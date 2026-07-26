@@ -16,6 +16,21 @@ test("capture polished desktop overview", async ({ page }, testInfo) => {
   });
 });
 
+test("capture collector inventory", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "readme-chromium");
+  await page.goto("/collectors");
+  await expect(page.getByRole("heading", { name: "Collectors" })).toBeVisible();
+  await expect(page.getByText("finance-app-01")).toBeVisible();
+  await expect(page.getByText("records-app-04")).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: path.join(screenshotDirectory, "bower-management-collectors.png"),
+    fullPage: true,
+    animations: "disabled"
+  });
+});
+
 test("capture polished dark approvals view", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "readme-chromium");
   await page.goto("/approvals");
@@ -31,6 +46,35 @@ test("capture polished dark approvals view", async ({ page }, testInfo) => {
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({
     path: path.join(screenshotDirectory, "bower-management-approvals-dark.png"),
+    fullPage: true,
+    animations: "disabled"
+  });
+});
+
+test("capture Entra access and RBAC model", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "readme-chromium");
+  await page.goto("/access");
+  await expect(page.getByRole("heading", { name: "Access control" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Current session" })).toBeVisible();
+  await expect(page.getByText("Bower.Administrator").first()).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: path.join(screenshotDirectory, "bower-management-access.png"),
+    fullPage: true,
+    animations: "disabled"
+  });
+});
+
+test("capture management audit history", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "readme-chromium");
+  await page.goto("/audit");
+  await expect(page.getByRole("heading", { name: "Management audit" })).toBeVisible();
+  await expect(page.getByText("records-prod-04").first()).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: path.join(screenshotDirectory, "bower-management-audit.png"),
     fullPage: true,
     animations: "disabled"
   });

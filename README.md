@@ -1,5 +1,7 @@
 # Bower
 
+![Bower turns scattered application noise into trusted security signal through Collect, Select, Arrange, Deliver and Prove](docs/images/bower-readme-hero.png)
+
 > Bower helps security teams collect meaningful security events from custom
 > applications and legacy products that do not integrate cleanly with Microsoft
 > Sentinel.
@@ -196,31 +198,66 @@ See Microsoft guidance for
 
 ## Management UI
 
-Bower includes a self-hosted React management console and ASP.NET Core API for:
+Bower includes a self-hosted React management console and ASP.NET Core API.
+Expand any section below for an exhaustive tour of shipped console functionality.
 
-- deployed collector and machine inventory;
-- source coverage, queue pressure and output health;
-- pending → approved → active → suspended/revoked collector lifecycle;
-- reasoned enrollment approval;
-- management audit history;
-- Microsoft Entra ID SSO and app-role RBAC.
+<details>
+  <summary><strong>Fleet posture and health</strong> — collector status, source coverage, queue pressure, output health and recent activity</summary>
+  <p>
+    Fleet-wide counts expose active, unhealthy, stale and pending collectors.
+    Health cards identify source and delivery conditions without displaying event
+    payloads or credentials.
+  </p>
+  <img src="docs/images/bower-management-overview.png" alt="Bower Management fleet posture showing collector health, approval state, queue pressure, output health, source coverage and recent activity">
+</details>
 
-![Bower Management fleet posture showing collector health, approval state, queue pressure and source coverage](docs/images/bower-management-overview.png)
+<details>
+  <summary><strong>Collector and machine inventory</strong> — lifecycle state, environment, source count, queue depth, delivery state and last heartbeat</summary>
+  <p>
+    Inventory records which machines are sending telemetry and makes missing,
+    degraded or backlogged collectors visible.
+  </p>
+  <img src="docs/images/bower-management-collectors.png" alt="Bower Management collector inventory showing machines, lifecycle state, environment, configured sources, queue depth, delivery health and last heartbeat">
+</details>
 
-<table>
-  <tr>
-    <td width="72%">
-      <img src="docs/images/bower-management-approvals-dark.png" alt="Bower Management dark-mode enrollment approval flow with reasoned decisions and audit history">
-    </td>
-    <td width="28%">
-      <img src="docs/images/bower-management-mobile.png" alt="Bower Management responsive mobile navigation">
-    </td>
-  </tr>
-  <tr>
-    <td><sub>Reasoned collector approval and immutable decision history.</sub></td>
-    <td><sub>Responsive fleet navigation.</sub></td>
-  </tr>
-</table>
+<details>
+  <summary><strong>Reasoned enrollment approvals</strong> — pending identity review, approve or reject controls, role enforcement and decision history</summary>
+  <p>
+    Pending collectors cannot become active until an authorized approver records
+    a reason. The same view preserves immutable decision history. Dark mode is
+    included.
+  </p>
+  <img src="docs/images/bower-management-approvals-dark.png" alt="Bower Management dark-mode enrollment approval flow showing pending collector identity, required decision reason, approve and reject controls, and decision history">
+</details>
+
+<details>
+  <summary><strong>Microsoft Entra ID SSO and group-based RBAC</strong> — current identity, role claims and group-assignable Bower app roles</summary>
+  <p>
+    The console shows the authenticated session and documents the
+    <code>Bower.Viewer</code>, <code>Bower.Operator</code>,
+    <code>Bower.Approver</code>, <code>Bower.Administrator</code> and
+    machine-only <code>Bower.Collector</code> roles.
+  </p>
+  <img src="docs/images/bower-management-access.png" alt="Bower Management access control showing current Entra identity, assigned app roles and the group-assignable RBAC model">
+</details>
+
+<details>
+  <summary><strong>Management audit history</strong> — enrollment and lifecycle actions with time, target, actor and Entra object ID</summary>
+  <p>
+    Audit rows identify who changed collector state and what changed. Event
+    payloads and credentials are never displayed.
+  </p>
+  <img src="docs/images/bower-management-audit.png" alt="Bower Management immutable audit history showing timestamps, lifecycle actions, collector targets, actors and Entra object IDs">
+</details>
+
+<details>
+  <summary><strong>Responsive operations</strong> — mobile navigation, fleet posture and touch-friendly access to every console area</summary>
+  <p>
+    The same operational workflow remains usable on narrow screens without
+    horizontal page overflow.
+  </p>
+  <img src="docs/images/bower-management-mobile.png" alt="Bower Management responsive mobile fleet posture with open navigation" width="420">
+</details>
 
 Screenshots use synthetic fleet metadata from the loopback-only development
 preview. The production deployment requires Entra ID authentication.
