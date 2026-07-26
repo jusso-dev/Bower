@@ -35,9 +35,10 @@ deduplication, retry/dead-letter transitions, AMA spool output, real Azure Monit
 Logs Ingestion SDK output, Entra-protected fleet management and approval UI,
 basic CLI tooling, schemas and deployment examples.
 
-Source adapters, complete catalogue commands, Roslyn packages, Azure plan/apply,
-query-backed evidence bundles, signing and broad resilience testing remain before
-v1. No mocked upload is represented as Sentinel delivery.
+File, REST and Windows Event Log source adapters, complete catalogue commands,
+Roslyn packages, Azure plan/apply, query-backed evidence bundles, release-signing
+automation and broad resilience testing remain before v1. No mocked upload is
+represented as Sentinel delivery.
 
 ## Architecture
 
@@ -65,6 +66,7 @@ Full design: [architecture](docs/architecture/overview.md).
 | .NET runtime | .NET 10 LTS |
 | Windows | `win-x64`, `win-arm64` publishing configured by release workflow |
 | Linux | `linux-x64`, `linux-arm64` publishing configured by release workflow |
+| macOS | `osx-x64`, `osx-arm64` publishing configured by release workflow |
 | Local collector HTTP | Implemented; loopback default |
 | Durable SQLite queue | Implemented |
 | AMA companion spool | Implemented |
@@ -72,7 +74,8 @@ Full design: [architecture](docs/architecture/overview.md).
 | Docker, systemd, Kubernetes | Baseline deployment assets |
 | Management UI and API | Fleet inventory, approval, health, audit and Entra app-role RBAC implemented |
 | Windows Service self-install | Not implemented |
-| File, SQL, REST, Event Log sources | Not implemented |
+| SQL Server source | EF Core adapter with durable SQLite cursors implemented |
+| File, REST, Event Log sources | Not implemented |
 | Sentinel query proof/evidence bundle | Not implemented |
 
 ## Quick start
@@ -101,6 +104,95 @@ dotnet run --project src/Bower.Cli -- queue inspect \
 
 Canary output proves local receipt, policy acceptance and queue/output state only.
 It does not prove Sentinel queryability.
+
+## Self-contained binaries
+
+Bower pins .NET SDK `10.0.302`. Publish single-file, self-contained executables
+without requiring .NET on the target machine:
+
+```bash
+# Choose one:
+# win-x64 win-arm64 linux-x64 linux-arm64 osx-x64 osx-arm64
+RID=linux-x64
+
+dotnet publish src/Bower.Cli/Bower.Cli.csproj \
+  --configuration Release \
+  --runtime "$RID" \
+  --self-contained true \
+  -p:PublishSingleFile=true \
+  --output "artifacts/releases/$RID/cli"
+
+dotnet publish src/Bower.Collector/Bower.Collector.csproj \
+  --configuration Release \
+  --runtime "$RID" \
+  --self-contained true \
+  -p:PublishSingleFile=true \
+  --output "artifacts/releases/$RID/collector"
+```
+
+Windows outputs end in `.exe`; Linux and macOS outputs are native executable
+binaries without an extension. CI builds all six RIDs and uploads one artifact
+per RID.
+
+### Signing with an organisation-trusted CA
+
+Keep signing keys in an HSM, Azure Key Vault or OS certificate store. Never
+commit a private key or PFX. Sign after publishing, then verify before release.
+An internal CA only creates trust on machines where the organisation has
+distributed that CA root.
+
+For Windows, issue a certificate with the Code Signing EKU, import it into the
+signing agent certificate store, and use Authenticode:
+
+```powershell
+$artifact = "artifacts\releases\win-x64\cli\bower.exe"
+$thumbprint = $env:BOWER_SIGNING_CERT_THUMBPRINT
+
+signtool sign /fd SHA256 /sha1 $thumbprint `
+  /tr https://timestamp.example.org /td SHA256 $artifact
+signtool verify /pa /all /v $artifact
+```
+
+For Linux, or cross-platform verification with the same organisation CA, create
+a detached CMS signature and distribute the approved CA chain:
+
+```bash
+artifact="artifacts/releases/linux-x64/cli/bower"
+
+openssl cms -sign -binary -md sha256 \
+  -in "$artifact" \
+  -signer org-code-signing.crt \
+  -inkey org-code-signing.key \
+  -outform DER -nosmimecap \
+  -out "$artifact.p7s"
+
+openssl cms -verify -binary -inform DER \
+  -in "$artifact.p7s" \
+  -content "$artifact" \
+  -CAfile org-code-signing-chain.pem \
+  -purpose any -out /dev/null
+```
+
+An organisation CA does not satisfy macOS Gatekeeper for external distribution.
+Sign macOS binaries with an Apple Developer ID Application identity and notarise
+the release archive; optionally add the detached organisation CMS signature for
+internal assurance:
+
+```bash
+artifact="artifacts/releases/osx-arm64/cli/bower"
+
+codesign --force --options runtime --timestamp \
+  --sign "Developer ID Application: Example Org (TEAMID)" "$artifact"
+codesign --verify --strict --verbose=2 "$artifact"
+
+ditto -c -k --keepParent "$artifact" "$artifact.zip"
+xcrun notarytool submit "$artifact.zip" \
+  --keychain-profile BOWER_NOTARY --wait
+```
+
+See Microsoft guidance for
+[SignTool](https://learn.microsoft.com/dotnet/framework/tools/signtool-exe) and
+[macOS notarisation for .NET](https://learn.microsoft.com/dotnet/core/install/macos-notarization-issues).
 
 ## Management UI
 
@@ -243,12 +335,67 @@ BOWER_STREAM_NAME=Custom-BowerSecurity
 Azure upload acknowledgement still needs a Log Analytics query before evidence
 can claim end-to-end delivery.
 
-## Legacy SQL direction
+## SQL Server source adapter
 
-Planned SQL adapter will require parameterized, bounded, read-only queries with
-stable ordering and durable incrementing/timestamp/composite cursors. Queries
-without cursor, row limit or stable ordering will fail validation. No SQL adapter
-is shipped yet.
+`Bower.Source.SqlServer` ships a real EF Core adapter for legacy audit tables.
+It does not accept free-form SQL. Table and column identifiers are validated,
+EF Core generates parameterised predicates, `Take` bounds every batch, and
+cursor-specific LINQ ordering is fixed by the adapter.
+
+Supported cursors:
+
+- incrementing sequence;
+- timestamp with optional bounded replay overlap;
+- composite timestamp plus sequence.
+
+Fingerprints remain stable across overlap replay. A saturated overlap window
+fails explicitly instead of silently skipping records. Cursor checkpoints use
+an EF Core SQLite store with optimistic concurrency and survive process restart.
+Commit a checkpoint only after every selected event in that batch is durably
+persisted.
+
+```csharp
+EfSourceCursorStore cursorStore = new("./data/sql-source-cursors.db");
+await cursorStore.InitializeAsync(cancellationToken);
+
+SqlServerSourceAdapter source = new(
+    new SqlServerSourceOptions
+    {
+        SourceId = "legacy-finance-audit",
+        ConnectionString = Environment.GetEnvironmentVariable("BOWER_FINANCE_SQL")
+            ?? throw new InvalidOperationException("BOWER_FINANCE_SQL is required."),
+        Schema = "dbo",
+        Table = "AuditLog",
+        CursorKind = SqlServerCursorKind.Incrementing,
+        BatchSize = 1_000,
+        Columns = new SqlServerColumnMappings
+        {
+            Sequence = "AuditId",
+            EventTime = "EventTime",
+            Username = "Username",
+            Action = "Action",
+            TargetType = "TargetType",
+            TargetId = "TargetId",
+            PreviousValue = "PreviousValue",
+            NewValue = "NewValue",
+            SourceIpAddress = "SourceIp"
+        }
+    },
+    cursorStore);
+
+SqlServerPollBatch batch = await source.PollAsync(cancellationToken);
+
+// Map and process each record through Bower redaction, validation and policy.
+// Commit only after those accepted events are durable.
+if (batch.Checkpoint is not null)
+{
+    await source.CommitAsync(batch.Checkpoint, cancellationToken);
+}
+```
+
+The connection must specify `Application Intent=ReadOnly`. Use a database
+principal restricted to `SELECT` on the approved audit table or view. Bower does
+not create, alter or delete source database objects.
 
 ## Evidence
 

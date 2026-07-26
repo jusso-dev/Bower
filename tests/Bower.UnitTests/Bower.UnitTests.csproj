@@ -14,7 +14,9 @@
     <ProjectReference Include="../../src/Bower.Core/Bower.Core.csproj" />
     <ProjectReference Include="../../src/Bower.Output.AmaSpool/Bower.Output.AmaSpool.csproj" />
     <ProjectReference Include="../../src/Bower.Management.Api/Bower.Management.Api.csproj" />
+    <ProjectReference Include="../../src/Bower.Persistence/Bower.Persistence.csproj" />
     <ProjectReference Include="../../src/Bower.Sdk/Bower.Sdk.csproj" />
+    <ProjectReference Include="../../src/Bower.Source.SqlServer/Bower.Source.SqlServer.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
