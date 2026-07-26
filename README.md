@@ -113,6 +113,26 @@ Bower includes a self-hosted React management console and ASP.NET Core API for:
 - management audit history;
 - Microsoft Entra ID SSO and app-role RBAC.
 
+![Bower Management fleet posture showing collector health, approval state, queue pressure and source coverage](docs/images/bower-management-overview.png)
+
+<table>
+  <tr>
+    <td width="72%">
+      <img src="docs/images/bower-management-approvals-dark.png" alt="Bower Management dark-mode enrollment approval flow with reasoned decisions and audit history">
+    </td>
+    <td width="28%">
+      <img src="docs/images/bower-management-mobile.png" alt="Bower Management responsive mobile navigation">
+    </td>
+  </tr>
+  <tr>
+    <td><sub>Reasoned collector approval and immutable decision history.</sub></td>
+    <td><sub>Responsive fleet navigation.</sub></td>
+  </tr>
+</table>
+
+Screenshots use synthetic fleet metadata from the loopback-only development
+preview. The production deployment requires Entra ID authentication.
+
 Entra security groups are assigned to Bower app roles. Group members receive the
 role in their access token, avoiding direct dependence on large or overage-prone
 group claims. The interactive roles are `Bower.Viewer`, `Bower.Operator`,
@@ -131,6 +151,10 @@ cp .env.example .env.local
 # Set VITE_BOWER_AUTH_MODE=development only for local development.
 npm ci
 npm run dev
+
+# Against a running management deployment:
+BOWER_UI_BASE_URL=http://127.0.0.1:4320 npm run test:e2e
+BOWER_UI_BASE_URL=http://127.0.0.1:4320 npm run screenshots
 ```
 
 Production Entra setup and collector identity flow:
