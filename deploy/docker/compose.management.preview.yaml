@@ -1,0 +1,30 @@
+services:
+  bower-management:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.management
+      args:
+        BOWER_AUTH_MODE: development
+        BOWER_ENTRA_TENANT_ID: 00000000-0000-0000-0000-000000000000
+        BOWER_ENTRA_CLIENT_ID: 00000000-0000-0000-0000-000000000000
+        BOWER_ENTRA_API_SCOPE: api://00000000-0000-0000-0000-000000000000/Bower.Access
+        BOWER_ENTRA_REDIRECT_URI: http://127.0.0.1:4320
+    read_only: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4320:4320"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      BOWER_AUTH_MODE: development
+      AllowedHosts: localhost;127.0.0.1
+    volumes:
+      - bower-management-preview-data:/var/lib/bower-management
+    tmpfs:
+      - /tmp:size=16m,mode=1770
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  bower-management-preview-data:

@@ -60,6 +60,10 @@ For a single-container deployment, use
 API's static root and keeps SQLite on `/var/lib/bower-management`. Terminate TLS
 at a trusted reverse proxy and expose only the approved hostname.
 
+`compose.management.preview.yaml` exists only for local or SSH-tunnel UI testing.
+It enables development authentication and binds to loopback. Never expose that
+profile to a LAN, reverse proxy or production environment.
+
 ## Web configuration
 
 Copy `ui/Bower.Management.Web/.env.example` and set the API and SPA application
