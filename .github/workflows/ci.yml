@@ -12,8 +12,8 @@ jobs:
   build-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
       - run: dotnet restore Bower.sln --locked-mode
@@ -27,8 +27,8 @@ jobs:
       matrix:
         rid: [win-x64, win-arm64, linux-x64, linux-arm64, osx-x64, osx-arm64]
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
       - run: dotnet restore Bower.sln --locked-mode
@@ -47,7 +47,7 @@ jobs:
           --no-restore
           -p:PublishSingleFile=true
           --output artifacts/${{ matrix.rid }}/collector
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: bower-${{ matrix.rid }}
           path: artifacts/${{ matrix.rid }}
