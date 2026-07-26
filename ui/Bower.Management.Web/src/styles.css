@@ -975,6 +975,8 @@ tbody tr:last-child td {
   .responsive-table th,
   .responsive-table td {
     display: table-cell;
+    padding: var(--space-3) var(--space-4);
+    border-block-end: 1px solid var(--color-rule);
   }
 
   .responsive-table td::before {

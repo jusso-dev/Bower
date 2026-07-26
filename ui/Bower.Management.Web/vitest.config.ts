@@ -5,6 +5,7 @@ export default defineConfig({
     "import.meta.env.VITE_BOWER_AUTH_MODE": JSON.stringify("development")
   },
   test: {
-    environment: "jsdom"
+    environment: "jsdom",
+    include: ["src/**/*.test.{ts,tsx}"]
   }
 });
