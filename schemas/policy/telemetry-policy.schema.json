@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bower.security/schemas/policy/telemetry-policy-v1.json",
+  "title": "Bower Telemetry Policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "match", "requirements", "decision"],
+  "properties": {
+    "apiVersion": {"const": "bower.security/v1"},
+    "kind": {"const": "TelemetryPolicy"},
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "version", "owner"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^BWR-POL-[A-Z0-9-]+$"},
+        "name": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+        "owner": {"type": "string", "minLength": 1},
+        "reviewDate": {"type": "string", "format": "date"}
+      }
+    },
+    "match": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "eventCategories": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "eventTypes": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      },
+      "anyOf": [
+        {"required": ["eventCategories"]},
+        {"required": ["eventTypes"]}
+      ]
+    },
+    "requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requiredFields": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "atLeastOne": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "recommendedFields": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action"],
+      "properties": {
+        "action": {
+          "enum": ["accept", "reject", "sample", "aggregate", "redact-and-accept", "quarantine", "dead-letter"]
+        },
+        "minimumValueScore": {"type": "integer", "minimum": 0, "maximum": 100},
+        "neverSample": {"type": "boolean"}
+      }
+    },
+    "routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {"type": "string"},
+        "destination": {"type": "string"}
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+**/bin/
+**/obj/
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+artifacts/
+coverage/
+evidence/
+**/node_modules/
+**/dist/
+*.db
+*.db-shm
+*.db-wal
+spool/

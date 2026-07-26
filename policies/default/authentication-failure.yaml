@@ -1,0 +1,39 @@
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+
+metadata:
+  id: BWR-POL-AUTH-FAILURE
+  name: Authentication failures
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-01-01
+
+match:
+  eventCategories:
+    - authentication
+  eventTypes:
+    - authentication_failure
+    - account_lockout
+
+requirements:
+  requiredFields:
+    - timeGenerated
+    - eventType
+    - eventResult
+    - application.name
+  atLeastOne:
+    - actor.userId
+    - actor.username
+  recommendedFields:
+    - source.ipAddress
+    - eventOutcomeReason
+    - request.correlationId
+
+decision:
+  action: accept
+  minimumValueScore: 70
+  neverSample: true
+
+routing:
+  profile: authentication
+  destination: security-events

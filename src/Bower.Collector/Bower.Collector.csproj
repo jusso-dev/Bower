@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Bower.Core/Bower.Core.csproj" />
+    <ProjectReference Include="../Bower.Output.AmaSpool/Bower.Output.AmaSpool.csproj" />
+    <ProjectReference Include="../Bower.Output.AzureLogsIngestion/Bower.Output.AzureLogsIngestion.csproj" />
+  </ItemGroup>
+</Project>

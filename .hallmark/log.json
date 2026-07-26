@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "runs": [
+    {
+      "date": "2026-07-26",
+      "artifact": "ui/Bower.Management.Web",
+      "genre": "modern-minimal",
+      "macrostructure": "Workbench",
+      "navigation": "N3 side rail",
+      "theme": "custom-bower",
+      "tokensFile": "ui/Bower.Management.Web/tokens.css",
+      "tokensSha256": "a6a1577f0345926e32bbb95dac67da9f5cc9ce0325c9a71033ec67f29c51d49a"
+    }
+  ]
+}

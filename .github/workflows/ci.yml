@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore Bower.sln --locked-mode
+      - run: dotnet build Bower.sln --configuration Release --no-restore
+      - run: dotnet test Bower.sln --configuration Release --no-build --no-restore
+      - run: dotnet format Bower.sln --verify-no-changes --no-restore
+
+  publish:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rid: [win-x64, win-arm64, linux-x64, linux-arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore Bower.sln
+      - run: >
+          dotnet publish src/Bower.Cli/Bower.Cli.csproj
+          --configuration Release
+          --runtime ${{ matrix.rid }}
+          --self-contained true
+          --output artifacts/${{ matrix.rid }}/cli
+      - run: >
+          dotnet publish src/Bower.Collector/Bower.Collector.csproj
+          --configuration Release
+          --runtime ${{ matrix.rid }}
+          --self-contained true
+          -p:PublishSingleFile=true
+          --output artifacts/${{ matrix.rid }}/collector
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bower-${{ matrix.rid }}
+          path: artifacts/${{ matrix.rid }}

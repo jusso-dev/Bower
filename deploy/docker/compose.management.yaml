@@ -1,0 +1,29 @@
+services:
+  bower-management:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.management
+      args:
+        BOWER_ENTRA_TENANT_ID: ${BOWER_ENTRA_TENANT_ID:?set BOWER_ENTRA_TENANT_ID}
+        BOWER_ENTRA_CLIENT_ID: ${BOWER_ENTRA_CLIENT_ID:?set BOWER_ENTRA_CLIENT_ID}
+        BOWER_ENTRA_API_SCOPE: ${BOWER_ENTRA_API_SCOPE:?set BOWER_ENTRA_API_SCOPE}
+        BOWER_ENTRA_REDIRECT_URI: ${BOWER_ENTRA_REDIRECT_URI:?set BOWER_ENTRA_REDIRECT_URI}
+    read_only: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4320:4320"
+    environment:
+      Bower__Entra__TenantId: ${BOWER_ENTRA_TENANT_ID}
+      Bower__Entra__Audience: ${BOWER_ENTRA_AUDIENCE:?set BOWER_ENTRA_AUDIENCE}
+      AllowedHosts: ${BOWER_MANAGEMENT_HOST:?set BOWER_MANAGEMENT_HOST}
+    volumes:
+      - bower-management-data:/var/lib/bower-management
+    tmpfs:
+      - /tmp:size=16m,mode=1770
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  bower-management-data:

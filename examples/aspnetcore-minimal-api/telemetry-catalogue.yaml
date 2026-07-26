@@ -1,0 +1,33 @@
+apiVersion: bower.security/v1
+kind: ApplicationTelemetryCatalogue
+application:
+  name: BowerMinimalApiExample
+  owner: Bower Maintainers
+  environment: development
+events:
+  - type: authentication_failure
+    schemaVersion: 1.0.0
+    description: Example local authentication attempt was denied
+    owner: Bower Maintainers
+    sourceLocation:
+      project: Bower.Example.MinimalApi
+      component: POST /login
+    securityPurpose:
+      - password-spray-detection
+      - account-compromise-investigation
+    expectedVolume:
+      dailyMinimum: 0
+      dailyMaximum: 10000
+    requiredFields:
+      - actor.username
+      - eventResult
+      - eventOutcomeReason
+      - request.correlationId
+    recommendedFields:
+      - source.ipAddress
+    destinationTable: BowerSecurity_CL
+    retentionClass: security-standard
+    samplingAllowed: false
+    owningTeam: Bower Maintainers
+    schemaVersionStatus: current
+    asimCompatibilityStatus: aligned

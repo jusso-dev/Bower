@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>bower</AssemblyName>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Bower.Contracts/Bower.Contracts.csproj" />
+    <ProjectReference Include="../Bower.Persistence/Bower.Persistence.csproj" />
+    <ProjectReference Include="../Bower.PolicyEngine/Bower.PolicyEngine.csproj" />
+  </ItemGroup>
+</Project>

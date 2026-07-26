@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Immutable Bower security event contracts.</Description>
+    <PackageId>Bower.Contracts</PackageId>
+  </PropertyGroup>
+</Project>

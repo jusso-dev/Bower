@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Strongly typed Bower security telemetry SDK.</Description>
+    <PackageId>Bower.Sdk</PackageId>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Bower.Contracts/Bower.Contracts.csproj" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,25 @@
+services:
+  bower:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    read_only: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4319:4319"
+    environment:
+      BOWER_OUTPUT: ama-spool
+      BOWER_AMA_SPOOL_PATH: /var/spool/bower
+    volumes:
+      - bower-data:/var/lib/bower
+      - bower-spool:/var/spool/bower
+    tmpfs:
+      - /tmp:size=16m,mode=1770
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  bower-data:
+  bower-spool:

@@ -1,0 +1,8 @@
+apiVersion: bower.security/v1
+kind: ApplicationConfiguration
+application:
+  name: BowerMinimalApiExample
+  environment: development
+transport:
+  type: local-collector
+  endpoint: http://127.0.0.1:4319

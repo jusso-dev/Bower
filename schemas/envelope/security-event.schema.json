@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bower.security/schemas/envelope/security-event-1.0.0.json",
+  "title": "Bower Security Event Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "timeGenerated",
+    "eventCategory",
+    "eventType",
+    "eventAction",
+    "eventResult",
+    "application"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "eventId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "x-bower-classification": "internal"
+    },
+    "eventOriginalId": {
+      "type": ["string", "null"],
+      "maxLength": 256,
+      "x-bower-classification": "internal"
+    },
+    "timeGenerated": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "timeObserved": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "eventCategory": {
+      "enum": [
+        "authentication",
+        "authorisation",
+        "identity-management",
+        "administrative-activity",
+        "data-access",
+        "application-security",
+        "api-security",
+        "collector-health"
+      ]
+    },
+    "eventType": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{2,127}$"
+    },
+    "eventAction": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "eventResult": {
+      "enum": ["unknown", "success", "failure", "denied"]
+    },
+    "eventSeverity": {
+      "enum": ["informational", "low", "medium", "high", "critical"]
+    },
+    "eventOutcomeReason": {
+      "type": ["string", "null"],
+      "maxLength": 1024,
+      "x-bower-classification": "internal"
+    },
+    "application": {
+      "$ref": "#/$defs/application"
+    },
+    "actor": {
+      "oneOf": [
+        {"$ref": "#/$defs/actor"},
+        {"type": "null"}
+      ]
+    },
+    "target": {
+      "oneOf": [
+        {"$ref": "#/$defs/target"},
+        {"type": "null"}
+      ]
+    },
+    "source": {
+      "oneOf": [
+        {"$ref": "#/$defs/source"},
+        {"type": "null"}
+      ]
+    },
+    "request": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "correlationId": {"type": ["string", "null"], "maxLength": 256},
+        "traceId": {"type": ["string", "null"], "maxLength": 128},
+        "sessionId": {
+          "type": ["string", "null"],
+          "maxLength": 256,
+          "x-bower-classification": "personal"
+        },
+        "method": {"type": ["string", "null"], "maxLength": 16},
+        "path": {"type": ["string", "null"], "maxLength": 2048},
+        "statusCode": {"type": ["integer", "null"], "minimum": 100, "maximum": 599}
+      }
+    },
+    "change": {"type": ["object", "null"]},
+    "security": {"type": ["object", "null"]},
+    "collector": {"type": ["object", "null"]},
+    "labels": {
+      "type": ["object", "null"],
+      "additionalProperties": {"type": "string", "maxLength": 256},
+      "maxProperties": 64
+    },
+    "attributes": {
+      "type": ["object", "null"],
+      "maxProperties": 64
+    }
+  },
+  "$defs": {
+    "application": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "environment"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 128},
+        "version": {"type": ["string", "null"], "maxLength": 64},
+        "environment": {"type": "string", "minLength": 1, "maxLength": 64},
+        "instance": {"type": ["string", "null"], "maxLength": 256},
+        "tenantId": {
+          "type": ["string", "null"],
+          "maxLength": 256,
+          "x-bower-classification": "personal"
+        }
+      }
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "userId": {
+          "type": ["string", "null"],
+          "maxLength": 256,
+          "x-bower-classification": "personal"
+        },
+        "username": {
+          "type": ["string", "null"],
+          "maxLength": 256,
+          "x-bower-classification": "personal"
+        },
+        "displayName": {
+          "type": ["string", "null"],
+          "maxLength": 256,
+          "x-bower-classification": "personal"
+        },
+        "type": {"enum": ["human", "service", "machine", "system", "unknown"]},
+        "role": {"type": ["string", "null"], "maxLength": 256}
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {"type": "string", "minLength": 1, "maxLength": 128},
+        "id": {
+          "type": ["string", "null"],
+          "maxLength": 256,
+          "x-bower-classification": "personal"
+        },
+        "name": {
+          "type": ["string", "null"],
+          "maxLength": 256,
+          "x-bower-classification": "personal"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ipAddress": {
+          "type": ["string", "null"],
+          "maxLength": 64,
+          "x-bower-classification": "personal"
+        },
+        "hostname": {
+          "type": ["string", "null"],
+          "maxLength": 256,
+          "x-bower-classification": "personal"
+        },
+        "port": {"type": ["integer", "null"], "minimum": 0, "maximum": 65535}
+      }
+    }
+  }
+}

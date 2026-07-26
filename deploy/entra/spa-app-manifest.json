@@ -1,0 +1,21 @@
+{
+  "displayName": "Bower Management Web",
+  "signInAudience": "AzureADMyOrg",
+  "spa": {
+    "redirectUris": [
+      "http://localhost:5173",
+      "https://bower.example.gov.au"
+    ]
+  },
+  "requiredResourceAccess": [
+    {
+      "resourceAppId": "00000000-0000-0000-0000-000000000000",
+      "resourceAccess": [
+        {
+          "id": "77fb48be-4622-4d5e-b5e6-0a30d8b67a32",
+          "type": "Scope"
+        }
+      ]
+    }
+  ]
+}

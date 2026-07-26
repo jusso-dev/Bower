@@ -1,0 +1,37 @@
+[Unit]
+Description=Bower Security Telemetry Collector
+Documentation=https://github.com/bower-security/bower
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+User=bower
+Group=bower
+WorkingDirectory=/opt/bower
+ExecStart=/opt/bower/Bower.Collector
+Restart=on-failure
+RestartSec=5s
+Environment=BOWER_LISTEN_URL=http://127.0.0.1:4319
+Environment=BOWER_QUEUE_PATH=/var/lib/bower/queue.db
+Environment=BOWER_POLICY_DIRECTORY=/etc/bower/policies
+EnvironmentFile=-/etc/bower/bower.env
+StateDirectory=bower
+LogsDirectory=bower
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+ReadWritePaths=/var/lib/bower /var/spool/bower
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Bower.Abstractions/Bower.Abstractions.csproj" />
+    <PackageReference Include="YamlDotNet" />
+  </ItemGroup>
+</Project>

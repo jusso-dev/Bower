@@ -1,0 +1,62 @@
+{
+  "displayName": "Bower Management API",
+  "signInAudience": "AzureADMyOrg",
+  "identifierUris": [
+    "api://00000000-0000-0000-0000-000000000000"
+  ],
+  "api": {
+    "requestedAccessTokenVersion": 2,
+    "oauth2PermissionScopes": [
+      {
+        "adminConsentDescription": "Access the tenant-controlled Bower management API.",
+        "adminConsentDisplayName": "Access Bower Management",
+        "id": "77fb48be-4622-4d5e-b5e6-0a30d8b67a32",
+        "isEnabled": true,
+        "type": "Admin",
+        "value": "Bower.Access"
+      }
+    ]
+  },
+  "appRoles": [
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Read Bower fleet, health, approval and audit data.",
+      "displayName": "Bower Viewer",
+      "id": "00ab39f3-ed9b-4fb1-ad0e-87a33cf6d089",
+      "isEnabled": true,
+      "value": "Bower.Viewer"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Operate Bower collectors and investigate delivery health.",
+      "displayName": "Bower Operator",
+      "id": "d85fd04b-fb18-4815-878f-edeb21c7b8f0",
+      "isEnabled": true,
+      "value": "Bower.Operator"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Approve or reject Bower collector enrollment.",
+      "displayName": "Bower Approver",
+      "id": "f24c8ec4-d3e5-4d50-9bc0-7fda72b9f9d7",
+      "isEnabled": true,
+      "value": "Bower.Approver"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Administer Bower collector lifecycle and access configuration.",
+      "displayName": "Bower Administrator",
+      "id": "84476fbc-395c-43b5-9f7b-11b3de992a76",
+      "isEnabled": true,
+      "value": "Bower.Administrator"
+    },
+    {
+      "allowedMemberTypes": ["Application"],
+      "description": "Register and heartbeat one identity-bound Bower Collector.",
+      "displayName": "Bower Collector",
+      "id": "47177bc8-d90b-4243-9c99-d40ed8ec87f7",
+      "isEnabled": true,
+      "value": "Bower.Collector"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+FROM node:22-alpine AS web-build
+WORKDIR /src/ui/Bower.Management.Web
+COPY ui/Bower.Management.Web/package.json ui/Bower.Management.Web/package-lock.json ./
+RUN npm ci --ignore-scripts
+COPY ui/Bower.Management.Web/ ./
+ARG BOWER_ENTRA_TENANT_ID
+ARG BOWER_ENTRA_CLIENT_ID
+ARG BOWER_ENTRA_API_SCOPE
+ARG BOWER_ENTRA_REDIRECT_URI
+RUN VITE_BOWER_AUTH_MODE=entra \
+    VITE_BOWER_ENTRA_TENANT_ID=${BOWER_ENTRA_TENANT_ID} \
+    VITE_BOWER_ENTRA_CLIENT_ID=${BOWER_ENTRA_CLIENT_ID} \
+    VITE_BOWER_ENTRA_API_SCOPE=${BOWER_ENTRA_API_SCOPE} \
+    VITE_BOWER_ENTRA_REDIRECT_URI=${BOWER_ENTRA_REDIRECT_URI} \
+    npm run build
+
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS api-build
+WORKDIR /src
+COPY . .
+RUN dotnet restore src/Bower.Management.Api/Bower.Management.Api.csproj
+RUN dotnet publish src/Bower.Management.Api/Bower.Management.Api.csproj \
+    --configuration Release \
+    --no-restore \
+    --output /app
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+COPY --from=api-build /app .
+COPY --from=web-build /src/ui/Bower.Management.Web/dist ./wwwroot
+RUN mkdir -p /var/lib/bower-management \
+    && chown -R 1654:1654 /app /var/lib/bower-management
+USER 1654
+ENV BOWER_MANAGEMENT_LISTEN_URL=http://0.0.0.0:4320
+ENV BOWER_MANAGEMENT_DB_PATH=/var/lib/bower-management/management.db
+EXPOSE 4320
+VOLUME ["/var/lib/bower-management"]
+ENTRYPOINT ["dotnet", "Bower.Management.Api.dll"]

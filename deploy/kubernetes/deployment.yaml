@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bower-collector
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bower-collector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: bower-collector
+    spec:
+      serviceAccountName: bower-collector
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: collector
+          image: ghcr.io/replace-me/bower:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 4319
+          env:
+            - name: BOWER_LISTEN_URL
+              value: http://0.0.0.0:4319
+            - name: BOWER_QUEUE_PATH
+              value: /var/lib/bower/queue.db
+            - name: BOWER_POLICY_DIRECTORY
+              value: /app/policies/default
+            - name: BOWER_OUTPUT
+              value: azure-logs-ingestion
+            - name: BOWER_DCE_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: bower-azure
+                  key: dceEndpoint
+            - name: BOWER_DCR_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: bower-azure
+                  key: dcrImmutableId
+            - name: BOWER_STREAM_NAME
+              value: Custom-BowerSecurity
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/bower
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: bower-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bower-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bower-collector
+  annotations:
+    azure.workload.identity/client-id: replace-me

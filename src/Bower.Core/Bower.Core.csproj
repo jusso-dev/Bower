@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Bower.Abstractions/Bower.Abstractions.csproj" />
+    <ProjectReference Include="../Bower.Persistence/Bower.Persistence.csproj" />
+    <ProjectReference Include="../Bower.PolicyEngine/Bower.PolicyEngine.csproj" />
+    <ProjectReference Include="../Bower.Redaction/Bower.Redaction.csproj" />
+  </ItemGroup>
+</Project>
