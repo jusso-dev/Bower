@@ -414,6 +414,13 @@
           "Bower.Contracts": "[1.0.0, )"
         }
       },
+      "bower.agent.aws": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Contracts": "[1.0.0, )",
+          "Bower.Source.Aws": "[1.0.0, )"
+        }
+      },
       "bower.analytics": {
         "type": "Project",
         "dependencies": {
