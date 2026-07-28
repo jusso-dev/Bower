@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Bower.Contracts/Bower.Contracts.csproj" />
+  </ItemGroup>
+</Project>
