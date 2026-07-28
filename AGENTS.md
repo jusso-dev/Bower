@@ -13,7 +13,7 @@ control plane, or runtime AI filter.
 
 - `src/Bower.Contracts`: immutable event contracts and serialization.
 - `src/Bower.PolicyEngine`: deterministic, explainable event selection.
-- `src/Bower.Redaction`: local data minimisation before persistence.
+- `src/Bower.Redaction`: local data minimisation and intelligent sensitive-data detection before persistence.
 - `src/Bower.Persistence`: SQLite queue, cursors, delivery state and evidence.
 - `src/Bower.Core`: source-to-policy-to-queue orchestration.
 - `src/Bower.Sdk`: semantic developer API and transports.
