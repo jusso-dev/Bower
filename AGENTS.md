@@ -21,6 +21,7 @@ control plane, or runtime AI filter.
 - `src/Bower.Management.Api`: Entra-protected fleet, approval and audit API.
 - `ui/Bower.Management.Web`: tenant-controlled operational console.
 - `src/Bower.Output.*`: bounded delivery adapters.
+- `src/Bower.Source.Aws`: AWS security telemetry parsers (CloudTrail, GuardDuty, Security Hub, CloudWatch).
 - `schemas`, `policies`, `deploy`, `docs`, `tests`: versioned product assets.
 
 Inspect nearest `AGENTS.md` before editing.

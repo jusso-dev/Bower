@@ -35,6 +35,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bower.Management.Api", "src
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bower.Source.SqlServer", "src\Bower.Source.SqlServer\Bower.Source.SqlServer.csproj", "{A9934CA4-88C5-4AD0-99C9-92490167B48E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bower.Source.Aws", "src\Bower.Source.Aws\Bower.Source.Aws.csproj", "{EA3A7CAF-51CE-4A81-A808-2239893A5332}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -225,6 +227,18 @@ Global
 		{A9934CA4-88C5-4AD0-99C9-92490167B48E}.Release|x64.Build.0 = Release|Any CPU
 		{A9934CA4-88C5-4AD0-99C9-92490167B48E}.Release|x86.ActiveCfg = Release|Any CPU
 		{A9934CA4-88C5-4AD0-99C9-92490167B48E}.Release|x86.Build.0 = Release|Any CPU
+		{EA3A7CAF-51CE-4A81-A808-2239893A5332}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EA3A7CAF-51CE-4A81-A808-2239893A5332}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EA3A7CAF-51CE-4A81-A808-2239893A5332}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{EA3A7CAF-51CE-4A81-A808-2239893A5332}.Debug|x64.Build.0 = Debug|Any CPU
+		{EA3A7CAF-51CE-4A81-A808-2239893A5332}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{EA3A7CAF-51CE-4A81-A808-2239893A5332}.Debug|x86.Build.0 = Debug|Any CPU
+		{EA3A7CAF-51CE-4A81-A808-2239893A5332}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EA3A7CAF-51CE-4A81-A808-2239893A5332}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EA3A7CAF-51CE-4A81-A808-2239893A5332}.Release|x64.ActiveCfg = Release|Any CPU
+		{EA3A7CAF-51CE-4A81-A808-2239893A5332}.Release|x64.Build.0 = Release|Any CPU
+		{EA3A7CAF-51CE-4A81-A808-2239893A5332}.Release|x86.ActiveCfg = Release|Any CPU
+		{EA3A7CAF-51CE-4A81-A808-2239893A5332}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -232,5 +246,6 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{D45BA108-CA26-46F7-9C0B-DA13A384E687} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{A9934CA4-88C5-4AD0-99C9-92490167B48E} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{EA3A7CAF-51CE-4A81-A808-2239893A5332} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal
