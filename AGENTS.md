@@ -25,6 +25,7 @@ control plane, or runtime AI filter.
 - `src/Bower.Ocsf`: OCSF normalisation engine and source mappers.
 - `src/Bower.Detection`: Sigma-compatible detection rules engine.
 - `src/Bower.Pipeline`: declarative telemetry pipeline model, templates and validation.
+- `src/Bower.Analytics`: telemetry quality and coverage scoring.
 - `schemas`, `policies`, `deploy`, `docs`, `tests`: versioned product assets.
 
 Inspect nearest `AGENTS.md` before editing.

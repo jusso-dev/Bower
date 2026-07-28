@@ -36,5 +36,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Bower.Pipeline\Bower.Pipeline.csproj" />
+    <ProjectReference Include="..\..\src\Bower.Analytics\Bower.Analytics.csproj" />
   </ItemGroup>
 </Project>

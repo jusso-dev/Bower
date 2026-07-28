@@ -414,6 +414,12 @@
           "Bower.Contracts": "[1.0.0, )"
         }
       },
+      "bower.analytics": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Contracts": "[1.0.0, )"
+        }
+      },
       "bower.contracts": {
         "type": "Project"
       },
