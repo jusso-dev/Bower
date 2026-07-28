@@ -1,0 +1,19 @@
+title: Authentication Failure Observed
+id: bower-auth-failure-001
+status: stable
+description: Detects authentication failure security events emitted by applications.
+version: 1.0.0
+level: medium
+logsource:
+  product: bower
+  service: authentication
+detection:
+  selection:
+    EventType: authentication_failure
+    EventResult: Failure
+  condition: selection
+tags:
+  - attack.t1110
+  - attack.credential_access
+falsepositives:
+  - User mistyped password during legitimate login
