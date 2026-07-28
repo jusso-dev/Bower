@@ -434,6 +434,12 @@
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.4, )"
         }
       },
+      "bower.ocsf": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Contracts": "[1.0.0, )"
+        }
+      },
       "bower.output.amaspool": {
         "type": "Project",
         "dependencies": {

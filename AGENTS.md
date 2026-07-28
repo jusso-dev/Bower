@@ -22,6 +22,7 @@ control plane, or runtime AI filter.
 - `ui/Bower.Management.Web`: tenant-controlled operational console.
 - `src/Bower.Output.*`: bounded delivery adapters.
 - `src/Bower.Source.Aws`: AWS security telemetry parsers (CloudTrail, GuardDuty, Security Hub, CloudWatch).
+- `src/Bower.Ocsf`: OCSF normalisation engine and source mappers.
 - `schemas`, `policies`, `deploy`, `docs`, `tests`: versioned product assets.
 
 Inspect nearest `AGENTS.md` before editing.
