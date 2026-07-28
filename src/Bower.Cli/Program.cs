@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Bower.Contracts;
 using Bower.Persistence;
+using Bower.Pipeline;
 using Bower.PolicyEngine;
 
 return await RunAsync(args);
@@ -14,6 +15,8 @@ static async Task<int> RunAsync(string[] args)
         {
             ["version"] => WriteVersion(),
             ["validate", .. string[] rest] => Validate(rest),
+            ["pipeline", "validate", .. string[] rest] => ValidatePipeline(rest),
+            ["pipeline", "template", .. string[] rest] => PipelineTemplate(rest),
             ["queue", "inspect", .. string[] rest] => await InspectQueueAsync(rest),
             ["test", "emit", .. string[] rest] => await EmitCanaryAsync(rest),
             ["developer", "init", .. string[] rest] => DeveloperInit(rest),
@@ -52,6 +55,41 @@ static int Validate(string[] args)
                 })
             },
             new JsonSerializerOptions { WriteIndented = true }));
+    return 0;
+}
+
+static int ValidatePipeline(string[] args)
+{
+    string? path = GetOption(args, "--file") ?? args.FirstOrDefault(item => !item.StartsWith('-'));
+    if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+    {
+        return Fail("Provide an existing pipeline file with --file PATH.");
+    }
+
+    TelemetryPipeline pipeline = PipelineDocument.ParseYaml(File.ReadAllText(path));
+    PipelineValidationResult validation = PipelineValidator.Validate(pipeline);
+    PipelinePerformanceEstimate estimate = PipelineValidator.Estimate(pipeline);
+    Console.WriteLine(
+        JsonSerializer.Serialize(
+            new
+            {
+                valid = validation.IsValid,
+                pipeline.Id,
+                pipeline.Name,
+                pipeline.Version,
+                order = validation.TopologicalOrder,
+                estimate,
+                issues = validation.Issues
+            },
+            new JsonSerializerOptions { WriteIndented = true }));
+    return validation.IsValid ? 0 : 2;
+}
+
+static int PipelineTemplate(string[] args)
+{
+    string templateId = GetOption(args, "--id") ?? args.FirstOrDefault(item => !item.StartsWith('-')) ?? "sentinel-app";
+    TelemetryPipeline pipeline = PipelineValidator.CreateTemplate(templateId);
+    Console.WriteLine(PipelineDocument.ToYaml(pipeline));
     return 0;
 }
 
@@ -191,6 +229,8 @@ static int WriteHelp()
 
         Commands:
           bower validate [--policy-directory PATH]
+          bower pipeline validate --file PATH
+          bower pipeline template [--id sentinel-app|aws-security]
           bower queue inspect [--database PATH]
           bower test emit [--endpoint URL]
           bower developer init [--path PATH]
