@@ -17,6 +17,9 @@
     <ProjectReference Include="../../src/Bower.Persistence/Bower.Persistence.csproj" />
     <ProjectReference Include="../../src/Bower.Sdk/Bower.Sdk.csproj" />
     <ProjectReference Include="../../src/Bower.Source.SqlServer/Bower.Source.SqlServer.csproj" />
+    <ProjectReference Include="../../src/Bower.Source.Aws/Bower.Source.Aws.csproj" />
+    <ProjectReference Include="../../src/Bower.Ocsf/Bower.Ocsf.csproj" />
+    <ProjectReference Include="../../src/Bower.Detection/Bower.Detection.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
@@ -26,9 +29,9 @@
       <Link>schemas/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\Bower.Source.Aws\Bower.Source.Aws.csproj" />
-    <ProjectReference Include="..\..\src\Bower.Ocsf\Bower.Ocsf.csproj" />
+    <Content Include="../../rules/**/*.yml">
+      <Link>rules/%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 </Project>

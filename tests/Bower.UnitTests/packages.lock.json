@@ -426,6 +426,13 @@
           "Bower.Redaction": "[1.0.0, )"
         }
       },
+      "bower.detection": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Contracts": "[1.0.0, )",
+          "YamlDotNet": "[18.1.0, )"
+        }
+      },
       "bower.management.api": {
         "type": "Project",
         "dependencies": {
