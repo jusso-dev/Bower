@@ -75,3 +75,24 @@ export interface Access {
   roles: string[];
   developmentAuthentication: boolean;
 }
+
+export interface PipelineNode {
+  id: string;
+  kind: string;
+  type: string;
+}
+
+export interface PipelineEdge {
+  from: string;
+  to: string;
+}
+
+export interface PipelineTemplate {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  nodes: PipelineNode[];
+  edges: PipelineEdge[];
+  tags?: string[];
+}

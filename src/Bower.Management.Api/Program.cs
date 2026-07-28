@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text.Json.Serialization;
 using Bower.Management.Api;
+using Bower.Pipeline;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -228,6 +229,33 @@ api.MapPost(
             }
         })
     .RequireAuthorization("Collector");
+
+api.MapGet(
+        "/pipelines/templates",
+        () => Results.Ok(
+            new[]
+            {
+                PipelineValidator.CreateTemplate("sentinel-app"),
+                PipelineValidator.CreateTemplate("aws-security")
+            }))
+    .RequireAuthorization("View");
+
+api.MapPost(
+        "/pipelines/validate",
+        (TelemetryPipeline pipeline) =>
+        {
+            PipelineValidationResult validation = PipelineValidator.Validate(pipeline);
+            PipelinePerformanceEstimate estimate = PipelineValidator.Estimate(pipeline);
+            return Results.Ok(
+                new
+                {
+                    validation.IsValid,
+                    validation.Issues,
+                    validation.TopologicalOrder,
+                    estimate
+                });
+        })
+    .RequireAuthorization("Operate");
 
 api.MapGet(
         "/approvals",

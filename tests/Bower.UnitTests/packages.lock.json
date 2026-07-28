@@ -436,6 +436,7 @@
       "bower.management.api": {
         "type": "Project",
         "dependencies": {
+          "Bower.Pipeline": "[1.0.0, )",
           "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.10, )",
           "Microsoft.Data.Sqlite": "[10.0.10, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.4, )"
@@ -460,6 +461,12 @@
           "Microsoft.Data.Sqlite": "[10.0.10, )",
           "Microsoft.EntityFrameworkCore.Sqlite": "[10.0.10, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.4, )"
+        }
+      },
+      "bower.pipeline": {
+        "type": "Project",
+        "dependencies": {
+          "YamlDotNet": "[18.1.0, )"
         }
       },
       "bower.policyengine": {

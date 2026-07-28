@@ -34,4 +34,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Bower.Pipeline\Bower.Pipeline.csproj" />
+  </ItemGroup>
 </Project>

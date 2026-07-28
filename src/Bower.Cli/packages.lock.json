@@ -168,6 +168,12 @@
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.4, )"
         }
       },
+      "bower.pipeline": {
+        "type": "Project",
+        "dependencies": {
+          "YamlDotNet": "[18.1.0, )"
+        }
+      },
       "bower.policyengine": {
         "type": "Project",
         "dependencies": {

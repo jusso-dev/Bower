@@ -24,6 +24,7 @@ control plane, or runtime AI filter.
 - `src/Bower.Source.Aws`: AWS security telemetry parsers (CloudTrail, GuardDuty, Security Hub, CloudWatch).
 - `src/Bower.Ocsf`: OCSF normalisation engine and source mappers.
 - `src/Bower.Detection`: Sigma-compatible detection rules engine.
+- `src/Bower.Pipeline`: declarative telemetry pipeline model, templates and validation.
 - `schemas`, `policies`, `deploy`, `docs`, `tests`: versioned product assets.
 
 Inspect nearest `AGENTS.md` before editing.

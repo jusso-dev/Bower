@@ -3,6 +3,7 @@ import {
   Boxes,
   CheckCircle2,
   ClipboardCheck,
+  GitBranch,
   KeyRound,
   Menu,
   Moon,
@@ -15,11 +16,12 @@ import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { useApi } from "./api";
 import { useAuth } from "./auth";
-import type { Access, Approval, Audit, Collector, Overview } from "./types";
+import type { Access, Approval, Audit, Collector, Overview, PipelineTemplate } from "./types";
 
 const navItems = [
   { to: "/", label: "Overview", icon: Activity },
   { to: "/collectors", label: "Collectors", icon: Boxes },
+  { to: "/pipelines", label: "Pipelines", icon: GitBranch },
   { to: "/approvals", label: "Approvals", icon: ClipboardCheck },
   { to: "/access", label: "Access", icon: KeyRound },
   { to: "/audit", label: "Audit", icon: ScrollText }
@@ -124,6 +126,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<OverviewPage />} />
           <Route path="/collectors" element={<CollectorsPage />} />
+          <Route path="/pipelines" element={<PipelinesPage />} />
           <Route path="/approvals" element={<ApprovalsPage />} />
           <Route path="/access" element={<AccessPage />} />
           <Route path="/audit" element={<AuditPage />} />
@@ -253,6 +256,53 @@ function CollectorsPage() {
               icon={<Boxes aria-hidden="true" />}
               title="No collectors enrolled"
               detail="Install a Bower Collector and register its service principal to start the approval flow."
+            />
+          )
+        }
+      </ResourceState>
+    </Page>
+  );
+}
+
+function PipelinesPage() {
+  const { data, loading, error } = useResource<PipelineTemplate[]>(
+    "/api/pipelines/templates"
+  );
+  return (
+    <Page
+      title="Pipeline builder"
+      description="Reusable telemetry pipeline templates with validation-ready node graphs."
+    >
+      <ResourceState loading={loading} error={error} data={data}>
+        {(templates) =>
+          templates.length ? (
+            <div className="workbench-grid">
+              {templates.map((template) => (
+                <section className="sheet" key={template.id}>
+                  <div className="section-heading">
+                    <h2>{template.name}</h2>
+                    <span className="mono">{template.version}</span>
+                  </div>
+                  <p>{template.description}</p>
+                  <p className="muted">
+                    {template.nodes.length} nodes · {template.edges.length} edges
+                  </p>
+                  <ol className="compact-list">
+                    {template.nodes.map((node) => (
+                      <li key={node.id}>
+                        <span className="mono">{node.id}</span> · {node.kind} ·{" "}
+                        {node.type}
+                      </li>
+                    ))}
+                  </ol>
+                </section>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={<GitBranch aria-hidden="true" />}
+              title="No pipeline templates"
+              detail="Publish a template through the management API to design telemetry paths."
             />
           )
         }
