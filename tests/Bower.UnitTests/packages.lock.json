@@ -432,6 +432,9 @@
           "Bower.Redaction": "[1.0.0, )"
         }
       },
+      "bower.dcr": {
+        "type": "Project"
+      },
       "bower.detection": {
         "type": "Project",
         "dependencies": {

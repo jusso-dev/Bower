@@ -27,6 +27,7 @@ control plane, or runtime AI filter.
 - `src/Bower.Pipeline`: declarative telemetry pipeline model, templates and validation.
 - `src/Bower.Analytics`: telemetry quality and coverage scoring.
 - `src/Bower.Source.Ama`: Azure Monitor Agent companion discovery and custom log mapping.
+- `src/Bower.Dcr`: Data Collection Rule optimiser and health assessment.
 - `schemas`, `policies`, `deploy`, `docs`, `tests`: versioned product assets.
 
 Inspect nearest `AGENTS.md` before editing.
