@@ -27,4 +27,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Bower.Source.Aws\Bower.Source.Aws.csproj" />
+  </ItemGroup>
 </Project>
