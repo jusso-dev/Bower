@@ -28,6 +28,7 @@ control plane, or runtime AI filter.
 - `src/Bower.Analytics`: telemetry quality and coverage scoring.
 - `src/Bower.Source.Ama`: Azure Monitor Agent companion discovery and custom log mapping.
 - `src/Bower.Dcr`: Data Collection Rule optimiser and health assessment.
+- `src/Bower.Agent.Aws`: native EC2 host telemetry agent with IMDS enrichment.
 - `schemas`, `policies`, `deploy`, `docs`, `tests`: versioned product assets.
 
 Inspect nearest `AGENTS.md` before editing.
