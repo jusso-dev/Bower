@@ -1,157 +1,27 @@
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using Bower.Abstractions;
+using Bower.Redaction.Privacy;
 
 namespace Bower.Redaction;
 
+/// <summary>
+/// Compatibility redactor. Delegates to <see cref="PrivacyEngine"/> with default policy.
+/// Field-name secrets are removed; emails and other PII are handled by detectors.
+/// </summary>
 public sealed class JsonEventRedactor : IEventRedactor
 {
-    public const int MaximumPayloadBytes = 1_048_576;
+    public const int MaximumPayloadBytes = PrivacyEngine.MaximumPayloadBytes;
 
-    private static readonly HashSet<string> RemoveNames = new(
-        [
-            "password",
-            "passwordhash",
-            "accesstoken",
-            "refreshtoken",
-            "bearertoken",
-            "apikeysecret",
-            "clientsecret",
-            "privatekey",
-            "connectionstring",
-            "authorization",
-            "cookie",
-            "cookies",
-            "credential",
-            "credentials",
-            "requestbody",
-            "responsebody",
-            "body",
-            "headers",
-            "payload",
-            "filecontents"
-        ],
-        StringComparer.Ordinal);
+    private readonly PrivacyEngine engine;
 
-    private static readonly HashSet<string> MaskNames = new(
-        ["email", "emailaddress"],
-        StringComparer.Ordinal);
-
-    public RedactionResult Redact(string json)
+    public JsonEventRedactor()
+        : this(PrivacyPolicy.CreateDefault())
     {
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return Failure("empty-payload");
-        }
-
-        if (System.Text.Encoding.UTF8.GetByteCount(json) > MaximumPayloadBytes)
-        {
-            return Failure("payload-too-large");
-        }
-
-        try
-        {
-            JsonNode? root = JsonNode.Parse(
-                json,
-                documentOptions: new JsonDocumentOptions
-                {
-                    AllowTrailingCommas = false,
-                    CommentHandling = JsonCommentHandling.Disallow,
-                    MaxDepth = 32
-                });
-
-            if (root is not JsonObject rootObject)
-            {
-                return Failure("root-must-be-object");
-            }
-
-            List<string> removed = [];
-            List<string> masked = [];
-            RedactObject(rootObject, "$", removed, masked);
-
-            return new RedactionResult(
-                true,
-                rootObject.ToJsonString(),
-                removed,
-                masked,
-                null);
-        }
-        catch (JsonException)
-        {
-            return Failure("invalid-json");
-        }
     }
 
-    private static void RedactObject(
-        JsonObject value,
-        string parentPath,
-        List<string> removed,
-        List<string> masked)
+    public JsonEventRedactor(PrivacyPolicy policy)
     {
-        foreach ((string propertyName, JsonNode? child) in value.ToArray())
-        {
-            string path = $"{parentPath}.{propertyName}";
-            string normalizedName = Normalize(propertyName);
-
-            if (RemoveNames.Contains(normalizedName))
-            {
-                value.Remove(propertyName);
-                removed.Add(path);
-                continue;
-            }
-
-            if (MaskNames.Contains(normalizedName) && child is JsonValue)
-            {
-                value[propertyName] = Mask(child.ToString());
-                masked.Add(path);
-                continue;
-            }
-
-            RedactNode(child, path, removed, masked);
-        }
+        engine = new PrivacyEngine(policy);
     }
 
-    private static void RedactNode(
-        JsonNode? node,
-        string path,
-        List<string> removed,
-        List<string> masked)
-    {
-        if (node is JsonObject childObject)
-        {
-            RedactObject(childObject, path, removed, masked);
-            return;
-        }
-
-        if (node is not JsonArray array)
-        {
-            return;
-        }
-
-        for (int index = 0; index < array.Count; index++)
-        {
-            RedactNode(array[index], $"{path}[{index}]", removed, masked);
-        }
-    }
-
-    private static string Normalize(string value)
-    {
-        return string.Concat(value.Where(char.IsLetterOrDigit)).ToLowerInvariant();
-    }
-
-    private static string Mask(string value)
-    {
-        int separator = value.IndexOf('@', StringComparison.Ordinal);
-        if (separator <= 0)
-        {
-            return "***";
-        }
-
-        return $"{value[0]}***{value[separator..]}";
-    }
-
-    private static RedactionResult Failure(string code)
-    {
-        return new RedactionResult(false, null, [], [], code);
-    }
+    public RedactionResult Redact(string json) => engine.Redact(json);
 }

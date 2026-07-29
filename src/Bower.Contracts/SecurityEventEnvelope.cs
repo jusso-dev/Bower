@@ -48,6 +48,20 @@ public sealed record SecurityEventEnvelope
     public IReadOnlyDictionary<string, string>? Labels { get; init; }
 
     public IReadOnlyDictionary<string, JsonElement>? Attributes { get; init; }
+
+    /// <summary>
+    /// Sanitisation summary produced by the Privacy &amp; Secret Protection Engine.
+    /// Never contains original sensitive values.
+    /// </summary>
+    public PrivacyContext? Privacy { get; init; }
+}
+
+/// <summary>Additive privacy metadata attached after detection and policy application.</summary>
+public sealed record PrivacyContext
+{
+    public required IReadOnlyList<string> Detected { get; init; }
+
+    public required IReadOnlyDictionary<string, string> Actions { get; init; }
 }
 
 public sealed record ApplicationContext
