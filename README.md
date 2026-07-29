@@ -50,7 +50,13 @@ Configurable actions per detector: Allow, Remove, Replace, Mask, SHA-256, HMAC,
 Encrypt, AlertOnly. Events emit `privacy` metadata describing what was detected
 and which action ran — **never** the original values.
 
-Full catalogue, policy configuration and extension points:
+**Security team notification:** high-risk findings (regulated AU identifiers,
+secrets, crypto material, payment cards, field-name secrets) also enqueue a
+first-class semantic event `sensitive_data_detected` (`privacy-control`) so the
+SOC can alert in Sentinel/SIEM. Routine email/phone masking alone does not fire
+that event (noise control). Original values are never included on the alert.
+
+Full catalogue, policy configuration, SOC event shape and extension points:
 [Privacy & Secret Protection Engine](docs/privacy/privacy-secret-engine.md).
 
 > [!WARNING]
@@ -101,7 +107,7 @@ Full design: [architecture](docs/architecture/overview.md).
 | Linux | `linux-x64`, `linux-arm64` publishing configured by release workflow |
 | macOS | `osx-x64`, `osx-arm64` publishing configured by release workflow |
 | Local collector HTTP | Implemented; loopback default |
-| Privacy & Secret Protection Engine | Implemented; AU identifiers (TFN, CRN, Medicare, IHI, ABN/ACN, …), secrets, crypto; policy actions + metadata |
+| Privacy & Secret Protection Engine | Implemented; AU identifiers (TFN, CRN, Medicare, IHI, ABN/ACN, …), secrets, crypto; policy actions + metadata; high-risk findings emit `sensitive_data_detected` for SOC |
 | Durable SQLite queue | Implemented |
 | AMA companion spool | Implemented |
 | Logs Ingestion API | Real Azure SDK client implemented; tenant test required |

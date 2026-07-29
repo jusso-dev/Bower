@@ -7,6 +7,12 @@ public static class SecurityEventTypes
     public const string AccountLockout = "account_lockout";
     public const string RoleMembershipChanged = "role_membership_changed";
     public const string SensitiveDataExported = "sensitive_data_exported";
+    /// <summary>
+    /// Privacy engine detected regulated identifiers, secrets or other sensitive
+    /// material in inbound telemetry and applied a control action.
+    /// Never carries original secret values — detector ids and actions only.
+    /// </summary>
+    public const string SensitiveDataDetected = "sensitive_data_detected";
     public const string CollectorStarted = "collector_started";
     public const string CollectorUploadFailed = "collector_upload_failed";
     public const string TelemetryAggregationSummary = "telemetry_aggregation_summary";
@@ -22,4 +28,6 @@ public static class SecurityEventCategories
     public const string ApplicationSecurity = "application-security";
     public const string ApiSecurity = "api-security";
     public const string CollectorHealth = "collector-health";
+    /// <summary>Privacy controls, DLP-style findings, data minimisation actions.</summary>
+    public const string PrivacyControl = "privacy-control";
 }

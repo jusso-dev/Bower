@@ -1,0 +1,36 @@
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+
+metadata:
+  id: BWR-POL-PRIVACY-DETECT
+  name: Sensitive data detected by privacy engine
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-01-01
+
+match:
+  eventCategories:
+    - privacy-control
+  eventTypes:
+    - sensitive_data_detected
+
+requirements:
+  requiredFields:
+    - timeGenerated
+    - eventType
+    - eventResult
+    - application.name
+    - target.id
+  recommendedFields:
+    - request.correlationId
+    - eventOutcomeReason
+    - labels.sourceEventId
+
+decision:
+  action: accept
+  minimumValueScore: 80
+  neverSample: true
+
+routing:
+  profile: privacy-controls
+  destination: security-events
