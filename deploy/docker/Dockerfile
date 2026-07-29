@@ -2,9 +2,13 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY . .
 RUN dotnet restore Bower.sln
+# Framework-dependent for container runtime image (not self-contained single-file).
 RUN dotnet publish src/Bower.Collector/Bower.Collector.csproj \
     --configuration Release \
     --no-restore \
+    --runtime linux-x64 \
+    --self-contained false \
+    -p:PublishSingleFile=false \
     --output /app
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
