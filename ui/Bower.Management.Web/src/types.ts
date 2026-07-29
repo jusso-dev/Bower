@@ -96,3 +96,79 @@ export interface PipelineTemplate {
   edges: PipelineEdge[];
   tags?: string[];
 }
+
+export type CustomLogFormat = "Json" | "Csv" | "KeyValue" | "Regex";
+export type CustomLogValueType =
+  | "Text"
+  | "DateTime"
+  | "IpAddress"
+  | "WholeNumber"
+  | "Boolean";
+
+export interface CustomLogField {
+  sourceName: string;
+  type: CustomLogValueType;
+  ocsfPath: string | null;
+  asimField: string | null;
+  sensitive: boolean;
+}
+
+export interface CustomLogParserConfiguration {
+  version: string;
+  format: CustomLogFormat;
+  fields: CustomLogField[];
+  delimiter: string | null;
+  keyValueSeparator: string | null;
+  pattern: string | null;
+}
+
+export interface CustomLogSchemaField {
+  name: string;
+  type: CustomLogValueType;
+  required: boolean;
+  ocsfPath: string | null;
+  asimField: string | null;
+}
+
+export interface CustomLogParserTest {
+  name: string;
+  sourceLine: number | null;
+  shouldParse: boolean;
+  expectedFields: string[];
+  expectedOcsfMappings: string[];
+  expectedAsimMappings: string[];
+}
+
+export interface CustomLogPreviewValue {
+  type: CustomLogValueType;
+  value: string;
+  ocsfPath: string | null;
+  asimField: string | null;
+  redacted: boolean;
+}
+
+export interface CustomLogPreviewRow {
+  sourceLine: number;
+  fields: Record<string, CustomLogPreviewValue>;
+}
+
+export interface CustomLogPreview {
+  isValid: boolean;
+  parsedLineCount: number;
+  rejectedLineCount: number;
+  issues: string[];
+  rows: CustomLogPreviewRow[];
+}
+
+export interface CustomLogGeneration {
+  format: CustomLogFormat;
+  confidence: number;
+  rationale: string[];
+  configuration: CustomLogParserConfiguration;
+  schema: {
+    version: string;
+    fields: CustomLogSchemaField[];
+  };
+  tests: CustomLogParserTest[];
+  preview: CustomLogPreview;
+}

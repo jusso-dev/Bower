@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -90,6 +90,93 @@ describe("Bower management shell", () => {
 
     expect(await screen.findByText(/Viewing only/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+  });
+
+  it("generates and previews a custom log parser", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const path = String(input);
+        if (path.includes("/api/custom-logs/generate")) {
+          return json({
+            format: "Json",
+            confidence: 1,
+            rationale: ["All 1 sampled record(s) are JSON objects."],
+            configuration: {
+              version: "1.0",
+              format: "Json",
+              fields: [
+                {
+                  sourceName: "severity",
+                  type: "Text",
+                  ocsfPath: "severity",
+                  asimField: "EventSeverity",
+                  sensitive: false
+                }
+              ],
+              delimiter: null,
+              keyValueSeparator: null,
+              pattern: null
+            },
+            schema: {
+              version: "1.0",
+              fields: [
+                {
+                  name: "severity",
+                  type: "Text",
+                  required: true,
+                  ocsfPath: "severity",
+                  asimField: "EventSeverity"
+                }
+              ]
+            },
+            tests: [
+              {
+                name: "parses representative record",
+                sourceLine: 1,
+                shouldParse: true,
+                expectedFields: ["severity"],
+                expectedOcsfMappings: ["severity"],
+                expectedAsimMappings: ["EventSeverity"]
+              }
+            ],
+            preview: {
+              isValid: true,
+              parsedLineCount: 1,
+              rejectedLineCount: 0,
+              issues: [],
+              rows: [
+                {
+                  sourceLine: 1,
+                  fields: {
+                    severity: {
+                      type: "Text",
+                      value: "warning",
+                      ocsfPath: "severity",
+                      asimField: "EventSeverity",
+                      redacted: false
+                    }
+                  }
+                }
+              ]
+            }
+          });
+        }
+        return json([]);
+      })
+    );
+
+    renderApp("/pipelines");
+
+    fireEvent.change(await screen.findByLabelText("Sample records"), {
+      target: { value: '{"severity":"warning"}' }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Infer parser and schema" }));
+
+    expect(await screen.findByText("AI-assisted custom log parser")).toBeTruthy();
+    expect(await screen.findByText("Json · 100%")).toBeTruthy();
+    expect(await screen.findByText("Live transformation preview")).toBeTruthy();
+    expect(screen.getByText("warning")).toBeTruthy();
   });
 });
 

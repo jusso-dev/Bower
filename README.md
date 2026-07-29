@@ -37,7 +37,7 @@ deduplication, retry/dead-letter transitions, AMA spool output, real Azure Monit
 Logs Ingestion SDK output, Entra-protected fleet management and approval UI,
 basic CLI tooling, schemas and deployment examples.
 
-File, REST and Windows Event Log source adapters, complete catalogue commands,
+Runtime file, REST and Windows Event Log source adapters, complete catalogue commands,
 Roslyn packages, Azure plan/apply, query-backed evidence bundles, release-signing
 automation and broad resilience testing remain before v1. No mocked upload is
 represented as Sentinel delivery.
@@ -74,7 +74,8 @@ Full design: [architecture](docs/architecture/overview.md).
 | AMA companion spool | Implemented |
 | Logs Ingestion API | Real Azure SDK client implemented; tenant test required |
 | Docker, systemd, Kubernetes | Baseline deployment assets |
-| Management UI and API | Fleet inventory, approval, health, audit and Entra app-role RBAC implemented |
+| Management UI and API | Fleet inventory, approval, health, audit, custom-log parser generation and Entra app-role RBAC implemented |
+| AI-assisted custom log parser generator | Deterministic local JSON, CSV, key/value and common-regex inference with OCSF/ASIM mappings and redacted preview |
 | Windows Service self-install | Not implemented |
 | SQL Server source | EF Core adapter with durable SQLite cursors implemented |
 | File, REST, Event Log sources | Not implemented |
@@ -221,6 +222,15 @@ Expand any section below for an exhaustive tour of shipped console functionality
 </details>
 
 <details>
+  <summary><strong>Custom log parser generator</strong> — sample upload or bounded server path, format inference, schema generation, OCSF/ASIM mappings, generated assertions and redacted live preview</summary>
+  <p>
+    Operators can review and edit a deterministic parser configuration before
+    exporting it for source-adapter deployment. Samples are processed in memory;
+    preview does not prove deployment or Sentinel delivery.
+  </p>
+</details>
+
+<details>
   <summary><strong>Reasoned enrollment approvals</strong> — pending identity review, approve or reject controls, role enforcement and decision history</summary>
   <p>
     Pending collectors cannot become active until an authorized approver records
@@ -288,6 +298,8 @@ BOWER_UI_BASE_URL=http://127.0.0.1:4320 npm run screenshots
 
 Production Entra setup and collector identity flow:
 [management identity and RBAC](docs/security/management-identity-and-rbac.md).
+Custom parser limits and API:
+[custom log parser generator](docs/developer-integration/custom-log-parser.md).
 The UI shell is original Bower code informed by the MIT-licensed
 [Shadcn Dashboard](https://github.com/shadcndashboard/shadcndashboard) layout
 patterns.

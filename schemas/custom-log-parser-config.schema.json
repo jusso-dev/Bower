@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bower.local/schemas/custom-log-parser-config.schema.json",
+  "title": "Bower custom log parser configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "format",
+    "fields"
+  ],
+  "properties": {
+    "version": {
+      "const": "1.0"
+    },
+    "format": {
+      "enum": [
+        "Json",
+        "Csv",
+        "KeyValue",
+        "Regex"
+      ]
+    },
+    "fields": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sourceName",
+          "type",
+          "ocsfPath",
+          "asimField",
+          "sensitive"
+        ],
+        "properties": {
+          "sourceName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.@-]+$"
+          },
+          "type": {
+            "enum": [
+              "Text",
+              "DateTime",
+              "IpAddress",
+              "WholeNumber",
+              "Boolean"
+            ]
+          },
+          "ocsfPath": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "asimField": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sensitive": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "delimiter": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        ",",
+        "\t",
+        ";",
+        null
+      ]
+    },
+    "keyValueSeparator": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "=",
+        ":",
+        null
+      ]
+    },
+    "pattern": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 2048
+    }
+  }
+}

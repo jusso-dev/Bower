@@ -39,6 +39,28 @@ test("approval view requires a reason and identifies the pending machine", async
   await expectNoHorizontalOverflow(page);
 });
 
+test("custom log parser infers mappings and redacts live preview", async ({ page }) => {
+  await page.goto("/pipelines");
+
+  await page.getByLabel("Sample records").fill(
+    JSON.stringify({
+      timestamp: "2026-07-29T10:00:00Z",
+      severity: "warning",
+      user: "alex@example.test",
+      source_ip: "192.0.2.10",
+      action: "login"
+    })
+  );
+  await page.getByRole("button", { name: "Infer parser and schema" }).click();
+
+  await expect(page.getByText("Json · 100%")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Live transformation preview" }))
+    .toBeVisible();
+  await expect(page.getByText("[redacted]", { exact: true })).toBeVisible();
+  await expect(page.getByText("[redacted:ip]", { exact: true })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+});
+
 test("mobile navigation remains usable without horizontal overflow", async ({
   page
 }, testInfo) => {

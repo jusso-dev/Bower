@@ -5,6 +5,7 @@ using Bower.Pipeline;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
@@ -255,6 +256,60 @@ api.MapPost(
                     estimate
                 });
         })
+    .RequireAuthorization("Operate");
+
+api.MapPost(
+        "/custom-logs/generate",
+        async (
+            CustomLogInput input,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                string sample = await CustomLogSampleReader.ReadAsync(
+                    input,
+                    Environment.GetEnvironmentVariable("BOWER_CUSTOM_LOG_ROOTS"),
+                    cancellationToken);
+                return Results.Ok(CustomLogParser.Generate(sample));
+            }
+            catch (Exception exception) when (
+                exception is ArgumentException
+                or InvalidDataException
+                or InvalidOperationException
+                or UnauthorizedAccessException
+                or FileNotFoundException)
+            {
+                return Results.BadRequest(new { error = exception.Message });
+            }
+        })
+    .WithMetadata(new RequestSizeLimitAttribute(600 * 1024))
+    .RequireAuthorization("Operate");
+
+api.MapPost(
+        "/custom-logs/preview",
+        async (
+            CustomLogPreviewRequest request,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                string sample = await CustomLogSampleReader.ReadAsync(
+                    request.Input,
+                    Environment.GetEnvironmentVariable("BOWER_CUSTOM_LOG_ROOTS"),
+                    cancellationToken);
+                return Results.Ok(CustomLogParser.Preview(request.Configuration, sample));
+            }
+            catch (Exception exception) when (
+                exception is ArgumentException
+                or InvalidDataException
+                or InvalidOperationException
+                or UnauthorizedAccessException
+                or FileNotFoundException)
+            {
+                return Results.BadRequest(new { error = exception.Message });
+            }
+        })
+    .WithMetadata(new RequestSizeLimitAttribute(600 * 1024))
     .RequireAuthorization("Operate");
 
 api.MapGet(
