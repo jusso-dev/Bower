@@ -34,7 +34,7 @@ string collectorId = Environment.GetEnvironmentVariable("BOWER_COLLECTOR_ID")
     ?? Environment.MachineName;
 
 builder.Services.AddSingleton<IClock, SystemClock>();
-builder.Services.AddSingleton<IEventRedactor, JsonEventRedactor>();
+builder.Services.AddSingleton<IEventRedactor>(_ => new JsonEventRedactor());
 builder.Services.AddSingleton<IDurableEventStore>(services =>
     new SqliteEventStore(
         databasePath,

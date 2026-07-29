@@ -7,7 +7,10 @@ validation or policy decision.
 ## Trust boundaries
 
 1. Source records are untrusted, bounded input.
-2. Redaction removes known dangerous fields before typed parsing and persistence.
+2. Privacy & Secret Protection Engine (`Bower.Redaction`) removes field-name
+   secrets and scans string values for regulated AU identifiers, credentials and
+   crypto material before typed parsing and persistence. See
+   [privacy engine](../privacy/privacy-secret-engine.md).
 3. Policy Engine accepts only approved semantic types with required context.
 4. SQLite queue is tenant-controlled durable state; delivery leases recover after
    crashes and acknowledged rows remain auditable until retention.
