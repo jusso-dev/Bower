@@ -22,7 +22,17 @@ public sealed record RedactionResult(
     string? RedactedJson,
     IReadOnlyList<string> RemovedPaths,
     IReadOnlyList<string> MaskedPaths,
-    string? FailureCode);
+    string? FailureCode,
+    /// <summary>
+    /// Detector ids observed during privacy scan (e.g. <c>au.tfn</c>, <c>secret.jwt</c>).
+    /// Never contains original sensitive values.
+    /// </summary>
+    IReadOnlyList<string>? PrivacyDetected = null,
+    /// <summary>
+    /// Per-detector action labels applied during privacy scan (e.g. Removed, SHA256).
+    /// Never contains original sensitive values.
+    /// </summary>
+    IReadOnlyDictionary<string, string>? PrivacyActions = null);
 
 public interface ITelemetryPolicyEvaluator
 {

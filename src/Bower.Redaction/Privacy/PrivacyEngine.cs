@@ -36,6 +36,52 @@ public sealed class PrivacyEngine : IEventRedactor
 
     public RedactionResult Redact(string json) => RedactJson(json).ToRedactionResult();
 
+    /// <summary>
+    /// Detector ids that warrant a first-class SOC security event when observed.
+    /// High-risk regulated AU identifiers, secrets and crypto — not routine email mask noise.
+    /// </summary>
+    public static bool IsSecurityEventWorthy(string detectorId)
+    {
+        if (string.IsNullOrEmpty(detectorId))
+        {
+            return false;
+        }
+
+        // SubKind suffixes appear as "secret.api-key:OpenAI" in metadata Detected list.
+        string root = detectorId;
+        int colon = detectorId.IndexOf(':', StringComparison.Ordinal);
+        if (colon > 0)
+        {
+            root = detectorId[..colon];
+        }
+
+        return root is DetectorIds.FieldNameSecret
+            or DetectorIds.Tfn
+            or DetectorIds.Crn
+            or DetectorIds.Medicare
+            or DetectorIds.Ihi
+            or DetectorIds.Passport
+            or DetectorIds.DriverLicence
+            or DetectorIds.Dva
+            or DetectorIds.CreditCard
+            or DetectorIds.BsbAccount
+            or DetectorIds.Iban
+            or DetectorIds.PayId
+            or DetectorIds.Aws
+            or DetectorIds.Azure
+            or DetectorIds.Entra
+            or DetectorIds.Gcp
+            or DetectorIds.Jwt
+            or DetectorIds.OAuth
+            or DetectorIds.ApiKey
+            or DetectorIds.Kubernetes
+            or DetectorIds.Docker
+            or DetectorIds.Database
+            or DetectorIds.EnvVar
+            or DetectorIds.CryptoMaterial
+            or DetectorIds.SecurityMarking;
+    }
+
     public PrivacyScanResult RedactJson(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -331,7 +377,14 @@ public sealed record PrivacyScanResult(
         new(false, null, [], PrivacyMetadata.Empty, [], [], code);
 
     public RedactionResult ToRedactionResult() =>
-        new(Succeeded, RedactedJson, RemovedPaths, MaskedPaths, FailureCode);
+        new(
+            Succeeded,
+            RedactedJson,
+            RemovedPaths,
+            MaskedPaths,
+            FailureCode,
+            Metadata.Detected,
+            Metadata.Actions);
 }
 
 public sealed record PrivacyTextResult(

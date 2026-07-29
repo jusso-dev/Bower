@@ -71,6 +71,35 @@ When findings exist, the engine attaches (never with original values):
 
 `SecurityEventEnvelope.Privacy` maps the same shape.
 
+## Security team notification
+
+Redaction alone is not enough for operations. When **high-risk** detectors fire,
+`SecurityEventProcessor` also enqueues a first-class semantic event:
+
+| Field | Value |
+| --- | --- |
+| `eventCategory` | `privacy-control` |
+| `eventType` | `sensitive_data_detected` |
+| `eventAction` | `privacy.control.applied` |
+| `target.id` | source event id |
+| `privacy.detected` / `privacy.actions` | detector ids + actions only |
+
+**Never** includes original TFNs, secrets, tokens or card numbers.
+
+Alert-worthy by default (SOC signal):
+
+- Australian regulated ids: TFN, CRN, Medicare, IHI, passport, licence, DVA
+- Payment: credit card, BSB/account, IBAN, PayID
+- Secrets / crypto / field-name secrets / env vars / API keys
+- Protective security markings (when opt-in detector enabled)
+
+**Not** alert-worthy by default (still redacted on the source event):
+
+- Routine email / phone mask alone (noise for SOC; still in source `privacy` metadata)
+
+Policy: `policies/default/sensitive-data-detected.yaml` (`BWR-POL-PRIVACY-DETECT`).
+Sentinel / SIEM can alert on `eventType == sensitive_data_detected`.
+
 ## Detector modules
 
 ### Australian identifiers

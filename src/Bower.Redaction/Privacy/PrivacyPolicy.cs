@@ -43,6 +43,13 @@ public sealed class PrivacyPolicy
     /// <summary>When true, injects privacy metadata object into JSON root.</summary>
     public bool EmitMetadata { get; init; } = true;
 
+    /// <summary>
+    /// When true (default), high-risk findings should surface as a separate
+    /// <c>sensitive_data_detected</c> security event for the SOC. The processor
+    /// owns enqueue; this flag documents intent for hosts wiring PrivacyEngine.
+    /// </summary>
+    public bool EmitSecurityEventOnFindings { get; init; } = true;
+
     public bool IsDetectorEnabled(string detectorId)
     {
         if (DisabledDetectors.Contains(detectorId))

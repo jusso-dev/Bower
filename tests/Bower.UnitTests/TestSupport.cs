@@ -111,4 +111,48 @@ internal static class TestEvents
         };
         return new LoadedPolicy(policy, "sha256:test-policy", "test");
     }
+
+    public static LoadedPolicy PrivacyDetectionPolicy()
+    {
+        TelemetryPolicy policy = new()
+        {
+            ApiVersion = "bower.security/v1",
+            Kind = "TelemetryPolicy",
+            Metadata = new PolicyMetadata
+            {
+                Id = "BWR-POL-PRIVACY-DETECT",
+                Name = "Sensitive data detected by privacy engine",
+                Version = "1.0.0",
+                Owner = "Security Operations"
+            },
+            Match = new PolicyMatch
+            {
+                EventCategories = [SecurityEventCategories.PrivacyControl],
+                EventTypes = [SecurityEventTypes.SensitiveDataDetected]
+            },
+            Requirements = new PolicyRequirements
+            {
+                RequiredFields =
+                [
+                    "timeGenerated",
+                    "eventType",
+                    "eventResult",
+                    "application.name",
+                    "target.id"
+                ],
+                RecommendedFields =
+                [
+                    "request.correlationId",
+                    "eventOutcomeReason"
+                ]
+            },
+            Decision = new PolicyAction
+            {
+                Action = "accept",
+                MinimumValueScore = 80,
+                NeverSample = true
+            }
+        };
+        return new LoadedPolicy(policy, "sha256:test-privacy-policy", "test");
+    }
 }
