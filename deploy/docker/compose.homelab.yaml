@@ -1,0 +1,60 @@
+# Homelab full stack: collector (privacy engine + queue) + management preview UI.
+# Management is development-auth only — not for internet exposure.
+services:
+  bower-collector:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    read_only: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4319:4319"
+    environment:
+      BOWER_LISTEN_URL: http://0.0.0.0:4319
+      BOWER_QUEUE_PATH: /var/lib/bower/queue.db
+      BOWER_POLICY_DIRECTORY: /app/policies/default
+      BOWER_COLLECTOR_ID: homelab-collector
+      BOWER_OUTPUT: ama-spool
+      BOWER_AMA_SPOOL_PATH: /var/spool/bower
+      BOWER_ENVIRONMENT: homelab
+    volumes:
+      - bower-data:/var/lib/bower
+      - bower-spool:/var/spool/bower
+    tmpfs:
+      - /tmp:size=16m,mode=1770
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  bower-management:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.management
+      args:
+        BOWER_AUTH_MODE: development
+        BOWER_ENTRA_TENANT_ID: 00000000-0000-0000-0000-000000000000
+        BOWER_ENTRA_CLIENT_ID: 00000000-0000-0000-0000-000000000000
+        BOWER_ENTRA_API_SCOPE: api://00000000-0000-0000-0000-000000000000/Bower.Access
+        BOWER_ENTRA_REDIRECT_URI: http://127.0.0.1:4320
+    read_only: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4320:4320"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      BOWER_AUTH_MODE: development
+      AllowedHosts: localhost;127.0.0.1
+    volumes:
+      - bower-management-preview-data:/var/lib/bower-management
+    tmpfs:
+      - /tmp:size=16m,mode=1770
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  bower-data:
+  bower-spool:
+  bower-management-preview-data:
