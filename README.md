@@ -9,19 +9,49 @@
 > Inspired by the Australian bowerbird, Bower deliberately selects and arranges
 > valuable security signals rather than forwarding every available log.
 >
-> It filters low-value noise, validates and redacts records, reliably buffers
-> events, and delivers them through Azure Monitor Agent-compatible files or the
-> Azure Monitor Logs Ingestion API.
+> It filters low-value noise, runs a deterministic **Privacy & Secret Protection
+> Engine** (Australian-regulated identifiers first), validates and redacts
+> records, reliably buffers events, and delivers them through Azure Monitor
+> Agent-compatible files or the Azure Monitor Logs Ingestion API.
 >
 > Developers can use the Bower SDK and generated AGENTS.md instructions to
 > instrument security-relevant actions consistently without needing to understand
 > Sentinel ingestion internals.
 
-**Turn scattered application noise into trusted security signal.**
+**Turn scattered application noise into trusted security signal — without
+shipping Australian PII, credentials or secrets downstream.**
 
 Bower follows **Collect → Select → Arrange → Deliver → Prove**. It is a
-self-hosted security telemetry bridge, not a generic log shipper, APM platform,
-SIEM, or replacement for Azure Monitor Agent.
+self-hosted security telemetry privacy gateway, not a generic log shipper, APM
+platform, SIEM, or replacement for Azure Monitor Agent.
+
+### Australian privacy focus
+
+Bower is built for Australian security operations. Before any event is
+persisted or forwarded, the **Privacy & Secret Protection Engine** inspects
+every string field with deterministic pattern matching, checksum validation and
+policy actions (no AI at runtime):
+
+| Australian identifiers | Validation |
+|---|---|
+| Tax File Numbers (TFN) | ATO 8/9-digit checksum; default SHA-256 |
+| Centrelink CRN | Pattern (digits + check letter) |
+| Medicare numbers | Official check digit + issue number |
+| Individual Healthcare Identifiers (IHI) | `800360…` + Luhn |
+| ABN / ACN | Mod-89 / company check digit |
+| Passport, driver licence (state formats), DVA | Format + context |
+
+Also covered: payment cards (Luhn), BSB/account, IBAN/SWIFT/PayID; email and
+Australian/international phone numbers; cloud credentials (AWS, Azure, Entra,
+GCP), JWT/OAuth, common API keys; PEM/SSH/PGP keys; optional protective security
+markings (OFFICIAL through TOP SECRET).
+
+Configurable actions per detector: Allow, Remove, Replace, Mask, SHA-256, HMAC,
+Encrypt, AlertOnly. Events emit `privacy` metadata describing what was detected
+and which action ran — **never** the original values.
+
+Full catalogue, policy configuration and extension points:
+[Privacy & Secret Protection Engine](docs/privacy/privacy-secret-engine.md).
 
 > [!WARNING]
 > Bower cannot make inaccurate application events trustworthy. Applications must
@@ -31,11 +61,12 @@ SIEM, or replacement for Azure Monitor Agent.
 ## Project status
 
 **Pre-alpha foundation. Not production-ready.** Current code implements typed
-contracts, bounded SDK buffering, local HTTP collection, pre-persistence
-redaction, deterministic default-deny policy evaluation, SQLite WAL queue and
-deduplication, retry/dead-letter transitions, AMA spool output, real Azure Monitor
-Logs Ingestion SDK output, Entra-protected fleet management and approval UI,
-basic CLI tooling, schemas and deployment examples.
+contracts, bounded SDK buffering, local HTTP collection, the Australian-first
+Privacy & Secret Protection Engine (pre-persistence), deterministic default-deny
+policy evaluation, SQLite WAL queue and deduplication, retry/dead-letter
+transitions, AMA spool output, real Azure Monitor Logs Ingestion SDK output,
+Entra-protected fleet management and approval UI, basic CLI tooling, schemas and
+deployment examples.
 
 Runtime file, REST and Windows Event Log source adapters, complete catalogue commands,
 Roslyn packages, Azure plan/apply, query-backed evidence bundles, release-signing
@@ -47,7 +78,7 @@ represented as Sentinel delivery.
 ```mermaid
 flowchart LR
     A[Application or source] --> B[Candidate event]
-    B --> C[Local redaction]
+    B --> C[Privacy and secret engine]
     C --> D[Schema validation]
     D --> E[Deterministic value policy]
     E -->|reject/quarantine| F[Decision evidence]
@@ -70,6 +101,7 @@ Full design: [architecture](docs/architecture/overview.md).
 | Linux | `linux-x64`, `linux-arm64` publishing configured by release workflow |
 | macOS | `osx-x64`, `osx-arm64` publishing configured by release workflow |
 | Local collector HTTP | Implemented; loopback default |
+| Privacy & Secret Protection Engine | Implemented; AU identifiers (TFN, CRN, Medicare, IHI, ABN/ACN, …), secrets, crypto; policy actions + metadata |
 | Durable SQLite queue | Implemented |
 | AMA companion spool | Implemented |
 | Logs Ingestion API | Real Azure SDK client implemented; tenant test required |
