@@ -21,6 +21,10 @@
 **Turn scattered application noise into trusted security signal — without
 shipping Australian PII, credentials or secrets downstream.**
 
+![Bower management console fleet posture: collector, pending, unhealthy, stale and queued counts with an exceptions table and source coverage](docs/images/bower-management-overview.png)
+
+*The management console with synthetic preview data. Walkthrough below.*
+
 Bower follows **Collect → Select → Arrange → Deliver → Prove**. It is a
 self-hosted security telemetry privacy gateway, not a generic log shipper, APM
 platform, SIEM, or replacement for Azure Monitor Agent.
@@ -197,15 +201,27 @@ cd ui/Bower.Management.Web && npm run seed:preview
 The seed script refuses to run unless the API reports development
 authentication. Then walk through the console:
 
-1. **Overview** shows exceptions first: the pending `hr-app-02`, the degraded
-   `claims-api-03` (1,294 queued) and the suspended `records-app-04`.
-2. **Approvals** — enter a reason and approve `hr-app-02`. The decision lands in
+1. **Overview** (shown at the top of this README) puts exceptions first: the
+   pending `hr-app-02`, the degraded `claims-api-03` with 1,294 queued events,
+   and the suspended `records-app-04`.
+
+2. **Approvals** — a pending collector cannot send heartbeats until an approver
+   records a reason. Enter one and approve `hr-app-02`; the decision appears in
    history and in **Audit**.
-3. **Jobs** shows the management `collector-staleness` job (administrators can
-   *Run now*) and each collector's retention, maintenance and heartbeat jobs.
-   `claims-api-03` reports a failed retention run.
-4. **Pipelines** — paste a JSON log line and choose *Infer parser and schema* to
-   see the generated parser and a redacted preview.
+
+   ![Enrollment approvals in dark mode: pending hr-app-02 with a required decision reason, Approve and Reject buttons, and decision history](docs/images/bower-management-approvals-dark.png)
+
+3. **Jobs** shows Hangfire schedules: the management `collector-staleness` job
+   (administrators can *Run now*) and each collector's retention, maintenance and
+   heartbeat jobs. `claims-api-03` reports a failed retention run.
+
+   ![Background jobs: collector-staleness with Run now, and per-collector queue retention, maintenance and heartbeat states including one failed run](docs/images/bower-management-jobs.png)
+
+4. **Pipelines** — paste JSON log lines and choose *Infer parser and schema*.
+   Bower infers field types and OCSF/ASIM mappings, generates parser tests, and
+   shows a live preview with identities and IP addresses redacted.
+
+   ![Pipeline builder: two pasted JSON log lines, inferred fields with OCSF and ASIM mappings, generated parser tests and a redacted live preview](docs/images/bower-management-pipelines.png)
 
 ### 5. Run the full stack in Docker
 
@@ -345,84 +361,38 @@ See Microsoft guidance for
 ## Management UI
 
 Bower includes a self-hosted React management console and ASP.NET Core API.
-Expand any section below for an exhaustive tour of shipped console functionality.
+The [walkthrough](#4-run-the-management-console-with-preview-data) covers
+overview, approvals, background jobs and the pipeline builder. The remaining
+views:
 
-<details>
-  <summary><strong>Fleet posture and health</strong> — collector status, source coverage, queue pressure, output health and recent activity</summary>
-  <p>
-    Fleet-wide counts expose active, unhealthy, stale and pending collectors.
-    Health cards identify source and delivery conditions without displaying event
-    payloads or credentials.
-  </p>
-  <img src="docs/images/bower-management-overview.png" alt="Bower Management fleet posture showing collector health, approval state, queue pressure, output health, source coverage and recent activity">
-</details>
+### Collector and machine inventory
 
-<details>
-  <summary><strong>Collector and machine inventory</strong> — lifecycle state, environment, source count, queue depth, delivery state and last heartbeat</summary>
-  <p>
-    Inventory records which machines are sending telemetry and makes missing,
-    degraded or backlogged collectors visible.
-  </p>
-  <img src="docs/images/bower-management-collectors.png" alt="Bower Management collector inventory showing machines, lifecycle state, environment, configured sources, queue depth, delivery health and last heartbeat">
-</details>
+Lifecycle state, environment, source count, queue depth, delivery health and
+last heartbeat for every enrolled machine, so missing, degraded or backlogged
+collectors stand out.
 
-<details>
-  <summary><strong>Custom log parser generator</strong> — sample upload or bounded server path, format inference, schema generation, OCSF/ASIM mappings, generated assertions and redacted live preview</summary>
-  <p>
-    Operators can review and edit a deterministic parser configuration before
-    exporting it for source-adapter deployment. Samples are processed in memory;
-    preview does not prove deployment or Sentinel delivery.
-  </p>
-</details>
+![Collector inventory: machines with lifecycle state, environment, sources, queue depth, delivery health and last heartbeat](docs/images/bower-management-collectors.png)
 
-<details>
-  <summary><strong>Reasoned enrollment approvals</strong> — pending identity review, approve or reject controls, role enforcement and decision history</summary>
-  <p>
-    Pending collectors cannot become active until an authorized approver records
-    a reason. The same view preserves immutable decision history. Dark mode is
-    included.
-  </p>
-  <img src="docs/images/bower-management-approvals-dark.png" alt="Bower Management dark-mode enrollment approval flow showing pending collector identity, required decision reason, approve and reject controls, and decision history">
-</details>
+### Microsoft Entra ID SSO and group-based RBAC
 
-<details>
-  <summary><strong>Background jobs</strong> — management and collector job schedules, last run, state and an audited run-now control</summary>
-  <p>
-    Shows Hangfire-scheduled maintenance on the management plane and the jobs each
-    collector reports in its heartbeat, including failed runs. Administrators can
-    queue a management job immediately; the action is written to the audit log.
-  </p>
-  <img src="docs/images/bower-management-jobs.png" alt="Bower Management background jobs view listing the collector-staleness job with Run now, and per-collector queue retention, maintenance and heartbeat job states including one failed run">
-</details>
+The authenticated session and the group-assignable `Bower.Viewer`,
+`Bower.Operator`, `Bower.Approver`, `Bower.Administrator` and machine-only
+`Bower.Collector` app roles.
 
-<details>
-  <summary><strong>Microsoft Entra ID SSO and group-based RBAC</strong> — current identity, role claims and group-assignable Bower app roles</summary>
-  <p>
-    The console shows the authenticated session and documents the
-    <code>Bower.Viewer</code>, <code>Bower.Operator</code>,
-    <code>Bower.Approver</code>, <code>Bower.Administrator</code> and
-    machine-only <code>Bower.Collector</code> roles.
-  </p>
-  <img src="docs/images/bower-management-access.png" alt="Bower Management access control showing current Entra identity, assigned app roles and the group-assignable RBAC model">
-</details>
+![Access control: current Entra identity, assigned app roles and the RBAC model](docs/images/bower-management-access.png)
 
-<details>
-  <summary><strong>Management audit history</strong> — enrollment and lifecycle actions with time, target, actor and Entra object ID</summary>
-  <p>
-    Audit rows identify who changed collector state and what changed. Event
-    payloads and credentials are never displayed.
-  </p>
-  <img src="docs/images/bower-management-audit.png" alt="Bower Management immutable audit history showing timestamps, lifecycle actions, collector targets, actors and Entra object IDs">
-</details>
+### Management audit history
 
-<details>
-  <summary><strong>Responsive operations</strong> — mobile navigation, fleet posture and touch-friendly access to every console area</summary>
-  <p>
-    The same operational workflow remains usable on narrow screens without
-    horizontal page overflow.
-  </p>
-  <img src="docs/images/bower-management-mobile.png" alt="Bower Management responsive mobile fleet posture with open navigation" width="420">
-</details>
+Who changed collector state, which job was triggered, and when. Event payloads
+and credentials are never displayed.
+
+![Management audit: timestamps, actions, targets, actors and Entra object IDs](docs/images/bower-management-audit.png)
+
+### Responsive operations
+
+Every console area works on narrow screens without horizontal scrolling.
+
+<img src="docs/images/bower-management-mobile.png" alt="Mobile fleet posture with the navigation menu open" width="360">
 
 Screenshots use synthetic fleet metadata from the loopback-only development
 preview. The production deployment requires Entra ID authentication.
