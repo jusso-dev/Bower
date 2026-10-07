@@ -62,14 +62,24 @@ jobs:
           cp -R ui/Bower.Management.Web/dist out/management/wwwroot
       - name: Start management API with synthetic preview data
         run: |
+          # Run from the publish folder so the content root (and wwwroot) resolves.
+          cd out/management
           ASPNETCORE_ENVIRONMENT=Development BOWER_AUTH_MODE=development \
             BOWER_MANAGEMENT_DB_PATH="$RUNNER_TEMP/management.db" \
-            dotnet out/management/Bower.Management.Api.dll > "$RUNNER_TEMP/management.log" 2>&1 &
+            dotnet Bower.Management.Api.dll > "$RUNNER_TEMP/management.log" 2>&1 &
+          cd "$GITHUB_WORKSPACE"
           for attempt in $(seq 1 30); do curl -sf http://127.0.0.1:4320/health && break; sleep 1; done
+          curl -sf http://127.0.0.1:4320/ | grep -q '<div id="root">'
           npm run seed:preview --prefix ui/Bower.Management.Web
       - run: npx --prefix ui/Bower.Management.Web playwright install --with-deps chromium
       - run: npx playwright test e2e/management.spec.ts
         working-directory: ui/Bower.Management.Web
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: ui/Bower.Management.Web/playwright-report
+          retention-days: 7
 
   docker:
     needs: build-test
