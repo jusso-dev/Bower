@@ -128,7 +128,7 @@ Full design: [architecture](docs/architecture/overview.md).
 
 ## Getting started
 
-Requires the .NET 10 SDK (`10.0.401`, pinned in `global.json`) and Node.js 24 for
+Requires the .NET 10 SDK (`10.0.401`, pinned in `global.json`) and Node.js 26 for
 the console. Everything below runs locally with synthetic data.
 
 ### 1. Build and test
