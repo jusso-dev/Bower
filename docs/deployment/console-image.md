@@ -5,6 +5,9 @@ unprivileged nginx. Entra settings are read at container start, so one image ser
 every tenant and environment. The management API image (`Dockerfile.management`)
 still bundles the console too; use whichever fits your deployment.
 
+Use the published `ghcr.io/jusso-dev/bower-web` image (see
+[container images](container-images.md)) or build it:
+
 ```bash
 docker build -f deploy/docker/Dockerfile.web -t bower-web:local .
 

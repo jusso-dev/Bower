@@ -163,17 +163,39 @@ public static class ManagementApplication
                     "frame-src https://login.microsoftonline.com;");
                 await next(context);
             });
-        app.UseCors();
-        app.UseAuthentication();
-        app.UseRateLimiter();
-        app.UseAuthorization();
+        // Runtime console settings (public SPA values, never secrets) so one published image
+        // serves any tenant. Falls back to the bundled static config.js when unset.
+        string? consoleConfig = ConsoleConfigScript(builder.Configuration, developmentAuthentication);
+        if (consoleConfig is not null)
+        {
+            app.Use(async (context, next) =>
+            {
+                if (HttpMethods.IsGet(context.Request.Method)
+                    && context.Request.Path.Equals("/config.js", StringComparison.Ordinal))
+                {
+                    context.Response.ContentType = "application/javascript; charset=utf-8";
+                    context.Response.Headers.CacheControl = "no-store";
+                    await context.Response.WriteAsync(consoleConfig);
+                    return;
+                }
 
+                await next(context);
+            });
+        }
+
+        // Public console assets are served before authentication: the fallback policy would
+        // otherwise require a token for the JavaScript that performs the sign-in.
         string indexPath = Path.Combine(app.Environment.WebRootPath ?? string.Empty, "index.html");
         if (File.Exists(indexPath))
         {
             app.UseDefaultFiles();
             app.UseStaticFiles();
         }
+
+        app.UseCors();
+        app.UseAuthentication();
+        app.UseRateLimiter();
+        app.UseAuthorization();
 
         MapApi(app.MapGroup("/api"), developmentAuthentication);
 
@@ -466,6 +488,31 @@ public static class ManagementApplication
                     return Results.Accepted();
                 })
             .RequireAuthorization("Administer");
+    }
+
+    /// <summary>
+    /// Builds window.__BOWER_CONFIG__ from Bower:Console:* settings, or null when none are
+    /// set. System.Text.Json escapes HTML-sensitive characters, so values cannot break out.
+    /// </summary>
+    internal static string? ConsoleConfigScript(IConfiguration configuration, bool developmentAuthentication)
+    {
+        IConfigurationSection console = configuration.GetSection("Bower:Console");
+        string? clientId = console["ClientId"];
+        if (string.IsNullOrWhiteSpace(clientId) && !developmentAuthentication)
+        {
+            return null;
+        }
+
+        Dictionary<string, string> values = new(StringComparer.Ordinal)
+        {
+            ["authMode"] = developmentAuthentication ? "development" : "entra",
+            ["apiBaseUrl"] = string.Empty,
+            ["entraTenantId"] = configuration["Bower:Entra:TenantId"] ?? string.Empty,
+            ["entraClientId"] = clientId ?? string.Empty,
+            ["entraApiScope"] = console["ApiScope"] ?? string.Empty,
+            ["entraRedirectUri"] = console["RedirectUri"] ?? string.Empty
+        };
+        return $"window.__BOWER_CONFIG__ = {System.Text.Json.JsonSerializer.Serialize(values)};\n";
     }
 
     private static bool IsCustomLogInputError(Exception exception) =>

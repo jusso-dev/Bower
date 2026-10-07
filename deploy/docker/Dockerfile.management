@@ -1,4 +1,4 @@
-FROM node:26-alpine AS web-build
+FROM --platform=$BUILDPLATFORM node:26-alpine AS web-build
 WORKDIR /src/ui/Bower.Management.Web
 COPY ui/Bower.Management.Web/package.json ui/Bower.Management.Web/package-lock.json ./
 RUN npm ci --ignore-scripts
@@ -15,7 +15,8 @@ RUN VITE_BOWER_AUTH_MODE=${BOWER_AUTH_MODE} \
     VITE_BOWER_ENTRA_REDIRECT_URI=${BOWER_ENTRA_REDIRECT_URI} \
     npm run build
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0.401 AS api-build
+# Portable framework-dependent output runs on amd64 and arm64; build natively.
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.401 AS api-build
 WORKDIR /src
 COPY . .
 RUN dotnet restore src/Bower.Management.Api/Bower.Management.Api.csproj --locked-mode
