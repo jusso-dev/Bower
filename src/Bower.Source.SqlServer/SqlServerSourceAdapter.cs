@@ -18,7 +18,8 @@ public sealed record SqlServerSourceRecord(
     string? PreviousValue,
     string? NewValue,
     string? SourceIpAddress,
-    string Fingerprint);
+    string Fingerprint,
+    bool ValuesOmitted = false);
 
 public sealed record SqlServerCursorCheckpoint(
     string SourceId,
@@ -38,19 +39,19 @@ public sealed class SqlServerSourceAdapter
 
     private readonly SqlServerSourceOptions options;
     private readonly ISourceCursorStore cursorStore;
-    private readonly IClock clock;
+    private readonly TimeProvider clock;
 
     public SqlServerSourceAdapter(
         SqlServerSourceOptions options,
         ISourceCursorStore cursorStore,
-        IClock? clock = null)
+        TimeProvider? clock = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(cursorStore);
         options.Validate();
         this.options = options;
         this.cursorStore = cursorStore;
-        this.clock = clock ?? new SystemClock();
+        this.clock = clock ?? TimeProvider.System;
     }
 
     public async Task<SqlServerPollBatch> PollAsync(
@@ -69,34 +70,39 @@ public sealed class SqlServerSourceAdapter
             .Take(options.BatchSize)
             .ToListAsync(cancellationToken);
 
+        return BuildBatch(rows, cursor, snapshot?.Version ?? 0);
+    }
+
+    internal SqlServerPollBatch BuildBatch(
+        IReadOnlyList<SqlServerAuditRow> rows,
+        SqlServerSourceCursor cursor,
+        long expectedVersion)
+    {
         if (rows.Count == 0)
         {
             return new SqlServerPollBatch([], null);
         }
 
+        DateTimeOffset settledBefore = clock.GetUtcNow() - options.CommitSettleDelay;
+        bool holdBackRecent = options.CommitSettleDelay > TimeSpan.Zero
+            && options.CursorKind != SqlServerCursorKind.Timestamp;
         List<SqlServerSourceRecord> records = new(rows.Count);
         SqlServerSourceCursor next = cursor;
         foreach (SqlServerAuditRow row in rows)
         {
+            if (holdBackRecent && row.EventTime.ToUniversalTime() > settledBefore)
+            {
+                // Rows are ordered by the cursor; stop here and pick this row up next poll.
+                break;
+            }
+
             SqlServerSourceCursor candidate = new(
                 1,
                 options.CursorKind,
                 row.Sequence,
                 row.EventTime.ToUniversalTime());
             next = Max(next, candidate);
-
-            SqlServerSourceRecord record = Map(row);
-            int size = JsonSerializer.SerializeToUtf8Bytes(record).Length;
-            if (size > options.MaximumRecordBytes)
-            {
-                throw new SqlServerSourceRecordTooLargeException(
-                    options.SourceId,
-                    row.Sequence,
-                    size,
-                    options.MaximumRecordBytes);
-            }
-
-            records.Add(record);
+            records.Add(MapBounded(row));
         }
 
         if (rows.Count == options.BatchSize &&
@@ -109,11 +115,43 @@ public sealed class SqlServerSourceAdapter
         SqlServerCursorCheckpoint? checkpoint = Compare(next, cursor) > 0
             ? new SqlServerCursorCheckpoint(
                 options.SourceId,
-                snapshot?.Version ?? 0,
+                expectedVersion,
                 JsonSerializer.Serialize(next, CursorJsonOptions))
             : null;
 
         return new SqlServerPollBatch(records, checkpoint);
+    }
+
+    private SqlServerSourceRecord MapBounded(SqlServerAuditRow row)
+    {
+        SqlServerSourceRecord record = Map(row);
+        int size = JsonSerializer.SerializeToUtf8Bytes(record).Length;
+        if (size <= options.MaximumRecordBytes)
+        {
+            return record;
+        }
+
+        if (options.OversizedRecords == SqlServerOversizedRecordHandling.OmitValues)
+        {
+            // Keep the audit fact (who, what, when) and drop the unbounded value columns so
+            // one large row cannot block the source permanently.
+            SqlServerSourceRecord trimmed = record with
+            {
+                PreviousValue = null,
+                NewValue = null,
+                ValuesOmitted = true
+            };
+            if (JsonSerializer.SerializeToUtf8Bytes(trimmed).Length <= options.MaximumRecordBytes)
+            {
+                return trimmed;
+            }
+        }
+
+        throw new SqlServerSourceRecordTooLargeException(
+            options.SourceId,
+            row.Sequence,
+            size,
+            options.MaximumRecordBytes);
     }
 
     public async Task CommitAsync(
@@ -132,7 +170,7 @@ public sealed class SqlServerSourceAdapter
             checkpoint.SourceId,
             checkpoint.ExpectedVersion,
             checkpoint.Value,
-            clock.UtcNow,
+            clock.GetUtcNow(),
             cancellationToken);
         if (!advanced)
         {

@@ -11,7 +11,8 @@ public interface IOcsfMapper
 
     string MappingVersion { get; }
 
-    OcsfNormalisationResult Map(JsonElement root);
+    /// <param name="observedAt">Fallback event time when the record carries none.</param>
+    OcsfNormalisationResult Map(JsonElement root, DateTimeOffset observedAt);
 }
 
 public sealed class OcsfNormalisationEngine
@@ -19,9 +20,13 @@ public sealed class OcsfNormalisationEngine
     public const string EngineVersion = "1.0.0";
 
     private readonly IReadOnlyDictionary<OcsfSourceKind, IOcsfMapper> mappers;
+    private readonly TimeProvider clock;
 
-    public OcsfNormalisationEngine(IEnumerable<IOcsfMapper>? mappers = null)
+    public OcsfNormalisationEngine(
+        IEnumerable<IOcsfMapper>? mappers = null,
+        TimeProvider? clock = null)
     {
+        this.clock = clock ?? TimeProvider.System;
         Dictionary<OcsfSourceKind, IOcsfMapper> map = (mappers ?? DefaultMappers())
             .ToDictionary(item => item.Kind);
         this.mappers = map;
@@ -56,7 +61,7 @@ public sealed class OcsfNormalisationEngine
                     CommentHandling = JsonCommentHandling.Disallow,
                     MaxDepth = 64
                 });
-            return mapper.Map(document.RootElement);
+            return mapper.Map(document.RootElement, clock.GetUtcNow());
         }
         catch (JsonException)
         {
@@ -201,7 +206,7 @@ internal sealed class BowerEnvelopeOcsfMapper : IOcsfMapper
 
     public string MappingVersion => "1.0.0";
 
-    public OcsfNormalisationResult Map(JsonElement root)
+    public OcsfNormalisationResult Map(JsonElement root, DateTimeOffset observedAt)
     {
         SecurityEventEnvelope? envelope;
         try
@@ -254,7 +259,7 @@ internal sealed class CloudTrailOcsfMapper : IOcsfMapper
 
     public string MappingVersion => "1.0.0";
 
-    public OcsfNormalisationResult Map(JsonElement root)
+    public OcsfNormalisationResult Map(JsonElement root, DateTimeOffset observedAt)
     {
         JsonElement record = root;
         if (root.ValueKind == JsonValueKind.Object &&
@@ -279,7 +284,7 @@ internal sealed class CloudTrailOcsfMapper : IOcsfMapper
             ActivityName = eventName,
             SeverityId = severityId,
             Severity = severity,
-            Time = JsonRead.Time(record, "eventTime") ?? DateTimeOffset.UtcNow,
+            Time = JsonRead.Time(record, "eventTime") ?? observedAt,
             TypeName = "CloudTrail",
             Message = JsonRead.String(record, "eventSource"),
             Status = JsonRead.String(record, "errorCode") is null ? "Success" : "Failure",
@@ -306,7 +311,7 @@ internal sealed class GuardDutyOcsfMapper : IOcsfMapper
 
     public string MappingVersion => "1.0.0";
 
-    public OcsfNormalisationResult Map(JsonElement root)
+    public OcsfNormalisationResult Map(JsonElement root, DateTimeOffset observedAt)
     {
         (int severityId, string severity) = OcsfSeverity.FromNumber(JsonRead.Number(root, "severity"));
         OcsfEvent mapped = new()
@@ -321,7 +326,7 @@ internal sealed class GuardDutyOcsfMapper : IOcsfMapper
             Severity = severity,
             Time = JsonRead.Time(root, "updatedAt")
                 ?? JsonRead.Time(root, "createdAt")
-                ?? DateTimeOffset.UtcNow,
+                ?? observedAt,
             TypeName = "GuardDuty",
             Message = JsonRead.String(root, "title"),
             Status = "New",
@@ -342,7 +347,7 @@ internal sealed class SecurityHubOcsfMapper : IOcsfMapper
 
     public string MappingVersion => "1.0.0";
 
-    public OcsfNormalisationResult Map(JsonElement root)
+    public OcsfNormalisationResult Map(JsonElement root, DateTimeOffset observedAt)
     {
         (int severityId, string severity) = OcsfSeverity.FromLabel(
             JsonRead.Nested(root, "Severity", "Label"));
@@ -358,7 +363,7 @@ internal sealed class SecurityHubOcsfMapper : IOcsfMapper
             Severity = severity,
             Time = JsonRead.Time(root, "UpdatedAt")
                 ?? JsonRead.Time(root, "CreatedAt")
-                ?? DateTimeOffset.UtcNow,
+                ?? observedAt,
             TypeName = "SecurityHub",
             Message = JsonRead.String(root, "Description"),
             Status = JsonRead.Nested(root, "Compliance", "Status") ?? "UNKNOWN",
@@ -379,7 +384,7 @@ internal sealed class WindowsEventOcsfMapper : IOcsfMapper
 
     public string MappingVersion => "1.0.0";
 
-    public OcsfNormalisationResult Map(JsonElement root)
+    public OcsfNormalisationResult Map(JsonElement root, DateTimeOffset observedAt)
     {
         string eventId = JsonRead.String(root, "EventID")
             ?? JsonRead.String(root, "Id")
@@ -395,7 +400,7 @@ internal sealed class WindowsEventOcsfMapper : IOcsfMapper
             ActivityName = JsonRead.String(root, "Task") ?? $"EventID {eventId}",
             SeverityId = eventId == "4625" ? 3 : 1,
             Severity = eventId == "4625" ? "Medium" : "Informational",
-            Time = JsonRead.Time(root, "TimeCreated") ?? DateTimeOffset.UtcNow,
+            Time = JsonRead.Time(root, "TimeCreated") ?? observedAt,
             TypeName = "WindowsEvent",
             Message = JsonRead.String(root, "Message"),
             Status = eventId == "4625" ? "Failure" : "Success",
@@ -419,7 +424,7 @@ internal sealed class SysmonOcsfMapper : IOcsfMapper
 
     public string MappingVersion => "1.0.0";
 
-    public OcsfNormalisationResult Map(JsonElement root)
+    public OcsfNormalisationResult Map(JsonElement root, DateTimeOffset observedAt)
     {
         string eventId = JsonRead.String(root, "EventID") ?? JsonRead.String(root, "Id") ?? "1";
         OcsfEvent mapped = new()
@@ -438,7 +443,7 @@ internal sealed class SysmonOcsfMapper : IOcsfMapper
             },
             SeverityId = 2,
             Severity = "Low",
-            Time = JsonRead.Time(root, "UtcTime") ?? DateTimeOffset.UtcNow,
+            Time = JsonRead.Time(root, "UtcTime") ?? observedAt,
             TypeName = "Sysmon",
             Message = JsonRead.String(root, "Image") ?? JsonRead.String(root, "CommandLine"),
             Status = "Success",
@@ -461,7 +466,7 @@ internal sealed class LinuxSyslogOcsfMapper : IOcsfMapper
 
     public string MappingVersion => "1.0.0";
 
-    public OcsfNormalisationResult Map(JsonElement root)
+    public OcsfNormalisationResult Map(JsonElement root, DateTimeOffset observedAt)
     {
         string message = JsonRead.String(root, "message")
             ?? JsonRead.String(root, "MESSAGE")
@@ -482,7 +487,7 @@ internal sealed class LinuxSyslogOcsfMapper : IOcsfMapper
             Severity = failure ? "Medium" : "Informational",
             Time = JsonRead.Time(root, "timestamp")
                 ?? JsonRead.Time(root, "__REALTIME_TIMESTAMP")
-                ?? DateTimeOffset.UtcNow,
+                ?? observedAt,
             TypeName = "LinuxSyslog",
             Message = message.Length > 512 ? message[..512] : message,
             Status = failure ? "Failure" : "Unknown",
@@ -505,7 +510,7 @@ internal sealed class GenericVendorOcsfMapper(OcsfSourceKind kind, string produc
 
     public string MappingVersion => "1.0.0";
 
-    public OcsfNormalisationResult Map(JsonElement root)
+    public OcsfNormalisationResult Map(JsonElement root, DateTimeOffset observedAt)
     {
         (int severityId, string severity) = OcsfSeverity.FromLabel(
             JsonRead.String(root, "severity")
@@ -528,7 +533,7 @@ internal sealed class GenericVendorOcsfMapper(OcsfSourceKind kind, string produc
             Time = JsonRead.Time(root, "timestamp")
                 ?? JsonRead.Time(root, "time")
                 ?? JsonRead.Time(root, "createdAt")
-                ?? DateTimeOffset.UtcNow,
+                ?? observedAt,
             TypeName = Kind.ToString(),
             Message = JsonRead.String(root, "description")
                 ?? JsonRead.String(root, "message"),

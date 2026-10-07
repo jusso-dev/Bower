@@ -162,6 +162,63 @@ public sealed class AwsSecurityEventMapperTests
         Assert.Throws<AwsTelemetryPayloadTooLargeException>(() => mapper.MapJsonDocument(huge));
     }
 
+    [Theory]
+    [InlineData("""{ "Records": [ "not-an-object" ] }""")]
+    [InlineData("""{ "Records": [ 42, { "eventName": "ok" } ] }""")]
+    [InlineData("\"just a string\"")]
+    [InlineData("[ null ]")]
+    public void Map_RejectsNonObjectRecordsWithTypedError(string json)
+    {
+        AwsSecurityEventMapper mapper = new(ValidOptions());
+
+        Assert.Throws<AwsTelemetryMalformedRecordException>(() => mapper.MapJsonDocument(json));
+    }
+
+    [Theory]
+    [InlineData("{ \"Records\": [ ")]
+    [InlineData("{ \"Records\": [], }")]
+    [InlineData("{ /* comment */ \"Records\": [] }")]
+    public void Map_RejectsInvalidJson(string json)
+    {
+        AwsSecurityEventMapper mapper = new(ValidOptions());
+
+        Assert.ThrowsAny<JsonException>(() => mapper.MapJsonDocument(json));
+    }
+
+    [Fact]
+    public void Map_RejectsExcessiveNesting()
+    {
+        AwsSecurityEventMapper mapper = new(ValidOptions());
+        string json = string.Concat(Enumerable.Repeat("{\"a\":", 80)) + "1" + new string('}', 80);
+
+        Assert.ThrowsAny<JsonException>(() => mapper.MapJsonDocument(json));
+    }
+
+    [Fact]
+    public void Map_RejectsBatchAboveLimit()
+    {
+        AwsSecurityEventMapper mapper = new(ValidOptions() with { MaximumBatchEvents = 2 });
+        string json = JsonSerializer.Serialize(new
+        {
+            Records = Enumerable.Range(0, 3).Select(index => new { eventName = $"e{index}" })
+        });
+
+        Assert.Throws<AwsTelemetryBatchTooLargeException>(() => mapper.MapJsonDocument(json));
+    }
+
+    [Fact]
+    public void Map_UsesDeterministicIdsWhenRecordIsReRead()
+    {
+        AwsSecurityEventMapper mapper = new(ValidOptions());
+        const string json =
+            """{ "Records": [ { "eventName": "ConsoleLogin", "eventTime": "2026-07-01T10:00:00Z" } ] }""";
+
+        string first = mapper.MapJsonDocument(json, TestEvents.Now)[0].EventId;
+        string second = mapper.MapJsonDocument(json, TestEvents.Now.AddHours(1))[0].EventId;
+
+        Assert.Equal(first, second);
+    }
+
     private static AwsSourceOptions ValidOptions()
     {
         return new AwsSourceOptions

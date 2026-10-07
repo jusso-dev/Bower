@@ -25,9 +25,11 @@ internal sealed class TemporaryDirectory : IDisposable
     }
 }
 
-internal sealed class FakeClock(DateTimeOffset value) : IClock
+internal sealed class FakeClock(DateTimeOffset value) : TimeProvider
 {
     public DateTimeOffset UtcNow { get; private set; } = value;
+
+    public override DateTimeOffset GetUtcNow() => UtcNow;
 
     public void Advance(TimeSpan duration)
     {

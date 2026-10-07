@@ -9,10 +9,14 @@ public sealed class DetectionEngine
     private readonly HashSet<string> suppressedRuleIds;
     private readonly HashSet<string> seenFingerprints = new(StringComparer.Ordinal);
 
+    private readonly TimeProvider clock;
+
     public DetectionEngine(
         IEnumerable<DetectionRule> rules,
-        IEnumerable<string>? suppressedRuleIds = null)
+        IEnumerable<string>? suppressedRuleIds = null,
+        TimeProvider? clock = null)
     {
+        this.clock = clock ?? TimeProvider.System;
         this.rules = rules.ToArray();
         this.suppressedRuleIds = new HashSet<string>(
             suppressedRuleIds ?? [],
@@ -31,7 +35,7 @@ public sealed class DetectionEngine
     public DetectionEvaluationResult Evaluate(SecurityEventEnvelope envelope, DateTimeOffset? now = null)
     {
         ArgumentNullException.ThrowIfNull(envelope);
-        DateTimeOffset detectedAt = now ?? DateTimeOffset.UtcNow;
+        DateTimeOffset detectedAt = now ?? clock.GetUtcNow();
         List<DetectionAlert> alerts = [];
         List<string> suppressed = [];
 

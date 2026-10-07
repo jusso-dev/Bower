@@ -2,16 +2,6 @@ using Bower.Contracts;
 
 namespace Bower.Abstractions;
 
-public interface IClock
-{
-    DateTimeOffset UtcNow { get; }
-}
-
-public sealed class SystemClock : IClock
-{
-    public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
-}
-
 public interface IEventRedactor
 {
     RedactionResult Redact(string json);
@@ -78,6 +68,18 @@ public interface IDurableEventStore
         CancellationToken cancellationToken = default);
 
     Task<QueueSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Permanently removes acknowledged (delivered) events whose acknowledgement is older
+    /// than <paramref name="deliveredBefore"/>. Never removes undelivered events.
+    /// </summary>
+    Task<int> PurgeDeliveredAsync(
+        DateTimeOffset deliveredBefore,
+        int maximumCount,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Checkpoints and optimises storage. Never changes event state.</summary>
+    Task MaintainAsync(CancellationToken cancellationToken = default);
 }
 
 public sealed record QueuedEvent(
@@ -97,7 +99,8 @@ public sealed record QueueSnapshot(
     long Delivered,
     long DeadLettered,
     long TotalBytes,
-    DateTimeOffset? OldestUndelivered);
+    DateTimeOffset? OldestUndelivered,
+    long UndeliveredBytes = 0);
 
 public enum QueueState
 {

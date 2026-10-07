@@ -105,9 +105,10 @@ public sealed class PrivacyEngineTests
         Assert.Contains(result.Findings, f => f.DetectorId == DetectorIds.Ihi && f.Validated);
         Assert.Contains(result.Findings, f => f.DetectorId == DetectorIds.Crn);
         Assert.DoesNotContain("100000001", result.RedactedJson);
-        Assert.Contains("sha256:", result.RedactedJson, StringComparison.Ordinal);
+        Assert.Contains("*****0001", result.RedactedJson, StringComparison.Ordinal);
         Assert.True(result.Metadata.HasFindings);
-        Assert.Equal("SHA256", result.Metadata.Actions[DetectorIds.Tfn]);
+        // An unkeyed hash of a TFN is reversible by enumeration, so the default masks.
+        Assert.Equal("Masked", result.Metadata.Actions[DetectorIds.Tfn]);
         Assert.Equal("Allow", result.Metadata.Actions[DetectorIds.Abn]);
     }
 
@@ -130,7 +131,7 @@ public sealed class PrivacyEngineTests
             """
             {
               "awsKey": "AKIAIOSFODNN7EXAMPLE",
-              "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.signature",
+              "detail": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.signature",
               "password": "do-not-store",
               "pem": "-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----"
             }

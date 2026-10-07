@@ -1,3 +1,5 @@
+using Bower.Jobs;
+
 namespace Bower.Management.Api;
 
 public static class BowerRoles
@@ -52,7 +54,8 @@ public sealed record CollectorHeartbeat(
     long QueueDepth,
     string DeliveryStatus,
     IReadOnlyList<SourceReport> Sources,
-    IReadOnlyList<OutputReport> Outputs);
+    IReadOnlyList<OutputReport> Outputs,
+    IReadOnlyList<BackgroundJobStatus>? Jobs = null);
 
 public sealed record CollectorRecord(
     string Id,
@@ -68,7 +71,8 @@ public sealed record CollectorRecord(
     long QueueDepth,
     string DeliveryStatus,
     IReadOnlyList<SourceReport> Sources,
-    IReadOnlyList<OutputReport> Outputs);
+    IReadOnlyList<OutputReport> Outputs,
+    IReadOnlyList<BackgroundJobStatus>? Jobs = null);
 
 public sealed record ApprovalRequest(string Reason);
 

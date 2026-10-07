@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <ProjectReference Include="../Bower.Contracts/Bower.Contracts.csproj" />
+    <ProjectReference Include="../Bower.Redaction/Bower.Redaction.csproj" />
     <ProjectReference Include="../Bower.Source.Aws/Bower.Source.Aws.csproj" />
   </ItemGroup>
 </Project>

@@ -65,17 +65,20 @@ public sealed class AmaCompanionService
     private readonly AmaCompanionOptions options;
     private readonly Func<string, bool> pathExists;
     private readonly Func<string, string> readAllText;
+    private readonly TimeProvider clock;
 
     public AmaCompanionService(
         AmaCompanionOptions options,
         Func<string, bool>? pathExists = null,
-        Func<string, string>? readAllText = null)
+        Func<string, string>? readAllText = null,
+        TimeProvider? clock = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         options.Validate();
         this.options = options;
         this.pathExists = pathExists ?? File.Exists;
         this.readAllText = readAllText ?? File.ReadAllText;
+        this.clock = clock ?? TimeProvider.System;
     }
 
     public AmaDiscoveryResult Discover()
@@ -173,7 +176,7 @@ public sealed class AmaCompanionService
             return [];
         }
 
-        DateTimeOffset observed = observedAt ?? DateTimeOffset.UtcNow;
+        DateTimeOffset observed = observedAt ?? clock.GetUtcNow();
         List<SecurityEventEnvelope> events = [];
         int index = 0;
         foreach (string line in lines)

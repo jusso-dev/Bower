@@ -93,10 +93,11 @@ public sealed class DeterministicPolicyEvaluator : ITelemetryPolicyEvaluator
 
     private static bool Matches(PolicyMatch match, SecurityEventEnvelope candidate)
     {
+        // Event types are mandatory (enforced by PolicyLoader); an empty list never matches,
+        // so unknown types stay default-deny even for hand-built policies.
         bool categoryMatch = match.EventCategories.Count == 0
             || match.EventCategories.Contains(candidate.EventCategory, StringComparer.Ordinal);
-        bool typeMatch = match.EventTypes.Count == 0
-            || match.EventTypes.Contains(candidate.EventType, StringComparer.Ordinal);
+        bool typeMatch = match.EventTypes.Contains(candidate.EventType, StringComparer.Ordinal);
         return categoryMatch && typeMatch;
     }
 
@@ -118,9 +119,8 @@ public sealed class DeterministicPolicyEvaluator : ITelemetryPolicyEvaluator
         return Math.Min(100, score);
     }
 
-    private static DecisionAction ParseAction(string value)
-    {
-        string normalized = value.Replace("-", string.Empty, StringComparison.Ordinal);
-        return Enum.Parse<DecisionAction>(normalized, true);
-    }
+    private static DecisionAction ParseAction(string value) =>
+        PolicyLoader.TryParseAction(value, out DecisionAction action)
+            ? action
+            : DecisionAction.Reject;
 }

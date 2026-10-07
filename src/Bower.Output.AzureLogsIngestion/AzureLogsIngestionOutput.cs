@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Azure;
 using Azure.Core;
 using Azure.Monitor.Ingestion;
@@ -14,11 +15,14 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
 
     public AzureLogsIngestionOutput(
         AzureLogsIngestionOptions options,
-        TokenCredential credential)
+        TokenCredential credential,
+        LogsIngestionClientOptions? clientOptions = null)
     {
         options.Validate();
         this.options = options;
-        client = new LogsIngestionClient(options.Endpoint, credential);
+        client = clientOptions is null
+            ? new LogsIngestionClient(options.Endpoint, credential)
+            : new LogsIngestionClient(options.Endpoint, credential, clientOptions);
     }
 
     public string Id => options.Id;
@@ -32,41 +36,67 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
             return new DeliveryResult([], [], null);
         }
 
-        Dictionary<string, string> payloadToEvent = new(StringComparer.Ordinal);
-        List<JsonElement> records = [];
+        // The SDK reports failed logs as serialised BinaryData, so failures map back to
+        // events by the eventId inside each record. The queue guarantees ids are unique.
+        HashSet<string> batchEventIds = new(StringComparer.Ordinal);
+        List<JsonObject> records = new(events.Count);
+        List<DeliveryFailure> failures = [];
         foreach (QueuedEvent item in events)
         {
-            using JsonDocument document = JsonDocument.Parse(item.Payload);
-            JsonElement record = document.RootElement.Clone();
-            records.Add(record);
-            payloadToEvent[record.GetRawText()] = item.EventId;
+            JsonObject? record = TryParseRecord(item.Payload);
+            if (record is null)
+            {
+                // A payload that cannot be parsed will never succeed: dead-letter it alone
+                // instead of failing the whole batch.
+                failures.Add(new DeliveryFailure(item.EventId, "payload-invalid-json", false, null));
+            }
+            else if (!string.Equals(ReadEventId(record), item.EventId, StringComparison.Ordinal))
+            {
+                failures.Add(new DeliveryFailure(item.EventId, "payload-event-id-mismatch", false, null));
+            }
+            else
+            {
+                records.Add(record);
+                batchEventIds.Add(item.EventId);
+            }
         }
 
-        ConcurrentDictionary<string, DeliveryFailure> failures = new(StringComparer.Ordinal);
+        if (records.Count == 0)
+        {
+            return new DeliveryResult([], failures, null);
+        }
+
+        ConcurrentDictionary<string, DeliveryFailure> uploadFailures = new(StringComparer.Ordinal);
+        int unattributed = 0;
         LogsUploadOptions uploadOptions = new()
         {
             MaxConcurrency = options.MaximumConcurrency
         };
         uploadOptions.UploadFailed += args =>
         {
+            int status = args.Exception is RequestFailedException requestFailure
+                ? requestFailure.Status
+                : 0;
             foreach (object failedLog in args.FailedLogs)
             {
-                string raw = failedLog is JsonElement element
-                    ? element.GetRawText()
-                    : JsonSerializer.Serialize(failedLog);
-                if (!payloadToEvent.TryGetValue(raw, out string? eventId))
+                string? eventId = failedLog switch
                 {
-                    continue;
+                    BinaryData data => ReadEventId(TryParseRecord(data.ToString())),
+                    JsonObject record => ReadEventId(record),
+                    _ => null
+                };
+                if (eventId is not null && batchEventIds.Contains(eventId))
+                {
+                    uploadFailures[eventId] = new DeliveryFailure(
+                        eventId,
+                        status == 0 ? "azure-upload-failed" : $"azure-http-{status}",
+                        status is 0 or 408 or 429 or >= 500,
+                        null);
                 }
-
-                int status = args.Exception is RequestFailedException requestFailure
-                    ? requestFailure.Status
-                    : 0;
-                failures[eventId] = new DeliveryFailure(
-                    eventId,
-                    status == 0 ? "azure-upload-failed" : $"azure-http-{status}",
-                    status is 0 or 408 or 429 or >= 500,
-                    null);
+                else
+                {
+                    Interlocked.Increment(ref unattributed);
+                }
             }
 
             return Task.CompletedTask;
@@ -79,12 +109,40 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
             uploadOptions,
             cancellationToken);
 
-        string acknowledgement = response.Headers.RequestId ?? $"azure-http-{response.Status}";
-        string[] acknowledged = events
-            .Where(item => !failures.ContainsKey(item.EventId))
-            .Select(item => item.EventId)
+        if (Volatile.Read(ref unattributed) > 0)
+        {
+            // A failure that cannot be tied to an event must never be counted as delivered.
+            failures.AddRange(batchEventIds
+                .Select(eventId => new DeliveryFailure(eventId, "azure-upload-unattributed", true, null)));
+            return new DeliveryResult([], failures, null);
+        }
+
+        failures.AddRange(uploadFailures.Values);
+        string[] acknowledged = batchEventIds
+            .Where(eventId => !uploadFailures.ContainsKey(eventId))
             .ToArray();
-        return new DeliveryResult(acknowledged, failures.Values.ToArray(), acknowledgement);
+
+        // Ingestion API acceptance only. Sentinel queryability is proven separately.
+        string acknowledgement =
+            $"azure-logs-ingestion:accepted:{response.Headers.RequestId ?? $"http-{response.Status}"}";
+        return new DeliveryResult(acknowledged, failures, acknowledgement);
+    }
+
+    private static string? ReadEventId(JsonObject? record) =>
+        record?["eventId"] is JsonValue value && value.TryGetValue(out string? eventId)
+            ? eventId
+            : null;
+
+    private static JsonObject? TryParseRecord(string payload)
+    {
+        try
+        {
+            return JsonNode.Parse(payload) as JsonObject;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }
 

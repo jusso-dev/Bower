@@ -34,6 +34,15 @@ public sealed class BowerOptions
         {
             throw new ArgumentException("Local collector endpoint must be an absolute HTTP URI.");
         }
+
+        // The ingest token is a bearer secret: only send it over TLS or to this host.
+        if (!string.IsNullOrEmpty(LocalCollector.IngestToken)
+            && endpoint.Scheme != Uri.UriSchemeHttps
+            && !endpoint.IsLoopback)
+        {
+            throw new ArgumentException(
+                "An ingest token requires an HTTPS collector endpoint unless it is loopback.");
+        }
     }
 }
 
@@ -55,6 +64,12 @@ public sealed class LocalCollectorOptions
     public string Endpoint { get; set; } = "http://127.0.0.1:4319";
 
     public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Shared collector ingest token (<c>BOWER_INGEST_TOKEN</c> on the collector). Load it
+    /// from a secret store; never hard-code it.
+    /// </summary>
+    public string? IngestToken { get; set; }
 }
 
 public enum BowerTransport

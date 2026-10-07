@@ -8,6 +8,7 @@
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Bower.Jobs\Bower.Jobs.csproj" />
     <ProjectReference Include="..\Bower.Pipeline\Bower.Pipeline.csproj" />
   </ItemGroup>
 </Project>

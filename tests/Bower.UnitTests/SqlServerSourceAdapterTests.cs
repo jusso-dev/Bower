@@ -136,6 +136,95 @@ public sealed class SqlServerSourceAdapterTests
             File.GetUnixFileMode(path));
     }
 
+    [Fact]
+    public void BuildBatch_HoldsBackRowsInsideCommitSettleWindow()
+    {
+        FakeClock clock = new(TestEvents.Now);
+        SqlServerSourceOptions options = ValidOptions();
+        SqlServerSourceAdapter adapter = new(options, new NoCursorStore(), clock);
+        SqlServerAuditRow[] rows =
+        [
+            Row(10, TestEvents.Now.AddMinutes(-1)),
+            Row(11, TestEvents.Now.AddSeconds(-2)),
+            Row(12, TestEvents.Now.AddMinutes(-2))
+        ];
+
+        SqlServerPollBatch batch = adapter.BuildBatch(rows, SqlServerSourceCursor.Initial(options), 0);
+
+        SqlServerSourceRecord record = Assert.Single(batch.Records);
+        Assert.Equal(10, record.Sequence);
+        Assert.Contains("\"sequence\":10", batch.Checkpoint!.Value, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildBatch_OmitsValuesFromOversizedRecordAndAdvances()
+    {
+        FakeClock clock = new(TestEvents.Now);
+        SqlServerSourceOptions options = ValidOptions() with { MaximumRecordBytes = 1_024 };
+        SqlServerSourceAdapter adapter = new(options, new NoCursorStore(), clock);
+        SqlServerAuditRow large = Row(20, TestEvents.Now.AddMinutes(-5));
+        large.NewValue = new string('x', 10_000);
+
+        SqlServerPollBatch batch = adapter.BuildBatch([large], SqlServerSourceCursor.Initial(options), 0);
+
+        SqlServerSourceRecord record = Assert.Single(batch.Records);
+        Assert.True(record.ValuesOmitted);
+        Assert.Null(record.NewValue);
+        Assert.NotNull(batch.Checkpoint);
+    }
+
+    [Fact]
+    public void BuildBatch_FailsOversizedRecordWhenConfigured()
+    {
+        FakeClock clock = new(TestEvents.Now);
+        SqlServerSourceOptions options = ValidOptions() with
+        {
+            MaximumRecordBytes = 1_024,
+            OversizedRecords = SqlServerOversizedRecordHandling.Fail
+        };
+        SqlServerSourceAdapter adapter = new(options, new NoCursorStore(), clock);
+        SqlServerAuditRow large = Row(20, TestEvents.Now.AddMinutes(-5));
+        large.NewValue = new string('x', 10_000);
+
+        Assert.Throws<SqlServerSourceRecordTooLargeException>(
+            () => adapter.BuildBatch([large], SqlServerSourceCursor.Initial(options), 0));
+    }
+
+    [Fact]
+    public void Options_RejectNegativeSettleDelay()
+    {
+        SqlServerSourceOptions options = ValidOptions() with { CommitSettleDelay = TimeSpan.FromSeconds(-1) };
+
+        Assert.Throws<ArgumentOutOfRangeException>(options.Validate);
+    }
+
+    private static SqlServerAuditRow Row(long sequence, DateTimeOffset eventTime) =>
+        new()
+        {
+            Sequence = sequence,
+            EventTime = eventTime,
+            Username = "auditor",
+            Action = "update",
+            TargetType = "invoice",
+            TargetId = $"invoice-{sequence}"
+        };
+
+    private sealed class NoCursorStore : Bower.Abstractions.ISourceCursorStore
+    {
+        public Task<Bower.Abstractions.SourceCursorSnapshot?> ReadAsync(
+            string sourceId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<Bower.Abstractions.SourceCursorSnapshot?>(null);
+
+        public Task<bool> TryAdvanceAsync(
+            string sourceId,
+            long expectedVersion,
+            string value,
+            DateTimeOffset updatedAt,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(true);
+    }
+
     private static SqlServerSourceOptions ValidOptions()
     {
         return new SqlServerSourceOptions

@@ -3,5 +3,6 @@
     <ProjectReference Include="../Bower.Abstractions/Bower.Abstractions.csproj" />
     <PackageReference Include="Microsoft.Data.SqlClient" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <InternalsVisibleTo Include="Bower.UnitTests" />
   </ItemGroup>
 </Project>

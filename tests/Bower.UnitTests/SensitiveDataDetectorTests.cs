@@ -12,7 +12,7 @@ public sealed class SensitiveDataDetectorTests
             """
             {
               "awsKey": "AKIAIOSFODNN7EXAMPLE",
-              "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.signature",
+              "detail": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.signature",
               "owner": "alice@example.test",
               "password": "do-not-store"
             }

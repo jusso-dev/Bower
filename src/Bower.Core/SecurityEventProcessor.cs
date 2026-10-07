@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Bower.Abstractions;
 using Bower.Contracts;
@@ -9,14 +11,24 @@ public sealed class SecurityEventProcessor(
     IEventRedactor redactor,
     ITelemetryPolicyEvaluator policyEvaluator,
     IDurableEventStore queue,
-    IClock clock)
+    TimeProvider clock)
 {
     public async Task<ProcessingResult> ProcessAsync(
         string candidateJson,
         CollectorIdentity collector,
         CancellationToken cancellationToken = default)
     {
-        RedactionResult redaction = redactor.Redact(candidateJson);
+        RedactionResult redaction;
+        try
+        {
+            redaction = redactor.Redact(candidateJson);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // Redaction failure is a security failure: quarantine without persisting.
+            return ProcessingResult.Failed(DecisionAction.Quarantine, "redaction-failed");
+        }
+
         if (!redaction.Succeeded || redaction.RedactedJson is null)
         {
             return ProcessingResult.Failed(
@@ -41,7 +53,8 @@ public sealed class SecurityEventProcessor(
             return ProcessingResult.Failed(DecisionAction.Quarantine, "schema-invalid");
         }
 
-        List<string> validationFailures = Validate(candidate, clock.UtcNow);
+        DateTimeOffset now = clock.GetUtcNow();
+        List<string> validationFailures = Validate(candidate, now);
         if (validationFailures.Count > 0)
         {
             // Still notify SOC when high-risk secrets/PII were present in invalid payloads.
@@ -82,7 +95,7 @@ public sealed class SecurityEventProcessor(
 
         SecurityEventEnvelope arranged = candidate with
         {
-            TimeObserved = candidate.TimeObserved ?? clock.UtcNow,
+            TimeObserved = candidate.TimeObserved ?? now,
             Security = new SecurityDecisionContext
             {
                 PolicyId = decision.PolicyId,
@@ -102,7 +115,7 @@ public sealed class SecurityEventProcessor(
                 Version = collector.Version,
                 SourceAdapter = collector.SourceAdapter,
                 ConfigurationHash = collector.ConfigurationHash,
-                ReceivedAt = clock.UtcNow
+                ReceivedAt = now
             }
         };
 
@@ -111,7 +124,7 @@ public sealed class SecurityEventProcessor(
             arranged.EventId,
             EventFingerprint.Create(arranged),
             payload,
-            clock.UtcNow);
+            now);
         EnqueueResult enqueue = await queue.EnqueueAsync(queued, cancellationToken);
 
         string? privacyAlertEventId = await TryEnqueuePrivacyAlertAsync(
@@ -193,17 +206,21 @@ public sealed class SecurityEventProcessor(
         }
 
         EventSeverity severity = ResolveSeverity(alertWorthy);
-        DateTimeOffset now = clock.UtcNow;
-        // Stable correlation for fingerprint: one alert per source event + detector set.
+        DateTimeOffset now = clock.GetUtcNow();
+        // Idempotent: the alert id and time derive from the source event and detector set,
+        // so client retries of the same event collapse onto one alert in the queue.
         string detectorFingerprint = string.Join(',', alertWorthy);
-        string alertEventId = TruncateId($"privacy-{source.EventId}-{Guid.NewGuid():N}");
+        string alertEventId = CreateAlertEventId(source.EventId, detectorFingerprint);
+        DateTimeOffset alertTime = IsWithinAcceptedWindow(source.TimeGenerated, now)
+            ? source.TimeGenerated
+            : now;
         SecurityEventEnvelope alert = new()
         {
             SchemaVersion = SecurityEventEnvelope.CurrentSchemaVersion,
             EventId = alertEventId,
             EventOriginalId = TruncateId($"{source.EventId}:{detectorFingerprint}"),
-            TimeGenerated = now,
-            TimeObserved = now,
+            TimeGenerated = alertTime,
+            TimeObserved = alertTime,
             EventCategory = SecurityEventCategories.PrivacyControl,
             EventType = SecurityEventTypes.SensitiveDataDetected,
             EventAction = "privacy.control.applied",
@@ -301,6 +318,16 @@ public sealed class SecurityEventProcessor(
     private static string TruncateId(string value) =>
         value.Length <= 128 ? value : value[..128];
 
+    private static string CreateAlertEventId(string? sourceEventId, string detectorFingerprint)
+    {
+        byte[] digest = SHA256.HashData(
+            Encoding.UTF8.GetBytes($"{sourceEventId}\u001f{detectorFingerprint}"));
+        return $"privacy-{Convert.ToHexStringLower(digest)[..32]}";
+    }
+
+    private static bool IsWithinAcceptedWindow(DateTimeOffset value, DateTimeOffset now) =>
+        value != default && value <= now.AddMinutes(5) && value >= now.AddYears(-5);
+
     private static List<string> Validate(
         SecurityEventEnvelope candidate,
         DateTimeOffset now)
@@ -333,9 +360,7 @@ public sealed class SecurityEventProcessor(
             failures.Add("application.name and application.environment are required");
         }
 
-        if (candidate.TimeGenerated == default
-            || candidate.TimeGenerated > now.AddMinutes(5)
-            || candidate.TimeGenerated < now.AddYears(-5))
+        if (!IsWithinAcceptedWindow(candidate.TimeGenerated, now))
         {
             failures.Add("timeGenerated is outside allowed range");
         }

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Hangfire.Core" />
+    <PackageReference Include="Hangfire.NetCore" />
+    <PackageReference Include="Hangfire.InMemory" />
+    <!-- Hangfire.Core allows Newtonsoft.Json 11.0.1 (GHSA-5crp-9r3c-p9vr); pin a patched version. -->
+    <PackageReference Include="Newtonsoft.Json" />
+  </ItemGroup>
+</Project>

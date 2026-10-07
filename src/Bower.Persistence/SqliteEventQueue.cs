@@ -1,3 +1,4 @@
+using System.Data;
 using System.Globalization;
 using Bower.Abstractions;
 using Microsoft.Data.Sqlite;
@@ -10,9 +11,9 @@ public sealed class SqliteEventStore : IDurableEventStore
     private readonly string databasePath;
     private readonly string connectionString;
     private readonly long maximumBytes;
-    private readonly IClock clock;
+    private readonly TimeProvider clock;
 
-    public SqliteEventStore(string databasePath, long maximumBytes, IClock? clock = null)
+    public SqliteEventStore(string databasePath, long maximumBytes, TimeProvider? clock = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
         if (maximumBytes < 1_048_576)
@@ -33,13 +34,14 @@ public sealed class SqliteEventStore : IDurableEventStore
         {
             DataSource = fullPath,
             Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared,
+            // Private cache: shared-cache mode is discouraged with WAL and serialises readers.
+            Cache = SqliteCacheMode.Private,
             Pooling = true
         };
         connectionString = builder.ToString();
         this.databasePath = fullPath;
         this.maximumBytes = maximumBytes;
-        this.clock = clock ?? new SystemClock();
+        this.clock = clock ?? TimeProvider.System;
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -49,9 +51,6 @@ public sealed class SqliteEventStore : IDurableEventStore
         command.CommandText =
             """
             PRAGMA journal_mode = WAL;
-            PRAGMA synchronous = FULL;
-            PRAGMA foreign_keys = ON;
-            PRAGMA busy_timeout = 5000;
 
             CREATE TABLE IF NOT EXISTS queue_events (
                 event_id TEXT PRIMARY KEY NOT NULL,
@@ -73,6 +72,9 @@ public sealed class SqliteEventStore : IDurableEventStore
             CREATE INDEX IF NOT EXISTS ix_queue_events_delivery
                 ON queue_events(state, next_attempt_at, received_at);
 
+            CREATE INDEX IF NOT EXISTS ix_queue_events_delivered_at
+                ON queue_events(state, delivered_at);
+
             CREATE TABLE IF NOT EXISTS schema_history (
                 version INTEGER PRIMARY KEY NOT NULL,
                 applied_at TEXT NOT NULL,
@@ -81,6 +83,9 @@ public sealed class SqliteEventStore : IDurableEventStore
 
             INSERT OR IGNORE INTO schema_history(version, applied_at, hash)
             VALUES (1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 'bower-queue-v1');
+
+            INSERT OR IGNORE INTO schema_history(version, applied_at, hash)
+            VALUES (2, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 'bower-queue-v2-retention');
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
         ApplyRestrictivePermissions();
@@ -94,10 +99,12 @@ public sealed class SqliteEventStore : IDurableEventStore
         int payloadBytes = System.Text.Encoding.UTF8.GetByteCount(candidate.Payload);
 
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        // BEGIN IMMEDIATE takes the write lock before the capacity check so concurrent
+        // enqueues cannot both pass the check and overshoot the limit.
         await using SqliteTransaction transaction =
-            (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+            connection.BeginTransaction(IsolationLevel.Serializable, deferred: false);
 
-        long currentBytes = await GetTotalBytesAsync(connection, transaction, cancellationToken);
+        long currentBytes = await GetUndeliveredBytesAsync(connection, transaction, cancellationToken);
         if (currentBytes + payloadBytes > maximumBytes)
         {
             throw new QueueCapacityExceededException(maximumBytes, currentBytes, payloadBytes);
@@ -141,13 +148,13 @@ public sealed class SqliteEventStore : IDurableEventStore
 
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(leaseDuration, TimeSpan.Zero);
 
-        DateTimeOffset now = clock.UtcNow;
+        DateTimeOffset now = clock.GetUtcNow();
         string nowValue = now.ToString(TimestampFormat, CultureInfo.InvariantCulture);
         string leaseValue = now.Add(leaseDuration).ToString(TimestampFormat, CultureInfo.InvariantCulture);
 
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
         await using SqliteTransaction transaction =
-            (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+            connection.BeginTransaction(IsolationLevel.Serializable, deferred: false);
 
         await using SqliteCommand select = connection.CreateCommand();
         select.Transaction = transaction;
@@ -241,7 +248,7 @@ public sealed class SqliteEventStore : IDurableEventStore
         command.Parameters.AddWithValue("$acknowledgement", acknowledgement);
         command.Parameters.AddWithValue(
             "$delivered_at",
-            clock.UtcNow.ToString(TimestampFormat, CultureInfo.InvariantCulture));
+            clock.GetUtcNow().ToString(TimestampFormat, CultureInfo.InvariantCulture));
         command.Parameters.AddWithValue("$event_id", eventId);
 
         if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
@@ -327,7 +334,8 @@ public sealed class SqliteEventStore : IDurableEventStore
                 SUM(CASE WHEN state = 3 THEN 1 ELSE 0 END),
                 SUM(CASE WHEN state = 4 THEN 1 ELSE 0 END),
                 COALESCE(SUM(payload_bytes), 0),
-                MIN(CASE WHEN state IN (0, 1, 2) THEN received_at END)
+                MIN(CASE WHEN state IN (0, 1, 2) THEN received_at END),
+                COALESCE(SUM(CASE WHEN state <> 3 THEN payload_bytes ELSE 0 END), 0)
             FROM queue_events;
             """;
 
@@ -347,24 +355,92 @@ public sealed class SqliteEventStore : IDurableEventStore
             GetInt64OrZero(reader, 3),
             GetInt64OrZero(reader, 4),
             GetInt64OrZero(reader, 5),
-            oldest);
+            oldest,
+            GetInt64OrZero(reader, 7));
+    }
+
+    public async Task<int> PurgeDeliveredAsync(
+        DateTimeOffset deliveredBefore,
+        int maximumCount,
+        CancellationToken cancellationToken = default)
+    {
+        if (maximumCount is < 1 or > 100_000)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumCount));
+        }
+
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        // Only acknowledged rows are eligible. Undelivered, retrying and dead-lettered
+        // events are never deleted here.
+        command.CommandText =
+            """
+            DELETE FROM queue_events
+            WHERE event_id IN (
+                SELECT event_id
+                FROM queue_events
+                WHERE state = $delivered
+                  AND acknowledgement IS NOT NULL
+                  AND delivered_at IS NOT NULL
+                  AND delivered_at < $delivered_before
+                ORDER BY delivered_at ASC
+                LIMIT $maximum_count);
+            """;
+        command.Parameters.AddWithValue("$delivered", (int)QueueState.Delivered);
+        command.Parameters.AddWithValue(
+            "$delivered_before",
+            deliveredBefore.ToUniversalTime().ToString(TimestampFormat, CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$maximum_count", maximumCount);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task MaintainAsync(CancellationToken cancellationToken = default)
+    {
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            PRAGMA wal_checkpoint(TRUNCATE);
+            PRAGMA optimize;
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private async Task<SqliteConnection> OpenAsync(CancellationToken cancellationToken)
     {
         SqliteConnection connection = new(connectionString);
         await connection.OpenAsync(cancellationToken);
+        // Connection-scoped settings must be applied on every pooled connection.
+        await using SqliteCommand pragmas = connection.CreateCommand();
+        pragmas.CommandText =
+            """
+            PRAGMA busy_timeout = 5000;
+            PRAGMA synchronous = FULL;
+            PRAGMA foreign_keys = ON;
+            """;
+        await pragmas.ExecuteNonQueryAsync(cancellationToken);
         return connection;
     }
 
-    private static async Task<long> GetTotalBytesAsync(
+    private static async Task<long> GetUndeliveredBytesAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
         CancellationToken cancellationToken)
     {
         await using SqliteCommand command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "SELECT COALESCE(SUM(payload_bytes), 0) FROM queue_events;";
+        // Delivered rows are retained for idempotency only and are purged by retention,
+        // so they do not count against the backpressure limit.
+        command.CommandText =
+            """
+            SELECT COALESCE(SUM(payload_bytes), 0)
+            FROM queue_events
+            WHERE state IN ($queued, $uploading, $retrying, $dead_lettered);
+            """;
+        command.Parameters.AddWithValue("$queued", (int)QueueState.Queued);
+        command.Parameters.AddWithValue("$uploading", (int)QueueState.Uploading);
+        command.Parameters.AddWithValue("$retrying", (int)QueueState.Retrying);
+        command.Parameters.AddWithValue("$dead_lettered", (int)QueueState.DeadLettered);
         object? result = await command.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }

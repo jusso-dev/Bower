@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Bower.Contracts;
+using Bower.Redaction.Privacy;
 
 namespace Bower.Agent.Aws;
 
@@ -52,6 +53,12 @@ public sealed record Ec2AgentOptions
 
     public int MaximumBatchLines { get; init; } = 1_000;
 
+    /// <summary>
+    /// Adds a privacy-redacted, 256-character preview of each line to labels. Off by default:
+    /// host lines are raw payloads and may hold data no detector recognises.
+    /// </summary>
+    public bool IncludeRedactedLinePreview { get; init; }
+
     public void Validate()
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(AgentId);
@@ -90,6 +97,10 @@ public sealed class Ec2MetadataClient
     {
         this.fetch = fetch ?? (_ => Task.FromResult<string?>(null));
     }
+
+    /// <summary>Creates a client that reads the local instance metadata service with IMDSv2.</summary>
+    public static Ec2MetadataClient CreateImdsV2(ImdsV2Client imds) =>
+        new(key => imds.FetchAsync(key, CancellationToken.None));
 
     public async Task<Ec2InstanceMetadata?> GetAsync(CancellationToken cancellationToken = default)
     {
@@ -158,19 +169,35 @@ public sealed class Ec2HostCollector
 {
     private readonly Ec2AgentOptions options;
     private readonly Ec2InstanceMetadata? metadata;
+    private readonly TimeProvider clock;
+    private readonly string configurationHash;
+    private readonly PrivacyEngine? previewRedactor;
 
-    public Ec2HostCollector(Ec2AgentOptions options, Ec2InstanceMetadata? metadata = null)
+    public Ec2HostCollector(
+        Ec2AgentOptions options,
+        Ec2InstanceMetadata? metadata = null,
+        TimeProvider? clock = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         options.Validate();
         this.options = options;
         this.metadata = metadata;
+        this.clock = clock ?? TimeProvider.System;
+        configurationHash = HashConfiguration(options);
+        previewRedactor = options.IncludeRedactedLinePreview ? new PrivacyEngine() : null;
     }
 
+    /// <summary>
+    /// Maps host log lines to events. <paramref name="firstLineNumber"/> is the position of
+    /// the first line in its source (for example the file line number), so re-reading the
+    /// same lines yields the same event ids and the queue deduplicates them.
+    /// Oversized lines become flagged events without content instead of failing the batch.
+    /// </summary>
     public IReadOnlyList<SecurityEventEnvelope> CollectLines(
         string sourceId,
         IEnumerable<string> lines,
-        DateTimeOffset? observedAt = null)
+        DateTimeOffset? observedAt = null,
+        long firstLineNumber = 0)
     {
         HostLogSource source = options.Sources.FirstOrDefault(item =>
             string.Equals(item.Id, sourceId, StringComparison.Ordinal))
@@ -181,11 +208,13 @@ public sealed class Ec2HostCollector
             return [];
         }
 
-        DateTimeOffset observed = observedAt ?? DateTimeOffset.UtcNow;
+        ArgumentOutOfRangeException.ThrowIfNegative(firstLineNumber);
+        DateTimeOffset observed = observedAt ?? clock.GetUtcNow();
         List<SecurityEventEnvelope> events = [];
-        int index = 0;
+        long lineNumber = firstLineNumber - 1;
         foreach (string line in lines)
         {
+            lineNumber++;
             if (string.IsNullOrWhiteSpace(line))
             {
                 continue;
@@ -198,39 +227,54 @@ public sealed class Ec2HostCollector
             }
 
             int size = Encoding.UTF8.GetByteCount(line);
-            if (size > options.MaximumLineBytes)
-            {
-                throw new InvalidOperationException(
-                    $"Host source '{sourceId}' line is {size} bytes; maximum is {options.MaximumLineBytes}.");
-            }
+            bool oversized = size > options.MaximumLineBytes;
+            string lineDigest = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(line)));
+            string originalId = Convert.ToHexStringLower(
+                    SHA256.HashData(Encoding.UTF8.GetBytes(
+                        $"{sourceId}\u001f{source.Path}\u001f{lineNumber}\u001f{lineDigest}")))[..24];
 
-            string originalId = Convert.ToHexString(
-                    SHA256.HashData(Encoding.UTF8.GetBytes($"{sourceId}\u001f{index}\u001f{line}")))
-                .ToLowerInvariant()[..24];
-            index++;
-
+            // Raw host lines never go into labels by default; the digest lets analysts match
+            // the event to the source line on the host.
             Dictionary<string, string> labels = new(StringComparer.Ordinal)
             {
                 ["host.sourceId"] = source.Id,
                 ["host.kind"] = source.Kind.ToString(),
                 ["host.path"] = source.Path,
-                ["host.linePreview"] = line.Length <= 256 ? line : line[..256]
+                ["host.lineNumber"] = lineNumber.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["host.lineSha256"] = lineDigest,
+                ["host.lineBytes"] = size.ToString(System.Globalization.CultureInfo.InvariantCulture)
             };
+            if (oversized)
+            {
+                labels["host.lineTruncated"] = "true";
+            }
+            else if (previewRedactor is not null)
+            {
+                string preview = line.Length <= 256 ? line : line[..256];
+                PrivacyTextResult redacted = previewRedactor.RedactText(preview);
+                if (redacted.Succeeded && redacted.RedactedText is not null)
+                {
+                    labels["host.linePreview"] = redacted.RedactedText;
+                }
+            }
+
             EnrichLabels(labels);
+            // Classify on the line only when it is within bounds.
+            string classified = oversized ? string.Empty : line;
 
             events.Add(
                 new SecurityEventEnvelope
                 {
                     SchemaVersion = SecurityEventEnvelope.CurrentSchemaVersion,
-                    EventId = Guid.CreateVersion7().ToString(),
+                    EventId = $"ec2-{originalId}",
                     EventOriginalId = originalId,
                     TimeGenerated = observed,
                     TimeObserved = observed,
-                    EventCategory = MapCategory(source.Kind, line),
+                    EventCategory = MapCategory(source.Kind, classified),
                     EventType = MapEventType(source.Kind),
-                    EventAction = MapAction(source.Kind, line),
-                    EventResult = MapResult(line),
-                    EventSeverity = MapSeverity(line),
+                    EventAction = MapAction(source.Kind, classified),
+                    EventResult = MapResult(classified),
+                    EventSeverity = MapSeverity(classified),
                     Application = new ApplicationContext
                     {
                         Name = options.ApplicationName,
@@ -252,7 +296,7 @@ public sealed class Ec2HostCollector
                         Id = options.AgentId,
                         Version = "0.1.0",
                         SourceAdapter = "aws.ec2-agent",
-                        ConfigurationHash = originalId[..16],
+                        ConfigurationHash = configurationHash,
                         ReceivedAt = observed
                     },
                     Labels = labels
@@ -278,6 +322,28 @@ public sealed class Ec2HostCollector
                 new HostLogSource("auditd", HostLogKind.Auditd, "/var/log/audit/audit.log"),
                 new HostLogSource("docker", HostLogKind.Docker, "/var/lib/docker/containers")
             ];
+    }
+
+    private static string HashConfiguration(Ec2AgentOptions options)
+    {
+        StringBuilder material = new();
+        material.Append(options.AgentId).Append('\u001f')
+            .Append(options.Environment).Append('\u001f')
+            .Append(options.ApplicationName).Append('\u001f')
+            .Append(options.MaximumLineBytes).Append('\u001f')
+            .Append(options.MaximumBatchLines).Append('\u001f')
+            .Append(options.IncludeRedactedLinePreview);
+        foreach (HostLogSource source in options.Sources.OrderBy(item => item.Id, StringComparer.Ordinal))
+        {
+            material.Append('\u001e')
+                .Append(source.Id).Append('\u001f')
+                .Append(source.Kind).Append('\u001f')
+                .Append(source.Path).Append('\u001f')
+                .Append(source.Enabled);
+        }
+
+        return "sha256:" + Convert.ToHexStringLower(
+            SHA256.HashData(Encoding.UTF8.GetBytes(material.ToString())));
     }
 
     private void EnrichLabels(Dictionary<string, string> labels)
