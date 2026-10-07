@@ -11,6 +11,12 @@
       "bower.contracts": {
         "type": "Project"
       },
+      "bower.redaction": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[1.0.0, )"
+        }
+      },
       "bower.source.aws": {
         "type": "Project",
         "dependencies": {

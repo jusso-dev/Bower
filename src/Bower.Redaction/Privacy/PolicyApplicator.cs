@@ -15,6 +15,12 @@ public sealed class PolicyApplicator
         hmacHasher = policy.HmacKey is { Length: >= 32 } key
             ? new KeyedFieldHasher(key)
             : null;
+        if (hmacHasher is null && policy.UsesAction(PrivacyAction.Hmac))
+        {
+            // Fail closed: an unkeyed fallback would silently weaken pseudonymisation.
+            throw new InvalidOperationException(
+                "Privacy policy uses the Hmac action but no HMAC key of at least 32 bytes is configured.");
+        }
     }
 
     public string Apply(string original, DetectionMatch match, PrivacyAction action)
@@ -28,7 +34,7 @@ public sealed class PolicyApplicator
             PrivacyAction.Replace => policy.ReplacementText,
             PrivacyAction.Mask => Mask(span, match.DetectorId),
             PrivacyAction.Sha256 => Sha256(span),
-            PrivacyAction.Hmac => hmacHasher?.Hash(span) ?? Sha256(span),
+            PrivacyAction.Hmac => hmacHasher!.Hash(span),
             PrivacyAction.Encrypt => Encrypt(span) ?? string.Empty,
             _ => policy.ReplacementText
         };

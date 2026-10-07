@@ -152,7 +152,7 @@ public sealed class CustomLogParserTests
     [Fact]
     public async Task SampleReader_RejectsAmbiguousInput()
     {
-        await Assert.ThrowsAsync<ArgumentException>(() =>
+        await Assert.ThrowsAsync<CustomLogInputException>(() =>
             CustomLogSampleReader.ReadAsync(
                 new CustomLogInput("sample", "/tmp/sample.log"),
                 null,

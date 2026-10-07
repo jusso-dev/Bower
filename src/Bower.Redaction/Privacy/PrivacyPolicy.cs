@@ -34,7 +34,10 @@ public sealed class PrivacyPolicy
     public IReadOnlySet<string> EnabledOptInDetectors { get; init; } =
         new HashSet<string>(StringComparer.Ordinal);
 
-    /// <summary>HMAC key for Hmac action (min 32 bytes). Null disables Hmac (falls back to Sha256).</summary>
+    /// <summary>
+    /// HMAC key for the Hmac action (min 32 bytes). Required when any action resolves to
+    /// Hmac; the engine refuses to start without it rather than fall back to an unkeyed hash.
+    /// </summary>
     public byte[]? HmacKey { get; init; }
 
     /// <summary>AES-256 key for Encrypt action (32 bytes). Null disables Encrypt (falls back to Remove).</summary>
@@ -65,6 +68,10 @@ public sealed class PrivacyPolicy
         return true;
     }
 
+    /// <summary>True when the default or any per-detector action is <paramref name="action"/>.</summary>
+    public bool UsesAction(PrivacyAction action) =>
+        DefaultAction == action || DetectorActions.Values.Any(value => value == action);
+
     public PrivacyAction ResolveAction(string detectorId)
     {
         if (DetectorActions.TryGetValue(detectorId, out PrivacyAction action))
@@ -84,7 +91,8 @@ public sealed class PrivacyPolicy
             DetectorActions = new Dictionary<string, PrivacyAction>(StringComparer.Ordinal)
             {
                 [DetectorIds.FieldNameSecret] = PrivacyAction.Remove,
-                [DetectorIds.Tfn] = PrivacyAction.Sha256,
+                // TFNs have ~10^8 valid values, so an unkeyed hash is reversible by enumeration.
+                [DetectorIds.Tfn] = PrivacyAction.Mask,
                 [DetectorIds.Crn] = PrivacyAction.Mask,
                 [DetectorIds.Medicare] = PrivacyAction.Mask,
                 [DetectorIds.Ihi] = PrivacyAction.Mask,

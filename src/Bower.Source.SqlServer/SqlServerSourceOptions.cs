@@ -10,6 +10,16 @@ public enum SqlServerCursorKind
     Composite
 }
 
+/// <summary>What to do when a mapped row exceeds <see cref="SqlServerSourceOptions.MaximumRecordBytes"/>.</summary>
+public enum SqlServerOversizedRecordHandling
+{
+    /// <summary>Drop previous/new values, flag the record and keep the cursor moving.</summary>
+    OmitValues,
+
+    /// <summary>Stop the source until an operator intervenes.</summary>
+    Fail
+}
+
 public sealed record SqlServerColumnMappings
 {
     public string Sequence { get; init; } = "AuditId";
@@ -58,6 +68,17 @@ public sealed partial record SqlServerSourceOptions
     public DateTimeOffset InitialTimestamp { get; init; } = DateTimeOffset.UnixEpoch;
 
     public int MaximumRecordBytes { get; init; } = 65_536;
+
+    public SqlServerOversizedRecordHandling OversizedRecords { get; init; } =
+        SqlServerOversizedRecordHandling.OmitValues;
+
+    /// <summary>
+    /// Incrementing and composite cursors do not advance past rows newer than this window.
+    /// Identity values are assigned at insert but become visible at commit, so a row with a
+    /// lower id can appear after a higher one; holding back recent rows stops the cursor
+    /// skipping them. Transactions open longer than this window can still be skipped.
+    /// </summary>
+    public TimeSpan CommitSettleDelay { get; init; } = TimeSpan.FromSeconds(5);
 
     public void Validate()
     {
@@ -115,6 +136,13 @@ public sealed partial record SqlServerSourceOptions
         {
             throw new ArgumentException(
                 "Timestamp overlap is only valid for timestamp cursors.");
+        }
+
+        if (CommitSettleDelay < TimeSpan.Zero || CommitSettleDelay > TimeSpan.FromHours(1))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(CommitSettleDelay),
+                "Commit settle delay must be between zero and one hour.");
         }
 
         if (InitialSequence < 0)

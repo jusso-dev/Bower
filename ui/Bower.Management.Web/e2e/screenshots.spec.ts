@@ -80,6 +80,21 @@ test("capture management audit history", async ({ page }, testInfo) => {
   });
 });
 
+test("capture background jobs view", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "readme-chromium");
+  await page.goto("/jobs");
+  await expect(page.getByRole("heading", { name: "Background jobs" })).toBeVisible();
+  await expect(page.getByText("collector-staleness")).toBeVisible();
+  await expect(page.getByText("claims-api-03").first()).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: path.join(screenshotDirectory, "bower-management-jobs.png"),
+    fullPage: true,
+    animations: "disabled"
+  });
+});
+
 test("capture polished mobile fleet view", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile-chromium");
   await page.goto("/");

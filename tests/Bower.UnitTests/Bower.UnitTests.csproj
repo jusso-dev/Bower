@@ -7,10 +7,13 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit.v3" />
+    <!-- Test-only: in-process HTTP server for collector and management API integration tests. -->
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
     <PackageReference Include="xunit.runner.visualstudio">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <ProjectReference Include="../../src/Bower.Collector/Bower.Collector.csproj" />
     <ProjectReference Include="../../src/Bower.Core/Bower.Core.csproj" />
     <ProjectReference Include="../../src/Bower.Output.AmaSpool/Bower.Output.AmaSpool.csproj" />
     <ProjectReference Include="../../src/Bower.Management.Api/Bower.Management.Api.csproj" />
@@ -27,6 +30,10 @@
   <ItemGroup>
     <Content Include="../../schemas/**/*.json">
       <Link>schemas/%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="../../policies/**/*.yaml">
+      <Link>policies/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="../../rules/**/*.yml">

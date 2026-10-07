@@ -16,6 +16,7 @@ control plane, or runtime AI filter.
 - `src/Bower.Redaction`: Privacy & Secret Protection Engine — modular detectors (AU identifiers, financial, secrets, crypto), policy actions, privacy metadata; redacts before persistence.
 - `src/Bower.Persistence`: SQLite queue, cursors, delivery state and evidence.
 - `src/Bower.Core`: source-to-policy-to-queue orchestration.
+- `src/Bower.Jobs`: shared Hangfire wiring for recurring maintenance and health jobs.
 - `src/Bower.Sdk`: semantic developer API and transports.
 - `src/Bower.Collector`: local HTTP collector host.
 - `src/Bower.Management.Api`: Entra-protected fleet, approval and audit API.
@@ -38,9 +39,10 @@ Inspect nearest `AGENTS.md` before editing.
 ```bash
 dotnet restore
 dotnet build --configuration Release
-dotnet test --configuration Release
+dotnet test --configuration Release   # Microsoft.Testing.Platform runner
 dotnet format --verify-no-changes
 docker compose build
+cd ui/Bower.Management.Web && npm ci && npm run lint && npm test && npm run build
 ```
 
 ## Invariants
@@ -62,7 +64,9 @@ docker compose build
 - New adapters require bounded input, cancellation, durable cursor tests,
   malformed-input tests, backpressure and scoped `AGENTS.md`.
 - Queue or redaction changes require crash/recovery or adversarial tests.
-- Do not add dependencies without written justification.
+- Do not add dependencies without written justification in
+  `docs/architecture/dependencies.md`.
+- Never move event delivery, acknowledgement or queue state into Hangfire.
 - Update docs, schemas and event catalogue with behavior changes.
 
 ## Pull requests and definition of done

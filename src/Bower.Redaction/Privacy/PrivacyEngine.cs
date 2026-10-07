@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Bower.Abstractions;
 
 namespace Bower.Redaction.Privacy;
@@ -144,6 +145,15 @@ public sealed class PrivacyEngine : IEventRedactor
         {
             return PrivacyScanResult.Fail("invalid-json");
         }
+        catch (Exception exception) when (
+            exception is RegexMatchTimeoutException
+                or ArgumentException
+                or InvalidOperationException)
+        {
+            // Detector timeouts and malformed structures (for example duplicate keys) are
+            // security failures: the payload must be quarantined, never persisted.
+            return PrivacyScanResult.Fail("redaction-failed");
+        }
     }
 
     /// <summary>Scan and sanitise a raw text payload (syslog, CSV cell, etc.).</summary>
@@ -167,9 +177,11 @@ public sealed class PrivacyEngine : IEventRedactor
 
     private void WalkObject(JsonObject value, string parentPath, List<AppliedFinding> findings)
     {
-        foreach ((string propertyName, JsonNode? child) in value.ToArray())
+        int redactedKeyIndex = 0;
+        foreach ((string originalName, JsonNode? originalChild) in value.ToArray())
         {
-            string path = $"{parentPath}.{propertyName}";
+            string propertyName = originalName;
+            JsonNode? child = originalChild;
             string normalized = NormalizeFieldName(propertyName);
 
             if (policy.IsDetectorEnabled(fieldNameDetector.Id) &&
@@ -179,7 +191,7 @@ public sealed class PrivacyEngine : IEventRedactor
                 findings.Add(new AppliedFinding(
                     fieldNameDetector.Id,
                     fieldNameDetector.Category,
-                    path,
+                    $"{parentPath}.{propertyName}",
                     action,
                     Validated: true,
                     SubKind: null));
@@ -192,10 +204,32 @@ public sealed class PrivacyEngine : IEventRedactor
                 continue;
             }
 
-            if (child is JsonValue jsonValue && jsonValue.TryGetValue(out string? text) && text is not null)
+            // Property names are attacker-controlled too: scan them with value detectors and
+            // rename the property when a key carries sensitive data.
+            string redactedName = ApplyDetectorsToValue(
+                propertyName,
+                $"{parentPath}.[key]",
+                findings);
+            if (!string.Equals(redactedName, propertyName, StringComparison.Ordinal))
+            {
+                value.Remove(propertyName);
+                do
+                {
+                    redactedName = string.IsNullOrEmpty(redactedName) || value.ContainsKey(redactedName)
+                        ? $"redacted-key-{++redactedKeyIndex}"
+                        : redactedName;
+                }
+                while (value.ContainsKey(redactedName));
+
+                value[redactedName] = child;
+                propertyName = redactedName;
+            }
+
+            string path = $"{parentPath}.{propertyName}";
+            if (child is JsonValue jsonValue && TryGetScannableText(jsonValue, out string? text))
             {
                 string redacted = ApplyDetectorsToValue(text, path, findings);
-                if (!ReferenceEquals(redacted, text) && redacted != text)
+                if (!string.Equals(redacted, text, StringComparison.Ordinal))
                 {
                     value[propertyName] = redacted;
                 }
@@ -223,16 +257,42 @@ public sealed class PrivacyEngine : IEventRedactor
             {
                 WalkObject(nested, itemPath, findings);
             }
+            else if (array[index] is JsonArray nestedArray)
+            {
+                WalkArray(nestedArray, itemPath, findings);
+            }
             else if (array[index] is JsonValue arrayValue &&
-                     arrayValue.TryGetValue(out string? arrayText) &&
-                     arrayText is not null)
+                     TryGetScannableText(arrayValue, out string? arrayText))
             {
                 string redacted = ApplyDetectorsToValue(arrayText, itemPath, findings);
-                if (redacted != arrayText)
+                if (!string.Equals(redacted, arrayText, StringComparison.Ordinal))
                 {
                     array[index] = redacted;
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Strings are scanned as-is; numbers are scanned by their exact JSON text so card
+    /// numbers, TFNs and account numbers sent as numbers cannot bypass detectors.
+    /// A redacted number becomes a string.
+    /// </summary>
+    private static bool TryGetScannableText(
+        JsonValue value,
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? text)
+    {
+        switch (value.GetValueKind())
+        {
+            case JsonValueKind.String:
+                text = value.GetValue<string>();
+                return true;
+            case JsonValueKind.Number:
+                text = value.ToJsonString();
+                return true;
+            default:
+                text = null;
+                return false;
         }
     }
 

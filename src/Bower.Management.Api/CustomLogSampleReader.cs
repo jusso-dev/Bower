@@ -15,7 +15,7 @@ public static class CustomLogSampleReader
         bool hasPath = !string.IsNullOrWhiteSpace(input.Path);
         if (hasSample == hasPath)
         {
-            throw new ArgumentException("Provide exactly one sample or server path.");
+            throw new CustomLogInputException("Provide exactly one sample or server path.");
         }
 
         if (hasSample)
@@ -31,7 +31,7 @@ public static class CustomLogSampleReader
             .ToArray();
         if (roots.Length == 0)
         {
-            throw new InvalidOperationException(
+            throw new CustomLogInputException(
                 "Server path input is disabled. Configure BOWER_CUSTOM_LOG_ROOTS.");
         }
 
@@ -62,6 +62,10 @@ public static class CustomLogSampleReader
             FileShare.ReadWrite,
             4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
+        // Re-check after opening to narrow the window for a link swapped in after the first
+        // check. A swap and swap-back between the checks is still possible; roots should
+        // be directories only trusted operators can write to.
+        RejectSymbolicLinks(root, fullPath);
         using StreamReader reader = new(stream, detectEncodingFromByteOrderMarks: true);
         StringBuilder sample = new();
         char[] buffer = new char[4096];
@@ -112,3 +116,6 @@ public static class CustomLogSampleReader
         }
     }
 }
+
+/// <summary>Validation failure whose message is authored by Bower and safe to return.</summary>
+public sealed class CustomLogInputException(string message) : InvalidOperationException(message);

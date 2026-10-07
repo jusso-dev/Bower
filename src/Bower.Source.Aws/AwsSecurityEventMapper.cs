@@ -9,12 +9,14 @@ namespace Bower.Source.Aws;
 public sealed class AwsSecurityEventMapper
 {
     private readonly AwsSourceOptions options;
+    private readonly TimeProvider clock;
 
-    public AwsSecurityEventMapper(AwsSourceOptions options)
+    public AwsSecurityEventMapper(AwsSourceOptions options, TimeProvider? clock = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         options.Validate();
         this.options = options;
+        this.clock = clock ?? TimeProvider.System;
     }
 
     public IReadOnlyList<SecurityEventEnvelope> MapJsonDocument(
@@ -48,10 +50,16 @@ public sealed class AwsSecurityEventMapper
                 options.MaximumBatchEvents);
         }
 
-        DateTimeOffset observed = observedAt ?? DateTimeOffset.UtcNow;
+        DateTimeOffset observed = observedAt ?? clock.GetUtcNow();
         List<SecurityEventEnvelope> mapped = new(rawEvents.Count);
         foreach (JsonElement element in rawEvents)
         {
+            if (element.ValueKind != JsonValueKind.Object)
+            {
+                // Typed failure instead of an InvalidOperationException deep in a mapper.
+                throw new AwsTelemetryMalformedRecordException(options.SourceId, element.ValueKind);
+            }
+
             int size = Encoding.UTF8.GetByteCount(element.GetRawText());
             if (size > options.MaximumRecordBytes)
             {
@@ -327,7 +335,6 @@ public sealed class AwsSecurityEventMapper
         JsonElement raw,
         EventSeverity severity = EventSeverity.Medium)
     {
-        string eventId = Guid.CreateVersion7().ToString();
         string fingerprint = Convert.ToHexString(
                 SHA256.HashData(
                     Encoding.UTF8.GetBytes(
@@ -338,6 +345,8 @@ public sealed class AwsSecurityEventMapper
                             originalId,
                             timeGenerated.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)))))
             .ToLowerInvariant();
+        // Deterministic so re-reading the same record collapses onto one queued event.
+        string eventId = $"aws-{fingerprint[..32]}";
 
         labels["aws.sourceId"] = options.SourceId;
         labels["bower.fingerprint"] = fingerprint;
@@ -505,6 +514,9 @@ public sealed class AwsSecurityEventMapper
             : null;
     }
 }
+
+public sealed class AwsTelemetryMalformedRecordException(string sourceId, JsonValueKind kind)
+    : InvalidOperationException($"AWS source '{sourceId}' record must be a JSON object, not {kind}.");
 
 public sealed class AwsTelemetryPayloadTooLargeException(
     string sourceId,

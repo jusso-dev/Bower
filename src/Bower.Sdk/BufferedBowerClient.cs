@@ -11,10 +11,13 @@ internal sealed class BufferedBowerClient : IBowerTelemetry, IAsyncDisposable
     private readonly CancellationTokenSource shutdown = new();
     private readonly Task sender;
 
-    public BufferedBowerClient(BowerOptions options)
+    private readonly TimeProvider clock;
+
+    public BufferedBowerClient(BowerOptions options, TimeProvider? clock = null)
     {
         options.Validate();
         this.options = options;
+        this.clock = clock ?? TimeProvider.System;
         channel = Channel.CreateBounded<SecurityEventEnvelope>(
             new BoundedChannelOptions(options.BufferCapacity)
             {
@@ -212,7 +215,7 @@ internal sealed class BufferedBowerClient : IBowerTelemetry, IAsyncDisposable
             SchemaVersion = SecurityEventEnvelope.CurrentSchemaVersion,
             EventId = Guid.CreateVersion7().ToString(),
             EventOriginalId = originalId,
-            TimeGenerated = DateTimeOffset.UtcNow,
+            TimeGenerated = clock.GetUtcNow(),
             EventCategory = category,
             EventType = eventType,
             EventAction = action,

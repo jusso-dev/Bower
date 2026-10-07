@@ -2,11 +2,13 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>true</SelfContained>
+    <!-- Self-contained only for RID-specific publishes, so tests can reference the host. -->
+    <SelfContained Condition="'$(RuntimeIdentifier)' != ''">true</SelfContained>
     <RuntimeIdentifiers>win-x64;win-arm64;linux-x64;linux-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Bower.Core/Bower.Core.csproj" />
+    <ProjectReference Include="../Bower.Jobs/Bower.Jobs.csproj" />
     <ProjectReference Include="../Bower.Output.AmaSpool/Bower.Output.AmaSpool.csproj" />
     <ProjectReference Include="../Bower.Output.AzureLogsIngestion/Bower.Output.AzureLogsIngestion.csproj" />
   </ItemGroup>

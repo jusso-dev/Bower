@@ -37,7 +37,9 @@ export function useApi() {
         }
         throw new ApiError(message, response.status);
       }
-      return (await response.json()) as T;
+      // 202/204 responses (for example job triggers) carry no body.
+      const text = await response.text();
+      return (text ? JSON.parse(text) : undefined) as T;
     },
     [getAccessToken]
   );

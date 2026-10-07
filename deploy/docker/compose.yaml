@@ -8,6 +8,9 @@ services:
     ports:
       - "127.0.0.1:4319:4319"
     environment:
+      # The container listens on 0.0.0.0, so producers must authenticate.
+      # Generate one with: dotnet run --project src/Bower.Cli -- token generate
+      BOWER_INGEST_TOKEN: ${BOWER_INGEST_TOKEN:?set BOWER_INGEST_TOKEN}
       BOWER_OUTPUT: ama-spool
       BOWER_AMA_SPOOL_PATH: /var/spool/bower
     volumes:

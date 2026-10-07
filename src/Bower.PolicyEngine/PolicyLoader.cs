@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Bower.Contracts;
+using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -40,13 +42,24 @@ public static class PolicyLoader
         }
 
         string yaml = File.ReadAllText(path, Encoding.UTF8);
+        // Strict: an unknown or misspelt key (for example "requirments") must fail the load
+        // rather than silently drop the requirements it was meant to carry.
         IDeserializer deserializer = new DeserializerBuilder()
             .WithNamingConvention(CamelCaseNamingConvention.Instance)
-            .IgnoreUnmatchedProperties()
             .Build();
 
-        TelemetryPolicy policy = deserializer.Deserialize<TelemetryPolicy>(yaml)
-            ?? throw new InvalidDataException("Policy is empty.");
+        TelemetryPolicy policy;
+        try
+        {
+            policy = deserializer.Deserialize<TelemetryPolicy>(yaml)
+                ?? throw new InvalidDataException("Policy is empty.");
+        }
+        catch (YamlException exception)
+        {
+            throw new InvalidDataException(
+                $"Policy '{Path.GetFileName(path)}' is invalid at line {exception.Start.Line}: {exception.Message}",
+                exception);
+        }
 
         Validate(policy);
         string canonicalJson = JsonSerializer.Serialize(policy);
@@ -64,16 +77,20 @@ public static class PolicyLoader
         }
 
         if (string.IsNullOrWhiteSpace(policy.Metadata.Id)
-            || string.IsNullOrWhiteSpace(policy.Metadata.Version)
-            || (policy.Match.EventCategories.Count == 0 && policy.Match.EventTypes.Count == 0))
+            || string.IsNullOrWhiteSpace(policy.Metadata.Version))
         {
-            throw new InvalidDataException("Policy metadata and at least one match value are required.");
+            throw new InvalidDataException("Policy metadata id and version are required.");
         }
 
-        if (!Enum.TryParse<Contracts.DecisionAction>(
-                policy.Decision.Action.Replace("-", string.Empty, StringComparison.Ordinal),
-                true,
-                out _))
+        // Default deny: a policy must name the exact event types it approves. A
+        // category-only match would accept any new or unknown type in that category.
+        if (policy.Match.EventTypes.Count == 0
+            || policy.Match.EventTypes.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new InvalidDataException("Policy match must list at least one eventType.");
+        }
+
+        if (!TryParseAction(policy.Decision.Action, out _))
         {
             throw new InvalidDataException($"Unsupported policy action: {policy.Decision.Action}");
         }
@@ -82,6 +99,21 @@ public static class PolicyLoader
         {
             throw new InvalidDataException("minimumValueScore must be between 0 and 100.");
         }
+    }
+
+    /// <summary>Parses a named action. Numeric values are rejected.</summary>
+    internal static bool TryParseAction(string? value, out DecisionAction action)
+    {
+        action = default;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        string normalized = value.Replace("-", string.Empty, StringComparison.Ordinal);
+        string? name = Enum.GetNames<DecisionAction>()
+            .FirstOrDefault(item => string.Equals(item, normalized, StringComparison.OrdinalIgnoreCase));
+        return name is not null && Enum.TryParse(name, out action);
     }
 }
 

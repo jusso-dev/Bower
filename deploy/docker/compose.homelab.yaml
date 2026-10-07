@@ -11,6 +11,7 @@ services:
       - "127.0.0.1:4319:4319"
     environment:
       BOWER_LISTEN_URL: http://0.0.0.0:4319
+      BOWER_INGEST_TOKEN: ${BOWER_INGEST_TOKEN:?set BOWER_INGEST_TOKEN}
       BOWER_QUEUE_PATH: /var/lib/bower/queue.db
       BOWER_POLICY_DIRECTORY: /app/policies/default
       BOWER_COLLECTOR_ID: homelab-collector

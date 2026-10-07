@@ -18,10 +18,79 @@ jobs:
           global-json-file: global.json
       - run: dotnet restore Bower.sln --locked-mode
       - run: dotnet build Bower.sln --configuration Release --no-restore
-      - run: dotnet test Bower.sln --configuration Release --no-build --no-restore
+      - run: dotnet test --solution Bower.sln --configuration Release --no-build
       - run: dotnet format Bower.sln --verify-no-changes --no-restore
 
+  ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui/Bower.Management.Web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ui/Bower.Management.Web/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=high
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+        env:
+          VITE_BOWER_AUTH_MODE: development
+
+  e2e:
+    needs: [build-test, ui]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ui/Bower.Management.Web/package-lock.json
+      - name: Build console (development auth) and management API
+        run: |
+          npm ci --ignore-scripts --prefix ui/Bower.Management.Web
+          VITE_BOWER_AUTH_MODE=development npm run build --prefix ui/Bower.Management.Web
+          dotnet publish src/Bower.Management.Api/Bower.Management.Api.csproj -c Release -o out/management
+          cp -R ui/Bower.Management.Web/dist out/management/wwwroot
+      - name: Start management API with synthetic preview data
+        run: |
+          # Run from the publish folder so the content root (and wwwroot) resolves.
+          cd out/management
+          ASPNETCORE_ENVIRONMENT=Development BOWER_AUTH_MODE=development \
+            BOWER_MANAGEMENT_DB_PATH="$RUNNER_TEMP/management.db" \
+            dotnet Bower.Management.Api.dll > "$RUNNER_TEMP/management.log" 2>&1 &
+          cd "$GITHUB_WORKSPACE"
+          for attempt in $(seq 1 30); do curl -sf http://127.0.0.1:4320/health && break; sleep 1; done
+          curl -sf http://127.0.0.1:4320/ | grep -q '<div id="root">'
+          npm run seed:preview --prefix ui/Bower.Management.Web
+      - run: npx --prefix ui/Bower.Management.Web playwright install --with-deps chromium
+      - run: npx playwright test e2e/management.spec.ts
+        working-directory: ui/Bower.Management.Web
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: ui/Bower.Management.Web/playwright-report
+          retention-days: 7
+
+  docker:
+    needs: build-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -f deploy/docker/Dockerfile -t bower-collector:ci .
+      - run: docker build -f deploy/docker/Dockerfile.management -t bower-management:ci --build-arg BOWER_AUTH_MODE=development .
+
   publish:
+    needs: build-test
     runs-on: ubuntu-latest
     strategy:
       matrix:

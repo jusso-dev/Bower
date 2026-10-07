@@ -19,6 +19,7 @@ static async Task<int> RunAsync(string[] args)
             ["pipeline", "template", .. string[] rest] => PipelineTemplate(rest),
             ["queue", "inspect", .. string[] rest] => await InspectQueueAsync(rest),
             ["test", "emit", .. string[] rest] => await EmitCanaryAsync(rest),
+            ["token", "generate"] => GenerateToken(),
             ["developer", "init", .. string[] rest] => DeveloperInit(rest),
             [] or ["--help"] or ["help"] => WriteHelp(),
             _ => Fail("Unknown command. Run 'bower --help'.")
@@ -132,11 +133,19 @@ static async Task<int> EmitCanaryAsync(string[] args)
         Labels = new Dictionary<string, string> { ["evidenceType"] = "test" }
     };
 
+    string? token = Environment.GetEnvironmentVariable("BOWER_INGEST_TOKEN");
     using HttpClient client = new() { BaseAddress = new Uri(EnsureSlash(endpoint)) };
-    using HttpResponseMessage response = await client.PostAsJsonAsync(
-        "v1/events",
-        canary,
-        BowerJson.Options);
+    using HttpRequestMessage request = new(HttpMethod.Post, "v1/events")
+    {
+        Content = JsonContent.Create(canary, options: BowerJson.Options)
+    };
+    if (!string.IsNullOrWhiteSpace(token))
+    {
+        request.Headers.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+    }
+
+    using HttpResponseMessage response = await client.SendAsync(request);
     string result = await response.Content.ReadAsStringAsync();
     Console.WriteLine(result);
     return response.IsSuccessStatusCode ? 0 : 2;
@@ -232,10 +241,19 @@ static int WriteHelp()
           bower pipeline validate --file PATH
           bower pipeline template [--id sentinel-app|aws-security]
           bower queue inspect [--database PATH]
-          bower test emit [--endpoint URL]
+          bower test emit [--endpoint URL]      (sends BOWER_INGEST_TOKEN when set)
+          bower token generate                 (new collector ingest token)
           bower developer init [--path PATH]
           bower version
         """);
+    return 0;
+}
+
+static int GenerateToken()
+{
+    // 32 random bytes, URL-safe base64: suitable for BOWER_INGEST_TOKEN.
+    byte[] bytes = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+    Console.WriteLine(Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_'));
     return 0;
 }
 

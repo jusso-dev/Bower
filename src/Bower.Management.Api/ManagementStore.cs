@@ -1,4 +1,5 @@
 using System.Globalization;
+using Bower.Jobs;
 using Microsoft.Data.Sqlite;
 
 namespace Bower.Management.Api;
@@ -9,7 +10,7 @@ public sealed class ManagementStore(string databasePath)
     {
         DataSource = Path.GetFullPath(databasePath),
         Mode = SqliteOpenMode.ReadWriteCreate,
-        Cache = SqliteCacheMode.Shared,
+        Cache = SqliteCacheMode.Private,
         Pooling = true
     }.ToString();
 
@@ -59,6 +60,16 @@ public sealed class ManagementStore(string databasePath)
                 last_acknowledged_at TEXT NULL,
                 last_error_code TEXT NULL,
                 PRIMARY KEY (collector_id, output_id),
+                FOREIGN KEY (collector_id) REFERENCES collectors(id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS collector_jobs (
+                collector_id TEXT NOT NULL,
+                job_id TEXT NOT NULL,
+                schedule TEXT NOT NULL,
+                last_run_at TEXT NULL,
+                last_state TEXT NULL,
+                next_run_at TEXT NULL,
+                PRIMARY KEY (collector_id, job_id),
                 FOREIGN KEY (collector_id) REFERENCES collectors(id) ON DELETE CASCADE
             );
             CREATE TABLE IF NOT EXISTS approvals (
@@ -163,6 +174,7 @@ public sealed class ManagementStore(string databasePath)
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
+        ValidateHeartbeat(heartbeat);
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
         await using SqliteTransaction transaction =
             (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
@@ -217,6 +229,11 @@ public sealed class ManagementStore(string databasePath)
             heartbeat.Sources,
             heartbeat.Outputs,
             cancellationToken);
+        if (heartbeat.Jobs is not null)
+        {
+            await ReplaceJobsAsync(connection, transaction, collectorId, heartbeat.Jobs, cancellationToken);
+        }
+
         await transaction.CommitAsync(cancellationToken);
         return await GetAsync(collectorId, cancellationToken);
     }
@@ -463,9 +480,11 @@ public sealed class ManagementStore(string databasePath)
             await ReadSourcesAsync(detailConnection, id, cancellationToken);
         IReadOnlyList<OutputReport> outputs =
             await ReadOutputsAsync(detailConnection, id, cancellationToken);
+        IReadOnlyList<BackgroundJobStatus> jobs =
+            await ReadJobsAsync(detailConnection, id, cancellationToken);
         return new(
             id, machine, environment, version, status, principal, firstSeen, lastSeen,
-            configuration, policy, queue, delivery, sources, outputs);
+            configuration, policy, queue, delivery, sources, outputs, jobs);
     }
 
     private static async Task<IReadOnlyList<SourceReport>> ReadSourcesAsync(
@@ -495,6 +514,172 @@ public sealed class ManagementStore(string databasePath)
 
         return records;
     }
+
+    private static async Task<IReadOnlyList<BackgroundJobStatus>> ReadJobsAsync(
+        SqliteConnection connection,
+        string collectorId,
+        CancellationToken cancellationToken)
+    {
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT * FROM collector_jobs WHERE collector_id = $id ORDER BY job_id;";
+        command.Parameters.AddWithValue("$id", collectorId);
+        List<BackgroundJobStatus> records = [];
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            records.Add(new BackgroundJobStatus(
+                reader.GetString(reader.GetOrdinal("job_id")),
+                reader.GetString(reader.GetOrdinal("schedule")),
+                ParseOptional(reader, "last_run_at"),
+                reader.IsDBNull(reader.GetOrdinal("last_state"))
+                    ? null
+                    : reader.GetString(reader.GetOrdinal("last_state")),
+                ParseOptional(reader, "next_run_at")));
+        }
+
+        return records;
+    }
+
+    private static DateTimeOffset? ParseOptional(SqliteDataReader reader, string column)
+    {
+        int ordinal = reader.GetOrdinal(column);
+        return reader.IsDBNull(ordinal) ? null : Parse(reader.GetString(ordinal));
+    }
+
+    private static async Task ReplaceJobsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string collectorId,
+        IReadOnlyList<BackgroundJobStatus> jobs,
+        CancellationToken cancellationToken)
+    {
+        await CommandAsync(
+            connection,
+            transaction,
+            "DELETE FROM collector_jobs WHERE collector_id = $id;",
+            [("$id", collectorId)],
+            cancellationToken);
+        foreach (BackgroundJobStatus job in jobs)
+        {
+            await CommandAsync(
+                connection,
+                transaction,
+                """
+                INSERT INTO collector_jobs (
+                    collector_id, job_id, schedule, last_run_at, last_state, next_run_at)
+                VALUES ($collector, $id, $schedule, $last, $state, $next);
+                """,
+                [
+                    ("$collector", collectorId),
+                    ("$id", job.Id),
+                    ("$schedule", job.Schedule),
+                    ("$last", job.LastRunAt is null ? null : Format(job.LastRunAt.Value)),
+                    ("$state", job.LastState),
+                    ("$next", job.NextRunAt is null ? null : Format(job.NextRunAt.Value))
+                ],
+                cancellationToken);
+        }
+    }
+
+    private static void ValidateHeartbeat(CollectorHeartbeat heartbeat)
+    {
+        if (heartbeat.Sources.Count > 250
+            || heartbeat.Outputs.Count > 50
+            || heartbeat.Jobs is { Count: > 50 }
+            || (heartbeat.Jobs?.Any(job =>
+                string.IsNullOrWhiteSpace(job.Id)
+                || job.Id.Length > 128
+                || job.Schedule.Length > 128
+                || job.LastState?.Length > 64) ?? false))
+        {
+            throw new ArgumentException("Collector heartbeat is invalid.", nameof(heartbeat));
+        }
+    }
+
+    /// <summary>
+    /// Marks active collectors that have not reported since <paramref name="staleBefore"/>
+    /// as stale and audits each transition once. A later heartbeat restores its status.
+    /// </summary>
+    public async Task<int> MarkStaleAsync(
+        DateTimeOffset staleBefore,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteTransaction transaction =
+            (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        List<string> stale = [];
+        await using (SqliteCommand select = connection.CreateCommand())
+        {
+            select.Transaction = transaction;
+            select.CommandText =
+                """
+                SELECT id FROM collectors
+                WHERE status IN ('Active', 'Approved')
+                  AND last_seen_at < $stale_before
+                  AND delivery_status <> 'stale'
+                ORDER BY id;
+                """;
+            select.Parameters.AddWithValue("$stale_before", Format(staleBefore));
+            await using SqliteDataReader reader = await select.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                stale.Add(reader.GetString(0));
+            }
+        }
+
+        foreach (string collectorId in stale)
+        {
+            await CommandAsync(
+                connection,
+                transaction,
+                "UPDATE collectors SET delivery_status = 'stale' WHERE id = $id;",
+                [("$id", collectorId)],
+                cancellationToken);
+            await InsertAuditAsync(
+                connection,
+                transaction,
+                "collector.stale",
+                collectorId,
+                SystemActorId,
+                SystemActorName,
+                now,
+                cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return stale.Count;
+    }
+
+    /// <summary>Records an operator action that is not a collector state change.</summary>
+    public async Task RecordAuditAsync(
+        string action,
+        string targetType,
+        string targetId,
+        string actorObjectId,
+        string actorName,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteTransaction transaction =
+            (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        await InsertAuditAsync(
+            connection,
+            transaction,
+            action,
+            targetId,
+            actorObjectId,
+            actorName,
+            now,
+            cancellationToken,
+            targetType);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    public const string SystemActorId = "bower.background-jobs";
+    public const string SystemActorName = "Bower background jobs";
 
     private static async Task<IReadOnlyList<OutputReport>> ReadOutputsAsync(
         SqliteConnection connection,
@@ -612,7 +797,8 @@ public sealed class ManagementStore(string databasePath)
         string actorObjectId,
         string actorName,
         DateTimeOffset now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string targetType = "collector")
     {
         await CommandAsync(
             connection,
@@ -620,11 +806,12 @@ public sealed class ManagementStore(string databasePath)
             """
             INSERT INTO management_audit (
                 id, action, target_type, target_id, actor_object_id, actor_name, occurred_at)
-            VALUES ($id, $action, 'collector', $target, $actor, $name, $occurred);
+            VALUES ($id, $action, $target_type, $target, $actor, $name, $occurred);
             """,
             [
                 ("$id", Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)),
                 ("$action", action),
+                ("$target_type", targetType),
                 ("$target", targetId),
                 ("$actor", actorObjectId),
                 ("$name", actorName),
@@ -637,7 +824,10 @@ public sealed class ManagementStore(string databasePath)
     {
         SqliteConnection connection = new(_connectionString);
         await connection.OpenAsync(cancellationToken);
-        await ExecuteAsync(connection, "PRAGMA foreign_keys=ON;", cancellationToken);
+        await ExecuteAsync(
+            connection,
+            "PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;",
+            cancellationToken);
         return connection;
     }
 

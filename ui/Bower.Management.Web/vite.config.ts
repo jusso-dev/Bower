@@ -20,7 +20,9 @@ export default defineConfig({
   },
   build: {
     target: "es2022",
-    sourcemap: true,
+    // Production bundles ship without source maps. Set BOWER_SOURCEMAP=true for a
+    // hidden map (written to dist, not referenced by the bundle) when debugging.
+    sourcemap: process.env.BOWER_SOURCEMAP === "true" ? "hidden" : false,
     outDir: "dist",
     emptyOutDir: true
   }

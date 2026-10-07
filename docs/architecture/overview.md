@@ -30,10 +30,22 @@ queued → uploading → delivered
 ```
 
 Only leased `uploading` records can transition. Expired leases become eligible
-after abrupt shutdown. Payload rows are not deleted during acknowledgement.
+after abrupt shutdown. Payload rows are not deleted during acknowledgement; the
+`queue-retention` job removes `delivered` rows only after the retention window.
+Retryable failures dead-letter after `BOWER_MAX_DELIVERY_ATTEMPTS` leases.
+
+## Background jobs
+
+Delivery is a low-latency hosted loop (`QueueDeliveryWorker`) driven by queue
+leases. Hangfire (`Bower.Jobs`, in-memory storage) runs only idempotent
+maintenance and reporting: queue retention, SQLite maintenance and the management
+heartbeat on collectors, and collector staleness on the management API. Losing
+Hangfire state on restart is harmless because durable state lives in Bower's
+SQLite stores. See [background jobs](../operations/background-jobs.md).
 
 ## Current limits
 
 Configuration is environment-based in collector host. YAML policy matching uses
-bounded category/type lists. Sampling, aggregation, source cursors, evidence query
+bounded category/type lists; every policy must name its event types and unknown
+YAML keys fail the load. Sampling, aggregation, source cursors, evidence query
 proof and policy population diff are not implemented.

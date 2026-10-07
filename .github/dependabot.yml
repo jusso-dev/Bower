@@ -1,0 +1,32 @@
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      dotnet-runtime:
+        patterns: ["Microsoft.*", "System.*"]
+      hangfire:
+        patterns: ["Hangfire.*"]
+      test:
+        patterns: ["xunit*", "Microsoft.NET.Test.Sdk", "Microsoft.AspNetCore.TestHost"]
+  - package-ecosystem: npm
+    directory: /ui/Bower.Management.Web
+    schedule:
+      interval: weekly
+    groups:
+      react:
+        patterns: ["react", "react-dom", "@types/react*", "react-router*"]
+      msal:
+        patterns: ["@azure/msal-*"]
+      tooling:
+        patterns: ["vite", "vitest", "@vitejs/*", "typescript", "@playwright/test", "jsdom", "@testing-library/*", "@types/node"]
+  - package-ecosystem: docker
+    directory: /deploy/docker
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
