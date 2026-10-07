@@ -10,5 +10,8 @@
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!-- Source-built SDKs (for example Homebrew) inject an unsigned library-packs feed
+         that breaks lock-file content hash validation. Restore from nuget.org only. -->
+    <DisableImplicitLibraryPacksFolder>true</DisableImplicitLibraryPacksFolder>
   </PropertyGroup>
 </Project>
