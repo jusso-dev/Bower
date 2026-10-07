@@ -26,6 +26,7 @@ Or run the console and API together with
 | `BOWER_AUTH_MODE` | No | `entra` (default) or `development` (local only; the API rejects it outside Development). |
 | `BOWER_ENTRA_TENANT_ID`, `BOWER_ENTRA_CLIENT_ID`, `BOWER_ENTRA_API_SCOPE` | For `entra` | Public SPA settings from the app registrations. |
 | `BOWER_ENTRA_REDIRECT_URI` | No | Defaults to the page origin. |
+| `BOWER_DNS_RESOLVER` | No | DNS server for the upstream lookup. Defaults to the container's `/etc/resolv.conf` nameserver (Docker's `127.0.0.11`, the cluster DNS in Kubernetes). |
 
 How it works:
 
@@ -36,6 +37,8 @@ How it works:
 - nginx listens on 8080 as uid 101, serves hashed assets with long-lived caching and
   everything else `no-store`, falls back to `index.html` for client-side routes, and
   sets the same security headers and CSP as the API.
+- The API host is resolved per request, so the console starts and serves pages
+  even before the API is reachable (API calls return 502 until it is).
 - `/healthz` backs the image `HEALTHCHECK`.
 
 When the API runs behind this proxy, include the upstream host name in the API's

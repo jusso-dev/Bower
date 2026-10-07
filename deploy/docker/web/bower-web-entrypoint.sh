@@ -57,7 +57,20 @@ CONFIG
 
 # Strip a trailing slash so proxy_pass keeps the /api/ prefix.
 BOWER_API_UPSTREAM="${BOWER_API_UPSTREAM%/}"
-export BOWER_API_UPSTREAM
-envsubst '${BOWER_API_UPSTREAM}' < /etc/bower-web/nginx.conf.template > /tmp/bower-web/nginx.conf
+
+# nginx needs an explicit resolver for runtime lookups: use the container's nameserver.
+if [ -z "${BOWER_DNS_RESOLVER:-}" ]; then
+  BOWER_DNS_RESOLVER="$(awk '/^nameserver/ { print $2; exit }' /etc/resolv.conf)"
+fi
+if ! printf '%s' "${BOWER_DNS_RESOLVER:-}" | grep -Eq '^[0-9A-Fa-f.:]+$'; then
+  echo "Could not determine a DNS resolver; set BOWER_DNS_RESOLVER to an IP address." >&2
+  exit 1
+fi
+case "$BOWER_DNS_RESOLVER" in
+  *:*) BOWER_DNS_RESOLVER="[$BOWER_DNS_RESOLVER]" ;;
+esac
+
+export BOWER_API_UPSTREAM BOWER_DNS_RESOLVER
+envsubst '${BOWER_API_UPSTREAM} ${BOWER_DNS_RESOLVER}' < /etc/bower-web/nginx.conf.template > /tmp/bower-web/nginx.conf
 
 exec nginx -c /tmp/bower-web/nginx.conf -g 'daemon off;'
