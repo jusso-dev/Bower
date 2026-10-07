@@ -1,0 +1,72 @@
+# Rendered at container start by bower-web-entrypoint.sh. Runs unprivileged on a
+# read-only root filesystem: everything writable lives under /tmp.
+worker_processes auto;
+pid /tmp/nginx.pid;
+error_log /dev/stderr warn;
+
+events {
+  worker_connections 1024;
+}
+
+http {
+  include /etc/nginx/mime.types;
+  default_type application/octet-stream;
+  server_tokens off;
+  sendfile on;
+  access_log off;
+
+  client_body_temp_path /tmp/client_temp;
+  proxy_temp_path /tmp/proxy_temp;
+  fastcgi_temp_path /tmp/fastcgi_temp;
+  uwsgi_temp_path /tmp/uwsgi_temp;
+  scgi_temp_path /tmp/scgi_temp;
+
+  client_max_body_size 600k;
+
+  map $uri $bower_cache_control {
+    ~^/assets/ "public, max-age=31536000, immutable";
+    default "no-store";
+  }
+
+  # Resolve the API at request time so the console starts even when the API is not
+  # up yet (Compose start order, rolling restarts). Nameserver comes from resolv.conf.
+  resolver ${BOWER_DNS_RESOLVER} valid=30s;
+
+  server {
+    listen 8080;
+    root /usr/share/nginx/html;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; font-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self' https://login.microsoftonline.com; frame-src https://login.microsoftonline.com;" always;
+    add_header Cache-Control $bower_cache_control always;
+
+    location = /healthz {
+      access_log off;
+      default_type text/plain;
+      return 200 "ok\n";
+    }
+
+    # Runtime configuration written at start-up from BOWER_* variables.
+    location = /config.js {
+      alias /tmp/bower-web/config.js;
+      default_type application/javascript;
+    }
+
+    # Same-origin API: the browser never needs CORS or a second hostname.
+    location /api/ {
+      set $bower_api_upstream ${BOWER_API_UPSTREAM};
+      proxy_pass $bower_api_upstream;
+      proxy_http_version 1.1;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
+      proxy_read_timeout 60s;
+    }
+
+    location / {
+      try_files $uri /index.html;
+    }
+  }
+}

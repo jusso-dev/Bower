@@ -515,6 +515,13 @@
           "Bower.Source.Aws": "[1.0.0, )"
         }
       },
+      "bower.agent.docker": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Persistence": "[1.0.0, )",
+          "Bower.Source.Docker": "[1.0.0, )"
+        }
+      },
       "bower.analytics": {
         "type": "Project",
         "dependencies": {
@@ -634,6 +641,13 @@
         }
       },
       "bower.source.aws": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Contracts": "[1.0.0, )"
+        }
+      },
+      "bower.source.docker": {
         "type": "Project",
         "dependencies": {
           "Bower.Abstractions": "[1.0.0, )",

@@ -9,5 +9,10 @@
 | `Newtonsoft.Json` 13.0.4 (pinned) | `Bower.Jobs` | Hangfire.Core accepts Newtonsoft.Json ≥ 11.0.1, which has GHSA-5crp-9r3c-p9vr. Pinning a patched version removes the vulnerable resolution. Not used by Bower code. | None; required by Hangfire's serializer. |
 | `Microsoft.AspNetCore.TestHost` | Tests only | Runs the collector and management API in-process for HTTP, authentication and rate-limit tests. | `Microsoft.AspNetCore.Mvc.Testing` (needs a single `Program` entry point per test assembly). |
 
+| `nginxinc/nginx-unprivileged` (container base image) | `Dockerfile.web` | Serves the static console as a non-root user on a read-only filesystem, with runtime config. Official NGINX image. | Serving from the management API only (still supported); Caddy (no official unprivileged image). |
+
+`Bower.Agent.Docker` uses the ASP.NET Core shared framework (`FrameworkReference`)
+for the generic host, logging and `IHttpClientFactory`, so it adds no NuGet packages.
+
 Review these when upgrading: Hangfire 2.x, a Hangfire release that drops the
 Newtonsoft.Json floor, or a move to durable job storage.

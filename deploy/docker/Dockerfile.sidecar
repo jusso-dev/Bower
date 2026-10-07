@@ -1,0 +1,40 @@
+# Bower Docker sidecar: tails opted-in container logs from Docker's read-only
+# json-file directory and forwards security events to a Bower collector.
+#
+# Runs as a non-root user (uid 1654). Docker's container directory is root-only
+# (0710/0600), so the sidecar executable carries one file capability,
+# CAP_DAC_READ_SEARCH (read and traverse only; it cannot write, chown or kill).
+# The container must add that capability and must not set no-new-privileges,
+# which blocks file capabilities. The chiseled runtime has no shell and no
+# setuid binaries, so no other binary can gain privileges.
+FROM mcr.microsoft.com/dotnet/sdk:10.0.401 AS build
+ARG TARGETARCH
+WORKDIR /src
+COPY . .
+RUN dotnet restore src/Bower.Agent.Docker/Bower.Agent.Docker.csproj --locked-mode
+RUN RID="linux-$([ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64)" \
+    && dotnet publish src/Bower.Agent.Docker/Bower.Agent.Docker.csproj \
+        --configuration Release \
+        --no-restore \
+        --runtime "$RID" \
+        --self-contained true \
+        --output /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libcap2-bin \
+    && setcap cap_dac_read_search+ep /app/Bower.Agent.Docker \
+    && getcap /app/Bower.Agent.Docker \
+    && mkdir -p /state
+
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0.12-noble-chiseled AS runtime
+WORKDIR /app
+COPY --from=build /app .
+COPY --from=build --chown=1654:1654 /state /var/lib/bower-sidecar
+USER 1654:1654
+ENV BOWER_DOCKER_ROOT=/var/lib/docker/containers \
+    BOWER_SIDECAR_STATE=/var/lib/bower-sidecar/cursors.db \
+    BOWER_SIDECAR_HEARTBEAT=/tmp/bower-sidecar/heartbeat \
+    DOTNET_gcServer=0
+VOLUME ["/var/lib/bower-sidecar"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
+  CMD ["/app/Bower.Agent.Docker", "--healthcheck"]
+ENTRYPOINT ["/app/Bower.Agent.Docker"]

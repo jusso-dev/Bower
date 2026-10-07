@@ -1,0 +1,54 @@
+# Bower management API plus the standalone console image.
+# The console is configured at start-up; the same image works in every tenant.
+services:
+  bower-management:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.management
+      args:
+        BOWER_ENTRA_TENANT_ID: ${BOWER_ENTRA_TENANT_ID:?set BOWER_ENTRA_TENANT_ID}
+        BOWER_ENTRA_CLIENT_ID: ${BOWER_ENTRA_CLIENT_ID:?set BOWER_ENTRA_CLIENT_ID}
+        BOWER_ENTRA_API_SCOPE: ${BOWER_ENTRA_API_SCOPE:?set BOWER_ENTRA_API_SCOPE}
+        BOWER_ENTRA_REDIRECT_URI: ${BOWER_ENTRA_REDIRECT_URI:?set BOWER_ENTRA_REDIRECT_URI}
+    read_only: true
+    restart: unless-stopped
+    environment:
+      Bower__Entra__TenantId: ${BOWER_ENTRA_TENANT_ID}
+      Bower__Entra__Audience: ${BOWER_ENTRA_AUDIENCE:?set BOWER_ENTRA_AUDIENCE}
+      # Requests arrive through the console proxy with this upstream host name.
+      AllowedHosts: bower-management;${BOWER_MANAGEMENT_HOST:-localhost}
+    volumes:
+      - bower-management-data:/var/lib/bower-management
+    tmpfs:
+      - /tmp:size=16m,mode=1770
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  bower-web:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.web
+    read_only: true
+    restart: unless-stopped
+    depends_on:
+      - bower-management
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      BOWER_API_UPSTREAM: http://bower-management:4320
+      BOWER_AUTH_MODE: entra
+      BOWER_ENTRA_TENANT_ID: ${BOWER_ENTRA_TENANT_ID}
+      BOWER_ENTRA_CLIENT_ID: ${BOWER_ENTRA_CLIENT_ID}
+      BOWER_ENTRA_API_SCOPE: ${BOWER_ENTRA_API_SCOPE}
+      BOWER_ENTRA_REDIRECT_URI: ${BOWER_ENTRA_REDIRECT_URI}
+    tmpfs:
+      - /tmp:size=8m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  bower-management-data:

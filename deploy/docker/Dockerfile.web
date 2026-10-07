@@ -1,0 +1,19 @@
+# Standalone Bower management console: static files on unprivileged nginx,
+# configured at container start. One image serves every environment.
+FROM node:24-alpine AS build
+WORKDIR /src
+COPY ui/Bower.Management.Web/package.json ui/Bower.Management.Web/package-lock.json ./
+RUN npm ci --ignore-scripts
+COPY ui/Bower.Management.Web/ ./
+# Entra settings are injected at runtime through /config.js, not baked in here.
+RUN npm run build
+
+FROM nginxinc/nginx-unprivileged:1.31-alpine AS runtime
+COPY --from=build /src/dist /usr/share/nginx/html
+COPY deploy/docker/web/nginx.conf.template /etc/bower-web/nginx.conf.template
+COPY --chmod=0755 deploy/docker/web/bower-web-entrypoint.sh /usr/local/bin/bower-web-entrypoint.sh
+USER 101
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
+  CMD wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1
+ENTRYPOINT ["/usr/local/bin/bower-web-entrypoint.sh"]
