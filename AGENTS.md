@@ -30,6 +30,8 @@ control plane, or runtime AI filter.
 - `src/Bower.Source.Ama`: Azure Monitor Agent companion discovery and custom log mapping.
 - `src/Bower.Dcr`: Data Collection Rule optimiser and health assessment.
 - `src/Bower.Agent.Aws`: native EC2 host telemetry agent with IMDS enrichment.
+- `src/Bower.Source.Docker`: read-only Docker json-file discovery, tailing and event mapping.
+- `src/Bower.Agent.Docker`: Docker sidecar that forwards opted-in container security events.
 - `schemas`, `policies`, `deploy`, `docs`, `tests`: versioned product assets.
 
 Inspect nearest `AGENTS.md` before editing.

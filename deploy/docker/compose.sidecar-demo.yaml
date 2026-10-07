@@ -1,0 +1,72 @@
+# End-to-end demo: a collector, the Docker sidecar and a "legacy" container that
+# prints SSH-style failures and one Bower JSON event. Run from the repository root:
+#
+#   export BOWER_INGEST_TOKEN="$(dotnet run --project src/Bower.Cli -- token generate)"
+#   docker compose -f deploy/docker/compose.sidecar-demo.yaml up --build
+#
+# Then inspect the collector queue: curl -H "Authorization: Bearer $BOWER_INGEST_TOKEN" \
+#   http://127.0.0.1:4319/v1/status
+name: bower-sidecar-demo
+services:
+  bower-collector:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    read_only: true
+    ports:
+      - "127.0.0.1:4319:4319"
+    environment:
+      BOWER_INGEST_TOKEN: ${BOWER_INGEST_TOKEN:?set BOWER_INGEST_TOKEN}
+      BOWER_COLLECTOR_ID: demo-collector
+      BOWER_OUTPUT: ama-spool
+      BOWER_AMA_SPOOL_PATH: /var/spool/bower
+    volumes:
+      - demo-data:/var/lib/bower
+      - demo-spool:/var/spool/bower
+    tmpfs:
+      - /tmp:size=16m,mode=1770
+    cap_drop:
+      - ALL
+
+  bower-sidecar:
+    extends:
+      file: compose.sidecar.yaml
+      service: bower-sidecar
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.sidecar
+    environment:
+      BOWER_SIDECAR_ID: demo-sidecar
+      BOWER_ENVIRONMENT: demo
+      BOWER_POLL_SECONDS: "2"
+    depends_on:
+      - bower-collector
+
+  legacy-app:
+    image: alpine:3.24
+    labels:
+      bower.collect: "true"
+      bower.application: legacy-ssh-gateway
+      bower.environment: demo
+    command:
+      - sh
+      - -c
+      - |
+        sleep 8
+        i=0
+        while true; do
+          i=$$((i + 1))
+          echo "Server listening on 0.0.0.0 port 22 (heartbeat $$i)"
+          echo "Failed password for invalid user admin$$i from 203.0.113.$$((i % 250 + 1)) port 4$$i ssh2"
+          echo "error: maximum authentication attempts exceeded for root from 198.51.100.7 port 22 ssh2 [preauth]"
+          sleep 5
+        done
+
+  unlabelled-app:
+    image: alpine:3.24
+    command: ["sh", "-c", "while true; do echo 'Failed password for root from 192.0.2.99 port 22 ssh2'; sleep 5; done"]
+
+volumes:
+  demo-data:
+  demo-spool:
+  bower-sidecar-state:

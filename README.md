@@ -117,6 +117,8 @@ Full design: [architecture](docs/architecture/overview.md).
 | AMA companion spool | Implemented |
 | Logs Ingestion API | Real Azure SDK client implemented; tenant test required |
 | Docker, systemd, Kubernetes | Baseline deployment assets |
+| Console container | Standalone nginx image configured at runtime (`Dockerfile.web`) |
+| Docker sidecar | Read-only collection from opted-in containers' json-file logs (`Bower.Agent.Docker`) |
 | Management UI and API | Fleet inventory, approval, health, audit, custom-log parser generation and Entra app-role RBAC implemented |
 | AI-assisted custom log parser generator | Deterministic local JSON, CSV, key/value and common-regex inference with OCSF/ASIM mappings and redacted preview |
 | Windows Service self-install | Not implemented |
@@ -233,6 +235,32 @@ docker compose -f deploy/docker/compose.homelab.yaml up --build
 This starts a collector on `127.0.0.1:4319` and the development-auth console on
 `127.0.0.1:4320`. It is a homelab preview; production management requires Entra ID
 (see [management identity and RBAC](docs/security/management-identity-and-rbac.md)).
+
+For production, run the console as its own container configured at start-up —
+`deploy/docker/compose.console.yaml` pairs it with the management API. See
+[standalone console image](docs/deployment/console-image.md).
+
+### 6. Collect security events from an existing Docker stack
+
+Add the sidecar to any Compose stack and label the containers it may read:
+
+```bash
+docker build -f deploy/docker/Dockerfile.sidecar -t bower-sidecar:local .
+docker compose -f compose.yaml -f /path/to/bower/deploy/docker/compose.sidecar.yaml up -d
+```
+
+```yaml
+services:
+  ssh-gateway:
+    labels:
+      bower.collect: "true"
+```
+
+The sidecar reads Docker's json-file logs through a read-only mount (no Docker
+socket), forwards Bower JSON events and recognised sign-in failures and lockouts, and
+drops everything else. Try the full flow with
+`docker compose -f deploy/docker/compose.sidecar-demo.yaml up --build`. Details:
+[Docker sidecar](docs/deployment/docker-sidecar.md).
 
 ## Collector configuration
 

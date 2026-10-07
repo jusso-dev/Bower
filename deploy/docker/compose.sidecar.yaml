@@ -1,0 +1,48 @@
+# Add Bower's Docker sidecar to an existing Compose stack. Build the image once from
+# the Bower repository root:
+#
+#   docker build -f deploy/docker/Dockerfile.sidecar -t bower-sidecar:local .
+#
+# then merge this file into your stack:
+#
+#   docker compose -f compose.yaml -f /path/to/bower/deploy/docker/compose.sidecar.yaml up -d
+#
+# Then label each container whose logs Bower should read:
+#
+#   labels:
+#     bower.collect: "true"
+#     bower.application: customer-portal   # optional, defaults to the container name
+#     bower.environment: production        # optional
+#
+# The sidecar only forwards Bower JSON events and recognised authentication
+# signals; every other line is dropped. Events go to a Bower collector, which
+# redacts and applies policy before anything is stored or delivered.
+services:
+  bower-sidecar:
+    image: ${BOWER_SIDECAR_IMAGE:-bower-sidecar:local}
+    restart: unless-stopped
+    read_only: true
+    environment:
+      BOWER_COLLECTOR_URL: ${BOWER_COLLECTOR_URL:-http://bower-collector:4319}
+      BOWER_INGEST_TOKEN: ${BOWER_INGEST_TOKEN:?set BOWER_INGEST_TOKEN to the collector ingest token}
+      BOWER_SIDECAR_ID: ${BOWER_SIDECAR_ID:-docker-sidecar}
+      BOWER_ENVIRONMENT: ${BOWER_ENVIRONMENT:-production}
+      # true replays existing container history on first start; default reads new lines only.
+      BOWER_DOCKER_READ_EXISTING: ${BOWER_DOCKER_READ_EXISTING:-false}
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - bower-sidecar-state:/var/lib/bower-sidecar
+    tmpfs:
+      - /tmp:size=8m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  bower-sidecar-state:

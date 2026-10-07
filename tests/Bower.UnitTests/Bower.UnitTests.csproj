@@ -13,7 +13,9 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <ProjectReference Include="../../src/Bower.Agent.Docker/Bower.Agent.Docker.csproj" />
     <ProjectReference Include="../../src/Bower.Collector/Bower.Collector.csproj" />
+    <ProjectReference Include="../../src/Bower.Source.Docker/Bower.Source.Docker.csproj" />
     <ProjectReference Include="../../src/Bower.Core/Bower.Core.csproj" />
     <ProjectReference Include="../../src/Bower.Output.AmaSpool/Bower.Output.AmaSpool.csproj" />
     <ProjectReference Include="../../src/Bower.Management.Api/Bower.Management.Api.csproj" />

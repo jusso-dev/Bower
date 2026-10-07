@@ -11,6 +11,7 @@ import {
   useContext,
   useMemo
 } from "react";
+import { bowerConfig } from "./runtimeConfig";
 
 interface AuthContextValue {
   accountName: string;
@@ -22,11 +23,11 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-const development = import.meta.env.VITE_BOWER_AUTH_MODE === "development";
-const tenantId = import.meta.env.VITE_BOWER_ENTRA_TENANT_ID ?? "";
-const clientId = import.meta.env.VITE_BOWER_ENTRA_CLIENT_ID ?? "";
-const apiScope = import.meta.env.VITE_BOWER_ENTRA_API_SCOPE ?? "";
-const redirectUri = import.meta.env.VITE_BOWER_ENTRA_REDIRECT_URI ?? window.location.origin;
+const development = bowerConfig.authMode === "development";
+const tenantId = bowerConfig.entraTenantId;
+const clientId = bowerConfig.entraClientId;
+const apiScope = bowerConfig.entraApiScope;
+const redirectUri = bowerConfig.entraRedirectUri ?? window.location.origin;
 
 let msal: PublicClientApplication | null = null;
 if (!development) {

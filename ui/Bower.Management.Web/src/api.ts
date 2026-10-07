@@ -1,7 +1,8 @@
 import { useCallback } from "react";
 import { useAuth } from "./auth";
+import { bowerConfig } from "./runtimeConfig";
 
-const baseUrl = import.meta.env.VITE_BOWER_API_BASE_URL ?? "";
+const baseUrl = bowerConfig.apiBaseUrl;
 
 export class ApiError extends Error {
   constructor(

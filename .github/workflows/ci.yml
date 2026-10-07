@@ -88,6 +88,17 @@ jobs:
       - uses: actions/checkout@v7
       - run: docker build -f deploy/docker/Dockerfile -t bower-collector:ci .
       - run: docker build -f deploy/docker/Dockerfile.management -t bower-management:ci --build-arg BOWER_AUTH_MODE=development .
+      - run: docker build -f deploy/docker/Dockerfile.web -t bower-web:ci .
+      - run: docker build -f deploy/docker/Dockerfile.sidecar -t bower-sidecar:ci .
+      - name: Smoke-test console image
+        run: |
+          docker network create bower-ci
+          docker run -d --name bower-web --network bower-ci --read-only --tmpfs /tmp --cap-drop ALL \
+            -e BOWER_API_UPSTREAM=http://bower-management:4320 -e BOWER_AUTH_MODE=development bower-web:ci
+          sleep 3
+          docker run --rm --network bower-ci curlimages/curl:8.11.1 -sf http://bower-web:8080/healthz
+          docker run --rm --network bower-ci curlimages/curl:8.11.1 -sf http://bower-web:8080/config.js | grep -q '"authMode": "development"'
+          docker run --rm --network bower-ci curlimages/curl:8.11.1 -sf -o /dev/null http://bower-web:8080/jobs
 
   publish:
     needs: build-test

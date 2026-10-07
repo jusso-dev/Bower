@@ -1,0 +1,26 @@
+# Bower Docker sidecar: tails opted-in container logs from Docker's read-only
+# json-file directory and forwards security events to a Bower collector.
+FROM mcr.microsoft.com/dotnet/sdk:10.0.401 AS build
+WORKDIR /src
+COPY . .
+RUN dotnet restore src/Bower.Agent.Docker/Bower.Agent.Docker.csproj --locked-mode
+RUN dotnet publish src/Bower.Agent.Docker/Bower.Agent.Docker.csproj \
+    --configuration Release \
+    --no-restore \
+    --output /app
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.12 AS runtime
+WORKDIR /app
+COPY --from=build /app .
+RUN mkdir -p /var/lib/bower-sidecar && chmod 0700 /var/lib/bower-sidecar
+# Docker's log files are root-owned (0640, directories 0710), so the sidecar runs as
+# uid 0 to read them. Run it with every capability dropped, a read-only root
+# filesystem and the log directory mounted read-only (see compose.sidecar.yaml).
+ENV BOWER_DOCKER_ROOT=/var/lib/docker/containers \
+    BOWER_SIDECAR_STATE=/var/lib/bower-sidecar/cursors.db \
+    BOWER_SIDECAR_HEARTBEAT=/tmp/bower-sidecar/heartbeat \
+    DOTNET_gcServer=0
+VOLUME ["/var/lib/bower-sidecar"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
+  CMD ["dotnet", "Bower.Agent.Docker.dll", "--healthcheck"]
+ENTRYPOINT ["dotnet", "Bower.Agent.Docker.dll"]
