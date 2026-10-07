@@ -95,6 +95,26 @@ test("capture background jobs view", async ({ page }, testInfo) => {
   });
 });
 
+test("capture custom log parser workbench", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "readme-chromium");
+  await page.goto("/pipelines");
+  await page.getByLabel("Sample records").fill(
+    [
+      '{"timestamp":"2026-10-07T09:58:12Z","severity":"warning","user":"alex@example.test","source_ip":"192.0.2.10","action":"login","result":"failure"}',
+      '{"timestamp":"2026-10-07T09:58:40Z","severity":"info","user":"sam@example.test","source_ip":"198.51.100.7","action":"login","result":"success"}'
+    ].join("\n")
+  );
+  await page.getByRole("button", { name: "Infer parser and schema" }).click();
+  await expect(page.getByRole("heading", { name: "Live transformation preview" })).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: path.join(screenshotDirectory, "bower-management-pipelines.png"),
+    fullPage: true,
+    animations: "disabled"
+  });
+});
+
 test("capture polished mobile fleet view", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile-chromium");
   await page.goto("/");
