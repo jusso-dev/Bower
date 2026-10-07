@@ -34,10 +34,14 @@ services:
       - bower-sidecar-state:/var/lib/bower-sidecar
     tmpfs:
       - /tmp:size=8m,mode=1777
-    security_opt:
-      - no-new-privileges:true
+    # Non-root (uid 1654) with a single read-only capability. The sidecar binary holds
+    # CAP_DAC_READ_SEARCH as a file capability so it can list Docker's root-only
+    # container directory. no-new-privileges must stay off: it blocks file
+    # capabilities. The chiseled image has no shell or setuid binaries.
     cap_drop:
       - ALL
+    cap_add:
+      - DAC_READ_SEARCH
     logging:
       driver: json-file
       options:

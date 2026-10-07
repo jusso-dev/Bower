@@ -102,9 +102,17 @@ docker compose -f deploy/docker/compose.sidecar-demo.yaml up --build
 
 - **No Docker socket.** The sidecar reads `/var/lib/docker/containers` mounted
   read-only. It cannot list, start, stop or exec containers.
-- **Least privilege.** Docker's log files are root-owned, so the process runs as
-  uid 0 but with every capability dropped, `no-new-privileges`, and a read-only root
-  filesystem.
+- **Non-root.** The process runs as uid 1654 on a chiseled image (no shell, no
+  setuid binaries) with a read-only root filesystem and every capability dropped
+  except `DAC_READ_SEARCH`, which only bypasses read and directory-traverse checks.
+  Docker's container directory is root-only (`0710`, metadata `0600`), so that one
+  capability is required to list containers and read their labels.
+- **Why `no-new-privileges` is off.** Docker never grants added capabilities to a
+  non-root user directly; the sidecar binary carries `cap_dac_read_search` as a
+  file capability instead, and `no-new-privileges` blocks file capabilities. With
+  nothing else in the image able to gain privileges, the effective result is one
+  read-only capability. Without `cap_add: DAC_READ_SEARCH` the binary refuses to
+  start (`operation not permitted`).
 - **Opt-in only.** Containers without `bower.collect=true` are never read.
 - **Token handling.** The ingest token is sent only as a bearer header and is never
   logged.
@@ -116,5 +124,7 @@ docker compose -f deploy/docker/compose.sidecar-demo.yaml up --build
 - Docker Desktop and OrbStack keep container logs inside their Linux VM; the bind
   mount works when the daemon resolves `/var/lib/docker/containers` inside that VM
   (verified on Docker 29 with the demo stack).
-- Rootless Docker and user-namespace remapping store logs elsewhere and map uid 0;
-  set `BOWER_DOCKER_ROOT` and permissions accordingly.
+- Rootless Docker and user-namespace remapping store logs elsewhere; set
+  `BOWER_DOCKER_ROOT` accordingly.
+- Kubernetes Pod Security "restricted" disallows `DAC_READ_SEARCH`; the sidecar
+  targets Docker and Compose hosts.

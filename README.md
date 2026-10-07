@@ -256,9 +256,9 @@ services:
       bower.collect: "true"
 ```
 
-The sidecar reads Docker's json-file logs through a read-only mount (no Docker
-socket), forwards Bower JSON events and recognised sign-in failures and lockouts, and
-drops everything else. Try the full flow with
+The sidecar runs as a non-root user and reads Docker's json-file logs through a
+read-only mount (no Docker socket). It forwards Bower JSON events and recognised
+sign-in failures and lockouts, and drops everything else. Try the full flow with
 `docker compose -f deploy/docker/compose.sidecar-demo.yaml up --build`. Details:
 [Docker sidecar](docs/deployment/docker-sidecar.md).
 

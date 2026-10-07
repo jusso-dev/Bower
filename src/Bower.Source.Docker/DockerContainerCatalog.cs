@@ -44,11 +44,22 @@ public static class DockerContainerCatalog
                 $"Docker container directory not found: {options.Root}. Mount it read-only.");
         }
 
+        string[] directories;
+        try
+        {
+            directories = System.IO.Directory.GetDirectories(options.Root);
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            throw new UnauthorizedAccessException(
+                $"Cannot list {options.Root}. Run the sidecar with cap_add DAC_READ_SEARCH and " +
+                "without no-new-privileges, or as root.",
+                exception);
+        }
+
         List<DockerContainer> containers = [];
         int skipped = 0;
-        foreach (string directory in System.IO.Directory
-                     .EnumerateDirectories(options.Root)
-                     .Order(StringComparer.Ordinal))
+        foreach (string directory in directories.Order(StringComparer.Ordinal))
         {
             string id = Path.GetFileName(directory);
             if (!IsContainerId(id))
