@@ -5,7 +5,8 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=notify
+# The collector does not send sd_notify readiness, so systemd must not wait for it.
+Type=exec
 User=bower
 Group=bower
 WorkingDirectory=/opt/bower
@@ -15,6 +16,7 @@ RestartSec=5s
 Environment=BOWER_LISTEN_URL=http://127.0.0.1:4319
 Environment=BOWER_QUEUE_PATH=/var/lib/bower/queue.db
 Environment=BOWER_POLICY_DIRECTORY=/etc/bower/policies
+# Put BOWER_INGEST_TOKEN_FILE, output and management settings here (mode 0600).
 EnvironmentFile=-/etc/bower/bower.env
 StateDirectory=bower
 LogsDirectory=bower
@@ -30,7 +32,7 @@ ProtectControlGroups=true
 RestrictSUIDSGID=true
 RestrictNamespaces=true
 LockPersonality=true
-MemoryDenyWriteExecute=true
+# MemoryDenyWriteExecute is omitted: the .NET JIT needs executable memory mappings.
 ReadWritePaths=/var/lib/bower /var/spool/bower
 
 [Install]

@@ -29,12 +29,12 @@ platform, SIEM, or replacement for Azure Monitor Agent.
 
 Bower is built for Australian security operations. Before any event is
 persisted or forwarded, the **Privacy & Secret Protection Engine** inspects
-every string field with deterministic pattern matching, checksum validation and
+every string and number value, and every property name, with deterministic pattern matching, checksum validation and
 policy actions (no AI at runtime):
 
 | Australian identifiers | Validation |
 |---|---|
-| Tax File Numbers (TFN) | ATO 8/9-digit checksum; default SHA-256 |
+| Tax File Numbers (TFN) | ATO 8/9-digit checksum; default masked to last 4 digits |
 | Centrelink CRN | Pattern (digits + check letter) |
 | Medicare numbers | Official check digit + issue number |
 | Individual Healthcare Identifiers (IHI) | `800360…` + Luhn |
@@ -106,9 +106,10 @@ Full design: [architecture](docs/architecture/overview.md).
 | Windows | `win-x64`, `win-arm64` publishing configured by release workflow |
 | Linux | `linux-x64`, `linux-arm64` publishing configured by release workflow |
 | macOS | `osx-x64`, `osx-arm64` publishing configured by release workflow |
-| Local collector HTTP | Implemented; loopback default |
+| Local collector HTTP | Implemented; loopback default; bearer-token ingest auth and rate limiting off-host |
 | Privacy & Secret Protection Engine | Implemented; AU identifiers (TFN, CRN, Medicare, IHI, ABN/ACN, …), secrets, crypto; policy actions + metadata; high-risk findings emit `sensitive_data_detected` for SOC |
-| Durable SQLite queue | Implemented |
+| Durable SQLite queue | Implemented; retention purge, undelivered-byte cap, attempt-limited dead-lettering |
+| Background jobs | Hangfire (in-memory) for retention, maintenance, heartbeat and staleness |
 | AMA companion spool | Implemented |
 | Logs Ingestion API | Real Azure SDK client implemented; tenant test required |
 | Docker, systemd, Kubernetes | Baseline deployment assets |
@@ -119,15 +120,24 @@ Full design: [architecture](docs/architecture/overview.md).
 | File, REST, Event Log sources | Not implemented |
 | Sentinel query proof/evidence bundle | Not implemented |
 
-## Quick start
+## Getting started
 
-Requires .NET 10 SDK.
+Requires the .NET 10 SDK (`10.0.401`, pinned in `global.json`) and Node.js 24 for
+the console. Everything below runs locally with synthetic data.
+
+### 1. Build and test
 
 ```bash
 dotnet restore
 dotnet build --configuration Release
 dotnet test --configuration Release
+```
 
+### 2. Run a collector and send a canary event
+
+A collector bound to loopback accepts events without a token:
+
+```bash
 BOWER_QUEUE_PATH=./artifacts/bower.db \
 BOWER_POLICY_DIRECTORY=./policies/default \
 BOWER_OUTPUT=ama-spool \
@@ -135,21 +145,118 @@ BOWER_AMA_SPOOL_PATH=./artifacts/spool \
 dotnet run --project src/Bower.Collector
 ```
 
-In another shell:
+In another shell, emit a synthetic authentication failure and inspect the queue:
 
 ```bash
 dotnet run --project src/Bower.Cli -- test emit
-dotnet run --project src/Bower.Cli -- queue inspect \
-  --database ./artifacts/bower.db
+dotnet run --project src/Bower.Cli -- queue inspect --database ./artifacts/bower.db
+curl -s http://127.0.0.1:4319/health          # {"status":"healthy"}
 ```
 
-Canary output proves local receipt, policy acceptance and queue/output state only.
-It does not prove Sentinel queryability.
+`test emit` prints the policy decision (`accept`, policy id, hash and score). The
+event is redacted, queued, and written to `./artifacts/spool/ready/` as JSONL for
+Azure Monitor Agent. Canary output proves local receipt, policy acceptance and
+queue/output state only; it does not prove Sentinel queryability.
+
+### 3. Expose the collector to other hosts
+
+Any non-loopback listener requires a shared ingest token; the collector refuses to
+start without one.
+
+```bash
+export BOWER_INGEST_TOKEN="$(dotnet run --project src/Bower.Cli -- token generate)"
+BOWER_LISTEN_URL=http://0.0.0.0:4319 dotnet run --project src/Bower.Collector
+
+# Producers send it as a bearer token. The CLI reads BOWER_INGEST_TOKEN:
+dotnet run --project src/Bower.Cli -- test emit --endpoint http://collector:4319
+curl -s -H "Authorization: Bearer $BOWER_INGEST_TOKEN" http://127.0.0.1:4319/v1/status
+```
+
+In the SDK set `options.LocalCollector.IngestToken` from your secret store. For
+containers, prefer `BOWER_INGEST_TOKEN_FILE` pointing at a mounted secret.
+
+### 4. Run the management console with preview data
+
+```bash
+# Terminal 1: management API in explicit local-only development mode
+ASPNETCORE_ENVIRONMENT=Development BOWER_AUTH_MODE=development \
+BOWER_MANAGEMENT_DB_PATH=./artifacts/management.db \
+dotnet run --project src/Bower.Management.Api
+
+# Terminal 2: console on http://127.0.0.1:5173
+cd ui/Bower.Management.Web
+cp .env.example .env.local
+# Edit .env.local: VITE_BOWER_AUTH_MODE=development (local development only)
+npm ci
+npm run dev
+
+# Terminal 3: synthetic collectors, approvals, heartbeats and job reports
+cd ui/Bower.Management.Web && npm run seed:preview
+```
+
+The seed script refuses to run unless the API reports development
+authentication. Then walk through the console:
+
+1. **Overview** shows exceptions first: the pending `hr-app-02`, the degraded
+   `claims-api-03` (1,294 queued) and the suspended `records-app-04`.
+2. **Approvals** — enter a reason and approve `hr-app-02`. The decision lands in
+   history and in **Audit**.
+3. **Jobs** shows the management `collector-staleness` job (administrators can
+   *Run now*) and each collector's retention, maintenance and heartbeat jobs.
+   `claims-api-03` reports a failed retention run.
+4. **Pipelines** — paste a JSON log line and choose *Infer parser and schema* to
+   see the generated parser and a redacted preview.
+
+### 5. Run the full stack in Docker
+
+```bash
+export BOWER_INGEST_TOKEN="$(dotnet run --project src/Bower.Cli -- token generate)"
+docker compose -f deploy/docker/compose.homelab.yaml up --build
+```
+
+This starts a collector on `127.0.0.1:4319` and the development-auth console on
+`127.0.0.1:4320`. It is a homelab preview; production management requires Entra ID
+(see [management identity and RBAC](docs/security/management-identity-and-rbac.md)).
+
+## Collector configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `BOWER_LISTEN_URL` | `http://127.0.0.1:4319` | HTTP listener. Non-loopback requires a token. |
+| `BOWER_INGEST_TOKEN` / `BOWER_INGEST_TOKEN_FILE` | — | Shared bearer token (≥ 32 characters) for `/v1/events` and `/v1/status`. |
+| `BOWER_ALLOW_UNAUTHENTICATED_INGEST` | `false` | Explicit opt-out for isolated networks only. |
+| `BOWER_INGEST_RATE_PER_SECOND` | `500` | Token-bucket limit (burst 2×); excess returns HTTP 429. |
+| `BOWER_QUEUE_PATH` | `./data/bower.db` | SQLite queue. |
+| `BOWER_QUEUE_MAX_BYTES` | 10 GiB | Cap on **undelivered** bytes; excess returns HTTP 503. |
+| `BOWER_QUEUE_RETENTION_HOURS` | `168` | How long acknowledged events stay for duplicate detection. |
+| `BOWER_MAX_DELIVERY_ATTEMPTS` | `20` | Retryable failures dead-letter after this many leases. |
+| `BOWER_POLICY_DIRECTORY` | `./policies/default` | Versioned policy YAML. |
+| `BOWER_OUTPUT` | `none` | `none`, `ama-spool` or `azure-logs-ingestion`. |
+| `BOWER_AZURE_CREDENTIAL` | `managed-identity` | `managed-identity`, `workload-identity`, `environment` or `azure-cli`. |
+| `BOWER_AZURE_CLIENT_ID` | — | User-assigned managed identity client id. |
+| `BOWER_MANAGEMENT_ENDPOINT` / `BOWER_MANAGEMENT_SCOPE` | — | Enables the heartbeat job. HTTPS required unless loopback. |
+
+## Background jobs
+
+Recurring maintenance runs on [Hangfire](https://www.hangfire.io/) with in-memory
+storage; event delivery stays in the durable queue's low-latency worker.
+
+| Host | Job | Schedule (UTC) |
+|---|---|---|
+| Collector | `queue-retention` — purge acknowledged events past retention | Hourly |
+| Collector | `queue-maintenance` — WAL checkpoint and `PRAGMA optimize` | Daily 03:00 |
+| Collector | `management-heartbeat` — register and report health | Every minute |
+| Management API | `collector-staleness` — flag and audit silent collectors | Every 5 minutes |
+
+Design, observability and how to add a job:
+[background jobs](docs/operations/background-jobs.md). Dependency rationale:
+[dependency decisions](docs/architecture/dependencies.md).
 
 ## Self-contained binaries
 
-Bower pins .NET SDK `10.0.302`. Publish single-file, self-contained executables
-without requiring .NET on the target machine:
+Bower pins .NET SDK `10.0.401` and runs tests on Microsoft.Testing.Platform.
+Publish single-file, self-contained executables without requiring .NET on the
+target machine:
 
 ```bash
 # Choose one:
@@ -279,6 +386,16 @@ Expand any section below for an exhaustive tour of shipped console functionality
 </details>
 
 <details>
+  <summary><strong>Background jobs</strong> — management and collector job schedules, last run, state and an audited run-now control</summary>
+  <p>
+    Shows Hangfire-scheduled maintenance on the management plane and the jobs each
+    collector reports in its heartbeat, including failed runs. Administrators can
+    queue a management job immediately; the action is written to the audit log.
+  </p>
+  <img src="docs/images/bower-management-jobs.png" alt="Bower Management background jobs view listing the collector-staleness job with Run now, and per-collector queue retention, maintenance and heartbeat job states including one failed run">
+</details>
+
+<details>
   <summary><strong>Microsoft Entra ID SSO and group-based RBAC</strong> — current identity, role claims and group-assignable Bower app roles</summary>
   <p>
     The console shows the authenticated session and documents the
@@ -329,9 +446,10 @@ cp .env.example .env.local
 npm ci
 npm run dev
 
-# Against a running management deployment:
+# Against a running development-auth deployment (API serving the built console):
+npm run seed:preview
 BOWER_UI_BASE_URL=http://127.0.0.1:4320 npm run test:e2e
-BOWER_UI_BASE_URL=http://127.0.0.1:4320 npm run screenshots
+BOWER_UI_BASE_URL=http://127.0.0.1:4320 npm run screenshots   # refreshes docs/images
 ```
 
 Production Entra setup and collector identity flow:
@@ -400,8 +518,9 @@ decision:
   neverSample: true
 ```
 
-Unknown events are rejected. Missing required investigation context is
-quarantined. Policy response includes ID, version, hash, score and reasons.
+Unknown events are rejected. Every policy must list `eventTypes`; unknown or
+misspelt YAML keys and numeric actions fail the load. Missing required
+investigation context is quarantined. Policy response includes ID, version, hash, score and reasons.
 
 ## Outputs
 
@@ -409,8 +528,8 @@ AMA companion mode writes one UTF-8 JSON object per line through an active
 temporary file and atomic rename into a ready directory. Configure AMA and its
 DCR to watch only ready files. Bower does not modify AMA.
 
-Direct mode uses `Azure.Monitor.Ingestion.LogsIngestionClient` with
-`DefaultAzureCredential`; managed/workload identity is preferred. Set:
+Direct mode uses `Azure.Monitor.Ingestion.LogsIngestionClient` with one explicit
+credential source (`BOWER_AZURE_CREDENTIAL`, managed identity by default). Set:
 
 ```text
 BOWER_OUTPUT=azure-logs-ingestion
@@ -419,8 +538,10 @@ BOWER_DCR_ID=dcr-<immutable-id>
 BOWER_STREAM_NAME=Custom-BowerSecurity
 ```
 
-Azure upload acknowledgement still needs a Log Analytics query before evidence
-can claim end-to-end delivery.
+Failed uploads map back to their exact events; unattributable failures retry the
+whole batch, never count as delivered. Azure upload acknowledgement
+(`azure-logs-ingestion:accepted:<request-id>`) still needs a Log Analytics query
+before evidence can claim end-to-end delivery.
 
 ## SQL Server source adapter
 
@@ -436,7 +557,12 @@ Supported cursors:
 - composite timestamp plus sequence.
 
 Fingerprints remain stable across overlap replay. A saturated overlap window
-fails explicitly instead of silently skipping records. Cursor checkpoints use
+fails explicitly instead of silently skipping records. Incrementing and composite
+cursors do not advance past rows newer than `CommitSettleDelay` (default 5 s), so
+identity values that commit out of order are not skipped. Records larger than
+`MaximumRecordBytes` drop their previous/new values and set `ValuesOmitted`
+instead of blocking the source (`OversizedRecords = Fail` restores the old
+behaviour). Cursor checkpoints use
 an EF Core SQLite store with optimistic concurrency and survive process restart.
 Commit a checkpoint only after every selected event in that batch is durably
 persisted.

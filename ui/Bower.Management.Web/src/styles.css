@@ -508,6 +508,11 @@ td small {
   white-space: nowrap;
 }
 
+td small.job-description {
+  max-width: 26rem;
+  white-space: normal;
+}
+
 tbody tr:last-child td {
   border-block-end: 0;
 }
@@ -577,6 +582,14 @@ tbody tr:last-child td {
 
 .health-label--degraded svg {
   color: var(--color-warning);
+}
+
+.health-label--pending svg {
+  color: var(--color-ink-muted);
+}
+
+.health-label--failed svg {
+  color: var(--color-danger);
 }
 
 .empty-state {
@@ -736,8 +749,28 @@ tbody tr:last-child td {
     transform var(--duration-fast) var(--ease-out);
 }
 
+.button:has(svg) {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.button svg {
+  width: 1rem;
+  height: 1rem;
+}
+
 .button:active {
   transform: translateY(1px);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .button:disabled {
@@ -1001,6 +1034,12 @@ tbody tr:last-child td {
   border-color: var(--color-danger);
   background: var(--color-danger-soft);
   color: var(--color-danger);
+}
+
+.alert--positive {
+  border-color: var(--color-positive);
+  background: var(--color-positive-soft);
+  color: var(--color-positive);
 }
 
 .section-gap {

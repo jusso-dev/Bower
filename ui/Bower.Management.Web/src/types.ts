@@ -21,6 +21,15 @@ export interface OutputReport {
   lastErrorCode: string | null;
 }
 
+/** Recurring background job status. Metadata only: never payloads or error text. */
+export interface BackgroundJob {
+  id: string;
+  schedule: string;
+  lastRunAt: string | null;
+  lastState: string | null;
+  nextRunAt: string | null;
+}
+
 export interface Collector {
   id: string;
   machineName: string;
@@ -36,6 +45,7 @@ export interface Collector {
   deliveryStatus: string;
   sources: SourceReport[];
   outputs: OutputReport[];
+  jobs?: BackgroundJob[] | null;
 }
 
 export interface Overview {
