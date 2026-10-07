@@ -1,6 +1,6 @@
 # Standalone Bower management console: static files on unprivileged nginx,
 # configured at container start. One image serves every environment.
-FROM node:26-alpine AS build
+FROM --platform=$BUILDPLATFORM node:26-alpine AS build
 WORKDIR /src
 COPY ui/Bower.Management.Web/package.json ui/Bower.Management.Web/package-lock.json ./
 RUN npm ci --ignore-scripts

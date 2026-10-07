@@ -32,6 +32,7 @@ services:
     extends:
       file: compose.sidecar.yaml
       service: bower-sidecar
+    image: bower-sidecar:local
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.sidecar

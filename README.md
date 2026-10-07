@@ -242,10 +242,10 @@ For production, run the console as its own container configured at start-up —
 
 ### 6. Collect security events from an existing Docker stack
 
-Add the sidecar to any Compose stack and label the containers it may read:
+Add the sidecar to any Compose stack and label the containers it may read. The
+compose file uses the published `ghcr.io/jusso-dev/bower-sidecar` image:
 
 ```bash
-docker build -f deploy/docker/Dockerfile.sidecar -t bower-sidecar:local .
 docker compose -f compose.yaml -f /path/to/bower/deploy/docker/compose.sidecar.yaml up -d
 ```
 
@@ -261,6 +261,22 @@ read-only mount (no Docker socket). It forwards Bower JSON events and recognised
 sign-in failures and lockouts, and drops everything else. Try the full flow with
 `docker compose -f deploy/docker/compose.sidecar-demo.yaml up --build`. Details:
 [Docker sidecar](docs/deployment/docker-sidecar.md).
+
+## Container images
+
+Every `main` commit that passes CI publishes multi-arch (`amd64`, `arm64`) images to
+GitHub Container Registry with SBOMs and signed build provenance; `vX.Y.Z` tags
+publish versioned and `latest` tags.
+
+```bash
+docker pull ghcr.io/jusso-dev/bower-collector:edge
+docker pull ghcr.io/jusso-dev/bower-management:edge
+docker pull ghcr.io/jusso-dev/bower-web:edge
+docker pull ghcr.io/jusso-dev/bower-sidecar:edge
+```
+
+Tags, verification and runtime configuration:
+[container images](docs/deployment/container-images.md).
 
 ## Collector configuration
 

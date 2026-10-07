@@ -33,10 +33,13 @@ event shape) — they pass straight through.
 
 ## Install into an existing stack
 
-1. Build the image from the Bower repository root:
+1. Use the published image `ghcr.io/jusso-dev/bower-sidecar` (see
+   [container images](container-images.md)), or build your own from the Bower
+   repository root:
 
    ```bash
    docker build -f deploy/docker/Dockerfile.sidecar -t bower-sidecar:local .
+   export BOWER_SIDECAR_IMAGE=bower-sidecar:local
    ```
 
 2. Label each container whose logs Bower should read:

@@ -127,6 +127,65 @@ public sealed class ManagementApiTests
     }
 
     [Fact]
+    public async Task ConsoleConfig_IsServedAnonymouslyFromSettings()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await StartAsync(
+            directory,
+            cancellationToken,
+            "--Bower:Console:ClientId=11111111-1111-1111-1111-111111111111",
+            "--Bower:Console:ApiScope=api://bower/Bower.Access",
+            "--Bower:Console:RedirectUri=https://bower.example.test/</script>");
+
+        using HttpResponseMessage response = await app.GetTestClient()
+            .GetAsync("/config.js", cancellationToken);
+        string body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.StartsWith("window.__BOWER_CONFIG__ = {", body, StringComparison.Ordinal);
+        Assert.Contains("\"entraClientId\":\"11111111-1111-1111-1111-111111111111\"", body, StringComparison.Ordinal);
+        Assert.Contains("\"entraTenantId\":\"00000000-0000-0000-0000-000000000000\"", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("</script>", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ConsoleAssets_LoadWithoutSignInWhileApiStaysProtected()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string webRoot = Path.Combine(directory.Path, "wwwroot");
+        Directory.CreateDirectory(Path.Combine(webRoot, "assets"));
+        File.WriteAllText(Path.Combine(webRoot, "index.html"), "<!doctype html><div id=\"root\"></div>");
+        File.WriteAllText(Path.Combine(webRoot, "assets", "app.js"), "console.log('bower');");
+        await using WebApplication app = await StartAsync(directory, cancellationToken, $"--webroot={webRoot}");
+        HttpClient anonymous = app.GetTestClient();
+
+        using HttpResponseMessage asset = await anonymous.GetAsync("/assets/app.js", cancellationToken);
+        using HttpResponseMessage index = await anonymous.GetAsync("/", cancellationToken);
+        using HttpResponseMessage deepLink = await anonymous.GetAsync("/jobs", cancellationToken);
+        using HttpResponseMessage api = await anonymous.GetAsync("/api/overview", cancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, asset.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, index.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, deepLink.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, api.StatusCode);
+    }
+
+    [Fact]
+    public async Task ConsoleConfig_IsNotGeneratedWhenUnset()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await StartAsync(directory, cancellationToken);
+
+        using HttpResponseMessage response = await app.GetTestClient()
+            .GetAsync("/config.js", cancellationToken);
+
+        Assert.NotEqual(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
     public async Task StalenessJob_MarksSilentCollectorsOnceAndAudits()
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
@@ -163,13 +222,15 @@ public sealed class ManagementApiTests
 
     private static async Task<WebApplication> StartAsync(
         TemporaryDirectory directory,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        params string[] extraArgs)
     {
         WebApplication app = ManagementApplication.Build(
             [
                 "--Bower:Entra:TenantId=00000000-0000-0000-0000-000000000000",
                 "--Bower:Entra:Audience=api://bower-test",
-                $"--BOWER_MANAGEMENT_DB_PATH={Path.Combine(directory.Path, "management.db")}"
+                $"--BOWER_MANAGEMENT_DB_PATH={Path.Combine(directory.Path, "management.db")}",
+                .. extraArgs
             ],
             builder =>
             {

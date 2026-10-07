@@ -1,9 +1,10 @@
-# Add Bower's Docker sidecar to an existing Compose stack. Build the image once from
-# the Bower repository root:
+# Add Bower's Docker sidecar to an existing Compose stack. It uses the published
+# image (pin a version or digest in production via BOWER_SIDECAR_IMAGE), or build
+# your own from the repository root:
 #
 #   docker build -f deploy/docker/Dockerfile.sidecar -t bower-sidecar:local .
 #
-# then merge this file into your stack:
+# Merge this file into your stack:
 #
 #   docker compose -f compose.yaml -f /path/to/bower/deploy/docker/compose.sidecar.yaml up -d
 #
@@ -19,7 +20,7 @@
 # redacts and applies policy before anything is stored or delivered.
 services:
   bower-sidecar:
-    image: ${BOWER_SIDECAR_IMAGE:-bower-sidecar:local}
+    image: ${BOWER_SIDECAR_IMAGE:-ghcr.io/jusso-dev/bower-sidecar:edge}
     restart: unless-stopped
     read_only: true
     environment:

@@ -1,4 +1,5 @@
-FROM mcr.microsoft.com/dotnet/sdk:10.0.401 AS build
+# Build on the runner's native platform and cross-compile for TARGETARCH (no QEMU).
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.401 AS build
 ARG TARGETARCH
 WORKDIR /src
 COPY . .
