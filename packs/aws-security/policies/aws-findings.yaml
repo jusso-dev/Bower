@@ -1,0 +1,37 @@
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+
+metadata:
+  id: BWR-POL-AWS-FINDINGS
+  name: GuardDuty and Security Hub findings
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-06-30
+
+match:
+  eventCategories:
+    - application-security
+  eventTypes:
+    - aws_guardduty
+    - aws_security_hub
+
+requirements:
+  requiredFields:
+    - timeGenerated
+    - eventType
+    - eventAction
+    - eventResult
+    - application.name
+    - target.type
+  recommendedFields:
+    - eventOutcomeReason
+    - target.name
+
+decision:
+  action: accept
+  minimumValueScore: 70
+  neverSample: true
+
+routing:
+  profile: cloud-findings
+  destination: security-events

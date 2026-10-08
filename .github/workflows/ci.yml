@@ -21,6 +21,26 @@ jobs:
       - run: dotnet test --solution Bower.sln --configuration Release --no-build
       - run: dotnet format Bower.sln --verify-no-changes --no-restore
 
+  infrastructure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # cfn-lint and Terraform providers are third-party code; keep the token out of .git/config.
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.2.0
+      - name: Lint CloudFormation
+        run: uvx cfn-lint==1.57.2 deploy/aws/*.yaml
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.15.8
+      - name: Validate GCP Terraform
+        working-directory: deploy/gcp
+        run: |
+          terraform fmt -check -diff
+          terraform init -backend=false -input=false
+          terraform validate
+
   ui:
     runs-on: ubuntu-latest
     defaults:
@@ -90,6 +110,12 @@ jobs:
       - run: docker build -f deploy/docker/Dockerfile.management -t bower-management:ci --build-arg BOWER_AUTH_MODE=development .
       - run: docker build -f deploy/docker/Dockerfile.web -t bower-web:ci .
       - run: docker build -f deploy/docker/Dockerfile.sidecar -t bower-sidecar:ci .
+      - run: docker build -f deploy/docker/Dockerfile.cloud -t bower-cloud:ci .
+      - name: Smoke-test cloud agent fails closed without a source
+        run: |
+          set +e
+          docker run --rm --read-only --cap-drop ALL bower-cloud:ci
+          test "$?" = 1
       - name: Smoke-test console image
         run: |
           docker network create bower-ci

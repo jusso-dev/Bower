@@ -1,0 +1,24 @@
+apiVersion: bower.security/v1
+kind: Pack
+metadata:
+  id: aws-security
+  version: 1.0.0
+  name: AWS security signal
+  description: >-
+    GuardDuty and Security Hub findings plus high-value CloudTrail events (root use,
+    IAM and policy changes, console sign-in failures, logging and KMS tampering)
+    delivered by EventBridge to SQS and forwarded by the Bower cloud agent.
+    Composes with other packs: it ships no privacy profile, so the active profile
+    (or the default Australian redaction) applies.
+  owner: Security Operations
+policies:
+  - policies/aws-cloudtrail.yaml
+  - policies/aws-findings.yaml
+detections:
+  - detections/aws-root-activity.yml
+  - detections/aws-logging-tampering.yml
+  - detections/aws-access-key-created.yml
+  - detections/aws-console-login-failure.yml
+samples:
+  - samples/aws.jsonl
+dcr: true

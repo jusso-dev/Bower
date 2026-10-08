@@ -15,6 +15,7 @@
     <Using Include="Microsoft.Extensions.Logging" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="../Bower.Forwarding/Bower.Forwarding.csproj" />
     <ProjectReference Include="../Bower.Persistence/Bower.Persistence.csproj" />
     <ProjectReference Include="../Bower.Source.Docker/Bower.Source.Docker.csproj" />
   </ItemGroup>

@@ -1,0 +1,7 @@
+project_id      = "bower-security-prod"
+organization_id = "123456789012"
+# GKE Workload Identity or Cloud Run service account:
+subscriber_member = "serviceAccount:bower-agent@bower-security-prod.iam.gserviceaccount.com"
+# Or an agent running in AWS (no Google key):
+# aws_account_id = "123456789012"
+# aws_role_name  = "bower-cloud-agent"

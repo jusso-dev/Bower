@@ -1,0 +1,23 @@
+title: AWS long-lived access key created
+id: bower-pack-aws-access-key-created-001
+status: stable
+description: An IAM access key or login profile was created, a common persistence step.
+version: 1.0.0
+level: medium
+logsource:
+  product: bower
+  service: aws_cloudtrail
+detection:
+  selection:
+    EventType: aws_cloudtrail
+    EventAction:
+      - CreateAccessKey
+      - CreateLoginProfile
+      - UpdateLoginProfile
+    EventResult: Success
+  condition: selection
+tags:
+  - attack.t1098.001
+  - attack.persistence
+falsepositives:
+  - Approved service account onboarding

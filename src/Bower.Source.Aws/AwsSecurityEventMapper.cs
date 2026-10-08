@@ -10,6 +10,7 @@ public sealed class AwsSecurityEventMapper
 {
     private readonly AwsSourceOptions options;
     private readonly TimeProvider clock;
+    private readonly string configurationHash;
 
     public AwsSecurityEventMapper(AwsSourceOptions options, TimeProvider? clock = null)
     {
@@ -17,7 +18,10 @@ public sealed class AwsSecurityEventMapper
         options.Validate();
         this.options = options;
         this.clock = clock ?? TimeProvider.System;
+        configurationHash = options.ConfigurationHash();
     }
+
+    public AwsSourceOptions Options => options;
 
     public IReadOnlyList<SecurityEventEnvelope> MapJsonDocument(
         string json,
@@ -54,25 +58,31 @@ public sealed class AwsSecurityEventMapper
         List<SecurityEventEnvelope> mapped = new(rawEvents.Count);
         foreach (JsonElement element in rawEvents)
         {
-            if (element.ValueKind != JsonValueKind.Object)
-            {
-                // Typed failure instead of an InvalidOperationException deep in a mapper.
-                throw new AwsTelemetryMalformedRecordException(options.SourceId, element.ValueKind);
-            }
-
-            int size = Encoding.UTF8.GetByteCount(element.GetRawText());
-            if (size > options.MaximumRecordBytes)
-            {
-                throw new AwsTelemetryPayloadTooLargeException(
-                    options.SourceId,
-                    size,
-                    options.MaximumRecordBytes);
-            }
-
-            mapped.Add(MapSingle(element, observed));
+            mapped.Add(MapRecord(element, observed));
         }
 
         return mapped;
+    }
+
+    /// <summary>Maps one already-parsed record of this mapper's kind (for example an EventBridge detail).</summary>
+    public SecurityEventEnvelope MapRecord(JsonElement element, DateTimeOffset observedAt)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            // Typed failure instead of an InvalidOperationException deep in a mapper.
+            throw new AwsTelemetryMalformedRecordException(options.SourceId, element.ValueKind);
+        }
+
+        int size = Encoding.UTF8.GetByteCount(element.GetRawText());
+        if (size > options.MaximumRecordBytes)
+        {
+            throw new AwsTelemetryPayloadTooLargeException(
+                options.SourceId,
+                size,
+                options.MaximumRecordBytes);
+        }
+
+        return MapSingle(element, observedAt);
     }
 
     private List<JsonElement> Expand(JsonElement root)
@@ -119,35 +129,74 @@ public sealed class AwsSecurityEventMapper
             ?? ReadNestedString(element, "userIdentity", "accountId")
             ?? options.AccountId;
         string? region = ReadString(element, "awsRegion") ?? options.Region;
-        string? username = ReadNestedString(element, "userIdentity", "userName")
-            ?? ReadNestedString(element, "userIdentity", "principalId");
+        string identityType = ReadNestedString(element, "userIdentity", "type") ?? "Unknown";
+        string? username = identityType == "Root"
+            ? "root"
+            : ReadNestedString(element, "userIdentity", "userName")
+                ?? ReadSessionIssuer(element)
+                ?? ReadNestedString(element, "userIdentity", "principalId");
+        string? principalArn = ReadNestedString(element, "userIdentity", "arn");
+        ActorType actorType = identityType switch
+        {
+            "Root" or "IAMUser" or "IdentityCenterUser" => ActorType.Human,
+            "AWSService" or "AWSAccount" => ActorType.Service,
+            _ => ActorType.Service
+        };
         string? sourceIp = ReadString(element, "sourceIPAddress");
         string? errorCode = ReadString(element, "errorCode");
-        EventResult result = errorCode is null ? EventResult.Success : EventResult.Failure;
+        // Console sign-in failures carry no errorCode; the outcome is in responseElements.
+        string? consoleLogin = ReadNestedString(element, "responseElements", "ConsoleLogin");
+        EventResult result = errorCode is not null
+            ? errorCode.Contains("AccessDenied", StringComparison.OrdinalIgnoreCase)
+                || errorCode.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase)
+                ? EventResult.Denied
+                : EventResult.Failure
+            : string.Equals(consoleLogin, "Failure", StringComparison.OrdinalIgnoreCase)
+                ? EventResult.Failure
+                : EventResult.Success;
+        string? reason = errorCode
+            ?? (result == EventResult.Failure ? ReadString(element, "errorMessage") ?? "ConsoleLoginFailure" : null);
+        string category = eventName == "ConsoleLogin"
+            ? SecurityEventCategories.Authentication
+            : SecurityEventCategories.AdministrativeActivity;
+        Dictionary<string, string> labels = new()
+        {
+            ["aws.service"] = eventSource,
+            ["aws.eventName"] = eventName,
+            ["aws.identityType"] = identityType,
+            ["aws.source"] = "cloudtrail"
+        };
+        string? mfa = ReadNestedString(element, "additionalEventData", "MFAUsed");
+        if (mfa is not null)
+        {
+            labels["aws.mfaUsed"] = mfa;
+        }
+
+        string? readOnly = ReadString(element, "readOnly");
+        if (readOnly is not null)
+        {
+            labels["aws.readOnly"] = readOnly;
+        }
 
         return BuildEnvelope(
             eventId,
             timeGenerated,
             observedAt,
-            SecurityEventCategories.AdministrativeActivity,
+            category,
             "aws_cloudtrail",
             eventName,
             result,
-            errorCode,
+            reason,
             username,
-            ActorType.Service,
+            actorType,
             "aws-api",
             eventSource,
-            sourceIp,
+            IsIpAddress(sourceIp) ? sourceIp : null,
             region,
             accountId,
-            new Dictionary<string, string>
-            {
-                ["aws.service"] = eventSource,
-                ["aws.eventName"] = eventName,
-                ["aws.source"] = "cloudtrail"
-            },
-            element);
+            labels,
+            element,
+            userId: principalArn);
     }
 
     private SecurityEventEnvelope MapGuardDuty(JsonElement element, DateTimeOffset observedAt)
@@ -333,7 +382,8 @@ public sealed class AwsSecurityEventMapper
         string? accountId,
         Dictionary<string, string> labels,
         JsonElement raw,
-        EventSeverity severity = EventSeverity.Medium)
+        EventSeverity severity = EventSeverity.Medium,
+        string? userId = null)
     {
         string fingerprint = Convert.ToHexString(
                 SHA256.HashData(
@@ -360,41 +410,47 @@ public sealed class AwsSecurityEventMapper
             labels["aws.accountId"] = accountId;
         }
 
-        Dictionary<string, JsonElement> attributes = new(StringComparer.Ordinal)
+        foreach (string key in labels.Keys.ToList())
         {
-            ["aws.raw"] = raw.Clone()
-        };
+            labels[key] = Clip(labels[key], 256)!;
+        }
+
+        // Raw records can hold request parameters; keep them only when explicitly enabled.
+        Dictionary<string, JsonElement>? attributes = options.IncludeRawRecord
+            ? new Dictionary<string, JsonElement>(StringComparer.Ordinal) { ["aws.raw"] = raw.Clone() }
+            : null;
 
         return new SecurityEventEnvelope
         {
             SchemaVersion = SecurityEventEnvelope.CurrentSchemaVersion,
             EventId = eventId,
-            EventOriginalId = originalId,
+            EventOriginalId = Clip(originalId, 256),
             TimeGenerated = timeGenerated.ToUniversalTime(),
             TimeObserved = observedAt.ToUniversalTime(),
             EventCategory = category,
             EventType = eventType,
-            EventAction = action,
+            EventAction = Clip(action, 128)!,
             EventResult = result,
             EventSeverity = severity,
-            EventOutcomeReason = outcomeReason,
+            EventOutcomeReason = Clip(outcomeReason, 1024),
             Application = new ApplicationContext
             {
                 Name = options.ApplicationName,
                 Environment = options.Environment,
                 TenantId = accountId
             },
-            Actor = username is null
+            Actor = username is null && userId is null
                 ? null
                 : new ActorContext
                 {
-                    Username = username,
+                    Username = Clip(username, 256),
+                    UserId = Clip(userId, 256),
                     Type = actorType
                 },
             Target = new TargetContext
             {
-                Type = targetType,
-                Name = targetName
+                Type = Clip(targetType, 128)!,
+                Name = Clip(targetName, 256)
             },
             Source = sourceIp is null
                 ? null
@@ -407,7 +463,7 @@ public sealed class AwsSecurityEventMapper
                 Id = options.SourceId,
                 Version = "0.1.0",
                 SourceAdapter = $"aws.{options.Kind.ToString().ToLowerInvariant()}",
-                ConfigurationHash = fingerprint[..16],
+                ConfigurationHash = configurationHash,
                 ReceivedAt = observedAt.ToUniversalTime()
             },
             Labels = labels,
@@ -451,6 +507,21 @@ public sealed class AwsSecurityEventMapper
     {
         return value.Length <= max ? value : value[..max];
     }
+
+    private static string? Clip(string? value, int max) =>
+        value is null || value.Length <= max ? value : value[..max];
+
+    // CloudTrail uses service names (for example "ec2.amazonaws.com") when AWS acts on your behalf.
+    private static bool IsIpAddress(string? value) =>
+        value is not null && System.Net.IPAddress.TryParse(value, out _);
+
+    private static string? ReadSessionIssuer(JsonElement element) =>
+        element.TryGetProperty("userIdentity", out JsonElement identity)
+            && identity.ValueKind == JsonValueKind.Object
+            && identity.TryGetProperty("sessionContext", out JsonElement session)
+            && session.ValueKind == JsonValueKind.Object
+            ? ReadNestedString(session, "sessionIssuer", "userName")
+            : null;
 
     private static string? ReadString(JsonElement element, string name)
     {

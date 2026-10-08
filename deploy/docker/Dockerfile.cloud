@@ -1,0 +1,30 @@
+# Bower cloud agent: reads AWS security telemetry from SQS and Google Cloud security
+# telemetry from Pub/Sub and forwards it to a Bower collector. Acknowledges a message
+# only after the collector accepts it.
+#
+# Non-root (uid 1654), no capabilities, read-only root filesystem friendly. Cloud
+# access comes from the platform identity (instance profile, ECS task role, IRSA,
+# GKE Workload Identity or Workload Identity Federation); no keys are baked in.
+# Build on the runner's native platform and cross-compile for TARGETARCH (no QEMU).
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.401 AS build
+ARG TARGETARCH
+WORKDIR /src
+COPY . .
+RUN dotnet restore src/Bower.Agent.Cloud/Bower.Agent.Cloud.csproj --locked-mode
+RUN RID="linux-$([ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64)" \
+    && dotnet publish src/Bower.Agent.Cloud/Bower.Agent.Cloud.csproj \
+        --configuration Release \
+        --no-restore \
+        --runtime "$RID" \
+        --self-contained true \
+        --output /app
+
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0.12-noble-chiseled AS runtime
+WORKDIR /app
+COPY --from=build /app .
+USER 1654:1654
+ENV BOWER_CLOUD_HEARTBEAT_DIR=/tmp/bower-cloud \
+    DOTNET_gcServer=0
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \
+  CMD ["/app/Bower.Agent.Cloud", "--healthcheck"]
+ENTRYPOINT ["/app/Bower.Agent.Cloud"]

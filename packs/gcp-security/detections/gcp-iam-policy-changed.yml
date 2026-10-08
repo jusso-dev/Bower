@@ -1,0 +1,20 @@
+title: Google Cloud IAM policy changed
+id: bower-pack-gcp-iam-policy-changed-001
+status: stable
+description: SetIamPolicy on an organisation, folder, project or resource.
+version: 1.0.0
+level: medium
+logsource:
+  product: bower
+  service: gcp_cloud_audit
+detection:
+  selection:
+    EventType: gcp_cloud_audit
+    EventAction: SetIamPolicy
+    EventResult: Success
+  condition: selection
+tags:
+  - attack.t1098
+  - attack.privilege_escalation
+falsepositives:
+  - Infrastructure-as-code deployments

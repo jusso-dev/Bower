@@ -1,5 +1,6 @@
 using System.Net;
 using Bower.Agent.Docker;
+using Bower.Forwarding;
 using Bower.Persistence;
 using Bower.Source.Docker;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -169,7 +170,7 @@ public sealed class DockerSidecarWorkerTests
         DockerSidecarWorker worker = new(
             settings,
             store,
-            new CollectorClient(client, settings),
+            new CollectorClient(client, settings.IngestToken),
             TimeProvider.System,
             NullLogger<DockerSidecarWorker>.Instance);
         return (worker, store);

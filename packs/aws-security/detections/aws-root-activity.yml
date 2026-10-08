@@ -1,0 +1,19 @@
+title: AWS root user activity
+id: bower-pack-aws-root-activity-001
+status: stable
+description: Any CloudTrail activity by the account root user. Root should be break-glass only.
+version: 1.0.0
+level: high
+logsource:
+  product: bower
+  service: aws_cloudtrail
+detection:
+  selection:
+    EventType: aws_cloudtrail
+    aws.identityType: Root
+  condition: selection
+tags:
+  - attack.t1078.004
+  - attack.privilege_escalation
+falsepositives:
+  - Documented break-glass procedures

@@ -1,0 +1,23 @@
+apiVersion: bower.security/v1
+kind: Pack
+metadata:
+  id: gcp-security
+  version: 1.0.0
+  name: Google Cloud security signal
+  description: >-
+    Security Command Center findings and high-value Cloud Audit Logs (IAM policy
+    changes, service account keys, logging sinks, firewall and KMS changes)
+    delivered by a log sink and SCC notification config to Pub/Sub and forwarded
+    by the Bower cloud agent. Ships no privacy profile so it composes with other packs.
+  owner: Security Operations
+policies:
+  - policies/gcp-cloud-audit.yaml
+  - policies/gcp-scc-findings.yaml
+detections:
+  - detections/gcp-service-account-key-created.yml
+  - detections/gcp-iam-policy-changed.yml
+  - detections/gcp-logging-tampering.yml
+  - detections/gcp-permission-denied.yml
+samples:
+  - samples/gcp.jsonl
+dcr: true

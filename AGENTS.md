@@ -25,7 +25,10 @@ control plane, or runtime AI filter.
 - `src/Bower.Management.Api`: Entra-protected fleet, approval and audit API.
 - `ui/Bower.Management.Web`: tenant-controlled operational console.
 - `src/Bower.Output.*`: bounded delivery adapters.
-- `src/Bower.Source.Aws`: AWS security telemetry parsers (CloudTrail, GuardDuty, Security Hub, CloudWatch).
+- `src/Bower.Source.Aws`: AWS security telemetry parsers (CloudTrail, GuardDuty, Security Hub, CloudWatch), EventBridge/SNS/S3 queue message parser and Firehose log object reader.
+- `src/Bower.Source.Gcp`: Cloud Audit Logs and Security Command Center mapper for Pub/Sub messages.
+- `src/Bower.Forwarding`: shared collector client for agents (at-least-once acknowledgement rule).
+- `src/Bower.Agent.Cloud`: AWS SQS and Google Pub/Sub forwarder host.
 - `src/Bower.Ocsf`: OCSF normalisation engine and source mappers.
 - `src/Bower.Detection`: Sigma-compatible detection rules engine.
 - `src/Bower.Pipeline`: declarative telemetry pipeline model, templates and validation.
@@ -35,6 +38,8 @@ control plane, or runtime AI filter.
 - `src/Bower.Agent.Aws`: native EC2 host telemetry agent with IMDS enrichment.
 - `src/Bower.Source.Docker`: read-only Docker json-file discovery, tailing and event mapping.
 - `src/Bower.Agent.Docker`: Docker sidecar that forwards opted-in container security events.
+- `packs`: signed content packs (`linux-ssh-gateway`, `aws-security`, `gcp-security`).
+- `deploy/aws`, `deploy/gcp`: CloudFormation and Terraform for cloud signal (plan-only by default).
 - `schemas`, `policies`, `deploy`, `docs`, `tests`: versioned product assets.
 
 Inspect nearest `AGENTS.md` before editing.
