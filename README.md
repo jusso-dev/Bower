@@ -35,6 +35,7 @@ removed on the host, provably arriving in Sentinel.**
 | **No silent loss** | Durable queue that deletes only after acknowledgement, attempt-limited dead letters with replay, preflight against Azure's 64 KB / type / schema limits, `bower doctor` and DCR drift checks | Azure truncates and drops rows without a per-record error |
 | **Tamper evidence** | Hash-chained queue ledger, head witnessed by the management plane | Not offered at the collector |
 | **Signed content** | Packs (policy, privacy profile, parsers, detections, samples, DCR) are signed, hash-pinned and tested before signing | Unsigned community content |
+| **AWS and Google Cloud, same contract** | GuardDuty, Security Hub, high-value CloudTrail, Security Command Center and admin audit logs arrive as the same semantic events through the same redaction and policy; cloud queues are acknowledged only after the collector accepts, with no stored cloud keys and Australian region pinning | Per-cloud connectors that forward everything, or polling with stored access keys |
 | **Sovereignty** | Self-hosted, region checks for Australian endpoints, no data leaves your tenant except to your Sentinel | Hosted control planes; Sentinel processes Australian workspace data in a US region |
 
 The comparison reflects vendor documentation reviewed in October 2026; see the
@@ -144,6 +145,8 @@ Full design: [architecture](docs/architecture/overview.md).
 | AI-assisted custom log parser generator | Deterministic local JSON, CSV, key/value and common-regex inference with OCSF/ASIM mappings and redacted preview |
 | Windows Service self-install | Not implemented |
 | SQL Server source | EF Core adapter with durable SQLite cursors implemented |
+| AWS security signal | GuardDuty, Security Hub and high-value CloudTrail via EventBridge → SQS, plus Bower events from CloudWatch Logs via Firehose → S3; CloudFormation, signed `aws-security` pack, `bower-cloud` agent with IAM-role credentials |
+| Google Cloud security signal | Security Command Center findings and Admin Activity audit logs via Pub/Sub with Australian storage policy; Terraform, signed `gcp-security` pack, ADC / Workload Identity Federation (key files refused) |
 | File, REST, Event Log sources | Not implemented |
 | Sentinel query proof/evidence bundle | Implemented: canary + KQL arrival + retention + ISM/E8 mapping, signed (`bower evidence`); tenant test required |
 | Signed Bower Packs | Implemented: policy, privacy profile, parsers, detections, samples, DCR template; tested before signing |
@@ -288,6 +291,29 @@ sign-in failures and lockouts, and drops everything else. Try the full flow with
 `docker compose -f deploy/docker/compose.sidecar-demo.yaml up --build`. Details:
 [Docker sidecar](docs/deployment/docker-sidecar.md).
 
+### 7. Forward AWS and Google Cloud security signal
+
+Deploy the queue side in each cloud, then run one agent for both:
+
+```bash
+# AWS: SQS + EventBridge rules (rules start disabled) in Sydney or Melbourne
+aws cloudformation deploy --region ap-southeast-2 --template-file deploy/aws/bower-aws-security.yaml \
+  --stack-name bower-aws-security --capabilities CAPABILITY_IAM
+# Google Cloud: topic, subscription, audit sink and SCC notifications
+terraform -chdir=deploy/gcp apply
+
+BOWER_AWS_SQS_QUEUE_URL=https://sqs.ap-southeast-2.amazonaws.com/123456789012/bower-security \
+BOWER_GCP_SUBSCRIPTION=projects/acme-security/subscriptions/bower-security \
+BOWER_INGEST_TOKEN=… docker compose -f deploy/docker/compose.cloud.yaml up -d
+```
+
+Load the signed `aws-security` and `gcp-security` packs in the collector so the new
+event types pass default deny. The agent uses the platform identity (instance
+profile, ECS task role, IRSA, GKE Workload Identity or Workload Identity Federation),
+acknowledges a message only after the collector accepts it, and stops receiving while
+the collector is down. Details: [AWS](docs/deployment/aws.md),
+[Google Cloud](docs/deployment/gcp.md).
+
 ## Container images
 
 Every `main` commit that passes CI publishes multi-arch (`amd64`, `arm64`) images to
@@ -299,6 +325,7 @@ docker pull ghcr.io/jusso-dev/bower-collector:edge
 docker pull ghcr.io/jusso-dev/bower-management:edge
 docker pull ghcr.io/jusso-dev/bower-web:edge
 docker pull ghcr.io/jusso-dev/bower-sidecar:edge
+docker pull ghcr.io/jusso-dev/bower-cloud:edge
 ```
 
 Tags, verification and runtime configuration:
@@ -354,6 +381,7 @@ Design, observability and how to add a job:
 | Replay dead letters | `bower queue dead-letters` · `bower queue replay --code preflight-` | [Fleet and queue integrity](docs/operations/fleet-and-queue-integrity.md) |
 | Verify queue integrity | `bower queue verify --database queue.db` | [Fleet and queue integrity](docs/operations/fleet-and-queue-integrity.md) |
 | Pseudonymise identifiers | privacy profile `action: hmac` + `BOWER_PRIVACY_HMAC_KEY_FILE` | [Privacy engine](docs/privacy/privacy-secret-engine.md) |
+| Forward AWS / GCP security signal | `deploy/aws` CloudFormation, `deploy/gcp` Terraform, `bower-cloud` agent | [AWS](docs/deployment/aws.md) · [Google Cloud](docs/deployment/gcp.md) |
 
 ## Self-contained binaries
 

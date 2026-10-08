@@ -79,6 +79,9 @@
       "bower.contracts": {
         "type": "Project"
       },
+      "bower.forwarding": {
+        "type": "Project"
+      },
       "bower.persistence": {
         "type": "Project",
         "dependencies": {

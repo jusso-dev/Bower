@@ -1,0 +1,42 @@
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+
+metadata:
+  id: BWR-PACK-AWS-CLOUDTRAIL
+  name: High-value AWS CloudTrail activity
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-06-30
+
+# The EventBridge rule in deploy/aws selects which API calls reach Bower; this policy
+# decides which of those are kept and what they must carry.
+match:
+  eventCategories:
+    - administrative-activity
+    - authentication
+  eventTypes:
+    - aws_cloudtrail
+
+requirements:
+  requiredFields:
+    - timeGenerated
+    - eventType
+    - eventAction
+    - eventResult
+    - application.name
+    - target.name
+  atLeastOne:
+    - actor.username
+    - actor.userId
+  recommendedFields:
+    - source.ipAddress
+    - eventOutcomeReason
+
+decision:
+  action: accept
+  minimumValueScore: 70
+  neverSample: true
+
+routing:
+  profile: cloud-control-plane
+  destination: security-events

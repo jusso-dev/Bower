@@ -45,6 +45,9 @@ jobs:
           - image: bower-sidecar
             dockerfile: deploy/docker/Dockerfile.sidecar
             description: Bower Docker sidecar - forwards opted-in container security events
+          - image: bower-cloud
+            dockerfile: deploy/docker/Dockerfile.cloud
+            description: Bower cloud agent - forwards AWS SQS and Google Pub/Sub security telemetry
     steps:
       - uses: actions/checkout@v7
         with:

@@ -28,6 +28,31 @@ public sealed record AwsSourceOptions
 
     public int MaximumBatchEvents { get; init; } = 1_000;
 
+    /// <summary>
+    /// Copies the original record into the <c>aws.raw</c> attribute. Raw records can hold
+    /// request parameters, so hosts that forward to a collector should leave this off.
+    /// </summary>
+    public bool IncludeRawRecord { get; init; } = true;
+
+    /// <summary>Stable hash of the mapping configuration, reported as the collector configuration hash.</summary>
+    public string ConfigurationHash()
+    {
+        string material = string.Join(
+            '\u001f',
+            SourceId,
+            Kind,
+            AccountId,
+            Region,
+            Environment,
+            ApplicationName,
+            MaximumRecordBytes.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            MaximumBatchEvents.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            IncludeRawRecord);
+        return Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(material)))
+            .ToLowerInvariant()[..16];
+    }
+
     public void Validate()
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(SourceId);

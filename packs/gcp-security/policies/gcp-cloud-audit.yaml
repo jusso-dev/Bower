@@ -1,0 +1,43 @@
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+
+metadata:
+  id: BWR-PACK-GCP-AUDIT
+  name: High-value Google Cloud Audit Logs
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-06-30
+
+# The log sink filter in deploy/gcp selects which audit entries reach Bower; this
+# policy decides which of those are kept and what they must carry.
+match:
+  eventCategories:
+    - administrative-activity
+    - authentication
+  eventTypes:
+    - gcp_cloud_audit
+
+requirements:
+  requiredFields:
+    - timeGenerated
+    - eventType
+    - eventAction
+    - eventResult
+    - application.name
+    - target.type
+  atLeastOne:
+    - actor.username
+    - actor.userId
+  recommendedFields:
+    - source.ipAddress
+    - target.name
+    - eventOutcomeReason
+
+decision:
+  action: accept
+  minimumValueScore: 70
+  neverSample: true
+
+routing:
+  profile: cloud-control-plane
+  destination: security-events

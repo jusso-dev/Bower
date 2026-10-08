@@ -1,0 +1,19 @@
+title: Google Cloud admin call denied
+id: bower-pack-gcp-permission-denied-001
+status: stable
+description: An administrative API call was denied (PERMISSION_DENIED or UNAUTHENTICATED).
+version: 1.0.0
+level: low
+logsource:
+  product: bower
+  service: gcp_cloud_audit
+detection:
+  selection:
+    EventType: gcp_cloud_audit
+    EventResult: Denied
+  condition: selection
+tags:
+  - attack.t1078
+  - attack.discovery
+falsepositives:
+  - Misconfigured automation

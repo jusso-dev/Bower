@@ -34,6 +34,17 @@ after abrupt shutdown. Payload rows are not deleted during acknowledgement; the
 `queue-retention` job removes `delivered` rows only after the retention window.
 Retryable failures dead-letter after `BOWER_MAX_DELIVERY_ATTEMPTS` leases.
 
+## Agents and cloud queues
+
+Agents (`Bower.Agent.Docker`, `Bower.Agent.Cloud`) are producers, not collectors:
+they map source records to candidate events and post them to a collector through
+`Bower.Forwarding`, so every event still passes redaction, schema validation and
+policy there. Their upstream position (a file cursor, an SQS message, a Pub/Sub ack
+id) advances only when the collector accepted or definitively rejected every event
+derived from it. Cloud queues keep their own dead-letter policies; the cloud agent
+releases malformed messages to them and never deletes on backpressure. See
+[AWS](../deployment/aws.md) and [Google Cloud](../deployment/gcp.md).
+
 ## Background jobs
 
 Delivery is a low-latency hosted loop (`QueueDeliveryWorker`) driven by queue

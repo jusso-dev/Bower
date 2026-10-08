@@ -1,5 +1,6 @@
 using Bower.Abstractions;
 using Bower.Agent.Docker;
+using Bower.Forwarding;
 using Bower.Persistence;
 
 if (args is ["--healthcheck"])
@@ -24,11 +25,14 @@ try
     builder.Services.AddSingleton(settings);
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddSingleton<ISourceCursorStore>(cursors);
-    builder.Services.AddHttpClient<CollectorClient>(client =>
+    builder.Services.AddHttpClient("bower-collector", client =>
     {
         client.BaseAddress = settings.CollectorUrl;
         client.Timeout = TimeSpan.FromSeconds(10);
     });
+    builder.Services.AddSingleton(services => new CollectorClient(
+        services.GetRequiredService<IHttpClientFactory>().CreateClient("bower-collector"),
+        settings.IngestToken));
     builder.Services.AddHostedService<DockerSidecarWorker>();
 
     using IHost host = builder.Build();

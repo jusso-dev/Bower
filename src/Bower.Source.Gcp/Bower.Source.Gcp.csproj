@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Bower.Abstractions/Bower.Abstractions.csproj" />
+    <ProjectReference Include="../Bower.Contracts/Bower.Contracts.csproj" />
+  </ItemGroup>
+</Project>

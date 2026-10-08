@@ -13,6 +13,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <ProjectReference Include="../../src/Bower.Agent.Cloud/Bower.Agent.Cloud.csproj" />
     <ProjectReference Include="../../src/Bower.Agent.Docker/Bower.Agent.Docker.csproj" />
     <ProjectReference Include="../../src/Bower.Collector/Bower.Collector.csproj" />
     <ProjectReference Include="../../src/Bower.Source.Docker/Bower.Source.Docker.csproj" />
@@ -43,6 +44,10 @@
     </Content>
     <Content Include="../../packs/**/*">
       <Link>packs/%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="../../deploy/privacy/*.yaml">
+      <Link>deploy/privacy/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="../../deploy/bicep/main.bicep">

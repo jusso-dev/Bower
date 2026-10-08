@@ -1,6 +1,6 @@
 # Container images
 
-The `Images` workflow publishes four images to GitHub Container Registry for
+The `Images` workflow publishes five images to GitHub Container Registry for
 `linux/amd64` and `linux/arm64`:
 
 | Image | Contents |
@@ -9,6 +9,7 @@ The `Images` workflow publishes four images to GitHub Container Registry for
 | `ghcr.io/jusso-dev/bower-management` | Management API with the bundled console |
 | `ghcr.io/jusso-dev/bower-web` | Standalone console on unprivileged nginx ([details](console-image.md)) |
 | `ghcr.io/jusso-dev/bower-sidecar` | Docker sidecar ([details](docker-sidecar.md)) |
+| `ghcr.io/jusso-dev/bower-cloud` | Cloud agent for AWS SQS and Google Pub/Sub ([AWS](aws.md), [GCP](gcp.md)) |
 
 ## Tags
 

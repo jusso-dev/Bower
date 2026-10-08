@@ -1,0 +1,36 @@
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+
+metadata:
+  id: BWR-PACK-GCP-SCC
+  name: Security Command Center findings
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-06-30
+
+match:
+  eventCategories:
+    - application-security
+  eventTypes:
+    - gcp_scc_finding
+
+requirements:
+  requiredFields:
+    - timeGenerated
+    - eventType
+    - eventAction
+    - eventResult
+    - application.name
+    - target.type
+  recommendedFields:
+    - target.name
+    - eventOutcomeReason
+
+decision:
+  action: accept
+  minimumValueScore: 70
+  neverSample: true
+
+routing:
+  profile: cloud-findings
+  destination: security-events

@@ -2,7 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 
-namespace Bower.Agent.Docker;
+namespace Bower.Forwarding;
 
 public enum SendOutcome
 {
@@ -12,15 +12,22 @@ public enum SendOutcome
     /// <summary>Collector decided not to keep it (policy reject or quarantine). Do not retry.</summary>
     Rejected,
 
-    /// <summary>Backpressure or transient failure. Retry later without advancing.</summary>
+    /// <summary>Backpressure or transient failure. Retry later without acknowledging the source.</summary>
     RetryLater,
+
+    /// <summary>Ingest rate limit (429). Retry the same event shortly.</summary>
+    Throttled,
 
     /// <summary>The ingest token was refused. Retry later; needs operator action.</summary>
     Unauthorized
 }
 
-/// <summary>Posts single events to the collector and classifies the response.</summary>
-public sealed class CollectorClient(HttpClient client, SidecarSettings settings)
+/// <summary>
+/// Posts single candidate events to a Bower collector and classifies the response.
+/// Shared by agents (Docker sidecar, cloud sources) so every forwarder applies the
+/// same at-least-once rule: acknowledge upstream only on Accepted or Rejected.
+/// </summary>
+public sealed class CollectorClient(HttpClient client, string? ingestToken)
 {
     public async Task<SendOutcome> SendAsync(string json, CancellationToken cancellationToken)
     {
@@ -28,9 +35,9 @@ public sealed class CollectorClient(HttpClient client, SidecarSettings settings)
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
-        if (settings.IngestToken is not null)
+        if (!string.IsNullOrEmpty(ingestToken))
         {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.IngestToken);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ingestToken);
         }
 
         try
@@ -46,7 +53,26 @@ public sealed class CollectorClient(HttpClient client, SidecarSettings settings)
         }
     }
 
-    internal static SendOutcome Classify(HttpStatusCode status) =>
+    /// <summary>
+    /// Cheap readiness probe. Queue sources call it before receiving so a collector outage
+    /// does not burn upstream delivery attempts and push healthy messages to a dead-letter queue.
+    /// </summary>
+    public async Task<bool> IsReachableAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using HttpResponseMessage response = await client.GetAsync("health", cancellationToken);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception exception) when (
+            exception is HttpRequestException
+                || (exception is TaskCanceledException && !cancellationToken.IsCancellationRequested))
+        {
+            return false;
+        }
+    }
+
+    public static SendOutcome Classify(HttpStatusCode status) =>
         status switch
         {
             HttpStatusCode.OK or HttpStatusCode.Accepted => SendOutcome.Accepted,
@@ -54,6 +80,7 @@ public sealed class CollectorClient(HttpClient client, SidecarSettings settings)
             HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => SendOutcome.Unauthorized,
             // 413 can never succeed for this event; treat like a rejection.
             HttpStatusCode.RequestEntityTooLarge => SendOutcome.Rejected,
+            HttpStatusCode.TooManyRequests => SendOutcome.Throttled,
             _ => SendOutcome.RetryLater
         };
 }

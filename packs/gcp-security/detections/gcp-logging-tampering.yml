@@ -1,0 +1,26 @@
+title: Google Cloud audit logging tampering
+id: bower-pack-gcp-logging-tampering-001
+status: stable
+description: Log sinks, buckets or exclusions changed or deleted, or SCC notifications removed.
+version: 1.0.0
+level: critical
+logsource:
+  product: bower
+  service: gcp_cloud_audit
+detection:
+  selection:
+    EventType: gcp_cloud_audit
+    EventAction:
+      - DeleteSink
+      - UpdateSink
+      - DeleteBucket
+      - CreateExclusion
+      - UpdateExclusion
+      - DeleteNotificationConfig
+      - UpdateNotificationConfig
+  condition: selection
+tags:
+  - attack.t1562.008
+  - attack.defense_evasion
+falsepositives:
+  - Planned logging changes

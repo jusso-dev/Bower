@@ -1,0 +1,467 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Bower AWS security signal (home region). EventBridge rules select GuardDuty and
+  Security Hub findings and high-value CloudTrail events into an encrypted SQS queue
+  with a dead-letter queue. Optionally, CloudWatch Logs containing Bower event
+  envelopes reach the same queue through Firehose and S3. The Bower cloud agent
+  consumes the queue with an IAM role (no stored keys) and acknowledges a message
+  only after the collector accepts it.
+
+Parameters:
+  QueueName:
+    Type: String
+    Default: bower-security
+    AllowedPattern: "^[A-Za-z0-9_-]{1,70}$"
+  MaxReceiveCount:
+    Type: Number
+    Default: 10
+    MinValue: 3
+    MaxValue: 50
+    Description: Deliveries before a message moves to the dead-letter queue. The agent stops receiving while the collector is down, so healthy messages do not exhaust this.
+  RuleState:
+    Type: String
+    Default: DISABLED
+    AllowedValues: [ENABLED, DISABLED]
+    Description: Rules start disabled. Enable after the collector, packs and agent are validated.
+  EnforceAustralianRegion:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Refuse to deploy outside ap-southeast-2 (Sydney) or ap-southeast-4 (Melbourne).
+  AppLogBucketName:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+    Description: Optional. Creates this bucket plus a Firehose stream for CloudWatch Logs that carry Bower event envelopes (Lambda, ECS). Leave empty to skip.
+  AppLogGroupName:
+    Type: String
+    Default: ""
+    Description: Optional. A CloudWatch Logs group to subscribe to the Firehose stream (only lines containing schemaVersion are sent).
+  AppLogRetentionDays:
+    Type: Number
+    Default: 7
+    MinValue: 1
+    MaxValue: 365
+
+Rules:
+  AustralianRegion:
+    RuleCondition: !Equals [!Ref EnforceAustralianRegion, "true"]
+    Assertions:
+      - Assert: !Contains [["ap-southeast-2", "ap-southeast-4"], !Ref "AWS::Region"]
+        AssertDescription: Deploy in ap-southeast-2 or ap-southeast-4, or set EnforceAustralianRegion=false.
+
+Conditions:
+  AppLogs: !Not [!Equals [!Ref AppLogBucketName, ""]]
+  AppLogSubscription: !And
+    - !Condition AppLogs
+    - !Not [!Equals [!Ref AppLogGroupName, ""]]
+
+Resources:
+  DeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${QueueName}-dlq"
+      SqsManagedSseEnabled: true
+      MessageRetentionPeriod: 1209600
+
+  Queue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Ref QueueName
+      SqsManagedSseEnabled: true
+      MessageRetentionPeriod: 345600
+      ReceiveMessageWaitTimeSeconds: 20
+      VisibilityTimeout: 300
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DeadLetterQueue.Arn
+        maxReceiveCount: !Ref MaxReceiveCount
+
+  DeadLetterQueuePolicy:
+    Type: AWS::SQS::QueueInlinePolicy
+    Properties:
+      Queue: !Ref DeadLetterQueue
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "sqs:*"
+            Resource: !GetAtt DeadLetterQueue.Arn
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  QueuePolicy:
+    Type: AWS::SQS::QueueInlinePolicy
+    Properties:
+      Queue: !Ref Queue
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowBowerRules
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt Queue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn:
+                  - !GetAtt GuardDutyRule.Arn
+                  - !GetAtt SecurityHubRule.Arn
+                  - !GetAtt CloudTrailIdentityRule.Arn
+                  - !GetAtt CloudTrailControlRule.Arn
+                  - !GetAtt ConsoleSignInRule.Arn
+                  - !GetAtt RootActivityRule.Arn
+          - !If
+            - AppLogs
+            - Sid: AllowAppLogBucketNotifications
+              Effect: Allow
+              Principal:
+                Service: s3.amazonaws.com
+              Action: sqs:SendMessage
+              Resource: !GetAtt Queue.Arn
+              Condition:
+                ArnEquals:
+                  aws:SourceArn: !Sub "arn:${AWS::Partition}:s3:::${AppLogBucketName}"
+                StringEquals:
+                  aws:SourceAccount: !Ref "AWS::AccountId"
+            - !Ref "AWS::NoValue"
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "sqs:*"
+            Resource: !GetAtt Queue.Arn
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  GuardDutyRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Bower - GuardDuty findings of Medium severity (4.0) or higher.
+      State: !Ref RuleState
+      EventPattern:
+        source: [aws.guardduty]
+        detail-type: [GuardDuty Finding]
+        detail:
+          # EventBridge needs a number literal here; edit to change the threshold.
+          severity: [{ numeric: [">=", 4] }]
+      Targets:
+        - Id: bower-queue
+          Arn: !GetAtt Queue.Arn
+
+  SecurityHubRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Bower - new, active HIGH and CRITICAL Security Hub findings.
+      State: !Ref RuleState
+      EventPattern:
+        source: [aws.securityhub]
+        detail-type: [Security Hub Findings - Imported]
+        detail:
+          findings:
+            Severity:
+              Label: [HIGH, CRITICAL]
+            Workflow:
+              Status: [NEW]
+            RecordState: [ACTIVE]
+      Targets:
+        - Id: bower-queue
+          Arn: !GetAtt Queue.Arn
+
+  # IAM is a global service: its events are emitted in us-east-1 and reach this region
+  # through bower-aws-global-forwarder.yaml. The pattern is the same either way.
+  CloudTrailIdentityRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Bower - IAM changes that grant, persist or weaken access.
+      State: !Ref RuleState
+      EventPattern:
+        source: [aws.iam]
+        detail-type: [AWS API Call via CloudTrail]
+        detail:
+          eventName:
+            - CreateUser
+            - DeleteUser
+            - CreateAccessKey
+            - CreateLoginProfile
+            - UpdateLoginProfile
+            - AddUserToGroup
+            - AttachUserPolicy
+            - AttachGroupPolicy
+            - AttachRolePolicy
+            - PutUserPolicy
+            - PutGroupPolicy
+            - PutRolePolicy
+            - CreatePolicyVersion
+            - SetDefaultPolicyVersion
+            - CreateRole
+            - UpdateAssumeRolePolicy
+            - DeactivateMFADevice
+            - DeleteVirtualMFADevice
+            - CreateSAMLProvider
+            - UpdateSAMLProvider
+            - CreateOpenIDConnectProvider
+      Targets:
+        - Id: bower-queue
+          Arn: !GetAtt Queue.Arn
+
+  CloudTrailControlRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Bower - logging, detection and key protection disabled; risky exposure changes.
+      State: !Ref RuleState
+      EventPattern:
+        source:
+          - aws.cloudtrail
+          - aws.guardduty
+          - aws.config
+          - aws.kms
+          - aws.securityhub
+          - aws.s3
+          - aws.ec2
+          - aws.organizations
+        detail-type: [AWS API Call via CloudTrail]
+        detail:
+          eventName:
+            - StopLogging
+            - DeleteTrail
+            - UpdateTrail
+            - PutEventSelectors
+            - DeleteDetector
+            - UpdateDetector
+            - DisassociateFromAdministratorAccount
+            - DisassociateFromMasterAccount
+            - StopConfigurationRecorder
+            - DeleteConfigurationRecorder
+            - DeleteDeliveryChannel
+            - DisableKey
+            - ScheduleKeyDeletion
+            - PutKeyPolicy
+            - DisableSecurityHub
+            - DeletePublicAccessBlock
+            - PutBucketPolicy
+            - PutBucketAcl
+            - ModifySnapshotAttribute
+            - AuthorizeSecurityGroupIngress
+            - LeaveOrganization
+      Targets:
+        - Id: bower-queue
+          Arn: !GetAtt Queue.Arn
+
+  ConsoleSignInRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Bower - failed console sign-ins.
+      State: !Ref RuleState
+      EventPattern:
+        detail-type: [AWS Console Sign In via CloudTrail]
+        detail:
+          responseElements:
+            ConsoleLogin: [Failure]
+      Targets:
+        - Id: bower-queue
+          Arn: !GetAtt Queue.Arn
+
+  RootActivityRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Bower - any API call or console sign-in by the root user.
+      State: !Ref RuleState
+      EventPattern:
+        detail-type:
+          - AWS API Call via CloudTrail
+          - AWS Console Sign In via CloudTrail
+        detail:
+          userIdentity:
+            type: [Root]
+      Targets:
+        - Id: bower-queue
+          Arn: !GetAtt Queue.Arn
+
+  # Attach to the agent's instance profile, ECS task role or IRSA role.
+  ConsumerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Bower cloud agent - consume the Bower security queue and read app log objects.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ConsumeQueue
+            Effect: Allow
+            Action:
+              - sqs:ReceiveMessage
+              - sqs:DeleteMessage
+              - sqs:ChangeMessageVisibility
+              - sqs:GetQueueAttributes
+            Resource: !GetAtt Queue.Arn
+          - !If
+            - AppLogs
+            - Sid: ReadAppLogObjects
+              Effect: Allow
+              Action: s3:GetObject
+              Resource: !Sub "arn:${AWS::Partition}:s3:::${AppLogBucketName}/*"
+            - !Ref "AWS::NoValue"
+
+  AppLogBucket:
+    Type: AWS::S3::Bucket
+    Condition: AppLogs
+    DependsOn: QueuePolicy
+    Properties:
+      BucketName: !Ref AppLogBucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-forwarded-logs
+            Status: Enabled
+            ExpirationInDays: !Ref AppLogRetentionDays
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      NotificationConfiguration:
+        QueueConfigurations:
+          - Event: "s3:ObjectCreated:*"
+            Queue: !GetAtt Queue.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: bower/
+
+  AppLogBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: AppLogs
+    Properties:
+      Bucket: !Ref AppLogBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt AppLogBucket.Arn
+              - !Sub "${AppLogBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  FirehoseRole:
+    Type: AWS::IAM::Role
+    Condition: AppLogs
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref "AWS::AccountId"
+      Policies:
+        - PolicyName: write-app-log-bucket
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                  - s3:PutObject
+                Resource:
+                  - !GetAtt AppLogBucket.Arn
+                  - !Sub "${AppLogBucket.Arn}/*"
+
+  AppLogStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Condition: AppLogs
+    Properties:
+      DeliveryStreamType: DirectPut
+      DeliveryStreamEncryptionConfigurationInput:
+        KeyType: AWS_OWNED_CMK
+      ExtendedS3DestinationConfiguration:
+        BucketARN: !GetAtt AppLogBucket.Arn
+        RoleARN: !GetAtt FirehoseRole.Arn
+        Prefix: bower/
+        ErrorOutputPrefix: errors/!{firehose:error-output-type}/
+        # CloudWatch Logs records arrive gzip-compressed; the agent reads them as delivered.
+        CompressionFormat: UNCOMPRESSED
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 5
+
+  LogsToFirehoseRole:
+    Type: AWS::IAM::Role
+    Condition: AppLogSubscription
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: logs.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringLike:
+                aws:SourceArn: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"
+      Policies:
+        - PolicyName: put-app-log-stream
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - firehose:PutRecord
+                  - firehose:PutRecordBatch
+                Resource: !GetAtt AppLogStream.Arn
+
+  AppLogSubscriptionFilter:
+    Type: AWS::Logs::SubscriptionFilter
+    Condition: AppLogSubscription
+    Properties:
+      LogGroupName: !Ref AppLogGroupName
+      # Only lines that can be Bower envelopes leave CloudWatch Logs.
+      FilterPattern: schemaVersion
+      DestinationArn: !GetAtt AppLogStream.Arn
+      RoleArn: !GetAtt LogsToFirehoseRole.Arn
+
+Outputs:
+  QueueUrl:
+    Description: Set as BOWER_AWS_SQS_QUEUE_URL for the Bower cloud agent.
+    Value: !Ref Queue
+  QueueArn:
+    Value: !GetAtt Queue.Arn
+  DeadLetterQueueUrl:
+    Description: Inspect and redrive from here after fixing the cause.
+    Value: !Ref DeadLetterQueue
+  ConsumerPolicyArn:
+    Description: Attach to the agent's instance profile, ECS task role or IRSA role.
+    Value: !Ref ConsumerPolicy
+  HomeEventBusArn:
+    Description: Pass to bower-aws-global-forwarder.yaml in us-east-1.
+    Value: !Sub "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/default"
+  AppLogBucket:
+    Condition: AppLogs
+    Description: Set as BOWER_AWS_S3_BUCKETS for the Bower cloud agent.
+    Value: !Ref AppLogBucket
+  AppLogStreamArn:
+    Condition: AppLogs
+    Description: Subscribe further log groups to this stream.
+    Value: !GetAtt AppLogStream.Arn

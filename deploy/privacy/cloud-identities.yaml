@@ -1,0 +1,17 @@
+apiVersion: bower.security/v1
+kind: PrivacyProfile
+metadata:
+  id: cloud-identities-pseudonymised
+  version: 1.0.0
+  description: >-
+    For the aws-security and gcp-security packs. Replaces AWS principal names and ARNs
+    and Google principal emails with keyed HMAC pseudonyms, so analysts can follow one
+    identity across events without the profile exposing who it is. Everything else keeps
+    the default Australian redaction. Set with BOWER_PRIVACY_PROFILE plus
+    BOWER_PRIVACY_HMAC_KEY_FILE and BOWER_PRIVACY_HMAC_KEY_ID.
+fields:
+  - path: actor.username
+    action: hmac
+  - path: actor.userId
+    action: hmac
+maximumFieldLength: 16384

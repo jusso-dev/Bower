@@ -1,0 +1,29 @@
+title: AWS audit logging or key protection disabled
+id: bower-pack-aws-logging-tampering-001
+status: stable
+description: CloudTrail stopped or deleted, GuardDuty or Config disabled, or a KMS key scheduled for deletion.
+version: 1.0.0
+level: critical
+logsource:
+  product: bower
+  service: aws_cloudtrail
+detection:
+  selection:
+    EventType: aws_cloudtrail
+    EventAction:
+      - StopLogging
+      - DeleteTrail
+      - UpdateTrail
+      - PutEventSelectors
+      - DeleteDetector
+      - DisassociateFromMasterAccount
+      - StopConfigurationRecorder
+      - DeleteConfigurationRecorder
+      - DisableKey
+      - ScheduleKeyDeletion
+  condition: selection
+tags:
+  - attack.t1562.008
+  - attack.defense_evasion
+falsepositives:
+  - Planned trail or key migrations

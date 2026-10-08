@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- The chiseled runtime image ships without ICU. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <RuntimeIdentifiers>linux-x64;linux-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Shared framework: generic host, logging and IHttpClientFactory without new packages. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- See docs/architecture/dependencies.md: SQS/S3 clients with the default credential
+         chain (instance profile, ECS task role, IRSA via STS web identity) and Google
+         Application Default Credentials including Workload Identity Federation. -->
+    <PackageReference Include="AWSSDK.S3" />
+    <PackageReference Include="AWSSDK.SecurityToken" />
+    <PackageReference Include="AWSSDK.SQS" />
+    <PackageReference Include="Google.Apis.Auth" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Microsoft.Extensions.DependencyInjection" />
+    <Using Include="Microsoft.Extensions.Hosting" />
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Bower.Forwarding/Bower.Forwarding.csproj" />
+    <ProjectReference Include="../Bower.Source.Aws/Bower.Source.Aws.csproj" />
+    <ProjectReference Include="../Bower.Source.Gcp/Bower.Source.Gcp.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Bower.UnitTests" />
+  </ItemGroup>
+</Project>

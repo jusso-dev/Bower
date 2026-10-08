@@ -1,0 +1,64 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Bower AWS global-service forwarder. Deploy in us-east-1. IAM, STS-global and root
+  console sign-in events are emitted only in us-east-1; this rule forwards those
+  write events to the home-region default event bus, where bower-aws-security.yaml
+  selects the high-value ones into the Bower queue. Events are not stored here.
+
+Parameters:
+  HomeEventBusArn:
+    Type: String
+    AllowedPattern: "^arn:aws[a-z-]*:events:[a-z0-9-]+:[0-9]{12}:event-bus/default$"
+    Description: HomeEventBusArn output of bower-aws-security.yaml.
+  RuleState:
+    Type: String
+    Default: DISABLED
+    AllowedValues: [ENABLED, DISABLED]
+
+Rules:
+  GlobalRegion:
+    Assertions:
+      - Assert: !Equals [!Ref "AWS::Region", us-east-1]
+        AssertDescription: Global service events are emitted in us-east-1; deploy this stack there.
+
+Resources:
+  ForwardRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref "AWS::AccountId"
+      Policies:
+        - PolicyName: put-home-bus
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: events:PutEvents
+                Resource: !Ref HomeEventBusArn
+
+  ForwardRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Bower - forward global IAM and sign-in events to the home region.
+      State: !Ref RuleState
+      EventPattern:
+        $or:
+          - source: [aws.iam]
+            detail-type: [AWS API Call via CloudTrail]
+          - detail-type: [AWS Console Sign In via CloudTrail]
+          - detail-type: [AWS API Call via CloudTrail]
+            detail:
+              userIdentity:
+                type: [Root]
+      Targets:
+        - Id: home-bus
+          Arn: !Ref HomeEventBusArn
+          RoleArn: !GetAtt ForwardRole.Arn

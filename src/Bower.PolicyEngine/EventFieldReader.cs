@@ -23,6 +23,7 @@ internal static class EventFieldReader
             "actor.username" => Present(value.Actor?.Username),
             "target.id" => Present(value.Target?.Id),
             "target.type" => Present(value.Target?.Type),
+            "target.name" => Present(value.Target?.Name),
             "source.ipAddress" => Present(value.Source?.IpAddress),
             "request.correlationId" => Present(value.Request?.CorrelationId),
             "request.traceId" => Present(value.Request?.TraceId),

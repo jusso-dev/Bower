@@ -1,0 +1,42 @@
+# Bower cloud agent next to a collector. It uses the published image (pin a version
+# or digest in production via BOWER_CLOUD_IMAGE), or build your own from the
+# repository root:
+#
+#   docker build -f deploy/docker/Dockerfile.cloud -t bower-cloud:local .
+#
+#   docker compose -f compose.yaml -f deploy/docker/compose.cloud.yaml up -d
+#
+# Configure at least one source. Credentials come from the host platform:
+#   AWS  - EC2 instance profile (IMDSv2 hop limit 2 for containers), ECS task role or
+#          EKS IRSA. Long-lived access keys are refused.
+#   GCP  - GKE Workload Identity, the attached service account, or a Workload
+#          Identity Federation file (see deploy/gcp) mounted read-only and named in
+#          GOOGLE_APPLICATION_CREDENTIALS. Service account key files are refused.
+services:
+  bower-cloud:
+    image: ${BOWER_CLOUD_IMAGE:-ghcr.io/jusso-dev/bower-cloud:edge}
+    restart: unless-stopped
+    read_only: true
+    environment:
+      BOWER_COLLECTOR_URL: ${BOWER_COLLECTOR_URL:-http://bower-collector:4319}
+      BOWER_INGEST_TOKEN: ${BOWER_INGEST_TOKEN:?set BOWER_INGEST_TOKEN to the collector ingest token}
+      BOWER_AGENT_ID: ${BOWER_AGENT_ID:-bower-cloud}
+      BOWER_ENVIRONMENT: ${BOWER_ENVIRONMENT:-production}
+      BOWER_REQUIRE_AU_REGION: ${BOWER_REQUIRE_AU_REGION:-true}
+      # AWS (output QueueUrl of deploy/aws/bower-aws-security.yaml)
+      BOWER_AWS_SQS_QUEUE_URL: ${BOWER_AWS_SQS_QUEUE_URL:-}
+      BOWER_AWS_S3_BUCKETS: ${BOWER_AWS_S3_BUCKETS:-}
+      # GCP (output subscription of deploy/gcp)
+      BOWER_GCP_SUBSCRIPTION: ${BOWER_GCP_SUBSCRIPTION:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+    tmpfs:
+      - /tmp:size=8m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
