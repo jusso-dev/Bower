@@ -91,6 +91,28 @@ public sealed class AzureLogsIngestionOutputTests
     }
 
     [Fact]
+    public async Task Deliver_DeadLettersRecordsAzureWouldTruncate()
+    {
+        RecordingHandler handler = new(_ => HttpStatusCode.NoContent);
+        AzureLogsIngestionOutput output = CreateOutput(handler);
+        string oversized = JsonSerializer.Serialize(new
+        {
+            eventId = "big",
+            timeGenerated = "2026-10-08T00:00:00Z",
+            actor = new { username = new string('x', 70_000) }
+        });
+
+        DeliveryResult result = await output.DeliverAsync(
+            [new QueuedEvent("big", "sha256:big", oversized, TestEvents.Now), Event("ok")],
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(["ok"], result.AcknowledgedEventIds);
+        DeliveryFailure failure = Assert.Single(result.Failures);
+        Assert.Equal("preflight-field-too-large", failure.Code);
+        Assert.False(failure.IsRetryable);
+    }
+
+    [Fact]
     public void Options_RejectNonHttpsEndpoint()
     {
         Assert.Throws<ArgumentException>(() => CreateOutput(
@@ -122,7 +144,7 @@ public sealed class AzureLogsIngestionOutputTests
         new(
             eventId,
             $"sha256:{eventId}",
-            JsonSerializer.Serialize(new { eventId, padding }),
+            JsonSerializer.Serialize(new { eventId, timeGenerated = "2026-10-08T00:00:00Z", padding }),
             TestEvents.Now);
 
     private sealed class RecordingHandler(Func<IReadOnlyList<string>, HttpStatusCode> respond)

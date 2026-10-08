@@ -14,6 +14,12 @@ public static class SecurityEventTypes
     /// </summary>
     public const string SensitiveDataDetected = "sensitive_data_detected";
     public const string CollectorStarted = "collector_started";
+
+    /// <summary>
+    /// Synthetic event sent by `bower evidence run` to prove end-to-end delivery.
+    /// Always labelled evidenceType=canary; never carries user data.
+    /// </summary>
+    public const string CollectorCanary = "collector_canary";
     public const string CollectorUploadFailed = "collector_upload_failed";
     public const string TelemetryAggregationSummary = "telemetry_aggregation_summary";
 }

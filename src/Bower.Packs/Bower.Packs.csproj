@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Bower.Dcr/Bower.Dcr.csproj" />
+    <ProjectReference Include="../Bower.Detection/Bower.Detection.csproj" />
+    <ProjectReference Include="../Bower.Integrity/Bower.Integrity.csproj" />
+    <ProjectReference Include="../Bower.Pipeline/Bower.Pipeline.csproj" />
+    <ProjectReference Include="../Bower.PolicyEngine/Bower.PolicyEngine.csproj" />
+    <ProjectReference Include="../Bower.Redaction/Bower.Redaction.csproj" />
+    <PackageReference Include="YamlDotNet" />
+  </ItemGroup>
+</Project>

@@ -21,6 +21,26 @@
 **Turn scattered application noise into trusted security signal — without
 shipping Australian PII, credentials or secrets downstream.**
 
+## Why Bower
+
+Azure Monitor Agent, Elastic Agent and Cribl Stream move logs. Bower makes a narrower
+promise and proves it: **only approved security events, with Australian personal data
+removed on the host, provably arriving in Sentinel.**
+
+| | Bower | Typical alternative |
+|---|---|---|
+| **Proof of arrival** | `bower evidence run` sends a canary, finds it in Sentinel with KQL, records latency and retention, maps it to ISM / Essential Eight controls and signs the result | AMA, Elastic and Cribl stop at "the API accepted it"; checking Sentinel is manual |
+| **Redaction before data leaves the host** | Deterministic engine with checksum-validated TFN, Medicare, IHI, CRN, ABN/ACN, cards and secrets; runs before anything is stored; any failure quarantines | DCR transformations redact in Azure after transfer; Elastic's redact processor runs in Elasticsearch on a paid licence; ML-based detectors elsewhere |
+| **Default deny** | Only event types an approved, versioned policy names are kept; everything else is rejected and explained | Forward everything configured, then filter |
+| **No silent loss** | Durable queue that deletes only after acknowledgement, attempt-limited dead letters with replay, preflight against Azure's 64 KB / type / schema limits, `bower doctor` and DCR drift checks | Azure truncates and drops rows without a per-record error |
+| **Tamper evidence** | Hash-chained queue ledger, head witnessed by the management plane | Not offered at the collector |
+| **Signed content** | Packs (policy, privacy profile, parsers, detections, samples, DCR) are signed, hash-pinned and tested before signing | Unsigned community content |
+| **Sovereignty** | Self-hosted, region checks for Australian endpoints, no data leaves your tenant except to your Sentinel | Hosted control planes; Sentinel processes Australian workspace data in a US region |
+
+The comparison reflects vendor documentation reviewed in October 2026; see the
+[competitive analysis](docs/research/competitive-analysis-2026-10.md) for sources and
+caveats.
+
 ![Bower management console fleet posture: collector, pending, unhealthy, stale and queued counts with an exceptions table and source coverage](docs/images/bower-management-overview.png)
 
 *The management console with synthetic preview data. Walkthrough below.*
@@ -75,12 +95,13 @@ contracts, bounded SDK buffering, local HTTP collection, the Australian-first
 Privacy & Secret Protection Engine (pre-persistence), deterministic default-deny
 policy evaluation, SQLite WAL queue and deduplication, retry/dead-letter
 transitions, AMA spool output, real Azure Monitor Logs Ingestion SDK output,
-Entra-protected fleet management and approval UI, basic CLI tooling, schemas and
-deployment examples.
+Entra-protected fleet management and approval UI, Sentinel query-verified evidence
+bundles, signed packs, DCR generation and drift checks, a tamper-evident queue
+ledger, CLI tooling, schemas and deployment examples.
 
 Runtime file, REST and Windows Event Log source adapters, complete catalogue commands,
-Roslyn packages, Azure plan/apply, query-backed evidence bundles, release-signing
-automation and broad resilience testing remain before v1. No mocked upload is
+Roslyn packages, Azure plan/apply, release-signing automation, a tenant-tested
+evidence run and broad resilience testing remain before v1. No mocked upload is
 represented as Sentinel delivery.
 
 ## Architecture
@@ -112,7 +133,7 @@ Full design: [architecture](docs/architecture/overview.md).
 | macOS | `osx-x64`, `osx-arm64` publishing configured by release workflow |
 | Local collector HTTP | Implemented; loopback default; bearer-token ingest auth and rate limiting off-host |
 | Privacy & Secret Protection Engine | Implemented; AU identifiers (TFN, CRN, Medicare, IHI, ABN/ACN, …), secrets, crypto; policy actions + metadata; high-risk findings emit `sensitive_data_detected` for SOC |
-| Durable SQLite queue | Implemented; retention purge, undelivered-byte cap, attempt-limited dead-lettering |
+| Durable SQLite queue | Implemented; retention purge, undelivered-byte cap, attempt-limited dead-lettering, replay, tamper-evident ledger |
 | Background jobs | Hangfire (in-memory) for retention, maintenance, heartbeat and staleness |
 | AMA companion spool | Implemented |
 | Logs Ingestion API | Real Azure SDK client implemented; tenant test required |
@@ -124,7 +145,12 @@ Full design: [architecture](docs/architecture/overview.md).
 | Windows Service self-install | Not implemented |
 | SQL Server source | EF Core adapter with durable SQLite cursors implemented |
 | File, REST, Event Log sources | Not implemented |
-| Sentinel query proof/evidence bundle | Not implemented |
+| Sentinel query proof/evidence bundle | Implemented: canary + KQL arrival + retention + ISM/E8 mapping, signed (`bower evidence`); tenant test required |
+| Signed Bower Packs | Implemented: policy, privacy profile, parsers, detections, samples, DCR template; tested before signing |
+| DCR generator, drift and doctor | Implemented: schema-driven ARM template, live/offline drift, ingestion preflight, region checks |
+| Fleet controls | Per-producer revocable ingest tokens, desired-policy acknowledgement, inactivity suspension and reinstate |
+| Queue integrity | Hash-chained ledger witnessed by management; dead-letter holding area with replay |
+| Privacy profiles | YAML detector actions, HMAC pseudonymisation with key ids, truncation, field-length cap |
 
 ## Getting started
 
@@ -284,6 +310,10 @@ Tags, verification and runtime configuration:
 |---|---|---|
 | `BOWER_LISTEN_URL` | `http://127.0.0.1:4319` | HTTP listener. Non-loopback requires a token. |
 | `BOWER_INGEST_TOKEN` / `BOWER_INGEST_TOKEN_FILE` | — | Shared bearer token (≥ 32 characters) for `/v1/events` and `/v1/status`. |
+| `BOWER_INGEST_TOKENS_FILE` | — | Per-producer revocable credentials (`<producer> sha256:<hex>` lines, hot reloaded). |
+| `BOWER_PACKS` / `BOWER_PACK_TRUSTED_KEYS` | — | Signed `.bowerpack` files to load, and the public keys trusted to sign them. |
+| `BOWER_PRIVACY_PROFILE` | — | Privacy profile YAML (detector actions, HMAC field rules, length limits). |
+| `BOWER_PRIVACY_HMAC_KEY_FILE` / `BOWER_PRIVACY_HMAC_KEY_ID` | — / `k1` | Pseudonymisation key (32+ bytes, base64) and the id embedded in HMAC output. |
 | `BOWER_ALLOW_UNAUTHENTICATED_INGEST` | `false` | Explicit opt-out for isolated networks only. |
 | `BOWER_INGEST_RATE_PER_SECOND` | `500` | Token-bucket limit (burst 2×); excess returns HTTP 429. |
 | `BOWER_QUEUE_PATH` | `./data/bower.db` | SQLite queue. |
@@ -311,6 +341,19 @@ storage; event delivery stays in the durable queue's low-latency worker.
 Design, observability and how to add a job:
 [background jobs](docs/operations/background-jobs.md). Dependency rationale:
 [dependency decisions](docs/architecture/dependencies.md).
+
+## Operating Bower
+
+| Task | Command | Details |
+|---|---|---|
+| Prove delivery to Sentinel | `bower evidence run --collector-url … --workspace-id … --signing-key …` | [Evidence bundles](docs/operations/evidence-bundles.md) |
+| Check a deployment | `bower doctor --collector-url … --dcr-resource-id … --workspace-resource-id …` | [Doctor and DCRs](docs/operations/doctor-and-dcr.md) |
+| Generate / diff the DCR | `bower dcr generate --out bower-dcr.json` · `bower dcr diff --rule rule.json` | [Doctor and DCRs](docs/operations/doctor-and-dcr.md) |
+| Build and sign a pack | `bower pack build packs/linux-ssh-gateway --key bower-signing.key.pem` | [Packs](docs/deployment/packs.md) |
+| Issue / revoke a producer token | `bower token generate --id sidecar-01` | [Fleet and queue integrity](docs/operations/fleet-and-queue-integrity.md) |
+| Replay dead letters | `bower queue dead-letters` · `bower queue replay --code preflight-` | [Fleet and queue integrity](docs/operations/fleet-and-queue-integrity.md) |
+| Verify queue integrity | `bower queue verify --database queue.db` | [Fleet and queue integrity](docs/operations/fleet-and-queue-integrity.md) |
+| Pseudonymise identifiers | privacy profile `action: hmac` + `BOWER_PRIVACY_HMAC_KEY_FILE` | [Privacy engine](docs/privacy/privacy-secret-engine.md) |
 
 ## Self-contained binaries
 
@@ -626,10 +669,11 @@ not create, alter or delete source database objects.
 
 ## Evidence
 
-Current local records capture policy hash, configuration identity, queue state and
-destination acknowledgement. v1 evidence bundles will add canary generation,
-Log Analytics query result, required-field verification and latency. Simulated
-and inaccessible evidence will never pass.
+`bower evidence run` sends a canary through the real collector, finds it in Sentinel
+with a KQL query under a separate read-only identity, records latency, retention and
+region, maps the result to ISM and Essential Eight controls, and signs the bundle.
+Without a workspace the bundle is labelled `simulated`; a 2xx from the ingestion API
+is never treated as proof. See [evidence bundles](docs/operations/evidence-bundles.md).
 
 ## Contributing
 

@@ -1,0 +1,13 @@
+apiVersion: bower.security/v1
+kind: PrivacyProfile
+metadata:
+  id: ssh-gateway-pseudonymised
+  version: 1.0.0
+  description: Default Australian redaction plus HMAC pseudonymisation of account names.
+fields:
+  # Keyed hash keeps attempts joinable across events without exposing the account.
+  - path: actor.username
+    action: hmac
+  - path: actor.userId
+    action: hmac
+maximumFieldLength: 16384

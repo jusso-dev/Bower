@@ -1,0 +1,39 @@
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+
+metadata:
+  id: BWR-PACK-SSH-AUTH
+  name: SSH and PAM authentication failures
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-06-30
+
+match:
+  eventCategories:
+    - authentication
+  eventTypes:
+    - authentication_failure
+    - account_lockout
+
+requirements:
+  requiredFields:
+    - timeGenerated
+    - eventType
+    - eventResult
+    - application.name
+    - source.ipAddress
+  atLeastOne:
+    - actor.userId
+    - actor.username
+  recommendedFields:
+    - eventOutcomeReason
+    - request.correlationId
+
+decision:
+  action: accept
+  minimumValueScore: 75
+  neverSample: true
+
+routing:
+  profile: authentication
+  destination: security-events

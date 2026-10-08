@@ -34,10 +34,44 @@ public sealed class PolicyApplicator
             PrivacyAction.Replace => policy.ReplacementText,
             PrivacyAction.Mask => Mask(span, match.DetectorId),
             PrivacyAction.Sha256 => Sha256(span),
-            PrivacyAction.Hmac => hmacHasher!.Hash(span),
+            PrivacyAction.Hmac => hmacHasher!.Hash(span, policy.HmacKeyId),
             PrivacyAction.Encrypt => Encrypt(span) ?? string.Empty,
             _ => policy.ReplacementText
         };
+    }
+
+    /// <summary>Applies an action to a whole field value (field rules and length limits).</summary>
+    public string? ApplyToValue(string value, PrivacyAction action, int? maxLength = null)
+    {
+        return action switch
+        {
+            PrivacyAction.Allow or PrivacyAction.AlertOnly => value,
+            PrivacyAction.Remove => null,
+            PrivacyAction.Replace => policy.ReplacementText,
+            PrivacyAction.Mask => Mask(value, string.Empty),
+            PrivacyAction.Sha256 => Sha256(value),
+            PrivacyAction.Hmac => value.Length == 0 ? value : hmacHasher!.Hash(value, policy.HmacKeyId),
+            PrivacyAction.Encrypt => Encrypt(value),
+            PrivacyAction.Truncate => Truncate(value, maxLength ?? policy.MaximumFieldLength),
+            _ => policy.ReplacementText
+        };
+    }
+
+    internal static string Truncate(string value, int maxLength)
+    {
+        if (value.Length <= maxLength)
+        {
+            return value;
+        }
+
+        // Never split a surrogate pair.
+        int cut = maxLength;
+        if (cut > 0 && char.IsHighSurrogate(value[cut - 1]))
+        {
+            cut--;
+        }
+
+        return value[..cut];
     }
 
     public static string ActionLabel(PrivacyAction action) => action switch
@@ -50,6 +84,7 @@ public sealed class PolicyApplicator
         PrivacyAction.Hmac => "HMAC",
         PrivacyAction.Encrypt => "Encrypted",
         PrivacyAction.AlertOnly => "AlertOnly",
+        PrivacyAction.Truncate => "Truncated",
         _ => action.ToString()
     };
 

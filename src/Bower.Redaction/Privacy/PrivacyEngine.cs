@@ -113,6 +113,8 @@ public sealed class PrivacyEngine : IEventRedactor
 
             List<AppliedFinding> findings = [];
             WalkObject(rootObject, "$", findings);
+            ApplyFieldRules(rootObject, findings);
+            EnforceFieldLength(rootObject, "$", findings);
 
             PrivacyMetadata metadata = BuildMetadata(findings);
             if (policy.EmitMetadata && metadata.HasFindings)
@@ -127,7 +129,8 @@ public sealed class PrivacyEngine : IEventRedactor
                 .ToList();
             List<string> masked = findings
                 .Where(f => f.Action is PrivacyAction.Mask or PrivacyAction.Sha256
-                    or PrivacyAction.Hmac or PrivacyAction.Encrypt or PrivacyAction.Replace)
+                    or PrivacyAction.Hmac or PrivacyAction.Encrypt or PrivacyAction.Replace
+                    or PrivacyAction.Truncate)
                 .Select(f => f.Path)
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
@@ -293,6 +296,111 @@ public sealed class PrivacyEngine : IEventRedactor
             default:
                 text = null;
                 return false;
+        }
+    }
+
+    private void ApplyFieldRules(JsonObject root, List<AppliedFinding> findings)
+    {
+        foreach (PrivacyFieldRule rule in policy.FieldRules)
+        {
+            ApplyFieldRule(root, rule, 0, "$", findings);
+        }
+    }
+
+    private void ApplyFieldRule(
+        JsonObject node,
+        PrivacyFieldRule rule,
+        int depth,
+        string path,
+        List<AppliedFinding> findings)
+    {
+        string segment = rule.Segments[depth];
+        IEnumerable<string> names = segment == "*"
+            ? node.Select(property => property.Key).ToArray()
+            : node.ContainsKey(segment) ? [segment] : [];
+        foreach (string name in names)
+        {
+            string childPath = $"{path}.{name}";
+            JsonNode? child = node[name];
+            if (depth < rule.Segments.Length - 1)
+            {
+                if (child is JsonObject nested)
+                {
+                    ApplyFieldRule(nested, rule, depth + 1, childPath, findings);
+                }
+
+                continue;
+            }
+
+            if (child is not JsonValue value || !TryGetScannableText(value, out string? text))
+            {
+                continue;
+            }
+
+            string? replaced = applicator.ApplyToValue(text, rule.Action, rule.MaxLength);
+            if (replaced is null)
+            {
+                node.Remove(name);
+            }
+            else if (!string.Equals(replaced, text, StringComparison.Ordinal))
+            {
+                node[name] = replaced;
+            }
+
+            findings.Add(new AppliedFinding(
+                DetectorIds.FieldRule,
+                DetectorCategories.FieldName,
+                childPath,
+                rule.Action,
+                Validated: true,
+                SubKind: null));
+        }
+    }
+
+    private void EnforceFieldLength(JsonNode? node, string path, List<AppliedFinding> findings)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+                foreach ((string name, JsonNode? child) in obj.ToArray())
+                {
+                    if (child is JsonValue value
+                        && value.GetValueKind() == JsonValueKind.String
+                        && value.GetValue<string>() is { } text
+                        && text.Length > policy.MaximumFieldLength)
+                    {
+                        obj[name] = PolicyApplicator.Truncate(text, policy.MaximumFieldLength);
+                        findings.Add(new AppliedFinding(
+                            DetectorIds.FieldLength, DetectorCategories.FieldName, $"{path}.{name}",
+                            PrivacyAction.Truncate, Validated: true, SubKind: null));
+                    }
+                    else
+                    {
+                        EnforceFieldLength(child, $"{path}.{name}", findings);
+                    }
+                }
+
+                break;
+            case JsonArray array:
+                for (int index = 0; index < array.Count; index++)
+                {
+                    if (array[index] is JsonValue value
+                        && value.GetValueKind() == JsonValueKind.String
+                        && value.GetValue<string>() is { } text
+                        && text.Length > policy.MaximumFieldLength)
+                    {
+                        array[index] = PolicyApplicator.Truncate(text, policy.MaximumFieldLength);
+                        findings.Add(new AppliedFinding(
+                            DetectorIds.FieldLength, DetectorCategories.FieldName, $"{path}[{index}]",
+                            PrivacyAction.Truncate, Validated: true, SubKind: null));
+                    }
+                    else
+                    {
+                        EnforceFieldLength(array[index], $"{path}[{index}]", findings);
+                    }
+                }
+
+                break;
         }
     }
 

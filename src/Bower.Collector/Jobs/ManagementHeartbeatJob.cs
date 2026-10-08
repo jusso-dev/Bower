@@ -18,6 +18,7 @@ public sealed partial class ManagementHeartbeatJob(
     IDurableEventStore eventStore,
     BackgroundJobCatalog jobs,
     CollectorSettings settings,
+    PolicyBundle bundle,
     ILogger<ManagementHeartbeatJob> logger)
 {
     public const string Id = "management-heartbeat";
@@ -71,6 +72,9 @@ public sealed partial class ManagementHeartbeatJob(
             }
         ];
         IReadOnlyList<BackgroundJobStatus> jobReports = jobs.List();
+        // The management store keeps the last ledger head per collector as an external
+        // witness: a later head with a lower sequence or a different hash is tampering.
+        LedgerHead ledger = await eventStore.GetLedgerHeadAsync(cancellationToken);
 
         using HttpRequestMessage registration = CreateRequest(
             "api/collectors/register",
@@ -81,8 +85,8 @@ public sealed partial class ManagementHeartbeatJob(
                 machineName = System.Environment.MachineName,
                 environment = settings.Environment,
                 version = settings.Version,
-                configurationHash = "environment:v1",
-                policyHash = "policy-directory:v1",
+                configurationHash = settings.ConfigurationHash(),
+                policyHash = bundle.Hash,
                 sources,
                 outputs
             });
@@ -99,13 +103,15 @@ public sealed partial class ManagementHeartbeatJob(
             new
             {
                 version = settings.Version,
-                configurationHash = "environment:v1",
-                policyHash = "policy-directory:v1",
+                configurationHash = settings.ConfigurationHash(),
+                policyHash = bundle.Hash,
                 queueDepth = snapshot.Queued + snapshot.Retrying + snapshot.Uploading,
                 deliveryStatus,
                 sources,
                 outputs,
-                jobs = jobReports
+                jobs = jobReports,
+                deadLettered = snapshot.DeadLettered,
+                ledger = new { sequence = ledger.Sequence, hash = ledger.Hash }
             });
         using HttpResponseMessage response = await client.SendAsync(heartbeat, cancellationToken);
         if (response.StatusCode == HttpStatusCode.Conflict)

@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using Bower.Cli.Commands;
 using Bower.Contracts;
 using Bower.Persistence;
 using Bower.Pipeline;
@@ -18,8 +19,22 @@ static async Task<int> RunAsync(string[] args)
             ["pipeline", "validate", .. string[] rest] => ValidatePipeline(rest),
             ["pipeline", "template", .. string[] rest] => PipelineTemplate(rest),
             ["queue", "inspect", .. string[] rest] => await InspectQueueAsync(rest),
+            ["queue", "dead-letters", .. string[] rest] => await QueueCommands.DeadLettersAsync(rest),
+            ["queue", "replay", .. string[] rest] => await QueueCommands.ReplayAsync(rest),
+            ["queue", "verify", .. string[] rest] => await QueueCommands.VerifyAsync(rest),
             ["test", "emit", .. string[] rest] => await EmitCanaryAsync(rest),
-            ["token", "generate"] => GenerateToken(),
+            ["token", "generate", .. string[] rest] => TokenCommands.Generate(rest),
+            ["doctor", .. string[] rest] => await DoctorCommand.RunAsync(rest),
+            ["dcr", "generate", .. string[] rest] => DcrCommands.Generate(rest),
+            ["dcr", "diff", .. string[] rest] => await DcrCommands.DiffAsync(rest),
+            ["keys", "generate", .. string[] rest] => KeyCommands.Generate(rest),
+            ["pack", "build", .. string[] rest] => PackCommands.Build(rest),
+            ["pack", "verify", .. string[] rest] => PackCommands.Verify(rest),
+            ["pack", "inspect", .. string[] rest] => PackCommands.Inspect(rest),
+            ["pack", "test", .. string[] rest] => PackCommands.Test(rest),
+            ["pack", "diff", .. string[] rest] => PackCommands.Diff(rest),
+            ["evidence", "run", .. string[] rest] => await EvidenceCommands.RunAsync(rest),
+            ["evidence", "verify", .. string[] rest] => EvidenceCommands.Verify(rest),
             ["developer", "init", .. string[] rest] => DeveloperInit(rest),
             [] or ["--help"] or ["help"] => WriteHelp(),
             _ => Fail("Unknown command. Run 'bower --help'.")
@@ -242,18 +257,31 @@ static int WriteHelp()
           bower pipeline template [--id sentinel-app|aws-security]
           bower queue inspect [--database PATH]
           bower test emit [--endpoint URL]      (sends BOWER_INGEST_TOKEN when set)
-          bower token generate                 (new collector ingest token)
+          bower token generate [--id PRODUCER] (new ingest token; --id prints a tokens-file line)
+
+          bower doctor [--policy-directory DIR] [--pack FILE --trusted-key PUB] [--privacy-profile FILE]
+                       [--hmac-key-file FILE] [--collector-url URL] [--database FILE]
+                       [--ingestion-endpoint URL] [--dcr-resource-id ID] [--workspace-resource-id ID]
+                       [--credential azure-cli|managed-identity|workload-identity|environment] [--json]
+
+          bower dcr generate [--out FILE] [--rule-name NAME] [--retention-days N] [--total-retention-days N]
+          bower dcr diff (--rule FILE | --dcr-resource-id ID) [--table FILE | --workspace-resource-id ID]
+
+          bower keys generate --out-dir DIR [--name NAME]
+          bower pack build DIR --key PRIVATE.pem [--out DIR]
+          bower pack verify|inspect|test FILE --trusted-key PUBLIC.pem
+          bower pack diff OLD.bowerpack NEW.bowerpack --trusted-key PUBLIC.pem
+
+          bower evidence run --collector-url URL [--workspace-id ID --workspace-resource-id ID]
+                             [--table NAME] [--signing-key PRIVATE.pem] [--out FILE]
+          bower evidence verify FILE --trusted-key PUBLIC.pem
+
+          bower queue dead-letters --database FILE
+          bower queue replay --database FILE (--code PREFIX | --event ID ...)
+          bower queue verify --database FILE [--expect-head SEQUENCE:HASH]
           bower developer init [--path PATH]
           bower version
         """);
-    return 0;
-}
-
-static int GenerateToken()
-{
-    // 32 random bytes, URL-safe base64: suitable for BOWER_INGEST_TOKEN.
-    byte[] bytes = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
-    Console.WriteLine(Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_'));
     return 0;
 }
 

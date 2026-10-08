@@ -86,8 +86,9 @@ public sealed class SqliteEventStore : IDurableEventStore
 
             INSERT OR IGNORE INTO schema_history(version, applied_at, hash)
             VALUES (2, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 'bower-queue-v2-retention');
-            """;
+            """ + QueueLedger.Schema;
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await QueueLedger.BackfillAsync(connection, cancellationToken);
         ApplyRestrictivePermissions();
     }
 
@@ -132,6 +133,17 @@ public sealed class SqliteEventStore : IDurableEventStore
         command.Parameters.AddWithValue("$delivery_attempts", candidate.DeliveryAttempts);
 
         int affected = await command.ExecuteNonQueryAsync(cancellationToken);
+        if (affected == 1)
+        {
+            await QueueLedger.AppendAsync(
+                connection,
+                transaction,
+                candidate.EventId,
+                candidate.Payload,
+                (string)command.Parameters["$received_at"].Value!,
+                cancellationToken);
+        }
+
         await transaction.CommitAsync(cancellationToken);
         return new EnqueueResult(affected == 1, affected == 0, candidate.EventId);
     }
@@ -370,13 +382,16 @@ public sealed class SqliteEventStore : IDurableEventStore
         }
 
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
-        await using SqliteCommand command = connection.CreateCommand();
-        // Only acknowledged rows are eligible. Undelivered, retrying and dead-lettered
-        // events are never deleted here.
-        command.CommandText =
-            """
-            DELETE FROM queue_events
-            WHERE event_id IN (
+        await using SqliteTransaction transaction =
+            connection.BeginTransaction(IsolationLevel.Serializable, deferred: false);
+        List<string> eventIds = [];
+        await using (SqliteCommand select = connection.CreateCommand())
+        {
+            select.Transaction = transaction;
+            // Only acknowledged rows are eligible. Undelivered, retrying and dead-lettered
+            // events are never deleted here.
+            select.CommandText =
+                """
                 SELECT event_id
                 FROM queue_events
                 WHERE state = $delivered
@@ -384,14 +399,150 @@ public sealed class SqliteEventStore : IDurableEventStore
                   AND delivered_at IS NOT NULL
                   AND delivered_at < $delivered_before
                 ORDER BY delivered_at ASC
-                LIMIT $maximum_count);
+                LIMIT $maximum_count;
+                """;
+            select.Parameters.AddWithValue("$delivered", (int)QueueState.Delivered);
+            select.Parameters.AddWithValue(
+                "$delivered_before",
+                deliveredBefore.ToUniversalTime().ToString(TimestampFormat, CultureInfo.InvariantCulture));
+            select.Parameters.AddWithValue("$maximum_count", maximumCount);
+            await using SqliteDataReader reader = await select.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                eventIds.Add(reader.GetString(0));
+            }
+        }
+
+        foreach (string eventId in eventIds)
+        {
+            await using SqliteCommand delete = connection.CreateCommand();
+            delete.Transaction = transaction;
+            delete.CommandText = "DELETE FROM queue_events WHERE event_id = $event_id AND state = $delivered;";
+            delete.Parameters.AddWithValue("$event_id", eventId);
+            delete.Parameters.AddWithValue("$delivered", (int)QueueState.Delivered);
+            await delete.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        // Record the purge in the ledger in the same transaction so verification can tell
+        // retention from tampering.
+        await QueueLedger.MarkPurgedAsync(
+            connection,
+            transaction,
+            eventIds,
+            clock.GetUtcNow().ToString(TimestampFormat, CultureInfo.InvariantCulture),
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        await QueueLedger.CompactAsync(
+            connection,
+            clock.GetUtcNow().ToString(TimestampFormat, CultureInfo.InvariantCulture),
+            cancellationToken);
+        return eventIds.Count;
+    }
+
+    public async Task<IReadOnlyList<DeadLetterRecord>> ListDeadLetteredAsync(
+        int maximumCount,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(maximumCount, 1);
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT event_id, last_failure_code, delivery_attempts, received_at
+            FROM queue_events
+            WHERE state = $dead_lettered
+            ORDER BY received_at ASC
+            LIMIT $maximum_count;
             """;
-        command.Parameters.AddWithValue("$delivered", (int)QueueState.Delivered);
-        command.Parameters.AddWithValue(
-            "$delivered_before",
-            deliveredBefore.ToUniversalTime().ToString(TimestampFormat, CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$dead_lettered", (int)QueueState.DeadLettered);
         command.Parameters.AddWithValue("$maximum_count", maximumCount);
-        return await command.ExecuteNonQueryAsync(cancellationToken);
+        List<DeadLetterRecord> records = [];
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            records.Add(new DeadLetterRecord(
+                reader.GetString(0),
+                reader.IsDBNull(1) ? null : reader.GetString(1),
+                reader.GetInt32(2),
+                DateTimeOffset.Parse(reader.GetString(3), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)));
+        }
+
+        return records;
+    }
+
+    public async Task<int> ReplayDeadLetteredAsync(
+        string? failureCodePrefix,
+        IReadOnlyCollection<string>? eventIds,
+        int maximumCount,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(maximumCount, 1);
+        if (string.IsNullOrWhiteSpace(failureCodePrefix) && (eventIds is null || eventIds.Count == 0))
+        {
+            return 0;
+        }
+
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteTransaction transaction =
+            connection.BeginTransaction(IsolationLevel.Serializable, deferred: false);
+        List<string> selected = [];
+        await using (SqliteCommand select = connection.CreateCommand())
+        {
+            select.Transaction = transaction;
+            select.CommandText =
+                """
+                SELECT event_id, last_failure_code FROM queue_events
+                WHERE state = $dead_lettered
+                ORDER BY received_at ASC;
+                """;
+            select.Parameters.AddWithValue("$dead_lettered", (int)QueueState.DeadLettered);
+            await using SqliteDataReader reader = await select.ExecuteReaderAsync(cancellationToken);
+            HashSet<string>? ids = eventIds is null ? null : new HashSet<string>(eventIds, StringComparer.Ordinal);
+            while (await reader.ReadAsync(cancellationToken) && selected.Count < maximumCount)
+            {
+                string eventId = reader.GetString(0);
+                string code = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
+                bool idMatch = ids is null || ids.Count == 0 || ids.Contains(eventId);
+                bool codeMatch = string.IsNullOrWhiteSpace(failureCodePrefix)
+                    || code.StartsWith(failureCodePrefix, StringComparison.Ordinal);
+                if (idMatch && codeMatch)
+                {
+                    selected.Add(eventId);
+                }
+            }
+        }
+
+        foreach (string eventId in selected)
+        {
+            await using SqliteCommand update = connection.CreateCommand();
+            update.Transaction = transaction;
+            update.CommandText =
+                """
+                UPDATE queue_events
+                SET state = $queued, delivery_attempts = 0, next_attempt_at = NULL, lease_until = NULL
+                WHERE event_id = $event_id AND state = $dead_lettered;
+                """;
+            update.Parameters.AddWithValue("$queued", (int)QueueState.Queued);
+            update.Parameters.AddWithValue("$dead_lettered", (int)QueueState.DeadLettered);
+            update.Parameters.AddWithValue("$event_id", eventId);
+            await update.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return selected.Count;
+    }
+
+    public async Task<LedgerHead> GetLedgerHeadAsync(CancellationToken cancellationToken = default)
+    {
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        (long sequence, string hash) = await QueueLedger.HeadAsync(connection, null, cancellationToken);
+        return new LedgerHead(sequence, hash);
+    }
+
+    public async Task<LedgerVerification> VerifyLedgerAsync(CancellationToken cancellationToken = default)
+    {
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        return await QueueLedger.VerifyAsync(connection, cancellationToken);
     }
 
     public async Task MaintainAsync(CancellationToken cancellationToken = default)

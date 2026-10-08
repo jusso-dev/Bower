@@ -68,8 +68,9 @@ test("background jobs show management and collector job health", async ({ page }
   await expect(page.getByRole("heading", { name: "Background jobs" })).toBeVisible();
   await expect(page.getByText("collector-staleness")).toBeVisible();
   await expect(page.getByText("queue-retention").first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Run now" })).toBeEnabled();
-  await page.getByRole("button", { name: "Run now" }).click();
+  const stalenessRow = page.getByRole("row", { name: /collector-staleness/ });
+  await expect(stalenessRow.getByRole("button", { name: "Run now" })).toBeEnabled();
+  await stalenessRow.getByRole("button", { name: "Run now" }).click();
   await expect(page.getByText(/Queued collector-staleness/)).toBeVisible();
   await expectNoHorizontalOverflow(page);
   expect(consoleErrors).toEqual([]);

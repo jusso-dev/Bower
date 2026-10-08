@@ -1,0 +1,36 @@
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+
+metadata:
+  id: BWR-POL-EVIDENCE-CANARY
+  name: Evidence canary events
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-06-30
+
+match:
+  eventCategories:
+    - collector-health
+  eventTypes:
+    - collector_canary
+
+requirements:
+  requiredFields:
+    - timeGenerated
+    - eventType
+    - eventResult
+    - application.name
+    - request.correlationId
+  atLeastOne:
+    - actor.username
+  recommendedFields:
+    - eventOutcomeReason
+
+decision:
+  action: accept
+  minimumValueScore: 50
+  neverSample: true
+
+routing:
+  profile: evidence
+  destination: security-events

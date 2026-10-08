@@ -1,3 +1,5 @@
+// Generated shape must match Bower.Dcr SentinelSchema.Default (enforced by tests).
+// Regenerate an equivalent ARM template with: bower dcr generate
 targetScope = 'resourceGroup'
 
 @description('Region matching the Log Analytics workspace.')
@@ -26,7 +28,8 @@ resource table 'Microsoft.OperationalInsights/workspaces/tables@2025-07-01' = {
   name: 'BowerSecurity_CL'
   properties: {
     plan: 'Analytics'
-    retentionInDays: 30
+    retentionInDays: 90
+    // ISM: event logs searchable for at least 12 months.
     totalRetentionInDays: 365
     schema: {
       name: 'BowerSecurity_CL'
@@ -50,6 +53,8 @@ resource table 'Microsoft.OperationalInsights/workspaces/tables@2025-07-01' = {
         { name: 'PolicyHash', type: 'string' }
         { name: 'ValueScore', type: 'int' }
         { name: 'CollectorId', type: 'string' }
+        { name: 'PrivacyDetected', type: 'dynamic' }
+        { name: 'Labels', type: 'dynamic' }
         { name: 'RawEnvelope', type: 'dynamic' }
       ]
     }
@@ -91,6 +96,8 @@ resource rule 'Microsoft.Insights/dataCollectionRules@2025-07-01' = {
           { name: 'request', type: 'dynamic' }
           { name: 'security', type: 'dynamic' }
           { name: 'collector', type: 'dynamic' }
+          { name: 'labels', type: 'dynamic' }
+          { name: 'privacy', type: 'dynamic' }
         ]
       }
     }
@@ -130,6 +137,8 @@ resource rule 'Microsoft.Insights/dataCollectionRules@2025-07-01' = {
               PolicyHash = substring(tostring(security.policyHash), 0, 128),
               ValueScore = toint(security.valueScore),
               CollectorId = substring(tostring(collector.id), 0, 128),
+              PrivacyDetected = privacy.detected,
+              Labels = labels,
               RawEnvelope = pack_all()
         '''
       }

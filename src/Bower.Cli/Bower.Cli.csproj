@@ -11,5 +11,8 @@
     <ProjectReference Include="../Bower.Persistence/Bower.Persistence.csproj" />
     <ProjectReference Include="../Bower.PolicyEngine/Bower.PolicyEngine.csproj" />
     <ProjectReference Include="..\Bower.Pipeline\Bower.Pipeline.csproj" />
+    <ProjectReference Include="../Bower.Dcr/Bower.Dcr.csproj" />
+    <ProjectReference Include="../Bower.Evidence/Bower.Evidence.csproj" />
+    <ProjectReference Include="../Bower.Packs/Bower.Packs.csproj" />
   </ItemGroup>
 </Project>

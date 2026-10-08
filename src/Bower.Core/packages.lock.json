@@ -172,7 +172,8 @@
       "bower.redaction": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )"
+          "Bower.Abstractions": "[1.0.0, )",
+          "YamlDotNet": "[18.1.0, )"
         }
       },
       "Microsoft.Data.Sqlite": {

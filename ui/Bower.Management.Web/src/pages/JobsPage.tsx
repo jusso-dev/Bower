@@ -9,6 +9,8 @@ import type { Access, BackgroundJob, Collector } from "../types";
 const jobDescriptions: Record<string, string> = {
   "collector-staleness":
     "Flags approved collectors that stopped reporting for 15 minutes and audits the change.",
+  "collector-inactivity":
+    "Suspends collector identities silent for 30 days; an administrator must reinstate them.",
   "queue-retention":
     "Removes acknowledged events after the duplicate-detection window. Never touches undelivered events.",
   "queue-maintenance": "Checkpoints the SQLite write-ahead log and refreshes query statistics.",
@@ -19,6 +21,7 @@ const schedules: Record<string, string> = {
   "* * * * *": "Every minute",
   "*/5 * * * *": "Every 5 minutes",
   "0 * * * *": "Hourly",
+  "0 2 * * *": "Daily, 02:00 UTC",
   "0 3 * * *": "Daily, 03:00 UTC"
 };
 

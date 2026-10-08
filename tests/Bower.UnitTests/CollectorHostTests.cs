@@ -111,6 +111,97 @@ public sealed class CollectorHostTests
     }
 
     [Fact]
+    public async Task ProducerTokens_AreRevocableWithoutRestart()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string sidecar = "sidecar-token-0123456789abcdefghijklmnop";
+        string app = "app-token-0123456789abcdefghijklmnopqrstu";
+        string tokensFile = Path.Combine(directory.Path, "tokens");
+        File.WriteAllLines(tokensFile,
+        [
+            "# producer credentials",
+            IngestAuthentication.TokensFileLine("sidecar-01", sidecar),
+            IngestAuthentication.TokensFileLine("portal", app)
+        ]);
+        FakeClock clock = new(TestEvents.Now);
+        IngestAuthentication authentication = new(null, tokensFile, clock);
+
+        string? before = authentication.Authenticate(Request(sidecar));
+        File.WriteAllLines(tokensFile, [IngestAuthentication.TokensFileLine("portal", app)]);
+        File.SetLastWriteTimeUtc(tokensFile, DateTime.UtcNow.AddSeconds(5));
+        clock.Advance(TimeSpan.FromSeconds(3));
+        string? revoked = authentication.Authenticate(Request(sidecar));
+        string? kept = authentication.Authenticate(Request(app));
+
+        Assert.Equal("sidecar-01", before);
+        Assert.Null(revoked);
+        Assert.Equal("portal", kept);
+        await Task.CompletedTask;
+    }
+
+    [Fact]
+    public void ProducerTokens_RejectMalformedFile()
+    {
+        using TemporaryDirectory directory = new();
+        string tokensFile = Path.Combine(directory.Path, "tokens");
+        File.WriteAllText(tokensFile, "sidecar-01 not-a-hash\n");
+
+        Assert.Throws<FormatException>(() => new IngestAuthentication(null, tokensFile));
+    }
+
+    [Fact]
+    public async Task Collector_LoadsSignedPackAndReportsPolicyBundle()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (string privatePem, string publicPem, _) = Bower.Integrity.DetachedSigner.GenerateKeyPair();
+        string pack = Bower.Packs.PackArchive.Build(
+            Path.Combine(AppContext.BaseDirectory, "packs", "linux-ssh-gateway"), privatePem, directory.Path);
+        string publicKey = Path.Combine(directory.Path, "trusted.pem");
+        string hmacKey = Path.Combine(directory.Path, "hmac.key");
+        File.WriteAllText(publicKey, publicPem);
+        File.WriteAllText(hmacKey, Convert.ToBase64String(new byte[32]));
+        await using WebApplication app = await StartAsync(
+            directory,
+            Token,
+            cancellationToken,
+            settings => settings with
+            {
+                Packs = [pack],
+                PackTrustedKeyFiles = [publicKey],
+                PrivacyHmacKeyFile = hmacKey
+            });
+        HttpClient client = app.GetTestClient();
+        using HttpRequestMessage statusRequest = new(HttpMethod.Get, "/v1/status");
+        statusRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Token);
+
+        string status = await (await client.SendAsync(statusRequest, cancellationToken)).Content.ReadAsStringAsync(cancellationToken);
+        using HttpRequestMessage post = Post(AuthenticationFailure(), Token);
+        string accepted = await (await client.SendAsync(post, cancellationToken)).Content.ReadAsStringAsync(cancellationToken);
+
+        Assert.Contains("linux-ssh-gateway", status, StringComparison.Ordinal);
+        Assert.Contains("\"privacyProfile\":\"ssh-gateway-pseudonymised\"", status, StringComparison.Ordinal);
+        Assert.Contains("\"ledger\":", status, StringComparison.Ordinal);
+        Assert.Contains("accept", accepted, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Settings_RefuseUnverifiedPacks()
+    {
+        CollectorSettings settings = BaseSettings("unused") with { Packs = ["x.bowerpack"] };
+
+        Assert.Throws<InvalidOperationException>(settings.Validate);
+    }
+
+    private static Microsoft.AspNetCore.Http.HttpRequest Request(string token)
+    {
+        Microsoft.AspNetCore.Http.DefaultHttpContext context = new();
+        context.Request.Headers.Authorization = $"Bearer {token}";
+        return context.Request;
+    }
+
+    [Fact]
     public void Settings_RequireTokenOnNonLoopbackListener()
     {
         CollectorSettings settings = BaseSettings("unused") with

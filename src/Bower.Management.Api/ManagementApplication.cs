@@ -135,6 +135,7 @@ public static class ManagementApplication
 
         builder.Services.AddBowerBackgroundJobs("bower-management", workerCount: 1);
         builder.Services.AddTransient<CollectorStalenessJob>();
+        builder.Services.AddTransient<CollectorInactivityJob>();
 
         configure?.Invoke(builder);
 
@@ -219,6 +220,11 @@ public static class ManagementApplication
             CollectorStalenessJob.Id,
             job => job.RunAsync(CancellationToken.None),
             "*/5 * * * *",
+            new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
+        app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<CollectorInactivityJob>(
+            CollectorInactivityJob.Id,
+            job => job.RunAsync(CancellationToken.None),
+            Cron.Daily(2),
             new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
     }
 
@@ -449,6 +455,48 @@ public static class ManagementApplication
                     DecideAsync(
                         collectorId, CollectorStatus.Revoked, "revoked", request, user, store,
                         clock, cancellationToken))
+            .RequireAuthorization("Administer");
+
+        api.MapPost(
+                "/collectors/{collectorId}/reinstate",
+                (string collectorId, ApprovalRequest request, ClaimsPrincipal user,
+                    ManagementStore store, TimeProvider clock, CancellationToken cancellationToken) =>
+                    DecideAsync(
+                        collectorId, CollectorStatus.Approved, "reinstated", request, user, store,
+                        clock, cancellationToken))
+            .RequireAuthorization("Administer");
+
+        api.MapPost(
+                "/collectors/{collectorId}/desired-policy",
+                async (
+                    string collectorId,
+                    DesiredPolicyRequest request,
+                    ClaimsPrincipal user,
+                    ManagementStore store,
+                    TimeProvider clock,
+                    CancellationToken cancellationToken) =>
+                {
+                    try
+                    {
+                        CollectorRecord? record = await store.SetDesiredPolicyAsync(
+                            collectorId,
+                            string.IsNullOrWhiteSpace(request.PolicyHash) ? null : request.PolicyHash.Trim(),
+                            request.Reason,
+                            ObjectId(user),
+                            DisplayName(user),
+                            clock.GetUtcNow(),
+                            cancellationToken);
+                        return record is null ? Results.NotFound() : Results.Ok(record);
+                    }
+                    catch (ArgumentException)
+                    {
+                        return Results.ValidationProblem(
+                            new Dictionary<string, string[]>
+                            {
+                                ["desiredPolicy"] = ["A sha256: policy hash (or empty to clear) and a 1–500 character reason are required."]
+                            });
+                    }
+                })
             .RequireAuthorization("Administer");
 
         api.MapGet(

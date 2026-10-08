@@ -13,5 +13,8 @@ public enum PrivacyAction
     Sha256,
     Hmac,
     Encrypt,
-    AlertOnly
+    AlertOnly,
+
+    /// <summary>Shorten the value to a configured maximum length.</summary>
+    Truncate
 }

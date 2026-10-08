@@ -26,6 +26,8 @@ export function OverviewPage() {
               <Metric label="Unhealthy" value={overview.unhealthyCollectors} tone="danger" />
               <Metric label="Stale" value={overview.staleCollectors} tone="warning" />
               <Metric label="Queued" value={overview.totalQueueDepth} />
+              <Metric label="Policy drift" value={overview.policyDrift ?? 0} tone="danger" />
+              <Metric label="Dead letters" value={overview.deadLettered ?? 0} tone="warning" />
             </div>
             <div className="workbench-grid">
               <section className="sheet">
@@ -34,7 +36,7 @@ export function OverviewPage() {
                   <span>{overview.exceptions.length} open</span>
                 </div>
                 {overview.exceptions.length ? (
-                  <CollectorTable collectors={overview.exceptions} />
+                  <CollectorTable collectors={overview.exceptions} compact />
                 ) : (
                   <EmptyState
                     icon={<ShieldCheck aria-hidden="true" />}

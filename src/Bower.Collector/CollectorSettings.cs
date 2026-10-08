@@ -30,6 +30,21 @@ public sealed record CollectorSettings
 
     public string? IngestToken { get; init; }
 
+    /// <summary>One revocable credential per producer: lines of "&lt;producer&gt; sha256:&lt;hex&gt;".</summary>
+    public string? IngestTokensFile { get; init; }
+
+    /// <summary>Signed .bowerpack archives to load policies and privacy profile from.</summary>
+    public IReadOnlyList<string> Packs { get; init; } = [];
+
+    /// <summary>PEM public keys trusted to sign packs.</summary>
+    public IReadOnlyList<string> PackTrustedKeyFiles { get; init; } = [];
+
+    public string? PrivacyProfilePath { get; init; }
+
+    public string? PrivacyHmacKeyFile { get; init; }
+
+    public string PrivacyHmacKeyId { get; init; } = "k1";
+
     public bool AllowUnauthenticatedIngest { get; init; }
 
     public int IngestRequestsPerSecond { get; init; } = 500;
@@ -81,6 +96,12 @@ public sealed record CollectorSettings
             DeliveredRetention = TimeSpan.FromHours(
                 ReadInt64(read, "BOWER_QUEUE_RETENTION_HOURS", 7 * 24)),
             IngestToken = string.IsNullOrWhiteSpace(token) ? null : token,
+            IngestTokensFile = Blank(read("BOWER_INGEST_TOKENS_FILE")),
+            Packs = SplitList(read("BOWER_PACKS")),
+            PackTrustedKeyFiles = SplitList(read("BOWER_PACK_TRUSTED_KEYS")),
+            PrivacyProfilePath = Blank(read("BOWER_PRIVACY_PROFILE")),
+            PrivacyHmacKeyFile = Blank(read("BOWER_PRIVACY_HMAC_KEY_FILE")),
+            PrivacyHmacKeyId = Blank(read("BOWER_PRIVACY_HMAC_KEY_ID")) ?? "k1",
             AllowUnauthenticatedIngest = string.Equals(
                 read("BOWER_ALLOW_UNAUTHENTICATED_INGEST"),
                 "true",
@@ -122,12 +143,18 @@ public sealed record CollectorSettings
         }
 
         // Fail closed: a collector reachable from other hosts must authenticate producers.
-        if (IngestToken is null && !AllowUnauthenticatedIngest && !IsLoopbackListener)
+        if (IngestToken is null && IngestTokensFile is null && !AllowUnauthenticatedIngest && !IsLoopbackListener)
         {
             throw new InvalidOperationException(
-                "BOWER_LISTEN_URL is not loopback, so BOWER_INGEST_TOKEN or " +
-                "BOWER_INGEST_TOKEN_FILE is required. Set BOWER_ALLOW_UNAUTHENTICATED_INGEST=true " +
+                "BOWER_LISTEN_URL is not loopback, so BOWER_INGEST_TOKEN, BOWER_INGEST_TOKEN_FILE " +
+                "or BOWER_INGEST_TOKENS_FILE is required. Set BOWER_ALLOW_UNAUTHENTICATED_INGEST=true " +
                 "only on an isolated network you control.");
+        }
+
+        if (Packs.Count > 0 && PackTrustedKeyFiles.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "BOWER_PACKS requires BOWER_PACK_TRUSTED_KEYS; packs are never loaded unverified.");
         }
 
         if (MaximumQueueBytes < 1_048_576)
@@ -181,6 +208,37 @@ public sealed record CollectorSettings
             }
         }
     }
+
+    /// <summary>
+    /// Hash of non-secret settings reported to management, so configuration drift is
+    /// visible. Tokens, keys and file contents are excluded.
+    /// </summary>
+    public string ConfigurationHash()
+    {
+        string material = string.Join(
+            '\u001f',
+            ListenUrl,
+            OutputType,
+            StreamName,
+            DceEndpoint?.ToString() ?? string.Empty,
+            DcrImmutableId ?? string.Empty,
+            AzureCredential.ToString(),
+            MaximumQueueBytes.ToString(CultureInfo.InvariantCulture),
+            DeliveredRetention.TotalHours.ToString(CultureInfo.InvariantCulture),
+            IngestRequestsPerSecond.ToString(CultureInfo.InvariantCulture),
+            MaximumDeliveryAttempts.ToString(CultureInfo.InvariantCulture),
+            (IngestToken is not null || IngestTokensFile is not null).ToString(),
+            PrivacyHmacKeyId);
+        return "sha256:" + Convert.ToHexStringLower(
+            System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(material)));
+    }
+
+    private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    private static string[] SplitList(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? []
+            : value.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     internal static bool IsLoopback(string host)
     {

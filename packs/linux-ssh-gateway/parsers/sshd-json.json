@@ -1,0 +1,10 @@
+{
+  "version": "1.0",
+  "format": "Json",
+  "fields": [
+    { "sourceName": "timestamp", "type": "DateTime", "ocsfPath": "time", "asimField": "TimeGenerated", "sensitive": false },
+    { "sourceName": "user", "type": "Text", "ocsfPath": "actor.user.name", "asimField": "TargetUsername", "sensitive": true },
+    { "sourceName": "source_ip", "type": "IpAddress", "ocsfPath": "src_endpoint.ip", "asimField": "SrcIpAddr", "sensitive": false },
+    { "sourceName": "result", "type": "Text", "ocsfPath": "status", "asimField": "EventResult", "sensitive": false }
+  ]
+}
