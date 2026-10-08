@@ -2,7 +2,7 @@ apiVersion: bower.security/v1
 kind: TelemetryPolicy
 
 metadata:
-  id: BWR-PACK-AWS-FINDINGS
+  id: BWR-POL-AWS-FINDINGS
   name: GuardDuty and Security Hub findings
   version: 1.0.0
   owner: Security Operations

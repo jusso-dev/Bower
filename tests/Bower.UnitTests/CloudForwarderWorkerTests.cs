@@ -277,6 +277,7 @@ public sealed class CloudForwarderWorkerTests
     [InlineData("BOWER_GCP_SUBSCRIPTION", "bower-security", null, null)]
     [InlineData("BOWER_GCP_SUBSCRIPTION", "projects/bower-prod/subscriptions/s1", "BOWER_GCP_PUBSUB_ENDPOINT", "http://pubsub.example.test")]
     [InlineData("BOWER_COLLECTOR_URL", "http://bower-collector:4319", null, null)]
+    [InlineData("BOWER_AWS_SQS_QUEUE_URL", "https://sqs.us-east-1.amazonaws.com/123456789012/q", "BOWER_AWS_REGION", "ap-southeast-2")]
     public void Settings_RejectUnsafeOrIncompleteConfiguration(string name, string value, string? extraName, string? extraValue)
     {
         Dictionary<string, string?> environment = new() { [name] = value };

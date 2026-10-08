@@ -15,13 +15,14 @@ locals {
   ])
 }
 
+# Storage is pinned to Australian regions. In-transit enforcement is not set: Cloud
+# Logging sinks and SCC publish through global endpoints and would be refused.
 resource "google_pubsub_topic" "events" {
   name                       = var.name
   message_retention_duration = "86400s"
 
   message_storage_policy {
     allowed_persistence_regions = var.allowed_persistence_regions
-    enforce_in_transit          = true
   }
 }
 
@@ -30,7 +31,6 @@ resource "google_pubsub_topic" "dead_letter" {
 
   message_storage_policy {
     allowed_persistence_regions = var.allowed_persistence_regions
-    enforce_in_transit          = true
   }
 }
 

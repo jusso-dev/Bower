@@ -2,7 +2,7 @@ apiVersion: bower.security/v1
 kind: TelemetryPolicy
 
 metadata:
-  id: BWR-PACK-AWS-CLOUDTRAIL
+  id: BWR-POL-AWS-CLOUDTRAIL
   name: High-value AWS CloudTrail activity
   version: 1.0.0
   owner: Security Operations

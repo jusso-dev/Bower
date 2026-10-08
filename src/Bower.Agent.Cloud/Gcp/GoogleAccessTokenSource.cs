@@ -20,6 +20,9 @@ public sealed class GoogleAccessTokenSource(bool allowServiceAccountKey) : IGoog
         return await access.GetAccessTokenForRequestAsync(cancellationToken: cancellationToken);
     }
 
+    /// <summary>Loads and checks credentials up front so a refused key file stops start-up.</summary>
+    public Task InitializeAsync(CancellationToken cancellationToken) => LoadAsync(cancellationToken);
+
     private async Task<ITokenAccess> LoadAsync(CancellationToken cancellationToken)
     {
         await gate.WaitAsync(cancellationToken);

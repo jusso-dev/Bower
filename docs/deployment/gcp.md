@@ -18,7 +18,7 @@ flowchart LR
 | Source | Selection |
 |---|---|
 | Cloud Audit Logs | Admin Activity entries whose method matches `audit_methods` (IAM policy changes, service account and key creation, custom roles, log sinks, buckets and exclusions, org policy, SCC notification changes, firewall changes, KMS key destruction, Workload Identity providers), plus any admin call denied with `PERMISSION_DENIED` |
-| Security Command Center | `state = "ACTIVE" AND mute != "MUTED" AND (severity = "HIGH" OR severity = "CRITICAL")` |
+| Security Command Center | `state = "ACTIVE" AND -mute = "MUTED" AND (severity = "HIGH" OR severity = "CRITICAL")` |
 
 With `organization_id` set the sink covers the whole organisation and the SCC
 notification config is created. Without it, a project sink is created and SCC is
@@ -51,7 +51,8 @@ terraform apply bower.plan
 The module creates:
 
 - a topic and dead-letter topic whose **message storage policy** allows only
-  `australia-southeast1` and `australia-southeast2`, with in-transit enforcement;
+  `australia-southeast1` and `australia-southeast2` (in-transit enforcement is left
+  off because Cloud Logging and SCC publish through global endpoints);
 - a pull subscription (60 s ack deadline, 7-day retention, exponential retry,
   dead-lettering after `max_delivery_attempts` = 10) and a dead-letter subscription
   to inspect and replay messages;
@@ -92,7 +93,7 @@ Federation.
 
 ## Pack
 
-`packs/gcp-security` holds `BWR-PACK-GCP-AUDIT` and `BWR-PACK-GCP-SCC`, Sigma
+`packs/gcp-security` holds `BWR-POL-GCP-AUDIT` and `BWR-POL-GCP-SCC`, Sigma
 detections for service account key creation, IAM policy changes, logging tampering
 and denied admin calls, and samples. Build, sign and load it like the AWS pack. Both
 cloud packs can be loaded together; use

@@ -25,7 +25,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+        with:
+          # cfn-lint and Terraform providers are third-party code; keep the token out of .git/config.
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.2.0
       - name: Lint CloudFormation
         run: uvx cfn-lint==1.57.2 deploy/aws/*.yaml
       - uses: hashicorp/setup-terraform@v4

@@ -201,7 +201,15 @@ public sealed partial record CloudAgentSettings
         string[] host = url.Host.Split('.');
         string? urlRegion = host.Length >= 3 && host[0] == "sqs" ? host[1] : null;
         string? urlAccount = segments.Length == 2 ? segments[0] : null;
-        string resolvedRegion = region ?? urlRegion
+        // The queue URL decides where messages live; an override must not disagree with it,
+        // or the Australian region check could pass for a queue stored elsewhere.
+        if (region is not null && urlRegion is not null && region != urlRegion)
+        {
+            throw new InvalidOperationException(
+                $"BOWER_AWS_REGION ({region}) does not match the queue URL region ({urlRegion}).");
+        }
+
+        string resolvedRegion = urlRegion ?? region
             ?? throw new InvalidOperationException("Set BOWER_AWS_REGION; it cannot be read from the queue URL.");
         string resolvedAccount = accountId ?? urlAccount
             ?? throw new InvalidOperationException("Set BOWER_AWS_ACCOUNT_ID; it cannot be read from the queue URL.");

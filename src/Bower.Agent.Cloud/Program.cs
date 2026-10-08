@@ -64,8 +64,10 @@ try
             services.GetRequiredService<ILogger<CloudForwarderWorker>>()));
     }
 
+    GoogleAccessTokenSource? googleTokens = null;
     if (settings.Gcp is { } gcp)
     {
+        googleTokens = new GoogleAccessTokenSource(gcp.AllowServiceAccountKey);
         builder.Services.AddHttpClient("pubsub", client =>
         {
             client.BaseAddress = gcp.Endpoint;
@@ -75,7 +77,7 @@ try
         builder.Services.AddSingleton<IHostedService>(services => new CloudForwarderWorker(
             new PubSubMessageSource(
                 services.GetRequiredService<IHttpClientFactory>().CreateClient("pubsub"),
-                new GoogleAccessTokenSource(gcp.AllowServiceAccountKey),
+                googleTokens,
                 gcp.Subscription),
             new PubSubMessageTranslator(
                 new GcpSecurityEventMapper(new GcpSourceOptions
@@ -94,6 +96,11 @@ try
     using IHost host = builder.Build();
     ILogger logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Bower.Agent.Cloud");
     CloudResidency.Report(settings, logger);
+    if (googleTokens is not null)
+    {
+        await googleTokens.InitializeAsync(CancellationToken.None);
+    }
+
     await host.RunAsync();
     return 0;
 }

@@ -59,7 +59,7 @@ variable "max_delivery_attempts" {
 variable "scc_filter" {
   description = "Security Command Center findings to forward."
   type        = string
-  default     = "state = \"ACTIVE\" AND mute != \"MUTED\" AND (severity = \"HIGH\" OR severity = \"CRITICAL\")"
+  default     = "state = \"ACTIVE\" AND -mute = \"MUTED\" AND (severity = \"HIGH\" OR severity = \"CRITICAL\")"
 }
 
 variable "audit_methods" {

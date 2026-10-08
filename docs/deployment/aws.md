@@ -152,7 +152,7 @@ bower pack build packs/aws-security --key bower-signing.key.pem --out packs-out
 BOWER_PACKS=packs-out/aws-security-1.0.0.bowerpack BOWER_PACK_TRUSTED_KEYS=bower-signing.pub.pem
 ```
 
-It holds two policies (`BWR-PACK-AWS-CLOUDTRAIL`, `BWR-PACK-AWS-FINDINGS`), Sigma
+It holds two policies (`BWR-POL-AWS-CLOUDTRAIL`, `BWR-POL-AWS-FINDINGS`), Sigma
 detections for root activity, logging and key tampering, access key creation and
 console sign-in failures, and samples that must pass before the pack can be signed.
 It ships no privacy profile so it can be loaded next to other packs. To pseudonymise

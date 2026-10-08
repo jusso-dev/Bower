@@ -2,7 +2,7 @@ apiVersion: bower.security/v1
 kind: TelemetryPolicy
 
 metadata:
-  id: BWR-PACK-GCP-AUDIT
+  id: BWR-POL-GCP-AUDIT
   name: High-value Google Cloud Audit Logs
   version: 1.0.0
   owner: Security Operations
