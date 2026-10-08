@@ -45,9 +45,8 @@ public sealed class ManagementApiTests
         BackgroundJobStatus[]? jobs = await Client(app, BowerRoles.Viewer)
             .GetFromJsonAsync<BackgroundJobStatus[]>("/api/jobs", cancellationToken);
 
-        BackgroundJobStatus job = Assert.Single(jobs!);
-        Assert.Equal("collector-staleness", job.Id);
-        Assert.Equal("*/5 * * * *", job.Schedule);
+        Assert.Equal(["collector-inactivity", "collector-staleness"], jobs!.Select(job => job.Id));
+        Assert.Equal("*/5 * * * *", jobs!.Single(job => job.Id == "collector-staleness").Schedule);
     }
 
     [Fact]
@@ -124,6 +123,78 @@ public sealed class ManagementApiTests
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("Collector registration is invalid.", body, StringComparison.Ordinal);
         Assert.DoesNotContain("Parameter", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Fleet_DesiredPolicyDriftLedgerWitnessAndReinstate()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await StartAsync(directory, cancellationToken);
+        HttpClient collector = Client(app, BowerRoles.Collector);
+        HttpClient admin = Client(app, BowerRoles.Administrator);
+        await collector.PostAsJsonAsync("/api/collectors/register",
+            new CollectorRegistration("edge-02", "edge-02", "test", "0.1.0", "c", "sha256:running", [], []), cancellationToken);
+        await admin.PostAsJsonAsync("/api/approvals/edge-02/approve", new ApprovalRequest("ok"), cancellationToken);
+
+        async Task<CollectorRecord> HeartbeatAsync(long sequence, string hash)
+        {
+            using HttpResponseMessage response = await collector.PostAsJsonAsync(
+                "/api/collectors/edge-02/heartbeat",
+                new CollectorHeartbeat("0.1.0", "c", "sha256:running", 0, "healthy", [], [], null, new LedgerReport(sequence, hash), 0),
+                cancellationToken);
+            return (await response.Content.ReadFromJsonAsync<CollectorRecord>(ApiJson, cancellationToken))!;
+        }
+
+        using HttpResponseMessage desired = await admin.PostAsJsonAsync(
+            "/api/collectors/edge-02/desired-policy",
+            new DesiredPolicyRequest("sha256:approved-bundle", "Roll out pack 1.1.0"),
+            cancellationToken);
+        CollectorRecord drifted = await HeartbeatAsync(10, "hash-10");
+        CollectorRecord advanced = await HeartbeatAsync(12, "hash-12");
+        CollectorRecord regressed = await HeartbeatAsync(11, "rewritten");
+        using HttpResponseMessage suspend = await admin.PostAsJsonAsync(
+            "/api/collectors/edge-02/suspend", new ApprovalRequest("maintenance"), cancellationToken);
+        using HttpResponseMessage reinstate = await admin.PostAsJsonAsync(
+            "/api/collectors/edge-02/reinstate", new ApprovalRequest("back in service"), cancellationToken);
+        using HttpResponseMessage asOperator = await Client(app, BowerRoles.Operator).PostAsJsonAsync(
+            "/api/collectors/edge-02/desired-policy", new DesiredPolicyRequest(null, "clear"), cancellationToken);
+        AuditRecord[]? audit = await admin.GetFromJsonAsync<AuditRecord[]>("/api/audit", cancellationToken);
+        CollectorRecord? final = await admin.GetFromJsonAsync<CollectorRecord>("/api/collectors/edge-02", ApiJson, cancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, desired.StatusCode);
+        Assert.False(drifted.PolicyInSync);
+        Assert.Equal("healthy", advanced.DeliveryStatus);
+        Assert.Equal("ledger-regression", regressed.DeliveryStatus);
+        Assert.Equal(12, final!.LedgerSequence);
+        Assert.Equal(HttpStatusCode.OK, suspend.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, reinstate.StatusCode);
+        Assert.Equal(CollectorStatus.Approved, final.Status);
+        Assert.Equal(HttpStatusCode.Forbidden, asOperator.StatusCode);
+        Assert.Contains(audit!, item => item.Action == "collector.ledger-regression");
+        Assert.Contains(audit!, item => item.Action == "collector.desired-policy-set");
+        Assert.Contains(audit!, item => item.Action == "collector.reinstated");
+    }
+
+    [Fact]
+    public async Task InactivityJob_SuspendsSilentCollectors()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        ManagementStore store = new(Path.Combine(directory.Path, "management.db"));
+        await store.InitializeAsync(cancellationToken);
+        await store.RegisterAsync(
+            new CollectorRegistration("old-01", "old-01", "test", "0.1.0", "c", "p", [], []),
+            "principal", TestEvents.Now, cancellationToken);
+        await store.DecideAsync("old-01", CollectorStatus.Approved, "approved", "ok", "admin", "Admin", TestEvents.Now, cancellationToken);
+
+        int suspended = await store.SuspendInactiveAsync(TestEvents.Now.AddDays(1), TestEvents.Now.AddDays(31), cancellationToken);
+        CollectorRecord? record = await store.GetAsync("old-01", cancellationToken);
+
+        Assert.Equal(1, suspended);
+        Assert.Equal(CollectorStatus.Suspended, record!.Status);
+        await Assert.ThrowsAsync<CollectorStateException>(() => store.HeartbeatAsync(
+            "old-01", new CollectorHeartbeat("0.1.0", "c", "p", 0, "healthy", [], []), "principal", TestEvents.Now.AddDays(32), cancellationToken));
     }
 
     [Fact]

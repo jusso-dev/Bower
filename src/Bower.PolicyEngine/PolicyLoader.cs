@@ -42,6 +42,19 @@ public static class PolicyLoader
         }
 
         string yaml = File.ReadAllText(path, Encoding.UTF8);
+        return LoadYaml(yaml, path);
+    }
+
+    /// <summary>Loads a policy from YAML text (used for signed packs).</summary>
+    public static LoadedPolicy LoadYaml(string yaml, string sourceName)
+    {
+        ArgumentNullException.ThrowIfNull(yaml);
+        if (Encoding.UTF8.GetByteCount(yaml) > MaximumPolicyBytes)
+        {
+            throw new InvalidDataException("Policy exceeds maximum size.");
+        }
+
+        string path = sourceName;
         // Strict: an unknown or misspelt key (for example "requirments") must fail the load
         // rather than silently drop the requirements it was meant to carry.
         IDeserializer deserializer = new DeserializerBuilder()

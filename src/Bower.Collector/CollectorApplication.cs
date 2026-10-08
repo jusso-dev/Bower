@@ -52,18 +52,19 @@ public static partial class CollectorApplication
 
         builder.Services.AddSingleton(settings);
         builder.Services.AddSingleton(TimeProvider.System);
-        builder.Services.AddSingleton<IEventRedactor>(_ => new JsonEventRedactor());
+        PolicyBundle bundle = PolicyBundle.Load(settings);
+        builder.Services.AddSingleton(bundle);
+        builder.Services.AddSingleton<IEventRedactor>(new JsonEventRedactor(bundle.Privacy));
         builder.Services.AddSingleton<IDurableEventStore>(services =>
             new SqliteEventStore(
                 settings.QueuePath,
                 settings.MaximumQueueBytes,
                 services.GetRequiredService<TimeProvider>()));
-        builder.Services.AddSingleton<ITelemetryPolicyEvaluator>(
-            new DeterministicPolicyEvaluator(PolicyLoader.LoadDirectory(settings.PolicyDirectory)));
+        builder.Services.AddSingleton<ITelemetryPolicyEvaluator>(new DeterministicPolicyEvaluator(bundle.Policies));
         builder.Services.AddSingleton<SecurityEventProcessor>();
         builder.Services.AddSingleton(
-            new CollectorIdentity(settings.CollectorId, settings.Version, "local-http", "environment:v1"));
-        builder.Services.AddSingleton(new IngestAuthentication(settings.IngestToken));
+            new CollectorIdentity(settings.CollectorId, settings.Version, "local-http", settings.ConfigurationHash()));
+        builder.Services.AddSingleton(new IngestAuthentication(settings.IngestToken, settings.IngestTokensFile));
         builder.Services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -149,16 +150,19 @@ public static partial class CollectorApplication
                 "/v1/events",
                 async (
                     JsonElement candidate,
+                    HttpContext context,
                     SecurityEventProcessor processor,
                     CollectorIdentity identity,
                     CancellationToken cancellationToken) =>
                 {
+                    // Record which producer credential sent the event (never the token).
+                    string producer = context.Items[IngestAuthenticationFilter.ProducerItem] as string ?? "anonymous";
                     ProcessingResult result;
                     try
                     {
                         result = await processor.ProcessAsync(
                             candidate.GetRawText(),
-                            identity,
+                            identity with { SourceAdapter = $"local-http:{producer}" },
                             cancellationToken);
                     }
                     catch (QueueCapacityExceededException)
@@ -212,12 +216,26 @@ public static partial class CollectorApplication
                 async (
                     IDurableEventStore eventQueue,
                     BackgroundJobCatalog jobs,
+                    PolicyBundle bundle,
                     CancellationToken cancellationToken) =>
                 {
                     QueueSnapshot snapshot = await eventQueue.GetSnapshotAsync(cancellationToken);
+                    LedgerHead ledger = await eventQueue.GetLedgerHeadAsync(cancellationToken);
                     return Results.Json(new
                     {
                         status = Status(snapshot),
+                        policy = new
+                        {
+                            hash = bundle.Hash,
+                            policies = bundle.Policies.Select(item => new
+                            {
+                                item.Policy.Metadata.Id,
+                                item.Policy.Metadata.Version
+                            }),
+                            packs = bundle.Packs.Select(pack => new { pack.Id, pack.Version, pack.PackHash }),
+                            privacyProfile = bundle.PrivacyProfile
+                        },
+                        ledger = new { ledger.Sequence, ledger.Hash },
                         queue = new
                         {
                             snapshot.Queued,

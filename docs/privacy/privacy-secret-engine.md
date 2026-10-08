@@ -59,6 +59,37 @@ There are only about 10^8 valid TFNs, so anyone who can read Sentinel could hash
 them all and reverse an unkeyed SHA-256. Use `Mask`, `Remove`, or `Hmac` with a
 managed secret key. `Sha256` remains available for high-entropy values only.
 
+### Privacy profiles, pseudonymisation and length limits
+
+A YAML profile changes detector actions and adds field rules
+(`BOWER_PRIVACY_PROFILE`, or inside a signed pack):
+
+```yaml
+apiVersion: bower.security/v1
+kind: PrivacyProfile
+metadata: { id: ssh-gateway, version: 1.0.0 }
+detectors:
+  id.email: remove
+fields:
+  - path: actor.username      # keyed hash: joinable across events, not reversible
+    action: hmac
+  - path: request.userAgent
+    action: truncate
+    maxLength: 256
+maximumFieldLength: 32768     # every longer string is truncated
+```
+
+`hmac` output is `hmac-sha256:<keyId>:<hex>` using the key in
+`BOWER_PRIVACY_HMAC_KEY_FILE` (32+ bytes, base64) and `BOWER_PRIVACY_HMAC_KEY_ID`.
+The same input and key always give the same pseudonym, so analysts can correlate
+attempts by account; a different key (another tenant, or after rotation) gives
+different pseudonyms. Keys never appear in profiles. A profile that uses `hmac`
+without a key fails at start-up. Unknown detector ids, actions or keys fail the load.
+
+`maximumFieldLength` keeps values below the Logs Ingestion API's silent 64 KB
+truncation, so Bower decides where a value is cut and records it as
+`limit.field-length` in privacy metadata.
+
 ### Numbers and key names
 
 Detectors run over the exact JSON text of numbers, so a card number or TFN sent

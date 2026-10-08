@@ -45,7 +45,14 @@ export function Page({
   );
 }
 
-export function CollectorTable({ collectors }: { collectors: Collector[] }) {
+export function CollectorTable({
+  collectors,
+  compact = false
+}: {
+  collectors: Collector[];
+  /** Drops environment and source count where space is tight (fleet overview). */
+  compact?: boolean;
+}) {
   return (
     <div className="responsive-table">
       <table>
@@ -53,10 +60,11 @@ export function CollectorTable({ collectors }: { collectors: Collector[] }) {
           <tr>
             <th>Machine</th>
             <th>Status</th>
-            <th>Environment</th>
-            <th>Sources</th>
+            {!compact && <th>Environment</th>}
+            {!compact && <th>Sources</th>}
             <th>Queue</th>
             <th>Delivery</th>
+            <th>Policy</th>
             <th>Last seen</th>
           </tr>
         </thead>
@@ -70,11 +78,17 @@ export function CollectorTable({ collectors }: { collectors: Collector[] }) {
               <td data-label="Status">
                 <StatusBadge status={collector.status} />
               </td>
-              <td data-label="Environment">{collector.environment}</td>
-              <td data-label="Sources">{collector.sources.length}</td>
+              {!compact && <td data-label="Environment">{collector.environment}</td>}
+              {!compact && <td data-label="Sources">{collector.sources.length}</td>}
               <td data-label="Queue">{collector.queueDepth.toLocaleString()}</td>
               <td data-label="Delivery">
                 <HealthLabel value={collector.deliveryStatus} />
+                {(collector.deadLettered ?? 0) > 0 && (
+                  <small>{collector.deadLettered!.toLocaleString()} dead-lettered</small>
+                )}
+              </td>
+              <td data-label="Policy">
+                <PolicyLabel collector={collector} />
               </td>
               <td data-label="Last seen">{formatDate(collector.lastSeenAt)}</td>
             </tr>
@@ -251,6 +265,33 @@ export function JobStateLabel({ value }: { value: string | null }) {
     <span className="health-label health-label--pending">
       <Activity aria-hidden="true" />
       {value}
+    </span>
+  );
+}
+
+/** Whether a collector runs the policy bundle an administrator assigned. */
+export function PolicyLabel({ collector }: { collector: Collector }) {
+  const running = collector.policyHash.replace("sha256:", "").slice(0, 8);
+  if (collector.policyInSync === true) {
+    return (
+      <span className="policy-label policy-label--sync" title={collector.policyHash}>
+        In sync · {running}
+      </span>
+    );
+  }
+  if (collector.policyInSync === false) {
+    return (
+      <span
+        className="policy-label policy-label--drift"
+        title={`Running ${collector.policyHash}, expected ${collector.desiredPolicyHash ?? ""}`}
+      >
+        Drift · {running}
+      </span>
+    );
+  }
+  return (
+    <span className="policy-label policy-label--unset" title={collector.policyHash}>
+      Unassigned · {running}
     </span>
   );
 }

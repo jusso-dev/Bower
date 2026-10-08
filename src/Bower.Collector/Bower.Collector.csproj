@@ -11,5 +11,6 @@
     <ProjectReference Include="../Bower.Jobs/Bower.Jobs.csproj" />
     <ProjectReference Include="../Bower.Output.AmaSpool/Bower.Output.AmaSpool.csproj" />
     <ProjectReference Include="../Bower.Output.AzureLogsIngestion/Bower.Output.AzureLogsIngestion.csproj" />
+    <ProjectReference Include="../Bower.Packs/Bower.Packs.csproj" />
   </ItemGroup>
 </Project>

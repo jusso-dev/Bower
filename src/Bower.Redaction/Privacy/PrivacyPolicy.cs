@@ -40,6 +40,21 @@ public sealed class PrivacyPolicy
     /// </summary>
     public byte[]? HmacKey { get; init; }
 
+    /// <summary>
+    /// Identifier embedded in HMAC output (<c>hmac-sha256:&lt;keyId&gt;:&lt;hex&gt;</c>) so
+    /// pseudonyms stay attributable to a key across rotations.
+    /// </summary>
+    public string HmacKeyId { get; init; } = "k1";
+
+    /// <summary>Field-level rules applied after detectors, for example HMAC pseudonymisation of actor.username.</summary>
+    public IReadOnlyList<PrivacyFieldRule> FieldRules { get; init; } = [];
+
+    /// <summary>
+    /// Any string longer than this is truncated after redaction. Defaults below the Logs
+    /// Ingestion API's silent 64 KB field truncation so Bower controls the cut.
+    /// </summary>
+    public int MaximumFieldLength { get; init; } = 32_768;
+
     /// <summary>AES-256 key for Encrypt action (32 bytes). Null disables Encrypt (falls back to Remove).</summary>
     public byte[]? EncryptionKey { get; init; }
 
@@ -70,7 +85,9 @@ public sealed class PrivacyPolicy
 
     /// <summary>True when the default or any per-detector action is <paramref name="action"/>.</summary>
     public bool UsesAction(PrivacyAction action) =>
-        DefaultAction == action || DetectorActions.Values.Any(value => value == action);
+        DefaultAction == action
+        || DetectorActions.Values.Any(value => value == action)
+        || FieldRules.Any(rule => rule.Action == action);
 
     public PrivacyAction ResolveAction(string detectorId)
     {
@@ -126,4 +143,13 @@ public sealed class PrivacyPolicy
             }
         };
     }
+}
+
+/// <summary>
+/// Deterministic action on a JSON path. Paths are dot-separated camelCase names from
+/// the envelope root (for example <c>actor.username</c>); <c>*</c> matches one segment.
+/// </summary>
+public sealed record PrivacyFieldRule(string Path, PrivacyAction Action, int? MaxLength = null)
+{
+    public string[] Segments { get; } = Path.Split('.', StringSplitOptions.RemoveEmptyEntries);
 }

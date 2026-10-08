@@ -80,7 +80,45 @@ public interface IDurableEventStore
 
     /// <summary>Checkpoints and optimises storage. Never changes event state.</summary>
     Task MaintainAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Dead-lettered events, metadata only (never payloads).</summary>
+    Task<IReadOnlyList<DeadLetterRecord>> ListDeadLetteredAsync(
+        int maximumCount,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns dead-lettered events to the queue for another delivery attempt. Filters by
+    /// failure code prefix and/or event ids; with neither, nothing is replayed.
+    /// </summary>
+    Task<int> ReplayDeadLetteredAsync(
+        string? failureCodePrefix,
+        IReadOnlyCollection<string>? eventIds,
+        int maximumCount,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Current tamper-evidence ledger head (sequence and chain hash).</summary>
+    Task<LedgerHead> GetLedgerHeadAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Recomputes the ledger chain and compares it with stored events.</summary>
+    Task<LedgerVerification> VerifyLedgerAsync(CancellationToken cancellationToken = default);
 }
+
+public sealed record DeadLetterRecord(
+    string EventId,
+    string? FailureCode,
+    int DeliveryAttempts,
+    DateTimeOffset ReceivedAt);
+
+public sealed record LedgerHead(long Sequence, string Hash);
+
+public sealed record LedgerIssue(long Sequence, string EventId, string Code, string Detail);
+
+public sealed record LedgerVerification(
+    bool Intact,
+    long Entries,
+    long HeadSequence,
+    string HeadHash,
+    IReadOnlyList<LedgerIssue> Issues);
 
 public sealed record QueuedEvent(
     string EventId,

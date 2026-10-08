@@ -3,7 +3,20 @@ namespace Bower.Redaction.Privacy;
 /// <summary>Stable detector identifiers used for policy overrides and metadata.</summary>
 public static class DetectorIds
 {
+    /// <summary>Every stable detector id, for validating configuration.</summary>
+    public static IReadOnlyList<string> All { get; } = typeof(DetectorIds)
+        .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+        .Where(field => field.IsLiteral && field.FieldType == typeof(string))
+        .Select(field => (string)field.GetRawConstantValue()!)
+        .ToArray();
+
     public const string FieldNameSecret = "field-name-secret";
+
+    /// <summary>A configured field rule (for example HMAC pseudonymisation) was applied.</summary>
+    public const string FieldRule = "field-rule";
+
+    /// <summary>A value exceeded the maximum field length and was truncated.</summary>
+    public const string FieldLength = "limit.field-length";
 
     // Australian regulated identifiers
     public const string Tfn = "au.tfn";

@@ -93,6 +93,11 @@ public sealed class ManagementStore(string databasePath)
             );
             """,
             cancellationToken);
+        // Additive migrations for databases created by earlier versions.
+        await AddColumnIfMissingAsync(connection, "collectors", "desired_policy_hash", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync(connection, "collectors", "ledger_sequence", "INTEGER NULL", cancellationToken);
+        await AddColumnIfMissingAsync(connection, "collectors", "ledger_hash", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync(connection, "collectors", "dead_lettered", "INTEGER NOT NULL DEFAULT 0", cancellationToken);
     }
 
     public async Task<CollectorRecord> RegisterAsync(
@@ -198,6 +203,27 @@ public sealed class ManagementStore(string databasePath)
             throw new CollectorStateException(collectorId, status);
         }
 
+        string deliveryStatus = heartbeat.DeliveryStatus;
+        if (heartbeat.Ledger is { } ledger
+            && await LedgerRegressedAsync(connection, transaction, collectorId, ledger, cancellationToken))
+        {
+            // The collector's queue history went backwards or was rewritten since the last
+            // witnessed head: flag it and keep the witnessed head, not the new one.
+            deliveryStatus = "ledger-regression";
+            await InsertAuditAsync(
+                connection, transaction, "collector.ledger-regression", collectorId,
+                principalObjectId, collectorId, now, cancellationToken);
+        }
+        else if (heartbeat.Ledger is { } accepted)
+        {
+            await CommandAsync(
+                connection,
+                transaction,
+                "UPDATE collectors SET ledger_sequence = $sequence, ledger_hash = $hash WHERE id = $id;",
+                [("$sequence", accepted.Sequence), ("$hash", accepted.Hash), ("$id", collectorId)],
+                cancellationToken);
+        }
+
         await CommandAsync(
             connection,
             transaction,
@@ -209,7 +235,8 @@ public sealed class ManagementStore(string databasePath)
                 configuration_hash = $configuration,
                 policy_hash = $policy,
                 queue_depth = $queue,
-                delivery_status = $delivery
+                delivery_status = $delivery,
+                dead_lettered = $dead_lettered
             WHERE id = $id;
             """,
             [
@@ -218,7 +245,8 @@ public sealed class ManagementStore(string databasePath)
                 ("$configuration", heartbeat.ConfigurationHash),
                 ("$policy", heartbeat.PolicyHash),
                 ("$queue", heartbeat.QueueDepth),
-                ("$delivery", heartbeat.DeliveryStatus),
+                ("$delivery", deliveryStatus),
+                ("$dead_lettered", heartbeat.DeadLettered ?? 0),
                 ("$id", collectorId)
             ],
             cancellationToken);
@@ -330,14 +358,15 @@ public sealed class ManagementStore(string databasePath)
         action switch
         {
             "approved" or "rejected" => current == CollectorStatus.Pending,
-            "suspended" => current is CollectorStatus.Approved or CollectorStatus.Active,
+            "suspended" or "suspended-inactive" => current is CollectorStatus.Approved or CollectorStatus.Active,
+            "reinstated" => current == CollectorStatus.Suspended,
             "revoked" => current != CollectorStatus.Revoked,
             _ => false
         } &&
         target switch
         {
-            CollectorStatus.Approved => action == "approved",
-            CollectorStatus.Suspended => action == "suspended",
+            CollectorStatus.Approved => action is "approved" or "reinstated",
+            CollectorStatus.Suspended => action is "suspended" or "suspended-inactive",
             CollectorStatus.Revoked => action is "rejected" or "revoked",
             _ => false
         };
@@ -439,6 +468,8 @@ public sealed class ManagementStore(string databasePath)
                     or CollectorStatus.Suspended
                     or CollectorStatus.Revoked ||
                 item.LastSeenAt < staleBefore ||
+                item.PolicyInSync == false ||
+                item.DeadLettered > 0 ||
                 !string.Equals(item.DeliveryStatus, "healthy", StringComparison.OrdinalIgnoreCase))
             .Take(12)
             .ToArray();
@@ -454,7 +485,9 @@ public sealed class ManagementStore(string databasePath)
                 .Count(item => string.Equals(item.Status, "healthy", StringComparison.OrdinalIgnoreCase)),
             collectors.SelectMany(item => item.Sources)
                 .Count(item => !string.Equals(item.Status, "healthy", StringComparison.OrdinalIgnoreCase)),
-            exceptions);
+            exceptions,
+            collectors.Count(item => item.PolicyInSync == false),
+            collectors.Sum(item => item.DeadLettered));
     }
 
     private async Task<CollectorRecord> ReadCollectorAsync(
@@ -475,6 +508,11 @@ public sealed class ManagementStore(string databasePath)
         string policy = reader.GetString(reader.GetOrdinal("policy_hash"));
         long queue = reader.GetInt64(reader.GetOrdinal("queue_depth"));
         string delivery = reader.GetString(reader.GetOrdinal("delivery_status"));
+        string? desiredPolicy = ReadOptionalString(reader, "desired_policy_hash");
+        long? ledgerSequence = reader.IsDBNull(reader.GetOrdinal("ledger_sequence"))
+            ? null
+            : reader.GetInt64(reader.GetOrdinal("ledger_sequence"));
+        long deadLettered = reader.GetInt64(reader.GetOrdinal("dead_lettered"));
         await using SqliteConnection detailConnection = await OpenAsync(cancellationToken);
         IReadOnlyList<SourceReport> sources =
             await ReadSourcesAsync(detailConnection, id, cancellationToken);
@@ -484,7 +522,8 @@ public sealed class ManagementStore(string databasePath)
             await ReadJobsAsync(detailConnection, id, cancellationToken);
         return new(
             id, machine, environment, version, status, principal, firstSeen, lastSeen,
-            configuration, policy, queue, delivery, sources, outputs, jobs);
+            configuration, policy, queue, delivery, sources, outputs, jobs,
+            desiredPolicy, ledgerSequence, deadLettered);
     }
 
     private static async Task<IReadOnlyList<SourceReport>> ReadSourcesAsync(
@@ -587,6 +626,8 @@ public sealed class ManagementStore(string databasePath)
         if (heartbeat.Sources.Count > 250
             || heartbeat.Outputs.Count > 50
             || heartbeat.Jobs is { Count: > 50 }
+            || heartbeat.Ledger is { } ledger && (ledger.Sequence < 0 || ledger.Hash.Length is 0 or > 128)
+            || heartbeat.DeadLettered is < 0
             || (heartbeat.Jobs?.Any(job =>
                 string.IsNullOrWhiteSpace(job.Id)
                 || job.Id.Length > 128
@@ -650,6 +691,145 @@ public sealed class ManagementStore(string databasePath)
 
         await transaction.CommitAsync(cancellationToken);
         return stale.Count;
+    }
+
+    /// <summary>
+    /// Sets the policy bundle hash a collector is expected to run. Heartbeats then show the
+    /// collector as in sync or drifted. Null clears the expectation.
+    /// </summary>
+    public async Task<CollectorRecord?> SetDesiredPolicyAsync(
+        string collectorId,
+        string? policyHash,
+        string reason,
+        string actorObjectId,
+        string actorName,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(reason) || reason.Length > 500)
+        {
+            throw new ArgumentException("A reason of 1–500 characters is required.", nameof(reason));
+        }
+
+        if (policyHash is not null && (policyHash.Length > 256 || !policyHash.StartsWith("sha256:", StringComparison.Ordinal)))
+        {
+            throw new ArgumentException("Policy hash must be a sha256: value.", nameof(policyHash));
+        }
+
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteTransaction transaction =
+            (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        int changed = await CommandAsync(
+            connection,
+            transaction,
+            "UPDATE collectors SET desired_policy_hash = $hash WHERE id = $id;",
+            [("$hash", policyHash), ("$id", collectorId)],
+            cancellationToken);
+        if (changed == 0)
+        {
+            return null;
+        }
+
+        await InsertAuditAsync(
+            connection, transaction, "collector.desired-policy-set", collectorId,
+            actorObjectId, actorName, now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return await GetAsync(collectorId, cancellationToken);
+    }
+
+    /// <summary>
+    /// Suspends approved or active collectors that have not reported for the inactivity
+    /// window, so a forgotten machine identity cannot resume sending unnoticed. An
+    /// administrator reinstates it explicitly.
+    /// </summary>
+    public async Task<int> SuspendInactiveAsync(
+        DateTimeOffset inactiveBefore,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteTransaction transaction =
+            (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        List<string> inactive = [];
+        await using (SqliteCommand select = connection.CreateCommand())
+        {
+            select.Transaction = transaction;
+            select.CommandText =
+                """
+                SELECT id FROM collectors
+                WHERE status IN ('Active', 'Approved') AND last_seen_at < $before
+                ORDER BY id;
+                """;
+            select.Parameters.AddWithValue("$before", Format(inactiveBefore));
+            await using SqliteDataReader reader = await select.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                inactive.Add(reader.GetString(0));
+            }
+        }
+
+        foreach (string collectorId in inactive)
+        {
+            await CommandAsync(
+                connection,
+                transaction,
+                "UPDATE collectors SET status = 'Suspended' WHERE id = $id;",
+                [("$id", collectorId)],
+                cancellationToken);
+            await InsertAuditAsync(
+                connection, transaction, "collector.suspended-inactive", collectorId,
+                SystemActorId, SystemActorName, now, cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return inactive.Count;
+    }
+
+    private static async Task<bool> LedgerRegressedAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string collectorId,
+        LedgerReport ledger,
+        CancellationToken cancellationToken)
+    {
+        await using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT ledger_sequence, ledger_hash FROM collectors WHERE id = $id;";
+        command.Parameters.AddWithValue("$id", collectorId);
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken) || reader.IsDBNull(0))
+        {
+            return false;
+        }
+
+        long witnessed = reader.GetInt64(0);
+        string witnessedHash = reader.GetString(1);
+        return ledger.Sequence < witnessed
+            || (ledger.Sequence == witnessed && !string.Equals(ledger.Hash, witnessedHash, StringComparison.Ordinal));
+    }
+
+    private static string? ReadOptionalString(SqliteDataReader reader, string column)
+    {
+        int ordinal = reader.GetOrdinal(column);
+        return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+    }
+
+    private static async Task AddColumnIfMissingAsync(
+        SqliteConnection connection,
+        string table,
+        string column,
+        string definition,
+        CancellationToken cancellationToken)
+    {
+        await using SqliteCommand info = connection.CreateCommand();
+        info.CommandText = $"SELECT 1 FROM pragma_table_info('{table}') WHERE name = $column;";
+        info.Parameters.AddWithValue("$column", column);
+        if (await info.ExecuteScalarAsync(cancellationToken) is not null)
+        {
+            return;
+        }
+
+        await ExecuteAsync(connection, $"ALTER TABLE {table} ADD COLUMN {column} {definition};", cancellationToken);
     }
 
     /// <summary>Records an operator action that is not a collector state change.</summary>

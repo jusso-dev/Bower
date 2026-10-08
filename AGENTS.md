@@ -17,6 +17,9 @@ control plane, or runtime AI filter.
 - `src/Bower.Persistence`: SQLite queue, cursors, delivery state and evidence.
 - `src/Bower.Core`: source-to-policy-to-queue orchestration.
 - `src/Bower.Jobs`: shared Hangfire wiring for recurring maintenance and health jobs.
+- `src/Bower.Integrity`: ECDSA signing and canonical JSON for packs and evidence.
+- `src/Bower.Packs`: signed, versioned packs (policy, privacy, parsers, detections, samples, DCR).
+- `src/Bower.Evidence`: Sentinel query-verified, signed evidence bundles.
 - `src/Bower.Sdk`: semantic developer API and transports.
 - `src/Bower.Collector`: local HTTP collector host.
 - `src/Bower.Management.Api`: Entra-protected fleet, approval and audit API.
@@ -58,6 +61,8 @@ cd ui/Bower.Management.Web && npm ci && npm run lint && npm test && npm run buil
   semantics. Never delete before acknowledgement.
 - Never claim Sentinel delivery without destination query validation. Simulated
   evidence must say `simulated`.
+- Never load an unsigned pack or one signed by an untrusted key.
+- Keep `SentinelSchema.Default`, the Bicep template and generated DCRs identical.
 - Use supported Azure Monitor ingestion APIs only, least privilege, and no
   persisted access tokens.
 - Schemas evolve additively by default. Required-field changes need explicit

@@ -150,6 +150,9 @@
       "bower.contracts": {
         "type": "Project"
       },
+      "bower.dcr": {
+        "type": "Project"
+      },
       "Microsoft.Extensions.DependencyInjection.Abstractions": {
         "type": "CentralTransitive",
         "requested": "[10.0.12, )",

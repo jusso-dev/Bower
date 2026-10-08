@@ -1,0 +1,21 @@
+apiVersion: bower.security/v1
+kind: Pack
+metadata:
+  id: linux-ssh-gateway
+  version: 1.0.0
+  name: Linux SSH gateway
+  description: >-
+    SSH and PAM sign-in failures and lockouts from Linux hosts and containers
+    (for example via the Bower Docker sidecar). Pseudonymises usernames with HMAC
+    so analysts can correlate attempts without seeing account names.
+  owner: Security Operations
+policies:
+  - policies/ssh-authentication.yaml
+privacyProfile: privacy.yaml
+parsers:
+  - parsers/sshd-json.json
+detections:
+  - detections/ssh-password-spray.yml
+samples:
+  - samples/ssh.jsonl
+dcr: true

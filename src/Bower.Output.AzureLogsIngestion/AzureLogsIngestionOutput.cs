@@ -5,6 +5,7 @@ using Azure;
 using Azure.Core;
 using Azure.Monitor.Ingestion;
 using Bower.Abstractions;
+using Bower.Dcr;
 
 namespace Bower.Output.AzureLogsIngestion;
 
@@ -53,6 +54,12 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
             else if (!string.Equals(ReadEventId(record), item.EventId, StringComparison.Ordinal))
             {
                 failures.Add(new DeliveryFailure(item.EventId, "payload-event-id-mismatch", false, null));
+            }
+            else if (IngestionPreflight.Check(record, options.Schema) is { Count: > 0 } issues)
+            {
+                // Azure would truncate, coerce or drop this row silently; dead-letter it
+                // with the reason instead.
+                failures.Add(new DeliveryFailure(item.EventId, $"preflight-{issues[0].Code}", false, null));
             }
             else
             {
@@ -157,6 +164,9 @@ public sealed record AzureLogsIngestionOptions
     public required string StreamName { get; init; }
 
     public int MaximumConcurrency { get; init; } = 4;
+
+    /// <summary>Stream schema used for preflight checks before upload.</summary>
+    public SentinelSchema Schema { get; init; } = SentinelSchema.Default;
 
     internal void Validate()
     {

@@ -534,7 +534,8 @@
           "Bower.Core": "[1.0.0, )",
           "Bower.Jobs": "[1.0.0, )",
           "Bower.Output.AmaSpool": "[1.0.0, )",
-          "Bower.Output.AzureLogsIngestion": "[1.0.0, )"
+          "Bower.Output.AzureLogsIngestion": "[1.0.0, )",
+          "Bower.Packs": "[1.0.0, )"
         }
       },
       "bower.contracts": {
@@ -558,6 +559,17 @@
           "Bower.Contracts": "[1.0.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
+      },
+      "bower.evidence": {
+        "type": "Project",
+        "dependencies": {
+          "Azure.Identity": "[1.21.0, )",
+          "Bower.Contracts": "[1.0.0, )",
+          "Bower.Integrity": "[1.0.0, )"
+        }
+      },
+      "bower.integrity": {
+        "type": "Project"
       },
       "bower.jobs": {
         "type": "Project",
@@ -595,7 +607,20 @@
         "dependencies": {
           "Azure.Identity": "[1.21.0, )",
           "Azure.Monitor.Ingestion": "[1.2.0, )",
-          "Bower.Abstractions": "[1.0.0, )"
+          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Dcr": "[1.0.0, )"
+        }
+      },
+      "bower.packs": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Dcr": "[1.0.0, )",
+          "Bower.Detection": "[1.0.0, )",
+          "Bower.Integrity": "[1.0.0, )",
+          "Bower.Pipeline": "[1.0.0, )",
+          "Bower.PolicyEngine": "[1.0.0, )",
+          "Bower.Redaction": "[1.0.0, )",
+          "YamlDotNet": "[18.1.0, )"
         }
       },
       "bower.persistence": {
@@ -623,7 +648,8 @@
       "bower.redaction": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )"
+          "Bower.Abstractions": "[1.0.0, )",
+          "YamlDotNet": "[18.1.0, )"
         }
       },
       "bower.sdk": {

@@ -46,6 +46,13 @@ export interface Collector {
   sources: SourceReport[];
   outputs: OutputReport[];
   jobs?: BackgroundJob[] | null;
+  /** Policy bundle hash an administrator expects this collector to run. */
+  desiredPolicyHash?: string | null;
+  /** Null when no desired policy is set. */
+  policyInSync?: boolean | null;
+  /** Last witnessed queue ledger sequence (tamper evidence). */
+  ledgerSequence?: number | null;
+  deadLettered?: number;
 }
 
 export interface Overview {
@@ -57,6 +64,8 @@ export interface Overview {
   sourcesReporting: number;
   sourcesDegraded: number;
   exceptions: Collector[];
+  policyDrift?: number;
+  deadLettered?: number;
 }
 
 export interface Approval {

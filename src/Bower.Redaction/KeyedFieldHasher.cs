@@ -17,10 +17,12 @@ public sealed class KeyedFieldHasher
         this.key = key.ToArray();
     }
 
-    public string Hash(string value)
+    public string Hash(string value, string? keyId = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(value);
         byte[] digest = HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(value));
-        return $"hmac-sha256:{Convert.ToHexStringLower(digest)}";
+        return string.IsNullOrEmpty(keyId)
+            ? $"hmac-sha256:{Convert.ToHexStringLower(digest)}"
+            : $"hmac-sha256:{keyId}:{Convert.ToHexStringLower(digest)}";
     }
 }

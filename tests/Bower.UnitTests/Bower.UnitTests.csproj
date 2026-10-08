@@ -17,6 +17,9 @@
     <ProjectReference Include="../../src/Bower.Collector/Bower.Collector.csproj" />
     <ProjectReference Include="../../src/Bower.Source.Docker/Bower.Source.Docker.csproj" />
     <ProjectReference Include="../../src/Bower.Core/Bower.Core.csproj" />
+    <ProjectReference Include="../../src/Bower.Evidence/Bower.Evidence.csproj" />
+    <ProjectReference Include="../../src/Bower.Integrity/Bower.Integrity.csproj" />
+    <ProjectReference Include="../../src/Bower.Packs/Bower.Packs.csproj" />
     <ProjectReference Include="../../src/Bower.Output.AmaSpool/Bower.Output.AmaSpool.csproj" />
     <ProjectReference Include="../../src/Bower.Management.Api/Bower.Management.Api.csproj" />
     <ProjectReference Include="../../src/Bower.Persistence/Bower.Persistence.csproj" />
@@ -36,6 +39,14 @@
     </Content>
     <Content Include="../../policies/**/*.yaml">
       <Link>policies/%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="../../packs/**/*">
+      <Link>packs/%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="../../deploy/bicep/main.bicep">
+      <Link>deploy/main.bicep</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="../../rules/**/*.yml">

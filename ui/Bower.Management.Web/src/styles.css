@@ -592,6 +592,24 @@ tbody tr:last-child td {
   color: var(--color-danger);
 }
 
+.policy-label {
+  font-family: var(--font-technical);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.policy-label--drift {
+  color: var(--color-danger);
+}
+
+.policy-label--sync {
+  color: var(--color-positive);
+}
+
+.policy-label--unset {
+  color: var(--color-ink-muted);
+}
+
 .empty-state {
   display: grid;
   justify-items: start;
@@ -1146,7 +1164,7 @@ tbody tr:last-child td {
   }
 
   .metric-strip {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
   }
 
   .metric {

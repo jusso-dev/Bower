@@ -240,5 +240,17 @@ public sealed class QueueDeliveryWorkerTests
 
         public Task MaintainAsync(CancellationToken cancellationToken = default) =>
             inner.MaintainAsync(cancellationToken);
+
+        public Task<IReadOnlyList<DeadLetterRecord>> ListDeadLetteredAsync(int maximumCount, CancellationToken cancellationToken = default) =>
+            inner.ListDeadLetteredAsync(maximumCount, cancellationToken);
+
+        public Task<int> ReplayDeadLetteredAsync(string? failureCodePrefix, IReadOnlyCollection<string>? eventIds, int maximumCount, CancellationToken cancellationToken = default) =>
+            inner.ReplayDeadLetteredAsync(failureCodePrefix, eventIds, maximumCount, cancellationToken);
+
+        public Task<LedgerHead> GetLedgerHeadAsync(CancellationToken cancellationToken = default) =>
+            inner.GetLedgerHeadAsync(cancellationToken);
+
+        public Task<LedgerVerification> VerifyLedgerAsync(CancellationToken cancellationToken = default) =>
+            inner.VerifyLedgerAsync(cancellationToken);
     }
 }
