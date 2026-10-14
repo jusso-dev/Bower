@@ -15,7 +15,7 @@ RUN RID="linux-$([ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64)" \
     -p:PublishSingleFile=false \
     --output /app
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.12 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.13 AS runtime
 WORKDIR /app
 COPY --from=build /app .
 COPY policies ./policies

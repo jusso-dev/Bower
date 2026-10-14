@@ -25,7 +25,7 @@ RUN dotnet publish src/Bower.Management.Api/Bower.Management.Api.csproj \
     --no-restore \
     --output /app
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.12 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.13 AS runtime
 WORKDIR /app
 COPY --from=api-build /app .
 COPY --from=web-build /src/ui/Bower.Management.Web/dist ./wwwroot
