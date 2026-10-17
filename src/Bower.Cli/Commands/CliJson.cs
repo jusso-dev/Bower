@@ -24,7 +24,7 @@ internal sealed record PipelineValidationOutput(
     string Name,
     string Version,
     [property: JsonPropertyName("order")] IReadOnlyList<string> Order,
-    [property: JsonPropertyName("estimate")] PipelinePerformanceEstimate Estimate,
+    [property: JsonPropertyName("estimate")] PipelinePerformanceEstimate? Estimate,
     [property: JsonPropertyName("issues")] IReadOnlyList<PipelineValidationIssue> Issues);
 
 internal sealed record InitOutput(

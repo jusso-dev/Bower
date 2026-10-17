@@ -18,4 +18,7 @@
     <ProjectReference Include="../Bower.Evidence/Bower.Evidence.csproj" />
     <ProjectReference Include="../Bower.Packs/Bower.Packs.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Bower.UnitTests" />
+  </ItemGroup>
 </Project>

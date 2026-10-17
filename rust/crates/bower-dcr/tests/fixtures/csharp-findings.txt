@@ -22,4 +22,5 @@ preflight|type-mismatch|timeGenerated|Expected datetime, got String; Azure would
 preflight|type-mismatch|eventType|Expected string, got Object; Azure would store an empty or stringified value.
 preflight|type-mismatch|eventSeverity|Expected string, got Number; Azure would store an empty or stringified value.
 preflight|field-too-large|actor|Field is 70015 bytes; Azure silently truncates values above 65536.
+preflight|type-mismatch|labels|Expected dynamic, got String; Azure would store an empty or stringified value.
 preflight|time-generated-missing|timeGenerated|Rows without timeGenerated cannot be placed in time.

@@ -29,6 +29,7 @@ fn run_error(error: EvidenceError) -> CliError {
 /// [--table NAME] [--credential MODE] [--client-id ID] [--timeout-minutes N]
 /// [--signing-key FILE] [--out FILE]`. Exit 0 only for a query-verified bundle, else 2.
 pub fn run(args: &EvidenceRunArgs) -> CliResult {
+    let minutes = timeout_minutes(args.timeout_minutes.as_deref())?;
     let http = default_http_client();
     let credential = if args.workspace_id.is_none() && args.workspace_resource_id.is_none() {
         None
@@ -63,8 +64,7 @@ pub fn run(args: &EvidenceRunArgs) -> CliResult {
     if let Some(table) = &args.table {
         table.clone_into(&mut options.table);
     }
-    let minutes = int_or(args.timeout_minutes.as_deref(), 15)?;
-    options.timeout = Duration::from_secs(u64::try_from(minutes).unwrap_or(0) * 60);
+    options.timeout = Duration::from_secs(u64::from(minutes) * 60);
 
     let bundle = super::block_on(async { runner.run(&options).await.map_err(run_error) })?;
 
@@ -85,6 +85,22 @@ pub fn run(args: &EvidenceRunArgs) -> CliResult {
         println!("{line}");
     }
     Ok(if bundle.mode == modes::VERIFIED { 0 } else { 2 })
+}
+
+/// Longest arrival wait `evidence run` accepts: one day (C# `MaximumTimeoutMinutes`).
+pub const MAXIMUM_TIMEOUT_MINUTES: u32 = 1_440;
+
+/// `--timeout-minutes N` (default 15); must be 1 to [`MAXIMUM_TIMEOUT_MINUTES`].
+pub fn timeout_minutes(value: Option<&str>) -> CliResult<u32> {
+    let minutes = int_or(value, 15)?;
+    u32::try_from(minutes)
+        .ok()
+        .filter(|minutes| (1..=MAXIMUM_TIMEOUT_MINUTES).contains(minutes))
+        .ok_or_else(|| {
+            CliError(format!(
+                "--timeout-minutes must be between 1 and {MAXIMUM_TIMEOUT_MINUTES}."
+            ))
+        })
 }
 
 /// The console summary `evidence run` prints after writing the bundle.
@@ -163,4 +179,27 @@ pub fn verify(args: &EvidenceVerifyArgs) -> CliResult {
         _ => println!("Signature INVALID or from an untrusted key."),
     }
     Ok(if valid { 0 } else { 1 })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timeout_minutes_must_be_positive_and_bounded() {
+        assert_eq!(timeout_minutes(None).unwrap(), 15);
+        assert_eq!(timeout_minutes(Some("1")).unwrap(), 1);
+        assert_eq!(timeout_minutes(Some("1440")).unwrap(), 1_440);
+        for bad in ["0", "-5", "1441", "2147483647"] {
+            assert_eq!(
+                timeout_minutes(Some(bad)).unwrap_err().0,
+                "--timeout-minutes must be between 1 and 1440.",
+                "{bad}"
+            );
+        }
+        assert_eq!(
+            timeout_minutes(Some("x")).unwrap_err().0,
+            "The input string 'x' was not in a correct format."
+        );
+    }
 }

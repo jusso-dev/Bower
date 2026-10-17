@@ -578,3 +578,75 @@ fn csharp_style_options_ignore_unknowns_and_take_first_value() {
     let run = bower(&["version", "extra"]);
     assert_eq!(run.stderr, "Unknown command. Run 'bower --help'.\n");
 }
+
+#[test]
+fn positionals_never_take_an_options_value() {
+    // `--format` is unknown: it and its value are skipped, so `bar` is not the template.
+    let run = bower(&["pipeline", "template", "--format", "bar"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert!(run.stdout.starts_with("id: template-sentinel-app\n"));
+    let run = bower(&["pipeline", "template", "--format", "yaml", "aws-security"]);
+    assert!(run.stdout.starts_with("id: template-aws-security\n"));
+
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("p.yaml");
+    std::fs::write(&file, bower(&["pipeline", "template"]).stdout).unwrap();
+    let path = file.to_str().unwrap();
+    let run = bower(&["pipeline", "validate", "--format", "json", path]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let run = bower(&["pipeline", "validate", "--format", path]);
+    assert_eq!(
+        (run.code, run.stderr.as_str()),
+        (1, "Provide an existing pipeline file with --file PATH.\n")
+    );
+}
+
+#[test]
+fn pipeline_validate_reports_cycles_without_an_estimate() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("cycle.yaml");
+    std::fs::write(
+        &file,
+        "id: c\nname: C\nversion: 1\ndescription: x\nnodes:\n- id: a\n  kind: Source\n  type: http-collector\n- id: b\n  kind: Output\n  type: http\n- id: lonely\n  kind: Enrich\n  type: geo\nedges:\n- from: a\n  to: b\n- from: b\n  to: a\n",
+    )
+    .unwrap();
+    let run = bower(&["pipeline", "validate", file.to_str().unwrap()]);
+    assert_eq!(run.code, 2, "{}", run.stderr);
+    assert!(run.stdout.contains("\"estimate\": null"), "{}", run.stdout);
+    assert!(run.stdout.contains("\"Code\": \"cycle\""));
+    assert!(run.stdout.contains("\"Code\": \"node-disconnected\""));
+}
+
+#[test]
+fn evidence_verify_reports_unreadable_bundles() {
+    let dir = tempfile::tempdir().unwrap();
+    for text in ["{}", "{\"bundle\":null}", "[]", "not json"] {
+        let file = dir.path().join("bundle.json");
+        std::fs::write(&file, text).unwrap();
+        let run = bower(&["evidence", "verify", file.to_str().unwrap()]);
+        assert_eq!(
+            (run.code, run.stderr.as_str()),
+            (1, "Evidence bundle is unreadable.\n"),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn evidence_run_requires_a_positive_bounded_timeout() {
+    for minutes in ["0", "-5", "1441"] {
+        let run = bower(&[
+            "evidence",
+            "run",
+            "--collector-url",
+            "http://127.0.0.1:9",
+            "--timeout-minutes",
+            minutes,
+        ]);
+        assert_eq!(
+            (run.code, run.stderr.as_str()),
+            (1, "--timeout-minutes must be between 1 and 1440.\n"),
+            "{minutes}"
+        );
+    }
+}

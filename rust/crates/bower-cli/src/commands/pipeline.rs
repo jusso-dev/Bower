@@ -41,7 +41,8 @@ pub fn validate(args: &PipelineValidateArgs) -> CliResult {
     };
     let pipeline = bower_pipeline::parse_yaml(&read_text(path)?).map_err(CliError::from_display)?;
     let validation = bower_pipeline::validate(&pipeline);
-    let estimate = bower_pipeline::estimate(&pipeline).map_err(CliError::from_display)?;
+    // No estimate (null) for a graph with duplicate node ids or a cycle.
+    let estimate = bower_pipeline::estimate(&pipeline).ok();
     let json = Json::object([
         ("valid", Json::Bool(validation.is_valid)),
         ("Id", Json::str(pipeline.id.clone())),
@@ -58,7 +59,10 @@ pub fn validate(args: &PipelineValidateArgs) -> CliResult {
                     .collect(),
             ),
         ),
-        ("estimate", estimate_json(&estimate)),
+        (
+            "estimate",
+            estimate.as_ref().map_or(Json::Null, estimate_json),
+        ),
         (
             "issues",
             Json::Array(validation.issues.iter().map(issue_json).collect()),

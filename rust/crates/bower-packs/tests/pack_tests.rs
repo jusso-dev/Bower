@@ -844,3 +844,64 @@ fn emit_rust_packs_for_csharp() {
     )
     .unwrap();
 }
+
+/// C# `PackSamples_AcceptCoversRedactAndAcceptButNotTheReverse`: a sample expecting
+/// `accept` passes when the event was also redacted (it is still delivered;
+/// `mustNotContain` checks the redaction). `redact-and-accept` requires redaction.
+#[test]
+fn sample_accept_covers_redact_and_accept_but_not_the_reverse() {
+    let built = build_pack(&repo_pack("aws-security"), None);
+    let pack = load(&built.archive, &[built.public_key.as_str()]).unwrap();
+    let line = |needle: &str| {
+        pack.sample_lines
+            .iter()
+            .find(|line| line.contains(needle))
+            .unwrap()
+            .clone()
+    };
+    let (plain, redacted) = (
+        line("StopLogging is accepted"),
+        line("access key in an outcome reason"),
+    );
+    let expect = |line: &str, expect: &str| {
+        let mut sample: serde_json::Value = serde_json::from_str(line).unwrap();
+        sample["expect"] = serde_json::Value::from(expect);
+        bower_contracts::json::to_string(&sample).unwrap()
+    };
+    let variants = LoadedPack {
+        sample_lines: vec![
+            expect(&redacted, "accept"),
+            expect(&redacted, "redact-and-accept"),
+            expect(&plain, "accept"),
+            expect(&plain, "redact-and-accept"),
+            expect(&redacted, "reject"),
+        ],
+        ..pack.clone()
+    };
+    let privacy = test_privacy_policy(pack.privacy_profile_yaml.as_deref()).unwrap();
+    let results = run_samples(&variants, privacy, None).unwrap();
+    let summary: Vec<(&str, &str, bool)> = results
+        .iter()
+        .map(|result| {
+            (
+                result.expected_decision.as_str(),
+                result.actual_decision.as_str(),
+                result.passed,
+            )
+        })
+        .collect();
+    assert_eq!(
+        summary,
+        [
+            ("accept", "redactandaccept", true),
+            ("redactandaccept", "redactandaccept", true),
+            ("accept", "accept", true),
+            ("redactandaccept", "accept", false),
+            ("reject", "redactandaccept", false),
+        ]
+    );
+    assert_eq!(
+        results[3].problems,
+        ["Expected redactandaccept, got accept."]
+    );
+}

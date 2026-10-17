@@ -6,8 +6,14 @@ use crate::DcrError;
 use crate::json_text::to_indented_string;
 use crate::schema::SentinelSchema;
 
-/// ARM API version used for the table, the DCR and ARM reads.
-pub const API_VERSION: &str = "2025-07-01";
+/// Pinned ARM api-version for `Microsoft.OperationalInsights/workspaces` and
+/// `workspaces/tables` (C# `AzureApiVersions.LogAnalytics`).
+pub const LOG_ANALYTICS_API_VERSION: &str = "2025-07-01";
+
+/// Pinned ARM api-version for `Microsoft.Insights/dataCollectionRules` (latest GA;
+/// C# `AzureApiVersions.DataCollectionRules`). ARM rejects an api-version the
+/// provider does not publish, so each resource type uses its own.
+pub const DATA_COLLECTION_RULES_API_VERSION: &str = "2024-03-11";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DcrTemplateOptions {
@@ -68,7 +74,7 @@ pub fn generate(options: &DcrTemplateOptions) -> Result<Value, DcrError> {
         "resources": [
             {
                 "type": "Microsoft.OperationalInsights/workspaces/tables",
-                "apiVersion": API_VERSION,
+                "apiVersion": LOG_ANALYTICS_API_VERSION,
                 "name": format!("[format('{{0}}/{table}', parameters('workspaceName'))]"),
                 "properties": {
                     "plan": options.plan,
@@ -79,7 +85,7 @@ pub fn generate(options: &DcrTemplateOptions) -> Result<Value, DcrError> {
             },
             {
                 "type": "Microsoft.Insights/dataCollectionRules",
-                "apiVersion": API_VERSION,
+                "apiVersion": DATA_COLLECTION_RULES_API_VERSION,
                 "name": rule,
                 "location": "[parameters('location')]",
                 // Direct kind exposes its own logs ingestion endpoint; no DCE needed
@@ -112,11 +118,11 @@ pub fn generate(options: &DcrTemplateOptions) -> Result<Value, DcrError> {
         "outputs": {
             "logsIngestionEndpoint": {
                 "type": "string",
-                "value": format!("[reference(resourceId('Microsoft.Insights/dataCollectionRules', '{rule}'), '{API_VERSION}').endpoints.logsIngestion]")
+                "value": format!("[reference(resourceId('Microsoft.Insights/dataCollectionRules', '{rule}'), '{DATA_COLLECTION_RULES_API_VERSION}').endpoints.logsIngestion]")
             },
             "dataCollectionRuleImmutableId": {
                 "type": "string",
-                "value": format!("[reference(resourceId('Microsoft.Insights/dataCollectionRules', '{rule}'), '{API_VERSION}').immutableId]")
+                "value": format!("[reference(resourceId('Microsoft.Insights/dataCollectionRules', '{rule}'), '{DATA_COLLECTION_RULES_API_VERSION}').immutableId]")
             },
             "streamName": { "type": "string", "value": schema.stream_name }
         }

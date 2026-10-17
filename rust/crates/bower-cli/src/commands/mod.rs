@@ -14,6 +14,7 @@ pub mod queue;
 pub mod token;
 
 use std::future::Future;
+use std::time::Duration;
 
 use crate::cli::{
     Command, DcrCommand, DeveloperCommand, EvidenceCommand, KeysCommand, PackCommand,
@@ -60,18 +61,26 @@ pub fn block_on<T>(future: impl Future<Output = CliResult<T>>) -> CliResult<T> {
         .block_on(future)
 }
 
+/// The .NET `HttpClient` timeout message (`TaskCanceledException` wrapping a
+/// `TimeoutException`), which both CLIs report as a failure, never a crash.
+pub fn timeout_message(timeout: Duration) -> String {
+    format!(
+        "The request was canceled due to the configured HttpClient.Timeout of {} seconds elapsing.",
+        timeout.as_secs_f64()
+    )
+}
+
 /// HTTP failure as a CLI error (see [`http_error_with_host`]).
-pub fn http_error(error: reqwest::Error) -> CliError {
-    CliError(http_error_with_host(&error))
+pub fn http_error(error: &reqwest::Error, timeout: Duration) -> CliError {
+    CliError(http_error_with_host(error, timeout))
 }
 
 /// HTTP failure text shaped like .NET `HttpRequestException` messages, e.g.
 /// `Connection refused (127.0.0.1:4319)`. Uses the innermost cause only, so
 /// never headers or tokens.
-pub fn http_error_with_host(error: &reqwest::Error) -> String {
+pub fn http_error_with_host(error: &reqwest::Error, timeout: Duration) -> String {
     if error.is_timeout() {
-        return "The request was canceled due to the configured HttpClient.Timeout elapsing."
-            .to_owned();
+        return timeout_message(timeout);
     }
     let mut message = error.to_string();
     let mut source = std::error::Error::source(error);

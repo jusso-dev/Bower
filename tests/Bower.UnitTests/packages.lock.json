@@ -532,6 +532,18 @@
           "xunit.v3.runner.common": "[4.0.1]"
         }
       },
+      "bower": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Contracts": "[1.0.0, )",
+          "Bower.Dcr": "[1.0.0, )",
+          "Bower.Evidence": "[1.0.0, )",
+          "Bower.Packs": "[1.0.0, )",
+          "Bower.Persistence": "[1.0.0, )",
+          "Bower.Pipeline": "[1.0.0, )",
+          "Bower.PolicyEngine": "[1.0.0, )"
+        }
+      },
       "bower.abstractions": {
         "type": "Project",
         "dependencies": {

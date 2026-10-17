@@ -14,6 +14,9 @@ public sealed record PackSampleResult(string Name, bool Passed, string ExpectedD
 /// checks the expected decision and that listed sensitive strings never survive.
 /// Sample lines: {"name": "...", "expect": "accept", "mustNotContain": ["..."], "event": {...}}.
 /// "{{now}}" in the event is replaced with the current UTC time.
+/// Expectations: "accept" passes for accept and for redact-and-accept, because the event
+/// is delivered either way (prove the redaction with "mustNotContain"); "redact-and-accept"
+/// requires that redaction happened; every other expectation must match exactly.
 /// </summary>
 public static class PackTester
 {
@@ -65,6 +68,7 @@ public static class PackTester
                 }
             }
 
+            // "accept" also covers redact-and-accept; the reverse does not hold.
             bool decisionMatches = string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase)
                 || (expected.Equals("accept", StringComparison.OrdinalIgnoreCase) && actual == "redactandaccept");
             if (!decisionMatches)

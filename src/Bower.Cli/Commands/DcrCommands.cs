@@ -44,13 +44,13 @@ internal static class DcrCommands
         ArmReader? arm = null;
         if (CliOptions.Has(args, "--dcr-resource-id") || CliOptions.Has(args, "--workspace-resource-id"))
         {
-            arm = new ArmReader(new HttpClient(), VerifierCredential.Create(CliOptions.Get(args, "--credential")));
+            arm = AzureResources.CreateReader(CliOptions.Get(args, "--credential"));
         }
 
         string? ruleJson = CliOptions.Get(args, "--rule") is { } ruleFile
             ? File.ReadAllText(ruleFile)
             : CliOptions.Get(args, "--dcr-resource-id") is { } ruleId
-                ? (await arm!.GetAsync(ruleId, DcrTemplateGenerator.ApiVersion, CancellationToken.None))?.ToJsonString()
+                ? (await AzureResources.GetRuleAsync(arm!, ruleId))?.ToJsonString()
                     ?? throw new InvalidOperationException("DCR not found or not readable with this credential.")
                 : null;
         if (ruleJson is null)
@@ -63,7 +63,7 @@ internal static class DcrCommands
         string? tableJson = CliOptions.Get(args, "--table") is { } tableFile
             ? File.ReadAllText(tableFile)
             : CliOptions.Get(args, "--workspace-resource-id") is { } workspaceId
-                ? (await arm!.GetAsync($"{workspaceId}/tables/{schema.TableName}", DcrTemplateGenerator.ApiVersion, CancellationToken.None))?.ToJsonString()
+                ? (await AzureResources.GetTableAsync(arm!, workspaceId, schema.TableName))?.ToJsonString()
                 : null;
         if (tableJson is not null)
         {

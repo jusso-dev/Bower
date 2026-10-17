@@ -31,6 +31,13 @@ samples fail cannot be signed. Sample lines:
 {"name":"TFN never leaves the host","expect":"accept","mustNotContain":["123456782"],"event":{ … "timeGenerated":"{{now}}" … }}
 ```
 
+`expect` is one of the policy decisions (`accept`, `reject`, `sample`, `aggregate`,
+`redact-and-accept`, `quarantine`, `dead-letter`; default `accept`). `accept` means
+"delivered": it also passes when the privacy engine redacted something
+(`redact-and-accept`), so prove the redaction with `mustNotContain`. Write
+`redact-and-accept` to require that redaction happened; it fails for an event that
+was accepted unchanged. Every other expectation must match exactly.
+
 `diff` is the policy population diff: event types added or removed, required fields,
 actions and score thresholds, and policies changed without a version bump (exit 1).
 

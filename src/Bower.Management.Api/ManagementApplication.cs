@@ -373,7 +373,7 @@ public static class ManagementApplication
                 (TelemetryPipeline pipeline) =>
                 {
                     PipelineValidationResult validation = PipelineValidator.Validate(pipeline);
-                    PipelinePerformanceEstimate estimate = PipelineValidator.Estimate(pipeline);
+                    PipelinePerformanceEstimate? estimate = PipelineValidator.TryEstimate(pipeline);
                     return Results.Ok(
                         new PipelineValidationResponse(
                             validation.IsValid,

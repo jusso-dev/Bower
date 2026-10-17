@@ -246,6 +246,69 @@ fn preflight_catches_what_azure_would_silently_truncate_or_coerce() {
     );
 }
 
+#[test]
+fn preflight_requires_dynamic_columns_to_be_objects_or_arrays() {
+    let record = json!({
+        "timeGenerated": "2026-10-08T00:00:00Z",
+        "labels": "team=red",
+        "application": { "name": "a" },
+        "privacy": []
+    })
+    .as_object()
+    .unwrap()
+    .clone();
+    let issues = preflight::check(&record, SentinelSchema::default_schema());
+    assert_eq!(issues.len(), 1, "{issues:?}");
+    assert_eq!(
+        (
+            issues[0].code.as_str(),
+            issues[0].field.as_str(),
+            issues[0].detail.as_str()
+        ),
+        (
+            "type-mismatch",
+            "labels",
+            "Expected dynamic, got String; Azure would store an empty or stringified value."
+        )
+    );
+}
+
+/// C# `ArmApiVersions_ArePinnedPerResourceProviderInTemplateAndBicep`.
+#[test]
+fn arm_api_versions_are_pinned_per_resource_provider() {
+    assert_eq!(bower_dcr::LOG_ANALYTICS_API_VERSION, "2025-07-01");
+    assert_eq!(bower_dcr::DATA_COLLECTION_RULES_API_VERSION, "2024-03-11");
+    let mut template = generator::generate(&DcrTemplateOptions::default()).unwrap();
+    assert_eq!(
+        resource(
+            &mut template,
+            "Microsoft.OperationalInsights/workspaces/tables"
+        )["apiVersion"],
+        bower_dcr::LOG_ANALYTICS_API_VERSION
+    );
+    assert_eq!(
+        resource(&mut template, "Microsoft.Insights/dataCollectionRules")["apiVersion"],
+        bower_dcr::DATA_COLLECTION_RULES_API_VERSION
+    );
+    let bicep = repo_file("deploy/bicep/main.bicep");
+    for expected in [
+        format!(
+            "'Microsoft.OperationalInsights/workspaces@{}'",
+            bower_dcr::LOG_ANALYTICS_API_VERSION
+        ),
+        format!(
+            "'Microsoft.OperationalInsights/workspaces/tables@{}'",
+            bower_dcr::LOG_ANALYTICS_API_VERSION
+        ),
+        format!(
+            "'Microsoft.Insights/dataCollectionRules@{}'",
+            bower_dcr::DATA_COLLECTION_RULES_API_VERSION
+        ),
+    ] {
+        assert!(bicep.contains(&expected), "{expected}");
+    }
+}
+
 fn bicep_columns(bicep: &str, start_marker: &str) -> Vec<String> {
     let start = bicep.find(start_marker).unwrap();
     let end = start + bicep[start..].find(']').unwrap();

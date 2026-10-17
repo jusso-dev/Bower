@@ -20,6 +20,8 @@ const ALLOWED_SOURCE_TYPES: &[&str] = &[
     "ec2-host",
 ];
 
+// Azure Monitor / Sentinel delivery is the `azure-logs-ingestion` output (Logs
+// Ingestion API). There is no separate `azure-monitor` output type.
 const ALLOWED_OUTPUT_TYPES: &[&str] = &[
     "azure-logs-ingestion",
     "ama-spool",
@@ -135,6 +137,30 @@ pub fn validate(pipeline: &TelemetryPipeline) -> PipelineValidationResult {
         }
     }
 
+    // A node with no edges is never reached and never delivers: flag it instead of
+    // silently ignoring it. Duplicate and empty ids are reported above.
+    let connected: HashSet<&str> = pipeline
+        .edges
+        .iter()
+        .flat_map(|edge| [edge.from.as_str(), edge.to.as_str()])
+        .collect();
+    let mut reported: HashSet<&str> = HashSet::new();
+    for node in &pipeline.nodes {
+        if !is_null_or_white_space(&node.id)
+            && !connected.contains(node.id.as_str())
+            && reported.insert(node.id.as_str())
+        {
+            issues.push(PipelineValidationIssue::new(
+                "node-disconnected",
+                format!(
+                    "Node '{}' has no edges; connect it to the pipeline or remove it.",
+                    node.id
+                ),
+                Some(&node.id),
+            ));
+        }
+    }
+
     let mut order = Vec::new();
     if nodes.len() == pipeline.nodes.len()
         && pipeline
@@ -142,7 +168,12 @@ pub fn validate(pipeline: &TelemetryPipeline) -> PipelineValidationResult {
             .iter()
             .all(|edge| nodes.contains(edge.from.as_str()) && nodes.contains(edge.to.as_str()))
     {
-        match topological_sort(pipeline) {
+        let edges: Vec<(&str, &str)> = pipeline
+            .edges
+            .iter()
+            .map(|edge| (edge.from.as_str(), edge.to.as_str()))
+            .collect();
+        match topological_sort(&pipeline.nodes, &edges) {
             Ok(sorted) => order = sorted,
             Err((partial, cycle_node)) => {
                 order = partial;
@@ -187,8 +218,9 @@ pub fn validate(pipeline: &TelemetryPipeline) -> PipelineValidationResult {
     }
 }
 
-/// `PipelineValidator.Estimate`. Single pass over the edges, as in C#. Duplicate node
-/// ids fail like C#'s `ToDictionary`.
+/// `PipelineValidator.Estimate`: counts and the longest path through the graph. Edges
+/// that reference unknown nodes are ignored. Duplicate node ids are
+/// `InvalidArgument`; a cyclic graph has no depth and is `InvalidData`.
 pub fn estimate(
     pipeline: &TelemetryPipeline,
 ) -> Result<PipelinePerformanceEstimate, PipelineError> {
@@ -196,16 +228,31 @@ pub fn estimate(
     for node in &pipeline.nodes {
         if depth.insert(node.id.as_str(), 0).is_some() {
             return Err(PipelineError::InvalidArgument(format!(
-                "An item with the same key has already been added. Key: {}",
+                "Duplicate node id '{}'; no estimate.",
                 node.id
             )));
         }
     }
-    for edge in &pipeline.edges {
-        if let (Some(&from), Some(&to)) =
-            (depth.get(edge.from.as_str()), depth.get(edge.to.as_str()))
-        {
-            depth.insert(edge.to.as_str(), to.max(from + 1));
+    let edges: Vec<(&str, &str)> = pipeline
+        .edges
+        .iter()
+        .filter(|edge| {
+            depth.contains_key(edge.from.as_str()) && depth.contains_key(edge.to.as_str())
+        })
+        .map(|edge| (edge.from.as_str(), edge.to.as_str()))
+        .collect();
+    let order = topological_sort(&pipeline.nodes, &edges).map_err(|_| {
+        PipelineError::InvalidData("Pipeline graph contains a cycle; no estimate.".to_owned())
+    })?;
+
+    // Longest path: relax each node's outgoing edges in topological order.
+    for current in &order {
+        let current_depth = depth[current.as_str()];
+        for &(from, to) in &edges {
+            if from == current {
+                let next = depth.get_mut(to).expect("edges reference known nodes");
+                *next = (*next).max(current_depth + 1);
+            }
         }
     }
 
@@ -288,7 +335,11 @@ fn validate_node(node: &PipelineNode, issues: &mut Vec<PipelineValidationIssue>)
     {
         issues.push(PipelineValidationIssue::new(
             "source-type",
-            format!("Unknown source type '{}'.", node.node_type),
+            format!(
+                "Unknown source type '{}'. Supported: {}.",
+                node.node_type,
+                ALLOWED_SOURCE_TYPES.join(", ")
+            ),
             Some(&node.id),
         ));
     }
@@ -299,7 +350,11 @@ fn validate_node(node: &PipelineNode, issues: &mut Vec<PipelineValidationIssue>)
     {
         issues.push(PipelineValidationIssue::new(
             "output-type",
-            format!("Unknown output type '{}'.", node.node_type),
+            format!(
+                "Unknown output type '{}'. Supported: {}.",
+                node.node_type,
+                ALLOWED_OUTPUT_TYPES.join(", ")
+            ),
             Some(&node.id),
         ));
     }
@@ -332,27 +387,29 @@ fn validate_node(node: &PipelineNode, issues: &mut Vec<PipelineValidationIssue>)
 
 /// Kahn's algorithm in node order. On a cycle returns the partial order and the first
 /// node (in node order) that still has incoming edges.
-fn topological_sort(pipeline: &TelemetryPipeline) -> Result<Vec<String>, (Vec<String>, String)> {
-    let index: HashMap<&str, usize> = pipeline
-        .nodes
+fn topological_sort(
+    nodes: &[PipelineNode],
+    edges: &[(&str, &str)],
+) -> Result<Vec<String>, (Vec<String>, String)> {
+    let index: HashMap<&str, usize> = nodes
         .iter()
         .enumerate()
         .map(|(position, node)| (node.id.as_str(), position))
         .collect();
-    let mut adjacency: Vec<Vec<usize>> = vec![Vec::new(); pipeline.nodes.len()];
-    let mut indegree = vec![0usize; pipeline.nodes.len()];
-    for edge in &pipeline.edges {
-        let (from, to) = (index[edge.from.as_str()], index[edge.to.as_str()]);
+    let mut adjacency: Vec<Vec<usize>> = vec![Vec::new(); nodes.len()];
+    let mut indegree = vec![0usize; nodes.len()];
+    for &(from, to) in edges {
+        let (from, to) = (index[from], index[to]);
         adjacency[from].push(to);
         indegree[to] += 1;
     }
 
-    let mut queue: VecDeque<usize> = (0..pipeline.nodes.len())
+    let mut queue: VecDeque<usize> = (0..nodes.len())
         .filter(|&position| indegree[position] == 0)
         .collect();
     let mut order = Vec::new();
     while let Some(current) = queue.pop_front() {
-        order.push(pipeline.nodes[current].id.clone());
+        order.push(nodes[current].id.clone());
         for &next in &adjacency[current] {
             indegree[next] -= 1;
             if indegree[next] == 0 {
@@ -361,12 +418,12 @@ fn topological_sort(pipeline: &TelemetryPipeline) -> Result<Vec<String>, (Vec<St
         }
     }
 
-    if order.len() != pipeline.nodes.len() {
+    if order.len() != nodes.len() {
         let cycle = indegree
             .iter()
             .position(|&value| value > 0)
             .expect("a cycle leaves a positive indegree");
-        return Err((order, pipeline.nodes[cycle].id.clone()));
+        return Err((order, nodes[cycle].id.clone()));
     }
     Ok(order)
 }

@@ -15,6 +15,7 @@
     </PackageReference>
     <ProjectReference Include="../../src/Bower.Agent.Cloud/Bower.Agent.Cloud.csproj" />
     <ProjectReference Include="../../src/Bower.Agent.Docker/Bower.Agent.Docker.csproj" />
+    <ProjectReference Include="../../src/Bower.Cli/Bower.Cli.csproj" />
     <ProjectReference Include="../../src/Bower.Collector/Bower.Collector.csproj" />
     <ProjectReference Include="../../src/Bower.Source.Docker/Bower.Source.Docker.csproj" />
     <ProjectReference Include="../../src/Bower.Core/Bower.Core.csproj" />

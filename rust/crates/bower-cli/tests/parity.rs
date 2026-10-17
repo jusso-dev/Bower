@@ -129,11 +129,28 @@ fn pipeline_validate_matches_csharp() {
         "id: bad\nname: Bad\nversion: 1.0.0\ndescription: cycle\nnodes:\n- id: a\n  kind: Source\n  type: nope\n- id: b\n  kind: Filter\n  type: policy-engine\nedges:\n- from: a\n  to: b\n- from: b\n  to: a\n",
     )
     .unwrap();
-    for file in [&valid, &invalid] {
+    // A disconnected Enrich node, an unknown `azure-monitor` output and duplicate ids.
+    let orphan = dir.path().join("orphan.yaml");
+    std::fs::write(
+        &orphan,
+        "id: o\nname: O\nversion: 1.0.0\ndescription: orphan\nnodes:\n- id: s\n  kind: Source\n  type: http-collector\n- id: lonely\n  kind: Enrich\n  type: geo\n- id: out\n  kind: Output\n  type: azure-monitor\n- id: out\n  kind: Output\n  type: http\nedges:\n- from: s\n  to: out\n",
+    )
+    .unwrap();
+    for file in [&valid, &invalid, &orphan] {
         let path = file.to_str().unwrap();
         assert_same(&cs, &repo_root(), &["pipeline", "validate", "--file", path]);
         assert_same(&cs, &repo_root(), &["pipeline", "validate", path]);
+        // An unknown option's value is never taken as the path.
+        assert_same(
+            &cs,
+            &repo_root(),
+            &["pipeline", "validate", "--format", path, path],
+        );
     }
+    let invalid = invalid.to_str().unwrap();
+    let run = assert_same(&cs, &repo_root(), &["pipeline", "validate", invalid]);
+    assert_eq!(run.code, 2);
+    assert!(run.stdout.contains("\"estimate\": null"), "{}", run.stdout);
 }
 
 #[test]
@@ -404,6 +421,20 @@ fn evidence_verify_matches_csharp_on_tampered_bundle() {
     .unwrap();
     let path = bundle.to_str().unwrap();
     assert_same(&cs, dir.path(), &["evidence", "verify", path]);
+
+    // No bundle, a null bundle or invalid JSON: a clean error, never a crash.
+    for (name, text) in [
+        ("empty.json", "{}"),
+        ("null.json", "{\"bundle\":null}"),
+        ("text.json", "not json"),
+    ] {
+        std::fs::write(dir.path().join(name), text).unwrap();
+        let run = assert_same(&cs, dir.path(), &["evidence", "verify", name]);
+        assert_eq!(
+            (run.code, run.stderr.as_str()),
+            (1, "Evidence bundle is unreadable.\n")
+        );
+    }
 }
 
 /// Masks per-run values (canary ids, times) so two runs can be compared.
@@ -539,6 +570,9 @@ fn argument_handling_matches_csharp() {
             "sentinel-app",
         ],
         &["pipeline", "validate", "--file"],
+        &["pipeline", "validate", "--foo", "bar"],
+        &["pipeline", "template", "--foo", "bar"],
+        &["pipeline", "template", "--format", "yaml", "aws-security"],
         &["dcr", "generate", "--retention-days"],
         &["dcr", "generate", "--retention-days", "x"],
         &["dcr", "generate", "--plan", "Basic", "--unknown"],
@@ -591,6 +625,23 @@ fn argument_handling_matches_csharp() {
             "http://127.0.0.1:9",
             "--timeout-minutes",
             "x",
+        ],
+        &["evidence", "run", "--timeout-minutes", "-5"],
+        &[
+            "evidence",
+            "run",
+            "--collector-url",
+            "http://127.0.0.1:9",
+            "--timeout-minutes",
+            "0",
+        ],
+        &[
+            "evidence",
+            "run",
+            "--collector-url",
+            "http://127.0.0.1:9",
+            "--timeout-minutes",
+            "1441",
         ],
         &["evidence", "verify", "missing.json"],
         &["developer", "init", "--path", "/nonexistent-bower-path"],

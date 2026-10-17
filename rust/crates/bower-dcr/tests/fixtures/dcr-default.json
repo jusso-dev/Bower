@@ -116,7 +116,7 @@
     },
     {
       "type": "Microsoft.Insights/dataCollectionRules",
-      "apiVersion": "2025-07-01",
+      "apiVersion": "2024-03-11",
       "name": "bower-dcr",
       "location": "[parameters(\u0027location\u0027)]",
       "kind": "Direct",
@@ -224,11 +224,11 @@
   "outputs": {
     "logsIngestionEndpoint": {
       "type": "string",
-      "value": "[reference(resourceId(\u0027Microsoft.Insights/dataCollectionRules\u0027, \u0027bower-dcr\u0027), \u00272025-07-01\u0027).endpoints.logsIngestion]"
+      "value": "[reference(resourceId(\u0027Microsoft.Insights/dataCollectionRules\u0027, \u0027bower-dcr\u0027), \u00272024-03-11\u0027).endpoints.logsIngestion]"
     },
     "dataCollectionRuleImmutableId": {
       "type": "string",
-      "value": "[reference(resourceId(\u0027Microsoft.Insights/dataCollectionRules\u0027, \u0027bower-dcr\u0027), \u00272025-07-01\u0027).immutableId]"
+      "value": "[reference(resourceId(\u0027Microsoft.Insights/dataCollectionRules\u0027, \u0027bower-dcr\u0027), \u00272024-03-11\u0027).immutableId]"
     },
     "streamName": {
       "type": "string",

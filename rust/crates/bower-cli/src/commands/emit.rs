@@ -12,6 +12,9 @@ use crate::support::{CliError, CliResult, ensure_slash};
 
 pub const DEFAULT_ENDPOINT: &str = "http://127.0.0.1:4319";
 
+/// C# `test emit` uses a bare `HttpClient` (100 second default timeout).
+const HTTP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(100);
+
 /// The synthetic authentication-failure canary C# `test emit` sends.
 pub fn canary() -> SecurityEventEnvelope {
     let canary_id = format!("bower-canary-{}", uuid::Uuid::now_v7());
@@ -93,7 +96,10 @@ pub fn run(args: &EmitArgs) -> CliResult {
         .filter(|value| !value.trim().is_empty());
 
     super::block_on(async move {
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .timeout(HTTP_TIMEOUT)
+            .build()
+            .map_err(CliError::from_display)?;
         let mut request = client
             .post(url)
             .header(
@@ -104,9 +110,15 @@ pub fn run(args: &EmitArgs) -> CliResult {
         if let Some(token) = token {
             request = request.bearer_auth(token);
         }
-        let response = request.send().await.map_err(super::http_error)?;
+        let response = request
+            .send()
+            .await
+            .map_err(|error| super::http_error(&error, HTTP_TIMEOUT))?;
         let success = response.status().is_success();
-        let bytes = response.bytes().await.map_err(super::http_error)?;
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|error| super::http_error(&error, HTTP_TIMEOUT))?;
         println!("{}", String::from_utf8_lossy(&bytes));
         Ok(if success { 0 } else { 2 })
     })

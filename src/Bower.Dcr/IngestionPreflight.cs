@@ -55,6 +55,10 @@ public static class IngestionPreflight
                     value.GetValue<string>(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out _),
                 "int" or "long" or "real" => kind == JsonValueKind.Number,
                 "boolean" => kind is JsonValueKind.True or JsonValueKind.False,
+                // The transform reads members of dynamic columns (labels, application.name,
+                // ...); a scalar there would land as text and every derived column would
+                // be empty.
+                "dynamic" => kind is JsonValueKind.Object or JsonValueKind.Array,
                 _ => true
             };
             if (!typeOk)

@@ -75,6 +75,7 @@ public sealed partial class EvidenceRunner(
     IArmReader? arm,
     TimeProvider? clock = null)
 {
+    // Microsoft.OperationalInsights api-version; keep equal to Bower.Dcr.AzureApiVersions.LogAnalytics.
     private const string TableApiVersion = "2025-07-01";
     private readonly TimeProvider clock = clock ?? TimeProvider.System;
 
@@ -162,6 +163,34 @@ public sealed partial class EvidenceRunner(
         JsonObject node = (JsonObject)JsonSerializer.SerializeToNode(bundle, EvidenceJsonContext.Default.EvidenceBundle)!;
         DetachedSignature? signature = privateKeyPem is null ? null : DetachedSigner.Sign(CanonicalJson.Bytes(node), privateKeyPem);
         return new SignedEvidence(node, signature);
+    }
+
+    /// <summary>
+    /// Reads a signed bundle file. Anything that is not a JSON object with an object
+    /// <c>bundle</c> and an optional signature fails with "Evidence bundle is unreadable."
+    /// </summary>
+    public static SignedEvidence Parse(string json)
+    {
+        try
+        {
+            SignedEvidence? evidence = JsonSerializer.Deserialize(json, EvidenceJsonContext.Default.SignedEvidence);
+            if (evidence?.Bundle is not null)
+            {
+                return evidence;
+            }
+        }
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException or NotSupportedException)
+        {
+        }
+
+        throw new InvalidDataException("Evidence bundle is unreadable.");
+    }
+
+    /// <summary>The bundle's <c>mode</c>, or "unknown" when it is absent or not a string.</summary>
+    public static string ModeOf(SignedEvidence evidence)
+    {
+        ArgumentNullException.ThrowIfNull(evidence);
+        return evidence.Bundle["mode"] is JsonValue value && value.TryGetValue(out string? mode) ? mode : "unknown";
     }
 
     public static bool Verify(SignedEvidence evidence, IEnumerable<string> trustedPublicKeyPems) =>

@@ -404,6 +404,18 @@ Design, observability and how to add a job:
 | Verify queue integrity | `bower queue verify --database queue.db` | [Fleet and queue integrity](docs/operations/fleet-and-queue-integrity.md) |
 | Pseudonymise identifiers | privacy profile `action: hmac` + `BOWER_PRIVACY_HMAC_KEY_FILE` | [Privacy engine](docs/privacy/privacy-secret-engine.md) |
 | Forward AWS / GCP security signal | `deploy/aws` CloudFormation, `deploy/gcp` Terraform, `bower-cloud` agent | [AWS](docs/deployment/aws.md) · [Google Cloud](docs/deployment/gcp.md) |
+| Validate a pipeline document | `bower pipeline validate --file pipeline.yaml` · `bower pipeline template aws-security` | Exit 2 when invalid |
+
+CLI arguments (C# and Rust `bower` alike): every `--option` takes the next argument as
+its value, the first occurrence wins, and unknown options are ignored **together with
+their value**. A positional argument (pack, bundle or pipeline file, template id) is
+the first argument that is neither an option nor an option's value, so
+`bower pipeline validate --format json p.yaml` validates `p.yaml`. HTTP timeouts are
+reported as errors (exit 1), or as a `FAIL` check in `doctor`, never as a crash.
+
+`pipeline validate` reports cycles, unknown source and output types (Azure Monitor /
+Sentinel delivery is `azure-logs-ingestion`), secrets in node config and nodes with no
+edges. Its `estimate` is `null` when the graph has a cycle or duplicate node ids.
 
 ## Native AOT binaries
 

@@ -40,7 +40,7 @@ static async Task<int> RunAsync(string[] args)
             _ => Fail("Unknown command. Run 'bower --help'.")
         };
     }
-    catch (Exception exception) when (exception is not OperationCanceledException)
+    catch (Exception exception) when (CliFailures.IsReportable(exception))
     {
         return Fail(exception.Message);
     }
@@ -72,7 +72,7 @@ static int Validate(string[] args)
 
 static int ValidatePipeline(string[] args)
 {
-    string? path = GetOption(args, "--file") ?? args.FirstOrDefault(item => !item.StartsWith('-'));
+    string? path = GetOption(args, "--file") ?? CliOptions.Positional(args);
     if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
     {
         return Fail("Provide an existing pipeline file with --file PATH.");
@@ -80,7 +80,7 @@ static int ValidatePipeline(string[] args)
 
     TelemetryPipeline pipeline = PipelineDocument.ParseYaml(File.ReadAllText(path));
     PipelineValidationResult validation = PipelineValidator.Validate(pipeline);
-    PipelinePerformanceEstimate estimate = PipelineValidator.Estimate(pipeline);
+    PipelinePerformanceEstimate? estimate = PipelineValidator.TryEstimate(pipeline);
     Console.WriteLine(
         JsonSerializer.Serialize(
             new PipelineValidationOutput(
@@ -97,7 +97,7 @@ static int ValidatePipeline(string[] args)
 
 static int PipelineTemplate(string[] args)
 {
-    string templateId = GetOption(args, "--id") ?? args.FirstOrDefault(item => !item.StartsWith('-')) ?? "sentinel-app";
+    string templateId = GetOption(args, "--id") ?? CliOptions.Positional(args) ?? "sentinel-app";
     TelemetryPipeline pipeline = PipelineValidator.CreateTemplate(templateId);
     Console.WriteLine(PipelineDocument.ToYaml(pipeline));
     return 0;

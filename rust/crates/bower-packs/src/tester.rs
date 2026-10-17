@@ -4,6 +4,11 @@
 //!
 //! Sample lines: `{"name": "...", "expect": "accept", "mustNotContain": ["..."], "event": {...}}`.
 //! `{{now}}` in the event is replaced with the current UTC time (`"O"` format).
+//!
+//! Expectations: `accept` passes for accept and for redact-and-accept, because the
+//! event is delivered either way (prove the redaction with `mustNotContain`);
+//! `redact-and-accept` requires that redaction happened; every other expectation
+//! must match exactly.
 
 use bower_contracts::time::{Clock, SystemClock, format_round_trip};
 use bower_contracts::{DecisionAction, SecurityEventEnvelope, TelemetryPolicyEvaluator};
@@ -111,6 +116,7 @@ pub fn run(
             _ => "quarantine".to_owned(),
         };
 
+        // `accept` also covers redact-and-accept; the reverse does not hold.
         let decision_matches = expected.eq_ignore_ascii_case(&actual)
             || (expected.eq_ignore_ascii_case("accept") && actual == "redactandaccept");
         if !decision_matches {

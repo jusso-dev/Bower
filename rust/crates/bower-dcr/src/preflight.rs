@@ -66,6 +66,10 @@ pub fn check(record: &Map<String, Value>, schema: &SentinelSchema) -> Vec<Prefli
             "datetime" => value.as_str().is_some_and(is_date_time_offset),
             "int" | "long" | "real" => value.is_number(),
             "boolean" => value.is_boolean(),
+            // The transform reads members of dynamic columns (labels, application.name,
+            // ...); a scalar there would land as text and every derived column would
+            // be empty.
+            "dynamic" => value.is_object() || value.is_array(),
             _ => true,
         };
         if !type_ok {

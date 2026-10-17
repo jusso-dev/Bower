@@ -11,12 +11,12 @@ public sealed record ErrorResponse(string Error);
 /// <summary>Liveness body.</summary>
 public sealed record HealthResponse(string Status);
 
-/// <summary>Pipeline validation result with its performance estimate.</summary>
+/// <summary>Pipeline validation result with its performance estimate (null for a cyclic graph or duplicate node ids).</summary>
 public sealed record PipelineValidationResponse(
     bool IsValid,
     IReadOnlyList<PipelineValidationIssue> Issues,
     IReadOnlyList<string> TopologicalOrder,
-    PipelinePerformanceEstimate Estimate);
+    PipelinePerformanceEstimate? Estimate);
 
 /// <summary>
 /// Source-generated metadata for every management API body (ASP.NET Core Web defaults).

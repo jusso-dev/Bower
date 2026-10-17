@@ -21,6 +21,9 @@ use crate::commands::queue::{open_store, store_error};
 use crate::output::{Json, pad};
 use crate::support::{CliError, CliResult, ensure_slash, read_all, read_text};
 
+/// C# `DoctorCommand.CollectorTimeout`.
+const COLLECTOR_TIMEOUT: Duration = Duration::from_secs(10);
+
 const AUSTRALIAN_REGIONS: &[&str] = &[
     "australiaeast",
     "australiasoutheast",
@@ -232,7 +235,7 @@ pub fn run(args: &DoctorArgs) -> CliResult {
 
     // Live collector.
     if let Some(collector_url) = &args.collector_url {
-        check_collector(collector_url, &mut checks)?;
+        check_collector(collector_url, COLLECTOR_TIMEOUT, &mut checks)?;
     }
 
     // Local queue ledger.
@@ -272,7 +275,7 @@ pub fn run(args: &DoctorArgs) -> CliResult {
     if args.dcr_resource_id.is_some() || args.workspace_resource_id.is_some() {
         let arm = ArmSession::new(args.credential.as_deref(), None)?;
         if let Some(rule_id) = &args.dcr_resource_id {
-            match arm.get(rule_id, bower_dcr::API_VERSION)? {
+            match arm.get_rule(rule_id)? {
                 None => checks.fail("dcr", "DCR not found or not readable with this credential."),
                 Some(rule) => {
                     let findings =
@@ -283,14 +286,13 @@ pub fn run(args: &DoctorArgs) -> CliResult {
             }
         }
         if let Some(workspace_id) = &args.workspace_resource_id {
-            let workspace = arm.get(workspace_id, bower_dcr::API_VERSION)?;
+            let workspace = arm.get_workspace(workspace_id)?;
             check_region(
                 "workspace",
                 workspace.as_ref().and_then(|value| value.get("location")),
                 &mut checks,
             );
-            let table_id = format!("{workspace_id}/tables/{}", schema.table_name);
-            match arm.get(&table_id, bower_dcr::API_VERSION)? {
+            match arm.get_table(workspace_id, &schema.table_name)? {
                 None => checks.fail(
                     "table",
                     format!(
@@ -417,7 +419,9 @@ fn check_region(area: &str, location: Option<&serde_json::Value>, checks: &mut C
     }
 }
 
-fn check_collector(collector_url: &str, checks: &mut Checks) -> CliResult<()> {
+/// Checks a live collector's `/health` and `/v1/status`. Unreachable collectors and
+/// HTTP timeouts are FAIL checks, never a crash.
+fn check_collector(collector_url: &str, timeout: Duration, checks: &mut Checks) -> CliResult<()> {
     let base = reqwest::Url::parse(&ensure_slash(collector_url)).map_err(|_| {
         CliError::new("Invalid URI: The format of the URI could not be determined.")
     })?;
@@ -427,7 +431,7 @@ fn check_collector(collector_url: &str, checks: &mut Checks) -> CliResult<()> {
         .filter(|value| !value.is_empty());
     let outcome = super::block_on(async move {
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(10))
+            .timeout(timeout)
             .build()
             .map_err(CliError::from_display)?;
         let health_url = base.join("health").map_err(CliError::from_display)?;
@@ -435,7 +439,7 @@ fn check_collector(collector_url: &str, checks: &mut Checks) -> CliResult<()> {
             Ok(response) => response,
             Err(error) => {
                 return Ok(CollectorOutcome::Unreachable(super::http_error_with_host(
-                    &error,
+                    &error, timeout,
                 )));
             }
         };
@@ -451,7 +455,7 @@ fn check_collector(collector_url: &str, checks: &mut Checks) -> CliResult<()> {
             Ok(response) => response,
             Err(error) => {
                 return Ok(CollectorOutcome::ReachableThenUnreachable(
-                    super::http_error_with_host(&error),
+                    super::http_error_with_host(&error, timeout),
                 ));
             }
         };
@@ -462,7 +466,7 @@ fn check_collector(collector_url: &str, checks: &mut Checks) -> CliResult<()> {
             Ok(body) => body,
             Err(error) => {
                 return Ok(CollectorOutcome::ReachableThenUnreachable(
-                    super::http_error_with_host(&error),
+                    super::http_error_with_host(&error, timeout),
                 ));
             }
         };
@@ -597,6 +601,38 @@ mod tests {
                 "WARN  collector  warn.",
                 "2 checks: 0 failed, 1 warnings."
             ]
+        );
+    }
+
+    /// A collector that accepts the connection and never answers is a FAIL check
+    /// with the .NET timeout message, not a crash.
+    #[test]
+    fn collector_timeout_is_a_failed_check() {
+        let Ok(listener) = std::net::TcpListener::bind("127.0.0.1:0") else {
+            eprintln!("skipping: cannot bind a loopback socket here");
+            return;
+        };
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let held = listener.accept();
+            std::thread::sleep(Duration::from_millis(1_500));
+            drop(held);
+        });
+        let mut checks = Checks::default();
+        check_collector(
+            &format!("http://{address}"),
+            Duration::from_millis(500),
+            &mut checks,
+        )
+        .unwrap();
+        server.join().unwrap();
+        assert_eq!(
+            checks.0,
+            vec![Check {
+                status: "FAIL",
+                area: "collector".to_owned(),
+                detail: "Unreachable: The request was canceled due to the configured HttpClient.Timeout of 0.5 seconds elapsing.".to_owned(),
+            }]
         );
     }
 

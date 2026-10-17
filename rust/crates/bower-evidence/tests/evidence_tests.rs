@@ -412,6 +412,32 @@ fn csharp_vector_bundle() -> EvidenceBundle {
     }
 }
 
+/// C# `EvidenceParse_ReportsUnreadableBundlesInsteadOfCrashing` (C# used to throw a
+/// NullReferenceException for a file with no `bundle`).
+#[test]
+fn unreadable_bundles_are_reported_not_crashed_on() {
+    for text in [
+        "{}",
+        "{\"bundle\":null,\"signature\":null}",
+        "{\"bundle\":\"x\"}",
+        "{\"bundle\":{},\"signature\":5}",
+        "[]",
+        "null",
+        "not json",
+    ] {
+        match SignedEvidence::from_json(text) {
+            Err(error) => assert_eq!(
+                error.to_string(),
+                "Evidence bundle is unreadable.",
+                "{text}"
+            ),
+            Ok(_) => panic!("{text} parsed"),
+        }
+    }
+    let unknown = SignedEvidence::from_json("{\"bundle\":{\"mode\":5}}").unwrap();
+    assert_eq!(unknown.mode(), "unknown");
+}
+
 #[test]
 fn csharp_signed_bundle_verifies_and_matches_byte_for_byte() {
     let public_key = fixture("csharp-signing.pub.pem");

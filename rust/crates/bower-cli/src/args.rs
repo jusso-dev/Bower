@@ -3,7 +3,9 @@
 //! read exactly like the C# CLI so the same command lines behave the same:
 //! unknown options and extra arguments are ignored, the first occurrence of an
 //! option wins, an option with no following value is absent, and a value may
-//! start with `-`.
+//! start with `-`. Positional arguments (pack, bundle and pipeline files, template
+//! ids) skip every `--option` together with the argument after it, so neither a
+//! known option's value nor an unknown option's value is taken as the positional.
 
 use crate::cli::{
     Command, DatabaseArgs, DcrCommand, DcrDiffArgs, DcrGenerateArgs, DeadLettersArgs,
@@ -50,14 +52,6 @@ impl<'a> Options<'a> {
             return Some(self.0[index].clone());
         }
         None
-    }
-
-    /// `args.FirstOrDefault(item => !item.StartsWith('-'))` (`pipeline` commands).
-    pub fn first_non_dash(self) -> Option<String> {
-        self.0
-            .iter()
-            .find(|argument| !argument.starts_with('-'))
-            .cloned()
     }
 
     /// `pack diff`: arguments ending with `.bowerpack` (ordinal, case-insensitive).
@@ -124,13 +118,13 @@ pub fn parse(args: &[String]) -> Option<Command> {
         ["pipeline", "validate"] => {
             Command::Pipeline(PipelineCommand::Validate(PipelineValidateArgs {
                 file: o.get("--file"),
-                path: o.first_non_dash(),
+                path: o.positional(),
             }))
         }
         ["pipeline", "template"] => {
             Command::Pipeline(PipelineCommand::Template(PipelineTemplateArgs {
                 id: o.get("--id"),
-                template: o.first_non_dash(),
+                template: o.positional(),
             }))
         }
         ["queue", "inspect"] => Command::Queue(QueueCommand::Inspect(database())),
@@ -236,8 +230,10 @@ mod tests {
             Some("-x")
         );
         assert_eq!(
-            Options(&strings(&["--k", "v"])).first_non_dash().as_deref(),
-            Some("v")
+            Options(&strings(&["--foo", "bar", "p.yaml"]))
+                .positional()
+                .as_deref(),
+            Some("p.yaml")
         );
         assert_eq!(
             Options(&strings(&[
@@ -273,5 +269,33 @@ mod tests {
         };
         assert!(doctor.json);
         assert_eq!(doctor.packs, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn pipeline_positionals_skip_option_values() {
+        let Some(Command::Pipeline(PipelineCommand::Validate(validate))) = parse(&strings(&[
+            "pipeline", "validate", "--foo", "bar", "p.yaml",
+        ])) else {
+            panic!("pipeline validate");
+        };
+        assert_eq!(validate.file, None);
+        assert_eq!(validate.path.as_deref(), Some("p.yaml"));
+        let Some(Command::Pipeline(PipelineCommand::Validate(validate))) =
+            parse(&strings(&["pipeline", "validate", "--foo", "bar"]))
+        else {
+            panic!("pipeline validate");
+        };
+        assert_eq!(validate.path, None);
+        let Some(Command::Pipeline(PipelineCommand::Template(template))) = parse(&strings(&[
+            "pipeline",
+            "template",
+            "--format",
+            "yaml",
+            "aws-security",
+        ])) else {
+            panic!("pipeline template");
+        };
+        assert_eq!(template.id, None);
+        assert_eq!(template.template.as_deref(), Some("aws-security"));
     }
 }

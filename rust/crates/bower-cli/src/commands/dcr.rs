@@ -57,9 +57,11 @@ pub fn diff(args: &DcrDiffArgs) -> CliResult {
     let rule_json = match (&args.rule, &args.dcr_resource_id, &arm) {
         (Some(file), _, _) => read_text(file)?,
         (None, Some(rule_id), Some(arm)) => arm
-            .get(rule_id, bower_dcr::API_VERSION)?
+            .get_rule(rule_id)?
             .map(|value| value.to_string())
-            .ok_or_else(|| CliError::new("DCR not found or not readable with this credential."))?,
+            .ok_or_else(|| {
+            CliError::new("DCR not found or not readable with this credential.")
+        })?,
         _ => {
             return Err(CliError::new(
                 "Provide --rule FILE or --dcr-resource-id ID.",
@@ -71,10 +73,7 @@ pub fn diff(args: &DcrDiffArgs) -> CliResult {
     let table_json = match (&args.table, &args.workspace_resource_id, &arm) {
         (Some(file), _, _) => Some(read_text(file)?),
         (None, Some(workspace), Some(arm)) => arm
-            .get(
-                &format!("{workspace}/tables/{}", schema.table_name),
-                bower_dcr::API_VERSION,
-            )?
+            .get_table(workspace, &schema.table_name)?
             .map(|value| value.to_string()),
         _ => None,
     };

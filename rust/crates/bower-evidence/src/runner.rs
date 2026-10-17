@@ -124,7 +124,7 @@ impl fmt::Debug for EvidenceOptions {
     }
 }
 
-const TABLE_API_VERSION: &str = "2025-07-01";
+const TABLE_API_VERSION: &str = bower_dcr::LOG_ANALYTICS_API_VERSION;
 
 static TABLE_NAME: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[A-Za-z][A-Za-z0-9_]{0,62}$").expect("static regex"));

@@ -14,7 +14,9 @@ pub mod preflight;
 pub mod schema;
 
 pub use drift::{DcrFinding, FindingLevel, MAXIMUM_TRANSFORM_LENGTH};
-pub use generator::{API_VERSION, DcrTemplateOptions};
+pub use generator::{
+    DATA_COLLECTION_RULES_API_VERSION, DcrTemplateOptions, LOG_ANALYTICS_API_VERSION,
+};
 pub use optimiser::{DcrAssessmentReport, DcrDataSource, DcrDocument, DcrRecommendation};
 pub use preflight::{MAXIMUM_FIELD_BYTES, MAXIMUM_RECORD_BYTES, PreflightIssue};
 pub use schema::{SentinelSchema, StreamColumn, TableColumn};

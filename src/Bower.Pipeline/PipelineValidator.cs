@@ -2,16 +2,26 @@ namespace Bower.Pipeline;
 
 public static class PipelineValidator
 {
-    private static readonly HashSet<string> AllowedSourceTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
+    private static readonly string[] SourceTypes =
+    [
         "http-collector", "sqlserver", "aws-cloudtrail", "aws-guardduty", "aws-securityhub",
         "aws-cloudwatch", "file-tail", "ama-companion", "ec2-host"
-    };
+    ];
 
-    private static readonly HashSet<string> AllowedOutputTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
+    // Azure Monitor / Sentinel delivery is the "azure-logs-ingestion" output (Logs
+    // Ingestion API). There is no separate "azure-monitor" output type.
+    private static readonly string[] OutputTypes =
+    [
         "azure-logs-ingestion", "ama-spool", "http", "kafka", "syslog", "security-lake", "opensearch"
-    };
+    ];
+
+    private static readonly HashSet<string> AllowedSourceTypes = new(SourceTypes, StringComparer.OrdinalIgnoreCase);
+
+    private static readonly HashSet<string> AllowedOutputTypes = new(OutputTypes, StringComparer.OrdinalIgnoreCase);
+
+    private static readonly string SupportedSourceTypes = string.Join(", ", SourceTypes);
+
+    private static readonly string SupportedOutputTypes = string.Join(", ", OutputTypes);
 
     private static readonly HashSet<string> SecretKeys = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -76,11 +86,35 @@ public static class PipelineValidator
             }
         }
 
+        // A node with no edges is never reached and never delivers: flag it instead of
+        // silently ignoring it. Duplicate and empty ids are reported above.
+        HashSet<string> connected = new(StringComparer.Ordinal);
+        foreach (PipelineEdge edge in pipeline.Edges)
+        {
+            connected.Add(edge.From);
+            connected.Add(edge.To);
+        }
+
+        HashSet<string> reported = new(StringComparer.Ordinal);
+        foreach (PipelineNode node in pipeline.Nodes)
+        {
+            if (!string.IsNullOrWhiteSpace(node.Id)
+                && !connected.Contains(node.Id)
+                && reported.Add(node.Id))
+            {
+                issues.Add(
+                    new PipelineValidationIssue(
+                        "node-disconnected",
+                        $"Node '{node.Id}' has no edges; connect it to the pipeline or remove it.",
+                        node.Id));
+            }
+        }
+
         List<string> order = [];
         if (nodes.Count == pipeline.Nodes.Count &&
             pipeline.Edges.All(edge => nodes.ContainsKey(edge.From) && nodes.ContainsKey(edge.To)))
         {
-            if (!TryTopologicalSort(pipeline, out order, out string? cycleNode))
+            if (!TryTopologicalSort(pipeline.Nodes, pipeline.Edges, out order, out string? cycleNode))
             {
                 issues.Add(new PipelineValidationIssue("cycle", "Pipeline graph contains a cycle.", cycleNode));
             }
@@ -101,16 +135,36 @@ public static class PipelineValidator
         return new PipelineValidationResult(issues.Count == 0, issues, order, order.Count);
     }
 
+    /// <summary>
+    /// Counts and the longest path through the graph. Edges that reference unknown nodes
+    /// are ignored. Throws <see cref="ArgumentException"/> for duplicate node ids and
+    /// <see cref="InvalidOperationException"/> for a cyclic graph, which has no depth.
+    /// </summary>
     public static PipelinePerformanceEstimate Estimate(TelemetryPipeline pipeline)
     {
         ArgumentNullException.ThrowIfNull(pipeline);
-        Dictionary<string, int> depth = pipeline.Nodes.ToDictionary(node => node.Id, _ => 0, StringComparer.Ordinal);
-        foreach (PipelineEdge edge in pipeline.Edges)
+        Dictionary<string, int> depth = new(StringComparer.Ordinal);
+        foreach (PipelineNode node in pipeline.Nodes)
         {
-            if (depth.TryGetValue(edge.From, out int fromDepth) &&
-                depth.TryGetValue(edge.To, out int toDepth))
+            if (!depth.TryAdd(node.Id, 0))
             {
-                depth[edge.To] = Math.Max(toDepth, fromDepth + 1);
+                throw new ArgumentException($"Duplicate node id '{node.Id}'; no estimate.");
+            }
+        }
+
+        List<PipelineEdge> edges = [.. pipeline.Edges.Where(edge => depth.ContainsKey(edge.From) && depth.ContainsKey(edge.To))];
+        if (!TryTopologicalSort(pipeline.Nodes, edges, out List<string> order, out _))
+        {
+            throw new InvalidOperationException("Pipeline graph contains a cycle; no estimate.");
+        }
+
+        // Longest path: relax each node's outgoing edges in topological order.
+        ILookup<string, string> outgoing = edges.ToLookup(edge => edge.From, edge => edge.To, StringComparer.Ordinal);
+        foreach (string current in order)
+        {
+            foreach (string next in outgoing[current])
+            {
+                depth[next] = Math.Max(depth[next], depth[current] + 1);
             }
         }
 
@@ -120,6 +174,20 @@ public static class PipelineValidator
             pipeline.Nodes.Count(node => node.Kind == PipelineNodeKind.Source),
             pipeline.Nodes.Count(node => node.Kind == PipelineNodeKind.Output),
             depth.Count == 0 ? 0 : depth.Values.Max());
+    }
+
+    /// <summary><see cref="Estimate"/>, or null when node ids are duplicated or the graph has a cycle.</summary>
+    public static PipelinePerformanceEstimate? TryEstimate(TelemetryPipeline pipeline)
+    {
+        ArgumentNullException.ThrowIfNull(pipeline);
+        try
+        {
+            return Estimate(pipeline);
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     public static TelemetryPipeline CreateTemplate(string templateId)
@@ -178,13 +246,13 @@ public static class PipelineValidator
         if (node.Kind == PipelineNodeKind.Source &&
             !AllowedSourceTypes.Contains(node.Type))
         {
-            issues.Add(new PipelineValidationIssue("source-type", $"Unknown source type '{node.Type}'.", node.Id));
+            issues.Add(new PipelineValidationIssue("source-type", $"Unknown source type '{node.Type}'. Supported: {SupportedSourceTypes}.", node.Id));
         }
 
         if (node.Kind == PipelineNodeKind.Output &&
             !AllowedOutputTypes.Contains(node.Type))
         {
-            issues.Add(new PipelineValidationIssue("output-type", $"Unknown output type '{node.Type}'.", node.Id));
+            issues.Add(new PipelineValidationIssue("output-type", $"Unknown output type '{node.Type}'. Supported: {SupportedOutputTypes}.", node.Id));
         }
 
         if (node.Config is null)
@@ -216,20 +284,21 @@ public static class PipelineValidator
     }
 
     private static bool TryTopologicalSort(
-        TelemetryPipeline pipeline,
+        IReadOnlyList<PipelineNode> nodes,
+        IReadOnlyList<PipelineEdge> edges,
         out List<string> order,
         out string? cycleNode)
     {
-        Dictionary<string, List<string>> adjacency = pipeline.Nodes.ToDictionary(
+        Dictionary<string, List<string>> adjacency = nodes.ToDictionary(
             node => node.Id,
             _ => new List<string>(),
             StringComparer.Ordinal);
-        Dictionary<string, int> indegree = pipeline.Nodes.ToDictionary(
+        Dictionary<string, int> indegree = nodes.ToDictionary(
             node => node.Id,
             _ => 0,
             StringComparer.Ordinal);
 
-        foreach (PipelineEdge edge in pipeline.Edges)
+        foreach (PipelineEdge edge in edges)
         {
             adjacency[edge.From].Add(edge.To);
             indegree[edge.To]++;
@@ -251,7 +320,7 @@ public static class PipelineValidator
             }
         }
 
-        if (order.Count != pipeline.Nodes.Count)
+        if (order.Count != nodes.Count)
         {
             cycleNode = indegree.First(pair => pair.Value > 0).Key;
             return false;

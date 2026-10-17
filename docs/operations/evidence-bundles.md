@@ -42,6 +42,12 @@ bower evidence verify evidence-2026-10.json --trusted-key ./keys/bower-signing.p
 
 Exit codes: `0` verified, `2` failed or simulated, `1` error.
 
+`--timeout-minutes N` (default 15) bounds how long the canary is polled for and must
+be between 1 and 1440 (one day). Each HTTP request (collector, query, ARM) times out
+after 30 seconds; a timeout is reported as an error with exit code 1, never a crash.
+`evidence verify` exits 1 with `Evidence bundle is unreadable.` for a file that is not
+a JSON object with a `bundle` object.
+
 ## Modes
 
 | Mode | Meaning |

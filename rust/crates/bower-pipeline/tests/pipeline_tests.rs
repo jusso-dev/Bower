@@ -103,9 +103,104 @@ fn validate_reports_structure_problems() {
             "edge-self",
         ]
     );
-    assert!(
-        estimate(&pipeline).is_err(),
-        "duplicate ids fail like C# ToDictionary"
+    assert_eq!(
+        estimate(&pipeline).unwrap_err().to_string(),
+        "Duplicate node id 'a'; no estimate."
+    );
+}
+
+fn pipeline(nodes: Vec<PipelineNode>, edges: Vec<PipelineEdge>) -> TelemetryPipeline {
+    TelemetryPipeline {
+        id: "p".to_owned(),
+        name: "P".to_owned(),
+        version: "1".to_owned(),
+        description: String::new(),
+        nodes,
+        edges,
+        tags: None,
+    }
+}
+
+#[test]
+fn validate_flags_nodes_with_no_edges_and_explains_unknown_output_types() {
+    let orphan = pipeline(
+        vec![
+            PipelineNode::new("s", PipelineNodeKind::Source, "http-collector"),
+            PipelineNode::new("lonely", PipelineNodeKind::Enrich, "geo"),
+            PipelineNode::new("o", PipelineNodeKind::Output, "azure-monitor"),
+        ],
+        vec![PipelineEdge::new("s", "o")],
+    );
+    let result = validate(&orphan);
+    assert!(!result.is_valid);
+    let issues: Vec<(&str, &str, Option<&str>)> = result
+        .issues
+        .iter()
+        .map(|issue| {
+            (
+                issue.code.as_str(),
+                issue.message.as_str(),
+                issue.node_id.as_deref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        issues,
+        [
+            (
+                "output-type",
+                "Unknown output type 'azure-monitor'. Supported: azure-logs-ingestion, ama-spool, http, kafka, syslog, security-lake, opensearch.",
+                Some("o")
+            ),
+            (
+                "node-disconnected",
+                "Node 'lonely' has no edges; connect it to the pipeline or remove it.",
+                Some("lonely")
+            ),
+        ]
+    );
+    assert!(validate(&create_template("aws-security").unwrap()).is_valid);
+}
+
+#[test]
+fn estimate_refuses_cycles_and_measures_longest_path_in_any_edge_order() {
+    let cycle = pipeline(
+        vec![
+            PipelineNode::new("a", PipelineNodeKind::Source, "http-collector"),
+            PipelineNode::new("b", PipelineNodeKind::Output, "http"),
+        ],
+        vec![PipelineEdge::new("a", "b"), PipelineEdge::new("b", "a")],
+    );
+    assert_eq!(
+        estimate(&cycle).unwrap_err().to_string(),
+        "Pipeline graph contains a cycle; no estimate."
+    );
+
+    // Edges listed back to front: a single pass would report depth 1.
+    let chain = pipeline(
+        vec![
+            PipelineNode::new("a", PipelineNodeKind::Source, "http-collector"),
+            PipelineNode::new("b", PipelineNodeKind::Redact, "privacy"),
+            PipelineNode::new("c", PipelineNodeKind::Filter, "policy-engine"),
+            PipelineNode::new("d", PipelineNodeKind::Output, "http"),
+        ],
+        vec![
+            PipelineEdge::new("c", "d"),
+            PipelineEdge::new("b", "c"),
+            PipelineEdge::new("a", "b"),
+            PipelineEdge::new("a", "zzz"),
+        ],
+    );
+    let estimate = estimate(&chain).unwrap();
+    assert_eq!(
+        (
+            estimate.node_count,
+            estimate.edge_count,
+            estimate.source_count,
+            estimate.output_count,
+            estimate.max_depth
+        ),
+        (4, 4, 1, 1, 3)
     );
 }
 
@@ -388,7 +483,8 @@ fn pack_parser_configuration_reads_and_validates() {
 }
 
 /// `fixtures/csharp-validation.txt` is C# `PipelineValidator.Validate`/`Estimate` output
-/// (temporary xunit emitter) for both templates and four broken pipelines: codes,
+/// (temporary xunit emitter, `TryEstimate` null as `error`) for both templates and four
+/// broken pipelines: codes,
 /// messages, node ids, topological order, stage counts and estimates.
 #[test]
 fn validation_and_estimates_match_csharp() {

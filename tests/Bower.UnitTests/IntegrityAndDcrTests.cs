@@ -116,6 +116,43 @@ public sealed partial class IntegrityAndDcrTests
     }
 
     [Fact]
+    public void Preflight_RequiresDynamicColumnsToBeObjectsOrArrays()
+    {
+        JsonObject record = new()
+        {
+            ["timeGenerated"] = "2026-10-08T00:00:00Z",
+            ["labels"] = "team=red",
+            ["application"] = new JsonObject { ["name"] = "a" },
+            ["privacy"] = new JsonArray()
+        };
+
+        PreflightIssue issue = Assert.Single(IngestionPreflight.Check(record, SentinelSchema.Default));
+
+        Assert.Equal(("type-mismatch", "labels"), (issue.Code, issue.Field));
+        Assert.Equal("Expected dynamic, got String; Azure would store an empty or stringified value.", issue.Detail);
+    }
+
+    [Fact]
+    public void ArmApiVersions_ArePinnedPerResourceProviderInTemplateAndBicep()
+    {
+        JsonObject template = DcrTemplateGenerator.Generate(new DcrTemplateOptions());
+        JsonArray resources = template["resources"]!.AsArray();
+        string ApiVersion(string type) =>
+            resources.Single(resource => resource!["type"]!.GetValue<string>() == type)!["apiVersion"]!.GetValue<string>();
+        string bicep = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "deploy", "main.bicep"));
+
+        Assert.Equal(AzureApiVersions.LogAnalytics, ApiVersion("Microsoft.OperationalInsights/workspaces/tables"));
+        Assert.Equal(AzureApiVersions.DataCollectionRules, ApiVersion("Microsoft.Insights/dataCollectionRules"));
+        Assert.Contains(
+            $"'{AzureApiVersions.DataCollectionRules}').endpoints.logsIngestion",
+            template["outputs"]!["logsIngestionEndpoint"]!["value"]!.GetValue<string>(),
+            StringComparison.Ordinal);
+        Assert.Contains($"'Microsoft.OperationalInsights/workspaces@{AzureApiVersions.LogAnalytics}'", bicep, StringComparison.Ordinal);
+        Assert.Contains($"'Microsoft.OperationalInsights/workspaces/tables@{AzureApiVersions.LogAnalytics}'", bicep, StringComparison.Ordinal);
+        Assert.Contains($"'Microsoft.Insights/dataCollectionRules@{AzureApiVersions.DataCollectionRules}'", bicep, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Bicep_MatchesTheSchemaModel()
     {
         string bicep = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "deploy", "main.bicep"));
