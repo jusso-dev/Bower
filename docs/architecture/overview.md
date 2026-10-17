@@ -33,6 +33,11 @@ Only leased `uploading` records can transition. Expired leases become eligible
 after abrupt shutdown. Payload rows are not deleted during acknowledgement; the
 `queue-retention` job removes `delivered` rows only after the retention window.
 Retryable failures dead-letter after `BOWER_MAX_DELIVERY_ATTEMPTS` leases.
+Events an adapter acknowledges in one delivery batch are marked `delivered` in a
+single queue transaction; an event whose lease was reclaimed meanwhile is skipped.
+Queue schema version 4 adds a covering index on `(state, payload_bytes,
+received_at)` so the per-enqueue capacity check does not read stored payloads; it
+is created idempotently on start-up.
 
 ## Agents and cloud queues
 

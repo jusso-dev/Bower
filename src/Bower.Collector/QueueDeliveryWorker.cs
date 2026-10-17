@@ -93,6 +93,7 @@ public sealed partial class QueueDeliveryWorker(
 
         string acknowledgement = result.DestinationAcknowledgement
             ?? $"adapter:{output.Id}:acknowledged";
+        List<string> delivered = new(result.AcknowledgedEventIds.Count);
         foreach (string eventId in result.AcknowledgedEventIds)
         {
             if (!leased.ContainsKey(eventId) || !settled.Add(eventId))
@@ -101,8 +102,21 @@ public sealed partial class QueueDeliveryWorker(
                 continue;
             }
 
-            await SettleAsync(
-                () => queue.MarkDeliveredAsync(eventId, acknowledgement, cancellationToken));
+            delivered.Add(eventId);
+        }
+
+        if (delivered.Count > 0)
+        {
+            // One queue transaction for every acknowledged event in the batch.
+            IReadOnlyList<string> reclaimed = await queue.MarkDeliveredBatchAsync(
+                delivered,
+                acknowledgement,
+                cancellationToken);
+            for (int index = 0; index < reclaimed.Count; index++)
+            {
+                // The lease expired and the event was reclaimed; the newer lease owns it now.
+                LogStaleLease(logger, output.Id);
+            }
         }
 
         foreach (DeliveryFailure failure in result.Failures)

@@ -25,7 +25,7 @@ public sealed partial class TfnDetector : RegexDetectorBase
 
     public override void Detect(ReadOnlySpan<char> text, string path, ICollection<DetectionMatch> matches)
     {
-        if (text.IsEmpty)
+        if (!MayMatch(text))
         {
             return;
         }
@@ -69,7 +69,7 @@ public sealed partial class CrnDetector : RegexDetectorBase
 
     public override void Detect(ReadOnlySpan<char> text, string path, ICollection<DetectionMatch> matches)
     {
-        if (text.IsEmpty)
+        if (!MayMatch(text))
         {
             return;
         }
@@ -100,7 +100,7 @@ public sealed partial class MedicareDetector : RegexDetectorBase
 
     public override void Detect(ReadOnlySpan<char> text, string path, ICollection<DetectionMatch> matches)
     {
-        if (text.IsEmpty)
+        if (!MayMatch(text))
         {
             return;
         }
@@ -131,7 +131,7 @@ public sealed partial class IhiDetector : RegexDetectorBase
 
     public override void Detect(ReadOnlySpan<char> text, string path, ICollection<DetectionMatch> matches)
     {
-        if (text.IsEmpty)
+        if (!MayMatch(text))
         {
             return;
         }
@@ -163,7 +163,7 @@ public sealed partial class PassportDetector : RegexDetectorBase
 
     public override void Detect(ReadOnlySpan<char> text, string path, ICollection<DetectionMatch> matches)
     {
-        if (text.IsEmpty)
+        if (!MayMatch(text))
         {
             return;
         }
@@ -198,7 +198,7 @@ public sealed partial class AbnDetector : RegexDetectorBase
 
     public override void Detect(ReadOnlySpan<char> text, string path, ICollection<DetectionMatch> matches)
     {
-        if (text.IsEmpty)
+        if (!MayMatch(text))
         {
             return;
         }
@@ -229,7 +229,7 @@ public sealed partial class AcnDetector : RegexDetectorBase
 
     public override void Detect(ReadOnlySpan<char> text, string path, ICollection<DetectionMatch> matches)
     {
-        if (text.IsEmpty)
+        if (!MayMatch(text))
         {
             return;
         }
@@ -263,7 +263,7 @@ public sealed partial class DvaDetector : RegexDetectorBase
 
     public override void Detect(ReadOnlySpan<char> text, string path, ICollection<DetectionMatch> matches)
     {
-        if (text.IsEmpty)
+        if (!MayMatch(text))
         {
             return;
         }
@@ -304,18 +304,17 @@ public sealed partial class DriverLicenceDetector : ISensitiveDetector
             return;
         }
 
-        string s = text.ToString();
-        bool hasContext = s.Contains("licence", StringComparison.OrdinalIgnoreCase)
-            || s.Contains("license", StringComparison.OrdinalIgnoreCase)
-            || s.Contains("driver", StringComparison.OrdinalIgnoreCase)
-            || s.Contains("DLN", StringComparison.OrdinalIgnoreCase);
+        bool hasContext = text.Contains("licence", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("license", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("driver", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("DLN", StringComparison.OrdinalIgnoreCase);
 
         if (!hasContext)
         {
             return;
         }
 
-        foreach (Match match in LicenceRegex().Matches(s))
+        foreach (ValueMatch match in LicenceRegex().EnumerateMatches(text))
         {
             matches.Add(new DetectionMatch(
                 Id,
@@ -323,7 +322,7 @@ public sealed partial class DriverLicenceDetector : ISensitiveDetector
                 match.Index,
                 match.Length,
                 Validated: false,
-                SubKind: InferState(match.Value)));
+                SubKind: InferState(text.Slice(match.Index, match.Length).ToString())));
         }
     }
 

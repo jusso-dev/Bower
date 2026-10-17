@@ -75,6 +75,12 @@ public sealed class SqliteEventStore : IDurableEventStore
             CREATE INDEX IF NOT EXISTS ix_queue_events_delivered_at
                 ON queue_events(state, delivered_at);
 
+            -- Covering index for the per-enqueue capacity SUM and the snapshot query.
+            -- payload_bytes and received_at sit after the payload column, so without it
+            -- both queries read every stored payload (including overflow pages).
+            CREATE INDEX IF NOT EXISTS ix_queue_events_state_bytes
+                ON queue_events(state, payload_bytes, received_at);
+
             CREATE TABLE IF NOT EXISTS schema_history (
                 version INTEGER PRIMARY KEY NOT NULL,
                 applied_at TEXT NOT NULL,
@@ -86,7 +92,12 @@ public sealed class SqliteEventStore : IDurableEventStore
 
             INSERT OR IGNORE INTO schema_history(version, applied_at, hash)
             VALUES (2, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 'bower-queue-v2-retention');
-            """ + QueueLedger.Schema;
+            """ + QueueLedger.Schema +
+            """
+
+            INSERT OR IGNORE INTO schema_history(version, applied_at, hash)
+            VALUES (4, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 'bower-queue-v4-capacity-index');
+            """;
         await command.ExecuteNonQueryAsync(cancellationToken);
         await QueueLedger.BackfillAsync(connection, cancellationToken);
         ApplyRestrictivePermissions();
@@ -206,21 +217,23 @@ public sealed class SqliteEventStore : IDurableEventStore
             }
         }
 
+        // One prepared statement for the whole batch instead of one per leased row.
+        await using SqliteCommand update = connection.CreateCommand();
+        update.Transaction = transaction;
+        update.CommandText =
+            """
+            UPDATE queue_events
+            SET state = $uploading,
+                lease_until = $lease_until,
+                delivery_attempts = delivery_attempts + 1
+            WHERE event_id = $event_id;
+            """;
+        update.Parameters.AddWithValue("$uploading", (int)QueueState.Uploading);
+        update.Parameters.AddWithValue("$lease_until", leaseValue);
+        SqliteParameter leasedEventId = update.Parameters.Add("$event_id", SqliteType.Text);
         foreach (QueuedEvent item in selected)
         {
-            await using SqliteCommand update = connection.CreateCommand();
-            update.Transaction = transaction;
-            update.CommandText =
-                """
-                UPDATE queue_events
-                SET state = $uploading,
-                    lease_until = $lease_until,
-                    delivery_attempts = delivery_attempts + 1
-                WHERE event_id = $event_id;
-                """;
-            update.Parameters.AddWithValue("$uploading", (int)QueueState.Uploading);
-            update.Parameters.AddWithValue("$lease_until", leaseValue);
-            update.Parameters.AddWithValue("$event_id", item.EventId);
+            leasedEventId.Value = item.EventId;
             await update.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -267,6 +280,63 @@ public sealed class SqliteEventStore : IDurableEventStore
         {
             throw new InvalidQueueTransitionException(eventId, "uploading", "delivered");
         }
+    }
+
+    public async Task<IReadOnlyList<string>> MarkDeliveredBatchAsync(
+        IReadOnlyList<string> eventIds,
+        string acknowledgement,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(eventIds);
+        ArgumentException.ThrowIfNullOrWhiteSpace(acknowledgement);
+        foreach (string eventId in eventIds)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(eventId);
+        }
+
+        if (eventIds.Count == 0)
+        {
+            return [];
+        }
+
+        // One transaction (one WAL commit and sync) for the whole batch instead of one per
+        // event. Same guarded transition as MarkDeliveredAsync: only uploading rows change.
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteTransaction transaction =
+            connection.BeginTransaction(IsolationLevel.Serializable, deferred: false);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            UPDATE queue_events
+            SET state = $delivered,
+                acknowledgement = $acknowledgement,
+                delivered_at = $delivered_at,
+                lease_until = NULL,
+                next_attempt_at = NULL,
+                last_failure_code = NULL
+            WHERE event_id = $event_id AND state = $uploading;
+            """;
+        command.Parameters.AddWithValue("$delivered", (int)QueueState.Delivered);
+        command.Parameters.AddWithValue("$uploading", (int)QueueState.Uploading);
+        command.Parameters.AddWithValue("$acknowledgement", acknowledgement);
+        command.Parameters.AddWithValue(
+            "$delivered_at",
+            clock.GetUtcNow().ToString(TimestampFormat, CultureInfo.InvariantCulture));
+        SqliteParameter deliveredEventId = command.Parameters.Add("$event_id", SqliteType.Text);
+
+        List<string> notLeased = [];
+        foreach (string eventId in eventIds)
+        {
+            deliveredEventId.Value = eventId;
+            if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                notLeased.Add(eventId);
+            }
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return notLeased;
     }
 
     public async Task MarkRetryingAsync(
@@ -413,14 +483,17 @@ public sealed class SqliteEventStore : IDurableEventStore
             }
         }
 
-        foreach (string eventId in eventIds)
+        await using (SqliteCommand delete = connection.CreateCommand())
         {
-            await using SqliteCommand delete = connection.CreateCommand();
             delete.Transaction = transaction;
             delete.CommandText = "DELETE FROM queue_events WHERE event_id = $event_id AND state = $delivered;";
-            delete.Parameters.AddWithValue("$event_id", eventId);
+            SqliteParameter deletedEventId = delete.Parameters.Add("$event_id", SqliteType.Text);
             delete.Parameters.AddWithValue("$delivered", (int)QueueState.Delivered);
-            await delete.ExecuteNonQueryAsync(cancellationToken);
+            foreach (string eventId in eventIds)
+            {
+                deletedEventId.Value = eventId;
+                await delete.ExecuteNonQueryAsync(cancellationToken);
+            }
         }
 
         // Record the purge in the ledger in the same transaction so verification can tell
@@ -512,9 +585,8 @@ public sealed class SqliteEventStore : IDurableEventStore
             }
         }
 
-        foreach (string eventId in selected)
+        await using (SqliteCommand update = connection.CreateCommand())
         {
-            await using SqliteCommand update = connection.CreateCommand();
             update.Transaction = transaction;
             update.CommandText =
                 """
@@ -524,8 +596,12 @@ public sealed class SqliteEventStore : IDurableEventStore
                 """;
             update.Parameters.AddWithValue("$queued", (int)QueueState.Queued);
             update.Parameters.AddWithValue("$dead_lettered", (int)QueueState.DeadLettered);
-            update.Parameters.AddWithValue("$event_id", eventId);
-            await update.ExecuteNonQueryAsync(cancellationToken);
+            SqliteParameter replayedEventId = update.Parameters.Add("$event_id", SqliteType.Text);
+            foreach (string eventId in selected)
+            {
+                replayedEventId.Value = eventId;
+                await update.ExecuteNonQueryAsync(cancellationToken);
+            }
         }
 
         await transaction.CommitAsync(cancellationToken);

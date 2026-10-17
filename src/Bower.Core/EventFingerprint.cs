@@ -24,7 +24,8 @@ public static class EventFingerprint
             value.EventResult.ToString(),
             value.TimeGenerated.ToUniversalTime().ToString("O"));
 
-        byte[] digest = SHA256.HashData(Encoding.UTF8.GetBytes(stableMaterial));
-        return $"sha256:{Convert.ToHexStringLower(digest)}";
+        Span<byte> digest = stackalloc byte[SHA256.HashSizeInBytes];
+        SHA256.HashData(Encoding.UTF8.GetBytes(stableMaterial), digest);
+        return "sha256:" + Convert.ToHexStringLower(digest);
     }
 }

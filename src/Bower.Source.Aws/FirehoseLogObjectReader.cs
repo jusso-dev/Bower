@@ -118,7 +118,9 @@ public static class FirehoseLogObjectReader
 
     private static JsonDocument? TryReadObject(ReadOnlySpan<char> text)
     {
-        byte[] bytes = Encoding.UTF8.GetBytes(text.ToArray());
+        // Encode straight from the span (no intermediate char[] copy).
+        byte[] bytes = new byte[Encoding.UTF8.GetByteCount(text)];
+        Encoding.UTF8.GetBytes(text, bytes);
         Utf8JsonReader reader = new(bytes, new JsonReaderOptions { MaxDepth = 32, AllowMultipleValues = true });
         try
         {

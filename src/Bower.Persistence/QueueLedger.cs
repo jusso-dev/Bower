@@ -155,14 +155,15 @@ internal static class QueueLedger
         string purgedAt,
         CancellationToken cancellationToken)
     {
+        await using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            "UPDATE queue_ledger SET purged_at = $purged_at WHERE event_id = $event_id AND purged_at IS NULL;";
+        command.Parameters.AddWithValue("$purged_at", purgedAt);
+        SqliteParameter purgedEventId = command.Parameters.Add("$event_id", SqliteType.Text);
         foreach (string eventId in eventIds)
         {
-            await using SqliteCommand command = connection.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText =
-                "UPDATE queue_ledger SET purged_at = $purged_at WHERE event_id = $event_id AND purged_at IS NULL;";
-            command.Parameters.AddWithValue("$purged_at", purgedAt);
-            command.Parameters.AddWithValue("$event_id", eventId);
+            purgedEventId.Value = eventId;
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
     }
@@ -229,6 +230,7 @@ internal static class QueueLedger
         long head = anchorSequence;
         string headHash = previous;
 
+        // Hash while streaming so memory holds one digest per event, not every payload.
         Dictionary<string, string> payloads = new(StringComparer.Ordinal);
         await using (SqliteCommand events = connection.CreateCommand())
         {
@@ -236,7 +238,7 @@ internal static class QueueLedger
             await using SqliteDataReader reader = await events.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
-                payloads[reader.GetString(0)] = reader.GetString(1);
+                payloads[reader.GetString(0)] = PayloadHash(reader.GetString(1));
             }
         }
 
@@ -270,11 +272,11 @@ internal static class QueueLedger
 
                 if (!purged)
                 {
-                    if (!payloads.TryGetValue(eventId, out string? payload))
+                    if (!payloads.TryGetValue(eventId, out string? storedPayloadHash))
                     {
                         issues.Add(new(sequence, eventId, "event-missing", "Event was removed without a purge record."));
                     }
-                    else if (!string.Equals(PayloadHash(payload), payloadHash, StringComparison.Ordinal))
+                    else if (!string.Equals(storedPayloadHash, payloadHash, StringComparison.Ordinal))
                     {
                         issues.Add(new(sequence, eventId, "payload-modified", "Stored payload no longer matches the ledger."));
                     }
