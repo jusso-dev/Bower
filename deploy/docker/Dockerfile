@@ -1,8 +1,12 @@
 # Bower collector, published as a Native AOT executable (no .NET runtime in the image).
 # Build on the runner's native platform and cross-compile for TARGETARCH (no QEMU): the
-# -aot SDK image carries the native toolchain and the cross-architecture sysroot.
+# -aot SDK image carries the native toolchain; aot-cross-deps.sh adds the target one.
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.402-noble-aot AS build
 ARG TARGETARCH
+ARG BUILDARCH
+# Cross-architecture builds (e.g. arm64 on an amd64 runner) need the target toolchain.
+COPY deploy/docker/aot-cross-deps.sh /usr/local/bin/aot-cross-deps.sh
+RUN sh /usr/local/bin/aot-cross-deps.sh "$BUILDARCH" "$TARGETARCH"
 WORKDIR /src
 COPY . .
 RUN dotnet restore src/Bower.Collector/Bower.Collector.csproj --locked-mode
