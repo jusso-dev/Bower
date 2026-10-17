@@ -111,9 +111,11 @@ internal sealed class BufferedBowerClient : IBowerTelemetry, IAsyncDisposable
         Dictionary<string, System.Text.Json.JsonElement> attributes = new()
         {
             ["recordCount"] = System.Text.Json.JsonSerializer.SerializeToElement(
-                securityEvent.RecordCount),
+                securityEvent.RecordCount,
+                SdkJsonContext.Default.Int64),
             ["exportFormat"] = System.Text.Json.JsonSerializer.SerializeToElement(
-                securityEvent.ExportFormat)
+                securityEvent.ExportFormat,
+                SdkJsonContext.Default.String)
         };
         SecurityEventEnvelope envelope = CreateEnvelope(
             SecurityEventCategories.DataAccess,
@@ -241,3 +243,8 @@ public sealed class BowerDeliveryException(string safeFailureCode)
     : Exception($"Bower telemetry delivery failed: {safeFailureCode}")
 {
 }
+
+/// <summary>Source-generated metadata for SDK attribute values (Native AOT safe).</summary>
+[System.Text.Json.Serialization.JsonSerializable(typeof(long))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(string))]
+internal sealed partial class SdkJsonContext : System.Text.Json.Serialization.JsonSerializerContext;

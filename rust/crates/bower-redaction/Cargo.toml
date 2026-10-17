@@ -1,0 +1,30 @@
+[package]
+name = "bower-redaction"
+description = "Bower Privacy & Secret Protection Engine: deterministic detectors, policy actions and redaction before persistence."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+aes-gcm.workspace = true
+base64.workspace = true
+bower-contracts.workspace = true
+getrandom.workspace = true
+hex.workspace = true
+hmac.workspace = true
+indexmap.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml_ng.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+flate2.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

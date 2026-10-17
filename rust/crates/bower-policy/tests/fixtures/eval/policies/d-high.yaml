@@ -1,0 +1,19 @@
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+metadata:
+  id: HIGH-BAR
+  name: High bar
+  version: 1.0.0
+  owner: T
+  reviewDate: 2027-02-03
+match:
+  eventCategories: [authentication]
+  eventTypes: [authentication_success]
+requirements:
+  recommendedFields: [actor.userId]
+decision:
+  action: accept
+  minimumValueScore: 99
+  neverSample: true
+routing:
+  profile: p

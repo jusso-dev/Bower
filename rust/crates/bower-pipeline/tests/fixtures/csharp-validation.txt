@@ -1,0 +1,29 @@
+result|sentinel-app|True|source,redact,filter,out|4
+estimate|sentinel-app|4|3|1|1|3
+result|aws-security|True|cloudtrail,guardduty,normalise,detect,sentinel,lake|6
+estimate|aws-security|6|5|2|2|3
+result|structure|False||0
+issue|structure|pipeline-id|Pipeline id is required and must be <= 128 chars.|<null>
+issue|structure|pipeline-name|Pipeline name is required.|<null>
+issue|structure|pipeline-version|Pipeline version is required.|<null>
+issue|structure|source-type|Unknown source type 'carrier-pigeon'. Supported: http-collector, sqlserver, aws-cloudtrail, aws-guardduty, aws-securityhub, aws-cloudwatch, file-tail, ama-companion, ec2-host.|a
+issue|structure|node-id|Node ids must be unique and non-empty.|a
+issue|structure|node-type|Node type is required.|c
+issue|structure|output-type|Unknown output type ''. Supported: azure-logs-ingestion, ama-spool, http, kafka, syslog, security-lake, opensearch.|c
+issue|structure|secret-in-config|Node config key 'Connection_String' looks like a secret and is not allowed.|c
+issue|structure|config-too-large|Config value for 'Connection_String' exceeds 4 KiB.|c
+issue|structure|edge-unknown-node|Edge 'a' -> 'zzz' references unknown node.|<null>
+issue|structure|edge-self|Self-edges are not allowed.|c
+estimate|structure|error
+result|cycle|False||0
+issue|cycle|secret-in-config|Node config key 'apiKey' looks like a secret and is not allowed.|b
+issue|cycle|cycle|Pipeline graph contains a cycle.|a
+estimate|cycle|error
+result|orphan|False|s,lonely,r,o|4
+issue|orphan|output-type|Unknown output type 'azure-monitor'. Supported: azure-logs-ingestion, ama-spool, http, kafka, syslog, security-lake, opensearch.|o
+issue|orphan|node-disconnected|Node 'lonely' has no edges; connect it to the pipeline or remove it.|lonely
+estimate|orphan|4|2|1|1|2
+result|no-output|False|s|1
+issue|no-output|node-disconnected|Node 's' has no edges; connect it to the pipeline or remove it.|s
+issue|no-output|missing-output|Pipeline needs at least one output node.|<null>
+estimate|no-output|1|0|1|0|0

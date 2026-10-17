@@ -72,7 +72,7 @@ to use the Australian locational endpoint.
 | `BOWER_GCP_SUBSCRIPTION` | — | `subscription` Terraform output (`projects/…/subscriptions/…`). |
 | `BOWER_GCP_PUBSUB_ENDPOINT` | `https://pubsub.googleapis.com/` | HTTPS only. |
 | `GOOGLE_APPLICATION_CREDENTIALS` | — | Only for Workload Identity Federation: the `external_account` file from `aws_credential_config_command`. It holds no secret. |
-| `BOWER_GCP_ALLOW_KEY_FILE` | `false` | Service account key files are refused unless this is set (labs only). |
+| `BOWER_GCP_ALLOW_KEY_FILE` | `false` | Service account key files and gcloud user credentials (`authorized_user`) are refused unless this is set (labs only). |
 
 Other variables (`BOWER_COLLECTOR_URL`, `BOWER_INGEST_TOKEN`, `BOWER_BATCH_SIZE`,
 `BOWER_RETRY_SECONDS`, `BOWER_INCLUDE_RAW_RECORDS`) are shared with the AWS source;
@@ -80,7 +80,15 @@ see [AWS](aws.md#run-the-agent).
 
 Credentials come from Application Default Credentials: GKE Workload Identity, the
 service account attached to Cloud Run or Compute Engine, or Workload Identity
-Federation.
+Federation. The agent implements ADC itself (Native AOT, no Google client library) in
+the order Google's libraries use: `GOOGLE_APPLICATION_CREDENTIALS`, the gcloud
+`application_default_credentials.json` file, then the metadata server
+(`GCE_METADATA_HOST` overrides it for emulators). Workload Identity Federation
+supports file, URL and AWS (`aws1`, including IMDSv2) credential sources with optional
+service account impersonation. Executable-sourced and X.509 certificate credential
+configurations are refused. Token and IAM endpoints in a credential file must be HTTPS
+on `googleapis.com` (or the file's `universe_domain`). Access tokens are cached in
+memory until five minutes before expiry and are never logged or written to disk.
 
 ## Delivery guarantees
 

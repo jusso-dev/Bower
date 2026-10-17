@@ -1,0 +1,40 @@
+[package]
+name = "bower-cli"
+description = "Bower operator CLI (`bower`): policy, pipeline, queue, doctor, DCR, key, pack and evidence commands."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "bower"
+path = "src/main.rs"
+
+[dependencies]
+bower-contracts.workspace = true
+bower-dcr.workspace = true
+bower-evidence.workspace = true
+bower-integrity.workspace = true
+bower-packs.workspace = true
+bower-persistence.workspace = true
+bower-pipeline.workspace = true
+bower-policy.workspace = true
+bower-redaction.workspace = true
+base64.workspace = true
+clap.workspace = true
+getrandom.workspace = true
+hex.workspace = true
+indexmap.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

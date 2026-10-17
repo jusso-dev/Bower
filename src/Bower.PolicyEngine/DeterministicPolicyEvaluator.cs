@@ -5,7 +5,7 @@ namespace Bower.PolicyEngine;
 
 public sealed class DeterministicPolicyEvaluator : ITelemetryPolicyEvaluator
 {
-    private readonly IReadOnlyList<LoadedPolicy> policies;
+    private readonly LoadedPolicy[] policies;
 
     public DeterministicPolicyEvaluator(IEnumerable<LoadedPolicy> policies)
     {
@@ -18,7 +18,17 @@ public sealed class DeterministicPolicyEvaluator : ITelemetryPolicyEvaluator
     {
         ArgumentNullException.ThrowIfNull(candidate);
 
-        LoadedPolicy? loaded = policies.FirstOrDefault(item => Matches(item.Policy.Match, candidate));
+        // Plain loop over the id-ordered array: same first-match result without a closure
+        // and enumerator allocation per event.
+        LoadedPolicy? loaded = null;
+        foreach (LoadedPolicy item in policies)
+        {
+            if (Matches(item.Policy.Match, candidate))
+            {
+                loaded = item;
+                break;
+            }
+        }
         if (loaded is null)
         {
             return new PolicyDecision(
@@ -95,9 +105,10 @@ public sealed class DeterministicPolicyEvaluator : ITelemetryPolicyEvaluator
     {
         // Event types are mandatory (enforced by PolicyLoader); an empty list never matches,
         // so unknown types stay default-deny even for hand-built policies.
+        // List<string>.Contains uses ordinal string equality without boxing an enumerator.
         bool categoryMatch = match.EventCategories.Count == 0
-            || match.EventCategories.Contains(candidate.EventCategory, StringComparer.Ordinal);
-        bool typeMatch = match.EventTypes.Contains(candidate.EventType, StringComparer.Ordinal);
+            || match.EventCategories.Contains(candidate.EventCategory);
+        bool typeMatch = match.EventTypes.Contains(candidate.EventType);
         return categoryMatch && typeMatch;
     }
 

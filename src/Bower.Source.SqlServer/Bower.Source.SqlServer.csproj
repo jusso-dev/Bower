@@ -1,4 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Not AOT compatible, by design and documented: the adapter must use EF Core LINQ
+         (see AGENTS.md) over a table and columns chosen at runtime, and EF Core's
+         DbContext and runtime model building need reflection and dynamic code
+         (IL2026/IL3050). Precompiled queries need a compile-time model, which a
+         runtime-configured mapping cannot have. No Native AOT host references this
+         library. -->
+    <IsAotCompatible>false</IsAotCompatible>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Bower.Abstractions/Bower.Abstractions.csproj" />
     <PackageReference Include="Microsoft.Data.SqlClient" />

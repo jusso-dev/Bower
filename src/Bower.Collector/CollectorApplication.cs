@@ -11,7 +11,6 @@ using Bower.Output.AzureLogsIngestion;
 using Bower.Persistence;
 using Bower.PolicyEngine;
 using Bower.Redaction;
-using Hangfire;
 using Microsoft.AspNetCore.RateLimiting;
 
 namespace Bower.Collector;
@@ -28,7 +27,10 @@ public static partial class CollectorApplication
         ArgumentNullException.ThrowIfNull(settings);
         settings.Validate();
 
-        WebApplicationBuilder builder = WebApplication.CreateBuilder();
+        // Slim builder: no reflection-based startup, as Native AOT requires. HTTPS endpoint
+        // configuration is opted back in because BOWER_LISTEN_URL may be https.
+        WebApplicationBuilder builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseKestrelHttpsConfiguration();
         builder.WebHost.UseUrls(settings.ListenUrl);
         builder.WebHost.ConfigureKestrel(options =>
         {
@@ -42,13 +44,16 @@ public static partial class CollectorApplication
             options.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ ";
             options.UseUtcTimestamp = true;
         });
-        builder.Logging.AddFilter("Hangfire", LogLevel.Warning);
         // Per-request framework logs add volume without security value.
         builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
         builder.Services.Configure<HostOptions>(options =>
             // An unhandled worker fault is a delivery outage; stop so the supervisor restarts
             // the process instead of running a collector that silently stopped delivering.
             options.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.StopHost);
+
+        // Source-generated JSON for request and response bodies (Web defaults, as before).
+        builder.Services.ConfigureHttpJsonOptions(options =>
+            options.SerializerOptions.TypeInfoResolverChain.Insert(0, CollectorJsonContext.Default));
 
         builder.Services.AddSingleton(settings);
         builder.Services.AddSingleton(TimeProvider.System);
@@ -122,25 +127,24 @@ public static partial class CollectorApplication
 
         await app.Services.GetRequiredService<IDurableEventStore>().InitializeAsync(cancellationToken);
 
-        IRecurringJobManager jobs = app.Services.GetRequiredService<IRecurringJobManager>();
-        RecurringJobOptions utc = new() { TimeZone = TimeZoneInfo.Utc };
+        RecurringJobRegistry jobs = app.Services.GetRequiredService<RecurringJobRegistry>();
         jobs.AddOrUpdate<QueueRetentionJob>(
             QueueRetentionJob.Id,
-            job => job.RunAsync(CancellationToken.None),
+            (job, token) => job.RunAsync(token),
             Cron.Hourly(),
-            utc);
+            QueueRetentionJob.RetryAttempts);
         jobs.AddOrUpdate<QueueMaintenanceJob>(
             QueueMaintenanceJob.Id,
-            job => job.RunAsync(CancellationToken.None),
+            (job, token) => job.RunAsync(token),
             Cron.Daily(3),
-            utc);
+            QueueMaintenanceJob.RetryAttempts);
         if (settings.ManagementEndpoint is not null)
         {
+            // A missed heartbeat is superseded by the next scheduled run; never retry-stack.
             jobs.AddOrUpdate<ManagementHeartbeatJob>(
                 ManagementHeartbeatJob.Id,
-                job => job.RunAsync(CancellationToken.None),
-                Cron.Minutely(),
-                utc);
+                (job, token) => job.RunAsync(token),
+                Cron.Minutely());
         }
     }
 
@@ -169,35 +173,32 @@ public static partial class CollectorApplication
                     {
                         // Backpressure: producers should buffer and retry.
                         return Results.Json(
-                            new { error = "Collector queue is at capacity; retry later." },
+                            new ErrorResponse("Collector queue is at capacity; retry later."),
+                            CollectorJsonContext.Default.ErrorResponse,
                             statusCode: StatusCodes.Status503ServiceUnavailable);
                     }
 
-                    object response = new
-                    {
+                    IngestResponse response = new(
                         result.EventId,
-                        decision = result.Action.ToString().ToLowerInvariant(),
+                        result.Action.ToString().ToLowerInvariant(),
                         result.Queued,
                         result.Duplicate,
                         result.Reasons,
-                        policy = result.PolicyDecision is null
+                        result.PolicyDecision is null
                             ? null
-                            : new
-                            {
+                            : new IngestPolicyResponse(
                                 result.PolicyDecision.PolicyId,
                                 result.PolicyDecision.PolicyVersion,
                                 result.PolicyDecision.PolicyHash,
-                                result.PolicyDecision.Score
-                            }
-                    };
+                                result.PolicyDecision.Score));
 
-                    return result.Action switch
+                    int statusCode = result.Action switch
                     {
-                        DecisionAction.Accept or DecisionAction.RedactAndAccept =>
-                            Results.Json(response, statusCode: result.Duplicate ? 200 : 202),
-                        DecisionAction.Reject => Results.Json(response, statusCode: 422),
-                        _ => Results.Json(response, statusCode: 400)
+                        DecisionAction.Accept or DecisionAction.RedactAndAccept => result.Duplicate ? 200 : 202,
+                        DecisionAction.Reject => 422,
+                        _ => 400
                     };
+                    return Results.Json(response, CollectorJsonContext.Default.IngestResponse, statusCode: statusCode);
                 })
             .AddEndpointFilter<IngestAuthenticationFilter>()
             .RequireRateLimiting("ingest");
@@ -208,7 +209,7 @@ public static partial class CollectorApplication
             async (IDurableEventStore eventQueue, CancellationToken cancellationToken) =>
             {
                 QueueSnapshot snapshot = await eventQueue.GetSnapshotAsync(cancellationToken);
-                return Results.Json(new { status = Status(snapshot) });
+                return Results.Json(new HealthResponse(Status(snapshot)), CollectorJsonContext.Default.HealthResponse);
             });
 
         app.MapGet(
@@ -221,23 +222,17 @@ public static partial class CollectorApplication
                 {
                     QueueSnapshot snapshot = await eventQueue.GetSnapshotAsync(cancellationToken);
                     LedgerHead ledger = await eventQueue.GetLedgerHeadAsync(cancellationToken);
-                    return Results.Json(new
-                    {
-                        status = Status(snapshot),
-                        policy = new
-                        {
-                            hash = bundle.Hash,
-                            policies = bundle.Policies.Select(item => new
-                            {
+                    StatusResponse status = new(
+                        Status(snapshot),
+                        new StatusPolicyResponse(
+                            bundle.Hash,
+                            [.. bundle.Policies.Select(item => new StatusPolicyItem(
                                 item.Policy.Metadata.Id,
-                                item.Policy.Metadata.Version
-                            }),
-                            packs = bundle.Packs.Select(pack => new { pack.Id, pack.Version, pack.PackHash }),
-                            privacyProfile = bundle.PrivacyProfile
-                        },
-                        ledger = new { ledger.Sequence, ledger.Hash },
-                        queue = new
-                        {
+                                item.Policy.Metadata.Version))],
+                            [.. bundle.Packs.Select(pack => new StatusPackItem(pack.Id, pack.Version, pack.PackHash))],
+                            bundle.PrivacyProfile),
+                        new LedgerResponse(ledger.Sequence, ledger.Hash),
+                        new StatusQueueResponse(
                             snapshot.Queued,
                             snapshot.Retrying,
                             snapshot.Uploading,
@@ -245,10 +240,9 @@ public static partial class CollectorApplication
                             snapshot.DeadLettered,
                             snapshot.TotalBytes,
                             snapshot.UndeliveredBytes,
-                            snapshot.OldestUndelivered
-                        },
-                        jobs = jobs.List()
-                    });
+                            snapshot.OldestUndelivered),
+                        jobs.List());
+                    return Results.Json(status, CollectorJsonContext.Default.StatusResponse);
                 })
             .AddEndpointFilter<IngestAuthenticationFilter>();
     }

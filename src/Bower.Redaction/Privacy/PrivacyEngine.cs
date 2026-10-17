@@ -1,7 +1,6 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using Bower.Abstractions;
 
 namespace Bower.Redaction.Privacy;
@@ -148,13 +147,11 @@ public sealed class PrivacyEngine : IEventRedactor
         {
             return PrivacyScanResult.Fail("invalid-json");
         }
-        catch (Exception exception) when (
-            exception is RegexMatchTimeoutException
-                or ArgumentException
-                or InvalidOperationException)
+        catch (Exception)
         {
-            // Detector timeouts and malformed structures (for example duplicate keys) are
-            // security failures: the payload must be quarantined, never persisted.
+            // Detector timeouts, malformed structures (for example duplicate keys) and any
+            // other failure are security failures: the payload must be quarantined, never
+            // persisted, and the caller must never see an exception instead of a verdict.
             return PrivacyScanResult.Fail("redaction-failed");
         }
     }
@@ -172,15 +169,24 @@ public sealed class PrivacyEngine : IEventRedactor
             return new PrivacyTextResult(false, null, [], PrivacyMetadata.Empty, "payload-too-large");
         }
 
-        List<AppliedFinding> findings = [];
-        string redacted = ApplyDetectorsToValue(text, "$", findings);
-        PrivacyMetadata metadata = BuildMetadata(findings);
-        return new PrivacyTextResult(true, redacted, findings, metadata, null);
+        try
+        {
+            List<AppliedFinding> findings = [];
+            string redacted = ApplyDetectorsToValue(text, "$", findings);
+            PrivacyMetadata metadata = BuildMetadata(findings);
+            return new PrivacyTextResult(true, redacted, findings, metadata, null);
+        }
+        catch (Exception)
+        {
+            // Same contract as RedactJson: quarantine, never throw or return the original.
+            return new PrivacyTextResult(false, null, [], PrivacyMetadata.Empty, "redaction-failed");
+        }
     }
 
     private void WalkObject(JsonObject value, string parentPath, List<AppliedFinding> findings)
     {
         int redactedKeyIndex = 0;
+        string keyPath = $"{parentPath}.[key]";
         foreach ((string originalName, JsonNode? originalChild) in value.ToArray())
         {
             string propertyName = originalName;
@@ -211,10 +217,14 @@ public sealed class PrivacyEngine : IEventRedactor
             // rename the property when a key carries sensitive data.
             string redactedName = ApplyDetectorsToValue(
                 propertyName,
-                $"{parentPath}.[key]",
+                keyPath,
                 findings);
             if (!string.Equals(redactedName, propertyName, StringComparison.Ordinal))
             {
+                // Compare names as they will be written: System.Text.Json writes every
+                // unpaired surrogate as U+FFFD, so two names differing only there would
+                // otherwise both survive and serialise as duplicate keys.
+                redactedName = ReplaceUnpairedSurrogates(redactedName);
                 value.Remove(propertyName);
                 do
                 {
@@ -424,24 +434,143 @@ public sealed class PrivacyEngine : IEventRedactor
         }
 
         // Resolve overlaps: prefer longer validated matches, then earlier start.
-        List<DetectionMatch> ordered = matches
-            .OrderByDescending(m => m.Length)
-            .ThenBy(m => m.Start)
-            .ToList();
+        List<DetectionMatch> ordered = matches.Count == 1
+            ? matches
+            : matches
+                .OrderByDescending(m => m.Length)
+                .ThenBy(m => m.Start)
+                .ToList();
 
+        List<DetectionMatch> selected = SelectNonOverlapping(ordered);
+
+        // Apply right-to-left so indices remain valid.
+        selected.Sort((a, b) => b.Start.CompareTo(a.Start));
+        return selected.Exists(match => match.Length == 0)
+            ? ApplySequentially(text, path, selected, findings)
+            : ApplyInOnePass(text, path, selected, findings);
+    }
+
+    /// <summary>
+    /// Greedy selection in candidate order: a candidate is kept unless it overlaps an
+    /// already kept span. Kept spans never overlap each other, so ordered by (Start, End)
+    /// their ends never decrease and only the last kept span starting before the
+    /// candidate's end can overlap it. Binary search keeps this O(n log n) for values
+    /// carrying thousands of matches (the previous pairwise scan was O(n^2)).
+    /// </summary>
+    private static List<DetectionMatch> SelectNonOverlapping(List<DetectionMatch> ordered)
+    {
         List<DetectionMatch> selected = [];
+        if (ordered.Count == 1)
+        {
+            selected.Add(ordered[0]);
+            return selected;
+        }
+
+        List<(int Start, int End)> kept = [];
         foreach (DetectionMatch candidate in ordered)
         {
-            if (selected.Any(existing => Overlaps(existing, candidate)))
+            // Index of the first kept span starting at or after the candidate's end.
+            int low = 0;
+            int high = kept.Count;
+            while (low < high)
+            {
+                int middle = low + ((high - low) / 2);
+                if (kept[middle].Start < candidate.End)
+                {
+                    low = middle + 1;
+                }
+                else
+                {
+                    high = middle;
+                }
+            }
+
+            if (low > 0 && candidate.Start < kept[low - 1].End)
             {
                 continue;
             }
 
+            // Insert after every kept span that sorts at or before (Start, End).
+            int position = low;
+            while (position > 0
+                && (kept[position - 1].Start > candidate.Start
+                    || (kept[position - 1].Start == candidate.Start && kept[position - 1].End > candidate.End)))
+            {
+                position--;
+            }
+
+            kept.Insert(position, (candidate.Start, candidate.End));
             selected.Add(candidate);
         }
 
-        // Apply right-to-left so indices remain valid.
-        selected.Sort((a, b) => b.Start.CompareTo(a.Start));
+        return selected;
+    }
+
+    /// <summary>
+    /// Spans are non-empty and disjoint and visited right-to-left, so every replacement
+    /// sees exactly the original text of its span. Builds the result once instead of
+    /// re-concatenating the whole value per match.
+    /// </summary>
+    private string ApplyInOnePass(
+        string text,
+        string path,
+        List<DetectionMatch> selected,
+        List<AppliedFinding> findings)
+    {
+        string?[] replacements = new string?[selected.Count];
+        bool changed = false;
+        for (int index = 0; index < selected.Count; index++)
+        {
+            DetectionMatch match = selected[index];
+            PrivacyAction action = policy.ResolveAction(match.DetectorId);
+            findings.Add(new AppliedFinding(
+                match.DetectorId,
+                match.Category,
+                path,
+                action,
+                match.Validated,
+                match.SubKind));
+
+            if (action is PrivacyAction.Allow or PrivacyAction.AlertOnly)
+            {
+                continue;
+            }
+
+            replacements[index] = applicator.Apply(text, match, action);
+            changed = true;
+        }
+
+        if (!changed)
+        {
+            return text;
+        }
+
+        StringBuilder builder = new(text.Length);
+        int position = 0;
+        for (int index = selected.Count - 1; index >= 0; index--)
+        {
+            if (replacements[index] is not { } replacement)
+            {
+                continue;
+            }
+
+            DetectionMatch match = selected[index];
+            builder.Append(text, position, match.Start - position);
+            builder.Append(replacement);
+            position = match.End;
+        }
+
+        builder.Append(text, position, text.Length - position);
+        return builder.ToString();
+    }
+
+    /// <summary>Original per-match splice, kept for zero-length matches from custom detectors.</summary>
+    private string ApplySequentially(
+        string text,
+        string path,
+        List<DetectionMatch> selected,
+        List<AppliedFinding> findings)
+    {
         string result = text;
         foreach (DetectionMatch match in selected)
         {
@@ -468,9 +597,6 @@ public sealed class PrivacyEngine : IEventRedactor
 
         return result;
     }
-
-    private static bool Overlaps(DetectionMatch a, DetectionMatch b) =>
-        a.Start < b.End && b.Start < a.End;
 
     private static PrivacyMetadata BuildMetadata(List<AppliedFinding> findings)
     {
@@ -504,7 +630,7 @@ public sealed class PrivacyEngine : IEventRedactor
         JsonArray detected = new();
         foreach (string id in metadata.Detected)
         {
-            detected.Add(id);
+            detected.Add((JsonNode)id);
         }
 
         JsonObject actions = new();
@@ -520,8 +646,38 @@ public sealed class PrivacyEngine : IEventRedactor
         };
     }
 
-    private static string NormalizeFieldName(string value) =>
-        string.Concat(value.Where(char.IsLetterOrDigit)).ToLowerInvariant();
+    /// <summary>
+    /// Replaces each unpaired surrogate with U+FFFD, exactly as System.Text.Json (and the
+    /// UTF-8 encoder's replacement fallback) writes it. Valid strings are returned as-is.
+    /// </summary>
+    private static string ReplaceUnpairedSurrogates(string value) =>
+        value.AsSpan().ContainsAnyInRange('\uD800', '\uDFFF')
+            ? Encoding.UTF8.GetString(Encoding.UTF8.GetBytes(value))
+            : value;
+
+    // Letters and digits only, lower-cased invariantly. Surrogates are not letters or
+    // digits here, so per-char invariant lowering equals string.ToLowerInvariant.
+    // Returns the input unchanged (no allocation) when it is already normalised.
+    private static string NormalizeFieldName(string value)
+    {
+        Span<char> buffer = value.Length <= 256 ? stackalloc char[value.Length] : new char[value.Length];
+        int length = 0;
+        bool changed = false;
+        foreach (char character in value)
+        {
+            if (!char.IsLetterOrDigit(character))
+            {
+                changed = true;
+                continue;
+            }
+
+            char lower = char.ToLowerInvariant(character);
+            changed |= lower != character;
+            buffer[length++] = lower;
+        }
+
+        return changed ? new string(buffer[..length]) : value;
+    }
 }
 
 public sealed record AppliedFinding(

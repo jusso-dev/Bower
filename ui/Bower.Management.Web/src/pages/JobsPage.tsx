@@ -72,7 +72,7 @@ export function JobsPage() {
       <section className="sheet">
         <div className="section-heading">
           <h2>Management plane</h2>
-          <span>Hangfire · in-memory schedule</span>
+          <span>In-process schedule · UTC</span>
         </div>
         <ResourceState loading={jobs.loading} error={jobs.error} data={jobs.data}>
           {(records) =>

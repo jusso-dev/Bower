@@ -54,6 +54,34 @@ public sealed class DockerSourceTests
     }
 
     [Fact]
+    public void Reader_StartsAtEndBeforeLongUnterminatedTail()
+    {
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, "history\n");
+        long lastLineEnd = new FileInfo(container.LogPath).Length;
+        // Longer than the backwards scan block, so the newline sits in an earlier block.
+        DockerFixture.AppendRaw(container, "{\"log\":\"" + new string('x', 10_000));
+
+        DockerLogBatch first = DockerJsonLogReader.Read(container, null, new DockerLogReaderOptions());
+
+        Assert.Empty(first.Records);
+        Assert.Equal(lastLineEnd, first.Cursor.Offset);
+    }
+
+    [Fact]
+    public void Reader_StartsAtZeroWhenNoLineIsComplete()
+    {
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.AppendRaw(container, "{\"log\":\"" + new string('x', 9_000));
+
+        DockerLogBatch first = DockerJsonLogReader.Read(container, null, new DockerLogReaderOptions());
+
+        Assert.Equal(0, first.Cursor.Offset);
+    }
+
+    [Fact]
     public void Reader_ReplaysHistoryWhenConfigured()
     {
         using TemporaryDirectory root = new();

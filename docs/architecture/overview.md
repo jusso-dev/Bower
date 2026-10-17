@@ -33,6 +33,28 @@ Only leased `uploading` records can transition. Expired leases become eligible
 after abrupt shutdown. Payload rows are not deleted during acknowledgement; the
 `queue-retention` job removes `delivered` rows only after the retention window.
 Retryable failures dead-letter after `BOWER_MAX_DELIVERY_ATTEMPTS` leases.
+Events an adapter acknowledges in one delivery batch are marked `delivered` in a
+single queue transaction; an event whose lease was reclaimed meanwhile is skipped.
+Failed events in the batch (retrying and dead-lettered, including events the
+adapter did not report) are settled in one more transaction with the same
+`uploading` guard. Either batch is all-or-nothing: on a storage error nothing in it
+is settled, the events stay leased and are redelivered after the lease expires
+(at-least-once).
+
+Enqueue checks for a duplicate (same event id or fingerprint, in any state) before
+the capacity check, inside the same `BEGIN IMMEDIATE` transaction, so a re-sent
+event is reported as a duplicate even when the queue is full. Invalid input (blank,
+NUL-containing or over-128-character event id, blank fingerprint, empty payload) is
+rejected as an error and is never reported as a duplicate. Ledger verification
+reads events and ledger entries in one read transaction, so concurrent enqueues
+cannot produce false issues.
+
+The source cursor store runs `CREATE TABLE IF NOT EXISTS` on every start (WAL only
+for a new file) and treats any failed cursor write as a lost race (`false`). The
+C# and Rust stores share the same DDL, column order and timestamp text.
+Queue schema version 4 adds a covering index on `(state, payload_bytes,
+received_at)` so the per-enqueue capacity check does not read stored payloads; it
+is created idempotently on start-up.
 
 ## Agents and cloud queues
 
@@ -48,10 +70,10 @@ releases malformed messages to them and never deletes on backpressure. See
 ## Background jobs
 
 Delivery is a low-latency hosted loop (`QueueDeliveryWorker`) driven by queue
-leases. Hangfire (`Bower.Jobs`, in-memory storage) runs only idempotent
-maintenance and reporting: queue retention, SQLite maintenance and the management
-heartbeat on collectors, and collector staleness on the management API. Losing
-Hangfire state on restart is harmless because durable state lives in Bower's
+leases. The in-process cron scheduler (`Bower.Jobs`, in-memory state) runs only
+idempotent maintenance and reporting: queue retention, SQLite maintenance and the
+management heartbeat on collectors, and collector staleness and inactivity on the
+management API. Losing scheduler state on restart is harmless because durable state lives in Bower's
 SQLite stores. See [background jobs](../operations/background-jobs.md).
 
 ## Current limits

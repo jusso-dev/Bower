@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Bower.Source.Docker;
 
@@ -14,12 +15,7 @@ public sealed record DockerLogCursor(int SchemaVersion, string Fingerprint, long
 {
     public const int CurrentSchemaVersion = 1;
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
-
-    public string Serialize() => JsonSerializer.Serialize(this, JsonOptions);
+    public string Serialize() => JsonSerializer.Serialize(this, DockerCursorJsonContext.Default.DockerLogCursor);
 
     public static DockerLogCursor? Deserialize(string? value)
     {
@@ -30,7 +26,7 @@ public sealed record DockerLogCursor(int SchemaVersion, string Fingerprint, long
 
         try
         {
-            DockerLogCursor? cursor = JsonSerializer.Deserialize<DockerLogCursor>(value, JsonOptions);
+            DockerLogCursor? cursor = JsonSerializer.Deserialize(value, DockerCursorJsonContext.Default.DockerLogCursor);
             return cursor is { SchemaVersion: CurrentSchemaVersion, Offset: >= 0 } ? cursor : null;
         }
         catch (JsonException)
@@ -39,6 +35,11 @@ public sealed record DockerLogCursor(int SchemaVersion, string Fingerprint, long
         }
     }
 }
+
+/// <summary>Cursor JSON: camelCase, otherwise default options (source generated).</summary>
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(DockerLogCursor))]
+internal sealed partial class DockerCursorJsonContext : JsonSerializerContext;
 
 /// <summary>One logical log line (Docker splits lines over 16 KiB into chunks).</summary>
 public sealed record DockerLogRecord(
@@ -351,17 +352,25 @@ public static class DockerJsonLogReader
 
     private static long LastCompleteLineEnd(string path)
     {
+        // Scan backwards in blocks: seeking back one byte at a time discarded the 64 KiB
+        // read buffer on every step, so a long unterminated tail cost one buffer refill per byte.
         using FileStream stream = Open(path);
-        long position = stream.Length;
-        while (position > 0)
+        byte[] block = new byte[4_096];
+        long end = stream.Length;
+        while (end > 0)
         {
-            stream.Seek(position - 1, SeekOrigin.Begin);
-            if (stream.ReadByte() == '\n')
+            int count = (int)Math.Min(block.Length, end);
+            long start = end - count;
+            stream.Seek(start, SeekOrigin.Begin);
+            // A concurrent truncation can shorten the read; bytes past EOF are never '\n'.
+            int read = stream.ReadAtLeast(block.AsSpan(0, count), count, throwOnEndOfStream: false);
+            int newline = block.AsSpan(0, read).LastIndexOf((byte)'\n');
+            if (newline >= 0)
             {
-                return position;
+                return start + newline + 1;
             }
 
-            position--;
+            end = start;
         }
 
         return 0;

@@ -9,45 +9,34 @@ public sealed partial class CryptographicMaterialDetector : RegexDetectorBase
     public override string Category => DetectorCategories.Crypto;
     protected override Regex Pattern => PemRegex();
 
+    /// <summary>
+    /// Labels the block by its exact <c>-----BEGIN &lt;label&gt;-----</c> header, so body text
+    /// can never change the kind (every alternative of the pattern starts with a header).
+    /// </summary>
     protected override string? SubKind(ReadOnlySpan<char> matched)
     {
-        string s = matched.ToString();
-        if (s.Contains("RSA PRIVATE", StringComparison.Ordinal))
+        const string Begin = "-----BEGIN ";
+        if (!matched.StartsWith(Begin, StringComparison.Ordinal))
         {
-            return "rsa-private";
+            return "pem";
         }
 
-        if (s.Contains("EC PRIVATE", StringComparison.Ordinal) || s.Contains("ECDSA", StringComparison.Ordinal))
+        ReadOnlySpan<char> rest = matched[Begin.Length..];
+        int end = rest.IndexOf("-----", StringComparison.Ordinal);
+        return (end < 0 ? rest : rest[..end]) switch
         {
-            return "ecdsa-private";
-        }
-
-        if (s.Contains("OPENSSH PRIVATE", StringComparison.Ordinal))
-        {
-            return "openssh-private";
-        }
-
-        if (s.Contains("PRIVATE KEY", StringComparison.Ordinal))
-        {
-            return "pkcs8-private";
-        }
-
-        if (s.Contains("CERTIFICATE", StringComparison.Ordinal))
-        {
-            return "x509-certificate";
-        }
-
-        if (s.Contains("PGP", StringComparison.Ordinal) || s.Contains("PGP PRIVATE", StringComparison.Ordinal))
-        {
-            return "pgp";
-        }
-
-        if (s.Contains("BEGIN SSH2", StringComparison.Ordinal))
-        {
-            return "ssh";
-        }
-
-        return "pem";
+            "RSA PRIVATE KEY" => "rsa-private",
+            "EC PRIVATE KEY" => "ecdsa-private",
+            "DSA PRIVATE KEY" => "dsa-private",
+            "OPENSSH PRIVATE KEY" => "openssh-private",
+            "ENCRYPTED PRIVATE KEY" => "encrypted-private",
+            "PRIVATE KEY" => "pkcs8-private",
+            "CERTIFICATE" => "x509-certificate",
+            "PGP PRIVATE KEY BLOCK" => "pgp-private",
+            "PGP PUBLIC KEY BLOCK" => "pgp-public",
+            "PGP KEY BLOCK" => "pgp",
+            _ => "pem"
+        };
     }
 
     [GeneratedRegex(

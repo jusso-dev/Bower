@@ -8,8 +8,6 @@ namespace Bower.Cli.Commands;
 
 internal static class EvidenceCommands
 {
-    private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
-
     /// <summary>
     /// bower evidence run --collector-url URL [--workspace-id ID] [--workspace-resource-id RID]
     ///   [--table NAME] [--credential MODE] [--timeout-minutes N] [--signing-key FILE] [--out FILE]
@@ -17,6 +15,7 @@ internal static class EvidenceCommands
     /// </summary>
     public static async Task<int> RunAsync(string[] args)
     {
+        TimeSpan timeout = TimeSpan.FromMinutes(TimeoutMinutes(args));
         string? workspaceId = CliOptions.Get(args, "--workspace-id");
         HttpClient http = new() { Timeout = TimeSpan.FromSeconds(30) };
         Azure.Core.TokenCredential? credential = workspaceId is null && CliOptions.Get(args, "--workspace-resource-id") is null
@@ -35,13 +34,13 @@ internal static class EvidenceCommands
                 WorkspaceId = workspaceId,
                 WorkspaceResourceId = CliOptions.Get(args, "--workspace-resource-id"),
                 Table = CliOptions.Get(args, "--table") ?? "BowerSecurity_CL",
-                Timeout = TimeSpan.FromMinutes(CliOptions.Int(args, "--timeout-minutes", 15))
+                Timeout = timeout
             },
             CancellationToken.None);
 
         string? key = CliOptions.Get(args, "--signing-key") is { } keyPath ? File.ReadAllText(keyPath) : null;
         SignedEvidence signed = EvidenceRunner.Sign(bundle, key);
-        string json = JsonSerializer.Serialize(signed, Indented);
+        string json = JsonSerializer.Serialize(signed, CliJsonContext.Default.SignedEvidence);
         string output = CliOptions.Get(args, "--out") ?? $"bower-evidence-{bundle.GeneratedAt:yyyyMMddTHHmmssZ}.json";
         File.WriteAllText(output, json);
 
@@ -66,15 +65,26 @@ internal static class EvidenceCommands
         return bundle.Mode == EvidenceModes.Verified ? 0 : 2;
     }
 
+    /// <summary>Longest arrival wait <c>evidence run</c> accepts: one day.</summary>
+    public const int MaximumTimeoutMinutes = 1_440;
+
+    /// <summary><c>--timeout-minutes N</c> (default 15); must be 1 to <see cref="MaximumTimeoutMinutes"/>.</summary>
+    public static int TimeoutMinutes(string[] args)
+    {
+        int minutes = CliOptions.Int(args, "--timeout-minutes", 15);
+        return minutes is >= 1 and <= MaximumTimeoutMinutes
+            ? minutes
+            : throw new ArgumentException($"--timeout-minutes must be between 1 and {MaximumTimeoutMinutes}.");
+    }
+
     /// <summary>bower evidence verify FILE --trusted-key PUBLIC.pem</summary>
     public static int Verify(string[] args)
     {
         string file = CliOptions.Positional(args) ?? throw new ArgumentException("Provide an evidence bundle file.");
-        SignedEvidence evidence = JsonSerializer.Deserialize<SignedEvidence>(File.ReadAllText(file))
-            ?? throw new InvalidDataException("Evidence bundle is unreadable.");
+        SignedEvidence evidence = EvidenceRunner.Parse(File.ReadAllText(file));
         string[] keys = CliOptions.All(args, "--trusted-key").Select(File.ReadAllText).ToArray();
         bool valid = EvidenceRunner.Verify(evidence, keys);
-        string mode = evidence.Bundle["mode"]?.GetValue<string>() ?? "unknown";
+        string mode = EvidenceRunner.ModeOf(evidence);
         Console.WriteLine(valid
             ? $"Signature valid (key {evidence.Signature!.KeyId}). Mode: {mode}."
             : "Signature INVALID or from an untrusted key.");
@@ -84,8 +94,6 @@ internal static class EvidenceCommands
 
 internal static class QueueCommands
 {
-    private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
-
     private static async Task<SqliteEventStore> OpenAsync(string[] args)
     {
         string path = CliOptions.Get(args, "--database") ?? Path.Combine(Directory.GetCurrentDirectory(), "data", "bower.db");
@@ -104,7 +112,7 @@ internal static class QueueCommands
     {
         SqliteEventStore store = await OpenAsync(args);
         IReadOnlyList<DeadLetterRecord> records = await store.ListDeadLetteredAsync(CliOptions.Int(args, "--max", 100));
-        Console.WriteLine(JsonSerializer.Serialize(records, Indented));
+        Console.WriteLine(JsonSerializer.Serialize(records, CliJsonContext.Default.IReadOnlyListDeadLetterRecord));
         return 0;
     }
 

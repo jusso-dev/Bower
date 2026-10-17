@@ -1,0 +1,74 @@
+{
+  "bundle": {
+    "schema": "bower.evidence/v1",
+    "mode": "verified",
+    "generatedAt": "2026-10-17T01:02:03.4567\u002B00:00",
+    "tool": "bower",
+    "canary": {
+      "eventId": "bower-canary-x",
+      "sentAt": "2026-10-17T01:02:03.4567\u002B00:00",
+      "collectorHost": "collector.test",
+      "collectorStatus": 202,
+      "collectorDecision": "accept",
+      "policyId": "BWR-POL\u0027\u002B\u003C\u003E"
+    },
+    "arrival": {
+      "found": true,
+      "workspaceId": "ws",
+      "table": "BowerSecurity_CL",
+      "query": "BowerSecurity_CL\n| where EventId == \u0022x\u0022",
+      "attempts": 2,
+      "timeGenerated": "2026-10-17T01:02:03.4567\u002B00:00",
+      "ingestionTime": "2026-10-17T01:02:15.7567\u002B00:00",
+      "latencySeconds": 12.3,
+      "rowPolicyHash": "sha256:policy",
+      "queryError": null
+    },
+    "retention": {
+      "plan": "Analytics",
+      "interactiveDays": 90,
+      "totalDays": 400,
+      "workspaceRegion": "australiaeast"
+    },
+    "ingestionErrorsLastHour": 0,
+    "controls": [
+      {
+        "framework": "ISM",
+        "id": "ISM-0580",
+        "requirement": "A security monitoring (event logging) policy is implemented; events are centrally logged.",
+        "status": "evidenced",
+        "evidence": "Canary BowerSecurity_CL row found by KQL after 12.3 s."
+      },
+      {
+        "framework": "ISM",
+        "id": "ISM-1988",
+        "requirement": "Event logs are retained and searchable for at least 12 months.",
+        "status": "evidenced",
+        "evidence": "Table total retention 400 days (plan Analytics)."
+      },
+      {
+        "framework": "Essential Eight",
+        "id": "E8-ML2-LOGGING",
+        "requirement": "Event logs are centrally stored and protected from unauthorised modification and deletion.",
+        "status": "evidenced",
+        "evidence": "Canary BowerSecurity_CL row found by KQL after 12.3 s. Assessment guide grades a simulated-activity test as excellent evidence."
+      },
+      {
+        "framework": "Privacy Act",
+        "id": "APP-11",
+        "requirement": "Technical measures protect personal information (redaction before data leaves the host).",
+        "status": "evidenced",
+        "evidence": "The canary passed Bower\u0027s pre-persistence privacy engine; see collector policy hash in the row."
+      }
+    ],
+    "limitations": [
+      "l1",
+      "l2 \u00E9"
+    ]
+  },
+  "signature": {
+    "Algorithm": "ES256",
+    "KeyId": "3e84aa1044d76e0f",
+    "Value": "LDIcXFsROgOwGmpAKM66ubDX01j4RRYzvavsqDXg0IiHSh2LxCtwVqGPRP9HZU5qwz5jJquwI8NEd8a8NhkU\u002Bw=="
+  }
+}

@@ -1,0 +1,238 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "workspaceName": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.OperationalInsights/workspaces/tables",
+      "apiVersion": "2025-07-01",
+      "name": "[format(\u0027{0}/BowerSecurity_CL\u0027, parameters(\u0027workspaceName\u0027))]",
+      "properties": {
+        "plan": "Basic",
+        "retentionInDays": 30,
+        "totalRetentionInDays": 400,
+        "schema": {
+          "name": "BowerSecurity_CL",
+          "columns": [
+            {
+              "name": "TimeGenerated",
+              "type": "dateTime"
+            },
+            {
+              "name": "EventId",
+              "type": "string"
+            },
+            {
+              "name": "EventOriginalId",
+              "type": "string"
+            },
+            {
+              "name": "EventCategory",
+              "type": "string"
+            },
+            {
+              "name": "EventType",
+              "type": "string"
+            },
+            {
+              "name": "EventAction",
+              "type": "string"
+            },
+            {
+              "name": "EventResult",
+              "type": "string"
+            },
+            {
+              "name": "EventSeverity",
+              "type": "string"
+            },
+            {
+              "name": "ApplicationName",
+              "type": "string"
+            },
+            {
+              "name": "ApplicationEnvironment",
+              "type": "string"
+            },
+            {
+              "name": "ActorUserId",
+              "type": "string"
+            },
+            {
+              "name": "ActorUsername",
+              "type": "string"
+            },
+            {
+              "name": "SourceIpAddress",
+              "type": "string"
+            },
+            {
+              "name": "CorrelationId",
+              "type": "string"
+            },
+            {
+              "name": "PolicyId",
+              "type": "string"
+            },
+            {
+              "name": "PolicyVersion",
+              "type": "string"
+            },
+            {
+              "name": "PolicyHash",
+              "type": "string"
+            },
+            {
+              "name": "ValueScore",
+              "type": "int"
+            },
+            {
+              "name": "CollectorId",
+              "type": "string"
+            },
+            {
+              "name": "PrivacyDetected",
+              "type": "dynamic"
+            },
+            {
+              "name": "Labels",
+              "type": "dynamic"
+            },
+            {
+              "name": "RawEnvelope",
+              "type": "dynamic"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Insights/dataCollectionRules",
+      "apiVersion": "2024-03-11",
+      "name": "x-rule\u0027s",
+      "location": "[parameters(\u0027location\u0027)]",
+      "kind": "Direct",
+      "dependsOn": [
+        "[resourceId(\u0027Microsoft.OperationalInsights/workspaces/tables\u0027, parameters(\u0027workspaceName\u0027), \u0027BowerSecurity_CL\u0027)]"
+      ],
+      "properties": {
+        "streamDeclarations": {
+          "Custom-BowerSecurity": {
+            "columns": [
+              {
+                "name": "schemaVersion",
+                "type": "string"
+              },
+              {
+                "name": "eventId",
+                "type": "string"
+              },
+              {
+                "name": "eventOriginalId",
+                "type": "string"
+              },
+              {
+                "name": "timeGenerated",
+                "type": "datetime"
+              },
+              {
+                "name": "eventCategory",
+                "type": "string"
+              },
+              {
+                "name": "eventType",
+                "type": "string"
+              },
+              {
+                "name": "eventAction",
+                "type": "string"
+              },
+              {
+                "name": "eventResult",
+                "type": "string"
+              },
+              {
+                "name": "eventSeverity",
+                "type": "string"
+              },
+              {
+                "name": "application",
+                "type": "dynamic"
+              },
+              {
+                "name": "actor",
+                "type": "dynamic"
+              },
+              {
+                "name": "source",
+                "type": "dynamic"
+              },
+              {
+                "name": "request",
+                "type": "dynamic"
+              },
+              {
+                "name": "security",
+                "type": "dynamic"
+              },
+              {
+                "name": "collector",
+                "type": "dynamic"
+              },
+              {
+                "name": "labels",
+                "type": "dynamic"
+              },
+              {
+                "name": "privacy",
+                "type": "dynamic"
+              }
+            ]
+          }
+        },
+        "destinations": {
+          "logAnalytics": [
+            {
+              "name": "BowerWorkspace",
+              "workspaceResourceId": "[resourceId(\u0027Microsoft.OperationalInsights/workspaces\u0027, parameters(\u0027workspaceName\u0027))]"
+            }
+          ]
+        },
+        "dataFlows": [
+          {
+            "streams": [
+              "Custom-BowerSecurity"
+            ],
+            "destinations": [
+              "BowerWorkspace"
+            ],
+            "outputStream": "Custom-BowerSecurity_CL",
+            "transformKql": "source\n| where schemaVersion == \u00221.0.0\u0022\n| project\n    TimeGenerated = timeGenerated,\n    EventId = substring(tostring(eventId), 0, 128),\n    EventOriginalId = substring(tostring(eventOriginalId), 0, 256),\n    EventCategory = substring(tostring(eventCategory), 0, 128),\n    EventType = substring(tostring(eventType), 0, 128),\n    EventAction = substring(tostring(eventAction), 0, 128),\n    EventResult = substring(tostring(eventResult), 0, 32),\n    EventSeverity = substring(tostring(eventSeverity), 0, 32),\n    ApplicationName = substring(tostring(application.name), 0, 128),\n    ApplicationEnvironment = substring(tostring(application.environment), 0, 64),\n    ActorUserId = substring(tostring(actor.userId), 0, 256),\n    ActorUsername = substring(tostring(actor.username), 0, 256),\n    SourceIpAddress = substring(tostring(source.ipAddress), 0, 64),\n    CorrelationId = substring(tostring(request.correlationId), 0, 256),\n    PolicyId = substring(tostring(security.policyId), 0, 128),\n    PolicyVersion = substring(tostring(security.policyVersion), 0, 32),\n    PolicyHash = substring(tostring(security.policyHash), 0, 128),\n    ValueScore = toint(security.valueScore),\n    CollectorId = substring(tostring(collector.id), 0, 128),\n    PrivacyDetected = privacy.detected,\n    Labels = labels,\n    RawEnvelope = pack_all()"
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "logsIngestionEndpoint": {
+      "type": "string",
+      "value": "[reference(resourceId(\u0027Microsoft.Insights/dataCollectionRules\u0027, \u0027x-rule\u0027s\u0027), \u00272024-03-11\u0027).endpoints.logsIngestion]"
+    },
+    "dataCollectionRuleImmutableId": {
+      "type": "string",
+      "value": "[reference(resourceId(\u0027Microsoft.Insights/dataCollectionRules\u0027, \u0027x-rule\u0027s\u0027), \u00272024-03-11\u0027).immutableId]"
+    },
+    "streamName": {
+      "type": "string",
+      "value": "Custom-BowerSecurity"
+    }
+  }
+}

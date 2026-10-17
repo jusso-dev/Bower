@@ -1,5 +1,7 @@
+using Bower.Abstractions;
 using Bower.Persistence;
 using Bower.Source.SqlServer;
+using Microsoft.Data.Sqlite;
 
 namespace Bower.UnitTests;
 
@@ -114,6 +116,122 @@ public sealed class SqlServerSourceAdapterTests
         Assert.NotNull(current);
         Assert.Equal(2, current.Version);
         Assert.Equal("""{"sequence":200}""", current.Value);
+    }
+
+    [Fact]
+    public async Task CursorStore_KeepsTheEfCoreSchemaAndTimestampFormat()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "source-cursors.db");
+        EfSourceCursorStore store = new(path);
+        await store.InitializeAsync(cancellationToken);
+        Assert.True(await store.TryAdvanceAsync(
+            "finance-audit",
+            expectedVersion: 0,
+            """{"sequence":1}""",
+            new DateTimeOffset(2026, 5, 1, 12, 30, 15, 250, TimeSpan.FromHours(10)),
+            cancellationToken));
+
+        await using SqliteConnection connection = new($"Data Source={path};Pooling=False");
+        await connection.OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT (SELECT sql FROM sqlite_master WHERE name = 'source_cursors'),
+                   (SELECT "UpdatedAt" FROM "source_cursors"),
+                   (SELECT journal_mode FROM pragma_journal_mode);
+            """;
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        Assert.True(await reader.ReadAsync(cancellationToken));
+
+        // The DDL EF Core 10 EnsureCreated produced for SourceCursorEntity, as SQLite stores it.
+        Assert.Equal(
+            "CREATE TABLE \"source_cursors\" (\n"
+            + "    \"SourceId\" TEXT NOT NULL CONSTRAINT \"PK_source_cursors\" PRIMARY KEY,\n"
+            + "    \"Value\" TEXT NOT NULL,\n"
+            + "    \"Version\" INTEGER NOT NULL,\n"
+            + "    \"UpdatedAt\" TEXT NOT NULL\n"
+            + ")",
+            reader.GetString(0).ReplaceLineEndings("\n"));
+        // EF Core's SQLite DateTimeOffset text, normalised to UTC.
+        Assert.Equal("2026-05-01 02:30:15.25+00:00", reader.GetString(1));
+        Assert.Equal("wal", reader.GetString(2));
+    }
+
+    [Fact]
+    public async Task CursorStore_ReadsAndAdvancesAnEfCoreCreatedDatabase()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "source-cursors.db");
+        await using (SqliteConnection connection = new($"Data Source={path};Pooling=False"))
+        {
+            await connection.OpenAsync(cancellationToken);
+            await using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = """
+                PRAGMA journal_mode = 'wal';
+                CREATE TABLE "source_cursors" (
+                    "SourceId" TEXT NOT NULL CONSTRAINT "PK_source_cursors" PRIMARY KEY,
+                    "Value" TEXT NOT NULL,
+                    "Version" INTEGER NOT NULL,
+                    "UpdatedAt" TEXT NOT NULL
+                );
+                INSERT INTO "source_cursors" VALUES ('finance-audit', '{"sequence":7}', 3, '2026-05-01 02:30:15+00:00');
+                """;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        EfSourceCursorStore store = new(path);
+        await store.InitializeAsync(cancellationToken);
+        SourceCursorSnapshot? snapshot = await store.ReadAsync("finance-audit", cancellationToken);
+
+        Assert.Equal(new SourceCursorSnapshot("""{"sequence":7}""", 3), snapshot);
+        Assert.False(await store.TryAdvanceAsync("finance-audit", 0, "x", TestEvents.Now, cancellationToken));
+        Assert.True(await store.TryAdvanceAsync("finance-audit", 3, "y", TestEvents.Now, cancellationToken));
+        Assert.Equal(4, (await store.ReadAsync("finance-audit", cancellationToken))!.Version);
+    }
+
+    [Fact]
+    public async Task CursorStore_CreatesMissingTableInExistingDatabaseAndTreatsWriteFailureAsLostRace()
+    {
+        // Pinned for the Rust port (bower-persistence cursor.rs): CREATE TABLE IF NOT EXISTS
+        // runs on every start, WAL only for a new file, and any failed write returns false.
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "source-cursors.db");
+        await ExecuteAsync(path, "CREATE TABLE unrelated (id INTEGER);", cancellationToken);
+
+        EfSourceCursorStore store = new(path);
+        await store.InitializeAsync(cancellationToken);
+        Assert.Null(await store.ReadAsync("existing", cancellationToken));
+        Assert.True(await store.TryAdvanceAsync("existing", 0, "v1", TestEvents.Now, cancellationToken));
+
+        await ExecuteAsync(
+            path,
+            """
+            CREATE TRIGGER reject_insert BEFORE INSERT ON source_cursors BEGIN SELECT RAISE(ABORT, 'injected'); END;
+            CREATE TRIGGER reject_update BEFORE UPDATE ON source_cursors BEGIN SELECT RAISE(FAIL, 'injected'); END;
+            """,
+            cancellationToken);
+        Assert.False(await store.TryAdvanceAsync("new", 0, "v", TestEvents.Now, cancellationToken));
+        Assert.False(await store.TryAdvanceAsync("existing", 1, "v2", TestEvents.Now, cancellationToken));
+        Assert.Null(await store.ReadAsync("new", cancellationToken));
+        Assert.Equal(new SourceCursorSnapshot("v1", 1), await store.ReadAsync("existing", cancellationToken));
+
+        await using SqliteConnection connection = new($"Data Source={path};Pooling=False");
+        await connection.OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT journal_mode FROM pragma_journal_mode;";
+        Assert.Equal("delete", await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    private static async Task ExecuteAsync(string path, string sql, CancellationToken cancellationToken)
+    {
+        await using SqliteConnection connection = new($"Data Source={path};Pooling=False");
+        await connection.OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     [Fact]

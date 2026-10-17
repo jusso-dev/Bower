@@ -26,6 +26,6 @@ public sealed class PubSubMessageTranslator(GcpSecurityEventMapper mapper, TimeP
 
         return Task.FromResult(mapped.Event is null
             ? CloudTranslation.Unsupported(mapped.UnsupportedReason ?? "unsupported")
-            : new CloudTranslation([JsonSerializer.Serialize(mapped.Event, BowerJson.Options)], 0, null));
+            : new CloudTranslation([JsonSerializer.Serialize(mapped.Event, BowerJson.Envelope)], 0, null));
     }
 }

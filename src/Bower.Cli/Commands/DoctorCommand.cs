@@ -19,9 +19,9 @@ namespace Bower.Cli.Commands;
 /// </summary>
 internal static class DoctorCommand
 {
-    private sealed record Check(string Status, string Area, string Detail);
+    internal sealed record Check(string Status, string Area, string Detail);
 
-    private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
+    private static readonly TimeSpan CollectorTimeout = TimeSpan.FromSeconds(10);
 
     private static readonly string[] AustralianRegions = ["australiaeast", "australiasoutheast", "australiacentral", "australiacentral2"];
 
@@ -141,7 +141,7 @@ internal static class DoctorCommand
         // Live collector.
         if (CliOptions.Get(args, "--collector-url") is { } collectorUrl)
         {
-            await CheckCollectorAsync(collectorUrl, policies, Pass, Warn, Fail);
+            await CheckCollectorAsync(collectorUrl, CollectorTimeout, Pass, Warn, Fail);
         }
 
         // Local queue ledger.
@@ -171,10 +171,10 @@ internal static class DoctorCommand
         string? workspaceId = CliOptions.Get(args, "--workspace-resource-id");
         if (ruleId is not null || workspaceId is not null)
         {
-            ArmReader arm = new(new HttpClient(), VerifierCredential.Create(CliOptions.Get(args, "--credential")));
+            ArmReader arm = AzureResources.CreateReader(CliOptions.Get(args, "--credential"));
             if (ruleId is not null)
             {
-                JsonObject? rule = await arm.GetAsync(ruleId, DcrTemplateGenerator.ApiVersion, CancellationToken.None);
+                JsonObject? rule = await AzureResources.GetRuleAsync(arm, ruleId);
                 if (rule is null)
                 {
                     Fail("dcr", "DCR not found or not readable with this credential.");
@@ -188,9 +188,9 @@ internal static class DoctorCommand
 
             if (workspaceId is not null)
             {
-                JsonObject? workspace = await arm.GetAsync(workspaceId, DcrTemplateGenerator.ApiVersion, CancellationToken.None);
+                JsonObject? workspace = await AzureResources.GetWorkspaceAsync(arm, workspaceId);
                 CheckRegion("workspace", workspace?["location"]?.GetValue<string>(), Pass, Warn);
-                JsonObject? table = await arm.GetAsync($"{workspaceId}/tables/{schema.TableName}", DcrTemplateGenerator.ApiVersion, CancellationToken.None);
+                JsonObject? table = await AzureResources.GetTableAsync(arm, workspaceId, schema.TableName);
                 if (table is null)
                 {
                     Fail("table", $"{schema.TableName} not found; deploy with 'bower dcr generate'.");
@@ -204,7 +204,7 @@ internal static class DoctorCommand
 
         if (CliOptions.Has(args, "--json"))
         {
-            Console.WriteLine(JsonSerializer.Serialize(checks, Indented));
+            Console.WriteLine(JsonSerializer.Serialize(checks, CliJsonContext.Default.ListCheck));
         }
         else
         {
@@ -221,14 +221,18 @@ internal static class DoctorCommand
         return checks.Any(check => check.Status == "FAIL") ? 1 : 0;
     }
 
-    private static async Task CheckCollectorAsync(
+    /// <summary>
+    /// Checks a live collector's /health and /v1/status. Unreachable collectors and HTTP
+    /// timeouts are FAIL checks, never a crash.
+    /// </summary>
+    internal static async Task CheckCollectorAsync(
         string collectorUrl,
-        List<LoadedPolicy> policies,
+        TimeSpan timeout,
         Action<string, string> pass,
         Action<string, string> warn,
         Action<string, string> fail)
     {
-        using HttpClient http = new() { BaseAddress = new Uri(collectorUrl.EndsWith('/') ? collectorUrl : collectorUrl + "/"), Timeout = TimeSpan.FromSeconds(10) };
+        using HttpClient http = new() { BaseAddress = new Uri(collectorUrl.EndsWith('/') ? collectorUrl : collectorUrl + "/"), Timeout = timeout };
         try
         {
             using HttpResponseMessage health = await http.GetAsync("health");
@@ -263,6 +267,10 @@ internal static class DoctorCommand
             pass("collector", $"Running policy bundle {policyHash ?? "unknown"}.");
         }
         catch (HttpRequestException exception)
+        {
+            fail("collector", $"Unreachable: {exception.Message}");
+        }
+        catch (TaskCanceledException exception) when (CliFailures.IsHttpTimeout(exception))
         {
             fail("collector", $"Unreachable: {exception.Message}");
         }
@@ -324,5 +332,5 @@ internal static class DoctorCommand
             Actor = new ActorContext { Username = "doctor" },
             Source = new SourceContext { IpAddress = "192.0.2.1" },
             Request = new RequestContext { CorrelationId = "doctor" }
-        }, BowerJson.Options);
+        }, BowerJson.Envelope);
 }

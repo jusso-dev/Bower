@@ -1,0 +1,73 @@
+[workspace]
+resolver = "3"
+members = ["crates/bower-*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+bower-contracts = { path = "crates/bower-contracts" }
+bower-core = { path = "crates/bower-core" }
+bower-dcr = { path = "crates/bower-dcr" }
+bower-detection = { path = "crates/bower-detection" }
+bower-evidence = { path = "crates/bower-evidence" }
+bower-integrity = { path = "crates/bower-integrity" }
+bower-output-ama-spool = { path = "crates/bower-output-ama-spool" }
+bower-output-azure = { path = "crates/bower-output-azure" }
+bower-packs = { path = "crates/bower-packs" }
+bower-persistence = { path = "crates/bower-persistence" }
+bower-pipeline = { path = "crates/bower-pipeline" }
+bower-policy = { path = "crates/bower-policy" }
+bower-redaction = { path = "crates/bower-redaction" }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+indexmap = { version = "2", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order", "arbitrary_precision", "raw_value"] }
+sha2 = "0.11"
+hmac = "0.13"
+p256 = { version = "0.14", features = ["ecdsa", "pem", "pkcs8"] }
+hex = "0.4"
+base64 = "0.23"
+thiserror = "2"
+regex = "1.13"
+serde_yaml_ng = "0.10"
+rusqlite = { version = "0.40", features = ["bundled"] }
+uuid = { version = "1", features = ["v4", "v7"] }
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "time", "sync", "signal", "fs", "net"] }
+axum = "0.8"
+tower = "0.5"
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio", "server", "server-graceful", "service"] }
+http-body-util = "0.1"
+http = "1"
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+clap = { version = "4.6", features = ["derive", "env"] }
+tempfile = "3"
+getrandom = "0.3"
+aes-gcm = { version = "0.11", default-features = false, features = ["aes"] }
+flate2 = "1"
+# Entra certificate credentials and Service Fabric managed identity (bower-output-azure).
+rsa = { version = "=0.10.0-rc.19", default-features = false, features = ["std", "encoding", "sha2"] }
+p12-keystore = "0.4.1"
+x509-cert = { version = "0.3", default-features = false }
+sha1 = "0.11"
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "aws_lc_rs"] }
+rustls-platform-verifier = "0.7"
+tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

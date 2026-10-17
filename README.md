@@ -30,7 +30,7 @@ removed on the host, provably arriving in Sentinel.**
 | | Bower | Typical alternative |
 |---|---|---|
 | **Proof of arrival** | `bower evidence run` sends a canary, finds it in Sentinel with KQL, records latency and retention, maps it to ISM / Essential Eight controls and signs the result | AMA, Elastic and Cribl stop at "the API accepted it"; checking Sentinel is manual |
-| **Redaction before data leaves the host** | Deterministic engine with checksum-validated TFN, Medicare, IHI, CRN, ABN/ACN, cards and secrets; runs before anything is stored; any failure quarantines | DCR transformations redact in Azure after transfer; Elastic's redact processor runs in Elasticsearch on a paid licence; ML-based detectors elsewhere |
+| **Redaction before data leaves the host** | Deterministic engine with checksum-validated TFN, Medicare, IHI, ABN/ACN and cards, pattern-matched CRN and secrets; runs before anything is stored; any failure quarantines | DCR transformations redact in Azure after transfer; Elastic's redact processor runs in Elasticsearch on a paid licence; ML-based detectors elsewhere |
 | **Default deny** | Only event types an approved, versioned policy names are kept; everything else is rejected and explained | Forward everything configured, then filter |
 | **No silent loss** | Durable queue that deletes only after acknowledgement, attempt-limited dead letters with replay, preflight against Azure's 64 KB / type / schema limits, `bower doctor` and DCR drift checks | Azure truncates and drops rows without a per-record error |
 | **Tamper evidence** | Hash-chained queue ledger, head witnessed by the management plane | Not offered at the collector |
@@ -60,7 +60,7 @@ policy actions (no AI at runtime):
 | Australian identifiers | Validation |
 |---|---|
 | Tax File Numbers (TFN) | ATO 8/9-digit checksum; default masked to last 4 digits |
-| Centrelink CRN | Pattern (digits + check letter) |
+| Centrelink CRN | Pattern only (9 digits + letter; no published check algorithm, so never reported as validated) |
 | Medicare numbers | Official check digit + issue number |
 | Individual Healthcare Identifiers (IHI) | `800360…` + Luhn |
 | ABN / ACN | Mod-89 / company check digit |
@@ -124,6 +124,27 @@ flowchart LR
 
 Full design: [architecture](docs/architecture/overview.md).
 
+### Rust data plane
+
+[`rust/`](rust/) holds a Rust implementation of the data plane alongside the C#
+one: `bower-collector` and the `bower` CLI, plus their libraries (contracts,
+policy, redaction, persistence, core, integrity, packs, DCR, evidence, outputs).
+The C# code is the specification. Both implementations share `policies/`,
+`schemas/`, `packs/` and configuration (`BOWER_*` variables), produce the same
+payload bytes, fingerprints, policy hashes and ledger hashes, verify each other's
+pack and evidence signatures, and can open each other's SQLite queue. Parity is
+enforced by tests built from C#-generated vectors. Agents, the management API
+and the console remain C# only.
+
+```bash
+cd rust
+cargo test --workspace
+cargo build --release -p bower-collector -p bower-cli   # target/release/{bower-collector,bower}
+docker build -f rust/Dockerfile -t bower-collector-rs .  # from the repository root
+```
+
+See [`rust/AGENTS.md`](rust/AGENTS.md) for parity rules.
+
 ## Supported foundation
 
 | Capability | Status |
@@ -135,7 +156,7 @@ Full design: [architecture](docs/architecture/overview.md).
 | Local collector HTTP | Implemented; loopback default; bearer-token ingest auth and rate limiting off-host |
 | Privacy & Secret Protection Engine | Implemented; AU identifiers (TFN, CRN, Medicare, IHI, ABN/ACN, …), secrets, crypto; policy actions + metadata; high-risk findings emit `sensitive_data_detected` for SOC |
 | Durable SQLite queue | Implemented; retention purge, undelivered-byte cap, attempt-limited dead-lettering, replay, tamper-evident ledger |
-| Background jobs | Hangfire (in-memory) for retention, maintenance, heartbeat and staleness |
+| Background jobs | In-process cron scheduler (`Bower.Jobs`) for retention, maintenance, heartbeat and staleness |
 | AMA companion spool | Implemented |
 | Logs Ingestion API | Real Azure SDK client implemented; tenant test required |
 | Docker, systemd, Kubernetes | Baseline deployment assets |
@@ -242,7 +263,7 @@ authentication. Then walk through the console:
 
    ![Enrollment approvals in dark mode: pending hr-app-02 with a required decision reason, Approve and Reject buttons, and decision history](docs/images/bower-management-approvals-dark.png)
 
-3. **Jobs** shows Hangfire schedules: the management `collector-staleness` job
+3. **Jobs** shows recurring job schedules: the management `collector-staleness` job
    (administrators can *Run now*) and each collector's retention, maintenance and
    heartbeat jobs. `claims-api-03` reports a failed retention run.
 
@@ -355,8 +376,9 @@ Tags, verification and runtime configuration:
 
 ## Background jobs
 
-Recurring maintenance runs on [Hangfire](https://www.hangfire.io/) with in-memory
-storage; event delivery stays in the durable queue's low-latency worker.
+Recurring maintenance runs on Bower's in-process cron scheduler (`Bower.Jobs`, state in
+memory and rebuilt at start-up); event delivery stays in the durable queue's
+low-latency worker.
 
 | Host | Job | Schedule (UTC) |
 |---|---|---|
@@ -382,12 +404,32 @@ Design, observability and how to add a job:
 | Verify queue integrity | `bower queue verify --database queue.db` | [Fleet and queue integrity](docs/operations/fleet-and-queue-integrity.md) |
 | Pseudonymise identifiers | privacy profile `action: hmac` + `BOWER_PRIVACY_HMAC_KEY_FILE` | [Privacy engine](docs/privacy/privacy-secret-engine.md) |
 | Forward AWS / GCP security signal | `deploy/aws` CloudFormation, `deploy/gcp` Terraform, `bower-cloud` agent | [AWS](docs/deployment/aws.md) · [Google Cloud](docs/deployment/gcp.md) |
+| Validate a pipeline document | `bower pipeline validate --file pipeline.yaml` · `bower pipeline template aws-security` | Exit 2 when invalid |
 
-## Self-contained binaries
+CLI arguments (C# and Rust `bower` alike): every `--option` takes the next argument as
+its value, the first occurrence wins, and unknown options are ignored **together with
+their value**. A positional argument (pack, bundle or pipeline file, template id) is
+the first argument that is neither an option nor an option's value, so
+`bower pipeline validate --format json p.yaml` validates `p.yaml`. HTTP timeouts are
+reported as errors (exit 1), or as a `FAIL` check in `doctor`, never as a crash.
+
+`pipeline validate` reports cycles, unknown source and output types (Azure Monitor /
+Sentinel delivery is `azure-logs-ingestion`), secrets in node config and nodes with no
+edges. Its `estimate` is `null` when the graph has a cycle or duplicate node ids.
+
+## Native AOT binaries
 
 Bower pins .NET SDK `10.0.401` and runs tests on Microsoft.Testing.Platform.
-Publish single-file, self-contained executables without requiring .NET on the
-target machine:
+`bower`, the collector, the management API, the Docker sidecar and the cloud agent
+(`bower-cloud`) publish as self-contained Native AOT binaries that need no .NET runtime
+on the target machine. `bower-cloud` implements Google Application Default Credentials
+in-house so no reflection-based Google library is needed
+([dependency decisions](docs/architecture/dependencies.md)). Trim and AOT analysis runs on every build and its
+warnings are errors. Native AOT compiles for the operating system it runs on (Linux
+can cross-compile between x64 and arm64 with a cross toolchain, as the container
+builds do), so publish each RID on a matching host with the platform C toolchain
+(clang or gcc on Linux, Xcode command line tools on macOS, Visual Studio C++ tools on
+Windows):
 
 ```bash
 # Choose one:
@@ -397,21 +439,19 @@ RID=linux-x64
 dotnet publish src/Bower.Cli/Bower.Cli.csproj \
   --configuration Release \
   --runtime "$RID" \
-  --self-contained true \
-  -p:PublishSingleFile=true \
   --output "artifacts/releases/$RID/cli"
 
 dotnet publish src/Bower.Collector/Bower.Collector.csproj \
   --configuration Release \
   --runtime "$RID" \
-  --self-contained true \
-  -p:PublishSingleFile=true \
   --output "artifacts/releases/$RID/collector"
 ```
 
 Windows outputs end in `.exe`; Linux and macOS outputs are native executable
-binaries without an extension. CI builds all six RIDs and uploads one artifact
-per RID.
+binaries without an extension. The CLI, collector and management API ship the native
+SQLite library (`libe_sqlite3`) beside the executable; keep it in the same directory.
+Debug symbols (`.dbg`, `.dSYM`, `.pdb`) are written next to the binary and need not
+be deployed.
 
 ### Signing with an organisation-trusted CA
 
@@ -607,6 +647,25 @@ Unknown events are rejected. Every policy must list `eventTypes`; unknown or
 misspelt YAML keys and numeric actions fail the load. Missing required
 investigation context is quarantined. Policy response includes ID, version, hash, score and reasons.
 
+Policies load identically on every machine and culture, so values must be written
+canonically. Anything else fails the load with the line number:
+
+- `minimumValueScore` is a decimal integer (`70`); `070`, `0x46`, `+70`, `7_0`
+  and `1:10` are rejected rather than read as octal, hex or base-60.
+- `neverSample` is `true` or `false`; YAML 1.1 forms (`yes`, `on`, `y`, `True`)
+  are rejected.
+- `reviewDate` is an ISO 8601 date (`2027-01-31`); `01/02/2027`, `2027/1/31` and
+  `Jan 31, 2027` are rejected.
+- `metadata`, `match`, `requirements` and `decision` are required sections. Lists
+  and their items cannot be null (`~`), and event categories and field paths
+  cannot be blank.
+
+Field paths in `requiredFields`, `atLeastOne` and `recommendedFields` name envelope
+fields (`timeGenerated`, `actor.userId`, `request.correlationId`, ...), a label as
+`labels.<key>` or a top-level attribute as `attributes.<key>`. Label and attribute
+keys match exactly; an attribute is present unless it is JSON `null` or a blank
+string. Unknown paths are never present.
+
 ## Outputs
 
 AMA companion mode writes one UTF-8 JSON object per line through an active
@@ -634,6 +693,8 @@ before evidence can claim end-to-end delivery.
 It does not accept free-form SQL. Table and column identifiers are validated,
 EF Core generates parameterised predicates, `Take` bounds every batch, and
 cursor-specific LINQ ordering is fixed by the adapter.
+EF Core LINQ over a runtime-configured mapping needs reflection, so this library is the
+one Bower project that is not Native AOT compatible; no shipped executable references it.
 
 Supported cursors:
 
@@ -648,7 +709,8 @@ identity values that commit out of order are not skipped. Records larger than
 `MaximumRecordBytes` drop their previous/new values and set `ValuesOmitted`
 instead of blocking the source (`OversizedRecords = Fail` restores the old
 behaviour). Cursor checkpoints use
-an EF Core SQLite store with optimistic concurrency and survive process restart.
+a SQLite store (`Microsoft.Data.Sqlite`, the same schema EF Core created, so existing
+cursor files keep working) with optimistic concurrency and survive process restart.
 Commit a checkpoint only after every selected event in that batch is durably
 persisted.
 

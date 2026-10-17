@@ -2,8 +2,11 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AssemblyName>bower</AssemblyName>
-    <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>true</SelfContained>
+    <!-- Native AOT: one self-contained native executable per RID (plus the native SQLite
+         library). Self-contained only for RID-specific publishes. -->
+    <PublishAot>true</PublishAot>
+    <SelfContained Condition="'$(RuntimeIdentifier)' != ''">true</SelfContained>
+    <InvariantGlobalization>true</InvariantGlobalization>
     <RuntimeIdentifiers>win-x64;win-arm64;linux-x64;linux-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
   </PropertyGroup>
   <ItemGroup>
@@ -14,5 +17,8 @@
     <ProjectReference Include="../Bower.Dcr/Bower.Dcr.csproj" />
     <ProjectReference Include="../Bower.Evidence/Bower.Evidence.csproj" />
     <ProjectReference Include="../Bower.Packs/Bower.Packs.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Bower.UnitTests" />
   </ItemGroup>
 </Project>

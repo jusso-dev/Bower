@@ -155,14 +155,15 @@ internal static class QueueLedger
         string purgedAt,
         CancellationToken cancellationToken)
     {
+        await using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            "UPDATE queue_ledger SET purged_at = $purged_at WHERE event_id = $event_id AND purged_at IS NULL;";
+        command.Parameters.AddWithValue("$purged_at", purgedAt);
+        SqliteParameter purgedEventId = command.Parameters.Add("$event_id", SqliteType.Text);
         foreach (string eventId in eventIds)
         {
-            await using SqliteCommand command = connection.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText =
-                "UPDATE queue_ledger SET purged_at = $purged_at WHERE event_id = $event_id AND purged_at IS NULL;";
-            command.Parameters.AddWithValue("$purged_at", purgedAt);
-            command.Parameters.AddWithValue("$event_id", eventId);
+            purgedEventId.Value = eventId;
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
     }
@@ -223,26 +224,33 @@ internal static class QueueLedger
         CancellationToken cancellationToken)
     {
         List<Bower.Abstractions.LedgerIssue> issues = [];
-        (long anchorSequence, string previous) = await AnchorAsync(connection, null, cancellationToken);
+        // One deferred (read) transaction: in WAL mode every read below sees the same
+        // snapshot, so an enqueue committing mid-verification cannot produce a false
+        // unledgered-event or event-missing issue.
+        await using SqliteTransaction transaction = connection.BeginTransaction(deferred: true);
+        (long anchorSequence, string previous) = await AnchorAsync(connection, transaction, cancellationToken);
         long expected = anchorSequence + 1;
         long entries = 0;
         long head = anchorSequence;
         string headHash = previous;
 
+        // Hash while streaming so memory holds one digest per event, not every payload.
         Dictionary<string, string> payloads = new(StringComparer.Ordinal);
         await using (SqliteCommand events = connection.CreateCommand())
         {
+            events.Transaction = transaction;
             events.CommandText = "SELECT event_id, payload FROM queue_events;";
             await using SqliteDataReader reader = await events.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
-                payloads[reader.GetString(0)] = reader.GetString(1);
+                payloads[reader.GetString(0)] = PayloadHash(reader.GetString(1));
             }
         }
 
         HashSet<string> ledgered = new(StringComparer.Ordinal);
         await using (SqliteCommand ledger = connection.CreateCommand())
         {
+            ledger.Transaction = transaction;
             ledger.CommandText =
                 "SELECT sequence, event_id, payload_sha256, received_at, chain_hash, purged_at FROM queue_ledger ORDER BY sequence;";
             await using SqliteDataReader reader = await ledger.ExecuteReaderAsync(cancellationToken);
@@ -270,11 +278,11 @@ internal static class QueueLedger
 
                 if (!purged)
                 {
-                    if (!payloads.TryGetValue(eventId, out string? payload))
+                    if (!payloads.TryGetValue(eventId, out string? storedPayloadHash))
                     {
                         issues.Add(new(sequence, eventId, "event-missing", "Event was removed without a purge record."));
                     }
-                    else if (!string.Equals(PayloadHash(payload), payloadHash, StringComparison.Ordinal))
+                    else if (!string.Equals(storedPayloadHash, payloadHash, StringComparison.Ordinal))
                     {
                         issues.Add(new(sequence, eventId, "payload-modified", "Stored payload no longer matches the ledger."));
                     }

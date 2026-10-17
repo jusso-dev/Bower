@@ -10,7 +10,13 @@ evidence.
 
 - Malicious JSON, log/newline injection and oversized records: strict JSON object
   parsing, depth 32, 1 MiB ingress limit, structured serialization and JSONL
-  records written from parsed envelopes.
+  records written from parsed envelopes. Enum fields (`eventResult`,
+  `eventSeverity`, `actor.type`, `security.decision`) accept a declared member name
+  (any case) or a declared ordinal only; undefined ordinals, numeric strings and
+  comma-joined names are schema-invalid, never fingerprinted or queued.
+- Poison records at delivery: a queued payload the Azure output can never upload
+  (invalid JSON, a repeated top-level property, invalid escapes) dead-letters alone
+  as `payload-invalid-json`; it never fails or blocks the rest of the batch.
 - Secret leakage: secret field-name removal (exact names and fragments), value
   detectors over strings, numbers and key names, fail-closed HMAC, and
   quarantine on any redaction error, all before persistence; payload-free
@@ -20,7 +26,10 @@ evidence.
   EC2 host events and AWS records use deterministic ids so retries and re-reads
   deduplicate. Acknowledged rows are kept for the retention window
   (`BOWER_QUEUE_RETENTION_HOURS`, default 7 days) to preserve deduplication.
-- Queue/disk exhaustion: the byte cap counts undelivered rows only, a Hangfire
+  Deduplication is checked before backpressure, so a resend to a full queue is
+  acknowledged as a duplicate rather than retried. Malformed queue input is an
+  error, never a silent duplicate.
+- Queue/disk exhaustion: the byte cap counts undelivered rows only, a recurring
   retention job purges acknowledged rows, capacity returns HTTP 503 for producer
   back-off, and ingest is rate limited (HTTP 429). Poison events dead-letter
   individually or after `BOWER_MAX_DELIVERY_ATTEMPTS`. Filesystem quota and

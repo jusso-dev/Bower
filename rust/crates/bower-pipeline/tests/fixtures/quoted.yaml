@@ -1,0 +1,13 @@
+id: 'x: y'
+name: Name with 'quote' and "dq"
+version: 1.0
+description: ''
+nodes:
+- id: a
+  kind: Source
+  type: http-collector
+  config:
+    k: 'v: w'
+    n: 123
+    e: ''
+edges: []

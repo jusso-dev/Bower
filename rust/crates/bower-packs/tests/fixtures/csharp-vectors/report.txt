@@ -1,0 +1,27 @@
+sample|linux-ssh-gateway|failed password is accepted and username pseudonymised|accept|redactandaccept|True
+sample|linux-ssh-gateway|lockout is accepted|accept|redactandaccept|True
+sample|linux-ssh-gateway|missing source address is quarantined|quarantine|quarantine|True
+sample|linux-ssh-gateway|unrelated event type is rejected by default deny|reject|reject|True
+sample|linux-ssh-gateway|a TFN in the outcome reason never leaves the host|accept|redactandaccept|True
+sample|aws-security|root console sign-in failure is accepted|accept|accept|True
+sample|aws-security|StopLogging is accepted|accept|accept|True
+sample|aws-security|GuardDuty finding is accepted|accept|accept|True
+sample|aws-security|Security Hub failed control is accepted|accept|accept|True
+sample|aws-security|CloudTrail event without an actor is quarantined|quarantine|quarantine|True
+sample|aws-security|an access key in an outcome reason never leaves the host|accept|redactandaccept|True
+sample|aws-security|generic CloudWatch log events are rejected by default deny|reject|reject|True
+sample|gcp-security|service account key creation is accepted|accept|redactandaccept|True
+sample|gcp-security|denied SetIamPolicy is accepted|accept|redactandaccept|True
+sample|gcp-security|SCC finding is accepted|accept|accept|True
+sample|gcp-security|audit entry without a principal is quarantined|quarantine|quarantine|True
+sample|gcp-security|a GCP API key in an outcome reason never leaves the host|accept|redactandaccept|True
+sample|gcp-security|unrelated event type is rejected by default deny|reject|reject|True
+diff|BWR-PACK-SSH-AUTH|event-type-added|authentication_success
+diff|BWR-PACK-SSH-AUTH|required-field-added|eventAction (events without it are now quarantined)
+diff|BWR-PACK-SSH-AUTH|minimum-score-changed|75 -> 60
+diff|BWR-PACK-SSH-AUTH|version-not-bumped|Policy content changed without a version bump.
+rust-pack|aws-security-1.0.0.bowerpack|loaded|aws-security|64ff74f4249a6a20|2|4|7/7
+rust-pack|gcp-security-1.0.0.bowerpack|loaded|gcp-security|64ff74f4249a6a20|2|4|6/6
+rust-pack|linux-ssh-gateway-1.0.0.bowerpack|loaded|linux-ssh-gateway|64ff74f4249a6a20|1|1|5/5
+rust-pack|z-tampered-1.0.0.bowerpack|rejected|PackVerificationException|Pack file 'policies/ssh-authentication.yaml' is missing or modified.
+rust-evidence|True|verified

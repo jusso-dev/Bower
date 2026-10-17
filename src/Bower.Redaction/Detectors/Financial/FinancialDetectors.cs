@@ -16,10 +16,9 @@ public sealed partial class CreditCardDetector : ISensitiveDetector
             return;
         }
 
-        string s = text.ToString();
-        foreach (Match match in CardRegex().Matches(s))
+        foreach (ValueMatch match in CardRegex().EnumerateMatches(text))
         {
-            string digits = ChecksumAlgorithms.DigitsOnly(match.Value);
+            string digits = ChecksumAlgorithms.DigitsOnly(text.Slice(match.Index, match.Length));
             if (digits.Length is < 13 or > 19)
             {
                 continue;
@@ -181,7 +180,7 @@ public sealed partial class PayIdDetector : RegexDetectorBase
 
     public override void Detect(ReadOnlySpan<char> text, string path, ICollection<DetectionMatch> matches)
     {
-        if (text.IsEmpty)
+        if (!MayMatch(text))
         {
             return;
         }

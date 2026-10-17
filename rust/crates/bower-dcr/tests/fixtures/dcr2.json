@@ -1,0 +1,1 @@
+{"name":"arm","dataSources":{"windowsEventLogs":[{"name":"sysmon","xPathQueries":["Microsoft-Windows-Sysmon/Operational!*[System[(EventID=1)]]"]}],"extensions":[]},"destinations":{"logAnalytics":[{"workspaceResourceId":"/w","name":"x"}]}}

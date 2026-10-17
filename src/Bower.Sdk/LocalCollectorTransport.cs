@@ -25,7 +25,7 @@ internal sealed class LocalCollectorTransport : IDisposable
     {
         using HttpRequestMessage request = new(HttpMethod.Post, "v1/events")
         {
-            Content = JsonContent.Create(securityEvent, options: BowerJson.Options)
+            Content = JsonContent.Create(securityEvent, BowerJson.Envelope)
         };
         if (!string.IsNullOrEmpty(ingestToken))
         {

@@ -21,6 +21,23 @@ jobs:
       - run: dotnet test --solution Bower.sln --configuration Release --no-build
       - run: dotnet format Bower.sln --verify-no-changes --no-restore
 
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v7
+      # rustup is preinstalled on the runner; Cargo.toml rust-version sets the floor.
+      - run: rustup toolchain install stable --profile minimal -c clippy,rustfmt && rustup default stable
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      # C#-vs-Rust parity tests that need a built C# binary skip when it is absent.
+      - run: cargo test --workspace --locked
+      - run: cargo build --release --locked -p bower-collector -p bower-cli
+
   infrastructure:
     runs-on: ubuntu-latest
     steps:
@@ -78,7 +95,8 @@ jobs:
         run: |
           npm ci --ignore-scripts --prefix ui/Bower.Management.Web
           VITE_BOWER_AUTH_MODE=development npm run build --prefix ui/Bower.Management.Web
-          dotnet publish src/Bower.Management.Api/Bower.Management.Api.csproj -c Release -o out/management
+          # Native AOT publish (clang and zlib are preinstalled on ubuntu-latest).
+          dotnet publish src/Bower.Management.Api/Bower.Management.Api.csproj -c Release -r linux-x64 -o out/management
           cp -R ui/Bower.Management.Web/dist out/management/wwwroot
       - name: Start management API with synthetic preview data
         run: |
@@ -86,7 +104,7 @@ jobs:
           cd out/management
           ASPNETCORE_ENVIRONMENT=Development BOWER_AUTH_MODE=development \
             BOWER_MANAGEMENT_DB_PATH="$RUNNER_TEMP/management.db" \
-            dotnet Bower.Management.Api.dll > "$RUNNER_TEMP/management.log" 2>&1 &
+            ./Bower.Management.Api > "$RUNNER_TEMP/management.log" 2>&1 &
           cd "$GITHUB_WORKSPACE"
           for attempt in $(seq 1 30); do curl -sf http://127.0.0.1:4320/health && break; sleep 1; done
           curl -sf http://127.0.0.1:4320/ | grep -q '<div id="root">'
@@ -102,7 +120,7 @@ jobs:
           retention-days: 7
 
   docker:
-    needs: build-test
+    needs: [build-test, rust]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -111,6 +129,7 @@ jobs:
       - run: docker build -f deploy/docker/Dockerfile.web -t bower-web:ci .
       - run: docker build -f deploy/docker/Dockerfile.sidecar -t bower-sidecar:ci .
       - run: docker build -f deploy/docker/Dockerfile.cloud -t bower-cloud:ci .
+      - run: docker build -f rust/Dockerfile -t bower-collector-rs:ci .
       - name: Smoke-test cloud agent fails closed without a source
         run: |
           set +e
@@ -128,16 +147,26 @@ jobs:
 
   publish:
     needs: build-test
-    runs-on: ubuntu-latest
+    # Native AOT cannot cross-compile to another OS, and cross-architecture links need
+    # a target sysroot, so every RID builds on a native runner.
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        rid: [win-x64, win-arm64, linux-x64, linux-arm64, osx-x64, osx-arm64]
+        include:
+          - { rid: linux-x64, os: ubuntu-latest }
+          - { rid: linux-arm64, os: ubuntu-24.04-arm }
+          - { rid: win-x64, os: windows-latest }
+          - { rid: win-arm64, os: windows-11-arm }
+          - { rid: osx-x64, os: macos-15-intel }
+          - { rid: osx-arm64, os: macos-latest }
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
       - run: dotnet restore Bower.sln --locked-mode
+      # Native AOT, self-contained (PublishAot in the project): one native binary per host.
       - run: >
           dotnet publish src/Bower.Cli/Bower.Cli.csproj
           --configuration Release
@@ -151,7 +180,6 @@ jobs:
           --runtime ${{ matrix.rid }}
           --self-contained true
           --no-restore
-          -p:PublishSingleFile=true
           --output artifacts/${{ matrix.rid }}/collector
       - uses: actions/upload-artifact@v7
         with:

@@ -1,0 +1,14 @@
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+metadata:
+  id: MID-ANYCAT
+  name: Any category
+  version: 1.0.0
+  owner: T
+match:
+  eventTypes: [sensitive_data_exported, collector_started]
+requirements:
+  recommendedFields: [schemaVersion, eventId, eventCategory, eventAction, eventType, timeGenerated, eventResult]
+decision:
+  action: Dead-Letter
+  minimumValueScore: 60

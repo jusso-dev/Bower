@@ -7,8 +7,10 @@
 # The container must add that capability and must not set no-new-privileges,
 # which blocks file capabilities. The chiseled runtime has no shell and no
 # setuid binaries, so no other binary can gain privileges.
-# Build on the runner's native platform and cross-compile for TARGETARCH (no QEMU).
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.401 AS build
+# Published as a Native AOT executable (no .NET runtime in the image). Build on the
+# runner's native platform and cross-compile for TARGETARCH (no QEMU): the -aot SDK
+# image carries the native toolchain and the cross-architecture sysroot.
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.401-noble-aot AS build
 ARG TARGETARCH
 WORKDIR /src
 COPY . .
@@ -18,8 +20,8 @@ RUN RID="linux-$([ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64)" \
         --configuration Release \
         --no-restore \
         --runtime "$RID" \
-        --self-contained true \
-        --output /app
+        --output /app \
+    && rm -f /app/*.dbg /app/*.pdb
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libcap2-bin \
     && setcap cap_dac_read_search+ep /app/Bower.Agent.Docker \

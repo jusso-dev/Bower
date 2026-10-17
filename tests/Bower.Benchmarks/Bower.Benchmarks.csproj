@@ -4,6 +4,8 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/Bower.Output.AmaSpool/Bower.Output.AmaSpool.csproj" />
+    <ProjectReference Include="../../src/Bower.Persistence/Bower.Persistence.csproj" />
     <ProjectReference Include="../../src/Bower.Redaction/Bower.Redaction.csproj" />
   </ItemGroup>
 </Project>

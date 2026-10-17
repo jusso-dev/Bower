@@ -72,7 +72,7 @@ public sealed class OcsfNormalisationEngine
     public OcsfNormalisationResult NormaliseEnvelope(SecurityEventEnvelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
-        string json = JsonSerializer.Serialize(envelope, BowerJson.Options);
+        string json = JsonSerializer.Serialize(envelope, BowerJson.Envelope);
         return Normalise(json, OcsfSourceKind.BowerEnvelope);
     }
 
@@ -211,7 +211,7 @@ internal sealed class BowerEnvelopeOcsfMapper : IOcsfMapper
         SecurityEventEnvelope? envelope;
         try
         {
-            envelope = JsonSerializer.Deserialize<SecurityEventEnvelope>(root.GetRawText(), BowerJson.Options);
+            envelope = JsonSerializer.Deserialize(root.GetRawText(), BowerJson.Envelope);
         }
         catch (JsonException)
         {

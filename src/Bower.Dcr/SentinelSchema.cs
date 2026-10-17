@@ -99,8 +99,6 @@ public sealed record DcrTemplateOptions
 /// <summary>Generates an ARM template for the Bower table and a Direct-kind DCR.</summary>
 public static class DcrTemplateGenerator
 {
-    public const string ApiVersion = "2025-07-01";
-
     public static JsonObject Generate(DcrTemplateOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -136,10 +134,10 @@ public static class DcrTemplateGenerator
             },
             ["resources"] = new JsonArray
             {
-                new JsonObject
+                (JsonNode)new JsonObject
                 {
                     ["type"] = "Microsoft.OperationalInsights/workspaces/tables",
-                    ["apiVersion"] = ApiVersion,
+                    ["apiVersion"] = AzureApiVersions.LogAnalytics,
                     ["name"] = $"[format('{{0}}/{schema.TableName}', parameters('workspaceName'))]",
                     ["properties"] = new JsonObject
                     {
@@ -153,10 +151,10 @@ public static class DcrTemplateGenerator
                         }
                     }
                 },
-                new JsonObject
+                (JsonNode)new JsonObject
                 {
                     ["type"] = "Microsoft.Insights/dataCollectionRules",
-                    ["apiVersion"] = ApiVersion,
+                    ["apiVersion"] = AzureApiVersions.DataCollectionRules,
                     ["name"] = options.RuleName,
                     ["location"] = "[parameters('location')]",
                     // Direct kind exposes its own logs ingestion endpoint; no DCE needed
@@ -164,7 +162,7 @@ public static class DcrTemplateGenerator
                     ["kind"] = "Direct",
                     ["dependsOn"] = new JsonArray
                     {
-                        $"[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('workspaceName'), '{schema.TableName}')]"
+                        (JsonNode)$"[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('workspaceName'), '{schema.TableName}')]"
                     },
                     ["properties"] = new JsonObject
                     {
@@ -176,7 +174,7 @@ public static class DcrTemplateGenerator
                         {
                             ["logAnalytics"] = new JsonArray
                             {
-                                new JsonObject
+                                (JsonNode)new JsonObject
                                 {
                                     ["name"] = "BowerWorkspace",
                                     ["workspaceResourceId"] =
@@ -186,10 +184,10 @@ public static class DcrTemplateGenerator
                         },
                         ["dataFlows"] = new JsonArray
                         {
-                            new JsonObject
+                            (JsonNode)new JsonObject
                             {
-                                ["streams"] = new JsonArray { schema.StreamName },
-                                ["destinations"] = new JsonArray { "BowerWorkspace" },
+                                ["streams"] = new JsonArray { (JsonNode)schema.StreamName },
+                                ["destinations"] = new JsonArray { (JsonNode)"BowerWorkspace" },
                                 ["outputStream"] = schema.OutputStream,
                                 ["transformKql"] = schema.TransformKql()
                             }
@@ -202,12 +200,12 @@ public static class DcrTemplateGenerator
                 ["logsIngestionEndpoint"] = new JsonObject
                 {
                     ["type"] = "string",
-                    ["value"] = $"[reference(resourceId('Microsoft.Insights/dataCollectionRules', '{options.RuleName}'), '{ApiVersion}').endpoints.logsIngestion]"
+                    ["value"] = $"[reference(resourceId('Microsoft.Insights/dataCollectionRules', '{options.RuleName}'), '{AzureApiVersions.DataCollectionRules}').endpoints.logsIngestion]"
                 },
                 ["dataCollectionRuleImmutableId"] = new JsonObject
                 {
                     ["type"] = "string",
-                    ["value"] = $"[reference(resourceId('Microsoft.Insights/dataCollectionRules', '{options.RuleName}'), '{ApiVersion}').immutableId]"
+                    ["value"] = $"[reference(resourceId('Microsoft.Insights/dataCollectionRules', '{options.RuleName}'), '{AzureApiVersions.DataCollectionRules}').immutableId]"
                 },
                 ["streamName"] = new JsonObject { ["type"] = "string", ["value"] = schema.StreamName }
             }

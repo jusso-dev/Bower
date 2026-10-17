@@ -50,7 +50,9 @@ public sealed class LogAnalyticsQueryClient(HttpClient http, TokenCredential cre
             new Uri($"https://api.loganalytics.azure.com/v1/workspaces/{Uri.EscapeDataString(workspaceId)}/query"))
         {
             Content = new StringContent(
-                JsonSerializer.Serialize(new { query = kql, timespan = System.Xml.XmlConvert.ToString(timespan) }),
+                JsonSerializer.Serialize(
+                    new LogAnalyticsQueryRequest(kql, System.Xml.XmlConvert.ToString(timespan)),
+                    EvidenceJsonContext.Default.LogAnalyticsQueryRequest),
                 Encoding.UTF8,
                 "application/json")
         };

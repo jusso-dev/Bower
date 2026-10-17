@@ -15,4 +15,6 @@ evidence/
 *.db
 *.db-shm
 *.db-wal
+# C#-written SQLite fixtures for the Rust compatibility tests (compat.rs).
+!rust/crates/bower-persistence/tests/fixtures/*.db
 spool/

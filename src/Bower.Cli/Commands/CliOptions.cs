@@ -27,7 +27,11 @@ internal static class CliOptions
 
     public static bool Has(string[] args, string name) => Array.IndexOf(args, name) >= 0;
 
-    /// <summary>First argument that is not an option or an option's value.</summary>
+    /// <summary>
+    /// First argument that is not an option or an option's value. Every <c>--option</c>,
+    /// known or not, consumes the argument after it, so an unknown option's value is
+    /// never taken as the positional.
+    /// </summary>
     public static string? Positional(string[] args)
     {
         for (int index = 0; index < args.Length; index++)

@@ -1,0 +1,17 @@
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+metadata:
+  id: ALPHA-OVERLAP
+  name: "Overlap earlier id é"
+  version: "1.10"
+  owner: T
+match:
+  eventCategories: [identity-management, administrative-activity]
+  eventTypes: [role_membership_changed, sensitive_data_exported]
+requirements:
+  requiredFields: [target.id, target.type, eventOriginalId, unknown.field, labels.x]
+  atLeastOne: [request.traceId, application.tenantId]
+  recommendedFields: [schemaVersion, eventId, eventCategory, eventAction, application.environment, target.name, actor.username]
+decision:
+  action: redact-and-accept
+  minimumValueScore: 100

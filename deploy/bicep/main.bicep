@@ -72,7 +72,7 @@ resource endpoint 'Microsoft.Insights/dataCollectionEndpoints@2024-03-11' = {
   }
 }
 
-resource rule 'Microsoft.Insights/dataCollectionRules@2025-07-01' = {
+resource rule 'Microsoft.Insights/dataCollectionRules@2024-03-11' = {
   name: '${namePrefix}-dcr'
   location: location
   kind: 'Direct'

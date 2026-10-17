@@ -1,5 +1,3 @@
-using Hangfire;
-
 namespace Bower.Management.Api.Jobs;
 
 /// <summary>
@@ -12,10 +10,9 @@ public sealed partial class CollectorStalenessJob(
     ILogger<CollectorStalenessJob> logger)
 {
     public const string Id = "collector-staleness";
+    public const int RetryAttempts = 2;
     public static readonly TimeSpan StaleAfter = TimeSpan.FromMinutes(15);
 
-    [AutomaticRetry(Attempts = 2)]
-    [DisableConcurrentExecution(timeoutInSeconds: 120)]
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         DateTimeOffset now = clock.GetUtcNow();

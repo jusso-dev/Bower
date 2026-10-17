@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Bower.Dcr;
@@ -113,6 +114,137 @@ public sealed partial class IntegrityAndDcrTests
         Assert.Contains("field-too-large", codes);
         Assert.Contains("type-mismatch", codes);
         Assert.Empty(IngestionPreflight.Check(new JsonObject { ["timeGenerated"] = "2026-10-08T00:00:00Z" }, SentinelSchema.Default));
+    }
+
+    [Theory]
+    [InlineData("""{"eventId":"e1","timeGenerated":"not a date","eventType":{},"actor":{"username":"x"}}""")]
+    [InlineData("""{"eventId":"e1","timeGenerated":null,"eventResult":3,"labels":"text","valueScore":"9"}""")]
+    [InlineData("""{"eventId":"e1","timeGenerated":"2026-10-08T00:00:00Z","eventSeverity":"high","valueScore":7,"o":{"x":1,"x":2}}""")]
+    [InlineData("""{"eventId":"e1","timeGenerated":"2026-10-08T00:00:00Z","eventCategory":"\u00e9\u003c","attributes":[1,{"a":null}]}""")]
+    [InlineData("""{"eventId":"e1"}""")]
+    public void Preflight_OverUploadBytesMatchesTheJsonObjectCheck(string json)
+    {
+        JsonObject record = JsonNode.Parse(json)!.AsObject();
+        byte[] uploaded = Encoding.UTF8.GetBytes(JsonNode.Parse(json)!.ToJsonString());
+        IReadOnlyList<PreflightIssue> legacy = LegacyPreflight(record, SentinelSchema.Default);
+
+        Assert.Equal(legacy, IngestionPreflight.Check(uploaded, SentinelSchema.Default));
+        Assert.Equal(legacy, IngestionPreflight.Check(record, SentinelSchema.Default));
+    }
+
+    /// <summary>The JsonObject implementation the byte reader replaced (the oracle).</summary>
+    private static List<PreflightIssue> LegacyPreflight(JsonObject record, SentinelSchema schema)
+    {
+        List<PreflightIssue> issues = [];
+        int recordBytes = Encoding.UTF8.GetByteCount(record.ToJsonString());
+        if (recordBytes > IngestionPreflight.MaximumRecordBytes)
+        {
+            issues.Add(new("record-too-large", "$", $"Record is {recordBytes} bytes; the API limit is {IngestionPreflight.MaximumRecordBytes}."));
+        }
+
+        foreach (StreamColumn column in schema.StreamColumns)
+        {
+            JsonNode? value = record[column.Name];
+            if (value is null)
+            {
+                continue;
+            }
+
+            int bytes = Encoding.UTF8.GetByteCount(value.ToJsonString());
+            if (bytes > IngestionPreflight.MaximumFieldBytes)
+            {
+                issues.Add(new("field-too-large", column.Name,
+                    $"Field is {bytes} bytes; Azure silently truncates values above {IngestionPreflight.MaximumFieldBytes}."));
+            }
+
+            JsonValueKind kind = value.GetValueKind();
+            bool typeOk = column.Type switch
+            {
+                "string" => kind == JsonValueKind.String,
+                "datetime" => kind == JsonValueKind.String && DateTimeOffset.TryParse(
+                    value.GetValue<string>(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out _),
+                "int" or "long" or "real" => kind == JsonValueKind.Number,
+                "boolean" => kind is JsonValueKind.True or JsonValueKind.False,
+                "dynamic" => kind is JsonValueKind.Object or JsonValueKind.Array,
+                _ => true
+            };
+            if (!typeOk)
+            {
+                issues.Add(new("type-mismatch", column.Name,
+                    $"Expected {column.Type}, got {kind}; Azure would store an empty or stringified value."));
+            }
+        }
+
+        if (record["timeGenerated"] is null)
+        {
+            issues.Add(new("time-generated-missing", "timeGenerated", "Rows without timeGenerated cannot be placed in time."));
+        }
+
+        return issues;
+    }
+
+    [Fact]
+    public void Preflight_MeasuresSizesOnTheUploadedBytes()
+    {
+        string username = new('<', 11_000);
+        byte[] uploaded = Encoding.UTF8.GetBytes(
+            new JsonObject
+            {
+                ["timeGenerated"] = "2026-10-08T00:00:00Z",
+                ["actor"] = new JsonObject { ["username"] = username }
+            }.ToJsonString());
+
+        // 11 000 '<' escape to 66 000 bytes (<), above the 64 KiB field limit.
+        PreflightIssue issue = Assert.Single(IngestionPreflight.Check(uploaded, SentinelSchema.Default));
+        Assert.Equal("field-too-large", issue.Code);
+        Assert.Equal("actor", issue.Field);
+    }
+
+    [Theory]
+    [InlineData("""{"eventId":"e1","timeGenerated":"2026-10-08T00:00:00Z","eventId":"e2"}""")]
+    [InlineData("""[{"eventId":"e1"}]""")]
+    [InlineData("""{"eventId":"e1"} {}""")]
+    [InlineData("""{"eventId":""")]
+    public void Preflight_RejectsBytesThatAreNotOneJsonObject(string json)
+    {
+        Assert.ThrowsAny<JsonException>(() => IngestionPreflight.Check(Encoding.UTF8.GetBytes(json), SentinelSchema.Default));
+    }
+
+    [Fact]
+    public void Preflight_RequiresDynamicColumnsToBeObjectsOrArrays()
+    {
+        JsonObject record = new()
+        {
+            ["timeGenerated"] = "2026-10-08T00:00:00Z",
+            ["labels"] = "team=red",
+            ["application"] = new JsonObject { ["name"] = "a" },
+            ["privacy"] = new JsonArray()
+        };
+
+        PreflightIssue issue = Assert.Single(IngestionPreflight.Check(record, SentinelSchema.Default));
+
+        Assert.Equal(("type-mismatch", "labels"), (issue.Code, issue.Field));
+        Assert.Equal("Expected dynamic, got String; Azure would store an empty or stringified value.", issue.Detail);
+    }
+
+    [Fact]
+    public void ArmApiVersions_ArePinnedPerResourceProviderInTemplateAndBicep()
+    {
+        JsonObject template = DcrTemplateGenerator.Generate(new DcrTemplateOptions());
+        JsonArray resources = template["resources"]!.AsArray();
+        string ApiVersion(string type) =>
+            resources.Single(resource => resource!["type"]!.GetValue<string>() == type)!["apiVersion"]!.GetValue<string>();
+        string bicep = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "deploy", "main.bicep"));
+
+        Assert.Equal(AzureApiVersions.LogAnalytics, ApiVersion("Microsoft.OperationalInsights/workspaces/tables"));
+        Assert.Equal(AzureApiVersions.DataCollectionRules, ApiVersion("Microsoft.Insights/dataCollectionRules"));
+        Assert.Contains(
+            $"'{AzureApiVersions.DataCollectionRules}').endpoints.logsIngestion",
+            template["outputs"]!["logsIngestionEndpoint"]!["value"]!.GetValue<string>(),
+            StringComparison.Ordinal);
+        Assert.Contains($"'Microsoft.OperationalInsights/workspaces@{AzureApiVersions.LogAnalytics}'", bicep, StringComparison.Ordinal);
+        Assert.Contains($"'Microsoft.OperationalInsights/workspaces/tables@{AzureApiVersions.LogAnalytics}'", bicep, StringComparison.Ordinal);
+        Assert.Contains($"'Microsoft.Insights/dataCollectionRules@{AzureApiVersions.DataCollectionRules}'", bicep, StringComparison.Ordinal);
     }
 
     [Fact]

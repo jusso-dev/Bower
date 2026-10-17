@@ -40,7 +40,7 @@ static async Task<int> RunAsync(string[] args)
             _ => Fail("Unknown command. Run 'bower --help'.")
         };
     }
-    catch (Exception exception) when (exception is not OperationCanceledException)
+    catch (Exception exception) when (CliFailures.IsReportable(exception))
     {
         return Fail(exception.Message);
     }
@@ -59,24 +59,20 @@ static int Validate(string[] args)
     IReadOnlyList<LoadedPolicy> policies = PolicyLoader.LoadDirectory(directory);
     Console.WriteLine(
         JsonSerializer.Serialize(
-            new
-            {
-                valid = true,
-                policyCount = policies.Count,
-                policies = policies.Select(item => new
-                {
+            new PolicyValidationOutput(
+                true,
+                policies.Count,
+                [.. policies.Select(item => new PolicyValidationItem(
                     item.Policy.Metadata.Id,
                     item.Policy.Metadata.Version,
-                    item.Hash
-                })
-            },
-            new JsonSerializerOptions { WriteIndented = true }));
+                    item.Hash))]),
+            CliJsonContext.Default.PolicyValidationOutput));
     return 0;
 }
 
 static int ValidatePipeline(string[] args)
 {
-    string? path = GetOption(args, "--file") ?? args.FirstOrDefault(item => !item.StartsWith('-'));
+    string? path = GetOption(args, "--file") ?? CliOptions.Positional(args);
     if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
     {
         return Fail("Provide an existing pipeline file with --file PATH.");
@@ -84,26 +80,24 @@ static int ValidatePipeline(string[] args)
 
     TelemetryPipeline pipeline = PipelineDocument.ParseYaml(File.ReadAllText(path));
     PipelineValidationResult validation = PipelineValidator.Validate(pipeline);
-    PipelinePerformanceEstimate estimate = PipelineValidator.Estimate(pipeline);
+    PipelinePerformanceEstimate? estimate = PipelineValidator.TryEstimate(pipeline);
     Console.WriteLine(
         JsonSerializer.Serialize(
-            new
-            {
-                valid = validation.IsValid,
+            new PipelineValidationOutput(
+                validation.IsValid,
                 pipeline.Id,
                 pipeline.Name,
                 pipeline.Version,
-                order = validation.TopologicalOrder,
+                validation.TopologicalOrder,
                 estimate,
-                issues = validation.Issues
-            },
-            new JsonSerializerOptions { WriteIndented = true }));
+                validation.Issues),
+            CliJsonContext.Default.PipelineValidationOutput));
     return validation.IsValid ? 0 : 2;
 }
 
 static int PipelineTemplate(string[] args)
 {
-    string templateId = GetOption(args, "--id") ?? args.FirstOrDefault(item => !item.StartsWith('-')) ?? "sentinel-app";
+    string templateId = GetOption(args, "--id") ?? CliOptions.Positional(args) ?? "sentinel-app";
     TelemetryPipeline pipeline = PipelineValidator.CreateTemplate(templateId);
     Console.WriteLine(PipelineDocument.ToYaml(pipeline));
     return 0;
@@ -117,7 +111,7 @@ static async Task<int> InspectQueueAsync(string[] args)
     await queue.InitializeAsync();
     Bower.Abstractions.QueueSnapshot snapshot = await queue.GetSnapshotAsync();
     Console.WriteLine(
-        JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true }));
+        JsonSerializer.Serialize(snapshot, CliJsonContext.Default.QueueSnapshot));
     return 0;
 }
 
@@ -152,7 +146,7 @@ static async Task<int> EmitCanaryAsync(string[] args)
     using HttpClient client = new() { BaseAddress = new Uri(EnsureSlash(endpoint)) };
     using HttpRequestMessage request = new(HttpMethod.Post, "v1/events")
     {
-        Content = JsonContent.Create(canary, options: BowerJson.Options)
+        Content = JsonContent.Create(canary, BowerJson.Envelope)
     };
     if (!string.IsNullOrWhiteSpace(token))
     {
@@ -193,14 +187,12 @@ static int DeveloperInit(string[] args)
 
     Console.WriteLine(
         JsonSerializer.Serialize(
-            new
-            {
-                initialized = true,
-                path = root,
-                framework = "dotnet",
-                note = "Package references are documented but not changed automatically in 0.1.0."
-            },
-            new JsonSerializerOptions { WriteIndented = true }));
+            new InitOutput(
+                true,
+                root,
+                "dotnet",
+                "Package references are documented but not changed automatically in 0.1.0."),
+            CliJsonContext.Default.InitOutput));
     return 0;
 }
 

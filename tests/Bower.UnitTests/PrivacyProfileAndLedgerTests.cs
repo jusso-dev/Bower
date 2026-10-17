@@ -69,6 +69,28 @@ public sealed class PrivacyProfileAndLedgerTests
         Assert.Throws<InvalidDataException>(() => PrivacyProfileLoader.Load(yaml));
     }
 
+    [Theory]
+    [InlineData("apiVersion: bower.security/v1\nkind: PrivacyProfile\n", "Privacy profile metadata is required.")]
+    [InlineData("apiVersion: bower.security/v1\nkind: PrivacyProfile\nmetadata: ~\n", "Privacy profile metadata is required.")]
+    [InlineData("apiVersion: bower.security/v1\nkind: PrivacyProfile\nmetadata:\n", "Privacy profile metadata is required.")]
+    [InlineData("detectors: ~", "Privacy profile 'detectors' must not be null.")]
+    [InlineData("detectors:\n  au.tfn: ~", "Privacy profile action for 'au.tfn' must not be null.")]
+    [InlineData("disabled: ~", "Privacy profile 'disabled' must not be null.")]
+    [InlineData("enableOptIn: ~", "Privacy profile 'enableOptIn' must not be null.")]
+    [InlineData("fields: ~", "Privacy profile 'fields' must not be null.")]
+    [InlineData("fields:\n  - ~", "Privacy profile field rule must not be null.")]
+    [InlineData("fields:\n  - path: a", "Field rule 'a' needs an action.")]
+    public void Profile_RejectsMissingRequiredValuesWithoutCrashing(string yamlOrExtra, string message)
+    {
+        // YamlDotNet does not enforce `required`; these used to throw NullReferenceException.
+        string yaml = yamlOrExtra.StartsWith("apiVersion:", StringComparison.Ordinal)
+            ? yamlOrExtra
+            : "apiVersion: bower.security/v1\nkind: PrivacyProfile\nmetadata:\n  id: t\n  version: 1.0.0\n" + yamlOrExtra + "\n";
+
+        InvalidDataException error = Assert.Throws<InvalidDataException>(() => PrivacyProfileLoader.Load(yaml));
+        Assert.Equal(message, error.Message);
+    }
+
     [Fact]
     public void MaximumFieldLength_TruncatesEveryLongString()
     {

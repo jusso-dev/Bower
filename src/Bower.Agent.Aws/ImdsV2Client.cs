@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Bower.Agent.Aws;
 
@@ -117,7 +118,7 @@ public sealed class ImdsV2Client : IDisposable
             }
         }
 
-        return JsonSerializer.Serialize(tags);
+        return JsonSerializer.Serialize(tags, ImdsJsonContext.Default.DictionaryStringString);
     }
 
     private async Task<string?> GetAsync(string path, CancellationToken cancellationToken)
@@ -157,7 +158,12 @@ public sealed class ImdsV2Client : IDisposable
             request.Headers.Add(
                 "X-aws-ec2-metadata-token-ttl-seconds",
                 ((int)TokenLifetime.TotalSeconds).ToString(CultureInfo.InvariantCulture));
-            using HttpResponseMessage response = await client.SendAsync(request, cancellationToken);
+            // Headers only, so ReadBoundedAsync enforces the size limit instead of the
+            // client buffering the whole body first.
+            using HttpResponseMessage response = await client.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 return null;
@@ -198,3 +204,7 @@ public sealed class ImdsV2Client : IDisposable
         return Encoding.UTF8.GetString(buffer, 0, total);
     }
 }
+
+/// <summary>Source-generated metadata for the instance tag map (default options, as before).</summary>
+[JsonSerializable(typeof(Dictionary<string, string>))]
+internal sealed partial class ImdsJsonContext : JsonSerializerContext;

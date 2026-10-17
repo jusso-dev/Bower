@@ -1,0 +1,69 @@
+id: id
+name: n
+version: v
+description: d
+nodes:
+- id: a
+  kind: Source
+  type: t
+  config:
+    k00: true
+    k01: null
+    k02: ~
+    k03: -x
+    k04: '- x'
+    k05: 'a #b'
+    k06: a#b
+    k07: 'a: b'
+    k08: a:b
+    k09: '  lead'
+    k10: 'trail '
+    k11: >-
+      multi
+
+      line
+    k12: x	y
+    k13: '@at'
+    k14: é
+    k15: '[x]'
+    k16: '#h'
+    k17: '!t'
+    k18: '&a'
+    k19: '*a'
+    k20: '|p'
+    k21: '>f'
+    k22: '%p'
+    k23: '`b'
+    k24: ?q
+    k25: '? q'
+    k26: :c
+    k27: ': c'
+    k28: '---'
+    k29: '...'
+    k30: '-'
+    k31: a,b
+    k32: '{x}'
+    k33: x'y
+    k34: '"q"'
+    k35: tab	
+    k36: "\x01ctl"
+    k37: a  b
+    k38: >
+      x
+    k39:  nb
+    k40: ﻿bom
+    k41: "\U0001F600"
+    k42: a]
+    k43: 1e3
+    k44: 0x1F
+    k45: ',lead'
+    k46: \back
+    '- key': v
+    'key: x': v
+    '': emptykey
+edges:
+- from: a
+  to: b
+tags:
+- x y
+- '-'

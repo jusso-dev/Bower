@@ -14,4 +14,10 @@
          that breaks lock-file content hash validation. Restore from nuget.org only. -->
     <DisableImplicitLibraryPacksFolder>true</DisableImplicitLibraryPacksFolder>
   </PropertyGroup>
+  <!-- Every shipped executable is published as Native AOT, so product libraries run the
+       trim, AOT and single-file analyzers at build time (warnings are errors). A project
+       that cannot be AOT-safe opts out explicitly and documents why. -->
+  <PropertyGroup Condition="$([System.String]::Copy('$(MSBuildProjectDirectory)').Replace('\', '/').Contains('/src/'))">
+    <IsAotCompatible Condition="'$(IsAotCompatible)' == ''">true</IsAotCompatible>
+  </PropertyGroup>
 </Project>

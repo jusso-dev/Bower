@@ -1,0 +1,27 @@
+id: template-sentinel-app
+name: Application to Sentinel
+version: 1.0.0
+description: HTTP collector → redact → policy filter → Azure Logs Ingestion
+nodes:
+- id: source
+  kind: Source
+  type: http-collector
+- id: redact
+  kind: Redact
+  type: json-redactor
+- id: filter
+  kind: Filter
+  type: policy-engine
+- id: out
+  kind: Output
+  type: azure-logs-ingestion
+edges:
+- from: source
+  to: redact
+- from: redact
+  to: filter
+- from: filter
+  to: out
+tags:
+- template
+- sentinel

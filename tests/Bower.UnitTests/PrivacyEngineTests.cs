@@ -186,6 +186,52 @@ public sealed class PrivacyEngineTests
     }
 
     [Fact]
+    public void RedactJson_CardWithHugeSeparatorRunDoesNotExhaustStack()
+    {
+        // The card pattern allows unbounded separators between digits, so a match can be
+        // nearly the whole value. Digit extraction must not stack-allocate its length.
+        string pan = "4" + new string('-', 600_000) + "111111111111111";
+        PrivacyEngine engine = new();
+
+        PrivacyScanResult result = engine.RedactJson(JsonSerializer.Serialize(new { pan }));
+
+        Assert.True(result.Succeeded);
+        Assert.Contains(result.Findings, f => f.DetectorId == DetectorIds.CreditCard);
+        Assert.DoesNotContain("111111111111111", result.RedactedJson);
+    }
+
+    [Fact]
+    public void RedactJson_DenseValueRedactsEveryFindingInPlace()
+    {
+        // 2,000 findings in one value, kept under the 32 KiB field-length limit so the
+        // result is not truncated.
+        string[] emails = Enumerable.Range(0, 2_000).Select(index => $"u{index}@ex.io").ToArray();
+        PrivacyEngine engine = new();
+
+        PrivacyScanResult result = engine.RedactJson(
+            JsonSerializer.Serialize(new { note = string.Join(" | ", emails) }));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(2_000, result.Findings.Count(f => f.DetectorId == DetectorIds.Email));
+        string note = JsonDocument.Parse(result.RedactedJson!).RootElement.GetProperty("note").GetString()!;
+        Assert.Equal(string.Join(" | ", emails.Select(email => "u***" + email[email.IndexOf('@')..])), note);
+    }
+
+    [Fact]
+    public void RedactJson_OverlappingFindingsKeepLongestSpan()
+    {
+        // A JWT is also a Kubernetes token shape; exactly one detector must own the span.
+        const string jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl";
+        PrivacyEngine engine = new();
+
+        PrivacyScanResult result = engine.RedactJson($$"""{ "note": "before {{jwt}} after a@ex.io" }""");
+
+        Assert.True(result.Succeeded);
+        Assert.DoesNotContain(jwt, result.RedactedJson);
+        Assert.Contains("before  after a***@ex.io", result.RedactedJson);
+    }
+
+    [Fact]
     public void RedactJson_MasksEmail()
     {
         PrivacyEngine engine = new();

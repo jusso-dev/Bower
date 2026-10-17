@@ -1,11 +1,31 @@
+using System.Text.Json;
 using Bower.Contracts;
 
 namespace Bower.PolicyEngine;
 
 internal static class EventFieldReader
 {
+    private const string LabelsPrefix = "labels.";
+    private const string AttributesPrefix = "attributes.";
+
     public static bool HasValue(SecurityEventEnvelope value, string path)
     {
+        // labels.<key> and attributes.<key> name one top-level entry; the key is the rest of
+        // the path, matched ordinally (it may itself contain dots).
+        if (path.StartsWith(LabelsPrefix, StringComparison.Ordinal))
+        {
+            return value.Labels is not null
+                && value.Labels.TryGetValue(path[LabelsPrefix.Length..], out string? label)
+                && Present(label);
+        }
+
+        if (path.StartsWith(AttributesPrefix, StringComparison.Ordinal))
+        {
+            return value.Attributes is not null
+                && value.Attributes.TryGetValue(path[AttributesPrefix.Length..], out JsonElement attribute)
+                && Present(attribute);
+        }
+
         return path switch
         {
             "schemaVersion" => Present(value.SchemaVersion),
@@ -36,4 +56,15 @@ internal static class EventFieldReader
     {
         return !string.IsNullOrWhiteSpace(value);
     }
+
+    /// <summary>
+    /// JSON null is absent and a string must be non-blank; numbers, booleans, objects and
+    /// arrays are present.
+    /// </summary>
+    private static bool Present(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.Undefined or JsonValueKind.Null => false,
+        JsonValueKind.String => Present(value.GetString()),
+        _ => true
+    };
 }

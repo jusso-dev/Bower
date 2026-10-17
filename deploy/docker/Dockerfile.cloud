@@ -5,8 +5,10 @@
 # Non-root (uid 1654), no capabilities, read-only root filesystem friendly. Cloud
 # access comes from the platform identity (instance profile, ECS task role, IRSA,
 # GKE Workload Identity or Workload Identity Federation); no keys are baked in.
-# Build on the runner's native platform and cross-compile for TARGETARCH (no QEMU).
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.401 AS build
+# Published as a Native AOT executable (no .NET runtime in the image). Build on the
+# runner's native platform and cross-compile for TARGETARCH (no QEMU): the -aot SDK
+# image carries the native toolchain and the cross-architecture sysroot.
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.401-noble-aot AS build
 ARG TARGETARCH
 WORKDIR /src
 COPY . .
@@ -16,9 +18,10 @@ RUN RID="linux-$([ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64)" \
         --configuration Release \
         --no-restore \
         --runtime "$RID" \
-        --self-contained true \
-        --output /app
+        --output /app \
+    && rm -f /app/*.dbg /app/*.pdb
 
+# Chiseled runtime-deps: no shell, no package manager, no ICU (InvariantGlobalization).
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0.12-noble-chiseled AS runtime
 WORKDIR /app
 COPY --from=build /app .

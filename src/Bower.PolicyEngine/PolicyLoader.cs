@@ -2,9 +2,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Bower.Contracts;
+using Bower.PolicyEngine.Yaml;
 using YamlDotNet.Core;
-using YamlDotNet.Serialization;
-using YamlDotNet.Serialization.NamingConventions;
 
 namespace Bower.PolicyEngine;
 
@@ -57,14 +56,10 @@ public static class PolicyLoader
         string path = sourceName;
         // Strict: an unknown or misspelt key (for example "requirments") must fail the load
         // rather than silently drop the requirements it was meant to carry.
-        IDeserializer deserializer = new DeserializerBuilder()
-            .WithNamingConvention(CamelCaseNamingConvention.Instance)
-            .Build();
-
         TelemetryPolicy policy;
         try
         {
-            policy = deserializer.Deserialize<TelemetryPolicy>(yaml)
+            policy = PolicyYamlReader.Read(yaml)
                 ?? throw new InvalidDataException("Policy is empty.");
         }
         catch (YamlException exception)
@@ -75,7 +70,7 @@ public static class PolicyLoader
         }
 
         Validate(policy);
-        string canonicalJson = JsonSerializer.Serialize(policy);
+        string canonicalJson = JsonSerializer.Serialize(policy, PolicyHashJsonContext.Default.TelemetryPolicy);
         string hash = $"sha256:{Convert.ToHexStringLower(
             SHA256.HashData(Encoding.UTF8.GetBytes(canonicalJson)))}";
         return new LoadedPolicy(policy, hash, path);
@@ -89,7 +84,11 @@ public static class PolicyLoader
             throw new InvalidDataException("Unsupported policy apiVersion or kind.");
         }
 
-        if (string.IsNullOrWhiteSpace(policy.Metadata.Id)
+        // YAML can leave any section, list or list item null (missing key, `~`, `- ~`).
+        // The evaluator dereferences all of them, so they are rejected here rather than
+        // failing every evaluation later.
+        if (policy.Metadata is null
+            || string.IsNullOrWhiteSpace(policy.Metadata.Id)
             || string.IsNullOrWhiteSpace(policy.Metadata.Version))
         {
             throw new InvalidDataException("Policy metadata id and version are required.");
@@ -97,10 +96,15 @@ public static class PolicyLoader
 
         // Default deny: a policy must name the exact event types it approves. A
         // category-only match would accept any new or unknown type in that category.
-        if (policy.Match.EventTypes.Count == 0
-            || policy.Match.EventTypes.Any(string.IsNullOrWhiteSpace))
+        if (policy.Match?.EventTypes is not { Count: > 0 } eventTypes
+            || eventTypes.Any(string.IsNullOrWhiteSpace))
         {
             throw new InvalidDataException("Policy match must list at least one eventType.");
+        }
+
+        if (policy.Decision is null)
+        {
+            throw new InvalidDataException("Policy decision section is required.");
         }
 
         if (!TryParseAction(policy.Decision.Action, out _))
@@ -111,6 +115,33 @@ public static class PolicyLoader
         if (policy.Decision.MinimumValueScore is < 0 or > 100)
         {
             throw new InvalidDataException("minimumValueScore must be between 0 and 100.");
+        }
+
+        if (policy.Match.EventCategories is null
+            || policy.Match.EventCategories.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new InvalidDataException(
+                "Policy match eventCategories must be a list of non-blank values.");
+        }
+
+        if (policy.Requirements is null)
+        {
+            throw new InvalidDataException("Policy requirements section is required.");
+        }
+
+        // A null or blank path can never be present: as a required field it would quarantine
+        // every matching event with "Missing required field: ".
+        ValidateFieldPaths(policy.Requirements.RequiredFields, "requiredFields");
+        ValidateFieldPaths(policy.Requirements.AtLeastOne, "atLeastOne");
+        ValidateFieldPaths(policy.Requirements.RecommendedFields, "recommendedFields");
+    }
+
+    private static void ValidateFieldPaths(List<string>? paths, string name)
+    {
+        if (paths is null || paths.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new InvalidDataException(
+                $"Policy requirements {name} must be a list of non-blank field paths.");
         }
     }
 
