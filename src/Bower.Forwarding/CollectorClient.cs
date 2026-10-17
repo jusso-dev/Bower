@@ -42,7 +42,11 @@ public sealed class CollectorClient(HttpClient client, string? ingestToken)
 
         try
         {
-            using HttpResponseMessage response = await client.SendAsync(request, cancellationToken);
+            // Only the status matters: do not buffer the response body (bounded drain on dispose).
+            using HttpResponseMessage response = await client.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
             return Classify(response.StatusCode);
         }
         catch (Exception exception) when (
@@ -61,7 +65,10 @@ public sealed class CollectorClient(HttpClient client, string? ingestToken)
     {
         try
         {
-            using HttpResponseMessage response = await client.GetAsync("health", cancellationToken);
+            using HttpResponseMessage response = await client.GetAsync(
+                "health",
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
             return response.IsSuccessStatusCode;
         }
         catch (Exception exception) when (

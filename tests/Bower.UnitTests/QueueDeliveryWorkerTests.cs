@@ -122,6 +122,31 @@ public sealed class QueueDeliveryWorkerTests
     }
 
     [Fact]
+    public async Task DeliverOnce_BatchAcknowledgementSkipsOnlyTheReclaimedEvent()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore store, FakeClock clock) = await CreateStoreAsync(directory, cancellationToken);
+        await EnqueueAsync(store, clock, ["slow", "fast"], cancellationToken);
+        FakeOutput output = new(events =>
+        {
+            // Another worker reclaims "slow" and settles it before this batch acknowledges.
+            clock.Advance(TimeSpan.FromMinutes(10));
+            store.LeaseAsync(10, TimeSpan.FromMinutes(5), CancellationToken.None).GetAwaiter().GetResult();
+            store.MarkDeliveredAsync("slow", "other-worker", CancellationToken.None).GetAwaiter().GetResult();
+            return new DeliveryResult(["slow", "fast"], [], "ack-batch");
+        });
+
+        int leased = await CreateWorker(store, output, clock).DeliverOnceAsync(cancellationToken);
+        QueueSnapshot snapshot = await store.GetSnapshotAsync(cancellationToken);
+
+        Assert.Equal(2, leased);
+        Assert.Equal(2, snapshot.Delivered);
+        Assert.Equal(0, snapshot.Uploading);
+        Assert.Equal(0, snapshot.Retrying);
+    }
+
+    [Fact]
     public async Task Worker_KeepsRunningAfterStorageFailure()
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
@@ -225,6 +250,9 @@ public sealed class QueueDeliveryWorkerTests
 
         public Task MarkDeliveredAsync(string eventId, string acknowledgement, CancellationToken cancellationToken = default) =>
             inner.MarkDeliveredAsync(eventId, acknowledgement, cancellationToken);
+
+        public Task<IReadOnlyList<string>> MarkDeliveredBatchAsync(IReadOnlyList<string> eventIds, string acknowledgement, CancellationToken cancellationToken = default) =>
+            inner.MarkDeliveredBatchAsync(eventIds, acknowledgement, cancellationToken);
 
         public Task MarkRetryingAsync(string eventId, string failureCode, DateTimeOffset retryAfter, CancellationToken cancellationToken = default) =>
             inner.MarkRetryingAsync(eventId, failureCode, retryAfter, cancellationToken);

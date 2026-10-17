@@ -126,27 +126,25 @@ public sealed partial class ApiKeyDetector : ISensitiveDetector
     public string Id => DetectorIds.ApiKey;
     public string Category => DetectorCategories.Secrets;
 
-    private static readonly ApiKeyPattern[] Patterns =
-    [
-        new("OpenAI", @"\bsk-[A-Za-z0-9]{20,}\b"),
-        new("Anthropic", @"\bsk-ant-[A-Za-z0-9\-_]{20,}\b"),
-        new("GitHub", @"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}\b"),
-        new("GitLab", @"\bglpat-[A-Za-z0-9\-_]{20,}\b"),
-        new("Slack", @"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"),
-        new("Stripe", @"\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{20,}\b"),
-        new("Twilio", @"\bSK[0-9a-fA-F]{32}\b"),
-        new("Cloudflare", @"\b(?:cfx|v1\.0-)[A-Za-z0-9_\-]{20,}\b"),
-        new("Atlassian", @"\bATATT3[A-Za-z0-9=_\-]{20,}\b"),
-        new("Datadog", @"\b(?:[a-f0-9]{32}|ddog_api_key)\b"),
-        new("PagerDuty", @"\b[a-f0-9]{32}\b"), // only with context below
-        new("Okta", @"\b00[A-Za-z0-9_\-]{40,}\b"),
-        new("MongoDB", @"\bmongodb(?:\+srv)?:\/\/[^\s]+\b"),
-        new("Snowflake", @"\b[A-Za-z0-9]{8,}-[A-Za-z0-9]{4,}\.[A-Za-z0-9]+\.snowflakecomputing\.com\b")
-    ];
-
+    // Source-generated (AOT-friendly, no Reflection.Emit at startup); same patterns,
+    // options, order and 50 ms timeout as before.
     private static readonly (string Provider, Regex Regex)[] Compiled =
-        Patterns.Select(p => (p.Provider, new Regex(p.Pattern, RegexOptions.CultureInvariant | RegexOptions.Compiled, TimeSpan.FromMilliseconds(50))))
-            .ToArray();
+    [
+        ("OpenAI", OpenAIRegex()),
+        ("Anthropic", AnthropicRegex()),
+        ("GitHub", GitHubRegex()),
+        ("GitLab", GitLabRegex()),
+        ("Slack", SlackRegex()),
+        ("Stripe", StripeRegex()),
+        ("Twilio", TwilioRegex()),
+        ("Cloudflare", CloudflareRegex()),
+        ("Atlassian", AtlassianRegex()),
+        ("Datadog", DatadogRegex()),
+        ("PagerDuty", PagerDutyRegex()),
+        ("Okta", OktaRegex()),
+        ("MongoDB", MongoDBRegex()),
+        ("Snowflake", SnowflakeRegex())
+    ];
 
     public void Detect(ReadOnlySpan<char> text, string path, ICollection<DetectionMatch> matches)
     {
@@ -155,21 +153,20 @@ public sealed partial class ApiKeyDetector : ISensitiveDetector
             return;
         }
 
-        string s = text.ToString();
         foreach ((string provider, Regex regex) in Compiled)
         {
             // High-FP patterns need context.
             if (provider is "PagerDuty" or "Datadog")
             {
-                if (!s.Contains(provider, StringComparison.OrdinalIgnoreCase) &&
-                    !s.Contains("api_key", StringComparison.OrdinalIgnoreCase) &&
-                    !s.Contains("apikey", StringComparison.OrdinalIgnoreCase))
+                if (!text.Contains(provider, StringComparison.OrdinalIgnoreCase) &&
+                    !text.Contains("api_key", StringComparison.OrdinalIgnoreCase) &&
+                    !text.Contains("apikey", StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
             }
 
-            foreach (Match match in regex.Matches(s))
+            foreach (ValueMatch match in regex.EnumerateMatches(text))
             {
                 matches.Add(new DetectionMatch(
                     Id,
@@ -182,7 +179,47 @@ public sealed partial class ApiKeyDetector : ISensitiveDetector
         }
     }
 
-    private readonly record struct ApiKeyPattern(string Provider, string Pattern);
+    [GeneratedRegex(@"\bsk-[A-Za-z0-9]{20,}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    private static partial Regex OpenAIRegex();
+
+    [GeneratedRegex(@"\bsk-ant-[A-Za-z0-9\-_]{20,}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    private static partial Regex AnthropicRegex();
+
+    [GeneratedRegex(@"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    private static partial Regex GitHubRegex();
+
+    [GeneratedRegex(@"\bglpat-[A-Za-z0-9\-_]{20,}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    private static partial Regex GitLabRegex();
+
+    [GeneratedRegex(@"\bxox[baprs]-[A-Za-z0-9-]{10,}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    private static partial Regex SlackRegex();
+
+    [GeneratedRegex(@"\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{20,}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    private static partial Regex StripeRegex();
+
+    [GeneratedRegex(@"\bSK[0-9a-fA-F]{32}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    private static partial Regex TwilioRegex();
+
+    [GeneratedRegex(@"\b(?:cfx|v1\.0-)[A-Za-z0-9_\-]{20,}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    private static partial Regex CloudflareRegex();
+
+    [GeneratedRegex(@"\bATATT3[A-Za-z0-9=_\-]{20,}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    private static partial Regex AtlassianRegex();
+
+    [GeneratedRegex(@"\b(?:[a-f0-9]{32}|ddog_api_key)\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    private static partial Regex DatadogRegex();
+
+    [GeneratedRegex(@"\b[a-f0-9]{32}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    private static partial Regex PagerDutyRegex();
+
+    [GeneratedRegex(@"\b00[A-Za-z0-9_\-]{40,}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    private static partial Regex OktaRegex();
+
+    [GeneratedRegex(@"\bmongodb(?:\+srv)?:\/\/[^\s]+\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    private static partial Regex MongoDBRegex();
+
+    [GeneratedRegex(@"\b[A-Za-z0-9]{8,}-[A-Za-z0-9]{4,}\.[A-Za-z0-9]+\.snowflakecomputing\.com\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    private static partial Regex SnowflakeRegex();
 }
 
 public sealed partial class KubernetesSecretDetector : RegexDetectorBase

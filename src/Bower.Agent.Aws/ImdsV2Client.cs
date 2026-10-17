@@ -157,7 +157,12 @@ public sealed class ImdsV2Client : IDisposable
             request.Headers.Add(
                 "X-aws-ec2-metadata-token-ttl-seconds",
                 ((int)TokenLifetime.TotalSeconds).ToString(CultureInfo.InvariantCulture));
-            using HttpResponseMessage response = await client.SendAsync(request, cancellationToken);
+            // Headers only, so ReadBoundedAsync enforces the size limit instead of the
+            // client buffering the whole body first.
+            using HttpResponseMessage response = await client.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 return null;

@@ -86,7 +86,11 @@ public sealed class AmaSpoolOutput : IOutputAdapter
             Access = FileAccess.Write,
             Mode = FileMode.CreateNew,
             Share = FileShare.None,
-            Options = FileOptions.Asynchronous | FileOptions.WriteThrough
+            // No WriteThrough: it made every 4 KiB buffer flush a synchronous disk write.
+            // Durability comes from the single fsync (Flush(true)) before the atomic rename,
+            // so a ready file is still complete and on disk before it is acknowledged.
+            Options = FileOptions.Asynchronous,
+            BufferSize = 64 * 1024
         };
         if (!OperatingSystem.IsWindows())
         {

@@ -20,21 +20,15 @@ public abstract partial class RegexDetectorBase : ISensitiveDetector
 
     public virtual void Detect(ReadOnlySpan<char> text, string path, ICollection<DetectionMatch> matches)
     {
-        // Regex operates on string; single allocation only when content present.
         if (text.IsEmpty)
         {
             return;
         }
 
-        string s = text.ToString();
-        foreach (Match match in Pattern.Matches(s))
+        // Span-based enumeration: no string copy or Match objects per scanned value.
+        foreach (ValueMatch match in Pattern.EnumerateMatches(text))
         {
-            if (!match.Success)
-            {
-                continue;
-            }
-
-            ReadOnlySpan<char> span = s.AsSpan(match.Index, match.Length);
+            ReadOnlySpan<char> span = text.Slice(match.Index, match.Length);
             bool validated = !RequiresValidation || Validate(span);
             if (RequiresValidation && !validated)
             {
@@ -50,4 +44,10 @@ public abstract partial class RegexDetectorBase : ISensitiveDetector
                 SubKind(span)));
         }
     }
+
+    /// <summary>
+    /// Cheap span-based pre-check for overrides that need capture groups: most values
+    /// never match, so they skip the string copy and <see cref="Match"/> allocations.
+    /// </summary>
+    protected bool MayMatch(ReadOnlySpan<char> text) => !text.IsEmpty && Pattern.IsMatch(text);
 }

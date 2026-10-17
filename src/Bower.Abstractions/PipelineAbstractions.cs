@@ -56,6 +56,16 @@ public interface IDurableEventStore
         string acknowledgement,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Marks every listed event that is still leased (uploading) as delivered, atomically.
+    /// Events no longer leased (for example reclaimed after lease expiry) are left untouched
+    /// and returned so the caller can report them.
+    /// </summary>
+    Task<IReadOnlyList<string>> MarkDeliveredBatchAsync(
+        IReadOnlyList<string> eventIds,
+        string acknowledgement,
+        CancellationToken cancellationToken = default);
+
     Task MarkRetryingAsync(
         string eventId,
         string failureCode,

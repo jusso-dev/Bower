@@ -198,7 +198,9 @@ public static class ChecksumAlgorithms
 
     public static string DigitsOnly(ReadOnlySpan<char> value)
     {
-        Span<char> buffer = stackalloc char[value.Length];
+        // Matches can be long (the card pattern allows unbounded separators between
+        // digits), so only small inputs go on the stack: a 1 MiB value would overflow it.
+        Span<char> buffer = value.Length <= 256 ? stackalloc char[value.Length] : new char[value.Length];
         int count = 0;
         foreach (char c in value)
         {

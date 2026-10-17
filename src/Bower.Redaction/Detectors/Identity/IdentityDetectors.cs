@@ -52,7 +52,7 @@ public sealed partial class DateOfBirthDetector : RegexDetectorBase
 
     public override void Detect(ReadOnlySpan<char> text, string path, ICollection<DetectionMatch> matches)
     {
-        if (text.IsEmpty)
+        if (!MayMatch(text))
         {
             return;
         }
@@ -130,7 +130,7 @@ public sealed partial class UsernameDetector : RegexDetectorBase
 
     public override void Detect(ReadOnlySpan<char> text, string path, ICollection<DetectionMatch> matches)
     {
-        if (text.IsEmpty)
+        if (!MayMatch(text))
         {
             return;
         }
