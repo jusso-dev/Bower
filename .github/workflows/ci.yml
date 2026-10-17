@@ -145,6 +145,29 @@ jobs:
           docker run --rm --network bower-ci curlimages/curl:8.11.1 -sf http://bower-web:8080/config.js | grep -q '"authMode": "development"'
           docker run --rm --network bower-ci curlimages/curl:8.11.1 -sf -o /dev/null http://bower-web:8080/jobs
 
+  docker-arm64:
+    # Images publishes linux/amd64 and linux/arm64 from an amd64 runner, so the AOT
+    # build stage cross-compiles. Build every AOT image for arm64 here so a broken
+    # cross toolchain fails the pull request instead of the post-merge publish.
+    needs: [build-test]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile:
+          - deploy/docker/Dockerfile
+          - deploy/docker/Dockerfile.management
+          - deploy/docker/Dockerfile.sidecar
+          - deploy/docker/Dockerfile.cloud
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - run: >
+          docker buildx build --platform linux/arm64
+          --file ${{ matrix.dockerfile }}
+          --build-arg BOWER_AUTH_MODE=development
+          --output type=cacheonly .
+
   publish:
     needs: build-test
     # Native AOT cannot cross-compile to another OS, and cross-architecture links need
