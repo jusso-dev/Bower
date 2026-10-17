@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using Bower.Abstractions;
 
@@ -5,17 +6,29 @@ namespace Bower.Output.AmaSpool;
 
 public sealed class AmaSpoolOutput : IOutputAdapter
 {
+    private const int SequenceDigits = 20;
+
     private readonly AmaSpoolOptions options;
+    private readonly string filePrefix;
     private long sequence;
 
     public AmaSpoolOutput(AmaSpoolOptions options)
     {
         options.Validate();
         this.options = options;
+        filePrefix = $"{Sanitize(options.CollectorId)}-{Sanitize(options.StreamName)}-";
         Directory.CreateDirectory(options.ActiveDirectory);
         Directory.CreateDirectory(options.ReadyDirectory);
         SetDirectoryPermissions(options.ActiveDirectory);
         SetDirectoryPermissions(options.ReadyDirectory);
+
+        // Continue numbering after every file a previous process left behind, so a restart
+        // never reuses the name of a ready file AMA has not consumed yet (File.Move would
+        // fail on every retry) or of a leftover temporary file (CreateNew would).
+        sequence = Math.Max(
+            HighestSequence(options.ReadyDirectory, ".jsonl"),
+            HighestSequence(options.ActiveDirectory, ".tmp"));
+        RemoveStaleTemporaryFiles();
     }
 
     public string Id => options.Id;
@@ -76,8 +89,7 @@ public sealed class AmaSpoolOutput : IOutputAdapter
         CancellationToken cancellationToken)
     {
         long fileSequence = Interlocked.Increment(ref sequence);
-        string stem =
-            $"{Sanitize(options.CollectorId)}-{Sanitize(options.StreamName)}-{fileSequence:D20}";
+        string stem = $"{filePrefix}{fileSequence:D20}";
         string temporaryPath = Path.Combine(options.ActiveDirectory, $"{stem}.tmp");
         string readyPath = Path.Combine(options.ReadyDirectory, $"{stem}.jsonl");
 
@@ -97,21 +109,92 @@ public sealed class AmaSpoolOutput : IOutputAdapter
             streamOptions.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
         }
 
-        await using (FileStream stream = new(temporaryPath, streamOptions))
-        await using (StreamWriter writer = new(stream, new UTF8Encoding(false), leaveOpen: true))
+        FileStream stream = new(temporaryPath, streamOptions);
+        try
         {
-            writer.NewLine = "\n";
-            foreach (QueuedEvent item in events)
+            await using (stream)
+            await using (StreamWriter writer = new(stream, new UTF8Encoding(false), leaveOpen: true))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                await writer.WriteLineAsync(item.Payload.AsMemory(), cancellationToken);
+                writer.NewLine = "\n";
+                foreach (QueuedEvent item in events)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await writer.WriteLineAsync(item.Payload.AsMemory(), cancellationToken);
+                }
+
+                await writer.FlushAsync(cancellationToken);
+                stream.Flush(true);
             }
 
-            await writer.FlushAsync(cancellationToken);
-            stream.Flush(true);
+            File.Move(temporaryPath, readyPath);
+        }
+        catch
+        {
+            // The events stay unacknowledged and are retried under a new sequence number;
+            // never leave a partial temporary file behind.
+            TryDelete(temporaryPath);
+            throw;
         }
 
-        File.Move(temporaryPath, readyPath);
+        // The rename is durable only once the ready directory itself is on disk.
+        DirectorySync.Flush(options.ReadyDirectory);
+    }
+
+    /// <summary>Highest sequence among this output's files with the given extension.</summary>
+    private long HighestSequence(string directory, string extension)
+    {
+        long highest = 0;
+        foreach (string path in Directory.EnumerateFiles(directory, $"{filePrefix}*"))
+        {
+            if (TryParseSequence(Path.GetFileName(path), extension, out long value) && value > highest)
+            {
+                highest = value;
+            }
+        }
+
+        return highest;
+    }
+
+    private bool TryParseSequence(string fileName, string extension, out long value)
+    {
+        value = 0;
+        if (fileName.Length != filePrefix.Length + SequenceDigits + extension.Length
+            || !fileName.StartsWith(filePrefix, StringComparison.Ordinal)
+            || !fileName.EndsWith(extension, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        ReadOnlySpan<char> digits = fileName.AsSpan(filePrefix.Length, SequenceDigits);
+        return long.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out value);
+    }
+
+    /// <summary>
+    /// Temporary files left by a crash hold events that were never acknowledged (the
+    /// acknowledgement follows the rename), so the queue redelivers them; the files only
+    /// waste space.
+    /// </summary>
+    private void RemoveStaleTemporaryFiles()
+    {
+        foreach (string path in Directory.EnumerateFiles(options.ActiveDirectory, $"{filePrefix}*"))
+        {
+            if (TryParseSequence(Path.GetFileName(path), ".tmp", out _))
+            {
+                TryDelete(path);
+            }
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // Best effort: numbering never reuses the name.
+        }
     }
 
     private static string Sanitize(string value)
@@ -156,7 +239,11 @@ public sealed record AmaSpoolOptions
         ArgumentException.ThrowIfNullOrWhiteSpace(StreamName);
         ArgumentException.ThrowIfNullOrWhiteSpace(ActiveDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(ReadyDirectory);
-        if (Path.GetFullPath(ActiveDirectory) == Path.GetFullPath(ReadyDirectory))
+        // "/a/b" and "/a/b/" are the same directory.
+        if (string.Equals(
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(ActiveDirectory)),
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(ReadyDirectory)),
+                StringComparison.Ordinal))
         {
             throw new ArgumentException("Active and ready directories must differ.");
         }

@@ -9,8 +9,9 @@ use crate::time::{Timestamp, serde_offset, serde_offset_option};
 
 pub const CURRENT_SCHEMA_VERSION: &str = "1.0.0";
 
-/// String enums serialized camelCase and read case-insensitively or by ordinal,
-/// matching `JsonStringEnumConverter` defaults.
+/// String enums serialized camelCase and read by member name (any case) or by the
+/// ordinal of a declared member, matching C# `DefinedEnumConverter`. Undefined
+/// ordinals, numeric strings and comma-joined names are rejected (default deny).
 macro_rules! dotnet_enum {
     ($(#[$meta:meta])* $name:ident { $($(#[$vmeta:meta])* $variant:ident => $camel:literal),+ $(,)? }) => {
         $(#[$meta])*
@@ -118,6 +119,8 @@ pub struct SecurityEventEnvelope {
     pub event_severity: EventSeverity,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub event_outcome_reason: Option<String>,
+    /// Required, but `null` reads as an empty context (see [`application_or_null`]).
+    #[serde(deserialize_with = "application_or_null")]
     pub application: ApplicationContext,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub actor: Option<ActorContext>,
@@ -160,6 +163,28 @@ pub struct ApplicationContext {
     pub instance: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tenant_id: Option<String>,
+}
+
+/// `System.Text.Json` binds `"application": null` (`required` only checks presence), so
+/// the C# processor sees a null application and quarantines the event with the
+/// validation reason instead of rejecting the JSON. An empty context reproduces that:
+/// validation fails with the same reason, and a privacy alert built from the event
+/// carries the same empty application C# substitutes for null. A missing property or a
+/// context without `name`/`environment` is still invalid JSON.
+fn application_or_null<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<ApplicationContext, D::Error> {
+    Ok(
+        Option::<ApplicationContext>::deserialize(deserializer)?.unwrap_or_else(|| {
+            ApplicationContext {
+                name: String::new(),
+                version: None,
+                environment: String::new(),
+                instance: None,
+                tenant_id: None,
+            }
+        }),
+    )
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -267,6 +292,79 @@ mod tests {
             json::to_string(&envelope).unwrap(),
             r#"{"schemaVersion":"1.0.0","eventId":"e1","timeGenerated":"2026-05-01T10:20:30+00:00","eventCategory":"authentication","eventType":"authentication_failure","eventAction":"login","eventResult":"failure","eventSeverity":"medium","application":{"name":"app","environment":"prod"},"actor":{"userId":"u1","type":"human"},"attributes":{"b":1.50,"a":[true,null]}}"#
         );
+    }
+
+    #[test]
+    fn undefined_enum_values_are_rejected_like_csharp() {
+        // C# `DefinedEnumConverter`: declared names and ordinals only (default deny).
+        for text in [
+            "7",
+            "-1",
+            "4",
+            "1.5",
+            "\"7\"",
+            "\"2\"",
+            "\"success, failure\"",
+            "\"bogus\"",
+            "null",
+            "true",
+        ] {
+            assert!(serde_json::from_str::<EventResult>(text).is_err(), "{text}");
+        }
+        assert!(serde_json::from_str::<EventSeverity>("5").is_err());
+        assert!(serde_json::from_str::<ActorType>("5").is_err());
+        assert!(serde_json::from_str::<DecisionAction>("7").is_err());
+        assert_eq!(
+            serde_json::from_str::<EventResult>("3").unwrap(),
+            EventResult::Denied
+        );
+        assert_eq!(
+            serde_json::from_str::<EventSeverity>("4").unwrap(),
+            EventSeverity::Critical
+        );
+        assert_eq!(
+            serde_json::from_str::<ActorType>("4").unwrap(),
+            ActorType::Unknown
+        );
+        assert_eq!(
+            serde_json::from_str::<DecisionAction>("\"DEADLETTER\"").unwrap(),
+            DecisionAction::DeadLetter
+        );
+        let envelope = SAMPLE.replace(r#""eventResult":"Failure""#, r#""eventResult":7"#);
+        assert!(json::from_str::<SecurityEventEnvelope>(&envelope).is_err());
+    }
+
+    #[test]
+    fn null_application_binds_as_empty_context_like_csharp() {
+        let envelope: SecurityEventEnvelope = json::from_str(&SAMPLE.replace(
+            r#""application":{"name":"app","environment":"prod"}"#,
+            r#""application":null"#,
+        ))
+        .unwrap();
+        assert_eq!(envelope.application.name, "");
+        assert_eq!(envelope.application.environment, "");
+        assert_eq!(envelope.application.tenant_id, None);
+        assert!(
+            json::to_string(&envelope)
+                .unwrap()
+                .contains(r#""application":{"name":"","environment":""}"#)
+        );
+
+        // Still required, and a present context still needs its required members.
+        for replacement in [
+            "",
+            r#""application":{},"#,
+            r#""application":{"name":"app"},"#,
+        ] {
+            let text = SAMPLE.replace(
+                r#""application":{"name":"app","environment":"prod"},"#,
+                replacement,
+            );
+            assert!(
+                json::from_str::<SecurityEventEnvelope>(&text).is_err(),
+                "{replacement}"
+            );
+        }
     }
 
     #[test]

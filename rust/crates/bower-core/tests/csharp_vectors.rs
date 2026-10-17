@@ -38,23 +38,20 @@ fn strings(value: &Value) -> Vec<String> {
 #[test]
 fn fingerprints_match_csharp() {
     let vectors = vectors();
+    let mut rejected = Vec::new();
     for case in vectors["fingerprints"].as_array().unwrap() {
         let input = case["input"].as_str().unwrap();
         let expected = case["fingerprint"].as_str().unwrap();
         let parsed = json::from_str::<SecurityEventEnvelope>(input);
-        if input.contains(r#""eventResult":7"#) {
-            // Known divergence (bower-contracts): C# accepts an undefined enum ordinal
-            // and fingerprints it as "7"; the Rust envelope rejects it (schema-invalid).
-            assert!(expected.starts_with("sha256:"));
-            assert!(parsed.is_err());
-            continue;
-        }
         if expected.starts_with("throws:") {
             assert!(parsed.is_err(), "C# rejected {input}");
+            rejected.push(expected);
             continue;
         }
         assert_eq!(event_fingerprint(&parsed.unwrap()), expected, "{input}");
     }
+    // `"eventResult":7`: both implementations reject the undefined enum value.
+    assert_eq!(rejected, ["throws:JsonException"]);
 }
 
 fn result_json(result: &ProcessingResult) -> Value {
@@ -76,7 +73,6 @@ fn processor_output_matches_csharp_byte_for_byte() {
     for case in scenarios {
         let scenario = &case["scenario"];
         let name = scenario["name"].as_str().unwrap();
-        let null_application = name.starts_with("null-application");
         let actions: Option<IndexMap<String, String>> =
             scenario["actions"].as_object().map(|actions| {
                 actions
@@ -109,25 +105,6 @@ fn processor_output_matches_csharp_byte_for_byte() {
         let first = processor.process(input, &identity).unwrap();
         let second = processor.process(input, &identity).unwrap();
 
-        if null_application {
-            // Known divergences: C# binds `"application":null` and quarantines with a
-            // validation reason, or throws NullReferenceException from
-            // EventFingerprint when a privacy alert is due (C# bug). The Rust
-            // envelope requires `application`, so both are schema-invalid and nothing
-            // is queued.
-            assert!(
-                case["first"]["reasons"]
-                    == serde_json::json!([
-                        "application.name and application.environment are required"
-                    ])
-                    || case["first"] == "throws:NullReferenceException",
-                "{name}"
-            );
-            assert!(case["queued"].as_array().unwrap().is_empty());
-            assert_eq!(first.reasons, ["schema-invalid"], "{name}");
-            assert!(store.items().is_empty(), "{name}");
-            continue;
-        }
         assert_eq!(result_json(&first), case["first"], "{name}: first result");
         assert_eq!(
             result_json(&second),

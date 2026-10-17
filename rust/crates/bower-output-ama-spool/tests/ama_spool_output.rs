@@ -121,6 +121,79 @@ async fn existing_ready_file_is_never_overwritten() {
     assert_eq!(result.failures[0].code, "output-adapter-failure");
     assert!(result.failures[0].is_retryable);
     assert_eq!(std::fs::read_to_string(&ready).unwrap(), "existing\n");
+    // The failed attempt leaves no temporary file, and the retry takes a new name.
+    assert!(files(&directory.path().join("active")).is_empty());
+    let retry = output.deliver(&[event("a", "{}")]).await;
+    assert_eq!(retry.acknowledged_event_ids, ["a"]);
+    assert!(ready_path(directory.path(), 2).exists());
+    assert_eq!(std::fs::read_to_string(&ready).unwrap(), "existing\n");
+}
+
+fn ready_path(root: &std::path::Path, sequence: i64) -> std::path::PathBuf {
+    root.join("ready").join(format!(
+        "collector-1-Custom-BowerSecurity-{sequence:020}.jsonl"
+    ))
+}
+
+#[tokio::test]
+async fn restart_continues_numbering_after_unconsumed_ready_files() {
+    let directory = tempfile::tempdir().unwrap();
+    let first = AmaSpoolOutput::new(options(directory.path(), 4_096))
+        .unwrap()
+        .deliver(&[event("event-1", r#"{"eventId":"event-1"}"#)])
+        .await;
+    // A new process: numbering used to restart at 1, so the move failed on every
+    // retry while AMA had not consumed the first file.
+    let second = AmaSpoolOutput::new(options(directory.path(), 4_096))
+        .unwrap()
+        .deliver(&[event("event-2", r#"{"eventId":"event-2"}"#)])
+        .await;
+
+    assert_eq!(
+        first.destination_acknowledgement.as_deref(),
+        Some("ama-spool:collector-1:1")
+    );
+    assert_eq!(
+        second.destination_acknowledgement.as_deref(),
+        Some("ama-spool:collector-1:2")
+    );
+    assert_eq!(second.acknowledged_event_ids, ["event-2"]);
+    assert_eq!(
+        files(&directory.path().join("ready")),
+        [
+            ready_path(directory.path(), 1),
+            ready_path(directory.path(), 2)
+        ]
+    );
+    assert_eq!(
+        std::fs::read_to_string(ready_path(directory.path(), 1)).unwrap(),
+        "{\"eventId\":\"event-1\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn restart_removes_stale_temporary_files_and_never_reuses_their_names() {
+    let directory = tempfile::tempdir().unwrap();
+    let active = directory.path().join("active");
+    std::fs::create_dir_all(&active).unwrap();
+    let stale = active.join("collector-1-Custom-BowerSecurity-00000000000000000005.tmp");
+    let foreign = active.join("other-Custom-BowerSecurity-00000000000000000009.tmp");
+    std::fs::write(&stale, "{\"eventId\":\"partial").unwrap();
+    std::fs::write(&foreign, "{}").unwrap();
+
+    let output = AmaSpoolOutput::new(options(directory.path(), 4_096)).unwrap();
+    let result = output.deliver(&[event("event-1", "{}")]).await;
+
+    assert!(!stale.exists());
+    assert!(foreign.exists());
+    assert_eq!(
+        result.destination_acknowledgement.as_deref(),
+        Some("ama-spool:collector-1:6")
+    );
+    assert_eq!(
+        files(&directory.path().join("ready")),
+        [ready_path(directory.path(), 6)]
+    );
 }
 
 #[test]
@@ -134,6 +207,17 @@ fn options_are_validated() {
         directory.path().join("y/../x"),
     );
     assert!(AmaSpoolOutput::new(same).is_err());
+    // A trailing separator names the same directory (C# trims it too).
+    for suffix in ["x/", "x/./"] {
+        let trailing = AmaSpoolOptions::new(
+            "ama",
+            "c",
+            "s",
+            directory.path().join(suffix),
+            directory.path().join("x"),
+        );
+        assert!(AmaSpoolOutput::new(trailing).is_err(), "{suffix}");
+    }
     assert!(AmaSpoolOutput::new(options(directory.path(), 1_023)).is_err());
     let blank = AmaSpoolOptions {
         id: " ".to_owned(),

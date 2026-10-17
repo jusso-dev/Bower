@@ -6,7 +6,7 @@ namespace Bower.Contracts;
 
 /// <summary>
 /// Bower wire JSON: Web defaults (camelCase, case-sensitive here), nulls omitted, camelCase
-/// string enums and a maximum depth of 32. Metadata is source generated, so serialization
+/// string enums restricted to declared members, and a maximum depth of 32. Metadata is source generated, so serialization
 /// is reflection-free and safe under trimming and Native AOT.
 /// </summary>
 public static class BowerJson
@@ -38,7 +38,8 @@ public static class BowerJson
             TypeInfoResolver = resolver
         };
         // The generic converters are the AOT-safe equivalent of
-        // JsonStringEnumConverter(JsonNamingPolicy.CamelCase) for each contract enum.
+        // JsonStringEnumConverter(JsonNamingPolicy.CamelCase) for each contract enum, and
+        // reject undefined values (default deny) instead of carrying them as numbers.
         options.Converters.Add(CamelCase<EventResult>());
         options.Converters.Add(CamelCase<EventSeverity>());
         options.Converters.Add(CamelCase<ActorType>());
@@ -52,10 +53,13 @@ public static class BowerJson
         return options;
     }
 
-    /// <summary>A camelCase string converter for one enum type (AOT safe).</summary>
+    /// <summary>
+    /// A camelCase string converter for one enum type that rejects undefined values
+    /// (AOT safe).
+    /// </summary>
     public static JsonConverter CamelCase<TEnum>()
         where TEnum : struct, Enum =>
-        new JsonStringEnumConverter<TEnum>(JsonNamingPolicy.CamelCase);
+        new DefinedEnumConverter<TEnum>(JsonNamingPolicy.CamelCase);
 }
 
 /// <summary>Source-generated metadata for the Bower event contracts.</summary>

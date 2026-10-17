@@ -226,7 +226,10 @@ public sealed class SecurityEventProcessor(
             EventSeverity = severity,
             EventOutcomeReason =
                 $"Privacy engine applied controls for {alertWorthy.Count} high-risk finding(s)",
-            Application = source.Application,
+            // An invalid source can arrive with "application": null (System.Text.Json binds
+            // it despite `required`). The alert then carries an empty application, exactly
+            // as when the producer sends empty names, and the alert policy decides as usual.
+            Application = source.Application ?? MissingApplication,
             Actor = new ActorContext
             {
                 Type = ActorType.System,
@@ -296,6 +299,12 @@ public sealed class SecurityEventProcessor(
         EnqueueResult enqueue = await queue.EnqueueAsync(queued, cancellationToken);
         return enqueue.Enqueued || enqueue.Duplicate ? arrangedAlert.EventId : null;
     }
+
+    private static readonly ApplicationContext MissingApplication = new()
+    {
+        Name = string.Empty,
+        Environment = string.Empty
+    };
 
     private static EventSeverity ResolveSeverity(IReadOnlyList<string> detectors)
     {

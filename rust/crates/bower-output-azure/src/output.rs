@@ -196,7 +196,8 @@ fn failure(event_id: &str, code: impl Into<String>, is_retryable: bool) -> Deliv
 }
 
 /// `JsonNode.Parse(payload) as JsonObject` with the default 64-level depth limit.
-/// A duplicate top-level property is unparseable too: C# throws on first access.
+/// A duplicate top-level property is unparseable too (`JsonObject` cannot hold it);
+/// C# dead-letters it as `payload-invalid-json` as well.
 fn try_parse_record(payload: &str) -> Option<Map<String, Value>> {
     if exceeds_depth(payload.as_bytes(), MAXIMUM_PAYLOAD_DEPTH) {
         return None;

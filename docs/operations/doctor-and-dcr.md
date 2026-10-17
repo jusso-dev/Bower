@@ -86,3 +86,10 @@ silently damaged (including a `dynamic` column such as `labels` that is not a JS
 object or array: the transformation reads its members, so a plain string would leave
 every derived column empty), and the privacy engine truncates strings above
 `maximumFieldLength` (default 32,768) at intake so the limit is rarely reached.
+
+Each payload is re-serialized once with `Utf8JsonReader`/`Utf8JsonWriter` (no DOM),
+and sizes are measured on exactly the bytes uploaded. A payload that can never be
+uploaded (not one JSON object, deeper than 64 levels, a repeated top-level property,
+invalid escapes) is dead-lettered alone as `payload-invalid-json`; a payload whose
+`eventId` differs from the queued id as `payload-event-id-mismatch`. The rest of the
+batch is still delivered.

@@ -852,7 +852,6 @@ async fn upload_requests_and_results_match_csharp_vectors() {
 
     for ((name, events), expected) in scenarios.into_iter().zip(expected_all) {
         assert_eq!(expected["name"], name);
-        let skip = KNOWN_DIVERGENCES.contains(&name);
         let (base, mock) = start(status(204)).await;
         let queued_events: Vec<QueuedEvent> = events
             .into_iter()
@@ -888,9 +887,6 @@ async fn upload_requests_and_results_match_csharp_vectors() {
                 })
             })
             .collect();
-        if skip {
-            continue;
-        }
         assert_eq!(
             serde_json::Value::Array(actual_requests),
             expected["requests"],
@@ -909,28 +905,11 @@ async fn upload_requests_and_results_match_csharp_vectors() {
     }
 }
 
-/// Scenarios where the C# behaviour is a defect the port deliberately does not
-/// reproduce (see the assertions in `csharp_divergences_are_documented`).
-const KNOWN_DIVERGENCES: [&str; 1] = ["duplicate-keys"];
-
-/// C# `JsonNode.Parse` accepts a top-level duplicate key, then throws
-/// `ArgumentException` on first property access, so `DeliverAsync` throws and the
-/// whole batch is retried forever as `output-adapter-failure`. The port dead-letters
-/// just that record as unparseable instead, which is what the C# code intends for
-/// payloads that can never succeed.
+/// A repeated top-level property can never be uploaded (C# `JsonObject` cannot hold
+/// it): that record alone is dead-lettered and the rest of the batch is delivered, in
+/// both implementations (the `duplicate-keys` vector pins the C# result).
 #[tokio::test]
-async fn csharp_divergences_are_documented() {
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/csharp-vectors.json");
-    let vectors: serde_json::Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-    let duplicate = vectors["azure"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|scenario| scenario["name"] == "duplicate-keys")
-        .unwrap();
-    assert_eq!(duplicate["throws"], "ArgumentException");
-
+async fn top_level_duplicate_property_is_dead_lettered_alone() {
     let (base, mock) = start(status(204)).await;
     let result = output(&base)
         .deliver(&[
@@ -948,6 +927,27 @@ async fn csharp_divergences_are_documented() {
     assert_eq!(result.failures[0].event_id, "dup");
     assert_eq!(result.failures[0].code, "payload-invalid-json");
     assert!(!result.failures[0].is_retryable);
+    assert_eq!(mock.requests.lock().unwrap().len(), 1);
+}
+
+/// Invalid escapes (a lone surrogate) can never be re-serialized: dead-lettered alone,
+/// as in C# (`Deliver_DeadLettersInvalidEscapesInsteadOfFailingTheUpload`).
+#[tokio::test]
+async fn invalid_escape_is_dead_lettered_alone() {
+    let (base, mock) = start(status(204)).await;
+    let lone_surrogate = format!("{}uD800", '\\');
+    let payload = format!(
+        r#"{{"eventId":"bad","timeGenerated":"2026-10-08T00:00:00Z","o":{{"s":"{lone_surrogate}"}}}}"#
+    );
+
+    let result = output(&base)
+        .deliver(&[queued("bad", payload), event("ok", "")])
+        .await;
+
+    assert_eq!(result.acknowledged_event_ids, ["ok"]);
+    assert_eq!(result.failures.len(), 1);
+    assert_eq!(result.failures[0].event_id, "bad");
+    assert_eq!(result.failures[0].code, "payload-invalid-json");
     assert_eq!(mock.requests.lock().unwrap().len(), 1);
 }
 

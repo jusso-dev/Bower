@@ -198,6 +198,74 @@ fn invalid_json_and_missing_fields_are_schema_invalid() {
 }
 
 #[test]
+fn undefined_enum_values_are_schema_invalid() {
+    // C# `DefinedEnumConverter` rejects these as invalid JSON (default deny).
+    let store = Arc::new(MemoryStore::default());
+    let json = authentication_failure_json("");
+    for (from, to) in [
+        (r#""eventResult":"failure""#, r#""eventResult":7"#),
+        (r#""eventResult":"failure""#, r#""eventResult":"7""#),
+        (r#""eventResult":"failure""#, r#""eventResult":-1"#),
+        (r#""eventSeverity":"medium""#, r#""eventSeverity":5"#),
+        (r#""type":"human""#, r#""type":9"#),
+    ] {
+        let input = json.replace(from, to);
+        assert_ne!(input, json);
+        let result = processor(
+            MetadataRedactor(RedactionResult {
+                succeeded: true,
+                ..RedactionResult::default()
+            }),
+            &store,
+        )
+        .process(&input, &identity())
+        .unwrap();
+        assert_eq!(result.action, DecisionAction::Quarantine, "{to}");
+        assert_eq!(result.reasons, ["schema-invalid"], "{to}");
+    }
+    assert!(store.items().is_empty());
+}
+
+#[test]
+fn null_application_quarantines_with_validation_reason_and_alert_has_empty_application() {
+    // C# binds `"application":null`, quarantines with the validation reason and (since
+    // the fix) builds the privacy alert with an empty application instead of throwing.
+    let store = Arc::new(MemoryStore::default());
+    let json = authentication_failure_json("").replace(
+        r#""application":{"name":"TestApplication","environment":"test"}"#,
+        r#""application":null"#,
+    );
+    let result = processor(
+        MetadataRedactor(RedactionResult {
+            succeeded: true,
+            privacy_detected: Some(vec!["secret.jwt".to_owned()]),
+            ..RedactionResult::default()
+        }),
+        &store,
+    )
+    .process(&json, &identity())
+    .unwrap();
+
+    assert_eq!(result.action, DecisionAction::Quarantine);
+    assert!(!result.queued);
+    assert_eq!(
+        result.reasons,
+        ["application.name and application.environment are required"]
+    );
+    let items = store.items();
+    assert_eq!(items.len(), 1);
+    assert_eq!(
+        Some(items[0].event_id.as_str()),
+        result.privacy_alert_event_id.as_deref()
+    );
+    assert!(
+        items[0]
+            .payload
+            .contains(r#""application":{"name":"","environment":""}"#)
+    );
+}
+
+#[test]
 fn validation_failures_quarantine_with_explained_reasons() {
     let store = Arc::new(MemoryStore::default());
     let json = authentication_failure_json("")

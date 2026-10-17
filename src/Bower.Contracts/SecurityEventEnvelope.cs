@@ -162,7 +162,7 @@ public sealed record CollectorContext
     public required DateTimeOffset ReceivedAt { get; init; }
 }
 
-[JsonConverter(typeof(JsonStringEnumConverter<EventResult>))]
+[JsonConverter(typeof(DefinedEnumConverter<EventResult>))]
 public enum EventResult
 {
     Unknown,
@@ -171,7 +171,7 @@ public enum EventResult
     Denied
 }
 
-[JsonConverter(typeof(JsonStringEnumConverter<EventSeverity>))]
+[JsonConverter(typeof(DefinedEnumConverter<EventSeverity>))]
 public enum EventSeverity
 {
     Informational,
@@ -181,7 +181,7 @@ public enum EventSeverity
     Critical
 }
 
-[JsonConverter(typeof(JsonStringEnumConverter<ActorType>))]
+[JsonConverter(typeof(DefinedEnumConverter<ActorType>))]
 public enum ActorType
 {
     Human,
@@ -191,7 +191,7 @@ public enum ActorType
     Unknown
 }
 
-[JsonConverter(typeof(JsonStringEnumConverter<DecisionAction>))]
+[JsonConverter(typeof(DefinedEnumConverter<DecisionAction>))]
 public enum DecisionAction
 {
     Accept,

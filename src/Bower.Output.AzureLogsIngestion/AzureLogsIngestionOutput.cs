@@ -1,7 +1,8 @@
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
+using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using Azure;
 using Azure.Core;
 using Azure.Core.Serialization;
@@ -41,25 +42,26 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
             return new DeliveryResult([], [], null);
         }
 
-        // The SDK reports failed logs as serialised BinaryData, so failures map back to
-        // events by the eventId inside each record. The queue guarantees ids are unique.
+        // The SDK reports failed logs by the objects it was given, so failures map back to
+        // events by the eventId each record carries. The queue guarantees ids are unique.
         HashSet<string> batchEventIds = new(StringComparer.Ordinal);
-        List<JsonObject> records = new(events.Count);
+        List<PreparedRecord> records = new(events.Count);
         List<DeliveryFailure> failures = [];
+        RecordEncoder encoder = new();
         foreach (QueuedEvent item in events)
         {
-            JsonObject? record = TryParseRecord(item.Payload);
-            if (record is null)
+            if (!encoder.TryEncode(item.Payload, out byte[]? entry, out string? eventId))
             {
-                // A payload that cannot be parsed will never succeed: dead-letter it alone
+                // A payload that cannot be parsed (including a repeated top-level property,
+                // which JsonObject cannot hold) will never succeed: dead-letter it alone
                 // instead of failing the whole batch.
                 failures.Add(new DeliveryFailure(item.EventId, "payload-invalid-json", false, null));
             }
-            else if (!string.Equals(ReadEventId(record), item.EventId, StringComparison.Ordinal))
+            else if (!string.Equals(eventId, item.EventId, StringComparison.Ordinal))
             {
                 failures.Add(new DeliveryFailure(item.EventId, "payload-event-id-mismatch", false, null));
             }
-            else if (IngestionPreflight.Check(record, options.Schema) is { Count: > 0 } issues)
+            else if (IngestionPreflight.Check(entry, options.Schema) is { Count: > 0 } issues)
             {
                 // Azure would truncate, coerce or drop this row silently; dead-letter it
                 // with the reason instead.
@@ -67,7 +69,7 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
             }
             else
             {
-                records.Add(record);
+                records.Add(new PreparedRecord(item.EventId, entry));
                 batchEventIds.Add(item.EventId);
             }
         }
@@ -82,7 +84,7 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
         LogsUploadOptions uploadOptions = new()
         {
             MaxConcurrency = options.MaximumConcurrency,
-            // Source-generated metadata, so the SDK never falls back to reflection.
+            // Copies the prepared bytes, so the SDK never falls back to reflection.
             Serializer = RecordSerializer
         };
         uploadOptions.UploadFailed += args =>
@@ -94,8 +96,8 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
             {
                 string? eventId = failedLog switch
                 {
-                    BinaryData data => ReadEventId(TryParseRecord(data.ToString())),
-                    JsonObject record => ReadEventId(record),
+                    PreparedRecord record => record.EventId,
+                    BinaryData data => RecordEncoder.TryReadEventId(data.ToMemory().Span),
                     _ => null
                 };
                 if (eventId is not null && batchEventIds.Contains(eventId))
@@ -136,34 +138,28 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
         return new DeliveryResult(acknowledged, failures, acknowledgement);
     }
 
-    private static string? ReadEventId(JsonObject? record) =>
-        record?["eventId"] is JsonValue value && value.TryGetValue(out string? eventId)
-            ? eventId
-            : null;
-
     // UploadAsync<T> is annotated RequiresUnreferencedCode/RequiresDynamicCode only because
     // it serializes each T with LogsUploadOptions.Serializer, which defaults to the
     // reflection-based JsonObjectSerializer. Every call passes RecordSerializer, which
-    // writes JsonObject nodes directly (JsonNode.WriteTo, no type metadata), and T is
-    // JsonObject, so nothing is reached through reflection and no code is generated at
-    // run time. The guard below keeps that true; AzureLogsIngestionOutputTests pin the
-    // uploaded bytes.
+    // copies each PreparedRecord's bytes (no type metadata), and T is PreparedRecord, so
+    // nothing is reached through reflection and no code is generated at run time. The
+    // guard below keeps that true; AzureLogsIngestionOutputTests pin the uploaded bytes.
     [UnconditionalSuppressMessage(
         "Trimming",
         "IL2026:RequiresUnreferencedCode",
-        Justification = "Records are JsonObject written by JsonRecordSerializer without reflection.")]
+        Justification = "Records are pre-serialized bytes written by JsonRecordSerializer without reflection.")]
     [UnconditionalSuppressMessage(
         "AOT",
         "IL3050:RequiresDynamicCode",
-        Justification = "Records are JsonObject written by JsonRecordSerializer without reflection.")]
+        Justification = "Records are pre-serialized bytes written by JsonRecordSerializer without reflection.")]
     private Task<Response> UploadAsync(
-        List<JsonObject> records,
+        List<PreparedRecord> records,
         LogsUploadOptions uploadOptions,
         CancellationToken cancellationToken)
     {
         if (!ReferenceEquals(uploadOptions.Serializer, RecordSerializer))
         {
-            throw new InvalidOperationException("Log records must use the source-generated serializer.");
+            throw new InvalidOperationException("Log records must use the prepared-record serializer.");
         }
 
         return client.UploadAsync(
@@ -172,18 +168,6 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
             records,
             uploadOptions,
             cancellationToken);
-    }
-
-    private static JsonObject? TryParseRecord(string payload)
-    {
-        try
-        {
-            return JsonNode.Parse(payload) as JsonObject;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
     }
 }
 
@@ -220,46 +204,227 @@ public sealed record AzureLogsIngestionOptions
     }
 }
 
+/// <summary>One upload entry: the record exactly as it is sent, and its event id.</summary>
+internal sealed class PreparedRecord(string eventId, byte[] utf8Json)
+{
+    public string EventId { get; } = eventId;
+
+    public ReadOnlyMemory<byte> Utf8Json { get; } = utf8Json;
+}
+
 /// <summary>
-/// Writes log records for the Logs Ingestion SDK without reflection: each record is a
-/// <see cref="JsonObject"/> and is written with default writer options, byte-for-byte what
-/// the SDK's default <c>JsonObjectSerializer</c> produced for the same node.
+/// Re-serializes queued payloads into upload entries without building a DOM: one
+/// <see cref="Utf8JsonReader"/> pass copied token by token to a <see cref="Utf8JsonWriter"/>
+/// with default options. The bytes are what the SDK's JsonObject serializer wrote for
+/// <c>JsonNode.Parse(payload)</c>: strings re-escaped with the default encoder, number
+/// text, property order and nested repeated names kept, whitespace dropped. Not
+/// thread-safe; one instance per delivery.
+/// </summary>
+internal sealed class RecordEncoder
+{
+    // JsonNode.Parse(string) rejects invalid UTF-16 instead of replacing it.
+    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
+
+    private readonly ArrayBufferWriter<byte> output = new();
+    private readonly HashSet<string> names = new(StringComparer.Ordinal);
+    private byte[] scratch = [];
+
+    /// <summary>
+    /// Encodes one payload. False when it is not a single JSON object within the default
+    /// 64-level depth, repeats a top-level property name, or holds invalid text.
+    /// </summary>
+    public bool TryEncode(
+        string payload,
+        [NotNullWhen(true)] out byte[]? entry,
+        out string? eventId)
+    {
+        entry = null;
+        eventId = null;
+        byte[]? utf8 = null;
+        try
+        {
+            utf8 = ArrayPool<byte>.Shared.Rent(StrictUtf8.GetByteCount(payload));
+            int length = StrictUtf8.GetBytes(payload, utf8);
+            output.ResetWrittenCount();
+            names.Clear();
+            using (Utf8JsonWriter writer = new(output))
+            {
+                if (!Copy(utf8.AsSpan(0, length), writer, out eventId))
+                {
+                    eventId = null;
+                    return false;
+                }
+            }
+
+            entry = output.WrittenSpan.ToArray();
+            return true;
+        }
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException or ArgumentException)
+        {
+            // Malformed JSON, invalid escapes or surrogates, or invalid UTF-16.
+            eventId = null;
+            return false;
+        }
+        finally
+        {
+            if (utf8 is not null)
+            {
+                ArrayPool<byte>.Shared.Return(utf8);
+            }
+        }
+    }
+
+    /// <summary>The top-level string <c>eventId</c> of an encoded entry, if any.</summary>
+    public static string? TryReadEventId(ReadOnlySpan<byte> utf8Json)
+    {
+        try
+        {
+            Utf8JsonReader reader = new(utf8Json);
+            if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
+            {
+                return null;
+            }
+
+            while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+            {
+                bool match = reader.ValueTextEquals("eventId"u8);
+                reader.Read();
+                if (match)
+                {
+                    return reader.TokenType == JsonTokenType.String ? reader.GetString() : null;
+                }
+
+                reader.Skip();
+            }
+
+            return null;
+        }
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private bool Copy(ReadOnlySpan<byte> utf8, Utf8JsonWriter writer, out string? eventId)
+    {
+        eventId = null;
+        // Same limits as JsonNode.Parse: 64-level depth, no comments or trailing commas,
+        // nothing after the object.
+        Utf8JsonReader reader = new(utf8);
+        if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
+        {
+            return false;
+        }
+
+        writer.WriteStartObject();
+        bool readingEventId = false;
+        while (reader.Read())
+        {
+            bool eventIdNext = false;
+            switch (reader.TokenType)
+            {
+                case JsonTokenType.StartObject:
+                    writer.WriteStartObject();
+                    break;
+                case JsonTokenType.EndObject:
+                    writer.WriteEndObject();
+                    break;
+                case JsonTokenType.StartArray:
+                    writer.WriteStartArray();
+                    break;
+                case JsonTokenType.EndArray:
+                    writer.WriteEndArray();
+                    break;
+                case JsonTokenType.PropertyName when reader.CurrentDepth == 1:
+                    // JsonObject throws on a repeated top-level name; nested repeats are
+                    // copied through, as JsonNode.WriteTo copies nested elements.
+                    string name = reader.GetString()!;
+                    if (!names.Add(name))
+                    {
+                        return false;
+                    }
+
+                    eventIdNext = string.Equals(name, "eventId", StringComparison.Ordinal);
+                    writer.WritePropertyName(name);
+                    break;
+                case JsonTokenType.PropertyName:
+                    writer.WritePropertyName(Unescaped(ref reader));
+                    break;
+                case JsonTokenType.String:
+                    if (readingEventId)
+                    {
+                        eventId = reader.GetString();
+                    }
+
+                    writer.WriteStringValue(Unescaped(ref reader));
+                    break;
+                case JsonTokenType.Number:
+                    // Number text is kept verbatim (JsonElement.WriteTo semantics).
+                    writer.WriteRawValue(reader.ValueSpan, skipInputValidation: true);
+                    break;
+                case JsonTokenType.True:
+                    writer.WriteBooleanValue(true);
+                    break;
+                case JsonTokenType.False:
+                    writer.WriteBooleanValue(false);
+                    break;
+                case JsonTokenType.Null:
+                    writer.WriteNullValue();
+                    break;
+                default:
+                    return false;
+            }
+
+            readingEventId = eventIdNext;
+        }
+
+        writer.Flush();
+        return true;
+    }
+
+    /// <summary>Unescaped UTF-8 of the current string or property name.</summary>
+    private ReadOnlySpan<byte> Unescaped(ref Utf8JsonReader reader)
+    {
+        if (!reader.ValueIsEscaped)
+        {
+            return reader.ValueSpan;
+        }
+
+        // Unescaping never makes the text longer.
+        if (scratch.Length < reader.ValueSpan.Length)
+        {
+            scratch = new byte[Math.Max(reader.ValueSpan.Length, scratch.Length * 2)];
+        }
+
+        int written = reader.CopyString(scratch);
+        return scratch.AsSpan(0, written);
+    }
+}
+
+/// <summary>
+/// Writes <see cref="PreparedRecord"/> entries for the Logs Ingestion SDK without
+/// reflection: the prepared bytes, unchanged.
 /// </summary>
 internal sealed class JsonRecordSerializer : ObjectSerializer
 {
-    public override void Serialize(Stream stream, object? value, Type inputType, CancellationToken cancellationToken)
-    {
-        using Utf8JsonWriter writer = new(stream);
-        Write(writer, value);
-    }
+    public override void Serialize(Stream stream, object? value, Type inputType, CancellationToken cancellationToken) =>
+        stream.Write(Bytes(value).Span);
 
     public override async ValueTask SerializeAsync(
         Stream stream,
         object? value,
         Type inputType,
-        CancellationToken cancellationToken)
-    {
-        await using Utf8JsonWriter writer = new(stream);
-        Write(writer, value);
-        await writer.FlushAsync(cancellationToken);
-    }
+        CancellationToken cancellationToken) =>
+        await stream.WriteAsync(Bytes(value), cancellationToken);
 
-    public override BinaryData Serialize(object? value, Type? inputType = null, CancellationToken cancellationToken = default)
-    {
-        using MemoryStream stream = new();
-        Serialize(stream, value, inputType ?? typeof(JsonObject), cancellationToken);
-        return new BinaryData(stream.ToArray());
-    }
+    public override BinaryData Serialize(object? value, Type? inputType = null, CancellationToken cancellationToken = default) =>
+        new(Bytes(value));
 
-    public override async ValueTask<BinaryData> SerializeAsync(
+    public override ValueTask<BinaryData> SerializeAsync(
         object? value,
         Type? inputType = null,
-        CancellationToken cancellationToken = default)
-    {
-        using MemoryStream stream = new();
-        await SerializeAsync(stream, value, inputType ?? typeof(JsonObject), cancellationToken);
-        return new BinaryData(stream.ToArray());
-    }
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(new BinaryData(Bytes(value)));
 
     public override object? Deserialize(Stream stream, Type returnType, CancellationToken cancellationToken) =>
         throw new NotSupportedException("Log records are write-only.");
@@ -267,20 +432,10 @@ internal sealed class JsonRecordSerializer : ObjectSerializer
     public override ValueTask<object?> DeserializeAsync(Stream stream, Type returnType, CancellationToken cancellationToken) =>
         throw new NotSupportedException("Log records are write-only.");
 
-    private static void Write(Utf8JsonWriter writer, object? value)
+    private static ReadOnlyMemory<byte> Bytes(object? value) => value switch
     {
-        switch (value)
-        {
-            case JsonNode node:
-                node.WriteTo(writer);
-                break;
-            case null:
-                writer.WriteNullValue();
-                break;
-            default:
-                throw new NotSupportedException($"Unsupported log record type {value.GetType().Name}.");
-        }
-
-        writer.Flush();
-    }
+        PreparedRecord record => record.Utf8Json,
+        null => "null"u8.ToArray(),
+        _ => throw new NotSupportedException($"Unsupported log record type {value.GetType().Name}.")
+    };
 }

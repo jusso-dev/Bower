@@ -157,6 +157,12 @@ Alert-worthy by default (SOC signal):
 Policy: `policies/default/sensitive-data-detected.yaml` (`BWR-POL-PRIVACY-DETECT`).
 Sentinel / SIEM can alert on `eventType == sensitive_data_detected`.
 
+The alert is also built for source events that fail validation (they are still
+quarantined). Its `application` is copied from the source; a source with
+`"application": null` gives an empty `application`, the same as empty names, and
+the alert policy decides as usual (the default policy requires `application.name`,
+so such an alert is not queued).
+
 ## Detector modules
 
 ### Australian identifiers
