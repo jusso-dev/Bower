@@ -17,7 +17,7 @@ RUN RID="linux-$([ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64)" \
     && mkdir -p /state/lib /state/spool
 
 # Chiseled runtime-deps: no shell, no package manager, no ICU (InvariantGlobalization).
-FROM mcr.microsoft.com/dotnet/runtime-deps:10.0.12-noble-chiseled AS runtime
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0.13-noble-chiseled AS runtime
 WORKDIR /app
 COPY --from=build /app .
 COPY policies ./policies

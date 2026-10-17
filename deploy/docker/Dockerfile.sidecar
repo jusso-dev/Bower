@@ -28,7 +28,7 @@ RUN apt-get update \
     && getcap /app/Bower.Agent.Docker \
     && mkdir -p /state
 
-FROM mcr.microsoft.com/dotnet/runtime-deps:10.0.12-noble-chiseled AS runtime
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0.13-noble-chiseled AS runtime
 WORKDIR /app
 COPY --from=build /app .
 COPY --from=build --chown=1654:1654 /state /var/lib/bower-sidecar
