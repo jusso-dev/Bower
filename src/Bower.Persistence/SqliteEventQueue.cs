@@ -8,6 +8,7 @@ namespace Bower.Persistence;
 public sealed class SqliteEventStore : IDurableEventStore
 {
     private const string TimestampFormat = "O";
+    private const int MaximumEventIdLength = 128;
     private readonly string databasePath;
     private readonly string connectionString;
     private readonly long maximumBytes;
@@ -108,13 +109,23 @@ public sealed class SqliteEventStore : IDurableEventStore
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(candidate);
+        // Reject what the table's NOT NULL and CHECK constraints would refuse, so invalid
+        // input is an error and never mistaken for a duplicate.
+        ValidateCandidate(candidate);
         int payloadBytes = System.Text.Encoding.UTF8.GetByteCount(candidate.Payload);
 
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
-        // BEGIN IMMEDIATE takes the write lock before the capacity check so concurrent
-        // enqueues cannot both pass the check and overshoot the limit.
+        // BEGIN IMMEDIATE takes the write lock before the duplicate and capacity checks so
+        // concurrent enqueues cannot both pass them and insert or overshoot the limit.
         await using SqliteTransaction transaction =
             connection.BeginTransaction(IsolationLevel.Serializable, deferred: false);
+
+        // Idempotency wins over backpressure: a re-sent event is a duplicate even when the
+        // queue is full.
+        if (await ExistsAsync(connection, transaction, candidate, cancellationToken))
+        {
+            return new EnqueueResult(false, true, candidate.EventId);
+        }
 
         long currentBytes = await GetUndeliveredBytesAsync(connection, transaction, cancellationToken);
         if (currentBytes + payloadBytes > maximumBytes)
@@ -122,11 +133,13 @@ public sealed class SqliteEventStore : IDurableEventStore
             throw new QueueCapacityExceededException(maximumBytes, currentBytes, payloadBytes);
         }
 
+        // Plain INSERT: duplicates were ruled out under the write lock, so any constraint
+        // failure is an error instead of being silently ignored.
         await using SqliteCommand command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText =
             """
-            INSERT OR IGNORE INTO queue_events (
+            INSERT INTO queue_events (
                 event_id, fingerprint, payload, payload_bytes, received_at, state,
                 delivery_attempts)
             VALUES (
@@ -143,20 +156,71 @@ public sealed class SqliteEventStore : IDurableEventStore
         command.Parameters.AddWithValue("$state", (int)QueueState.Queued);
         command.Parameters.AddWithValue("$delivery_attempts", candidate.DeliveryAttempts);
 
-        int affected = await command.ExecuteNonQueryAsync(cancellationToken);
-        if (affected == 1)
-        {
-            await QueueLedger.AppendAsync(
-                connection,
-                transaction,
-                candidate.EventId,
-                candidate.Payload,
-                (string)command.Parameters["$received_at"].Value!,
-                cancellationToken);
-        }
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        await QueueLedger.AppendAsync(
+            connection,
+            transaction,
+            candidate.EventId,
+            candidate.Payload,
+            (string)command.Parameters["$received_at"].Value!,
+            cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
-        return new EnqueueResult(affected == 1, affected == 0, candidate.EventId);
+        return new EnqueueResult(true, false, candidate.EventId);
+    }
+
+    /// <summary>
+    /// Mirrors the table constraints: event id 1 to 128 characters (SQLite <c>length()</c>
+    /// counts Unicode characters and stops at NUL), non-empty fingerprint and payload.
+    /// Blank ids and fingerprints are also rejected: a blank id could never be settled.
+    /// </summary>
+    private static void ValidateCandidate(QueuedEvent candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate.EventId))
+        {
+            throw new ArgumentException("Event identifier cannot be empty or whitespace.", nameof(candidate));
+        }
+
+        if (candidate.EventId.Contains('\0', StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Event identifier cannot contain NUL characters.", nameof(candidate));
+        }
+
+        if (candidate.EventId.Length > MaximumEventIdLength
+            && candidate.EventId.EnumerateRunes().Count() > MaximumEventIdLength)
+        {
+            throw new ArgumentException("Event identifier cannot exceed 128 characters.", nameof(candidate));
+        }
+
+        if (string.IsNullOrWhiteSpace(candidate.Fingerprint))
+        {
+            throw new ArgumentException("Event fingerprint cannot be empty or whitespace.", nameof(candidate));
+        }
+
+        if (string.IsNullOrEmpty(candidate.Payload))
+        {
+            throw new ArgumentException("Event payload cannot be empty.", nameof(candidate));
+        }
+    }
+
+    private static async Task<bool> ExistsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        QueuedEvent candidate,
+        CancellationToken cancellationToken)
+    {
+        await using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        // Two EXISTS probes so each uses its own unique index.
+        command.CommandText =
+            """
+            SELECT EXISTS (SELECT 1 FROM queue_events WHERE event_id = $event_id)
+                OR EXISTS (SELECT 1 FROM queue_events WHERE fingerprint = $fingerprint);
+            """;
+        command.Parameters.AddWithValue("$event_id", candidate.EventId);
+        command.Parameters.AddWithValue("$fingerprint", candidate.Fingerprint);
+        object? result = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToInt64(result, CultureInfo.InvariantCulture) != 0;
     }
 
     public async Task<IReadOnlyList<QueuedEvent>> LeaseAsync(
@@ -401,6 +465,90 @@ public sealed class SqliteEventStore : IDurableEventStore
         {
             throw new InvalidQueueTransitionException(eventId, "uploading", "dead-lettered");
         }
+    }
+
+    public async Task<IReadOnlyList<string>> MarkFailedBatchAsync(
+        IReadOnlyList<FailureSettlement> failures,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(failures);
+        foreach (FailureSettlement failure in failures)
+        {
+            ArgumentNullException.ThrowIfNull(failure);
+            ArgumentException.ThrowIfNullOrWhiteSpace(failure.EventId);
+            ArgumentException.ThrowIfNullOrWhiteSpace(failure.FailureCode);
+        }
+
+        if (failures.Count == 0)
+        {
+            return [];
+        }
+
+        // One transaction for every failure in the batch, with the same guarded transitions
+        // as MarkRetryingAsync and MarkDeadLetteredAsync. Any error rolls the whole batch
+        // back, so the events stay leased and are redelivered after the lease expires.
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteTransaction transaction =
+            connection.BeginTransaction(IsolationLevel.Serializable, deferred: false);
+        await using SqliteCommand retry = connection.CreateCommand();
+        retry.Transaction = transaction;
+        retry.CommandText =
+            """
+            UPDATE queue_events
+            SET state = $retrying,
+                next_attempt_at = $next_attempt_at,
+                last_failure_code = $failure_code,
+                lease_until = NULL
+            WHERE event_id = $event_id AND state = $uploading;
+            """;
+        retry.Parameters.AddWithValue("$retrying", (int)QueueState.Retrying);
+        retry.Parameters.AddWithValue("$uploading", (int)QueueState.Uploading);
+        SqliteParameter retryAt = retry.Parameters.Add("$next_attempt_at", SqliteType.Text);
+        SqliteParameter retryCode = retry.Parameters.Add("$failure_code", SqliteType.Text);
+        SqliteParameter retryEventId = retry.Parameters.Add("$event_id", SqliteType.Text);
+
+        await using SqliteCommand deadLetter = connection.CreateCommand();
+        deadLetter.Transaction = transaction;
+        deadLetter.CommandText =
+            """
+            UPDATE queue_events
+            SET state = $dead_lettered,
+                last_failure_code = $failure_code,
+                lease_until = NULL,
+                next_attempt_at = NULL
+            WHERE event_id = $event_id AND state = $uploading;
+            """;
+        deadLetter.Parameters.AddWithValue("$dead_lettered", (int)QueueState.DeadLettered);
+        deadLetter.Parameters.AddWithValue("$uploading", (int)QueueState.Uploading);
+        SqliteParameter deadCode = deadLetter.Parameters.Add("$failure_code", SqliteType.Text);
+        SqliteParameter deadEventId = deadLetter.Parameters.Add("$event_id", SqliteType.Text);
+
+        List<string> notLeased = [];
+        foreach (FailureSettlement failure in failures)
+        {
+            SqliteCommand command;
+            if (failure.RetryAfter is DateTimeOffset retryAfter)
+            {
+                retryAt.Value = retryAfter.ToUniversalTime().ToString(TimestampFormat, CultureInfo.InvariantCulture);
+                retryCode.Value = failure.FailureCode;
+                retryEventId.Value = failure.EventId;
+                command = retry;
+            }
+            else
+            {
+                deadCode.Value = failure.FailureCode;
+                deadEventId.Value = failure.EventId;
+                command = deadLetter;
+            }
+
+            if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                notLeased.Add(failure.EventId);
+            }
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return notLeased;
     }
 
     public async Task<QueueSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default)

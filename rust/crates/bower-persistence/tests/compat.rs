@@ -9,6 +9,8 @@
 //! temporary C# test also opened the databases from
 //! `export_rust_databases_for_csharp`, verified the ledger, leased, delivered,
 //! purged and advanced cursors on them (reverse direction). It was not committed.
+//! The current C# cursor store (Microsoft.Data.Sqlite, `CREATE TABLE IF NOT EXISTS`)
+//! stores the same DDL text, so the cursor fixture still matches.
 
 mod common;
 
@@ -63,9 +65,19 @@ fn queue_scenario(path: &Path) {
     assert!(enqueue("e5", "sha256:e5", r#"{"n":5}"#, now + Span::seconds(3), 0).enqueued);
     assert!(enqueue("e6", "sha256:e5", r#"{"n":6}"#, now, 0).duplicate);
     assert!(enqueue("e5", "sha256:other", r#"{"n":6}"#, now, 0).duplicate);
-    assert!(enqueue("", "sha256:bad0", "{}", now, 0).duplicate);
-    assert!(enqueue(&"x".repeat(129), "sha256:bad129", "{}", now, 0).duplicate);
-    assert!(enqueue("empty", "sha256:empty", "", now, 0).duplicate);
+    // The C# fixture run reported these as duplicates (INSERT OR IGNORE swallowed the
+    // CHECK failures); both implementations now reject them. Neither wrote a row, so
+    // the fixture is unaffected.
+    for (id, fingerprint, payload) in [
+        (String::new(), "sha256:bad0", "{}"),
+        ("x".repeat(129), "sha256:bad129", "{}"),
+        ("empty".to_owned(), "sha256:empty", ""),
+    ] {
+        assert!(matches!(
+            store.enqueue(&event(&id, fingerprint, payload, now)),
+            Err(bower_contracts::StoreError::Invalid(_))
+        ));
+    }
 
     let leased = store.lease(3, Duration::from_secs(60)).unwrap();
     let summary: Vec<String> = leased

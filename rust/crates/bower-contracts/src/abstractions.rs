@@ -120,6 +120,15 @@ pub struct DeadLetterRecord {
     pub received_at: Timestamp,
 }
 
+/// One failed delivery to settle (C# `FailureSettlement`). `retry_after` set
+/// schedules a retry; `None` dead-letters the event with `failure_code`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FailureSettlement {
+    pub event_id: String,
+    pub failure_code: String,
+    pub retry_after: Option<Timestamp>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LedgerHead {
     pub sequence: i64,
@@ -155,6 +164,17 @@ pub enum StoreError {
 
 pub type StoreResult<T> = Result<T, StoreError>;
 
+/// `ArgumentException.ThrowIfNullOrWhiteSpace` for batch arguments.
+fn require_batch_text(value: &str, name: &str) -> StoreResult<()> {
+    if value.chars().all(char::is_whitespace) {
+        Err(StoreError::Invalid(format!(
+            "{name} cannot be empty or whitespace."
+        )))
+    } else {
+        Ok(())
+    }
+}
+
 /// Durable, idempotent event queue. Never deletes before acknowledgement.
 pub trait DurableEventStore: Send + Sync {
     fn initialize(&self) -> StoreResult<()>;
@@ -172,6 +192,56 @@ pub trait DurableEventStore: Send + Sync {
         retry_after: Timestamp,
     ) -> StoreResult<()>;
     fn mark_dead_lettered(&self, event_id: &str, failure_code: &str) -> StoreResult<()>;
+    /// Marks every listed event that is still leased (uploading) as delivered and
+    /// returns the ones that were not (for example reclaimed after lease expiry).
+    ///
+    /// Stores should override this to settle the batch in one transaction; the
+    /// default settles event by event and is not atomic.
+    fn mark_delivered_batch(
+        &self,
+        event_ids: &[String],
+        acknowledgement: &str,
+    ) -> StoreResult<Vec<String>> {
+        require_batch_text(acknowledgement, "acknowledgement")?;
+        for event_id in event_ids {
+            require_batch_text(event_id, "eventId")?;
+        }
+        let mut not_leased = Vec::new();
+        for event_id in event_ids {
+            match self.mark_delivered(event_id, acknowledgement) {
+                Ok(()) => {}
+                Err(StoreError::Invalid(_)) => not_leased.push(event_id.clone()),
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(not_leased)
+    }
+    /// Settles failed deliveries: every listed event still leased becomes retrying
+    /// (`retry_after` set) or dead-lettered (`None`); the rest are returned untouched.
+    ///
+    /// Stores should override this to settle the batch in one transaction (nothing
+    /// settled on error); the default settles event by event and is not atomic.
+    fn mark_failed_batch(&self, failures: &[FailureSettlement]) -> StoreResult<Vec<String>> {
+        for failure in failures {
+            require_batch_text(&failure.event_id, "eventId")?;
+            require_batch_text(&failure.failure_code, "failureCode")?;
+        }
+        let mut not_leased = Vec::new();
+        for failure in failures {
+            let settled = match failure.retry_after {
+                Some(retry_after) => {
+                    self.mark_retrying(&failure.event_id, &failure.failure_code, retry_after)
+                }
+                None => self.mark_dead_lettered(&failure.event_id, &failure.failure_code),
+            };
+            match settled {
+                Ok(()) => {}
+                Err(StoreError::Invalid(_)) => not_leased.push(failure.event_id.clone()),
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(not_leased)
+    }
     fn snapshot(&self) -> StoreResult<QueueSnapshot>;
     /// Removes delivered events acknowledged before `delivered_before`. Never removes
     /// undelivered events.

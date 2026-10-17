@@ -104,6 +104,48 @@ public sealed class QueueRetentionTests
     }
 
     [Fact]
+    public async Task Capacity_FullQueueStillReportsDuplicates()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = new(Path.Combine(directory.Path, "queue.db"), OneMebibyte, clock);
+        await store.InitializeAsync(cancellationToken);
+        string payload = $$"""{"v":"{{new string('x', 600 * 1024)}}"}""";
+        await store.EnqueueAsync(new QueuedEvent("first", "sha256:first", payload, clock.UtcNow), cancellationToken);
+
+        // Idempotency wins over backpressure: a producer re-sending an accepted event while
+        // the queue is full must see Duplicate (and stop retrying), not capacity exceeded.
+        EnqueueResult sameId = await store.EnqueueAsync(
+            new QueuedEvent("first", "sha256:first", payload, clock.UtcNow),
+            cancellationToken);
+        EnqueueResult sameFingerprint = await store.EnqueueAsync(
+            new QueuedEvent("first-again", "sha256:first", payload, clock.UtcNow),
+            cancellationToken);
+        await Assert.ThrowsAsync<QueueCapacityExceededException>(() => store.EnqueueAsync(
+            new QueuedEvent("second", "sha256:second", payload, clock.UtcNow),
+            cancellationToken));
+
+        // Also after a restart, and for a duplicate that has since been delivered.
+        SqliteEventStore restarted = new(Path.Combine(directory.Path, "queue.db"), OneMebibyte, clock);
+        await restarted.InitializeAsync(cancellationToken);
+        await restarted.LeaseAsync(1, TimeSpan.FromMinutes(1), cancellationToken);
+        await restarted.MarkDeliveredAsync("first", "ack", cancellationToken);
+        await restarted.EnqueueAsync(new QueuedEvent("filler", "sha256:filler", payload, clock.UtcNow), cancellationToken);
+        EnqueueResult delivered = await restarted.EnqueueAsync(
+            new QueuedEvent("first", "sha256:first", payload, clock.UtcNow),
+            cancellationToken);
+        LedgerVerification verification = await restarted.VerifyLedgerAsync(cancellationToken);
+
+        Assert.True(sameId.Duplicate);
+        Assert.True(sameFingerprint.Duplicate);
+        Assert.Equal("first-again", sameFingerprint.EventId);
+        Assert.True(delivered.Duplicate);
+        Assert.True(verification.Intact);
+        Assert.Equal(2, verification.Entries);
+    }
+
+    [Fact]
     public async Task Capacity_HoldsUnderConcurrentEnqueue()
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;

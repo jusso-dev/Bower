@@ -11,8 +11,8 @@ use std::time::Duration;
 
 use bower_contracts::time::Clock;
 use bower_contracts::{
-    DeliveryFailure, DeliveryResult, DurableEventStore, OutputAdapter, QueuedEvent, StoreError,
-    StoreResult,
+    DeliveryFailure, DeliveryResult, DurableEventStore, FailureSettlement, OutputAdapter,
+    QueuedEvent, StoreError, StoreResult,
 };
 use tracing::{error, info, warn};
 
@@ -123,6 +123,7 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
             .destination_acknowledgement
             .clone()
             .unwrap_or_else(|| format!("adapter:{output_id}:acknowledged"));
+        let mut delivered = Vec::with_capacity(result.acknowledged_event_ids.len());
         for event_id in &result.acknowledged_event_ids {
             if !leased.contains_key(event_id) || !settled.insert(event_id.clone()) {
                 warn!(
@@ -131,11 +132,21 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
                 );
                 continue;
             }
-            let (id, ack) = (event_id.clone(), acknowledgement.clone());
-            self.settle(move |queue| queue.mark_delivered(&id, &ack), shutdown)
-                .await?;
+            delivered.push(event_id.clone());
         }
 
+        if !delivered.is_empty() {
+            // One queue transaction for every acknowledged event in the batch.
+            let reclaimed = self
+                .blocking(
+                    move |queue| queue.mark_delivered_batch(&delivered, &acknowledgement),
+                    shutdown,
+                )
+                .await?;
+            self.log_stale_leases(reclaimed.len());
+        }
+
+        let mut failed = Vec::new();
         for failure in &result.failures {
             let Some(&attempts) = leased.get(&failure.event_id) else {
                 warn!(
@@ -151,8 +162,7 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
                 );
                 continue;
             }
-            self.settle_failure(attempts, failure.clone(), shutdown)
-                .await?;
+            failed.push(self.to_settlement(attempts, failure.clone()));
         }
 
         // An adapter that neither acknowledged nor failed an event broke its contract;
@@ -168,11 +178,30 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
                 is_retryable: true,
                 retry_after: None,
             };
-            self.settle_failure(leased[event_id], failure, shutdown)
+            failed.push(self.to_settlement(leased[event_id], failure));
+        }
+
+        if !failed.is_empty() {
+            // One queue transaction for every retrying and dead-lettered event in the
+            // batch. On error nothing is settled and the events are redelivered after
+            // the lease expires.
+            let reclaimed = self
+                .blocking(move |queue| queue.mark_failed_batch(&failed), shutdown)
                 .await?;
+            self.log_stale_leases(reclaimed.len());
         }
 
         Ok(count)
+    }
+
+    fn log_stale_leases(&self, count: usize) {
+        for _ in 0..count {
+            // The lease expired and the event was reclaimed; the newer lease owns it now.
+            info!(
+                output_id = self.output.id(),
+                "Output adapter settled an event whose lease had already expired."
+            );
+        }
     }
 
     /// Runs the adapter on its own task so a panicking adapter fails the batch
@@ -214,12 +243,9 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
         }))
     }
 
-    async fn settle_failure(
-        &self,
-        attempts: i32,
-        failure: DeliveryFailure,
-        shutdown: &ShutdownToken,
-    ) -> Result<(), DeliveryError> {
+    /// C# `ToSettlement`: dead-letter permanent failures and exhausted retries,
+    /// otherwise schedule a retry.
+    fn to_settlement(&self, attempts: i32, failure: DeliveryFailure) -> FailureSettlement {
         let DeliveryFailure {
             event_id,
             code,
@@ -227,12 +253,11 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
             retry_after,
         } = failure;
         if !is_retryable {
-            return self
-                .settle(
-                    move |queue| queue.mark_dead_lettered(&event_id, &code),
-                    shutdown,
-                )
-                .await;
+            return FailureSettlement {
+                event_id,
+                failure_code: code,
+                retry_after: None,
+            };
         }
 
         if attempts >= self.options.maximum_delivery_attempts {
@@ -240,13 +265,11 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
                 output_id = self.output.id(),
                 attempts, "Output adapter exhausted delivery attempts; event dead-lettered."
             );
-            let reason = format!("max-attempts-exceeded:{code}");
-            return self
-                .settle(
-                    move |queue| queue.mark_dead_lettered(&event_id, &reason),
-                    shutdown,
-                )
-                .await;
+            return FailureSettlement {
+                event_id,
+                failure_code: format!("max-attempts-exceeded:{code}"),
+                retry_after: None,
+            };
         }
 
         let retry_at = retry_after.unwrap_or_else(|| {
@@ -254,28 +277,10 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
             self.clock.utc_now()
                 + chrono::TimeDelta::from_std(delay).unwrap_or(chrono::TimeDelta::MAX)
         });
-        self.settle(
-            move |queue| queue.mark_retrying(&event_id, &code, retry_at),
-            shutdown,
-        )
-        .await
-    }
-
-    async fn settle(
-        &self,
-        transition: impl FnOnce(&dyn DurableEventStore) -> StoreResult<()> + Send + 'static,
-        shutdown: &ShutdownToken,
-    ) -> Result<(), DeliveryError> {
-        match self.blocking(transition, shutdown).await {
-            Err(DeliveryError::Store(StoreError::Invalid(_))) => {
-                // The lease expired and the event was reclaimed; the newer lease owns it now.
-                info!(
-                    output_id = self.output.id(),
-                    "Output adapter settled an event whose lease had already expired."
-                );
-                Ok(())
-            }
-            other => other,
+        FailureSettlement {
+            event_id,
+            failure_code: code,
+            retry_after: Some(retry_at),
         }
     }
 

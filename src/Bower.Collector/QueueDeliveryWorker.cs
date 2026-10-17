@@ -1,5 +1,4 @@
 using Bower.Abstractions;
-using Bower.Persistence;
 
 namespace Bower.Collector;
 
@@ -119,6 +118,7 @@ public sealed partial class QueueDeliveryWorker(
             }
         }
 
+        List<FailureSettlement> failed = [];
         foreach (DeliveryFailure failure in result.Failures)
         {
             if (!leased.TryGetValue(failure.EventId, out QueuedEvent? item) || !settled.Add(failure.EventId))
@@ -127,7 +127,7 @@ public sealed partial class QueueDeliveryWorker(
                 continue;
             }
 
-            await SettleFailureAsync(item, failure, cancellationToken);
+            failed.Add(ToSettlement(item, failure));
         }
 
         // An adapter that neither acknowledged nor failed an event broke its contract;
@@ -135,53 +135,42 @@ public sealed partial class QueueDeliveryWorker(
         foreach (QueuedEvent item in events.Where(item => !settled.Contains(item.EventId)))
         {
             LogUnexpectedResult(logger, output.Id);
-            await SettleFailureAsync(
+            failed.Add(ToSettlement(
                 item,
-                new DeliveryFailure(item.EventId, "output-result-missing", true, null),
-                cancellationToken);
+                new DeliveryFailure(item.EventId, "output-result-missing", true, null)));
+        }
+
+        if (failed.Count > 0)
+        {
+            // One queue transaction for every retrying and dead-lettered event in the batch.
+            // On error nothing is settled and the events are redelivered after lease expiry.
+            IReadOnlyList<string> reclaimed = await queue.MarkFailedBatchAsync(failed, cancellationToken);
+            for (int index = 0; index < reclaimed.Count; index++)
+            {
+                // The lease expired and the event was reclaimed; the newer lease owns it now.
+                LogStaleLease(logger, output.Id);
+            }
         }
 
         return events.Count;
     }
 
-    private Task SettleFailureAsync(
-        QueuedEvent item,
-        DeliveryFailure failure,
-        CancellationToken cancellationToken)
+    private FailureSettlement ToSettlement(QueuedEvent item, DeliveryFailure failure)
     {
         if (!failure.IsRetryable)
         {
-            return SettleAsync(
-                () => queue.MarkDeadLetteredAsync(item.EventId, failure.Code, cancellationToken));
+            return new FailureSettlement(item.EventId, failure.Code, null);
         }
 
         if (item.DeliveryAttempts >= options.MaximumDeliveryAttempts)
         {
             LogAttemptsExhausted(logger, output.Id, item.DeliveryAttempts);
-            return SettleAsync(
-                () => queue.MarkDeadLetteredAsync(
-                    item.EventId,
-                    $"max-attempts-exceeded:{failure.Code}",
-                    cancellationToken));
+            return new FailureSettlement(item.EventId, $"max-attempts-exceeded:{failure.Code}", null);
         }
 
         DateTimeOffset retryAt = failure.RetryAfter
             ?? clock.GetUtcNow().Add(CalculateRetryDelay(item.DeliveryAttempts));
-        return SettleAsync(
-            () => queue.MarkRetryingAsync(item.EventId, failure.Code, retryAt, cancellationToken));
-    }
-
-    private async Task SettleAsync(Func<Task> transition)
-    {
-        try
-        {
-            await transition();
-        }
-        catch (InvalidQueueTransitionException)
-        {
-            // The lease expired and the event was reclaimed; the newer lease owns it now.
-            LogStaleLease(logger, output.Id);
-        }
+        return new FailureSettlement(item.EventId, failure.Code, retryAt);
     }
 
     internal static TimeSpan CalculateRetryDelay(int attempt)

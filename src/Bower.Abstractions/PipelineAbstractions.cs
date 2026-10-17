@@ -77,6 +77,16 @@ public interface IDurableEventStore
         string failureCode,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Settles failed deliveries atomically: every listed event that is still leased
+    /// (uploading) becomes retrying (<see cref="FailureSettlement.RetryAfter"/> set) or
+    /// dead-lettered (<see cref="FailureSettlement.RetryAfter"/> null). Events no longer
+    /// leased are left untouched and returned. On error nothing is settled.
+    /// </summary>
+    Task<IReadOnlyList<string>> MarkFailedBatchAsync(
+        IReadOnlyList<FailureSettlement> failures,
+        CancellationToken cancellationToken = default);
+
     Task<QueueSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -112,6 +122,15 @@ public interface IDurableEventStore
     /// <summary>Recomputes the ledger chain and compares it with stored events.</summary>
     Task<LedgerVerification> VerifyLedgerAsync(CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// One failed delivery to settle. A <see cref="RetryAfter"/> value schedules a retry;
+/// null dead-letters the event with <see cref="FailureCode"/>.
+/// </summary>
+public sealed record FailureSettlement(
+    string EventId,
+    string FailureCode,
+    DateTimeOffset? RetryAfter);
 
 public sealed record DeadLetterRecord(
     string EventId,

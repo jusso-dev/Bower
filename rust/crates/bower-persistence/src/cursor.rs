@@ -1,8 +1,8 @@
 //! Source cursor checkpoints (C# `EfSourceCursorStore`).
 //!
-//! The C# store uses EF Core `EnsureCreated`; this reproduces its DDL, its
-//! creation rules and EF Core's SQLite `DateTimeOffset` text so either
-//! implementation can open the other's database.
+//! The C# store (Microsoft.Data.Sqlite since EF Core was removed for Native AOT)
+//! keeps the DDL and `DateTimeOffset` text EF Core created; this mirrors it so
+//! either implementation can open the other's database.
 
 use std::path::{Path, PathBuf};
 
@@ -13,14 +13,14 @@ use rusqlite::{OptionalExtension, TransactionBehavior, params};
 
 use crate::pool::{ConnectionPool, prepare_path, require_text, restrict_permissions, storage};
 
-/// EF Core opens with `Default Timeout=5` (busy retry) and enables foreign keys.
-const CONNECTION_PRAGMAS: &str = "PRAGMA busy_timeout = 5000;
-PRAGMA foreign_keys = ON;";
+/// C# opens with `Default Timeout=5` (busy retry) and no other connection PRAGMAs.
+const CONNECTION_PRAGMAS: &str = "PRAGMA busy_timeout = 5000;";
 
-/// DDL emitted by EF Core 10 `EnsureCreated` for `SourceCursorDbContext`:
-/// key first, then CLR declaration order (verified against a C#-written file,
-/// `tests/fixtures/csharp-cursors.db`).
-const CURSOR_SCHEMA: &str = "CREATE TABLE \"source_cursors\" (
+/// C# `CreateTableSql`: the DDL EF Core 10 `EnsureCreated` emitted for
+/// `SourceCursorDbContext` (key first, then CLR declaration order), made
+/// idempotent. SQLite drops `IF NOT EXISTS` from `sqlite_master.sql`, so the
+/// stored schema matches `tests/fixtures/csharp-cursors.db`.
+const CURSOR_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS \"source_cursors\" (
     \"SourceId\" TEXT NOT NULL CONSTRAINT \"PK_source_cursors\" PRIMARY KEY,
     \"Value\" TEXT NOT NULL,
     \"Version\" INTEGER NOT NULL,
@@ -85,29 +85,18 @@ impl SqliteSourceCursorStore {
         self.pool.clear();
     }
 
-    /// EF Core `EnsureCreated`: a new file is switched to WAL and gets the table;
-    /// an existing file gets the table only when it has no tables at all.
+    /// C# `InitializeAsync`: a new file is switched to WAL (as EF Core did), then
+    /// `CREATE TABLE IF NOT EXISTS` runs on every start, so an existing file that
+    /// lacks the table (for example one holding unrelated tables) gets it.
     pub fn initialize(&self) -> StoreResult<()> {
-        let existed = self.pool.path().exists();
+        let created = !self.pool.path().exists();
         self.pool.with(|connection| {
-            if !existed {
-                let _mode: String =
-                    connection.query_row("PRAGMA journal_mode = 'wal';", [], |row| row.get(0)).map_err(storage)?;
+            if created {
+                let _mode: String = connection
+                    .query_row("PRAGMA journal_mode = 'wal';", [], |row| row.get(0))
+                    .map_err(storage)?;
             }
-            let tables: i64 = connection
-                .query_row(
-                    "SELECT COUNT(*) FROM \"sqlite_master\" WHERE \"type\" = 'table' AND \"rootpage\" IS NOT NULL;",
-                    [],
-                    |row| row.get(0),
-                )
-                .map_err(storage)?;
-            if tables == 0 {
-                let transaction =
-                    connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
-                transaction.execute_batch(CURSOR_SCHEMA).map_err(storage)?;
-                transaction.commit().map_err(storage)?;
-            }
-            Ok(())
+            connection.execute_batch(CURSOR_SCHEMA).map_err(storage)
         })?;
         restrict_permissions(&[PathBuf::from(self.pool.path())])
     }
@@ -147,14 +136,15 @@ impl SourceCursorStore for SqliteSourceCursorStore {
             let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
             let current: Option<i64> = transaction
                 .query_row(
-                    "SELECT \"Version\" FROM \"source_cursors\" WHERE \"SourceId\" = ?1 LIMIT 2;",
+                    "SELECT \"Version\" FROM \"source_cursors\" WHERE \"SourceId\" = ?1;",
                     params![source_id],
                     |row| row.get(0),
                 )
                 .optional()
                 .map_err(storage)?;
-            // SaveChanges failures (constraint, concurrency) surface as `false`,
-            // matching the C# `DbUpdateException` handler.
+            // Any failed write (constraint, concurrent creator) and a version
+            // predicate that matched nothing are a lost race: `false`, matching the
+            // C# `SqliteException` handler.
             let written = match current {
                 None if expected_version != 0 => return Ok(false),
                 None => transaction.execute(
@@ -163,8 +153,8 @@ impl SourceCursorStore for SqliteSourceCursorStore {
                 ),
                 Some(version) if version != expected_version => return Ok(false),
                 Some(version) => transaction.execute(
-                    "UPDATE \"source_cursors\" SET \"UpdatedAt\" = ?1, \"Value\" = ?2, \"Version\" = ?3 WHERE \"SourceId\" = ?4 AND \"Version\" = ?5;",
-                    params![updated_text, value, version + 1, source_id, version],
+                    "UPDATE \"source_cursors\" SET \"Value\" = ?1, \"Version\" = ?2, \"UpdatedAt\" = ?3 WHERE \"SourceId\" = ?4 AND \"Version\" = ?5;",
+                    params![value, version + 1, updated_text, source_id, version],
                 ),
             };
             match written {

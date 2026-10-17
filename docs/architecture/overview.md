@@ -35,6 +35,23 @@ after abrupt shutdown. Payload rows are not deleted during acknowledgement; the
 Retryable failures dead-letter after `BOWER_MAX_DELIVERY_ATTEMPTS` leases.
 Events an adapter acknowledges in one delivery batch are marked `delivered` in a
 single queue transaction; an event whose lease was reclaimed meanwhile is skipped.
+Failed events in the batch (retrying and dead-lettered, including events the
+adapter did not report) are settled in one more transaction with the same
+`uploading` guard. Either batch is all-or-nothing: on a storage error nothing in it
+is settled, the events stay leased and are redelivered after the lease expires
+(at-least-once).
+
+Enqueue checks for a duplicate (same event id or fingerprint, in any state) before
+the capacity check, inside the same `BEGIN IMMEDIATE` transaction, so a re-sent
+event is reported as a duplicate even when the queue is full. Invalid input (blank,
+NUL-containing or over-128-character event id, blank fingerprint, empty payload) is
+rejected as an error and is never reported as a duplicate. Ledger verification
+reads events and ledger entries in one read transaction, so concurrent enqueues
+cannot produce false issues.
+
+The source cursor store runs `CREATE TABLE IF NOT EXISTS` on every start (WAL only
+for a new file) and treats any failed cursor write as a lost race (`false`). The
+C# and Rust stores share the same DDL, column order and timestamp text.
 Queue schema version 4 adds a covering index on `(state, payload_bytes,
 received_at)` so the per-enqueue capacity check does not read stored payloads; it
 is created idempotently on start-up.

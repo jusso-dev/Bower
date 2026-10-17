@@ -9,8 +9,8 @@ use bower_collector::worker::{QueueDeliveryOptions, QueueDeliveryWorker};
 use bower_contracts::time::{Clock, Timestamp};
 use bower_contracts::{
     DeadLetterRecord, DeliveryFailure, DeliveryResult, DurableEventStore, EnqueueResult,
-    LedgerHead, LedgerVerification, OutputAdapter, QueueSnapshot, QueueState, QueuedEvent,
-    StoreError, StoreResult,
+    FailureSettlement, LedgerHead, LedgerVerification, OutputAdapter, QueueSnapshot, QueueState,
+    QueuedEvent, StoreError, StoreResult,
 };
 use bower_persistence::SqliteEventStore;
 
@@ -246,16 +246,101 @@ async fn deliver_once_ignores_settlement_of_reclaimed_lease() {
 }
 
 #[tokio::test]
+async fn deliver_once_batch_acknowledgement_skips_only_the_reclaimed_event() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new();
+    let store = create_store(&directory, &clock);
+    enqueue(&store, &clock, &["slow", "fast"]);
+    let (inner_store, inner_clock) = (store.clone(), clock.clone());
+    let output = FakeOutput(Box::new(move |_| {
+        // Another worker reclaims "slow" and settles it before this batch acknowledges.
+        inner_clock.advance(Duration::from_secs(600));
+        inner_store.lease(10, Duration::from_secs(300)).unwrap();
+        inner_store.mark_delivered("slow", "other-worker").unwrap();
+        result(&["slow", "fast"], Vec::new(), Some("ack-batch"))
+    }));
+
+    let leased = worker(store.clone(), output, &clock, 20)
+        .deliver_once(&ShutdownToken::never())
+        .await
+        .unwrap();
+    let snapshot = store.snapshot().unwrap();
+
+    assert_eq!(leased, 2);
+    assert_eq!(snapshot.delivered, 2);
+    assert_eq!(snapshot.uploading, 0);
+    assert_eq!(snapshot.retrying, 0);
+}
+
+#[tokio::test]
+async fn deliver_once_settles_all_failures_in_one_batch_all_or_nothing() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new();
+    let store = create_store(&directory, &clock);
+    enqueue(&store, &clock, &["ok", "retry", "bad", "missing"]);
+    let flaky = Arc::new(FlakyStore::new(store.clone(), 0, 1));
+    let output = FakeOutput(Box::new(|events| {
+        let acknowledged: Vec<&str> = events
+            .iter()
+            .map(|item| item.event_id.as_str())
+            .filter(|id| *id == "ok")
+            .collect();
+        let failures = events
+            .iter()
+            .filter_map(|item| match item.event_id.as_str() {
+                "retry" => Some(failure("retry", "azure-http-503", true)),
+                "bad" => Some(failure("bad", "azure-http-400", false)),
+                _ => None,
+            })
+            .collect();
+        result(&acknowledged, failures, Some("ack-1"))
+    }));
+    let worker = worker(flaky.clone(), output, &clock, 20);
+
+    // The failure batch fails: acknowledged events stay delivered, every failed event
+    // stays leased (none half-settled) and is redelivered once the lease expires.
+    assert!(matches!(
+        worker.deliver_once(&ShutdownToken::never()).await,
+        Err(bower_collector::worker::DeliveryError::Store(
+            StoreError::Storage(_)
+        ))
+    ));
+    let after_failure = store.snapshot().unwrap();
+    assert_eq!(
+        (
+            after_failure.delivered,
+            after_failure.uploading,
+            after_failure.retrying,
+            after_failure.dead_lettered
+        ),
+        (1, 3, 0, 0)
+    );
+
+    clock.advance(Duration::from_secs(360));
+    let redelivered = worker.deliver_once(&ShutdownToken::never()).await.unwrap();
+    let settled = store.snapshot().unwrap();
+
+    assert_eq!(redelivered, 3);
+    assert_eq!(flaky.failed_batch_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        (
+            settled.delivered,
+            settled.uploading,
+            settled.retrying,
+            settled.dead_lettered
+        ),
+        (1, 0, 2, 1)
+    );
+    assert!(store.verify_ledger().unwrap().intact);
+}
+
+#[tokio::test]
 async fn worker_keeps_running_after_storage_failure() {
     let directory = tempfile::tempdir().unwrap();
     let clock = FakeClock::new();
     let store = create_store(&directory, &clock);
     enqueue(&store, &clock, &["a"]);
-    let flaky = Arc::new(FlakyStore {
-        inner: store.clone(),
-        failures: AtomicUsize::new(0),
-        failures_before_success: 2,
-    });
+    let flaky = Arc::new(FlakyStore::new(store.clone(), 2, 0));
     let (delivered_sender, delivered) = tokio::sync::oneshot::channel::<()>();
     let delivered_sender = Mutex::new(Some(delivered_sender));
     let output = FakeOutput(Box::new(move |events| {
@@ -314,9 +399,41 @@ struct FlakyStore {
     inner: Arc<SqliteEventStore>,
     failures: AtomicUsize,
     failures_before_success: usize,
+    failed_batch_calls: AtomicUsize,
+    failed_batch_failures: usize,
+}
+
+impl FlakyStore {
+    fn new(
+        inner: Arc<SqliteEventStore>,
+        failures_before_success: usize,
+        failed_batch_failures: usize,
+    ) -> Self {
+        Self {
+            inner,
+            failures: AtomicUsize::new(0),
+            failures_before_success,
+            failed_batch_calls: AtomicUsize::new(0),
+            failed_batch_failures,
+        }
+    }
 }
 
 impl DurableEventStore for FlakyStore {
+    fn mark_delivered_batch(
+        &self,
+        event_ids: &[String],
+        acknowledgement: &str,
+    ) -> StoreResult<Vec<String>> {
+        self.inner.mark_delivered_batch(event_ids, acknowledgement)
+    }
+    fn mark_failed_batch(&self, failures: &[FailureSettlement]) -> StoreResult<Vec<String>> {
+        let call = self.failed_batch_calls.fetch_add(1, Ordering::SeqCst) + 1;
+        if call <= self.failed_batch_failures {
+            return Err(StoreError::Storage("database is locked".into()));
+        }
+        self.inner.mark_failed_batch(failures)
+    }
     fn initialize(&self) -> StoreResult<()> {
         self.inner.initialize()
     }

@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use bower_contracts::time::{self, Timestamp};
 use bower_contracts::{
-    DeadLetterRecord, DurableEventStore, EnqueueResult, LedgerHead, LedgerVerification,
-    QueueSnapshot, QueueState, QueuedEvent, StoreError, StoreResult,
+    DeadLetterRecord, DurableEventStore, EnqueueResult, FailureSettlement, LedgerHead,
+    LedgerVerification, QueueSnapshot, QueueState, QueuedEvent, StoreError, StoreResult,
 };
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension, Row, TransactionBehavior, named_params, params};
@@ -23,6 +23,8 @@ use bower_contracts::time::{Clock, SystemClock};
 pub const MINIMUM_QUEUE_BYTES: i64 = 1_048_576;
 pub const MAXIMUM_LEASE_COUNT: usize = 10_000;
 pub const MAXIMUM_PURGE_COUNT: usize = 100_000;
+/// `CHECK (length(event_id) BETWEEN 1 AND 128)`: SQLite counts characters.
+pub const MAXIMUM_EVENT_ID_LENGTH: usize = 128;
 
 /// Connection-scoped settings applied to every pooled connection.
 const CONNECTION_PRAGMAS: &str = "PRAGMA busy_timeout = 5000;
@@ -125,6 +127,26 @@ fn transition_error(event_id: &str, expected: &str, requested: &str) -> StoreErr
     ))
 }
 
+/// Mirrors the table constraints (C# `ValidateCandidate`): event id 1 to 128
+/// characters without NUL (SQLite `length()` stops at NUL), non-blank fingerprint
+/// and non-empty payload. Blank ids are rejected too: they could never be settled.
+fn validate_candidate(candidate: &QueuedEvent) -> StoreResult<()> {
+    let message = if is_blank(&candidate.event_id) {
+        "Event identifier cannot be empty or whitespace."
+    } else if candidate.event_id.contains('\0') {
+        "Event identifier cannot contain NUL characters."
+    } else if candidate.event_id.chars().count() > MAXIMUM_EVENT_ID_LENGTH {
+        "Event identifier cannot exceed 128 characters."
+    } else if is_blank(&candidate.fingerprint) {
+        "Event fingerprint cannot be empty or whitespace."
+    } else if candidate.payload.is_empty() {
+        "Event payload cannot be empty."
+    } else {
+        return Ok(());
+    };
+    Err(StoreError::Invalid(message.into()))
+}
+
 fn capacity_error(maximum: i64, current: i64, attempted: i64) -> StoreError {
     StoreError::Full(format!(
         "Queue capacity exceeded. Maximum={maximum}, Current={current}, Attempted={attempted}."
@@ -182,6 +204,18 @@ WHERE state IN (?1, ?2, ?3, ?4);",
             .map_err(storage)
     }
 
+    fn exists(connection: &Connection, candidate: &QueuedEvent) -> StoreResult<bool> {
+        // Two EXISTS probes so each uses its own unique index.
+        connection
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM queue_events WHERE event_id = ?1)
+    OR EXISTS (SELECT 1 FROM queue_events WHERE fingerprint = ?2);",
+                params![candidate.event_id, candidate.fingerprint],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(storage)
+    }
+
     fn transition(
         &self,
         sql: &str,
@@ -230,22 +264,35 @@ impl DurableEventStore for SqliteEventStore {
     }
 
     fn enqueue(&self, candidate: &QueuedEvent) -> StoreResult<EnqueueResult> {
+        // Reject what the NOT NULL and CHECK constraints would refuse, so invalid
+        // input is an error and never mistaken for a duplicate.
+        validate_candidate(candidate)?;
         let payload_bytes = i64::try_from(candidate.payload.len()).unwrap_or(i64::MAX);
         let received_at = stored(&candidate.received_at);
         self.pool.with(|connection| {
-            // BEGIN IMMEDIATE takes the write lock before the capacity check so
-            // concurrent enqueues cannot both pass the check and overshoot.
+            // BEGIN IMMEDIATE takes the write lock before the duplicate and capacity
+            // checks so concurrent enqueues cannot both pass them.
             let transaction = connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(storage)?;
+            // Idempotency wins over backpressure: a re-sent event is a duplicate even
+            // when the queue is full. Dropping the read-only transaction rolls back.
+            if Self::exists(&transaction, candidate)? {
+                return Ok(EnqueueResult {
+                    enqueued: false,
+                    duplicate: true,
+                    event_id: candidate.event_id.clone(),
+                });
+            }
             let current = Self::undelivered_bytes(&transaction)?;
             if current.saturating_add(payload_bytes) > self.maximum_bytes {
                 return Err(capacity_error(self.maximum_bytes, current, payload_bytes));
             }
-            // OR IGNORE: duplicate event id or fingerprint keeps the original row.
-            let affected = transaction
+            // Plain INSERT: duplicates were ruled out under the write lock, so any
+            // constraint failure is an error instead of being silently ignored.
+            transaction
                 .execute(
-                    "INSERT OR IGNORE INTO queue_events (
+                    "INSERT INTO queue_events (
     event_id, fingerprint, payload, payload_bytes, received_at, state,
     delivery_attempts)
 VALUES (
@@ -262,18 +309,16 @@ VALUES (
                     },
                 )
                 .map_err(storage)?;
-            if affected == 1 {
-                ledger::append(
-                    &transaction,
-                    &candidate.event_id,
-                    &candidate.payload,
-                    &received_at,
-                )?;
-            }
+            ledger::append(
+                &transaction,
+                &candidate.event_id,
+                &candidate.payload,
+                &received_at,
+            )?;
             transaction.commit().map_err(storage)?;
             Ok(EnqueueResult {
-                enqueued: affected == 1,
-                duplicate: affected == 0,
+                enqueued: true,
+                duplicate: false,
                 event_id: candidate.event_id.clone(),
             })
         })
@@ -437,6 +482,125 @@ WHERE event_id = :event_id AND state = :uploading;",
         } else {
             Err(transition_error(event_id, "uploading", "dead-lettered"))
         }
+    }
+
+    fn mark_delivered_batch(
+        &self,
+        event_ids: &[String],
+        acknowledgement: &str,
+    ) -> StoreResult<Vec<String>> {
+        require_text(acknowledgement, "acknowledgement")?;
+        for event_id in event_ids {
+            require_text(event_id, "eventId")?;
+        }
+        if event_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let delivered_at = self.now_text();
+        // One transaction (one WAL commit and sync) for the whole batch. Same guarded
+        // transition as `mark_delivered`: only uploading rows change. On error the
+        // transaction is dropped and nothing is settled.
+        self.pool.with(|connection| {
+            let transaction = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(storage)?;
+            let mut not_leased = Vec::new();
+            {
+                let mut update = transaction
+                    .prepare(
+                        "UPDATE queue_events
+SET state = :delivered,
+    acknowledgement = :acknowledgement,
+    delivered_at = :delivered_at,
+    lease_until = NULL,
+    next_attempt_at = NULL,
+    last_failure_code = NULL
+WHERE event_id = :event_id AND state = :uploading;",
+                    )
+                    .map_err(storage)?;
+                for event_id in event_ids {
+                    let affected = update
+                        .execute(named_params! {
+                            ":delivered": DELIVERED,
+                            ":uploading": UPLOADING,
+                            ":acknowledgement": acknowledgement,
+                            ":delivered_at": delivered_at,
+                            ":event_id": event_id,
+                        })
+                        .map_err(storage)?;
+                    if affected != 1 {
+                        not_leased.push(event_id.clone());
+                    }
+                }
+            }
+            transaction.commit().map_err(storage)?;
+            Ok(not_leased)
+        })
+    }
+
+    fn mark_failed_batch(&self, failures: &[FailureSettlement]) -> StoreResult<Vec<String>> {
+        for failure in failures {
+            require_text(&failure.event_id, "eventId")?;
+            require_text(&failure.failure_code, "failureCode")?;
+        }
+        if failures.is_empty() {
+            return Ok(Vec::new());
+        }
+        // One transaction for every failure in the batch, with the same guarded
+        // transitions as `mark_retrying` and `mark_dead_lettered`. Any error drops the
+        // transaction, so the events stay leased and are redelivered after the lease
+        // expires.
+        self.pool.with(|connection| {
+            let transaction = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(storage)?;
+            let mut not_leased = Vec::new();
+            {
+                let mut retry = transaction
+                    .prepare(
+                        "UPDATE queue_events
+SET state = :retrying,
+    next_attempt_at = :next_attempt_at,
+    last_failure_code = :failure_code,
+    lease_until = NULL
+WHERE event_id = :event_id AND state = :uploading;",
+                    )
+                    .map_err(storage)?;
+                let mut dead_letter = transaction
+                    .prepare(
+                        "UPDATE queue_events
+SET state = :dead_lettered,
+    last_failure_code = :failure_code,
+    lease_until = NULL,
+    next_attempt_at = NULL
+WHERE event_id = :event_id AND state = :uploading;",
+                    )
+                    .map_err(storage)?;
+                for failure in failures {
+                    let affected = match &failure.retry_after {
+                        Some(retry_after) => retry.execute(named_params! {
+                            ":retrying": RETRYING,
+                            ":uploading": UPLOADING,
+                            ":next_attempt_at": stored(retry_after),
+                            ":failure_code": failure.failure_code,
+                            ":event_id": failure.event_id,
+                        }),
+                        None => dead_letter.execute(named_params! {
+                            ":dead_lettered": DEAD_LETTERED,
+                            ":uploading": UPLOADING,
+                            ":failure_code": failure.failure_code,
+                            ":event_id": failure.event_id,
+                        }),
+                    }
+                    .map_err(storage)?;
+                    if affected != 1 {
+                        not_leased.push(failure.event_id.clone());
+                    }
+                }
+            }
+            transaction.commit().map_err(storage)?;
+            Ok(not_leased)
+        })
     }
 
     fn snapshot(&self) -> StoreResult<QueueSnapshot> {

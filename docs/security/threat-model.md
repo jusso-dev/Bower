@@ -20,6 +20,9 @@ evidence.
   EC2 host events and AWS records use deterministic ids so retries and re-reads
   deduplicate. Acknowledged rows are kept for the retention window
   (`BOWER_QUEUE_RETENTION_HOURS`, default 7 days) to preserve deduplication.
+  Deduplication is checked before backpressure, so a resend to a full queue is
+  acknowledged as a duplicate rather than retried. Malformed queue input is an
+  error, never a silent duplicate.
 - Queue/disk exhaustion: the byte cap counts undelivered rows only, a recurring
   retention job purges acknowledged rows, capacity returns HTTP 503 for producer
   back-off, and ingest is rate limited (HTTP 429). Poison events dead-letter

@@ -147,6 +147,41 @@ public sealed class QueueDeliveryWorkerTests
     }
 
     [Fact]
+    public async Task DeliverOnce_SettlesAllFailuresInOneBatchAllOrNothing()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore store, FakeClock clock) = await CreateStoreAsync(directory, cancellationToken);
+        await EnqueueAsync(store, clock, ["ok", "retry", "bad", "missing"], cancellationToken);
+        FlakyStore flaky = new(store, failuresBeforeSuccess: 0, failedBatchFailures: 1);
+        FakeOutput output = new(events => new DeliveryResult(
+            events.Any(item => item.EventId == "ok") ? ["ok"] : [],
+            events
+                .Where(item => item.EventId is "retry" or "bad")
+                .Select(item => new DeliveryFailure(item.EventId, item.EventId == "bad" ? "azure-http-400" : "azure-http-503", item.EventId == "retry", null))
+                .ToArray(),
+            "ack-1"));
+        QueueDeliveryWorker worker = CreateWorker(flaky, output, clock);
+
+        // The failure batch fails: acknowledged events stay delivered, every failed event stays
+        // leased (none half-settled) and is redelivered once the lease expires.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => worker.DeliverOnceAsync(cancellationToken));
+        QueueSnapshot afterFailure = await store.GetSnapshotAsync(cancellationToken);
+        Assert.Equal((1L, 3L, 0L, 0L), (afterFailure.Delivered, afterFailure.Uploading, afterFailure.Retrying, afterFailure.DeadLettered));
+
+        clock.Advance(TimeSpan.FromMinutes(6));
+        int redelivered = await worker.DeliverOnceAsync(cancellationToken);
+        QueueSnapshot settled = await store.GetSnapshotAsync(cancellationToken);
+
+        Assert.Equal(3, redelivered);
+        Assert.Equal(2, flaky.FailedBatchCalls);
+        Assert.Equal(
+            (1L, 0L, 2L, 1L),
+            (settled.Delivered, settled.Uploading, settled.Retrying, settled.DeadLettered));
+        Assert.True((await store.VerifyLedgerAsync(cancellationToken)).Intact);
+    }
+
+    [Fact]
     public async Task Worker_KeepsRunningAfterStorageFailure()
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
@@ -224,9 +259,27 @@ public sealed class QueueDeliveryWorkerTests
             Task.FromResult(deliver(events));
     }
 
-    private sealed class FlakyStore(IDurableEventStore inner, int failuresBeforeSuccess) : IDurableEventStore
+    private sealed class FlakyStore(
+        IDurableEventStore inner,
+        int failuresBeforeSuccess,
+        int failedBatchFailures = 0) : IDurableEventStore
     {
         public int Failures { get; private set; }
+
+        public int FailedBatchCalls { get; private set; }
+
+        public Task<IReadOnlyList<string>> MarkFailedBatchAsync(
+            IReadOnlyList<FailureSettlement> failures,
+            CancellationToken cancellationToken = default)
+        {
+            FailedBatchCalls++;
+            if (FailedBatchCalls <= failedBatchFailures)
+            {
+                throw new InvalidOperationException("database is locked");
+            }
+
+            return inner.MarkFailedBatchAsync(failures, cancellationToken);
+        }
 
         public Task<IReadOnlyList<QueuedEvent>> LeaseAsync(
             int maximumCount,

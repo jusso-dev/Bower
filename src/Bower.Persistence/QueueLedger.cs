@@ -224,7 +224,11 @@ internal static class QueueLedger
         CancellationToken cancellationToken)
     {
         List<Bower.Abstractions.LedgerIssue> issues = [];
-        (long anchorSequence, string previous) = await AnchorAsync(connection, null, cancellationToken);
+        // One deferred (read) transaction: in WAL mode every read below sees the same
+        // snapshot, so an enqueue committing mid-verification cannot produce a false
+        // unledgered-event or event-missing issue.
+        await using SqliteTransaction transaction = connection.BeginTransaction(deferred: true);
+        (long anchorSequence, string previous) = await AnchorAsync(connection, transaction, cancellationToken);
         long expected = anchorSequence + 1;
         long entries = 0;
         long head = anchorSequence;
@@ -234,6 +238,7 @@ internal static class QueueLedger
         Dictionary<string, string> payloads = new(StringComparer.Ordinal);
         await using (SqliteCommand events = connection.CreateCommand())
         {
+            events.Transaction = transaction;
             events.CommandText = "SELECT event_id, payload FROM queue_events;";
             await using SqliteDataReader reader = await events.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
@@ -245,6 +250,7 @@ internal static class QueueLedger
         HashSet<string> ledgered = new(StringComparer.Ordinal);
         await using (SqliteCommand ledger = connection.CreateCommand())
         {
+            ledger.Transaction = transaction;
             ledger.CommandText =
                 "SELECT sequence, event_id, payload_sha256, received_at, chain_hash, purged_at FROM queue_ledger ORDER BY sequence;";
             await using SqliteDataReader reader = await ledger.ExecuteReaderAsync(cancellationToken);

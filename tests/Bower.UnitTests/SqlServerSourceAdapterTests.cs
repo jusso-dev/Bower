@@ -192,6 +192,49 @@ public sealed class SqlServerSourceAdapterTests
     }
 
     [Fact]
+    public async Task CursorStore_CreatesMissingTableInExistingDatabaseAndTreatsWriteFailureAsLostRace()
+    {
+        // Pinned for the Rust port (bower-persistence cursor.rs): CREATE TABLE IF NOT EXISTS
+        // runs on every start, WAL only for a new file, and any failed write returns false.
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "source-cursors.db");
+        await ExecuteAsync(path, "CREATE TABLE unrelated (id INTEGER);", cancellationToken);
+
+        EfSourceCursorStore store = new(path);
+        await store.InitializeAsync(cancellationToken);
+        Assert.Null(await store.ReadAsync("existing", cancellationToken));
+        Assert.True(await store.TryAdvanceAsync("existing", 0, "v1", TestEvents.Now, cancellationToken));
+
+        await ExecuteAsync(
+            path,
+            """
+            CREATE TRIGGER reject_insert BEFORE INSERT ON source_cursors BEGIN SELECT RAISE(ABORT, 'injected'); END;
+            CREATE TRIGGER reject_update BEFORE UPDATE ON source_cursors BEGIN SELECT RAISE(FAIL, 'injected'); END;
+            """,
+            cancellationToken);
+        Assert.False(await store.TryAdvanceAsync("new", 0, "v", TestEvents.Now, cancellationToken));
+        Assert.False(await store.TryAdvanceAsync("existing", 1, "v2", TestEvents.Now, cancellationToken));
+        Assert.Null(await store.ReadAsync("new", cancellationToken));
+        Assert.Equal(new SourceCursorSnapshot("v1", 1), await store.ReadAsync("existing", cancellationToken));
+
+        await using SqliteConnection connection = new($"Data Source={path};Pooling=False");
+        await connection.OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT journal_mode FROM pragma_journal_mode;";
+        Assert.Equal("delete", await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    private static async Task ExecuteAsync(string path, string sql, CancellationToken cancellationToken)
+    {
+        await using SqliteConnection connection = new($"Data Source={path};Pooling=False");
+        await connection.OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    [Fact]
     public async Task CursorStore_RestrictsDatabasePermissionsOnUnix()
     {
         if (OperatingSystem.IsWindows())

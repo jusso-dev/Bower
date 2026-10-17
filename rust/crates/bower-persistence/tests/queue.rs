@@ -6,10 +6,23 @@ mod common;
 use std::sync::Arc;
 use std::time::Duration;
 
-use bower_contracts::{DurableEventStore, QueueState, StoreError};
+use bower_contracts::time::Timestamp;
+use bower_contracts::{DurableEventStore, FailureSettlement, QueueState, StoreError};
 use bower_persistence::SqliteEventStore;
 use chrono::Duration as Span;
 use common::*;
+
+fn ids(values: &[&str]) -> Vec<String> {
+    values.iter().map(|value| (*value).to_owned()).collect()
+}
+
+fn settlement(event_id: &str, code: &str, retry_after: Option<Timestamp>) -> FailureSettlement {
+    FailureSettlement {
+        event_id: event_id.into(),
+        failure_code: code.into(),
+        retry_after,
+    }
+}
 
 fn assert_send_sync<T: Send + Sync>() {}
 
@@ -315,26 +328,486 @@ fn validates_arguments() {
     ));
 }
 
-/// C# parity quirk: `INSERT OR IGNORE` also swallows CHECK violations, so an
-/// empty/oversized event id or empty payload is reported as a duplicate.
+/// `Enqueue_RejectsInvalidInputInsteadOfReportingDuplicate`. `INSERT OR IGNORE`
+/// used to swallow CHECK violations and report them as duplicates (C# and Rust).
 #[test]
-fn check_constraint_violations_report_duplicate_like_csharp() {
+fn enqueue_rejects_invalid_input_instead_of_reporting_duplicate() {
     let directory = tempfile::tempdir().unwrap();
     let clock = FakeClock::new(test_now());
     let store = store(directory.path(), 10 * ONE_MEBIBYTE, &clock);
-    for (id, payload) in [("", "{}"), (&*"x".repeat(129), "{}"), ("empty", "")] {
-        let result = store
-            .enqueue(&event(id, &format!("f-{}", id.len()), payload, clock.now()))
-            .unwrap();
-        assert!(result.duplicate && !result.enqueued);
+    let long_id = "x".repeat(129);
+    let astral_129 = "\u{1F600}".repeat(129);
+    for (id, fingerprint, payload) in [
+        ("", "sha256:empty-id", "{}"),
+        (" \t", "sha256:blank-id", "{}"),
+        (long_id.as_str(), "sha256:long-id", "{}"),
+        ("nul\0id", "sha256:nul-id", "{}"),
+        ("\0", "sha256:nul-only", "{}"),
+        ("blank-fingerprint", " ", "{}"),
+        ("empty-fingerprint", "", "{}"),
+        ("empty-payload", "sha256:empty-payload", ""),
+        (astral_129.as_str(), "sha256:astral-129", "{}"),
+    ] {
+        let outcome = store.enqueue(&event(id, fingerprint, payload, clock.now()));
+        assert!(
+            matches!(outcome, Err(StoreError::Invalid(_))),
+            "{fingerprint}: {outcome:?}"
+        );
     }
+
+    // The limit mirrors SQLite length(): 128 characters, not 128 UTF-16 units.
     assert!(
         store
-            .enqueue(&event(&"x".repeat(128), "f-128", "{}", clock.now()))
+            .enqueue(&event(&"x".repeat(128), "sha256:x128", "{}", clock.now()))
             .unwrap()
             .enqueued
     );
+    assert!(
+        store
+            .enqueue(&event(
+                &"\u{1F600}".repeat(128),
+                "sha256:astral",
+                "{}",
+                clock.now()
+            ))
+            .unwrap()
+            .enqueued
+    );
+    let verification = store.verify_ledger().unwrap();
+    assert_eq!(store.snapshot().unwrap().queued, 2);
+    assert!(verification.intact);
+    assert_eq!(verification.entries, 2);
+}
+
+/// `Enqueue_ConcurrentDuplicatesInsertExactlyOnce`.
+#[test]
+fn enqueue_concurrent_duplicates_insert_exactly_once() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    let store = Arc::new(store(directory.path(), 10 * ONE_MEBIBYTE, &clock));
+    // Half the writers reuse the event id, half reuse the fingerprint under a new id.
+    let handles: Vec<_> = (0..24)
+        .map(|index| {
+            let store = store.clone();
+            let now = clock.now();
+            std::thread::spawn(move || {
+                let id = if index % 2 == 0 {
+                    "same".to_owned()
+                } else {
+                    format!("other-{index}")
+                };
+                store
+                    .enqueue(&event(&id, "sha256:same", r#"{"eventId":"same"}"#, now))
+                    .unwrap()
+            })
+        })
+        .collect();
+    let results: Vec<_> = handles
+        .into_iter()
+        .map(|handle| handle.join().unwrap())
+        .collect();
+    let verification = store.verify_ledger().unwrap();
+
+    assert_eq!(results.iter().filter(|result| result.enqueued).count(), 1);
+    assert_eq!(results.iter().filter(|result| result.duplicate).count(), 23);
+    assert!(
+        results
+            .iter()
+            .all(|result| result.enqueued != result.duplicate)
+    );
+    assert!(verification.intact);
+    assert_eq!(verification.entries, 1);
+}
+
+/// `MarkDeliveredBatch_SettlesLeasedEventsAndReturnsTheRest`.
+#[test]
+fn mark_delivered_batch_settles_leased_events_and_returns_the_rest() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    let store = store(directory.path(), 10 * ONE_MEBIBYTE, &clock);
+    for id in ["leased-1", "leased-2", "queued"] {
+        enqueue(&store, &clock, id);
+    }
+    let leased = store.lease(3, Duration::from_secs(300)).unwrap();
+    store
+        .mark_retrying("queued", "test", clock.now() + Span::hours(1))
+        .unwrap();
+
+    let not_leased = store
+        .mark_delivered_batch(
+            &ids(&["leased-1", "leased-2", "queued", "missing"]),
+            "ack-batch",
+        )
+        .unwrap();
+    let empty = store.mark_delivered_batch(&[], "ack-batch").unwrap();
+    let snapshot = store.snapshot().unwrap();
+
+    assert_eq!(leased.len(), 3);
+    assert_eq!(not_leased, ["queued", "missing"]);
+    assert!(empty.is_empty());
+    assert_eq!(
+        (snapshot.delivered, snapshot.retrying, snapshot.uploading),
+        (2, 1, 0)
+    );
+    let acknowledgement: String = raw(&queue_path(directory.path()))
+        .query_row(
+            "SELECT acknowledgement FROM queue_events WHERE event_id = 'leased-2'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(acknowledgement, "ack-batch");
+    assert!(matches!(
+        store.mark_delivered_batch(&ids(&["ok", " "]), "ack"),
+        Err(StoreError::Invalid(_))
+    ));
+    assert!(matches!(
+        store.mark_delivered_batch(&ids(&["ok"]), " "),
+        Err(StoreError::Invalid(_))
+    ));
     assert!(store.verify_ledger().unwrap().intact);
+}
+
+/// `MarkDeliveredBatch_IsDurableAcrossRestartAndIdempotentOnReplay`.
+#[test]
+fn mark_delivered_batch_is_durable_across_restart_and_idempotent_on_replay() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    let first = store(directory.path(), 10 * ONE_MEBIBYTE, &clock);
+    enqueue(&first, &clock, "event-1");
+    enqueue(&first, &clock, "event-2");
+    first.lease(2, Duration::from_secs(300)).unwrap();
+    assert!(
+        first
+            .mark_delivered_batch(&ids(&["event-1", "event-2"]), "ack-1")
+            .unwrap()
+            .is_empty()
+    );
+    drop(first);
+
+    let restarted = store(directory.path(), 10 * ONE_MEBIBYTE, &clock);
+    let replay = restarted
+        .mark_delivered_batch(&ids(&["event-1", "event-2"]), "ack-2")
+        .unwrap();
+    clock.advance(Span::minutes(10));
+    let releasable = restarted.lease(10, Duration::from_secs(300)).unwrap();
+    let snapshot = restarted.snapshot().unwrap();
+
+    assert_eq!(replay, ["event-1", "event-2"]);
+    assert!(releasable.is_empty());
+    assert_eq!((snapshot.delivered, snapshot.uploading), (2, 0));
+    assert!(restarted.verify_ledger().unwrap().intact);
+}
+
+/// `MarkFailedBatch_SettlesLeasedEventsAndReturnsTheRest`.
+#[test]
+fn mark_failed_batch_settles_leased_events_and_returns_the_rest() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    let store = store(directory.path(), 10 * ONE_MEBIBYTE, &clock);
+    for id in ["retry", "dead", "delivered"] {
+        enqueue(&store, &clock, id);
+    }
+    store.lease(3, Duration::from_secs(300)).unwrap();
+    store.mark_delivered("delivered", "ack").unwrap();
+    let retry_at = bower_contracts::time::parse("2026-08-30T09:00:00+05:30").unwrap();
+
+    let not_leased = store
+        .mark_failed_batch(&[
+            settlement("retry", "busy", Some(retry_at)),
+            settlement("dead", "azure-http-400", None),
+            settlement("delivered", "late", None),
+            settlement("missing", "late", Some(retry_at)),
+            settlement("retry", "twice", None),
+        ])
+        .unwrap();
+    let empty = store.mark_failed_batch(&[]).unwrap();
+    let snapshot = store.snapshot().unwrap();
+    let dead = store.list_dead_lettered(10).unwrap();
+
+    assert_eq!(not_leased, ["delivered", "missing", "retry"]);
+    assert!(empty.is_empty());
+    assert_eq!(
+        (
+            snapshot.retrying,
+            snapshot.dead_lettered,
+            snapshot.delivered,
+            snapshot.uploading
+        ),
+        (1, 1, 1, 0)
+    );
+    assert_eq!(dead.len(), 1);
+    assert_eq!(dead[0].failure_code.as_deref(), Some("azure-http-400"));
+    let (next_attempt_at, code, lease_until): (String, String, Option<String>) =
+        raw(&queue_path(directory.path()))
+            .query_row(
+                "SELECT next_attempt_at, last_failure_code, lease_until FROM queue_events WHERE event_id = 'retry'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+    assert_eq!(next_attempt_at, "2026-08-30T03:30:00.0000000+00:00");
+    assert_eq!(code, "busy");
+    assert_eq!(lease_until, None);
+
+    assert!(matches!(
+        store.mark_failed_batch(&[settlement(" ", "code", None)]),
+        Err(StoreError::Invalid(_))
+    ));
+    assert!(matches!(
+        store.mark_failed_batch(&[settlement("retry", "", Some(retry_at))]),
+        Err(StoreError::Invalid(_))
+    ));
+    assert!(store.verify_ledger().unwrap().intact);
+}
+
+/// `SettlementBatches_RollBackCompletelyOnErrorAndRecoverAfterRestart`.
+#[test]
+fn settlement_batches_roll_back_completely_on_error_and_recover_after_restart() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = queue_path(directory.path());
+    let clock = FakeClock::new(test_now());
+    let first = store(directory.path(), 10 * ONE_MEBIBYTE, &clock);
+    for id in ["a", "b", "poison"] {
+        enqueue(&first, &clock, id);
+    }
+    first.lease(3, Duration::from_secs(300)).unwrap();
+
+    // Adversarial storage failure on the last row of each batch.
+    raw(&path)
+        .execute_batch(
+            "CREATE TRIGGER fail_poison BEFORE UPDATE OF state ON queue_events
+WHEN NEW.event_id = 'poison'
+BEGIN SELECT RAISE(ABORT, 'injected failure'); END;",
+        )
+        .unwrap();
+    let retry_at = clock.now() + Span::minutes(1);
+    assert!(matches!(
+        first.mark_failed_batch(&[
+            settlement("a", "busy", Some(retry_at)),
+            settlement("b", "bad", None),
+            settlement("poison", "bad", None),
+        ]),
+        Err(StoreError::Storage(_))
+    ));
+    assert!(matches!(
+        first.mark_delivered_batch(&ids(&["a", "b", "poison"]), "ack"),
+        Err(StoreError::Storage(_))
+    ));
+    let after_failure = first.snapshot().unwrap();
+    assert_eq!(
+        (
+            after_failure.uploading,
+            after_failure.retrying,
+            after_failure.dead_lettered,
+            after_failure.delivered
+        ),
+        (3, 0, 0, 0)
+    );
+    drop(first);
+
+    // Restart: nothing was half-settled, every lease is reclaimed once it expires
+    // (at-least-once) and the reclaimed events settle normally.
+    raw(&path)
+        .execute_batch("DROP TRIGGER fail_poison;")
+        .unwrap();
+    let restarted = store(directory.path(), 10 * ONE_MEBIBYTE, &clock);
+    assert!(
+        restarted
+            .lease(10, Duration::from_secs(300))
+            .unwrap()
+            .is_empty()
+    );
+    clock.advance(Span::minutes(6));
+    let mut reclaimed = restarted.lease(10, Duration::from_secs(300)).unwrap();
+    reclaimed.sort_by(|left, right| left.event_id.cmp(&right.event_id));
+    let summary: Vec<(&str, i32)> = reclaimed
+        .iter()
+        .map(|item| (item.event_id.as_str(), item.delivery_attempts))
+        .collect();
+    assert_eq!(summary, [("a", 2), ("b", 2), ("poison", 2)]);
+    assert!(
+        restarted
+            .mark_failed_batch(&[
+                settlement("a", "busy", Some(clock.now() + Span::minutes(1))),
+                settlement("b", "bad", None),
+            ])
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        restarted
+            .mark_delivered_batch(&ids(&["poison"]), "ack")
+            .unwrap()
+            .is_empty()
+    );
+    let settled = restarted.snapshot().unwrap();
+    assert_eq!(
+        (
+            settled.uploading,
+            settled.retrying,
+            settled.dead_lettered,
+            settled.delivered
+        ),
+        (0, 1, 1, 1)
+    );
+    assert!(restarted.verify_ledger().unwrap().intact);
+}
+
+/// The trait's default (non-transactional) batch methods keep the same contract
+/// for stores that do not override them.
+#[test]
+fn default_batch_methods_follow_the_same_contract() {
+    struct Plain(SqliteEventStore);
+    impl DurableEventStore for Plain {
+        fn initialize(&self) -> bower_contracts::StoreResult<()> {
+            self.0.initialize()
+        }
+        fn enqueue(
+            &self,
+            candidate: &bower_contracts::QueuedEvent,
+        ) -> bower_contracts::StoreResult<bower_contracts::EnqueueResult> {
+            self.0.enqueue(candidate)
+        }
+        fn lease(
+            &self,
+            maximum_count: usize,
+            lease_duration: Duration,
+        ) -> bower_contracts::StoreResult<Vec<bower_contracts::QueuedEvent>> {
+            self.0.lease(maximum_count, lease_duration)
+        }
+        fn mark_delivered(&self, event_id: &str, ack: &str) -> bower_contracts::StoreResult<()> {
+            self.0.mark_delivered(event_id, ack)
+        }
+        fn mark_retrying(
+            &self,
+            event_id: &str,
+            code: &str,
+            retry_after: bower_contracts::time::Timestamp,
+        ) -> bower_contracts::StoreResult<()> {
+            self.0.mark_retrying(event_id, code, retry_after)
+        }
+        fn mark_dead_lettered(
+            &self,
+            event_id: &str,
+            code: &str,
+        ) -> bower_contracts::StoreResult<()> {
+            self.0.mark_dead_lettered(event_id, code)
+        }
+        fn snapshot(&self) -> bower_contracts::StoreResult<bower_contracts::QueueSnapshot> {
+            self.0.snapshot()
+        }
+        fn purge_delivered(
+            &self,
+            before: bower_contracts::time::Timestamp,
+            maximum_count: usize,
+        ) -> bower_contracts::StoreResult<usize> {
+            self.0.purge_delivered(before, maximum_count)
+        }
+        fn maintain(&self) -> bower_contracts::StoreResult<()> {
+            self.0.maintain()
+        }
+        fn list_dead_lettered(
+            &self,
+            maximum_count: usize,
+        ) -> bower_contracts::StoreResult<Vec<bower_contracts::DeadLetterRecord>> {
+            self.0.list_dead_lettered(maximum_count)
+        }
+        fn replay_dead_lettered(
+            &self,
+            prefix: Option<&str>,
+            event_ids: Option<&[String]>,
+            maximum_count: usize,
+        ) -> bower_contracts::StoreResult<usize> {
+            self.0
+                .replay_dead_lettered(prefix, event_ids, maximum_count)
+        }
+        fn ledger_head(&self) -> bower_contracts::StoreResult<bower_contracts::LedgerHead> {
+            self.0.ledger_head()
+        }
+        fn verify_ledger(
+            &self,
+        ) -> bower_contracts::StoreResult<bower_contracts::LedgerVerification> {
+            self.0.verify_ledger()
+        }
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    let plain = Plain(store(directory.path(), 10 * ONE_MEBIBYTE, &clock));
+    for id in ["ok", "retry", "dead"] {
+        enqueue(&plain.0, &clock, id);
+    }
+    plain.lease(3, Duration::from_secs(300)).unwrap();
+
+    assert_eq!(
+        plain
+            .mark_delivered_batch(&ids(&["ok", "missing"]), "ack")
+            .unwrap(),
+        ["missing"]
+    );
+    assert_eq!(
+        plain
+            .mark_failed_batch(&[
+                settlement("retry", "busy", Some(clock.now())),
+                settlement("dead", "bad", None),
+                settlement("ok", "late", None),
+            ])
+            .unwrap(),
+        ["ok"]
+    );
+    assert!(matches!(
+        plain.mark_delivered_batch(&ids(&["ok", ""]), "ack"),
+        Err(StoreError::Invalid(_))
+    ));
+    assert!(matches!(
+        plain.mark_failed_batch(&[settlement("retry", " ", None)]),
+        Err(StoreError::Invalid(_))
+    ));
+    let snapshot = plain.snapshot().unwrap();
+    assert_eq!(
+        (
+            snapshot.delivered,
+            snapshot.retrying,
+            snapshot.dead_lettered
+        ),
+        (1, 1, 1)
+    );
+}
+
+/// `VerifyLedger_ReadsOneSnapshotWhileEnqueuesCommit`.
+#[test]
+fn verify_ledger_reads_one_snapshot_while_enqueues_commit() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    let store = Arc::new(store(directory.path(), 10 * ONE_MEBIBYTE, &clock));
+    enqueue(&store, &clock, "seed");
+    let writer = {
+        let store = store.clone();
+        let now = clock.now();
+        std::thread::spawn(move || {
+            for index in 0..400 {
+                store
+                    .enqueue(&event(
+                        &format!("e{index}"),
+                        &format!("sha256:e{index}"),
+                        &format!("{{\"n\":{index}}}"),
+                        now,
+                    ))
+                    .unwrap();
+            }
+        })
+    };
+    let mut issues = Vec::new();
+    while !writer.is_finished() {
+        issues.extend(store.verify_ledger().unwrap().issues);
+    }
+    writer.join().unwrap();
+    let last = store.verify_ledger().unwrap();
+
+    assert!(issues.is_empty(), "{issues:?}");
+    assert!(last.intact);
+    assert_eq!(last.entries, 401);
 }
 
 #[test]
@@ -475,11 +948,50 @@ fn capacity_rejects_when_undelivered_bytes_would_exceed_limit() {
     );
     // Rejected enqueue leaves no row and no ledger entry.
     assert_eq!(store.ledger_head().unwrap().sequence, 1);
-    // C# parity: the capacity check precedes deduplication.
+}
+
+/// `Capacity_FullQueueStillReportsDuplicates`: idempotency wins over backpressure.
+/// The capacity check used to run first, so a re-sent event got `Full` (C# and Rust).
+#[test]
+fn capacity_full_queue_still_reports_duplicates() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    let first = store(directory.path(), ONE_MEBIBYTE, &clock);
+    let payload = format!("{{\"v\":\"{}\"}}", "x".repeat(600 * 1024));
+    first
+        .enqueue(&event("first", "sha256:first", &payload, clock.now()))
+        .unwrap();
+
+    let same_id = first
+        .enqueue(&event("first", "sha256:first", &payload, clock.now()))
+        .unwrap();
+    let same_fingerprint = first
+        .enqueue(&event("first-again", "sha256:first", &payload, clock.now()))
+        .unwrap();
     assert!(matches!(
-        store.enqueue(&event("first", "sha256:first", &payload, clock.now())),
+        first.enqueue(&event("second", "sha256:second", &payload, clock.now())),
         Err(StoreError::Full(_))
     ));
+    drop(first);
+
+    // Also after a restart, and for a duplicate that has since been delivered.
+    let restarted = store(directory.path(), ONE_MEBIBYTE, &clock);
+    restarted.lease(1, Duration::from_secs(60)).unwrap();
+    restarted.mark_delivered("first", "ack").unwrap();
+    restarted
+        .enqueue(&event("filler", "sha256:filler", &payload, clock.now()))
+        .unwrap();
+    let delivered = restarted
+        .enqueue(&event("first", "sha256:first", &payload, clock.now()))
+        .unwrap();
+    let verification = restarted.verify_ledger().unwrap();
+
+    assert!(same_id.duplicate && !same_id.enqueued);
+    assert!(same_fingerprint.duplicate);
+    assert_eq!(same_fingerprint.event_id, "first-again");
+    assert!(delivered.duplicate);
+    assert!(verification.intact);
+    assert_eq!(verification.entries, 2);
 }
 
 #[test]

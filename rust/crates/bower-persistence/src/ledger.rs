@@ -225,7 +225,8 @@ struct LedgerRow {
 }
 
 /// Recomputes the chain and cross-checks stored events. Reads run in one
-/// deferred transaction so a concurrent enqueue cannot produce a false issue.
+/// deferred (read) transaction: in WAL mode the anchor, event and ledger reads all
+/// see one snapshot, so a concurrent enqueue cannot produce a false issue.
 pub(crate) fn verify(connection: &mut Connection) -> StoreResult<LedgerVerification> {
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Deferred)

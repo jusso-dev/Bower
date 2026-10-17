@@ -99,6 +99,33 @@ fn validates_arguments() {
     ));
 }
 
+/// C# catches every `SqliteException` from the write: a failed write is a lost race
+/// (`false`), never an error, and nothing is committed.
+#[test]
+fn any_sqlite_write_failure_returns_false() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("cursors.db");
+    let store = open(&path);
+    assert!(store.try_advance("existing", 0, "v1", test_now()).unwrap());
+    raw(&path)
+        .execute_batch(
+            "CREATE TRIGGER reject_insert BEFORE INSERT ON source_cursors BEGIN SELECT RAISE(ABORT, 'injected'); END;
+             CREATE TRIGGER reject_update BEFORE UPDATE ON source_cursors BEGIN SELECT RAISE(FAIL, 'injected'); END;",
+        )
+        .unwrap();
+
+    assert!(!store.try_advance("new", 0, "v", test_now()).unwrap());
+    assert!(!store.try_advance("existing", 1, "v2", test_now()).unwrap());
+    assert_eq!(store.read("new").unwrap(), None);
+    let existing = store.read("existing").unwrap().unwrap();
+    assert_eq!((existing.value.as_str(), existing.version), ("v1", 1));
+
+    raw(&path)
+        .execute_batch("DROP TRIGGER reject_insert; DROP TRIGGER reject_update;")
+        .unwrap();
+    assert!(store.try_advance("existing", 1, "v2", test_now()).unwrap());
+}
+
 #[test]
 fn updated_at_uses_ef_core_text_in_utc() {
     let directory = tempfile::tempdir().unwrap();
@@ -138,20 +165,49 @@ fn concurrent_advances_have_exactly_one_winner_per_version() {
     assert_eq!(store.read("src").unwrap().unwrap().version, 2);
 }
 
-/// EF Core `EnsureCreated` only creates tables in an empty database.
+/// C# `InitializeAsync` (Microsoft.Data.Sqlite): `CREATE TABLE IF NOT EXISTS` on
+/// every start, WAL only for a newly created file. The old EF Core `EnsureCreated`
+/// rule left an existing database with unrelated tables without `source_cursors`.
 #[test]
-fn initialize_follows_ensure_created_rules() {
+fn initialize_creates_table_if_missing_on_every_start() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("cursors.db");
     raw(&path)
-        .execute_batch("CREATE TABLE unrelated (id INTEGER);")
+        .execute_batch("CREATE TABLE unrelated (id INTEGER); INSERT INTO unrelated VALUES (7);")
         .unwrap();
     let store = open(&path);
-    assert!(matches!(store.read("s"), Err(StoreError::Storage(_))));
+    assert_eq!(store.read("s").unwrap(), None);
+    assert!(store.try_advance("s", 0, "v", test_now()).unwrap());
     let mode: String = raw(&path)
         .query_row("PRAGMA journal_mode", [], |row| row.get(0))
         .unwrap();
     assert_eq!(mode, "delete");
+    let unrelated: i64 = raw(&path)
+        .query_row("SELECT id FROM unrelated", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(unrelated, 7);
+
+    // Restart is idempotent and keeps data; a dropped table is recreated.
+    let restarted = open(&path);
+    assert_eq!(restarted.read("s").unwrap().unwrap().version, 1);
+    restarted.close_idle_connections();
+    store.close_idle_connections();
+    raw(&path)
+        .execute_batch("DROP TABLE source_cursors;")
+        .unwrap();
+    let recreated = open(&path);
+    assert_eq!(recreated.read("s").unwrap(), None);
+    let sql: String = raw(&path)
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE name = 'source_cursors'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        sql,
+        "CREATE TABLE \"source_cursors\" (\n    \"SourceId\" TEXT NOT NULL CONSTRAINT \"PK_source_cursors\" PRIMARY KEY,\n    \"Value\" TEXT NOT NULL,\n    \"Version\" INTEGER NOT NULL,\n    \"UpdatedAt\" TEXT NOT NULL\n)"
+    );
 
     let fresh_path = directory.path().join("fresh.db");
     let _fresh = open(&fresh_path);
