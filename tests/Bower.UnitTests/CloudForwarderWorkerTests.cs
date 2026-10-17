@@ -328,14 +328,23 @@ public sealed class CloudForwarderWorkerTests
     public void GoogleCredentials_RefuseServiceAccountKeysByDefault()
     {
         using System.Security.Cryptography.RSA rsa = System.Security.Cryptography.RSA.Create(2048);
-        Google.Apis.Auth.OAuth2.ServiceAccountCredential key = new(
-            new Google.Apis.Auth.OAuth2.ServiceAccountCredential.Initializer("bower@bower-prod.iam.gserviceaccount.com")
-            {
-                Key = rsa
-            });
+        using TemporaryDirectory directory = new();
+        string key = Path.Combine(directory.Path, "key.json");
+        File.WriteAllText(
+            key,
+            JsonSerializer.Serialize(
+                new Dictionary<string, string>
+                {
+                    ["type"] = "service_account",
+                    ["client_email"] = "bower@bower-prod.iam.gserviceaccount.com",
+                    ["private_key"] = rsa.ExportPkcs8PrivateKeyPem()
+                },
+                TestJson.Default.DictionaryStringString));
+        using GoogleAccessTokenSource refused = new(allowServiceAccountKey: false);
+        using GoogleAccessTokenSource allowed = new(allowServiceAccountKey: true);
 
-        Assert.Throws<InvalidOperationException>(() => GoogleAccessTokenSource.Check(key, allowServiceAccountKey: false));
-        GoogleAccessTokenSource.Check(key, allowServiceAccountKey: true);
+        Assert.Throws<InvalidOperationException>(() => refused.FromFile(key, "test"));
+        Assert.NotNull(allowed.FromFile(key, "test"));
     }
 
     private static CloudMessage Message(string id, string body) => new(id, $"handle-{id}", Encoding.UTF8.GetBytes(body), 1);

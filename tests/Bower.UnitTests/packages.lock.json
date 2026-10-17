@@ -52,22 +52,6 @@
           "System.Memory.Data": "10.0.3"
         }
       },
-      "Google.Apis": {
-        "type": "Transitive",
-        "resolved": "1.77.0",
-        "contentHash": "zj7MKdZz7lWRM7z2meqh5S9KSf83c1xY8Fa+b1KzYxw9xMugUxcQtwPoxJgFzxKJgLE64dAra0ze++P/Up4k6Q==",
-        "dependencies": {
-          "Google.Apis.Core": "1.77.0"
-        }
-      },
-      "Google.Apis.Core": {
-        "type": "Transitive",
-        "resolved": "1.77.0",
-        "contentHash": "7Yj4dpbOLFbxct6x5AFHQEZ25E8/f+5zqW39Q8f/GZknLyuS+uhnt2DIcKQplBNJTK9WNXompbYLWsPRhO6Nmg==",
-        "dependencies": {
-          "Newtonsoft.Json": "13.0.4"
-        }
-      },
       "Microsoft.ApplicationInsights": {
         "type": "Transitive",
         "resolved": "2.23.0",
@@ -361,11 +345,6 @@
         "resolved": "5.0.0",
         "contentHash": "dDoKi0PnDz31yAyETfRntsLArTlVAVzUzCIvvEDsDsucrl33Dl8pIJG06ePTJTI3tGpeyHS9Cq7Foc/s4EeKcg=="
       },
-      "Newtonsoft.Json": {
-        "type": "Transitive",
-        "resolved": "13.0.4",
-        "contentHash": "pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A=="
-      },
       "SQLite": {
         "type": "Transitive",
         "resolved": "3.53.4",
@@ -403,11 +382,6 @@
           "System.Memory.Data": "10.0.3"
         }
       },
-      "System.CodeDom": {
-        "type": "Transitive",
-        "resolved": "7.0.0",
-        "contentHash": "GLltyqEsE5/3IE+zYRP5sNa1l44qKl9v+bfdMcwg+M9qnQf47wK3H0SUR/T+3N4JEQXF3vV4CSuuo0rsg+nq2A=="
-      },
       "System.Configuration.ConfigurationManager": {
         "type": "Transitive",
         "resolved": "9.0.18",
@@ -429,14 +403,6 @@
         "dependencies": {
           "Microsoft.IdentityModel.JsonWebTokens": "8.19.2",
           "Microsoft.IdentityModel.Tokens": "8.19.2"
-        }
-      },
-      "System.Management": {
-        "type": "Transitive",
-        "resolved": "7.0.2",
-        "contentHash": "/qEUN91mP/MUQmJnM5y5BdT7ZoPuVrtxnFlbJ8a3kBJGhe2wCzBfnPFtK2wTtEEcf3DMGR9J00GZZfg6HRI6yA==",
-        "dependencies": {
-          "System.CodeDom": "7.0.0"
         }
       },
       "System.Memory.Data": {
@@ -566,8 +532,7 @@
           "AWSSDK.SecurityToken": "[4.0.101.1, )",
           "Bower.Forwarding": "[1.0.0, )",
           "Bower.Source.Aws": "[1.0.0, )",
-          "Bower.Source.Gcp": "[1.0.0, )",
-          "Google.Apis.Auth": "[1.77.0, )"
+          "Bower.Source.Gcp": "[1.0.0, )"
         }
       },
       "bower.agent.docker": {
@@ -790,17 +755,6 @@
         "contentHash": "+wSX2NhWoip9smhRcb4iiVB4H2I8MBQTogJfYaO5s1om0JxNN7aP5isNCkN9Q96P4HXYeDxOE9eC54qbk6haaA==",
         "dependencies": {
           "Azure.Core": "1.47.1"
-        }
-      },
-      "Google.Apis.Auth": {
-        "type": "CentralTransitive",
-        "requested": "[1.77.0, )",
-        "resolved": "1.77.0",
-        "contentHash": "lcgXlzM+JkX0nKKc7KBwTdiei2IbV20PuTe3cVQ2zOhq0j4IiS9I4xlRQY4igdCMLlmobthz5xtHiPr/wxl0Ew==",
-        "dependencies": {
-          "Google.Apis": "1.77.0",
-          "Google.Apis.Core": "1.77.0",
-          "System.Management": "7.0.2"
         }
       },
       "Microsoft.AspNetCore.Authentication.JwtBearer": {

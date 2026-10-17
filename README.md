@@ -420,10 +420,11 @@ edges. Its `estimate` is `null` when the graph has a cycle or duplicate node ids
 ## Native AOT binaries
 
 Bower pins .NET SDK `10.0.401` and runs tests on Microsoft.Testing.Platform.
-`bower`, the collector, the management API and the Docker sidecar publish as
-self-contained Native AOT binaries that need no .NET runtime on the target machine.
-`bower-cloud` publishes self-contained on the .NET runtime until its Google
-credential library is AOT safe ([dependency decisions](docs/architecture/dependencies.md)). Trim and AOT analysis runs on every build and its
+`bower`, the collector, the management API, the Docker sidecar and the cloud agent
+(`bower-cloud`) publish as self-contained Native AOT binaries that need no .NET runtime
+on the target machine. `bower-cloud` implements Google Application Default Credentials
+in-house so no reflection-based Google library is needed
+([dependency decisions](docs/architecture/dependencies.md)). Trim and AOT analysis runs on every build and its
 warnings are errors. Native AOT compiles for the operating system it runs on (Linux
 can cross-compile between x64 and arm64 with a cross toolchain, as the container
 builds do), so publish each RID on a matching host with the platform C toolchain

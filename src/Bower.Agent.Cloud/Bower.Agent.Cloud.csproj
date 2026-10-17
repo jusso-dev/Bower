@@ -1,13 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <!-- Not published as Native AOT (yet): Google.Apis.Auth reads credential files and token
-         responses through Google.Apis.Core's NewtonsoftJsonSerializer, which uses
-         reflection-based Newtonsoft.Json (IL2026/IL3050/IL2070 in Google.Apis.Core and
-         Newtonsoft.Json; see docs/architecture/dependencies.md). Bower's own code here is
-         still trim and AOT analysed at build time (IsAotCompatible), and the AWS SDK path is
-         AOT clean. Published self-contained on the .NET runtime instead. -->
-    <PublishAot>false</PublishAot>
+    <!-- Native AOT: one self-contained native executable per RID. Google Application Default
+         Credentials are implemented in-house (Gcp/Auth) with source-generated JSON, so no
+         reflection-based Google client library is needed (docs/architecture/dependencies.md). -->
+    <PublishAot>true</PublishAot>
     <SelfContained Condition="'$(RuntimeIdentifier)' != ''">true</SelfContained>
     <!-- The chiseled runtime image ships without ICU. -->
     <InvariantGlobalization>true</InvariantGlobalization>
@@ -19,12 +16,10 @@
   </ItemGroup>
   <ItemGroup>
     <!-- See docs/architecture/dependencies.md: SQS/S3 clients with the default credential
-         chain (instance profile, ECS task role, IRSA via STS web identity) and Google
-         Application Default Credentials including Workload Identity Federation. -->
+         chain (instance profile, ECS task role, IRSA via STS web identity). -->
     <PackageReference Include="AWSSDK.S3" />
     <PackageReference Include="AWSSDK.SecurityToken" />
     <PackageReference Include="AWSSDK.SQS" />
-    <PackageReference Include="Google.Apis.Auth" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Microsoft.Extensions.DependencyInjection" />

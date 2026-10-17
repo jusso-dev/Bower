@@ -6,7 +6,6 @@
 |---|---|---|---|
 | `AWSSDK.SQS`, `AWSSDK.S3` 4.0 | `Bower.Agent.Cloud` | SigV4-signed SQS receive/delete/visibility and bounded S3 `GetObject` with `ExpectedBucketOwner`, using the AWS default credential chain (EC2 instance profile with IMDSv2, ECS task role, EKS IRSA). Apache-2.0, first-party. Only these two service clients are referenced. | Hand-written SigV4 over `HttpClient` (security-sensitive code to own and audit); AWS CLI sidecar (shell, extra image surface). |
 | `AWSSDK.SecurityToken` 4.0 | `Bower.Agent.Cloud` | Loaded by AWSSDK.Core to exchange an IRSA or Workload Identity web token for temporary credentials (`AssumeRoleWithWebIdentity`). Without it IRSA silently fails. | None for IRSA in .NET. |
-| `Google.Apis.Auth` 1.77 | `Bower.Agent.Cloud` | Application Default Credentials including GKE Workload Identity, the metadata server and Workload Identity Federation (`external_account`, including AWS-sourced tokens), with token caching and refresh. Lets Bower detect and refuse service account key files. Apache-2.0, first-party. Pub/Sub itself is called over REST with `HttpClient`, so the gRPC stack is not pulled in. Brings `Google.Apis`, `Google.Apis.Core`, `Newtonsoft.Json` 13.0.4 (its own floor; patched for GHSA-5crp-9r3c-p9vr, so no direct pin is needed) and `System.Management` (Windows-only code paths, unused on Linux). Blocks Native AOT for `bower-cloud`; see below. | `Google.Cloud.PubSub.V1` (gRPC, much larger dependency tree); hand-written STS token exchange for each credential type. |
 | `Vecc.YamlDotNet.Analyzers.StaticGenerator` 18.1 (build-time only, `PrivateAssets=all`) | `Bower.PolicyEngine`, `Bower.Redaction`, `Bower.Pipeline`, `Bower.Packs` | Roslyn source generator that emits YamlDotNet's `StaticContext` for policy, privacy profile, pipeline and pack YAML, so YAML binding needs no reflection under Native AOT. Published by the YamlDotNet maintainers at the same version as `YamlDotNet`. Nothing ships at run time. | Hand-written YAML-to-model mapping over YamlDotNet's parser (more code to keep in step with the models); YamlDotNet reflection deserializer (IL2026/IL3050 under AOT). |
 | `Microsoft.AspNetCore.TestHost` | Tests only | Runs the collector and management API in-process for HTTP, authentication and rate-limit tests. | `Microsoft.AspNetCore.Mvc.Testing` (needs a single `Program` entry point per test assembly). |
 
@@ -14,27 +13,30 @@
 
 `Bower.Agent.Docker` uses the ASP.NET Core shared framework (`FrameworkReference`)
 for the generic host, logging and `IHttpClientFactory`, so it adds no NuGet packages.
-`Bower.Agent.Cloud` does the same; its only packages are the cloud SDKs above.
+`Bower.Agent.Cloud` does the same; its only packages are the AWS SDKs above. Google
+credentials are handled in-house (see "Removed for Native AOT" below), so no Google
+package is referenced.
 `Bower.Source.Gcp` and the AWS queue parser in `Bower.Source.Aws` have no dependencies:
 parsing stays pure and testable without cloud access.
 
-Review these when upgrading: AWS SDK for .NET 5.x, Google.Apis.Auth major versions
-(credential-type changes affect the key-file refusal, and a release that drops
-Newtonsoft.Json would unblock Native AOT for `bower-cloud`).
+Review these when upgrading: AWS SDK for .NET 5.x. Review `Bower.Agent.Cloud/Gcp/Auth`
+when Google changes AIP-4110/4117 (new `external_account` credential sources, a new
+`aws` environment version or new credential file types).
 
 ## Removed for Native AOT
 
 | Package | Replaced by | Notes |
 |---|---|---|
 | `Hangfire.Core`, `Hangfire.NetCore`, `Hangfire.InMemory` | `Bower.Jobs` in-process cron scheduler (`RecurringJobRegistry`, `PeriodicTimer`) | Hangfire serializes jobs with reflection-based Newtonsoft.Json and builds calls from expression trees. Same job ids, UTC cron schedules, retry counts and no-overlap rule; state stays in memory. See [background jobs](../operations/background-jobs.md). |
-| `Newtonsoft.Json` (direct pin) | — | Only pinned for Hangfire. Still present transitively under `Google.Apis.Auth` in `Bower.Agent.Cloud`. |
+| `Newtonsoft.Json` (direct pin) | — | Only pinned for Hangfire. Its last transitive use (`Google.Apis.Auth`) is removed too, so no Bower project resolves Newtonsoft.Json. |
+| `Google.Apis.Auth` (`Google.Apis`, `Google.Apis.Core`, `Newtonsoft.Json`, `System.Management`, `System.CodeDom`) | `Bower.Agent.Cloud/Gcp/Auth`: in-house Application Default Credentials with System.Text.Json source generation | Google.Apis.Core reads credential files and token responses with reflection-based Newtonsoft.Json (IL2026/IL3050/IL2070). The replacement covers exactly what the agent used: ADC discovery (`GOOGLE_APPLICATION_CREDENTIALS`, the gcloud well-known file, then the metadata server), metadata server tokens (`Metadata-Flavor: Google`, probe on 169.254.169.254, tokens from `metadata.google.internal`, `GCE_METADATA_HOST`/`GCE_METADATA_IP`), and Workload Identity Federation per AIP-4117: file- and URL-sourced subject tokens (text or JSON), AWS-sourced tokens (SigV4-signed GetCallerIdentity, IMDSv2 session token, region and role credentials from IMDS or the AWS environment variables), the RFC 8693 STS exchange (optional client authentication, workforce `userProject`) and service account impersonation through IAM Credentials `generateAccessToken` (`token_lifetime_seconds` 600–43200). Tokens are cached in memory until five minutes before expiry. The key-file refusal is unchanged; gcloud user credentials (`authorized_user`, a long-lived refresh token) now need `BOWER_GCP_ALLOW_KEY_FILE=true` too. Executable-sourced credentials are refused (configuration must not run code), as are X.509 workload certificates, `impersonated_service_account` and other credential types. Hardening beyond the AIP: token and IAM endpoints must be HTTPS on the universe domain (`googleapis.com`), AWS metadata URLs must be 169.254.169.254 or fd00:ec2::254 (as AIP-4117 requires), plain HTTP only to metadata or loopback hosts, no redirects, metadata calls bypass proxies, responses capped at 64 KiB (subject tokens 256 KiB), and error bodies are never surfaced beyond the OAuth `error` code. SigV4 is pinned by AWS's published SigV4 test suite. |
 | `Microsoft.EntityFrameworkCore`, `Microsoft.EntityFrameworkCore.Sqlite` (`Bower.Persistence`) | `Microsoft.Data.Sqlite` (already referenced) | EF Core's runtime model building needs reflection and dynamic code. `EfSourceCursorStore` keeps the exact table, column order (`SourceId`, `Value`, `Version`, `UpdatedAt`) and timestamp text EF Core created, so existing cursor files keep working. `Bower.Source.SqlServer` still uses EF Core (SQL Server) by design and is not referenced by any AOT executable. |
 
 ## Native AOT status
 
 All product libraries set `IsAotCompatible` (trim, AOT and single-file analysers run on
-every build; warnings are errors). `bower`, the collector, the management API and the
-Docker sidecar publish as Native AOT with zero IL2xxx/IL3xxx warnings. JSON uses
+every build; warnings are errors). `bower`, the collector, the management API, the
+Docker sidecar and the cloud agent publish as Native AOT with zero IL2xxx/IL3xxx warnings. JSON uses
 System.Text.Json source generation with the same options as before, so wire bytes,
 policy hashes and pack signatures are unchanged.
 
@@ -44,7 +46,6 @@ policy hashes and pack signatures are unchanged.
 | `Azure.Identity`, `Azure.Core` | AOT clean. |
 | `Azure.Monitor.Ingestion` | `LogsIngestionClient.UploadAsync<T>` carries `RequiresUnreferencedCode`/`RequiresDynamicCode` because its default serializer is reflection-based. `AzureLogsIngestionOutput` always passes `JsonRecordSerializer` (writes `JsonObject` nodes directly), behind a guard, and suppresses IL2026/IL3050 on that one call with a written justification. Uploaded bytes are unchanged (pinned by `AzureLogsIngestionOutputTests`). |
 | `AWSSDK.Core`, `AWSSDK.SQS`, `AWSSDK.S3`, `AWSSDK.SecurityToken` 4.0 | AOT clean (no warnings under ILC). |
-| `Google.Apis.Auth` 1.77 (`Google.Apis.Core`, `Newtonsoft.Json`) | **Blocker.** `Google.Apis.Json.NewtonsoftJsonSerializer`/`NewtonsoftJsonContractResolver` call `Newtonsoft.Json.JsonSerializer.Create` and `DefaultContractResolver()` (IL2026/IL3050), `Google.Apis.Util.RequestParameterDescriptorProvider` reflects over request types (IL2070), and Newtonsoft's `JToken`/`JObject`/`JValue` dynamic and `ToObject(Type)` paths are not AOT safe (IL2026/IL3050, surfaced as IL2104/IL3053). ADC credential files and token responses are read through that serializer, so the warnings guard real reflection. `bower-cloud` therefore publishes self-contained on the .NET runtime (`PublishAot=false`); Bower's own code in it is still AOT analysed. Unblocking needs an AOT-safe Google auth library or an in-house ADC implementation (metadata server, `external_account` STS exchange including AWS-sourced SigV4 subject tokens, impersonation, and the service-account key refusal). |
 
 
 ## Rust data plane (`rust/`)
