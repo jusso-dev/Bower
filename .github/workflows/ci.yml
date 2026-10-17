@@ -147,16 +147,26 @@ jobs:
 
   publish:
     needs: build-test
-    runs-on: ubuntu-latest
+    # Native AOT cannot cross-compile to another OS, and cross-architecture links need
+    # a target sysroot, so every RID builds on a native runner.
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        rid: [win-x64, win-arm64, linux-x64, linux-arm64, osx-x64, osx-arm64]
+        include:
+          - { rid: linux-x64, os: ubuntu-latest }
+          - { rid: linux-arm64, os: ubuntu-24.04-arm }
+          - { rid: win-x64, os: windows-latest }
+          - { rid: win-arm64, os: windows-11-arm }
+          - { rid: osx-x64, os: macos-15-intel }
+          - { rid: osx-arm64, os: macos-latest }
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
       - run: dotnet restore Bower.sln --locked-mode
+      # Native AOT, self-contained (PublishAot in the project): one native binary per host.
       - run: >
           dotnet publish src/Bower.Cli/Bower.Cli.csproj
           --configuration Release
@@ -170,7 +180,6 @@ jobs:
           --runtime ${{ matrix.rid }}
           --self-contained true
           --no-restore
-          -p:PublishSingleFile=true
           --output artifacts/${{ matrix.rid }}/collector
       - uses: actions/upload-artifact@v7
         with:
