@@ -1,6 +1,8 @@
 //! Privacy & Secret Protection Engine (`PrivacyEngine`). Runs after parse and
 //! before persistence. Deterministic: regex, checksum and structure only.
 
+use std::panic::{self, AssertUnwindSafe};
+
 use bower_contracts::{EventRedactor, RedactionResult};
 use indexmap::IndexMap;
 
@@ -208,7 +210,14 @@ impl PrivacyEngine {
         )
     }
 
+    /// Never panics: any failure, including a panicking custom detector, quarantines the
+    /// payload with `redaction-failed` (C# catches every exception the same way).
     pub fn redact_json(&self, json: &str) -> PrivacyScanResult {
+        panic::catch_unwind(AssertUnwindSafe(|| self.redact_json_unguarded(json)))
+            .unwrap_or_else(|_| PrivacyScanResult::fail("redaction-failed"))
+    }
+
+    fn redact_json_unguarded(&self, json: &str) -> PrivacyScanResult {
         if is_null_or_whitespace(json) {
             return PrivacyScanResult::fail("empty-payload");
         }
@@ -270,22 +279,26 @@ impl PrivacyEngine {
         })
     }
 
-    /// Scans and sanitises a raw text payload (syslog line, CSV cell, …).
+    /// Scans and sanitises a raw text payload (syslog line, CSV cell, …). Never panics;
+    /// failures return `redaction-failed` like [`PrivacyEngine::redact_json`].
     pub fn redact_text(&self, text: &str) -> PrivacyTextResult {
         if text.len() > MAXIMUM_PAYLOAD_BYTES {
             return PrivacyTextResult::fail("payload-too-large");
         }
 
         let mut findings = Vec::new();
-        match self.apply_detectors_to_value(text, "$", &mut findings) {
-            Ok(redacted) => PrivacyTextResult {
+        let redacted = panic::catch_unwind(AssertUnwindSafe(|| {
+            self.apply_detectors_to_value(text, "$", &mut findings)
+        }));
+        match redacted {
+            Ok(Ok(redacted)) => PrivacyTextResult {
                 succeeded: true,
                 redacted_text: Some(redacted),
                 metadata: build_metadata(&findings),
                 findings,
                 failure_code: None,
             },
-            Err(RedactionFailed) => PrivacyTextResult::fail("redaction-failed"),
+            Ok(Err(RedactionFailed)) | Err(_) => PrivacyTextResult::fail("redaction-failed"),
         }
     }
 
@@ -554,24 +567,70 @@ impl PrivacyEngine {
             return Ok(text.to_owned());
         }
 
+        // A (custom) detector reporting offsets outside the text or inside a character
+        // cannot be applied safely: quarantine instead of panicking on the slice.
+        if matches.iter().any(|found| {
+            found.start > found.end
+                || !text.is_char_boundary(found.start)
+                || !text.is_char_boundary(found.end)
+        }) {
+            return Err(RedactionFailed);
+        }
+
         // Resolve overlaps: prefer longer matches, then earlier start (stable, like LINQ).
         matches.sort_by(|a, b| {
             b.length_utf16
                 .cmp(&a.length_utf16)
                 .then(a.start.cmp(&b.start))
         });
-        let mut selected: Vec<DetectionMatch> = Vec::new();
-        for candidate in matches {
-            if !selected
-                .iter()
-                .any(|existing| overlaps(existing, &candidate))
-            {
-                selected.push(candidate);
-            }
-        }
+        let mut selected = select_non_overlapping(matches);
 
         // Apply right-to-left so offsets remain valid.
         selected.sort_by_key(|found| std::cmp::Reverse(found.start));
+        if selected.iter().any(|found| found.start == found.end) {
+            return self.apply_sequentially(text, path, selected, findings);
+        }
+
+        // Spans are non-empty and disjoint, so every replacement sees exactly the
+        // original text of its span: build the result once (`ApplyInOnePass`) instead
+        // of splicing the whole value per match.
+        let mut replacements: Vec<Option<String>> = Vec::with_capacity(selected.len());
+        for found in &selected {
+            let action = self.policy.resolve_action(&found.detector_id);
+            replacements.push(if action.keeps_content() {
+                None
+            } else {
+                Some(self.applicator.apply(text, found, action)?)
+            });
+        }
+
+        let mut result = String::with_capacity(text.len());
+        let mut position = 0;
+        for (found, replacement) in selected.iter().zip(&replacements).rev() {
+            if let Some(replacement) = replacement {
+                result.push_str(&text[position..found.start]);
+                result.push_str(replacement);
+                position = found.end;
+            }
+        }
+        result.push_str(&text[position..]);
+
+        for found in selected {
+            let action = self.policy.resolve_action(&found.detector_id);
+            findings.push(applied(found, path, action));
+        }
+
+        Ok(result)
+    }
+
+    /// Per-match splice (`ApplySequentially`), kept for zero-length custom matches.
+    fn apply_sequentially(
+        &self,
+        text: &str,
+        path: &str,
+        selected: Vec<DetectionMatch>,
+        findings: &mut Vec<AppliedFinding>,
+    ) -> Step<String> {
         let mut result = text.to_owned();
         for found in selected {
             let action = self.policy.resolve_action(&found.detector_id);
@@ -580,14 +639,7 @@ impl PrivacyEngine {
                 result.replace_range(found.start..found.end, &replacement);
             }
 
-            findings.push(AppliedFinding {
-                detector_id: found.detector_id,
-                category: found.category,
-                path: path.to_owned(),
-                action,
-                validated: found.validated,
-                sub_kind: found.sub_kind,
-            });
+            findings.push(applied(found, path, action));
         }
 
         Ok(result)
@@ -610,8 +662,48 @@ fn scannable_text(node: &Node) -> Step<Option<String>> {
     }
 }
 
-fn overlaps(a: &DetectionMatch, b: &DetectionMatch) -> bool {
-    a.start < b.end && b.start < a.end
+fn applied(found: DetectionMatch, path: &str, action: PrivacyAction) -> AppliedFinding {
+    AppliedFinding {
+        detector_id: found.detector_id,
+        category: found.category,
+        path: path.to_owned(),
+        action,
+        validated: found.validated,
+        sub_kind: found.sub_kind,
+    }
+}
+
+/// `SelectNonOverlapping`: greedy selection in candidate order; a candidate is kept
+/// unless it overlaps an already kept span. Kept spans never overlap each other, so
+/// ordered by (start, end) their ends never decrease and only the last kept span
+/// starting before the candidate's end can overlap it. Binary search keeps this
+/// O(n log n) for values carrying many matches (a pairwise scan is O(n^2): a 1 MiB
+/// value of short emails took seconds).
+fn select_non_overlapping(ordered: Vec<DetectionMatch>) -> Vec<DetectionMatch> {
+    let mut selected = Vec::new();
+    let mut kept: Vec<(usize, usize)> = Vec::new();
+    for candidate in ordered {
+        // Index of the first kept span starting at or after the candidate's end.
+        let low = kept.partition_point(|&(start, _)| start < candidate.end);
+        if low > 0 && candidate.start < kept[low - 1].1 {
+            continue;
+        }
+
+        // Insert after every kept span that sorts at or before (start, end).
+        let mut position = low;
+        while position > 0
+            && (kept[position - 1].0 > candidate.start
+                || (kept[position - 1].0 == candidate.start
+                    && kept[position - 1].1 > candidate.end))
+        {
+            position -= 1;
+        }
+
+        kept.insert(position, (candidate.start, candidate.end));
+        selected.push(candidate);
+    }
+
+    selected
 }
 
 fn distinct_paths(

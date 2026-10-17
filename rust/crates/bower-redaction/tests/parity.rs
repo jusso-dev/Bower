@@ -4,6 +4,7 @@
 //! C# `Bower.Redaction` assembly. Every expected value here comes from C#.
 
 use std::collections::HashSet;
+use std::io::BufReader;
 use std::sync::LazyLock;
 
 use base64::Engine as _;
@@ -12,15 +13,14 @@ use bower_redaction::{
     PrivacyPolicy, SensitiveDataDetector, checksum, detector_ids as ids, load_privacy_profile,
     read_key_file,
 };
+use flate2::read::GzDecoder;
 use serde_json::Value;
 
+/// Gzipped so synthetic fuzzed credentials in the corpus do not trip secret scanning.
 static VECTORS: LazyLock<Value> = LazyLock::new(|| {
-    // Gzipped: the vectors are full of synthetic secrets by design, and plain text
-    // trips repository secret scanning.
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/vectors/csharp.json.gz");
     let file = std::fs::File::open(path).expect("vectors exist");
-    serde_json::from_reader(std::io::BufReader::new(flate2::read::GzDecoder::new(file)))
-        .expect("vectors parse")
+    serde_json::from_reader(BufReader::new(GzDecoder::new(file))).expect("vectors parse")
 });
 
 fn vectors(name: &str) -> &'static Vec<Value> {
@@ -138,35 +138,6 @@ fn finding_text(finding: &AppliedFinding) -> String {
     .join("|")
 }
 
-/// The C# output, adjusted for the two documented divergences. Both come from C#
-/// masking slicing a surrogate pair (`value[..2]`), which leaves an unpaired high
-/// surrogate in an intermediate .NET string. Rust strings cannot hold one, so the
-/// mask writes U+FFFD immediately (System.Text.Json writes the same U+FFFD later):
-///
-/// * two keys whose masks differ only in that surrogate are distinct in C#, which
-///   then serialises both as the same name (duplicate keys in the output). Rust sees
-///   the collision and renames the second key `redacted-key-1`;
-/// * `PolicyApplicator.Truncate` drops a cut-off unpaired high surrogate; Rust keeps
-///   the U+FFFD it already wrote.
-///
-/// Findings, paths and metadata still match C# exactly for these inputs.
-fn expected_redacted_json(policy: &str, input: &str, csharp: Option<&str>) -> Option<String> {
-    let csharp = csharp?;
-    if input == "{\"PayID: a\u{1F600}bc\":1,\"PayID: a\u{1F300}bc\":2}" {
-        let duplicate = "\"PayID: a\u{5C}uFFFD*bc\":2";
-        // Only masking policies collide; hashes and replacements keep keys distinct.
-        return Some(csharp.replacen(duplicate, r#""redacted-key-1":2"#, 1));
-    }
-
-    if policy == "short" && input.starts_with("{\"a\":\" PayID: a\u{1F600}bcdefgh\"") {
-        let cut = r#""a":" PayID: a","#;
-        assert!(csharp.contains(cut), "C# drops the unpaired surrogate");
-        return Some(csharp.replacen(cut, "\"a\":\" PayID: a\u{5C}uFFFD\",", 1));
-    }
-
-    Some(csharp.to_owned())
-}
-
 fn preview(input: &str) -> String {
     input.chars().take(160).collect()
 }
@@ -206,9 +177,7 @@ fn redact_json_matches_csharp() {
             ),
             (
                 "redactedJson",
-                result.redacted_json.as_deref()
-                    == expected_redacted_json(name, input, opt_str(&vector["redactedJson"]))
-                        .as_deref(),
+                result.redacted_json.as_deref() == opt_str(&vector["redactedJson"]),
             ),
             (
                 "removedPaths",
@@ -394,8 +363,6 @@ fn privacy_profiles_match_csharp() {
                 let expected_type = vector["error"].as_str().unwrap();
                 let message = vector["message"].as_str().unwrap();
                 let (rust_type, compare_message) = match expected_type {
-                    // C# crashes with a NullReferenceException; Rust fails the load cleanly.
-                    "NullReferenceException" => ("InvalidDataException", false),
                     // YAML parser messages come from different libraries.
                     _ if message.starts_with("Privacy profile is invalid at line") => {
                         (expected_type, false)
@@ -486,5 +453,32 @@ fn facade_matches_csharp() {
             .map(|f| format!("{}|{}|{}|{}", f.kind, f.path, f.preview, f.action))
             .collect();
         assert_eq!(findings, strings(&vector["findings"]), "{input}");
+    }
+}
+
+#[test]
+fn policy_validation_matches_csharp() {
+    for vector in vectors("policyErrors") {
+        let path = vector["path"].as_str().unwrap();
+        let policy = PrivacyPolicy {
+            field_rules: vec![PrivacyFieldRule::new(path, PrivacyAction::Mask, None)],
+            ..PrivacyPolicy::default()
+        };
+        match (PrivacyEngine::new(policy), vector["ok"].as_bool().unwrap()) {
+            (Ok(_), true) => {}
+            (Err(error), false) => {
+                assert_eq!(
+                    error.dotnet_type(),
+                    vector["error"].as_str().unwrap(),
+                    "{path:?}"
+                );
+                assert_eq!(
+                    error.to_string(),
+                    vector["message"].as_str().unwrap(),
+                    "{path:?}"
+                );
+            }
+            (result, _) => panic!("{path:?}: {result:?} vs C# {vector}"),
+        }
     }
 }

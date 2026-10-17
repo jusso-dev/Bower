@@ -11,6 +11,8 @@ public sealed class PolicyApplicator
 
     public PolicyApplicator(PrivacyPolicy policy)
     {
+        ArgumentNullException.ThrowIfNull(policy);
+        policy.Validate();
         this.policy = policy;
         hmacHasher = policy.HmacKey is { Length: >= 32 } key
             ? new KeyedFieldHasher(key)
@@ -114,6 +116,12 @@ public sealed class PolicyApplicator
                Convert.ToBase64String(ciphertext);
     }
 
+    /// <summary>
+    /// Masks in UTF-16 units but never splits a surrogate pair: a kept prefix or suffix
+    /// that would end inside a pair shrinks by one unit and the pair is masked instead.
+    /// An unpaired surrogate would serialise as U+FFFD, so two masks differing only in
+    /// that surrogate would collide (for example as duplicate JSON property names).
+    /// </summary>
     private static string Mask(string value, string detectorId)
     {
         if (detectorId == DetectorIds.Email)
@@ -121,7 +129,8 @@ public sealed class PolicyApplicator
             int at = value.IndexOf('@');
             if (at > 0)
             {
-                return value[0] + "***" + value[at..];
+                int head = char.IsHighSurrogate(value[0]) ? 0 : 1;
+                return string.Concat(value.AsSpan(0, head), "***", value.AsSpan(at));
             }
         }
 
@@ -150,6 +159,11 @@ public sealed class PolicyApplicator
             return "****";
         }
 
-        return value[..2] + new string('*', value.Length - 4) + value[^2..];
+        int prefix = char.IsHighSurrogate(value[1]) ? 1 : 2;
+        int suffix = char.IsLowSurrogate(value[^2]) ? 1 : 2;
+        return string.Concat(
+            value.AsSpan(0, prefix),
+            new string('*', value.Length - prefix - suffix),
+            value.AsSpan(value.Length - suffix));
     }
 }

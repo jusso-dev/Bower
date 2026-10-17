@@ -28,6 +28,7 @@ impl PolicyApplicator {
     /// Fails closed when the policy uses Hmac without a key of at least 32 bytes:
     /// an unkeyed fallback would silently weaken pseudonymisation.
     pub fn new(policy: &PrivacyPolicy) -> Result<Self, PrivacyError> {
+        policy.validate()?;
         let hmac_hasher = match &policy.hmac_key {
             Some(key) if key.len() >= 32 => Some(KeyedFieldHasher::new(key)?),
             _ => None,

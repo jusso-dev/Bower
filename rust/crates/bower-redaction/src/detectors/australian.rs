@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use super::{DetectionMatch, ScanText, SensitiveDetector, compile};
+use super::{DetectionMatch, Pattern, ScanText, SensitiveDetector, compile, proxied};
 use crate::checksum::{
     digits_only, is_valid_abn, is_valid_acn, is_valid_ihi, is_valid_medicare, is_valid_tfn,
 };
@@ -13,31 +13,51 @@ use crate::ids::{detector_categories as categories, detector_ids as ids};
 use crate::text::{contains_ignore_ascii_case, is_dotnet_whitespace, utf16_len};
 
 // 8–9 digits with optional spaces/hyphens; context labels increase confidence but checksum is required.
-static TFN: LazyLock<Regex> = LazyLock::new(|| {
-    compile(r"(?i)\b(?:TFN|Tax\s*File\s*Number)?[:\s#-]*(\d{3}[\s-]?\d{3}[\s-]?\d{2,3})\b")
+static TFN: LazyLock<Pattern> = LazyLock::new(|| {
+    proxied(
+        r"(?i)\b(?:TFN|Tax\s*File\s*Number)?[:\s#-]*(\d{3}[\s-]?\d{3}[\s-]?\d{2,3})\b",
+        Some(b'9'),
+        b'k',
+    )
 });
-static CRN: LazyLock<Regex> = LazyLock::new(|| {
-    compile(
+static CRN: LazyLock<Pattern> = LazyLock::new(|| {
+    proxied(
         r"(?i)\b(?:CRN|Customer\s*Reference\s*Number|Centrelink)?[:\s#-]*(\d{3}[\s-]?\d{3}[\s-]?\d{3}[A-Za-z])\b",
+        Some(b'9'),
+        b'k',
     )
 });
-static MEDICARE: LazyLock<Regex> = LazyLock::new(|| compile(r"\b(\d{4}[\s-]?\d{5}[\s-]?\d)\b"));
-static IHI: LazyLock<Regex> = LazyLock::new(|| compile(r"\b(800360\d{10})\b"));
+static MEDICARE: LazyLock<Pattern> =
+    LazyLock::new(|| proxied(r"\b(\d{4}[\s-]?\d{5}[\s-]?\d)\b", Some(b'9'), b'_'));
+static IHI: LazyLock<Pattern> = LazyLock::new(|| proxied(r"\b(800360\d{10})\b", Some(b'9'), b'_'));
 // Common AU passport: letter + 7 digits, or 1–2 letters + 7 digits.
-static PASSPORT: LazyLock<Regex> = LazyLock::new(|| {
-    compile(
+static PASSPORT: LazyLock<Pattern> = LazyLock::new(|| {
+    proxied(
         r"(?i)\b(?:passport(?:\s*no(?:\.|mber)?)?|australian\s*passport)[:\s#-]*([A-Z]{1,2}\d{7})\b|\b([A-Z]\d{7})\b",
+        Some(b'9'),
+        b'k',
     )
 });
-static ABN: LazyLock<Regex> =
-    LazyLock::new(|| compile(r"\b(\d{2}[\s]?\d{3}[\s]?\d{3}[\s]?\d{3})\b"));
-static ACN: LazyLock<Regex> = LazyLock::new(|| compile(r"\b(\d{3}[\s]?\d{3}[\s]?\d{3})\b"));
+static ABN: LazyLock<Pattern> = LazyLock::new(|| {
+    proxied(
+        r"\b(\d{2}[\s]?\d{3}[\s]?\d{3}[\s]?\d{3})\b",
+        Some(b'9'),
+        b'_',
+    )
+});
+static ACN: LazyLock<Pattern> =
+    LazyLock::new(|| proxied(r"\b(\d{3}[\s]?\d{3}[\s]?\d{3})\b", Some(b'9'), b'_'));
 // State letter + 1–8 digits + optional war code letter.
-static DVA: LazyLock<Regex> = LazyLock::new(|| {
-    compile(r"(?i)\b(?:DVA|Veterans'?\s*Affairs)?[:\s#-]*([NQVSTW][A-Z]?\d{4,8}[A-Z]?)\b")
+static DVA: LazyLock<Pattern> = LazyLock::new(|| {
+    proxied(
+        r"(?i)\b(?:DVA|Veterans'?\s*Affairs)?[:\s#-]*([NQVSTW][A-Z]?\d{4,8}[A-Z]?)\b",
+        Some(b'9'),
+        b'k',
+    )
 });
 // Broad licence token after contextual keywords only (context gated in detect).
-static LICENCE: LazyLock<Regex> = LazyLock::new(|| compile(r"(?i)\b([A-Z]{0,2}\d{6,10}[A-Z]?)\b"));
+static LICENCE: LazyLock<Pattern> =
+    LazyLock::new(|| proxied(r"(?i)\b([A-Z]{0,2}\d{6,10}[A-Z]?)\b", Some(b'9'), b'k'));
 static STATE_NSW_VIC_QLD: LazyLock<Regex> = LazyLock::new(|| compile(r"^\d{8}$"));
 static STATE_SA_TAS_WA: LazyLock<Regex> = LazyLock::new(|| compile(r"^\d{6,7}$"));
 static STATE_ACT: LazyLock<Regex> = LazyLock::new(|| compile(r"(?i)^[A-Z]{2}\d{6}$"));
@@ -46,7 +66,7 @@ static STATE_NT: LazyLock<Regex> = LazyLock::new(|| compile(r"^\d{10}$"));
 /// Pushes group 1 of each match when `accept(group text)` holds.
 fn detect_group(
     text: &ScanText<'_>,
-    regex: &Regex,
+    pattern: &Pattern,
     id: &str,
     category: &str,
     validated: bool,
@@ -57,12 +77,12 @@ fn detect_group(
         return;
     }
 
-    for captures in text.captures(regex) {
+    for captures in text.captures(pattern) {
         let Some(group) = captures.get(1) else {
             continue;
         };
-        if accept(text.slice(&group)) {
-            matches.push(text.detection(id, category, &group, validated, None));
+        if accept(text.slice(group)) {
+            matches.push(text.detection(id, category, group, validated, None));
         }
     }
 }
@@ -108,7 +128,8 @@ impl SensitiveDetector for CrnDetector {
             &CRN,
             ids::CRN,
             categories::AUSTRALIAN,
-            true,
+            // No published CRN check-character algorithm: pattern only, never "validated".
+            false,
             |_| true,
             matches,
         );
@@ -192,13 +213,7 @@ impl SensitiveDetector for PassportDetector {
             let Some(group) = labelled.or(bare).or_else(|| captures.get(0)) else {
                 continue;
             };
-            matches.push(text.detection(
-                ids::PASSPORT,
-                categories::AUSTRALIAN,
-                &group,
-                false,
-                None,
-            ));
+            matches.push(text.detection(ids::PASSPORT, categories::AUSTRALIAN, group, false, None));
         }
     }
 }
@@ -277,12 +292,12 @@ impl SensitiveDetector for DvaDetector {
             || contains_ignore_ascii_case(text.text(), "Veteran");
         for captures in text.captures(&DVA) {
             let whole = captures.get(0).expect("group 0 always participates");
-            if !contextual && utf16_len(text.slice(&whole)) < 6 {
+            if !contextual && utf16_len(text.slice(whole)) < 6 {
                 continue;
             }
 
             let group = captures.get(1).unwrap_or(whole);
-            matches.push(text.detection(ids::DVA, categories::AUSTRALIAN, &group, false, None));
+            matches.push(text.detection(ids::DVA, categories::AUSTRALIAN, group, false, None));
         }
     }
 }
@@ -333,17 +348,35 @@ impl SensitiveDetector for DriverLicenceDetector {
             return;
         }
 
-        for found in LICENCE.find_iter(text.haystack()) {
+        for found in text.find_iter(&LICENCE) {
             // Matches never include supplementary-plane characters (the haystack maps
             // them to symbols), so .NET and Rust `\d` agree on the original slice.
-            let state = Self::infer_state(text.slice(&found));
+            let state = Self::infer_state(text.slice(found));
             matches.push(text.detection(
                 ids::DRIVER_LICENCE,
                 categories::AUSTRALIAN,
-                &found,
+                found,
                 false,
                 Some(state.to_owned()),
             ));
         }
     }
+}
+
+/// Every pattern in this module, for the proxy differential test.
+#[cfg(test)]
+pub(super) fn patterns() -> Vec<(&'static str, &'static Pattern)> {
+    #[allow(unused_mut)]
+    let mut patterns: Vec<(&'static str, &'static Pattern)> = vec![
+        ("TFN", &*TFN),
+        ("CRN", &*CRN),
+        ("MEDICARE", &*MEDICARE),
+        ("IHI", &*IHI),
+        ("PASSPORT", &*PASSPORT),
+        ("ABN", &*ABN),
+        ("ACN", &*ACN),
+        ("DVA", &*DVA),
+        ("LICENCE", &*LICENCE),
+    ];
+    patterns
 }

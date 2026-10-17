@@ -68,6 +68,53 @@ public sealed class PrivacyPolicy
     /// </summary>
     public bool EmitSecurityEventOnFindings { get; init; } = true;
 
+    /// <summary>
+    /// Rejects settings that would make redaction throw at runtime or silently keep data.
+    /// Engines and applicators call this on construction, so a bad policy fails at
+    /// start-up instead of quarantining every event.
+    /// </summary>
+    /// <exception cref="ArgumentException">The policy cannot be applied safely.</exception>
+    public void Validate()
+    {
+        if (DetectorActions is null
+            || DisabledDetectors is null
+            || OptInDetectors is null
+            || EnabledOptInDetectors is null
+            || FieldRules is null)
+        {
+            throw new ArgumentException("Privacy policy collections must not be null.");
+        }
+
+        if (ReplacementText is null)
+        {
+            // A null replacement would leave Replace matches unchanged (fail open).
+            throw new ArgumentException("Privacy policy ReplacementText must not be null.");
+        }
+
+        if (MaximumFieldLength < 0)
+        {
+            throw new ArgumentException("Privacy policy MaximumFieldLength must not be negative.");
+        }
+
+        foreach (PrivacyFieldRule? rule in FieldRules)
+        {
+            if (rule is null)
+            {
+                throw new ArgumentException("Privacy field rules must not be null.");
+            }
+
+            if (rule.Segments.Length == 0)
+            {
+                throw new ArgumentException($"Privacy field rule path '{rule.Path}' has no segments.");
+            }
+
+            if (rule.Action == PrivacyAction.Truncate && rule.MaxLength < 0)
+            {
+                throw new ArgumentException($"Privacy field rule '{rule.Path}' needs a non-negative MaxLength.");
+            }
+        }
+    }
+
     public bool IsDetectorEnabled(string detectorId)
     {
         if (DisabledDetectors.Contains(detectorId))

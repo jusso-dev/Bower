@@ -1,7 +1,6 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using Bower.Abstractions;
 
 namespace Bower.Redaction.Privacy;
@@ -148,13 +147,11 @@ public sealed class PrivacyEngine : IEventRedactor
         {
             return PrivacyScanResult.Fail("invalid-json");
         }
-        catch (Exception exception) when (
-            exception is RegexMatchTimeoutException
-                or ArgumentException
-                or InvalidOperationException)
+        catch (Exception)
         {
-            // Detector timeouts and malformed structures (for example duplicate keys) are
-            // security failures: the payload must be quarantined, never persisted.
+            // Detector timeouts, malformed structures (for example duplicate keys) and any
+            // other failure are security failures: the payload must be quarantined, never
+            // persisted, and the caller must never see an exception instead of a verdict.
             return PrivacyScanResult.Fail("redaction-failed");
         }
     }
@@ -172,10 +169,18 @@ public sealed class PrivacyEngine : IEventRedactor
             return new PrivacyTextResult(false, null, [], PrivacyMetadata.Empty, "payload-too-large");
         }
 
-        List<AppliedFinding> findings = [];
-        string redacted = ApplyDetectorsToValue(text, "$", findings);
-        PrivacyMetadata metadata = BuildMetadata(findings);
-        return new PrivacyTextResult(true, redacted, findings, metadata, null);
+        try
+        {
+            List<AppliedFinding> findings = [];
+            string redacted = ApplyDetectorsToValue(text, "$", findings);
+            PrivacyMetadata metadata = BuildMetadata(findings);
+            return new PrivacyTextResult(true, redacted, findings, metadata, null);
+        }
+        catch (Exception)
+        {
+            // Same contract as RedactJson: quarantine, never throw or return the original.
+            return new PrivacyTextResult(false, null, [], PrivacyMetadata.Empty, "redaction-failed");
+        }
     }
 
     private void WalkObject(JsonObject value, string parentPath, List<AppliedFinding> findings)
@@ -216,6 +221,10 @@ public sealed class PrivacyEngine : IEventRedactor
                 findings);
             if (!string.Equals(redactedName, propertyName, StringComparison.Ordinal))
             {
+                // Compare names as they will be written: System.Text.Json writes every
+                // unpaired surrogate as U+FFFD, so two names differing only there would
+                // otherwise both survive and serialise as duplicate keys.
+                redactedName = ReplaceUnpairedSurrogates(redactedName);
                 value.Remove(propertyName);
                 do
                 {
@@ -636,6 +645,15 @@ public sealed class PrivacyEngine : IEventRedactor
             ["actions"] = actions
         };
     }
+
+    /// <summary>
+    /// Replaces each unpaired surrogate with U+FFFD, exactly as System.Text.Json (and the
+    /// UTF-8 encoder's replacement fallback) writes it. Valid strings are returned as-is.
+    /// </summary>
+    private static string ReplaceUnpairedSurrogates(string value) =>
+        value.AsSpan().ContainsAnyInRange('\uD800', '\uDFFF')
+            ? Encoding.UTF8.GetString(Encoding.UTF8.GetBytes(value))
+            : value;
 
     // Letters and digits only, lower-cased invariantly. Surrogates are not letters or
     // digits here, so per-char invariant lowering equals string.ToLowerInvariant.

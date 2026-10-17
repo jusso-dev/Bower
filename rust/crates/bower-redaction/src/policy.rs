@@ -6,6 +6,7 @@ use std::fmt;
 
 use indexmap::IndexMap;
 
+use crate::error::PrivacyError;
 use crate::ids::detector_ids as ids;
 
 /// Deterministic action applied to a detected sensitive span. Original values are
@@ -225,6 +226,23 @@ impl PrivacyPolicy {
                 .collect(),
             ..Self::default()
         }
+    }
+
+    /// `PrivacyPolicy.Validate`: rejects settings that would make redaction fail at
+    /// runtime, so a bad policy fails at start-up instead of quarantining every event.
+    /// Null collections, a null replacement text and negative lengths, which C# also
+    /// rejects, cannot be expressed in Rust.
+    pub fn validate(&self) -> Result<(), PrivacyError> {
+        for rule in &self.field_rules {
+            if rule.segments().is_empty() {
+                return Err(PrivacyError::Argument(format!(
+                    "Privacy field rule path '{}' has no segments.",
+                    rule.path
+                )));
+            }
+        }
+
+        Ok(())
     }
 
     pub fn is_detector_enabled(&self, detector_id: &str) -> bool {

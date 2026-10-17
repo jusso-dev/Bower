@@ -52,6 +52,135 @@ pub fn regex_haystack(text: &str) -> Cow<'_, str> {
     })
 }
 
+/// Regex classes of a non-ASCII haystack character, as the Unicode-mode detector
+/// patterns see it. Indexed by BMP code point (the haystack has no other characters).
+const CLASS_OTHER: u8 = 0;
+const CLASS_WORD: u8 = 1;
+const CLASS_DIGIT: u8 = 2;
+const CLASS_SPACE: u8 = 3;
+const CLASS_KELVIN: u8 = 4;
+
+static BMP_CLASSES: LazyLock<Box<[u8]>> = LazyLock::new(|| {
+    let mut classes = vec![CLASS_OTHER; 0x1_0000].into_boxed_slice();
+    let all: String = (0x80..0x1_0000).filter_map(char::from_u32).collect();
+    // Later classes refine earlier ones: every `\d` is also `\w`.
+    for (pattern, class) in [
+        (r"\w+", CLASS_WORD),
+        (r"\d+", CLASS_DIGIT),
+        (r"\s+", CLASS_SPACE),
+    ] {
+        let regex = Regex::new(pattern).expect("class pattern is valid");
+        for found in regex.find_iter(&all) {
+            for character in found.as_str().chars() {
+                classes[character as usize] = class;
+            }
+        }
+    }
+    classes['\u{212A}' as usize] = CLASS_KELVIN;
+    classes
+});
+
+/// Placeholder bytes in [`AsciiProxy`] for classes whose stand-in depends on the
+/// pattern. Never valid in the final (ASCII) proxy text.
+const PLACEHOLDER_DIGIT: u8 = 0x80;
+const PLACEHOLDER_KELVIN: u8 = 0x81;
+
+/// An all-ASCII stand-in for a non-ASCII regex haystack: one byte per haystack
+/// character (that is, per UTF-16 unit of the original text) plus the haystack byte
+/// offset of each.
+///
+/// Rust's lazy DFA cannot evaluate a Unicode `\b` once it sees a non-ASCII byte, so on
+/// non-ASCII text every `\b` pattern falls back to the much slower PikeVM over the rest
+/// of the value. On ASCII text the DFA handles `\b` exactly. Each non-ASCII character
+/// is replaced by an ASCII byte in exactly the same classes *for the pattern being
+/// run*: `_` for word characters (a pattern using it must not mention `_`), `\x0C` for
+/// whitespace, `\x01` for everything else, and a pattern-chosen byte for decimal digits
+/// and the Kelvin sign (see [`ProxyBytes`]). The pattern then matches the same
+/// character positions, which [`AsciiProxy::offsets`] maps back.
+#[derive(Debug)]
+pub(crate) struct AsciiProxy {
+    bytes: Vec<u8>,
+    offsets: Vec<usize>,
+    has_digit: bool,
+    has_kelvin: bool,
+}
+
+/// Stand-ins a pattern accepts for non-ASCII digits and the Kelvin sign.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ProxyBytes {
+    /// Byte matching exactly what a non-ASCII `\d` character matches in this pattern:
+    /// an ASCII digit used by no literal or class (patterns with `\d`), `_` (patterns
+    /// without `\d`), or `None` when no byte qualifies.
+    pub digit: Option<u8>,
+    /// `k` in `(?i)` patterns (Rust folds the Kelvin sign to `k`), otherwise `_`.
+    pub kelvin: u8,
+}
+
+impl AsciiProxy {
+    /// `None` when `haystack` holds a character outside the BMP (never produced by
+    /// [`regex_haystack`]).
+    pub(crate) fn new(haystack: &str) -> Option<Self> {
+        let classes = &*BMP_CLASSES;
+        let mut bytes = Vec::with_capacity(haystack.len());
+        let mut offsets = Vec::with_capacity(haystack.len() + 1);
+        let mut has_digit = false;
+        let mut has_kelvin = false;
+        for (offset, character) in haystack.char_indices() {
+            offsets.push(offset);
+            let byte = if character.is_ascii() {
+                character as u8
+            } else {
+                match *classes.get(character as usize)? {
+                    CLASS_WORD => b'_',
+                    CLASS_DIGIT => {
+                        has_digit = true;
+                        PLACEHOLDER_DIGIT
+                    }
+                    CLASS_SPACE => 0x0C,
+                    CLASS_KELVIN => {
+                        has_kelvin = true;
+                        PLACEHOLDER_KELVIN
+                    }
+                    _ => 0x01,
+                }
+            };
+            bytes.push(byte);
+        }
+        offsets.push(haystack.len());
+        Some(Self {
+            bytes,
+            offsets,
+            has_digit,
+            has_kelvin,
+        })
+    }
+
+    /// Haystack byte offset of each proxy byte (and of the end).
+    pub(crate) fn offsets(&self) -> &[usize] {
+        &self.offsets
+    }
+
+    /// Variant key for `proxy`, or `None` when the text holds a non-ASCII digit the
+    /// pattern cannot represent. Texts without digits or Kelvin signs share variant 0.
+    pub(crate) fn variant(&self, proxy: ProxyBytes) -> Option<(u8, u8)> {
+        let digit = if self.has_digit { proxy.digit? } else { 0 };
+        let kelvin = if self.has_kelvin { proxy.kelvin } else { 0 };
+        Some((digit, kelvin))
+    }
+
+    /// ASCII proxy text for a variant from [`AsciiProxy::variant`].
+    pub(crate) fn text(&self, (digit, kelvin): (u8, u8)) -> String {
+        self.bytes
+            .iter()
+            .map(|&byte| match byte {
+                PLACEHOLDER_DIGIT => char::from(digit),
+                PLACEHOLDER_KELVIN => char::from(kelvin),
+                other => char::from(other),
+            })
+            .collect()
+    }
+}
+
 /// Number of UTF-16 code units (`string.Length`).
 pub fn utf16_len(text: &str) -> usize {
     text.chars().map(char::len_utf16).sum()
@@ -141,22 +270,40 @@ pub fn truncate_utf16(value: &str, max_length: usize) -> Option<String> {
     Some(from_utf16_lossy(&units[..cut]))
 }
 
-/// `value[..2] + new string('*', value.Length - 4) + value[^2..]` with C# UTF-16
-/// slicing; values of four units or fewer become `****`.
+fn is_low_surrogate(unit: u16) -> bool {
+    (0xDC00..0xE000).contains(&unit)
+}
+
+/// `PolicyApplicator.Mask` generic form: keeps the first two and last two UTF-16 units
+/// and stars the rest; values of four units or fewer become `****`. A kept prefix or
+/// suffix that would end inside a surrogate pair shrinks by one unit, so the pair is
+/// masked and the output never holds an unpaired surrogate (which C# would serialise as
+/// U+FFFD, letting two different masks collide).
 pub fn mask_generic(value: &str) -> String {
     let units: Vec<u16> = value.encode_utf16().collect();
-    if units.len() <= 4 {
+    let length = units.len();
+    if length <= 4 {
         return "****".to_owned();
     }
 
-    let mut masked = Vec::with_capacity(units.len());
-    masked.extend_from_slice(&units[..2]);
-    masked.extend(std::iter::repeat_n(u16::from(b'*'), units.len() - 4));
-    masked.extend_from_slice(&units[units.len() - 2..]);
+    let prefix = if is_high_surrogate(units[1]) { 1 } else { 2 };
+    let suffix = if is_low_surrogate(units[length - 2]) {
+        1
+    } else {
+        2
+    };
+    let mut masked = Vec::with_capacity(length);
+    masked.extend_from_slice(&units[..prefix]);
+    masked.extend(std::iter::repeat_n(
+        u16::from(b'*'),
+        length - prefix - suffix,
+    ));
+    masked.extend_from_slice(&units[length - suffix..]);
     from_utf16_lossy(&masked)
 }
 
-/// Email mask: `value[0] + "***" + value[at..]` when `@` is after the first unit.
+/// Email mask: first UTF-16 unit + `***` + `value[at..]` when `@` is after the first
+/// unit. A leading surrogate pair is dropped rather than split.
 pub fn mask_email(value: &str) -> Option<String> {
     let units: Vec<u16> = value.encode_utf16().collect();
     let at = units.iter().position(|unit| *unit == u16::from(b'@'))?;
@@ -165,7 +312,9 @@ pub fn mask_email(value: &str) -> Option<String> {
     }
 
     let mut masked = Vec::with_capacity(units.len() + 3);
-    masked.push(units[0]);
+    if !is_high_surrogate(units[0]) {
+        masked.push(units[0]);
+    }
     masked.extend("***".encode_utf16());
     masked.extend_from_slice(&units[at..]);
     Some(from_utf16_lossy(&masked))
@@ -220,8 +369,17 @@ mod tests {
 
     #[test]
     fn masks_and_truncates_in_utf16_units() {
-        assert_eq!(mask_generic("a\u{1F600}bc"), "a\u{FFFD}*bc");
+        // Never splits a surrogate pair at either end.
+        assert_eq!(mask_generic("a\u{1F600}bc"), "a**bc");
+        assert_eq!(mask_generic("ab\u{1F600}c"), "ab**c");
+        assert_eq!(mask_generic("abcd\u{1F600}"), "ab**\u{1F600}");
+        assert_eq!(mask_generic("\u{1F600}abc"), "\u{1F600}*bc");
+        assert_eq!(mask_generic("\u{1F600}\u{1F600}x"), "\u{1F600}**x");
         assert_eq!(mask_generic("abcd"), "****");
+        assert_eq!(
+            mask_email("\u{1F600}x@example.test").as_deref(),
+            Some("***@example.test")
+        );
         assert_eq!(
             mask_email("alice@example.test").as_deref(),
             Some("a***@example.test")

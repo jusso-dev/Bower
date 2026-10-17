@@ -11,7 +11,8 @@ use bower_redaction::{
     DetectionMatch, FieldNameSecretDetector, JsonEventRedactor, MAXIMUM_PAYLOAD_BYTES,
     PrivacyAction, PrivacyEngine, PrivacyError, PrivacyFieldRule, PrivacyPolicy, ScanText,
     SensitiveDataDetector, SensitiveDetector, SensitiveFindingKind, checksum,
-    default_value_detectors, detector_ids as ids, load_privacy_profile,
+    default_field_name_detector, default_value_detectors, detector_ids as ids,
+    load_privacy_profile,
 };
 use serde_json::Value;
 
@@ -775,15 +776,21 @@ fn whitespace_value_under_hmac_rule_fails_closed() {
 }
 
 #[test]
-fn empty_field_rule_path_fails_closed() {
-    let policy = PrivacyPolicy {
-        field_rules: vec![PrivacyFieldRule::new("..", PrivacyAction::Remove, None)],
-        ..PrivacyPolicy::create_default()
-    };
-    let result = PrivacyEngine::new(policy)
-        .unwrap()
-        .redact_json(r#"{"a":1}"#);
-    assert_eq!(result.failure_code.as_deref(), Some("redaction-failed"));
+fn empty_field_rule_path_is_rejected_at_construction() {
+    // C# used to throw IndexOutOfRangeException out of RedactJson; both now refuse the
+    // policy when the engine is built.
+    for path in ["", ".", ".."] {
+        let policy = PrivacyPolicy {
+            field_rules: vec![PrivacyFieldRule::new(path, PrivacyAction::Remove, None)],
+            ..PrivacyPolicy::create_default()
+        };
+        let error = PrivacyEngine::new(policy).unwrap_err();
+        assert_eq!(error.dotnet_type(), "ArgumentException");
+        assert_eq!(
+            error.to_string(),
+            format!("Privacy field rule path '{path}' has no segments.")
+        );
+    }
 }
 
 #[test]
@@ -1122,12 +1129,168 @@ fn unicode_fuzz_never_panics_and_keeps_offsets_on_char_boundaries() {
 }
 
 #[test]
-fn unpaired_surrogates_from_masking_never_produce_duplicate_keys() {
-    // C# masks both keys to names that differ only in an unpaired high surrogate
-    // and then serialises both as "PayID: a<U+FFFD>*bc" (duplicate keys). Rust renames
-    // the colliding key; see tests/parity.rs `expected_redacted_json`.
-    let result = engine().redact_json("{\"PayID: a\u{1F600}bc\":1,\"PayID: a\u{1F300}bc\":2}");
+fn masking_never_splits_surrogate_pairs_or_duplicates_keys() {
+    // Masks used to keep `value[..2]`, half of a surrogate pair, so two keys differing
+    // only in that pair serialised as the same U+FFFD name in C#. The pair is now
+    // masked whole and the second, identical mask is renamed.
+    let result = engine().redact_json(
+        "{\"PayID: a\u{1F600}bc\":1,\"PayID: a\u{1F300}bc\":2,\"PayID: abc\u{1F600}x\":3,\"PayID: abc\u{1F300}x\":4}",
+    );
     let redacted = result.redacted_json.unwrap();
-    assert!(redacted.starts_with("{\"PayID: a\u{5C}uFFFD*bc\":1,\"redacted-key-1\":2,"));
-    assert!(!redacted.contains('\u{1F600}') && !redacted.contains("\\uD83D"));
+    assert!(
+        redacted.starts_with(
+            "{\"PayID: a**bc\":1,\"redacted-key-1\":2,\"PayID: ab***x\":3,\"redacted-key-2\":4,"
+        ),
+        "{redacted}"
+    );
+    assert!(!redacted.contains("FFFD") && !redacted.contains("\\uD8"));
+
+    // Every key is unique once parsed back.
+    let mut seen = std::collections::HashSet::new();
+    let object: serde_json::Map<String, Value> = serde_json::from_str(&redacted).unwrap();
+    assert_eq!(object.len(), 5);
+    for key in object.keys() {
+        assert!(seen.insert(key.clone()));
+    }
+
+    // A pair at the kept edge of a value is kept whole, never halved.
+    let text = engine().redact_text("PayID: \u{1F600}\u{1F600}x PayID: ab\u{1F600}cd");
+    assert_eq!(
+        text.redacted_text.as_deref(),
+        Some("PayID: \u{1F600}**x PayID: ab**cd")
+    );
+}
+
+#[test]
+fn detector_offsets_inside_a_character_fail_closed_without_panicking() {
+    // Custom detectors report byte offsets; one inside a multi-byte character cannot be
+    // applied (C# would split the surrogate pair). Quarantine, never unwind.
+    struct Splitter;
+    impl SensitiveDetector for Splitter {
+        fn id(&self) -> &str {
+            "custom.splitter"
+        }
+        fn category(&self) -> &str {
+            "custom"
+        }
+        fn detect(&self, text: &ScanText<'_>, _path: &str, matches: &mut Vec<DetectionMatch>) {
+            if let Some(start) = text.text().find('\u{1F600}') {
+                matches.push(DetectionMatch::new(
+                    self.id(),
+                    self.category(),
+                    text.text(),
+                    start,
+                    start + 2,
+                    true,
+                    None,
+                ));
+            }
+        }
+    }
+
+    let engine = PrivacyEngine::with_detectors(
+        PrivacyPolicy::default(),
+        vec![Box::new(Splitter)],
+        default_field_name_detector(),
+    )
+    .unwrap();
+    let json = engine.redact_json("{\"k\":\"a\u{1F600}b\"}");
+    assert!(!json.succeeded);
+    assert_eq!(json.failure_code.as_deref(), Some("redaction-failed"));
+    assert_eq!(json.redacted_json, None);
+    let text = engine.redact_text("a\u{1F600}b");
+    assert!(!text.succeeded);
+    assert_eq!(text.failure_code.as_deref(), Some("redaction-failed"));
+    assert_eq!(text.redacted_text, None);
+}
+
+#[test]
+fn panicking_detector_fails_closed() {
+    struct Panics;
+    impl SensitiveDetector for Panics {
+        fn id(&self) -> &str {
+            "custom.panics"
+        }
+        fn category(&self) -> &str {
+            "custom"
+        }
+        fn detect(&self, _: &ScanText<'_>, _: &str, _: &mut Vec<DetectionMatch>) {
+            panic!("detector bug");
+        }
+    }
+
+    let engine = PrivacyEngine::with_detectors(
+        PrivacyPolicy::default(),
+        vec![Box::new(Panics)],
+        default_field_name_detector(),
+    )
+    .unwrap();
+    assert_eq!(
+        engine.redact_json(r#"{"a":"x"}"#).failure_code.as_deref(),
+        Some("redaction-failed")
+    );
+    assert_eq!(
+        engine.redact_text("x").failure_code.as_deref(),
+        Some("redaction-failed")
+    );
+}
+
+#[test]
+fn crypto_material_is_labelled_by_its_exact_header() {
+    let cases = [
+        ("RSA PRIVATE KEY", "rsa-private"),
+        ("EC PRIVATE KEY", "ecdsa-private"),
+        ("DSA PRIVATE KEY", "dsa-private"),
+        ("OPENSSH PRIVATE KEY", "openssh-private"),
+        ("ENCRYPTED PRIVATE KEY", "encrypted-private"),
+        ("PRIVATE KEY", "pkcs8-private"),
+        ("CERTIFICATE", "x509-certificate"),
+        ("PGP PRIVATE KEY BLOCK", "pgp-private"),
+        ("PGP PUBLIC KEY BLOCK", "pgp-public"),
+        ("PGP KEY BLOCK", "pgp"),
+    ];
+    for (label, kind) in cases {
+        // Body text naming other kinds never changes the label.
+        let block = format!(
+            "-----BEGIN {label}-----\nRSA PRIVATE ECDSA PGP BEGIN SSH2\n-----END {label}-----"
+        );
+        let result = engine().redact_text(&block);
+        assert_eq!(result.redacted_text.as_deref(), Some(""), "{label}");
+        let sub_kinds: Vec<_> = result
+            .findings
+            .iter()
+            .map(|finding| (finding.detector_id.as_str(), finding.sub_kind.as_deref()))
+            .collect();
+        assert_eq!(sub_kinds, [(ids::CRYPTO_MATERIAL, Some(kind))], "{label}");
+    }
+}
+
+#[test]
+fn crn_is_a_pattern_match_not_a_validated_checksum() {
+    let result = engine().redact_text("CRN 123 456 789A");
+    let crn: Vec<_> = result
+        .findings
+        .iter()
+        .filter(|finding| finding.detector_id == ids::CRN)
+        .collect();
+    assert_eq!(crn.len(), 1);
+    assert!(!crn[0].validated);
+    assert_eq!(result.redacted_text.as_deref(), Some("CRN *****6789"));
+}
+
+#[test]
+fn profile_without_metadata_is_invalid_data_not_a_crash() {
+    for yaml in [
+        "apiVersion: bower.security/v1\nkind: PrivacyProfile\n",
+        "apiVersion: bower.security/v1\nkind: PrivacyProfile\nmetadata: ~\n",
+        "apiVersion: bower.security/v1\nkind: PrivacyProfile\nmetadata:\n",
+    ] {
+        let error = load_privacy_profile(yaml, None, None).unwrap_err();
+        assert_eq!(error.dotnet_type(), "InvalidDataException", "{yaml:?}");
+        assert_eq!(
+            error.to_string(),
+            "Privacy profile metadata is required.",
+            "{yaml:?}"
+        );
+    }
 }

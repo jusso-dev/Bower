@@ -30,7 +30,7 @@ removed on the host, provably arriving in Sentinel.**
 | | Bower | Typical alternative |
 |---|---|---|
 | **Proof of arrival** | `bower evidence run` sends a canary, finds it in Sentinel with KQL, records latency and retention, maps it to ISM / Essential Eight controls and signs the result | AMA, Elastic and Cribl stop at "the API accepted it"; checking Sentinel is manual |
-| **Redaction before data leaves the host** | Deterministic engine with checksum-validated TFN, Medicare, IHI, CRN, ABN/ACN, cards and secrets; runs before anything is stored; any failure quarantines | DCR transformations redact in Azure after transfer; Elastic's redact processor runs in Elasticsearch on a paid licence; ML-based detectors elsewhere |
+| **Redaction before data leaves the host** | Deterministic engine with checksum-validated TFN, Medicare, IHI, ABN/ACN and cards, pattern-matched CRN and secrets; runs before anything is stored; any failure quarantines | DCR transformations redact in Azure after transfer; Elastic's redact processor runs in Elasticsearch on a paid licence; ML-based detectors elsewhere |
 | **Default deny** | Only event types an approved, versioned policy names are kept; everything else is rejected and explained | Forward everything configured, then filter |
 | **No silent loss** | Durable queue that deletes only after acknowledgement, attempt-limited dead letters with replay, preflight against Azure's 64 KB / type / schema limits, `bower doctor` and DCR drift checks | Azure truncates and drops rows without a per-record error |
 | **Tamper evidence** | Hash-chained queue ledger, head witnessed by the management plane | Not offered at the collector |
@@ -60,7 +60,7 @@ policy actions (no AI at runtime):
 | Australian identifiers | Validation |
 |---|---|
 | Tax File Numbers (TFN) | ATO 8/9-digit checksum; default masked to last 4 digits |
-| Centrelink CRN | Pattern (digits + check letter) |
+| Centrelink CRN | Pattern only (9 digits + letter; no published check algorithm, so never reported as validated) |
 | Medicare numbers | Official check digit + issue number |
 | Individual Healthcare Identifiers (IHI) | `800360…` + Luhn |
 | ABN / ACN | Mod-89 / company check digit |

@@ -84,27 +84,38 @@ public static class PrivacyProfileLoader
         HashSet<string> known = DetectorIds.All.ToHashSet(StringComparer.Ordinal);
         PrivacyPolicy defaults = PrivacyPolicy.CreateDefault();
         Dictionary<string, PrivacyAction> actions = new(defaults.DetectorActions, StringComparer.Ordinal);
-        foreach ((string detector, string action) in document.Detectors)
+        // YamlDotNet does not enforce `required`: explicit YAML nulls arrive as null and
+        // must fail the load with a clear message, never a NullReferenceException.
+        foreach ((string detector, string? action) in RequireCollection(document.Detectors, "detectors"))
         {
             RequireKnown(known, detector);
-            actions[detector] = ParseAction(action);
+            actions[detector] = ParseAction(action
+                ?? throw new InvalidDataException($"Privacy profile action for '{detector}' must not be null."));
         }
 
-        foreach (string detector in document.Disabled.Concat(document.EnableOptIn))
+        List<string> disabled = RequireCollection(document.Disabled, "disabled");
+        List<string> enableOptIn = RequireCollection(document.EnableOptIn, "enableOptIn");
+        foreach (string detector in disabled.Concat(enableOptIn))
         {
             RequireKnown(known, detector);
         }
 
         List<PrivacyFieldRule> rules = [];
-        foreach (PrivacyFieldRuleDocument rule in document.Fields)
+        foreach (PrivacyFieldRuleDocument? rule in RequireCollection(document.Fields, "fields"))
         {
+            if (rule is null)
+            {
+                throw new InvalidDataException("Privacy profile field rule must not be null.");
+            }
+
             if (string.IsNullOrWhiteSpace(rule.Path)
                 || rule.Path.Split('.').Any(segment => segment.Length == 0 || segment.Length > 64))
             {
                 throw new InvalidDataException($"Field rule path '{rule.Path}' is invalid.");
             }
 
-            PrivacyAction action = ParseAction(rule.Action);
+            PrivacyAction action = ParseAction(rule.Action
+                ?? throw new InvalidDataException($"Field rule '{rule.Path}' needs an action."));
             if (action == PrivacyAction.Truncate && rule.MaxLength is not (> 0 and <= 65_536))
             {
                 throw new InvalidDataException($"Field rule '{rule.Path}' needs maxLength between 1 and 65536 for truncate.");
@@ -123,8 +134,8 @@ public static class PrivacyProfileLoader
         {
             DefaultAction = document.DefaultAction is null ? defaults.DefaultAction : ParseAction(document.DefaultAction),
             DetectorActions = actions,
-            DisabledDetectors = document.Disabled.ToHashSet(StringComparer.Ordinal),
-            EnabledOptInDetectors = document.EnableOptIn.ToHashSet(StringComparer.Ordinal),
+            DisabledDetectors = disabled.ToHashSet(StringComparer.Ordinal),
+            EnabledOptInDetectors = enableOptIn.ToHashSet(StringComparer.Ordinal),
             FieldRules = rules,
             MaximumFieldLength = maximumFieldLength,
             EmitMetadata = document.EmitMetadata ?? true,
@@ -134,9 +145,15 @@ public static class PrivacyProfileLoader
 
         // Construct once so a profile that needs an absent key fails at load, not at runtime.
         _ = new PolicyApplicator(policy);
+        PrivacyProfileMetadata metadata = document.Metadata
+            ?? throw new InvalidDataException("Privacy profile metadata is required.");
         string hash = "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(yaml.ReplaceLineEndings("\n"))));
-        return new LoadedPrivacyProfile(policy, document.Metadata.Id, document.Metadata.Version, hash);
+        return new LoadedPrivacyProfile(policy, metadata.Id, metadata.Version, hash);
     }
+
+    private static T RequireCollection<T>(T? value, string name)
+        where T : class =>
+        value ?? throw new InvalidDataException($"Privacy profile '{name}' must not be null.");
 
     /// <summary>Reads a key file holding base64 (preferred) or at least 32 raw bytes.</summary>
     public static byte[] ReadKeyFile(string path)

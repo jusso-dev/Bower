@@ -21,7 +21,7 @@ Raw Event → Parser → Privacy & Secret Engine → Normalisation → Output
 | Streaming / per-event | Events processed independently; safe under concurrent callers |
 | Extensible | `ISensitiveDetector` plugins; provider API keys via pattern registry |
 | Configurable | Global default action + per-detector overrides |
-| Fail closed | Invalid / oversized payloads, duplicate keys and detector timeouts → redaction failure → quarantine |
+| Fail closed | Invalid / oversized payloads, duplicate keys, detector timeouts and any other detector or action failure → `redaction-failed` → quarantine. `RedactJson` / `RedactText` never throw; a policy that could fail at runtime (field rule path without segments, negative length, null replacement text or collections) is rejected when the engine is built |
 | Complete coverage | String **and number** values are scanned, and so are **property names** |
 
 ## Actions
@@ -31,7 +31,7 @@ Raw Event → Parser → Privacy & Secret Engine → Normalisation → Output
 | `Allow` | Leave value unchanged (still recorded in metadata if detected) |
 | `Remove` | Delete property (field-name) or replace span with empty |
 | `Replace` | Replace with configured placeholder |
-| `Mask` | Partial reveal (e.g. last 4 digits, email local-part) |
+| `Mask` | Partial reveal (e.g. last 4 digits, email local-part). Generic masks keep two UTF-16 units at each end but never half of a surrogate pair: that end shrinks to one unit and the pair is starred |
 | `Sha256` | `sha256:<hex>` |
 | `Hmac` | `hmac-sha256:<hex>`; requires a 32+ byte key. The engine refuses to start if `Hmac` is configured without one |
 | `Encrypt` | AES-GCM (`enc:aesgcm:…`); requires 32-byte key; else remove |
@@ -84,7 +84,10 @@ maximumFieldLength: 32768     # every longer string is truncated
 The same input and key always give the same pseudonym, so analysts can correlate
 attempts by account; a different key (another tenant, or after rotation) gives
 different pseudonyms. Keys never appear in profiles. A profile that uses `hmac`
-without a key fails at start-up. Unknown detector ids, actions or keys fail the load.
+without a key fails at start-up. Unknown detector ids, actions or keys fail the load,
+and so do a missing `metadata` block and explicit nulls where a value is required
+(`detectors: ~`, a null action or field rule): each is an `InvalidDataException`
+with a message naming the problem.
 
 `maximumFieldLength` keeps values below the Logs Ingestion API's silent 64 KB
 truncation, so Bower decides where a value is cut and records it as
@@ -96,7 +99,9 @@ Detectors run over the exact JSON text of numbers, so a card number or TFN sent
 as a number (`"card": 4111111111111111`) is caught. A redacted number becomes a
 string. Property names are scanned too: a sensitive key is renamed to its
 redacted form (for example `a***@example.test`) or to `redacted-key-N` when the
-action removes it.
+action removes it or the redacted name already exists. Names are compared as
+they will be written (an unpaired surrogate becomes U+FFFD), so the output never
+holds duplicate keys.
 
 ### Field-name secrets
 
@@ -170,7 +175,7 @@ so such an alert is not queued).
 | Id | Validation |
 | --- | --- |
 | `au.tfn` | ATO 8/9-digit checksum |
-| `au.crn` | Pattern (9 digits + letter) |
+| `au.crn` | Pattern only (9 digits + letter); Services Australia publishes no check-character algorithm, so findings report `Validated: false` |
 | `au.medicare` | Medicare checksum + issue digit |
 | `au.ihi` | `800360` + Luhn |
 | `au.passport` | Format + contextual label |
@@ -195,6 +200,23 @@ AWS, Azure, Entra, GCP, JWT, OAuth, provider API keys (OpenAI, Anthropic,
 GitHub, GitLab, Slack, Stripe, Twilio, Cloudflare, Atlassian, Datadog,
 PagerDuty, Okta, MongoDB, Snowflake), Kubernetes, Docker, database connection
 strings, environment variable assignments, PEM/PKCS8/SSH/PGP/X.509.
+
+`crypto.material` sub-kinds come from the exact `-----BEGIN <label>-----` header
+(body text never changes them) and appear in metadata as
+`crypto.material:<sub-kind>`:
+
+| Header label | Sub-kind |
+| --- | --- |
+| `RSA PRIVATE KEY` | `rsa-private` |
+| `EC PRIVATE KEY` | `ecdsa-private` |
+| `DSA PRIVATE KEY` | `dsa-private` |
+| `OPENSSH PRIVATE KEY` | `openssh-private` |
+| `ENCRYPTED PRIVATE KEY` | `encrypted-private` |
+| `PRIVATE KEY` | `pkcs8-private` |
+| `CERTIFICATE` | `x509-certificate` |
+| `PGP PRIVATE KEY BLOCK` | `pgp-private` |
+| `PGP PUBLIC KEY BLOCK` | `pgp-public` |
+| `PGP KEY BLOCK` | `pgp` |
 
 ### Classification
 
@@ -236,9 +258,14 @@ var engine = new PrivacyEngine(policy, customDetectors);
 ## Performance
 
 - Per-event JSON walk; detectors only run on string leaves.
-- Overlapping matches resolved once (prefer longer, then earlier).
-- Replacements applied right-to-left.
+- Overlapping matches resolved once (prefer longer, then earlier) in O(n log n).
+- Replacements applied right-to-left in one pass.
 - Micro-benchmarks: `tests/Bower.Benchmarks` (Stopwatch; no extra packages).
+- Rust port: the `regex` crate's DFA cannot evaluate a Unicode `\b` on non-ASCII
+  text, so patterns that allow it scan an all-ASCII stand-in of the value (one byte
+  per UTF-16 unit, same character classes) and map offsets back; a differential
+  test checks identical matches. Timing probe:
+  `cargo test --release -p bower-redaction --test perf_probe -- --ignored --nocapture`.
 
 ## Tests
 

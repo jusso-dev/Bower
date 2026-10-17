@@ -90,10 +90,20 @@ for (int i = 0; i < 20_000; i++)
 
 string denseEvent = dense.Append("\"}").ToString();
 
+// Licence value: driver-licence context with thousands of state-bucketed tokens.
+System.Text.StringBuilder licences = new("{\"eventId\":\"evt-5\",\"note\":\"driver licence");
+for (int i = 0; i < 5_000; i++)
+{
+    licences.Append(System.Globalization.CultureInfo.InvariantCulture, $" AB{100_000 + i} {10_000_000 + i}");
+}
+
+string licenceEvent = licences.Append("\"}").ToString();
+
 (double cleanOps, double cleanUs) = Measure(engine, cleanEvent, iterations);
 (double dirtyOps, double dirtyUs) = Measure(engine, dirtyEvent, iterations);
 (double wideOps, double wideUs) = Measure(engine, wideEvent, 500);
 (double denseOps, double denseUs) = Measure(engine, denseEvent, 3);
+(double licenceOps, double licenceUs) = Measure(engine, licenceEvent, 20);
 long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
 for (int i = 0; i < 1_000; i++)
 {
@@ -108,6 +118,7 @@ Console.WriteLine($"  clean event: {cleanOps:F0} ops/s  mean {cleanUs:F1} µs  a
 Console.WriteLine($"  dirty event: {dirtyOps:F0} ops/s  mean {dirtyUs:F1} µs");
 Console.WriteLine($"  wide event (200 fields): {wideOps:F0} ops/s  mean {wideUs:F1} µs");
 Console.WriteLine($"  dense value (20k emails, {denseEvent.Length / 1024} KiB): mean {denseUs / 1000:F1} ms");
+Console.WriteLine($"  licence value (10k licence tokens, {licenceEvent.Length / 1024} KiB): mean {licenceUs / 1000:F1} ms");
 Console.WriteLine($"  detectors:   {engine.Detectors.Count}");
 
 // Queue settlement: one transaction per acknowledged event vs one per delivery batch.

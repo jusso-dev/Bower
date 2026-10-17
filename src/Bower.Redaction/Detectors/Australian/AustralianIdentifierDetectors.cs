@@ -83,7 +83,9 @@ public sealed partial class CrnDetector : RegexDetectorBase
                 continue;
             }
 
-            matches.Add(new DetectionMatch(Id, Category, g.Index, g.Length, Validated: true));
+            // Services Australia publishes no CRN check-character algorithm, so a CRN is a
+            // pattern match only and must not claim checksum validation.
+            matches.Add(new DetectionMatch(Id, Category, g.Index, g.Length, Validated: false));
         }
     }
 }
@@ -330,28 +332,44 @@ public sealed partial class DriverLicenceDetector : ISensitiveDetector
     {
         string compact = string.Concat(value.Where(c => !char.IsWhiteSpace(c)));
         // Heuristic format buckets — not authoritative registries.
-        if (Regex.IsMatch(compact, @"^\d{8}$"))
+        if (NswVicQldRegex().IsMatch(compact))
         {
             return "NSW/VIC/QLD-like";
         }
 
-        if (Regex.IsMatch(compact, @"^\d{6,7}$"))
+        if (SaTasWaRegex().IsMatch(compact))
         {
             return "SA/TAS/WA-like";
         }
 
-        if (Regex.IsMatch(compact, @"^[A-Z]{2}\d{6}$", RegexOptions.IgnoreCase))
+        if (ActRegex().IsMatch(compact))
         {
             return "ACT-like";
         }
 
-        if (Regex.IsMatch(compact, @"^\d{10}$"))
+        if (NtRegex().IsMatch(compact))
         {
             return "NT-like";
         }
 
         return "unknown";
     }
+
+    // Source-generated: no per-call regex cache lookup or interpretation. The ACT bucket is
+    // culture-invariant like LicenceRegex, so the label no longer depends on the host's
+    // current culture (Turkish i/I casing could change it before). Identical under the
+    // invariant and English cultures.
+    [GeneratedRegex(@"^\d{8}$")]
+    private static partial Regex NswVicQldRegex();
+
+    [GeneratedRegex(@"^\d{6,7}$")]
+    private static partial Regex SaTasWaRegex();
+
+    [GeneratedRegex(@"^[A-Z]{2}\d{6}$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ActRegex();
+
+    [GeneratedRegex(@"^\d{10}$")]
+    private static partial Regex NtRegex();
 
     // Broad licence token after contextual keywords only (context gated in Detect).
     [GeneratedRegex(

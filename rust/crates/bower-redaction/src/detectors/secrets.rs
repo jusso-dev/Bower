@@ -2,54 +2,60 @@
 
 use std::sync::LazyLock;
 
-use regex::Regex;
-
-use super::{DetectionMatch, RegexDetector, ScanText, SensitiveDetector, compile};
+use super::{
+    DetectionMatch, Pattern, RegexDetector, ScanText, SensitiveDetector, proxied, unicode_only,
+};
 use crate::ids::{detector_categories as categories, detector_ids as ids};
 use crate::text::contains_ignore_ascii_case;
 
-static AWS: LazyLock<Regex> = LazyLock::new(|| {
-    compile(
+static AWS: LazyLock<Pattern> = LazyLock::new(|| {
+    unicode_only(
         r"(?i)\b(?:AKIA|ASIA)[0-9A-Z]{16}\b|(?:aws)?_?secret_?(?:access)?_?key\s*[:=]\s*\S+|aws_session_token\s*[:=]\s*\S+",
     )
 });
-static AZURE: LazyLock<Regex> = LazyLock::new(|| {
-    compile(
+static AZURE: LazyLock<Pattern> = LazyLock::new(|| {
+    proxied(
         r"(?i)DefaultEndpointsProtocol=https?;AccountName=[^;]+;AccountKey=[A-Za-z0-9+/=]{20,}|sv=\d{4}-\d{2}-\d{2}[^;\s]*sig=[A-Za-z0-9%]+|SharedAccessSignature=[^\s;]+|AccountKey=[A-Za-z0-9+/=]{40,}",
+        None,
+        b'k',
     )
 });
-static ENTRA: LazyLock<Regex> = LazyLock::new(|| {
-    compile(
+static ENTRA: LazyLock<Pattern> = LazyLock::new(|| {
+    unicode_only(
         r"(?i)\b(?:eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})\b|device_code\s*[:=]\s*[A-Za-z0-9\-_]{10,}",
     )
 });
-static GCP: LazyLock<Regex> = LazyLock::new(|| {
-    compile(
+static GCP: LazyLock<Pattern> = LazyLock::new(|| {
+    unicode_only(
         r#""type"\s*:\s*"service_account"|"private_key"\s*:\s*"-----BEGIN|AIza[0-9A-Za-z\-_]{35}|ya29\.[0-9A-Za-z\-_]+"#,
     )
 });
-static JWT: LazyLock<Regex> =
-    LazyLock::new(|| compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"));
-static OAUTH: LazyLock<Regex> = LazyLock::new(|| {
-    compile(r"(?i)\b(?:access_token|refresh_token|id_token)\s*[:=]\s*[A-Za-z0-9\-._~+/]+=*")
+static JWT: LazyLock<Pattern> =
+    LazyLock::new(|| unicode_only(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"));
+static OAUTH: LazyLock<Pattern> = LazyLock::new(|| {
+    unicode_only(r"(?i)\b(?:access_token|refresh_token|id_token)\s*[:=]\s*[A-Za-z0-9\-._~+/]+=*")
 });
-static KUBERNETES: LazyLock<Regex> = LazyLock::new(|| {
-    compile(
+static KUBERNETES: LazyLock<Pattern> = LazyLock::new(|| {
+    unicode_only(
         r"(?i)\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b|kubeconfig|kind:\s*Config[\s\S]{0,80}users:|Bearer\s+eyJ[A-Za-z0-9_-]+\.",
     )
 });
-static DOCKER: LazyLock<Regex> = LazyLock::new(|| {
-    compile(
+static DOCKER: LazyLock<Pattern> = LazyLock::new(|| {
+    proxied(
         r#"(?i)\b(?:docker\s+login|auths\s*\{|"auth"\s*:\s*"[A-Za-z0-9+/=]{20,}")\b|registry[^\n]{0,40}password\s*[:=]\s*\S+"#,
+        Some(b'_'),
+        b'k',
     )
 });
-static DATABASE: LazyLock<Regex> = LazyLock::new(|| {
-    compile(
+static DATABASE: LazyLock<Pattern> = LazyLock::new(|| {
+    proxied(
         r"(?i)(?:Server|Data Source|Host)=[^;]+;.*(?:Password|Pwd)=[^;]+|jdbc:[a-z0-9]+:\/\/[^\s]+|postgres(?:ql)?:\/\/[^\s]+|mysql:\/\/[^\s]+|mongodb(?:\+srv)?:\/\/[^\s]+|Driver=\{[^}]+\}.*Pwd=",
+        Some(b'_'),
+        b'k',
     )
 });
-static ENV_VAR: LazyLock<Regex> = LazyLock::new(|| {
-    compile(
+static ENV_VAR: LazyLock<Pattern> = LazyLock::new(|| {
+    unicode_only(
         r"\b(?:PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY|CLIENT_SECRET|ACCESS_KEY|AUTH_TOKEN)\s*=\s*\S+",
     )
 });
@@ -131,30 +137,42 @@ pub fn environment_variable_secret_detector() -> RegexDetector {
 }
 
 /// Provider API key patterns. New providers are registered without changing the engine.
-static API_KEY_PATTERNS: LazyLock<Vec<(&'static str, Regex)>> = LazyLock::new(|| {
-    [
-        ("OpenAI", r"\bsk-[A-Za-z0-9]{20,}\b"),
-        ("Anthropic", r"\bsk-ant-[A-Za-z0-9\-_]{20,}\b"),
-        ("GitHub", r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}\b"),
-        ("GitLab", r"\bglpat-[A-Za-z0-9\-_]{20,}\b"),
-        ("Slack", r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"),
-        ("Stripe", r"\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{20,}\b"),
-        ("Twilio", r"\bSK[0-9a-fA-F]{32}\b"),
-        ("Cloudflare", r"\b(?:cfx|v1\.0-)[A-Za-z0-9_\-]{20,}\b"),
-        ("Atlassian", r"\bATATT3[A-Za-z0-9=_\-]{20,}\b"),
-        ("Datadog", r"\b(?:[a-f0-9]{32}|ddog_api_key)\b"),
+/// Case-sensitive patterns without `_` or `\d` may scan the ASCII proxy; the rest always
+/// scan the Unicode haystack.
+static API_KEY_PATTERNS: LazyLock<Vec<(&'static str, Pattern)>> = LazyLock::new(|| {
+    let ascii = |pattern| proxied(pattern, Some(b'_'), b'_');
+    vec![
+        ("OpenAI", ascii(r"\bsk-[A-Za-z0-9]{20,}\b")),
+        ("Anthropic", unicode_only(r"\bsk-ant-[A-Za-z0-9\-_]{20,}\b")),
+        (
+            "GitHub",
+            unicode_only(r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}\b"),
+        ),
+        ("GitLab", unicode_only(r"\bglpat-[A-Za-z0-9\-_]{20,}\b")),
+        ("Slack", ascii(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b")),
+        (
+            "Stripe",
+            unicode_only(r"\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{20,}\b"),
+        ),
+        ("Twilio", ascii(r"\bSK[0-9a-fA-F]{32}\b")),
+        (
+            "Cloudflare",
+            unicode_only(r"\b(?:cfx|v1\.0-)[A-Za-z0-9_\-]{20,}\b"),
+        ),
+        ("Atlassian", unicode_only(r"\bATATT3[A-Za-z0-9=_\-]{20,}\b")),
+        (
+            "Datadog",
+            unicode_only(r"\b(?:[a-f0-9]{32}|ddog_api_key)\b"),
+        ),
         // Only with context, see `detect`.
-        ("PagerDuty", r"\b[a-f0-9]{32}\b"),
-        ("Okta", r"\b00[A-Za-z0-9_\-]{40,}\b"),
-        ("MongoDB", r"\bmongodb(?:\+srv)?:\/\/[^\s]+\b"),
+        ("PagerDuty", ascii(r"\b[a-f0-9]{32}\b")),
+        ("Okta", unicode_only(r"\b00[A-Za-z0-9_\-]{40,}\b")),
+        ("MongoDB", ascii(r"\bmongodb(?:\+srv)?:\/\/[^\s]+\b")),
         (
             "Snowflake",
-            r"\b[A-Za-z0-9]{8,}-[A-Za-z0-9]{4,}\.[A-Za-z0-9]+\.snowflakecomputing\.com\b",
+            ascii(r"\b[A-Za-z0-9]{8,}-[A-Za-z0-9]{4,}\.[A-Za-z0-9]+\.snowflakecomputing\.com\b"),
         ),
     ]
-    .into_iter()
-    .map(|(provider, pattern)| (provider, compile(pattern)))
-    .collect()
 });
 
 pub struct ApiKeyDetector;
@@ -174,7 +192,7 @@ impl SensitiveDetector for ApiKeyDetector {
         }
 
         let original = text.text();
-        for (provider, regex) in API_KEY_PATTERNS.iter() {
+        for (provider, pattern) in API_KEY_PATTERNS.iter() {
             // High false-positive patterns need context.
             if matches!(*provider, "PagerDuty" | "Datadog")
                 && !contains_ignore_ascii_case(original, provider)
@@ -184,15 +202,39 @@ impl SensitiveDetector for ApiKeyDetector {
                 continue;
             }
 
-            for found in regex.find_iter(text.haystack()) {
+            for found in text.find_iter(pattern) {
                 matches.push(text.detection(
                     ids::API_KEY,
                     categories::SECRETS,
-                    &found,
+                    found,
                     false,
                     Some((*provider).to_owned()),
                 ));
             }
         }
     }
+}
+
+/// Every pattern in this module, for the proxy differential test.
+#[cfg(test)]
+pub(super) fn patterns() -> Vec<(&'static str, &'static Pattern)> {
+    #[allow(unused_mut)]
+    let mut patterns: Vec<(&'static str, &'static Pattern)> = vec![
+        ("AWS", &*AWS),
+        ("AZURE", &*AZURE),
+        ("ENTRA", &*ENTRA),
+        ("GCP", &*GCP),
+        ("JWT", &*JWT),
+        ("OAUTH", &*OAUTH),
+        ("KUBERNETES", &*KUBERNETES),
+        ("DOCKER", &*DOCKER),
+        ("DATABASE", &*DATABASE),
+        ("ENV_VAR", &*ENV_VAR),
+    ];
+    patterns.extend(
+        API_KEY_PATTERNS
+            .iter()
+            .map(|(provider, pattern)| (*provider, pattern)),
+    );
+    patterns
 }

@@ -162,11 +162,16 @@ let jsonCases =
       """{"a":-4111111111111111,"b":4111111111111111.0,"c":4111111111111111e0,"d":1e400,"e":-1E-400,"f":100000001,"g":[-0,0.5e-3]}"""
       """{"a":"x\u0000y 4111111111111111","b":"\u0000"}"""; " {}"; " "; " "; "{} "
       """{"privacy":{"a":1},"e":"bob@example.test"}"""; """{"e":"bob@example.test","privacy":null}"""
-      // Masks that split surrogate pairs inside keys and near the truncation boundary.
+      // Masks next to surrogate pairs inside keys and near the truncation boundary (formerly split).
       "{\"PayID: a\U0001F600bc\":1,\"PayID: a\U0001F300bc\":2}"
       "{\"a\":\" PayID: a\U0001F600bcdefgh\",\"b\":\" PayID: \U0001F600abcdefgh\"}"
       // Overlap ranking counts UTF-16 units, not bytes.
-      "{\"a\":\"PayID: éééé+61412345678 x@ab.co\",\"b\":\"PayID:ééééééx@ab.co\"}" ]
+      "{\"a\":\"PayID: éééé+61412345678 x@ab.co\",\"b\":\"PayID:ééééééx@ab.co\"}"
+      // Masks never split a surrogate pair at either end, in keys or values.
+      "{\"PayID: abc\U0001F600x\":1,\"PayID: abc\U0001F300x\":2,\"v\":\"PayID: \U0001F600\U0001F600x\",\"w\":\"PayID: ab\U0001F600\"}"
+      // Every PEM label is classified by its BEGIN header; body text never changes the kind.
+      """{"msg":"-----BEGIN RSA PRIVATE KEY-----\nx\n-----END RSA PRIVATE KEY----- -----BEGIN EC PRIVATE KEY-----\nx\n-----END EC PRIVATE KEY----- -----BEGIN DSA PRIVATE KEY-----\nx\n-----END DSA PRIVATE KEY----- -----BEGIN ENCRYPTED PRIVATE KEY-----\nx\n-----END ENCRYPTED PRIVATE KEY----- -----BEGIN OPENSSH PRIVATE KEY-----\nx\n-----END OPENSSH PRIVATE KEY----- -----BEGIN PRIVATE KEY-----\nx\n-----END RSA PRIVATE KEY-----"}"""
+      """{"msg":"-----BEGIN CERTIFICATE-----\nRSA PRIVATE KEY ECDSA PGP BEGIN SSH2\n-----END CERTIFICATE----- -----BEGIN PGP PRIVATE KEY BLOCK-----\nx\n-----END PGP PRIVATE KEY BLOCK----- -----BEGIN PGP PUBLIC KEY BLOCK-----\nx\n-----END PGP PUBLIC KEY BLOCK----- -----BEGIN PGP KEY BLOCK-----\nx\n-----END PGP KEY BLOCK-----"}""" ]
 
 // Large payloads run under the default policy only, to keep the vector file small.
 let largeCases =
@@ -304,7 +309,12 @@ maximumFieldLength: 1024
       "kind: PrivacyProfile\nmetadata:\n  id: t\n  version: 1\n"; "apiVersion: bower.security/v2\nkind: PrivacyProfile\nmetadata:\n  id: t\n  version: 1\n"
       "ApiVersion: bower.security/v1\nkind: PrivacyProfile\nmetadata:\n  id: t\n  version: 1\n"
       "---\n"; "# only a comment\n"; "apiVersion: [a]\n"; header + "---\nfoo: 1\n"
-      "  " ]
+      "  "
+      // YAML nulls where the model is required fail the load with a clear message.
+      "apiVersion: bower.security/v1\nkind: PrivacyProfile\n"; "apiVersion: bower.security/v1\nkind: PrivacyProfile\nmetadata: ~\n"
+      "apiVersion: bower.security/v1\nkind: PrivacyProfile\nmetadata:\n"; "apiVersion: bower.security/v1\nkind: PrivacyProfile\ndetectors:\n  au.tfn: nope\n"
+      header + "detectors: ~\n"; header + "detectors:\n  au.tfn: ~\n"; header + "disabled: ~\n"; header + "enableOptIn: ~\n"; header + "disabled: [~]\n"
+      header + "fields: ~\n"; header + "fields:\n  - ~\n"; header + "fields:\n  - path: a\n"; header + "fields:\n  - path: a\n    action: ~\n" ]
 
 let profileVectors =
     [ for yaml in profileCases ->
@@ -333,6 +343,14 @@ let withoutKey =
             PrivacyProfileLoader.Load(yaml) |> ignore
             dict [ "yaml", box yaml; "ok", box true ]
         with ex -> dict [ "yaml", box yaml; "ok", box false; "error", box (ex.GetType().Name); "message", box ex.Message ] ]
+
+// ---------------------------------------------------------------- policy validation
+let policyErrorVectors =
+    [ for path in [ ""; "."; ".."; "a"; "a..b"; "*" ] ->
+        try
+            PrivacyEngine(PrivacyPolicy(FieldRules = [| PrivacyFieldRule(path, PrivacyAction.Mask) |])) |> ignore
+            dict [ "path", box path; "ok", box true ]
+        with ex -> dict [ "path", box path; "ok", box false; "error", box (ex.GetType().Name); "message", box ex.Message ] ]
 
 // ---------------------------------------------------------------- key files
 let keyFileCases: (string * byte[]) list =
@@ -377,14 +395,15 @@ let document =
            "profiles", box profileVectors
            "profilesWithoutKey", box withoutKey
            "keyFiles", box keyFileVectors
-           "facade", box facadeVectors ]
+           "facade", box facadeVectors
+           "policyErrors", box policyErrorVectors ]
 
-// Gzipped (deterministic header): the vectors are full of synthetic secrets by design,
-// and plain text trips repository secret scanning.
-let vectorsJson = JsonSerializer.Serialize(document, JsonSerializerOptions(WriteIndented = false, Encoder = Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping)) + "\n"
+// Gzipped so synthetic fuzzed credentials in the corpus do not trip secret scanning.
 do
-    use output = File.Create(outPath)
-    use gzip = new IO.Compression.GZipStream(output, IO.Compression.CompressionLevel.SmallestSize)
-    let bytes = Text.Encoding.UTF8.GetBytes(vectorsJson)
+    use gzip = new IO.Compression.GZipStream(File.Create(outPath), IO.Compression.CompressionLevel.SmallestSize)
+    let bytes =
+        Text.Encoding.UTF8.GetBytes(
+            JsonSerializer.Serialize(document, JsonSerializerOptions(WriteIndented = false, Encoder = Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping))
+            + "\n")
     gzip.Write(bytes, 0, bytes.Length)
 printfn "wrote %s (%d engine, %d text vectors)" outPath jsonVectors.Length textVectors.Length

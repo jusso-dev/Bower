@@ -2,22 +2,32 @@
 
 use std::sync::LazyLock;
 
-use regex::Regex;
-
-use super::{DetectionMatch, RegexDetector, ScanText, SensitiveDetector, compile};
+use super::{DetectionMatch, Pattern, RegexDetector, ScanText, SensitiveDetector, proxied};
 use crate::checksum::{digits_only, luhn};
 use crate::ids::{detector_categories as categories, detector_ids as ids};
 use crate::text::is_dotnet_whitespace;
 
-static CARD: LazyLock<Regex> = LazyLock::new(|| compile(r"\b(?:\d[ -]*?){13,19}\b"));
-static BSB: LazyLock<Regex> = LazyLock::new(|| {
-    compile(r"(?i)\b(\d{3}[-\s]?\d{3})(?:[/\s:]+|[\s]*account[\s#:]*)(\d{4,10})\b")
+static CARD: LazyLock<Pattern> =
+    LazyLock::new(|| proxied(r"\b(?:\d[ -]*?){13,19}\b", Some(b'9'), b'_'));
+static BSB: LazyLock<Pattern> = LazyLock::new(|| {
+    proxied(
+        r"(?i)\b(\d{3}[-\s]?\d{3})(?:[/\s:]+|[\s]*account[\s#:]*)(\d{4,10})\b",
+        Some(b'9'),
+        b'k',
+    )
 });
-static IBAN: LazyLock<Regex> = LazyLock::new(|| compile(r"(?i)\b([A-Z]{2}\d{2}[A-Z0-9]{11,30})\b"));
-static SWIFT: LazyLock<Regex> =
-    LazyLock::new(|| compile(r"\b([A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?)\b"));
+static IBAN: LazyLock<Pattern> =
+    LazyLock::new(|| proxied(r"(?i)\b([A-Z]{2}\d{2}[A-Z0-9]{11,30})\b", None, b'k'));
+static SWIFT: LazyLock<Pattern> = LazyLock::new(|| {
+    proxied(
+        r"\b([A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?)\b",
+        Some(b'_'),
+        b'_',
+    )
+});
 // PayID is typically email, phone, or ABN — flag explicit PayID labels.
-static PAY_ID: LazyLock<Regex> = LazyLock::new(|| compile(r"(?i)\bPayID[:\s=]+(\S+)"));
+static PAY_ID: LazyLock<Pattern> =
+    LazyLock::new(|| proxied(r"(?i)\bPayID[:\s=]+(\S+)", Some(b'_'), b'k'));
 
 pub struct CreditCardDetector;
 
@@ -77,8 +87,8 @@ impl SensitiveDetector for CreditCardDetector {
             return;
         }
 
-        for found in CARD.find_iter(text.haystack()) {
-            let digits = digits_only(text.slice(&found));
+        for found in text.find_iter(&CARD) {
+            let digits = digits_only(text.slice(found));
             if !(13..=19).contains(&digits.len()) || !luhn(&digits) {
                 continue;
             }
@@ -89,7 +99,7 @@ impl SensitiveDetector for CreditCardDetector {
             matches.push(text.detection(
                 ids::CREDIT_CARD,
                 categories::FINANCIAL,
-                &found,
+                found,
                 true,
                 Some(network.to_owned()),
             ));
@@ -165,11 +175,25 @@ impl SensitiveDetector for PayIdDetector {
                 matches.push(text.detection(
                     ids::PAY_ID,
                     categories::FINANCIAL,
-                    &group,
+                    group,
                     false,
                     None,
                 ));
             }
         }
     }
+}
+
+/// Every pattern in this module, for the proxy differential test.
+#[cfg(test)]
+pub(super) fn patterns() -> Vec<(&'static str, &'static Pattern)> {
+    #[allow(unused_mut)]
+    let mut patterns: Vec<(&'static str, &'static Pattern)> = vec![
+        ("CARD", &*CARD),
+        ("BSB", &*BSB),
+        ("IBAN", &*IBAN),
+        ("SWIFT", &*SWIFT),
+        ("PAY_ID", &*PAY_ID),
+    ];
+    patterns
 }

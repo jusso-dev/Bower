@@ -2,37 +2,60 @@
 
 use std::sync::LazyLock;
 
-use regex::Regex;
-
-use super::{DetectionMatch, RegexDetector, ScanText, SensitiveDetector, compile};
+use super::{
+    DetectionMatch, Pattern, RegexDetector, ScanText, SensitiveDetector, proxied, unicode_only,
+};
 use crate::ids::{detector_categories as categories, detector_ids as ids};
 
-static EMAIL: LazyLock<Regex> =
-    LazyLock::new(|| compile(r"(?i)[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}"));
-static PHONE_AU: LazyLock<Regex> =
-    LazyLock::new(|| compile(r"\b(?:\+?61[\s\-]?|0)(?:4\d{2}|[2378]\d)[\s\-]?\d{3}[\s\-]?\d{3}\b"));
-static PHONE_INTL: LazyLock<Regex> = LazyLock::new(|| compile(r"\b\+[1-9]\d{6,14}\b"));
-static DOB: LazyLock<Regex> = LazyLock::new(|| {
-    compile(r"(?i)\b(?:DOB|Date\s*of\s*Birth|born)[:\s#\-]*(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4})\b")
+static EMAIL: LazyLock<Pattern> =
+    LazyLock::new(|| unicode_only(r"(?i)[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}"));
+static PHONE_AU: LazyLock<Pattern> = LazyLock::new(|| {
+    proxied(
+        r"\b(?:\+?61[\s\-]?|0)(?:4\d{2}|[2378]\d)[\s\-]?\d{3}[\s\-]?\d{3}\b",
+        Some(b'9'),
+        b'_',
+    )
+});
+static PHONE_INTL: LazyLock<Pattern> =
+    LazyLock::new(|| proxied(r"\b\+[1-9]\d{6,14}\b", Some(b'0'), b'_'));
+static DOB: LazyLock<Pattern> = LazyLock::new(|| {
+    proxied(
+        r"(?i)\b(?:DOB|Date\s*of\s*Birth|born)[:\s#\-]*(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4})\b",
+        Some(b'9'),
+        b'k',
+    )
 });
 // Opt-in: Australian-style street address heuristic.
-static ADDRESS: LazyLock<Regex> = LazyLock::new(|| {
-    compile(
+static ADDRESS: LazyLock<Pattern> = LazyLock::new(|| {
+    proxied(
         r"(?i)\b\d{1,5}\s+[A-Z][A-Za-z'\-]+(?:\s+[A-Z][A-Za-z'\-]+){0,3}\s+(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Court|Ct|Place|Pl|Lane|Ln|Parade|Pde|Crescent|Cres|Boulevard|Blvd|Highway|Hwy)\b",
+        Some(b'9'),
+        b'k',
     )
 });
-static GPS: LazyLock<Regex> =
-    LazyLock::new(|| compile(r"\b-?\d{1,2}\.\d{4,},\s*-?\d{1,3}\.\d{4,}\b"));
-static IP: LazyLock<Regex> = LazyLock::new(|| {
-    compile(r"\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b")
+static GPS: LazyLock<Pattern> = LazyLock::new(|| {
+    proxied(
+        r"\b-?\d{1,2}\.\d{4,},\s*-?\d{1,3}\.\d{4,}\b",
+        Some(b'9'),
+        b'_',
+    )
 });
-static HOST: LazyLock<Regex> = LazyLock::new(|| {
-    compile(
+static IP: LazyLock<Pattern> = LazyLock::new(|| {
+    proxied(
+        r"\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b",
+        Some(b'9'),
+        b'_',
+    )
+});
+static HOST: LazyLock<Pattern> = LazyLock::new(|| {
+    proxied(
         r"(?i)\b(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+(?:com|net|org|io|au|local|internal|corp)\b",
+        Some(b'_'),
+        b'k',
     )
 });
-static USERNAME: LazyLock<Regex> = LazyLock::new(|| {
-    compile(r"(?i)\b(?:username|user\s*name|login)[:\s=]+([A-Za-z0-9._\-]{2,64})\b")
+static USERNAME: LazyLock<Pattern> = LazyLock::new(|| {
+    unicode_only(r"(?i)\b(?:username|user\s*name|login)[:\s=]+([A-Za-z0-9._\-]{2,64})\b")
 });
 
 pub fn email_detector() -> RegexDetector {
@@ -66,7 +89,7 @@ pub fn hostname_detector() -> RegexDetector {
 /// Pushes group 1 (falling back to the whole match) as an unvalidated match.
 fn detect_labelled(
     text: &ScanText<'_>,
-    regex: &Regex,
+    pattern: &Pattern,
     id: &str,
     matches: &mut Vec<DetectionMatch>,
 ) {
@@ -74,12 +97,12 @@ fn detect_labelled(
         return;
     }
 
-    for captures in text.captures(regex) {
+    for captures in text.captures(pattern) {
         let group = captures
             .get(1)
             .or_else(|| captures.get(0))
             .expect("group 0 always participates");
-        matches.push(text.detection(id, categories::IDENTITY, &group, false, None));
+        matches.push(text.detection(id, categories::IDENTITY, group, false, None));
     }
 }
 
@@ -113,4 +136,22 @@ impl SensitiveDetector for UsernameDetector {
     fn detect(&self, text: &ScanText<'_>, _path: &str, matches: &mut Vec<DetectionMatch>) {
         detect_labelled(text, &USERNAME, ids::USERNAME, matches);
     }
+}
+
+/// Every pattern in this module, for the proxy differential test.
+#[cfg(test)]
+pub(super) fn patterns() -> Vec<(&'static str, &'static Pattern)> {
+    #[allow(unused_mut)]
+    let mut patterns: Vec<(&'static str, &'static Pattern)> = vec![
+        ("EMAIL", &*EMAIL),
+        ("PHONE_AU", &*PHONE_AU),
+        ("PHONE_INTL", &*PHONE_INTL),
+        ("DOB", &*DOB),
+        ("ADDRESS", &*ADDRESS),
+        ("GPS", &*GPS),
+        ("IP", &*IP),
+        ("HOST", &*HOST),
+        ("USERNAME", &*USERNAME),
+    ];
+    patterns
 }
