@@ -2,16 +2,16 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Bower.Dcr;
 using Bower.Detection;
 using Bower.Integrity;
+using Bower.Packs.Yaml;
 using Bower.Pipeline;
 using Bower.PolicyEngine;
 using Bower.Redaction.Privacy;
 using YamlDotNet.Core;
-using YamlDotNet.Serialization;
-using YamlDotNet.Serialization.NamingConventions;
 
 namespace Bower.Packs;
 
@@ -36,12 +36,6 @@ public static partial class PackArchive
     private const long MaximumFileBytes = 1_048_576;
     private const long MaximumArchiveBytes = 50L * 1_048_576;
 
-    internal static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = false,
-        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
-        PropertyNameCaseInsensitive = true
-    };
 
     /// <summary>Validates a source directory and writes a signed archive. Returns its path.</summary>
     public static string Build(
@@ -125,7 +119,7 @@ public static partial class PackArchive
                 .ToArray(),
             PackHash(packFiles));
 
-        byte[] manifestBytes = CanonicalJson.Bytes(JsonSerializer.SerializeToNode(manifest, JsonOptions));
+        byte[] manifestBytes = CanonicalJson.Bytes(JsonSerializer.SerializeToNode(manifest, PackJsonContext.Default.PackManifest));
         DetachedSignature signature = DetachedSigner.Sign(manifestBytes, privateKeyPem);
 
         Directory.CreateDirectory(outputDirectory);
@@ -134,7 +128,7 @@ public static partial class PackArchive
         using (ZipArchive zip = new(stream, ZipArchiveMode.Create))
         {
             WriteEntry(zip, ManifestEntry, manifestBytes);
-            WriteEntry(zip, SignatureEntry, JsonSerializer.SerializeToUtf8Bytes(signature, JsonOptions));
+            WriteEntry(zip, SignatureEntry, JsonSerializer.SerializeToUtf8Bytes(signature, PackJsonContext.Default.DetachedSignature));
             foreach ((string path, _, byte[] content) in files.OrderBy(item => item.Path, StringComparer.Ordinal))
             {
                 WriteEntry(zip, ContentPrefix + path, content);
@@ -192,11 +186,11 @@ public static partial class PackArchive
             throw new PackVerificationException("Pack is missing its manifest or signature.");
         }
 
-        DetachedSignature signature = JsonSerializer.Deserialize<DetachedSignature>(signatureBytes, JsonOptions)
+        DetachedSignature signature = JsonSerializer.Deserialize(signatureBytes, PackJsonContext.Default.DetachedSignature)
             ?? throw new PackVerificationException("Pack signature is unreadable.");
-        PackManifest manifest = JsonSerializer.Deserialize<PackManifest>(manifestBytes, JsonOptions)
+        PackManifest manifest = JsonSerializer.Deserialize(manifestBytes, PackJsonContext.Default.PackManifest)
             ?? throw new PackVerificationException("Pack manifest is unreadable.");
-        byte[] canonical = CanonicalJson.Bytes(JsonSerializer.SerializeToNode(manifest, JsonOptions));
+        byte[] canonical = CanonicalJson.Bytes(JsonSerializer.SerializeToNode(manifest, PackJsonContext.Default.PackManifest));
         if (!canonical.AsSpan().SequenceEqual(manifestBytes)
             || !DetachedSigner.Verify(canonical, signature, trustedPublicKeyPems))
         {
@@ -280,7 +274,7 @@ public static partial class PackArchive
                     break;
                 case PackRoles.Parser:
                     CustomLogParserConfiguration configuration =
-                        JsonSerializer.Deserialize<CustomLogParserConfiguration>(text, JsonOptions)
+                        JsonSerializer.Deserialize(text, PackJsonContext.Default.CustomLogParserConfiguration)
                         ?? throw new InvalidDataException($"Parser '{path}' is empty.");
                     IReadOnlyList<string> issues = CustomLogParser.ValidateConfiguration(configuration);
                     if (issues.Count > 0)
@@ -338,10 +332,7 @@ public static partial class PackArchive
 
         try
         {
-            return new DeserializerBuilder()
-                .WithNamingConvention(CamelCaseNamingConvention.Instance)
-                .Build()
-                .Deserialize<PackSource>(File.ReadAllText(path))
+            return PackSourceYamlReader.Read(File.ReadAllText(path))
                 ?? throw new InvalidDataException("pack.yaml is empty.");
         }
         catch (YamlException exception)
@@ -402,3 +393,15 @@ public static partial class PackArchive
 }
 
 public sealed class PackVerificationException(string message) : Exception(message);
+
+/// <summary>
+/// Source-generated metadata for pack manifests, signatures and parsers (Native AOT). The
+/// options match the former reflection options exactly: defaults, case-insensitive
+/// property names and enums as their declared names (integers still accepted on read), so
+/// canonical manifest bytes and therefore existing signatures are unchanged.
+/// </summary>
+[JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true, UseStringEnumConverter = true)]
+[JsonSerializable(typeof(PackManifest))]
+[JsonSerializable(typeof(DetachedSignature))]
+[JsonSerializable(typeof(CustomLogParserConfiguration))]
+internal sealed partial class PackJsonContext : JsonSerializerContext;

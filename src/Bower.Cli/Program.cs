@@ -59,18 +59,14 @@ static int Validate(string[] args)
     IReadOnlyList<LoadedPolicy> policies = PolicyLoader.LoadDirectory(directory);
     Console.WriteLine(
         JsonSerializer.Serialize(
-            new
-            {
-                valid = true,
-                policyCount = policies.Count,
-                policies = policies.Select(item => new
-                {
+            new PolicyValidationOutput(
+                true,
+                policies.Count,
+                [.. policies.Select(item => new PolicyValidationItem(
                     item.Policy.Metadata.Id,
                     item.Policy.Metadata.Version,
-                    item.Hash
-                })
-            },
-            new JsonSerializerOptions { WriteIndented = true }));
+                    item.Hash))]),
+            CliJsonContext.Default.PolicyValidationOutput));
     return 0;
 }
 
@@ -87,17 +83,15 @@ static int ValidatePipeline(string[] args)
     PipelinePerformanceEstimate estimate = PipelineValidator.Estimate(pipeline);
     Console.WriteLine(
         JsonSerializer.Serialize(
-            new
-            {
-                valid = validation.IsValid,
+            new PipelineValidationOutput(
+                validation.IsValid,
                 pipeline.Id,
                 pipeline.Name,
                 pipeline.Version,
-                order = validation.TopologicalOrder,
+                validation.TopologicalOrder,
                 estimate,
-                issues = validation.Issues
-            },
-            new JsonSerializerOptions { WriteIndented = true }));
+                validation.Issues),
+            CliJsonContext.Default.PipelineValidationOutput));
     return validation.IsValid ? 0 : 2;
 }
 
@@ -117,7 +111,7 @@ static async Task<int> InspectQueueAsync(string[] args)
     await queue.InitializeAsync();
     Bower.Abstractions.QueueSnapshot snapshot = await queue.GetSnapshotAsync();
     Console.WriteLine(
-        JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true }));
+        JsonSerializer.Serialize(snapshot, CliJsonContext.Default.QueueSnapshot));
     return 0;
 }
 
@@ -152,7 +146,7 @@ static async Task<int> EmitCanaryAsync(string[] args)
     using HttpClient client = new() { BaseAddress = new Uri(EnsureSlash(endpoint)) };
     using HttpRequestMessage request = new(HttpMethod.Post, "v1/events")
     {
-        Content = JsonContent.Create(canary, options: BowerJson.Options)
+        Content = JsonContent.Create(canary, BowerJson.Envelope)
     };
     if (!string.IsNullOrWhiteSpace(token))
     {
@@ -193,14 +187,12 @@ static int DeveloperInit(string[] args)
 
     Console.WriteLine(
         JsonSerializer.Serialize(
-            new
-            {
-                initialized = true,
-                path = root,
-                framework = "dotnet",
-                note = "Package references are documented but not changed automatically in 0.1.0."
-            },
-            new JsonSerializerOptions { WriteIndented = true }));
+            new InitOutput(
+                true,
+                root,
+                "dotnet",
+                "Package references are documented but not changed automatically in 0.1.0."),
+            CliJsonContext.Default.InitOutput));
     return 0;
 }
 

@@ -1,0 +1,1 @@
+{"Id":"arm","Name":"arm","WorkspaceId":null,"DataSources":[{"Name":"sysmon","Kind":"windowsEventLogs","Streams":[],"XPathQueries":["Microsoft-Windows-Sysmon/Operational!*[System[(EventID=1)]]"],"Enabled":true}],"Destinations":["logAnalytics"]}

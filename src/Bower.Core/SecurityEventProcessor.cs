@@ -39,9 +39,7 @@ public sealed class SecurityEventProcessor(
         SecurityEventEnvelope? candidate;
         try
         {
-            candidate = JsonSerializer.Deserialize<SecurityEventEnvelope>(
-                redaction.RedactedJson,
-                BowerJson.Options);
+            candidate = JsonSerializer.Deserialize(redaction.RedactedJson, BowerJson.Envelope);
         }
         catch (JsonException)
         {
@@ -119,7 +117,7 @@ public sealed class SecurityEventProcessor(
             }
         };
 
-        string payload = JsonSerializer.Serialize(arranged, BowerJson.Options);
+        string payload = JsonSerializer.Serialize(arranged, BowerJson.Envelope);
         QueuedEvent queued = new(
             arranged.EventId,
             EventFingerprint.Create(arranged),
@@ -289,7 +287,7 @@ public sealed class SecurityEventProcessor(
             }
         };
 
-        string payload = JsonSerializer.Serialize(arrangedAlert, BowerJson.Options);
+        string payload = JsonSerializer.Serialize(arrangedAlert, BowerJson.Envelope);
         QueuedEvent queued = new(
             arrangedAlert.EventId,
             EventFingerprint.Create(arrangedAlert),

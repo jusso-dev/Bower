@@ -136,7 +136,7 @@ public static class DcrTemplateGenerator
             },
             ["resources"] = new JsonArray
             {
-                new JsonObject
+                (JsonNode)new JsonObject
                 {
                     ["type"] = "Microsoft.OperationalInsights/workspaces/tables",
                     ["apiVersion"] = ApiVersion,
@@ -153,7 +153,7 @@ public static class DcrTemplateGenerator
                         }
                     }
                 },
-                new JsonObject
+                (JsonNode)new JsonObject
                 {
                     ["type"] = "Microsoft.Insights/dataCollectionRules",
                     ["apiVersion"] = ApiVersion,
@@ -164,7 +164,7 @@ public static class DcrTemplateGenerator
                     ["kind"] = "Direct",
                     ["dependsOn"] = new JsonArray
                     {
-                        $"[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('workspaceName'), '{schema.TableName}')]"
+                        (JsonNode)$"[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('workspaceName'), '{schema.TableName}')]"
                     },
                     ["properties"] = new JsonObject
                     {
@@ -176,7 +176,7 @@ public static class DcrTemplateGenerator
                         {
                             ["logAnalytics"] = new JsonArray
                             {
-                                new JsonObject
+                                (JsonNode)new JsonObject
                                 {
                                     ["name"] = "BowerWorkspace",
                                     ["workspaceResourceId"] =
@@ -186,10 +186,10 @@ public static class DcrTemplateGenerator
                         },
                         ["dataFlows"] = new JsonArray
                         {
-                            new JsonObject
+                            (JsonNode)new JsonObject
                             {
-                                ["streams"] = new JsonArray { schema.StreamName },
-                                ["destinations"] = new JsonArray { "BowerWorkspace" },
+                                ["streams"] = new JsonArray { (JsonNode)schema.StreamName },
+                                ["destinations"] = new JsonArray { (JsonNode)"BowerWorkspace" },
                                 ["outputStream"] = schema.OutputStream,
                                 ["transformKql"] = schema.TransformKql()
                             }

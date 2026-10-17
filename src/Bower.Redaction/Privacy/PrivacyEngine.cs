@@ -504,7 +504,7 @@ public sealed class PrivacyEngine : IEventRedactor
         JsonArray detected = new();
         foreach (string id in metadata.Detected)
         {
-            detected.Add(id);
+            detected.Add((JsonNode)id);
         }
 
         JsonObject actions = new();

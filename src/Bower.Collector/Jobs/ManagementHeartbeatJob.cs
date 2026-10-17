@@ -4,7 +4,6 @@ using System.Net.Http.Json;
 using Azure.Core;
 using Bower.Abstractions;
 using Bower.Jobs;
-using Hangfire;
 
 namespace Bower.Collector.Jobs;
 
@@ -25,8 +24,6 @@ public sealed partial class ManagementHeartbeatJob(
     public const string HttpClientName = "bower-management";
 
     // A missed heartbeat is superseded by the next scheduled run; never retry-stack.
-    [AutomaticRetry(Attempts = 0, LogEvents = false)]
-    [DisableConcurrentExecution(timeoutInSeconds: 60)]
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         try
@@ -49,27 +46,10 @@ public sealed partial class ManagementHeartbeatJob(
 
         QueueSnapshot snapshot = await eventStore.GetSnapshotAsync(cancellationToken);
         string deliveryStatus = snapshot.DeadLettered > 0 ? "degraded" : "healthy";
-        object[] sources =
+        SourceReport[] sources = [new SourceReport("local-http", "local-http", "healthy", null, null)];
+        OutputReport[] outputs =
         [
-            new
-            {
-                id = "local-http",
-                type = "local-http",
-                status = "healthy",
-                lagSeconds = (long?)null,
-                lastEventAt = (DateTimeOffset?)null
-            }
-        ];
-        object[] outputs =
-        [
-            new
-            {
-                id = settings.OutputType,
-                type = settings.OutputType,
-                status = deliveryStatus,
-                lastAcknowledgedAt = (DateTimeOffset?)null,
-                lastErrorCode = (string?)null
-            }
+            new OutputReport(settings.OutputType, settings.OutputType, deliveryStatus, null, null)
         ];
         IReadOnlyList<BackgroundJobStatus> jobReports = jobs.List();
         // The management store keeps the last ledger head per collector as an external
@@ -79,17 +59,17 @@ public sealed partial class ManagementHeartbeatJob(
         using HttpRequestMessage registration = CreateRequest(
             "api/collectors/register",
             accessToken.Token,
-            new
-            {
-                collectorId = settings.CollectorId,
-                machineName = System.Environment.MachineName,
-                environment = settings.Environment,
-                version = settings.Version,
-                configurationHash = settings.ConfigurationHash(),
-                policyHash = bundle.Hash,
-                sources,
-                outputs
-            });
+            JsonContent.Create(
+                new CollectorRegistration(
+                    settings.CollectorId,
+                    System.Environment.MachineName,
+                    settings.Environment,
+                    settings.Version,
+                    settings.ConfigurationHash(),
+                    bundle.Hash,
+                    sources,
+                    outputs),
+                CollectorJsonContext.Default.CollectorRegistration));
         using HttpResponseMessage registered = await client.SendAsync(registration, cancellationToken);
         if (!registered.IsSuccessStatusCode)
         {
@@ -100,19 +80,19 @@ public sealed partial class ManagementHeartbeatJob(
         using HttpRequestMessage heartbeat = CreateRequest(
             $"api/collectors/{Uri.EscapeDataString(settings.CollectorId)}/heartbeat",
             accessToken.Token,
-            new
-            {
-                version = settings.Version,
-                configurationHash = settings.ConfigurationHash(),
-                policyHash = bundle.Hash,
-                queueDepth = snapshot.Queued + snapshot.Retrying + snapshot.Uploading,
-                deliveryStatus,
-                sources,
-                outputs,
-                jobs = jobReports,
-                deadLettered = snapshot.DeadLettered,
-                ledger = new { sequence = ledger.Sequence, hash = ledger.Hash }
-            });
+            JsonContent.Create(
+                new CollectorHeartbeat(
+                    settings.Version,
+                    settings.ConfigurationHash(),
+                    bundle.Hash,
+                    snapshot.Queued + snapshot.Retrying + snapshot.Uploading,
+                    deliveryStatus,
+                    sources,
+                    outputs,
+                    jobReports,
+                    snapshot.DeadLettered,
+                    new LedgerResponse(ledger.Sequence, ledger.Hash)),
+                CollectorJsonContext.Default.CollectorHeartbeat));
         using HttpResponseMessage response = await client.SendAsync(heartbeat, cancellationToken);
         if (response.StatusCode == HttpStatusCode.Conflict)
         {
@@ -124,11 +104,11 @@ public sealed partial class ManagementHeartbeatJob(
     }
 
     // The bearer token is attached per request, never to shared default headers.
-    private static HttpRequestMessage CreateRequest(string path, string token, object body) =>
+    private static HttpRequestMessage CreateRequest(string path, string token, JsonContent body) =>
         new(HttpMethod.Post, path)
         {
             Headers = { Authorization = new AuthenticationHeaderValue("Bearer", token) },
-            Content = JsonContent.Create(body)
+            Content = body
         };
 
     [LoggerMessage(

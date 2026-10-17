@@ -2,5 +2,7 @@
   <ItemGroup>
     <ProjectReference Include="../Bower.Abstractions/Bower.Abstractions.csproj" />
     <PackageReference Include="YamlDotNet" />
+    <!-- Compile-time YamlDotNet static context: reflection-free YAML for Native AOT. -->
+    <PackageReference Include="Vecc.YamlDotNet.Analyzers.StaticGenerator" PrivateAssets="all" />
   </ItemGroup>
 </Project>

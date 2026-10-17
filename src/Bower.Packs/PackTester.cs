@@ -48,8 +48,7 @@ public static class PackTester
             }
             else
             {
-                SecurityEventEnvelope? envelope = JsonSerializer.Deserialize<SecurityEventEnvelope>(
-                    redaction.RedactedJson!, BowerJson.Options);
+                SecurityEventEnvelope? envelope = JsonSerializer.Deserialize(redaction.RedactedJson!, BowerJson.Envelope);
                 PolicyDecision decision = evaluator.Evaluate(envelope!);
                 actual = decision.Action switch
                 {

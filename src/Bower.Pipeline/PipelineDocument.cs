@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -6,12 +7,13 @@ namespace Bower.Pipeline;
 
 public static class PipelineDocument
 {
-    private static readonly IDeserializer Deserializer = new DeserializerBuilder()
+    // Static (source-generated) YamlDotNet context: reflection-free for Native AOT.
+    private static readonly IDeserializer Deserializer = new StaticDeserializerBuilder(new PipelineYamlContext())
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
         .IgnoreUnmatchedProperties()
         .Build();
 
-    private static readonly ISerializer Serializer = new SerializerBuilder()
+    private static readonly ISerializer Serializer = new StaticSerializerBuilder(new PipelineYamlContext())
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
         .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
         .Build();
@@ -35,7 +37,7 @@ public static class PipelineDocument
         return Serializer.Serialize(PipelineDto.FromModel(pipeline));
     }
 
-    private sealed class PipelineDto
+    internal sealed class PipelineDto
     {
         public string? Id { get; set; }
         public string? Name { get; set; }
@@ -72,7 +74,7 @@ public static class PipelineDocument
         }
     }
 
-    private sealed class NodeDto
+    internal sealed class NodeDto
     {
         public string? Id { get; set; }
         public string? Kind { get; set; }
@@ -101,7 +103,7 @@ public static class PipelineDocument
         }
     }
 
-    private sealed class EdgeDto
+    internal sealed class EdgeDto
     {
         public string? From { get; set; }
         public string? To { get; set; }
@@ -111,3 +113,11 @@ public static class PipelineDocument
         public static EdgeDto FromModel(PipelineEdge edge) => new() { From = edge.From, To = edge.To };
     }
 }
+
+/// <summary>YamlDotNet static context for pipeline documents. Infrastructure only.</summary>
+[EditorBrowsable(EditorBrowsableState.Never)]
+[YamlStaticContext]
+[YamlSerializable(typeof(PipelineDocument.PipelineDto))]
+[YamlSerializable(typeof(PipelineDocument.NodeDto))]
+[YamlSerializable(typeof(PipelineDocument.EdgeDto))]
+public partial class PipelineYamlContext : StaticContext;

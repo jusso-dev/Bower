@@ -1,5 +1,3 @@
-using Hangfire;
-
 namespace Bower.Management.Api.Jobs;
 
 /// <summary>
@@ -14,9 +12,8 @@ public sealed partial class CollectorInactivityJob(
     ILogger<CollectorInactivityJob> logger)
 {
     public const string Id = "collector-inactivity";
+    public const int RetryAttempts = 2;
 
-    [AutomaticRetry(Attempts = 2)]
-    [DisableConcurrentExecution(timeoutInSeconds: 300)]
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         int days = configuration.GetValue("BOWER_COLLECTOR_INACTIVE_DAYS", 30);

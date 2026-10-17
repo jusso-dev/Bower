@@ -1,0 +1,20 @@
+//! Azure Monitor Logs Ingestion output (port of `Bower.Output.AzureLogsIngestion`)
+//! and the Microsoft Entra credential sources the collector supports
+//! (`AzureCredentialFactory`).
+//!
+//! Uses the supported Logs Ingestion REST API directly. Tokens are cached in memory
+//! only and never logged or persisted.
+
+pub mod credential;
+mod output;
+
+pub use credential::{
+    AccessToken, AzureCliCredential, AzureCredentialMode, CachedTokenProvider,
+    EnvironmentCredential, ManagedIdentityCredential, ManagedIdentitySource, TokenError,
+    TokenFuture, TokenProvider, WorkloadIdentityCredential, WorkloadIdentitySettings,
+    credential_from_mode,
+};
+pub use output::{
+    API_VERSION, AzureLogsIngestionOptions, AzureLogsIngestionOutput, AzureOutputError,
+    IngestionClientOptions, MONITOR_SCOPE, SINGLE_UPLOAD_THRESHOLD,
+};

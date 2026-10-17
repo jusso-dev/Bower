@@ -73,7 +73,7 @@ public sealed partial class AwsMessageTranslator(
         {
             case AwsQueueMessageKind.Events:
                 return new CloudTranslation(
-                    parsed.Events.Select(item => JsonSerializer.Serialize(item, BowerJson.Options)).ToList(),
+                    parsed.Events.Select(item => JsonSerializer.Serialize(item, BowerJson.Envelope)).ToList(),
                     0,
                     null);
             case AwsQueueMessageKind.ObjectReferences:

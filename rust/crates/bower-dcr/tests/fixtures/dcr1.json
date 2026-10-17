@@ -1,0 +1,16 @@
+{
+  "id": "dcr-1",
+  "name": "servers",
+  "workspaceId": "/subscriptions/x/resourceGroups/rg/providers/Microsoft.OperationalInsights/workspaces/law",
+  "dataSources": [
+    {
+      "name": "windows-security",
+      "kind": "windowsEventLogs",
+      "streams": ["Microsoft-WindowsEvent"],
+      "xPathQueries": ["Security!*"]
+    },
+    { "streams": [ "Microsoft-Syslog",  "x" ], "enabled": false },
+    { "name": "Windows-Security", "type": 7, "enabled": true }
+  ],
+  "destinations": [{ "name": "law" }, {"id": 1}]
+}

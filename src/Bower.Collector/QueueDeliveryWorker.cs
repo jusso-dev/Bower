@@ -19,7 +19,7 @@ public sealed record QueueDeliveryOptions
 
 /// <summary>
 /// Drains the durable queue into the configured output. Stays a low-latency hosted loop
-/// rather than a Hangfire job: delivery is continuous and its durability lives in the
+/// rather than a scheduled job: delivery is continuous and its durability lives in the
 /// queue's lease/acknowledgement state, not in a scheduler.
 /// </summary>
 public sealed partial class QueueDeliveryWorker(

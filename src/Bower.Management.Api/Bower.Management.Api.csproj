@@ -1,6 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <!-- Native AOT: one self-contained native executable per RID (plus the native SQLite
+         library). Self-contained only for RID-specific publishes. -->
+    <PublishAot>true</PublishAot>
+    <SelfContained Condition="'$(RuntimeIdentifier)' != ''">true</SelfContained>
+    <!-- The chiseled runtime image ships without ICU; all comparisons are ordinal. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <RuntimeIdentifiers>linux-x64;linux-arm64;osx-x64;osx-arm64;win-x64;win-arm64</RuntimeIdentifiers>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />

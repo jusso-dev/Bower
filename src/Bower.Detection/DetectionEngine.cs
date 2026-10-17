@@ -82,9 +82,7 @@ public sealed class DetectionEngine
 
     public DetectionEvaluationResult EvaluateJson(string eventJson, DateTimeOffset? now = null)
     {
-        SecurityEventEnvelope? envelope = JsonSerializer.Deserialize<SecurityEventEnvelope>(
-            eventJson,
-            BowerJson.Options);
+        SecurityEventEnvelope? envelope = JsonSerializer.Deserialize(eventJson, BowerJson.Envelope);
         if (envelope is null)
         {
             throw new InvalidDataException("Event JSON did not deserialize to SecurityEventEnvelope.");

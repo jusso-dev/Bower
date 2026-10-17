@@ -54,7 +54,7 @@ public sealed class HttpCanarySender(HttpClient http) : ICanarySender
         JsonObject? body = null;
         try
         {
-            body = await response.Content.ReadFromJsonAsync<JsonObject>(cancellationToken);
+            body = await response.Content.ReadFromJsonAsync(EvidenceWebJsonContext.Default.JsonObject, cancellationToken);
         }
         catch (JsonException)
         {
@@ -110,7 +110,7 @@ public sealed partial class EvidenceRunner(
         (int status, JsonObject? body) = await sender.SendAsync(
             options.CollectorUrl,
             options.IngestToken,
-            JsonSerializer.Serialize(canary, BowerJson.Options),
+            JsonSerializer.Serialize(canary, BowerJson.Envelope),
             cancellationToken);
         CanaryRecord canaryRecord = new(
             eventId,
@@ -159,7 +159,7 @@ public sealed partial class EvidenceRunner(
 
     public static SignedEvidence Sign(EvidenceBundle bundle, string? privateKeyPem)
     {
-        JsonObject node = (JsonObject)JsonSerializer.SerializeToNode(bundle)!;
+        JsonObject node = (JsonObject)JsonSerializer.SerializeToNode(bundle, EvidenceJsonContext.Default.EvidenceBundle)!;
         DetachedSignature? signature = privateKeyPem is null ? null : DetachedSigner.Sign(CanonicalJson.Bytes(node), privateKeyPem);
         return new SignedEvidence(node, signature);
     }

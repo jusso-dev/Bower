@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Azure;
 using Azure.Core;
+using Azure.Core.Serialization;
 using Azure.Monitor.Ingestion;
 using Bower.Abstractions;
 using Bower.Dcr;
@@ -25,6 +27,8 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
             ? new LogsIngestionClient(options.Endpoint, credential)
             : new LogsIngestionClient(options.Endpoint, credential, clientOptions);
     }
+
+    private static readonly JsonRecordSerializer RecordSerializer = new();
 
     public string Id => options.Id;
 
@@ -77,7 +81,9 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
         int unattributed = 0;
         LogsUploadOptions uploadOptions = new()
         {
-            MaxConcurrency = options.MaximumConcurrency
+            MaxConcurrency = options.MaximumConcurrency,
+            // Source-generated metadata, so the SDK never falls back to reflection.
+            Serializer = RecordSerializer
         };
         uploadOptions.UploadFailed += args =>
         {
@@ -109,12 +115,7 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
             return Task.CompletedTask;
         };
 
-        Response response = await client.UploadAsync(
-            options.DcrImmutableId,
-            options.StreamName,
-            records,
-            uploadOptions,
-            cancellationToken);
+        Response response = await UploadAsync(records, uploadOptions, cancellationToken);
 
         if (Volatile.Read(ref unattributed) > 0)
         {
@@ -139,6 +140,39 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
         record?["eventId"] is JsonValue value && value.TryGetValue(out string? eventId)
             ? eventId
             : null;
+
+    // UploadAsync<T> is annotated RequiresUnreferencedCode/RequiresDynamicCode only because
+    // it serializes each T with LogsUploadOptions.Serializer, which defaults to the
+    // reflection-based JsonObjectSerializer. Every call passes RecordSerializer, which
+    // writes JsonObject nodes directly (JsonNode.WriteTo, no type metadata), and T is
+    // JsonObject, so nothing is reached through reflection and no code is generated at
+    // run time. The guard below keeps that true; AzureLogsIngestionOutputTests pin the
+    // uploaded bytes.
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026:RequiresUnreferencedCode",
+        Justification = "Records are JsonObject written by JsonRecordSerializer without reflection.")]
+    [UnconditionalSuppressMessage(
+        "AOT",
+        "IL3050:RequiresDynamicCode",
+        Justification = "Records are JsonObject written by JsonRecordSerializer without reflection.")]
+    private Task<Response> UploadAsync(
+        List<JsonObject> records,
+        LogsUploadOptions uploadOptions,
+        CancellationToken cancellationToken)
+    {
+        if (!ReferenceEquals(uploadOptions.Serializer, RecordSerializer))
+        {
+            throw new InvalidOperationException("Log records must use the source-generated serializer.");
+        }
+
+        return client.UploadAsync(
+            options.DcrImmutableId,
+            options.StreamName,
+            records,
+            uploadOptions,
+            cancellationToken);
+    }
 
     private static JsonObject? TryParseRecord(string payload)
     {
@@ -183,5 +217,70 @@ public sealed record AzureLogsIngestionOptions
         {
             throw new ArgumentOutOfRangeException(nameof(MaximumConcurrency));
         }
+    }
+}
+
+/// <summary>
+/// Writes log records for the Logs Ingestion SDK without reflection: each record is a
+/// <see cref="JsonObject"/> and is written with default writer options, byte-for-byte what
+/// the SDK's default <c>JsonObjectSerializer</c> produced for the same node.
+/// </summary>
+internal sealed class JsonRecordSerializer : ObjectSerializer
+{
+    public override void Serialize(Stream stream, object? value, Type inputType, CancellationToken cancellationToken)
+    {
+        using Utf8JsonWriter writer = new(stream);
+        Write(writer, value);
+    }
+
+    public override async ValueTask SerializeAsync(
+        Stream stream,
+        object? value,
+        Type inputType,
+        CancellationToken cancellationToken)
+    {
+        await using Utf8JsonWriter writer = new(stream);
+        Write(writer, value);
+        await writer.FlushAsync(cancellationToken);
+    }
+
+    public override BinaryData Serialize(object? value, Type? inputType = null, CancellationToken cancellationToken = default)
+    {
+        using MemoryStream stream = new();
+        Serialize(stream, value, inputType ?? typeof(JsonObject), cancellationToken);
+        return new BinaryData(stream.ToArray());
+    }
+
+    public override async ValueTask<BinaryData> SerializeAsync(
+        object? value,
+        Type? inputType = null,
+        CancellationToken cancellationToken = default)
+    {
+        using MemoryStream stream = new();
+        await SerializeAsync(stream, value, inputType ?? typeof(JsonObject), cancellationToken);
+        return new BinaryData(stream.ToArray());
+    }
+
+    public override object? Deserialize(Stream stream, Type returnType, CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Log records are write-only.");
+
+    public override ValueTask<object?> DeserializeAsync(Stream stream, Type returnType, CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Log records are write-only.");
+
+    private static void Write(Utf8JsonWriter writer, object? value)
+    {
+        switch (value)
+        {
+            case JsonNode node:
+                node.WriteTo(writer);
+                break;
+            case null:
+                writer.WriteNullValue();
+                break;
+            default:
+                throw new NotSupportedException($"Unsupported log record type {value.GetType().Name}.");
+        }
+
+        writer.Flush();
     }
 }

@@ -15,27 +15,35 @@ RUN VITE_BOWER_AUTH_MODE=${BOWER_AUTH_MODE} \
     VITE_BOWER_ENTRA_REDIRECT_URI=${BOWER_ENTRA_REDIRECT_URI} \
     npm run build
 
-# Portable framework-dependent output runs on amd64 and arm64; build natively.
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.401 AS api-build
+# Native AOT executable (no .NET runtime in the image). Build on the runner's native
+# platform and cross-compile for TARGETARCH (no QEMU): the -aot SDK image carries the
+# native toolchain and the cross-architecture sysroot.
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.401-noble-aot AS api-build
+ARG TARGETARCH
 WORKDIR /src
 COPY . .
 RUN dotnet restore src/Bower.Management.Api/Bower.Management.Api.csproj --locked-mode
-RUN dotnet publish src/Bower.Management.Api/Bower.Management.Api.csproj \
-    --configuration Release \
-    --no-restore \
-    --output /app
+RUN RID="linux-$([ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64)" \
+    && dotnet publish src/Bower.Management.Api/Bower.Management.Api.csproj \
+        --configuration Release \
+        --no-restore \
+        --runtime "$RID" \
+        --output /app \
+    && rm -f /app/*.dbg /app/*.pdb \
+    && mkdir -p /state
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.12 AS runtime
+# Chiseled runtime-deps: no shell, no package manager, no ICU (InvariantGlobalization).
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0.12-noble-chiseled AS runtime
 WORKDIR /app
 COPY --from=api-build /app .
 COPY --from=web-build /src/ui/Bower.Management.Web/dist ./wwwroot
-RUN mkdir -p /var/lib/bower-management \
-    && chown -R 1654:1654 /app /var/lib/bower-management
-USER 1654
+COPY --from=api-build --chown=1654:1654 /state /var/lib/bower-management
+USER 1654:1654
 # Bower sets its own listen URL; clear the base image default to avoid an override warning.
-ENV ASPNETCORE_HTTP_PORTS=
-ENV BOWER_MANAGEMENT_LISTEN_URL=http://0.0.0.0:4320
-ENV BOWER_MANAGEMENT_DB_PATH=/var/lib/bower-management/management.db
+ENV ASPNETCORE_HTTP_PORTS= \
+    BOWER_MANAGEMENT_LISTEN_URL=http://0.0.0.0:4320 \
+    BOWER_MANAGEMENT_DB_PATH=/var/lib/bower-management/management.db \
+    DOTNET_gcServer=0
 EXPOSE 4320
 VOLUME ["/var/lib/bower-management"]
-ENTRYPOINT ["dotnet", "Bower.Management.Api.dll"]
+ENTRYPOINT ["/app/Bower.Management.Api"]

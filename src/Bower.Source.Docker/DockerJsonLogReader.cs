@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Bower.Source.Docker;
 
@@ -14,12 +15,7 @@ public sealed record DockerLogCursor(int SchemaVersion, string Fingerprint, long
 {
     public const int CurrentSchemaVersion = 1;
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
-
-    public string Serialize() => JsonSerializer.Serialize(this, JsonOptions);
+    public string Serialize() => JsonSerializer.Serialize(this, DockerCursorJsonContext.Default.DockerLogCursor);
 
     public static DockerLogCursor? Deserialize(string? value)
     {
@@ -30,7 +26,7 @@ public sealed record DockerLogCursor(int SchemaVersion, string Fingerprint, long
 
         try
         {
-            DockerLogCursor? cursor = JsonSerializer.Deserialize<DockerLogCursor>(value, JsonOptions);
+            DockerLogCursor? cursor = JsonSerializer.Deserialize(value, DockerCursorJsonContext.Default.DockerLogCursor);
             return cursor is { SchemaVersion: CurrentSchemaVersion, Offset: >= 0 } ? cursor : null;
         }
         catch (JsonException)
@@ -39,6 +35,11 @@ public sealed record DockerLogCursor(int SchemaVersion, string Fingerprint, long
         }
     }
 }
+
+/// <summary>Cursor JSON: camelCase, otherwise default options (source generated).</summary>
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(DockerLogCursor))]
+internal sealed partial class DockerCursorJsonContext : JsonSerializerContext;
 
 /// <summary>One logical log line (Docker splits lines over 16 KiB into chunks).</summary>
 public sealed record DockerLogRecord(

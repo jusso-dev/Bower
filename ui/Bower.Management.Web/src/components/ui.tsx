@@ -234,7 +234,7 @@ export function ResourceState<T>({
   return data === null ? null : children(data);
 }
 
-/** Hangfire job state: Succeeded, Failed, Processing, Enqueued, Scheduled or not yet run. */
+/** Recurring job state: Succeeded, Failed, Processing, Enqueued, Scheduled or not yet run. */
 export function JobStateLabel({ value }: { value: string | null }) {
   if (!value) {
     return (

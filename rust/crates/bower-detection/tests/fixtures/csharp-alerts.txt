@@ -1,0 +1,44 @@
+alert|linux-ssh-gateway:1|bower-pack-ssh-auth-failure-001|SSH sign-in failure from gateway|1.0.0|9a810e29f0f6267b2b36a9629785a4548a4fd9ee53166d82658afd6ce1a0dade|medium|50|2026-10-17T01:02:03.4567000+00:00|sample-ssh-1|authentication_failure|deploy-admin|203.0.113.5|T1110|EventType,EventResult|SSH sign-in failure from gateway matched event authentication_failure (authentication.attempt)
+alert|linux-ssh-gateway:1|bower-auth-failure-001|Authentication Failure Observed|1.0.0|6b8cf695fed2a7970710032785a48759862efbe4e545666eb82eae0842159688|medium|50|2026-10-17T01:02:03.4567000+00:00|sample-ssh-1|authentication_failure|deploy-admin|203.0.113.5|T1110|EventType,EventResult|Authentication Failure Observed matched event authentication_failure (authentication.attempt)
+suppressed|linux-ssh-gateway:1|bower-pack-gcp-logging-tampering-001
+suppressed|linux-ssh-gateway:2|bower-pack-gcp-logging-tampering-001
+alert|linux-ssh-gateway:3|bower-pack-ssh-auth-failure-001|SSH sign-in failure from gateway|1.0.0|9a810e29f0f6267b2b36a9629785a4548a4fd9ee53166d82658afd6ce1a0dade|medium|50|2026-10-17T01:02:03.4567000+00:00|sample-ssh-3|authentication_failure|root|<null>|T1110|EventType,EventResult|SSH sign-in failure from gateway matched event authentication_failure (authentication.attempt)
+alert|linux-ssh-gateway:3|bower-auth-failure-001|Authentication Failure Observed|1.0.0|6b8cf695fed2a7970710032785a48759862efbe4e545666eb82eae0842159688|medium|50|2026-10-17T01:02:03.4567000+00:00|sample-ssh-3|authentication_failure|root|<null>|T1110|EventType,EventResult|Authentication Failure Observed matched event authentication_failure (authentication.attempt)
+suppressed|linux-ssh-gateway:3|bower-pack-gcp-logging-tampering-001
+suppressed|linux-ssh-gateway:4|bower-pack-gcp-logging-tampering-001
+alert|linux-ssh-gateway:5|bower-pack-ssh-auth-failure-001|SSH sign-in failure from gateway|1.0.0|9a810e29f0f6267b2b36a9629785a4548a4fd9ee53166d82658afd6ce1a0dade|medium|50|2026-10-17T01:02:03.4567000+00:00|sample-ssh-5|authentication_failure|svc|203.0.113.9|T1110|EventType,EventResult|SSH sign-in failure from gateway matched event authentication_failure (authentication.attempt)
+alert|linux-ssh-gateway:5|bower-auth-failure-001|Authentication Failure Observed|1.0.0|6b8cf695fed2a7970710032785a48759862efbe4e545666eb82eae0842159688|medium|50|2026-10-17T01:02:03.4567000+00:00|sample-ssh-5|authentication_failure|svc|203.0.113.9|T1110|EventType,EventResult|Authentication Failure Observed matched event authentication_failure (authentication.attempt)
+suppressed|linux-ssh-gateway:5|bower-pack-gcp-logging-tampering-001
+alert|aws-security:1|bower-pack-aws-console-login-failure-001|AWS console sign-in failure|1.0.0|849cef1d85aacdb8275fa04ea7b2817634aa29037cc1cdbc11e568b2eb4ca66f|medium|50|2026-10-17T01:02:03.4567000+00:00|sample-aws-1|aws_cloudtrail|root|203.0.113.10|T1110|EventType,EventAction,EventResult|AWS console sign-in failure matched event aws_cloudtrail (ConsoleLogin)
+alert|aws-security:1|bower-pack-aws-root-activity-001|AWS root user activity|1.0.0|e6c03b31ffc09f01d2b2b3f44be3f94f52a5b10e864586988403254007501e2f|high|75|2026-10-17T01:02:03.4567000+00:00|sample-aws-1|aws_cloudtrail|root|203.0.113.10|T1078.004|EventType,aws.identityType|AWS root user activity matched event aws_cloudtrail (ConsoleLogin)
+suppressed|aws-security:1|bower-pack-gcp-logging-tampering-001
+alert|aws-security:2|bower-pack-aws-logging-tampering-001|AWS audit logging or key protection disabled|1.0.0|7519ba0323f50e9db2200bc72a2b588d2da7be0ab06a05d56fadf7e47f6a854b|critical|95|2026-10-17T01:02:03.4567000+00:00|sample-aws-2|aws_cloudtrail|Admin|198.51.100.7|T1562.008|EventType,EventAction|AWS audit logging or key protection disabled matched event aws_cloudtrail (StopLogging)
+suppressed|aws-security:2|bower-pack-gcp-logging-tampering-001
+suppressed|aws-security:3|bower-pack-gcp-logging-tampering-001
+suppressed|aws-security:4|bower-pack-gcp-logging-tampering-001
+suppressed|aws-security:5|bower-pack-gcp-logging-tampering-001
+alert|aws-security:6|bower-pack-aws-access-key-created-001|AWS long-lived access key created|1.0.0|2c53cca1674edcd8aab4b3fad6ea57662de8aecdfc4e40fc497df88d15997748|medium|50|2026-10-17T01:02:03.4567000+00:00|sample-aws-6|aws_cloudtrail|Admin|198.51.100.7|T1098.001|EventType,EventAction,EventResult|AWS long-lived access key created matched event aws_cloudtrail (CreateAccessKey)
+suppressed|aws-security:6|bower-pack-gcp-logging-tampering-001
+suppressed|aws-security:7|bower-pack-gcp-logging-tampering-001
+alert|gcp-security:1|bower-pack-gcp-sa-key-created-001|Google Cloud service account key created|1.0.0|5df18a9c21e315b68467bacc16295d9c0f3683c9d28d223c74eb93ada11f420d|high|75|2026-10-17T01:02:03.4567000+00:00|sample-gcp-1|gcp_cloud_audit|alice@example.com|203.0.113.20|T1098.001|EventType,EventAction,EventResult|Google Cloud service account key created matched event gcp_cloud_audit (google.iam.admin.v1.CreateServiceAccountKey)
+suppressed|gcp-security:1|bower-pack-gcp-logging-tampering-001
+alert|gcp-security:2|bower-pack-gcp-permission-denied-001|Google Cloud admin call denied|1.0.0|09b16a40f794fa2a4bf64deb8fa0af879eecbedc15575c19dce9f7f0cfa9740f|low|25|2026-10-17T01:02:03.4567000+00:00|sample-gcp-2|gcp_cloud_audit|deployer@bower-prod.iam.gserviceaccount.com|<null>|T1078|EventType,EventResult|Google Cloud admin call denied matched event gcp_cloud_audit (SetIamPolicy)
+suppressed|gcp-security:2|bower-pack-gcp-logging-tampering-001
+suppressed|gcp-security:3|bower-pack-gcp-logging-tampering-001
+alert|gcp-security:4|bower-pack-gcp-iam-policy-changed-001|Google Cloud IAM policy changed|1.0.0|6c11b173b1028dd8d893ee5952a922a180368dd9a33f0dc9ac9c2d0478e6c598|medium|50|2026-10-17T01:02:03.4567000+00:00|sample-gcp-4|gcp_cloud_audit|<null>|<null>|T1098|EventType,EventAction,EventResult|Google Cloud IAM policy changed matched event gcp_cloud_audit (SetIamPolicy)
+suppressed|gcp-security:4|bower-pack-gcp-logging-tampering-001
+suppressed|gcp-security:5|bower-pack-gcp-logging-tampering-001
+suppressed|gcp-security:6|bower-pack-gcp-logging-tampering-001
+suppressed|envelope-aws-guardduty.json|bower-pack-gcp-logging-tampering-001
+alert|envelope-aws-root.json|bower-pack-aws-console-login-failure-001|AWS console sign-in failure|1.0.0|849cef1d85aacdb8275fa04ea7b2817634aa29037cc1cdbc11e568b2eb4ca66f|medium|50|2026-10-17T01:02:03.4567000+00:00|aws-407a2a0aabf5e672a6613f125e19f6b9|aws_cloudtrail|root|203.0.113.10|T1110|EventType,EventAction,EventResult|AWS console sign-in failure matched event aws_cloudtrail (ConsoleLogin)
+alert|envelope-aws-root.json|bower-pack-aws-root-activity-001|AWS root user activity|1.0.0|e6c03b31ffc09f01d2b2b3f44be3f94f52a5b10e864586988403254007501e2f|high|75|2026-10-17T01:02:03.4567000+00:00|aws-407a2a0aabf5e672a6613f125e19f6b9|aws_cloudtrail|root|203.0.113.10|T1078.004|EventType,aws.identityType|AWS root user activity matched event aws_cloudtrail (ConsoleLogin)
+suppressed|envelope-aws-root.json|bower-pack-gcp-logging-tampering-001
+suppressed|envelope-aws-securityhub.json|bower-pack-gcp-logging-tampering-001
+alert|envelope-aws-stop.json|bower-pack-aws-logging-tampering-001|AWS audit logging or key protection disabled|1.0.0|7519ba0323f50e9db2200bc72a2b588d2da7be0ab06a05d56fadf7e47f6a854b|critical|95|2026-10-17T01:02:03.4567000+00:00|aws-7616752a676831bca4a1a804a5f367c0|aws_cloudtrail|Admin|198.51.100.7|T1562.008|EventType,EventAction|AWS audit logging or key protection disabled matched event aws_cloudtrail (StopLogging)
+suppressed|envelope-aws-stop.json|bower-pack-gcp-logging-tampering-001
+alert|envelope-gcp-audit.json|bower-pack-gcp-sa-key-created-001|Google Cloud service account key created|1.0.0|5df18a9c21e315b68467bacc16295d9c0f3683c9d28d223c74eb93ada11f420d|high|75|2026-10-17T01:02:03.4567000+00:00|gcp-15459fc62cf93c9562307f0f167b36da|gcp_cloud_audit|alice@example.com|203.0.113.20|T1098.001|EventType,EventAction,EventResult|Google Cloud service account key created matched event gcp_cloud_audit (google.iam.admin.v1.CreateServiceAccountKey)
+suppressed|envelope-gcp-audit.json|bower-pack-gcp-logging-tampering-001
+alert|envelope-gcp-denied.json|bower-pack-gcp-permission-denied-001|Google Cloud admin call denied|1.0.0|09b16a40f794fa2a4bf64deb8fa0af879eecbedc15575c19dce9f7f0cfa9740f|low|25|2026-10-17T01:02:03.4567000+00:00|gcp-15459fc62cf93c9562307f0f167b36da|gcp_cloud_audit|alice@example.com|203.0.113.20|T1078|EventType,EventResult|Google Cloud admin call denied matched event gcp_cloud_audit (google.iam.admin.v1.CreateServiceAccountKey)
+suppressed|envelope-gcp-denied.json|bower-pack-gcp-logging-tampering-001
+suppressed|envelope-gcp-scc.json|bower-pack-gcp-logging-tampering-001
+repeat-alerts|0

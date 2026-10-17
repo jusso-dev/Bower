@@ -1,5 +1,4 @@
 using Bower.Abstractions;
-using Hangfire;
 
 namespace Bower.Collector.Jobs;
 
@@ -7,9 +6,8 @@ namespace Bower.Collector.Jobs;
 public sealed class QueueMaintenanceJob(IDurableEventStore queue)
 {
     public const string Id = "queue-maintenance";
+    public const int RetryAttempts = 2;
 
-    [AutomaticRetry(Attempts = 2)]
-    [DisableConcurrentExecution(timeoutInSeconds: 600)]
     public Task RunAsync(CancellationToken cancellationToken) =>
         queue.MaintainAsync(cancellationToken);
 }

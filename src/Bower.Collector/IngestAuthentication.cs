@@ -171,7 +171,8 @@ internal sealed class IngestAuthenticationFilter(IngestAuthentication authentica
 
         context.HttpContext.Response.Headers.WWWAuthenticate = "Bearer";
         return ValueTask.FromResult<object?>(Results.Json(
-            new { error = "A valid collector ingest token is required." },
+            new ErrorResponse("A valid collector ingest token is required."),
+            CollectorJsonContext.Default.ErrorResponse,
             statusCode: StatusCodes.Status401Unauthorized));
     }
 }

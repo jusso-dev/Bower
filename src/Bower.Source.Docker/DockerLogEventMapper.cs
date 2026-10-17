@@ -40,8 +40,6 @@ public sealed partial class DockerLogEventMapper(DockerMapperOptions options)
 {
     public const string SourceAdapter = "docker.json-file";
 
-    private static readonly JsonSerializerOptions EnvelopeOptions = BowerJson.Options;
-
     private readonly string configurationHash = "sha256:" + Convert.ToHexStringLower(SHA256.HashData(
         Encoding.UTF8.GetBytes($"{options.SidecarId}\u001f{options.Version}\u001f{options.DefaultEnvironment}")));
 
@@ -80,7 +78,7 @@ public sealed partial class DockerLogEventMapper(DockerMapperOptions options)
 
             string json = JsonSerializer.Serialize(
                 BuildSignal(container, record, observedAt, pattern, match),
-                EnvelopeOptions);
+                BowerJson.Envelope);
             return new DockerMappedEvent(DockerMappingKind.RecognisedSignal, json, pattern.Id);
         }
 

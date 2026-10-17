@@ -1,8 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
+using Bower.Redaction.Privacy.Yaml;
 using YamlDotNet.Core;
-using YamlDotNet.Serialization;
-using YamlDotNet.Serialization.NamingConventions;
 
 namespace Bower.Redaction.Privacy;
 
@@ -69,10 +68,7 @@ public static class PrivacyProfileLoader
         PrivacyProfileDocument document;
         try
         {
-            document = new DeserializerBuilder()
-                .WithNamingConvention(CamelCaseNamingConvention.Instance)
-                .Build()
-                .Deserialize<PrivacyProfileDocument>(yaml)
+            document = PrivacyProfileYamlReader.Read(yaml)
                 ?? throw new InvalidDataException("Privacy profile is empty.");
         }
         catch (YamlException exception)

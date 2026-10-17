@@ -1,0 +1,19 @@
+[package]
+name = "bower-dcr"
+description = "Sentinel schema model, DCR template generator, drift checks, ingestion preflight and DCR optimiser (port of Bower.Dcr)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bower-contracts.workspace = true
+chrono.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

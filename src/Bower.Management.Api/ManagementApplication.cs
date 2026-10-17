@@ -4,7 +4,6 @@ using System.Threading.RateLimiting;
 using Bower.Jobs;
 using Bower.Management.Api.Jobs;
 using Bower.Pipeline;
-using Hangfire;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -21,19 +20,29 @@ public static class ManagementApplication
         Action<WebApplicationBuilder>? configure = null,
         string? environmentName = null)
     {
-        WebApplicationBuilder builder = WebApplication.CreateBuilder(new WebApplicationOptions
+        // Slim builder: no reflection-based startup, as Native AOT requires. HTTPS endpoint
+        // configuration is opted back in because TLS may terminate at Kestrel.
+        WebApplicationBuilder builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions
         {
             Args = args,
             EnvironmentName = environmentName
         });
+        builder.WebHost.UseKestrelHttpsConfiguration();
         builder.Services.ConfigureHttpJsonOptions(options =>
-            options.SerializerOptions.Converters.Add(
-                new JsonStringEnumConverter(namingPolicy: null, allowIntegerValues: false)));
+        {
+            // Source-generated metadata only (Native AOT): no reflection fallback.
+            options.SerializerOptions.TypeInfoResolverChain.Clear();
+            options.SerializerOptions.TypeInfoResolverChain.Add(ManagementJsonContext.Default);
+            // Enum names as written, integers rejected (one converter per wire enum).
+            options.SerializerOptions.Converters.Add(new JsonStringEnumConverter<CollectorStatus>(null, false));
+            options.SerializerOptions.Converters.Add(new JsonStringEnumConverter<PipelineNodeKind>(null, false));
+            options.SerializerOptions.Converters.Add(new JsonStringEnumConverter<CustomLogFormat>(null, false));
+            options.SerializerOptions.Converters.Add(new JsonStringEnumConverter<CustomLogValueType>(null, false));
+        });
         builder.WebHost.UseUrls(
             Environment.GetEnvironmentVariable("BOWER_MANAGEMENT_LISTEN_URL")
             ?? "http://127.0.0.1:4320");
         builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
-        builder.Logging.AddFilter("Hangfire", LogLevel.Warning);
 
         bool developmentAuthentication = string.Equals(
             builder.Configuration["BOWER_AUTH_MODE"],
@@ -200,7 +209,7 @@ public static class ManagementApplication
 
         MapApi(app.MapGroup("/api"), developmentAuthentication);
 
-        app.MapGet("/health", () => Results.Ok(new { status = "healthy" }))
+        app.MapGet("/health", () => Results.Ok(new HealthResponse("healthy")))
             .AllowAnonymous()
             .DisableRateLimiting();
 
@@ -216,16 +225,17 @@ public static class ManagementApplication
     public static async Task InitializeAsync(WebApplication app, CancellationToken cancellationToken)
     {
         await app.Services.GetRequiredService<ManagementStore>().InitializeAsync(cancellationToken);
-        app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<CollectorStalenessJob>(
+        RecurringJobRegistry jobs = app.Services.GetRequiredService<RecurringJobRegistry>();
+        jobs.AddOrUpdate<CollectorStalenessJob>(
             CollectorStalenessJob.Id,
-            job => job.RunAsync(CancellationToken.None),
+            (job, token) => job.RunAsync(token),
             "*/5 * * * *",
-            new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
-        app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<CollectorInactivityJob>(
+            CollectorStalenessJob.RetryAttempts);
+        jobs.AddOrUpdate<CollectorInactivityJob>(
             CollectorInactivityJob.Id,
-            job => job.RunAsync(CancellationToken.None),
+            (job, token) => job.RunAsync(token),
             Cron.Daily(2),
-            new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
+            CollectorInactivityJob.RetryAttempts);
     }
 
     private static void MapApi(RouteGroupBuilder api, bool developmentAuthentication)
@@ -260,7 +270,7 @@ public static class ManagementApplication
                         if (!Enum.TryParse(status, true, out CollectorStatus value)
                             || !Enum.IsDefined(value))
                         {
-                            return Results.BadRequest(new { error = "Unknown collector status." });
+                            return Results.BadRequest(new ErrorResponse("Unknown collector status."));
                         }
 
                         parsed = value;
@@ -299,7 +309,7 @@ public static class ManagementApplication
                     catch (CollectorIdentityConflictException)
                     {
                         return Results.Conflict(
-                            new { error = "Collector id is bound to a different principal." });
+                            new ErrorResponse("Collector id is bound to a different principal."));
                     }
                     catch (ArgumentException)
                     {
@@ -335,7 +345,7 @@ public static class ManagementApplication
                     catch (CollectorStateException)
                     {
                         return Results.Conflict(
-                            new { error = "Collector is not approved to send heartbeats." });
+                            new ErrorResponse("Collector is not approved to send heartbeats."));
                     }
                     catch (ArgumentException)
                     {
@@ -365,13 +375,11 @@ public static class ManagementApplication
                     PipelineValidationResult validation = PipelineValidator.Validate(pipeline);
                     PipelinePerformanceEstimate estimate = PipelineValidator.Estimate(pipeline);
                     return Results.Ok(
-                        new
-                        {
+                        new PipelineValidationResponse(
                             validation.IsValid,
                             validation.Issues,
                             validation.TopologicalOrder,
-                            estimate
-                        });
+                            estimate));
                 })
             .RequireAuthorization("Operate");
 
@@ -389,7 +397,7 @@ public static class ManagementApplication
                     }
                     catch (Exception exception) when (IsCustomLogInputError(exception))
                     {
-                        return Results.BadRequest(new { error = CustomLogError(exception) });
+                        return Results.BadRequest(new ErrorResponse(CustomLogError(exception)));
                     }
                 })
             .WithMetadata(new RequestSizeLimitAttribute(600 * 1024))
@@ -409,7 +417,7 @@ public static class ManagementApplication
                     }
                     catch (Exception exception) when (IsCustomLogInputError(exception))
                     {
-                        return Results.BadRequest(new { error = CustomLogError(exception) });
+                        return Results.BadRequest(new ErrorResponse(CustomLogError(exception)));
                     }
                 })
             .WithMetadata(new RequestSizeLimitAttribute(600 * 1024))
@@ -513,18 +521,16 @@ public static class ManagementApplication
                 async (
                     string id,
                     ClaimsPrincipal user,
-                    BackgroundJobCatalog jobs,
-                    IRecurringJobManager manager,
+                    RecurringJobRegistry jobs,
                     ManagementStore store,
                     TimeProvider clock,
                     CancellationToken cancellationToken) =>
                 {
-                    if (!jobs.Exists(id))
+                    if (!jobs.Trigger(id))
                     {
                         return Results.NotFound();
                     }
 
-                    manager.Trigger(id);
                     await store.RecordAuditAsync(
                         "job.triggered",
                         "job",
@@ -560,7 +566,7 @@ public static class ManagementApplication
             ["entraApiScope"] = console["ApiScope"] ?? string.Empty,
             ["entraRedirectUri"] = console["RedirectUri"] ?? string.Empty
         };
-        return $"window.__BOWER_CONFIG__ = {System.Text.Json.JsonSerializer.Serialize(values)};\n";
+        return $"window.__BOWER_CONFIG__ = {System.Text.Json.JsonSerializer.Serialize(values, ManagementJsonContext.Default.DictionaryStringString)};\n";
     }
 
     private static bool IsCustomLogInputError(Exception exception) =>
@@ -619,7 +625,7 @@ public static class ManagementApplication
         catch (CollectorStateException)
         {
             return Results.Conflict(
-                new { error = "Collector is not in a state that allows this decision." });
+                new ErrorResponse("Collector is not in a state that allows this decision."));
         }
     }
 

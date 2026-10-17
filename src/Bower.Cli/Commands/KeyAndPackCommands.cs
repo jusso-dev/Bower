@@ -37,8 +37,6 @@ internal static class KeyCommands
 
 internal static class PackCommands
 {
-    private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
-
     /// <summary>bower pack build DIR --key PRIVATE.pem [--out DIR]</summary>
     public static int Build(string[] args)
     {
@@ -61,22 +59,22 @@ internal static class PackCommands
     public static int Inspect(string[] args)
     {
         LoadedPack pack = Load(args);
-        Console.WriteLine(JsonSerializer.Serialize(new
-        {
-            pack.Manifest.Id,
-            pack.Manifest.Version,
-            pack.Manifest.Name,
-            pack.Manifest.Owner,
-            signedBy = pack.SignedByKeyId,
-            pack.Manifest.PackHash,
-            policies = pack.Manifest.Policies,
-            files = pack.Manifest.Files.Select(file => new { file.Path, file.Role, file.Bytes }),
-            detections = pack.Detections.Count,
-            parsers = pack.Parsers.Count,
-            samples = pack.SampleLines.Count,
-            privacyProfile = pack.PrivacyProfileYaml is not null,
-            dcrTemplate = pack.DcrTemplateJson is not null
-        }, Indented));
+        Console.WriteLine(JsonSerializer.Serialize(
+            new PackInspectOutput(
+                pack.Manifest.Id,
+                pack.Manifest.Version,
+                pack.Manifest.Name,
+                pack.Manifest.Owner,
+                pack.SignedByKeyId,
+                pack.Manifest.PackHash,
+                pack.Manifest.Policies,
+                [.. pack.Manifest.Files.Select(file => new PackInspectFile(file.Path, file.Role, file.Bytes))],
+                pack.Detections.Count,
+                pack.Parsers.Count,
+                pack.SampleLines.Count,
+                pack.PrivacyProfileYaml is not null,
+                pack.DcrTemplateJson is not null),
+            CliJsonContext.Default.PackInspectOutput));
         return 0;
     }
 

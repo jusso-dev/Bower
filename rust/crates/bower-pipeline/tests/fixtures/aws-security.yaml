@@ -1,0 +1,37 @@
+id: template-aws-security
+name: AWS Security to multi-destination
+version: 1.0.0
+description: AWS sources → normalise → detect → dual output
+nodes:
+- id: cloudtrail
+  kind: Source
+  type: aws-cloudtrail
+- id: guardduty
+  kind: Source
+  type: aws-guardduty
+- id: normalise
+  kind: Normalise
+  type: ocsf
+- id: detect
+  kind: Detect
+  type: sigma
+- id: sentinel
+  kind: Output
+  type: azure-logs-ingestion
+- id: lake
+  kind: Output
+  type: security-lake
+edges:
+- from: cloudtrail
+  to: normalise
+- from: guardduty
+  to: normalise
+- from: normalise
+  to: detect
+- from: detect
+  to: sentinel
+- from: detect
+  to: lake
+tags:
+- template
+- aws

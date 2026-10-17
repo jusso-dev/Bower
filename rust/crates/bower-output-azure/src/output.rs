@@ -1,0 +1,692 @@
+//! `Bower.Output.AzureLogsIngestion`: delivery to a Data Collection Rule stream
+//! through the Azure Monitor Logs Ingestion REST API (`api-version=2023-01-01`).
+//!
+//! Wire behaviour follows `Azure.Monitor.Ingestion` 1.2 with Azure.Core defaults:
+//! records re-serialized as a JSON array, 1 MiB batches, gzip bodies, bearer
+//! tokens for `https://monitor.azure.com//.default`, exponential retries honouring
+//! `Retry-After`. Upload success is ingestion acceptance only, never proof of
+//! Sentinel queryability.
+
+use std::collections::HashSet;
+use std::io::Write;
+use std::sync::Arc;
+use std::time::Duration;
+
+use bower_contracts::{DeliveryFailure, DeliveryResult, OutputAdapter, QueuedEvent};
+use bower_dcr::SentinelSchema;
+use flate2::Compression;
+use flate2::write::GzEncoder;
+use reqwest::Url;
+use reqwest::header::{HeaderMap, HeaderValue};
+use serde_json::{Map, Value};
+use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
+
+use crate::credential::{CachedTokenProvider, TokenProvider};
+
+/// Token scope used by `LogsIngestionClient` for the public cloud.
+pub const MONITOR_SCOPE: &str = "https://monitor.azure.com//.default";
+/// Logs Ingestion REST API version used by `Azure.Monitor.Ingestion` 1.2.
+pub const API_VERSION: &str = "2023-01-01";
+/// `LogsIngestionClient.SingleUploadThreshold` (1 MiB): a batch is closed when
+/// `body + entry + 1 >= threshold`. Measured against the C# SDK, not assumed.
+pub const SINGLE_UPLOAD_THRESHOLD: usize = 1024 * 1024;
+/// `JsonNode.Parse` default maximum depth.
+const MAXIMUM_PAYLOAD_DEPTH: usize = 64;
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum AzureOutputError {
+    #[error("invalid Azure Logs Ingestion options: {0}")]
+    Invalid(String),
+}
+
+#[derive(Clone, Debug)]
+pub struct AzureLogsIngestionOptions {
+    pub id: String,
+    pub endpoint: Url,
+    pub dcr_immutable_id: String,
+    pub stream_name: String,
+    /// Parallel batch uploads (1..=32, default 4).
+    pub maximum_concurrency: usize,
+    /// Stream schema used for preflight checks before upload.
+    pub schema: SentinelSchema,
+}
+
+impl AzureLogsIngestionOptions {
+    pub fn new(
+        id: impl Into<String>,
+        endpoint: Url,
+        dcr_immutable_id: impl Into<String>,
+        stream_name: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            endpoint,
+            dcr_immutable_id: dcr_immutable_id.into(),
+            stream_name: stream_name.into(),
+            maximum_concurrency: 4,
+            schema: SentinelSchema::default_schema().clone(),
+        }
+    }
+
+    fn validate(&self) -> Result<(), AzureOutputError> {
+        for (name, value) in [
+            ("id", &self.id),
+            ("dcr_immutable_id", &self.dcr_immutable_id),
+            ("stream_name", &self.stream_name),
+        ] {
+            if value.trim().is_empty() {
+                return Err(AzureOutputError::Invalid(format!("{name} is required")));
+            }
+        }
+        if self.endpoint.scheme() != "https" {
+            return Err(AzureOutputError::Invalid(
+                "Azure ingestion endpoint must use HTTPS.".to_owned(),
+            ));
+        }
+        if !(1..=32).contains(&self.maximum_concurrency) {
+            return Err(AzureOutputError::Invalid(
+                "maximum_concurrency must be 1..=32".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Pipeline settings (Azure.Core `ClientOptions` defaults).
+#[derive(Clone, Debug)]
+pub struct IngestionClientOptions {
+    /// Retries after the first attempt (`RetryOptions.MaxRetries`, default 3).
+    pub max_retries: u32,
+    /// Base exponential delay (`RetryOptions.Delay`, default 0.8 s).
+    pub retry_delay: Duration,
+    /// Cap for computed delays (`RetryOptions.MaxDelay`, default 60 s). A larger
+    /// server `Retry-After` still wins, as in Azure.Core.
+    pub max_retry_delay: Duration,
+    /// Per-attempt timeout (`RetryOptions.NetworkTimeout`, default 100 s).
+    pub network_timeout: Duration,
+    pub scope: String,
+    /// Test transport: send requests to this base URL instead of `endpoint`
+    /// (the equivalent of replacing the C# `HttpPipelineTransport`). Validation of
+    /// the configured endpoint is unchanged.
+    pub transport_base_url: Option<Url>,
+}
+
+impl Default for IngestionClientOptions {
+    fn default() -> Self {
+        Self {
+            max_retries: 3,
+            retry_delay: Duration::from_millis(800),
+            max_retry_delay: Duration::from_secs(60),
+            network_timeout: Duration::from_secs(100),
+            scope: MONITOR_SCOPE.to_owned(),
+            transport_base_url: None,
+        }
+    }
+}
+
+pub struct AzureLogsIngestionOutput {
+    options: AzureLogsIngestionOptions,
+    client_options: IngestionClientOptions,
+    upload_url: Url,
+    http: reqwest::Client,
+    credential: Arc<dyn TokenProvider>,
+}
+
+impl AzureLogsIngestionOutput {
+    pub fn new(
+        options: AzureLogsIngestionOptions,
+        credential: Arc<dyn TokenProvider>,
+    ) -> Result<Self, AzureOutputError> {
+        Self::with_client_options(options, credential, IngestionClientOptions::default())
+    }
+
+    pub fn with_client_options(
+        options: AzureLogsIngestionOptions,
+        credential: Arc<dyn TokenProvider>,
+        client_options: IngestionClientOptions,
+    ) -> Result<Self, AzureOutputError> {
+        options.validate()?;
+        let base = client_options
+            .transport_base_url
+            .clone()
+            .unwrap_or_else(|| options.endpoint.clone());
+        let upload_url = upload_url(&base, &options.dcr_immutable_id, &options.stream_name)?;
+        let http = reqwest::Client::builder()
+            .timeout(client_options.network_timeout)
+            // Azure.Core does not follow redirects; never replay the bearer token.
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|_| AzureOutputError::Invalid("HTTP client could not be built".to_owned()))?;
+        Ok(Self {
+            options,
+            client_options,
+            upload_url,
+            http,
+            // BearerTokenAuthenticationPolicy caches the token in memory and refreshes
+            // it five minutes before expiry.
+            credential: Arc::new(CachedTokenProvider::new(credential)),
+        })
+    }
+}
+
+/// `{endpoint}/dataCollectionRules/{ruleId}/streams/{stream}?api-version=2023-01-01`
+/// with escaped path segments.
+fn upload_url(base: &Url, rule_id: &str, stream_name: &str) -> Result<Url, AzureOutputError> {
+    let mut url = base.clone();
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| AzureOutputError::Invalid("endpoint cannot be a base URL".to_owned()))?;
+        segments
+            .pop_if_empty()
+            .extend(["dataCollectionRules", rule_id, "streams", stream_name]);
+    }
+    url.set_query(Some(&format!("api-version={API_VERSION}")));
+    Ok(url)
+}
+
+fn failure(event_id: &str, code: impl Into<String>, is_retryable: bool) -> DeliveryFailure {
+    DeliveryFailure {
+        event_id: event_id.to_owned(),
+        code: code.into(),
+        is_retryable,
+        retry_after: None,
+    }
+}
+
+/// `JsonNode.Parse(payload) as JsonObject` with the default 64-level depth limit.
+/// A duplicate top-level property is unparseable too: C# throws on first access.
+fn try_parse_record(payload: &str) -> Option<Map<String, Value>> {
+    if exceeds_depth(payload.as_bytes(), MAXIMUM_PAYLOAD_DEPTH) {
+        return None;
+    }
+    if serde_json::from_str::<TopLevelKeys>(payload).is_ok_and(|keys| keys.duplicate) {
+        return None;
+    }
+    match serde_json::from_str::<Value>(payload) {
+        Ok(Value::Object(record)) => Some(record),
+        _ => None,
+    }
+}
+
+/// Detects a repeated top-level property name without materialising values.
+struct TopLevelKeys {
+    duplicate: bool,
+}
+
+impl<'de> serde::Deserialize<'de> for TopLevelKeys {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Keys;
+        impl<'de> serde::de::Visitor<'de> for Keys {
+            type Value = TopLevelKeys;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a JSON object")
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<TopLevelKeys, A::Error> {
+                let mut seen = HashSet::new();
+                let mut duplicate = false;
+                while let Some(key) = map.next_key::<String>()? {
+                    map.next_value::<serde::de::IgnoredAny>()?;
+                    duplicate |= !seen.insert(key);
+                }
+                Ok(TopLevelKeys { duplicate })
+            }
+        }
+        deserializer.deserialize_map(Keys)
+    }
+}
+
+fn exceeds_depth(text: &[u8], maximum: usize) -> bool {
+    let (mut depth, mut in_string, mut escaped) = (0usize, false, false);
+    for &byte in text {
+        if in_string {
+            match (escaped, byte) {
+                (true, _) => escaped = false,
+                (false, b'\\') => escaped = true,
+                (false, b'"') => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        match byte {
+            b'"' => in_string = true,
+            b'{' | b'[' => {
+                depth += 1;
+                if depth > maximum {
+                    return true;
+                }
+            }
+            b'}' | b']' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    false
+}
+
+fn read_event_id(record: &Map<String, Value>) -> Option<&str> {
+    record.get("eventId").and_then(Value::as_str)
+}
+
+/// One upload request: JSON array body and the events it carries.
+struct Batch {
+    body: Vec<u8>,
+    event_ids: Vec<String>,
+}
+
+/// `LogsIngestionClient.Batch`: entries are appended to a JSON array until adding
+/// the next one would reach the 1 MiB threshold; an entry above the threshold on its
+/// own is sent alone.
+fn batch_records(records: Vec<(String, Vec<u8>)>) -> Vec<Batch> {
+    let mut batches = Vec::new();
+    let mut body: Vec<u8> = vec![b'['];
+    let mut event_ids: Vec<String> = Vec::new();
+    for (event_id, entry) in records {
+        if entry.len() > SINGLE_UPLOAD_THRESHOLD {
+            let mut single = Vec::with_capacity(entry.len() + 2);
+            single.push(b'[');
+            single.extend_from_slice(&entry);
+            single.push(b']');
+            batches.push(Batch {
+                body: single,
+                event_ids: vec![event_id],
+            });
+            continue;
+        }
+        if !event_ids.is_empty() && body.len() + entry.len() + 1 >= SINGLE_UPLOAD_THRESHOLD {
+            body.push(b']');
+            batches.push(Batch {
+                body: std::mem::replace(&mut body, vec![b'[']),
+                event_ids: std::mem::take(&mut event_ids),
+            });
+        }
+        if !event_ids.is_empty() {
+            body.push(b',');
+        }
+        body.extend_from_slice(&entry);
+        event_ids.push(event_id);
+    }
+    if !event_ids.is_empty() {
+        body.push(b']');
+        batches.push(Batch { body, event_ids });
+    }
+    batches
+}
+
+/// Outcome of one batch after retries.
+enum BatchOutcome {
+    Accepted {
+        request_id: Option<String>,
+        status: u16,
+    },
+    /// `status` 0 means no HTTP response (transport, timeout or token failure).
+    Failed {
+        status: u16,
+        request_id: Option<String>,
+    },
+}
+
+/// Azure.Core `ResponseClassifier`: retriable HTTP statuses.
+fn is_retriable_status(status: u16) -> bool {
+    matches!(status, 408 | 429 | 500 | 502 | 503 | 504)
+}
+
+/// Server-requested delay: `retry-after-ms`, `x-ms-retry-after-ms`, then
+/// `Retry-After` (seconds or HTTP date).
+fn server_delay(headers: &HeaderMap) -> Option<Duration> {
+    let text = |name: &str| {
+        headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::trim)
+    };
+    for name in ["retry-after-ms", "x-ms-retry-after-ms"] {
+        if let Some(milliseconds) = text(name).and_then(|value| value.parse::<f64>().ok())
+            && milliseconds.is_finite()
+            && milliseconds >= 0.0
+        {
+            return Some(Duration::from_secs_f64(milliseconds / 1000.0));
+        }
+    }
+    let value = text("retry-after")?;
+    if let Ok(seconds) = value.parse::<u64>() {
+        return Some(Duration::from_secs(seconds));
+    }
+    let date = chrono::DateTime::parse_from_rfc2822(value).ok()?;
+    let remaining = date.signed_duration_since(chrono::Utc::now());
+    Some(remaining.to_std().unwrap_or(Duration::ZERO))
+}
+
+fn jitter() -> f64 {
+    let mut bytes = [0u8; 4];
+    if getrandom::fill(&mut bytes).is_err() {
+        return 1.0;
+    }
+    0.8 + 0.4 * f64::from(u32::from_le_bytes(bytes)) / f64::from(u32::MAX)
+}
+
+/// Azure.Core exponential `DelayStrategy`: `max(server, min(base * 2^(n-1) * jitter, max))`.
+fn retry_delay(
+    options: &IngestionClientOptions,
+    retry_number: u32,
+    server: Option<Duration>,
+) -> Duration {
+    let exponent = retry_number.saturating_sub(1).min(30);
+    let computed = options
+        .retry_delay
+        .mul_f64(f64::from(1u32 << exponent) * jitter());
+    let capped = computed.min(options.max_retry_delay);
+    server.map_or(capped, |server| server.max(capped))
+}
+
+#[derive(Clone)]
+struct Uploader {
+    http: reqwest::Client,
+    url: Url,
+    credential: Arc<dyn TokenProvider>,
+    options: IngestionClientOptions,
+}
+
+impl Uploader {
+    async fn upload(&self, body: Vec<u8>) -> BatchOutcome {
+        let mut encoder =
+            GzEncoder::new(Vec::with_capacity(body.len() / 4), Compression::default());
+        let compressed = match encoder.write_all(&body).and_then(|()| encoder.finish()) {
+            Ok(compressed) => compressed,
+            Err(_) => {
+                return BatchOutcome::Failed {
+                    status: 0,
+                    request_id: None,
+                };
+            }
+        };
+        let client_request_id = uuid::Uuid::new_v4().to_string();
+        let mut retry_number = 0u32;
+        loop {
+            let (retriable, server, outcome) = self.attempt(&compressed, &client_request_id).await;
+            if !retriable || retry_number >= self.options.max_retries {
+                return outcome;
+            }
+            retry_number += 1;
+            tokio::time::sleep(retry_delay(&self.options, retry_number, server)).await;
+        }
+    }
+
+    /// One try. Returns (retriable, server delay, outcome).
+    async fn attempt(
+        &self,
+        body: &[u8],
+        client_request_id: &str,
+    ) -> (bool, Option<Duration>, BatchOutcome) {
+        let token = match self.credential.get_token(&self.options.scope).await {
+            Ok(token) => token,
+            // Credential failures are not retried by the pipeline.
+            Err(_) => {
+                return (
+                    false,
+                    None,
+                    BatchOutcome::Failed {
+                        status: 0,
+                        request_id: None,
+                    },
+                );
+            }
+        };
+        let Ok(authorization) = HeaderValue::from_str(&format!("Bearer {}", token.token)) else {
+            return (
+                false,
+                None,
+                BatchOutcome::Failed {
+                    status: 0,
+                    request_id: None,
+                },
+            );
+        };
+        let mut authorization = authorization;
+        authorization.set_sensitive(true);
+        let request = self
+            .http
+            .post(self.url.clone())
+            .header(reqwest::header::AUTHORIZATION, authorization)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .header(reqwest::header::CONTENT_ENCODING, "gzip")
+            .header(reqwest::header::ACCEPT, "application/json")
+            .header("x-ms-client-request-id", client_request_id)
+            .header("x-ms-return-client-request-id", "true")
+            .body(body.to_vec());
+        match request.send().await {
+            Err(_) => (
+                true,
+                None,
+                BatchOutcome::Failed {
+                    status: 0,
+                    request_id: None,
+                },
+            ),
+            Ok(response) => {
+                let status = response.status();
+                let request_id = response
+                    .headers()
+                    .get("x-ms-request-id")
+                    .and_then(|value| value.to_str().ok())
+                    .map(str::to_owned);
+                let server = server_delay(response.headers());
+                // Drain the body so the connection can be reused; never inspect it.
+                let _ = response.bytes().await;
+                if status.is_success() {
+                    (
+                        false,
+                        None,
+                        BatchOutcome::Accepted {
+                            request_id,
+                            status: status.as_u16(),
+                        },
+                    )
+                } else {
+                    let code = status.as_u16();
+                    (
+                        is_retriable_status(code),
+                        server,
+                        BatchOutcome::Failed {
+                            status: code,
+                            request_id,
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+impl AzureLogsIngestionOutput {
+    /// Uploads `events`. Poison records (unparseable, id mismatch, preflight issue)
+    /// fail alone and are not retryable; HTTP failures map to `azure-http-{status}`,
+    /// retryable for 408, 429 and 5xx; failures without a response map to
+    /// `azure-upload-failed` (retryable).
+    pub async fn deliver_events(&self, events: &[QueuedEvent]) -> DeliveryResult {
+        if events.is_empty() {
+            return DeliveryResult::default();
+        }
+
+        let mut batch_event_ids: HashSet<&str> = HashSet::new();
+        let mut accepted_ids: Vec<&str> = Vec::new();
+        let mut records: Vec<(String, Vec<u8>)> = Vec::with_capacity(events.len());
+        let mut failures: Vec<DeliveryFailure> = Vec::new();
+        for item in events {
+            let Some(record) = try_parse_record(&item.payload) else {
+                // Never succeeds on retry: dead-letter it alone.
+                failures.push(failure(&item.event_id, "payload-invalid-json", false));
+                continue;
+            };
+            if read_event_id(&record) != Some(item.event_id.as_str()) {
+                failures.push(failure(&item.event_id, "payload-event-id-mismatch", false));
+                continue;
+            }
+            let issues = bower_dcr::preflight::check(&record, &self.options.schema);
+            if let Some(issue) = issues.first() {
+                // Azure would truncate, coerce or drop this row silently.
+                failures.push(failure(
+                    &item.event_id,
+                    format!("preflight-{}", issue.code),
+                    false,
+                ));
+                continue;
+            }
+            // Re-serialized as the SDK's JsonObject serializer writes it: strings
+            // re-escaped, number text and property order kept from the payload.
+            let Ok(entry) = bower_integrity::canonical_json::compact_from_str(&item.payload) else {
+                failures.push(failure(&item.event_id, "payload-invalid-json", false));
+                continue;
+            };
+            records.push((item.event_id.clone(), entry));
+            if batch_event_ids.insert(item.event_id.as_str()) {
+                accepted_ids.push(item.event_id.as_str());
+            }
+        }
+
+        if records.is_empty() {
+            return DeliveryResult {
+                acknowledged_event_ids: Vec::new(),
+                failures,
+                destination_acknowledgement: None,
+            };
+        }
+
+        let uploader = Uploader {
+            http: self.http.clone(),
+            url: self.upload_url.clone(),
+            credential: Arc::clone(&self.credential),
+            options: self.client_options.clone(),
+        };
+        let semaphore = Arc::new(Semaphore::new(self.options.maximum_concurrency));
+        // JoinSet aborts in-flight uploads when this future is dropped (cancellation).
+        let mut uploads: JoinSet<(usize, BatchOutcome)> = JoinSet::new();
+        let batches = batch_records(records);
+        let mut batch_ids: Vec<Vec<String>> = Vec::with_capacity(batches.len());
+        for (index, batch) in batches.into_iter().enumerate() {
+            batch_ids.push(batch.event_ids);
+            let uploader = uploader.clone();
+            let semaphore = Arc::clone(&semaphore);
+            uploads.spawn(async move {
+                let Ok(_permit) = semaphore.acquire_owned().await else {
+                    return (
+                        index,
+                        BatchOutcome::Failed {
+                            status: 0,
+                            request_id: None,
+                        },
+                    );
+                };
+                (index, uploader.upload(batch.body).await)
+            });
+        }
+
+        let mut failed: HashSet<String> = HashSet::new();
+        let mut last_response: Option<(Option<String>, u16)> = None;
+        while let Some(joined) = uploads.join_next().await {
+            let Ok((index, outcome)) = joined else {
+                // A panicked upload cannot be attributed safely: nothing is delivered.
+                failures.extend(
+                    accepted_ids
+                        .iter()
+                        .map(|id| failure(id, "azure-upload-unattributed", true)),
+                );
+                return DeliveryResult {
+                    acknowledged_event_ids: Vec::new(),
+                    failures,
+                    destination_acknowledgement: None,
+                };
+            };
+            match outcome {
+                BatchOutcome::Accepted { request_id, status } => {
+                    last_response = Some((request_id, status))
+                }
+                BatchOutcome::Failed { status, request_id } => {
+                    if status != 0 {
+                        last_response = Some((request_id, status));
+                    }
+                    for event_id in &batch_ids[index] {
+                        let code = if status == 0 {
+                            "azure-upload-failed".to_owned()
+                        } else {
+                            format!("azure-http-{status}")
+                        };
+                        let retryable =
+                            status == 0 || status == 408 || status == 429 || status >= 500;
+                        failures.push(failure(event_id, code, retryable));
+                        failed.insert(event_id.clone());
+                    }
+                }
+            }
+        }
+
+        let acknowledged: Vec<String> = accepted_ids
+            .iter()
+            .filter(|id| !failed.contains(**id))
+            .map(|id| (*id).to_owned())
+            .collect();
+        let acknowledgement = last_response.map(|(request_id, status)| {
+            format!(
+                "azure-logs-ingestion:accepted:{}",
+                request_id.unwrap_or_else(|| format!("http-{status}"))
+            )
+        });
+        DeliveryResult {
+            acknowledged_event_ids: acknowledged,
+            failures,
+            destination_acknowledgement: acknowledgement,
+        }
+    }
+}
+
+impl OutputAdapter for AzureLogsIngestionOutput {
+    fn id(&self) -> &str {
+        &self.options.id
+    }
+
+    async fn deliver(&self, events: &[QueuedEvent]) -> DeliveryResult {
+        self.deliver_events(events).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upload_url_matches_sdk() {
+        let base = Url::parse("https://example.ingest.monitor.azure.com").unwrap();
+        assert_eq!(
+            upload_url(&base, "dcr-1", "Custom-BowerSecurity")
+                .unwrap()
+                .as_str(),
+            "https://example.ingest.monitor.azure.com/dataCollectionRules/dcr-1/streams/Custom-BowerSecurity?api-version=2023-01-01"
+        );
+    }
+
+    #[test]
+    fn server_delay_prefers_milliseconds_headers() {
+        let mut headers = HeaderMap::new();
+        headers.insert("retry-after", HeaderValue::from_static("7"));
+        assert_eq!(server_delay(&headers), Some(Duration::from_secs(7)));
+        headers.insert("retry-after-ms", HeaderValue::from_static("250"));
+        assert_eq!(server_delay(&headers), Some(Duration::from_millis(250)));
+    }
+
+    #[test]
+    fn computed_delay_is_capped_but_server_delay_wins() {
+        let options = IngestionClientOptions::default();
+        let first = retry_delay(&options, 1, None);
+        assert!(first >= Duration::from_millis(640) && first <= Duration::from_millis(960));
+        assert_eq!(retry_delay(&options, 30, None), Duration::from_secs(60));
+        assert_eq!(
+            retry_delay(&options, 1, Some(Duration::from_secs(120))),
+            Duration::from_secs(120)
+        );
+    }
+}

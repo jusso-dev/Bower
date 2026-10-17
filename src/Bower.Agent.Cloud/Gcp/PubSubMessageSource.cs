@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Bower.Agent.Cloud.Gcp;
 
@@ -25,9 +26,11 @@ public sealed class PubSubMessageSource(HttpClient http, IGoogleAccessTokenSourc
 
     public async Task<IReadOnlyList<CloudMessage>> ReceiveAsync(int maximum, CancellationToken cancellationToken)
     {
-        PullResponse? response = await PostAsync<PullResponse>(
+        PullResponse? response = await PostAsync(
             "pull",
-            new { maxMessages = Math.Clamp(maximum, 1, 1000) },
+            new PullRequest(Math.Clamp(maximum, 1, 1000)),
+            PubSubJsonContext.Default.PullRequest,
+            PubSubJsonContext.Default.PullResponse,
             cancellationToken);
         return (response?.ReceivedMessages ?? [])
             .Where(item => item.AckId is not null)
@@ -40,7 +43,12 @@ public sealed class PubSubMessageSource(HttpClient http, IGoogleAccessTokenSourc
     }
 
     public Task AcknowledgeAsync(CloudMessage message, CancellationToken cancellationToken) =>
-        PostAsync<JsonElement>("acknowledge", new { ackIds = new[] { message.Handle } }, cancellationToken);
+        PostAsync(
+            "acknowledge",
+            new AcknowledgeRequest([message.Handle]),
+            PubSubJsonContext.Default.AcknowledgeRequest,
+            PubSubJsonContext.Default.JsonElement,
+            cancellationToken);
 
     public Task ReleaseAsync(CloudMessage message, TimeSpan delay, CancellationToken cancellationToken) =>
         ModifyAsync(message, delay, cancellationToken);
@@ -49,20 +57,25 @@ public sealed class PubSubMessageSource(HttpClient http, IGoogleAccessTokenSourc
         ModifyAsync(message, lease, cancellationToken);
 
     private async Task ModifyAsync(CloudMessage message, TimeSpan deadline, CancellationToken cancellationToken) =>
-        await PostAsync<JsonElement>(
+        await PostAsync(
             "modifyAckDeadline",
-            new
-            {
-                ackIds = new[] { message.Handle },
-                ackDeadlineSeconds = (int)Math.Clamp(deadline.TotalSeconds, 0, MaximumAckDeadlineSeconds)
-            },
+            new ModifyAckDeadlineRequest(
+                [message.Handle],
+                (int)Math.Clamp(deadline.TotalSeconds, 0, MaximumAckDeadlineSeconds)),
+            PubSubJsonContext.Default.ModifyAckDeadlineRequest,
+            PubSubJsonContext.Default.JsonElement,
             cancellationToken);
 
-    private async Task<T?> PostAsync<T>(string verb, object body, CancellationToken cancellationToken)
+    private async Task<TResponse?> PostAsync<TRequest, TResponse>(
+        string verb,
+        TRequest body,
+        JsonTypeInfo<TRequest> requestType,
+        JsonTypeInfo<TResponse> responseType,
+        CancellationToken cancellationToken)
     {
         using HttpRequestMessage request = new(HttpMethod.Post, $"v1/{subscription}:{verb}")
         {
-            Content = JsonContent.Create(body)
+            Content = JsonContent.Create(body, requestType)
         };
         request.Headers.Authorization = new AuthenticationHeaderValue(
             "Bearer",
@@ -74,7 +87,7 @@ public sealed class PubSubMessageSource(HttpClient http, IGoogleAccessTokenSourc
             throw new HttpRequestException($"Pub/Sub {verb} returned {(int)response.StatusCode}.", null, response.StatusCode);
         }
 
-        return await response.Content.ReadFromJsonAsync<T>(cancellationToken);
+        return await response.Content.ReadFromJsonAsync(responseType, cancellationToken);
     }
 
     private static byte[] Decode(string? data)
@@ -95,15 +108,31 @@ public sealed class PubSubMessageSource(HttpClient http, IGoogleAccessTokenSourc
         }
     }
 
-    private sealed record PullResponse(
+    // Request bodies: Web defaults (camelCase), as JsonContent.Create used before.
+    internal sealed record PullRequest(int MaxMessages);
+
+    internal sealed record AcknowledgeRequest(IReadOnlyList<string> AckIds);
+
+    internal sealed record ModifyAckDeadlineRequest(IReadOnlyList<string> AckIds, int AckDeadlineSeconds);
+
+    internal sealed record PullResponse(
         [property: JsonPropertyName("receivedMessages")] IReadOnlyList<ReceivedMessage>? ReceivedMessages);
 
-    private sealed record ReceivedMessage(
+    internal sealed record ReceivedMessage(
         [property: JsonPropertyName("ackId")] string? AckId,
         [property: JsonPropertyName("message")] PubSubMessage? Message,
         [property: JsonPropertyName("deliveryAttempt")] int? DeliveryAttempt);
 
-    private sealed record PubSubMessage(
+    internal sealed record PubSubMessage(
         [property: JsonPropertyName("data")] string? Data,
         [property: JsonPropertyName("messageId")] string? MessageId);
 }
+
+/// <summary>Source-generated Pub/Sub REST bodies (Web defaults, as JsonContent used).</summary>
+[JsonSourceGenerationOptions(JsonSerializerDefaults.Web)]
+[JsonSerializable(typeof(JsonElement))]
+[JsonSerializable(typeof(PubSubMessageSource.PullRequest))]
+[JsonSerializable(typeof(PubSubMessageSource.AcknowledgeRequest))]
+[JsonSerializable(typeof(PubSubMessageSource.ModifyAckDeadlineRequest))]
+[JsonSerializable(typeof(PubSubMessageSource.PullResponse))]
+internal sealed partial class PubSubJsonContext : JsonSerializerContext;

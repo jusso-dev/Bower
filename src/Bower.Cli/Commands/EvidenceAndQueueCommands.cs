@@ -8,8 +8,6 @@ namespace Bower.Cli.Commands;
 
 internal static class EvidenceCommands
 {
-    private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
-
     /// <summary>
     /// bower evidence run --collector-url URL [--workspace-id ID] [--workspace-resource-id RID]
     ///   [--table NAME] [--credential MODE] [--timeout-minutes N] [--signing-key FILE] [--out FILE]
@@ -41,7 +39,7 @@ internal static class EvidenceCommands
 
         string? key = CliOptions.Get(args, "--signing-key") is { } keyPath ? File.ReadAllText(keyPath) : null;
         SignedEvidence signed = EvidenceRunner.Sign(bundle, key);
-        string json = JsonSerializer.Serialize(signed, Indented);
+        string json = JsonSerializer.Serialize(signed, CliJsonContext.Default.SignedEvidence);
         string output = CliOptions.Get(args, "--out") ?? $"bower-evidence-{bundle.GeneratedAt:yyyyMMddTHHmmssZ}.json";
         File.WriteAllText(output, json);
 
@@ -70,7 +68,7 @@ internal static class EvidenceCommands
     public static int Verify(string[] args)
     {
         string file = CliOptions.Positional(args) ?? throw new ArgumentException("Provide an evidence bundle file.");
-        SignedEvidence evidence = JsonSerializer.Deserialize<SignedEvidence>(File.ReadAllText(file))
+        SignedEvidence evidence = JsonSerializer.Deserialize(File.ReadAllText(file), CliJsonContext.Default.SignedEvidence)
             ?? throw new InvalidDataException("Evidence bundle is unreadable.");
         string[] keys = CliOptions.All(args, "--trusted-key").Select(File.ReadAllText).ToArray();
         bool valid = EvidenceRunner.Verify(evidence, keys);
@@ -84,8 +82,6 @@ internal static class EvidenceCommands
 
 internal static class QueueCommands
 {
-    private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
-
     private static async Task<SqliteEventStore> OpenAsync(string[] args)
     {
         string path = CliOptions.Get(args, "--database") ?? Path.Combine(Directory.GetCurrentDirectory(), "data", "bower.db");
@@ -104,7 +100,7 @@ internal static class QueueCommands
     {
         SqliteEventStore store = await OpenAsync(args);
         IReadOnlyList<DeadLetterRecord> records = await store.ListDeadLetteredAsync(CliOptions.Int(args, "--max", 100));
-        Console.WriteLine(JsonSerializer.Serialize(records, Indented));
+        Console.WriteLine(JsonSerializer.Serialize(records, CliJsonContext.Default.IReadOnlyListDeadLetterRecord));
         return 0;
     }
 

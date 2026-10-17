@@ -48,10 +48,10 @@ releases malformed messages to them and never deletes on backpressure. See
 ## Background jobs
 
 Delivery is a low-latency hosted loop (`QueueDeliveryWorker`) driven by queue
-leases. Hangfire (`Bower.Jobs`, in-memory storage) runs only idempotent
-maintenance and reporting: queue retention, SQLite maintenance and the management
-heartbeat on collectors, and collector staleness on the management API. Losing
-Hangfire state on restart is harmless because durable state lives in Bower's
+leases. The in-process cron scheduler (`Bower.Jobs`, in-memory state) runs only
+idempotent maintenance and reporting: queue retention, SQLite maintenance and the
+management heartbeat on collectors, and collector staleness and inactivity on the
+management API. Losing scheduler state on restart is harmless because durable state lives in Bower's
 SQLite stores. See [background jobs](../operations/background-jobs.md).
 
 ## Current limits

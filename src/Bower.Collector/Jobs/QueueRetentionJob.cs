@@ -1,5 +1,4 @@
 using Bower.Abstractions;
-using Hangfire;
 
 namespace Bower.Collector.Jobs;
 
@@ -14,10 +13,9 @@ public sealed partial class QueueRetentionJob(
     ILogger<QueueRetentionJob> logger)
 {
     public const string Id = "queue-retention";
+    public const int RetryAttempts = 3;
     private const int BatchSize = 5_000;
 
-    [AutomaticRetry(Attempts = 3)]
-    [DisableConcurrentExecution(timeoutInSeconds: 600)]
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         DateTimeOffset cutoff = clock.GetUtcNow() - settings.DeliveredRetention;

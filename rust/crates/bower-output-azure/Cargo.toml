@@ -1,0 +1,30 @@
+[package]
+name = "bower-output-azure"
+description = "Bower Azure Monitor Logs Ingestion output and Entra credential sources (port of Bower.Output.AzureLogsIngestion)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bower-contracts.workspace = true
+bower-dcr.workspace = true
+bower-integrity.workspace = true
+chrono.workspace = true
+flate2.workspace = true
+getrandom.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+hex.workspace = true
+sha2.workspace = true
+
+[lints]
+workspace = true

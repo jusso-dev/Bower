@@ -19,9 +19,7 @@ namespace Bower.Cli.Commands;
 /// </summary>
 internal static class DoctorCommand
 {
-    private sealed record Check(string Status, string Area, string Detail);
-
-    private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
+    internal sealed record Check(string Status, string Area, string Detail);
 
     private static readonly string[] AustralianRegions = ["australiaeast", "australiasoutheast", "australiacentral", "australiacentral2"];
 
@@ -204,7 +202,7 @@ internal static class DoctorCommand
 
         if (CliOptions.Has(args, "--json"))
         {
-            Console.WriteLine(JsonSerializer.Serialize(checks, Indented));
+            Console.WriteLine(JsonSerializer.Serialize(checks, CliJsonContext.Default.ListCheck));
         }
         else
         {
@@ -324,5 +322,5 @@ internal static class DoctorCommand
             Actor = new ActorContext { Username = "doctor" },
             Source = new SourceContext { IpAddress = "192.0.2.1" },
             Request = new RequestContext { CorrelationId = "doctor" }
-        }, BowerJson.Options);
+        }, BowerJson.Envelope);
 }

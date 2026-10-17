@@ -19,3 +19,6 @@ candidate events to a Bower collector. Event selection stays in collector policy
   failure types only.
 - Unit tests use fakes for queues and S3; no live cloud calls.
 - Exit with a status code on fatal errors (PID 1 aborts can hang).
+- Bower code here must stay trim/AOT safe (it is analysed on every build). The host is
+  not published as Native AOT only because Google.Apis.Auth needs Newtonsoft.Json
+  reflection; see docs/architecture/dependencies.md.

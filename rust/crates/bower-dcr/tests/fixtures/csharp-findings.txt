@@ -1,0 +1,25 @@
+finding|drift-rule|Error|stream-column-missing|Stream column 'eventId' is missing; the value is dropped at ingestion.
+finding|drift-rule|Error|stream-column-type|Stream column 'timeGenerated' is 'int', expected 'datetime'.
+finding|drift-rule|Error|output-stream|Data flow writes to 'Custom-Other_CL', expected 'Custom-BowerSecurity_CL'.
+finding|drift-rule|Warning|transform-drift|Deployed transformKql differs from the transformation Bower generates. Regenerate with `bower dcr generate` or review the change.
+finding|drift-rule|Info|filter-present|The transformation filters rows. Filtered rows are dropped without an error; confirm the filter matches Bower's policy.
+finding|drift-table|Error|table-column-missing|Table column 'EventId' is missing; the transformation cannot write it.
+finding|drift-table|Error|table-column-type|Table column 'EventType' is 'int', expected 'string'.
+finding|drift-table|Warning|retention-short|Total retention is 90 days; ISM event logging guidance expects at least 365.
+finding|drift-table-400|Error|table-column-missing|Table column 'EventId' is missing; the transformation cannot write it.
+finding|drift-table-400|Error|table-column-type|Table column 'EventType' is 'int', expected 'string'.
+finding|drift-table-400|Warning|retention-short|Total retention is 90 days; ISM event logging guidance expects at least 400.
+finding|drift-agent|Info|rule-not-direct|DCR kind is 'AgentDirectToStore'. Bower expects 'Direct' so the rule exposes its own ingestion endpoint; a DCE is then needed only for Private Link.
+finding|drift-agent|Error|stream-missing|Stream declaration 'Custom-BowerSecurity' is not deployed.
+finding|drift-agent|Error|dataflow-missing|No data flow consumes 'Custom-BowerSecurity'; ingested events are discarded.
+finding|lint-long|Error|transform-too-long|transformKql is 15369 characters; Azure's limit is 15360.
+finding|lint-regex|Warning|parse-regex-full-match|`parse kind=regex` must match the whole value; a partial match leaves every extracted column empty without an error.
+finding|lint-many|Warning|parse-too-many-columns|A `parse` statement extracts more than 10 columns; transformations support at most 10 per parse.
+finding|lint-where|Info|filter-present|The transformation filters rows. Filtered rows are dropped without an error; confirm the filter matches Bower's policy.
+finding|lint-schema|Error|column-name|Column 'TenantId' is reserved or invalid (start with a letter; letters, digits, underscore; 45 characters max).
+finding|lint-schema|Error|column-name|Column '1bad' is reserved or invalid (start with a letter; letters, digits, underscore; 45 characters max).
+preflight|type-mismatch|timeGenerated|Expected datetime, got String; Azure would store an empty or stringified value.
+preflight|type-mismatch|eventType|Expected string, got Object; Azure would store an empty or stringified value.
+preflight|type-mismatch|eventSeverity|Expected string, got Number; Azure would store an empty or stringified value.
+preflight|field-too-large|actor|Field is 70015 bytes; Azure silently truncates values above 65536.
+preflight|time-generated-missing|timeGenerated|Rows without timeGenerated cannot be placed in time.

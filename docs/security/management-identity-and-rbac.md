@@ -95,7 +95,7 @@ BOWER_ENVIRONMENT=production
 The credential selected by `BOWER_AZURE_CREDENTIAL` (managed identity by default)
 obtains the machine token. The token is held in memory and attached per request,
 never persisted or logged. Remote endpoints must use HTTPS; the collector refuses
-to start otherwise. The heartbeat runs as the `management-heartbeat` Hangfire job
+to start otherwise. The heartbeat runs as the `management-heartbeat` recurring job
 every minute and also reports the collector's background job states. A failed heartbeat is a management health condition; it
 does not interrupt the collector's local ingestion or destination delivery.
 

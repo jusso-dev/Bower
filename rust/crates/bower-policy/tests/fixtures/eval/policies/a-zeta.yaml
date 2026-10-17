@@ -1,0 +1,14 @@
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+metadata:
+  id: ZETA-OVERLAP
+  name: Overlap later id
+  version: 2.0.0
+  owner: T
+match:
+  eventTypes: [role_membership_changed]
+requirements:
+  requiredFields: [actor.userId]
+decision:
+  action: sample
+  minimumValueScore: 10

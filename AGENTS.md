@@ -16,7 +16,7 @@ control plane, or runtime AI filter.
 - `src/Bower.Redaction`: Privacy & Secret Protection Engine — modular detectors (AU identifiers, financial, secrets, crypto), policy actions, privacy metadata; redacts before persistence.
 - `src/Bower.Persistence`: SQLite queue, cursors, delivery state and evidence.
 - `src/Bower.Core`: source-to-policy-to-queue orchestration.
-- `src/Bower.Jobs`: shared Hangfire wiring for recurring maintenance and health jobs.
+- `src/Bower.Jobs`: in-process cron scheduler for recurring maintenance and health jobs.
 - `src/Bower.Integrity`: ECDSA signing and canonical JSON for packs and evidence.
 - `src/Bower.Packs`: signed, versioned packs (policy, privacy, parsers, detections, samples, DCR).
 - `src/Bower.Evidence`: Sentinel query-verified, signed evidence bundles.
@@ -39,6 +39,7 @@ control plane, or runtime AI filter.
 - `src/Bower.Source.Docker`: read-only Docker json-file discovery, tailing and event mapping.
 - `src/Bower.Agent.Docker`: Docker sidecar that forwards opted-in container security events.
 - `packs`: signed content packs (`linux-ssh-gateway`, `aws-security`, `gcp-security`).
+- `rust`: Rust port of the data plane (`bower-collector`, `bower` CLI and their libraries); C# is the specification. See `rust/AGENTS.md`.
 - `deploy/aws`, `deploy/gcp`: CloudFormation and Terraform for cloud signal (plan-only by default).
 - `schemas`, `policies`, `deploy`, `docs`, `tests`: versioned product assets.
 
@@ -78,7 +79,7 @@ cd ui/Bower.Management.Web && npm ci && npm run lint && npm test && npm run buil
 - Queue or redaction changes require crash/recovery or adversarial tests.
 - Do not add dependencies without written justification in
   `docs/architecture/dependencies.md`.
-- Never move event delivery, acknowledgement or queue state into Hangfire.
+- Never move event delivery, acknowledgement or queue state into scheduled jobs.
 - Update docs, schemas and event catalogue with behavior changes.
 
 ## Pull requests and definition of done

@@ -1,0 +1,39 @@
+id: id
+name: 'word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word: quoted'
+version: 1
+description: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word
+nodes:
+- id: a
+  kind: Source
+  type: t
+  config:
+    single: 'word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word: quoted'
+    dq: "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word \x01 x"
+    multi: >-
+      word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word
+
+      word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word
+
+
+      end
+    multi2: >
+      a
+
+
+
+      b
+    lead: >2-
+       lead
+      x
+- id: b
+  kind: Output
+  type: t
+  config: {}
+edges: []
+tags: []
+id: ''
+name: ''
+version: ''
+description: ''
+nodes: []
+edges: []

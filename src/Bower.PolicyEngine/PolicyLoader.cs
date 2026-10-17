@@ -2,9 +2,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Bower.Contracts;
+using Bower.PolicyEngine.Yaml;
 using YamlDotNet.Core;
-using YamlDotNet.Serialization;
-using YamlDotNet.Serialization.NamingConventions;
 
 namespace Bower.PolicyEngine;
 
@@ -57,14 +56,10 @@ public static class PolicyLoader
         string path = sourceName;
         // Strict: an unknown or misspelt key (for example "requirments") must fail the load
         // rather than silently drop the requirements it was meant to carry.
-        IDeserializer deserializer = new DeserializerBuilder()
-            .WithNamingConvention(CamelCaseNamingConvention.Instance)
-            .Build();
-
         TelemetryPolicy policy;
         try
         {
-            policy = deserializer.Deserialize<TelemetryPolicy>(yaml)
+            policy = PolicyYamlReader.Read(yaml)
                 ?? throw new InvalidDataException("Policy is empty.");
         }
         catch (YamlException exception)
@@ -75,7 +70,7 @@ public static class PolicyLoader
         }
 
         Validate(policy);
-        string canonicalJson = JsonSerializer.Serialize(policy);
+        string canonicalJson = JsonSerializer.Serialize(policy, PolicyHashJsonContext.Default.TelemetryPolicy);
         string hash = $"sha256:{Convert.ToHexStringLower(
             SHA256.HashData(Encoding.UTF8.GetBytes(canonicalJson)))}";
         return new LoadedPolicy(policy, hash, path);

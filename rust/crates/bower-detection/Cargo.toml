@@ -1,0 +1,24 @@
+[package]
+name = "bower-detection"
+description = "Sigma-compatible detection rule loading and deterministic matching (port of Bower.Detection)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bower-contracts.workspace = true
+hex.workspace = true
+serde.workspace = true
+serde_yaml_ng.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+indexmap.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

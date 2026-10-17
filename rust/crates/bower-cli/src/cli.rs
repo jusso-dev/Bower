@@ -1,0 +1,396 @@
+//! Command surface of the C# `bower` CLI (`src/Bower.Cli/Program.cs`).
+//!
+//! Every option the C# code reads is declared here, including ones its help text
+//! omits (`--plan`, `--credential`, `--client-id`, `--timeout-minutes`, `--max`).
+//! Clap only renders `--help` from these types; `args::parse` fills them with C#
+//! `CliOptions` semantics, and commands validate required values so missing ones
+//! produce the C# messages and exit code 1.
+
+use clap::{Args, Parser, Subcommand};
+
+#[derive(Debug, Parser)]
+#[command(
+    name = "bower",
+    about = "Bower security telemetry",
+    disable_help_subcommand = true,
+    disable_version_flag = true,
+    subcommand_required = true
+)]
+pub struct Cli {
+    #[command(subcommand)]
+    pub command: Command,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum Command {
+    /// Print the CLI version.
+    Version,
+    /// Load a policy directory strictly and print policy ids, versions and hashes.
+    Validate(ValidateArgs),
+    /// Validate pipeline files and print pipeline templates.
+    #[command(subcommand)]
+    Pipeline(PipelineCommand),
+    /// Inspect, verify and replay the local SQLite queue (metadata only).
+    #[command(subcommand)]
+    Queue(QueueCommand),
+    /// Send synthetic test events.
+    #[command(subcommand)]
+    Test(TestCommand),
+    /// Generate collector ingest tokens.
+    #[command(subcommand)]
+    Token(TokenCommand),
+    /// Check a Bower deployment for silent-loss risks and misconfiguration (exit 1 on any FAIL).
+    Doctor(DoctorArgs),
+    /// Generate the Sentinel DCR template or diff a deployed DCR against Bower's schema.
+    #[command(subcommand)]
+    Dcr(DcrCommand),
+    /// Generate ECDSA P-256 signing keys.
+    #[command(subcommand)]
+    Keys(KeysCommand),
+    /// Build, verify, inspect, test and diff signed content packs.
+    #[command(subcommand)]
+    Pack(PackCommand),
+    /// Produce and verify signed Sentinel delivery evidence bundles.
+    #[command(subcommand)]
+    Evidence(EvidenceCommand),
+    /// Developer project scaffolding.
+    #[command(subcommand)]
+    Developer(DeveloperCommand),
+}
+
+#[derive(Debug, Args)]
+pub struct ValidateArgs {
+    /// Policy directory [default: ./policies/default].
+    #[arg(long = "policy-directory", value_name = "PATH")]
+    pub policy_directory: Option<String>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PipelineCommand {
+    /// Validate a pipeline YAML file (exit 2 when invalid).
+    Validate(PipelineValidateArgs),
+    /// Print a pipeline template as YAML.
+    Template(PipelineTemplateArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct PipelineValidateArgs {
+    /// Pipeline YAML file.
+    #[arg(long = "file", value_name = "PATH")]
+    pub file: Option<String>,
+    /// Pipeline YAML file (when --file is not given).
+    #[arg(value_name = "PATH")]
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct PipelineTemplateArgs {
+    /// Template id: sentinel-app or aws-security [default: sentinel-app].
+    #[arg(long = "id", value_name = "ID")]
+    pub id: Option<String>,
+    /// Template id (when --id is not given).
+    #[arg(value_name = "ID")]
+    pub template: Option<String>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum QueueCommand {
+    /// Print queue state counts as JSON.
+    Inspect(DatabaseArgs),
+    /// List dead-lettered events (metadata only).
+    #[command(name = "dead-letters")]
+    DeadLetters(DeadLettersArgs),
+    /// Return dead-lettered events to the queue.
+    Replay(ReplayArgs),
+    /// Verify the tamper-evident queue ledger.
+    Verify(QueueVerifyArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct DatabaseArgs {
+    /// Queue database [default: ./data/bower.db].
+    #[arg(long = "database", value_name = "FILE")]
+    pub database: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct DeadLettersArgs {
+    #[command(flatten)]
+    pub database: DatabaseArgs,
+    /// Maximum records [default: 100].
+    #[arg(long = "max", value_name = "N")]
+    pub max: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct ReplayArgs {
+    #[command(flatten)]
+    pub database: DatabaseArgs,
+    /// Replay dead letters whose failure code starts with PREFIX.
+    #[arg(long = "code", value_name = "PREFIX")]
+    pub code: Option<String>,
+    /// Replay a dead-lettered event id (repeatable).
+    #[arg(long = "event", value_name = "ID")]
+    pub events: Vec<String>,
+    /// Maximum events [default: 1000].
+    #[arg(long = "max", value_name = "N")]
+    pub max: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct QueueVerifyArgs {
+    #[command(flatten)]
+    pub database: DatabaseArgs,
+    /// Fail when the ledger is behind or differs from a witnessed head.
+    #[arg(long = "expect-head", value_name = "SEQUENCE:HASH")]
+    pub expect_head: Option<String>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TestCommand {
+    /// Send a synthetic canary event to a collector (sends BOWER_INGEST_TOKEN when set).
+    Emit(EmitArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct EmitArgs {
+    /// Collector base URL [default: http://127.0.0.1:4319].
+    #[arg(long = "endpoint", value_name = "URL")]
+    pub endpoint: Option<String>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TokenCommand {
+    /// Generate a new ingest token; --id also prints a tokens-file line.
+    Generate(TokenGenerateArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct TokenGenerateArgs {
+    /// Producer id for the BOWER_INGEST_TOKENS_FILE line.
+    #[arg(long = "id", value_name = "PRODUCER")]
+    pub id: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct DoctorArgs {
+    /// Policy directory [default: policies/default].
+    #[arg(long = "policy-directory", value_name = "DIR")]
+    pub policy_directory: Option<String>,
+    /// Signed pack to verify (repeatable).
+    #[arg(long = "pack", value_name = "FILE")]
+    pub packs: Vec<String>,
+    /// Trusted public key for packs (repeatable).
+    #[arg(long = "trusted-key", value_name = "PUB")]
+    pub trusted_keys: Vec<String>,
+    /// Privacy profile YAML.
+    #[arg(long = "privacy-profile", value_name = "FILE")]
+    pub privacy_profile: Option<String>,
+    /// HMAC key file for the privacy profile.
+    #[arg(long = "hmac-key-file", value_name = "FILE")]
+    pub hmac_key_file: Option<String>,
+    /// Live collector base URL.
+    #[arg(long = "collector-url", value_name = "URL")]
+    pub collector_url: Option<String>,
+    /// Queue database whose ledger to verify.
+    #[arg(long = "database", value_name = "FILE")]
+    pub database: Option<String>,
+    /// Logs Ingestion endpoint to check for region placement (repeatable).
+    #[arg(long = "ingestion-endpoint", value_name = "URL")]
+    pub ingestion_endpoints: Vec<String>,
+    /// Deployed DCR resource id (read-only ARM check).
+    #[arg(long = "dcr-resource-id", value_name = "ID")]
+    pub dcr_resource_id: Option<String>,
+    /// Log Analytics workspace resource id (read-only ARM check).
+    #[arg(long = "workspace-resource-id", value_name = "ID")]
+    pub workspace_resource_id: Option<String>,
+    /// Azure credential: azure-cli, managed-identity, workload-identity or environment.
+    #[arg(long = "credential", value_name = "MODE")]
+    pub credential: Option<String>,
+    /// Print checks as JSON.
+    #[arg(long = "json")]
+    pub json: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DcrCommand {
+    /// Print or write the ARM template for the Bower table and DCR.
+    Generate(DcrGenerateArgs),
+    /// Compare a DCR (and optionally the table) with Bower's schema (exit 1 on error drift).
+    Diff(DcrDiffArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct DcrGenerateArgs {
+    /// Write the template to FILE instead of stdout.
+    #[arg(long = "out", value_name = "FILE")]
+    pub out: Option<String>,
+    /// DCR name [default: bower-dcr].
+    #[arg(long = "rule-name", value_name = "NAME")]
+    pub rule_name: Option<String>,
+    /// Table plan: Analytics or Basic [default: Analytics].
+    #[arg(long = "plan", value_name = "PLAN")]
+    pub plan: Option<String>,
+    /// Interactive retention days [default: 90].
+    #[arg(long = "retention-days", value_name = "N")]
+    pub retention_days: Option<String>,
+    /// Total retention days [default: 365].
+    #[arg(long = "total-retention-days", value_name = "N")]
+    pub total_retention_days: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct DcrDiffArgs {
+    /// DCR JSON file.
+    #[arg(long = "rule", value_name = "FILE")]
+    pub rule: Option<String>,
+    /// Deployed DCR resource id (read-only ARM).
+    #[arg(long = "dcr-resource-id", value_name = "ID")]
+    pub dcr_resource_id: Option<String>,
+    /// Table JSON file.
+    #[arg(long = "table", value_name = "FILE")]
+    pub table: Option<String>,
+    /// Workspace resource id (reads the table via ARM).
+    #[arg(long = "workspace-resource-id", value_name = "ID")]
+    pub workspace_resource_id: Option<String>,
+    /// Azure credential mode.
+    #[arg(long = "credential", value_name = "MODE")]
+    pub credential: Option<String>,
+    /// `--dcr-resource-id` or `--workspace-resource-id` present, even without a value.
+    #[arg(skip)]
+    pub arm_requested: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum KeysCommand {
+    /// Generate an ECDSA P-256 key pair (refuses to overwrite a private key).
+    Generate(KeysGenerateArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct KeysGenerateArgs {
+    /// Output directory (required).
+    #[arg(long = "out-dir", value_name = "DIR")]
+    pub out_dir: Option<String>,
+    /// Key file base name [default: bower-signing].
+    #[arg(long = "name", value_name = "NAME")]
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PackCommand {
+    /// Build and sign a pack from a source directory.
+    Build(PackBuildArgs),
+    /// Verify a pack signature and file hashes.
+    Verify(PackFileArgs),
+    /// Print pack metadata as JSON.
+    Inspect(PackFileArgs),
+    /// Run the pack's samples through its policies and privacy profile.
+    Test(PackTestArgs),
+    /// Policy population diff between two packs (exit 1 if a changed policy kept its version).
+    Diff(PackDiffArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct PackBuildArgs {
+    /// Pack source directory.
+    #[arg(value_name = "DIR")]
+    pub source: Option<String>,
+    /// Private signing key PEM (required).
+    #[arg(long = "key", value_name = "PRIVATE.pem")]
+    pub key: Option<String>,
+    /// Output directory [default: artifacts/packs].
+    #[arg(long = "out", value_name = "DIR")]
+    pub out: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct PackFileArgs {
+    /// Pack file (.bowerpack).
+    #[arg(value_name = "FILE")]
+    pub file: Option<String>,
+    /// Trusted public key PEM (repeatable, at least one).
+    #[arg(long = "trusted-key", value_name = "PUBLIC.pem")]
+    pub trusted_keys: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct PackTestArgs {
+    #[command(flatten)]
+    pub pack: PackFileArgs,
+    /// HMAC key file for the pack's privacy profile.
+    #[arg(long = "hmac-key-file", value_name = "FILE")]
+    pub hmac_key_file: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct PackDiffArgs {
+    /// OLD.bowerpack NEW.bowerpack
+    #[arg(value_name = "PACK")]
+    pub files: Vec<String>,
+    /// Trusted public key PEM (repeatable, at least one).
+    #[arg(long = "trusted-key", value_name = "PUBLIC.pem")]
+    pub trusted_keys: Vec<String>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum EvidenceCommand {
+    /// Send a canary, query Sentinel for it and write a signed evidence bundle (exit 2 unless verified).
+    Run(EvidenceRunArgs),
+    /// Verify an evidence bundle signature.
+    Verify(EvidenceVerifyArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct EvidenceRunArgs {
+    /// Collector base URL (required). The ingest token is read from BOWER_INGEST_TOKEN.
+    #[arg(long = "collector-url", value_name = "URL")]
+    pub collector_url: Option<String>,
+    /// Log Analytics workspace (customer) id; without it the bundle is simulated.
+    #[arg(long = "workspace-id", value_name = "ID")]
+    pub workspace_id: Option<String>,
+    /// Workspace resource id for retention and region checks.
+    #[arg(long = "workspace-resource-id", value_name = "ID")]
+    pub workspace_resource_id: Option<String>,
+    /// Destination table [default: BowerSecurity_CL].
+    #[arg(long = "table", value_name = "NAME")]
+    pub table: Option<String>,
+    /// Azure credential mode.
+    #[arg(long = "credential", value_name = "MODE")]
+    pub credential: Option<String>,
+    /// Managed identity client id.
+    #[arg(long = "client-id", value_name = "ID")]
+    pub client_id: Option<String>,
+    /// Arrival query timeout in minutes [default: 15].
+    #[arg(long = "timeout-minutes", value_name = "N")]
+    pub timeout_minutes: Option<String>,
+    /// Private key PEM used to sign the bundle.
+    #[arg(long = "signing-key", value_name = "PRIVATE.pem")]
+    pub signing_key: Option<String>,
+    /// Bundle output file [default: bower-evidence-<time>.json].
+    #[arg(long = "out", value_name = "FILE")]
+    pub out: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct EvidenceVerifyArgs {
+    /// Evidence bundle file.
+    #[arg(value_name = "FILE")]
+    pub file: Option<String>,
+    /// Trusted public key PEM (repeatable).
+    #[arg(long = "trusted-key", value_name = "PUBLIC.pem")]
+    pub trusted_keys: Vec<String>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DeveloperCommand {
+    /// Add Bower telemetry docs, configuration, catalogue and an AGENTS.md section to a .NET repo.
+    Init(DeveloperInitArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct DeveloperInitArgs {
+    /// Repository root [default: current directory].
+    #[arg(long = "path", value_name = "PATH")]
+    pub path: Option<String>,
+}

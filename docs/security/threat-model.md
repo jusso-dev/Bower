@@ -20,7 +20,7 @@ evidence.
   EC2 host events and AWS records use deterministic ids so retries and re-reads
   deduplicate. Acknowledged rows are kept for the retention window
   (`BOWER_QUEUE_RETENTION_HOURS`, default 7 days) to preserve deduplication.
-- Queue/disk exhaustion: the byte cap counts undelivered rows only, a Hangfire
+- Queue/disk exhaustion: the byte cap counts undelivered rows only, a recurring
   retention job purges acknowledged rows, capacity returns HTTP 503 for producer
   back-off, and ingest is rate limited (HTTP 429). Poison events dead-letter
   individually or after `BOWER_MAX_DELIVERY_ATTEMPTS`. Filesystem quota and

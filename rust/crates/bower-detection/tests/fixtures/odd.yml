@@ -1,0 +1,21 @@
+title: Odd rule
+id: odd-1
+level: HIGH
+version: 7
+detection:
+  sel:
+    EventType:
+      - a
+      - b
+    nested:
+      x: 1
+      y: [p, q]
+  Condition: ignored
+  condition: sel or other
+tags:
+  - attack.T1059.001
+  - t1003
+  - T12
+  - tabcd
+falsepositives:
+  - one
