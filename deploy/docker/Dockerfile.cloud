@@ -8,7 +8,7 @@
 # Published as a Native AOT executable (no .NET runtime in the image). Build on the
 # runner's native platform and cross-compile for TARGETARCH (no QEMU): the -aot SDK
 # image carries the native toolchain and the cross-architecture sysroot.
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.401-noble-aot AS build
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.402-noble-aot AS build
 ARG TARGETARCH
 WORKDIR /src
 COPY . .
