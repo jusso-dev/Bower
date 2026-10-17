@@ -14,3 +14,9 @@ Rust port of `src/Bower.Output.AzureLogsIngestion` and the credential sources of
 - Tokens stay in memory (`CachedTokenProvider`); never log, persist or put tokens,
   secrets or response bodies in errors. Authority hosts must be HTTPS.
 - `tests/fixtures/csharp-vectors.json` came from the C# adapter; keep it passing.
+- Credentials follow Azure.Identity 1.21 / MSAL.NET 4.83 (`src/credential/`): MSAL
+  managed identity source order and api-versions, Azure.Core's managed identity
+  retry policy, Azure Arc challenge files confined to the agent token directory
+  (4096-byte limit, no symlinks), Service Fabric thumbprint-pinned TLS, MSAL
+  client assertions (`PS256`, `x5t#S256`). `tests/fixtures/credentials` keys are
+  test-only.

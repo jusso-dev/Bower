@@ -1,9 +1,11 @@
-//! Microsoft Entra token acquisition for Azure Monitor (subset of Azure.Identity
-//! used by `Bower.Collector.AzureCredentialFactory`).
+//! Microsoft Entra token acquisition for Azure Monitor (the Azure.Identity 1.21
+//! credentials reached by `Bower.Collector.AzureCredentialFactory` and
+//! `Bower.Evidence.VerifierCredential`).
 //!
-//! Tokens live only in memory. They are never logged, persisted or included in
-//! errors; `AccessToken`'s `Debug` output is redacted.
+//! Tokens, secrets and key material live only in memory. They are never logged,
+//! persisted or included in errors; `Debug` output is redacted.
 
+use std::collections::BTreeSet;
 use std::fmt;
 use std::future::Future;
 use std::path::PathBuf;
@@ -15,6 +17,16 @@ use bower_contracts::time::{self, Timestamp};
 use serde_json::Value;
 use tokio::sync::Mutex;
 
+mod certificate;
+mod managed_identity;
+mod tls;
+
+pub use certificate::{ClientCertificate, ClientCertificateCredential};
+pub use managed_identity::{
+    ARC_DEFAULT_ENDPOINT, ManagedIdentityCredential, ManagedIdentityRetryOptions,
+    ManagedIdentitySource,
+};
+
 /// Default Microsoft Entra authority (`AzureAuthorityHosts.AzurePublicCloud`).
 pub const DEFAULT_AUTHORITY_HOST: &str = "https://login.microsoftonline.com/";
 /// IMDS token endpoint used by `ManagedIdentityCredential`.
@@ -23,6 +35,8 @@ pub const IMDS_ENDPOINT: &str = "http://169.254.169.254/metadata/identity/oauth2
 pub const TOKEN_REFRESH_OFFSET: Duration = Duration::from_secs(5 * 60);
 /// Azure.Identity `AzureCliCredential` process timeout.
 const CLI_TIMEOUT: Duration = Duration::from_secs(13);
+/// Azure.Core `RetryOptions.NetworkTimeout`.
+const NETWORK_TIMEOUT: Duration = Duration::from_secs(100);
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct AccessToken {
@@ -89,8 +103,7 @@ impl AzureCredentialMode {
 }
 
 /// `AzureCredentialFactory.Create`: exactly one configured credential source,
-/// wrapped in an in-memory cache. Environment variables are read lazily at token
-/// time, as Azure.Identity does.
+/// wrapped in an in-memory cache.
 pub fn credential_from_mode(
     mode: AzureCredentialMode,
     managed_identity_client_id: Option<&str>,
@@ -118,11 +131,16 @@ pub fn credential_from_mode(
 
 fn default_http_client() -> reqwest::Client {
     reqwest::Client::builder()
-        .timeout(Duration::from_secs(100))
+        .timeout(NETWORK_TIMEOUT)
         // Never replay credentials or client secrets to a redirect target.
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .expect("reqwest client builds with static configuration")
+}
+
+/// Non-empty environment variable (`EnvironmentVariables.GetNonEmptyStringOrNull`).
+fn env_var(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|value| !value.is_empty())
 }
 
 /// Caches one token per scope until [`TOKEN_REFRESH_OFFSET`] before expiry.
@@ -178,27 +196,28 @@ pub fn scope_to_resource(scope: &str) -> &str {
 
 /// `application/x-www-form-urlencoded` encoding.
 fn form_encode(pairs: &[(&str, &str)]) -> String {
-    fn encode(value: &str, output: &mut String) {
-        for byte in value.bytes() {
-            match byte {
-                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'*' => {
-                    output.push(char::from(byte))
-                }
-                b' ' => output.push('+'),
-                other => output.push_str(&format!("%{other:02X}")),
-            }
-        }
-    }
     let mut output = String::new();
     for (index, (name, value)) in pairs.iter().enumerate() {
         if index > 0 {
             output.push('&');
         }
-        encode(name, &mut output);
+        percent_encode(name, &mut output);
         output.push('=');
-        encode(value, &mut output);
+        percent_encode(value, &mut output);
     }
     output
+}
+
+fn percent_encode(value: &str, output: &mut String) {
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'*' => {
+                output.push(char::from(byte))
+            }
+            b' ' => output.push('+'),
+            other => output.push_str(&format!("%{other:02X}")),
+        }
+    }
 }
 
 fn now_plus_seconds(seconds: i64) -> Timestamp {
@@ -213,6 +232,19 @@ fn number_or_string(value: Option<&Value>) -> Option<i64> {
     }
 }
 
+/// `expires_on` as Unix seconds (number or string) or, from older managed identity
+/// endpoints, a date string (`DateTimeOffset.TryParse`).
+fn parse_expires_on(value: Option<&Value>) -> Option<Timestamp> {
+    if let Some(epoch) = number_or_string(value) {
+        return chrono::DateTime::from_timestamp(epoch, 0).map(|value| value.fixed_offset());
+    }
+    let text = value?.as_str()?.trim();
+    chrono::DateTime::parse_from_rfc3339(text)
+        .or_else(|_| chrono::DateTime::parse_from_str(text, "%m/%d/%Y %H:%M:%S %:z"))
+        .or_else(|_| chrono::DateTime::parse_from_str(text, "%m/%d/%Y %I:%M:%S %p %:z"))
+        .ok()
+}
+
 /// Parses an OAuth / managed identity token response without echoing it.
 fn parse_token_response(body: &[u8]) -> Result<AccessToken, TokenError> {
     let document: Value = serde_json::from_slice(body)
@@ -223,9 +255,8 @@ fn parse_token_response(body: &[u8]) -> Result<AccessToken, TokenError> {
         .filter(|token| !token.is_empty())
         .ok_or_else(|| TokenError::Failed("token response has no access_token".to_owned()))?
         .to_owned();
-    let expires_on = if let Some(epoch) = number_or_string(document.get("expires_on")) {
-        chrono::DateTime::from_timestamp(epoch, 0)
-            .map(|value| value.fixed_offset())
+    let expires_on = if document.get("expires_on").is_some() {
+        parse_expires_on(document.get("expires_on"))
             .ok_or_else(|| TokenError::Failed("token response has invalid expires_on".to_owned()))?
     } else if let Some(seconds) = number_or_string(document.get("expires_in")) {
         now_plus_seconds(seconds)
@@ -253,14 +284,12 @@ fn error_code(body: &[u8]) -> String {
         .unwrap_or_else(|| "unknown".to_owned())
 }
 
-async fn send_for_token(
-    request: reqwest::RequestBuilder,
+/// Maps a token endpoint response: success parses, anything else fails with the
+/// status and the Entra error code only.
+async fn read_token_response(
+    response: reqwest::Response,
     source: &str,
 ) -> Result<AccessToken, TokenError> {
-    let response = request
-        .send()
-        .await
-        .map_err(|_| TokenError::Unavailable(format!("{source} endpoint unreachable")))?;
     let status = response.status();
     let body = response
         .bytes()
@@ -276,135 +305,15 @@ async fn send_for_token(
     parse_token_response(&body)
 }
 
-/// Where a managed identity token comes from.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ManagedIdentitySource {
-    /// Azure Instance Metadata Service (VMs, VM scale sets, AKS node identity).
-    Imds { endpoint: String },
-    /// App Service / Functions / Container Apps (`IDENTITY_ENDPOINT` + `IDENTITY_HEADER`).
-    AppService { endpoint: String, header: String },
-    /// AKS workload identity token exchange (`AZURE_FEDERATED_TOKEN_FILE`), which
-    /// Azure.Identity's managed identity credential prefers over IMDS.
-    TokenExchange(WorkloadIdentitySettings),
-    /// A source this port does not implement (Azure Arc, Service Fabric, Cloud Shell).
-    Unsupported(&'static str),
-}
-
-/// System- or user-assigned (by client id) managed identity.
-pub struct ManagedIdentityCredential {
-    client: reqwest::Client,
-    client_id: Option<String>,
-    source: ManagedIdentitySource,
-}
-
-impl ManagedIdentityCredential {
-    pub fn new(
-        client: reqwest::Client,
-        client_id: Option<String>,
-        source: ManagedIdentitySource,
-    ) -> Self {
-        Self {
-            client,
-            client_id,
-            source,
-        }
-    }
-
-    /// Detects the source like Azure.Identity: Service Fabric / App Service /
-    /// Cloud Shell / Azure Arc (only App Service is supported here), then workload
-    /// identity token exchange, else IMDS.
-    pub fn from_env(client: reqwest::Client, client_id: Option<String>) -> Self {
-        let var = |name: &str| {
-            std::env::var(name)
-                .ok()
-                .filter(|value| !value.trim().is_empty())
-        };
-        let source = match (var("IDENTITY_ENDPOINT"), var("IDENTITY_HEADER")) {
-            (Some(_), Some(_)) if var("IDENTITY_SERVER_THUMBPRINT").is_some() => {
-                ManagedIdentitySource::Unsupported("Service Fabric managed identity")
-            }
-            (Some(endpoint), Some(header)) => {
-                ManagedIdentitySource::AppService { endpoint, header }
-            }
-            (Some(_), None) if var("IMDS_ENDPOINT").is_some() => {
-                ManagedIdentitySource::Unsupported("Azure Arc managed identity")
-            }
-            _ if var("MSI_ENDPOINT").is_some() => {
-                ManagedIdentitySource::Unsupported("Cloud Shell managed identity")
-            }
-            _ if var("AZURE_FEDERATED_TOKEN_FILE").is_some()
-                && var("AZURE_TENANT_ID").is_some()
-                && (client_id.is_some() || var("AZURE_CLIENT_ID").is_some()) =>
-            {
-                ManagedIdentitySource::TokenExchange(WorkloadIdentitySettings {
-                    tenant_id: var("AZURE_TENANT_ID").unwrap_or_default(),
-                    client_id: client_id
-                        .clone()
-                        .or_else(|| var("AZURE_CLIENT_ID"))
-                        .unwrap_or_default(),
-                    token_file: PathBuf::from(
-                        var("AZURE_FEDERATED_TOKEN_FILE").unwrap_or_default(),
-                    ),
-                    authority_host: var("AZURE_AUTHORITY_HOST")
-                        .unwrap_or_else(|| DEFAULT_AUTHORITY_HOST.to_owned()),
-                })
-            }
-            _ => {
-                let endpoint = var("AZURE_POD_IDENTITY_AUTHORITY_HOST")
-                    .map(|host| {
-                        format!(
-                            "{}/metadata/identity/oauth2/token",
-                            host.trim_end_matches('/')
-                        )
-                    })
-                    .unwrap_or_else(|| IMDS_ENDPOINT.to_owned());
-                ManagedIdentitySource::Imds { endpoint }
-            }
-        };
-        Self::new(client, client_id, source)
-    }
-}
-
-impl TokenProvider for ManagedIdentityCredential {
-    fn get_token<'a>(&'a self, scope: &'a str) -> TokenFuture<'a> {
-        Box::pin(async move {
-            let resource = scope_to_resource(scope);
-            let mut query: Vec<(&str, &str)> = Vec::new();
-            let request = match &self.source {
-                ManagedIdentitySource::Imds { endpoint } => {
-                    query.push(("api-version", "2018-02-01"));
-                    query.push(("resource", resource));
-                    if let Some(client_id) = &self.client_id {
-                        query.push(("client_id", client_id));
-                    }
-                    self.client
-                        .get(format!("{endpoint}?{}", form_encode(&query)))
-                        .header("Metadata", "true")
-                }
-                ManagedIdentitySource::AppService { endpoint, header } => {
-                    query.push(("api-version", "2019-08-01"));
-                    query.push(("resource", resource));
-                    if let Some(client_id) = &self.client_id {
-                        query.push(("client_id", client_id));
-                    }
-                    self.client
-                        .get(format!("{endpoint}?{}", form_encode(&query)))
-                        .header("X-IDENTITY-HEADER", header)
-                }
-                ManagedIdentitySource::TokenExchange(settings) => {
-                    return WorkloadIdentityCredential::new(self.client.clone(), settings.clone())
-                        .get_token(scope)
-                        .await;
-                }
-                ManagedIdentitySource::Unsupported(name) => {
-                    return Err(TokenError::Unavailable(format!(
-                        "{name} is not supported by this collector"
-                    )));
-                }
-            };
-            send_for_token(request, "managed identity").await
-        })
-    }
+async fn send_for_token(
+    request: reqwest::RequestBuilder,
+    source: &str,
+) -> Result<AccessToken, TokenError> {
+    let response = request
+        .send()
+        .await
+        .map_err(|_| TokenError::Unavailable(format!("{source} endpoint unreachable")))?;
+    read_token_response(response, source).await
 }
 
 /// Azure.Identity rejects non-HTTPS authority hosts. Plain HTTP is accepted only
@@ -427,23 +336,36 @@ fn is_allowed_authority(authority_host: &str) -> bool {
     }
 }
 
-/// OAuth client credentials against `{authority}/{tenant}/oauth2/v2.0/token`.
+/// `{authority}/{tenant}/oauth2/v2.0/token`, also the client assertion audience.
+fn token_endpoint(authority_host: &str, tenant_id: &str) -> Result<String, TokenError> {
+    if !is_allowed_authority(authority_host) {
+        return Err(TokenError::Unavailable(
+            "the authority host must use HTTPS".to_owned(),
+        ));
+    }
+    Ok(format!(
+        "{}/{}/oauth2/v2.0/token",
+        authority_host.trim_end_matches('/'),
+        tenant_id
+    ))
+}
+
+/// OAuth token request against `{authority}/{tenant}/oauth2/v2.0/token`.
 async fn client_credentials(
     client: &reqwest::Client,
     authority_host: &str,
     tenant_id: &str,
     form: &[(&str, &str)],
 ) -> Result<AccessToken, TokenError> {
-    if !is_allowed_authority(authority_host) {
-        return Err(TokenError::Unavailable(
-            "the authority host must use HTTPS".to_owned(),
-        ));
-    }
-    let url = format!(
-        "{}/{}/oauth2/v2.0/token",
-        authority_host.trim_end_matches('/'),
-        tenant_id
-    );
+    let url = token_endpoint(authority_host, tenant_id)?;
+    post_token_form(client, url, form).await
+}
+
+async fn post_token_form(
+    client: &reqwest::Client,
+    url: String,
+    form: &[(&str, &str)],
+) -> Result<AccessToken, TokenError> {
     let request = client
         .post(url)
         .header(
@@ -480,22 +402,17 @@ impl WorkloadIdentityCredential {
     /// `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_FEDERATED_TOKEN_FILE`,
     /// `AZURE_AUTHORITY_HOST` (optional).
     pub fn from_env(client: reqwest::Client) -> Self {
-        let var = |name: &str| {
-            std::env::var(name)
-                .ok()
-                .filter(|value| !value.trim().is_empty())
-        };
         let settings = match (
-            var("AZURE_TENANT_ID"),
-            var("AZURE_CLIENT_ID"),
-            var("AZURE_FEDERATED_TOKEN_FILE"),
+            env_var("AZURE_TENANT_ID"),
+            env_var("AZURE_CLIENT_ID"),
+            env_var("AZURE_FEDERATED_TOKEN_FILE"),
         ) {
             (Some(tenant_id), Some(client_id), Some(token_file)) => {
                 Some(WorkloadIdentitySettings {
                     tenant_id,
                     client_id,
                     token_file: PathBuf::from(token_file),
-                    authority_host: var("AZURE_AUTHORITY_HOST")
+                    authority_host: env_var("AZURE_AUTHORITY_HOST")
                         .unwrap_or_else(|| DEFAULT_AUTHORITY_HOST.to_owned()),
                 })
             }
@@ -538,50 +455,290 @@ impl TokenProvider for WorkloadIdentityCredential {
     }
 }
 
-/// `EnvironmentCredential` with a client secret (`AZURE_TENANT_ID`,
-/// `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, optional `AZURE_AUTHORITY_HOST`).
-/// Certificate and username/password variants are not supported.
+/// Which credential `EnvironmentCredential` builds, in Azure.Identity's order:
+/// client secret, then client certificate, then username and password.
+#[derive(Clone, PartialEq, Eq)]
+enum EnvironmentConfig {
+    Secret {
+        tenant_id: String,
+        client_id: String,
+        secret: String,
+    },
+    Certificate {
+        tenant_id: String,
+        client_id: String,
+        path: PathBuf,
+        password: Option<String>,
+        send_certificate_chain: bool,
+    },
+    UsernamePassword {
+        tenant_id: String,
+        client_id: String,
+        username: String,
+        password: String,
+    },
+}
+
+impl fmt::Debug for EnvironmentConfig {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Secret { .. } => "EnvironmentConfig::Secret",
+            Self::Certificate { .. } => "EnvironmentConfig::Certificate",
+            Self::UsernamePassword { .. } => "EnvironmentConfig::UsernamePassword",
+        })
+    }
+}
+
+/// `EnvironmentCredential`'s constructor over an environment lookup.
+fn resolve_environment(var: impl Fn(&str) -> Option<String>) -> Option<EnvironmentConfig> {
+    let tenant_id = var("AZURE_TENANT_ID")?;
+    let client_id = var("AZURE_CLIENT_ID")?;
+    if let Some(secret) = var("AZURE_CLIENT_SECRET") {
+        return Some(EnvironmentConfig::Secret {
+            tenant_id,
+            client_id,
+            secret,
+        });
+    }
+    if let Some(path) = var("AZURE_CLIENT_CERTIFICATE_PATH") {
+        let send_certificate_chain = var("AZURE_CLIENT_SEND_CERTIFICATE_CHAIN")
+            .is_some_and(|value| value.eq_ignore_ascii_case("true") || value == "1");
+        return Some(EnvironmentConfig::Certificate {
+            tenant_id,
+            client_id,
+            path: PathBuf::from(path),
+            password: var("AZURE_CLIENT_CERTIFICATE_PASSWORD"),
+            send_certificate_chain,
+        });
+    }
+    match (var("AZURE_USERNAME"), var("AZURE_PASSWORD")) {
+        (Some(username), Some(password)) => Some(EnvironmentConfig::UsernamePassword {
+            tenant_id,
+            client_id,
+            username,
+            password,
+        }),
+        _ => None,
+    }
+}
+
+/// `EnvironmentCredential`: `AZURE_TENANT_ID` and `AZURE_CLIENT_ID` plus one of
+/// `AZURE_CLIENT_SECRET`, `AZURE_CLIENT_CERTIFICATE_PATH` (optional
+/// `AZURE_CLIENT_CERTIFICATE_PASSWORD`, `AZURE_CLIENT_SEND_CERTIFICATE_CHAIN`) or
+/// `AZURE_USERNAME` + `AZURE_PASSWORD`; optional `AZURE_AUTHORITY_HOST`.
+///
+/// Variables are read at token time. A loaded certificate is kept in memory, as
+/// Azure.Identity caches it, until the path or password changes.
 pub struct EnvironmentCredential {
     client: reqwest::Client,
+    certificate: Mutex<Option<LoadedCertificate>>,
 }
+
+/// Certificate path, password and the certificate loaded from them.
+type LoadedCertificate = (PathBuf, Option<String>, Arc<ClientCertificate>);
 
 impl EnvironmentCredential {
     pub fn new(client: reqwest::Client) -> Self {
-        Self { client }
+        Self {
+            client,
+            certificate: Mutex::new(None),
+        }
+    }
+
+    async fn certificate(
+        &self,
+        path: &std::path::Path,
+        password: Option<&str>,
+    ) -> Result<Arc<ClientCertificate>, TokenError> {
+        let mut cached = self.certificate.lock().await;
+        if let Some((cached_path, cached_password, certificate)) = cached.as_ref()
+            && cached_path == path
+            && cached_password.as_deref() == password
+        {
+            return Ok(certificate.clone());
+        }
+        let owned_path = path.to_path_buf();
+        let owned_password = password.map(str::to_owned);
+        let certificate = tokio::task::spawn_blocking(move || {
+            ClientCertificate::load(&owned_path, owned_password.as_deref())
+        })
+        .await
+        .map_err(|_| TokenError::Unavailable("could not load certificate file".to_owned()))??;
+        let certificate = Arc::new(certificate);
+        *cached = Some((
+            path.to_path_buf(),
+            password.map(str::to_owned),
+            certificate.clone(),
+        ));
+        Ok(certificate)
     }
 }
 
 impl TokenProvider for EnvironmentCredential {
     fn get_token<'a>(&'a self, scope: &'a str) -> TokenFuture<'a> {
         Box::pin(async move {
-            let var = |name: &str| {
-                std::env::var(name)
-                    .ok()
-                    .filter(|value| !value.trim().is_empty())
-            };
-            let (Some(tenant_id), Some(client_id)) =
-                (var("AZURE_TENANT_ID"), var("AZURE_CLIENT_ID"))
-            else {
-                return Err(TokenError::Unavailable(
-                    "AZURE_TENANT_ID and AZURE_CLIENT_ID are required".to_owned(),
+            let config = resolve_environment(env_var).ok_or_else(|| {
+                TokenError::Unavailable("environment variables are not fully configured".to_owned())
+            })?;
+            let authority = env_var("AZURE_AUTHORITY_HOST")
+                .unwrap_or_else(|| DEFAULT_AUTHORITY_HOST.to_owned());
+            match config {
+                EnvironmentConfig::Secret {
+                    tenant_id,
+                    client_id,
+                    secret,
+                } => {
+                    client_credentials(
+                        &self.client,
+                        &authority,
+                        &tenant_id,
+                        &[
+                            ("client_id", &client_id),
+                            ("scope", scope),
+                            ("grant_type", "client_credentials"),
+                            ("client_secret", &secret),
+                        ],
+                    )
+                    .await
+                }
+                EnvironmentConfig::Certificate {
+                    tenant_id,
+                    client_id,
+                    path,
+                    password,
+                    send_certificate_chain,
+                } => {
+                    let certificate = self.certificate(&path, password.as_deref()).await?;
+                    ClientCertificateCredential {
+                        client: self.client.clone(),
+                        tenant_id,
+                        client_id,
+                        certificate,
+                        authority_host: authority,
+                        send_certificate_chain,
+                    }
+                    .get_token(scope)
+                    .await
+                }
+                EnvironmentConfig::UsernamePassword {
+                    tenant_id,
+                    client_id,
+                    username,
+                    password,
+                } => {
+                    UsernamePasswordCredential {
+                        client: self.client.clone(),
+                        tenant_id,
+                        client_id,
+                        username,
+                        password,
+                        authority_host: authority,
+                    }
+                    .get_token(scope)
+                    .await
+                }
+            }
+        })
+    }
+}
+
+/// `UsernamePasswordCredential` (OAuth resource owner password grant), reached by
+/// C# Bower through `EnvironmentCredential` when `AZURE_USERNAME` and
+/// `AZURE_PASSWORD` are set. Microsoft deprecates it and it cannot satisfy MFA.
+/// Like MSAL it runs user realm discovery first; federated (WS-Trust) accounts
+/// are refused rather than implemented.
+pub struct UsernamePasswordCredential {
+    pub client: reqwest::Client,
+    pub tenant_id: String,
+    pub client_id: String,
+    pub username: String,
+    pub password: String,
+    pub authority_host: String,
+}
+
+impl fmt::Debug for UsernamePasswordCredential {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UsernamePasswordCredential")
+            .field("tenant_id", &self.tenant_id)
+            .field("client_id", &self.client_id)
+            .field("authority_host", &self.authority_host)
+            .finish_non_exhaustive()
+    }
+}
+
+impl UsernamePasswordCredential {
+    /// MSAL user realm discovery: `{authority}/common/userrealm/{username}`.
+    async fn account_type(&self) -> Result<String, TokenError> {
+        let mut url = format!(
+            "{}/common/userrealm/",
+            self.authority_host.trim_end_matches('/')
+        );
+        percent_encode(&self.username, &mut url);
+        url.push_str("?api-version=1.0");
+        let response = self
+            .client
+            .get(url)
+            .header(reqwest::header::ACCEPT, "application/json")
+            .send()
+            .await
+            .map_err(|_| {
+                TokenError::Unavailable("Microsoft Entra endpoint unreachable".to_owned())
+            })?;
+        let status = response.status();
+        let body = response
+            .bytes()
+            .await
+            .map_err(|_| TokenError::Failed("user realm response could not be read".to_owned()))?;
+        if !status.is_success() {
+            return Err(TokenError::Failed(format!(
+                "user realm discovery returned HTTP {}",
+                status.as_u16()
+            )));
+        }
+        serde_json::from_slice::<Value>(&body)
+            .ok()
+            .and_then(|document| {
+                document
+                    .get("account_type")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+            .ok_or_else(|| TokenError::Failed("user realm response is not valid".to_owned()))
+    }
+}
+
+impl TokenProvider for UsernamePasswordCredential {
+    fn get_token<'a>(&'a self, scope: &'a str) -> TokenFuture<'a> {
+        Box::pin(async move {
+            let url = token_endpoint(&self.authority_host, &self.tenant_id)?;
+            let account_type = self.account_type().await?;
+            if account_type.eq_ignore_ascii_case("federated") {
+                return Err(TokenError::Failed(
+                    "federated accounts need WS-Trust, which this collector does not support"
+                        .to_owned(),
                 ));
-            };
-            let Some(secret) = var("AZURE_CLIENT_SECRET") else {
-                return Err(TokenError::Unavailable(
-                    "only AZURE_CLIENT_SECRET environment credentials are supported".to_owned(),
+            }
+            if !account_type.eq_ignore_ascii_case("managed") {
+                return Err(TokenError::Failed(
+                    "unsupported user account type".to_owned(),
                 ));
-            };
-            let authority =
-                var("AZURE_AUTHORITY_HOST").unwrap_or_else(|| DEFAULT_AUTHORITY_HOST.to_owned());
-            client_credentials(
+            }
+            // MSAL adds the OIDC reserved scopes to user flows (ordered set).
+            let scopes: BTreeSet<&str> = [scope, "openid", "profile", "offline_access"]
+                .into_iter()
+                .collect();
+            let scopes = scopes.into_iter().collect::<Vec<_>>().join(" ");
+            post_token_form(
                 &self.client,
-                &authority,
-                &tenant_id,
+                url,
                 &[
-                    ("client_id", &client_id),
-                    ("scope", scope),
-                    ("grant_type", "client_credentials"),
-                    ("client_secret", &secret),
+                    ("client_id", &self.client_id),
+                    ("grant_type", "password"),
+                    ("username", &self.username),
+                    ("password", &self.password),
+                    ("scope", &scopes),
+                    ("client_info", "1"),
                 ],
             )
             .await
@@ -715,6 +872,12 @@ mod tests {
         let relative =
             parse_token_response(br#"{"access_token":"secret","expires_in":3599}"#).unwrap();
         assert!(relative.expires_on > time::now());
+        let dated = parse_token_response(
+            br#"{"access_token":"secret","expires_on":"01/01/2030 00:00:00 +00:00"}"#,
+        )
+        .unwrap();
+        assert_eq!(dated.expires_on.timestamp(), 1_893_456_000);
+        assert!(parse_token_response(br#"{"access_token":"t","expires_on":"soon"}"#).is_err());
         assert!(parse_token_response(br#"{"error":"invalid_client"}"#).is_err());
         assert_eq!(
             error_code(br#"{"error":"invalid_client","error_description":"x"}"#),
@@ -735,5 +898,71 @@ mod tests {
             Some(AzureCredentialMode::AzureCli)
         );
         assert_eq!(AzureCredentialMode::parse(Some("other")), None);
+    }
+
+    fn lookup(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {
+        move |name| {
+            pairs
+                .iter()
+                .find(|(key, _)| *key == name)
+                .map(|(_, value)| (*value).to_owned())
+        }
+    }
+
+    #[test]
+    fn environment_credential_prefers_secret_then_certificate_then_password() {
+        let all: &'static [(&str, &str)] = &[
+            ("AZURE_TENANT_ID", "t"),
+            ("AZURE_CLIENT_ID", "c"),
+            ("AZURE_CLIENT_SECRET", "s"),
+            ("AZURE_CLIENT_CERTIFICATE_PATH", "/cert.pem"),
+            ("AZURE_USERNAME", "u"),
+            ("AZURE_PASSWORD", "p"),
+        ];
+        assert!(matches!(
+            resolve_environment(lookup(all)),
+            Some(EnvironmentConfig::Secret { .. })
+        ));
+        let certificate: &'static [(&str, &str)] = &[
+            ("AZURE_TENANT_ID", "t"),
+            ("AZURE_CLIENT_ID", "c"),
+            ("AZURE_CLIENT_CERTIFICATE_PATH", "/cert.pfx"),
+            ("AZURE_CLIENT_CERTIFICATE_PASSWORD", "pw"),
+            ("AZURE_CLIENT_SEND_CERTIFICATE_CHAIN", "TRUE"),
+            ("AZURE_USERNAME", "u"),
+            ("AZURE_PASSWORD", "p"),
+        ];
+        assert_eq!(
+            resolve_environment(lookup(certificate)),
+            Some(EnvironmentConfig::Certificate {
+                tenant_id: "t".to_owned(),
+                client_id: "c".to_owned(),
+                path: PathBuf::from("/cert.pfx"),
+                password: Some("pw".to_owned()),
+                send_certificate_chain: true,
+            })
+        );
+        let password: &'static [(&str, &str)] = &[
+            ("AZURE_TENANT_ID", "t"),
+            ("AZURE_CLIENT_ID", "c"),
+            ("AZURE_USERNAME", "u"),
+            ("AZURE_PASSWORD", "p"),
+        ];
+        assert!(matches!(
+            resolve_environment(lookup(password)),
+            Some(EnvironmentConfig::UsernamePassword { .. })
+        ));
+        // Username without password, or no tenant: unavailable.
+        let partial: &'static [(&str, &str)] = &[
+            ("AZURE_TENANT_ID", "t"),
+            ("AZURE_CLIENT_ID", "c"),
+            ("AZURE_USERNAME", "u"),
+        ];
+        assert_eq!(resolve_environment(lookup(partial)), None);
+        let no_tenant: &'static [(&str, &str)] = &[("AZURE_CLIENT_SECRET", "s")];
+        assert_eq!(resolve_environment(lookup(no_tenant)), None);
+        // Debug never prints secrets.
+        let debug = format!("{:?}", resolve_environment(lookup(all)).unwrap());
+        assert_eq!(debug, "EnvironmentConfig::Secret");
     }
 }

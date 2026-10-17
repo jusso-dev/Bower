@@ -52,6 +52,14 @@ tempfile = "3"
 getrandom = "0.3"
 aes-gcm = { version = "0.11", default-features = false, features = ["aes"] }
 flate2 = "1"
+# Entra certificate credentials and Service Fabric managed identity (bower-output-azure).
+rsa = { version = "=0.10.0-rc.19", default-features = false, features = ["std", "encoding", "sha2"] }
+p12-keystore = "0.4.1"
+x509-cert = { version = "0.3", default-features = false }
+sha1 = "0.11"
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "aws_lc_rs"] }
+rustls-platform-verifier = "0.7"
+tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
