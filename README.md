@@ -634,6 +634,25 @@ Unknown events are rejected. Every policy must list `eventTypes`; unknown or
 misspelt YAML keys and numeric actions fail the load. Missing required
 investigation context is quarantined. Policy response includes ID, version, hash, score and reasons.
 
+Policies load identically on every machine and culture, so values must be written
+canonically. Anything else fails the load with the line number:
+
+- `minimumValueScore` is a decimal integer (`70`); `070`, `0x46`, `+70`, `7_0`
+  and `1:10` are rejected rather than read as octal, hex or base-60.
+- `neverSample` is `true` or `false`; YAML 1.1 forms (`yes`, `on`, `y`, `True`)
+  are rejected.
+- `reviewDate` is an ISO 8601 date (`2027-01-31`); `01/02/2027`, `2027/1/31` and
+  `Jan 31, 2027` are rejected.
+- `metadata`, `match`, `requirements` and `decision` are required sections. Lists
+  and their items cannot be null (`~`), and event categories and field paths
+  cannot be blank.
+
+Field paths in `requiredFields`, `atLeastOne` and `recommendedFields` name envelope
+fields (`timeGenerated`, `actor.userId`, `request.correlationId`, ...), a label as
+`labels.<key>` or a top-level attribute as `attributes.<key>`. Label and attribute
+keys match exactly; an attribute is present unless it is JSON `null` or a blank
+string. Unknown paths are never present.
+
 ## Outputs
 
 AMA companion mode writes one UTF-8 JSON object per line through an active

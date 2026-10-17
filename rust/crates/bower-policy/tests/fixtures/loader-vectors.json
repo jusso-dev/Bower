@@ -7,7 +7,7 @@
  {
   "name": "a01-misspelt.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirments:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'a01-misspelt.yaml' is invalid at line 11: Property 'requirments' not found on type 'Bower.PolicyEngine.TelemetryPolicy'."
+  "csharp": "ERR Policy 'a01-misspelt.yaml' is invalid at line 11: Property 'requirments' not found on type 'Bower.PolicyEngine.Yaml.TelemetryPolicy'."
  },
  {
   "name": "a02-category-only.yaml",
@@ -137,42 +137,42 @@
  {
   "name": "c06-score.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 070\n  neverSample: true\n",
-  "csharp": "OK sha256:94cd4f3d7b49a0a0e517a7fb298013201004e0e22a646953afd4a4a904a35023"
+  "csharp": "ERR Policy 'c06-score.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "c07-score.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 0x10\n  neverSample: true\n",
-  "csharp": "OK sha256:e15932cf9cef305cd84415db17f36b386d477cbaa92e32c011c6167ccfbeecb6"
+  "csharp": "ERR Policy 'c07-score.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "c08-score.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 0b11\n  neverSample: true\n",
-  "csharp": "OK sha256:121d979692961494a7f89536819d80532b79567e967cb412f0a1012520586784"
+  "csharp": "ERR Policy 'c08-score.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "c09-score.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: +5\n  neverSample: true\n",
-  "csharp": "OK sha256:24159a5f5a12492b46c634beba9b26e6810cc057974537fb63ab7cd703d09f91"
+  "csharp": "ERR Policy 'c09-score.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "c10-score.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1_0\n  neverSample: true\n",
-  "csharp": "OK sha256:a69decbe6dffb9e2a69282e6fda21b5491153dbc4f64305b411076aa9726bed2"
+  "csharp": "ERR Policy 'c10-score.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "c11-score.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1:30\n  neverSample: true\n",
-  "csharp": "OK sha256:33c8ddb8f0b573bc4854f628dd1b0e0f40586f260d9edd181c81fc59f27c329d"
+  "csharp": "ERR Policy 'c11-score.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "c12-score.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 70.0\n  neverSample: true\n",
-  "csharp": "ERR Policy 'c12-score.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'c12-score.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "c13-score.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1e2\n  neverSample: true\n",
-  "csharp": "ERR Policy 'c13-score.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'c13-score.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "c14-score.yaml",
@@ -182,17 +182,17 @@
  {
   "name": "c15-score.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: ''\n  neverSample: true\n",
-  "csharp": "ERR Policy 'c15-score.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'c15-score.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "c16-score.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: abc\n  neverSample: true\n",
-  "csharp": "ERR Policy 'c16-score.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'c16-score.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "c17-score.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: \" 7 \"\n  neverSample: true\n",
-  "csharp": "OK sha256:7bb1d57e1c6d506ece0a5d48ae9ee643e97feebc8bce4a845781d26e56bab5e8"
+  "csharp": "ERR Policy 'c17-score.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "c18-score.yaml",
@@ -207,62 +207,62 @@
  {
   "name": "c20-score.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 2147483648\n  neverSample: true\n",
-  "csharp": "ERR Policy 'c20-score.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'c20-score.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "c21-score.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: -2147483649\n  neverSample: true\n",
-  "csharp": "ERR Policy 'c21-score.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'c21-score.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "c22-score.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 0o17\n  neverSample: true\n",
-  "csharp": "ERR Policy 'c22-score.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'c22-score.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "c23-score.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 09\n  neverSample: true\n",
-  "csharp": "ERR Policy 'c23-score.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'c23-score.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "c24-score.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 00\n  neverSample: true\n",
-  "csharp": "OK sha256:cbdb6818812fe21180e8e9feeadb3a5c66bcc1fa1acab1a602336bddb78b0ba0"
+  "csharp": "ERR Policy 'c24-score.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "d01-bool.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: yes\n",
-  "csharp": "OK sha256:664c378a9e14a0b601d8ae8c19ca1dcc25ed1e57d04bba94ff38bf671edf7191"
+  "csharp": "ERR Policy 'd01-bool.yaml' is invalid at line 17: Expected true or false."
  },
  {
   "name": "d02-bool.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: Y\n",
-  "csharp": "OK sha256:664c378a9e14a0b601d8ae8c19ca1dcc25ed1e57d04bba94ff38bf671edf7191"
+  "csharp": "ERR Policy 'd02-bool.yaml' is invalid at line 17: Expected true or false."
  },
  {
   "name": "d03-bool.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: on\n",
-  "csharp": "OK sha256:664c378a9e14a0b601d8ae8c19ca1dcc25ed1e57d04bba94ff38bf671edf7191"
+  "csharp": "ERR Policy 'd03-bool.yaml' is invalid at line 17: Expected true or false."
  },
  {
   "name": "d04-bool.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: ON\n",
-  "csharp": "OK sha256:664c378a9e14a0b601d8ae8c19ca1dcc25ed1e57d04bba94ff38bf671edf7191"
+  "csharp": "ERR Policy 'd04-bool.yaml' is invalid at line 17: Expected true or false."
  },
  {
   "name": "d05-bool.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: True\n",
-  "csharp": "OK sha256:664c378a9e14a0b601d8ae8c19ca1dcc25ed1e57d04bba94ff38bf671edf7191"
+  "csharp": "ERR Policy 'd05-bool.yaml' is invalid at line 17: Expected true or false."
  },
  {
   "name": "d06-bool.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: TRUE\n",
-  "csharp": "OK sha256:664c378a9e14a0b601d8ae8c19ca1dcc25ed1e57d04bba94ff38bf671edf7191"
+  "csharp": "ERR Policy 'd06-bool.yaml' is invalid at line 17: Expected true or false."
  },
  {
   "name": "d07-bool.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: 1\n",
-  "csharp": "ERR Policy 'd07-bool.yaml' is invalid at line 17: Exception during deserialization"
+  "csharp": "ERR Policy 'd07-bool.yaml' is invalid at line 17: Expected true or false."
  },
  {
   "name": "d08-bool.yaml",
@@ -272,17 +272,17 @@
  {
   "name": "d09-bool.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: no\n",
-  "csharp": "OK sha256:6909ba79ab23456d0d9bbf92066269ac844b613569a106ab3b9005d4031378dc"
+  "csharp": "ERR Policy 'd09-bool.yaml' is invalid at line 17: Expected true or false."
  },
  {
   "name": "d10-bool.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: off\n",
-  "csharp": "OK sha256:6909ba79ab23456d0d9bbf92066269ac844b613569a106ab3b9005d4031378dc"
+  "csharp": "ERR Policy 'd10-bool.yaml' is invalid at line 17: Expected true or false."
  },
  {
   "name": "d11-bool.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: False\n",
-  "csharp": "OK sha256:6909ba79ab23456d0d9bbf92066269ac844b613569a106ab3b9005d4031378dc"
+  "csharp": "ERR Policy 'd11-bool.yaml' is invalid at line 17: Expected true or false."
  },
  {
   "name": "d12-bool.yaml",
@@ -292,27 +292,27 @@
  {
   "name": "d13-bool.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: nope\n",
-  "csharp": "ERR Policy 'd13-bool.yaml' is invalid at line 17: Exception during deserialization"
+  "csharp": "ERR Policy 'd13-bool.yaml' is invalid at line 17: Expected true or false."
  },
  {
   "name": "d14-bool.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: y\n",
-  "csharp": "OK sha256:664c378a9e14a0b601d8ae8c19ca1dcc25ed1e57d04bba94ff38bf671edf7191"
+  "csharp": "ERR Policy 'd14-bool.yaml' is invalid at line 17: Expected true or false."
  },
  {
   "name": "d15-bool.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: n\n",
-  "csharp": "OK sha256:6909ba79ab23456d0d9bbf92066269ac844b613569a106ab3b9005d4031378dc"
+  "csharp": "ERR Policy 'd15-bool.yaml' is invalid at line 17: Expected true or false."
  },
  {
   "name": "d16-bool.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: OFF\n",
-  "csharp": "OK sha256:6909ba79ab23456d0d9bbf92066269ac844b613569a106ab3b9005d4031378dc"
+  "csharp": "ERR Policy 'd16-bool.yaml' is invalid at line 17: Expected true or false."
  },
  {
   "name": "d17-bool.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: 0\n",
-  "csharp": "ERR Policy 'd17-bool.yaml' is invalid at line 17: Exception during deserialization"
+  "csharp": "ERR Policy 'd17-bool.yaml' is invalid at line 17: Expected true or false."
  },
  {
   "name": "e01-review.yaml",
@@ -327,12 +327,12 @@
  {
   "name": "e03-review.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\n  reviewDate: 2027-1-1\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "OK sha256:ca30d98c403acf4ca4c28483101ecc51f14a80e1774ab106b6675b4556f43d7a"
+  "csharp": "ERR Policy 'e03-review.yaml' is invalid at line 8: Expected an ISO 8601 date (yyyy-MM-dd)."
  },
  {
   "name": "e04-review.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\n  reviewDate: 2027-13-01\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'e04-review.yaml' is invalid at line 8: Exception during deserialization"
+  "csharp": "ERR Policy 'e04-review.yaml' is invalid at line 8: Expected an ISO 8601 date (yyyy-MM-dd)."
  },
  {
   "name": "e05-review.yaml",
@@ -342,13 +342,12 @@
  {
   "name": "e06-review.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\n  reviewDate: '01/02/2027'\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "OK sha256:ac7b8b1a42042d26710baeeb6ed566a609dd13e3dbd496474bc21c2f8dc824a8",
-  "rust": "ERR Policy 'e06-review.yaml' is invalid at line 8: Exception during deserialization"
+  "csharp": "ERR Policy 'e06-review.yaml' is invalid at line 8: Expected an ISO 8601 date (yyyy-MM-dd)."
  },
  {
   "name": "e07-review.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\n  reviewDate: 2027-01-01T00:00:00Z\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'e07-review.yaml' is invalid at line 8: Exception during deserialization"
+  "csharp": "ERR Policy 'e07-review.yaml' is invalid at line 8: Expected an ISO 8601 date (yyyy-MM-dd)."
  },
  {
   "name": "e08-review.yaml",
@@ -363,8 +362,7 @@
  {
   "name": "e10-review.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\n  reviewDate: Jan 5, 2027\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "OK sha256:e4734a5f1bcc0d5322cbc9b4e816e429a4cb6077f40d8838c3c20a427952adbf",
-  "rust": "ERR Policy 'e10-review.yaml' is invalid at line 8: Exception during deserialization"
+  "csharp": "ERR Policy 'e10-review.yaml' is invalid at line 8: Expected an ISO 8601 date (yyyy-MM-dd)."
  },
  {
   "name": "e11-review.yaml",
@@ -424,26 +422,22 @@
  {
   "name": "f11-no-metadata.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Object reference not set to an instance of an object.",
-  "rust": "ERR Policy metadata id and version are required."
+  "csharp": "ERR Policy metadata id and version are required."
  },
  {
   "name": "f12-no-match.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Object reference not set to an instance of an object.",
-  "rust": "ERR Policy match must list at least one eventType."
+  "csharp": "ERR Policy match must list at least one eventType."
  },
  {
   "name": "f13-no-requirements.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "OK sha256:624e68b4e8c18e1be373c93bab827a79cbca9d13d670a28140fbc0ec9bc0e671",
-  "rust": "ERR Policy requirements must not be null."
+  "csharp": "ERR Policy requirements section is required."
  },
  {
   "name": "f14-no-decision.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\n",
-  "csharp": "ERR Object reference not set to an instance of an object.",
-  "rust": "ERR Unsupported policy action: "
+  "csharp": "ERR Policy decision section is required."
  },
  {
   "name": "f15-empty-types.yaml",
@@ -453,8 +447,7 @@
  {
   "name": "f16-null-types.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Object reference not set to an instance of an object.",
-  "rust": "ERR Policy match must list at least one eventType."
+  "csharp": "ERR Policy match must list at least one eventType."
  },
  {
   "name": "f17-blank-type.yaml",
@@ -469,19 +462,17 @@
  {
   "name": "f19-null-categories.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventCategories: ~\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "OK sha256:3e6c8a82360d718f092c3c30a82444c1355af5bdc9f432863016a0fbaed1e980",
-  "rust": "ERR Policy match eventCategories must not be null."
+  "csharp": "ERR Policy match eventCategories must be a list of non-blank values."
  },
  {
   "name": "f20-null-required.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields: ~\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "OK sha256:0340a3bfd5d69763e7c604f9325639b8ad5d12e5595295b490c66dbeb01ef66b",
-  "rust": "ERR Policy requirement lists must not be null."
+  "csharp": "ERR Policy requirements requiredFields must be a list of non-blank field paths."
  },
  {
   "name": "f21-null-item-required.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\n    - ~\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "OK sha256:565eff831d3a40f1584499e97e30e235f87d826882dc09e2e258b4f66d0988a4"
+  "csharp": "ERR Policy requirements requiredFields must be a list of non-blank field paths."
  },
  {
   "name": "f22-routing.yaml",
@@ -531,17 +522,17 @@
  {
   "name": "f31-unknown-nested.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\n  ownr: X\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'f31-unknown-nested.yaml' is invalid at line 8: Property 'ownr' not found on type 'Bower.PolicyEngine.PolicyMetadata'."
+  "csharp": "ERR Policy 'f31-unknown-nested.yaml' is invalid at line 8: Property 'ownr' not found on type 'Bower.PolicyEngine.Yaml.PolicyMetadata'."
  },
  {
   "name": "f32-unknown-decision.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n  extra: 1\n",
-  "csharp": "ERR Policy 'f32-unknown-decision.yaml' is invalid at line 18: Property 'extra' not found on type 'Bower.PolicyEngine.PolicyAction'."
+  "csharp": "ERR Policy 'f32-unknown-decision.yaml' is invalid at line 18: Property 'extra' not found on type 'Bower.PolicyEngine.Yaml.PolicyAction'."
  },
  {
   "name": "f33-pascal-key.yaml",
   "yaml": "apiVersion: bower.security/v1\nKind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'f33-pascal-key.yaml' is invalid at line 2: Property 'Kind' not found on type 'Bower.PolicyEngine.TelemetryPolicy'."
+  "csharp": "ERR Policy 'f33-pascal-key.yaml' is invalid at line 2: Property 'Kind' not found on type 'Bower.PolicyEngine.Yaml.TelemetryPolicy'."
  },
  {
   "name": "f34-seq-for-string.yaml",
@@ -608,7 +599,7 @@
  {
   "name": "f46-misspelt-in-unicode.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: \"é😀é\"\n  nme: x\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'f46-misspelt-in-unicode.yaml' is invalid at line 6: Property 'nme' not found on type 'Bower.PolicyEngine.PolicyMetadata'."
+  "csharp": "ERR Policy 'f46-misspelt-in-unicode.yaml' is invalid at line 6: Property 'nme' not found on type 'Bower.PolicyEngine.Yaml.PolicyMetadata'."
  },
  {
   "name": "g01-empty.yaml",
@@ -628,7 +619,7 @@
  {
   "name": "g04-seq-doc.yaml",
   "yaml": "- a\n- b\n",
-  "csharp": "ERR Policy 'g04-seq-doc.yaml' is invalid at line 1: No node deserializer was able to deserialize the node into type Bower.PolicyEngine.TelemetryPolicy, Bower.PolicyEngine, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+  "csharp": "ERR Policy 'g04-seq-doc.yaml' is invalid at line 1: No node deserializer was able to deserialize the node into type Bower.PolicyEngine.Yaml.TelemetryPolicy, Bower.PolicyEngine, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
  },
  {
   "name": "g05-scalar-doc.yaml",
@@ -648,17 +639,17 @@
  {
   "name": "g08-crlf-misspelt.yaml",
   "yaml": "apiVersion: bower.security/v1\r\nkind: TelemetryPolicy\r\nmetadata:\r\n  id: BWR-POL-TEST\r\n  name: Test policy\r\n  version: 1.0.0\r\n  owner: Test\r\nmatch:\r\n  eventTypes:\r\n    - authentication_failure\r\nrequirments:\r\n  requiredFields:\r\n    - eventType\r\ndecision:\r\n  action: accept\r\n  minimumValueScore: 1\r\n  neverSample: true\r\n",
-  "csharp": "ERR Policy 'g08-crlf-misspelt.yaml' is invalid at line 11: Property 'requirments' not found on type 'Bower.PolicyEngine.TelemetryPolicy'."
+  "csharp": "ERR Policy 'g08-crlf-misspelt.yaml' is invalid at line 11: Property 'requirments' not found on type 'Bower.PolicyEngine.Yaml.TelemetryPolicy'."
  },
  {
   "name": "g09-bom-misspelt.yaml",
   "yaml": "﻿apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirments:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'g09-bom-misspelt.yaml' is invalid at line 11: Property 'requirments' not found on type 'Bower.PolicyEngine.TelemetryPolicy'."
+  "csharp": "ERR Policy 'g09-bom-misspelt.yaml' is invalid at line 11: Property 'requirments' not found on type 'Bower.PolicyEngine.Yaml.TelemetryPolicy'."
  },
  {
   "name": "h01.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore:\n    abc\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h01.yaml' is invalid at line 17: Exception during deserialization"
+  "csharp": "ERR Policy 'h01.yaml' is invalid at line 17: Expected a decimal integer such as 70."
  },
  {
   "name": "h02.yaml",
@@ -673,7 +664,7 @@
  {
   "name": "h04.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision: [a]\nxdec:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h04.yaml' is invalid at line 14: No node deserializer was able to deserialize the node into type Bower.PolicyEngine.PolicyAction, Bower.PolicyEngine, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+  "csharp": "ERR Policy 'h04.yaml' is invalid at line 14: No node deserializer was able to deserialize the node into type Bower.PolicyEngine.Yaml.PolicyAction, Bower.PolicyEngine, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
  },
  {
   "name": "h05.yaml",
@@ -688,13 +679,12 @@
  {
   "name": "h07.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: [true]\n",
-  "csharp": "ERR Policy 'h07.yaml' is invalid at line 17: No node deserializer was able to deserialize the node into type System.Boolean, System.Private.CoreLib, Version=10.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e"
+  "csharp": "ERR Policy 'h07.yaml' is invalid at line 17: Expected true or false."
  },
  {
   "name": "h08.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: {a: 1}\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h08.yaml' is invalid at line 16: Property 'a' not found on type 'System.Int32'.",
-  "rust": "ERR Policy 'h08.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'h08.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h10.yaml",
@@ -719,22 +709,22 @@
  {
   "name": "h15.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata: &m\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nxx: *m\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h15.yaml' is invalid at line 8: Property 'xx' not found on type 'Bower.PolicyEngine.TelemetryPolicy'."
+  "csharp": "ERR Policy 'h15.yaml' is invalid at line 8: Property 'xx' not found on type 'Bower.PolicyEngine.Yaml.TelemetryPolicy'."
  },
  {
   "name": "h16.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\n  reviewDate: [a]\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h16.yaml' is invalid at line 8: No node deserializer was able to deserialize the node into type System.Nullable`1[[System.DateOnly, System.Private.CoreLib, Version=10.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]], System.Private.CoreLib, Version=10.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e"
+  "csharp": "ERR Policy 'h16.yaml' is invalid at line 8: Expected an ISO 8601 date (yyyy-MM-dd)."
  },
  {
   "name": "h18.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\nextra:\n  a:\n    b: c\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h18.yaml' is invalid at line 14: Property 'extra' not found on type 'Bower.PolicyEngine.TelemetryPolicy'."
+  "csharp": "ERR Policy 'h18.yaml' is invalid at line 14: Property 'extra' not found on type 'Bower.PolicyEngine.Yaml.TelemetryPolicy'."
  },
  {
   "name": "h19.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\n\"requirments\":\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h19.yaml' is invalid at line 11: Property 'requirments' not found on type 'Bower.PolicyEngine.TelemetryPolicy'."
+  "csharp": "ERR Policy 'h19.yaml' is invalid at line 11: Property 'requirments' not found on type 'Bower.PolicyEngine.Yaml.TelemetryPolicy'."
  },
  {
   "name": "h23.yaml",
@@ -744,7 +734,7 @@
  {
   "name": "h24.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\nrouting: [a]\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h24.yaml' is invalid at line 14: No node deserializer was able to deserialize the node into type Bower.PolicyEngine.PolicyRouting, Bower.PolicyEngine, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+  "csharp": "ERR Policy 'h24.yaml' is invalid at line 14: No node deserializer was able to deserialize the node into type Bower.PolicyEngine.Yaml.PolicyRouting, Bower.PolicyEngine, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
  },
  {
   "name": "h25.yaml",
@@ -759,33 +749,32 @@
  {
   "name": "h27.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: \"1.5\"\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h27.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'h27.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h28.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: \"  \"\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h28.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'h28.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h29.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample:\n    maybe\n",
-  "csharp": "ERR Policy 'h29.yaml' is invalid at line 18: Exception during deserialization"
+  "csharp": "ERR Policy 'h29.yaml' is invalid at line 18: Expected true or false."
  },
  {
   "name": "h30.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\n  reviewDate:\n    notadate\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h30.yaml' is invalid at line 9: Exception during deserialization"
+  "csharp": "ERR Policy 'h30.yaml' is invalid at line 9: Expected an ISO 8601 date (yyyy-MM-dd)."
  },
  {
   "name": "h31.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\n  reviewDate: {a: b}\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h31.yaml' is invalid at line 8: Property 'a' not found on type 'System.DateOnly'.",
-  "rust": "ERR Policy 'h31.yaml' is invalid at line 8: Exception during deserialization"
+  "csharp": "ERR Policy 'h31.yaml' is invalid at line 8: Expected an ISO 8601 date (yyyy-MM-dd)."
  },
  {
   "name": "h32.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: [1]\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h32.yaml' is invalid at line 16: No node deserializer was able to deserialize the node into type System.Int32, System.Private.CoreLib, Version=10.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e"
+  "csharp": "ERR Policy 'h32.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h33.yaml",
@@ -795,7 +784,7 @@
  {
   "name": "h34.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch: [abc]\nmm:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h34.yaml' is invalid at line 8: No node deserializer was able to deserialize the node into type Bower.PolicyEngine.PolicyMatch, Bower.PolicyEngine, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+  "csharp": "ERR Policy 'h34.yaml' is invalid at line 8: No node deserializer was able to deserialize the node into type Bower.PolicyEngine.Yaml.PolicyMatch, Bower.PolicyEngine, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
  },
  {
   "name": "h35.yaml",
@@ -805,47 +794,47 @@
  {
   "name": "h36.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: tRuE\n",
-  "csharp": "OK sha256:664c378a9e14a0b601d8ae8c19ca1dcc25ed1e57d04bba94ff38bf671edf7191"
+  "csharp": "ERR Policy 'h36.yaml' is invalid at line 17: Expected true or false."
  },
  {
   "name": "h37.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: \" true\"\n",
-  "csharp": "ERR Policy 'h37.yaml' is invalid at line 17: Exception during deserialization"
+  "csharp": "ERR Policy 'h37.yaml' is invalid at line 17: Expected true or false."
  },
  {
   "name": "h38.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 0+7\n  neverSample: true\n",
-  "csharp": "OK sha256:7bb1d57e1c6d506ece0a5d48ae9ee643e97feebc8bce4a845781d26e56bab5e8"
+  "csharp": "ERR Policy 'h38.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h39.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1:-5\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h39.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'h39.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h40.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 0b\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h40.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'h40.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h41.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 0x1F\n  neverSample: true\n",
-  "csharp": "OK sha256:bdfc74c4b585ce5155b1749b656103ec368a349b3ed7870c7deaea7c70416d76"
+  "csharp": "ERR Policy 'h41.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h42.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: -0x1\n  neverSample: true\n",
-  "csharp": "ERR minimumValueScore must be between 0 and 100."
+  "csharp": "ERR Policy 'h42.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h43.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: \"\\t5\"\n  neverSample: true\n",
-  "csharp": "OK sha256:24159a5f5a12492b46c634beba9b26e6810cc057974537fb63ab7cd703d09f91"
+  "csharp": "ERR Policy 'h43.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h44.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1_000_000_000_000\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h44.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'h44.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h45.yaml",
@@ -855,57 +844,57 @@
  {
   "name": "h46.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 0x\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h46.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'h46.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h47.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: \"+-5\"\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h47.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'h47.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h48.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: \"--0\"\n  neverSample: true\n",
-  "csharp": "OK sha256:cbdb6818812fe21180e8e9feeadb3a5c66bcc1fa1acab1a602336bddb78b0ba0"
+  "csharp": "ERR Policy 'h48.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h49.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 0:1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h49.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'h49.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h50.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1:0x\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h50.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'h50.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h51.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: \"1:\"\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h51.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'h51.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h52.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 08_\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h52.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'h52.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h53.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: \"0 7\"\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h53.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'h53.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h54.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: \"\\u00a07\"\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h54.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'h54.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h55.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: \"0x 1F \"\n  neverSample: true\n",
-  "csharp": "OK sha256:bdfc74c4b585ce5155b1749b656103ec368a349b3ed7870c7deaea7c70416d76"
+  "csharp": "ERR Policy 'h55.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h56.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: \"07 \"\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h56.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'h56.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "h57.yaml",
@@ -925,28 +914,27 @@
  {
   "name": "h60.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\n  reviewDate: 2027-01-01 10:00\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h60.yaml' is invalid at line 8: Exception during deserialization"
+  "csharp": "ERR Policy 'h60.yaml' is invalid at line 8: Expected an ISO 8601 date (yyyy-MM-dd)."
  },
  {
   "name": "h61.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\n  reviewDate: 27-1-1\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "OK sha256:43f9286514a0f8f29e93176d751cb571b54e6cc70ac9aa876be4bb07b550cb57",
-  "rust": "ERR Policy 'h61.yaml' is invalid at line 8: Exception during deserialization"
+  "csharp": "ERR Policy 'h61.yaml' is invalid at line 8: Expected an ISO 8601 date (yyyy-MM-dd)."
  },
  {
   "name": "h62.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\n  reviewDate: 2027/01/05\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "OK sha256:e4734a5f1bcc0d5322cbc9b4e816e429a4cb6077f40d8838c3c20a427952adbf"
+  "csharp": "ERR Policy 'h62.yaml' is invalid at line 8: Expected an ISO 8601 date (yyyy-MM-dd)."
  },
  {
   "name": "h63.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\n  reviewDate: 20270105\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h63.yaml' is invalid at line 8: Exception during deserialization"
+  "csharp": "ERR Policy 'h63.yaml' is invalid at line 8: Expected an ISO 8601 date (yyyy-MM-dd)."
  },
  {
   "name": "h64.yaml",
   "yaml": "apiVersion: ~\nk2: 1\nx: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h64.yaml' is invalid at line 2: Property 'k2' not found on type 'Bower.PolicyEngine.TelemetryPolicy'."
+  "csharp": "ERR Policy 'h64.yaml' is invalid at line 2: Property 'k2' not found on type 'Bower.PolicyEngine.Yaml.TelemetryPolicy'."
  },
  {
   "name": "h65.yaml",
@@ -956,7 +944,7 @@
  {
   "name": "h66.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata: {id: X, name: y, version: \"1\", owner: z, reviewDate: 2027-03-04}\nmatch: {eventTypes: [a], eventCategories: [b]}\nrequirements: {atLeastOne: [c]}\ndecision: {action: Dead-Letter, minimumValueScore: 50, neverSample: off}\nrouting: {destination: d}\n",
-  "csharp": "OK sha256:46d367a6d45d888f20274e891e09d86779aaaa263bcfdea1a2384c9aaae1b0f6"
+  "csharp": "ERR Policy 'h66.yaml' is invalid at line 6: Expected true or false."
  },
  {
   "name": "i01.yaml",
@@ -976,24 +964,23 @@
  {
   "name": "i04.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  - a\nxmeta:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'i04.yaml' is invalid at line 4: No node deserializer was able to deserialize the node into type Bower.PolicyEngine.PolicyMetadata, Bower.PolicyEngine, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+  "csharp": "ERR Policy 'i04.yaml' is invalid at line 4: No node deserializer was able to deserialize the node into type Bower.PolicyEngine.Yaml.PolicyMetadata, Bower.PolicyEngine, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
  },
  {
   "name": "i05.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  abc\nxmeta:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'i05.yaml' is invalid at line 4: Exception during deserialization"
+  "csharp": "ERR Policy 'i05.yaml' is invalid at line 3: Exception during deserialization",
+  "rust": "ERR Policy 'i05.yaml' is invalid at line 4: Exception during deserialization"
  },
  {
   "name": "i06.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore:\n    a: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'i06.yaml' is invalid at line 17: Property 'a' not found on type 'System.Int32'.",
-  "rust": "ERR Policy 'i06.yaml' is invalid at line 17: Exception during deserialization"
+  "csharp": "ERR Policy 'i06.yaml' is invalid at line 17: Expected a decimal integer such as 70."
  },
  {
   "name": "i07.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: {}\n  neverSample: true\n",
-  "csharp": "OK sha256:cbdb6818812fe21180e8e9feeadb3a5c66bcc1fa1acab1a602336bddb78b0ba0",
-  "rust": "ERR Policy 'i07.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'i07.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "i08.yaml",
@@ -1003,19 +990,18 @@
  {
   "name": "i09.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: {a: 1}\n",
-  "csharp": "ERR Policy 'i09.yaml' is invalid at line 17: Property 'a' not found on type 'System.Boolean'.",
-  "rust": "ERR Policy 'i09.yaml' is invalid at line 17: Exception during deserialization"
+  "csharp": "ERR Policy 'i09.yaml' is invalid at line 17: Expected true or false."
  },
  {
   "name": "i10.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\n  reviewDate: {}\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "OK sha256:c523b244a77b108b25c8335a9abf07865318baffc8ba8589aba8c5de13cc961f",
-  "rust": "ERR Policy 'i10.yaml' is invalid at line 8: Exception during deserialization"
+  "csharp": "ERR Policy 'i10.yaml' is invalid at line 8: Expected an ISO 8601 date (yyyy-MM-dd)."
  },
  {
   "name": "i11.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    abc\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'i11.yaml' is invalid at line 10: Exception during deserialization"
+  "csharp": "ERR Policy 'i11.yaml' is invalid at line 9: Exception during deserialization",
+  "rust": "ERR Policy 'i11.yaml' is invalid at line 10: Exception during deserialization"
  },
  {
   "name": "i12.yaml",
@@ -1025,7 +1011,7 @@
  {
   "name": "i13.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: &n Test\n  owner: *n\n  x: 1\n  version: 1.0.0\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'i13.yaml' is invalid at line 7: Property 'x' not found on type 'Bower.PolicyEngine.PolicyMetadata'."
+  "csharp": "ERR Policy 'i13.yaml' is invalid at line 7: Property 'x' not found on type 'Bower.PolicyEngine.Yaml.PolicyMetadata'."
  },
  {
   "name": "i14.yaml",
@@ -1035,14 +1021,12 @@
  {
   "name": "i15.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: {a: 1, b: 2}\n  neverSample: true\n",
-  "csharp": "ERR Policy 'i15.yaml' is invalid at line 16: Property 'a' not found on type 'System.Int32'.",
-  "rust": "ERR Policy 'i15.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'i15.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "i16.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: {~: 1}\n  neverSample: true\n",
-  "csharp": "ERR Policy 'i16.yaml' is invalid at line 16: Property '~' not found on type 'System.Int32'.",
-  "rust": "ERR Policy 'i16.yaml' is invalid at line 16: Exception during deserialization"
+  "csharp": "ERR Policy 'i16.yaml' is invalid at line 16: Expected a decimal integer such as 70."
  },
  {
   "name": "i17.yaml",
@@ -1057,7 +1041,7 @@
  {
   "name": "i19.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\nx2:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'i19.yaml' is invalid at line 18: Property 'x2' not found on type 'Bower.PolicyEngine.TelemetryPolicy'."
+  "csharp": "ERR Policy 'i19.yaml' is invalid at line 18: Property 'x2' not found on type 'Bower.PolicyEngine.Yaml.TelemetryPolicy'."
  },
  {
   "name": "i20.yaml",
@@ -1067,13 +1051,11 @@
  {
   "name": "i21.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: X\n  name: y\n  version: \"1\"\n  owner: z\nmatch:\n  eventTypes: [a]\nrequirements: \ndecision:\n  action: accept\n",
-  "csharp": "OK sha256:897d861a462aea9e990b66481dcd2c53974cebe55d17173f1efd9467e24b3e52",
-  "rust": "ERR Policy requirements must not be null."
+  "csharp": "ERR Policy requirements section is required."
  },
  {
   "name": "i22.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: X\n  name: y\n  version: \"1\"\n  owner: z\nmatch:\n  eventTypes: [a]\nrequirements: ~\ndecision:\n  action: accept\nrouting:\n",
-  "csharp": "OK sha256:897d861a462aea9e990b66481dcd2c53974cebe55d17173f1efd9467e24b3e52",
-  "rust": "ERR Policy requirements must not be null."
+  "csharp": "ERR Policy requirements section is required."
  }
 ]

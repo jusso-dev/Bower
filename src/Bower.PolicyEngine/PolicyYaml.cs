@@ -20,31 +20,119 @@ internal static class PolicyYamlReader
 {
     private static readonly IDeserializer Deserializer = new StaticDeserializerBuilder(new PolicyYamlContext())
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
-        .WithTypeConverter(new DateOnlyYamlConverter())
+        .WithTypeConverter(new StrictScalarYamlConverter())
+        .WithNodeTypeResolver(new CoreScalarTagNodeTypeResolver(), where => where.OnTop())
         .Build();
 
-    public static Model.TelemetryPolicy? Read(string yaml) =>
-        Deserializer.Deserialize<TelemetryPolicy?>(yaml)?.ToModel();
+    public static Model.TelemetryPolicy? Read(string yaml)
+    {
+        try
+        {
+            return Deserializer.Deserialize<TelemetryPolicy?>(yaml)?.ToModel();
+        }
+        catch (InvalidCastException exception)
+        {
+            // A scalar document deserializes to its text and the root cast fails outside
+            // YamlDotNet's own wrapping. Report it at the scalar like any other node.
+            Parser parser = new(new StringReader(yaml));
+            while (parser.MoveNext() && parser.Current is not Scalar)
+            {
+            }
+
+            Mark start = parser.Current?.Start ?? Mark.Empty;
+            throw new YamlException(start, start, "Exception during deserialization", exception);
+        }
+    }
 }
 
-/// <summary>Parses YAML scalars into <see cref="DateOnly"/>, as the reflection type converter did.</summary>
-internal sealed class DateOnlyYamlConverter : IYamlTypeConverter
+/// <summary>
+/// Core-schema tags on scalars (<c>!!str 5</c>, <c>!!int 5</c>) do not change the target
+/// type: the property type and its converter decide, as for untagged text. Without this the
+/// tag picks the CLR type and the property assignment fails with a cast error.
+/// </summary>
+internal sealed class CoreScalarTagNodeTypeResolver : INodeTypeResolver
 {
-    public bool Accepts(Type type) => type == typeof(DateOnly) || type == typeof(DateOnly?);
+    public bool Resolve(NodeEvent? nodeEvent, ref Type currentType) =>
+        nodeEvent is Scalar scalar
+        && !scalar.Tag.IsEmpty
+        && scalar.Tag.Value.StartsWith("tag:yaml.org,2002:", StringComparison.Ordinal);
+}
+
+/// <summary>
+/// Canonical scalars for the policy value types, so a policy means the same on every
+/// parser, culture and machine. YamlDotNet's defaults follow YAML 1.1 (<c>yes</c>/<c>on</c>/<c>y</c>
+/// booleans, <c>070</c> read as octal 56, hex, binary, base-60 and <c>_</c>-separated integers)
+/// and <see cref="DateOnly.Parse(string)"/> accepts locale-shaped dates. Only the YAML 1.2
+/// JSON-schema forms are accepted: <c>true</c>/<c>false</c>, decimal integers without a leading
+/// zero or <c>+</c>, and ISO 8601 <c>yyyy-MM-dd</c> dates. A plain null keeps the CLR default,
+/// as before. Anything else, including a mapping or sequence, fails the load at its line.
+/// </summary>
+internal sealed class StrictScalarYamlConverter : IYamlTypeConverter
+{
+    internal const string IntegerMessage = "Expected a decimal integer such as 70.";
+    internal const string BooleanMessage = "Expected true or false.";
+    internal const string DateMessage = "Expected an ISO 8601 date (yyyy-MM-dd).";
+
+    public bool Accepts(Type type) =>
+        type == typeof(int) || type == typeof(bool) || type == typeof(DateOnly?);
 
     public object? ReadYaml(IParser parser, Type type, ObjectDeserializer rootDeserializer)
     {
-        Scalar scalar = parser.Consume<Scalar>();
-        if (type == typeof(DateOnly?) && scalar.IsPlainNull())
+        string message = type == typeof(int) ? IntegerMessage
+            : type == typeof(bool) ? BooleanMessage
+            : DateMessage;
+        ParsingEvent current = parser.Current ?? throw new YamlException(message);
+        if (current is not Scalar)
         {
-            return null;
+            throw new YamlException(current.Start, current.End, message);
         }
 
-        return DateOnly.Parse(scalar.Value, CultureInfo.InvariantCulture);
+        Scalar scalar = parser.Consume<Scalar>();
+        if (scalar.IsPlainNull())
+        {
+            return type == typeof(int) ? 0 : type == typeof(bool) ? false : null;
+        }
+
+        object? value = type == typeof(int) ? ParseInteger(scalar.Value)
+            : type == typeof(bool) ? ParseBoolean(scalar.Value)
+            : ParseDate(scalar.Value);
+        return value ?? throw new YamlException(scalar.Start, scalar.End, message);
     }
 
     public void WriteYaml(IEmitter emitter, object? value, Type type, ObjectSerializer serializer) =>
         throw new NotSupportedException("Policies are never written as YAML.");
+
+    /// <summary><c>-?(0|[1-9][0-9]*)</c> within <see cref="int"/> range.</summary>
+    internal static object? ParseInteger(string text)
+    {
+        ReadOnlySpan<char> digits = text.StartsWith('-') ? text.AsSpan(1) : text.AsSpan();
+        bool canonical = !digits.IsEmpty
+            && (digits[0] != '0' || digits.Length == 1)
+            && !digits.ContainsAnyExceptInRange('0', '9');
+        return canonical
+            && int.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out int value)
+            ? value
+            : null;
+    }
+
+    internal static object? ParseBoolean(string text) => text switch
+    {
+        "true" => true,
+        "false" => false,
+        _ => null
+    };
+
+    /// <summary>Exactly <c>yyyy-MM-dd</c>: four-digit year, two-digit month and day.</summary>
+    internal static object? ParseDate(string text) =>
+        text.Length == 10
+        && text[4] == '-'
+        && text[7] == '-'
+        && !text.AsSpan(0, 4).ContainsAnyExceptInRange('0', '9')
+        && !text.AsSpan(5, 2).ContainsAnyExceptInRange('0', '9')
+        && !text.AsSpan(8, 2).ContainsAnyExceptInRange('0', '9')
+        && DateOnly.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly date)
+            ? date
+            : null;
 }
 
 internal static class ScalarExtensions

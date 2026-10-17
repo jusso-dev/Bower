@@ -229,13 +229,9 @@ fn second_document_start(text: &str) -> (usize, usize) {
     (0, 0)
 }
 
-/// `PolicyLoader.Validate`, then conversion to the non-null public model.
-///
-/// C# throws `NullReferenceException` for a missing `metadata`, `match`,
-/// `match.eventTypes` or `decision`, and loads but cannot evaluate a policy
-/// with a null `requirements`, null requirement list, null
-/// `match.eventCategories` or null category item. These are rejected here as
-/// invalid data instead.
+/// `PolicyLoader.Validate` (same checks, order and messages), then conversion
+/// to the non-null public model. Missing or null sections, lists and list
+/// items are rejected, as are blank event categories and field paths.
 fn validate(raw: &RawPolicy) -> Result<TelemetryPolicy, PolicyError> {
     if raw.api_version.as_deref() != Some(SUPPORTED_API_VERSION)
         || raw.kind.as_deref() != Some(SUPPORTED_KIND)
@@ -252,13 +248,13 @@ fn validate(raw: &RawPolicy) -> Result<TelemetryPolicy, PolicyError> {
     let rule = raw.r#match.as_ref();
     let event_types = rule
         .and_then(|rule| rule.event_types.as_ref())
-        .filter(|types| !types.is_empty() && types.iter().all(|item| present(item.as_deref())))
+        .filter(|types| !types.is_empty() && all_present(types))
         .ok_or_else(|| invalid("Policy match must list at least one eventType."))?;
 
     let decision = raw
         .decision
         .as_ref()
-        .ok_or_else(|| invalid("Unsupported policy action: "))?;
+        .ok_or_else(|| invalid("Policy decision section is required."))?;
     if try_parse_action(decision.action.as_deref()).is_none() {
         return Err(invalid(format!(
             "Unsupported policy action: {}",
@@ -271,17 +267,29 @@ fn validate(raw: &RawPolicy) -> Result<TelemetryPolicy, PolicyError> {
 
     let event_categories = rule
         .and_then(|rule| rule.event_categories.as_ref())
-        .filter(|categories| categories.iter().all(Option::is_some))
-        .ok_or_else(|| invalid("Policy match eventCategories must not be null."))?;
+        .filter(|categories| all_present(categories))
+        .ok_or_else(|| {
+            invalid("Policy match eventCategories must be a list of non-blank values.")
+        })?;
     let requirements = raw
         .requirements
         .as_ref()
-        .ok_or_else(|| invalid("Policy requirements must not be null."))?;
-    let required_list = |list: &RawList| {
+        .ok_or_else(|| invalid("Policy requirements section is required."))?;
+    // A null or blank path can never be present: as a required field it would
+    // quarantine every matching event with "Missing required field: ".
+    let field_paths = |list: &RawList, name: &str| {
         list.as_ref()
+            .filter(|items| all_present(items))
             .map(|items| strings(items))
-            .ok_or_else(|| invalid("Policy requirement lists must not be null."))
+            .ok_or_else(|| {
+                invalid(format!(
+                    "Policy requirements {name} must be a list of non-blank field paths."
+                ))
+            })
     };
+    let required_fields = field_paths(&requirements.required_fields, "requiredFields")?;
+    let at_least_one = field_paths(&requirements.at_least_one, "atLeastOne")?;
+    let recommended_fields = field_paths(&requirements.recommended_fields, "recommendedFields")?;
 
     Ok(TelemetryPolicy {
         api_version: SUPPORTED_API_VERSION.to_owned(),
@@ -298,9 +306,9 @@ fn validate(raw: &RawPolicy) -> Result<TelemetryPolicy, PolicyError> {
             event_types: strings(event_types),
         },
         requirements: PolicyRequirements {
-            required_fields: required_list(&requirements.required_fields)?,
-            at_least_one: required_list(&requirements.at_least_one)?,
-            recommended_fields: required_list(&requirements.recommended_fields)?,
+            required_fields,
+            at_least_one,
+            recommended_fields,
         },
         decision: PolicyAction {
             action: decision.action.clone().unwrap_or_default(),
@@ -314,8 +322,13 @@ fn validate(raw: &RawPolicy) -> Result<TelemetryPolicy, PolicyError> {
     })
 }
 
-/// Null field paths behave like empty ones in the evaluator (never present,
-/// rendered as empty text), so they map to `""`.
+/// No null, empty or white-space item (`string.IsNullOrWhiteSpace`).
+fn all_present(items: &[Option<String>]) -> bool {
+    items.iter().all(|item| present(item.as_deref()))
+}
+
+/// Items already checked by [`all_present`] (event types and categories,
+/// field paths), so none is null.
 fn strings(items: &[Option<String>]) -> Vec<String> {
     items
         .iter()

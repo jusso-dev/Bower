@@ -8,16 +8,14 @@
 //! match the C# collector byte for byte. Unknown event types are default-deny
 //! (`BWR-POL-DEFAULT-DENY`). Configuration never executes code.
 //!
-//! Known differences from C# (all fail closed):
-//! - Structures C# turns into a `NullReferenceException` (missing `metadata`,
-//!   `match`, `decision`, null `eventTypes`) or that load in C# but throw on
-//!   every evaluation (null `requirements`, null requirement lists, null
-//!   `eventCategories` or category items) are rejected as invalid data.
-//! - `reviewDate` accepts only `yyyy-M-d` / `yyyy/M/d`; C# uses
-//!   current-culture `DateOnly.Parse`, which also accepts e.g. `Jan 5, 2027`.
-//! - A mapping given for an integer, boolean or date is rejected; C# reads
-//!   `{}` as the default value and reports the first key otherwise.
+//! Integers, booleans and `reviewDate` accept only canonical text
+//! (`-?(0|[1-9][0-9]*)`, `true`/`false`, `yyyy-MM-dd`); missing or null
+//! sections, lists and list items, and blank field paths, fail the load.
+//!
+//! Known differences from C# (both reject the policy; only the message differs):
 //! - YAML syntax errors report the libyaml message and line, not YamlDotNet's.
+//! - A scalar written on the line after a section or list key is reported at
+//!   the scalar's line; C# reports the key's line.
 
 mod evaluator;
 mod field;

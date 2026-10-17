@@ -1,11 +1,14 @@
 //! Port of `PolicyEvaluatorTests.cs`, plus a decision corpus produced by the
-//! C# `DeterministicPolicyEvaluator` (git HEAD bf15994) over
-//! `policies/default` and `tests/fixtures/eval/policies`.
+//! C# `DeterministicPolicyEvaluator` over `policies/default` and
+//! `tests/fixtures/eval/policies` (pinned on the C# side by
+//! `PolicyParityVectorTests.EvaluatorCorpus_MatchesCSharpDecisions`).
 
 mod common;
 
 use bower_contracts::{DecisionAction, SecurityEventEnvelope, TelemetryPolicyEvaluator, json};
-use bower_policy::{DeterministicPolicyEvaluator, LoadedPolicy, PolicyMatch, load_directory};
+use bower_policy::{
+    DeterministicPolicyEvaluator, LoadedPolicy, PolicyMatch, PolicyRequirements, load_directory,
+};
 use common::{authentication_failure, authentication_policy, fixtures_dir, now};
 
 #[test]
@@ -109,6 +112,76 @@ fn first_matching_policy_by_ordinal_id_wins_regardless_of_input_order() {
         assert_eq!(decision.policy_id, "B");
         assert_eq!(decision.action, DecisionAction::Accept);
     }
+}
+
+fn label_and_attribute_policy() -> LoadedPolicy {
+    let strings = |items: &[&str]| items.iter().map(|item| (*item).to_owned()).collect();
+    let mut loaded = authentication_policy();
+    loaded.policy.requirements = PolicyRequirements {
+        required_fields: strings(&["labels.sourceEventId", "attributes.http.route"]),
+        at_least_one: Vec::new(),
+        recommended_fields: strings(&[
+            "attributes.count",
+            "attributes.flag",
+            "attributes.empty",
+            "attributes.none",
+            "labels.blank",
+            "labels.absent",
+        ]),
+    };
+    loaded
+}
+
+/// Envelope from `authentication_failure` with `extra` JSON members appended.
+fn with_json(extra: &str) -> SecurityEventEnvelope {
+    let base = json::to_string(&authentication_failure(now())).unwrap();
+    let text = format!("{},{extra}}}", base.strip_suffix('}').unwrap());
+    json::from_str(&text).unwrap()
+}
+
+/// Port of `PolicyEvaluatorTests.Evaluate_ReadsLabelAndAttributeFieldPaths`.
+#[test]
+fn evaluate_reads_label_and_attribute_field_paths() {
+    let evaluator = DeterministicPolicyEvaluator::new([label_and_attribute_policy()]);
+    let candidate = with_json(
+        r#""labels":{"sourceEventId":"event-0","blank":" "},"attributes":{"http.route":"/login","count":0,"flag":false,"empty":"","none":null}"#,
+    );
+
+    let result = evaluator.evaluate(&candidate);
+
+    assert_eq!(result.action, DecisionAction::Accept);
+    // 40 + 30 required + 10 actor + 5 source + 10 correlation + 2 recommended present.
+    assert_eq!(result.score, 97);
+    assert_eq!(
+        result.warnings,
+        [
+            "Missing recommended field: attributes.empty",
+            "Missing recommended field: attributes.none",
+            "Missing recommended field: labels.blank",
+            "Missing recommended field: labels.absent",
+        ]
+    );
+}
+
+/// Port of `PolicyEvaluatorTests.Evaluate_QuarantinesWhenRequiredLabelOrAttributeIsMissing`.
+#[test]
+fn evaluate_quarantines_when_required_label_or_attribute_is_missing() {
+    let evaluator = DeterministicPolicyEvaluator::new([label_and_attribute_policy()]);
+    // Keys match exactly: case differs and nested objects are not traversed.
+    let candidate = with_json(
+        r#""labels":{"SourceEventId":"event-0"},"attributes":{"http":{"route":"/login"}}"#,
+    );
+
+    let result = evaluator.evaluate(&candidate);
+
+    assert_eq!(result.action, DecisionAction::Quarantine);
+    assert_eq!(
+        result.reasons,
+        [
+            "Missing required field: labels.sourceEventId",
+            "Missing required field: attributes.http.route",
+        ]
+    );
 }
 
 fn all_policies() -> Vec<LoadedPolicy> {

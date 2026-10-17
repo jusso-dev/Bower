@@ -1,7 +1,7 @@
 //! Port of `EventFieldReader`: a closed allow-list of envelope paths a policy
 //! may require. Unknown paths are never present.
 
-use bower_contracts::{EventResult, SecurityEventEnvelope};
+use bower_contracts::{EventResult, JsonElement, SecurityEventEnvelope};
 use chrono::DateTime;
 
 /// `string.IsNullOrWhiteSpace` negated. Rust `char::is_whitespace` (Unicode
@@ -18,8 +18,35 @@ fn is_default_time(value: &bower_contracts::time::Timestamp) -> bool {
     DateTime::from_timestamp(DOTNET_MIN_UNIX_SECONDS, 0).is_some_and(|min| *value == min)
 }
 
+/// JSON null is absent and a string must be non-blank; numbers, booleans,
+/// objects and arrays are present.
+fn present_element(value: &JsonElement) -> bool {
+    match value {
+        JsonElement::Null => false,
+        JsonElement::String(text) => present(Some(text)),
+        _ => true,
+    }
+}
+
 /// Returns whether `path` names a populated envelope field.
+///
+/// `labels.<key>` and `attributes.<key>` name one top-level entry; the key is
+/// the rest of the path, matched exactly (it may itself contain dots).
 pub fn has_value(value: &SecurityEventEnvelope, path: &str) -> bool {
+    if let Some(key) = path.strip_prefix("labels.") {
+        return value
+            .labels
+            .as_ref()
+            .and_then(|labels| labels.get(key))
+            .is_some_and(|label| present(Some(label)));
+    }
+    if let Some(key) = path.strip_prefix("attributes.") {
+        return value
+            .attributes
+            .as_ref()
+            .and_then(|attributes| attributes.get(key))
+            .is_some_and(present_element);
+    }
     match path {
         "schemaVersion" => present(Some(&value.schema_version)),
         "eventId" => present(Some(&value.event_id)),

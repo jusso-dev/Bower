@@ -5,6 +5,13 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["apiVersion", "kind", "metadata", "match", "requirements", "decision"],
+  "$defs": {
+    "fieldPath": {
+      "description": "Envelope field (timeGenerated, actor.userId, ...), labels.<key> or attributes.<key>. Unknown paths are never present.",
+      "type": "string",
+      "pattern": "\\S"
+    }
+  },
   "properties": {
     "apiVersion": {"const": "bower.security/v1"},
     "kind": {"const": "TelemetryPolicy"},
@@ -17,14 +24,14 @@
         "name": {"type": "string", "minLength": 1},
         "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
         "owner": {"type": "string", "minLength": 1},
-        "reviewDate": {"type": "string", "format": "date"}
+        "reviewDate": {"type": "string", "format": "date", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}
       }
     },
     "match": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "eventCategories": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "eventCategories": {"type": "array", "items": {"type": "string", "pattern": "\\S"}, "uniqueItems": true},
         "eventTypes": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
       },
       "required": ["eventTypes"]
@@ -33,9 +40,9 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "requiredFields": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
-        "atLeastOne": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
-        "recommendedFields": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+        "requiredFields": {"type": "array", "items": {"$ref": "#/$defs/fieldPath"}, "uniqueItems": true},
+        "atLeastOne": {"type": "array", "items": {"$ref": "#/$defs/fieldPath"}, "uniqueItems": true},
+        "recommendedFields": {"type": "array", "items": {"$ref": "#/$defs/fieldPath"}, "uniqueItems": true}
       }
     },
     "decision": {

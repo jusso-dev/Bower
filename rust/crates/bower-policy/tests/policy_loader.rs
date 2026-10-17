@@ -1,5 +1,6 @@
 //! Port of `PolicyLoaderTests.cs`, plus loader vectors produced by the C#
-//! `PolicyLoader` (git HEAD bf15994, YamlDotNet 18.1.0).
+//! `PolicyLoader` (YamlDotNet 18.1.0 static context) and pinned on the C#
+//! side by `PolicyParityVectorTests.LoaderVectors_MatchCSharpOutcomes`.
 
 mod common;
 
@@ -107,7 +108,7 @@ fn load_file_rejects_misspelt_key() {
     assert!(error.to_string().contains("policy.yaml"));
     assert_eq!(
         error.to_string(),
-        "Policy 'policy.yaml' is invalid at line 11: Property 'requirments' not found on type 'Bower.PolicyEngine.TelemetryPolicy'."
+        "Policy 'policy.yaml' is invalid at line 11: Property 'requirments' not found on type 'Bower.PolicyEngine.Yaml.TelemetryPolicy'."
     );
 }
 
@@ -236,6 +237,252 @@ fn load_file_strips_byte_order_mark_and_keeps_hash() {
     assert_eq!(load_file(&path).unwrap().hash, VALID_POLICY_HASH);
 }
 
+/// Port of `PolicyLoaderTests.LoadFile_RejectsNonIsoReviewDate`.
+#[test]
+fn load_yaml_rejects_non_iso_review_date() {
+    for value in [
+        "'01/02/2027'",
+        "2027/01/02",
+        "2027-1-2",
+        "27-1-2",
+        "Jan 2, 2027",
+        "2027-01-02T00:00:00Z",
+        "2027-02-30",
+        "0000-01-01",
+        "\" 2027-01-02\"",
+        "{a: b}",
+        "[2027-01-02]",
+    ] {
+        let yaml = VALID_POLICY.replace(
+            "  owner: Test\n",
+            &format!("  owner: Test\n  reviewDate: {value}\n"),
+        );
+        assert_eq!(
+            load_yaml(&yaml, "policy.yaml").unwrap_err().to_string(),
+            "Policy 'policy.yaml' is invalid at line 8: Expected an ISO 8601 date (yyyy-MM-dd).",
+            "{value}"
+        );
+    }
+
+    let yaml = VALID_POLICY.replace(
+        "  owner: Test\n",
+        "  owner: Test\n  reviewDate: 2027-01-02\n",
+    );
+    let loaded = load_yaml(&yaml, "policy.yaml").unwrap();
+    assert_eq!(
+        loaded.policy.metadata.review_date.unwrap().to_string(),
+        "2027-01-02"
+    );
+}
+
+/// Port of `PolicyLoaderTests.LoadFile_RejectsNullSectionsListsAndFieldPaths`.
+#[test]
+fn load_yaml_rejects_null_sections_lists_and_field_paths() {
+    const METADATA: &str =
+        "metadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\n";
+    const DECISION: &str =
+        "decision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n";
+    const TYPES: &str = "    - authentication_failure\n";
+    const REQUIRED: &str = "    - eventType\n";
+    let fields =
+        |name: &str| format!("Policy requirements {name} must be a list of non-blank field paths.");
+    let categories = "Policy match eventCategories must be a list of non-blank values.";
+    let cases: Vec<(&str, String, String)> = vec![
+        (
+            METADATA,
+            String::new(),
+            "Policy metadata id and version are required.".into(),
+        ),
+        (
+            METADATA,
+            "metadata: ~\n".into(),
+            "Policy metadata id and version are required.".into(),
+        ),
+        (
+            "match:\n  eventTypes:\n    - authentication_failure\n",
+            String::new(),
+            "Policy match must list at least one eventType.".into(),
+        ),
+        (
+            "  eventTypes:\n    - authentication_failure\n",
+            "  eventTypes: ~\n".into(),
+            "Policy match must list at least one eventType.".into(),
+        ),
+        (
+            DECISION,
+            String::new(),
+            "Policy decision section is required.".into(),
+        ),
+        (
+            DECISION,
+            "decision: ~\n".into(),
+            "Policy decision section is required.".into(),
+        ),
+        (
+            TYPES,
+            format!("{TYPES}  eventCategories: ~\n"),
+            categories.into(),
+        ),
+        (
+            TYPES,
+            format!("{TYPES}  eventCategories: [authentication, ~]\n"),
+            categories.into(),
+        ),
+        (
+            TYPES,
+            format!("{TYPES}  eventCategories: [' ']\n"),
+            categories.into(),
+        ),
+        (
+            "requirements:\n  requiredFields:\n    - eventType\n",
+            String::new(),
+            "Policy requirements section is required.".into(),
+        ),
+        (
+            "requirements:\n  requiredFields:\n    - eventType\n",
+            "requirements: ~\n".into(),
+            "Policy requirements section is required.".into(),
+        ),
+        (
+            "  requiredFields:\n    - eventType\n",
+            "  requiredFields: ~\n".into(),
+            fields("requiredFields"),
+        ),
+        (
+            REQUIRED,
+            format!("{REQUIRED}    - ~\n"),
+            fields("requiredFields"),
+        ),
+        (REQUIRED, "    - ''\n".into(), fields("requiredFields")),
+        (
+            REQUIRED,
+            format!("{REQUIRED}  atLeastOne: ~\n"),
+            fields("atLeastOne"),
+        ),
+        (
+            REQUIRED,
+            format!("{REQUIRED}  atLeastOne: [actor.userId, '  ']\n"),
+            fields("atLeastOne"),
+        ),
+        (
+            REQUIRED,
+            format!("{REQUIRED}  recommendedFields: ~\n"),
+            fields("recommendedFields"),
+        ),
+        (
+            REQUIRED,
+            format!("{REQUIRED}  recommendedFields: [~]\n"),
+            fields("recommendedFields"),
+        ),
+    ];
+    for (original, replacement, message) in cases {
+        assert!(VALID_POLICY.contains(original), "{original}");
+        let yaml = VALID_POLICY.replace(original, &replacement);
+        let error = load_yaml(&yaml, "policy.yaml").unwrap_err();
+        assert!(matches!(error, PolicyError::InvalidData(_)));
+        assert_eq!(error.to_string(), message, "{replacement}");
+    }
+}
+
+/// Port of `PolicyLoaderTests.LoadFile_RejectsNonCanonicalScalars` and
+/// `LoadFile_AcceptsCanonicalScalarsInAnyStyleWithUnchangedHash`.
+#[test]
+fn load_yaml_accepts_only_canonical_integers_and_booleans() {
+    const INTEGER: &str = "Expected a decimal integer such as 70.";
+    const BOOLEAN: &str = "Expected true or false.";
+    let rejected = [
+        (
+            "minimumValueScore: 1",
+            "minimumValueScore: 070",
+            16,
+            INTEGER,
+        ),
+        (
+            "minimumValueScore: 1",
+            "minimumValueScore: 0x10",
+            16,
+            INTEGER,
+        ),
+        (
+            "minimumValueScore: 1",
+            "minimumValueScore: 0b11",
+            16,
+            INTEGER,
+        ),
+        ("minimumValueScore: 1", "minimumValueScore: +5", 16, INTEGER),
+        (
+            "minimumValueScore: 1",
+            "minimumValueScore: 1_0",
+            16,
+            INTEGER,
+        ),
+        (
+            "minimumValueScore: 1",
+            "minimumValueScore: 1:30",
+            16,
+            INTEGER,
+        ),
+        (
+            "minimumValueScore: 1",
+            "minimumValueScore: \" 7 \"",
+            16,
+            INTEGER,
+        ),
+        (
+            "minimumValueScore: 1",
+            "minimumValueScore: 70.0",
+            16,
+            INTEGER,
+        ),
+        (
+            "minimumValueScore: 1",
+            "minimumValueScore: 2147483648",
+            16,
+            INTEGER,
+        ),
+        (
+            "minimumValueScore: 1",
+            "minimumValueScore: {a: 1}",
+            16,
+            INTEGER,
+        ),
+        (
+            "minimumValueScore: 1",
+            "minimumValueScore: [1]",
+            16,
+            INTEGER,
+        ),
+        ("neverSample: true", "neverSample: yes", 17, BOOLEAN),
+        ("neverSample: true", "neverSample: on", 17, BOOLEAN),
+        ("neverSample: true", "neverSample: y", 17, BOOLEAN),
+        ("neverSample: true", "neverSample: off", 17, BOOLEAN),
+        ("neverSample: true", "neverSample: True", 17, BOOLEAN),
+        ("neverSample: true", "neverSample: 1", 17, BOOLEAN),
+        ("neverSample: true", "neverSample: {a: 1}", 17, BOOLEAN),
+    ];
+    for (original, replacement, line, message) in rejected {
+        let yaml = VALID_POLICY.replace(original, replacement);
+        assert_eq!(
+            load_yaml(&yaml, "policy.yaml").unwrap_err().to_string(),
+            format!("Policy 'policy.yaml' is invalid at line {line}: {message}"),
+            "{replacement}"
+        );
+    }
+
+    for (original, replacement) in [
+        ("minimumValueScore: 1", "minimumValueScore: \"1\""),
+        ("minimumValueScore: 1", "minimumValueScore: !!str 1"),
+        ("neverSample: true", "neverSample: \"true\""),
+    ] {
+        let yaml = VALID_POLICY.replace(original, replacement);
+        assert_eq!(
+            load_yaml(&yaml, "policy.yaml").unwrap().hash,
+            VALID_POLICY_HASH,
+            "{replacement}"
+        );
+    }
+}
+
 #[test]
 fn try_parse_action_accepts_names_only() {
     assert_eq!(
@@ -246,10 +493,13 @@ fn try_parse_action_accepts_names_only() {
 }
 
 /// Every vector's YAML was loaded by C# `PolicyLoader.LoadFile`; `csharp` is
-/// `OK <hash>` or `ERR <exception message>`. Vectors with a `rust` entry are
-/// documented deviations (C# NullReferenceException, culture-dependent dates,
-/// mappings for value types, YAML syntax error wording); Rust's outcome is
-/// asserted for those.
+/// `OK <hash>` or `ERR <exception message>` (pinned on the C# side by
+/// `PolicyParityVectorTests`). Vectors with a `rust` entry are documented
+/// deviations where both reject the policy but the message differs: YAML
+/// syntax errors carry libyaml's wording (`f36`, `f38`), and a scalar given
+/// on the line after a section or list key is reported at the scalar's line
+/// where C# reports the key's line (`i05`, `i11`). Rust's outcome is asserted
+/// for those.
 #[test]
 fn loader_vectors_match_csharp() {
     let text = fs::read_to_string(fixtures_dir().join("loader-vectors.json")).unwrap();
@@ -257,6 +507,7 @@ fn loader_vectors_match_csharp() {
     assert!(vectors.len() > 200);
 
     let mut deviations = Vec::new();
+    let mut mismatches = Vec::new();
     for vector in &vectors {
         let name = vector["name"].as_str().unwrap();
         let yaml = vector["yaml"].as_str().unwrap();
@@ -264,19 +515,32 @@ fn loader_vectors_match_csharp() {
             Ok(loaded) => format!("OK {}", loaded.hash),
             Err(error) => format!("ERR {error}"),
         };
+        let csharp = vector["csharp"].as_str().unwrap();
         let expected = match vector.get("rust") {
             Some(rust) => {
                 deviations.push(name);
+                // Deviations fail closed wherever C# does.
+                assert!(csharp.starts_with("ERR "), "{name}");
                 rust.as_str().unwrap()
             }
-            None => vector["csharp"].as_str().unwrap(),
+            None => csharp,
         };
-        assert_eq!(actual, expected, "{name}");
+        if actual != expected {
+            mismatches.push(format!("{name}: expected {expected:?}, actual {actual:?}"));
+        }
     }
 
-    // Deviations are only the documented classes; every one fails closed.
+    assert!(mismatches.is_empty(), "{mismatches:#?}");
     for vector in vectors.iter().filter(|vector| vector.get("rust").is_some()) {
         assert!(vector["rust"].as_str().unwrap().starts_with("ERR "));
     }
-    assert_eq!(deviations.len(), 22, "{deviations:?}");
+    assert_eq!(
+        deviations,
+        [
+            "f36-bad-indent.yaml",
+            "f38-unclosed-quote.yaml",
+            "i05.yaml",
+            "i11.yaml"
+        ]
+    );
 }

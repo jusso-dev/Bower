@@ -432,7 +432,7 @@ impl<'de, T: Section> Visitor<'de> for SectionVisitor<'_, T> {
 
     fn visit_seq<A: SeqAccess<'de>>(self, _seq: A) -> Result<T, A::Error> {
         Err(self.ctx.fail(no_node_deserializer(&format!(
-            "Bower.PolicyEngine.{}, {POLICY_ASSEMBLY}",
+            "Bower.PolicyEngine.Yaml.{}, {POLICY_ASSEMBLY}",
             T::TYPE_NAME
         ))))
     }
@@ -488,7 +488,7 @@ impl<'de, T: Section> Visitor<'de> for KeySeed<'_, T> {
             .position(|name| *name == value)
             .ok_or_else(|| {
                 self.ctx.fail(Failure::Message(format!(
-                    "Property '{value}' not found on type 'Bower.PolicyEngine.{}'.",
+                    "Property '{value}' not found on type 'Bower.PolicyEngine.Yaml.{}'.",
                     T::TYPE_NAME
                 )))
             })
@@ -567,12 +567,26 @@ impl<'de> Visitor<'de> for ListVisitor<'_> {
     );
 }
 
+/// `StrictScalarYamlConverter` messages (C# `PolicyYaml.cs`).
+pub(crate) const INTEGER_MESSAGE: &str = "Expected a decimal integer such as 70.";
+pub(crate) const BOOLEAN_MESSAGE: &str = "Expected true or false.";
+pub(crate) const DATE_MESSAGE: &str = "Expected an ISO 8601 date (yyyy-MM-dd).";
+
 /// How a scalar's source text converts to a CLR value.
 trait ScalarKind {
     type Output;
+    /// Strict value types: the one message for unconvertible text, a mapping
+    /// or a sequence. `None` keeps `YamlDotNet`'s own failures (strings).
+    const INVALID: Option<&'static str> = None;
     /// Assembly-qualified CLR type for "No node deserializer" messages.
     fn clr_type() -> String;
     fn convert(text: &str) -> Option<Self::Output>;
+
+    fn invalid() -> Failure {
+        Self::INVALID.map_or_else(conversion_failed, |message| {
+            Failure::Message(message.to_owned())
+        })
+    }
 }
 
 struct StringKind;
@@ -592,6 +606,7 @@ impl ScalarKind for StringKind {
 
 impl ScalarKind for IntKind {
     type Output = i32;
+    const INVALID: Option<&'static str> = Some(INTEGER_MESSAGE);
     fn clr_type() -> String {
         format!("System.Int32, {CORELIB}")
     }
@@ -602,6 +617,7 @@ impl ScalarKind for IntKind {
 
 impl ScalarKind for BoolKind {
     type Output = bool;
+    const INVALID: Option<&'static str> = Some(BOOLEAN_MESSAGE);
     fn clr_type() -> String {
         format!("System.Boolean, {CORELIB}")
     }
@@ -612,6 +628,7 @@ impl ScalarKind for BoolKind {
 
 impl ScalarKind for DateKind {
     type Output = NaiveDate;
+    const INVALID: Option<&'static str> = Some(DATE_MESSAGE);
     fn clr_type() -> String {
         format!("System.Nullable`1[[System.DateOnly, {CORELIB}]], {CORELIB}")
     }
@@ -666,15 +683,16 @@ impl<'de, K: ScalarKind> Visitor<'de> for ScalarSeed<'_, K> {
                 marker: PhantomData,
             })
             .map(Some)
-            .inspect_err(|error| {
-                // Mappings: YamlDotNet fails strings with a conversion error and
-                // builds value types property-by-property (not reproduced; see
-                // crate docs). Both are rejected here.
-                ctx.classify(
+            .inspect_err(|error| match K::INVALID {
+                // Strict value types reject mappings and sequences with their
+                // own message.
+                Some(_) => ctx.classify(error, K::invalid(), K::invalid()),
+                // Strings: YamlDotNet's node deserializer failures.
+                None => ctx.classify(
                     error,
                     no_node_deserializer(&K::clr_type()),
                     conversion_failed(),
-                );
+                ),
             })
     }
 }
@@ -692,6 +710,6 @@ impl<'de, K: ScalarKind> Visitor<'de> for TextVisitor<'_, K> {
     }
 
     fn visit_str<E: de::Error>(self, value: &str) -> Result<K::Output, E> {
-        K::convert(value).ok_or_else(|| self.ctx.fail(conversion_failed()))
+        K::convert(value).ok_or_else(|| self.ctx.fail(K::invalid()))
     }
 }
