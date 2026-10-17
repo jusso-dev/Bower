@@ -8,7 +8,7 @@
     <SelfContained Condition="'$(RuntimeIdentifier)' != ''">true</SelfContained>
     <!-- The chiseled runtime image ships without ICU. -->
     <InvariantGlobalization>true</InvariantGlobalization>
-    <RuntimeIdentifiers>linux-x64;linux-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
+    <RuntimeIdentifiers>linux-x64;linux-arm64;osx-x64;osx-arm64;win-x64;win-arm64</RuntimeIdentifiers>
   </PropertyGroup>
   <ItemGroup>
     <!-- Shared framework: generic host, logging and IHttpClientFactory without new packages. -->
