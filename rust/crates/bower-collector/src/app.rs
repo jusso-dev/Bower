@@ -362,7 +362,7 @@ fn health_status(snapshot: &QueueSnapshot) -> &'static str {
 async fn read_store<T: Send + 'static>(
     store: &Arc<dyn DurableEventStore>,
     call: impl FnOnce(&dyn DurableEventStore) -> Result<T, StoreError> + Send + 'static,
-) -> Result<T, Response> {
+) -> Result<T, StatusCode> {
     let store = Arc::clone(store);
     match tokio::task::spawn_blocking(move || call(store.as_ref())).await {
         Ok(Ok(value)) => Ok(value),
@@ -371,9 +371,9 @@ async fn read_store<T: Send + 'static>(
                 failure_type = store_error_name(&failure),
                 "Queue status read failed."
             );
-            Err(StatusCode::INTERNAL_SERVER_ERROR.into_response())
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR.into_response()),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }
 
@@ -391,7 +391,7 @@ async fn health(State(state): State<AppState>) -> Response {
                 status: health_status(&snapshot),
             },
         ),
-        Err(response) => response,
+        Err(status) => status.into_response(),
     }
 }
 
@@ -443,7 +443,7 @@ async fn status(State(state): State<AppState>, headers: HeaderMap) -> Response {
     .await
     {
         Ok(values) => values,
-        Err(response) => return response,
+        Err(status) => return status.into_response(),
     };
     let bundle = &state.bundle;
     json_response(
