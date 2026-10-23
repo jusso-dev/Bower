@@ -18,21 +18,22 @@
 > instrument security-relevant actions consistently without needing to understand
 > Sentinel ingestion internals.
 
-**Turn scattered application noise into trusted security signal — without
-shipping Australian PII, credentials or secrets downstream.**
+**Turn application security events into selected signal, with privacy controls
+applied before persistence and forwarding.**
 
 ## Why Bower
 
 Azure Monitor Agent, Elastic Agent and Cribl Stream move logs. Bower makes a narrower
-promise and proves it: **only approved security events, with Australian personal data
-removed on the host, provably arriving in Sentinel.**
+scope: **approved semantic security events, configured host-side redaction, durable
+delivery accounting, and destination-query evidence when verification is run.**
+Local tests do not prove tenant delivery or complete detection of arbitrary secrets.
 
 | | Bower | Typical alternative |
 |---|---|---|
-| **Proof of arrival** | `bower evidence run` sends a canary, finds it in Sentinel with KQL, records latency and retention, maps it to ISM / Essential Eight controls and signs the result | AMA, Elastic and Cribl stop at "the API accepted it"; checking Sentinel is manual |
+| **Proof of arrival** | `bower evidence run` can query a canary in Sentinel and sign the observed result; unrelated privacy, retention and regulatory dimensions remain `not-assessed` without separate evidence | AMA, Elastic and Cribl stop at "the API accepted it"; checking Sentinel is manual |
 | **Redaction before data leaves the host** | Deterministic engine with checksum-validated TFN, Medicare, IHI, ABN/ACN and cards, pattern-matched CRN and secrets; runs before anything is stored; any failure quarantines | DCR transformations redact in Azure after transfer; Elastic's redact processor runs in Elasticsearch on a paid licence; ML-based detectors elsewhere |
 | **Default deny** | Only event types an approved, versioned policy names are kept; everything else is rejected and explained | Forward everything configured, then filter |
-| **No silent loss** | Durable queue that deletes only after acknowledgement, attempt-limited dead letters with replay, preflight against Azure's 64 KB / type / schema limits, `bower doctor` and DCR drift checks | Azure truncates and drops rows without a per-record error |
+| **Delivery accounting** | Durable queue with acknowledged retention, bounded destination outages, retained dead letters and audited replay; SDK acceptance is memory-only until collector acceptance; preflight and DCR drift checks | Azure truncates and drops rows without a per-record error |
 | **Tamper evidence** | Hash-chained queue ledger, head witnessed by the management plane | Not offered at the collector |
 | **Signed content** | Packs (policy, privacy profile, parsers, detections, samples, DCR) are signed, hash-pinned and tested before signing | Unsigned community content |
 | **AWS and Google Cloud, same contract** | GuardDuty, Security Hub, high-value CloudTrail, Security Command Center and admin audit logs arrive as the same semantic events through the same redaction and policy; cloud queues are acknowledged only after the collector accepts, with no stored cloud keys and Australian region pinning | Per-cloud connectors that forward everything, or polling with stored access keys |
@@ -165,7 +166,7 @@ See [`rust/AGENTS.md`](rust/AGENTS.md) for parity rules.
 | Management UI and API | Fleet inventory, approval, health, audit, custom-log parser generation and Entra app-role RBAC implemented |
 | AI-assisted custom log parser generator | Deterministic local JSON, CSV, key/value and common-regex inference with OCSF/ASIM mappings and redacted preview |
 | Windows Service self-install | Not implemented |
-| SQL Server source | EF Core adapter with durable SQLite cursors implemented |
+| SQL Server source | EF Core adapter library with durable keyset/overlap cursors; collector polling orchestration not yet wired |
 | AWS security signal | GuardDuty, Security Hub and high-value CloudTrail via EventBridge → SQS, plus Bower events from CloudWatch Logs via Firehose → S3; CloudFormation, signed `aws-security` pack, `bower-cloud` agent with IAM-role credentials |
 | Google Cloud security signal | Security Command Center findings and Admin Activity audit logs via Pub/Sub with Australian storage policy; Terraform, signed `gcp-security` pack, ADC / Workload Identity Federation (key files refused) |
 | File, REST, Event Log sources | Not implemented |
