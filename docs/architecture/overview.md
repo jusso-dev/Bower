@@ -17,9 +17,11 @@ validation or policy decision.
 5. Output adapters receive only arranged, redacted envelopes.
 6. Azure acknowledgement proves API acceptance, not Sentinel queryability.
 
-Stable fingerprints exclude collection and ingestion times. Current fingerprint
-uses source ID, semantic type/action, application/tenant, actor, target, result and
-source generation time.
+Version 2 fingerprints identify a stable source fact: collector/source adapter,
+application/environment/tenant/instance, source hostname and original source ID
+(or stable producer event ID). Timestamps and semantic similarity are not identity.
+An identical replay must also match normalized redacted source content; changed
+content conflicts instead of receiving duplicate success.
 
 ## Queue transitions
 
@@ -29,21 +31,24 @@ queued → uploading → delivered
                  └→ dead-lettered
 ```
 
-Only leased `uploading` records can transition. Expired leases become eligible
+Only leased `uploading` records with the original lease token can transition. Expired leases become eligible
 after abrupt shutdown. Payload rows are not deleted during acknowledgement; the
 `queue-retention` job removes `delivered` rows only after the retention window.
-Retryable failures dead-letter after `BOWER_MAX_DELIVERY_ATTEMPTS` leases.
+Individual retryable record failures dead-letter after
+`BOWER_MAX_DELIVERY_ATTEMPTS` leases. Destination/auth/configuration failures
+preserve pending data, refund their attempt and pause new leases until the durable
+cooldown expires. Physical storage pressure applies intake backpressure.
 Events an adapter acknowledges in one delivery batch are marked `delivered` in a
 single queue transaction; an event whose lease was reclaimed meanwhile is skipped.
 Failed events in the batch (retrying and dead-lettered, including events the
 adapter did not report) are settled in one more transaction with the same
-`uploading` guard. Either batch is all-or-nothing: on a storage error nothing in it
+`uploading` and lease-ownership guard. Either batch is all-or-nothing: on a storage error nothing in it
 is settled, the events stay leased and are redelivered after the lease expires
 (at-least-once).
 
-Enqueue checks for a duplicate (same event id or fingerprint, in any state) before
-the capacity check, inside the same `BEGIN IMMEDIATE` transaction, so a re-sent
-event is reported as a duplicate even when the queue is full. Invalid input (blank,
+Enqueue checks stable identity and normalized content before the capacity check,
+inside the same `BEGIN IMMEDIATE` transaction. Exact replay succeeds even when
+the queue is full; identity reuse with different content is rejected. Invalid input (blank,
 NUL-containing or over-128-character event id, blank fingerprint, empty payload) is
 rejected as an error and is never reported as a duplicate. Ledger verification
 reads events and ledger entries in one read transaction, so concurrent enqueues
@@ -52,9 +57,10 @@ cannot produce false issues.
 The source cursor store runs `CREATE TABLE IF NOT EXISTS` on every start (WAL only
 for a new file) and treats any failed cursor write as a lost race (`false`). The
 C# and Rust stores share the same DDL, column order and timestamp text.
-Queue schema version 4 adds a covering index on `(state, payload_bytes,
-received_at)` so the per-enqueue capacity check does not read stored payloads; it
-is created idempotently on start-up.
+Queue schema version 5 adds lease generations, enqueue incarnations and compacted
+ledger checkpoints. The old table name becomes a read-only view, refusing old
+writers. DB/WAL limits include retained payloads, indexes and ledger history.
+See [upgrade, rollback and storage contract](../operations/queue-v5-durability.md).
 
 ## Agents and cloud queues
 
@@ -79,6 +85,9 @@ SQLite stores. See [background jobs](../operations/background-jobs.md).
 ## Current limits
 
 Configuration is environment-based in collector host. YAML policy matching uses
-bounded category/type lists; every policy must name its event types and unknown
-YAML keys fail the load. Sampling, aggregation, source cursors, evidence query
-proof and policy population diff are not implemented.
+bounded category/type and optional exact action/result/severity lists. Every
+policy must name its event types; unknown YAML keys fail loading. Sampling and
+aggregation remain unimplemented. Durable SQL cursors and evidence-query tooling
+exist, but SQL polling is not a shipped collector integration and live destination
+proof requires an authorised tenant. Population notes describe tested classes,
+not measured tenant volume. Unknown software formats remain denied.

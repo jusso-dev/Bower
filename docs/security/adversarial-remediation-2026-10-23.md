@@ -11,8 +11,8 @@ Baseline: `473c6ec6ffb9c195d49c54caae1267bd069c548f`. Implementation in progress
 | SEC-02 | Documented management Entra audience mismatches v2 tokens | Implemented; final combined gates pending |
 | SEC-05 | Producer authentication does not authorize application or tenant identity | Implemented; final combined gates pending |
 | DUR-01 | SDK reports dropped events as accepted and hides sender failure | Implemented; final combined gates pending |
-| DUR-02 | Fingerprint merges distinct security events | Scoped implementation running |
-| DUR-03 | SQL timestamp cursor stalls on a saturated timestamp | Scoped implementation running |
+| DUR-02 | Fingerprint merges distinct security events | Implemented; final combined gates pending |
+| DUR-03 | SQL timestamp cursor stalls on a saturated timestamp | Implemented; final combined gates pending |
 | COV-01 | Defaults reject role-change and export SDK events | Implemented; final combined gates pending |
 | COV-02 | Cloud mappings lose permission-change investigation context | Implemented; final combined gates pending |
 | AZ-04 | Final Retry-After is lost when SDK-level retries exhaust | Implemented; final combined gates pending |
@@ -20,15 +20,15 @@ Baseline: `473c6ec6ffb9c195d49c54caae1267bd069c548f`. Implementation in progress
 | AZ-06 | Entra ingestion is implemented but provisioning remains partly manual | Implemented; final combined gates pending |
 | SEC-03 | Unchecked heartbeat counts persistently crash fleet overview | Implemented; final combined gates pending |
 | SEC-04 | Revoked collectors can rewrite protected inventory | Implemented; final combined gates pending |
-| DUR-04 | Conflicting event ID returns duplicate success | Scoped implementation running |
-| DUR-05 | Stale worker can settle a newer lease | Scoped implementation running |
-| DUR-06 | Legitimate replay after retention reports false ledger corruption | Scoped implementation running |
-| DUR-07 | Unresolved event pins unbounded ledger history | Scoped implementation running |
+| DUR-04 | Conflicting event ID returns duplicate success | Implemented; final combined gates pending |
+| DUR-05 | Stale worker can settle a newer lease | Implemented; final combined gates pending |
+| DUR-06 | Legitimate replay after retention reports false ledger corruption | Implemented; final combined gates pending |
+| DUR-07 | Unresolved event pins unbounded ledger history | Implemented; final combined gates pending |
 | DUR-08 | Delivery health reports healthy when output disabled or stalled | Implemented; final combined gates pending |
 | COV-03 | Signed pack parser/detection assets never activate in collector | Scoped implementation running |
 | COV-04 | Sigma subset silently changes Boolean and equality semantics | Scoped implementation running |
 | COV-05 | High-value filtering relies on upstream subscription remaining narrow | Implemented; final combined gates pending |
-| OPS-01 | SQL size checks follow unrestricted row allocation | Scoped implementation running |
+| OPS-01 | SQL size checks follow unrestricted row allocation | Implemented; final combined gates pending |
 | OPS-02 | UI token cache contradicts repository security requirement | Implemented; final combined gates pending |
 
 Release gates: byte-level privacy; exact event acknowledgement; outage storage/backpressure; populated database migration and recovery; source/policy/DCR field preservation; supported parser/detection activation; independent destination query. Unsupported evidence dimensions remain not-assessed.
@@ -61,6 +61,13 @@ results do not replace integration validation.
 - COV-01/02/05: `DefaultSignalCoverageTests`, `CloudPermissionContextTests`,
   Rust policy tests and the versioned population notes cover shipped SDK events,
   IAM grant/revoke context and default denial of routine inventory traffic.
+- DUR-02–07/OPS-01: `DurabilityAdversarialTests`, `SqlServerAdversarialTests`,
+  Rust adversarial/compatibility tests and bidirectional queue fixtures cover
+  identity conflicts, fenced settlement, retention incarnations, compacted
+  history, DB/WAL admission bounds and populated v4-to-v5 migration rollback.
+  SQL tests inspect generated server projection and keyset behavior locally.
+- AZ-03 recovery: `tools/audited-replay/test_replay.py` covers exact-ID bounds,
+  durable intent/outcome, audit failure before mutation and ambiguous crash state.
 - OPS-02: console auth tests pin in-memory MSAL cache and popup flows.
 
 ## External acceptance gates
