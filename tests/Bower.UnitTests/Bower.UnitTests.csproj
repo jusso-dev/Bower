@@ -70,6 +70,7 @@
     </Content>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="../../tools/queue-migration-check/Bower.QueueMigrationCheck.csproj" />
     <ProjectReference Include="..\..\src\Bower.Pipeline\Bower.Pipeline.csproj" />
     <ProjectReference Include="..\..\src\Bower.Analytics\Bower.Analytics.csproj" />
     <ProjectReference Include="..\..\src\Bower.Source.Ama\Bower.Source.Ama.csproj" />

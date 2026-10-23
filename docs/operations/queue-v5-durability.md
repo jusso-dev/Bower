@@ -49,6 +49,42 @@ migration. No accepted row is discarded to resolve a collision. Investigate the
 source identity configuration and restore the pre-upgrade backup for old-version
 operation. Do not drop the view or rename tables to force a downgrade.
 
+Before upgrading either runtime, run the standalone C# identity preflight against
+the stopped v4 queue or a consistent backup. It uses the canonical C#
+`EventIdentity` implementation and does not invoke either runtime's queue startup:
+
+```sh
+dotnet run --project tools/queue-migration-check --configuration Release -- --database /absolute/path/bower.db
+```
+
+Build the tool before the maintenance window. Exit 0 means the bounded identity
+scan completed without collisions; 2 means collisions; 1 means refused or
+incomplete (including limits, unsupported schema or unreadable database). JSON
+contains completion/status, scanned/opaque row counts and colliding event-ID
+pairs only. No payload, original source ID, fingerprint or parser error is
+printed. The check opens SQLite read-only, uses a single read transaction, and
+never initializes, migrates, checkpoints or changes DB/WAL/schema contents. SQLite
+may use its normal shared-memory read locks; this is not a forensic no-filesystem-
+activity tool. Never use SQLite `immutable` mode to skip a committed WAL.
+
+Limits are 100,000 rows, 1 MiB per payload, 64 MiB total payload and 100 reported
+pairs. Hitting a limit is an incomplete result, never a clean bill of health.
+Only known v4 schema history is supported; future, v5, older and unknown schemas
+are refused. Opaque rows retain their explicit fingerprints, matching migration.
+Pairs include conflicts in ordered re-keying, including retained opaque keys.
+This is an identity check, not a ledger verification or guarantee that the full
+upgrade will succeed. Keep writers stopped between the check and upgrade.
+
+If collisions appear, preserve the backup and keep the v4 queue intact. Investigate
+the reported IDs in the authorized source system: distinguish a resend of one
+fact from producers reusing source identities. Record the reconciliation decision
+and evidence. Drain/acknowledge through the supported old runtime and normal
+retention where appropriate, or seek a separately reviewed data-preserving
+reconciliation plan. Do not delete accepted rows, rewrite payloads/ledger entries,
+or remove uniqueness constraints to force upgrade. Repeat the preflight on the
+reconciled consistent backup before upgrading. No automatic reconciliation or
+deletion is provided.
+
 Legacy DDL/backfill and v5 migration are transactional. Restart after an aborted
 transaction sees the prior committed state and can retry. Tests inject rollback
 at schema-history insertion on populated old databases and verify restart, data

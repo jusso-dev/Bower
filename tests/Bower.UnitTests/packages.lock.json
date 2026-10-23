@@ -657,6 +657,12 @@
           "YamlDotNet": "[18.1.0, )"
         }
       },
+      "bower.queuemigrationcheck": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Persistence": "[1.0.0, )"
+        }
+      },
       "bower.redaction": {
         "type": "Project",
         "dependencies": {
