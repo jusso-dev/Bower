@@ -102,22 +102,93 @@ production loss is **not established**. If an affected deployment existed:
    Pending destination failures resume automatically after the persisted deadline;
    no replay is needed for those rows. Verify a separately authorised canary by ID
    and expected sanitized fields at the destination.
-4. Inventory old dead letters with metadata-only commands, select reviewed IDs,
-   and replay in bounded groups only under explicit operational authority:
+4. Inventory old dead letters with metadata-only commands and select exact reviewed
+   IDs under explicit operational authority. Stop queue users for the offline
+   maintenance window and preserve the consistent backup before replay. Use the
+   audited wrapper with a trusted, already compiled C# CLI apphost or Rust `bower`
+   executable; do not substitute `dotnet run`, a shell command or an unreviewed
+   executable. Pre-provision private local audit storage outside the checkout:
 
    ```sh
    bower queue dead-letters --database /path/to/bower.db --max 100
-   bower queue replay --database /path/to/bower.db --event REVIEWED_EVENT_ID --max 1
+   mkdir -m 700 /path/to/replay-audit
+   python3 tools/audited-replay/replay.py \
+     --cli /opt/bower/bower \
+     --database /path/to/bower.db \
+     --audit-directory /path/to/replay-audit/CHG-123-batch-1 \
+     --operator operator-17 --change-reference CHG-123 \
+     --event REVIEWED_EVENT_ID
    ```
 
    Historical auth failures may have `azure-http-401`, `azure-http-403`, or
-   `max-attempts-exceeded:` codes. Prefer exact IDs; broad prefix replay can include
-   unrelated poison events. Existing replay handles dead letters only; it cannot
-   recover purged records or automatically replay incorrectly delivered rows.
+   `max-attempts-exceeded:` codes. The wrapper accepts exact IDs only; broad prefix
+   replay can include unrelated poison events. Existing replay handles dead letters
+   only; it cannot recover purged records or automatically replay incorrectly delivered rows.
    Source replay requires stable IDs, retained content and separate reconciliation.
-5. Retain an external change/audit record: operator, approval, selected IDs,
-   failure classification, before/after counts, exact command, timestamp and
-   destination query evidence. Existing CLI replay prints a count; it does **not**
-   create a complete operator audit trail. Do not call that count proof of delivery.
+5. Retain the wrapper's audit directory with the external approved change record:
+   failure classification, before/after metadata counts, release and trusted binary
+   installation details, queue identity, exact command and destination query evidence.
+   Operator/change references are assertions, not authentication or an approval
+   service. The bare CLI still prints a count without this external operator audit;
+   invoke the wrapper for controlled replay. Neither a count nor CLI success proves
+   destination delivery. Reconcile the selected IDs against queue metadata and
+   destination queries before closing the change.
+
+### Offline audit guarantees and recovery
+
+`tools/audited-replay/replay.py` uses only Python 3's standard library on POSIX.
+No cloud calls or direct queue SQL are made. It passes a shell-free argument array
+containing only `queue replay`, the resolved database path, repeated exact `--event`
+values and `--max` equal to the number of IDs. It accepts 1–100 distinct IDs, each
+1–128 ASCII characters; operator and change-reference identifiers are required and
+limited to 1–80 characters. Identifiers must start with an ASCII letter or digit;
+remaining characters may also include `.`, `_`, `:`, `@` and `-`. Unsupported IDs
+are refused, never rewritten. Supply non-secret identifiers only: no payloads,
+credentials, URLs or free-form investigation notes. Timeout defaults to 60 seconds
+and may be set with `--timeout-seconds` to 1–300 seconds.
+
+The audit parent must already exist, be owned by the current user and have no
+group/other permission bits. Each invocation requires a **new** audit directory
+(0700). Files are 0600. `intent.json` records the operator, change reference, exact
+IDs, bound, timeout, UTC timestamp and operation UUID. The command template,
+SHA-256 hashes of resolved CLI/database paths, CLI executable hash and database
+device/inode identify the local operation without retaining filesystem paths.
+Keep the path mapping and release details in the access-controlled change record;
+the apphost hash alone does not identify the C# managed assemblies. Installations
+and queue paths must remain stable and access-controlled for the maintenance window.
+
+The wrapper fsyncs the new directory's parent, writes/fsyncs intent, atomically
+publishes it without overwrite and fsyncs the audit directory **before launching
+the CLI**. An audit failure at any of these steps prevents invocation. After the
+CLI ends, `outcome.json` is published with the same durability steps. Records
+contain only fixed outcome classifications and the exit code, never CLI stdout,
+stderr, exception details or raw events. The wrapper discards both CLI output
+streams, including the CLI's count. `cli-exit-zero` means only that the command
+exited zero: fewer or none of the selected IDs may have been dead-lettered.
+Queue effects remain unverified; `delivery_verified` is always false.
+
+Wrapper exit codes: **0** means zero CLI exit plus saved outcome; **1** means a
+saved nonzero/timeout/interrupted/launch-failed outcome; **2** means refused input,
+local validation or audit failure. Any nonzero CLI outcome is conservatively
+ambiguous about queue effects. Timeout kills/waits for the direct CLI process;
+abrupt wrapper termination can leave its child running.
+
+After a crash, missing/invalid outcome, leftover `.pending` file, or any reported
+outcome audit failure, preserve the entire directory and treat queue effects as
+**ambiguous**, even if a complete-looking outcome file exists. A failure to fsync
+may leave visible but not durable data. Never delete evidence to retry. The tool
+refuses every existing audit directory and has no automatic retry/resume path.
+Ensure any surviving CLI has stopped, then reconcile selected IDs against queue
+state and destination evidence. Only separately reviewed remaining IDs may enter
+a new, explicitly approved batch with a fresh audit directory/change reference.
+The wrapper cannot prevent a privileged operator from bypassing it or choosing a
+different directory; it is not an exactly-once queue transaction or a tamper-proof
+audit service. Store evidence on reliable local storage supporting fsync and hard
+links, retain it under operator policy, and protect it from modification/deletion.
+
+Validation: `python3 -B -m unittest discover -s tools/audited-replay -v` covers
+success, command/launch failure, every pre-launch sync boundary, post-command audit
+failure, input bounds/injection, timeout and abrupt wrapper death using isolated
+synthetic CLI fixtures. No production replay or live destination check is involved.
 
 No recovery or replay operation was performed as part of this implementation.
