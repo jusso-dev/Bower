@@ -93,6 +93,28 @@ public sealed class ManagementBoundaryTests
         Assert.Empty(await store.ListAsync(null, ct));
     }
 
+    [Theory]
+    [InlineData("waiting", 0)]
+    [InlineData("pending", 0)]
+    [InlineData("api-accepted", 0)]
+    [InlineData("spooled", 0)]
+    [InlineData("disabled", 1)]
+    [InlineData("retrying", 1)]
+    [InlineData("stalled", 1)]
+    [InlineData("backpressure", 1)]
+    public async Task Overview_distinguishes_operational_progress_from_delivery_exceptions(string delivery, int unhealthy)
+    {
+        using TemporaryDirectory root = new();
+        ManagementStore store = new(Path.Combine(root.Path, "management.db"));
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        await store.InitializeAsync(ct);
+        await store.RegisterAsync(Registration("one"), "principal", TestEvents.Now, ct);
+        await store.DecideAsync("one", CollectorStatus.Approved, "approved", "test", "admin", "admin", TestEvents.Now, ct);
+        await store.HeartbeatAsync("one", Heartbeat() with { DeliveryStatus = delivery }, "principal", TestEvents.Now, ct);
+        OverviewRecord overview = await store.OverviewAsync(TestEvents.Now.AddMinutes(-1), ct);
+        Assert.Equal(unhealthy, overview.UnhealthyCollectors);
+    }
+
     private static CollectorRegistration Registration(string id) =>
         new(id, "machine", "test", "1", "config", "policy", [new("source", "sql", "healthy", 0, null)], []);
 

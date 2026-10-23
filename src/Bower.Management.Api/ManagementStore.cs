@@ -481,7 +481,7 @@ public sealed class ManagementStore(string databasePath)
                 item.LastSeenAt < staleBefore ||
                 item.PolicyInSync == false ||
                 item.DeadLettered > 0 ||
-                !string.Equals(item.DeliveryStatus, "healthy", StringComparison.OrdinalIgnoreCase))
+                !DeliveryOperational(item.DeliveryStatus))
             .Take(12)
             .ToArray();
         return new OverviewRecord(
@@ -489,7 +489,7 @@ public sealed class ManagementStore(string databasePath)
             collectors.Count(item => item.Status == CollectorStatus.Pending),
             collectors.Count(item =>
                 item.Status is CollectorStatus.Suspended or CollectorStatus.Revoked ||
-                !string.Equals(item.DeliveryStatus, "healthy", StringComparison.OrdinalIgnoreCase)),
+                !DeliveryOperational(item.DeliveryStatus)),
             collectors.Count(item => item.LastSeenAt < staleBefore),
             SaturatingCount(collectors.Select(item => item.QueueDepth)),
             collectors.SelectMany(item => item.Sources)
@@ -500,6 +500,11 @@ public sealed class ManagementStore(string databasePath)
             collectors.Count(item => item.PolicyInSync == false),
             SaturatingCount(collectors.Select(item => item.DeadLettered)));
     }
+
+    // Operational progress is distinct from a Sentinel destination-query claim.
+    // Keep normal waiting/pending states out of the fleet error count.
+    private static bool DeliveryOperational(string? status) => status?.ToLowerInvariant()
+        is "healthy" or "waiting" or "pending" or "api-accepted" or "spooled";
 
     // Existing databases can contain invalid counters from older collectors. Keep
     // overview available without allowing negative rows to cancel valid counts.
