@@ -289,6 +289,7 @@ async fn pack_backpressure_preserves_existing_rows_and_retry_can_succeed() {
     collector
         .store
         .enqueue(&bower_contracts::QueuedEvent {
+            lease_token: None,
             event_id: "filler".into(),
             fingerprint: "sha256:filler".into(),
             payload: "x".repeat(1_048_000),
