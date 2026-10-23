@@ -91,3 +91,23 @@ The following remain unexecuted until an authorised test target is supplied:
 No live delivery, historical completeness, regulatory control or universal
 software-support claim follows from local green checks. Generic raw-log shipping
 remains outside scope; unsupported events remain denied.
+
+## Implementation council follow-up
+
+One independent Claude/Codex round reviewed combined implementation `2999b65`.
+Both returned **SHIP WITH CHANGES**. Their review was source-based; final tests
+below remain the lead's responsibility. No second approval round is implied.
+
+| Objection | Disposition and local regression |
+|---|---|
+| Unbounded server retry deadline pauses every lease | Fixed at client and durable-worker boundaries. Long headers return without SDK sleep; deadlines cap at one hour with fixed metadata. Huge date/millisecond and restart tests in both runtimes. |
+| Isolated HTTP 400 continually pauses healthy backlog | Selectively rejected singleton retained in dead letters when another record succeeds in the same delivery call; healthy backlog continues. All-failing/configuration-wide 400 remains recoverable destination fault. Immediate audited recovery is safer than reclassifying every singleton as poison. |
+| v4 identity collisions abort upgrade without diagnostics | Added bounded read-only canonical-identity preflight, collision pairs and backup/reconciliation instructions. Populated v4, malformed/future schema, unchanged DB/WAL and transactional upgrade tests. |
+| Producer metadata suppresses detection without failure | Ambiguous or excessive fields now cause explicit evaluation failure and quarantine before source persistence. Matching/repaired/boundary host tests in C# and Rust. |
+| Forward SQL pages skip/starve overlap | Cursor v3 pins replay bounds and alternates bounded forward/replay pages. Backlog, late rows, timestamp ties and restart regressions; v1/v2 migration documented. |
+| Global event IDs can collide across producers | Actionable intake response and bounded diagnostics being completed; on-disk primary key remains unchanged. |
+
+The 400 decision is deliberately narrower than classifying every failed singleton
+as poison: a wrong DCR may reject every valid record. Without a successful sibling,
+Bower preserves those records pending operator repair and applies bounded storage
+backpressure. Dead letters are retained, never counted as delivered.
