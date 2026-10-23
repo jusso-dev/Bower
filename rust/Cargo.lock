@@ -313,6 +313,7 @@ dependencies = [
  "axum",
  "bower-contracts",
  "bower-core",
+ "bower-integrity",
  "bower-output-ama-spool",
  "bower-output-azure",
  "bower-packs",

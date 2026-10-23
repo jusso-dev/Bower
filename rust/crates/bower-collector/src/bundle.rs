@@ -68,6 +68,20 @@ pub fn load(settings: &CollectorSettings) -> Result<LoadedBundle, HostError> {
     for path in &settings.packs {
         packs.push(bower_packs::load(std::path::Path::new(path), &trusted).map_err(pack_error)?);
     }
+    let mut pack_ids = HashSet::new();
+    let mut detection_ids = HashSet::new();
+    let mut parser_count = 0;
+    let mut detection_count = 0;
+    for pack in &packs {
+        parser_count += pack.parsers.len();
+        detection_count += pack.detections.len();
+        if !pack_ids.insert(manifest(pack).id.clone())
+            || pack.detections.iter().any(|rule| !detection_ids.insert(rule.id.to_lowercase()))
+            || parser_count > 64 || detection_count > 64
+        {
+            return Err(HostError::new("InvalidDataException", "Duplicate pack/detection identity or runtime pack limit exceeded."));
+        }
+    }
     for pack in &packs {
         policies.extend(pack.policies.iter().cloned());
     }
@@ -165,17 +179,20 @@ pub fn load(settings: &CollectorSettings) -> Result<LoadedBundle, HostError> {
             .collect(),
         packs: packs
             .iter()
-            .map(manifest)
-            .map(|manifest| PackSummary {
-                id: manifest.id.clone(),
-                version: manifest.version.clone(),
-                pack_hash: manifest.pack_hash.clone(),
+            .map(|pack| PackSummary {
+                id: manifest(pack).id.clone(),
+                version: manifest(pack).version.clone(),
+                pack_hash: manifest(pack).pack_hash.clone(),
+                parser_statuses: pack.parsers.iter().map(|parser| bower_packs::runtime::parser_status(parser).into()).collect(),
+                detection_status: if pack.detections.is_empty() { "absent" } else { "active-local" }.into(),
+                dcr_status: if pack.dcr_template_json.is_some() { "packaged-only" } else { "absent" }.into(),
             })
             .collect(),
         privacy_profile: profile.as_ref().and_then(|profile| profile.id.clone()),
     };
     Ok(LoadedBundle {
         info,
+        packs,
         redactor: Arc::new(
             bower_redaction::JsonEventRedactor::with_policy(privacy)
                 .map_err(|error| HostError::new(error.dotnet_type(), error.to_string()))?,

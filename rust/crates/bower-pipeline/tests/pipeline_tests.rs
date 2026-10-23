@@ -401,6 +401,7 @@ fn regex_configuration(pattern: &str) -> CustomLogParserConfiguration {
         delimiter: None,
         key_value_separator: None,
         pattern: Some(pattern.to_owned()),
+        runtime: None,
     }
 }
 
@@ -438,6 +439,7 @@ fn configuration_validation_reports_every_issue() {
         delimiter: Some("|".to_owned()),
         key_value_separator: None,
         pattern: None,
+        runtime: None,
     };
 
     assert_eq!(

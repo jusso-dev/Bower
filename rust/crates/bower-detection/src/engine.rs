@@ -1,6 +1,6 @@
 //! Deterministic, bounded Sigma-style matching (`DetectionEngine`).
 
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::path::Path;
 
 use bower_contracts::SecurityEventEnvelope;
@@ -9,12 +9,15 @@ use bower_contracts::time::Timestamp;
 use crate::DetectionError;
 use crate::loader;
 use crate::model::{DetectionAlert, DetectionEvaluationResult, DetectionRule};
-use crate::ordinal::{contains_ignore_case, ends_with_ignore_case, eq_ignore_case};
+use crate::ordinal::eq_ignore_case;
+use crate::semantics::Semantics;
 
 pub struct DetectionEngine {
     rules: Vec<DetectionRule>,
     suppressed_rule_ids: Vec<String>,
     seen_fingerprints: HashSet<String>,
+    fingerprint_order: VecDeque<String>,
+    semantics: Vec<Option<Semantics>>,
 }
 
 /// Event values keyed case-insensitively, in insertion order.
@@ -29,7 +32,7 @@ impl Haystack {
             .iter_mut()
             .find(|(existing, _)| eq_ignore_case(existing, key))
         {
-            Some(entry) => entry.1 = value,
+            Some(_) => {},
             None => self.entries.push((key.to_owned(), value)),
         }
     }
@@ -41,13 +44,7 @@ impl Haystack {
             .map(|(_, value)| value.as_str())
     }
 
-    fn joined_values(&self) -> String {
-        self.entries
-            .iter()
-            .map(|(_, value)| value.as_str())
-            .collect::<Vec<_>>()
-            .join(" ")
-    }
+
 }
 
 impl DetectionEngine {
@@ -55,7 +52,10 @@ impl DetectionEngine {
         rules: Vec<DetectionRule>,
         suppressed_rule_ids: impl IntoIterator<Item = String>,
     ) -> Self {
+        let semantics = rules.iter().map(|r| Semantics::new(&r.detection_fields, &r.condition).ok()).collect();
         Self {
+            semantics,
+            fingerprint_order: VecDeque::new(),
             rules,
             suppressed_rule_ids: suppressed_rule_ids.into_iter().collect(),
             seen_fingerprints: HashSet::new(),
@@ -86,7 +86,14 @@ impl DetectionEngine {
         let mut alerts = Vec::new();
         let mut suppressed: Vec<String> = Vec::new();
 
-        for rule in &self.rules {
+        if envelope.labels.as_ref().is_some_and(|labels| labels.len() > 256) {
+            return DetectionEvaluationResult { alerts, suppressed_rule_ids: suppressed };
+        }
+        let haystack = build_haystack(envelope);
+        if haystack.entries.iter().any(|(key, value)| key.encode_utf16().count() > 128 || value.encode_utf16().count() > 65536) {
+            return DetectionEvaluationResult { alerts, suppressed_rule_ids: suppressed };
+        }
+        for (index, rule) in self.rules.iter().enumerate() {
             if self
                 .suppressed_rule_ids
                 .iter()
@@ -96,13 +103,24 @@ impl DetectionEngine {
                 continue;
             }
 
-            let Some(matched_fields) = matches(rule, envelope) else {
+            let Some(matched_fields) = self.semantics[index].as_ref().and_then(|s| s.matches(|field| haystack.get(field).map(str::to_owned))) else {
                 continue;
             };
 
-            let fingerprint = format!("{}:{}:{}", rule.id, envelope.event_id, rule.rule_hash);
-            if !self.seen_fingerprints.insert(fingerprint) {
+            use sha2::{Digest, Sha256};
+            let mut hash = Sha256::new();
+            for value in [&rule.id, &envelope.event_id, &rule.rule_hash] {
+                hash.update((value.len() as u32).to_le_bytes());
+                hash.update(value.as_bytes());
+            }
+            let fingerprint = hex::encode(hash.finalize());
+            if !self.seen_fingerprints.insert(fingerprint.clone()) {
                 continue;
+            }
+
+            self.fingerprint_order.push_back(fingerprint);
+            if self.fingerprint_order.len() > 4096 {
+                if let Some(old) = self.fingerprint_order.pop_front() { self.seen_fingerprints.remove(&old); }
             }
 
             let actor = envelope
@@ -155,6 +173,7 @@ impl DetectionEngine {
         event_json: &str,
         now: Option<Timestamp>,
     ) -> Result<DetectionEvaluationResult, DetectionError> {
+        if event_json.len() > 1024 * 1024 { return Err(crate::semantics::invalid()); }
         let envelope: SecurityEventEnvelope =
             bower_contracts::json::from_str(event_json).map_err(|_| {
                 DetectionError::InvalidData(
@@ -163,109 +182,6 @@ impl DetectionEngine {
             })?;
         Ok(self.evaluate(&envelope, now))
     }
-}
-
-const CONDITION_KEYWORDS: &[&str] = &["or", "and", "not", "of", "them"];
-
-/// Returns the matched field names, or `None` when the rule does not match.
-fn matches(rule: &DetectionRule, envelope: &SecurityEventEnvelope) -> Option<Vec<String>> {
-    let mut matched_fields = Vec::new();
-    let haystack = build_haystack(envelope);
-
-    // MVP: condition "selection" or "selection1 or selection2"; all keys under named selection groups.
-    let mut groups: Vec<String> = rule
-        .condition
-        .split([' ', '\t'])
-        .map(str::trim)
-        .filter(|token| !token.is_empty())
-        .filter(|token| {
-            *token != "1"
-                && !CONDITION_KEYWORDS
-                    .iter()
-                    .any(|keyword| eq_ignore_case(keyword, token))
-        })
-        .map(str::to_owned)
-        .collect();
-    if groups.is_empty() {
-        groups = rule.detection_fields.keys().map(str::to_owned).collect();
-    }
-
-    let any_group = contains_ignore_case(&rule.condition, " or ")
-        || contains_ignore_case(&rule.condition, "1 of them");
-
-    let mut results = Vec::with_capacity(groups.len());
-    for group in &groups {
-        let result = match rule.detection_fields.get(group) {
-            Some(selection) => match_selection(selection, &haystack, &mut matched_fields),
-            None => false,
-        };
-        results.push(result);
-    }
-
-    let matched = if any_group {
-        results.iter().any(|result| *result)
-    } else {
-        results.iter().all(|result| *result)
-    };
-    matched.then_some(matched_fields)
-}
-
-fn match_selection(selection: &str, haystack: &Haystack, matched_fields: &mut Vec<String>) -> bool {
-    // Selection forms: "field:value|value2;field2:value".
-    let clauses: Vec<&str> = selection
-        .split(';')
-        .map(str::trim)
-        .filter(|clause| !clause.is_empty())
-        .collect();
-    if clauses.is_empty() {
-        return contains_matching(&haystack.joined_values(), selection, matched_fields);
-    }
-
-    for clause in clauses {
-        let separator = clause.find(':');
-        let Some(separator) = separator.filter(|position| *position > 0) else {
-            if !contains_matching(&haystack.joined_values(), clause, matched_fields) {
-                return false;
-            }
-            continue;
-        };
-
-        let field = clause[..separator].trim().trim_end_matches(['|', '*']);
-        let pattern = &clause[separator + 1..];
-        let value = match haystack.get(field) {
-            Some(value) => value,
-            None => {
-                // Also try event.* aliases.
-                match haystack
-                    .entries
-                    .iter()
-                    .find(|(key, _)| ends_with_ignore_case(key, field))
-                {
-                    Some((_, alias)) => alias.as_str(),
-                    None => return false,
-                }
-            }
-        };
-
-        let matched = pattern
-            .split('|')
-            .map(str::trim)
-            .filter(|option| !option.is_empty())
-            .any(|option| contains_ignore_case(value, option));
-        if !matched {
-            return false;
-        }
-        matched_fields.push(field.to_owned());
-    }
-    true
-}
-
-fn contains_matching(haystack: &str, needle: &str, matched_fields: &mut Vec<String>) -> bool {
-    if contains_ignore_case(haystack, needle) {
-        matched_fields.push("payload".to_owned());
-        return true;
-    }
-    false
 }
 
 fn build_haystack(envelope: &SecurityEventEnvelope) -> Haystack {

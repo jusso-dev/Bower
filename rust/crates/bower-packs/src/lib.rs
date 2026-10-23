@@ -13,6 +13,7 @@
 pub mod archive;
 pub mod diff;
 pub mod model;
+pub mod runtime;
 pub mod tester;
 pub mod zip;
 

@@ -2,9 +2,57 @@
   "version": "1.0",
   "format": "Json",
   "fields": [
-    { "sourceName": "timestamp", "type": "DateTime", "ocsfPath": "time", "asimField": "TimeGenerated", "sensitive": false },
-    { "sourceName": "user", "type": "Text", "ocsfPath": "actor.user.name", "asimField": "TargetUsername", "sensitive": true },
-    { "sourceName": "source_ip", "type": "IpAddress", "ocsfPath": "src_endpoint.ip", "asimField": "SrcIpAddr", "sensitive": false },
-    { "sourceName": "result", "type": "Text", "ocsfPath": "status", "asimField": "EventResult", "sensitive": false }
-  ]
+    {
+      "sourceName": "id",
+      "type": "Text",
+      "ocsfPath": "metadata.uid",
+      "asimField": "EventOriginalUid",
+      "sensitive": false
+    },
+    {
+      "sourceName": "timestamp",
+      "type": "DateTime",
+      "ocsfPath": "time",
+      "asimField": "TimeGenerated",
+      "sensitive": false
+    },
+    {
+      "sourceName": "user",
+      "type": "Text",
+      "ocsfPath": "actor.user.name",
+      "asimField": "TargetUsername",
+      "sensitive": true
+    },
+    {
+      "sourceName": "source_ip",
+      "type": "IpAddress",
+      "ocsfPath": "src_endpoint.ip",
+      "asimField": "SrcIpAddr",
+      "sensitive": false
+    },
+    {
+      "sourceName": "result",
+      "type": "Text",
+      "ocsfPath": "status",
+      "asimField": "EventResult",
+      "sensitive": false
+    }
+  ],
+  "runtime": {
+    "applicationName": "ssh-gateway",
+    "environment": "production",
+    "eventCategory": "authentication",
+    "eventType": "authentication_failure",
+    "eventAction": "authentication.attempt",
+    "eventResult": "failure",
+    "match": {
+      "result": "failure"
+    },
+    "fields": {
+      "eventId": "id",
+      "timeGenerated": "timestamp",
+      "actor.username": "user",
+      "source.ipAddress": "source_ip"
+    }
+  }
 }

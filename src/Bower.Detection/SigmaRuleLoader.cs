@@ -1,5 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using YamlDotNet.Core;
+using YamlDotNet.Core.Events;
 using YamlDotNet.RepresentationModel;
 
 namespace Bower.Detection;
@@ -36,13 +39,17 @@ public static class SigmaRuleLoader
             throw new InvalidDataException("Sigma rule exceeds 256 KiB limit.");
         }
 
+        ValidateYamlBounds(yaml);
         using StringReader reader = new(yaml);
         YamlStream stream = new();
         stream.Load(reader);
-        if (stream.Documents.Count == 0 || stream.Documents[0].RootNode is not YamlMappingNode root)
+        if (stream.Documents.Count != 1 || stream.Documents[0].RootNode is not YamlMappingNode root)
         {
             throw new InvalidDataException("Sigma rule root must be a mapping.");
         }
+
+        int remainingNodes = 8192;
+        ValidateTree(root, 0, ref remainingNodes);
 
         string id = RequiredScalar(root, "id", sourceName);
         string title = RequiredScalar(root, "title", sourceName);
@@ -75,13 +82,16 @@ public static class SigmaRuleLoader
             condition = OptionalScalar(detection, "condition") ?? "selection";
             foreach ((YamlNode keyNode, YamlNode valueNode) in detection.Children)
             {
-                string key = keyNode.ToString();
+                string key = keyNode is YamlScalarNode keyScalar ? keyScalar.Value ?? string.Empty : throw DetectionSemantics.Invalid();
                 if (key.Equals("condition", StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
 
-                fields[key] = FlattenSelection(valueNode);
+                if (!fields.TryAdd(key, EncodeSelection(valueNode)))
+                {
+                    throw DetectionSemantics.Invalid();
+                }
             }
         }
 
@@ -89,6 +99,8 @@ public static class SigmaRuleLoader
         {
             throw new InvalidDataException($"Sigma rule '{id}' has no detection selections.");
         }
+
+        _ = new DetectionSemantics(fields, condition);
 
         List<string> techniques = [];
         if (root.Children.TryGetValue(new YamlScalarNode("tags"), out YamlNode? tagsNode) &&
@@ -135,30 +147,86 @@ public static class SigmaRuleLoader
             hash);
     }
 
-    private static string FlattenSelection(YamlNode node)
+    private static string EncodeSelection(YamlNode node)
     {
-        if (node is YamlScalarNode scalar)
+        if (node is not YamlMappingNode mapping) { throw DetectionSemantics.Invalid(); }
+        List<string[]> clauses = [];
+        foreach ((YamlNode key, YamlNode value) in mapping.Children)
         {
-            return scalar.Value ?? string.Empty;
+            if (key is not YamlScalarNode scalarKey) { throw DetectionSemantics.Invalid(); }
+            string[] parts = (scalarKey.Value ?? string.Empty).Split('|');
+            if (parts.Length > 2) { throw DetectionSemantics.Invalid(); }
+            List<string> clause = [parts[0], parts.Length == 1 ? "equals" : parts[1]];
+            if (value is YamlSequenceNode sequence)
+            {
+                clause.AddRange(sequence.Select(SelectionScalar));
+            }
+            else { clause.Add(SelectionScalar(value)); }
+            clauses.Add(clause.ToArray());
         }
 
-        if (node is YamlSequenceNode sequence)
-        {
-            return string.Join('|', sequence.Select(item => item.ToString()));
-        }
+        string[][] result = clauses.ToArray();
+        DetectionSemantics.ValidateClauses(result);
+        return JsonSerializer.Serialize(result, DetectionJsonContext.Default.StringArrayArray);
+    }
 
+    private static string SelectionScalar(YamlNode node)
+    {
+        if (node is not YamlScalarNode scalar || scalar.Value is null) { throw DetectionSemantics.Invalid(); }
+        // Quote YAML typed scalars; the two YAML libraries resolve them differently.
+        string value = scalar.Value;
+        if (scalar.Style == ScalarStyle.Plain && (value.Length == 0
+            || value.Equals("true", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("false", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("null", StringComparison.OrdinalIgnoreCase)
+            || value == "~" || IsYamlNumber(value)))
+        {
+            throw DetectionSemantics.Invalid();
+        }
+        return value;
+    }
+
+    private static void ValidateTree(YamlNode node, int depth, ref int remaining)
+    {
+        if (depth > 32 || --remaining < 0) { throw DetectionSemantics.Invalid(); }
         if (node is YamlMappingNode mapping)
         {
-            List<string> parts = [];
+            HashSet<string> keys = new(StringComparer.OrdinalIgnoreCase);
             foreach ((YamlNode key, YamlNode value) in mapping.Children)
             {
-                parts.Add($"{key}:{FlattenSelection(value)}");
+                if (key is not YamlScalarNode scalar || !keys.Add(scalar.Value ?? string.Empty)) { throw DetectionSemantics.Invalid(); }
+                ValidateTree(key, depth + 1, ref remaining);
+                ValidateTree(value, depth + 1, ref remaining);
             }
-
-            return string.Join(';', parts);
         }
+        else if (node is YamlSequenceNode sequence)
+        {
+            foreach (YamlNode item in sequence) { ValidateTree(item, depth + 1, ref remaining); }
+        }
+    }
 
-        return node.ToString();
+    private static bool IsYamlNumber(string value)
+    {
+        string unsigned = value.TrimStart('+', '-');
+        if (unsigned.Length > 1 && unsigned[0] == '0' && unsigned.All(char.IsAsciiDigit)) { return false; }
+        return double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _)
+            || unsigned is ".inf" or ".Inf" or ".INF" or ".nan" or ".NaN" or ".NAN"
+            || unsigned.StartsWith("0x", StringComparison.Ordinal) || unsigned.StartsWith("0o", StringComparison.Ordinal)
+            || unsigned.StartsWith("0b", StringComparison.Ordinal);
+    }
+
+    private static void ValidateYamlBounds(string yaml)
+    {
+        Parser parser = new(new StringReader(yaml));
+        int depth = 0;
+        int nodes = 0;
+        while (parser.MoveNext())
+        {
+            if (++nodes > 8192) { throw DetectionSemantics.Invalid(); }
+            if (parser.Current is MappingStart or SequenceStart && ++depth > 32) { throw DetectionSemantics.Invalid(); }
+            if (parser.Current is MappingEnd or SequenceEnd) { depth--; }
+            if (parser.Current is NodeEvent node && !node.Tag.IsEmpty) { throw DetectionSemantics.Invalid(); }
+        }
     }
 
     private static string RequiredScalar(YamlMappingNode root, string name, string? source)
@@ -176,7 +244,7 @@ public static class SigmaRuleLoader
     private static string? OptionalScalar(YamlMappingNode root, string name)
     {
         return root.Children.TryGetValue(new YamlScalarNode(name), out YamlNode? node)
-            ? node.ToString()
+            ? node is YamlScalarNode scalar ? scalar.Value : throw DetectionSemantics.Invalid()
             : null;
     }
 }

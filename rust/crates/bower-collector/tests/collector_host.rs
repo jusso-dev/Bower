@@ -17,6 +17,155 @@ use tower::ServiceExt;
 
 const TOKEN: &str = "test-ingest-token-0123456789abcdef0123456789";
 
+fn signed_ssh_settings(directory: &Path) -> CollectorSettings {
+    let keys = bower_integrity::generate_key_pair();
+    let archive = bower_packs::build(
+        &repo_root().join("packs/linux-ssh-gateway"),
+        &keys.private_key_pem,
+        directory,
+        None,
+    ).unwrap();
+    let public_key = directory.join("trusted.pem");
+    std::fs::write(&public_key, keys.public_key_pem).unwrap();
+    let privacy_key = directory.join("privacy.key");
+    std::fs::write(&privacy_key, [0xabu8; 32]).unwrap();
+    let mut settings = base_settings(directory);
+    settings.policy_directory = directory.join("no-directory-policies");
+    settings.packs = vec![archive.to_string_lossy().into_owned()];
+    settings.pack_trusted_key_files = vec![public_key.to_string_lossy().into_owned()];
+    settings.privacy_hmac_key_file = Some(privacy_key);
+    settings.ingest_token = Some(TOKEN.into());
+    settings.single_trust_domain = true;
+    settings.ingest_requests_per_second = 1000;
+    settings
+}
+
+fn raw_ssh(id: &str, result: &str) -> String {
+    serde_json::json!({
+        "id": id, "timestamp": bower_contracts::time::format_json(&bower_contracts::time::now()),
+        "user": "raw-test-user", "source_ip": "203.0.113.5", "result": result,
+        "password": "discard-unknown-secret"
+    }).to_string()
+}
+
+fn post_raw(path: &str, body: String, token: Option<&str>) -> Request<Body> {
+    let mut request = Request::post(path).header(header::CONTENT_TYPE, "application/json");
+    if let Some(token) = token { request = request.header(header::AUTHORIZATION, format!("Bearer {token}")); }
+    request.body(Body::from(body)).unwrap()
+}
+
+const SSH_RUNTIME_PATH: &str = "/v1/packs/linux-ssh-gateway/parsers/0/events";
+
+#[tokio::test]
+async fn signed_pack_raw_events_queue_redacted_detection_evidence_and_survive_reopen() {
+    let directory = tempfile::tempdir().unwrap();
+    let settings = signed_ssh_settings(directory.path());
+    let loaded = bundle::load(&settings).unwrap();
+    assert_eq!(loaded.info.packs[0].parser_statuses, ["active-local-json"]);
+    assert_eq!(loaded.info.packs[0].detection_status, "active-local");
+    assert_eq!(loaded.info.packs[0].dcr_status, "packaged-only");
+    let mut collector = host::build(settings.clone(), loaded, BuildOptions::default()).unwrap();
+    collector.initialize().await.unwrap();
+    let raw = raw_ssh("raw-durable", "failure");
+    let (status, _, body) = send(&collector.router, post_raw(SSH_RUNTIME_PATH, raw.clone(), Some(TOKEN))).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+    assert!(!body.contains("raw-test-user"));
+    let (status, _, body) = send(&collector.router, post_raw(SSH_RUNTIME_PATH, raw, Some(TOKEN))).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.contains("\"duplicate\":true"));
+
+    // Semantic ingest uses exactly the same local rules and cannot forge evidence.
+    let mut semantic = authentication_failure("semantic-detection");
+    semantic.application.name = "ssh-gateway".into();
+    semantic.application.environment = "production".into();
+    semantic.attributes = Some([("bowerDetections".into(), bower_contracts::JsonElement::from("forged-evidence"))].into_iter().collect());
+    let (status, _, body) = send(&collector.router, post(&semantic, Some(TOKEN))).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+    drop(collector);
+
+    let mut reopened = host::build(settings.clone(), bundle::load(&settings).unwrap(), BuildOptions::default()).unwrap();
+    reopened.initialize().await.unwrap();
+    let queued = reopened.store.lease(10, Duration::from_secs(60)).unwrap();
+    // HMAC redaction may emit existing privacy alerts, but no separate detection event.
+    for row in &queued {
+        assert!(!row.payload.contains("raw-test-user"));
+        assert!(!row.payload.contains("discard-unknown-secret"));
+        assert!(!row.payload.contains("forged-evidence"));
+    }
+    for id in ["raw-durable", "semantic-detection"] {
+        let source = queued.iter().find(|row| row.event_id == id).unwrap();
+        let event: serde_json::Value = serde_json::from_str(&source.payload).unwrap();
+        let evidence = &event["attributes"]["bowerDetections"][0];
+        assert_eq!(evidence.as_object().unwrap().len(), 4);
+        assert_eq!(evidence["ruleId"], "bower-pack-ssh-auth-failure-001");
+        assert_eq!(evidence["ruleVersion"], "1.0.0");
+        assert!(evidence["ruleHash"].as_str().unwrap().len() >= 64);
+        assert!(evidence["mitreTechniques"].as_array().unwrap().iter().any(|item| item == "T1110"));
+        if id == "raw-durable" {
+            assert_eq!(event["eventOriginalId"], id);
+            assert_eq!(event["collector"]["sourceAdapter"], "pack-http:default:linux-ssh-gateway:0");
+        }
+    }
+    assert_eq!(queued.iter().filter(|row| row.event_id == "raw-durable").count(), 1);
+    assert!(queued.iter().all(|row| row.event_id == "raw-durable" || row.event_id == "semantic-detection" || row.payload.contains("sensitive_data_detected")));
+}
+
+#[tokio::test]
+async fn pack_ingest_filters_bounds_and_auth_fail_without_queueing() {
+    let directory = tempfile::tempdir().unwrap();
+    let settings = signed_ssh_settings(directory.path());
+    let mut collector = host::build(settings.clone(), bundle::load(&settings).unwrap(), BuildOptions::default()).unwrap();
+    collector.initialize().await.unwrap();
+    let valid = raw_ssh("not-queued", "failure");
+    let mut cases = vec![
+        (valid.clone(), None, StatusCode::UNAUTHORIZED),
+        (raw_ssh("not-queued", "success"), Some(TOKEN), StatusCode::UNPROCESSABLE_ENTITY),
+        (raw_ssh("not-queued", "Failure"), Some(TOKEN), StatusCode::UNPROCESSABLE_ENTITY),
+        ("[]".into(), Some(TOKEN), StatusCode::BAD_REQUEST),
+        ("{".into(), Some(TOKEN), StatusCode::BAD_REQUEST),
+        (valid.replacen('{', "{\"id\":\"duplicate\",", 1), Some(TOKEN), StatusCode::BAD_REQUEST),
+        (valid.replace("raw-test-user", &"u".repeat(2049)), Some(TOKEN), StatusCode::BAD_REQUEST),
+        (raw_ssh(&"i".repeat(129), "failure"), Some(TOKEN), StatusCode::BAD_REQUEST),
+        (valid.replace("203.0.113.5", "not-an-address"), Some(TOKEN), StatusCode::BAD_REQUEST),
+        (" ".repeat(32_769), Some(TOKEN), StatusCode::PAYLOAD_TOO_LARGE),
+    ];
+    let mut object: serde_json::Value = serde_json::from_str(&valid).unwrap();
+    object["timestamp"] = "2026-10-23T10:00:00".into();
+    cases.push((object.to_string(), Some(TOKEN), StatusCode::BAD_REQUEST));
+    object["timestamp"] = 123.into();
+    cases.push((object.to_string(), Some(TOKEN), StatusCode::BAD_REQUEST));
+    let nested = format!("{}0{}", "[".repeat(16), "]".repeat(16));
+    cases.push((valid.replacen('{', &format!("{{\"deep\":{nested},"), 1), Some(TOKEN), StatusCode::BAD_REQUEST));
+    for (body, token, expected) in cases {
+        let (status, _, response) = send(&collector.router, post_raw(SSH_RUNTIME_PATH, body, token)).await;
+        assert_eq!(status, expected, "{response}");
+        assert!(!response.contains("raw-test-user"));
+        assert!(!response.contains("discard-unknown-secret"));
+    }
+    for path in ["/v1/packs/missing/parsers/0/events", "/v1/packs/linux-ssh-gateway/parsers/99/events", "/v1/packs/linux-ssh-gateway/parsers/-1/events"] {
+        assert_eq!(send(&collector.router, post_raw(path, valid.clone(), Some(TOKEN))).await.0, StatusCode::NOT_FOUND);
+    }
+    assert!(collector.store.lease(10, Duration::from_secs(60)).unwrap().is_empty());
+
+    // Authorization sees static application and mapped source identity, before processing.
+    let scopes = directory.path().join("scopes.json");
+    std::fs::write(&scopes, r#"[{"producer":"default","application":{"name":"ssh-gateway","environment":"production"},"source":{"ipAddress":"192.0.2.77"}}]"#).unwrap();
+    let mut restricted = settings;
+    restricted.single_trust_domain = false;
+    restricted.producer_scopes_file = Some(scopes);
+    let restricted = host::build(restricted.clone(), bundle::load(&restricted).unwrap(), BuildOptions::default()).unwrap();
+    assert_eq!(send(&restricted.router, post_raw(SSH_RUNTIME_PATH, valid, Some(TOKEN))).await.0, StatusCode::FORBIDDEN);
+    assert!(restricted.store.lease(10, Duration::from_secs(60)).unwrap().is_empty());
+}
+
+#[test]
+fn pack_bundle_rejects_duplicate_pack_identity() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut settings = signed_ssh_settings(directory.path());
+    settings.packs.push(settings.packs[0].clone());
+    assert!(bundle::load(&settings).is_err());
+}
+
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../..")

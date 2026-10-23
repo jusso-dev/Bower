@@ -37,7 +37,8 @@ internal sealed record StatusPolicyResponse(
 
 internal sealed record StatusPolicyItem(string Id, string Version);
 
-internal sealed record StatusPackItem(string Id, string Version, string PackHash);
+internal sealed record StatusPackItem(string Id, string Version, string PackHash,
+    IReadOnlyList<string> ParserStatuses, string DetectionStatus, string DcrStatus);
 
 internal sealed record LedgerResponse(long Sequence, string Hash);
 

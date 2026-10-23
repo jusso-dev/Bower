@@ -36,6 +36,7 @@ tracing-subscriber.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+bower-integrity.workspace = true
 flate2.workspace = true
 rusqlite.workspace = true
 chrono.workspace = true

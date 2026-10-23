@@ -18,6 +18,8 @@ public sealed record PolicyBundle(
     string? PrivacyProfile,
     string Hash)
 {
+    public IReadOnlyList<LoadedPack> LoadedPacks { get; init; } = [];
+
     public static PolicyBundle Load(CollectorSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -33,6 +35,13 @@ public sealed record PolicyBundle(
 
         string[] trusted = settings.PackTrustedKeyFiles.Select(File.ReadAllText).ToArray();
         List<LoadedPack> packs = settings.Packs.Select(path => PackArchive.Load(path, trusted)).ToList();
+        if (packs.Select(pack => pack.Manifest.Id).Distinct(StringComparer.Ordinal).Count() != packs.Count
+            || packs.Sum(pack => pack.Parsers.Count) > 64 || packs.Sum(pack => pack.Detections.Count) > 64
+            || packs.SelectMany(pack => pack.Detections).Select(rule => rule.Id).Distinct(StringComparer.Ordinal).Count()
+                != packs.Sum(pack => pack.Detections.Count))
+        {
+            throw new InvalidDataException("Duplicate pack or detection identity, or more than 64 parsers/detections.");
+        }
         policies.AddRange(packs.SelectMany(pack => pack.Policies));
 
         string? duplicate = policies
@@ -64,6 +73,9 @@ public sealed record PolicyBundle(
                 .Concat(packs.Select(pack => $"pack:{pack.Manifest.Id}@{pack.Manifest.Version}:{pack.Manifest.PackHash}"))
                 .Append($"privacy:{profile?.Hash ?? "default"}"));
         string hash = "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(material)));
-        return new PolicyBundle(policies, packs.Select(pack => pack.Manifest).ToArray(), privacy, profile?.Id, hash);
+        return new PolicyBundle(policies, packs.Select(pack => pack.Manifest).ToArray(), privacy, profile?.Id, hash)
+        {
+            LoadedPacks = packs
+        };
     }
 }

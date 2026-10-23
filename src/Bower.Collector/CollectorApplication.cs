@@ -9,6 +9,7 @@ using Bower.Jobs;
 using Bower.Output.AmaSpool;
 using Bower.Output.AzureLogsIngestion;
 using Bower.Persistence;
+using Bower.Packs;
 using Bower.PolicyEngine;
 using Bower.Redaction;
 using Microsoft.AspNetCore.RateLimiting;
@@ -59,7 +60,9 @@ public static partial class CollectorApplication
         builder.Services.AddSingleton(TimeProvider.System);
         PolicyBundle bundle = PolicyBundle.Load(settings);
         builder.Services.AddSingleton(bundle);
-        builder.Services.AddSingleton<IEventRedactor>(new JsonEventRedactor(bundle.Privacy));
+        builder.Services.AddSingleton<IEventRedactor>(new PackDetectionRedactor(
+            new JsonEventRedactor(bundle.Privacy), new DeterministicPolicyEvaluator(bundle.Policies),
+            bundle.LoadedPacks.SelectMany(pack => pack.Detections).ToArray()));
         builder.Services.AddSingleton<IDurableEventStore>(services =>
             new SqliteEventStore(
                 settings.QueuePath,
@@ -151,6 +154,7 @@ public static partial class CollectorApplication
 
     private static void MapEndpoints(WebApplication app)
     {
+        MapPackEndpoints(app);
         app.MapPost(
                 "/v1/events",
                 async (
@@ -239,7 +243,11 @@ public static partial class CollectorApplication
                             [.. bundle.Policies.Select(item => new StatusPolicyItem(
                                 item.Policy.Metadata.Id,
                                 item.Policy.Metadata.Version))],
-                            [.. bundle.Packs.Select(pack => new StatusPackItem(pack.Id, pack.Version, pack.PackHash))],
+                            [.. bundle.LoadedPacks.Select(pack => new StatusPackItem(
+                                pack.Manifest.Id, pack.Manifest.Version, pack.Manifest.PackHash,
+                                [.. pack.Parsers.Select(parser => parser.Runtime is null ? "inactive-preview-only" : "active-local-json")],
+                                pack.Detections.Count == 0 ? "absent" : "active-local",
+                                pack.DcrTemplateJson is null ? "absent" : "packaged-only"))],
                             bundle.PrivacyProfile),
                         new LedgerResponse(ledger.Sequence, ledger.Hash),
                         new StatusQueueResponse(

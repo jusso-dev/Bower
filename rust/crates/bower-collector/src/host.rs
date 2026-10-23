@@ -39,6 +39,7 @@ use crate::worker::{QueueDeliveryOptions, QueueDeliveryWorker};
 /// status view.
 pub struct LoadedBundle {
     pub info: BundleInfo,
+    pub packs: Vec<bower_packs::LoadedPack>,
     pub redactor: Arc<dyn EventRedactor>,
     pub evaluator: Arc<dyn TelemetryPolicyEvaluator>,
 }
@@ -159,7 +160,11 @@ pub fn build(
         settings.configuration_hash(),
     );
     let processor = SecurityEventProcessor::new(
-        bundle.redactor,
+        Arc::new(bower_packs::runtime::PackDetectionRedactor {
+            inner: bundle.redactor,
+            evaluator: Arc::clone(&bundle.evaluator),
+            rules: bundle.packs.iter().flat_map(|pack| pack.detections.iter().cloned()).collect(),
+        }),
         bundle.evaluator,
         Arc::clone(&store),
         Arc::clone(&clock),
@@ -186,6 +191,7 @@ pub fn build(
             u32::try_from(settings.ingest_requests_per_second).unwrap_or(1),
         )),
         bundle: Arc::new(bundle.info),
+        packs: Arc::new(bundle.packs),
         catalog: Arc::clone(&catalog),
     };
     let delivery = options.delivery.unwrap_or(QueueDeliveryOptions {
