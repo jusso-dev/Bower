@@ -14,7 +14,7 @@ Baseline: `473c6ec6ffb9c195d49c54caae1267bd069c548f`. Implementation in progress
 | DUR-02 | Fingerprint merges distinct security events | Scoped implementation running |
 | DUR-03 | SQL timestamp cursor stalls on a saturated timestamp | Scoped implementation running |
 | COV-01 | Defaults reject role-change and export SDK events | Implemented; final combined gates pending |
-| COV-02 | Cloud mappings lose permission-change investigation context | Scoped implementation running |
+| COV-02 | Cloud mappings lose permission-change investigation context | Implemented; final combined gates pending |
 | AZ-04 | Final Retry-After is lost when SDK-level retries exhaust | Implemented; final combined gates pending |
 | AZ-05 | Evidence control mappings claim more than canary query establishes | Implemented; final combined gates pending |
 | AZ-06 | Entra ingestion is implemented but provisioning remains partly manual | Implemented; final combined gates pending |
@@ -32,3 +32,51 @@ Baseline: `473c6ec6ffb9c195d49c54caae1267bd069c548f`. Implementation in progress
 | OPS-02 | UI token cache contradicts repository security requirement | Implemented; final combined gates pending |
 
 Release gates: byte-level privacy; exact event acknowledgement; outage storage/backpressure; populated database migration and recovery; source/policy/DCR field preservation; supported parser/detection activation; independent destination query. Unsupported evidence dimensions remain not-assessed.
+
+
+## Regression evidence map
+
+These tests establish local/simulated behavior only. Final gate results must bind
+to the combined commit, runtime versions and production defaults. Focused child
+results do not replace integration validation.
+
+- AZ-01/03/04: `AzureLogsIngestionOutputTests` and both runtimes' delivery-worker
+  suites cover reordered concurrent responses, exact acknowledgement ownership,
+  bounded isolation, persisted outages and final server retry deadlines.
+- SEC-01/05: `SemanticPrivacyTests`, `ProducerAuthorizationTests` and Rust
+  redaction/host suites cover canaries across SQLite/WAL/spool/captured requests
+  and producer identity mismatches before persistence.
+- DUR-01: `SdkDeliveryTests` covers overflow, permanent/transient failures,
+  timeouts, sender faults and bounded shutdown accounting.
+- SEC-02/03/04: `ManagementEntraTokenTests` and `ManagementBoundaryTests` cover
+  signed offline token rejection, counter bounds, legacy overflow and revoked
+  inventory writes.
+- DUR-08: `DeliveryHealthTests` and Rust heartbeat tests cover disabled output,
+  retrying/stalled/backpressure states. Historical receipts cannot prove the
+  currently configured destination worked; an empty backlog reports idle.
+- AZ-02/05: `SchemaAssetTests`, `IntegrityAndDcrTests`, `PackAndEvidenceTests`
+  and Rust parity fixtures pin additive fields and restricted evidence claims.
+- AZ-06: `deploy/entra/test_plan_ingestion.py` plus Bicep compilation cover
+  deterministic offline identity/federation plans and exact DCR role scope.
+- COV-01/02/05: `DefaultSignalCoverageTests`, `CloudPermissionContextTests`,
+  Rust policy tests and the versioned population notes cover shipped SDK events,
+  IAM grant/revoke context and default denial of routine inventory traffic.
+- OPS-02: console auth tests pin in-memory MSAL cache and popup flows.
+
+## External acceptance gates
+
+The following remain unexecuted until an authorised test target is supplied:
+
+1. Actual Entra token acquisition for each supported machine identity, management
+   login/heartbeat, correct-DCR success and unrelated-DCR denial.
+2. Destination query of unique application fixture IDs in the intended LAW/table,
+   with exact sanitised target/change/export fields. See
+   [deployment acceptance checks](../deployment/entra-ingestion-plan.md).
+3. Live SQL Server tied-timestamp/restart/late-arrival exercise. Predicate and
+   local queue tests do not certify a production database or its permissions.
+4. Any historical reconciliation or replay on a deployed queue. Production loss
+   is conditional, not established by the simulated misattribution probe.
+
+No live delivery, historical completeness, regulatory control or universal
+software-support claim follows from local green checks. Generic raw-log shipping
+remains outside scope; unsupported events remain denied.
