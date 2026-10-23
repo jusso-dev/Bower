@@ -18,7 +18,11 @@ internal sealed record IngestResponse(
     bool Queued,
     bool Duplicate,
     IReadOnlyList<string> Reasons,
-    IngestPolicyResponse? Policy);
+    IngestPolicyResponse? Policy)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Remediation { get; init; }
+}
 
 internal sealed record IngestPolicyResponse(string PolicyId, string PolicyVersion, string PolicyHash, int Score);
 
@@ -27,7 +31,10 @@ internal sealed record StatusResponse(
     StatusPolicyResponse Policy,
     LedgerResponse Ledger,
     StatusQueueResponse Queue,
-    IReadOnlyList<BackgroundJobStatus> Jobs);
+    IReadOnlyList<BackgroundJobStatus> Jobs)
+{
+    public EventIdentityConflictSnapshot? EventIdentityConflicts { get; init; }
+}
 
 internal sealed record StatusPolicyResponse(
     string Hash,

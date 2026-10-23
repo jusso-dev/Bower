@@ -70,6 +70,7 @@ public static partial class CollectorApplication
                 services.GetRequiredService<TimeProvider>()));
         builder.Services.AddSingleton<ITelemetryPolicyEvaluator>(new DeterministicPolicyEvaluator(bundle.Policies));
         builder.Services.AddSingleton<SecurityEventProcessor>();
+        builder.Services.AddSingleton<EventIdentityConflicts>();
         builder.Services.AddSingleton(
             new CollectorIdentity(settings.CollectorId, settings.Version, "local-http", settings.ConfigurationHash()));
         builder.Services.AddSingleton(new ProducerAuthorization(settings.ProducerScopesFile, settings.SingleTrustDomain));
@@ -162,6 +163,8 @@ public static partial class CollectorApplication
                     HttpContext context,
                     SecurityEventProcessor processor,
                     ProducerAuthorization authorization,
+                    EventIdentityConflicts conflicts,
+                    IngestAuthentication authentication,
                     CollectorIdentity identity,
                     CancellationToken cancellationToken) =>
                 {
@@ -212,6 +215,12 @@ public static partial class CollectorApplication
                         DecisionAction.Reject => 422,
                         _ => 400
                     };
+                    if (result.Reasons.Contains(EventIdentityConflicts.Reason, StringComparer.Ordinal))
+                    {
+                        conflicts.Record(producer, authentication.Required);
+                        statusCode = StatusCodes.Status409Conflict;
+                        response = response with { Remediation = EventIdentityConflicts.Remediation };
+                    }
                     return Results.Json(response, CollectorJsonContext.Default.IngestResponse, statusCode: statusCode);
                 })
             .AddEndpointFilter<IngestAuthenticationFilter>()
@@ -231,6 +240,7 @@ public static partial class CollectorApplication
                 async (
                     IDurableEventStore eventQueue,
                     BackgroundJobCatalog jobs,
+                    EventIdentityConflicts conflicts,
                     PolicyBundle bundle,
                     CancellationToken cancellationToken) =>
                 {
@@ -259,7 +269,7 @@ public static partial class CollectorApplication
                             snapshot.TotalBytes,
                             snapshot.UndeliveredBytes,
                             snapshot.OldestUndelivered),
-                        jobs.List());
+                        jobs.List()) { EventIdentityConflicts = conflicts.Snapshot() };
                     return Results.Json(status, CollectorJsonContext.Default.StatusResponse);
                 })
             .AddEndpointFilter<IngestAuthenticationFilter>();

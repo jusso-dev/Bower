@@ -5,6 +5,7 @@ pub mod app;
 pub mod auth;
 pub mod authorization;
 pub mod bundle;
+mod conflicts;
 pub mod credential;
 pub mod error;
 pub mod heartbeat;

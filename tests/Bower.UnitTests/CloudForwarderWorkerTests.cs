@@ -46,6 +46,7 @@ public sealed class CloudForwarderWorkerTests
     }
 
     [Theory]
+    [InlineData(HttpStatusCode.Conflict)]
     [InlineData(HttpStatusCode.ServiceUnavailable)]
     [InlineData(HttpStatusCode.Unauthorized)]
     [InlineData(HttpStatusCode.InternalServerError)]
@@ -68,16 +69,20 @@ public sealed class CloudForwarderWorkerTests
         Assert.All(source.Released, item => Assert.Equal(TimeSpan.FromSeconds(60), item.Delay));
     }
 
-    [Fact]
-    public async Task Pass_RetriedMessageResendsSameEventIds()
+    [Theory]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    [InlineData(HttpStatusCode.Conflict)]
+    public async Task Pass_RetriedMessageResendsSameEventIds(HttpStatusCode initialStatus)
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         FakeSource source = new(Message("m1", CloudSourceTests.StopLogging));
-        HttpStatusCode status = HttpStatusCode.ServiceUnavailable;
+        HttpStatusCode status = initialStatus;
         Collector collector = new(_ => status);
         CloudForwarderWorker worker = Worker(source, collector);
 
         await worker.ProcessOnceAsync(cancellationToken);
+        Assert.Empty(source.Acknowledged);
+        Assert.Equal("m1", Assert.Single(source.Released).Id);
         source.Redeliver();
         status = HttpStatusCode.Accepted;
         await worker.ProcessOnceAsync(cancellationToken);

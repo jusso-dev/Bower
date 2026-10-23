@@ -61,6 +61,98 @@ fn post_raw(path: &str, body: String, token: Option<&str>) -> Request<Body> {
 const SSH_RUNTIME_PATH: &str = "/v1/packs/linux-ssh-gateway/parsers/0/events";
 
 #[tokio::test]
+async fn semantic_and_raw_cross_producer_conflicts_are_actionable_and_payload_free() {
+    const OTHER_TOKEN: &str = "other-token-0123456789abcdef0123456789";
+    for raw_intake in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut settings = signed_ssh_settings(directory.path());
+        let tokens_file = directory.path().join("tokens");
+        std::fs::write(
+            &tokens_file,
+            IngestAuthentication::tokens_file_line("other-producer", OTHER_TOKEN),
+        )
+        .unwrap();
+        settings.ingest_tokens_file = Some(tokens_file);
+        let mut collector = host::build(
+            settings.clone(),
+            bundle::load(&settings).unwrap(),
+            BuildOptions::default(),
+        )
+        .unwrap();
+        collector.initialize().await.unwrap();
+        let raw = raw_ssh("private-event-id", "failure");
+        let mut semantic = authentication_failure("private-event-id");
+        semantic.application.name = "ssh-gateway".into();
+        semantic.application.environment = "production".into();
+        semantic.attributes = Some(
+            [(
+                "producer".into(),
+                bower_contracts::JsonElement::from("forged-producer"),
+            )]
+            .into_iter()
+            .collect(),
+        );
+        let request = |token| {
+            if raw_intake {
+                post_raw(SSH_RUNTIME_PATH, raw.clone(), Some(token))
+            } else {
+                post(&semantic, Some(token))
+            }
+        };
+        let (status, _, body) = send(&collector.router, request(TOKEN)).await;
+        assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+        let (status, _, body) = send(&collector.router, request(TOKEN)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        for _ in 0..2 {
+            let (status, _, body) = send(&collector.router, request(OTHER_TOKEN)).await;
+            assert_eq!(status, StatusCode::CONFLICT, "{body}");
+            let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+            assert_eq!(
+                json["reasons"],
+                serde_json::json!(["event-identity-conflict"])
+            );
+            assert_eq!(json["queued"], false);
+            assert_eq!(json["duplicate"], false);
+            assert!(
+                json["remediation"]
+                    .as_str()
+                    .unwrap()
+                    .contains("Preserve the upstream event")
+            );
+            assert!(!body.contains("discard-unknown-secret"));
+            assert!(!body.contains("raw-test-user"));
+        }
+        let (status, _, body) = send(&collector.router, get("/v1/status", Some(OTHER_TOKEN))).await;
+        assert_eq!(status, StatusCode::OK);
+        let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(
+            json["eventIdentityConflicts"],
+            serde_json::json!({
+                "producers": [{"producer": "other-producer", "count": 2}],
+                "unattributed": 0, "overflow": 0
+            })
+        );
+        for forbidden in [
+            "private-event-id",
+            "forged-producer",
+            "discard-unknown-secret",
+            OTHER_TOKEN,
+        ] {
+            assert!(!body.contains(forbidden));
+        }
+        let (status, _, body) = send(&collector.router, request(TOKEN)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let rows = collector.store.lease(10, Duration::from_secs(60)).unwrap();
+        let original = rows
+            .iter()
+            .filter(|row| row.event_id == "private-event-id")
+            .collect::<Vec<_>>();
+        assert_eq!(original.len(), 1);
+        assert!(!original[0].payload.contains("other-producer"));
+    }
+}
+
+#[tokio::test]
 async fn signed_pack_raw_events_queue_redacted_detection_evidence_and_survive_reopen() {
     let directory = tempfile::tempdir().unwrap();
     let settings = signed_ssh_settings(directory.path());

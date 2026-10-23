@@ -108,8 +108,9 @@ correlation ID and outcome reason. Secrets and unrestricted bodies cannot be
 forwarded through arbitrary field mappings.
 
 Responses: 202 durable local acceptance, 200 duplicate, 400 invalid input, 401
-missing/invalid credential, 403 scope denied, 404 inactive/unknown parser, 413
-oversize, 415 wrong content type, 422 unmatched or policy rejected, 429 rate limit,
+missing/invalid credential, 403 scope denied, 404 inactive/unknown parser, 409
+event identity conflict, 413 oversize, 415 wrong content type, 422 unmatched or
+policy rejected, 429 rate limit,
 503 queue capacity. Cancellation while reading persists nothing. Once processing
 has reached durable enqueue, a disconnected client may miss its response; retry
 the identical event. Existing queue identity/conflict and retention semantics apply.
@@ -174,3 +175,7 @@ flattened matching string. Consumers constructing rules manually must use the lo
 Exact equality intentionally removes accidental substring matches. The GCP pack
 1.1.1 explicitly lists qualified IAM service-account-key methods in detection
 version 1.1.0. Policies are unchanged by this correction.
+
+Raw parser IDs must be globally unique across producers and stable on replay.
+On 409, preserve upstream events pending repair; see
+[event identity conflict recovery](../operations/event-identity-conflicts.md).

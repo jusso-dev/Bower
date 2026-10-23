@@ -2,20 +2,20 @@
 //!
 //! - `POST /v1/events`: rate limited (429), bearer authenticated (401), JSON only
 //!   (415), 1 MiB body limit (413), then redaction, policy and durable queueing.
-//!   202 accepted, 200 duplicate, 422 rejected, 400 quarantined, 503 queue full.
+//!   202 accepted, 200 duplicate, 422 rejected, 400 quarantined, 409 identity conflict, 503 queue full.
 //! - `GET /health`: anonymous, status only.
 //! - `GET /v1/status`: bearer authenticated queue, ledger, policy and job metadata.
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::Router;
 use axum::body::Body;
 use axum::extract::{Path, Request, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use axum::{Extension, Router};
 use bower_contracts::time::{Timestamp, serde_offset_option};
 use bower_contracts::{DecisionAction, DurableEventStore, LedgerHead, QueueSnapshot, StoreError};
 use http_body_util::BodyExt;
@@ -23,6 +23,7 @@ use serde::Serialize;
 use tracing::error;
 
 use crate::auth::IngestAuthentication;
+use crate::conflicts::{CONFLICT_REASON, ConflictSnapshot, EventIdentityConflicts, REMEDIATION};
 use crate::jobs::{BackgroundJobStatus, JobCatalog};
 use crate::rate_limit::TokenBucket;
 use crate::worker::store_error_name;
@@ -136,6 +137,7 @@ pub fn router(state: AppState) -> Router {
         .merge(ingest)
         .route("/health", get(health))
         .route("/v1/status", get(status))
+        .layer(Extension(Arc::new(EventIdentityConflicts::default())))
         .with_state(state)
 }
 
@@ -285,22 +287,30 @@ struct IngestResponse {
     duplicate: bool,
     reasons: Vec<String>,
     policy: Option<PolicyReference>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    remediation: Option<&'static str>,
 }
 
-async fn ingest(State(state): State<AppState>, request: Request) -> Response {
-    ingest_candidate(state, request, None).await
+async fn ingest(
+    State(state): State<AppState>,
+    Extension(conflicts): Extension<Arc<EventIdentityConflicts>>,
+    request: Request,
+) -> Response {
+    ingest_candidate(state, conflicts, request, None).await
 }
 
 async fn ingest_pack(
     State(state): State<AppState>,
+    Extension(conflicts): Extension<Arc<EventIdentityConflicts>>,
     Path((pack_id, parser_index)): Path<(String, String)>,
     request: Request,
 ) -> Response {
-    ingest_candidate(state, request, Some((pack_id, parser_index))).await
+    ingest_candidate(state, conflicts, request, Some((pack_id, parser_index))).await
 }
 
 async fn ingest_candidate(
     state: AppState,
+    conflicts: Arc<EventIdentityConflicts>,
     request: Request,
     pack_parser: Option<(String, String)>,
 ) -> Response {
@@ -414,7 +424,7 @@ async fn ingest_candidate(
         }
     };
 
-    let status = match result.action {
+    let mut status = match result.action {
         DecisionAction::Accept | DecisionAction::RedactAndAccept => {
             if result.duplicate {
                 StatusCode::OK
@@ -425,6 +435,14 @@ async fn ingest_candidate(
         DecisionAction::Reject => StatusCode::UNPROCESSABLE_ENTITY,
         _ => StatusCode::BAD_REQUEST,
     };
+    let conflict = result
+        .reasons
+        .iter()
+        .any(|reason| reason == CONFLICT_REASON);
+    if conflict {
+        conflicts.record(&producer, state.auth.required());
+        status = StatusCode::CONFLICT;
+    }
     json_response(
         status,
         &IngestResponse {
@@ -434,6 +452,7 @@ async fn ingest_candidate(
             duplicate: result.duplicate,
             reasons: result.reasons,
             policy: result.policy,
+            remediation: conflict.then_some(REMEDIATION),
         },
     )
 }
@@ -518,9 +537,15 @@ struct StatusBody<'a> {
     ledger: StatusLedger,
     queue: StatusQueue,
     jobs: Vec<BackgroundJobStatus>,
+    #[serde(rename = "eventIdentityConflicts")]
+    event_identity_conflicts: ConflictSnapshot,
 }
 
-async fn status(State(state): State<AppState>, headers: HeaderMap) -> Response {
+async fn status(
+    State(state): State<AppState>,
+    Extension(conflicts): Extension<Arc<EventIdentityConflicts>>,
+    headers: HeaderMap,
+) -> Response {
     if let Err(response) = authenticate(&state.auth, &headers) {
         return *response;
     }
@@ -558,6 +583,7 @@ async fn status(State(state): State<AppState>, headers: HeaderMap) -> Response {
                 oldest_undelivered: snapshot.oldest_undelivered,
             },
             jobs: state.catalog.list(),
+            event_identity_conflicts: conflicts.snapshot(),
         },
     )
 }

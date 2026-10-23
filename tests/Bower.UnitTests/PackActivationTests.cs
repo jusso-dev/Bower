@@ -27,6 +27,37 @@ public sealed class PackActivationTests
     private static string Source => Path.Combine(AppContext.BaseDirectory, "packs", "linux-ssh-gateway");
 
     [Fact]
+    public async Task RawIntake_CrossProducerConflictPreservesOriginalAndReports409()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        const string otherToken = "other-token-0123456789abcdef0123456789";
+        string tokensFile = Path.Combine(directory.Path, "tokens");
+        File.WriteAllLines(tokensFile, [IngestAuthentication.TokensFileLine("raw-producer", otherToken)]);
+        await using WebApplication app = await Start(directory, cancellation, tokensFile: tokensFile);
+        using HttpClient client = app.GetTestClient();
+        string raw = Raw();
+        using HttpResponseMessage accepted = await Send(client, raw, cancellation);
+        Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
+        using HttpRequestMessage request = new(HttpMethod.Post, Endpoint)
+        {
+            Content = new StringContent(raw, Encoding.UTF8, "application/json")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", otherToken);
+        using HttpResponseMessage response = await client.SendAsync(request, cancellation);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        string body = await response.Content.ReadAsStringAsync(cancellation);
+        Assert.Contains("event-identity-conflict", body, StringComparison.Ordinal);
+        Assert.Contains("Preserve the upstream event", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("raw-secret-never-forwarded", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("deploy-admin", body, StringComparison.Ordinal);
+        using HttpResponseMessage replay = await Send(client, raw, cancellation);
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+        EventIdentityConflictSnapshot counts = app.Services.GetRequiredService<EventIdentityConflicts>().Snapshot();
+        Assert.Equal(new ProducerConflictCount("raw-producer", 1), Assert.Single(counts.Producers));
+    }
+
+    [Fact]
     public async Task SignedPack_RawRecordBecomesRedactedDurableDetection_AndReplayDeduplicates()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
@@ -388,7 +419,7 @@ public sealed class PackActivationTests
         }
     }
 
-    private static async Task<WebApplication> Start(TemporaryDirectory directory, CancellationToken cancellation, bool singleTrustDomain = true, int rate = 1000, bool active = true, IEventRedactor? redactor = null)
+    private static async Task<WebApplication> Start(TemporaryDirectory directory, CancellationToken cancellation, bool singleTrustDomain = true, int rate = 1000, bool active = true, IEventRedactor? redactor = null, string? tokensFile = null)
     {
         (string privateKey, string publicKey, _) = DetachedSigner.GenerateKeyPair();
         string source = Source;
@@ -420,6 +451,7 @@ public sealed class PackActivationTests
             MaximumQueueBytes = 1_048_576,
             IngestRequestsPerSecond = rate,
             IngestToken = Token,
+            IngestTokensFile = tokensFile,
             SingleTrustDomain = singleTrustDomain
         }, builder =>
         {

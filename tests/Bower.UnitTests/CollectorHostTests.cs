@@ -64,6 +64,62 @@ public sealed class CollectorHostTests
     }
 
     [Fact]
+    public async Task Ingest_CrossProducerIdentityConflictIsActionableAndCountedWithoutPayload()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        const string otherToken = "other-token-0123456789abcdef0123456789";
+        string tokensFile = Path.Combine(directory.Path, "tokens");
+        File.WriteAllLines(tokensFile, [IngestAuthentication.TokensFileLine("other-producer", otherToken)]);
+        await using WebApplication app = await StartAsync(directory, Token, cancellation,
+            settings => settings with { IngestTokensFile = tokensFile });
+        using HttpClient client = app.GetTestClient();
+        SecurityEventEnvelope candidate = AuthenticationFailure() with
+        {
+            EventId = "private-event-id",
+            Attributes = new Dictionary<string, JsonElement>
+            {
+                ["producer"] = JsonSerializer.SerializeToElement("forged-producer"),
+                ["dbPassword"] = JsonSerializer.SerializeToElement("payload-secret-canary")
+            }
+        };
+        using HttpRequestMessage first = Post(candidate, Token);
+        using HttpResponseMessage accepted = await client.SendAsync(first, cancellation);
+        Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
+        using HttpRequestMessage replay = Post(candidate, Token);
+        using HttpResponseMessage duplicate = await client.SendAsync(replay, cancellation);
+        Assert.Equal(HttpStatusCode.OK, duplicate.StatusCode);
+        for (int index = 0; index < 2; index++)
+        {
+            using HttpRequestMessage request = Post(candidate, otherToken);
+            using HttpResponseMessage response = await client.SendAsync(request, cancellation);
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            string body = await response.Content.ReadAsStringAsync(cancellation);
+            using JsonDocument json = JsonDocument.Parse(body);
+            Assert.Equal("event-identity-conflict", json.RootElement.GetProperty("reasons")[0].GetString());
+            Assert.False(json.RootElement.GetProperty("queued").GetBoolean());
+            Assert.False(json.RootElement.GetProperty("duplicate").GetBoolean());
+            Assert.Contains("Preserve the upstream event", json.RootElement.GetProperty("remediation").GetString(), StringComparison.Ordinal);
+            Assert.DoesNotContain("payload-secret-canary", body, StringComparison.Ordinal);
+        }
+        using HttpRequestMessage statusRequest = new(HttpMethod.Get, "/v1/status");
+        statusRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", otherToken);
+        using HttpResponseMessage status = await client.SendAsync(statusRequest, cancellation);
+        string diagnostics = await status.Content.ReadAsStringAsync(cancellation);
+        using JsonDocument document = JsonDocument.Parse(diagnostics);
+        JsonElement conflicts = document.RootElement.GetProperty("eventIdentityConflicts");
+        JsonElement producer = Assert.Single(conflicts.GetProperty("producers").EnumerateArray());
+        Assert.Equal("other-producer", producer.GetProperty("producer").GetString());
+        Assert.Equal(2, producer.GetProperty("count").GetInt64());
+        Assert.Equal(0, conflicts.GetProperty("unattributed").GetInt64());
+        Assert.Equal(0, conflicts.GetProperty("overflow").GetInt64());
+        Assert.DoesNotContain("private-event-id", diagnostics, StringComparison.Ordinal);
+        Assert.DoesNotContain("forged-producer", diagnostics, StringComparison.Ordinal);
+        Assert.DoesNotContain("payload-secret-canary", diagnostics, StringComparison.Ordinal);
+        Assert.DoesNotContain(otherToken, diagnostics, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Health_IsAnonymousButStatusRequiresToken()
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;

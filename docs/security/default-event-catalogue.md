@@ -34,3 +34,10 @@ native Sentinel connectors when they already supply the required security signal
 SQL library support does not imply an installed polling service. Broad JSONL,
 Windows Event Log and audit-API coverage and extra language SDKs remain separately
 scoped integrations; no claim of support for every software package is made.
+
+## Event identity
+
+Every event type uses globally unique, retry-stable IDs across producers.
+Collector HTTP 409 `event-identity-conflict` is an intake outcome, not a new
+security event type. Preserve upstream events pending producer repair; see
+[event identity conflict recovery](../operations/event-identity-conflicts.md).

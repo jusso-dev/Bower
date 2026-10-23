@@ -14,7 +14,8 @@ public static partial class CollectorApplication
         app.MapPost("/v1/packs/{packId}/parsers/{parserIndex:int}/events",
             async (string packId, int parserIndex, HttpContext context,
                 PolicyBundle bundle, SecurityEventProcessor processor, ProducerAuthorization authorization,
-                CollectorIdentity identity, CancellationToken cancellationToken) =>
+                CollectorIdentity identity, EventIdentityConflicts conflicts, IngestAuthentication authentication,
+                CancellationToken cancellationToken) =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 LoadedPack? pack = bundle.LoadedPacks.SingleOrDefault(pack => pack.Manifest.Id == packId);
@@ -96,6 +97,12 @@ public static partial class CollectorApplication
                     DecisionAction.Reject => 422,
                     _ => 400
                 };
+                if (result.Reasons.Contains(EventIdentityConflicts.Reason, StringComparer.Ordinal))
+                {
+                    conflicts.Record(producer, authentication.Required);
+                    status = StatusCodes.Status409Conflict;
+                    response = response with { Remediation = EventIdentityConflicts.Remediation };
+                }
                 return Results.Json(response, CollectorJsonContext.Default.IngestResponse, statusCode: status);
             })
             .AddEndpointFilter<IngestAuthenticationFilter>()
