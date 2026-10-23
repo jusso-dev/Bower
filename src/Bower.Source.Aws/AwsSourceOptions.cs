@@ -30,9 +30,9 @@ public sealed record AwsSourceOptions
 
     /// <summary>
     /// Copies the original record into the <c>aws.raw</c> attribute. Raw records can hold
-    /// request parameters, so hosts that forward to a collector should leave this off.
+    /// request parameters, so this is off by default and forwarding hosts should leave it off.
     /// </summary>
-    public bool IncludeRawRecord { get; init; } = true;
+    public bool IncludeRawRecord { get; init; }
 
     /// <summary>Stable hash of the mapping configuration, reported as the collector configuration hash.</summary>
     public string ConfigurationHash()

@@ -6,7 +6,7 @@ using Bower.Contracts;
 
 namespace Bower.Source.Aws;
 
-public sealed class AwsSecurityEventMapper
+public sealed partial class AwsSecurityEventMapper
 {
     private readonly AwsSourceOptions options;
     private readonly TimeProvider clock;
@@ -178,7 +178,7 @@ public sealed class AwsSecurityEventMapper
             labels["aws.readOnly"] = readOnly;
         }
 
-        return BuildEnvelope(
+        SecurityEventEnvelope envelope = BuildEnvelope(
             eventId,
             timeGenerated,
             observedAt,
@@ -197,6 +197,9 @@ public sealed class AwsSecurityEventMapper
             labels,
             element,
             userId: principalArn);
+        return eventSource == "iam.amazonaws.com"
+            ? MapIamPermissionChange(envelope, element, eventName)
+            : envelope;
     }
 
     private SecurityEventEnvelope MapGuardDuty(JsonElement element, DateTimeOffset observedAt)

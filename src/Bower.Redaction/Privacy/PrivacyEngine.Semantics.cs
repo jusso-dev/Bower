@@ -24,8 +24,23 @@ public sealed partial class PrivacyEngine
             return;
         }
 
+        // Cloud mappers use only a fixed direction enum here. Identities and compound
+        // entries stay structured in attributes and pass every ordinary detector.
+        bool cloudDirection = root["eventType"] is JsonValue cloudType
+            && cloudType.TryGetValue<string>(out string? cloudEventType)
+            && cloudEventType is "aws_cloudtrail" or "gcp_cloud_audit"
+            && change["field"] is JsonValue cloudField
+            && cloudField.TryGetValue<string>(out string? cloudFieldName)
+            && cloudFieldName == "permission_direction";
         foreach (string name in new[] { "previousValue", "newValue" })
         {
+            if (cloudDirection && name == "newValue" && change[name] is JsonValue direction
+                && direction.TryGetValue<string>(out string? value)
+                && value is "grant" or "revoke" or "mixed" or "replace" or "unknown")
+            {
+                continue;
+            }
+
             if (change.Remove(name))
             {
                 findings.Add(new AppliedFinding(

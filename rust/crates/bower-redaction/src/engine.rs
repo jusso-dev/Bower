@@ -665,6 +665,7 @@ fn sanitize_change(root: &mut Object, findings: &mut Vec<AppliedFinding>) -> Ste
         return Err(RedactionFailed);
     }
     let role_event = matches!(root.map.get("eventType"), Some(Node::String(s)) if !s.invalid && s.value == "role_membership_changed");
+    let cloud_event = matches!(root.map.get("eventType"), Some(Node::String(s)) if !s.invalid && matches!(s.value.as_str(), "aws_cloudtrail" | "gcp_cloud_audit"));
     let Some(Node::Object(change)) = root.map.get_mut("change") else {
         return Ok(());
     };
@@ -676,7 +677,15 @@ fn sanitize_change(root: &mut Object, findings: &mut Vec<AppliedFinding>) -> Ste
     if role_event && role_field {
         return Ok(());
     }
+    let cloud_direction = cloud_event
+        && matches!(change.map.get("field"), Some(Node::String(s)) if !s.invalid && s.value == "permission_direction");
     for name in ["previousValue", "newValue"] {
+        if cloud_direction
+            && name == "newValue"
+            && matches!(change.map.get(name), Some(Node::String(s)) if !s.invalid && matches!(s.value.as_str(), "grant" | "revoke" | "mixed" | "replace" | "unknown"))
+        {
+            continue;
+        }
         if change.map.shift_remove(name).is_some() {
             findings.push(AppliedFinding {
                 detector_id: ids::FIELD_NAME_SECRET.to_owned(),

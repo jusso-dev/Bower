@@ -49,11 +49,20 @@ const string dirtyEvent =
 
 PrivacyEngine engine = new();
 
+const string permissionEvent =
+    """
+    {"eventType":"gcp_cloud_audit","change":{"field":"permission_direction","newValue":"mixed"},
+     "attributes":{"cloud.permissionChanges":{"mode":"delta","target":"projects/example","entries":[
+       {"member":"allUsers","permission":"roles/viewer","direction":"grant","conditionPresent":false},
+       {"member":"user:alice@example.test","permission":"roles/owner","direction":"revoke","conditionPresent":true}]}}}
+    """;
+
 // Warmup
 for (int i = 0; i < 200; i++)
 {
     _ = engine.RedactJson(cleanEvent);
     _ = engine.RedactJson(dirtyEvent);
+    _ = engine.RedactJson(permissionEvent);
 }
 
 static (double opsPerSec, double meanUs) Measure(PrivacyEngine engine, string payload, int iterations)
@@ -103,6 +112,7 @@ string licenceEvent = licences.Append("\"}").ToString();
 
 (double cleanOps, double cleanUs) = Measure(engine, cleanEvent, iterations);
 (double dirtyOps, double dirtyUs) = Measure(engine, dirtyEvent, iterations);
+(double permissionOps, double permissionUs) = Measure(engine, permissionEvent, iterations);
 (double wideOps, double wideUs) = Measure(engine, wideEvent, 500);
 (double denseOps, double denseUs) = Measure(engine, denseEvent, 3);
 (double licenceOps, double licenceUs) = Measure(engine, licenceEvent, 20);
@@ -118,6 +128,7 @@ Console.WriteLine("Bower PrivacyEngine micro-benchmark");
 Console.WriteLine($"  iterations: {iterations}");
 Console.WriteLine($"  clean event: {cleanOps:F0} ops/s  mean {cleanUs:F1} µs  alloc {cleanAllocated} B/op");
 Console.WriteLine($"  dirty event: {dirtyOps:F0} ops/s  mean {dirtyUs:F1} µs");
+Console.WriteLine($"  cloud permission event: {permissionOps:F0} ops/s  mean {permissionUs:F1} µs");
 Console.WriteLine($"  wide event (200 fields): {wideOps:F0} ops/s  mean {wideUs:F1} µs");
 Console.WriteLine($"  dense value (20k emails, {denseEvent.Length / 1024} KiB): mean {denseUs / 1000:F1} ms");
 Console.WriteLine($"  licence value (10k licence tokens, {licenceEvent.Length / 1024} KiB): mean {licenceUs / 1000:F1} ms");

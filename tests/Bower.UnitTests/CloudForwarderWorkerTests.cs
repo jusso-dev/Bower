@@ -103,6 +103,23 @@ public sealed class CloudForwarderWorkerTests
     }
 
     [Fact]
+    public async Task Pass_InvalidPermissionContextIsReleasedForDeadLetterWithoutAcknowledgement()
+    {
+        const string body = """
+            {"detail-type":"AWS API Call via CloudTrail","source":"aws.iam","detail":
+            {"eventID":"bad-permission","eventName":"AttachUserPolicy","eventSource":"iam.amazonaws.com",
+             "requestParameters":{"userName":"affected-user","policyArn":{"password":"unapproved-canary"}}}}
+            """;
+        FakeSource source = new(Message("bad", body));
+        Collector collector = new(_ => HttpStatusCode.Accepted);
+        CloudPassResult result = await Worker(source, collector).ProcessOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(1, result.Malformed);
+        Assert.Empty(source.Acknowledged);
+        Assert.Empty(collector.Bodies);
+        Assert.Equal(("bad", TimeSpan.Zero), Assert.Single(source.Released));
+    }
+
+    [Fact]
     public async Task Pass_UnsupportedMessagesAreAcknowledgedAndNotForwarded()
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;

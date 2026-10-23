@@ -20,6 +20,40 @@ namespace Bower.UnitTests;
 
 public sealed class SemanticPrivacyTests
 {
+    [Theory]
+    [InlineData("aws_cloudtrail")]
+    [InlineData("gcp_cloud_audit")]
+    public void CloudDirectionOnlyAllowsFixedNewValueEnum(string eventType)
+    {
+        foreach (string direction in new[] { "grant", "revoke", "mixed", "replace", "unknown" })
+        {
+            string json = $$$"""{"eventType":"{{{eventType}}}","change":{"field":"permission_direction","previousValue":"before-canary","newValue":"{{{direction}}}"}}""";
+            PrivacyScanResult result = new PrivacyEngine().RedactJson(json);
+            using JsonDocument document = JsonDocument.Parse(result.RedactedJson!);
+            Assert.Equal(direction, document.RootElement.GetProperty("change").GetProperty("newValue").GetString());
+            Assert.DoesNotContain("canary", result.RedactedJson, StringComparison.Ordinal);
+        }
+
+        foreach (string value in new[] { "\"after-canary\"", "{\"grant\":\"after-canary\"}", "[\"after-canary\"]" })
+        {
+            string json = $$$"""{"eventType":"{{{eventType}}}","change":{"field":"permission_direction","newValue":{{{value}}}}}""";
+            PrivacyScanResult result = new PrivacyEngine().RedactJson(json);
+            Assert.DoesNotContain("newValue", result.RedactedJson, StringComparison.Ordinal);
+            Assert.DoesNotContain("canary", result.RedactedJson, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void CloudDirectionBytesMatchRustFixture()
+    {
+        const string input = """{"eventType":"gcp_cloud_audit","change":{"field":"permission_direction","newValue":"mixed"},"attributes":{"cloud.permissionChanges":{"entries":[{"member":"allUsers","permission":"roles/viewer","direction":"grant"}]}}}""";
+        Assert.Equal(input, new PrivacyEngine().RedactJson(input).RedactedJson);
+        Assert.DoesNotContain("newValue", new PrivacyEngine().RedactJson(
+            """{"eventType":"other","change":{"field":"permission_direction","newValue":"grant"}}""").RedactedJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("newValue", new PrivacyEngine().RedactJson(
+            """{"eventType":"aws_cloudtrail","change":{"field":"password","newValue":"grant"}}""").RedactedJson, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void SemanticGuardBytesMatchRustFixture()
     {
