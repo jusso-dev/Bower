@@ -66,6 +66,9 @@ results do not replace integration validation.
   identity conflicts, fenced settlement, retention incarnations, compacted
   history, DB/WAL admission bounds and populated v4-to-v5 migration rollback.
   SQL tests inspect generated server projection and keyset behavior locally.
+  `SqlServerReplayTests` also covers fair bounded overlap across restart, and
+  `QueueMigrationPreflightTests` verifies read-only collision reports and unchanged
+  DB/WAL bytes before a failed-closed upgrade.
 - AZ-03 recovery: `tools/audited-replay/test_replay.py` covers exact-ID bounds,
   durable intent/outcome, audit failure before mutation and ambiguous crash state.
 - COV-03/04: `PackActivationTests`, `DetectionSemanticsTests`, Rust host tests
@@ -105,7 +108,7 @@ below remain the lead's responsibility. No second approval round is implied.
 | v4 identity collisions abort upgrade without diagnostics | Added bounded read-only canonical-identity preflight, collision pairs and backup/reconciliation instructions. Populated v4, malformed/future schema, unchanged DB/WAL and transactional upgrade tests. |
 | Producer metadata suppresses detection without failure | Ambiguous or excessive fields now cause explicit evaluation failure and quarantine before source persistence. Matching/repaired/boundary host tests in C# and Rust. |
 | Forward SQL pages skip/starve overlap | Cursor v3 pins replay bounds and alternates bounded forward/replay pages. Backlog, late rows, timestamp ties and restart regressions; v1/v2 migration documented. |
-| Global event IDs can collide across producers | Actionable intake response and bounded diagnostics being completed; on-disk primary key remains unchanged. |
+| Global event IDs can collide across producers | Implemented HTTP 409 with repair guidance, bounded authenticated producer counters, and forwarding tests proving no source acknowledgement/discard/cursor advance. On-disk primary key remains unchanged. |
 
 The 400 decision is deliberately narrower than classifying every failed singleton
 as poison: a wrong DCR may reject every valid record. Without a successful sibling,
