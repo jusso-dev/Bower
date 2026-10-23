@@ -504,7 +504,7 @@ public sealed class ManagementStore(string databasePath)
     // Operational progress is distinct from a Sentinel destination-query claim.
     // Keep normal waiting/pending states out of the fleet error count.
     private static bool DeliveryOperational(string? status) => status?.ToLowerInvariant()
-        is "healthy" or "waiting" or "pending" or "api-accepted" or "spooled";
+        is "healthy" or "waiting" or "pending" or "idle" or "api-accepted" or "spooled";
 
     // Existing databases can contain invalid counters from older collectors. Keep
     // overview available without allowing negative rows to cancel valid counts.

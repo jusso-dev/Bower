@@ -95,6 +95,7 @@ public sealed class ManagementBoundaryTests
 
     [Theory]
     [InlineData("waiting", 0)]
+    [InlineData("idle", 0)]
     [InlineData("pending", 0)]
     [InlineData("api-accepted", 0)]
     [InlineData("spooled", 0)]

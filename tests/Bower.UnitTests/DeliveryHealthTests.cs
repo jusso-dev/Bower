@@ -20,10 +20,10 @@ public sealed class DeliveryHealthTests
     }
 
     [Fact]
-    public void Spool_creation_does_not_claim_api_acceptance()
+    public void Historical_receipts_do_not_claim_acceptance_by_current_output()
     {
         QueueSnapshot snapshot = new(0, 0, 0, 1, 0, 10, null, 0);
-        Assert.Equal("spooled", DeliveryHealth.Evaluate("ama-spool", snapshot, 1000, TestEvents.Now));
+        Assert.Equal("idle", DeliveryHealth.Evaluate("ama-spool", snapshot, 1000, TestEvents.Now));
     }
 
     [Fact]
@@ -31,7 +31,7 @@ public sealed class DeliveryHealthTests
     {
         QueueSnapshot snapshot = new(1, 0, 0, 100, 0, 10, TestEvents.Now.AddMinutes(-6), 10);
         Assert.Equal("stalled", DeliveryHealth.Evaluate("azure-logs-ingestion", snapshot, 1000, TestEvents.Now));
-        Assert.Equal("api-accepted", DeliveryHealth.Evaluate("azure-logs-ingestion",
+        Assert.Equal("idle", DeliveryHealth.Evaluate("azure-logs-ingestion",
             snapshot with { Queued = 0, OldestUndelivered = null }, 1000, TestEvents.Now));
     }
 }

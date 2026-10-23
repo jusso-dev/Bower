@@ -47,12 +47,9 @@ pub fn delivery_health(
     if snapshot.uploading > 0 || snapshot.queued > 0 {
         return "pending";
     }
+    // Historical receipts may belong to a previously configured output.
     if snapshot.delivered > 0 {
-        if output.eq_ignore_ascii_case("ama-spool") {
-            "spooled"
-        } else {
-            "api-accepted"
-        }
+        "idle"
     } else {
         "waiting"
     }
@@ -81,13 +78,10 @@ mod health_tests {
             "waiting"
         );
         snapshot.delivered = 1;
-        assert_eq!(
-            delivery_health("ama-spool", &snapshot, 1000, now),
-            "spooled"
-        );
+        assert_eq!(delivery_health("ama-spool", &snapshot, 1000, now), "idle");
         assert_eq!(
             delivery_health("azure-logs-ingestion", &snapshot, 1000, now),
-            "api-accepted"
+            "idle"
         );
         snapshot.delivered = 0;
         snapshot.retrying = 1;

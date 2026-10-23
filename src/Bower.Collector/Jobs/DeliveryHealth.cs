@@ -15,8 +15,8 @@ public static class DeliveryHealth
         if (snapshot.Uploading > 0 || snapshot.Queued > 0) return "pending";
         // Retained acknowledgements carry no freshness or destination-query proof.
         // Stay conservative rather than synthesising last-ack timestamps.
-        if (snapshot.Delivered == 0) return "waiting";
-        return string.Equals(outputType, "ama-spool", StringComparison.OrdinalIgnoreCase)
-            ? "spooled" : "api-accepted";
+        // Output may have changed since these receipts. Do not infer API acceptance
+        // or spool creation from a queue-wide historical count.
+        return snapshot.Delivered > 0 ? "idle" : "waiting";
     }
 }
