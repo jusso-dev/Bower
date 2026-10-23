@@ -230,7 +230,7 @@ public sealed class PackActivationTests
         Assert.Equal(HttpStatusCode.ServiceUnavailable, blocked.StatusCode);
         QueuedEvent filler = Assert.Single(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
         Assert.Equal("filler", filler.EventId);
-        await store.MarkDeliveredAsync(filler.EventId, "test-ack", cancellation);
+        await store.MarkDeliveredAsync(filler.EventId, "test-ack", filler.LeaseToken, cancellation);
         using HttpResponseMessage retried = await Send(client, raw, cancellation);
         Assert.Equal(HttpStatusCode.Accepted, retried.StatusCode);
         Assert.Equal("activation-1", Assert.Single(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation)).EventId);

@@ -22,7 +22,8 @@ reject them instead of silently accepting broader input.
 | Low/informational cloud findings | Accepted | Rejected; medium/high/critical retained |
 | Unknown software/event types | Denied | Denied |
 
-AWS and GCP packs and their existing policies move from 1.0.0 to 1.1.0.
+AWS and GCP existing policies move from 1.0.0 to 1.1.0. AWS pack is 1.1.0;
+GCP pack is 1.1.1 for its additional exact detection-method correction.
 New denied-operation policies start at 1.0.0. Exact action populations live in
 `packs/*/policies`; there is no suffix wildcard or inferred arbitrary method
 support. CloudFormation condition identifiers such as `AppLogs` are not API

@@ -309,7 +309,7 @@ async fn pack_backpressure_preserves_existing_rows_and_retry_can_succeed() {
     assert_eq!(rows[0].event_id, "filler");
     collector
         .store
-        .mark_delivered("filler", "test-ack")
+        .mark_delivered("filler", "test-ack", rows[0].lease_token.as_deref())
         .unwrap();
     assert_eq!(
         send(

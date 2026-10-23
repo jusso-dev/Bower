@@ -323,3 +323,54 @@ fn corrupt_legacy_ledger_refuses_migration_without_rewriting_evidence() {
         4
     );
 }
+
+#[test]
+fn replay_ignores_local_detection_changes_but_preserves_source_attributes() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    let store = store(directory.path(), ONE_MEBIBYTE, &clock);
+    let plain = r#"{"schemaVersion":"1.0.0","eventType":"test","attributes":{"sourceFact":1}}"#;
+    let item = event("detection", "fp", plain, clock.now());
+    store.enqueue(&item).unwrap();
+    for version in ["1", "2"] {
+        let enriched = plain.replace(
+            r#""sourceFact":1"#,
+            &format!(r#""sourceFact":1,"bowerDetections":[{{"ruleVersion":"{version}"}}]"#),
+        );
+        assert!(
+            store
+                .enqueue(&event("detection", "fp", &enriched, clock.now()))
+                .unwrap()
+                .duplicate
+        );
+    }
+    assert!(
+        store
+            .enqueue(&event(
+                "detection",
+                "fp",
+                &plain.replace("sourceFact\":1", "sourceFact\":2"),
+                clock.now()
+            ))
+            .is_err()
+    );
+    store
+        .enqueue(&event(
+            "only-evidence",
+            "fp-two",
+            r#"{"schemaVersion":"1.0.0","eventType":"test"}"#,
+            clock.now(),
+        ))
+        .unwrap();
+    assert!(store.enqueue(&event("only-evidence", "fp-two", r#"{"schemaVersion":"1.0.0","eventType":"test","attributes":{"bowerDetections":[]}}"#, clock.now())).unwrap().duplicate);
+    assert_eq!(
+        store
+            .lease(2, Duration::from_secs(60))
+            .unwrap()
+            .into_iter()
+            .find(|row| row.event_id == "detection")
+            .unwrap()
+            .payload,
+        plain
+    );
+}

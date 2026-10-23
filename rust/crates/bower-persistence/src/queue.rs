@@ -1028,7 +1028,20 @@ fn replay_content(payload: &str) -> String {
         _ => false,
     };
     if envelope && let JsonElement::Object(properties) = &mut value {
-        properties.retain(|(key, _)| {
+        for (key, value) in properties.iter_mut() {
+            if key == "attributes"
+                && let JsonElement::Object(attributes) = value
+            {
+                attributes.retain(|(name, _)| !name.eq_ignore_ascii_case("bowerDetections"));
+            }
+        }
+        properties.retain(|(key, value)| {
+            if key == "attributes"
+                && (matches!(value, JsonElement::Null)
+                    || matches!(value, JsonElement::Object(attributes) if attributes.is_empty()))
+            {
+                return false;
+            }
             !matches!(key.as_str(), "collector" | "security" | "timeObserved")
                 && !(original && key == "eventId")
         });

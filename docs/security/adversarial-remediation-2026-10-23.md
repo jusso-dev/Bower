@@ -25,8 +25,8 @@ Baseline: `473c6ec6ffb9c195d49c54caae1267bd069c548f`. Implementation in progress
 | DUR-06 | Legitimate replay after retention reports false ledger corruption | Implemented; final combined gates pending |
 | DUR-07 | Unresolved event pins unbounded ledger history | Implemented; final combined gates pending |
 | DUR-08 | Delivery health reports healthy when output disabled or stalled | Implemented; final combined gates pending |
-| COV-03 | Signed pack parser/detection assets never activate in collector | Scoped implementation running |
-| COV-04 | Sigma subset silently changes Boolean and equality semantics | Scoped implementation running |
+| COV-03 | Signed pack parser/detection assets never activate in collector | Implemented; final combined gates pending |
+| COV-04 | Sigma subset silently changes Boolean and equality semantics | Implemented; final combined gates pending |
 | COV-05 | High-value filtering relies on upstream subscription remaining narrow | Implemented; final combined gates pending |
 | OPS-01 | SQL size checks follow unrestricted row allocation | Implemented; final combined gates pending |
 | OPS-02 | UI token cache contradicts repository security requirement | Implemented; final combined gates pending |
@@ -68,6 +68,10 @@ results do not replace integration validation.
   SQL tests inspect generated server projection and keyset behavior locally.
 - AZ-03 recovery: `tools/audited-replay/test_replay.py` covers exact-ID bounds,
   durable intent/outcome, audit failure before mutation and ambiguous crash state.
+- COV-03/04: `PackActivationTests`, `DetectionSemanticsTests`, Rust host tests
+  and 89 shared semantic vectors cover signed raw intake, component status,
+  Boolean precedence/negation/equality, malformed input, restart and backpressure.
+  Combined replay tests exclude changing local detection evidence from source identity.
 - OPS-02: console auth tests pin in-memory MSAL cache and popup flows.
 
 ## External acceptance gates

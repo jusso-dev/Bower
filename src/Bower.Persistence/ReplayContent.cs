@@ -44,6 +44,26 @@ internal static class ReplayContent
                 {
                     continue;
                 }
+                if (envelope && property.Name == "attributes")
+                {
+                    if (property.Value.ValueKind == JsonValueKind.Null) continue;
+                    if (property.Value.ValueKind == JsonValueKind.Object)
+                    {
+                        JsonProperty[] sourceAttributes = [.. property.Value.EnumerateObject()
+                            .Where(item => !item.Name.Equals("bowerDetections", StringComparison.OrdinalIgnoreCase))
+                            .OrderBy(item => item.Name, StringComparer.Ordinal)];
+                        if (sourceAttributes.Length == 0) continue;
+                        writer.WritePropertyName(property.Name);
+                        writer.WriteStartObject();
+                        foreach (JsonProperty attribute in sourceAttributes)
+                        {
+                            writer.WritePropertyName(attribute.Name);
+                            Write(writer, attribute.Value);
+                        }
+                        writer.WriteEndObject();
+                        continue;
+                    }
+                }
                 writer.WritePropertyName(property.Name);
                 Write(writer, property.Value);
             }

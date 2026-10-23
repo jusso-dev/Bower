@@ -7,7 +7,7 @@ Current fixtures were built using C# `PackArchive.Build`, .NET 10.0.402, with
 `TimeProvider.GetUtcNow()` fixed at `2026-10-17T01:02:03.4567+00:00`:
 
 - `linux-ssh-gateway-1.1.0.bowerpack`: explicit JSON runtime and raw sample expectations.
-- `aws-security-1.1.0.bowerpack`: source pack inherited from the parent revision.
+- `aws-security-1.1.0.bowerpack`: integrated source pack including reviewed revoke actions; deployment labels excluded.
 - `gcp-security-1.1.1.bowerpack`: explicit qualified service-account-key detection alternatives.
 
 `csharp-current-signing.pub.pem` verifies these current fixtures. The ephemeral

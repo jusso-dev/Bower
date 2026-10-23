@@ -59,6 +59,32 @@ public sealed class DurabilityAdversarialTests
     }
 
     [Fact]
+    public async Task Replay_IgnoresLocalDetectionChangesButPreservesSourceAttributes()
+    {
+        using TemporaryDirectory directory = new();
+        SqliteEventStore store = new(Path.Combine(directory.Path, "queue.db"), 1_048_576);
+        await store.InitializeAsync(Cancellation);
+        const string plain = """{"schemaVersion":"1.0.0","eventType":"test","attributes":{"sourceFact":1}}""";
+        QueuedEvent first = new("detection", "fp", plain, TestEvents.Now);
+        await store.EnqueueAsync(first, Cancellation);
+        foreach (string version in new[] { "1", "2" })
+        {
+            string enriched = plain.Replace("\"sourceFact\":1", "\"sourceFact\":1,\"bowerDetections\":[{\"ruleVersion\":\"" + version + "\"}]", StringComparison.Ordinal);
+            Assert.True((await store.EnqueueAsync(first with { Payload = enriched }, Cancellation)).Duplicate);
+        }
+        await Assert.ThrowsAsync<EventIdentityConflictException>(() => store.EnqueueAsync(first with
+        {
+            Payload = plain.Replace("sourceFact\":1", "sourceFact\":2", StringComparison.Ordinal)
+        }, Cancellation));
+        const string empty = """{"schemaVersion":"1.0.0","eventType":"test"}""";
+        QueuedEvent onlyEvidence = new("only-evidence", "fp-two", empty, TestEvents.Now);
+        await store.EnqueueAsync(onlyEvidence, Cancellation);
+        string withEvidence = empty[..^1] + """, "attributes":{"bowerDetections":[]}}""";
+        Assert.True((await store.EnqueueAsync(onlyEvidence with { Payload = withEvidence }, Cancellation)).Duplicate);
+        Assert.Equal(plain, (await store.LeaseAsync(2, TimeSpan.FromMinutes(1), Cancellation)).Single(row => row.EventId == first.EventId).Payload);
+    }
+
+    [Fact]
     public async Task StaleClaims_CannotSettleNewLeaseOrNewIncarnation()
     {
         using TemporaryDirectory directory = new();

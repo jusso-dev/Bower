@@ -18,7 +18,10 @@ Both event-ID and fingerprint uniqueness remain enforced. A collision is only an
 identical replay when both the stable fingerprint and normalized source content
 match. Reusing an event ID across source namespaces is an identity conflict. Object key order is
 normalized recursively; unknown source fields and number text are retained.
-Collector-owned `collector`, `security` and `timeObserved` decoration is excluded.
+Collector-owned `collector`, `security`, `timeObserved` and top-level
+`attributes.bowerDetections` decoration is excluded. Pack upgrades can change
+detection metadata without making a source replay conflict; retained evidence is
+not rewritten. Other source attributes remain part of strict content comparison.
 When `eventOriginalId` is present, reconstructed `eventId` is excluded from content
 comparison. Changed source content raises `EventIdentityConflictException` in C# /
 `StoreError::Invalid("event-identity-conflict")` in Rust. The processor returns a
