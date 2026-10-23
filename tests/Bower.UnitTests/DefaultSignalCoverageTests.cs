@@ -64,6 +64,7 @@ public sealed class DefaultSignalCoverageTests
 
     [Theory]
     [InlineData("aws-security", "aws_cloudtrail", "ListBuckets", EventResult.Success, false)]
+    [InlineData("aws-security", "aws_cloudtrail", "AppLogs", EventResult.Success, false)]
     [InlineData("aws-security", "aws_cloudtrail", "AttachUserPolicy", EventResult.Success, true)]
     [InlineData("aws-security", "aws_cloudtrail", "StopLogging", EventResult.Success, true)]
     [InlineData("aws-security", "aws_cloudtrail", "DetachUserPolicy", EventResult.Success, true)]

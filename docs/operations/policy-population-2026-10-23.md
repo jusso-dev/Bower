@@ -25,7 +25,8 @@ reject them instead of silently accepting broader input.
 AWS and GCP packs and their existing policies move from 1.0.0 to 1.1.0.
 New denied-operation policies start at 1.0.0. Exact action populations live in
 `packs/*/policies`; there is no suffix wildcard or inferred arbitrary method
-support. Source variants need reviewed additions and new fixtures. This is a
+support. CloudFormation condition identifiers such as `AppLogs` are not API
+actions and remain denied. Source variants need reviewed additions and new fixtures. This is a
 class-level fixture population diff, not a measured claim about tenant volume,
 coverage or cost. Unknown tenant distributions remain unmeasured.
 

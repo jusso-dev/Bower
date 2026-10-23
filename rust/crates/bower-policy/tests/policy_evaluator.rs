@@ -237,6 +237,13 @@ fn broadened_cloud_feeds_still_require_local_security_predicates() {
         (
             "aws-security",
             "aws_cloudtrail",
+            "AppLogs",
+            EventResult::Success,
+            false,
+        ),
+        (
+            "aws-security",
+            "aws_cloudtrail",
             "AttachUserPolicy",
             EventResult::Success,
             true,
