@@ -38,5 +38,7 @@ describe("Collector table policy and dead-letter state", () => {
     expect(screen.getByText("Drift · abcdef01")).toBeTruthy();
     expect(screen.getByText("Unassigned · abcdef01")).toBeTruthy();
     expect(screen.getByText("3 dead-lettered")).toBeTruthy();
+    // No privacy profile version assigned to any of them.
+    expect(screen.getAllByText("Unassigned")).toHaveLength(3);
   });
 });

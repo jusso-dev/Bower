@@ -53,6 +53,19 @@ export interface Collector {
   /** Last witnessed queue ledger sequence (tamper evidence). */
   ledgerSequence?: number | null;
   deadLettered?: number;
+  /** Approved privacy profile version an administrator assigned. Null when unassigned. */
+  desiredPrivacyProfile?: DesiredPrivacyProfile | null;
+  /** Privacy profile hash from the latest heartbeat: "sha256:<hex>" or "default". */
+  reportedPrivacyProfileHash?: string | null;
+  /** Null when no privacy profile version is assigned. */
+  privacyProfileInSync?: boolean | null;
+}
+
+export interface DesiredPrivacyProfile {
+  versionId: string;
+  profileId: string;
+  version: string;
+  contentHash: string;
 }
 
 export interface Overview {
@@ -190,4 +203,71 @@ export interface CustomLogGeneration {
   };
   tests: CustomLogParserTest[];
   preview: CustomLogPreview;
+}
+
+export type PrivacyProfileVersionStatus = "PendingReview" | "Approved" | "Rejected";
+
+export interface PrivacyProfileCustomDetectorSummary {
+  id: string;
+  description?: string | null;
+  action: string;
+}
+
+export interface PrivacyProfileValidation {
+  valid: boolean;
+  errors: string[];
+  profileId: string | null;
+  version: string | null;
+  contentHash: string | null;
+  customDetectors: PrivacyProfileCustomDetectorSummary[];
+  secretFieldNames: number;
+  detectorOverrides: number;
+  fieldRules: number;
+}
+
+export interface PrivacyProfileFinding {
+  detectorId: string;
+  action: string;
+  path: string;
+}
+
+export interface PrivacyProfilePreview {
+  valid: boolean;
+  errors: string[];
+  redacted: string | null;
+  findings: PrivacyProfileFinding[];
+}
+
+export interface PrivacyProfileVersionSummary {
+  id: string;
+  profileId: string;
+  version: string;
+  description?: string | null;
+  contentHash: string;
+  changeSummary: string;
+  status: PrivacyProfileVersionStatus;
+  authorName?: string | null;
+  createdAt: string;
+  reviewerName?: string | null;
+  reviewedAt?: string | null;
+  reviewReason?: string | null;
+  assignedCollectors: number;
+}
+
+export interface PrivacyProfileVersionDetail extends PrivacyProfileVersionSummary {
+  content: string;
+  authorObjectId: string;
+  previousApprovedVersionId: string | null;
+}
+
+export interface PrivacyProfileAssignment {
+  id: number;
+  collectorId: string;
+  versionId?: string | null;
+  profileId?: string | null;
+  version?: string | null;
+  action: "assigned" | "cleared";
+  reason: string;
+  actorName?: string | null;
+  occurredAt: string;
 }
