@@ -28,6 +28,8 @@ internal static class PrivacyProfileYamlReader
 [YamlSerializable(typeof(PrivacyProfileDocument))]
 [YamlSerializable(typeof(PrivacyProfileMetadata))]
 [YamlSerializable(typeof(PrivacyFieldRuleDocument))]
+[YamlSerializable(typeof(PrivacyCustomDetectorDocument))]
+[YamlSerializable(typeof(PrivacyCustomDetectorTestsDocument))]
 public partial class PrivacyProfileYamlContext : StaticContext;
 
 internal sealed class PrivacyProfileDocument
@@ -52,6 +54,10 @@ internal sealed class PrivacyProfileDocument
 
     public bool? EmitMetadata { get; set; }
 
+    public List<PrivacyCustomDetectorDocument> CustomDetectors { get; set; } = [];
+
+    public List<string> SecretFieldNames { get; set; } = [];
+
     public Model.PrivacyProfileDocument ToModel() => new()
     {
         ApiVersion = ApiVersion!,
@@ -63,7 +69,9 @@ internal sealed class PrivacyProfileDocument
         EnableOptIn = EnableOptIn,
         Fields = Fields?.Select(field => field?.ToModel()!).ToList()!,
         MaximumFieldLength = MaximumFieldLength,
-        EmitMetadata = EmitMetadata
+        EmitMetadata = EmitMetadata,
+        CustomDetectors = CustomDetectors?.Select(detector => detector?.ToModel()!).ToList()!,
+        SecretFieldNames = SecretFieldNames
     };
 }
 
@@ -96,5 +104,46 @@ internal sealed class PrivacyFieldRuleDocument
         Path = Path!,
         Action = Action!,
         MaxLength = MaxLength
+    };
+}
+
+internal sealed class PrivacyCustomDetectorDocument
+{
+    public string? Id { get; set; }
+
+    public string? Description { get; set; }
+
+    public string? Pattern { get; set; }
+
+    public bool? IgnoreCase { get; set; }
+
+    public bool? WholeWord { get; set; }
+
+    public string? Action { get; set; }
+
+    public PrivacyCustomDetectorTestsDocument? Tests { get; set; }
+
+    public Model.PrivacyCustomDetectorDocument ToModel() => new()
+    {
+        Id = Id!,
+        Description = Description,
+        Pattern = Pattern!,
+        IgnoreCase = IgnoreCase,
+        WholeWord = WholeWord,
+        Action = Action!,
+        Tests = Tests?.ToModel()!
+    };
+}
+
+internal sealed class PrivacyCustomDetectorTestsDocument
+{
+    public List<string>? Match { get; set; } = [];
+
+    public List<string>? NoMatch { get; set; } = [];
+
+    public Model.PrivacyCustomDetectorTestsDocument ToModel() => new()
+    {
+        Match = Match!,
+        NoMatch = NoMatch!
     };
 }

@@ -8,8 +8,8 @@ use indexmap::IndexMap;
 
 use crate::applicator::PolicyApplicator;
 use crate::detectors::{
-    DetectionMatch, FieldNameDetector, ScanText, SensitiveDetector, default_field_name_detector,
-    default_value_detectors,
+    DetectionMatch, FieldNameDetector, ScanText, SensitiveDetector, field_name_detector_for,
+    value_detectors_for,
 };
 use crate::error::PrivacyError;
 use crate::ids::{detector_categories as categories, detector_ids as ids};
@@ -134,17 +134,17 @@ impl std::fmt::Debug for PrivacyEngine {
 }
 
 impl PrivacyEngine {
-    /// Engine with the built-in detector catalogue. Fails when the policy needs an
-    /// HMAC key that is not configured.
+    /// Engine with the built-in detector catalogue plus the policy's custom detectors,
+    /// and the field-name detector extended with its secret field names. Fails when the
+    /// policy needs an HMAC key that is not configured.
     pub fn new(policy: PrivacyPolicy) -> Result<Self, PrivacyError> {
-        Self::with_detectors(
-            policy,
-            default_value_detectors(),
-            default_field_name_detector(),
-        )
+        let detectors = value_detectors_for(&policy);
+        let field_name_detector = field_name_detector_for(&policy);
+        Self::with_detectors(policy, detectors, field_name_detector)
     }
 
-    /// Engine with custom detectors (appended or replaced without modifying the engine).
+    /// Engine with explicit detectors (appended or replaced without modifying the
+    /// engine), used as given: the policy's custom detectors are not added.
     pub fn with_detectors(
         policy: PrivacyPolicy,
         detectors: Vec<Box<dyn SensitiveDetector>>,

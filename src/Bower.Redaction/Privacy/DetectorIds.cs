@@ -76,4 +76,7 @@ public static class DetectorCategories
     public const string Secrets = "secrets";
     public const string Crypto = "crypto";
     public const string Classification = "classification";
+
+    /// <summary>Custom detectors defined in a privacy profile.</summary>
+    public const string Custom = "custom";
 }

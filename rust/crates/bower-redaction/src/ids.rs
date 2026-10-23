@@ -107,4 +107,6 @@ pub mod detector_categories {
     pub const SECRETS: &str = "secrets";
     pub const CRYPTO: &str = "crypto";
     pub const CLASSIFICATION: &str = "classification";
+    /// Custom detectors defined in a privacy profile.
+    pub const CUSTOM: &str = "custom";
 }

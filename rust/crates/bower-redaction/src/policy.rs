@@ -6,6 +6,7 @@ use std::fmt;
 
 use indexmap::IndexMap;
 
+use crate::detectors::CustomDetectorDefinition;
 use crate::error::PrivacyError;
 use crate::ids::detector_ids as ids;
 
@@ -137,6 +138,13 @@ pub struct PrivacyPolicy {
     pub hmac_key_id: String,
     /// Field-level rules applied after detectors.
     pub field_rules: Vec<PrivacyFieldRule>,
+    /// Custom detectors from the privacy profile, run after the built-in value detectors
+    /// in this order. Enabled unless listed in `disabled_detectors`. Their actions resolve
+    /// through `detector_actions` (the profile loader adds each one).
+    pub custom_detectors: Vec<CustomDetectorDefinition>,
+    /// Extra field names, normalised with [`crate::text::normalize_field_name`], handled
+    /// exactly like the built-in field-name secrets.
+    pub secret_field_names: Vec<String>,
     /// Any string longer than this (UTF-16 units) is truncated after redaction.
     pub maximum_field_length: usize,
     /// AES-256 key for the Encrypt action (exactly 32 bytes). Otherwise Encrypt
@@ -171,6 +179,8 @@ impl Default for PrivacyPolicy {
             hmac_key: None,
             hmac_key_id: "k1".to_owned(),
             field_rules: Vec::new(),
+            custom_detectors: Vec::new(),
+            secret_field_names: Vec::new(),
             maximum_field_length: 32_768,
             encryption_key: None,
             emit_metadata: true,

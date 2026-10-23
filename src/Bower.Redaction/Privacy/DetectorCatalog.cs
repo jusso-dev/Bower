@@ -59,4 +59,27 @@ public static class DetectorCatalog
     ];
 
     public static IFieldNameDetector CreateDefaultFieldNameDetector() => new FieldNameSecretDetector();
+
+    /// <summary>Built-in value detectors followed by the policy's custom detectors, in definition order.</summary>
+    public static IReadOnlyList<ISensitiveDetector> CreateValueDetectors(PrivacyPolicy policy)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        IReadOnlyList<ISensitiveDetector> builtIn = CreateDefaultValueDetectors();
+        if (policy.CustomDetectors is not { Count: > 0 } custom)
+        {
+            return builtIn;
+        }
+
+        return [.. builtIn, .. custom.Select(definition => new CustomPatternDetector(definition))];
+    }
+
+    /// <summary>The built-in field-name detector, extended with the policy's secret field names.</summary>
+    public static IFieldNameDetector CreateFieldNameDetector(PrivacyPolicy policy)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        IFieldNameDetector detector = CreateDefaultFieldNameDetector();
+        return policy.SecretFieldNames is { Count: > 0 } names
+            ? new CompositeFieldNameDetector(detector, names)
+            : detector;
+    }
 }

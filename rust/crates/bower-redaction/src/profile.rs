@@ -17,12 +17,18 @@ use serde::de::{self, Deserializer, IgnoredAny, MapAccess, Visitor};
 use sha2::{Digest, Sha256};
 
 use crate::applicator::PolicyApplicator;
+use crate::detectors::custom::{self, CustomDetectorDefinition, CustomPatternDetector};
 use crate::error::PrivacyError;
 use crate::ids::detector_ids;
 use crate::policy::{PrivacyAction, PrivacyFieldRule, PrivacyPolicy};
-use crate::text::{is_null_or_whitespace, utf16_len};
+use crate::text::{is_null_or_whitespace, normalize_field_name, utf16_len};
 
 const MAXIMUM_PROFILE_BYTES: usize = 262_144;
+const MAXIMUM_CUSTOM_DETECTORS: usize = 32;
+const MAXIMUM_SAMPLES: usize = 16;
+const MAXIMUM_SAMPLE_LENGTH: usize = 1024;
+const MAXIMUM_SECRET_FIELD_NAMES: usize = 64;
+const MAXIMUM_SECRET_FIELD_NAME_LENGTH: usize = 128;
 
 /// A loaded profile: the policy plus identity and a hash of the normalised YAML.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -53,12 +59,40 @@ struct ProfileDocument {
     fields: Present<Vec<Option<FieldRuleDocument>>>,
     maximum_field_length: Present<DotnetInt>,
     emit_metadata: Present<DotnetBool>,
+    custom_detectors: Present<Vec<Option<CustomDetectorDocument>>>,
+    secret_field_names: Present<Vec<Option<String>>>,
 }
 
 #[derive(Default)]
 struct MetadataDocument {
     id: Option<String>,
     version: Option<String>,
+}
+
+#[derive(Default)]
+struct CustomDetectorDocument {
+    id: Option<String>,
+    description: Option<String>,
+    pattern: Option<String>,
+    ignore_case: Option<DotnetBool>,
+    whole_word: Option<DotnetBool>,
+    action: Option<String>,
+    tests: Option<CustomDetectorTestsDocument>,
+}
+
+/// Lists default to empty when absent; an explicit YAML null stays null (`None`).
+struct CustomDetectorTestsDocument {
+    match_samples: Option<Vec<Option<String>>>,
+    no_match_samples: Option<Vec<Option<String>>>,
+}
+
+impl Default for CustomDetectorTestsDocument {
+    fn default() -> Self {
+        Self {
+            match_samples: Some(Vec::new()),
+            no_match_samples: Some(Vec::new()),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -119,6 +153,8 @@ mapping_visitor!(
             "fields" => doc.fields = Some(map.next_value()?),
             "maximumFieldLength" => doc.maximum_field_length = Some(map.next_value()?),
             "emitMetadata" => doc.emit_metadata = Some(map.next_value()?),
+            "customDetectors" => doc.custom_detectors = Some(map.next_value()?),
+            "secretFieldNames" => doc.secret_field_names = Some(map.next_value()?),
             other => {
                 let _: IgnoredAny = map.next_value()?;
                 return Err(unknown_property(other, "PrivacyProfileDocument"));
@@ -141,6 +177,46 @@ mapping_visitor!(
             other => {
                 let _: IgnoredAny = map.next_value()?;
                 return Err(unknown_property(other, "PrivacyProfileMetadata"));
+            }
+        }
+    }
+);
+
+mapping_visitor!(
+    CustomDetectorVisitor,
+    CustomDetectorDocument,
+    "PrivacyCustomDetectorDocument",
+    |map, doc, key| {
+        match key.as_str() {
+            "id" => doc.id = map.next_value()?,
+            "description" => doc.description = map.next_value()?,
+            "pattern" => doc.pattern = map.next_value()?,
+            "ignoreCase" => doc.ignore_case = map.next_value()?,
+            "wholeWord" => doc.whole_word = map.next_value()?,
+            "action" => doc.action = map.next_value()?,
+            "tests" => doc.tests = map.next_value()?,
+            other => {
+                let _: IgnoredAny = map.next_value()?;
+                return Err(unknown_property(other, "PrivacyCustomDetectorDocument"));
+            }
+        }
+    }
+);
+
+mapping_visitor!(
+    CustomDetectorTestsVisitor,
+    CustomDetectorTestsDocument,
+    "PrivacyCustomDetectorTestsDocument",
+    |map, doc, key| {
+        match key.as_str() {
+            "match" => doc.match_samples = map.next_value()?,
+            "noMatch" => doc.no_match_samples = map.next_value()?,
+            other => {
+                let _: IgnoredAny = map.next_value()?;
+                return Err(unknown_property(
+                    other,
+                    "PrivacyCustomDetectorTestsDocument",
+                ));
             }
         }
     }
@@ -375,9 +451,23 @@ pub fn load(
     }
 
     let known: HashSet<&str> = detector_ids::ALL.iter().copied().collect();
+    let custom_detectors = load_custom_detectors(required_collection(
+        document.custom_detectors,
+        "customDetectors",
+    )?)?;
+    let custom_ids: HashSet<String> = custom_detectors
+        .iter()
+        .map(|detector| detector.id().to_owned())
+        .collect();
     let defaults = PrivacyPolicy::create_default();
     let mut actions = defaults.detector_actions.clone();
     for (detector, action) in required_collection(document.detectors, "detectors")? {
+        if custom_ids.contains(&detector) {
+            return Err(invalid(format!(
+                "Custom detector '{detector}' sets its action in customDetectors, not detectors."
+            )));
+        }
+
         require_known(&known, Some(&detector))?;
         let action = action.ok_or_else(|| {
             invalid(format!(
@@ -387,9 +477,23 @@ pub fn load(
         actions.insert(detector, parse_action(&action)?);
     }
 
+    for detector in &custom_detectors {
+        actions.insert(detector.id().to_owned(), detector.action());
+    }
+
     let disabled = required_collection(document.disabled, "disabled")?;
     let enable_opt_in = required_collection(document.enable_opt_in, "enableOptIn")?;
-    for detector in disabled.iter().chain(&enable_opt_in) {
+    for detector in &disabled {
+        // Custom detectors are enabled by default and may be disabled, never opted in.
+        if !detector
+            .as_deref()
+            .is_some_and(|detector| custom_ids.contains(detector))
+        {
+            require_known(&known, detector.as_deref())?;
+        }
+    }
+
+    for detector in &enable_opt_in {
         require_known(&known, detector.as_deref())?;
     }
 
@@ -421,6 +525,11 @@ pub fn load(
         rules.push(PrivacyFieldRule::new(path, action, max_length));
     }
 
+    let secret_field_names = load_secret_field_names(required_collection(
+        document.secret_field_names,
+        "secretFieldNames",
+    )?)?;
+
     let maximum_field_length = match document.maximum_field_length.flatten() {
         Some(DotnetInt(value)) => value,
         None => defaults.maximum_field_length as i32,
@@ -440,6 +549,8 @@ pub fn load(
         disabled_detectors: disabled.into_iter().flatten().collect(),
         enabled_opt_in_detectors: enable_opt_in.into_iter().flatten().collect(),
         field_rules: rules,
+        custom_detectors,
+        secret_field_names,
         maximum_field_length: maximum_field_length as usize,
         emit_metadata: document
             .emit_metadata
@@ -470,6 +581,133 @@ pub fn load(
         version: metadata.version,
         hash,
     })
+}
+
+fn load_custom_detectors(
+    documents: Vec<Option<CustomDetectorDocument>>,
+) -> Result<Vec<CustomDetectorDefinition>, PrivacyError> {
+    if documents.len() > MAXIMUM_CUSTOM_DETECTORS {
+        return Err(invalid(
+            "Privacy profile may define at most 32 custom detectors.",
+        ));
+    }
+
+    let mut ids = HashSet::new();
+    let mut definitions = Vec::with_capacity(documents.len());
+    for document in documents {
+        let document =
+            document.ok_or_else(|| invalid("Privacy profile custom detector must not be null."))?;
+        custom::require_valid_id(document.id.as_deref())?;
+        let id = document.id.unwrap_or_default();
+        if !ids.insert(id.clone()) {
+            return Err(invalid(format!(
+                "Custom detector id '{id}' is defined more than once."
+            )));
+        }
+
+        custom::require_valid_description(&id, document.description.as_deref())?;
+        let ignore_case = document.ignore_case.is_some_and(|DotnetBool(value)| value);
+        let (canonical, regex) =
+            custom::compile_pattern(&id, document.pattern.as_deref(), ignore_case)?;
+        let action = document
+            .action
+            .ok_or_else(|| invalid(format!("Custom detector '{id}' requires an action.")))?;
+        let action = parse_action(&action)?;
+
+        let tests = document.tests;
+        let match_samples = tests
+            .as_ref()
+            .and_then(|tests| tests.match_samples.as_ref());
+        let no_match_samples = tests
+            .as_ref()
+            .and_then(|tests| tests.no_match_samples.as_ref());
+        let Some(match_samples) = match_samples.filter(|samples| !samples.is_empty()) else {
+            return Err(invalid(format!(
+                "Custom detector '{id}' requires at least one tests.match sample."
+            )));
+        };
+
+        let valid_sample = |sample: &Option<String>| {
+            sample
+                .as_deref()
+                .is_some_and(|sample| (1..=MAXIMUM_SAMPLE_LENGTH).contains(&utf16_len(sample)))
+        };
+        let Some(no_match_samples) = no_match_samples.filter(|no_match| {
+            match_samples.len() <= MAXIMUM_SAMPLES
+                && no_match.len() <= MAXIMUM_SAMPLES
+                && match_samples
+                    .iter()
+                    .chain(no_match.iter())
+                    .all(valid_sample)
+        }) else {
+            return Err(invalid(format!(
+                "Custom detector '{id}' may have at most 16 tests.match and 16 tests.noMatch samples of 1-1024 characters."
+            )));
+        };
+
+        let definition = CustomDetectorDefinition::from_validated(
+            &id,
+            document.description.as_deref(),
+            document.pattern.as_deref().unwrap_or_default(),
+            canonical,
+            regex,
+            ignore_case,
+            document.whole_word.is_some_and(|DotnetBool(value)| value),
+            action,
+        );
+        let detector = CustomPatternDetector::new(definition);
+        for (index, sample) in match_samples.iter().flatten().enumerate() {
+            if !detector.matches(sample) {
+                return Err(invalid(format!(
+                    "Custom detector '{id}' did not match tests.match[{index}]."
+                )));
+            }
+        }
+
+        for (index, sample) in no_match_samples.iter().flatten().enumerate() {
+            if detector.matches(sample) {
+                return Err(invalid(format!(
+                    "Custom detector '{id}' matched tests.noMatch[{index}]."
+                )));
+            }
+        }
+
+        definitions.push(detector.definition().clone());
+    }
+
+    Ok(definitions)
+}
+
+/// Normalises like the engine; duplicates after normalisation keep the first occurrence.
+fn load_secret_field_names(names: Vec<Option<String>>) -> Result<Vec<String>, PrivacyError> {
+    let valid = names.len() <= MAXIMUM_SECRET_FIELD_NAMES
+        && names.iter().all(|name| {
+            name.as_deref().is_some_and(|name| {
+                (1..=MAXIMUM_SECRET_FIELD_NAME_LENGTH).contains(&utf16_len(name))
+            })
+        });
+    if !valid {
+        return Err(invalid(
+            "Privacy profile may list at most 64 secretFieldNames of 1-128 characters.",
+        ));
+    }
+
+    let mut seen = HashSet::new();
+    let mut normalised = Vec::with_capacity(names.len());
+    for name in names.into_iter().flatten() {
+        let value = normalize_field_name(&name);
+        if value.is_empty() {
+            return Err(invalid(format!(
+                "Secret field name '{name}' has no letters or digits."
+            )));
+        }
+
+        if seen.insert(value.clone()) {
+            normalised.push(value);
+        }
+    }
+
+    Ok(normalised)
 }
 
 /// Reads a key file holding base64 (preferred) or at least 32 raw bytes.

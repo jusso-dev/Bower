@@ -267,6 +267,291 @@ let hasherVectors =
 
 // ---------------------------------------------------------------- privacy profiles
 let header = "apiVersion: bower.security/v1\nkind: PrivacyProfile\nmetadata:\n  id: t\n  version: 1\n"
+
+// ---------------------------------------------------------------- custom detectors (appended)
+let customDetector (id: string) (pattern: string) (action: string) (extra: string) (tests: string) =
+    "customDetectors:\n  - id: " + id + "\n    pattern: '" + pattern + "'\n    action: " + action + "\n" + extra + "    tests:\n      match: " + tests + "\n"
+let emp = """EMP-\d{6}"""
+let validDetector (id: string) =
+    "  - id: " + id + "\n    pattern: 'EMP-\\d{6}'\n    action: mask\n    tests:\n      match: [EMP-123456]\n"
+let longText (n: int) = String.replicate n "x"
+let customProfileCases =
+    [ // Every error message, in loader order.
+      header + "customDetectors:\n" + String.Join("", [ for i in 0..32 -> validDetector (sprintf "custom.d%d" i) ])
+      header + "customDetectors:\n" + String.Join("", [ for i in 0..31 -> validDetector (sprintf "custom.d%d" i) ])
+      header + "customDetectors: ~\n"; header + "customDetectors: []\n"; header + "customDetectors:\n  - ~\n"
+      header + customDetector "Custom.X" emp "mask" "" "[EMP-123456]"
+      header + customDetector "custom." emp "mask" "" "[EMP-123456]"
+      header + customDetector "custom" emp "mask" "" "[EMP-123456]"
+      header + customDetector "custom.a--b" emp "mask" "" "[EMP-123456]"
+      header + customDetector "custom.-a" emp "mask" "" "[EMP-123456]"
+      header + customDetector "custom.a-" emp "mask" "" "[EMP-123456]"
+      header + customDetector "custom.a_b" emp "mask" "" "[EMP-123456]"
+      header + customDetector "custom.éa" emp "mask" "" "[EMP-123456]"
+      header + customDetector "custom.a.b" emp "mask" "" "[EMP-123456]"
+      header + customDetector ("custom." + String.replicate 57 "a") emp "mask" "" "[EMP-123456]"
+      header + customDetector ("custom." + String.replicate 58 "a") emp "mask" "" "[EMP-123456]"
+      header + customDetector "custom.a-1-b2" emp "mask" "" "[EMP-123456]"
+      header + "customDetectors:\n  - pattern: 'x'\n    action: mask\n    tests:\n      match: [x]\n"
+      header + "customDetectors:\n  - id: ~\n    pattern: 'x'\n    action: mask\n    tests:\n      match: [x]\n"
+      header + "customDetectors:\n" + validDetector "custom.dup" + validDetector "custom.other" + validDetector "custom.dup"
+      header + customDetector "custom.d" emp "mask" ("    description: " + longText 257 + "\n") "[EMP-123456]"
+      header + customDetector "custom.d" emp "mask" ("    description: " + longText 256 + "\n") "[EMP-123456]"
+      header + customDetector "custom.d" emp "mask" "    description: ~\n" "[EMP-123456]"
+      header + "customDetectors:\n  - id: custom.d\n    action: mask\n    tests:\n      match: [x]\n"
+      header + "customDetectors:\n  - id: custom.d\n    pattern: ~\n    action: mask\n    tests:\n      match: [x]\n"
+      header + customDetector "custom.d" "" "mask" "" "[x]"
+      header + customDetector "custom.d" (String.replicate 513 "x") "mask" "" ("[" + String.replicate 513 "x" + "]")
+      header + customDetector "custom.d" (String.replicate 512 "x") "mask" "" ("[" + String.replicate 512 "x" + "]")
+      header + customDetector "custom.d" "a(?=b)" "mask" "" "[ab]"
+      header + customDetector "custom.d" "(a{1000}){5}" "mask" "" "[a]"
+      header + customDetector "custom.d" "a*" "mask" "" "[a]"
+      header + customDetector "custom.d" "^" "mask" "" "[a]"
+      header + "customDetectors:\n  - id: custom.d\n    pattern: 'x'\n    tests:\n      match: [x]\n"
+      header + customDetector "custom.d" "x" "~" "" "[x]"
+      header + customDetector "custom.d" "x" "obliterate" "" "[x]"
+      header + customDetector "custom.d" "x" "Alert-Only" "" "[x]"
+      header + customDetector "custom.d" "x" "hmac" "" "[x]"
+      header + customDetector "custom.d" "x" "truncate" "" "[x]"
+      header + "customDetectors:\n  - id: custom.d\n    pattern: 'x'\n    action: mask\n"
+      header + "customDetectors:\n  - id: custom.d\n    pattern: 'x'\n    action: mask\n    tests: ~\n"
+      header + "customDetectors:\n  - id: custom.d\n    pattern: 'x'\n    action: mask\n    tests: {}\n"
+      header + "customDetectors:\n  - id: custom.d\n    pattern: 'x'\n    action: mask\n    tests:\n      noMatch: [y]\n"
+      header + customDetector "custom.d" "x" "mask" "" "[]"
+      header + customDetector "custom.d" "x" "mask" "" "~"
+      header + customDetector "custom.d" "x" "mask" "" ("[" + String.Join(", ", List.replicate 17 "x") + "]")
+      header + customDetector "custom.d" "x" "mask" "" ("[" + String.Join(", ", List.replicate 16 "x") + "]")
+      header + customDetector "custom.d" "x" "mask" "" ("[x]\n      noMatch: [" + String.Join(", ", List.replicate 17 "y") + "]")
+      header + customDetector "custom.d" "x" "mask" "" ("[x]\n      noMatch: [" + String.Join(", ", List.replicate 16 "y") + "]")
+      header + customDetector "custom.d" "x" "mask" "" "[x, '']"
+      header + customDetector "custom.d" "x" "mask" "" "[x, ~]"
+      header + customDetector "custom.d" "x" "mask" "" ("[" + String.replicate 1025 "x" + "]")
+      header + customDetector "custom.d" "x" "mask" "" ("[" + String.replicate 1024 "x" + "]")
+      header + customDetector "custom.d" "x" "mask" "" "[x]\n      noMatch: ~"
+      header + customDetector "custom.d" "x" "mask" "" "[x]\n      noMatch: ['']"
+      header + customDetector "custom.d" "x" "mask" "" "[x, y, z]"
+      header + customDetector "custom.d" "x" "mask" "" "[x]\n      noMatch: [y, axb]"
+      header + customDetector "custom.d" emp "mask" "    wholeWord: true\n" "[EMP-123456, 'id EMP-000001.']\n      noMatch: [XEMP-123456, EMP-1234567, EMP-123456_]"
+      header + customDetector "custom.d" emp "mask" "    wholeWord: true\n" "[XEMP-123456]"
+      header + customDetector "custom.d" emp "mask" "    wholeWord: yes\n    ignoreCase: on\n" "[emp-123456]"
+      header + customDetector "custom.d" emp "mask" "    wholeWord: off\n    ignoreCase: ~\n" "[XEMP-123456]\n      noMatch: [emp-123456]"
+      header + customDetector "custom.d" emp "mask" "    ignoreCase: maybe\n" "[EMP-123456]"
+      header + customDetector "custom.d" emp "mask" "    unknownKey: 1\n" "[EMP-123456]"
+      header + customDetector "custom.d" emp "mask" "" "[EMP-123456]\n      extra: [x]"
+      header + customDetector "custom.d" """\d{6}""" "mask" "" "[123456]\n      noMatch: [12345]"
+      header + customDetector "custom.d" "x" "mask" "" "[x]" + "detectors:\n  custom.d: remove\n"
+      header + customDetector "custom.d" "x" "mask" "" "[x]" + "detectors:\n  custom.other: remove\n"
+      header + customDetector "custom.d" "x" "mask" "" "[x]" + "disabled: [custom.d, id.email]\n"
+      header + customDetector "custom.d" "x" "mask" "" "[x]" + "disabled: [custom.other]\n"
+      header + customDetector "custom.d" "x" "mask" "" "[x]" + "enableOptIn: [custom.d]\n"
+      header + "detectors:\n  custom.d: remove\n"
+      // Secret field names.
+      header + "secretFieldNames: ~\n"; header + "secretFieldNames: []\n"
+      header + "secretFieldNames: [sessionKey, x-contoso-signature, SESSION_KEY, Session-Key, 'Пароль', ÜberSecret, a1]\n"
+      header + "secretFieldNames: [" + String.Join(", ", [ for i in 0..64 -> sprintf "n%d" i ]) + "]\n"
+      header + "secretFieldNames: [" + String.Join(", ", [ for i in 0..63 -> sprintf "n%d" i ]) + "]\n"
+      header + "secretFieldNames: [ok, '']\n"; header + "secretFieldNames: [ok, ~]\n"
+      header + "secretFieldNames: [" + String.replicate 129 "a" + "]\n"; header + "secretFieldNames: [" + String.replicate 128 "a" + "]\n"
+      header + "secretFieldNames: [ok, '---', '  ']\n"; header + "secretFieldNames: ['_']\n"
+      header + "secretFieldNames: [\"pass\\U0001F600word\", \"İd\", \"KKey\"]\n"
+      header + "secretFieldNames: {a: b}\n"
+      // Syntax variety that must load identically.
+      header + "customDetectors:\n"
+      + "  - id: custom.employee-id\n    description: Contoso employee numbers\n    pattern: 'EMP-\\d{6}'\n    wholeWord: true\n    action: mask\n    tests:\n      match: [EMP-123456, 'user EMP-000001 logged in']\n      noMatch: [EMP-12345]\n"
+      + "  - id: custom.customer-ref\n    pattern: 'CUST-[A-Z]{2}\\d{4}'\n    ignoreCase: true\n    action: hmac\n    tests:\n      match: [cust-ab1234, CUST-ZZ0000]\n      noMatch: [CUST-A1234]\n"
+      + "  - id: custom.ticket\n    pattern: '(?:INC|CHG)[0-9]{7}|^TKT-\\w+$'\n    action: Replace\n    tests:\n      match: [INC0012345, TKT-abc]\n      noMatch: [' TKT-abc', inc0012345]\n"
+      + "secretFieldNames: [sessionKey]\nfields:\n  - path: actor.username\n    action: hmac\n" ]
+
+// ---------------------------------------------------------------- custom pattern translation (appended)
+let patternCorpus =
+    [ // Accepted syntax.
+      """EMP-\d{6}"""; """\w+@\w+\.com"""; """[A-Z]{2}\d{4}"""; "(?:ab|cd)+"; "(ab)*c"; "a{3,}"; "a{2,5}?"; "a+?b"; "x.y"; "^start"; "end$"
+      """^\d+$"""; """[^\s]+"""; """\S+"""; """\D\W"""; """[\d\w\s]"""; """[a\-z]"""; "[-a]"; "[a-]"; """[\]\[\^\\&~]"""; """[\t\n\r]"""; """\t\n\r"""
+      """\.\-\/\#\ \_\!\"\%\'\,\:\;\=\@\`\}\]\{\[\(\)\*\+\?\|\$\^\&\~"""; "a}b]c"; "café"; "[à-ÿ]+"; "[一-\uFFFC]"; "[ -~]"; "日本語"; "Ω+"; "a|b|c"; "(a|)b"
+      "x()y"; "x(?:)y"; "(((a)))"; "a{0}b"; "a{1000}"; "(a{1000}){4}"; "((a{64}){64})"; "(?:a|b|c){1000}"; ".{1000}"; "(.{1000}){4}"; "[^a]{4096}"
+      "a{0,1000}"; "a{01}"; "a{1,01}"; "a{00}b"; "[a-a]"; "[\u0000-\uFFFE]"; "[\uD7FF-\uE000]"; "[\uE000-\uFFFE]"; "\uFFFE"; "[\t- ]"; "a\u0001b"; "x y"
+      "Hello"; "[a-z]+"; "[A-Fa-f0-9]{8}"; "[Z-b]"; "[^q]"; "ſK"; "[ſ]"; "Straße"; "[@-`]"; "[a-zA-Z]"; "İı"; "[^\\n]"
+      // Rejected syntax: one case per reason and position.
+      "(?=a)"; "(?!a)"; "(?<=a)b"; "(?<!a)b"; """\1"""; """(a)\2"""; """\k<x>"""; """\p{L}"""; """\P{L}"""; "(?i)a"; "(?i:a)"; "(?-i)a"; "(?s)a"
+      "(?<n>a)"; "(?'n'a)"; "(?P<n>a)"; "(?>a)"; "(?#c)a"; "(?(a)b|c)"; "(?"; "(?)"; "(?:"; "(a"; "a)"; "((a)"; "a(b(c)"; "[a"; "[^"; "["; "[]"; "[^]"
+      "[]a]"; "[[a]]"; "[a[b]]"; "[[:alpha:]]"; "[a[:alpha:]]"; "[a&&b]"; "[a--b]"; "[a~~b]"; "[a-z-[aeiou]]"; "[a-[b]]"; "[z-a]"; """[a-\d]"""; """[\d-z]"""
+      """[\D]"""; """[\W]"""; """[\S]"""; "a{"; "a{x}"; "a{1"; "a{1,"; "a{,2}"; "a{2,1}"; "a{1, 2}"; "a{1001}"; "a{1,1001}"; "a{99999999999}"; "a{1001"
+      "{2}a"; "{x"; "*a"; "+a"; "?a"; "a|*"; "(*a)"; "^*"; "$+"; "^{2}"; "a**"; "a+*"; "a*??"; "a{2}{3}"; "a??+"; "a?{2}"
+      """\b"""; """\B"""; """\<"""; """\>"""; """\A"""; """\z"""; """\Z"""; """\G"""; """\x41"""; """\u0041"""; """\0"""; """\a"""; """\e"""; """\f"""
+      """\v"""; """\c"""; """\q"""; """\é"""; "\\"; "a\\"; "[a\\"; """[\b]"""; """[\1]"""; """[\p{L}]"""; """[\x41]"""; "\U0001F600"; "a\U0001F600"
+      "[\U0001F600]"; "[a-\U0001F600]"; "\uFFFF"; "[a-\uFFFF]"; "x\uFFFF"
+      // Empty-matching and too complex (translated, then rejected by the loader).
+      "a*"; "a?"; "^"; "$"; "^$"; "(a|)"; "a|"; "|a"; "()"; "(?:)*"; "a{0}"; "(a*)+"; "a*b?"; "(a{1000}){5}"; "((a{10}){10}){41}"; "(a{64}){65}"
+      "(a{100}){10}"; "(a{100}){11}"; "((a{10}){10}){10}"; "(?:a|b){500}"; "(?:a|b){501}"; "x[^\\n]{999}"; "x[^\\n]{1000}"; "(?:[^\\n]+){1000}"
+      "((((((((((a{1000}){1000}){1000}){1000}){1000}){1000}){1000}){1000}){1000}){1000})" ]
+
+let patternVectors =
+    [ for pattern in patternCorpus do
+        for ignoreCase in [ false; true ] ->
+            let translation: obj list =
+                try
+                    let t = CustomPatternTranslator.Translate(pattern, ignoreCase)
+                    [ box true; box t.CanonicalPattern; box t.Complexity; box t.MatchesEmpty ]
+                with :? CustomPatternSyntaxException as e -> [ box false; box e.Position; box e.Reason ]
+            let created =
+                try
+                    let d = CustomDetectorDefinition.Create("custom.t", pattern, PrivacyAction.Mask, ignoreCase)
+                    "ok:" + d.CanonicalPattern
+                with :? InvalidDataException as e -> e.Message
+            dict [ "pattern", box pattern; "ignoreCase", box ignoreCase; "translation", box translation; "created", box created ] ]
+
+let reasonVector = List.ofSeq CustomPatternReasons.All
+
+// ---------------------------------------------------------------- custom detector engine (appended)
+let customEngineProfiles =
+    [ "contoso",
+      header + """customDetectors:
+  - id: custom.employee-id
+    pattern: 'EMP-\d{6}'
+    wholeWord: true
+    action: mask
+    tests:
+      match: [EMP-123456]
+      noMatch: [XEMP-123456]
+  - id: custom.customer-ref
+    pattern: 'cust-[a-z]{3}\d{4}'
+    ignoreCase: true
+    action: hmac
+    tests:
+      match: [CUST-abc1234]
+  - id: custom.mail-local
+    pattern: '[a-z]+@example\.test'
+    action: remove
+    tests:
+      match: [alice@example.test]
+  - id: custom.long-number
+    pattern: '\d{9,}'
+    action: replace
+    tests:
+      match: ['100000001']
+  - id: custom.disabled-one
+    pattern: 'ZZZ'
+    action: remove
+    tests:
+      match: [ZZZ]
+  - id: custom.alert
+    pattern: 'ALERT\d'
+    action: alert-only
+    tests:
+      match: [ALERT1]
+  - id: custom.sha
+    pattern: 'K[A-Z]{3}'
+    action: sha256
+    tests:
+      match: [KABC]
+disabled: [custom.disabled-one]
+detectors:
+  id.email: mask
+secretFieldNames: [sessionKey, x-contoso-signature, 'Пароль', ÜberSecret, ok]
+fields:
+  - path: actor.username
+    action: hmac
+"""
+      "nonbmp",
+      header + """customDetectors:
+  - id: custom.one
+    pattern: 'P[^a]Q'
+    action: mask
+    tests:
+      match: [PxQ]
+  - id: custom.two
+    pattern: 'R[^a][^a]S'
+    action: mask
+    tests:
+      match: [RxyS]
+  - id: custom.dot-after
+    pattern: 'x.'
+    action: replace
+    tests:
+      match: [xy]
+  - id: custom.dot-before
+    pattern: '.y'
+    action: replace
+    tests:
+      match: [ay]
+  - id: custom.run
+    pattern: '[^\s]{3}'
+    wholeWord: true
+    action: mask
+    tests:
+      match: [abc]
+  - id: custom.word
+    pattern: 'Z\W+Z'
+    wholeWord: true
+    action: remove
+    tests:
+      match: [Z-Z]
+  - id: custom.cjk
+    pattern: '[一-龥]+'
+    action: mask
+    tests:
+      match: [日本]
+  - id: custom.anchored
+    pattern: '^A.{2}$'
+    action: mask
+    tests:
+      match: [Abc]
+"""
+      "thirtytwo",
+      header + "customDetectors:\n" + String.Join("", [ for i in 0..31 -> sprintf "  - id: custom.rule-%d\n    pattern: 'R%02d-[A-Z0-9]{4,8}'\n    wholeWord: %b\n    ignoreCase: %b\n    action: mask\n    tests:\n      match: [R%02d-ABCD]\n" i i (i % 2 = 0) (i % 3 = 0) i ]) ]
+
+let loadedCustom =
+    [ for (name, yaml) in customEngineProfiles -> name, yaml, PrivacyEngine(PrivacyProfileLoader.Load(yaml, Array.create 32 9uy, "kp").Policy) ]
+
+let customJsonCases =
+    [ """{"msg":"user EMP-123456 and XEMP-123456 and EMP-1234567 and EMP-654321_x and (EMP-000001)"}"""
+      """{"ref":"cust-abc1234 CUST-XyZ9876 cust-ab1234","mail":"alice@example.test","n":100000001,"m":"tfn 100000001 card 4111111111111111"}"""
+      """{"sessionKey":"s","SESSION_KEY":"s","session-key":"s","xContosoSignature":"s","пароль":"s","ПАРОЛЬ":"s","überSecret":"s","UBERSECRET":"s","ok":1,"oK":2,"notSecret":"v"}"""
+      """{"EMP-123456":"key","nested":{"ALERT1 cust-abc9999":"v","ZZZ":"disabled","KABC":"hash me"}}"""
+      """{"actor":{"username":"EMP-123456"},"list":["EMP-111111",123456789012,["ALERT2"]]}"""
+      """{"a":"P😀Q P😀😀Q PxQ","b":"R😀S R😀😀S RxyS","c":"x😀 😀y xy ay","d":"😀😀 ab😀 😀ab abc a😀c","e":"Z😀Z Z-Z aZ-Z","f":"日本😀語 中文","g":"A😀","h":"Ab😀"}"""
+      """{"a":"PxQ","emoji":"😀😀😀😀😀😀","mixed":"EMP-123456😀EMP-654321"}"""
+      """{"r":"R01-ABCD r00-abcd R03-abcd R02-ABCD9 xR04-ABCD R31-ABCDEFGH R30-abcdefgh"}"""
+      """{"none":"nothing to see","num":42,"t":true}""" ]
+
+let customEngineVectors =
+    [ for (name, _, engine) in loadedCustom do
+        for input in customJsonCases ->
+            let result = engine.RedactJson(input)
+            let detected, actions = metadataVector result.Metadata
+            dict [ "profile", box name
+                   "input", box input
+                   "succeeded", box result.Succeeded
+                   "failureCode", box result.FailureCode
+                   "redactedJson", box result.RedactedJson
+                   "removedPaths", box (List.ofSeq result.RemovedPaths)
+                   "maskedPaths", box (List.ofSeq result.MaskedPaths)
+                   "detected", box detected
+                   "actions", box actions
+                   "findings", box [ for f in result.Findings -> findingText f ] ] ]
+
+let customTextVectors =
+    let crng = Random(20261024)
+    let pieces =
+        [| "EMP-123456"; "XEMP-1"; "_"; " "; "-"; "😀"; "P"; "Q"; "R"; "S"; "x"; "y"; "a"; "Z"; "日本"; "A"; "cust-abc1234"; "100000001"; "4111111111111111"
+           "alice@example.test"; "ALERT3"; "KABC"; "R05-ABCD"; "r06-abcd"; "\n"; "\t"; "é"; "ſ"; "K"; "1"; "." |]
+    [ for (name, _, engine) in loadedCustom do
+        for _ in 1..150 do
+            let input = String.Join("", [| for _ in 1..crng.Next(1, 12) -> pieces.[crng.Next(pieces.Length)] |])
+            let result = engine.RedactText(input)
+            yield dict [ "profile", box name
+                         "input", box input
+                         "succeeded", box result.Succeeded
+                         "redactedText", box result.RedactedText
+                         "findings", box [ for f in result.Findings -> findingText f ] ] ]
+
+// ---------------------------------------------------------------- field-name normalisation (appended)
+let normalizationVectors =
+    let all = [| for code in 0..0xFFFF do if code < 0xD800 || code > 0xDFFF then yield char code |]
+    [ for chunk in Array.chunkBySize 1024 all ->
+        let input = String(chunk)
+        dict [ "input", box input; "normalized", box (FieldNameNormalizer.Normalize input) ] ]
+
 let profileCases =
     [ File.ReadAllText(Path.Combine(repoRoot, "deploy", "privacy", "cloud-identities.yaml"))
       File.ReadAllText(Path.Combine(repoRoot, "packs", "linux-ssh-gateway", "privacy.yaml"))
@@ -315,6 +600,11 @@ maximumFieldLength: 1024
       "apiVersion: bower.security/v1\nkind: PrivacyProfile\nmetadata:\n"; "apiVersion: bower.security/v1\nkind: PrivacyProfile\ndetectors:\n  au.tfn: nope\n"
       header + "detectors: ~\n"; header + "detectors:\n  au.tfn: ~\n"; header + "disabled: ~\n"; header + "enableOptIn: ~\n"; header + "disabled: [~]\n"
       header + "fields: ~\n"; header + "fields:\n  - ~\n"; header + "fields:\n  - path: a\n"; header + "fields:\n  - path: a\n    action: ~\n" ]
+    @ customProfileCases
+
+let customDetectorVector (d: CustomDetectorDefinition) =
+    [ d.Id; (if isNull d.Description then "" else d.Description); d.Pattern; d.CanonicalPattern
+      (if d.IgnoreCase then "true" else "false"); (if d.WholeWord then "true" else "false"); string d.Action ]
 
 let profileVectors =
     [ for yaml in profileCases ->
@@ -333,12 +623,15 @@ let profileVectors =
                    "fieldRules", box [ for r in p.FieldRules -> [ r.Path; string r.Action; (if r.MaxLength.HasValue then string r.MaxLength.Value else "") ] ]
                    "maximumFieldLength", box p.MaximumFieldLength
                    "emitMetadata", box p.EmitMetadata
-                   "hmacKeyId", box p.HmacKeyId ]
+                   "hmacKeyId", box p.HmacKeyId
+                   "customDetectors", box [ for d in p.CustomDetectors -> customDetectorVector d ]
+                   "secretFieldNames", box (List.ofSeq p.SecretFieldNames) ]
         with ex ->
             dict [ "yaml", box yaml; "ok", box false; "error", box (ex.GetType().Name); "message", box ex.Message ] ]
 
 let withoutKey =
-    [ for yaml in [ header + "defaultAction: hmac\n"; header + "fields:\n  - path: a\n    action: hmac\n"; header ] ->
+    [ for yaml in [ header + "defaultAction: hmac\n"; header + "fields:\n  - path: a\n    action: hmac\n"; header
+                    header + customDetector "custom.h" "EMP-\\d{6}" "hmac" "" "[EMP-123456]" ] ->
         try
             PrivacyProfileLoader.Load(yaml) |> ignore
             dict [ "yaml", box yaml; "ok", box true ]
@@ -396,7 +689,13 @@ let document =
            "profilesWithoutKey", box withoutKey
            "keyFiles", box keyFileVectors
            "facade", box facadeVectors
-           "policyErrors", box policyErrorVectors ]
+           "policyErrors", box policyErrorVectors
+           "customPatterns", box patternVectors
+           "customPatternReasons", box reasonVector
+           "customEngineProfiles", box [ for (name, yaml) in customEngineProfiles -> [ name; yaml ] ]
+           "customEngine", box customEngineVectors
+           "customText", box customTextVectors
+           "fieldNameNormalization", box normalizationVectors ]
 
 // Gzipped so synthetic fuzzed credentials in the corpus do not trip secret scanning.
 do
