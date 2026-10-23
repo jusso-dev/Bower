@@ -162,14 +162,16 @@ public sealed partial class QueueDeliveryWorker(
             return new FailureSettlement(item.EventId, failure.Code, null);
         }
 
-        if (item.DeliveryAttempts >= options.MaximumDeliveryAttempts)
+        if (!failure.IsDestinationFailure && item.DeliveryAttempts >= options.MaximumDeliveryAttempts)
         {
             LogAttemptsExhausted(logger, output.Id, item.DeliveryAttempts);
             return new FailureSettlement(item.EventId, $"max-attempts-exceeded:{failure.Code}", null);
         }
 
-        DateTimeOffset retryAt = failure.RetryAfter
-            ?? clock.GetUtcNow().Add(CalculateRetryDelay(item.DeliveryAttempts));
+        DateTimeOffset retryAt = clock.GetUtcNow().Add(failure.IsDestinationFailure
+            ? TimeSpan.FromSeconds(30)
+            : CalculateRetryDelay(item.DeliveryAttempts));
+        if (failure.RetryAfter > retryAt) retryAt = failure.RetryAfter.Value;
         return new FailureSettlement(item.EventId, failure.Code, retryAt);
     }
 

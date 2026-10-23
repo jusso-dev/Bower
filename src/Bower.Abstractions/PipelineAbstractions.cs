@@ -196,4 +196,9 @@ public sealed record DeliveryFailure(
     string EventId,
     string Code,
     bool IsRetryable,
-    DateTimeOffset? RetryAfter);
+    DateTimeOffset? RetryAfter)
+{
+    /// <summary>Destination-wide faults preserve records and do not spend poison budgets.
+    /// The reserved prefix is persisted with the retry deadline for restart-safe circuits.</summary>
+    public bool IsDestinationFailure => Code.StartsWith("destination-", StringComparison.Ordinal);
+}

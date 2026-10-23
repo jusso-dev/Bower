@@ -291,6 +291,13 @@ pub struct DeliveryFailure {
     pub retry_after: Option<Timestamp>,
 }
 
+impl DeliveryFailure {
+    /// Reserved persisted code namespace: destination outages do not spend poison budgets.
+    pub fn is_destination_failure(&self) -> bool {
+        self.code.starts_with("destination-")
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DeliveryResult {
     pub acknowledged_event_ids: Vec<String>,

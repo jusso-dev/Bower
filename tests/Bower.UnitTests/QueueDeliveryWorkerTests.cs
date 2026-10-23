@@ -213,6 +213,45 @@ public sealed class QueueDeliveryWorkerTests
         Assert.Equal(2, flaky.Failures);
     }
 
+    [Theory]
+    [InlineData(401)]
+    [InlineData(403)]
+    [InlineData(429)]
+    [InlineData(503)]
+    public async Task DestinationOutage_SurvivesRestartPreservesBudgetAndPausesNewBacklog(int status)
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore store, FakeClock clock) = await CreateStoreAsync(directory, cancellationToken);
+        await EnqueueAsync(store, clock, ["valid"], cancellationToken);
+        bool repaired = false;
+        int calls = 0;
+        FakeOutput output = new(events =>
+        {
+            calls++;
+            Assert.All(events, item => Assert.Equal(1, item.DeliveryAttempts));
+            return repaired ? new DeliveryResult(events.Select(item => item.EventId).ToArray(), [], "accepted")
+                : new DeliveryResult([], events.Select(item => new DeliveryFailure(item.EventId,
+                    $"destination-azure-http-{status}", true, clock.UtcNow.AddMinutes(2))).ToArray(), null);
+        });
+        // A poison budget of one must never dead-letter a destination outage.
+        await CreateWorker(store, output, clock, maximumAttempts: 1).DeliverOnceAsync(cancellationToken);
+        await EnqueueAsync(store, clock, ["new-backlog"], cancellationToken);
+        SqliteEventStore reopened = new(Path.Combine(directory.Path, "queue.db"), 10 * 1024 * 1024, clock);
+        await reopened.InitializeAsync(cancellationToken);
+        QueueDeliveryWorker restarted = CreateWorker(reopened, output, clock, maximumAttempts: 1);
+        clock.Advance(TimeSpan.FromSeconds(119));
+        Assert.Equal(0, await restarted.DeliverOnceAsync(cancellationToken));
+        Assert.Equal(1, calls);
+        clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal(2, await restarted.DeliverOnceAsync(cancellationToken));
+        Assert.Equal(0, (await reopened.GetSnapshotAsync(cancellationToken)).DeadLettered);
+        repaired = true;
+        clock.Advance(TimeSpan.FromMinutes(2));
+        Assert.Equal(2, await restarted.DeliverOnceAsync(cancellationToken));
+        Assert.Equal(2, (await reopened.GetSnapshotAsync(cancellationToken)).Delivered);
+    }
+
     private static QueueDeliveryWorker CreateWorker(
         IDurableEventStore store,
         IOutputAdapter output,

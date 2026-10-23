@@ -498,3 +498,81 @@ impl DurableEventStore for FlakyStore {
         self.inner.verify_ledger()
     }
 }
+
+#[tokio::test]
+async fn destination_outages_survive_restart_pause_backlog_and_preserve_budget() {
+    for status in [401, 403, 429, 503] {
+        let directory = tempfile::tempdir().unwrap();
+        let clock = FakeClock::new();
+        let store = create_store(&directory, &clock);
+        enqueue(&store, &clock, &["valid"]);
+        let repaired = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let make_output = || {
+            let repaired = repaired.clone();
+            let clock = clock.clone();
+            FakeOutput(Box::new(move |events| {
+                assert!(events.iter().all(|item| item.delivery_attempts == 1));
+                if repaired.load(Ordering::SeqCst) {
+                    DeliveryResult {
+                        acknowledged_event_ids: events
+                            .iter()
+                            .map(|item| item.event_id.clone())
+                            .collect(),
+                        failures: vec![],
+                        destination_acknowledgement: Some("accepted".into()),
+                    }
+                } else {
+                    let failures = events
+                        .iter()
+                        .map(|item| DeliveryFailure {
+                            event_id: item.event_id.clone(),
+                            code: format!("destination-azure-http-{status}"),
+                            is_retryable: true,
+                            retry_after: Some(clock.utc_now() + chrono::Duration::seconds(120)),
+                        })
+                        .collect();
+                    DeliveryResult {
+                        acknowledged_event_ids: vec![],
+                        failures,
+                        destination_acknowledgement: None,
+                    }
+                }
+            }))
+        };
+        worker(store.clone(), make_output(), &clock, 1)
+            .deliver_once(&ShutdownToken::never())
+            .await
+            .unwrap();
+        enqueue(&store, &clock, &["backlog"]);
+        drop(store);
+        let reopened = create_store(&directory, &clock);
+        let restarted = worker(reopened.clone(), make_output(), &clock, 1);
+        clock.advance(Duration::from_secs(119));
+        assert_eq!(
+            restarted
+                .deliver_once(&ShutdownToken::never())
+                .await
+                .unwrap(),
+            0
+        );
+        clock.advance(Duration::from_secs(1));
+        assert_eq!(
+            restarted
+                .deliver_once(&ShutdownToken::never())
+                .await
+                .unwrap(),
+            2
+        );
+        assert_eq!(reopened.snapshot().unwrap().dead_lettered, 0);
+        repaired.store(true, Ordering::SeqCst);
+        clock.advance(Duration::from_secs(120));
+        assert_eq!(
+            restarted
+                .deliver_once(&ShutdownToken::never())
+                .await
+                .unwrap(),
+            2
+        );
+        assert_eq!(reopened.snapshot().unwrap().delivered, 2);
+    }
+}

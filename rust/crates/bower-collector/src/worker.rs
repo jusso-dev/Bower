@@ -246,6 +246,7 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
     /// C# `ToSettlement`: dead-letter permanent failures and exhausted retries,
     /// otherwise schedule a retry.
     fn to_settlement(&self, attempts: i32, failure: DeliveryFailure) -> FailureSettlement {
+        let destination = failure.is_destination_failure();
         let DeliveryFailure {
             event_id,
             code,
@@ -260,7 +261,7 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
             };
         }
 
-        if attempts >= self.options.maximum_delivery_attempts {
+        if !destination && attempts >= self.options.maximum_delivery_attempts {
             warn!(
                 output_id = self.output.id(),
                 attempts, "Output adapter exhausted delivery attempts; event dead-lettered."
@@ -272,11 +273,14 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
             };
         }
 
-        let retry_at = retry_after.unwrap_or_else(|| {
-            let delay = calculate_retry_delay(attempts);
-            self.clock.utc_now()
-                + chrono::TimeDelta::from_std(delay).unwrap_or(chrono::TimeDelta::MAX)
-        });
+        let delay = if destination {
+            Duration::from_secs(30)
+        } else {
+            calculate_retry_delay(attempts)
+        };
+        let local = self.clock.utc_now()
+            + chrono::TimeDelta::from_std(delay).unwrap_or(chrono::TimeDelta::MAX);
+        let retry_at = retry_after.map_or(local, |server| server.max(local));
         FailureSettlement {
             event_id,
             failure_code: code,

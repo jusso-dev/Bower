@@ -10,6 +10,7 @@
 use std::collections::HashSet;
 use std::io::Write;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::time::Duration;
 
 use bower_contracts::{DeliveryFailure, DeliveryResult, OutputAdapter, QueuedEvent};
@@ -28,8 +29,7 @@ use crate::credential::{CachedTokenProvider, TokenProvider};
 pub const MONITOR_SCOPE: &str = "https://monitor.azure.com//.default";
 /// Logs Ingestion REST API version used by `Azure.Monitor.Ingestion` 1.2.
 pub const API_VERSION: &str = "2023-01-01";
-/// `LogsIngestionClient.SingleUploadThreshold` (1 MiB): a batch is closed when
-/// `body + entry + 1 >= threshold`. Measured against the C# SDK, not assumed.
+/// Hard uncompressed JSON-array byte limit, including commas and brackets.
 pub const SINGLE_UPLOAD_THRESHOLD: usize = 1024 * 1024;
 /// `JsonNode.Parse` default maximum depth.
 const MAXIMUM_PAYLOAD_DEPTH: usize = 64;
@@ -280,26 +280,13 @@ struct Batch {
     event_ids: Vec<String>,
 }
 
-/// `LogsIngestionClient.Batch`: entries are appended to a JSON array until adding
-/// the next one would reach the 1 MiB threshold; an entry above the threshold on its
-/// own is sent alone.
+/// Prepared entries fit within the hard request limit (checked before batching).
 fn batch_records(records: Vec<(String, Vec<u8>)>) -> Vec<Batch> {
     let mut batches = Vec::new();
     let mut body: Vec<u8> = vec![b'['];
     let mut event_ids: Vec<String> = Vec::new();
     for (event_id, entry) in records {
-        if entry.len() > SINGLE_UPLOAD_THRESHOLD {
-            let mut single = Vec::with_capacity(entry.len() + 2);
-            single.push(b'[');
-            single.extend_from_slice(&entry);
-            single.push(b']');
-            batches.push(Batch {
-                body: single,
-                event_ids: vec![event_id],
-            });
-            continue;
-        }
-        if !event_ids.is_empty() && body.len() + entry.len() + 1 >= SINGLE_UPLOAD_THRESHOLD {
+        if !event_ids.is_empty() && body.len() + entry.len() + 2 > SINGLE_UPLOAD_THRESHOLD {
             body.push(b']');
             batches.push(Batch {
                 body: std::mem::replace(&mut body, vec![b'[']),
@@ -321,14 +308,11 @@ fn batch_records(records: Vec<(String, Vec<u8>)>) -> Vec<Batch> {
 
 /// Outcome of one batch after retries.
 enum BatchOutcome {
-    Accepted {
-        request_id: Option<String>,
-        status: u16,
-    },
+    Accepted,
     /// `status` 0 means no HTTP response (transport, timeout or token failure).
     Failed {
         status: u16,
-        request_id: Option<String>,
+        retry_after: Option<bower_contracts::time::Timestamp>,
     },
 }
 
@@ -349,14 +333,14 @@ fn server_delay(headers: &HeaderMap) -> Option<Duration> {
     for name in ["retry-after-ms", "x-ms-retry-after-ms"] {
         if let Some(milliseconds) = text(name).and_then(|value| value.parse::<f64>().ok())
             && milliseconds.is_finite()
-            && milliseconds >= 0.0
+            && (0.0..=253_402_300_799_000.0).contains(&milliseconds)
         {
             return Some(Duration::from_secs_f64(milliseconds / 1000.0));
         }
     }
     let value = text("retry-after")?;
     if let Ok(seconds) = value.parse::<u64>() {
-        return Some(Duration::from_secs(seconds));
+        return Some(Duration::from_secs(seconds.min(253_402_300_799)));
     }
     let date = chrono::DateTime::parse_from_rfc2822(value).ok()?;
     let remaining = date.signed_duration_since(chrono::Utc::now());
@@ -402,7 +386,7 @@ impl Uploader {
             Err(_) => {
                 return BatchOutcome::Failed {
                     status: 0,
-                    request_id: None,
+                    retry_after: None,
                 };
             }
         };
@@ -433,7 +417,7 @@ impl Uploader {
                     None,
                     BatchOutcome::Failed {
                         status: 0,
-                        request_id: None,
+                        retry_after: None,
                     },
                 );
             }
@@ -444,7 +428,7 @@ impl Uploader {
                 None,
                 BatchOutcome::Failed {
                     status: 0,
-                    request_id: None,
+                    retry_after: None,
                 },
             );
         };
@@ -466,28 +450,15 @@ impl Uploader {
                 None,
                 BatchOutcome::Failed {
                     status: 0,
-                    request_id: None,
+                    retry_after: None,
                 },
             ),
             Ok(response) => {
                 let status = response.status();
-                let request_id = response
-                    .headers()
-                    .get("x-ms-request-id")
-                    .and_then(|value| value.to_str().ok())
-                    .map(str::to_owned);
                 let server = server_delay(response.headers());
-                // Drain the body so the connection can be reused; never inspect it.
-                let _ = response.bytes().await;
+                // Drop untrusted response bodies; never buffer or expose them.
                 if status.is_success() {
-                    (
-                        false,
-                        None,
-                        BatchOutcome::Accepted {
-                            request_id,
-                            status: status.as_u16(),
-                        },
-                    )
+                    (false, None, BatchOutcome::Accepted)
                 } else {
                     let code = status.as_u16();
                     (
@@ -495,7 +466,16 @@ impl Uploader {
                         server,
                         BatchOutcome::Failed {
                             status: code,
-                            request_id,
+                            retry_after: server
+                                .and_then(|delay| chrono::Duration::from_std(delay).ok())
+                                .and_then(|delay| {
+                                    let maximum =
+                                        bower_contracts::time::parse("9999-12-31T23:59:58Z")
+                                            .expect("constant maximum timestamp");
+                                    bower_contracts::time::now()
+                                        .checked_add_signed(delay)
+                                        .map(|deadline| deadline.min(maximum))
+                                }),
                         },
                     )
                 }
@@ -506,9 +486,8 @@ impl Uploader {
 
 impl AzureLogsIngestionOutput {
     /// Uploads `events`. Poison records (unparseable, id mismatch, preflight issue)
-    /// fail alone and are not retryable; HTTP failures map to `azure-http-{status}`,
-    /// retryable for 408, 429 and 5xx; failures without a response map to
-    /// `azure-upload-failed` (retryable).
+    /// fail alone and are not retryable. HTTP/credential/transport failures use the
+    /// reserved destination fault namespace and preserve records for repair.
     pub async fn deliver_events(&self, events: &[QueuedEvent]) -> DeliveryResult {
         if events.is_empty() {
             return DeliveryResult::default();
@@ -544,6 +523,10 @@ impl AzureLogsIngestionOutput {
                 failures.push(failure(&item.event_id, "payload-invalid-json", false));
                 continue;
             };
+            if entry.len() + 2 > SINGLE_UPLOAD_THRESHOLD {
+                failures.push(failure(&item.event_id, "payload-too-large", false));
+                continue;
+            }
             records.push((item.event_id.clone(), entry));
             if batch_event_ids.insert(item.event_id.as_str()) {
                 accepted_ids.push(item.event_id.as_str());
@@ -565,37 +548,50 @@ impl AzureLogsIngestionOutput {
             options: self.client_options.clone(),
         };
         let semaphore = Arc::new(Semaphore::new(self.options.maximum_concurrency));
-        // JoinSet aborts in-flight uploads when this future is dropped (cancellation).
-        let mut uploads: JoinSet<(usize, BatchOutcome)> = JoinSet::new();
-        let batches = batch_records(records);
-        let mut batch_ids: Vec<Vec<String>> = Vec::with_capacity(batches.len());
-        for (index, batch) in batches.into_iter().enumerate() {
-            batch_ids.push(batch.event_ids);
+        let budget = Arc::new(AtomicI32::new(16));
+        // Each task retains its batch IDs through every completion and isolation split.
+        // JoinSet aborts in-flight requests on caller cancellation.
+        let mut uploads = JoinSet::new();
+        for batch in batch_records(records) {
             let uploader = uploader.clone();
             let semaphore = Arc::clone(&semaphore);
+            let budget = Arc::clone(&budget);
             uploads.spawn(async move {
-                let Ok(_permit) = semaphore.acquire_owned().await else {
-                    return (
-                        index,
-                        BatchOutcome::Failed {
-                            status: 0,
-                            request_id: None,
-                        },
-                    );
-                };
-                (index, uploader.upload(batch.body).await)
+                let _permit = semaphore.acquire_owned().await.expect("semaphore stays open");
+                let mut pending = vec![batch];
+                let mut results = Vec::new();
+                while let Some(batch) = pending.pop() {
+                    let outcome = uploader.upload(batch.body.clone()).await;
+                    if matches!(outcome, BatchOutcome::Failed { status: 400, retry_after } if retry_after.is_none_or(|deadline| deadline <= bower_contracts::time::now()))
+                        && batch.event_ids.len() > 1
+                        && budget.fetch_sub(2, Ordering::SeqCst) >= 2
+                    {
+                        // RawValue preserves already prepared number text and escaping.
+                        let entries: Vec<Box<serde_json::value::RawValue>> =
+                            serde_json::from_slice(&batch.body).expect("owned valid JSON array");
+                        let middle = entries.len() / 2;
+                        for (entries, ids) in [
+                            (&entries[middle..], &batch.event_ids[middle..]),
+                            (&entries[..middle], &batch.event_ids[..middle]),
+                        ] {
+                            let body = format!("[{}]", entries.iter().map(|entry| entry.get()).collect::<Vec<_>>().join(",")).into_bytes();
+                            pending.push(Batch { body, event_ids: ids.to_vec() });
+                        }
+                    } else {
+                        results.push((batch.event_ids, outcome));
+                    }
+                }
+                results
             });
         }
 
         let mut failed: HashSet<String> = HashSet::new();
-        let mut last_response: Option<(Option<String>, u16)> = None;
         while let Some(joined) = uploads.join_next().await {
-            let Ok((index, outcome)) = joined else {
-                // A panicked upload cannot be attributed safely: nothing is delivered.
+            let Ok(results) = joined else {
                 failures.extend(
                     accepted_ids
                         .iter()
-                        .map(|id| failure(id, "azure-upload-unattributed", true)),
+                        .map(|id| failure(id, "destination-azure-unattributed", true)),
                 );
                 return DeliveryResult {
                     acknowledged_event_ids: Vec::new(),
@@ -603,24 +599,22 @@ impl AzureLogsIngestionOutput {
                     destination_acknowledgement: None,
                 };
             };
-            match outcome {
-                BatchOutcome::Accepted { request_id, status } => {
-                    last_response = Some((request_id, status))
-                }
-                BatchOutcome::Failed { status, request_id } => {
-                    if status != 0 {
-                        last_response = Some((request_id, status));
-                    }
-                    for event_id in &batch_ids[index] {
+            for (event_ids, outcome) in results {
+                if let BatchOutcome::Failed {
+                    status,
+                    retry_after,
+                } = outcome
+                {
+                    for event_id in event_ids {
                         let code = if status == 0 {
-                            "azure-upload-failed".to_owned()
+                            "destination-azure-unavailable".to_owned()
                         } else {
-                            format!("azure-http-{status}")
+                            format!("destination-azure-http-{status}")
                         };
-                        let retryable =
-                            status == 0 || status == 408 || status == 429 || status >= 500;
-                        failures.push(failure(event_id, code, retryable));
-                        failed.insert(event_id.clone());
+                        let mut item = failure(&event_id, code, true);
+                        item.retry_after = retry_after;
+                        failures.push(item);
+                        failed.insert(event_id);
                     }
                 }
             }
@@ -631,12 +625,8 @@ impl AzureLogsIngestionOutput {
             .filter(|id| !failed.contains(**id))
             .map(|id| (*id).to_owned())
             .collect();
-        let acknowledgement = last_response.map(|(request_id, status)| {
-            format!(
-                "azure-logs-ingestion:accepted:{}",
-                request_id.unwrap_or_else(|| format!("http-{status}"))
-            )
-        });
+        let acknowledgement = (!acknowledged.is_empty())
+            .then(|| "azure-logs-ingestion:accepted:owned-batches".to_owned());
         DeliveryResult {
             acknowledged_event_ids: acknowledged,
             failures,
