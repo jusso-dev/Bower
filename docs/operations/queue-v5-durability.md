@@ -111,19 +111,50 @@ small shared-memory file and transient memory are additional overhead. All write
 must use the supported APIs and matching limits; raw administrative SQL is outside
 this enforcement boundary.
 
-## SQL Server timestamp cursor and allocation bounds
+## SQL Server timestamp cursor v3 and allocation bounds
 
-Timestamp cursor v2 keeps forward `(eventTime, sequence)` progress separate from a
-bounded overlap sweep. Forward pages use strict keyset comparison; an overlap sweep
-has a fixed high watermark and its own persisted `(eventTime, sequence)` position.
-Full tied-timestamp pages progress with zero or positive overlap. Finishing a sweep
-resumes forward polling. Later sweeps recover late rows still inside the configured
-overlap horizon. Rows arriving outside that horizon require an operator replay;
-no finite overlap guarantees recovery of arbitrarily delayed commits.
+Timestamp cursor v3 keeps forward `(eventTime, sequence)` progress separate from a
+bounded overlap sweep. Forward and replay pages alternate, each limited to
+`BatchSize`, even when every forward page is full. Both streams use strict keyset
+comparison, including the sequence tie-breaker. Zero overlap uses forward pages
+only. An already pending sweep finishes even if overlap is changed to zero.
 
-Version 1 checkpoints upgrade when read; new checkpoints are v2. Old adapters reject
-v2, and optimistic checkpoint versions reject concurrent stale commits. Commit a
-checkpoint only after every selected row has been durably accepted by the sink.
+The first forward checkpoint atomically saves its new watermark and a replay lower
+bound derived from the **pre-page** watermark minus `TimestampOverlap`. The sweep's
+upper `(eventTime, sequence)` bound is fixed at that page's new watermark. Replay
+position, upper bound and next-page selection survive restart; subsequent forward
+pages cannot move the active sweep's bounds. After a short replay page completes
+the sweep, its upper bound remains saved. The next sweep starts at that saved upper
+timestamp minus overlap and ends at the new forward watermark. This covers forward
+progress made during the previous sweep without a gap. A full page at the upper
+bound needs a later empty replay page to confirm completion.
+
+This is a finite **event-time** lateness contract, not a wall-clock commit-delay
+guarantee. A row within a pending sweep is recovered if it is visible before that
+sweep's keyset passes it, and it remains readable until fetched. A row becoming
+visible behind the replay position needs a subsequent sweep whose lower bound
+still includes it. Advancing forward pages cannot discard a pending interval, but
+arbitrarily delayed or backdated commits can fall outside subsequent intervals.
+Choose overlap for the source's timestamp/commit behavior and polling throughput;
+use an operator-controlled replay for older rows. Timestamp and sequence must
+identify immutable, deterministically ordered facts. Overlap intentionally repeats
+rows; the sink must durably deduplicate stable fingerprints.
+
+Version 1 and 2 checkpoints upgrade in memory when read; subsequent checkpoints
+are v3. A v2 active sweep retains its exact replay position and old forward
+watermark as its fixed upper bound. A legacy forward-only checkpoint starts the
+new overlap at its stored watermark; migration cannot recover rows already skipped
+outside that horizon. Reconcile such historical gaps with an operator replay.
+Old adapters reject v3. Stop old SQL pollers before upgrading, back up the cursor
+store consistently, and do not run mixed cursor versions. Downgrade requires the
+pre-upgrade cursor backup plus reconciliation of subsequently accepted rows;
+do not edit the schema version to force old readers to accept new state.
+
+Optimistic checkpoint versions reject concurrent stale commits. Commit a checkpoint
+only after every selected row has been durably accepted by the sink, including
+checkpoints on empty pages that change replay state. A crash before commit repeats
+the page; it never skips ahead. No persistence queue or cursor-store API changes
+are required.
 
 EF Core LINQ projects bounded fields on SQL Server before `ToListAsync`.
 `DATALENGTH` (including trailing spaces), summed as bigint, bounds combined identity
@@ -136,6 +167,8 @@ at most 64 MiB; the projected string data is at most twice that bound, plus CLR 
 serialization overhead. No unrestricted value is first materialized then discarded.
 
 Tests cover the actual EF-generated SQL, in-memory keyset pages, persisted restart,
-late arrival, rejection markers and cursor version checks. A live SQL Server
+full forward backlogs with late commits, interleaved tied-timestamp replay, crashes
+before checkpoint commit, stale commits, legacy migration, malformed bounds and
+rejection markers. A live SQL Server
 allocation/plan test remains required in the integration environment. No Rust SQL
 adapter exists in the supported port; SQL changes apply to the C# adapter only.

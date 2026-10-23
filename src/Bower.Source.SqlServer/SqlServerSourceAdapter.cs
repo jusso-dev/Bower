@@ -91,30 +91,58 @@ public sealed class SqlServerSourceAdapter
             }
 
             SqlServerSourceCursor candidate = new(
-                2,
+                3,
                 options.CursorKind,
                 row.Sequence,
                 row.EventTime.ToUniversalTime());
             records.Add(MapBounded(row));
-            next = cursor.ReplayTime is null
-                ? Max(next, candidate)
-                : next with { ReplayTime = row.EventTime.ToUniversalTime(), ReplaySequence = row.Sequence };
+            if (cursor.ReplayNext)
+            {
+                next = next with { ReplayTime = candidate.EventTime, ReplaySequence = candidate.Sequence };
+            }
+            else if (Compare(next, candidate) < 0)
+            {
+                next = next with { EventTime = candidate.EventTime, Sequence = candidate.Sequence };
+            }
         }
 
-        // Forward progress and overlap replay use independent keyset positions. A replay
-        // sweep has a fixed upper bound, so tied timestamps never pin the first page.
-        if (options.CursorKind == SqlServerCursorKind.Timestamp && rows.Count < options.BatchSize)
+        if (options.CursorKind == SqlServerCursorKind.Timestamp)
         {
-            next = cursor.ReplayTime is not null
-                ? next with { ReplayTime = null, ReplaySequence = long.MinValue }
-                : options.TimestampOverlap > TimeSpan.Zero
-                    ? next with { ReplayTime = next.EventTime - options.TimestampOverlap, ReplaySequence = long.MinValue }
-                    : next;
+            if (cursor.ReplayNext)
+            {
+                // Alternate bounded pages even while both streams have a backlog. Keep the
+                // completed upper bound: the next sweep must cover intervening forward progress.
+                next = next with { ReplayNext = false };
+                if (rows.Count < options.BatchSize)
+                {
+                    next = next with { ReplayTime = null, ReplaySequence = long.MinValue };
+                }
+            }
+            else
+            {
+                if (next.ReplayTime is null && options.TimestampOverlap > TimeSpan.Zero)
+                {
+                    // Pin the lower bound to the previous sweep (or pre-page watermark),
+                    // never to the watermark advanced by this page. Commit both atomically.
+                    DateTimeOffset anchor = cursor.ReplayUpperTime ?? cursor.EventTime;
+                    DateTimeOffset lower = anchor.UtcTicks < options.TimestampOverlap.Ticks
+                        ? DateTimeOffset.MinValue
+                        : anchor - options.TimestampOverlap;
+                    next = next with
+                    {
+                        ReplayTime = lower,
+                        ReplaySequence = long.MinValue,
+                        ReplayUpperTime = next.EventTime,
+                        ReplayUpperSequence = next.Sequence
+                    };
+                }
+                next = next with { ReplayNext = next.ReplayTime is not null };
+            }
         }
 
         SqlServerCursorCheckpoint? checkpoint = next != cursor
             ? new SqlServerCursorCheckpoint(options.SourceId, expectedVersion,
-                JsonSerializer.Serialize(next with { SchemaVersion = 2 }, CursorJsonOptions))
+                JsonSerializer.Serialize(next with { SchemaVersion = 3 }, CursorJsonOptions))
             : null;
 
         return new SqlServerPollBatch(records, checkpoint);
@@ -191,11 +219,11 @@ public sealed class SqlServerSourceAdapter
             SqlServerCursorKind.Incrementing => rows
                 .Where(row => row.Sequence > cursor.Sequence)
                 .OrderBy(row => row.Sequence),
-            SqlServerCursorKind.Timestamp when cursor.ReplayTime is DateTimeOffset replayTime => rows
+            SqlServerCursorKind.Timestamp when cursor.ReplayNext && cursor.ReplayTime is DateTimeOffset replayTime => rows
                 .Where(row => (row.EventTime > replayTime ||
                     (row.EventTime == replayTime && row.Sequence > cursor.ReplaySequence)) &&
-                    (row.EventTime < cursor.EventTime ||
-                    (row.EventTime == cursor.EventTime && row.Sequence <= cursor.Sequence)))
+                    (row.EventTime < cursor.ReplayUpperTime ||
+                    (row.EventTime == cursor.ReplayUpperTime && row.Sequence <= cursor.ReplayUpperSequence)))
                 .OrderBy(row => row.EventTime).ThenBy(row => row.Sequence),
             SqlServerCursorKind.Timestamp => rows
                 .Where(row => row.EventTime > cursor.EventTime ||
@@ -275,25 +303,42 @@ public sealed class SqlServerSourceAdapter
             SqlServerSourceCursor cursor =
                 JsonSerializer.Deserialize<SqlServerSourceCursor>(value, CursorJsonOptions)
                 ?? throw new JsonException("Cursor is empty.");
-            if (cursor.SchemaVersion is not (1 or 2) || cursor.Kind != options.CursorKind
+            if (cursor.SchemaVersion is not (1 or 2 or 3) || cursor.Kind != options.CursorKind
                 || (cursor.ReplayTime is not null && (cursor.Kind != SqlServerCursorKind.Timestamp || cursor.ReplayTime > cursor.EventTime)))
             {
                 throw new JsonException("Cursor version or kind does not match source.");
             }
 
-            return cursor with { SchemaVersion = 2 };
+            if (cursor.SchemaVersion < 3)
+            {
+                // v2's forward watermark was frozen during replay. It is therefore the
+                // exact upper bound to preserve when resuming an in-flight legacy sweep.
+                cursor = cursor with
+                {
+                    SchemaVersion = 3,
+                    ReplayUpperTime = cursor.ReplayTime is null ? null : cursor.EventTime,
+                    ReplayUpperSequence = cursor.ReplayTime is null ? long.MinValue : cursor.Sequence,
+                    ReplayNext = cursor.ReplayTime is not null
+                };
+            }
+
+            if ((cursor.ReplayNext && cursor.ReplayTime is null)
+                || (cursor.ReplayTime is not null && (cursor.ReplayUpperTime is null
+                    || cursor.ReplayTime > cursor.ReplayUpperTime
+                    || (cursor.ReplayTime == cursor.ReplayUpperTime && cursor.ReplaySequence > cursor.ReplayUpperSequence)))
+                || (cursor.ReplayUpperTime is not null && (cursor.Kind != SqlServerCursorKind.Timestamp
+                    || cursor.ReplayUpperTime > cursor.EventTime
+                    || (cursor.ReplayUpperTime == cursor.EventTime && cursor.ReplayUpperSequence > cursor.Sequence))))
+            {
+                throw new JsonException("Cursor replay bounds are invalid.");
+            }
+
+            return cursor;
         }
         catch (JsonException exception)
         {
             throw new InvalidSourceCursorException(options.SourceId, exception);
         }
-    }
-
-    private static SqlServerSourceCursor Max(
-        SqlServerSourceCursor left,
-        SqlServerSourceCursor right)
-    {
-        return Compare(left, right) >= 0 ? left : right;
     }
 
     private static int Compare(SqlServerSourceCursor left, SqlServerSourceCursor right)
@@ -314,12 +359,15 @@ internal sealed record SqlServerSourceCursor(
     long Sequence,
     DateTimeOffset EventTime,
     DateTimeOffset? ReplayTime = null,
-    long ReplaySequence = long.MinValue)
+    long ReplaySequence = long.MinValue,
+    DateTimeOffset? ReplayUpperTime = null,
+    long ReplayUpperSequence = long.MinValue,
+    bool ReplayNext = false)
 {
     public static SqlServerSourceCursor Initial(SqlServerSourceOptions options)
     {
         return new SqlServerSourceCursor(
-            2,
+            3,
             options.CursorKind,
             options.InitialSequence,
             options.InitialTimestamp.ToUniversalTime());

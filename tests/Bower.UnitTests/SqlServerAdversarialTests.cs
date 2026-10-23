@@ -84,8 +84,8 @@ public sealed partial class SqlServerSourceAdapterTests
         SqlServerSourceOptions options = ValidOptions();
         SqlServerSourceAdapter adapter = new(options, new NoCursorStore());
         var upgraded = adapter.DeserializeCursor("""{"schemaVersion":1,"kind":0,"sequence":7,"eventTime":"2026-01-01T00:00:00Z"}""");
-        Assert.Equal(2, upgraded.SchemaVersion);
+        Assert.Equal(3, upgraded.SchemaVersion);
         Assert.Equal(7, upgraded.Sequence);
-        Assert.Throws<InvalidSourceCursorException>(() => adapter.DeserializeCursor("""{"schemaVersion":3,"kind":0,"sequence":7,"eventTime":"2026-01-01T00:00:00Z"}"""));
+        Assert.Throws<InvalidSourceCursorException>(() => adapter.DeserializeCursor("""{"schemaVersion":4,"kind":0,"sequence":7,"eventTime":"2026-01-01T00:00:00Z"}"""));
     }
 }
