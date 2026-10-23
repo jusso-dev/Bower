@@ -48,7 +48,11 @@ pub fn delivery_health(
         return "pending";
     }
     if snapshot.delivered > 0 {
-        "api-accepted"
+        if output.eq_ignore_ascii_case("ama-spool") {
+            "spooled"
+        } else {
+            "api-accepted"
+        }
     } else {
         "waiting"
     }
@@ -76,6 +80,16 @@ mod health_tests {
             delivery_health("azure-logs-ingestion", &snapshot, 1000, now),
             "waiting"
         );
+        snapshot.delivered = 1;
+        assert_eq!(
+            delivery_health("ama-spool", &snapshot, 1000, now),
+            "spooled"
+        );
+        assert_eq!(
+            delivery_health("azure-logs-ingestion", &snapshot, 1000, now),
+            "api-accepted"
+        );
+        snapshot.delivered = 0;
         snapshot.retrying = 1;
         assert_eq!(
             delivery_health("azure-logs-ingestion", &snapshot, 1000, now),

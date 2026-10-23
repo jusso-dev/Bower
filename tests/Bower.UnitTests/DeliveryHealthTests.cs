@@ -20,6 +20,13 @@ public sealed class DeliveryHealthTests
     }
 
     [Fact]
+    public void Spool_creation_does_not_claim_api_acceptance()
+    {
+        QueueSnapshot snapshot = new(0, 0, 0, 1, 0, 10, null, 0);
+        Assert.Equal("spooled", DeliveryHealth.Evaluate("ama-spool", snapshot, 1000, TestEvents.Now));
+    }
+
+    [Fact]
     public void Old_backlog_is_stalled_and_historical_acknowledgements_are_not_query_proof()
     {
         QueueSnapshot snapshot = new(1, 0, 0, 100, 0, 10, TestEvents.Now.AddMinutes(-6), 10);
