@@ -282,6 +282,7 @@ fn csharp_mapped_cloud_events_pass_pack_policies_and_fire_pack_detections() {
     ] {
         let mut fired: Vec<String> = detection
             .evaluate(&envelope(name), Some(now))
+            .unwrap()
             .alerts
             .into_iter()
             .map(|alert| alert.rule_id)

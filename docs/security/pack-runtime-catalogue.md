@@ -11,6 +11,10 @@ pseudonymises usernames before persistence. Local rule
 `bower-pack-ssh-auth-failure-001` 1.0.0 attaches stable rule hash/version and T1110
 metadata to the accepted semantic row. It does not assert an observed password
 spray aggregate; matching is per event. Unmapped raw fields are discarded.
+Selected events with ambiguous or over-limit detection fields are quarantined
+with `pack-detection-failed` before source persistence; they cannot bypass local
+detections by adding unrelated labels or attributes. Producer evidence is removed
+before evaluation and replaced only by locally computed `bowerDetections`.
 
 Other parser configurations without a signed runtime mapping are preview-only.
 Cloud packs use their existing semantic agent paths and local detections; no new

@@ -895,6 +895,7 @@
       "A": "no"
     },
     "valid": true,
+    "evaluationFailure": true,
     "match": false
   }
 ]

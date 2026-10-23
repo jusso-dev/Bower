@@ -199,9 +199,10 @@ impl EventRedactor for PackDetectionRedactor {
             )
         {
             let mut engine = DetectionEngine::new(self.rules.clone(), []);
-            let mut alerts = engine
-                .evaluate(&envelope, Some(envelope.time_generated))
-                .alerts;
+            let Ok(evaluation) = engine.evaluate(&envelope, Some(envelope.time_generated)) else {
+                return RedactionResult::failed("pack-detection-failed");
+            };
+            let mut alerts = evaluation.alerts;
             alerts.sort_by(|left, right| left.rule_id.cmp(&right.rule_id));
             if !alerts.is_empty() {
                 let values = alerts

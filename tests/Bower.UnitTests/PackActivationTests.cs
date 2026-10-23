@@ -199,6 +199,57 @@ public sealed class PackActivationTests
     }
 
     [Theory]
+    [InlineData("labels", "collision")]
+    [InlineData("labels", "count")]
+    [InlineData("labels", "key")]
+    [InlineData("attributes", "collision")]
+    [InlineData("attributes", "count")]
+    [InlineData("attributes", "key")]
+    public async Task DetectionMetadataFailure_QuarantinesMatchingEventWithoutPersistingSource(string field, string attack)
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await Start(directory, cancellation);
+        using HttpClient client = app.GetTestClient();
+        const string marker = "detection-source-marker";
+        SecurityEventEnvelope envelope = TestEvents.AuthenticationFailure(DateTimeOffset.UtcNow) with
+        {
+            Application = new ApplicationContext { Name = "ssh-gateway", Environment = "production" },
+            EventOutcomeReason = marker
+        };
+        Dictionary<string, string> metadata = attack switch
+        {
+            "collision" => new() { ["x"] = "harmless", ["X"] = "harmless" },
+            "count" => Enumerable.Range(0, 257).ToDictionary(index => $"x{index}", _ => "harmless"),
+            _ => new() { [new string('x', field == "attributes" ? 118 : 129)] = "harmless" }
+        };
+        envelope = field == "labels"
+            ? envelope with { Labels = metadata }
+            : envelope with { Attributes = metadata.ToDictionary(pair => pair.Key, pair => JsonSerializer.SerializeToElement(pair.Value)) };
+
+        using HttpResponseMessage rejected = await Send(client, JsonSerializer.Serialize(envelope, BowerJson.Envelope), cancellation, endpoint: "/v1/events");
+        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+        string response = await rejected.Content.ReadAsStringAsync(cancellation);
+        Assert.Contains("pack-detection-failed", response, StringComparison.Ordinal);
+        Assert.Contains("quarantine", response, StringComparison.Ordinal);
+        Assert.DoesNotContain(marker, response, StringComparison.Ordinal);
+        IDurableEventStore store = app.Services.GetRequiredService<IDurableEventStore>();
+        Assert.Equal(0, (await store.GetSnapshotAsync(cancellation)).Queued);
+        foreach (string path in Directory.EnumerateFiles(directory.Path, "queue.db*"))
+        {
+            Assert.DoesNotContain(marker, Encoding.UTF8.GetString(await File.ReadAllBytesAsync(path, cancellation)), StringComparison.Ordinal);
+        }
+
+        // The same source event succeeds after metadata is repaired: failure must not deduplicate it.
+        envelope = envelope with { Labels = null, Attributes = null };
+        using HttpResponseMessage repaired = await Send(client, JsonSerializer.Serialize(envelope, BowerJson.Envelope), cancellation, endpoint: "/v1/events");
+        Assert.Equal(HttpStatusCode.Accepted, repaired.StatusCode);
+        QueuedEvent row = Assert.Single(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
+        SecurityEventEnvelope stored = JsonSerializer.Deserialize(row.Payload, BowerJson.Envelope)!;
+        Assert.Equal("bower-pack-ssh-auth-failure-001", Assert.Single(stored.Attributes![PackDetectionRedactor.EvidenceAttribute].EnumerateArray()).GetProperty("ruleId").GetString());
+    }
+
+    [Theory]
     [InlineData("bowerDetections")]
     [InlineData("BOWERDETECTIONS")]
     public void DetectionEvidence_CannotBeForgedByProducer(string key)
@@ -214,6 +265,34 @@ public sealed class PackActivationTests
         RedactionResult result = redactor.Redact(JsonSerializer.Serialize(envelope, BowerJson.Envelope));
         Assert.True(result.Succeeded);
         Assert.DoesNotContain("forged-rule", result.RedactedJson!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DetectionEvidence_ReservedAttributesAreRemovedBeforeBoundsAndReplacedOnReplay()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await Start(directory, cancellation);
+        using HttpClient client = app.GetTestClient();
+        Dictionary<string, JsonElement> attributes = Enumerable.Range(0, 256)
+            .ToDictionary(index => $"x{index}", _ => JsonSerializer.SerializeToElement("harmless"));
+        attributes["bowerDetections"] = JsonSerializer.SerializeToElement("forged-rule");
+        attributes["BOWERDETECTIONS"] = JsonSerializer.SerializeToElement("forged-rule");
+        SecurityEventEnvelope envelope = TestEvents.AuthenticationFailure(DateTimeOffset.UtcNow) with
+        {
+            Application = new ApplicationContext { Name = "ssh-gateway", Environment = "production" },
+            Attributes = attributes
+        };
+        using HttpResponseMessage accepted = await Send(client, JsonSerializer.Serialize(envelope, BowerJson.Envelope), cancellation, endpoint: "/v1/events");
+        Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
+        QueuedEvent row = Assert.Single(await app.Services.GetRequiredService<IDurableEventStore>().LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
+        Assert.DoesNotContain("forged-rule", row.Payload, StringComparison.Ordinal);
+        SecurityEventEnvelope stored = JsonSerializer.Deserialize(row.Payload, BowerJson.Envelope)!;
+        Assert.Equal(257, stored.Attributes!.Count);
+        Assert.Single(stored.Attributes[PackDetectionRedactor.EvidenceAttribute].EnumerateArray());
+        envelope = envelope with { Attributes = stored.Attributes };
+        using HttpResponseMessage replay = await Send(client, JsonSerializer.Serialize(envelope, BowerJson.Envelope), cancellation, endpoint: "/v1/events");
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
     }
 
     [Fact]

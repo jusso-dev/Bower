@@ -141,7 +141,20 @@ fields combine with AND; a field's alternative list combines with OR. Field name
 match exactly (case-insensitive), never by suffix. Standard envelope fields and
 labels are strings; scalar attributes use the explicit `attributes.<name>` namespace.
 Labels cannot override envelope fields or the attributes namespace. Ambiguous
-case-duplicate labels/attributes do not produce detections.
+case-duplicate labels/attributes fail evaluation. Events also fail evaluation if
+either collection exceeds 256 entries, or an evaluated field name exceeds 128
+UTF-16 units (including the `attributes.` prefix) or its string value exceeds
+65,536 UTF-16 units. These failures are never successful empty detection results:
+selected events with active rules return HTTP 400, decision `quarantine`, reason
+`pack-detection-failed`, without persisting the source payload or consuming a
+detection fingerprint. Privacy redaction runs first, so values truncated into
+bounds can still be evaluated. Reserved `bowerDetections` attributes in any casing
+are stripped before these checks and regenerated only from local rule matches;
+the generated evidence does not count against the source attribute limit.
+
+The C# engine throws `InvalidDataException` for these failures; the Rust engine's
+`evaluate` and `evaluate_json` return `Err(DetectionError::InvalidData)`. Callers
+must handle evaluation failure separately from a successful result with no alerts.
 
 Unmodified scalar strings use whole-value, case-insensitive equality. Explicit
 `contains`, `startswith`, `endswith` work only on strings. YAML booleans and signed

@@ -141,6 +141,52 @@ fn envelope(event_type: &str) -> SecurityEventEnvelope {
 }
 
 #[test]
+fn over_limit_values_fail_without_consuming_detection() {
+    for attribute in [false, true] {
+        let rule = load_yaml("title: Auth Fail\nid: bounds\ndetection:\n  selection:\n    EventType: authentication_failure\n  condition: selection\n", None).unwrap();
+        let mut engine = DetectionEngine::new(vec![rule], []);
+        let mut event = envelope("authentication_failure");
+        if attribute {
+            event.attributes = Some(
+                [("x".into(), "x".repeat(65537).into())]
+                    .into_iter()
+                    .collect(),
+            );
+        } else {
+            event.labels = Some([("x".into(), "x".repeat(65537))].into_iter().collect());
+        }
+        let invalid = bower_contracts::json::to_string(&event).unwrap();
+        assert_eq!(
+            engine
+                .evaluate_json(&invalid, None)
+                .unwrap_err()
+                .to_string(),
+            "Ambiguous or over-limit detection event fields."
+        );
+
+        let mut metadata: IndexMap<String, String> = (0..255)
+            .map(|index| (format!("x{index}"), "harmless".into()))
+            .collect();
+        metadata.insert(
+            "x".repeat(if attribute { 117 } else { 128 }),
+            "x".repeat(65536),
+        );
+        if attribute {
+            event.attributes = Some(
+                metadata
+                    .into_iter()
+                    .map(|(key, value)| (key, value.into()))
+                    .collect(),
+            );
+        } else {
+            event.labels = Some(metadata);
+        }
+        let valid = bower_contracts::json::to_string(&event).unwrap();
+        assert_eq!(engine.evaluate_json(&valid, None).unwrap().alerts.len(), 1);
+    }
+}
+
+#[test]
 fn evaluate_raises_alert_for_authentication_failure() {
     let rule = load_yaml(
         "title: Auth Fail\nid: test-auth-1\nlevel: high\nversion: 1.0.0\ndetection:\n  selection:\n    EventType: authentication_failure\n  condition: selection\ntags:\n  - attack.t1110\n",
@@ -158,7 +204,7 @@ fn evaluate_raises_alert_for_authentication_failure() {
         ..SourceContext::default()
     });
 
-    let result = engine.evaluate(&event, None);
+    let result = engine.evaluate(&event, None).unwrap();
 
     assert_eq!(result.alerts.len(), 1);
     let alert = &result.alerts[0];
@@ -170,7 +216,7 @@ fn evaluate_raises_alert_for_authentication_failure() {
     assert_eq!(alert.matched_fields, ["EventType"]);
 
     // The same event never alerts twice for the same rule version.
-    assert!(engine.evaluate(&event, None).alerts.is_empty());
+    assert!(engine.evaluate(&event, None).unwrap().alerts.is_empty());
 }
 
 #[test]
@@ -182,7 +228,9 @@ fn evaluate_suppresses_configured_rule_ids() {
     .unwrap();
     let mut engine = DetectionEngine::new(vec![rule], vec!["SUPPRESSED-1".to_owned()]);
 
-    let result = engine.evaluate(&envelope("authentication_failure"), None);
+    let result = engine
+        .evaluate(&envelope("authentication_failure"), None)
+        .unwrap();
 
     assert!(result.alerts.is_empty());
     assert_eq!(result.suppressed_rule_ids, ["suppressed-1"]);
@@ -203,6 +251,7 @@ fn pack_detections_fire_on_exact_labels_without_suffix_aliases() {
 
     let mut fired: Vec<String> = engine
         .evaluate(&event, None)
+        .unwrap()
         .alerts
         .into_iter()
         .map(|alert| alert.rule_id)
@@ -227,7 +276,7 @@ fn pack_detections_fire_on_exact_labels_without_suffix_aliases() {
         Vec::new(),
     );
     assert_eq!(
-        engine.evaluate(&event, None).alerts.len(),
+        engine.evaluate(&event, None).unwrap().alerts.len(),
         0,
         "field names must match exactly; suffix aliases could match unrelated context"
     );
@@ -248,8 +297,12 @@ fn shared_semantic_vectors() {
         event.labels = Some(serde_json::from_value(vector["labels"].clone()).unwrap());
         event.attributes = Some(serde_json::from_value(vector["attributes"].clone()).unwrap());
         let mut engine = DetectionEngine::new(vec![rule.unwrap()], []);
+        if vector["evaluationFailure"].as_bool().unwrap_or(false) {
+            assert!(engine.evaluate(&event, None).is_err(), "{name}");
+            continue;
+        }
         assert_eq!(
-            !engine.evaluate(&event, None).alerts.is_empty(),
+            !engine.evaluate(&event, None).unwrap().alerts.is_empty(),
             vector["match"].as_bool().unwrap(),
             "{name}"
         );

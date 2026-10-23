@@ -78,11 +78,12 @@ impl DetectionEngine {
     }
 
     /// Evaluates every rule. An alert fires once per rule, event id and rule hash.
+    /// Ambiguous or over-limit event fields fail before any fingerprint is consumed.
     pub fn evaluate(
         &mut self,
         envelope: &SecurityEventEnvelope,
         now: Option<Timestamp>,
-    ) -> DetectionEvaluationResult {
+    ) -> Result<DetectionEvaluationResult, DetectionError> {
         let detected_at = now.unwrap_or_else(bower_contracts::time::now);
         let mut alerts = Vec::new();
         let mut suppressed: Vec<String> = Vec::new();
@@ -96,10 +97,7 @@ impl DetectionEngine {
                 .as_ref()
                 .is_some_and(|attributes| attributes.len() > 256)
         {
-            return DetectionEvaluationResult {
-                alerts,
-                suppressed_rule_ids: suppressed,
-            };
+            return Err(invalid_event());
         }
         let duplicates = |keys: Vec<&str>| {
             keys.iter()
@@ -115,19 +113,13 @@ impl DetectionEngine {
                 .as_ref()
                 .is_some_and(|values| duplicates(values.keys().map(String::as_str).collect()))
         {
-            return DetectionEvaluationResult {
-                alerts,
-                suppressed_rule_ids: suppressed,
-            };
+            return Err(invalid_event());
         }
         let haystack = build_haystack(envelope);
         if haystack.entries.iter().any(|(key, value)| {
             key.encode_utf16().count() > 128 || value.encode_utf16().count() > 65538
         }) {
-            return DetectionEvaluationResult {
-                alerts,
-                suppressed_rule_ids: suppressed,
-            };
+            return Err(invalid_event());
         }
         for (index, rule) in self.rules.iter().enumerate() {
             if self
@@ -202,10 +194,10 @@ impl DetectionEngine {
                 distinct.push(id);
             }
         }
-        DetectionEvaluationResult {
+        Ok(DetectionEvaluationResult {
             alerts,
             suppressed_rule_ids: distinct,
-        }
+        })
     }
 
     /// Deserializes a Bower envelope (System.Text.Json rules) and evaluates it.
@@ -223,8 +215,12 @@ impl DetectionEngine {
                     "Event JSON did not deserialize to SecurityEventEnvelope.".to_owned(),
                 )
             })?;
-        Ok(self.evaluate(&envelope, now))
+        self.evaluate(&envelope, now)
     }
+}
+
+fn invalid_event() -> DetectionError {
+    DetectionError::InvalidData("Ambiguous or over-limit detection event fields.".into())
 }
 
 fn build_haystack(envelope: &SecurityEventEnvelope) -> Haystack {

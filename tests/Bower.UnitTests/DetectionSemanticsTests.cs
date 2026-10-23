@@ -28,6 +28,11 @@ public sealed class DetectionSemanticsTests
                 Labels = vector.GetProperty("labels").EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString()!),
                 Attributes = vector.GetProperty("attributes").EnumerateObject().ToDictionary(p => p.Name, p => p.Value.Clone())
             };
+            if (vector.TryGetProperty("evaluationFailure", out JsonElement evaluationFailure) && evaluationFailure.GetBoolean())
+            {
+                Assert.Throws<InvalidDataException>(() => new DetectionEngine([rule]).Evaluate(envelope));
+                continue;
+            }
             bool match = new DetectionEngine([rule]).Evaluate(envelope).Alerts.Count == 1;
             Assert.True(match == vector.GetProperty("match").GetBoolean(), name);
         }

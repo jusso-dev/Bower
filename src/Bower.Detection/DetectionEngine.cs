@@ -52,16 +52,18 @@ public sealed class DetectionEngine
         List<DetectionAlert> alerts = [];
         List<string> suppressed = [];
 
-        if (envelope.Labels?.Count > 256 || envelope.Attributes?.Count > 256) { return new DetectionEvaluationResult([], []); }
+        // Invalid event fields are an evaluation failure, never a successful no-match.
+        // PackDetectionRedactor converts this failure to quarantine before persistence.
+        if (envelope.Labels?.Count > 256 || envelope.Attributes?.Count > 256) { throw InvalidEvent(); }
         if (envelope.Labels is not null && envelope.Labels.Keys.Distinct(StringComparer.OrdinalIgnoreCase).Count() != envelope.Labels.Count
             || envelope.Attributes is not null && envelope.Attributes.Keys.Distinct(StringComparer.OrdinalIgnoreCase).Count() != envelope.Attributes.Count)
         {
-            return new DetectionEvaluationResult([], []);
+            throw InvalidEvent();
         }
         Dictionary<string, string> haystack = BuildHaystack(envelope);
         if (haystack.Any(pair => pair.Key.Length > 128 || pair.Value.Length > 65538))
         {
-            return new DetectionEvaluationResult([], []);
+            throw InvalidEvent();
         }
         for (int index = 0; index < rules.Count; index++)
         {
@@ -119,6 +121,8 @@ public sealed class DetectionEngine
 
         return Evaluate(envelope, now);
     }
+
+    private static InvalidDataException InvalidEvent() => new("Ambiguous or over-limit detection event fields.");
 
     private static string Fingerprint(DetectionRule rule, string eventId)
     {

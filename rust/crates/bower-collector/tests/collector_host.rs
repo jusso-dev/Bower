@@ -152,6 +152,131 @@ async fn signed_pack_raw_events_queue_redacted_detection_evidence_and_survive_re
 }
 
 #[tokio::test]
+async fn detection_metadata_failure_quarantines_matching_event_without_persisting_source() {
+    for field in ["labels", "attributes"] {
+        for attack in ["collision", "count", "key"] {
+            let directory = tempfile::tempdir().unwrap();
+            let settings = signed_ssh_settings(directory.path());
+            let mut collector = host::build(
+                settings.clone(),
+                bundle::load(&settings).unwrap(),
+                BuildOptions::default(),
+            )
+            .unwrap();
+            collector.initialize().await.unwrap();
+            let marker = "detection-source-marker";
+            let mut event = authentication_failure("metadata-failure");
+            event.application.name = "ssh-gateway".into();
+            event.application.environment = "production".into();
+            event.event_outcome_reason = Some(marker.into());
+            let metadata: Vec<(String, String)> = match attack {
+                "collision" => vec![
+                    ("x".into(), "harmless".into()),
+                    ("X".into(), "harmless".into()),
+                ],
+                "count" => (0..257)
+                    .map(|index| (format!("x{index}"), "harmless".into()))
+                    .collect(),
+                _ => vec![(
+                    "x".repeat(if field == "attributes" { 118 } else { 129 }),
+                    "harmless".into(),
+                )],
+            };
+            if field == "labels" {
+                event.labels = Some(metadata.into_iter().collect());
+            } else {
+                event.attributes = Some(
+                    metadata
+                        .into_iter()
+                        .map(|(key, value)| (key, value.into()))
+                        .collect(),
+                );
+            }
+            let (status, _, body) = send(&collector.router, post(&event, Some(TOKEN))).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{field}/{attack}: {body}");
+            assert!(body.contains("pack-detection-failed"));
+            assert!(body.contains("quarantine"));
+            assert!(!body.contains(marker));
+            assert!(
+                collector
+                    .store
+                    .lease(10, Duration::from_secs(60))
+                    .unwrap()
+                    .is_empty()
+            );
+            for entry in std::fs::read_dir(directory.path()).unwrap() {
+                let path = entry.unwrap().path();
+                if path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with(settings.queue_path.file_name().unwrap().to_str().unwrap())
+                {
+                    let bytes = std::fs::read(path).unwrap();
+                    assert!(!String::from_utf8_lossy(&bytes).contains(marker));
+                }
+            }
+
+            // Failure must not deduplicate a repaired retry of the same source event.
+            event.labels = None;
+            event.attributes = None;
+            let (status, _, body) = send(&collector.router, post(&event, Some(TOKEN))).await;
+            assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+            let rows = collector.store.lease(10, Duration::from_secs(60)).unwrap();
+            let [row] = rows.as_slice() else {
+                panic!("expected one detected source event")
+            };
+            let stored: serde_json::Value = serde_json::from_str(&row.payload).unwrap();
+            assert_eq!(
+                stored["attributes"]["bowerDetections"][0]["ruleId"],
+                "bower-pack-ssh-auth-failure-001"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn reserved_detection_attributes_are_removed_before_bounds_and_replaced_on_replay() {
+    let directory = tempfile::tempdir().unwrap();
+    let settings = signed_ssh_settings(directory.path());
+    let mut collector = host::build(
+        settings.clone(),
+        bundle::load(&settings).unwrap(),
+        BuildOptions::default(),
+    )
+    .unwrap();
+    collector.initialize().await.unwrap();
+    let mut event = authentication_failure("reserved-evidence");
+    event.application.name = "ssh-gateway".into();
+    event.application.environment = "production".into();
+    event.attributes = Some(
+        (0..256)
+            .map(|index| (format!("x{index}"), "harmless".into()))
+            .collect(),
+    );
+    let attributes = event.attributes.as_mut().unwrap();
+    attributes.insert("bowerDetections".into(), "forged-rule".into());
+    attributes.insert("BOWERDETECTIONS".into(), "forged-rule".into());
+    let (status, _, body) = send(&collector.router, post(&event, Some(TOKEN))).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+    let rows = collector.store.lease(10, Duration::from_secs(60)).unwrap();
+    let [row] = rows.as_slice() else {
+        panic!("expected one detected source event")
+    };
+    assert!(!row.payload.contains("forged-rule"));
+    let stored: SecurityEventEnvelope = bower_contracts::json::from_str(&row.payload).unwrap();
+    assert_eq!(stored.attributes.as_ref().unwrap().len(), 257);
+    event.attributes = stored.attributes;
+    let (status, _, body) = send(&collector.router, post(&event, Some(TOKEN))).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let evidence: serde_json::Value = serde_json::from_str(&row.payload).unwrap();
+    assert_eq!(
+        evidence["attributes"]["bowerDetections"][0]["ruleId"],
+        "bower-pack-ssh-auth-failure-001"
+    );
+}
+
+#[tokio::test]
 async fn pack_ingest_filters_bounds_and_auth_fail_without_queueing() {
     let directory = tempfile::tempdir().unwrap();
     let settings = signed_ssh_settings(directory.path());
