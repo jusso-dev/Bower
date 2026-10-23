@@ -222,3 +222,82 @@ fn decisions_match_csharp_corpus() {
         assert_eq!(actual, expected, "event {line}");
     }
 }
+
+#[test]
+fn broadened_cloud_feeds_still_require_local_security_predicates() {
+    use bower_contracts::{EventResult, TargetContext};
+    for (pack, event_type, action, result, accepted) in [
+        (
+            "aws-security",
+            "aws_cloudtrail",
+            "ListBuckets",
+            EventResult::Success,
+            false,
+        ),
+        (
+            "aws-security",
+            "aws_cloudtrail",
+            "AttachUserPolicy",
+            EventResult::Success,
+            true,
+        ),
+        (
+            "aws-security",
+            "aws_cloudtrail",
+            "StopLogging",
+            EventResult::Success,
+            true,
+        ),
+        (
+            "gcp-security",
+            "gcp_cloud_audit",
+            "ListProjects",
+            EventResult::Success,
+            false,
+        ),
+        (
+            "gcp-security",
+            "gcp_cloud_audit",
+            "SetIamPolicy",
+            EventResult::Success,
+            true,
+        ),
+        (
+            "gcp-security",
+            "gcp_cloud_audit",
+            "ListProjects",
+            EventResult::Denied,
+            true,
+        ),
+    ] {
+        let policies = load_directory(
+            common::repo_root()
+                .join("packs")
+                .join(pack)
+                .join("policies"),
+        )
+        .unwrap();
+        let evaluator = DeterministicPolicyEvaluator::new(policies);
+        let candidate = SecurityEventEnvelope {
+            event_category: "administrative-activity".into(),
+            event_type: event_type.into(),
+            event_action: action.into(),
+            event_result: result,
+            target: Some(TargetContext {
+                target_type: "resource".into(),
+                name: Some("fixture-resource".into()),
+                id: None,
+            }),
+            ..authentication_failure(now())
+        };
+        assert_eq!(
+            evaluator.evaluate(&candidate).action,
+            if accepted {
+                DecisionAction::Accept
+            } else {
+                DecisionAction::Reject
+            },
+            "{pack}/{action}"
+        );
+    }
+}

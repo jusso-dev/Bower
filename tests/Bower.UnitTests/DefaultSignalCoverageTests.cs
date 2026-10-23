@@ -22,7 +22,8 @@ public sealed class DefaultSignalCoverageTests
             ListenUrl = "http://127.0.0.1:0",
             QueuePath = Path.Combine(directory.Path, "queue.db"),
             PolicyDirectory = Path.Combine(AppContext.BaseDirectory, "policies/default"),
-            CollectorId = "sdk-coverage"
+            CollectorId = "sdk-coverage",
+            SingleTrustDomain = true
         }, builder => builder.Logging.ClearProviders());
         await CollectorApplication.InitializeAsync(app, ct);
         await app.StartAsync(ct);

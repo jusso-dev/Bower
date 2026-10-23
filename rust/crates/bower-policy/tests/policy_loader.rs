@@ -552,3 +552,16 @@ fn loader_vectors_match_csharp() {
         ]
     );
 }
+
+#[test]
+fn invalid_optional_selection_predicates_fail_closed() {
+    for predicate in [
+        "eventActions: []",
+        "eventActions: null",
+        "eventResults: [typo]",
+        "eventSeverities: [urgent]",
+    ] {
+        let yaml = VALID_POLICY.replace("match:", &format!("match:\n  {predicate}"));
+        assert!(load_yaml(&yaml, "predicate.yaml").is_err(), "{predicate}");
+    }
+}

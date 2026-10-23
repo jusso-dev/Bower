@@ -38,3 +38,31 @@ For the additive schema update, deploy table/stream/transform together before
 relying on new fields. Existing column types and order remain unchanged. Historic
 rows lack the new fields. The template's total retention includes archive and
 does not itself prove searchable retention.
+
+## Destination field acceptance check
+
+After authorised provisioning, emit a role-change fixture through a scoped
+producer and keep its generated event ID. Use a separate read-only identity in
+the intended workspace to run this query with the fixture's expected values:
+
+```kusto
+let expectedEventId = "REPLACE_WITH_EMITTED_EVENT_ID";
+let expectedTarget = "fixture-member";
+let expectedRole = "fixture-auditor";
+BowerSecurity_CL
+| where TimeGenerated > ago(1d) and EventId == expectedEventId
+| project EventId, PolicyHash, EventType,
+    TypeMatches = EventType == "role_membership_changed",
+    TargetMatches = tostring(Target.id) == expectedTarget,
+    ChangeMatches = tostring(Change.newValue) == expectedRole,
+    HasPolicy = isnotempty(PolicyHash)
+```
+
+Require a row with all booleans true and the expected policy hash. A successful
+upload with zero rows or a missing field fails this gate. Retain only event ID,
+policy hash, booleans, workspace/table identity, query time and exact revision in
+the evidence record. Do not export event payloads. Run the sensitive-export
+fixture separately and assert `tolong(Attributes.recordCount)` equals its known
+synthetic count. The built-in canary proves arrival; these representative fixtures
+separately prove application field preservation. Neither establishes historical
+completeness, secret absence across arbitrary inputs or regulatory compliance.
