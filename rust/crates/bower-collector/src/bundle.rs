@@ -76,10 +76,17 @@ pub fn load(settings: &CollectorSettings) -> Result<LoadedBundle, HostError> {
         parser_count += pack.parsers.len();
         detection_count += pack.detections.len();
         if !pack_ids.insert(manifest(pack).id.clone())
-            || pack.detections.iter().any(|rule| !detection_ids.insert(rule.id.to_lowercase()))
-            || parser_count > 64 || detection_count > 64
+            || pack
+                .detections
+                .iter()
+                .any(|rule| !detection_ids.insert(rule.id.to_lowercase()))
+            || parser_count > 64
+            || detection_count > 64
         {
-            return Err(HostError::new("InvalidDataException", "Duplicate pack/detection identity or runtime pack limit exceeded."));
+            return Err(HostError::new(
+                "InvalidDataException",
+                "Duplicate pack/detection identity or runtime pack limit exceeded.",
+            ));
         }
     }
     for pack in &packs {
@@ -183,9 +190,23 @@ pub fn load(settings: &CollectorSettings) -> Result<LoadedBundle, HostError> {
                 id: manifest(pack).id.clone(),
                 version: manifest(pack).version.clone(),
                 pack_hash: manifest(pack).pack_hash.clone(),
-                parser_statuses: pack.parsers.iter().map(|parser| bower_packs::runtime::parser_status(parser).into()).collect(),
-                detection_status: if pack.detections.is_empty() { "absent" } else { "active-local" }.into(),
-                dcr_status: if pack.dcr_template_json.is_some() { "packaged-only" } else { "absent" }.into(),
+                parser_statuses: pack
+                    .parsers
+                    .iter()
+                    .map(|parser| bower_packs::runtime::parser_status(parser).into())
+                    .collect(),
+                detection_status: if pack.detections.is_empty() {
+                    "absent"
+                } else {
+                    "active-local"
+                }
+                .into(),
+                dcr_status: if pack.dcr_template_json.is_some() {
+                    "packaged-only"
+                } else {
+                    "absent"
+                }
+                .into(),
             })
             .collect(),
         privacy_profile: profile.as_ref().and_then(|profile| profile.id.clone()),

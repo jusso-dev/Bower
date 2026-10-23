@@ -1,0 +1,900 @@
+[
+  {
+    "name": "a or b and not c: False,False,False",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: a or b and not c\n",
+    "labels": {
+      "A": "no",
+      "B": "no",
+      "C": "no"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": false
+  },
+  {
+    "name": "(a or b) and not c: False,False,False",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: (a or b) and not c\n",
+    "labels": {
+      "A": "no",
+      "B": "no",
+      "C": "no"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": false
+  },
+  {
+    "name": "not (a and b) or c: False,False,False",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: not (a and b) or c\n",
+    "labels": {
+      "A": "no",
+      "B": "no",
+      "C": "no"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "not not a: False,False,False",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: not not a\n",
+    "labels": {
+      "A": "no",
+      "B": "no",
+      "C": "no"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": false
+  },
+  {
+    "name": "a or b and not c: False,False,True",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: a or b and not c\n",
+    "labels": {
+      "A": "no",
+      "B": "no",
+      "C": "yes"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": false
+  },
+  {
+    "name": "(a or b) and not c: False,False,True",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: (a or b) and not c\n",
+    "labels": {
+      "A": "no",
+      "B": "no",
+      "C": "yes"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": false
+  },
+  {
+    "name": "not (a and b) or c: False,False,True",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: not (a and b) or c\n",
+    "labels": {
+      "A": "no",
+      "B": "no",
+      "C": "yes"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "not not a: False,False,True",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: not not a\n",
+    "labels": {
+      "A": "no",
+      "B": "no",
+      "C": "yes"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": false
+  },
+  {
+    "name": "a or b and not c: False,True,False",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: a or b and not c\n",
+    "labels": {
+      "A": "no",
+      "B": "yes",
+      "C": "no"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "(a or b) and not c: False,True,False",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: (a or b) and not c\n",
+    "labels": {
+      "A": "no",
+      "B": "yes",
+      "C": "no"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "not (a and b) or c: False,True,False",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: not (a and b) or c\n",
+    "labels": {
+      "A": "no",
+      "B": "yes",
+      "C": "no"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "not not a: False,True,False",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: not not a\n",
+    "labels": {
+      "A": "no",
+      "B": "yes",
+      "C": "no"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": false
+  },
+  {
+    "name": "a or b and not c: False,True,True",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: a or b and not c\n",
+    "labels": {
+      "A": "no",
+      "B": "yes",
+      "C": "yes"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": false
+  },
+  {
+    "name": "(a or b) and not c: False,True,True",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: (a or b) and not c\n",
+    "labels": {
+      "A": "no",
+      "B": "yes",
+      "C": "yes"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": false
+  },
+  {
+    "name": "not (a and b) or c: False,True,True",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: not (a and b) or c\n",
+    "labels": {
+      "A": "no",
+      "B": "yes",
+      "C": "yes"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "not not a: False,True,True",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: not not a\n",
+    "labels": {
+      "A": "no",
+      "B": "yes",
+      "C": "yes"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": false
+  },
+  {
+    "name": "a or b and not c: True,False,False",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: a or b and not c\n",
+    "labels": {
+      "A": "yes",
+      "B": "no",
+      "C": "no"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "(a or b) and not c: True,False,False",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: (a or b) and not c\n",
+    "labels": {
+      "A": "yes",
+      "B": "no",
+      "C": "no"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "not (a and b) or c: True,False,False",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: not (a and b) or c\n",
+    "labels": {
+      "A": "yes",
+      "B": "no",
+      "C": "no"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "not not a: True,False,False",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: not not a\n",
+    "labels": {
+      "A": "yes",
+      "B": "no",
+      "C": "no"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "a or b and not c: True,False,True",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: a or b and not c\n",
+    "labels": {
+      "A": "yes",
+      "B": "no",
+      "C": "yes"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "(a or b) and not c: True,False,True",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: (a or b) and not c\n",
+    "labels": {
+      "A": "yes",
+      "B": "no",
+      "C": "yes"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": false
+  },
+  {
+    "name": "not (a and b) or c: True,False,True",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: not (a and b) or c\n",
+    "labels": {
+      "A": "yes",
+      "B": "no",
+      "C": "yes"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "not not a: True,False,True",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: not not a\n",
+    "labels": {
+      "A": "yes",
+      "B": "no",
+      "C": "yes"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "a or b and not c: True,True,False",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: a or b and not c\n",
+    "labels": {
+      "A": "yes",
+      "B": "yes",
+      "C": "no"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "(a or b) and not c: True,True,False",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: (a or b) and not c\n",
+    "labels": {
+      "A": "yes",
+      "B": "yes",
+      "C": "no"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "not (a and b) or c: True,True,False",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: not (a and b) or c\n",
+    "labels": {
+      "A": "yes",
+      "B": "yes",
+      "C": "no"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": false
+  },
+  {
+    "name": "not not a: True,True,False",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: not not a\n",
+    "labels": {
+      "A": "yes",
+      "B": "yes",
+      "C": "no"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "a or b and not c: True,True,True",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: a or b and not c\n",
+    "labels": {
+      "A": "yes",
+      "B": "yes",
+      "C": "yes"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "(a or b) and not c: True,True,True",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: (a or b) and not c\n",
+    "labels": {
+      "A": "yes",
+      "B": "yes",
+      "C": "yes"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": false
+  },
+  {
+    "name": "not (a and b) or c: True,True,True",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: not (a and b) or c\n",
+    "labels": {
+      "A": "yes",
+      "B": "yes",
+      "C": "yes"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "not not a: True,True,True",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  a:\n    A: yes\n  b:\n    B: yes\n  c:\n    C: yes\n  condition: not not a\n",
+    "labels": {
+      "A": "yes",
+      "B": "yes",
+      "C": "yes"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "string authentication_failure",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    Test: authentication_failure\n  condition: selection\n",
+    "labels": {
+      "Test": "authentication_failure"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "string authentication_failure_extra",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    Test: authentication_failure\n  condition: selection\n",
+    "labels": {
+      "Test": "authentication_failure_extra"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": false
+  },
+  {
+    "name": "string |containsprefix-authentication_failure-suffix",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    Test|contains: authentication_failure\n  condition: selection\n",
+    "labels": {
+      "Test": "prefix-authentication_failure-suffix"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "string |startswithauthentication_failure_extra",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    Test|startswith: authentication_failure\n  condition: selection\n",
+    "labels": {
+      "Test": "authentication_failure_extra"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "string |endswithprefix-authentication_failure",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    Test|endswith: authentication_failure\n  condition: selection\n",
+    "labels": {
+      "Test": "prefix-authentication_failure"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "typed true true",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    attributes.value: true\n  condition: selection\n",
+    "labels": {},
+    "attributes": {
+      "value": true
+    },
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "typed true \"true\"",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    attributes.value: true\n  condition: selection\n",
+    "labels": {},
+    "attributes": {
+      "value": "true"
+    },
+    "valid": true,
+    "match": false
+  },
+  {
+    "name": "typed false false",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    attributes.value: false\n  condition: selection\n",
+    "labels": {},
+    "attributes": {
+      "value": false
+    },
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "typed 42 42",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    attributes.value: 42\n  condition: selection\n",
+    "labels": {},
+    "attributes": {
+      "value": 42
+    },
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "typed 42 \"42\"",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    attributes.value: 42\n  condition: selection\n",
+    "labels": {},
+    "attributes": {
+      "value": "42"
+    },
+    "valid": true,
+    "match": false
+  },
+  {
+    "name": "typed '42' 42",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    attributes.value: '42'\n  condition: selection\n",
+    "labels": {},
+    "attributes": {
+      "value": 42
+    },
+    "valid": true,
+    "match": false
+  },
+  {
+    "name": "typed '42' \"42\"",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    attributes.value: '42'\n  condition: selection\n",
+    "labels": {},
+    "attributes": {
+      "value": "42"
+    },
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "typed 42 420",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    attributes.value: 42\n  condition: selection\n",
+    "labels": {},
+    "attributes": {
+      "value": 420
+    },
+    "valid": true,
+    "match": false
+  },
+  {
+    "name": "typed -42 -42",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    attributes.value: -42\n  condition: selection\n",
+    "labels": {},
+    "attributes": {
+      "value": -42
+    },
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "typed 9223372036854775807 9223372036854775807",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    attributes.value: 9223372036854775807\n  condition: selection\n",
+    "labels": {},
+    "attributes": {
+      "value": 9223372036854775807
+    },
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "list OR field AND",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A: [yes, ok]\n    B: yes\n  condition: selection\n",
+    "labels": {
+      "A": "ok",
+      "B": "yes"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "label cannot shadow core",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    EventType: forged\n  condition: selection\n",
+    "labels": {
+      "EventType": "forged"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": false
+  },
+  {
+    "name": "suffix is not alias",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    Test: value\n  condition: selection\n",
+    "labels": {
+      "prefix.Test": "value"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": false
+  },
+  {
+    "name": "typed namespace cannot be forged",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    attributes.value: true\n  condition: selection\n",
+    "labels": {
+      "attributes.value": "true"
+    },
+    "attributes": {},
+    "valid": true,
+    "match": false
+  },
+  {
+    "name": "reject selection and missing",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A: yes\n  condition: selection and missing\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject 1 of selection*",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A: yes\n  condition: 1 of selection*\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject selection | count() > 1",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A: yes\n  condition: selection | count() > 1\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject selection xor selection",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A: yes\n  condition: selection xor selection\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject selection and",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A: yes\n  condition: selection and\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject (selection",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A: yes\n  condition: (selection\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject selection)",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A: yes\n  condition: selection)\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject not",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A: yes\n  condition: not\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject selection selection",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A: yes\n  condition: selection selection\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject A|reabc",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A|re: abc\n  condition: selection\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject A|contains|allabc",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A|contains|all: abc\n  condition: selection\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject Anull",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A: null\n  condition: selection\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject A1.5",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A: 1.5\n  condition: selection\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject A9223372036854775808",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A: 9223372036854775808\n  condition: selection\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject A[yes, {x: y}]",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A: [yes, {x: y}]\n  condition: selection\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject A\"*wildcard*\"",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A: \"*wildcard*\"\n  condition: selection\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject A\"?\"",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A: \"?\"\n  condition: selection\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject A\"\"",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A: \"\"\n  condition: selection\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject A|containstrue",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A|contains: true\n  condition: selection\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject duplicate selection",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A: yes\n  SELECTION:\n    A: no\n  condition: selection\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject duplicate field",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A: yes\n    a: no\n  condition: selection\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject nested",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A: {value: yes}\n  condition: selection\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject payload list",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection: [password]\n  condition: selection\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "reject deep condition",
+    "yaml": "title: Parity\nid: parity-rule\nversion: 1.0.0\ndetection:\n  selection:\n    A: yes\n  condition: ((((((((((((((((((((((((((((((((((selection))))))))))))))))))))))))))))))))))\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "yaml scalar !!str true",
+    "yaml": "title: Parity\nid: parity-rule\ndetection:\n  selection:\n    attributes.value: !!str true\n  condition: selection\n",
+    "labels": {},
+    "attributes": {
+      "value": "true"
+    },
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "yaml scalar !!bool true",
+    "yaml": "title: Parity\nid: parity-rule\ndetection:\n  selection:\n    attributes.value: !!bool true\n  condition: selection\n",
+    "labels": {},
+    "attributes": {
+      "value": true
+    },
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "yaml scalar 0x2a",
+    "yaml": "title: Parity\nid: parity-rule\ndetection:\n  selection:\n    attributes.value: 0x2a\n  condition: selection\n",
+    "labels": {},
+    "attributes": {
+      "value": 42
+    },
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "yaml scalar 0o52",
+    "yaml": "title: Parity\nid: parity-rule\ndetection:\n  selection:\n    attributes.value: 0o52\n  condition: selection\n",
+    "labels": {},
+    "attributes": {
+      "value": 42
+    },
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "yaml scalar 01",
+    "yaml": "title: Parity\nid: parity-rule\ndetection:\n  selection:\n    attributes.value: 01\n  condition: selection\n",
+    "labels": {},
+    "attributes": {
+      "value": "01"
+    },
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "yaml scalar 1e2",
+    "yaml": "title: Parity\nid: parity-rule\ndetection:\n  selection:\n    attributes.value: 1e2\n  condition: selection\n",
+    "labels": {},
+    "attributes": {
+      "value": 100
+    },
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "yaml scalar ~",
+    "yaml": "title: Parity\nid: parity-rule\ndetection:\n  selection:\n    attributes.value: ~\n  condition: selection\n",
+    "labels": {},
+    "attributes": {
+      "value": null
+    },
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "yaml scalar 0b10",
+    "yaml": "title: Parity\nid: parity-rule\ndetection:\n  selection:\n    attributes.value: 0b10\n  condition: selection\n",
+    "labels": {},
+    "attributes": {
+      "value": 2
+    },
+    "valid": true,
+    "match": true
+  },
+  {
+    "name": "too many selections",
+    "yaml": "title: Parity\nid: parity-rule\ndetection:\n  s0:\n    A: yes\n  s1:\n    A: yes\n  s2:\n    A: yes\n  s3:\n    A: yes\n  s4:\n    A: yes\n  s5:\n    A: yes\n  s6:\n    A: yes\n  s7:\n    A: yes\n  s8:\n    A: yes\n  s9:\n    A: yes\n  s10:\n    A: yes\n  s11:\n    A: yes\n  s12:\n    A: yes\n  s13:\n    A: yes\n  s14:\n    A: yes\n  s15:\n    A: yes\n  s16:\n    A: yes\n  s17:\n    A: yes\n  s18:\n    A: yes\n  s19:\n    A: yes\n  s20:\n    A: yes\n  s21:\n    A: yes\n  s22:\n    A: yes\n  s23:\n    A: yes\n  s24:\n    A: yes\n  s25:\n    A: yes\n  s26:\n    A: yes\n  s27:\n    A: yes\n  s28:\n    A: yes\n  s29:\n    A: yes\n  s30:\n    A: yes\n  s31:\n    A: yes\n  s32:\n    A: yes\n  s33:\n    A: yes\n  s34:\n    A: yes\n  s35:\n    A: yes\n  s36:\n    A: yes\n  s37:\n    A: yes\n  s38:\n    A: yes\n  s39:\n    A: yes\n  s40:\n    A: yes\n  s41:\n    A: yes\n  s42:\n    A: yes\n  s43:\n    A: yes\n  s44:\n    A: yes\n  s45:\n    A: yes\n  s46:\n    A: yes\n  s47:\n    A: yes\n  s48:\n    A: yes\n  s49:\n    A: yes\n  s50:\n    A: yes\n  s51:\n    A: yes\n  s52:\n    A: yes\n  s53:\n    A: yes\n  s54:\n    A: yes\n  s55:\n    A: yes\n  s56:\n    A: yes\n  s57:\n    A: yes\n  s58:\n    A: yes\n  s59:\n    A: yes\n  s60:\n    A: yes\n  s61:\n    A: yes\n  s62:\n    A: yes\n  s63:\n    A: yes\n  s64:\n    A: yes\n  condition: s0\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "too many alternatives",
+    "yaml": "title: Parity\nid: parity-rule\ndetection:\n  selection:\n    A: [yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes, yes]\n  condition: selection\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "too long scalar",
+    "yaml": "title: Parity\nid: parity-rule\ndetection:\n  selection:\n    A: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n  condition: selection\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "too many tokens",
+    "yaml": "title: Parity\nid: parity-rule\ndetection:\n  selection:\n    A: yes\n  condition: selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection or selection\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "typed mapping key",
+    "yaml": "title: Parity\nid: parity-rule\ndetection:\n  selection:\n    true: yes\n  condition: selection\n",
+    "labels": {},
+    "attributes": {},
+    "valid": false,
+    "match": false
+  },
+  {
+    "name": "case duplicate attribute",
+    "yaml": "title: Parity\nid: parity-rule\ndetection:\n  selection:\n    attributes.a: yes\n  condition: selection\n",
+    "labels": {},
+    "attributes": {
+      "a": "yes",
+      "A": "no"
+    },
+    "valid": true,
+    "match": false
+  }
+]

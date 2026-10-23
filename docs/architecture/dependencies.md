@@ -89,3 +89,18 @@ queue migration must call the same identity implementation; this prevents drift
 when existing databases are re-keyed. No new third-party runtime package or version
 is introduced. Its tests use the existing workspace `tempfile` dev dependency for
 real durable-store replay/conflict regression tests rather than an in-memory double.
+
+
+### Signed pack runtime activation
+
+`Bower.Packs` reuses its existing Detection, Pipeline, PolicyEngine and Redaction
+references for bounded raw mapping and post-redaction detection enrichment. The
+collector composes that wrapper around its existing redactor; no external runtime
+package is added. Detection's internal scalar/condition encoding uses a generated
+System.Text.Json context (`DetectionJsonContext`) and evidence uses
+`DetectionEvidenceJson`, preserving Native AOT analysis without suppressions.
+
+Rust collector tests add the internal workspace `bower-integrity` dev reference to
+build genuine signed packs before exercising the real host. This is test-only;
+production pack verification already depends on the same library through
+`bower-packs`. No new external Rust dependency is introduced.

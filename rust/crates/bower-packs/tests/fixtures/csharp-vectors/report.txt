@@ -3,6 +3,8 @@ sample|linux-ssh-gateway|lockout is accepted|accept|redactandaccept|True
 sample|linux-ssh-gateway|missing source address is quarantined|quarantine|quarantine|True
 sample|linux-ssh-gateway|unrelated event type is rejected by default deny|reject|reject|True
 sample|linux-ssh-gateway|a TFN in the outcome reason never leaves the host|accept|redactandaccept|True
+sample|linux-ssh-gateway|raw failure activates parser and local detection|accept|redactandaccept|True
+sample|linux-ssh-gateway|raw success remains denied by source filter|reject|reject|True
 sample|aws-security|root console sign-in failure is accepted|accept|accept|True
 sample|aws-security|StopLogging is accepted|accept|accept|True
 sample|aws-security|GuardDuty finding is accepted|accept|accept|True

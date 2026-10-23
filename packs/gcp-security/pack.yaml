@@ -2,7 +2,7 @@ apiVersion: bower.security/v1
 kind: Pack
 metadata:
   id: gcp-security
-  version: 1.1.0
+  version: 1.1.1
   name: Google Cloud security signal
   description: >-
     Security Command Center findings and high-value Cloud Audit Logs (IAM policy

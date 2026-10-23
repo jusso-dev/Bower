@@ -32,8 +32,26 @@ fn repo_pack(id: &str) -> PathBuf {
     manifest_dir().join("../../../packs").join(id)
 }
 
+fn current_archive(id: &str) -> PathBuf {
+    let version = if id == "gcp-security" {
+        "1.1.1"
+    } else {
+        "1.1.0"
+    };
+    fixture(&format!("{id}-{version}.bowerpack"))
+}
+
+#[test]
+fn previous_signed_pack_versions_remain_verifiable() {
+    let key = std::fs::read_to_string(fixture("csharp-signing.pub.pem")).unwrap();
+    for id in PACK_IDS {
+        let old = load(&fixture(&format!("{id}-1.0.0.bowerpack")), &[key.as_str()]).unwrap();
+        assert_eq!(old.manifest.unwrap().version, "1.0.0");
+    }
+}
+
 fn csharp_public_key() -> String {
-    std::fs::read_to_string(fixture("csharp-signing.pub.pem")).unwrap()
+    std::fs::read_to_string(fixture("csharp-current-signing.pub.pem")).unwrap()
 }
 
 fn vector(name: &str) -> String {
@@ -100,7 +118,7 @@ fn csharp_signed_packs_verify_and_carry_the_repo_sources() {
     let dcr =
         bower_dcr::generator::generate_json(&bower_dcr::DcrTemplateOptions::default()).unwrap();
     for id in PACK_IDS {
-        let archive = fixture(&format!("{id}-1.0.0.bowerpack"));
+        let archive = current_archive(id);
         let pack = load(&archive, &[public_key.as_str()]).unwrap();
         let manifest = pack.manifest.as_ref().unwrap();
         assert_eq!(manifest.id, id);
@@ -150,11 +168,7 @@ fn rust_built_manifests_are_byte_identical_to_csharp() {
     let public_key = csharp_public_key();
     let clock = csharp_clock();
     for id in PACK_IDS {
-        let csharp = load(
-            &fixture(&format!("{id}-1.0.0.bowerpack")),
-            &[public_key.as_str()],
-        )
-        .unwrap();
+        let csharp = load(&current_archive(id), &[public_key.as_str()]).unwrap();
         let built = build_pack(&repo_pack(id), Some(&clock));
         let rust = load(&built.archive, &[built.public_key.as_str()]).unwrap();
         let (csharp_manifest, rust_manifest) = (csharp.manifest.unwrap(), rust.manifest.unwrap());
@@ -174,11 +188,7 @@ fn rust_built_manifests_are_byte_identical_to_csharp() {
                 .unwrap()
                 .1
         };
-        assert_eq!(
-            stored(&built.archive),
-            stored(&fixture(&format!("{id}-1.0.0.bowerpack"))),
-            "{id}"
-        );
+        assert_eq!(stored(&built.archive), stored(&current_archive(id)), "{id}");
     }
 }
 
@@ -212,16 +222,8 @@ fn csharp_sample_decisions_match() {
 
 #[test]
 fn csharp_mapped_cloud_events_pass_pack_policies_and_fire_pack_detections() {
-    let aws = load(
-        &fixture("aws-security-1.0.0.bowerpack"),
-        &[csharp_public_key()],
-    )
-    .unwrap();
-    let gcp = load(
-        &fixture("gcp-security-1.0.0.bowerpack"),
-        &[csharp_public_key()],
-    )
-    .unwrap();
+    let aws = load(&current_archive("aws-security"), &[csharp_public_key()]).unwrap();
+    let gcp = load(&current_archive("gcp-security"), &[csharp_public_key()]).unwrap();
     let evaluator =
         DeterministicPolicyEvaluator::new(aws.policies.iter().chain(&gcp.policies).cloned());
     let engine = PrivacyEngine::new(test_privacy_policy(None).unwrap()).unwrap();
@@ -317,8 +319,8 @@ fn cloud_identity_profile_pseudonymises_principals_like_csharp() {
 fn pack_builds_signs_verifies_and_passes_its_samples() {
     for (id, policies, detections, privacy) in [
         ("linux-ssh-gateway", 1, 1, true),
-        ("aws-security", 2, 4, false),
-        ("gcp-security", 2, 4, false),
+        ("aws-security", 3, 4, false),
+        ("gcp-security", 3, 4, false),
     ] {
         let built = build_pack(&repo_pack(id), None);
         let pack = load(&built.archive, &[built.public_key.as_str()]).unwrap();
@@ -342,7 +344,7 @@ fn pack_builds_signs_verifies_and_passes_its_samples() {
         }
         assert_eq!(
             built.archive.file_name().unwrap().to_str().unwrap(),
-            format!("{id}-1.0.0.bowerpack")
+            current_archive(id).file_name().unwrap().to_str().unwrap()
         );
     }
 }
@@ -363,7 +365,7 @@ fn pack_rejects_untrusted_keys_and_missing_trust() {
     );
     // The C# fixtures are not trusted under a Rust key either.
     verification_error(load(
-        &fixture("aws-security-1.0.0.bowerpack"),
+        &current_archive("aws-security"),
         &[built.public_key.as_str()],
     ));
     // Missing archive.
@@ -546,7 +548,7 @@ fn pack_detects_tampering() {
 #[test]
 fn csharp_pack_tampered_by_rust_is_rejected() {
     let key = csharp_public_key();
-    let archive = fixture("gcp-security-1.0.0.bowerpack");
+    let archive = current_archive("gcp-security");
     let message = verification_error(tampered(&archive, &key, |entries| {
         replace(entries, "content/samples/gcp.jsonl", |text| {
             format!("{text}\n")
@@ -582,6 +584,63 @@ fn pack_build_fails_when_a_sample_fails() {
 }
 
 #[test]
+fn signing_rejects_invalid_runtime_mappings() {
+    for attack in [
+        "unknown-target",
+        "empty-filter",
+        "unsupported-format",
+        "unknown-property",
+    ] {
+        let source = tempfile::tempdir().unwrap();
+        copy_directory(&repo_pack("linux-ssh-gateway"), source.path());
+        let file = source.path().join("parsers/sshd-json.json");
+        let mut parser: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        match attack {
+            "unknown-target" => parser["runtime"]["fields"]["attributes.raw"] = "user".into(),
+            "empty-filter" => parser["runtime"]["match"] = serde_json::json!({}),
+            "unsupported-format" => {
+                parser["format"] = "KeyValue".into();
+                parser["keyValueSeparator"] = "=".into();
+            }
+            _ => parser["runtime"]["eventTypo"] = "allow-anything".into(),
+        }
+        std::fs::write(file, parser.to_string()).unwrap();
+        let keys = bower_integrity::generate_key_pair();
+        let output = source.path().join("out");
+        assert!(
+            build(source.path(), &keys.private_key_pem, &output, None).is_err(),
+            "{attack}"
+        );
+        assert!(!output.exists());
+    }
+}
+
+#[test]
+fn signing_rejects_unsupported_detection_before_writing_archive() {
+    for condition in [
+        "selection and missing",
+        "1 of selection*",
+        "selection | count() > 1",
+    ] {
+        let source = tempfile::tempdir().unwrap();
+        copy_directory(&repo_pack("linux-ssh-gateway"), source.path());
+        let file = source.path().join("detections/ssh-password-spray.yml");
+        let rule = std::fs::read_to_string(&file)
+            .unwrap()
+            .replace("condition: selection", &format!("condition: {condition}"));
+        std::fs::write(file, rule).unwrap();
+        let keys = bower_integrity::generate_key_pair();
+        let output = source.path().join("out");
+        assert!(
+            build(source.path(), &keys.private_key_pem, &output, None).is_err(),
+            "{condition}"
+        );
+        assert!(!output.exists());
+    }
+}
+
+#[test]
 fn pack_build_validates_the_source() {
     let keys = bower_integrity::generate_key_pair();
     let attempt = |edit: &dyn Fn(String) -> String| {
@@ -609,7 +668,7 @@ fn pack_build_validates_the_source() {
     );
     assert_eq!(
         invalid(attempt(
-            &|yaml| yaml.replace("version: 1.0.0", "version: v1")
+            &|yaml| yaml.replace("version: 1.1.0", "version: v1")
         )),
         "Pack version must be semantic (for example 1.2.0)."
     );
@@ -681,7 +740,7 @@ fn pack_diff_reports_population_changes_and_missing_version_bump() {
         &yaml,
         std::fs::read_to_string(&yaml)
             .unwrap()
-            .replace("version: 1.0.0", "version: 1.1.0"),
+            .replace("version: 1.1.0", "version: 1.2.0"),
     )
     .unwrap();
     let policy = v2.path().join("policies/ssh-authentication.yaml");
@@ -805,7 +864,7 @@ fn rust_and_csharp_archives_round_trip_through_the_rust_zip_writer() {
     // the manifest, not the container.
     let key = csharp_public_key();
     for id in PACK_IDS {
-        let archive = fixture(&format!("{id}-1.0.0.bowerpack"));
+        let archive = current_archive(id);
         assert!(
             tampered(&archive, &key, |entries| entries.reverse()).is_ok(),
             "{id}"

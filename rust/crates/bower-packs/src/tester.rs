@@ -13,7 +13,9 @@
 use bower_contracts::time::{Clock, SystemClock, format_round_trip};
 use std::sync::Arc;
 
-use bower_contracts::{DecisionAction, EventRedactor, JsonElement, SecurityEventEnvelope, TelemetryPolicyEvaluator};
+use bower_contracts::{
+    DecisionAction, EventRedactor, JsonElement, SecurityEventEnvelope, TelemetryPolicyEvaluator,
+};
 use bower_policy::DeterministicPolicyEvaluator;
 use bower_redaction::{JsonEventRedactor, PrivacyPolicy};
 
@@ -58,9 +60,13 @@ pub fn run(
 ) -> Result<Vec<PackSampleResult>, PackError> {
     let now = clock.unwrap_or(&SystemClock).utc_now();
     let now_text = format_round_trip(&now);
-    let evaluator: Arc<dyn TelemetryPolicyEvaluator> = Arc::new(DeterministicPolicyEvaluator::new(pack.policies.iter().cloned()));
+    let evaluator: Arc<dyn TelemetryPolicyEvaluator> = Arc::new(DeterministicPolicyEvaluator::new(
+        pack.policies.iter().cloned(),
+    ));
     let engine = PackDetectionRedactor {
-        inner: Arc::new(JsonEventRedactor::with_policy(privacy).map_err(|error| invalid(error.to_string()))?),
+        inner: Arc::new(
+            JsonEventRedactor::with_policy(privacy).map_err(|error| invalid(error.to_string()))?,
+        ),
         evaluator: Arc::clone(&evaluator),
         rules: pack.detections.clone(),
     };
@@ -80,19 +86,34 @@ pub fn run(
         let mut problems = Vec::new();
         let expected_detections = match sample.get("expectedDetections") {
             None => None,
-            Some(Value::Array(ids)) if ids.iter().all(Value::is_string) => Some(ids.iter().map(|id| id.as_str().unwrap().to_owned()).collect::<Vec<_>>()),
-            _ => return Err(invalid(format!("Sample '{name}' expectedDetections must be a string array."))),
+            Some(Value::Array(ids)) if ids.iter().all(Value::is_string) => Some(
+                ids.iter()
+                    .map(|id| id.as_str().unwrap().to_owned())
+                    .collect::<Vec<_>>(),
+            ),
+            _ => {
+                return Err(invalid(format!(
+                    "Sample '{name}' expectedDetections must be a string array."
+                )));
+            }
         };
         let mut mapping_decision = None;
         let event_json = if sample.contains_key("raw") {
-            let parser = sample.get("parser").and_then(Value::as_u64).and_then(|index| usize::try_from(index).ok()).and_then(|index| pack.parsers.get(index))
+            let parser = sample
+                .get("parser")
+                .and_then(Value::as_u64)
+                .and_then(|index| usize::try_from(index).ok())
+                .and_then(|index| pack.parsers.get(index))
                 .ok_or_else(|| invalid(format!("Sample '{name}' parser is invalid.")))?;
             // Preserve duplicate raw keys so the same runtime rejects them here and at HTTP ingest.
-            let source = JsonElement::parse(line).map_err(|_| invalid(format!("Sample '{name}' is invalid.")))?;
+            let source = JsonElement::parse(line)
+                .map_err(|_| invalid(format!("Sample '{name}' is invalid.")))?;
             let raw = bower_contracts::json::to_string(source.get("raw").unwrap())
-                .map_err(|_| invalid(format!("Sample '{name}' raw cannot be serialized.")))?.replace("{{now}}", &now_text);
+                .map_err(|_| invalid(format!("Sample '{name}' raw cannot be serialized.")))?
+                .replace("{{now}}", &now_text);
             match map_raw(parser, &raw) {
-                Ok(envelope) => bower_contracts::json::to_string(&envelope).map_err(|_| invalid(format!("Sample '{name}' event cannot be serialized.")))?,
+                Ok(envelope) => bower_contracts::json::to_string(&envelope)
+                    .map_err(|_| invalid(format!("Sample '{name}' event cannot be serialized.")))?,
                 Err(MappingError::NoMatch) => {
                     mapping_decision = Some("reject");
                     String::new()
@@ -100,7 +121,9 @@ pub fn run(
                 Err(_) => return Err(invalid(format!("Sample '{name}' raw event is invalid."))),
             }
         } else {
-            let event = sample.get("event").filter(|value| !value.is_null())
+            let event = sample
+                .get("event")
+                .filter(|value| !value.is_null())
                 .ok_or_else(|| invalid(format!("Sample '{name}' has no event.")))?;
             bower_contracts::json::to_string(event)
                 .map_err(|_| invalid(format!("Sample '{name}' event cannot be serialized.")))?
@@ -114,14 +137,27 @@ pub fn run(
                     .map_err(|_| {
                         invalid(format!("Sample '{name}' is not a valid security event."))
                     })?;
-                if let Some(JsonElement::Array(alerts)) = envelope.attributes.as_ref().and_then(|attributes| attributes.get("bowerDetections")) {
+                if let Some(JsonElement::Array(alerts)) = envelope
+                    .attributes
+                    .as_ref()
+                    .and_then(|attributes| attributes.get("bowerDetections"))
+                {
                     for alert in alerts {
-                        if let Some(id) = alert.get("ruleId").and_then(JsonElement::as_str) { detected.push(id.to_owned()); }
+                        if let Some(id) = alert.get("ruleId").and_then(JsonElement::as_str) {
+                            detected.push(id.to_owned());
+                        }
                     }
                 }
                 let decision = evaluator.evaluate(&envelope);
                 let actual = match decision.action {
-                    DecisionAction::Accept if !redaction.removed_paths.is_empty() || !redaction.masked_paths.is_empty() || redaction.privacy_detected.as_ref().is_some_and(|ids| !ids.is_empty()) => {
+                    DecisionAction::Accept
+                        if !redaction.removed_paths.is_empty()
+                            || !redaction.masked_paths.is_empty()
+                            || redaction
+                                .privacy_detected
+                                .as_ref()
+                                .is_some_and(|ids| !ids.is_empty()) =>
+                    {
                         "redactandaccept".to_owned()
                     }
                     action => action.pascal_name().to_lowercase(),
@@ -148,7 +184,11 @@ pub fn run(
         };
 
         let actual = mapping_decision.map(str::to_owned).unwrap_or(actual);
-        if expected_detections.is_some_and(|mut expected| { expected.sort(); detected.sort(); expected != detected }) {
+        if expected_detections.is_some_and(|mut expected| {
+            expected.sort();
+            detected.sort();
+            expected != detected
+        }) {
             problems.push("Expected detection rule ids do not match local execution.".into());
         }
 

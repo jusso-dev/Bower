@@ -163,7 +163,11 @@ pub fn build(
         Arc::new(bower_packs::runtime::PackDetectionRedactor {
             inner: bundle.redactor,
             evaluator: Arc::clone(&bundle.evaluator),
-            rules: bundle.packs.iter().flat_map(|pack| pack.detections.iter().cloned()).collect(),
+            rules: bundle
+                .packs
+                .iter()
+                .flat_map(|pack| pack.detections.iter().cloned())
+                .collect(),
         }),
         bundle.evaluator,
         Arc::clone(&store),

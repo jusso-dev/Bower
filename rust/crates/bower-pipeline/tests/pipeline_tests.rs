@@ -464,9 +464,14 @@ fn pack_parser_configuration_reads_and_validates() {
     let configuration = CustomLogParserConfiguration::from_json(&text).unwrap();
 
     assert_eq!(configuration.format, CustomLogFormat::Json);
-    assert_eq!(configuration.fields.len(), 4);
+    assert_eq!(configuration.fields.len(), 5);
     assert_eq!(
-        configuration.fields[2].value_type,
+        configuration
+            .fields
+            .iter()
+            .find(|field| field.source_name == "source_ip")
+            .unwrap()
+            .value_type,
         CustomLogValueType::IpAddress
     );
     assert!(validate_configuration(&configuration).is_empty());

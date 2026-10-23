@@ -3,8 +3,8 @@ using System.Text.Json.Nodes;
 using Bower.Abstractions;
 using Bower.Contracts;
 using Bower.PolicyEngine;
-using Bower.Redaction.Privacy;
 using Bower.Redaction;
+using Bower.Redaction.Privacy;
 
 namespace Bower.Packs;
 

@@ -122,10 +122,16 @@ pub struct AppState {
 }
 
 pub fn router(state: AppState) -> Router {
-    let ingest = Router::new().route("/v1/events", post(ingest))
-        .route("/v1/packs/{pack_id}/parsers/{parser_index}/events", post(ingest_pack)).route_layer(
-        middleware::from_fn_with_state(Arc::clone(&state.limiter), rate_limit),
-    );
+    let ingest = Router::new()
+        .route("/v1/events", post(ingest))
+        .route(
+            "/v1/packs/{pack_id}/parsers/{parser_index}/events",
+            post(ingest_pack),
+        )
+        .route_layer(middleware::from_fn_with_state(
+            Arc::clone(&state.limiter),
+            rate_limit,
+        ));
     Router::new()
         .merge(ingest)
         .route("/health", get(health))
@@ -293,7 +299,11 @@ async fn ingest_pack(
     ingest_candidate(state, request, Some((pack_id, parser_index))).await
 }
 
-async fn ingest_candidate(state: AppState, request: Request, pack_parser: Option<(String, String)>) -> Response {
+async fn ingest_candidate(
+    state: AppState,
+    request: Request,
+    pack_parser: Option<(String, String)>,
+) -> Response {
     let (parts, body) = request.into_parts();
     // Record which producer credential sent the event (never the token).
     let producer = match authenticate(&state.auth, &parts.headers) {
@@ -308,7 +318,11 @@ async fn ingest_candidate(state: AppState, request: Request, pack_parser: Option
         .get(header::CONTENT_LENGTH)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.trim().parse::<u64>().ok());
-    let limit = if pack_parser.is_some() { bower_packs::runtime::MAXIMUM_RAW_BYTES } else { MAXIMUM_PAYLOAD_BYTES };
+    let limit = if pack_parser.is_some() {
+        bower_packs::runtime::MAXIMUM_RAW_BYTES
+    } else {
+        MAXIMUM_PAYLOAD_BYTES
+    };
     if declared.is_some_and(|length| length > limit as u64) {
         return StatusCode::PAYLOAD_TOO_LARGE.into_response();
     }
@@ -322,19 +336,39 @@ async fn ingest_candidate(state: AppState, request: Request, pack_parser: Option
     drop(bytes);
     let source_adapter = if let Some((pack_id, parser_index)) = pack_parser {
         let parser = parser_index.parse::<usize>().ok().and_then(|index| {
-            state.packs.iter().find(|pack| pack.manifest.as_ref().is_some_and(|manifest| manifest.id == pack_id))
+            state
+                .packs
+                .iter()
+                .find(|pack| {
+                    pack.manifest
+                        .as_ref()
+                        .is_some_and(|manifest| manifest.id == pack_id)
+                })
                 .and_then(|pack| pack.parsers.get(index).map(|parser| (index, parser)))
         });
-        let Some((index, parser)) = parser else { return json_response(StatusCode::NOT_FOUND, &ErrorBody { error: "pack-parser-inactive-or-unknown" }); };
+        let Some((index, parser)) = parser else {
+            return json_response(
+                StatusCode::NOT_FOUND,
+                &ErrorBody {
+                    error: "pack-parser-inactive-or-unknown",
+                },
+            );
+        };
         let envelope = match bower_packs::runtime::map_raw(parser, &candidate) {
             Ok(envelope) => envelope,
             Err(error) => {
                 use bower_packs::runtime::MappingError;
                 let (status, error) = match error {
-                    MappingError::Inactive => (StatusCode::NOT_FOUND, "pack-parser-inactive-or-unknown"),
+                    MappingError::Inactive => {
+                        (StatusCode::NOT_FOUND, "pack-parser-inactive-or-unknown")
+                    }
                     MappingError::Invalid => (StatusCode::BAD_REQUEST, "pack-record-invalid"),
-                    MappingError::TooLarge => (StatusCode::PAYLOAD_TOO_LARGE, "pack-record-too-large"),
-                    MappingError::NoMatch => (StatusCode::UNPROCESSABLE_ENTITY, "pack-record-not-selected"),
+                    MappingError::TooLarge => {
+                        (StatusCode::PAYLOAD_TOO_LARGE, "pack-record-too-large")
+                    }
+                    MappingError::NoMatch => {
+                        (StatusCode::UNPROCESSABLE_ENTITY, "pack-record-not-selected")
+                    }
                 };
                 return json_response(status, &ErrorBody { error });
             }
@@ -344,7 +378,9 @@ async fn ingest_candidate(state: AppState, request: Request, pack_parser: Option
             Err(_) => return StatusCode::BAD_REQUEST.into_response(),
         };
         format!("pack-http:{producer}:{pack_id}:{index}")
-    } else { format!("local-http:{producer}") };
+    } else {
+        format!("local-http:{producer}")
+    };
     if !state.authorization.is_authorized(&producer, &candidate) {
         return json_response(
             StatusCode::FORBIDDEN,

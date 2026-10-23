@@ -69,11 +69,25 @@ internal sealed class DetectionSemantics
                 || !clause[0].All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '.' or '-')
                 || !seen.Add(clause[0] + "|" + clause[1])
                 || clause[1] is not ("equals" or "contains" or "startswith" or "endswith")
-                || clause.Skip(2).Any(v => v.Length is < 1 or > 4096 || v.Contains('*') || v.Contains('?')))
+                || clause.Skip(2).Any(v => !ValidScalar(v, clause[1])))
             {
                 throw Invalid();
             }
         }
+    }
+
+    private static bool ValidScalar(string value, string modifier)
+    {
+        if (value.StartsWith("s:", StringComparison.Ordinal))
+        {
+            return value.Length is > 2 and <= 4098 && !value.Contains('*') && !value.Contains('?');
+        }
+        if (modifier != "equals") { return false; }
+        if (value is "b:true" or "b:false") { return true; }
+        return value.StartsWith("n:", StringComparison.Ordinal)
+            && long.TryParse(value.AsSpan(2), System.Globalization.NumberStyles.AllowLeadingSign,
+                System.Globalization.CultureInfo.InvariantCulture, out long number)
+            && value[2..] == number.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
 
     internal bool Matches(IReadOnlyDictionary<string, string> haystack, out List<string> matchedFields)
@@ -85,13 +99,13 @@ internal sealed class DetectionSemantics
             bool match = true;
             foreach (string[] clause in clauses)
             {
-                if (!haystack.TryGetValue(clause[0], out string? value) || value.Length > 65536
+                if (!haystack.TryGetValue(clause[0], out string? value) || value.Length > 65538
                     || !clause.Skip(2).Any(pattern => clause[1] switch
                     {
                         "equals" => value.Equals(pattern, StringComparison.OrdinalIgnoreCase),
-                        "contains" => value.Contains(pattern, StringComparison.OrdinalIgnoreCase),
-                        "startswith" => value.StartsWith(pattern, StringComparison.OrdinalIgnoreCase),
-                        "endswith" => value.EndsWith(pattern, StringComparison.OrdinalIgnoreCase),
+                        "contains" => value.StartsWith("s:", StringComparison.Ordinal) && value[2..].Contains(pattern[2..], StringComparison.OrdinalIgnoreCase),
+                        "startswith" => value.StartsWith("s:", StringComparison.Ordinal) && value[2..].StartsWith(pattern[2..], StringComparison.OrdinalIgnoreCase),
+                        "endswith" => value.StartsWith("s:", StringComparison.Ordinal) && value[2..].EndsWith(pattern[2..], StringComparison.OrdinalIgnoreCase),
                         _ => false
                     }))
                 {

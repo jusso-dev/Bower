@@ -44,7 +44,7 @@ public static class PackRuntime
             {
                 CustomLogValueType.Text => true,
                 CustomLogValueType.DateTime => TryTimestamp(text, out _),
-                CustomLogValueType.IpAddress => IPAddress.TryParse(text, out _),
+                CustomLogValueType.IpAddress => IsAddress(text),
                 CustomLogValueType.WholeNumber => long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out _),
                 CustomLogValueType.Boolean => text is "true" or "false",
                 _ => false
@@ -71,7 +71,7 @@ public static class PackRuntime
         string? username = Mapped("actor.username");
         string? userId = Mapped("actor.userId");
         string? ip = Mapped("source.ipAddress");
-        if (ip is not null && !IPAddress.TryParse(ip, out _))
+        if (ip is not null && !IsAddress(ip))
         {
             throw new InvalidDataException("pack-source-invalid");
         }
@@ -95,11 +95,20 @@ public static class PackRuntime
         };
     }
 
+    private static bool IsAddress(string text)
+    {
+        if (text.Contains('%') || !IPAddress.TryParse(text, out IPAddress? address)) { return false; }
+        if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork) { return text == address.ToString(); }
+        if (!text.Contains('.')) { return true; }
+        string ipv4 = text[(text.LastIndexOf(':') + 1)..];
+        return IPAddress.TryParse(ipv4, out IPAddress? embedded) && ipv4 == embedded.ToString();
+    }
+
     private static bool TryTimestamp(string text, out DateTimeOffset value)
     {
         value = default;
         return text.Contains('T') && (text.EndsWith('Z') || (text.Length >= 6 && text[^6] is '+' or '-' && text[^3] == ':'))
-            && DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out value);
+            && DateTimeOffset.TryParseExact(text, "yyyy-MM-dd\'T\'HH:mm:ss.FFFFFFFK", CultureInfo.InvariantCulture, DateTimeStyles.None, out value);
     }
 
     private static bool HasDuplicates(JsonElement element)

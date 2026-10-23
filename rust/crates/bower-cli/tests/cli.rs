@@ -521,15 +521,15 @@ fn packs_build_verify_inspect_test_and_diff() {
     assert_eq!(run.code, 0, "{}", run.stderr);
     assert_eq!(
         run.stdout,
-        "Built and signed artifacts/packs/linux-ssh-gateway-1.0.0.bowerpack\n"
+        "Built and signed artifacts/packs/linux-ssh-gateway-1.1.0.bowerpack\n"
     );
-    let pack = "artifacts/packs/linux-ssh-gateway-1.0.0.bowerpack";
+    let pack = "artifacts/packs/linux-ssh-gateway-1.1.0.bowerpack";
 
     let run = bower_in(root, &["pack", "verify", pack, "--trusted-key", public]);
     assert_eq!(run.code, 0, "{}", run.stderr);
     assert!(
         run.stdout
-            .starts_with("Verified linux-ssh-gateway@1.0.0 signed by key ")
+            .starts_with("Verified linux-ssh-gateway@1.1.0 signed by key ")
     );
     assert!(run.stdout.contains(" files, pack hash sha256:"));
 
@@ -537,7 +537,7 @@ fn packs_build_verify_inspect_test_and_diff() {
     assert_eq!(run.code, 0, "{}", run.stderr);
     assert!(
         run.stdout
-            .starts_with("{\n  \"Id\": \"linux-ssh-gateway\",\n  \"Version\": \"1.0.0\",")
+            .starts_with("{\n  \"Id\": \"linux-ssh-gateway\",\n  \"Version\": \"1.1.0\",")
     );
     assert!(run.stdout.contains("\"eventTypes\": ["));
     assert!(run.stdout.contains("\"privacyProfile\": true"));
@@ -551,7 +551,7 @@ fn packs_build_verify_inspect_test_and_diff() {
         (run.code, run.stdout.as_str()),
         (
             0,
-            "linux-ssh-gateway 1.0.0 -> 1.0.0\n  No policy population changes.\n"
+            "linux-ssh-gateway 1.1.0 -> 1.1.0\n  No policy population changes.\n"
         )
     );
 

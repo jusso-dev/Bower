@@ -19,8 +19,8 @@ Example: [`packs/linux-ssh-gateway`](../../packs/linux-ssh-gateway).
 ```bash
 bower keys generate --out-dir ./keys
 bower pack build packs/linux-ssh-gateway --key ./keys/bower-signing.key.pem --out ./artifacts/packs
-bower pack verify ./artifacts/packs/linux-ssh-gateway-1.0.0.bowerpack --trusted-key ./keys/bower-signing.pub.pem
-bower pack test   ./artifacts/packs/linux-ssh-gateway-1.0.0.bowerpack --trusted-key ./keys/bower-signing.pub.pem
+bower pack verify ./artifacts/packs/linux-ssh-gateway-1.1.0.bowerpack --trusted-key ./keys/bower-signing.pub.pem
+bower pack test   ./artifacts/packs/linux-ssh-gateway-1.1.0.bowerpack --trusted-key ./keys/bower-signing.pub.pem
 bower pack diff   old.bowerpack new.bowerpack --trusted-key ./keys/bower-signing.pub.pem
 ```
 
@@ -33,7 +33,7 @@ samples fail cannot be signed. Sample lines:
 
 `expect` is one of the policy decisions (`accept`, `reject`, `sample`, `aggregate`,
 `redact-and-accept`, `quarantine`, `dead-letter`; default `accept`). `accept` means
-"delivered": it also passes when the privacy engine redacted something
+"selected locally": it also passes when the privacy engine redacted something
 (`redact-and-accept`), so prove the redaction with `mustNotContain`. Write
 `redact-and-accept` to require that redaction happened; it fails for an event that
 was accepted unchanged. Every other expectation must match exactly.
@@ -53,7 +53,7 @@ Nothing is loaded from an unverified pack.
 ## Using packs on a collector
 
 ```text
-BOWER_PACKS=/etc/bower/packs/linux-ssh-gateway-1.0.0.bowerpack
+BOWER_PACKS=/etc/bower/packs/linux-ssh-gateway-1.1.0.bowerpack
 BOWER_PACK_TRUSTED_KEYS=/etc/bower/keys/bower-signing.pub.pem
 BOWER_PRIVACY_HMAC_KEY_FILE=/run/secrets/bower-hmac      # if the profile uses hmac
 BOWER_PRIVACY_HMAC_KEY_ID=k2026
@@ -63,3 +63,101 @@ Pack policies are added to the policy directory's; duplicate policy ids fail sta
 Only one privacy profile may be active (from a pack or `BOWER_PRIVACY_PROFILE`). The
 collector reports a **policy bundle hash** (policies, packs and profile) to management,
 which compares it with the policy an administrator assigned.
+
+
+## Local parser and detection activation
+
+Both collector runtimes retain verified pack components. Authenticated `/v1/status`
+reports `parserStatuses` in manifest parser order, `detectionStatus`, and `dcrStatus`:
+
+- `active-local-json`: an explicit signed JSON `runtime` mapping is installed.
+- `inactive-preview-only`: parser has no runtime mapping. CSV, key/value and regex
+  configurations remain preview tooling; they do not expose raw ingestion.
+- Detections: `active-local` when present, otherwise `absent`. Evaluation runs on
+  selected, privacy-redacted semantic events, including `/v1/events` submissions.
+- DCR: `packaged-only` when present, otherwise `absent`. Loading never deploys a DCR,
+  installs Sentinel analytics rules, or establishes destination delivery.
+
+Duplicate pack IDs or detection IDs fail startup. The combined bundle permits at
+most 64 parsers and 64 detections. New runtime mappings must be signed and validated;
+there is no unsigned activation endpoint or fallback parser.
+
+`POST /v1/packs/{packId}/parsers/{zeroBasedIndex}/events` accepts **one JSON object**.
+The SSH gateway 1.1.0 mapping expects an upstream SSH/PAM normalizer's JSON record:
+
+```json
+{"id":"host-a:sshd:12345","timestamp":"2026-10-23T10:00:00Z","user":"synthetic-user","source_ip":"203.0.113.5","result":"failure"}
+```
+
+Send a current timestamp and an original ID stable across retries. This is an
+explicit normalized JSON adapter, not a parser for arbitrary `sshd` text, a file
+tailer, or a generic raw-log endpoint. Only `result: failure` maps to
+`authentication_failure`. The signed mapping fixes application `ssh-gateway`,
+environment `production`, action `authentication.attempt`, and result `failure`.
+Policy still decides whether the mapped event is accepted. Unmapped fields are
+never copied to labels, attributes or persistence.
+
+Authentication and the shared ingest rate limit run before reading the body.
+Producer scopes apply to the mapped application and source identity before
+processing. The raw body limit is 32 KiB, including whitespace and ignored fields;
+JSON depth is 16, root fields at most 64, mapped strings at most 2048 UTF-16 units,
+and original IDs at most 128. Duplicate JSON keys, missing/mistyped mapped fields,
+invalid timestamps/IPs, unknown targets and unbounded mappings fail closed.
+Runtime mapping targets are restricted to identity/time, actor, source IP,
+correlation ID and outcome reason. Secrets and unrestricted bodies cannot be
+forwarded through arbitrary field mappings.
+
+Responses: 202 durable local acceptance, 200 duplicate, 400 invalid input, 401
+missing/invalid credential, 403 scope denied, 404 inactive/unknown parser, 413
+oversize, 415 wrong content type, 422 unmatched or policy rejected, 429 rate limit,
+503 queue capacity. Cancellation while reading persists nothing. Once processing
+has reached durable enqueue, a disconnected client may miss its response; retry
+the identical event. Existing queue identity/conflict and retention semantics apply.
+No response from this endpoint proves Sentinel arrival.
+
+Local detections enrich that same durable semantic row with
+`attributes.bowerDetections`: sorted rule ID, version, SHA-256 rule hash and MITRE
+technique IDs. A fresh engine per event avoids retry-dependent alert suppression.
+Random alert IDs, wall-clock detection times, raw values and matched values never
+enter this metadata. Producer-supplied `bowerDetections` is removed even when no
+rules are installed. There is no second detection queue or independent acknowledgement.
+
+Raw pack samples use `raw`, `parser` and `expectedDetections` instead of `event`:
+
+```json
+{"name":"raw failure","parser":0,"expect":"accept","raw":{"id":"sample-raw","timestamp":"{{now}}","user":"synthetic-user","source_ip":"203.0.113.5","result":"failure"},"expectedDetections":["bower-pack-ssh-auth-failure-001"],"mustNotContain":["synthetic-user"]}
+```
+
+Build executes mapping, privacy, selection and detection expectations before
+signing. Actual host tests separately establish queue, authentication, scope,
+rate, replay, restart, cancellation and backpressure behavior. These tests use
+synthetic local input; they are not destination query evidence.
+
+## Supported Sigma subset and upgrade impact
+
+Conditions support selection identifiers, parentheses and case-insensitive `not`,
+`and`, `or`, with precedence **not, then and, then or**. Selections are mappings:
+fields combine with AND; a field's alternative list combines with OR. Field names
+match exactly (case-insensitive), never by suffix. Standard envelope fields and
+labels are strings; scalar attributes use the explicit `attributes.<name>` namespace.
+Labels cannot override envelope fields or the attributes namespace. Ambiguous
+case-duplicate labels/attributes do not produce detections.
+
+Unmodified scalar strings use whole-value, case-insensitive equality. Explicit
+`contains`, `startswith`, `endswith` work only on strings. YAML booleans and signed
+64-bit integers compare only with the corresponding JSON scalar type, never with
+strings such as `"true"` or `"42"`. Numeric attributes must use integral JSON tokens;
+fractions/exponents, null matching, regex, wildcard values, payload searches,
+selection wildcards (`1 of ...`), aggregation/correlation syntax, unknown selections,
+unknown/chained modifiers and nested selections are unsupported and rejected at
+load/build time. Rules are bounded to 256 KiB, 64 selections, 64 clauses per
+selection, 64 alternatives per clause, 4096 UTF-16 units per value, 256 condition
+tokens and depth 32. YAML expansion is bounded to 8192 nodes and depth 32.
+
+Previously signed packs still require verification and semantic validation; packs
+using formerly tolerated unsupported grammar now fail startup and must be corrected
+and re-signed. `DetectionFields` is a structured internal encoding, not the old
+flattened matching string. Consumers constructing rules manually must use the loader.
+Exact equality intentionally removes accidental substring matches. The GCP pack
+1.1.1 explicitly lists qualified IAM service-account-key methods in detection
+version 1.1.0. Policies are unchanged by this correction.

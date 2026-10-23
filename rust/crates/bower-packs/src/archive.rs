@@ -484,9 +484,16 @@ fn parse_content<'a>(
     }
 
     let mut ids = std::collections::HashSet::new();
-    if parsed.parsers.len() > 64 || parsed.detections.len() > 64
-        || parsed.detections.iter().any(|rule| !ids.insert(rule.id.to_lowercase())) {
-        return Err(invalid("Duplicate detection identity or runtime pack limit exceeded."));
+    if parsed.parsers.len() > 64
+        || parsed.detections.len() > 64
+        || parsed
+            .detections
+            .iter()
+            .any(|rule| !ids.insert(rule.id.to_lowercase()))
+    {
+        return Err(invalid(
+            "Duplicate detection identity or runtime pack limit exceeded.",
+        ));
     }
     if parsed.policies.is_empty() {
         return Err(invalid("A pack must contain at least one policy."));

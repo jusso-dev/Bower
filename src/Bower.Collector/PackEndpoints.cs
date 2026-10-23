@@ -12,7 +12,7 @@ public static partial class CollectorApplication
     private static void MapPackEndpoints(WebApplication app)
     {
         app.MapPost("/v1/packs/{packId}/parsers/{parserIndex:int}/events",
-            async (string packId, int parserIndex, JsonElement raw, HttpContext context,
+            async (string packId, int parserIndex, HttpContext context,
                 PolicyBundle bundle, SecurityEventProcessor processor, ProducerAuthorization authorization,
                 CollectorIdentity identity, CancellationToken cancellationToken) =>
             {
@@ -23,11 +23,35 @@ public static partial class CollectorApplication
                     return PackError(404, "pack-parser-inactive-or-unknown");
                 }
 
-                string rawJson = raw.GetRawText();
-                if (Encoding.UTF8.GetByteCount(rawJson) > PackRuntime.MaximumRecordBytes)
+                if (!context.Request.HasJsonContentType())
+                {
+                    return PackError(415, "pack-record-content-type");
+                }
+                // Read only after authentication/rate limiting. Bound bytes before JSON parsing,
+                // including chunked bodies and ignored fields. No raw payload enters diagnostics.
+                if (context.Request.ContentLength > PackRuntime.MaximumRecordBytes)
                 {
                     return PackError(413, "pack-record-too-large");
                 }
+                byte[] buffer = new byte[PackRuntime.MaximumRecordBytes + 1];
+                int length = 0;
+                while (length < buffer.Length)
+                {
+                    int read = await context.Request.Body.ReadAsync(buffer.AsMemory(length), cancellationToken);
+                    if (read == 0) { break; }
+                    length += read;
+                }
+                if (length > PackRuntime.MaximumRecordBytes)
+                {
+                    return PackError(413, "pack-record-too-large");
+                }
+                string rawJson;
+                try
+                {
+                    int offset = length >= 3 && buffer[0] == 0xEF && buffer[1] == 0xBB && buffer[2] == 0xBF ? 3 : 0;
+                    rawJson = new UTF8Encoding(false, true).GetString(buffer, offset, length - offset);
+                }
+                catch (DecoderFallbackException) { return PackError(400, "pack-record-invalid"); }
 
                 SecurityEventEnvelope? envelope;
                 try

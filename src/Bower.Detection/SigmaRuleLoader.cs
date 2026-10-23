@@ -173,17 +173,40 @@ public static class SigmaRuleLoader
     private static string SelectionScalar(YamlNode node)
     {
         if (node is not YamlScalarNode scalar || scalar.Value is null) { throw DetectionSemantics.Invalid(); }
-        // Quote YAML typed scalars; the two YAML libraries resolve them differently.
         string value = scalar.Value;
-        if (scalar.Style == ScalarStyle.Plain && (value.Length == 0
-            || value.Equals("true", StringComparison.OrdinalIgnoreCase)
-            || value.Equals("false", StringComparison.OrdinalIgnoreCase)
-            || value.Equals("null", StringComparison.OrdinalIgnoreCase)
-            || value == "~" || IsYamlNumber(value)))
+        if (scalar.Style != ScalarStyle.Plain && scalar.Tag.IsEmpty || scalar.Tag.ToString() == "tag:yaml.org,2002:str") { return "s:" + value; }
+        string tag = scalar.Tag.ToString();
+        if (!scalar.Tag.IsEmpty && tag is not ("tag:yaml.org,2002:int" or "tag:yaml.org,2002:bool")) { throw DetectionSemantics.Invalid(); }
+        if (tag == "tag:yaml.org,2002:bool" && !value.Equals("true", StringComparison.OrdinalIgnoreCase)
+            && !value.Equals("false", StringComparison.OrdinalIgnoreCase)) { throw DetectionSemantics.Invalid(); }
+        if (tag == "tag:yaml.org,2002:int" && (value.Equals("true", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("false", StringComparison.OrdinalIgnoreCase))) { throw DetectionSemantics.Invalid(); }
+        if (value.Equals("true", StringComparison.OrdinalIgnoreCase)) { return "b:true"; }
+        if (value.Equals("false", StringComparison.OrdinalIgnoreCase)) { return "b:false"; }
+        if (long.TryParse(value, System.Globalization.NumberStyles.AllowLeadingSign,
+            System.Globalization.CultureInfo.InvariantCulture, out long number)
+            && !(value.TrimStart('+', '-').Length > 1 && value.TrimStart('+', '-')[0] == '0'))
         {
-            throw DetectionSemantics.Invalid();
+            return "n:" + number.ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
-        return value;
+        foreach ((string prefix, int radix) in new[] { ("0x", 16), ("0o", 8), ("0b", 2) })
+        {
+            string unsigned = value.TrimStart('+', '-');
+            if (!unsigned.StartsWith(prefix, StringComparison.Ordinal)) { continue; }
+            try
+            {
+                ulong magnitude = Convert.ToUInt64(unsigned[2..], radix);
+                long signed = magnitude == 0 ? 0 : value.StartsWith('-') ? checked(-(long)(magnitude - 1) - 1) : checked((long)magnitude);
+                return "n:" + signed.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+            catch (Exception exception) when (exception is FormatException or OverflowException or ArgumentException)
+            {
+                throw DetectionSemantics.Invalid();
+            }
+        }
+        if (!scalar.Tag.IsEmpty || value.Length == 0 || value.Equals("null", StringComparison.OrdinalIgnoreCase)
+            || value == "~" || IsYamlNumber(value)) { throw DetectionSemantics.Invalid(); }
+        return "s:" + value;
     }
 
     private static void ValidateTree(YamlNode node, int depth, ref int remaining)
@@ -194,7 +217,7 @@ public static class SigmaRuleLoader
             HashSet<string> keys = new(StringComparer.OrdinalIgnoreCase);
             foreach ((YamlNode key, YamlNode value) in mapping.Children)
             {
-                if (key is not YamlScalarNode scalar || !keys.Add(scalar.Value ?? string.Empty)) { throw DetectionSemantics.Invalid(); }
+                if (key is not YamlScalarNode scalar || !SelectionScalar(scalar).StartsWith("s:", StringComparison.Ordinal) || !keys.Add(scalar.Value ?? string.Empty)) { throw DetectionSemantics.Invalid(); }
                 ValidateTree(key, depth + 1, ref remaining);
                 ValidateTree(value, depth + 1, ref remaining);
             }
@@ -225,7 +248,10 @@ public static class SigmaRuleLoader
             if (++nodes > 8192) { throw DetectionSemantics.Invalid(); }
             if (parser.Current is MappingStart or SequenceStart && ++depth > 32) { throw DetectionSemantics.Invalid(); }
             if (parser.Current is MappingEnd or SequenceEnd) { depth--; }
-            if (parser.Current is NodeEvent node && !node.Tag.IsEmpty) { throw DetectionSemantics.Invalid(); }
+            if (parser.Current is NodeEvent node && !node.Tag.IsEmpty
+                && node.Tag.ToString() is not ("tag:yaml.org,2002:str" or "tag:yaml.org,2002:int"
+                    or "tag:yaml.org,2002:bool" or "tag:yaml.org,2002:float" or "tag:yaml.org,2002:null"
+                    or "tag:yaml.org,2002:map" or "tag:yaml.org,2002:seq")) { throw DetectionSemantics.Invalid(); }
         }
     }
 

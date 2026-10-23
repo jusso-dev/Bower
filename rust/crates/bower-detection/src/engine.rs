@@ -32,7 +32,7 @@ impl Haystack {
             .iter_mut()
             .find(|(existing, _)| eq_ignore_case(existing, key))
         {
-            Some(_) => {},
+            Some(_) => {}
             None => self.entries.push((key.to_owned(), value)),
         }
     }
@@ -43,8 +43,6 @@ impl Haystack {
             .find(|(existing, _)| eq_ignore_case(existing, key))
             .map(|(_, value)| value.as_str())
     }
-
-
 }
 
 impl DetectionEngine {
@@ -52,7 +50,10 @@ impl DetectionEngine {
         rules: Vec<DetectionRule>,
         suppressed_rule_ids: impl IntoIterator<Item = String>,
     ) -> Self {
-        let semantics = rules.iter().map(|r| Semantics::new(&r.detection_fields, &r.condition).ok()).collect();
+        let semantics = rules
+            .iter()
+            .map(|r| Semantics::new(&r.detection_fields, &r.condition).ok())
+            .collect();
         Self {
             semantics,
             fingerprint_order: VecDeque::new(),
@@ -86,12 +87,47 @@ impl DetectionEngine {
         let mut alerts = Vec::new();
         let mut suppressed: Vec<String> = Vec::new();
 
-        if envelope.labels.as_ref().is_some_and(|labels| labels.len() > 256) {
-            return DetectionEvaluationResult { alerts, suppressed_rule_ids: suppressed };
+        if envelope
+            .labels
+            .as_ref()
+            .is_some_and(|labels| labels.len() > 256)
+            || envelope
+                .attributes
+                .as_ref()
+                .is_some_and(|attributes| attributes.len() > 256)
+        {
+            return DetectionEvaluationResult {
+                alerts,
+                suppressed_rule_ids: suppressed,
+            };
+        }
+        let duplicates = |keys: Vec<&str>| {
+            keys.iter()
+                .enumerate()
+                .any(|(index, key)| keys[..index].iter().any(|other| eq_ignore_case(key, other)))
+        };
+        if envelope
+            .labels
+            .as_ref()
+            .is_some_and(|values| duplicates(values.keys().map(String::as_str).collect()))
+            || envelope
+                .attributes
+                .as_ref()
+                .is_some_and(|values| duplicates(values.keys().map(String::as_str).collect()))
+        {
+            return DetectionEvaluationResult {
+                alerts,
+                suppressed_rule_ids: suppressed,
+            };
         }
         let haystack = build_haystack(envelope);
-        if haystack.entries.iter().any(|(key, value)| key.encode_utf16().count() > 128 || value.encode_utf16().count() > 65536) {
-            return DetectionEvaluationResult { alerts, suppressed_rule_ids: suppressed };
+        if haystack.entries.iter().any(|(key, value)| {
+            key.encode_utf16().count() > 128 || value.encode_utf16().count() > 65538
+        }) {
+            return DetectionEvaluationResult {
+                alerts,
+                suppressed_rule_ids: suppressed,
+            };
         }
         for (index, rule) in self.rules.iter().enumerate() {
             if self
@@ -103,7 +139,10 @@ impl DetectionEngine {
                 continue;
             }
 
-            let Some(matched_fields) = self.semantics[index].as_ref().and_then(|s| s.matches(|field| haystack.get(field).map(str::to_owned))) else {
+            let Some(matched_fields) = self.semantics[index]
+                .as_ref()
+                .and_then(|s| s.matches(|field| haystack.get(field).map(str::to_owned)))
+            else {
                 continue;
             };
 
@@ -119,8 +158,10 @@ impl DetectionEngine {
             }
 
             self.fingerprint_order.push_back(fingerprint);
-            if self.fingerprint_order.len() > 4096 {
-                if let Some(old) = self.fingerprint_order.pop_front() { self.seen_fingerprints.remove(&old); }
+            if self.fingerprint_order.len() > 4096
+                && let Some(old) = self.fingerprint_order.pop_front()
+            {
+                self.seen_fingerprints.remove(&old);
             }
 
             let actor = envelope
@@ -173,7 +214,9 @@ impl DetectionEngine {
         event_json: &str,
         now: Option<Timestamp>,
     ) -> Result<DetectionEvaluationResult, DetectionError> {
-        if event_json.len() > 1024 * 1024 { return Err(crate::semantics::invalid()); }
+        if event_json.len() > 1024 * 1024 {
+            return Err(crate::semantics::invalid());
+        }
         let envelope: SecurityEventEnvelope =
             bower_contracts::json::from_str(event_json).map_err(|_| {
                 DetectionError::InvalidData(
@@ -234,7 +277,26 @@ fn build_haystack(envelope: &SecurityEventEnvelope) -> Haystack {
     };
     if let Some(labels) = &envelope.labels {
         for (key, value) in labels {
-            haystack.set(key, value.clone());
+            if !key.to_ascii_lowercase().starts_with("attributes.") {
+                haystack.set(key, value.clone());
+            }
+        }
+    }
+    for (_, value) in &mut haystack.entries {
+        *value = format!("s:{value}");
+    }
+    if let Some(attributes) = &envelope.attributes {
+        for (key, value) in attributes {
+            use bower_contracts::JsonElement;
+            let scalar = match value {
+                JsonElement::String(text) => Some(format!("s:{text}")),
+                JsonElement::Bool(value) => Some(format!("b:{value}")),
+                JsonElement::Number(value) => value.parse::<i64>().ok().map(|n| format!("n:{n}")),
+                _ => None,
+            };
+            if let Some(scalar) = scalar {
+                haystack.set(&format!("attributes.{key}"), scalar);
+            }
         }
     }
     haystack

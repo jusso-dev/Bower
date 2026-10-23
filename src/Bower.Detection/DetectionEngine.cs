@@ -52,9 +52,14 @@ public sealed class DetectionEngine
         List<DetectionAlert> alerts = [];
         List<string> suppressed = [];
 
-        if (envelope.Labels?.Count > 256) { return new DetectionEvaluationResult([], []); }
+        if (envelope.Labels?.Count > 256 || envelope.Attributes?.Count > 256) { return new DetectionEvaluationResult([], []); }
+        if (envelope.Labels is not null && envelope.Labels.Keys.Distinct(StringComparer.OrdinalIgnoreCase).Count() != envelope.Labels.Count
+            || envelope.Attributes is not null && envelope.Attributes.Keys.Distinct(StringComparer.OrdinalIgnoreCase).Count() != envelope.Attributes.Count)
+        {
+            return new DetectionEvaluationResult([], []);
+        }
         Dictionary<string, string> haystack = BuildHaystack(envelope);
-        if (haystack.Any(pair => pair.Key.Length > 128 || pair.Value.Length > 65536))
+        if (haystack.Any(pair => pair.Key.Length > 128 || pair.Value.Length > 65538))
         {
             return new DetectionEvaluationResult([], []);
         }
@@ -150,10 +155,30 @@ public sealed class DetectionEngine
         {
             foreach ((string key, string value) in envelope.Labels)
             {
-                values.TryAdd(key, value);
+                if (!key.StartsWith("attributes.", StringComparison.OrdinalIgnoreCase)) { values.TryAdd(key, value); }
             }
         }
 
+        foreach (string key in values.Keys.ToArray()) { values[key] = "s:" + values[key]; }
+        // Attributes use an explicit namespace and retain their JSON scalar type.
+        // Label keys cannot shadow typed attributes.
+        if (envelope.Attributes is not null)
+        {
+            foreach ((string key, JsonElement value) in envelope.Attributes)
+            {
+                string field = "attributes." + key;
+                values.Remove(field);
+                string? scalar = value.ValueKind switch
+                {
+                    JsonValueKind.String => "s:" + value.GetString(),
+                    JsonValueKind.True => "b:true",
+                    JsonValueKind.False => "b:false",
+                    JsonValueKind.Number when value.TryGetInt64(out long number) => "n:" + number.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    _ => null
+                };
+                if (scalar is not null) { values[field] = scalar; }
+            }
+        }
         return values;
     }
 

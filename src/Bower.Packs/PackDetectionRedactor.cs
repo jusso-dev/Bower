@@ -28,7 +28,10 @@ public sealed class PackDetectionRedactor(
                 ?? throw new JsonException();
             Dictionary<string, JsonElement> attributes = new(envelope.Attributes ?? new Dictionary<string, JsonElement>(), StringComparer.Ordinal);
             // Producers cannot forge local engine evidence. Also strip it when no rules are active.
-            attributes.Remove(EvidenceAttribute);
+            foreach (string key in attributes.Keys.Where(key => key.Equals(EvidenceAttribute, StringComparison.OrdinalIgnoreCase)).ToArray())
+            {
+                attributes.Remove(key);
+            }
             envelope = envelope with { Attributes = attributes.Count == 0 ? null : attributes };
             if (rules.Count > 0 && policies.Evaluate(envelope).Action is DecisionAction.Accept or DecisionAction.RedactAndAccept)
             {

@@ -213,25 +213,50 @@ impl CustomLogParserConfiguration {
             runtime: match property(&object, "runtime") {
                 None | Some(Value::Null) => None,
                 Some(Value::Object(runtime)) => Some(read_runtime(runtime)?),
-                _ => return Err(PipelineError::InvalidData("Runtime mapping must be an object.".into())),
+                _ => {
+                    return Err(PipelineError::InvalidData(
+                        "Runtime mapping must be an object.".into(),
+                    ));
+                }
             },
         })
     }
 }
 
 fn read_runtime(object: &Map<String, Value>) -> Result<CustomLogRuntimeMapping, PipelineError> {
-    let known = ["applicationName", "environment", "eventCategory", "eventType", "eventAction", "eventResult", "match", "fields"];
-    if object.keys().any(|key| !known.iter().any(|name| key.eq_ignore_ascii_case(name))) {
-        return Err(PipelineError::InvalidData("Unknown runtime mapping member.".into()));
+    let known = [
+        "applicationName",
+        "environment",
+        "eventCategory",
+        "eventType",
+        "eventAction",
+        "eventResult",
+        "match",
+        "fields",
+    ];
+    if object
+        .keys()
+        .any(|key| !known.iter().any(|name| key.eq_ignore_ascii_case(name)))
+    {
+        return Err(PipelineError::InvalidData(
+            "Unknown runtime mapping member.".into(),
+        ));
     }
     let dictionary = |name| -> Result<IndexMap<String, String>, PipelineError> {
         let Some(Value::Object(values)) = property(object, name) else {
-            return Err(PipelineError::InvalidData("Runtime mapping requires string dictionaries.".into()));
+            return Err(PipelineError::InvalidData(
+                "Runtime mapping requires string dictionaries.".into(),
+            ));
         };
-        values.iter().map(|(key, value)| match value {
-            Value::String(value) => Ok((key.clone(), value.clone())),
-            _ => Err(PipelineError::InvalidData("Runtime mapping requires string dictionaries.".into())),
-        }).collect()
+        values
+            .iter()
+            .map(|(key, value)| match value {
+                Value::String(value) => Ok((key.clone(), value.clone())),
+                _ => Err(PipelineError::InvalidData(
+                    "Runtime mapping requires string dictionaries.".into(),
+                )),
+            })
+            .collect()
     };
     Ok(CustomLogRuntimeMapping {
         application_name: optional_string(object, "applicationName")?.unwrap_or_default(),
@@ -300,19 +325,47 @@ pub fn validate_configuration(configuration: &CustomLogParserConfiguration) -> V
     }
 
     if let Some(runtime) = &configuration.runtime {
-        let metadata = [&runtime.application_name, &runtime.environment, &runtime.event_category,
-            &runtime.event_type, &runtime.event_action];
-        let targets = ["eventId", "timeGenerated", "actor.username", "actor.userId", "source.ipAddress",
-            "request.correlationId", "eventOutcomeReason"];
+        let metadata = [
+            &runtime.application_name,
+            &runtime.environment,
+            &runtime.event_category,
+            &runtime.event_type,
+            &runtime.event_action,
+        ];
+        let targets = [
+            "eventId",
+            "timeGenerated",
+            "actor.username",
+            "actor.userId",
+            "source.ipAddress",
+            "request.correlationId",
+            "eventOutcomeReason",
+        ];
         if configuration.format != CustomLogFormat::Json
-            || metadata.iter().any(|value| value.trim().is_empty() || value.encode_utf16().count() > 128)
-            || !matches!(runtime.event_result.as_str(), "success" | "failure" | "denied" | "unknown")
+            || metadata
+                .iter()
+                .any(|value| value.trim().is_empty() || value.encode_utf16().count() > 128)
+            || !matches!(
+                runtime.event_result.as_str(),
+                "success" | "failure" | "denied" | "unknown"
+            )
             || !(1..=16).contains(&runtime.match_fields.len())
             || !(2..=7).contains(&runtime.fields.len())
-            || !runtime.fields.contains_key("eventId") || !runtime.fields.contains_key("timeGenerated")
-            || runtime.fields.keys().any(|key| !targets.contains(&key.as_str()))
-            || runtime.fields.values().any(|source| !names.contains(source.as_str()))
-            || runtime.match_fields.iter().any(|(source, value)| !names.contains(source.as_str()) || value.is_empty() || value.encode_utf16().count() > 2048)
+            || !runtime.fields.contains_key("eventId")
+            || !runtime.fields.contains_key("timeGenerated")
+            || runtime
+                .fields
+                .keys()
+                .any(|key| !targets.contains(&key.as_str()))
+            || runtime
+                .fields
+                .values()
+                .any(|source| !names.contains(source.as_str()))
+            || runtime.match_fields.iter().any(|(source, value)| {
+                !names.contains(source.as_str())
+                    || value.is_empty()
+                    || value.encode_utf16().count() > 2048
+            })
         {
             issues.push("Invalid runtime semantic mapping; only bounded, filtered JSON mappings are supported.".into());
         }
