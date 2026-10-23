@@ -14,6 +14,27 @@ class IngestionPlanTests(unittest.TestCase):
         other = create_plan("another-law", "australiaeast", "bower", managed_identity=True)
         self.assertNotEqual(plan["planSha256"], json.loads(other[1])["planSha256"])
 
+    def test_federation_is_exact_optional_and_requires_new_identity(self):
+        issuer = "https://issuer.example.test/tenant/"
+        subject = "system:serviceaccount:security:bower"
+        parameters, plan = create_plan("security-law", "australiaeast", "bower", managed_identity=True,
+                                       federation_issuer=issuer, federation_subject=subject)
+        self.assertEqual(json.loads(parameters)["parameters"]["federationIssuer"]["value"], issuer)
+        self.assertTrue(json.loads(plan)["federationPlanned"])
+        for invalid in [
+            {"federation_issuer": issuer},
+            {"federation_subject": subject},
+            {"federation_issuer": "http://issuer.example.test", "federation_subject": subject},
+            {"federation_issuer": "https://user:secret@example.test", "federation_subject": subject},
+            {"federation_issuer": issuer, "federation_subject": "system:serviceaccount:*"},
+            {"federation_issuer": issuer, "federation_subject": "bad\nsubject"},
+        ]:
+            with self.assertRaises(ValueError):
+                create_plan("security-law", "australiaeast", "bower", managed_identity=True, **invalid)
+        with self.assertRaises(ValueError):
+            create_plan("security-law", "australiaeast", "bower", principal="11111111-2222-3333-4444-555555555555",
+                        federation_issuer=issuer, federation_subject=subject)
+
     def test_existing_identity_and_invalid_inputs(self):
         principal = "11111111-2222-3333-4444-555555555555"
         parameters, _ = create_plan("security-law", "australiaeast", "bower", principal=principal)

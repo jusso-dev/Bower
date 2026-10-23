@@ -6,9 +6,11 @@ import json
 from pathlib import Path
 import re
 import uuid
+from urllib.parse import urlsplit
 
 
-def create_plan(workspace, location, prefix, principal=None, managed_identity=False):
+def create_plan(workspace, location, prefix, principal=None, managed_identity=False,
+                federation_issuer=None, federation_subject=None):
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{2,62}", workspace):
         raise ValueError("Workspace name must contain 3-63 letters, digits or hyphens.")
     if not re.fullmatch(r"[a-z][a-z0-9]{1,39}", location):
@@ -21,12 +23,24 @@ def create_plan(workspace, location, prefix, principal=None, managed_identity=Fa
         principal = str(uuid.UUID(principal))
         if uuid.UUID(principal).int == 0:
             raise ValueError("Principal object ID must not be the zero GUID.")
+    if bool(federation_issuer) != bool(federation_subject):
+        raise ValueError("Federation requires both exact issuer and subject.")
+    if federation_issuer:
+        issuer = urlsplit(federation_issuer)
+        if (not managed_identity or issuer.scheme != "https" or not issuer.hostname
+                or issuer.username or issuer.password or issuer.query or issuer.fragment
+                or any(char.isspace() for char in federation_issuer)
+                or "*" in federation_issuer or len(federation_issuer) > 600
+                or len(federation_subject) > 600 or "*" in federation_subject
+                or any(ord(char) < 32 or char.isspace() for char in federation_subject)):
+            raise ValueError("Federation needs a new identity, HTTPS issuer and bounded exact subject.")
     parameters = {
         "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
         "contentVersion": "1.0.0.0",
         "parameters": {key: {"value": value} for key, value in {
             "workspaceName": workspace, "location": location, "namePrefix": prefix,
             "ingestPrincipalObjectId": principal or "", "createIngestIdentity": managed_identity,
+            "federationIssuer": federation_issuer or "", "federationSubject": federation_subject or "",
         }.items()},
     }
     template = Path(__file__).resolve().parents[1] / "bicep" / "main.bicep"
@@ -39,6 +53,7 @@ def create_plan(workspace, location, prefix, principal=None, managed_identity=Fa
         "planSha256": hashlib.sha256((template_hash + ":" + parameters_hash).encode()).hexdigest(),
         "ingestionRole": "Monitoring Metrics Publisher", "ingestionScope": "exact DCR",
         "credentialsCreated": False, "azureMutationsPerformed": False,
+        "federationPlanned": bool(federation_issuer),
         "remainingChecks": ["Authorise and review Azure what-if in intended tenant/subscription.",
                             "Apply reviewed plan and attach identity to collector compute.",
                             "Use separate reader identity to query the canary in intended workspace/table.",
@@ -55,11 +70,14 @@ def main():
     identity = parser.add_mutually_exclusive_group(required=True)
     identity.add_argument("--principal-object-id")
     identity.add_argument("--create-managed-identity", action="store_true")
+    parser.add_argument("--federation-issuer")
+    parser.add_argument("--federation-subject")
     parser.add_argument("--out", required=True, type=Path)
     args = parser.parse_args()
     try:
         parameters, plan = create_plan(args.workspace_name, args.location, args.name_prefix,
-                                       args.principal_object_id, args.create_managed_identity)
+                                       args.principal_object_id, args.create_managed_identity,
+                                       args.federation_issuer, args.federation_subject)
     except ValueError as error:
         parser.error(str(error))
     args.out.mkdir(parents=True, exist_ok=True)

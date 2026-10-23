@@ -19,9 +19,25 @@ param ingestPrincipalObjectId string = ''
 @description('Create a user-assigned managed identity and grant it write access on this DCR only. Plan-only until explicitly deployed.')
 param createIngestIdentity bool = false
 
+@description('Optional exact OIDC issuer for a new identity federation. Use the reviewed plan generator; no wildcards.')
+param federationIssuer string = ''
+
+@description('Optional exact OIDC subject, for example system:serviceaccount:namespace:collector.')
+param federationSubject string = ''
+
 resource ingestIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = if (createIngestIdentity) {
   name: '${namePrefix}-ingest'
   location: location
+}
+
+resource ingestFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2023-01-31' = if (createIngestIdentity && !empty(federationIssuer) && !empty(federationSubject)) {
+  parent: ingestIdentity
+  name: 'bower-ingestion'
+  properties: {
+    issuer: federationIssuer
+    subject: federationSubject
+    audiences: ['api://AzureADTokenExchange']
+  }
 }
 
 var selectedIngestPrincipal = createIngestIdentity ? ingestIdentity!.properties.principalId : ingestPrincipalObjectId

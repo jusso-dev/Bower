@@ -20,12 +20,28 @@ Monitoring Metrics Publisher on this DCR. It does not grant workspace write or
 query access. Its output contains identity IDs, endpoint and immutable DCR ID,
 never credentials. Attach the identity to collector compute separately.
 
+For a new workload identity, add `--federation-issuer <exact-https-issuer>` and
+`--federation-subject system:serviceaccount:<namespace>:<service-account>` to the
+managed-identity plan. Both values are required together; wildcards are rejected.
+The template binds exactly that tuple with audience `api://AzureADTokenExchange`.
+It does not enable an issuer, install a webhook, modify Kubernetes service
+accounts or provision credential files. Confirm issuer ownership and exact subject
+in the review. Existing principals keep their separately managed federation.
+
 Configure `BOWER_OUTPUT=azure-logs-ingestion`, `BOWER_AZURE_CREDENTIAL=managed-identity`,
 `BOWER_AZURE_CLIENT_ID=<created-client-id>`, `BOWER_DCE_ENDPOINT=<endpoint>`,
 `BOWER_DCR_ID=<immutable-id>` and `BOWER_STREAM_NAME=Custom-BowerSecurity`.
 For Kubernetes federation use `workload-identity`; off Azure use `environment`
 with tenant/client IDs and protected certificate or runtime-injected secret.
 Do not use human username/password credentials for unattended ingestion.
+`environment` credentials use `AZURE_TENANT_ID` and `AZURE_CLIENT_ID` plus either
+`AZURE_CLIENT_CERTIFICATE_PATH` (and protected certificate password when needed)
+or runtime-injected `AZURE_CLIENT_SECRET`. Mount certificate/token files read-only
+with least-privilege filesystem access; keep their values out of CLI arguments,
+plans and logs. Workload identity uses projected `AZURE_FEDERATED_TOKEN_FILE` with
+`AZURE_TENANT_ID` and `AZURE_CLIENT_ID`. Collector `BOWER_AZURE_CLIENT_ID` selects
+its managed identity; it is not a substitute for the environment credential fields.
+See [network and cloud prerequisites](logs-ingestion-api.md).
 
 After approved deployment and RBAC propagation, run `bower evidence run` with a
 separate read-only verifier and the exact workspace ID. See
