@@ -68,9 +68,13 @@ enforcement controls; do not expose an old collector to isolated producers.
 
 ## Semantic privacy behavior
 
-Before/after values in `change` are removed unless `eventType` is exactly
-`role_membership_changed` and `change.field` is exactly `role`. This reviewed pair
-retains role investigation context and still passes through value detectors.
+Before/after values in `change` are removed except for reviewed event/field
+pairs: `role_membership_changed` with `role`, and `aws_cloudtrail` or
+`gcp_cloud_audit` with `permission_direction`. Cloud direction values are limited
+to the mapper's grant/revoke/mixed/replacement vocabulary; bounded identity and
+permission details use the structured context described in
+[cloud permission context](../deployment/cloud-permission-context.md). These
+reviewed fields retain investigation context and still pass value detectors.
 Unknown fields, passwords, token fields, missing field names and non-scalar values
 cannot retain before/after content. Extend the allowlist only with event-specific
 regression tests; this does not enable arbitrary attribute forwarding.
