@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Bower.Abstractions;
 using Bower.Collector;
 using Bower.Contracts;
@@ -48,6 +49,15 @@ public sealed class DefaultSignalCoverageTests
         IReadOnlyList<QueuedEvent> rows = await store.LeaseAsync(10, TimeSpan.FromMinutes(1), ct);
         foreach (string type in new[] { "authentication_failure", "role_membership_changed", "sensitive_data_exported" })
             Assert.Contains(rows, row => row.Payload.Contains($"\"eventType\":\"{type}\"", StringComparison.Ordinal));
+        SecurityEventEnvelope[] accepted = rows.Select(row => JsonSerializer.Deserialize(row.Payload, BowerJson.Envelope)!).ToArray();
+        SecurityEventEnvelope role = Assert.Single(accepted, item => item.EventType == "role_membership_changed");
+        Assert.Equal("member", role.Target?.Id);
+        Assert.Equal("auditor", role.Change?.NewValue);
+        Assert.Equal("operator", role.Actor?.UserId);
+        SecurityEventEnvelope export = Assert.Single(accepted, item => item.EventType == "sensitive_data_exported");
+        Assert.Equal("export-1", export.Target?.Id);
+        Assert.Equal(7, export.Attributes!["recordCount"].GetInt64());
+        Assert.Equal("sensitive", export.Labels!["dataClassification"]);
         DeterministicPolicyEvaluator evaluator = new(PolicyLoader.LoadDirectory(Path.Combine(AppContext.BaseDirectory, "policies/default")));
         Assert.Equal(DecisionAction.Reject, evaluator.Evaluate(TestEvents.AuthenticationFailure(DateTimeOffset.UtcNow) with { EventType = "unapproved_type" }).Action);
     }
