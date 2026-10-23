@@ -20,6 +20,15 @@ public sealed record PolicyBundle(
 {
     public IReadOnlyList<LoadedPack> LoadedPacks { get; init; } = [];
 
+    /// <summary>Active privacy profile version; null for the built-in default.</summary>
+    public string? PrivacyProfileVersion { get; init; }
+
+    /// <summary>Active privacy profile content hash; null for the built-in default.</summary>
+    public string? PrivacyProfileHash { get; init; }
+
+    /// <summary>BOWER_PRIVACY_PROFILE_SOURCE that produced the active privacy profile.</summary>
+    public string PrivacyProfileSource { get; init; } = PrivacyProfileSources.Local;
+
     public static PolicyBundle Load(CollectorSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -59,11 +68,20 @@ public sealed record PolicyBundle(
             throw new InvalidDataException("Only one privacy profile may be active (BOWER_PRIVACY_PROFILE or one pack).");
         }
 
+        if (settings.UsesManagedPrivacyProfile && packProfiles.Length > 0)
+        {
+            throw new InvalidDataException(
+                "BOWER_PRIVACY_PROFILE_SOURCE=management cannot be combined with pack privacy profiles.");
+        }
+
         profileYaml ??= packProfiles.FirstOrDefault();
         byte[]? key = settings.PrivacyHmacKeyFile is null ? null : PrivacyProfileLoader.ReadKeyFile(settings.PrivacyHmacKeyFile);
-        LoadedPrivacyProfile? profile = profileYaml is null
-            ? null
-            : PrivacyProfileLoader.Load(profileYaml, key, settings.PrivacyHmacKeyId);
+        // Management mode: the verified cached assignment, or the built-in default when none.
+        LoadedPrivacyProfile? profile = settings.UsesManagedPrivacyProfile
+            ? ManagedPrivacyProfileCache.LoadVerified(settings, key)?.Profile
+            : profileYaml is null
+                ? null
+                : PrivacyProfileLoader.Load(profileYaml, key, settings.PrivacyHmacKeyId);
         PrivacyPolicy privacy = profile?.Policy ?? PrivacyPolicy.CreateDefault();
 
         string material = string.Join(
@@ -75,7 +93,10 @@ public sealed record PolicyBundle(
         string hash = "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(material)));
         return new PolicyBundle(policies, packs.Select(pack => pack.Manifest).ToArray(), privacy, profile?.Id, hash)
         {
-            LoadedPacks = packs
+            LoadedPacks = packs,
+            PrivacyProfileVersion = profile?.Version,
+            PrivacyProfileHash = profile?.Hash,
+            PrivacyProfileSource = settings.PrivacyProfileSource
         };
     }
 }

@@ -40,7 +40,10 @@ internal sealed record StatusPolicyResponse(
     string Hash,
     IReadOnlyList<StatusPolicyItem> Policies,
     IReadOnlyList<StatusPackItem> Packs,
-    string? PrivacyProfile);
+    string? PrivacyProfile,
+    string? PrivacyProfileVersion,
+    string PrivacyProfileHash,
+    string PrivacyProfileSource);
 
 internal sealed record StatusPolicyItem(string Id, string Version);
 
@@ -79,7 +82,8 @@ internal sealed record CollectorHeartbeat(
     IReadOnlyList<OutputReport> Outputs,
     IReadOnlyList<BackgroundJobStatus> Jobs,
     long DeadLettered,
-    LedgerResponse Ledger);
+    LedgerResponse Ledger,
+    string PrivacyProfileHash);
 
 internal sealed record SourceReport(string Id, string Type, string Status, long? LagSeconds, DateTimeOffset? LastEventAt);
 
@@ -99,4 +103,5 @@ internal sealed record OutputReport(
 [JsonSerializable(typeof(StatusResponse))]
 [JsonSerializable(typeof(CollectorRegistration))]
 [JsonSerializable(typeof(CollectorHeartbeat))]
+[JsonSerializable(typeof(ManagedPrivacyProfileDocument))]
 internal sealed partial class CollectorJsonContext : JsonSerializerContext;

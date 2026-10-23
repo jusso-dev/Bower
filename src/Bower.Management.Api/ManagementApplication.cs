@@ -38,6 +38,7 @@ public static class ManagementApplication
             options.SerializerOptions.Converters.Add(new JsonStringEnumConverter<PipelineNodeKind>(null, false));
             options.SerializerOptions.Converters.Add(new JsonStringEnumConverter<CustomLogFormat>(null, false));
             options.SerializerOptions.Converters.Add(new JsonStringEnumConverter<CustomLogValueType>(null, false));
+            options.SerializerOptions.Converters.Add(new JsonStringEnumConverter<PrivacyProfileVersionStatus>(null, false));
         });
         builder.WebHost.UseUrls(
             Environment.GetEnvironmentVariable("BOWER_MANAGEMENT_LISTEN_URL")
@@ -108,6 +109,9 @@ public static class ManagementApplication
             ?? Path.Combine(AppContext.BaseDirectory, "data", "management.db");
         builder.Services.AddSingleton(new ManagementStore(databasePath));
         builder.Services.AddSingleton(TimeProvider.System);
+        // Optional: without a key the deployment endpoint answers 503 and all else works.
+        builder.Services.AddSingleton(ManagedPrivacyProfileSigner.FromFile(
+            builder.Configuration[ManagedPrivacyProfileSigner.KeyFileSetting]));
 
         string[] allowedOrigins = builder.Configuration
             .GetSection("Bower:AllowedOrigins")
@@ -511,6 +515,8 @@ public static class ManagementApplication
                 })
             .RequireAuthorization("Administer");
 
+        PrivacyProfileEndpoints.Map(api);
+
         api.MapGet(
                 "/audit",
                 (ManagementStore store, CancellationToken cancellationToken) =>
@@ -633,12 +639,12 @@ public static class ManagementApplication
         }
     }
 
-    private static string ObjectId(ClaimsPrincipal user) =>
+    internal static string ObjectId(ClaimsPrincipal user) =>
         user.FindFirstValue("oid")
         ?? user.FindFirstValue(ClaimTypes.NameIdentifier)
         ?? throw new InvalidOperationException("Authenticated principal has no object identifier.");
 
-    private static string DisplayName(ClaimsPrincipal user) =>
+    internal static string DisplayName(ClaimsPrincipal user) =>
         user.FindFirstValue("name") ?? "Unknown principal";
 
     private static string RequiredConfiguration(ConfigurationManager configuration, string key) =>

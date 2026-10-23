@@ -92,7 +92,8 @@ public sealed partial class ManagementHeartbeatJob(
                     outputs,
                     jobReports,
                     snapshot.DeadLettered,
-                    new LedgerResponse(ledger.Sequence, ledger.Hash)),
+                    new LedgerResponse(ledger.Sequence, ledger.Hash),
+                    bundle.PrivacyProfileHash ?? "default"),
                 CollectorJsonContext.Default.CollectorHeartbeat));
         using HttpResponseMessage response = await client.SendAsync(heartbeat, cancellationToken);
         if (response.StatusCode == HttpStatusCode.Conflict)

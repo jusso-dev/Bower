@@ -111,6 +111,10 @@ public static partial class CollectorApplication
                 client.Timeout = TimeSpan.FromSeconds(15);
             });
             builder.Services.AddTransient<ManagementHeartbeatJob>();
+            if (settings.UsesManagedPrivacyProfile)
+            {
+                builder.Services.AddTransient<ManagedPrivacyProfileJob>();
+            }
         }
 
         configure?.Invoke(builder);
@@ -150,6 +154,15 @@ public static partial class CollectorApplication
                 ManagementHeartbeatJob.Id,
                 (job, token) => job.RunAsync(token),
                 Cron.Minutely());
+            if (settings.UsesManagedPrivacyProfile)
+            {
+                // Idempotent: an unchanged assignment is a no-op; a failed run is retried
+                // by the next scheduled occurrence with the current profile still active.
+                jobs.AddOrUpdate<ManagedPrivacyProfileJob>(
+                    ManagedPrivacyProfileJob.Id,
+                    (job, token) => job.RunAsync(token),
+                    Cron.Minutely());
+            }
         }
     }
 
@@ -258,7 +271,10 @@ public static partial class CollectorApplication
                                 [.. pack.Parsers.Select(parser => parser.Runtime is null ? "inactive-preview-only" : "active-local-json")],
                                 pack.Detections.Count == 0 ? "absent" : "active-local",
                                 pack.DcrTemplateJson is null ? "absent" : "packaged-only"))],
-                            bundle.PrivacyProfile),
+                            bundle.PrivacyProfile,
+                            bundle.PrivacyProfileVersion,
+                            bundle.PrivacyProfileHash ?? "default",
+                            bundle.PrivacyProfileSource),
                         new LedgerResponse(ledger.Sequence, ledger.Hash),
                         new StatusQueueResponse(
                             snapshot.Queued,

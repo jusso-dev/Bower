@@ -596,11 +596,14 @@
       "bower.management.api": {
         "type": "Project",
         "dependencies": {
+          "Bower.Integrity": "[1.0.0, )",
           "Bower.Jobs": "[1.0.0, )",
           "Bower.Pipeline": "[1.0.0, )",
+          "Bower.Redaction": "[1.0.0, )",
           "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.13, )",
           "Microsoft.Data.Sqlite": "[10.0.13, )",
-          "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.5, )"
+          "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.5, )",
+          "YamlDotNet": "[18.1.0, )"
         }
       },
       "bower.ocsf": {

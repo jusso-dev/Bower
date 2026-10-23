@@ -46,6 +46,26 @@ public sealed record CollectorSettings
 
     public string? PrivacyProfilePath { get; init; }
 
+    /// <summary>
+    /// <c>local</c> (default): BOWER_PRIVACY_PROFILE, one pack profile or the built-in default.
+    /// <c>management</c>: the signed version assigned in the management API (cached locally).
+    /// </summary>
+    public string PrivacyProfileSource { get; init; } = PrivacyProfileSources.Local;
+
+    /// <summary>PEM public keys trusted to sign managed privacy profiles.</summary>
+    public IReadOnlyList<string> ManagedPrivacyTrustedKeyFiles { get; init; } = [];
+
+    /// <summary>Cache directory for the managed privacy profile; null means next to the queue database.</summary>
+    public string? ManagedPrivacyDirectory { get; init; }
+
+    public bool UsesManagedPrivacyProfile =>
+        string.Equals(PrivacyProfileSource, PrivacyProfileSources.Management, StringComparison.Ordinal);
+
+    /// <summary>Resolved managed privacy profile cache directory.</summary>
+    public string ManagedPrivacyCacheDirectory =>
+        ManagedPrivacyDirectory
+        ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(QueuePath)) ?? ".", "managed-privacy");
+
     public string? PrivacyHmacKeyFile { get; init; }
 
     public string PrivacyHmacKeyId { get; init; } = "k1";
@@ -107,6 +127,10 @@ public sealed record CollectorSettings
             Packs = SplitList(read("BOWER_PACKS")),
             PackTrustedKeyFiles = SplitList(read("BOWER_PACK_TRUSTED_KEYS")),
             PrivacyProfilePath = Blank(read("BOWER_PRIVACY_PROFILE")),
+            PrivacyProfileSource = Blank(read("BOWER_PRIVACY_PROFILE_SOURCE"))?.Trim().ToLowerInvariant()
+                ?? PrivacyProfileSources.Local,
+            ManagedPrivacyTrustedKeyFiles = SplitList(read("BOWER_MANAGED_PRIVACY_TRUSTED_KEYS")),
+            ManagedPrivacyDirectory = Blank(read("BOWER_MANAGED_PRIVACY_DIRECTORY")),
             PrivacyHmacKeyFile = Blank(read("BOWER_PRIVACY_HMAC_KEY_FILE")),
             PrivacyHmacKeyId = Blank(read("BOWER_PRIVACY_HMAC_KEY_ID")) ?? "k1",
             AllowUnauthenticatedIngest = string.Equals(
@@ -219,6 +243,40 @@ public sealed record CollectorSettings
                     "BOWER_MANAGEMENT_ENDPOINT must use HTTPS unless it targets loopback.");
             }
         }
+
+        ValidatePrivacyProfileSource();
+    }
+
+    private void ValidatePrivacyProfileSource()
+    {
+        if (PrivacyProfileSource is not (PrivacyProfileSources.Local or PrivacyProfileSources.Management))
+        {
+            throw new InvalidOperationException("BOWER_PRIVACY_PROFILE_SOURCE must be local or management.");
+        }
+
+        if (!UsesManagedPrivacyProfile)
+        {
+            return;
+        }
+
+        if (ManagementEndpoint is null)
+        {
+            throw new InvalidOperationException(
+                "BOWER_PRIVACY_PROFILE_SOURCE=management requires BOWER_MANAGEMENT_ENDPOINT and BOWER_MANAGEMENT_SCOPE.");
+        }
+
+        if (ManagedPrivacyTrustedKeyFiles.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "BOWER_PRIVACY_PROFILE_SOURCE=management requires BOWER_MANAGED_PRIVACY_TRUSTED_KEYS; " +
+                "managed privacy profiles are never loaded unverified.");
+        }
+
+        if (PrivacyProfilePath is not null)
+        {
+            throw new InvalidOperationException(
+                "BOWER_PRIVACY_PROFILE cannot be combined with BOWER_PRIVACY_PROFILE_SOURCE=management.");
+        }
     }
 
     /// <summary>
@@ -243,6 +301,12 @@ public sealed record CollectorSettings
             PrivacyHmacKeyId,
             SingleTrustDomain.ToString(),
             ProducerScopesFile ?? string.Empty);
+        if (UsesManagedPrivacyProfile)
+        {
+            // Appended only in management mode so existing local configuration hashes are unchanged.
+            material += '\u001f' + "privacy-source:" + PrivacyProfileSource;
+        }
+
         return "sha256:" + Convert.ToHexStringLower(
             System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(material)));
     }
@@ -288,6 +352,13 @@ public sealed record CollectorSettings
             _ => throw new InvalidOperationException(
                 "BOWER_AZURE_CREDENTIAL must be managed-identity, workload-identity, environment or azure-cli.")
         };
+}
+
+/// <summary>Values of BOWER_PRIVACY_PROFILE_SOURCE.</summary>
+public static class PrivacyProfileSources
+{
+    public const string Local = "local";
+    public const string Management = "management";
 }
 
 /// <summary>

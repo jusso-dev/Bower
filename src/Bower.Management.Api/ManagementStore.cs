@@ -4,7 +4,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Bower.Management.Api;
 
-public sealed class ManagementStore(string databasePath)
+public sealed partial class ManagementStore(string databasePath)
 {
     private readonly string _connectionString = new SqliteConnectionStringBuilder
     {
@@ -91,6 +91,34 @@ public sealed class ManagementStore(string databasePath)
                 actor_name TEXT NOT NULL,
                 occurred_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS privacy_profile_versions (
+                id TEXT PRIMARY KEY,
+                profile_id TEXT NOT NULL,
+                version TEXT NOT NULL,
+                description TEXT NULL,
+                content TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                change_summary TEXT NOT NULL,
+                status TEXT NOT NULL,
+                author_object_id TEXT NOT NULL,
+                author_name TEXT NULL,
+                created_at TEXT NOT NULL,
+                reviewer_object_id TEXT NULL,
+                reviewer_name TEXT NULL,
+                reviewed_at TEXT NULL,
+                review_reason TEXT NULL,
+                UNIQUE(profile_id, version)
+            );
+            CREATE TABLE IF NOT EXISTS privacy_profile_assignments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                collector_id TEXT NOT NULL REFERENCES collectors(id),
+                version_id TEXT NULL REFERENCES privacy_profile_versions(id),
+                action TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                actor_object_id TEXT NOT NULL,
+                actor_name TEXT NULL,
+                occurred_at TEXT NOT NULL
+            );
             """,
             cancellationToken);
         // Additive migrations for databases created by earlier versions.
@@ -98,6 +126,10 @@ public sealed class ManagementStore(string databasePath)
         await AddColumnIfMissingAsync(connection, "collectors", "ledger_sequence", "INTEGER NULL", cancellationToken);
         await AddColumnIfMissingAsync(connection, "collectors", "ledger_hash", "TEXT NULL", cancellationToken);
         await AddColumnIfMissingAsync(connection, "collectors", "dead_lettered", "INTEGER NOT NULL DEFAULT 0", cancellationToken);
+        await AddColumnIfMissingAsync(
+            connection, "collectors", "desired_privacy_profile_version_id", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync(
+            connection, "collectors", "reported_privacy_profile_hash", "TEXT NULL", cancellationToken);
     }
 
     public async Task<CollectorRecord> RegisterAsync(
@@ -247,7 +279,8 @@ public sealed class ManagementStore(string databasePath)
                 policy_hash = $policy,
                 queue_depth = $queue,
                 delivery_status = $delivery,
-                dead_lettered = $dead_lettered
+                dead_lettered = $dead_lettered,
+                reported_privacy_profile_hash = $privacy_profile
             WHERE id = $id;
             """,
             [
@@ -258,6 +291,7 @@ public sealed class ManagementStore(string databasePath)
                 ("$queue", heartbeat.QueueDepth),
                 ("$delivery", deliveryStatus),
                 ("$dead_lettered", heartbeat.DeadLettered ?? 0),
+                ("$privacy_profile", heartbeat.PrivacyProfileHash),
                 ("$id", collectorId)
             ],
             cancellationToken);
@@ -543,6 +577,8 @@ public sealed class ManagementStore(string databasePath)
             ? null
             : reader.GetInt64(reader.GetOrdinal("ledger_sequence"));
         long deadLettered = reader.GetInt64(reader.GetOrdinal("dead_lettered"));
+        string? desiredPrivacyProfileId = ReadOptionalString(reader, "desired_privacy_profile_version_id");
+        string? reportedPrivacyProfile = ReadOptionalString(reader, "reported_privacy_profile_hash");
         await using SqliteConnection detailConnection = await OpenAsync(cancellationToken);
         IReadOnlyList<SourceReport> sources =
             await ReadSourcesAsync(detailConnection, id, cancellationToken);
@@ -550,10 +586,13 @@ public sealed class ManagementStore(string databasePath)
             await ReadOutputsAsync(detailConnection, id, cancellationToken);
         IReadOnlyList<BackgroundJobStatus> jobs =
             await ReadJobsAsync(detailConnection, id, cancellationToken);
+        DesiredPrivacyProfile? desiredPrivacyProfile = desiredPrivacyProfileId is null
+            ? null
+            : await ReadDesiredPrivacyProfileAsync(detailConnection, desiredPrivacyProfileId, cancellationToken);
         return new(
             id, machine, environment, version, status, principal, firstSeen, lastSeen,
             configuration, policy, queue, delivery, sources, outputs, jobs,
-            desiredPolicy, ledgerSequence, deadLettered);
+            desiredPolicy, ledgerSequence, deadLettered, desiredPrivacyProfile, reportedPrivacyProfile);
     }
 
     private static async Task<IReadOnlyList<SourceReport>> ReadSourcesAsync(
@@ -662,6 +701,7 @@ public sealed class ManagementStore(string databasePath)
             || heartbeat.Jobs is { Count: > 50 }
             || heartbeat.Ledger is { } ledger && (ledger.Sequence < 0 || !ValidText(ledger.Hash, 128))
             || heartbeat.DeadLettered is < 0 or > MaximumReportedCount
+            || heartbeat.PrivacyProfileHash is { } privacyProfileHash && !IsPrivacyProfileHash(privacyProfileHash)
             || (heartbeat.Jobs?.Any(job =>
                 job is null
                 || !ValidText(job.Id, 128)
