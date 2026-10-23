@@ -32,8 +32,9 @@ internal sealed class LocalCollectorTransport : IDisposable
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ingestToken);
         }
 
-        using HttpResponseMessage response = await client.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        using HttpResponseMessage response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw new HttpRequestException("collector-http-failure", null, response.StatusCode);
     }
 
     public void Dispose()

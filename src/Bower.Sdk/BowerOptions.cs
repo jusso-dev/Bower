@@ -14,6 +14,10 @@ public sealed class BowerOptions
 
     public TimeSpan ShutdownFlushTimeout { get; set; } = TimeSpan.FromSeconds(5);
 
+    public int MaximumSendAttempts { get; set; } = 3;
+
+    public TimeSpan RetryDelay { get; set; } = TimeSpan.FromMilliseconds(250);
+
     internal void Validate()
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(Application.Name);
@@ -22,6 +26,11 @@ public sealed class BowerOptions
         {
             throw new ArgumentOutOfRangeException(nameof(BufferCapacity));
         }
+
+        if (MaximumSendAttempts is < 1 or > 10) throw new ArgumentOutOfRangeException(nameof(MaximumSendAttempts));
+        if (RetryDelay < TimeSpan.Zero || RetryDelay > TimeSpan.FromSeconds(30)) throw new ArgumentOutOfRangeException(nameof(RetryDelay));
+        if (ShutdownFlushTimeout <= TimeSpan.Zero || ShutdownFlushTimeout > TimeSpan.FromMinutes(1)) throw new ArgumentOutOfRangeException(nameof(ShutdownFlushTimeout));
+        if (LocalCollector.RequestTimeout <= TimeSpan.Zero || LocalCollector.RequestTimeout > TimeSpan.FromMinutes(1)) throw new ArgumentOutOfRangeException(nameof(LocalCollector.RequestTimeout));
 
         if (Transport != BowerTransport.LocalCollector)
         {
