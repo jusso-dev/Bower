@@ -83,6 +83,7 @@ fn evaluator_denies_unknown_type_even_for_category_only_policy() {
     category_only.policy.r#match = PolicyMatch {
         event_categories: vec!["authentication".to_owned()],
         event_types: Vec::new(),
+        ..Default::default()
     };
     let evaluator = DeterministicPolicyEvaluator::new([category_only]);
 

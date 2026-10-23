@@ -45,7 +45,8 @@ public sealed partial class ManagementHeartbeatJob(
         HttpClient client = httpClientFactory.CreateClient(HttpClientName);
 
         QueueSnapshot snapshot = await eventStore.GetSnapshotAsync(cancellationToken);
-        string deliveryStatus = snapshot.DeadLettered > 0 ? "degraded" : "healthy";
+        string deliveryStatus = DeliveryHealth.Evaluate(settings.OutputType, snapshot,
+            settings.MaximumQueueBytes, DateTimeOffset.UtcNow);
         SourceReport[] sources = [new SourceReport("local-http", "local-http", "healthy", null, null)];
         OutputReport[] outputs =
         [

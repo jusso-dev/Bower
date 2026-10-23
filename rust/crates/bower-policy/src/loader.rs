@@ -291,6 +291,43 @@ fn validate(raw: &RawPolicy) -> Result<TelemetryPolicy, PolicyError> {
     let at_least_one = field_paths(&requirements.at_least_one, "atLeastOne")?;
     let recommended_fields = field_paths(&requirements.recommended_fields, "recommendedFields")?;
 
+    let predicate = |values: &RawList,
+                     name: &str,
+                     allowed: &[&str]|
+     -> Result<Option<Vec<String>>, PolicyError> {
+        match values {
+            None => Ok(None),
+            Some(items)
+                if !items.is_empty()
+                    && items.len() <= 256
+                    && all_present(items)
+                    && items.iter().all(|item| {
+                        item.as_ref().is_some_and(|value| {
+                            value.encode_utf16().count() <= 256
+                                && (allowed.is_empty() || allowed.contains(&value.as_str()))
+                        })
+                    }) =>
+            {
+                Ok(Some(strings(items)))
+            }
+            _ => Err(invalid(format!(
+                "Policy match {name} must contain 1–256 approved non-blank values."
+            ))),
+        }
+    };
+    let rule = rule.expect("event types already validated");
+    let event_actions = predicate(&rule.event_actions, "eventActions", &[])?;
+    let event_results = predicate(
+        &rule.event_results,
+        "eventResults",
+        &["unknown", "success", "failure", "denied"],
+    )?;
+    let event_severities = predicate(
+        &rule.event_severities,
+        "eventSeverities",
+        &["informational", "low", "medium", "high", "critical"],
+    )?;
+
     Ok(TelemetryPolicy {
         api_version: SUPPORTED_API_VERSION.to_owned(),
         kind: SUPPORTED_KIND.to_owned(),
@@ -304,6 +341,9 @@ fn validate(raw: &RawPolicy) -> Result<TelemetryPolicy, PolicyError> {
         r#match: PolicyMatch {
             event_categories: strings(event_categories),
             event_types: strings(event_types),
+            event_actions,
+            event_results,
+            event_severities,
         },
         requirements: PolicyRequirements {
             required_fields,

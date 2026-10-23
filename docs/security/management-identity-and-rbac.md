@@ -44,7 +44,7 @@ principal. Do not assign it to interactive users in production.
 
 ```text
 Bower__Entra__TenantId=<tenant-guid>
-Bower__Entra__Audience=api://<api-application-client-id>
+Bower__Entra__Audience=<api-application-client-id-guid>
 Bower__AllowedOrigins__0=https://bower.example.gov.au
 AllowedHosts=bower-api.example.gov.au
 BOWER_MANAGEMENT_LISTEN_URL=http://127.0.0.1:4320
@@ -52,6 +52,10 @@ BOWER_MANAGEMENT_DB_PATH=/var/lib/bower-management/management.db
 ```
 
 The API validates signature, tenant issuer, audience, lifetime and app roles.
+The supplied manifest requests v2 access tokens: their `aud` is the API client-ID
+GUID. Keep `api://<api-application-client-id>` in resource/scope identifiers, not
+the audience setting. Management API authentication is separate from Azure Monitor
+ingestion authentication.
 `BOWER_AUTH_MODE=development` is rejected unless
 `ASPNETCORE_ENVIRONMENT=Development`.
 
@@ -68,8 +72,11 @@ profile to a LAN, reverse proxy or production environment.
 
 Copy `ui/Bower.Management.Web/.env.example` and set the API and SPA application
 IDs. Vite variables are public client configuration, never secrets. MSAL uses
-redirect sign-in, session storage and silent access-token acquisition. No token
-is written to local storage by Bower code.
+popup sign-in, in-memory token caching and silent access-token acquisition with
+popup fallback. Tokens are not persisted in local/session storage. Refreshing the
+page clears the token cache; sign in again using the existing Entra session.
+Allow sign-in popups for the approved console origin. Redirect authentication is
+not supported with the in-memory cache.
 
 ## Collector enrollment flow
 

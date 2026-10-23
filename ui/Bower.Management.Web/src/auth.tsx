@@ -45,7 +45,7 @@ if (!development) {
       postLogoutRedirectUri: redirectUri
     },
     cache: {
-      cacheLocation: "sessionStorage"
+      cacheLocation: "memoryStorage"
     }
   });
 }
@@ -73,13 +73,14 @@ function EntraAuth({ children }: PropsWithChildren) {
   }
 
   const signIn = useCallback(async () => {
-    await instance.loginRedirect({
+    const result = await instance.loginPopup({
       scopes: ["openid", "profile", apiScope]
     });
+    instance.setActiveAccount(result.account);
   }, [instance]);
 
   const signOut = useCallback(async () => {
-    await instance.logoutRedirect({ account });
+    await instance.logoutPopup({ account });
   }, [account, instance]);
 
   const getAccessToken = useCallback(async () => {
@@ -97,11 +98,11 @@ function EntraAuth({ children }: PropsWithChildren) {
       return response.accessToken;
     } catch (error) {
       if (error instanceof InteractionRequiredAuthError) {
-        await instance.acquireTokenRedirect({
+        const response = await instance.acquireTokenPopup({
           account: active,
           scopes: [apiScope]
         });
-        return null;
+        return response.accessToken;
       }
       throw error;
     }
@@ -125,15 +126,6 @@ function EntraAuth({ children }: PropsWithChildren) {
 export async function initializeAuthentication(): Promise<void> {
   if (msal) {
     await msal.initialize();
-    const result = await msal.handleRedirectPromise();
-    if (result?.account) {
-      msal.setActiveAccount(result.account);
-    } else {
-      const account = msal.getAllAccounts()[0];
-      if (account) {
-        msal.setActiveAccount(account);
-      }
-    }
   }
 }
 

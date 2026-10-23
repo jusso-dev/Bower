@@ -28,7 +28,7 @@ pub fn map(
     arrival: &ArrivalRecord,
     retention: Option<&RetentionRecord>,
 ) -> Vec<ControlRecord> {
-    let verified = mode == modes::VERIFIED;
+    let verified = mode == modes::VERIFIED && arrival.found;
     let simulated = mode == modes::SIMULATED;
     let delivery = if verified {
         format!(
@@ -59,12 +59,12 @@ pub fn map(
     {
         Some((retention, total)) => (
             if total >= ISM_MINIMUM_RETENTION_DAYS {
-                "evidenced"
+                "not-assessed"
             } else {
                 "not-evidenced"
             },
             format!(
-                "Table total retention {total} days (plan {}).",
+                "Table total retention {total} days (plan {}). Configured total retention does not establish searchable retention or historical data availability.",
                 retention.plan.as_deref().unwrap_or("unknown")
             ),
         ),
@@ -93,15 +93,15 @@ pub fn map(
             "Essential Eight",
             "E8-ML2-LOGGING",
             "Event logs are centrally stored and protected from unauthorised modification and deletion.",
-            delivery_status,
-            format!("{delivery} Assessment guide grades a simulated-activity test as excellent evidence."),
+            "not-assessed",
+            format!("{delivery} Protection against modification and deletion was not assessed."),
         ),
         control(
             "Privacy Act",
             "APP-11",
             "Technical measures protect personal information (redaction before data leaves the host).",
-            if verified { "evidenced" } else { "not-assessed" },
-            "The canary passed Bower's pre-persistence privacy engine; see collector policy hash in the row.".to_owned(),
+            "not-assessed",
+            "Canary arrival and policy hashes do not establish redaction effectiveness. Independent privacy tests were not assessed.".to_owned(),
         ),
     ]
 }

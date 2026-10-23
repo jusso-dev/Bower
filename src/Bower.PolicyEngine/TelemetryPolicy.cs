@@ -35,6 +35,15 @@ public sealed record PolicyMatch
     public List<string> EventCategories { get; init; } = [];
 
     public List<string> EventTypes { get; init; } = [];
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? EventActions { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? EventResults { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? EventSeverities { get; init; }
 }
 
 public sealed record PolicyRequirements

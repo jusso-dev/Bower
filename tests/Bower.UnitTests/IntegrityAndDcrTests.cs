@@ -78,6 +78,19 @@ public sealed partial class IntegrityAndDcrTests
     }
 
     [Fact]
+    public void Investigation_context_is_declared_and_projected_before_pack_all()
+    {
+        SentinelSchema schema = SentinelSchema.Default;
+        foreach (string field in new[] { "target", "change", "attributes", "eventOutcomeReason", "timeObserved" })
+        {
+            Assert.Contains(schema.StreamColumns, column => column.Name == field);
+            Assert.Contains(schema.TableColumns, column => column.Expression.Contains(field, StringComparison.Ordinal));
+        }
+        Assert.Equal("target", schema.TableColumns.Single(column => column.Name == "Target").Expression);
+        Assert.Equal("change", schema.TableColumns.Single(column => column.Name == "Change").Expression);
+    }
+
+    [Fact]
     public void Lint_FlagsTransformTraps()
     {
         string tooLong = "source | " + new string('x', DcrDrift.MaximumTransformLength);

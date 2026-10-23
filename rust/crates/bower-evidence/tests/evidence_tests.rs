@@ -220,7 +220,9 @@ async fn evidence_verified_when_canary_is_found_and_signature_checks() {
             .status
             .clone()
     };
-    assert_eq!(status("ISM-1988"), "evidenced");
+    assert_eq!(status("ISM-1988"), "not-assessed");
+    assert_eq!(status("APP-11"), "not-assessed");
+    assert_eq!(status("E8-ML2-LOGGING"), "not-assessed");
     assert_eq!(status("ISM-0580"), "evidenced");
     assert!(
         query

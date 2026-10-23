@@ -93,6 +93,7 @@ pub fn authentication_policy() -> LoadedPolicy {
             r#match: PolicyMatch {
                 event_categories: strings(&[event_categories::AUTHENTICATION]),
                 event_types: strings(&[event_types::AUTHENTICATION_FAILURE]),
+                ..Default::default()
             },
             requirements: PolicyRequirements {
                 required_fields: strings(&[

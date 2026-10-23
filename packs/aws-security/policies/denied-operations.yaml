@@ -1,0 +1,43 @@
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+
+metadata:
+  id: BWR-POL-AWS-DENIED
+  name: Denied AWS control-plane operations
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-06-30
+
+match:
+  eventCategories:
+    - administrative-activity
+    - authentication
+  eventTypes:
+    - aws_cloudtrail
+
+
+  eventResults: [denied, failure]
+
+requirements:
+  requiredFields:
+    - timeGenerated
+    - eventType
+    - eventAction
+    - eventResult
+    - application.name
+    - target.name
+  atLeastOne:
+    - actor.username
+    - actor.userId
+  recommendedFields:
+    - source.ipAddress
+    - eventOutcomeReason
+
+decision:
+  action: accept
+  minimumValueScore: 70
+  neverSample: true
+
+routing:
+  profile: cloud-control-plane
+  destination: security-events

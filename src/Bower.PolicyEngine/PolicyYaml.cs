@@ -206,6 +206,13 @@ internal sealed class PolicyMetadata
 
 internal sealed class PolicyMatch
 {
+    private List<string>? eventActions;
+    private List<string>? eventResults;
+    private List<string>? eventSeverities;
+
+    public List<string>? EventActions { get => eventActions; set => eventActions = value ?? throw new InvalidDataException("Null match predicates are not permitted."); }
+    public List<string>? EventResults { get => eventResults; set => eventResults = value ?? throw new InvalidDataException("Null match predicates are not permitted."); }
+    public List<string>? EventSeverities { get => eventSeverities; set => eventSeverities = value ?? throw new InvalidDataException("Null match predicates are not permitted."); }
     public List<string> EventCategories { get; set; } = [];
 
     public List<string> EventTypes { get; set; } = [];
@@ -213,7 +220,10 @@ internal sealed class PolicyMatch
     public Model.PolicyMatch ToModel() => new()
     {
         EventCategories = EventCategories,
-        EventTypes = EventTypes
+        EventTypes = EventTypes,
+        EventActions = EventActions,
+        EventResults = EventResults,
+        EventSeverities = EventSeverities
     };
 }
 

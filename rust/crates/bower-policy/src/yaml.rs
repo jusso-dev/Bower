@@ -121,6 +121,12 @@ pub(crate) struct RawMetadata {
 pub(crate) struct RawMatch {
     pub event_categories: RawList,
     pub event_types: RawList,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_actions: RawList,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_results: RawList,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_severities: RawList,
 }
 
 impl Default for RawMatch {
@@ -128,6 +134,9 @@ impl Default for RawMatch {
         Self {
             event_categories: Some(Vec::new()),
             event_types: Some(Vec::new()),
+            event_actions: None,
+            event_results: None,
+            event_severities: None,
         }
     }
 }
@@ -260,7 +269,13 @@ impl Section for RawMetadata {
 
 impl Section for RawMatch {
     const TYPE_NAME: &'static str = "PolicyMatch";
-    const FIELDS: &'static [&'static str] = &["eventCategories", "eventTypes"];
+    const FIELDS: &'static [&'static str] = &[
+        "eventCategories",
+        "eventTypes",
+        "eventActions",
+        "eventResults",
+        "eventSeverities",
+    ];
 
     fn read_field<'de, A: MapAccess<'de>>(
         &mut self,
@@ -270,7 +285,20 @@ impl Section for RawMatch {
     ) -> Result<(), A::Error> {
         match index {
             0 => self.event_categories = list(map, ctx)?,
-            _ => self.event_types = list(map, ctx)?,
+            1 => self.event_types = list(map, ctx)?,
+            _ => {
+                let value = list(map, ctx)?;
+                if value.is_none() {
+                    return Err(de::Error::custom(
+                        "Null match predicates are not permitted.",
+                    ));
+                }
+                match index {
+                    2 => self.event_actions = value,
+                    3 => self.event_results = value,
+                    _ => self.event_severities = value,
+                }
+            }
         }
         Ok(())
     }

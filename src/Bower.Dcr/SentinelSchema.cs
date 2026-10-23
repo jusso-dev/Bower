@@ -41,7 +41,12 @@ public sealed record SentinelSchema(
             new("security", "dynamic"),
             new("collector", "dynamic"),
             new("labels", "dynamic"),
-            new("privacy", "dynamic")
+            new("privacy", "dynamic"),
+            new("timeObserved", "datetime"),
+            new("eventOutcomeReason", "string"),
+            new("target", "dynamic"),
+            new("change", "dynamic"),
+            new("attributes", "dynamic")
         ],
         [
             new("TimeGenerated", "datetime", "timeGenerated"),
@@ -65,7 +70,12 @@ public sealed record SentinelSchema(
             new("CollectorId", "string", "substring(tostring(collector.id), 0, 128)"),
             new("PrivacyDetected", "dynamic", "privacy.detected"),
             new("Labels", "dynamic", "labels"),
-            new("RawEnvelope", "dynamic", "pack_all()")
+            new("RawEnvelope", "dynamic", "pack_all()"),
+            new("TimeObserved", "datetime", "timeObserved"),
+            new("EventOutcomeReason", "string", "substring(tostring(eventOutcomeReason), 0, 1024)"),
+            new("Target", "dynamic", "target"),
+            new("Change", "dynamic", "change"),
+            new("Attributes", "dynamic", "attributes")
         ],
         "1.0.0");
 
@@ -90,7 +100,7 @@ public sealed record DcrTemplateOptions
 
     public int RetentionInDays { get; init; } = 90;
 
-    /// <summary>ISM requires event logs to be searchable for at least 12 months.</summary>
+    /// <summary>Total retention includes archive; it does not establish interactive searchability.</summary>
     public int TotalRetentionInDays { get; init; } = 365;
 
     public SentinelSchema Schema { get; init; } = SentinelSchema.Default;

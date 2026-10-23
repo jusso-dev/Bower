@@ -147,7 +147,9 @@ public sealed class PackAndEvidenceTests
         Assert.True(bundle.Arrival.Found);
         Assert.Equal(2, bundle.Arrival.Attempts);
         Assert.Equal(400, bundle.Retention?.TotalDays);
-        Assert.Equal("evidenced", bundle.Controls.Single(control => control.Id == "ISM-1988").Status);
+        Assert.Equal("not-assessed", bundle.Controls.Single(control => control.Id == "ISM-1988").Status);
+        Assert.Equal("not-assessed", bundle.Controls.Single(control => control.Id == "APP-11").Status);
+        Assert.Equal("not-assessed", bundle.Controls.Single(control => control.Id == "E8-ML2-LOGGING").Status);
         Assert.Contains(query.Queries, kql => kql.Contains(bundle.Canary.EventId, StringComparison.Ordinal));
         Assert.True(EvidenceRunner.Verify(roundTripped, [publicPem]));
 

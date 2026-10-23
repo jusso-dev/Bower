@@ -311,6 +311,10 @@ public static class ManagementApplication
                         return Results.Conflict(
                             new ErrorResponse("Collector id is bound to a different principal."));
                     }
+                    catch (CollectorStateException)
+                    {
+                        return Results.Forbid();
+                    }
                     catch (ArgumentException)
                     {
                         return Results.ValidationProblem(

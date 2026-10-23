@@ -18,8 +18,8 @@ namespace Bower.UnitTests;
 public sealed class CloudPackTests
 {
     [Theory]
-    [InlineData("aws-security", 2)]
-    [InlineData("gcp-security", 2)]
+    [InlineData("aws-security", 3)]
+    [InlineData("gcp-security", 3)]
     public void Pack_BuildsSignsAndPassesItsSamples(string id, int policies)
     {
         LoadedPack pack = Build(id, out _);

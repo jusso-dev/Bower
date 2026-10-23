@@ -4,18 +4,170 @@ kind: TelemetryPolicy
 metadata:
   id: BWR-POL-GCP-AUDIT
   name: High-value Google Cloud Audit Logs
-  version: 1.0.0
+  version: 1.1.0
   owner: Security Operations
   reviewDate: 2027-06-30
 
-# The log sink filter in deploy/gcp selects which audit entries reach Bower; this
-# policy decides which of those are kept and what they must carry.
 match:
   eventCategories:
     - administrative-activity
     - authentication
   eventTypes:
     - gcp_cloud_audit
+
+  eventActions:
+    - google.api.apikeys.v2.ApiKeys.CreateKey
+    - google.api.apikeys.v2.ApiKeys.UpdateKey
+    - google.api.apikeys.v2.ApiKeys.DeleteKey
+    - CreateExclusion
+    - CreateRole
+    - CreateServiceAccount
+    - CreateServiceAccountKey
+    - CreateSink
+    - CreateWorkloadIdentityPoolProvider
+    - DeleteBucket
+    - DeleteNotificationConfig
+    - DeleteSink
+    - DestroyCryptoKeyVersion
+    - DisableServiceAccountKey
+    - SetIamPolicy
+    - SetOrgPolicy
+    - UpdateBucket
+    - UpdateCryptoKeyPrimaryVersion
+    - UpdateExclusion
+    - UpdateNotificationConfig
+    - UpdateRole
+    - UpdateSink
+    - UpdateWorkloadIdentityPoolProvider
+    - UploadServiceAccountKey
+    - compute.firewalls.insert
+    - compute.firewalls.patch
+    - google.cloud.kms.v1.KeyManagementService.CreateExclusion
+    - google.cloud.kms.v1.KeyManagementService.CreateRole
+    - google.cloud.kms.v1.KeyManagementService.CreateServiceAccount
+    - google.cloud.kms.v1.KeyManagementService.CreateServiceAccountKey
+    - google.cloud.kms.v1.KeyManagementService.CreateSink
+    - google.cloud.kms.v1.KeyManagementService.CreateWorkloadIdentityPoolProvider
+    - google.cloud.kms.v1.KeyManagementService.DeleteBucket
+    - google.cloud.kms.v1.KeyManagementService.DeleteNotificationConfig
+    - google.cloud.kms.v1.KeyManagementService.DeleteSink
+    - google.cloud.kms.v1.KeyManagementService.DestroyCryptoKeyVersion
+    - google.cloud.kms.v1.KeyManagementService.DisableServiceAccountKey
+    - google.cloud.kms.v1.KeyManagementService.SetIamPolicy
+    - google.cloud.kms.v1.KeyManagementService.SetOrgPolicy
+    - google.cloud.kms.v1.KeyManagementService.UpdateBucket
+    - google.cloud.kms.v1.KeyManagementService.UpdateCryptoKeyPrimaryVersion
+    - google.cloud.kms.v1.KeyManagementService.UpdateExclusion
+    - google.cloud.kms.v1.KeyManagementService.UpdateNotificationConfig
+    - google.cloud.kms.v1.KeyManagementService.UpdateRole
+    - google.cloud.kms.v1.KeyManagementService.UpdateSink
+    - google.cloud.kms.v1.KeyManagementService.UpdateWorkloadIdentityPoolProvider
+    - google.cloud.kms.v1.KeyManagementService.UploadServiceAccountKey
+    - google.cloud.resourcemanager.v1.Projects.CreateExclusion
+    - google.cloud.resourcemanager.v1.Projects.CreateRole
+    - google.cloud.resourcemanager.v1.Projects.CreateServiceAccount
+    - google.cloud.resourcemanager.v1.Projects.CreateServiceAccountKey
+    - google.cloud.resourcemanager.v1.Projects.CreateSink
+    - google.cloud.resourcemanager.v1.Projects.CreateWorkloadIdentityPoolProvider
+    - google.cloud.resourcemanager.v1.Projects.DeleteBucket
+    - google.cloud.resourcemanager.v1.Projects.DeleteNotificationConfig
+    - google.cloud.resourcemanager.v1.Projects.DeleteSink
+    - google.cloud.resourcemanager.v1.Projects.DestroyCryptoKeyVersion
+    - google.cloud.resourcemanager.v1.Projects.DisableServiceAccountKey
+    - google.cloud.resourcemanager.v1.Projects.SetIamPolicy
+    - google.cloud.resourcemanager.v1.Projects.SetOrgPolicy
+    - google.cloud.resourcemanager.v1.Projects.UpdateBucket
+    - google.cloud.resourcemanager.v1.Projects.UpdateCryptoKeyPrimaryVersion
+    - google.cloud.resourcemanager.v1.Projects.UpdateExclusion
+    - google.cloud.resourcemanager.v1.Projects.UpdateNotificationConfig
+    - google.cloud.resourcemanager.v1.Projects.UpdateRole
+    - google.cloud.resourcemanager.v1.Projects.UpdateSink
+    - google.cloud.resourcemanager.v1.Projects.UpdateWorkloadIdentityPoolProvider
+    - google.cloud.resourcemanager.v1.Projects.UploadServiceAccountKey
+    - google.cloud.resourcemanager.v3.Projects.CreateExclusion
+    - google.cloud.resourcemanager.v3.Projects.CreateRole
+    - google.cloud.resourcemanager.v3.Projects.CreateServiceAccount
+    - google.cloud.resourcemanager.v3.Projects.CreateServiceAccountKey
+    - google.cloud.resourcemanager.v3.Projects.CreateSink
+    - google.cloud.resourcemanager.v3.Projects.CreateWorkloadIdentityPoolProvider
+    - google.cloud.resourcemanager.v3.Projects.DeleteBucket
+    - google.cloud.resourcemanager.v3.Projects.DeleteNotificationConfig
+    - google.cloud.resourcemanager.v3.Projects.DeleteSink
+    - google.cloud.resourcemanager.v3.Projects.DestroyCryptoKeyVersion
+    - google.cloud.resourcemanager.v3.Projects.DisableServiceAccountKey
+    - google.cloud.resourcemanager.v3.Projects.SetIamPolicy
+    - google.cloud.resourcemanager.v3.Projects.SetOrgPolicy
+    - google.cloud.resourcemanager.v3.Projects.UpdateBucket
+    - google.cloud.resourcemanager.v3.Projects.UpdateCryptoKeyPrimaryVersion
+    - google.cloud.resourcemanager.v3.Projects.UpdateExclusion
+    - google.cloud.resourcemanager.v3.Projects.UpdateNotificationConfig
+    - google.cloud.resourcemanager.v3.Projects.UpdateRole
+    - google.cloud.resourcemanager.v3.Projects.UpdateSink
+    - google.cloud.resourcemanager.v3.Projects.UpdateWorkloadIdentityPoolProvider
+    - google.cloud.resourcemanager.v3.Projects.UploadServiceAccountKey
+    - google.iam.admin.v1.CreateExclusion
+    - google.iam.admin.v1.CreateRole
+    - google.iam.admin.v1.CreateServiceAccount
+    - google.iam.admin.v1.CreateServiceAccountKey
+    - google.iam.admin.v1.CreateSink
+    - google.iam.admin.v1.CreateWorkloadIdentityPoolProvider
+    - google.iam.admin.v1.DeleteBucket
+    - google.iam.admin.v1.DeleteNotificationConfig
+    - google.iam.admin.v1.DeleteSink
+    - google.iam.admin.v1.DestroyCryptoKeyVersion
+    - google.iam.admin.v1.DisableServiceAccountKey
+    - google.iam.admin.v1.SetIamPolicy
+    - google.iam.admin.v1.SetOrgPolicy
+    - google.iam.admin.v1.UpdateBucket
+    - google.iam.admin.v1.UpdateCryptoKeyPrimaryVersion
+    - google.iam.admin.v1.UpdateExclusion
+    - google.iam.admin.v1.UpdateNotificationConfig
+    - google.iam.admin.v1.UpdateRole
+    - google.iam.admin.v1.UpdateSink
+    - google.iam.admin.v1.UpdateWorkloadIdentityPoolProvider
+    - google.iam.admin.v1.UploadServiceAccountKey
+    - google.iam.v1.IAMPolicy.CreateExclusion
+    - google.iam.v1.IAMPolicy.CreateRole
+    - google.iam.v1.IAMPolicy.CreateServiceAccount
+    - google.iam.v1.IAMPolicy.CreateServiceAccountKey
+    - google.iam.v1.IAMPolicy.CreateSink
+    - google.iam.v1.IAMPolicy.CreateWorkloadIdentityPoolProvider
+    - google.iam.v1.IAMPolicy.DeleteBucket
+    - google.iam.v1.IAMPolicy.DeleteNotificationConfig
+    - google.iam.v1.IAMPolicy.DeleteSink
+    - google.iam.v1.IAMPolicy.DestroyCryptoKeyVersion
+    - google.iam.v1.IAMPolicy.DisableServiceAccountKey
+    - google.iam.v1.IAMPolicy.SetIamPolicy
+    - google.iam.v1.IAMPolicy.SetOrgPolicy
+    - google.iam.v1.IAMPolicy.UpdateBucket
+    - google.iam.v1.IAMPolicy.UpdateCryptoKeyPrimaryVersion
+    - google.iam.v1.IAMPolicy.UpdateExclusion
+    - google.iam.v1.IAMPolicy.UpdateNotificationConfig
+    - google.iam.v1.IAMPolicy.UpdateRole
+    - google.iam.v1.IAMPolicy.UpdateSink
+    - google.iam.v1.IAMPolicy.UpdateWorkloadIdentityPoolProvider
+    - google.iam.v1.IAMPolicy.UploadServiceAccountKey
+    - google.logging.v2.ConfigServiceV2.CreateExclusion
+    - google.logging.v2.ConfigServiceV2.CreateRole
+    - google.logging.v2.ConfigServiceV2.CreateServiceAccount
+    - google.logging.v2.ConfigServiceV2.CreateServiceAccountKey
+    - google.logging.v2.ConfigServiceV2.CreateSink
+    - google.logging.v2.ConfigServiceV2.CreateWorkloadIdentityPoolProvider
+    - google.logging.v2.ConfigServiceV2.DeleteBucket
+    - google.logging.v2.ConfigServiceV2.DeleteNotificationConfig
+    - google.logging.v2.ConfigServiceV2.DeleteSink
+    - google.logging.v2.ConfigServiceV2.DestroyCryptoKeyVersion
+    - google.logging.v2.ConfigServiceV2.DisableServiceAccountKey
+    - google.logging.v2.ConfigServiceV2.SetIamPolicy
+    - google.logging.v2.ConfigServiceV2.SetOrgPolicy
+    - google.logging.v2.ConfigServiceV2.UpdateBucket
+    - google.logging.v2.ConfigServiceV2.UpdateCryptoKeyPrimaryVersion
+    - google.logging.v2.ConfigServiceV2.UpdateExclusion
+    - google.logging.v2.ConfigServiceV2.UpdateNotificationConfig
+    - google.logging.v2.ConfigServiceV2.UpdateRole
+    - google.logging.v2.ConfigServiceV2.UpdateSink
+    - google.logging.v2.ConfigServiceV2.UpdateWorkloadIdentityPoolProvider
+    - google.logging.v2.ConfigServiceV2.UploadServiceAccountKey
 
 requirements:
   requiredFields:

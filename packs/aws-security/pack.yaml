@@ -2,7 +2,7 @@ apiVersion: bower.security/v1
 kind: Pack
 metadata:
   id: aws-security
-  version: 1.0.0
+  version: 1.1.0
   name: AWS security signal
   description: >-
     GuardDuty and Security Hub findings plus high-value CloudTrail events (root use,
@@ -12,6 +12,7 @@ metadata:
     (or the default Australian redaction) applies.
   owner: Security Operations
 policies:
+  - policies/denied-operations.yaml
   - policies/aws-cloudtrail.yaml
   - policies/aws-findings.yaml
 detections:

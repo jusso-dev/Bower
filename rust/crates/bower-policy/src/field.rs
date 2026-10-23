@@ -64,6 +64,14 @@ pub fn has_value(value: &SecurityEventEnvelope, path: &str) -> bool {
         "target.id" => present(value.target.as_ref().and_then(|t| t.id.as_deref())),
         "target.type" => present(value.target.as_ref().map(|t| t.target_type.as_str())),
         "target.name" => present(value.target.as_ref().and_then(|t| t.name.as_deref())),
+        "change.field" => present(value.change.as_ref().and_then(|c| c.field.as_deref())),
+        "change.previousValue" => present(
+            value
+                .change
+                .as_ref()
+                .and_then(|c| c.previous_value.as_deref()),
+        ),
+        "change.newValue" => present(value.change.as_ref().and_then(|c| c.new_value.as_deref())),
         "source.ipAddress" => present(value.source.as_ref().and_then(|s| s.ip_address.as_deref())),
         "request.correlationId" => present(
             value

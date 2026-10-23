@@ -13,6 +13,20 @@ param workspaceName string
 @maxLength(40)
 param namePrefix string = 'bower'
 
+@description('Existing Entra service-principal object ID for ingestion. Never a client secret or application client ID. Leave empty when creating a managed identity.')
+param ingestPrincipalObjectId string = ''
+
+@description('Create a user-assigned managed identity and grant it write access on this DCR only. Plan-only until explicitly deployed.')
+param createIngestIdentity bool = false
+
+resource ingestIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = if (createIngestIdentity) {
+  name: '${namePrefix}-ingest'
+  location: location
+}
+
+var selectedIngestPrincipal = createIngestIdentity ? ingestIdentity!.properties.principalId : ingestPrincipalObjectId
+var metricsPublisherRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '3913510d-42f4-4e42-8a64-420c390055eb')
+
 @allowed([
   'Enabled'
   'Disabled'
@@ -29,7 +43,7 @@ resource table 'Microsoft.OperationalInsights/workspaces/tables@2025-07-01' = {
   properties: {
     plan: 'Analytics'
     retentionInDays: 90
-    // ISM: event logs searchable for at least 12 months.
+    // Total retention includes archive; this does not prove interactive searchability.
     totalRetentionInDays: 365
     schema: {
       name: 'BowerSecurity_CL'
@@ -56,6 +70,11 @@ resource table 'Microsoft.OperationalInsights/workspaces/tables@2025-07-01' = {
         { name: 'PrivacyDetected', type: 'dynamic' }
         { name: 'Labels', type: 'dynamic' }
         { name: 'RawEnvelope', type: 'dynamic' }
+        { name: 'TimeObserved', type: 'dateTime' }
+        { name: 'EventOutcomeReason', type: 'string' }
+        { name: 'Target', type: 'dynamic' }
+        { name: 'Change', type: 'dynamic' }
+        { name: 'Attributes', type: 'dynamic' }
       ]
     }
   }
@@ -98,6 +117,11 @@ resource rule 'Microsoft.Insights/dataCollectionRules@2024-03-11' = {
           { name: 'collector', type: 'dynamic' }
           { name: 'labels', type: 'dynamic' }
           { name: 'privacy', type: 'dynamic' }
+          { name: 'timeObserved', type: 'dateTime' }
+          { name: 'eventOutcomeReason', type: 'string' }
+          { name: 'target', type: 'dynamic' }
+          { name: 'change', type: 'dynamic' }
+          { name: 'attributes', type: 'dynamic' }
         ]
       }
     }
@@ -139,7 +163,12 @@ resource rule 'Microsoft.Insights/dataCollectionRules@2024-03-11' = {
               CollectorId = substring(tostring(collector.id), 0, 128),
               PrivacyDetected = privacy.detected,
               Labels = labels,
-              RawEnvelope = pack_all()
+              RawEnvelope = pack_all(),
+              TimeObserved = timeObserved,
+              EventOutcomeReason = substring(tostring(eventOutcomeReason), 0, 1024),
+              Target = target,
+              Change = change,
+              Attributes = attributes
         '''
       }
     ]
@@ -147,6 +176,18 @@ resource rule 'Microsoft.Insights/dataCollectionRules@2024-03-11' = {
   dependsOn: [table]
 }
 
+resource ingestionGrant 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createIngestIdentity || !empty(ingestPrincipalObjectId)) {
+  name: guid(rule.id, createIngestIdentity ? ingestIdentity!.id : ingestPrincipalObjectId, metricsPublisherRole)
+  scope: rule
+  properties: {
+    roleDefinitionId: metricsPublisherRole
+    principalId: selectedIngestPrincipal
+    principalType: 'ServicePrincipal'
+  }
+}
+
+output ingestManagedIdentityClientId string = createIngestIdentity ? ingestIdentity!.properties.clientId : ''
+output ingestPrincipalId string = selectedIngestPrincipal
 output dataCollectionEndpoint string = endpoint.properties.logsIngestion.endpoint
 output dataCollectionRuleImmutableId string = rule.properties.immutableId
 output streamName string = 'Custom-BowerSecurity'
