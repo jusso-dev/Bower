@@ -269,7 +269,8 @@ public static partial class CollectorApplication
                             snapshot.TotalBytes,
                             snapshot.UndeliveredBytes,
                             snapshot.OldestUndelivered),
-                        jobs.List()) { EventIdentityConflicts = conflicts.Snapshot() };
+                        jobs.List())
+                    { EventIdentityConflicts = conflicts.Snapshot() };
                     return Results.Json(status, CollectorJsonContext.Default.StatusResponse);
                 })
             .AddEndpointFilter<IngestAuthenticationFilter>();
