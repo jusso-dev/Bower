@@ -243,6 +243,7 @@ impl PrivacyEngine {
 
     fn redact_root(&self, root: &mut Object) -> Step<PrivacyScanResult> {
         let mut findings = Vec::new();
+        sanitize_change(root, &mut findings)?;
         self.walk_object(root, "$", &mut findings)?;
         self.apply_field_rules(root, &mut findings)?;
         self.enforce_field_length_object(root, "$", &mut findings)?;
@@ -555,6 +556,18 @@ impl PrivacyEngine {
         path: &str,
         findings: &mut Vec<AppliedFinding>,
     ) -> Step<String> {
+        let safe = safe_url(text, path);
+        if safe != text {
+            findings.push(AppliedFinding {
+                detector_id: ids::FIELD_NAME_SECRET.to_owned(),
+                category: categories::FIELD_NAME.to_owned(),
+                path: path.to_owned(),
+                action: PrivacyAction::Replace,
+                validated: true,
+                sub_kind: None,
+            });
+        }
+        let text = safe.as_str();
         let scan = ScanText::new(text);
         let mut matches: Vec<DetectionMatch> = Vec::new();
         for detector in &self.detectors {
@@ -644,6 +657,112 @@ impl PrivacyEngine {
 
         Ok(result)
     }
+}
+
+// Explicit event/field allowlist; ordinary secret text has no reliable value signature.
+fn sanitize_change(root: &mut Object, findings: &mut Vec<AppliedFinding>) -> Step {
+    if root.poisoned {
+        return Err(RedactionFailed);
+    }
+    let role_event = matches!(root.map.get("eventType"), Some(Node::String(s)) if !s.invalid && s.value == "role_membership_changed");
+    let Some(Node::Object(change)) = root.map.get_mut("change") else {
+        return Ok(());
+    };
+    if change.poisoned {
+        return Err(RedactionFailed);
+    }
+    let role_field =
+        matches!(change.map.get("field"), Some(Node::String(s)) if !s.invalid && s.value == "role");
+    if role_event && role_field {
+        return Ok(());
+    }
+    for name in ["previousValue", "newValue"] {
+        if change.map.shift_remove(name).is_some() {
+            findings.push(AppliedFinding {
+                detector_id: ids::FIELD_NAME_SECRET.to_owned(),
+                category: categories::FIELD_NAME.to_owned(),
+                path: format!("$.change.{name}"),
+                action: PrivacyAction::Remove,
+                validated: true,
+                sub_kind: None,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn safe_url(text: &str, path: &str) -> String {
+    let name = normalize_field_name(path.rsplit('.').next().unwrap_or(path));
+    let lower = text.to_ascii_lowercase();
+    let absolute = lower.starts_with("http://") || lower.starts_with("https://");
+    if !absolute
+        && !matches!(
+            name.as_str(),
+            "path"
+                | "url"
+                | "uri"
+                | "href"
+                | "endpoint"
+                | "requesturl"
+                | "requesturi"
+                | "redirecturl"
+                | "redirecturi"
+        )
+    {
+        return text.to_owned();
+    }
+    if text.chars().any(|c| c.is_control() || c == '\\') {
+        return "[redacted]".into();
+    }
+    let end = ["?", "#", "%3f", "%23"]
+        .iter()
+        .filter_map(|d| lower.find(d))
+        .min()
+        .unwrap_or(text.len());
+    let safe = &text[..end];
+    let start = if absolute {
+        safe.find("://").map(|p| p + 3)
+    } else if safe.starts_with("//") {
+        Some(2)
+    } else {
+        None
+    };
+    if let Some(start) = start {
+        let authority_end = safe[start..].find('/').map_or(safe.len(), |p| p + start);
+        let authority = &safe[start..authority_end];
+        if authority.contains('%') {
+            return "[redacted]".into();
+        }
+        let authority = authority.rsplit('@').next().unwrap_or_default();
+        if authority.is_empty() || authority.chars().any(char::is_whitespace) {
+            return "[redacted]".into();
+        }
+        let port_start = if authority.starts_with('[') {
+            let Some(close) = authority.find(']') else {
+                return "[redacted]".into();
+            };
+            if authority[1..close].parse::<std::net::IpAddr>().is_err() {
+                return "[redacted]".into();
+            }
+            close + 1
+        } else {
+            authority.find(':').unwrap_or(authority.len())
+        };
+        if port_start < authority.len()
+            && (authority.as_bytes()[port_start] != b':'
+                || port_start == 0
+                || port_start + 1 == authority.len()
+                || !authority[port_start + 1..]
+                    .bytes()
+                    .all(|b| b.is_ascii_digit()))
+        {
+            return "[redacted]".into();
+        }
+        return format!("{}{}{}", &safe[..start], authority, &safe[authority_end..]);
+    } else if safe.contains([':', '@']) {
+        return "[redacted]".into();
+    }
+    safe.to_owned()
 }
 
 impl EventRedactor for PrivacyEngine {

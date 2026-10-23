@@ -48,6 +48,8 @@ pub struct CollectorSettings {
     pub ingest_token: Option<String>,
     /// One revocable credential per producer: lines of `<producer> sha256:<hex>`.
     pub ingest_tokens_file: Option<PathBuf>,
+    pub producer_scopes_file: Option<PathBuf>,
+    pub single_trust_domain: bool,
     pub packs: Vec<String>,
     pub pack_trusted_key_files: Vec<String>,
     pub privacy_profile_path: Option<PathBuf>,
@@ -102,6 +104,8 @@ impl CollectorSettings {
             delivered_retention: Duration::from_secs(7 * 24 * 3600),
             ingest_token: None,
             ingest_tokens_file: None,
+            producer_scopes_file: None,
+            single_trust_domain: false,
             packs: Vec::new(),
             pack_trusted_key_files: Vec::new(),
             privacy_profile_path: None,
@@ -158,6 +162,9 @@ impl CollectorSettings {
             delivered_retention: hours(retention_hours),
             ingest_token: token.filter(|value| !is_blank(value)),
             ingest_tokens_file: blank(read("BOWER_INGEST_TOKENS_FILE")).map(PathBuf::from),
+            producer_scopes_file: blank(read("BOWER_PRODUCER_SCOPES_FILE")).map(PathBuf::from),
+            single_trust_domain: read("BOWER_SINGLE_TRUST_DOMAIN")
+                .is_some_and(|value| value.eq_ignore_ascii_case("true")),
             packs: split_list(read("BOWER_PACKS").as_deref()),
             pack_trusted_key_files: split_list(read("BOWER_PACK_TRUSTED_KEYS").as_deref()),
             privacy_profile_path: blank(read("BOWER_PRIVACY_PROFILE")).map(PathBuf::from),
@@ -225,6 +232,12 @@ impl CollectorSettings {
                 "BOWER_LISTEN_URL is not loopback, so BOWER_INGEST_TOKEN, BOWER_INGEST_TOKEN_FILE \
                  or BOWER_INGEST_TOKENS_FILE is required. Set BOWER_ALLOW_UNAUTHENTICATED_INGEST=true \
                  only on an isolated network you control.",
+            ));
+        }
+
+        if self.single_trust_domain && self.producer_scopes_file.is_some() {
+            return Err(invalid(
+                "Producer scopes and single trust domain mode are mutually exclusive.",
             ));
         }
 
@@ -315,6 +328,11 @@ impl CollectorSettings {
             dotnet_bool(self.ingest_token.is_some() || self.ingest_tokens_file.is_some())
                 .to_string(),
             self.privacy_hmac_key_id.clone(),
+            dotnet_bool(self.single_trust_domain).to_string(),
+            self.producer_scopes_file
+                .as_ref()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default(),
         ]
         .join("\u{1f}");
         format!(

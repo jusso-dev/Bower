@@ -41,7 +41,9 @@ const string dirtyEvent =
       "pan": "4111111111111111",
       "awsKey": "AKIAIOSFODNN7EXAMPLE",
       "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.signature",
-      "note": "contact +61 412 345 678 and abn 51 824 753 556"
+      "note": "contact +61 412 345 678 and abn 51 824 753 556",
+      "change": { "field": "password", "previousValue": "ordinary-before", "newValue": "ordinary-after" },
+      "request": { "path": "https://user:ordinary-url@example.test/login?state=ordinary-query#ordinary-fragment" }
     }
     """;
 

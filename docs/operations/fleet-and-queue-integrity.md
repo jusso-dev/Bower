@@ -17,7 +17,9 @@ customer-portal sha256:9ab2…
 The file holds SHA-256 hashes only. Remove a line to revoke that producer; the
 collector reloads the file within seconds without a restart. Each accepted event
 records its producer in `collector.sourceAdapter` (`local-http:sidecar-01`).
-`BOWER_INGEST_TOKEN` still works and is producer `default`.
+`BOWER_INGEST_TOKEN` still works and is producer `default`. Credentials must also
+match [producer identity scopes](../security/producer-scopes.md). Ingest defaults
+to deny without scopes; single-trust-domain compatibility requires explicit opt-in.
 
 ## Policy assignment and acknowledgement
 

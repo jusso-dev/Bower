@@ -3,6 +3,7 @@
 
 pub mod app;
 pub mod auth;
+pub mod authorization;
 pub mod bundle;
 pub mod credential;
 pub mod error;

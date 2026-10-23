@@ -191,9 +191,12 @@ dotnet test --configuration Release
 
 ### 2. Run a collector and send a canary event
 
-A collector bound to loopback accepts events without a token:
+For this isolated local demo, explicitly use one trust domain. Production collectors
+should configure [producer identity scopes](docs/security/producer-scopes.md);
+unscoped ingest is denied by default, including loopback.
 
 ```bash
+BOWER_SINGLE_TRUST_DOMAIN=true \
 BOWER_QUEUE_PATH=./artifacts/bower.db \
 BOWER_POLICY_DIRECTORY=./policies/default \
 BOWER_OUTPUT=ama-spool \
@@ -217,7 +220,8 @@ queue/output state only; it does not prove Sentinel queryability.
 ### 3. Expose the collector to other hosts
 
 Any non-loopback listener requires a shared ingest token; the collector refuses to
-start without one.
+start without one. Configure `BOWER_PRODUCER_SCOPES_FILE` before ingesting;
+a valid token alone does not authorize an application, tenant or source.
 
 ```bash
 export BOWER_INGEST_TOKEN="$(dotnet run --project src/Bower.Cli -- token generate)"
@@ -359,6 +363,8 @@ Tags, verification and runtime configuration:
 | `BOWER_LISTEN_URL` | `http://127.0.0.1:4319` | HTTP listener. Non-loopback requires a token. |
 | `BOWER_INGEST_TOKEN` / `BOWER_INGEST_TOKEN_FILE` | — | Shared bearer token (≥ 32 characters) for `/v1/events` and `/v1/status`. |
 | `BOWER_INGEST_TOKENS_FILE` | — | Per-producer revocable credentials (`<producer> sha256:<hex>` lines, hot reloaded). |
+| `BOWER_PRODUCER_SCOPES_FILE` | — | Exact per-producer application/environment/tenant/instance/source tuples; restart to reload. Missing scope denies ingest. |
+| `BOWER_SINGLE_TRUST_DOMAIN` | `false` | Explicit legacy trust mode; every producer may assert any identity. Mutually exclusive with scopes file. |
 | `BOWER_PACKS` / `BOWER_PACK_TRUSTED_KEYS` | — | Signed `.bowerpack` files to load, and the public keys trusted to sign them. |
 | `BOWER_PRIVACY_PROFILE` | — | Privacy profile YAML (detector actions, HMAC field rules, length limits). |
 | `BOWER_PRIVACY_HMAC_KEY_FILE` / `BOWER_PRIVACY_HMAC_KEY_ID` | — / `k1` | Pseudonymisation key (32+ bytes, base64) and the id embedded in HMAC output. |

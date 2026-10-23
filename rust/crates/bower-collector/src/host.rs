@@ -178,6 +178,10 @@ pub fn build(
         }),
         store: Arc::clone(&store),
         auth: Arc::clone(&auth),
+        authorization: Arc::new(crate::authorization::ProducerAuthorization::new(
+            settings.producer_scopes_file.as_deref(),
+            settings.single_trust_domain,
+        )?),
         limiter: Arc::new(TokenBucket::new(
             u32::try_from(settings.ingest_requests_per_second).unwrap_or(1),
         )),

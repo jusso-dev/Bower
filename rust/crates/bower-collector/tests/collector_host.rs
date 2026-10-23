@@ -40,6 +40,7 @@ async fn start(
 ) -> Collector {
     let mut settings = base_settings(directory);
     settings.ingest_token = token.map(str::to_string);
+    settings.single_trust_domain = true;
     adjust(&mut settings);
     let bundle = bundle::load(&settings).unwrap();
     let mut collector = host::build(settings, bundle, BuildOptions::default()).unwrap();
@@ -578,4 +579,186 @@ async fn serves_on_a_real_listener_and_shuts_down_cleanly() {
             .await
             .is_err()
     );
+}
+
+#[tokio::test]
+async fn scoped_producer_cannot_impersonate_or_mix_identity_tuples() {
+    let directory = tempfile::tempdir().unwrap();
+    let scopes = directory.path().join("scopes.json");
+    std::fs::write(&scopes, r#"[
+      {"producer":"default","application":{"name":"TestApplication","environment":"test","tenantId":"tenant-a","instance":"instance-a"},"source":{"ipAddress":"192.0.2.10","hostname":"host-a","port":123}},
+      {"producer":"default","application":{"name":"OtherApplication","environment":"test","tenantId":"tenant-b","instance":"instance-b"},"source":{"ipAddress":"192.0.2.20","hostname":"host-b","port":456}}
+    ]"#).unwrap();
+    let collector = start(directory.path(), Some(TOKEN), |s| {
+        s.single_trust_domain = false;
+        s.producer_scopes_file = Some(scopes);
+    })
+    .await;
+    let mut candidate = authentication_failure(&new_id());
+    candidate.application.tenant_id = Some("tenant-a".into());
+    candidate.application.instance = Some("instance-a".into());
+    candidate.source.as_mut().unwrap().hostname = Some("host-a".into());
+    candidate.source.as_mut().unwrap().port = Some(123);
+    let mut variants = Vec::new();
+    for field in 0..8 {
+        let mut changed = candidate.clone();
+        match field {
+            0 => changed.application.name = "OtherApplication".into(),
+            1 => changed.application.environment = "production".into(),
+            2 => changed.application.tenant_id = Some("tenant-b".into()),
+            3 => changed.application.instance = Some("instance-b".into()),
+            4 => changed.source.as_mut().unwrap().ip_address = Some("192.0.2.20".into()),
+            5 => changed.source.as_mut().unwrap().hostname = Some("host-b".into()),
+            6 => changed.source.as_mut().unwrap().port = Some(456),
+            _ => changed.application.tenant_id = None,
+        }
+        variants.push(changed);
+    }
+    for changed in variants {
+        let (status, _, _) = send(&collector.router, post(&changed, Some(TOKEN))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+    assert!(
+        collector
+            .store
+            .lease(100, Duration::from_secs(60))
+            .unwrap()
+            .is_empty()
+    );
+    let (status, _, _) = send(&collector.router, post(&candidate, Some(TOKEN))).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+}
+
+#[tokio::test]
+async fn default_without_scopes_denies_authenticated_ingest() {
+    let directory = tempfile::tempdir().unwrap();
+    let collector = start(directory.path(), Some(TOKEN), |s| {
+        s.single_trust_domain = false
+    })
+    .await;
+    let (status, _, _) = send(
+        &collector.router,
+        post(&authentication_failure(&new_id()), Some(TOKEN)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(
+        collector
+            .store
+            .lease(10, Duration::from_secs(60))
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn semantic_canaries_absent_from_queue_wal_spool_and_captured_outbound() {
+    use axum::{body::Bytes, extract::State, routing::post as route_post};
+    use bower_contracts::OutputAdapter;
+    use bower_output_ama_spool::{AmaSpoolOptions, AmaSpoolOutput};
+    use bower_output_azure::{
+        AccessToken, AzureLogsIngestionOptions, AzureLogsIngestionOutput, IngestionClientOptions,
+        TokenFuture, TokenProvider,
+    };
+    use std::io::Read;
+    let directory = tempfile::tempdir().unwrap();
+    let collector = start(directory.path(), Some(TOKEN), |_| {}).await;
+    let database = directory.path().join("queue.db");
+    let reader = rusqlite::Connection::open(&database).unwrap();
+    reader
+        .execute_batch("BEGIN; SELECT count(*) FROM queue_events;")
+        .unwrap();
+    let mut candidate = authentication_failure(&new_id());
+    candidate.change = Some(bower_contracts::ChangeContext {
+        field: Some("password".into()),
+        previous_value: Some("before-canary".into()),
+        new_value: Some("after-canary".into()),
+    });
+    candidate.request.as_mut().unwrap().path = Some(
+        "https://u:userinfo-canary@example.test/login?opaque=query-canary#fragment-canary".into(),
+    );
+    let (status, _, response) = send(&collector.router, post(&candidate, Some(TOKEN))).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{response}");
+    let batch = collector.store.lease(10, Duration::from_secs(60)).unwrap();
+    assert!(batch.iter().any(|e| e.event_id == candidate.event_id));
+    assert!(batch.iter().all(|e| !e.payload.contains("canary")));
+    let wal = directory.path().join("queue.db-wal");
+    assert!(std::fs::metadata(&wal).unwrap().len() > 0);
+    for path in [&database, &wal] {
+        let bytes = std::fs::read(path).unwrap();
+        assert!(!String::from_utf8_lossy(&bytes).contains("canary"));
+    }
+    let ready = directory.path().join("ready");
+    let spool = AmaSpoolOutput::new(AmaSpoolOptions::new(
+        "test",
+        "test",
+        "Custom-BowerSecurity",
+        directory.path().join("active"),
+        &ready,
+    ))
+    .unwrap();
+    let spooled = spool.deliver(&batch).await;
+    assert_eq!(spooled.acknowledged_event_ids.len(), batch.len());
+    let files: Vec<_> = std::fs::read_dir(&ready).unwrap().collect();
+    assert!(!files.is_empty());
+    for file in files {
+        assert!(
+            !std::fs::read_to_string(file.unwrap().path())
+                .unwrap()
+                .contains("canary")
+        );
+    }
+    struct Credential;
+    impl TokenProvider for Credential {
+        fn get_token<'a>(&'a self, _: &'a str) -> TokenFuture<'a> {
+            Box::pin(async {
+                Ok(AccessToken {
+                    token: "synthetic-test-token".into(),
+                    expires_on: bower_contracts::time::now() + chrono::Duration::hours(1),
+                })
+            })
+        }
+    }
+    async fn capture(State(bodies): State<Arc<Mutex<Vec<String>>>>, bytes: Bytes) -> StatusCode {
+        let mut text = String::new();
+        flate2::read::GzDecoder::new(&bytes[..])
+            .read_to_string(&mut text)
+            .unwrap();
+        bodies.lock().unwrap().push(text);
+        StatusCode::NO_CONTENT
+    }
+    let bodies = Arc::new(Mutex::new(Vec::<String>::new()));
+    let mock = Router::new()
+        .route(
+            "/dataCollectionRules/{rule}/streams/{stream}",
+            route_post(capture),
+        )
+        .with_state(bodies.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, mock).await.unwrap() });
+    let output = AzureLogsIngestionOutput::with_client_options(
+        AzureLogsIngestionOptions::new(
+            "test",
+            "https://simulated.ingest.monitor.azure.com"
+                .parse()
+                .unwrap(),
+            "dcr-test",
+            "Custom-BowerSecurity",
+        ),
+        Arc::new(Credential),
+        IngestionClientOptions {
+            transport_base_url: Some(format!("http://{address}").parse().unwrap()),
+            max_retries: 0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let delivered = output.deliver(&batch).await;
+    assert_eq!(delivered.acknowledged_event_ids.len(), batch.len());
+    let recorded = bodies.lock().unwrap();
+    assert!(!recorded.is_empty());
+    assert!(recorded.iter().all(|body| !body.contains("canary")));
+    server.abort();
+    reader.execute_batch("ROLLBACK;").unwrap();
 }

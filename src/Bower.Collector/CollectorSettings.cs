@@ -33,6 +33,11 @@ public sealed record CollectorSettings
     /// <summary>One revocable credential per producer: lines of "&lt;producer&gt; sha256:&lt;hex&gt;".</summary>
     public string? IngestTokensFile { get; init; }
 
+    public string? ProducerScopesFile { get; init; }
+
+    /// <summary>Explicit legacy mode: every producer belongs to one trusted domain.</summary>
+    public bool SingleTrustDomain { get; init; }
+
     /// <summary>Signed .bowerpack archives to load policies and privacy profile from.</summary>
     public IReadOnlyList<string> Packs { get; init; } = [];
 
@@ -97,6 +102,8 @@ public sealed record CollectorSettings
                 ReadInt64(read, "BOWER_QUEUE_RETENTION_HOURS", 7 * 24)),
             IngestToken = string.IsNullOrWhiteSpace(token) ? null : token,
             IngestTokensFile = Blank(read("BOWER_INGEST_TOKENS_FILE")),
+            ProducerScopesFile = Blank(read("BOWER_PRODUCER_SCOPES_FILE")),
+            SingleTrustDomain = string.Equals(read("BOWER_SINGLE_TRUST_DOMAIN"), "true", StringComparison.OrdinalIgnoreCase),
             Packs = SplitList(read("BOWER_PACKS")),
             PackTrustedKeyFiles = SplitList(read("BOWER_PACK_TRUSTED_KEYS")),
             PrivacyProfilePath = Blank(read("BOWER_PRIVACY_PROFILE")),
@@ -149,6 +156,11 @@ public sealed record CollectorSettings
                 "BOWER_LISTEN_URL is not loopback, so BOWER_INGEST_TOKEN, BOWER_INGEST_TOKEN_FILE " +
                 "or BOWER_INGEST_TOKENS_FILE is required. Set BOWER_ALLOW_UNAUTHENTICATED_INGEST=true " +
                 "only on an isolated network you control.");
+        }
+
+        if (SingleTrustDomain && ProducerScopesFile is not null)
+        {
+            throw new InvalidOperationException("Producer scopes and single trust domain mode are mutually exclusive.");
         }
 
         if (Packs.Count > 0 && PackTrustedKeyFiles.Count == 0)
@@ -228,7 +240,9 @@ public sealed record CollectorSettings
             IngestRequestsPerSecond.ToString(CultureInfo.InvariantCulture),
             MaximumDeliveryAttempts.ToString(CultureInfo.InvariantCulture),
             (IngestToken is not null || IngestTokensFile is not null).ToString(),
-            PrivacyHmacKeyId);
+            PrivacyHmacKeyId,
+            SingleTrustDomain.ToString(),
+            ProducerScopesFile ?? string.Empty);
         return "sha256:" + Convert.ToHexStringLower(
             System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(material)));
     }

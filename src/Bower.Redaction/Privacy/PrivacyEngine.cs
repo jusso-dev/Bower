@@ -10,7 +10,7 @@ namespace Bower.Redaction.Privacy;
 /// Operates after parse / before persistence and normalisation.
 /// Deterministic: regex, checksum, structure — no AI at runtime.
 /// </summary>
-public sealed class PrivacyEngine : IEventRedactor
+public sealed partial class PrivacyEngine : IEventRedactor
 {
     public const int MaximumPayloadBytes = 1_048_576;
 
@@ -111,6 +111,7 @@ public sealed class PrivacyEngine : IEventRedactor
             }
 
             List<AppliedFinding> findings = [];
+            SanitizeChange(rootObject, findings);
             WalkObject(rootObject, "$", findings);
             ApplyFieldRules(rootObject, findings);
             EnforceFieldLength(rootObject, "$", findings);
@@ -416,6 +417,15 @@ public sealed class PrivacyEngine : IEventRedactor
 
     private string ApplyDetectorsToValue(string text, string path, List<AppliedFinding> findings)
     {
+        string safeUrl = SafeUrl(text, path);
+        if (!string.Equals(text, safeUrl, StringComparison.Ordinal))
+        {
+            findings.Add(new AppliedFinding(
+                DetectorIds.FieldNameSecret, DetectorCategories.FieldName, path,
+                PrivacyAction.Replace, Validated: true, SubKind: null));
+            text = safeUrl;
+        }
+
         List<DetectionMatch> matches = [];
         ReadOnlySpan<char> span = text.AsSpan();
         foreach (ISensitiveDetector detector in detectors)

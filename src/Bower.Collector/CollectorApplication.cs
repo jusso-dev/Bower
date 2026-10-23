@@ -69,6 +69,7 @@ public static partial class CollectorApplication
         builder.Services.AddSingleton<SecurityEventProcessor>();
         builder.Services.AddSingleton(
             new CollectorIdentity(settings.CollectorId, settings.Version, "local-http", settings.ConfigurationHash()));
+        builder.Services.AddSingleton(new ProducerAuthorization(settings.ProducerScopesFile, settings.SingleTrustDomain));
         builder.Services.AddSingleton(new IngestAuthentication(settings.IngestToken, settings.IngestTokensFile));
         builder.Services.AddRateLimiter(options =>
         {
@@ -156,11 +157,20 @@ public static partial class CollectorApplication
                     JsonElement candidate,
                     HttpContext context,
                     SecurityEventProcessor processor,
+                    ProducerAuthorization authorization,
                     CollectorIdentity identity,
                     CancellationToken cancellationToken) =>
                 {
                     // Record which producer credential sent the event (never the token).
                     string producer = context.Items[IngestAuthenticationFilter.ProducerItem] as string ?? "anonymous";
+                    if (!authorization.IsAuthorized(producer, candidate))
+                    {
+                        return Results.Json(
+                            new ErrorResponse("Producer is not authorized for this event identity."),
+                            CollectorJsonContext.Default.ErrorResponse,
+                            statusCode: StatusCodes.Status403Forbidden);
+                    }
+
                     ProcessingResult result;
                     try
                     {

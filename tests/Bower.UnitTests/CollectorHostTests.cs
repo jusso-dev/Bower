@@ -301,7 +301,8 @@ public sealed class CollectorHostTests
             ListenUrl = "http://127.0.0.1:4319",
             QueuePath = Path.Combine(directory, "queue.db"),
             PolicyDirectory = Path.Combine(AppContext.BaseDirectory, "policies", "default"),
-            CollectorId = "collector-test"
+            CollectorId = "collector-test",
+            SingleTrustDomain = true
         };
 
     private static HttpRequestMessage Post(SecurityEventEnvelope candidate, string token)

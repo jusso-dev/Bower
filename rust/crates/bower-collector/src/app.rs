@@ -111,6 +111,7 @@ pub struct AppState {
     pub processor: Arc<dyn EventProcessor>,
     pub store: Arc<dyn DurableEventStore>,
     pub auth: Arc<IngestAuthentication>,
+    pub authorization: Arc<crate::authorization::ProducerAuthorization>,
     pub limiter: Arc<TokenBucket>,
     pub bundle: Arc<BundleInfo>,
     pub catalog: Arc<JobCatalog>,
@@ -301,6 +302,14 @@ async fn ingest(State(state): State<AppState>, request: Request) -> Response {
         return StatusCode::BAD_REQUEST.into_response();
     };
     drop(bytes);
+    if !state.authorization.is_authorized(&producer, &candidate) {
+        return json_response(
+            StatusCode::FORBIDDEN,
+            &ErrorBody {
+                error: "Producer is not authorized for this event identity.",
+            },
+        );
+    }
 
     let processor = Arc::clone(&state.processor);
     let source_adapter = format!("local-http:{producer}");

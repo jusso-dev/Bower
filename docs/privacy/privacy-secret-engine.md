@@ -24,6 +24,14 @@ Raw Event → Parser → Privacy & Secret Engine → Normalisation → Output
 | Fail closed | Invalid / oversized payloads, duplicate keys, detector timeouts and any other detector or action failure → `redaction-failed` → quarantine. `RedactJson` / `RedactText` never throw; a policy that could fail at runtime (field rule path without segments, negative length, null replacement text or collections) is rejected when the engine is built |
 | Complete coverage | String **and number** values are scanned, and so are **property names** |
 
+## Semantic change values and URLs
+
+Before persistence, both runtimes remove change values except the reviewed
+`role_membership_changed` / `role` pair, and strip URL query, fragment and userinfo
+content. These structural guards run even when value detectors are disabled.
+See [SEC-01/SEC-05 migration](../security/producer-scopes.md) for exact scope,
+limitations, producer authorization and treatment of existing queued events.
+
 ## Actions
 
 | Action | Effect |

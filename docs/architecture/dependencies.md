@@ -73,3 +73,10 @@ policy hashes and pack signatures are unchanged.
 | `clap` 4 | CLI | Renders `--help`; argument semantics are parsed by hand to match the C# CLI. | Hand-written help text. |
 | `uuid` 1 | core, collector, evidence | Event, batch and canary identifiers. | `getrandom` + manual formatting. |
 | `tempfile` 3 | tests only | Scratch directories for queue, spool, pack and credential tests. | Manual temp paths (cleanup leaks). |
+
+### Collector adversarial privacy tests
+
+The Rust collector test target reuses workspace `flate2` and `rusqlite` as dev-only
+dependencies. `flate2` decodes captured Azure gzip request bodies so privacy assertions
+inspect actual outbound content; `rusqlite` holds a read transaction open so SQLite
+WAL bytes remain available for inspection. Neither adds a production dependency.
