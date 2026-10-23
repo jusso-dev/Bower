@@ -252,6 +252,46 @@ public sealed class QueueDeliveryWorkerTests
         Assert.Equal(2, (await reopened.GetSnapshotAsync(cancellationToken)).Delivered);
     }
 
+    [Fact]
+    public async Task ExcessiveDestinationDeadline_IsCappedAndRecoversAfterRestart()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore store, FakeClock clock) = await CreateStoreAsync(directory, token);
+        await EnqueueAsync(store, clock, ["valid"], token);
+        FakeOutput failing = new(events => new DeliveryResult([], events.Select(item =>
+            new DeliveryFailure(item.EventId, "destination-azure-http-429", true, clock.UtcNow.AddYears(50))).ToArray(), null));
+        await CreateWorker(store, failing, clock).DeliverOnceAsync(token);
+        SqliteEventStore reopened = new(Path.Combine(directory.Path, "queue.db"), 10 * 1024 * 1024, clock);
+        await reopened.InitializeAsync(token);
+        FakeOutput accepting = new(events => new DeliveryResult(events.Select(item => item.EventId).ToArray(), [], "accepted"));
+        QueueDeliveryWorker worker = CreateWorker(reopened, accepting, clock);
+        clock.Advance(TimeSpan.FromMinutes(59));
+        Assert.Equal(0, await worker.DeliverOnceAsync(token));
+        clock.Advance(TimeSpan.FromMinutes(1));
+        Assert.Equal(1, await worker.DeliverOnceAsync(token));
+        Assert.Equal(1, (await reopened.GetSnapshotAsync(token)).Delivered);
+    }
+
+    [Fact]
+    public async Task IsolatedRejectedRecord_DoesNotPauseHealthyBacklog()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore store, FakeClock clock) = await CreateStoreAsync(directory, token);
+        await EnqueueAsync(store, clock, ["bad", "good"], token);
+        FakeOutput output = new(events => new DeliveryResult(
+            events.Where(item => item.EventId != "bad").Select(item => item.EventId).ToArray(),
+            events.Where(item => item.EventId == "bad").Select(item =>
+                new DeliveryFailure(item.EventId, "azure-http-400-isolated", false, null)).ToArray(), "accepted"));
+        QueueDeliveryWorker worker = CreateWorker(store, output, clock);
+        Assert.Equal(2, await worker.DeliverOnceAsync(token));
+        await EnqueueAsync(store, clock, ["backlog"], token);
+        Assert.Equal(1, await worker.DeliverOnceAsync(token));
+        Assert.Equal(2, (await store.GetSnapshotAsync(token)).Delivered);
+        Assert.Equal(1, (await store.GetSnapshotAsync(token)).DeadLettered);
+    }
+
     private static QueueDeliveryWorker CreateWorker(
         IDurableEventStore store,
         IOutputAdapter output,

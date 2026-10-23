@@ -173,8 +173,20 @@ public sealed partial class QueueDeliveryWorker(
             ? TimeSpan.FromSeconds(30)
             : CalculateRetryDelay(item.DeliveryAttempts));
         if (failure.RetryAfter > retryAt) retryAt = failure.RetryAfter.Value;
-        return new FailureSettlement(item.EventId, failure.Code, retryAt, item.LeaseToken);
+        DateTimeOffset maximum = clock.GetUtcNow().AddHours(1);
+        string code = failure.Code;
+        if (retryAt > maximum)
+        {
+            retryAt = maximum;
+            code += ":retry-after-capped";
+            LogRetryAfterCapped(logger, output.Id);
+        }
+        return new FailureSettlement(item.EventId, code, retryAt, item.LeaseToken);
     }
+
+    [LoggerMessage(EventId = 1006, Level = LogLevel.Warning,
+        Message = "Output adapter {OutputId} retry deadline exceeded one hour and was capped.")]
+    private static partial void LogRetryAfterCapped(ILogger logger, string outputId);
 
     internal static TimeSpan CalculateRetryDelay(int attempt)
     {

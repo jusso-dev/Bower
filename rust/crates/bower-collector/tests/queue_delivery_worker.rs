@@ -598,3 +598,82 @@ async fn destination_outages_survive_restart_pause_backlog_and_preserve_budget()
         assert_eq!(reopened.snapshot().unwrap().delivered, 2);
     }
 }
+
+#[tokio::test]
+async fn excessive_destination_deadline_is_capped_and_recovers_after_restart() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new();
+    let store = create_store(&directory, &clock);
+    enqueue(&store, &clock, &["valid"]);
+    let deadline = clock.utc_now() + chrono::Duration::days(365 * 50);
+    let failing = FakeOutput(Box::new(move |_| {
+        result(
+            &[],
+            vec![DeliveryFailure {
+                event_id: "valid".into(),
+                code: "destination-azure-http-429".into(),
+                is_retryable: true,
+                retry_after: Some(deadline),
+            }],
+            None,
+        )
+    }));
+    worker(store.clone(), failing, &clock, 1)
+        .deliver_once(&ShutdownToken::never())
+        .await
+        .unwrap();
+    drop(store);
+    let reopened = create_store(&directory, &clock);
+    let accepting = FakeOutput(Box::new(|_| result(&["valid"], vec![], Some("accepted"))));
+    let restarted = worker(reopened.clone(), accepting, &clock, 1);
+    clock.advance(Duration::from_secs(3599));
+    assert_eq!(
+        restarted
+            .deliver_once(&ShutdownToken::never())
+            .await
+            .unwrap(),
+        0
+    );
+    clock.advance(Duration::from_secs(1));
+    assert_eq!(
+        restarted
+            .deliver_once(&ShutdownToken::never())
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(reopened.snapshot().unwrap().delivered, 1);
+}
+
+#[tokio::test]
+async fn isolated_bad_record_never_pauses_healthy_backlog() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new();
+    let store = create_store(&directory, &clock);
+    enqueue(&store, &clock, &["bad", "good"]);
+    let output = FakeOutput(Box::new(|events| DeliveryResult {
+        acknowledged_event_ids: events
+            .iter()
+            .filter(|item| item.event_id != "bad")
+            .map(|item| item.event_id.clone())
+            .collect(),
+        failures: events
+            .iter()
+            .filter(|item| item.event_id == "bad")
+            .map(|item| failure(&item.event_id, "azure-http-400-isolated", false))
+            .collect(),
+        destination_acknowledgement: Some("accepted".into()),
+    }));
+    let worker = worker(store.clone(), output, &clock, 1);
+    assert_eq!(
+        worker.deliver_once(&ShutdownToken::never()).await.unwrap(),
+        2
+    );
+    enqueue(&store, &clock, &["backlog"]);
+    assert_eq!(
+        worker.deliver_once(&ShutdownToken::never()).await.unwrap(),
+        1
+    );
+    assert_eq!(store.snapshot().unwrap().delivered, 2);
+    assert_eq!(store.snapshot().unwrap().dead_lettered, 1);
+}

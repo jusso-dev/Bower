@@ -313,6 +313,7 @@ enum BatchOutcome {
     Failed {
         status: u16,
         retry_after: Option<bower_contracts::time::Timestamp>,
+        retry_capped: bool,
     },
 }
 
@@ -333,9 +334,11 @@ fn server_delay(headers: &HeaderMap) -> Option<Duration> {
     for name in ["retry-after-ms", "x-ms-retry-after-ms"] {
         if let Some(milliseconds) = text(name).and_then(|value| value.parse::<f64>().ok())
             && milliseconds.is_finite()
-            && (0.0..=253_402_300_799_000.0).contains(&milliseconds)
+            && milliseconds >= 0.0
         {
-            return Some(Duration::from_secs_f64(milliseconds / 1000.0));
+            return Some(Duration::from_secs_f64(
+                (milliseconds / 1000.0).min(253_402_300_799.0),
+            ));
         }
     }
     let value = text("retry-after")?;
@@ -387,6 +390,7 @@ impl Uploader {
                 return BatchOutcome::Failed {
                     status: 0,
                     retry_after: None,
+                    retry_capped: false,
                 };
             }
         };
@@ -394,7 +398,10 @@ impl Uploader {
         let mut retry_number = 0u32;
         loop {
             let (retriable, server, outcome) = self.attempt(&compressed, &client_request_id).await;
-            if !retriable || retry_number >= self.options.max_retries {
+            if !retriable
+                || retry_number >= self.options.max_retries
+                || server.is_some_and(|delay| delay > Duration::from_secs(60))
+            {
                 return outcome;
             }
             retry_number += 1;
@@ -418,6 +425,7 @@ impl Uploader {
                     BatchOutcome::Failed {
                         status: 0,
                         retry_after: None,
+                        retry_capped: false,
                     },
                 );
             }
@@ -429,6 +437,7 @@ impl Uploader {
                 BatchOutcome::Failed {
                     status: 0,
                     retry_after: None,
+                    retry_capped: false,
                 },
             );
         };
@@ -451,6 +460,7 @@ impl Uploader {
                 BatchOutcome::Failed {
                     status: 0,
                     retry_after: None,
+                    retry_capped: false,
                 },
             ),
             Ok(response) => {
@@ -466,16 +476,15 @@ impl Uploader {
                         server,
                         BatchOutcome::Failed {
                             status: code,
-                            retry_after: server
-                                .and_then(|delay| chrono::Duration::from_std(delay).ok())
-                                .and_then(|delay| {
-                                    let maximum =
-                                        bower_contracts::time::parse("9999-12-31T23:59:58Z")
-                                            .expect("constant maximum timestamp");
-                                    bower_contracts::time::now()
-                                        .checked_add_signed(delay)
-                                        .map(|deadline| deadline.min(maximum))
-                                }),
+                            retry_capped: server
+                                .is_some_and(|delay| delay > Duration::from_secs(3600)),
+                            retry_after: server.map(|delay| {
+                                bower_contracts::time::now()
+                                    + chrono::Duration::from_std(
+                                        delay.min(Duration::from_secs(3600)),
+                                    )
+                                    .expect("bounded retry delay")
+                            }),
                         },
                     )
                 }
@@ -562,7 +571,7 @@ impl AzureLogsIngestionOutput {
                 let mut results = Vec::new();
                 while let Some(batch) = pending.pop() {
                     let outcome = uploader.upload(batch.body.clone()).await;
-                    if matches!(outcome, BatchOutcome::Failed { status: 400, retry_after } if retry_after.is_none_or(|deadline| deadline <= bower_contracts::time::now()))
+                    if matches!(outcome, BatchOutcome::Failed { status: 400, retry_after, .. } if retry_after.is_none_or(|deadline| deadline <= bower_contracts::time::now()))
                         && batch.event_ids.len() > 1
                         && budget.fetch_sub(2, Ordering::SeqCst) >= 2
                     {
@@ -586,6 +595,7 @@ impl AzureLogsIngestionOutput {
         }
 
         let mut failed: HashSet<String> = HashSet::new();
+        let mut isolated = HashSet::new();
         while let Some(joined) = uploads.join_next().await {
             let Ok(results) = joined else {
                 failures.extend(
@@ -603,13 +613,28 @@ impl AzureLogsIngestionOutput {
                 if let BatchOutcome::Failed {
                     status,
                     retry_after,
+                    retry_capped,
                 } = outcome
                 {
+                    if status == 400
+                        && event_ids.len() == 1
+                        && retry_after
+                            .is_none_or(|deadline| deadline <= bower_contracts::time::now())
+                    {
+                        isolated.insert(event_ids[0].clone());
+                    }
                     for event_id in event_ids {
                         let code = if status == 0 {
                             "destination-azure-unavailable".to_owned()
                         } else {
-                            format!("destination-azure-http-{status}")
+                            format!(
+                                "destination-azure-http-{status}{}",
+                                if retry_capped {
+                                    ":retry-after-capped"
+                                } else {
+                                    ""
+                                }
+                            )
                         };
                         let mut item = failure(&event_id, code, true);
                         item.retry_after = retry_after;
@@ -625,6 +650,15 @@ impl AzureLogsIngestionOutput {
             .filter(|id| !failed.contains(**id))
             .map(|id| (*id).to_owned())
             .collect();
+        if !acknowledged.is_empty() {
+            for failure in &mut failures {
+                if isolated.contains(&failure.event_id) {
+                    failure.code = "azure-http-400-isolated".to_owned();
+                    failure.is_retryable = false;
+                    failure.retry_after = None;
+                }
+            }
+        }
         let acknowledgement = (!acknowledged.is_empty())
             .then(|| "azure-logs-ingestion:accepted:owned-batches".to_owned());
         DeliveryResult {

@@ -20,7 +20,13 @@ An HTTP error alone does not prove record poison: 401/403, DCR/stream errors,
 throttling, transport/token failures and 5xx become retryable `destination-*`
 failures. Ambiguous 400 batches can be bisected, with at most 16 additional
 requests per delivery call (SDK transport retries are separately bounded).
-Valid siblings can progress; unresolved singletons stay pending. A future
+If a singleton still returns 400 and another record succeeds in the same delivery
+call, it is retained as `azure-http-400-isolated` in dead letters immediately.
+This prevents an isolated rejection from reopening the destination circuit forever.
+It is evidence of selective rejection, not proof of intrinsically invalid content:
+repair the mapping/DCR as needed and use audited exact-ID replay. If every request
+fails, or isolation ends with multiple records, records remain pending as a
+destination fault. A future
 server retry deadline suppresses immediate isolation. There is intentionally no
 heuristic parsing of potentially sensitive service error bodies to condemn a
 record. Persistent unresolved 400s need operator investigation.
@@ -32,7 +38,14 @@ The queue currently feeds one configured destination. A future retrying row with
 including newly queued backlog. Its existing `next_attempt_at` survives process
 restart. The worker uses the later of a 30-second destination cooldown and the
 terminal response's Retry-After deadline (seconds, HTTP date, or Azure millisecond
-headers). Healthy records do not exhaust poison budgets during an outage: the
+headers), capped to **one hour** at both response parsing and worker settlement.
+Headers beyond that limit produce `:retry-after-capped` in queue failure metadata;
+worker-side capping also emits a payload-free warning. Ingestion-client retries
+return immediately for server delays above 60 seconds, letting the durable queue
+own the wait; short retries remain bounded by configured attempts. C# installs its
+own retry policy using the supplied standard retry options; a caller-provided
+custom retry policy is replaced to enforce this bound. No response bodies enter
+health metadata. Healthy records do not exhaust poison budgets during an outage: the
 same failure-settlement transaction refunds the lease's attempt increment.
 The circuit opens again when the greatest outstanding deadline expires. Request
 concurrency and queue capacity remain bounded; a full queue must apply intake

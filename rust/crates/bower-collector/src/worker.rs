@@ -294,7 +294,18 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
         };
         let local = self.clock.utc_now()
             + chrono::TimeDelta::from_std(delay).unwrap_or(chrono::TimeDelta::MAX);
-        let retry_at = retry_after.map_or(local, |server| server.max(local));
+        let requested = retry_after.map_or(local, |server| server.max(local));
+        let maximum = self.clock.utc_now() + chrono::TimeDelta::hours(1);
+        let code = if requested > maximum {
+            warn!(
+                output_id = self.output.id(),
+                "Retry deadline exceeded one hour and was capped."
+            );
+            format!("{code}:retry-after-capped")
+        } else {
+            code
+        };
+        let retry_at = requested.min(maximum);
         FailureSettlement {
             lease_token: None,
             event_id,

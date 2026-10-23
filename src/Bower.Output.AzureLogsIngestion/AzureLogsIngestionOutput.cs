@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using Azure;
 using Azure.Core;
+using Azure.Core.Pipeline;
 using Azure.Monitor.Ingestion;
 using Bower.Abstractions;
 using Bower.Dcr;
@@ -24,9 +25,10 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
     {
         options.Validate();
         this.options = options;
-        client = clientOptions is null
-            ? new LogsIngestionClient(options.Endpoint, credential)
-            : new LogsIngestionClient(options.Endpoint, credential, clientOptions);
+        clientOptions ??= new LogsIngestionClientOptions();
+        // Long server delays belong in the durable queue, never an in-memory SDK sleep.
+        clientOptions.RetryPolicy = new DurableRetryPolicy(clientOptions.Retry);
+        client = new LogsIngestionClient(options.Endpoint, credential, clientOptions);
     }
 
     public string Id => options.Id;
@@ -98,14 +100,18 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
         if (current.Count > 0) batches.Add(current);
         ConcurrentBag<string> acknowledged = [];
         ConcurrentBag<DeliveryFailure> uploadFailures = [];
+        ConcurrentBag<string> isolatedBadRequests = [];
         int isolationBudget = 16;
         await Parallel.ForEachAsync(batches, new ParallelOptions
         {
             MaxDegreeOfParallelism = options.MaximumConcurrency,
             CancellationToken = cancellationToken
         }, async (batch, token) => await UploadBatchAsync(batch, token));
-        failures.AddRange(uploadFailures);
         HashSet<string> accepted = new(acknowledged, StringComparer.Ordinal);
+        HashSet<string> isolated = new(isolatedBadRequests, StringComparer.Ordinal);
+        failures.AddRange(uploadFailures.Select(failure => accepted.Count > 0 && isolated.Contains(failure.EventId)
+            ? failure with { Code = "azure-http-400-isolated", IsRetryable = false, RetryAfter = null }
+            : failure));
         return new DeliveryResult(
             records.Where(record => accepted.Contains(record.EventId)).Select(record => record.EventId).ToArray(),
             failures,
@@ -124,6 +130,7 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
             using RequestContent content = RequestContent.Create(body.ToArray());
             int status;
             DateTimeOffset? retryAfter = null;
+            bool retryCapped = false;
             try
             {
                 // Protocol overload sends exactly one owned request (AOT safe). NoThrow
@@ -135,7 +142,10 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
                         ErrorOptions = ErrorOptions.NoThrow
                     });
                 status = response.Status;
-                retryAfter = ReadRetryAfter(response, DateTimeOffset.UtcNow);
+                DateTimeOffset now = DateTimeOffset.UtcNow;
+                retryAfter = ReadRetryAfter(response, now);
+                retryCapped = retryAfter > now.Add(MaximumDurableRetryDelay);
+                if (retryCapped) retryAfter = now.Add(MaximumDurableRetryDelay);
             }
             catch (Exception exception) when (exception is not OperationCanceledException || !token.IsCancellationRequested)
             {
@@ -150,7 +160,7 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
             }
 
             // An ambiguous 400 is not proof of record poison. Bounded bisection lets
-            // valid siblings progress; unresolved singletons stay pending for repair.
+            // valid siblings progress. Singletons are held unless another record succeeds.
             if (status == 400 && batch.Count > 1 && (retryAfter is null || retryAfter <= DateTimeOffset.UtcNow)
                 && Interlocked.Add(ref isolationBudget, -2) >= 0)
             {
@@ -160,16 +170,34 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
                 return;
             }
 
+            if (status == 400 && batch.Count == 1 && (retryAfter is null || retryAfter <= DateTimeOffset.UtcNow))
+                isolatedBadRequests.Add(batch[0].EventId);
             foreach (PreparedRecord record in batch)
             {
                 uploadFailures.Add(new DeliveryFailure(record.EventId,
-                    status == 0 ? "destination-azure-unavailable" : $"destination-azure-http-{status}",
+                    status == 0 ? "destination-azure-unavailable" : $"destination-azure-http-{status}{(retryCapped ? ":retry-after-capped" : "")}",
                     true, retryAfter));
             }
         }
     }
 
     public const int MaximumBatchBytes = 1024 * 1024;
+    public static readonly TimeSpan MaximumDurableRetryDelay = TimeSpan.FromHours(1);
+
+    private sealed class DurableRetryPolicy(RetryOptions retry) : RetryPolicy(retry.MaxRetries,
+        retry.Mode == RetryMode.Fixed
+            ? DelayStrategy.CreateFixedDelayStrategy(retry.Delay)
+            : DelayStrategy.CreateExponentialDelayStrategy(retry.Delay, retry.MaxDelay))
+    {
+        private static bool HasLongDelay(HttpMessage message) => message.HasResponse &&
+            ReadRetryAfter(message.Response, DateTimeOffset.UtcNow) > DateTimeOffset.UtcNow.AddSeconds(60);
+
+        protected override bool ShouldRetry(HttpMessage message, Exception? exception) =>
+            !HasLongDelay(message) && base.ShouldRetry(message, exception);
+
+        protected override ValueTask<bool> ShouldRetryAsync(HttpMessage message, Exception? exception) =>
+            HasLongDelay(message) ? ValueTask.FromResult(false) : base.ShouldRetryAsync(message, exception);
+    }
 
     private static DateTimeOffset? ReadRetryAfter(Response response, DateTimeOffset now)
     {

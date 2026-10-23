@@ -44,8 +44,8 @@ public sealed class AzureLogsIngestionOutputTests
         Assert.Equal(["accepted"], result.AcknowledgedEventIds);
         DeliveryFailure failure = Assert.Single(result.Failures);
         Assert.Equal("rejected", failure.EventId);
-        Assert.Equal("destination-azure-http-400", failure.Code);
-        Assert.True(failure.IsRetryable);
+        Assert.Equal("azure-http-400-isolated", failure.Code);
+        Assert.False(failure.IsRetryable);
     }
 
     [Fact]
@@ -204,18 +204,20 @@ public sealed class AzureLogsIngestionOutputTests
             TestContext.Current.CancellationToken);
         Assert.Equal(["two", "four"], result.AcknowledgedEventIds);
         Assert.Equal(["one", "three"], result.Failures.Select(item => item.EventId).Order());
-        Assert.All(result.Failures, item => Assert.True(item.IsDestinationFailure));
+        Assert.Equal("azure-http-400-isolated", result.Failures.Single(item => item.EventId == "one").Code);
+        Assert.True(result.Failures.Single(item => item.EventId == "three").IsDestinationFailure);
         Assert.Equal(4, handler.Count);
     }
 
     [Fact]
-    public async Task Deliver_BoundedIsolationPreservesValidSiblingsAndAmbiguousSingleton()
+    public async Task Deliver_BoundedIsolationRetainsRejectedSingletonForAuditedRecovery()
     {
         RecordingHandler handler = new(ids => ids.Contains("bad") ? HttpStatusCode.BadRequest : HttpStatusCode.NoContent);
         DeliveryResult result = await CreateOutput(handler).DeliverAsync(
             [Event("good1"), Event("bad"), Event("good2")], TestContext.Current.CancellationToken);
         Assert.Equal(["good1", "good2"], result.AcknowledgedEventIds);
-        Assert.True(Assert.Single(result.Failures).IsDestinationFailure);
+        Assert.Equal("azure-http-400-isolated", Assert.Single(result.Failures).Code);
+        Assert.False(Assert.Single(result.Failures).IsRetryable);
         Assert.InRange(handler.Requests.Count, 3, 17);
     }
 
@@ -247,6 +249,22 @@ public sealed class AzureLogsIngestionOutputTests
         HeaderHandler handler = new(429, deadline.ToString("R"));
         DeliveryResult result = await CreateOutput(handler).DeliverAsync([Event("a")], TestContext.Current.CancellationToken);
         Assert.Equal(deadline.ToUnixTimeSeconds(), Assert.Single(result.Failures).RetryAfter!.Value.ToUnixTimeSeconds());
+    }
+
+    [Theory]
+    [InlineData("Retry-After", "Fri, 01 Jan 2100 00:00:00 GMT")]
+    [InlineData("retry-after-ms", "1e300")]
+    [InlineData("Retry-After", "999999999999999999")]
+    public async Task Deliver_AbsurdRetryAfterReturnsPromptlyWithBoundedDurableDeadline(string name, string value)
+    {
+        HeaderHandler handler = new(429, value, name);
+        DateTimeOffset before = DateTimeOffset.UtcNow;
+        DeliveryResult result = await CreateOutput(handler, retries: 3).DeliverAsync([Event("valid")],
+            TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        DeliveryFailure failure = Assert.Single(result.Failures);
+        Assert.EndsWith(":retry-after-capped", failure.Code, StringComparison.Ordinal);
+        Assert.InRange(failure.RetryAfter!.Value, before.AddMinutes(59), DateTimeOffset.UtcNow.AddHours(1));
+        Assert.True(failure.IsDestinationFailure);
     }
 
     [Fact]
@@ -303,19 +321,19 @@ public sealed class AzureLogsIngestionOutputTests
         {
             Calls++;
             HttpResponseMessage response = new(HttpStatusCode.TooManyRequests) { Content = new StringContent("{}") };
-            response.Headers.TryAddWithoutValidation("Retry-After", "120");
+            response.Headers.TryAddWithoutValidation("Retry-After", "1");
             Entered.TrySetResult();
             return Task.FromResult(response);
         }
     }
 
-    private sealed class HeaderHandler(int status, string retryAfter) : HttpMessageHandler
+    private sealed class HeaderHandler(int status, string retryAfter, string headerName = "Retry-After") : HttpMessageHandler
     {
         public int Status { get; set; } = status;
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             HttpResponseMessage response = new((HttpStatusCode)Status) { Content = new StringContent("synthetic-secret-response") };
-            response.Headers.TryAddWithoutValidation("Retry-After", retryAfter);
+            response.Headers.TryAddWithoutValidation(headerName, retryAfter);
             return Task.FromResult(response);
         }
     }

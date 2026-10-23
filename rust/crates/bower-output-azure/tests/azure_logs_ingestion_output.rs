@@ -232,8 +232,8 @@ async fn deliver_attributes_failed_batch_to_exact_events() {
     assert_eq!(result.acknowledged_event_ids, ["accepted"]);
     assert_eq!(result.failures.len(), 1);
     assert_eq!(result.failures[0].event_id, "rejected");
-    assert_eq!(result.failures[0].code, "destination-azure-http-400");
-    assert!(result.failures[0].is_retryable);
+    assert_eq!(result.failures[0].code, "azure-http-400-isolated");
+    assert!(!result.failures[0].is_retryable);
     assert_eq!(mock.requests.lock().unwrap().len(), 2);
 }
 
@@ -1048,11 +1048,22 @@ async fn default_concurrency_owns_reordered_mixed_outcomes() {
         .collect();
     failed.sort();
     assert_eq!(failed, ["one", "three"]);
+    assert_eq!(
+        result
+            .failures
+            .iter()
+            .find(|item| item.event_id == "one")
+            .unwrap()
+            .code,
+        "azure-http-400-isolated"
+    );
     assert!(
         result
             .failures
             .iter()
-            .all(|item| item.is_destination_failure())
+            .find(|item| item.event_id == "three")
+            .unwrap()
+            .is_destination_failure()
     );
     assert_eq!(completion.lock().unwrap().last().unwrap(), "one");
 }
@@ -1111,7 +1122,8 @@ async fn ambiguous_bad_request_isolates_siblings_with_bounded_requests() {
         .await;
     assert_eq!(result.acknowledged_event_ids, ["a", "b"]);
     assert_eq!(result.failures.len(), 1);
-    assert!(result.failures[0].is_destination_failure());
+    assert_eq!(result.failures[0].code, "azure-http-400-isolated");
+    assert!(!result.failures[0].is_retryable);
     assert!(mock.count.load(Ordering::SeqCst) <= 17);
 }
 
@@ -1128,7 +1140,7 @@ async fn final_http_date_deadline_and_cancellation_are_preserved() {
         deadline.timestamp()
     );
 
-    let (base, mock) = start(Arc::new(|_, _| (429, vec![("retry-after", "120".into())]))).await;
+    let (base, mock) = start(Arc::new(|_, _| (429, vec![("retry-after", "1".into())]))).await;
     let client = output_with(&base, 3, StaticCredential::new());
     let cancelled = tokio::time::timeout(
         Duration::from_millis(100),
@@ -1153,4 +1165,30 @@ async fn configuration_wide_bad_request_has_bounded_isolation() {
             .all(|item| item.is_destination_failure())
     );
     assert!(mock.count.load(Ordering::SeqCst) <= 17);
+}
+
+#[tokio::test]
+async fn absurd_retry_headers_return_promptly_with_bounded_durable_deadlines() {
+    for (name, value) in [
+        ("retry-after", "Fri, 01 Jan 2100 00:00:00 GMT"),
+        ("retry-after-ms", "1e300"),
+        ("retry-after", "999999999999999999"),
+    ] {
+        let (base, mock) = start(Arc::new(move |_, _| (429, vec![(name, value.to_owned())]))).await;
+        let client = output_with(&base, 3, StaticCredential::new());
+        let before = time::now();
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            client.deliver(&[event("valid", "")]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(mock.count.load(Ordering::SeqCst), 1);
+        let failure = &result.failures[0];
+        assert!(failure.code.ends_with(":retry-after-capped"));
+        assert!(failure.is_destination_failure());
+        let deadline = failure.retry_after.unwrap();
+        assert!(deadline >= before + chrono::Duration::minutes(59));
+        assert!(deadline <= time::now() + chrono::Duration::hours(1));
+    }
 }
