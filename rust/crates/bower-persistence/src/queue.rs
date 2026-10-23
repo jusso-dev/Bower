@@ -360,6 +360,11 @@ WHERE (
         OR (state = :retrying AND (next_attempt_at IS NULL OR next_attempt_at <= :now))
         OR (state = :uploading AND lease_until <= :now)
       )
+  AND NOT EXISTS (
+      SELECT 1 FROM queue_events AS outage
+      WHERE outage.state = :retrying
+        AND outage.last_failure_code GLOB 'destination-*'
+        AND outage.next_attempt_at > :now)
 ORDER BY received_at ASC
 LIMIT :maximum_count;",
                     )
@@ -561,6 +566,7 @@ WHERE event_id = :event_id AND state = :uploading;",
                         "UPDATE queue_events
 SET state = :retrying,
     next_attempt_at = :next_attempt_at,
+    delivery_attempts = MAX(0, delivery_attempts - CASE WHEN :failure_code GLOB 'destination-*' THEN 1 ELSE 0 END),
     last_failure_code = :failure_code,
     lease_until = NULL
 WHERE event_id = :event_id AND state = :uploading;",
