@@ -145,7 +145,7 @@ try
     string payload = "{\"eventId\":\"x\",\"note\":\"" + new string('p', 1_000) + "\"}";
     int nextId = 0;
 
-    async Task<IReadOnlyList<string>> EnqueueAndLeaseAsync(int count)
+    async Task<IReadOnlyList<QueuedEvent>> EnqueueAndLeaseAsync(int count)
     {
         for (int i = 0; i < count; i++)
         {
@@ -153,7 +153,7 @@ try
             await store.EnqueueAsync(new QueuedEvent(id, $"sha256:{id}", payload, DateTimeOffset.UtcNow));
         }
 
-        return [.. (await store.LeaseAsync(count, TimeSpan.FromMinutes(5))).Select(item => item.EventId)];
+        return await store.LeaseAsync(count, TimeSpan.FromMinutes(5));
     }
 
     double perEventMs = 0;
@@ -161,18 +161,18 @@ try
     const int rounds = 3;
     for (int round = 0; round < rounds; round++)
     {
-        IReadOnlyList<string> ids = await EnqueueAndLeaseAsync(settleBatch);
+        IReadOnlyList<QueuedEvent> ids = await EnqueueAndLeaseAsync(settleBatch);
         Stopwatch perEvent = Stopwatch.StartNew();
-        foreach (string id in ids)
+        foreach (QueuedEvent item in ids)
         {
-            await store.MarkDeliveredAsync(id, "bench");
+            await store.MarkDeliveredAsync(item.EventId, "bench", item.LeaseToken);
         }
 
         perEventMs += perEvent.Elapsed.TotalMilliseconds;
 
         ids = await EnqueueAndLeaseAsync(settleBatch);
         Stopwatch batch = Stopwatch.StartNew();
-        await store.MarkDeliveredBatchAsync(ids, "bench");
+        await store.MarkDeliveredBatchAsync(ids.Select(item => item.EventId).ToArray(), "bench", ids.ToDictionary(item => item.EventId, item => item.LeaseToken!));
         batchMs += batch.Elapsed.TotalMilliseconds;
     }
 

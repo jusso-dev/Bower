@@ -110,6 +110,7 @@ public sealed partial class QueueDeliveryWorker(
             IReadOnlyList<string> reclaimed = await queue.MarkDeliveredBatchAsync(
                 delivered,
                 acknowledgement,
+                events.ToDictionary(item => item.EventId, item => item.LeaseToken!, StringComparer.Ordinal),
                 cancellationToken);
             for (int index = 0; index < reclaimed.Count; index++)
             {
@@ -159,20 +160,20 @@ public sealed partial class QueueDeliveryWorker(
     {
         if (!failure.IsRetryable)
         {
-            return new FailureSettlement(item.EventId, failure.Code, null);
+            return new FailureSettlement(item.EventId, failure.Code, null, item.LeaseToken);
         }
 
         if (!failure.IsDestinationFailure && item.DeliveryAttempts >= options.MaximumDeliveryAttempts)
         {
             LogAttemptsExhausted(logger, output.Id, item.DeliveryAttempts);
-            return new FailureSettlement(item.EventId, $"max-attempts-exceeded:{failure.Code}", null);
+            return new FailureSettlement(item.EventId, $"max-attempts-exceeded:{failure.Code}", null, item.LeaseToken);
         }
 
         DateTimeOffset retryAt = clock.GetUtcNow().Add(failure.IsDestinationFailure
             ? TimeSpan.FromSeconds(30)
             : CalculateRetryDelay(item.DeliveryAttempts));
         if (failure.RetryAfter > retryAt) retryAt = failure.RetryAfter.Value;
-        return new FailureSettlement(item.EventId, failure.Code, retryAt);
+        return new FailureSettlement(item.EventId, failure.Code, retryAt, item.LeaseToken);
     }
 
     internal static TimeSpan CalculateRetryDelay(int attempt)

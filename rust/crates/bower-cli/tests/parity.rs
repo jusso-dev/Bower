@@ -253,6 +253,7 @@ fn queue_commands_match_csharp_on_shared_database() {
         for id in ["a", "b"] {
             store
                 .enqueue(&QueuedEvent {
+                    lease_token: None,
                     event_id: id.to_owned(),
                     fingerprint: format!("fp-{id}"),
                     payload: "{}".to_owned(),
@@ -263,8 +264,10 @@ fn queue_commands_match_csharp_on_shared_database() {
                 })
                 .unwrap();
         }
-        store.lease(1, std::time::Duration::from_secs(60)).unwrap();
-        store.mark_dead_lettered("a", "http-400").unwrap();
+        let leases = store.lease(1, std::time::Duration::from_secs(60)).unwrap();
+        store
+            .mark_dead_lettered("a", "http-400", leases[0].lease_token.as_deref())
+            .unwrap();
     }
     let db = rust_db.to_str().unwrap();
     for args in [

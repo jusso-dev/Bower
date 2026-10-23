@@ -16,8 +16,14 @@ fn ids(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_owned()).collect()
 }
 
-fn settlement(event_id: &str, code: &str, retry_after: Option<Timestamp>) -> FailureSettlement {
+fn settlement(
+    store: &SqliteEventStore,
+    event_id: &str,
+    code: &str,
+    retry_after: Option<Timestamp>,
+) -> FailureSettlement {
     FailureSettlement {
+        lease_token: claim(store, event_id),
         event_id: event_id.into(),
         failure_code: code.into(),
         retry_after,
@@ -52,7 +58,7 @@ fn enqueue_deduplicates_fingerprint_and_keeps_original() {
         .enqueue(&event(
             "event-2",
             "sha256:same",
-            r#"{"eventId":"event-2"}"#,
+            r#"{"eventId":"event-1"}"#,
             clock.now(),
         ))
         .unwrap();
@@ -68,7 +74,7 @@ fn enqueue_deduplicates_fingerprint_and_keeps_original() {
 }
 
 #[test]
-fn enqueue_deduplicates_event_id() {
+fn enqueue_rejects_conflicting_event_id() {
     let directory = tempfile::tempdir().unwrap();
     let clock = FakeClock::new(test_now());
     let store = store(directory.path(), 10 * ONE_MEBIBYTE, &clock);
@@ -78,10 +84,10 @@ fn enqueue_deduplicates_event_id() {
             .unwrap()
             .enqueued
     );
-    let again = store
-        .enqueue(&event("same", "f2", r#"{"x":1}"#, clock.now()))
-        .unwrap();
-    assert!(again.duplicate);
+    let again = store.enqueue(&event("same", "f2", r#"{"x":1}"#, clock.now()));
+    assert!(
+        matches!(again, Err(StoreError::Invalid(message)) if message == "event-identity-conflict")
+    );
     assert_eq!(store.snapshot().unwrap().queued, 1);
     assert_eq!(store.ledger_head().unwrap().sequence, 1);
 }
@@ -157,7 +163,7 @@ fn uncommitted_write_is_rolled_back_after_crash() {
             .unwrap();
         transaction
             .execute(
-                "INSERT INTO queue_events (event_id, fingerprint, payload, payload_bytes, received_at, state) VALUES ('ghost','ghost','{}',2,'2026-01-01T00:00:00.0000000+00:00',0);",
+                "INSERT INTO queue_events_v5 (event_id, fingerprint, payload, payload_bytes, received_at, state) VALUES ('ghost','ghost','{}',2,'2026-01-01T00:00:00.0000000+00:00',0);",
                 [],
             )
             .unwrap();
@@ -185,13 +191,21 @@ fn mark_delivered_requires_lease_and_retains_acknowledged_record() {
         ))
         .unwrap();
 
-    let error = store.mark_delivered("event-1", "not-leased").unwrap_err();
+    let error = store
+        .mark_delivered("event-1", "not-leased", claim(&store, "event-1").as_deref())
+        .unwrap_err();
     assert!(
         matches!(&error, StoreError::Invalid(message) if message == "Event 'event-1' is not in required state 'uploading' for transition to 'delivered'."),
         "{error}"
     );
     store.lease(1, Duration::from_secs(60)).unwrap();
-    store.mark_delivered("event-1", "ama-spool:file-1").unwrap();
+    store
+        .mark_delivered(
+            "event-1",
+            "ama-spool:file-1",
+            claim(&store, "event-1").as_deref(),
+        )
+        .unwrap();
     let snapshot = store.snapshot().unwrap();
 
     assert_eq!(snapshot.queued, 0);
@@ -207,21 +221,27 @@ fn transitions_require_uploading_state() {
     let clock = FakeClock::new(test_now());
     let store = store(directory.path(), 10 * ONE_MEBIBYTE, &clock);
     enqueue(&store, &clock, "e1");
-    let retry = store.mark_retrying("e1", "busy", clock.now()).unwrap_err();
+    let retry = store
+        .mark_retrying("e1", "busy", clock.now(), claim(&store, "e1").as_deref())
+        .unwrap_err();
     assert_eq!(
         retry.to_string(),
         "invalid queue operation: Event 'e1' is not in required state 'uploading' for transition to 'retrying'."
     );
-    let dead = store.mark_dead_lettered("missing", "bad").unwrap_err();
+    let dead = store
+        .mark_dead_lettered("missing", "bad", claim(&store, "missing").as_deref())
+        .unwrap_err();
     assert_eq!(
         dead.to_string(),
         "invalid queue operation: Event 'missing' is not in required state 'uploading' for transition to 'dead-lettered'."
     );
     store.lease(1, Duration::from_secs(60)).unwrap();
-    store.mark_delivered("e1", "ack").unwrap();
+    store
+        .mark_delivered("e1", "ack", claim(&store, "e1").as_deref())
+        .unwrap();
     // Already delivered: a second acknowledgement is a transition error, not a silent success.
     assert!(matches!(
-        store.mark_delivered("e1", "ack"),
+        store.mark_delivered("e1", "ack", claim(&store, "e1").as_deref()),
         Err(StoreError::Invalid(_))
     ));
 }
@@ -235,7 +255,9 @@ fn retrying_waits_for_next_attempt() {
     store.lease(1, Duration::from_secs(60)).unwrap();
     // Offset timestamps are normalised to UTC text so comparisons stay lexical.
     let retry_after = bower_contracts::time::parse("2026-07-26T12:19:19+10:00").unwrap();
-    store.mark_retrying("e1", "busy", retry_after).unwrap();
+    store
+        .mark_retrying("e1", "busy", retry_after, claim(&store, "e1").as_deref())
+        .unwrap();
     assert_eq!(store.snapshot().unwrap().retrying, 1);
     clock.advance(Span::minutes(4));
     assert!(store.lease(1, Duration::from_secs(60)).unwrap().is_empty());
@@ -311,19 +333,19 @@ fn validates_arguments() {
         Err(StoreError::Invalid(_))
     ));
     assert!(matches!(
-        store.mark_delivered(" ", "ack"),
+        store.mark_delivered(" ", "ack", claim(&store, " ").as_deref()),
         Err(StoreError::Invalid(_))
     ));
     assert!(matches!(
-        store.mark_delivered("e", "\t"),
+        store.mark_delivered("e", "\t", claim(&store, "e").as_deref()),
         Err(StoreError::Invalid(_))
     ));
     assert!(matches!(
-        store.mark_retrying("e", "", clock.now()),
+        store.mark_retrying("e", "", clock.now(), claim(&store, "e").as_deref()),
         Err(StoreError::Invalid(_))
     ));
     assert!(matches!(
-        store.mark_dead_lettered("e", " "),
+        store.mark_dead_lettered("e", " ", claim(&store, "e").as_deref()),
         Err(StoreError::Invalid(_))
     ));
 }
@@ -430,16 +452,24 @@ fn mark_delivered_batch_settles_leased_events_and_returns_the_rest() {
     }
     let leased = store.lease(3, Duration::from_secs(300)).unwrap();
     store
-        .mark_retrying("queued", "test", clock.now() + Span::hours(1))
+        .mark_retrying(
+            "queued",
+            "test",
+            clock.now() + Span::hours(1),
+            claim(&store, "queued").as_deref(),
+        )
         .unwrap();
 
     let not_leased = store
         .mark_delivered_batch(
             &ids(&["leased-1", "leased-2", "queued", "missing"]),
             "ack-batch",
+            &claims(&store),
         )
         .unwrap();
-    let empty = store.mark_delivered_batch(&[], "ack-batch").unwrap();
+    let empty = store
+        .mark_delivered_batch(&[], "ack-batch", &claims(&store))
+        .unwrap();
     let snapshot = store.snapshot().unwrap();
 
     assert_eq!(leased.len(), 3);
@@ -458,11 +488,11 @@ fn mark_delivered_batch_settles_leased_events_and_returns_the_rest() {
         .unwrap();
     assert_eq!(acknowledgement, "ack-batch");
     assert!(matches!(
-        store.mark_delivered_batch(&ids(&["ok", " "]), "ack"),
+        store.mark_delivered_batch(&ids(&["ok", " "]), "ack", &claims(&store)),
         Err(StoreError::Invalid(_))
     ));
     assert!(matches!(
-        store.mark_delivered_batch(&ids(&["ok"]), " "),
+        store.mark_delivered_batch(&ids(&["ok"]), " ", &claims(&store)),
         Err(StoreError::Invalid(_))
     ));
     assert!(store.verify_ledger().unwrap().intact);
@@ -479,7 +509,7 @@ fn mark_delivered_batch_is_durable_across_restart_and_idempotent_on_replay() {
     first.lease(2, Duration::from_secs(300)).unwrap();
     assert!(
         first
-            .mark_delivered_batch(&ids(&["event-1", "event-2"]), "ack-1")
+            .mark_delivered_batch(&ids(&["event-1", "event-2"]), "ack-1", &claims(&first))
             .unwrap()
             .is_empty()
     );
@@ -487,7 +517,7 @@ fn mark_delivered_batch_is_durable_across_restart_and_idempotent_on_replay() {
 
     let restarted = store(directory.path(), 10 * ONE_MEBIBYTE, &clock);
     let replay = restarted
-        .mark_delivered_batch(&ids(&["event-1", "event-2"]), "ack-2")
+        .mark_delivered_batch(&ids(&["event-1", "event-2"]), "ack-2", &claims(&restarted))
         .unwrap();
     clock.advance(Span::minutes(10));
     let releasable = restarted.lease(10, Duration::from_secs(300)).unwrap();
@@ -509,16 +539,18 @@ fn mark_failed_batch_settles_leased_events_and_returns_the_rest() {
         enqueue(&store, &clock, id);
     }
     store.lease(3, Duration::from_secs(300)).unwrap();
-    store.mark_delivered("delivered", "ack").unwrap();
+    store
+        .mark_delivered("delivered", "ack", claim(&store, "delivered").as_deref())
+        .unwrap();
     let retry_at = bower_contracts::time::parse("2026-08-30T09:00:00+05:30").unwrap();
 
     let not_leased = store
         .mark_failed_batch(&[
-            settlement("retry", "busy", Some(retry_at)),
-            settlement("dead", "azure-http-400", None),
-            settlement("delivered", "late", None),
-            settlement("missing", "late", Some(retry_at)),
-            settlement("retry", "twice", None),
+            settlement(&store, "retry", "busy", Some(retry_at)),
+            settlement(&store, "dead", "azure-http-400", None),
+            settlement(&store, "delivered", "late", None),
+            settlement(&store, "missing", "late", Some(retry_at)),
+            settlement(&store, "retry", "twice", None),
         ])
         .unwrap();
     let empty = store.mark_failed_batch(&[]).unwrap();
@@ -551,11 +583,11 @@ fn mark_failed_batch_settles_leased_events_and_returns_the_rest() {
     assert_eq!(lease_until, None);
 
     assert!(matches!(
-        store.mark_failed_batch(&[settlement(" ", "code", None)]),
+        store.mark_failed_batch(&[settlement(&store, " ", "code", None)]),
         Err(StoreError::Invalid(_))
     ));
     assert!(matches!(
-        store.mark_failed_batch(&[settlement("retry", "", Some(retry_at))]),
+        store.mark_failed_batch(&[settlement(&store, "retry", "", Some(retry_at))]),
         Err(StoreError::Invalid(_))
     ));
     assert!(store.verify_ledger().unwrap().intact);
@@ -576,7 +608,7 @@ fn settlement_batches_roll_back_completely_on_error_and_recover_after_restart() 
     // Adversarial storage failure on the last row of each batch.
     raw(&path)
         .execute_batch(
-            "CREATE TRIGGER fail_poison BEFORE UPDATE OF state ON queue_events
+            "CREATE TRIGGER fail_poison BEFORE UPDATE OF state ON queue_events_v5
 WHEN NEW.event_id = 'poison'
 BEGIN SELECT RAISE(ABORT, 'injected failure'); END;",
         )
@@ -584,14 +616,14 @@ BEGIN SELECT RAISE(ABORT, 'injected failure'); END;",
     let retry_at = clock.now() + Span::minutes(1);
     assert!(matches!(
         first.mark_failed_batch(&[
-            settlement("a", "busy", Some(retry_at)),
-            settlement("b", "bad", None),
-            settlement("poison", "bad", None),
+            settlement(&first, "a", "busy", Some(retry_at)),
+            settlement(&first, "b", "bad", None),
+            settlement(&first, "poison", "bad", None),
         ]),
         Err(StoreError::Storage(_))
     ));
     assert!(matches!(
-        first.mark_delivered_batch(&ids(&["a", "b", "poison"]), "ack"),
+        first.mark_delivered_batch(&ids(&["a", "b", "poison"]), "ack", &claims(&first)),
         Err(StoreError::Storage(_))
     ));
     let after_failure = first.snapshot().unwrap();
@@ -629,15 +661,20 @@ BEGIN SELECT RAISE(ABORT, 'injected failure'); END;",
     assert!(
         restarted
             .mark_failed_batch(&[
-                settlement("a", "busy", Some(clock.now() + Span::minutes(1))),
-                settlement("b", "bad", None),
+                settlement(
+                    &restarted,
+                    "a",
+                    "busy",
+                    Some(clock.now() + Span::minutes(1))
+                ),
+                settlement(&restarted, "b", "bad", None),
             ])
             .unwrap()
             .is_empty()
     );
     assert!(
         restarted
-            .mark_delivered_batch(&ids(&["poison"]), "ack")
+            .mark_delivered_batch(&ids(&["poison"]), "ack", &claims(&restarted))
             .unwrap()
             .is_empty()
     );
@@ -676,23 +713,31 @@ fn default_batch_methods_follow_the_same_contract() {
         ) -> bower_contracts::StoreResult<Vec<bower_contracts::QueuedEvent>> {
             self.0.lease(maximum_count, lease_duration)
         }
-        fn mark_delivered(&self, event_id: &str, ack: &str) -> bower_contracts::StoreResult<()> {
-            self.0.mark_delivered(event_id, ack)
+        fn mark_delivered(
+            &self,
+            event_id: &str,
+            ack: &str,
+            lease_token: Option<&str>,
+        ) -> bower_contracts::StoreResult<()> {
+            self.0.mark_delivered(event_id, ack, lease_token)
         }
         fn mark_retrying(
             &self,
             event_id: &str,
             code: &str,
             retry_after: bower_contracts::time::Timestamp,
+            lease_token: Option<&str>,
         ) -> bower_contracts::StoreResult<()> {
-            self.0.mark_retrying(event_id, code, retry_after)
+            self.0
+                .mark_retrying(event_id, code, retry_after, lease_token)
         }
         fn mark_dead_lettered(
             &self,
             event_id: &str,
             code: &str,
+            lease_token: Option<&str>,
         ) -> bower_contracts::StoreResult<()> {
-            self.0.mark_dead_lettered(event_id, code)
+            self.0.mark_dead_lettered(event_id, code, lease_token)
         }
         fn snapshot(&self) -> bower_contracts::StoreResult<bower_contracts::QueueSnapshot> {
             self.0.snapshot()
@@ -742,26 +787,26 @@ fn default_batch_methods_follow_the_same_contract() {
 
     assert_eq!(
         plain
-            .mark_delivered_batch(&ids(&["ok", "missing"]), "ack")
+            .mark_delivered_batch(&ids(&["ok", "missing"]), "ack", &claims(&plain.0))
             .unwrap(),
         ["missing"]
     );
     assert_eq!(
         plain
             .mark_failed_batch(&[
-                settlement("retry", "busy", Some(clock.now())),
-                settlement("dead", "bad", None),
-                settlement("ok", "late", None),
+                settlement(&plain.0, "retry", "busy", Some(clock.now())),
+                settlement(&plain.0, "dead", "bad", None),
+                settlement(&plain.0, "ok", "late", None),
             ])
             .unwrap(),
         ["ok"]
     );
     assert!(matches!(
-        plain.mark_delivered_batch(&ids(&["ok", ""]), "ack"),
+        plain.mark_delivered_batch(&ids(&["ok", ""]), "ack", &claims(&plain.0)),
         Err(StoreError::Invalid(_))
     ));
     assert!(matches!(
-        plain.mark_failed_batch(&[settlement("retry", " ", None)]),
+        plain.mark_failed_batch(&[settlement(&plain.0, "retry", " ", None)]),
         Err(StoreError::Invalid(_))
     ));
     let snapshot = plain.snapshot().unwrap();
@@ -836,15 +881,34 @@ fn purge_removes_only_acknowledged_events_past_retention() {
     enqueue(&store, &clock, "dead-lettered");
     enqueue(&store, &clock, "retrying");
     store.lease(10, Duration::from_secs(60)).unwrap();
-    store.mark_delivered("delivered-old", "ack-1").unwrap();
-    store.mark_dead_lettered("dead-lettered", "bad").unwrap();
     store
-        .mark_retrying("retrying", "busy", clock.now() + Span::days(30))
+        .mark_delivered(
+            "delivered-old",
+            "ack-1",
+            claim(&store, "delivered-old").as_deref(),
+        )
+        .unwrap();
+    store
+        .mark_dead_lettered(
+            "dead-lettered",
+            "bad",
+            claim(&store, "dead-lettered").as_deref(),
+        )
+        .unwrap();
+    store
+        .mark_retrying(
+            "retrying",
+            "busy",
+            clock.now() + Span::days(30),
+            claim(&store, "retrying").as_deref(),
+        )
         .unwrap();
     clock.advance(Span::days(8));
     enqueue(&store, &clock, "queued");
     store.lease(1, Duration::from_secs(60)).unwrap();
-    store.mark_delivered("queued", "ack-2").unwrap();
+    store
+        .mark_delivered("queued", "ack-2", claim(&store, "queued").as_deref())
+        .unwrap();
 
     let purged = store
         .purge_delivered(clock.now() - Span::days(7), 100)
@@ -883,7 +947,9 @@ fn purge_honours_maximum_count_oldest_first() {
     for id in ["a", "b", "c"] {
         enqueue(&store, &clock, id);
         store.lease(1, Duration::from_secs(60)).unwrap();
-        store.mark_delivered(id, "ack").unwrap();
+        store
+            .mark_delivered(id, "ack", claim(&store, id).as_deref())
+            .unwrap();
         clock.advance(Span::seconds(1));
     }
     clock.advance(Span::days(10));
@@ -910,7 +976,9 @@ fn capacity_ignores_delivered_history() {
         ))
         .unwrap();
     store.lease(1, Duration::from_secs(60)).unwrap();
-    store.mark_delivered("delivered", "ack").unwrap();
+    store
+        .mark_delivered("delivered", "ack", claim(&store, "delivered").as_deref())
+        .unwrap();
 
     let second = store
         .enqueue(&event(
@@ -977,7 +1045,9 @@ fn capacity_full_queue_still_reports_duplicates() {
     // Also after a restart, and for a duplicate that has since been delivered.
     let restarted = store(directory.path(), ONE_MEBIBYTE, &clock);
     restarted.lease(1, Duration::from_secs(60)).unwrap();
-    restarted.mark_delivered("first", "ack").unwrap();
+    restarted
+        .mark_delivered("first", "ack", claim(&restarted, "first").as_deref())
+        .unwrap();
     restarted
         .enqueue(&event("filler", "sha256:filler", &payload, clock.now()))
         .unwrap();
@@ -1108,7 +1178,9 @@ fn snapshot_reports_oldest_undelivered_and_bytes() {
     clock.advance(Span::seconds(5));
     enqueue(&store, &clock, "b");
     store.lease(1, Duration::from_secs(60)).unwrap();
-    store.mark_delivered("a", "ack").unwrap();
+    store
+        .mark_delivered("a", "ack", claim(&store, "a").as_deref())
+        .unwrap();
     let snapshot = store.snapshot().unwrap();
     assert_eq!(snapshot.oldest_undelivered, Some(clock.now()));
     assert_eq!(snapshot.delivered, 1);
@@ -1133,9 +1205,15 @@ fn dead_letters_are_listed_without_payloads_and_replayed_by_code() {
             .unwrap();
     }
     store.lease(2, Duration::from_secs(60)).unwrap();
-    store.mark_dead_lettered("x", "azure-http-400").unwrap();
     store
-        .mark_dead_lettered("y", "preflight-field-too-large")
+        .mark_dead_lettered("x", "azure-http-400", claim(&store, "x").as_deref())
+        .unwrap();
+    store
+        .mark_dead_lettered(
+            "y",
+            "preflight-field-too-large",
+            claim(&store, "y").as_deref(),
+        )
         .unwrap();
 
     let listed = store.list_dead_lettered(10).unwrap();
@@ -1172,9 +1250,13 @@ fn replay_filters_by_ids_prefix_and_maximum() {
     }
     store.lease(4, Duration::from_secs(60)).unwrap();
     for id in ["a", "b", "c"] {
-        store.mark_dead_lettered(id, "http-500").unwrap();
+        store
+            .mark_dead_lettered(id, "http-500", claim(&store, id).as_deref())
+            .unwrap();
     }
-    store.mark_dead_lettered("d", "schema").unwrap();
+    store
+        .mark_dead_lettered("d", "schema", claim(&store, "d").as_deref())
+        .unwrap();
 
     // Whitespace prefix and empty id list count as "no filter".
     assert_eq!(

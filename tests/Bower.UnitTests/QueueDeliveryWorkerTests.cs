@@ -106,7 +106,7 @@ public sealed class QueueDeliveryWorkerTests
                 .LeaseAsync(10, TimeSpan.FromMinutes(5), CancellationToken.None)
                 .GetAwaiter()
                 .GetResult();
-            store.MarkDeliveredAsync(reclaimed[0].EventId, "other-worker", CancellationToken.None)
+            store.MarkDeliveredAsync(reclaimed[0].EventId, "other-worker", reclaimed[0].LeaseToken, CancellationToken.None)
                 .GetAwaiter()
                 .GetResult();
             return new DeliveryResult(
@@ -132,8 +132,8 @@ public sealed class QueueDeliveryWorkerTests
         {
             // Another worker reclaims "slow" and settles it before this batch acknowledges.
             clock.Advance(TimeSpan.FromMinutes(10));
-            store.LeaseAsync(10, TimeSpan.FromMinutes(5), CancellationToken.None).GetAwaiter().GetResult();
-            store.MarkDeliveredAsync("slow", "other-worker", CancellationToken.None).GetAwaiter().GetResult();
+            var reclaimed = store.LeaseAsync(1, TimeSpan.FromMinutes(5), CancellationToken.None).GetAwaiter().GetResult();
+            store.MarkDeliveredAsync("slow", "other-worker", reclaimed[0].LeaseToken, CancellationToken.None).GetAwaiter().GetResult();
             return new DeliveryResult(["slow", "fast"], [], "ack-batch");
         });
 
@@ -340,17 +340,17 @@ public sealed class QueueDeliveryWorkerTests
         public Task<EnqueueResult> EnqueueAsync(QueuedEvent candidate, CancellationToken cancellationToken = default) =>
             inner.EnqueueAsync(candidate, cancellationToken);
 
-        public Task MarkDeliveredAsync(string eventId, string acknowledgement, CancellationToken cancellationToken = default) =>
-            inner.MarkDeliveredAsync(eventId, acknowledgement, cancellationToken);
+        public Task MarkDeliveredAsync(string eventId, string acknowledgement, string? leaseToken, CancellationToken cancellationToken = default) =>
+            inner.MarkDeliveredAsync(eventId, acknowledgement, leaseToken, cancellationToken);
 
-        public Task<IReadOnlyList<string>> MarkDeliveredBatchAsync(IReadOnlyList<string> eventIds, string acknowledgement, CancellationToken cancellationToken = default) =>
-            inner.MarkDeliveredBatchAsync(eventIds, acknowledgement, cancellationToken);
+        public Task<IReadOnlyList<string>> MarkDeliveredBatchAsync(IReadOnlyList<string> eventIds, string acknowledgement, IReadOnlyDictionary<string, string>? leaseTokens, CancellationToken cancellationToken = default) =>
+            inner.MarkDeliveredBatchAsync(eventIds, acknowledgement, leaseTokens, cancellationToken);
 
-        public Task MarkRetryingAsync(string eventId, string failureCode, DateTimeOffset retryAfter, CancellationToken cancellationToken = default) =>
-            inner.MarkRetryingAsync(eventId, failureCode, retryAfter, cancellationToken);
+        public Task MarkRetryingAsync(string eventId, string failureCode, DateTimeOffset retryAfter, string? leaseToken, CancellationToken cancellationToken = default) =>
+            inner.MarkRetryingAsync(eventId, failureCode, retryAfter, leaseToken, cancellationToken);
 
-        public Task MarkDeadLetteredAsync(string eventId, string failureCode, CancellationToken cancellationToken = default) =>
-            inner.MarkDeadLetteredAsync(eventId, failureCode, cancellationToken);
+        public Task MarkDeadLetteredAsync(string eventId, string failureCode, string? leaseToken, CancellationToken cancellationToken = default) =>
+            inner.MarkDeadLetteredAsync(eventId, failureCode, leaseToken, cancellationToken);
 
         public Task<QueueSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default) =>
             inner.GetSnapshotAsync(cancellationToken);

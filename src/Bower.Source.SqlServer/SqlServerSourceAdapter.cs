@@ -66,8 +66,7 @@ public sealed class SqlServerSourceAdapter
 
         await using SqlServerAuditDbContext context = new(options);
         IQueryable<SqlServerAuditRow> query = BuildQuery(context.AuditRows, cursor);
-        List<SqlServerAuditRow> rows = await query
-            .Take(options.BatchSize)
+        List<SqlServerAuditRow> rows = await BoundProjection(query.Take(options.BatchSize))
             .ToListAsync(cancellationToken);
 
         return BuildBatch(rows, cursor, snapshot?.Version ?? 0);
@@ -78,11 +77,6 @@ public sealed class SqlServerSourceAdapter
         SqlServerSourceCursor cursor,
         long expectedVersion)
     {
-        if (rows.Count == 0)
-        {
-            return new SqlServerPollBatch([], null);
-        }
-
         DateTimeOffset settledBefore = clock.GetUtcNow() - options.CommitSettleDelay;
         bool holdBackRecent = options.CommitSettleDelay > TimeSpan.Zero
             && options.CursorKind != SqlServerCursorKind.Timestamp;
@@ -97,26 +91,30 @@ public sealed class SqlServerSourceAdapter
             }
 
             SqlServerSourceCursor candidate = new(
-                1,
+                2,
                 options.CursorKind,
                 row.Sequence,
                 row.EventTime.ToUniversalTime());
-            next = Max(next, candidate);
             records.Add(MapBounded(row));
+            next = cursor.ReplayTime is null
+                ? Max(next, candidate)
+                : next with { ReplayTime = row.EventTime.ToUniversalTime(), ReplaySequence = row.Sequence };
         }
 
-        if (rows.Count == options.BatchSize &&
-            options.TimestampOverlap > TimeSpan.Zero &&
-            Compare(next, cursor) <= 0)
+        // Forward progress and overlap replay use independent keyset positions. A replay
+        // sweep has a fixed upper bound, so tied timestamps never pin the first page.
+        if (options.CursorKind == SqlServerCursorKind.Timestamp && rows.Count < options.BatchSize)
         {
-            throw new SqlServerOverlapWindowSaturatedException(options.SourceId);
+            next = cursor.ReplayTime is not null
+                ? next with { ReplayTime = null, ReplaySequence = long.MinValue }
+                : options.TimestampOverlap > TimeSpan.Zero
+                    ? next with { ReplayTime = next.EventTime - options.TimestampOverlap, ReplaySequence = long.MinValue }
+                    : next;
         }
 
-        SqlServerCursorCheckpoint? checkpoint = Compare(next, cursor) > 0
-            ? new SqlServerCursorCheckpoint(
-                options.SourceId,
-                expectedVersion,
-                JsonSerializer.Serialize(next, CursorJsonOptions))
+        SqlServerCursorCheckpoint? checkpoint = next != cursor
+            ? new SqlServerCursorCheckpoint(options.SourceId, expectedVersion,
+                JsonSerializer.Serialize(next with { SchemaVersion = 2 }, CursorJsonOptions))
             : null;
 
         return new SqlServerPollBatch(records, checkpoint);
@@ -124,7 +122,13 @@ public sealed class SqlServerSourceAdapter
 
     private SqlServerSourceRecord MapBounded(SqlServerAuditRow row)
     {
-        SqlServerSourceRecord record = Map(row);
+        if (row.OversizedIdentity || (row.OversizedValues && options.OversizedRecords == SqlServerOversizedRecordHandling.Fail))
+        {
+            throw new SqlServerSourceRecordTooLargeException(options.SourceId, row.Sequence,
+                -1, options.MaximumRecordBytes);
+        }
+
+        SqlServerSourceRecord record = Map(row) with { ValuesOmitted = row.ValuesOmitted };
         int size = JsonSerializer.SerializeToUtf8Bytes(record).Length;
         if (size <= options.MaximumRecordBytes)
         {
@@ -178,7 +182,7 @@ public sealed class SqlServerSourceAdapter
         }
     }
 
-    private IQueryable<SqlServerAuditRow> BuildQuery(
+    internal IQueryable<SqlServerAuditRow> BuildQuery(
         IQueryable<SqlServerAuditRow> rows,
         SqlServerSourceCursor cursor)
     {
@@ -187,10 +191,16 @@ public sealed class SqlServerSourceAdapter
             SqlServerCursorKind.Incrementing => rows
                 .Where(row => row.Sequence > cursor.Sequence)
                 .OrderBy(row => row.Sequence),
+            SqlServerCursorKind.Timestamp when cursor.ReplayTime is DateTimeOffset replayTime => rows
+                .Where(row => (row.EventTime > replayTime ||
+                    (row.EventTime == replayTime && row.Sequence > cursor.ReplaySequence)) &&
+                    (row.EventTime < cursor.EventTime ||
+                    (row.EventTime == cursor.EventTime && row.Sequence <= cursor.Sequence)))
+                .OrderBy(row => row.EventTime).ThenBy(row => row.Sequence),
             SqlServerCursorKind.Timestamp => rows
-                .Where(row => row.EventTime >= cursor.EventTime - options.TimestampOverlap)
-                .OrderBy(row => row.EventTime)
-                .ThenBy(row => row.Sequence),
+                .Where(row => row.EventTime > cursor.EventTime ||
+                    (row.EventTime == cursor.EventTime && row.Sequence > cursor.Sequence))
+                .OrderBy(row => row.EventTime).ThenBy(row => row.Sequence),
             SqlServerCursorKind.Composite => rows
                 .Where(
                     row =>
@@ -200,6 +210,36 @@ public sealed class SqlServerSourceAdapter
                 .ThenBy(row => row.Sequence),
             _ => throw new InvalidOperationException("Unsupported SQL cursor kind.")
         };
+    }
+
+    internal IQueryable<SqlServerAuditRow> BoundProjection(IQueryable<SqlServerAuditRow> rows)
+    {
+        int limit = options.MaximumRecordBytes;
+        return rows.Select(row => new
+        {
+            Row = row,
+            IdentityBytes = (long)(EF.Functions.DataLength(row.Username) ?? 0)
+                + (EF.Functions.DataLength(row.Action) ?? 0)
+                + (EF.Functions.DataLength(row.TargetType) ?? 0)
+                + (EF.Functions.DataLength(row.TargetId) ?? 0)
+                + (EF.Functions.DataLength(row.SourceIpAddress) ?? 0),
+            ValueBytes = (long)(EF.Functions.DataLength(row.PreviousValue) ?? 0)
+                + (EF.Functions.DataLength(row.NewValue) ?? 0)
+        }).Select(value => new SqlServerAuditRow
+        {
+            Sequence = value.Row.Sequence,
+            EventTime = value.Row.EventTime,
+            Username = value.IdentityBytes <= limit ? value.Row.Username : null,
+            Action = value.IdentityBytes <= limit ? value.Row.Action : null,
+            TargetType = value.IdentityBytes <= limit ? value.Row.TargetType : null,
+            TargetId = value.IdentityBytes <= limit ? value.Row.TargetId : null,
+            SourceIpAddress = value.IdentityBytes <= limit ? value.Row.SourceIpAddress : null,
+            PreviousValue = value.ValueBytes <= limit ? value.Row.PreviousValue : null,
+            NewValue = value.ValueBytes <= limit ? value.Row.NewValue : null,
+            OversizedIdentity = value.IdentityBytes > limit,
+            OversizedValues = value.ValueBytes > limit,
+            ValuesOmitted = value.ValueBytes > limit
+        });
     }
 
     private SqlServerSourceRecord Map(SqlServerAuditRow row)
@@ -228,19 +268,20 @@ public sealed class SqlServerSourceAdapter
             fingerprint);
     }
 
-    private SqlServerSourceCursor DeserializeCursor(string value)
+    internal SqlServerSourceCursor DeserializeCursor(string value)
     {
         try
         {
             SqlServerSourceCursor cursor =
                 JsonSerializer.Deserialize<SqlServerSourceCursor>(value, CursorJsonOptions)
                 ?? throw new JsonException("Cursor is empty.");
-            if (cursor.SchemaVersion != 1 || cursor.Kind != options.CursorKind)
+            if (cursor.SchemaVersion is not (1 or 2) || cursor.Kind != options.CursorKind
+                || (cursor.ReplayTime is not null && (cursor.Kind != SqlServerCursorKind.Timestamp || cursor.ReplayTime > cursor.EventTime)))
             {
                 throw new JsonException("Cursor version or kind does not match source.");
             }
 
-            return cursor;
+            return cursor with { SchemaVersion = 2 };
         }
         catch (JsonException exception)
         {
@@ -271,12 +312,14 @@ internal sealed record SqlServerSourceCursor(
     int SchemaVersion,
     SqlServerCursorKind Kind,
     long Sequence,
-    DateTimeOffset EventTime)
+    DateTimeOffset EventTime,
+    DateTimeOffset? ReplayTime = null,
+    long ReplaySequence = long.MinValue)
 {
     public static SqlServerSourceCursor Initial(SqlServerSourceOptions options)
     {
         return new SqlServerSourceCursor(
-            1,
+            2,
             options.CursorKind,
             options.InitialSequence,
             options.InitialTimestamp.ToUniversalTime());
@@ -301,5 +344,6 @@ public sealed class SqlServerSourceRecordTooLargeException(
     long sequence,
     int actualBytes,
     int maximumBytes)
-    : InvalidOperationException(
-        $"SQL source '{sourceId}' record at sequence {sequence} is {actualBytes} bytes; maximum is {maximumBytes} bytes.");
+    : InvalidOperationException(actualBytes < 0
+        ? $"SQL source '{sourceId}' record at sequence {sequence} exceeds the bounded source projection ({maximumBytes} bytes per column group)."
+        : $"SQL source '{sourceId}' record at sequence {sequence} is {actualBytes} bytes; maximum is {maximumBytes} bytes.");

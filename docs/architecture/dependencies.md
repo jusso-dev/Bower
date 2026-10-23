@@ -80,3 +80,12 @@ The Rust collector test target reuses workspace `flate2` and `rusqlite` as dev-o
 dependencies. `flate2` decodes captured Azure gzip request bodies so privacy assertions
 inspect actual outbound content; `rusqlite` holds a read transaction open so SQLite
 WAL bytes remain available for inspection. Neither adds a production dependency.
+
+## Queue v5 identity and regression tests (2026-10-23)
+
+`bower-core` now references the existing workspace `bower-persistence` crate,
+matching the C# Core-to-Persistence dependency. Core fingerprinting and persisted
+queue migration must call the same identity implementation; this prevents drift
+when existing databases are re-keyed. No new third-party runtime package or version
+is introduced. Its tests use the existing workspace `tempfile` dev dependency for
+real durable-store replay/conflict regression tests rather than an in-memory double.

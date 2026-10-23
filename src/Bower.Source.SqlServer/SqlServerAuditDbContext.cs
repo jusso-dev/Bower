@@ -79,4 +79,13 @@ internal sealed class SqlServerAuditRow
     public string? NewValue { get; set; }
 
     public string? SourceIpAddress { get; set; }
+
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public bool ValuesOmitted { get; set; }
+
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public bool OversizedIdentity { get; set; }
+
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public bool OversizedValues { get; set; }
 }

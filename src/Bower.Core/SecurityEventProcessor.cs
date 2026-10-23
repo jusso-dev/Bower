@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Bower.Abstractions;
 using Bower.Contracts;
+using Bower.Persistence;
 using Bower.Redaction.Privacy;
 
 namespace Bower.Core;
@@ -123,7 +124,16 @@ public sealed class SecurityEventProcessor(
             EventFingerprint.Create(arranged),
             payload,
             now);
-        EnqueueResult enqueue = await queue.EnqueueAsync(queued, cancellationToken);
+        EnqueueResult enqueue;
+        try
+        {
+            enqueue = await queue.EnqueueAsync(queued, cancellationToken);
+        }
+        catch (EventIdentityConflictException)
+        {
+            return new ProcessingResult(DecisionAction.Quarantine, arranged.EventId, false, false,
+                ["event-identity-conflict"], decision);
+        }
 
         string? privacyAlertEventId = await TryEnqueuePrivacyAlertAsync(
             arranged,

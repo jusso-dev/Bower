@@ -29,6 +29,16 @@ internal static class QueueLedger
 
         CREATE INDEX IF NOT EXISTS ix_queue_ledger_event ON queue_ledger(event_id);
 
+
+        CREATE TABLE IF NOT EXISTS queue_ledger_segments (
+            start_sequence INTEGER PRIMARY KEY NOT NULL,
+            end_sequence INTEGER NOT NULL,
+            previous_hash TEXT NOT NULL,
+            chain_hash TEXT NOT NULL,
+            checkpoint_hash TEXT NOT NULL,
+            CHECK(end_sequence >= start_sequence)
+        );
+
         CREATE TABLE IF NOT EXISTS queue_ledger_anchor (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             sequence INTEGER NOT NULL,
@@ -64,7 +74,10 @@ internal static class QueueLedger
         command.Transaction = transaction;
         command.CommandText =
             """
-            SELECT sequence, chain_hash FROM queue_ledger ORDER BY sequence DESC LIMIT 1;
+            SELECT sequence, chain_hash FROM (
+                SELECT sequence, chain_hash FROM queue_ledger
+                UNION ALL SELECT end_sequence, chain_hash FROM queue_ledger_segments
+            ) ORDER BY sequence DESC LIMIT 1;
             """;
         await using (SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken))
         {
@@ -97,7 +110,8 @@ internal static class QueueLedger
         string eventId,
         string payload,
         string receivedAt,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool assignIncarnation = true)
     {
         (long sequence, string previous) = await HeadAsync(connection, transaction, cancellationToken);
         long next = sequence + 1;
@@ -115,13 +129,16 @@ internal static class QueueLedger
         command.Parameters.AddWithValue("$received_at", receivedAt);
         command.Parameters.AddWithValue("$chain_hash", Chain(previous, next, eventId, payloadHash, receivedAt));
         await command.ExecuteNonQueryAsync(cancellationToken);
+        if (assignIncarnation)
+        {
+            command.CommandText = "UPDATE queue_events_v5 SET enqueue_sequence = $sequence WHERE event_id = $event_id;";
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
     }
 
     /// <summary>Adds ledger entries for events stored before the ledger existed.</summary>
-    internal static async Task BackfillAsync(SqliteConnection connection, CancellationToken cancellationToken)
+    internal static async Task BackfillAsync(SqliteConnection connection, SqliteTransaction transaction, CancellationToken cancellationToken)
     {
-        await using SqliteTransaction transaction =
-            connection.BeginTransaction(System.Data.IsolationLevel.Serializable, deferred: false);
         List<(string EventId, string Payload, string ReceivedAt)> missing = [];
         await using (SqliteCommand select = connection.CreateCommand())
         {
@@ -142,10 +159,9 @@ internal static class QueueLedger
 
         foreach ((string eventId, string payload, string receivedAt) in missing)
         {
-            await AppendAsync(connection, transaction, eventId, payload, receivedAt, cancellationToken);
+            await AppendAsync(connection, transaction, eventId, payload, receivedAt, cancellationToken, assignIncarnation: false);
         }
 
-        await transaction.CommitAsync(cancellationToken);
     }
 
     internal static async Task MarkPurgedAsync(
@@ -168,66 +184,105 @@ internal static class QueueLedger
         }
     }
 
-    /// <summary>Folds the longest fully purged prefix into the anchor and deletes it.</summary>
-    internal static async Task<int> CompactAsync(
-        SqliteConnection connection,
-        string now,
-        CancellationToken cancellationToken)
+    internal static string CheckpointHash(long start, long end, string previous, string hash) =>
+        PayloadHash(string.Join('\u001f', "bower-ledger-segment-v1",
+            start.ToString(CultureInfo.InvariantCulture), end.ToString(CultureInfo.InvariantCulture), previous, hash));
+
+    /// <summary>Coalesces purged runs, including runs behind unresolved events.</summary>
+    internal static async Task<int> CompactAsync(SqliteConnection connection, SqliteTransaction transaction, string now, CancellationToken cancellationToken)
     {
-        await using SqliteTransaction transaction =
-            connection.BeginTransaction(System.Data.IsolationLevel.Serializable, deferred: false);
-        await using SqliteCommand find = connection.CreateCommand();
-        find.Transaction = transaction;
-        find.CommandText =
-            """
-            SELECT sequence, chain_hash FROM queue_ledger
-            WHERE sequence < COALESCE((SELECT MIN(sequence) FROM queue_ledger WHERE purged_at IS NULL), 9223372036854775807)
-            ORDER BY sequence DESC LIMIT 1;
-            """;
-        long sequence;
-        string hash;
-        await using (SqliteDataReader reader = await find.ExecuteReaderAsync(cancellationToken))
+        _ = now;
+        List<(long Start, long End, string Previous, string Hash)> runs = [];
+        (long anchor, string previous) = await AnchorAsync(connection, transaction, cancellationToken);
+        long expected = anchor + 1;
+        long start = 0;
+        long end = 0;
+        string before = previous;
+        string hash = previous;
+        await using (SqliteCommand select = connection.CreateCommand())
         {
-            if (!await reader.ReadAsync(cancellationToken))
+            select.Transaction = transaction;
+            select.CommandText = """
+                SELECT sequence, sequence, chain_hash, purged_at IS NOT NULL,
+                    event_id, payload_sha256, received_at, NULL, NULL FROM queue_ledger
+                UNION ALL SELECT start_sequence, end_sequence, chain_hash, 1,
+                    '', '', '', previous_hash, checkpoint_hash FROM queue_ledger_segments
+                ORDER BY 1;
+                """;
+            await using SqliteDataReader reader = await select.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
             {
-                return 0;
+                long rowStart = reader.GetInt64(0);
+                long rowEnd = reader.GetInt64(1);
+                string rowHash = reader.GetString(2);
+                bool purged = reader.GetBoolean(3);
+                bool segment = !reader.IsDBNull(7);
+                bool valid = segment
+                    ? reader.GetString(7) == previous && reader.GetString(8) == CheckpointHash(rowStart, rowEnd, previous, rowHash)
+                    : rowHash == Chain(previous, rowStart, reader.GetString(4), reader.GetString(5), reader.GetString(6));
+                if (rowStart != expected || !valid)
+                {
+                    throw new InvalidOperationException("Cannot compact a corrupt queue ledger.");
+                }
+                expected = rowEnd + 1;
+                if (start != 0 && (!purged || rowStart != end + 1))
+                {
+                    runs.Add((start, end, before, hash));
+                    start = 0;
+                }
+                if (purged)
+                {
+                    if (start == 0)
+                    {
+                        start = rowStart;
+                        before = previous;
+                    }
+                    end = rowEnd;
+                    hash = rowHash;
+                }
+                previous = rowHash;
             }
-
-            sequence = reader.GetInt64(0);
-            hash = reader.GetString(1);
         }
-
-        await using SqliteCommand anchor = connection.CreateCommand();
-        anchor.Transaction = transaction;
-        anchor.CommandText =
-            """
-            INSERT INTO queue_ledger_anchor (id, sequence, chain_hash, created_at)
-            VALUES (1, $sequence, $hash, $now)
-            ON CONFLICT(id) DO UPDATE SET sequence = excluded.sequence, chain_hash = excluded.chain_hash, created_at = excluded.created_at;
-            """;
-        anchor.Parameters.AddWithValue("$sequence", sequence);
-        anchor.Parameters.AddWithValue("$hash", hash);
-        anchor.Parameters.AddWithValue("$now", now);
-        await anchor.ExecuteNonQueryAsync(cancellationToken);
-
-        await using SqliteCommand delete = connection.CreateCommand();
-        delete.Transaction = transaction;
-        delete.CommandText = "DELETE FROM queue_ledger WHERE sequence <= $sequence;";
-        delete.Parameters.AddWithValue("$sequence", sequence);
-        int removed = await delete.ExecuteNonQueryAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        if (start != 0)
+        {
+            runs.Add((start, end, before, hash));
+        }
+        int removed = 0;
+        foreach (var run in runs)
+        {
+            await using SqliteCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                DELETE FROM queue_ledger_segments WHERE start_sequence BETWEEN $start AND $end;
+                INSERT INTO queue_ledger_segments VALUES ($start, $end, $previous, $hash, $checkpoint);
+                """;
+            command.Parameters.AddWithValue("$start", run.Start);
+            command.Parameters.AddWithValue("$end", run.End);
+            command.Parameters.AddWithValue("$previous", run.Previous);
+            command.Parameters.AddWithValue("$hash", run.Hash);
+            command.Parameters.AddWithValue("$checkpoint", CheckpointHash(run.Start, run.End, run.Previous, run.Hash));
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            command.CommandText = "DELETE FROM queue_ledger WHERE sequence BETWEEN $start AND $end AND purged_at IS NOT NULL;";
+            removed += await command.ExecuteNonQueryAsync(cancellationToken);
+        }
         return removed;
     }
 
     internal static async Task<Bower.Abstractions.LedgerVerification> VerifyAsync(
         SqliteConnection connection,
+        CancellationToken cancellationToken) => await VerifyAsync(connection, null, cancellationToken);
+
+    internal static async Task<Bower.Abstractions.LedgerVerification> VerifyAsync(
+        SqliteConnection connection,
+        SqliteTransaction? existingTransaction,
         CancellationToken cancellationToken)
     {
         List<Bower.Abstractions.LedgerIssue> issues = [];
         // One deferred (read) transaction: in WAL mode every read below sees the same
         // snapshot, so an enqueue committing mid-verification cannot produce a false
         // unledgered-event or event-missing issue.
-        await using SqliteTransaction transaction = connection.BeginTransaction(deferred: true);
+        await using SqliteTransaction? owned = existingTransaction is null ? connection.BeginTransaction(deferred: true) : null;
+        SqliteTransaction transaction = existingTransaction ?? owned!;
         (long anchorSequence, string previous) = await AnchorAsync(connection, transaction, cancellationToken);
         long expected = anchorSequence + 1;
         long entries = 0;
@@ -235,24 +290,30 @@ internal static class QueueLedger
         string headHash = previous;
 
         // Hash while streaming so memory holds one digest per event, not every payload.
-        Dictionary<string, string> payloads = new(StringComparer.Ordinal);
+        Dictionary<long, (string EventId, string Hash)> payloads = [];
         await using (SqliteCommand events = connection.CreateCommand())
         {
             events.Transaction = transaction;
-            events.CommandText = "SELECT event_id, payload FROM queue_events;";
+            events.CommandText = "SELECT enqueue_sequence, event_id, payload FROM queue_events_v5;";
             await using SqliteDataReader reader = await events.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
-                payloads[reader.GetString(0)] = PayloadHash(reader.GetString(1));
+                payloads[reader.GetInt64(0)] = (reader.GetString(1), PayloadHash(reader.GetString(2)));
             }
         }
 
-        HashSet<string> ledgered = new(StringComparer.Ordinal);
+        HashSet<long> ledgered = [];
         await using (SqliteCommand ledger = connection.CreateCommand())
         {
             ledger.Transaction = transaction;
             ledger.CommandText =
-                "SELECT sequence, event_id, payload_sha256, received_at, chain_hash, purged_at FROM queue_ledger ORDER BY sequence;";
+                """
+                SELECT sequence, event_id, payload_sha256, received_at, chain_hash, purged_at,
+                    sequence, NULL, NULL FROM queue_ledger
+                UNION ALL SELECT start_sequence, '', '', '', chain_hash, 'segment',
+                    end_sequence, previous_hash, checkpoint_hash FROM queue_ledger_segments
+                ORDER BY 1;
+                """;
             await using SqliteDataReader reader = await ledger.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
@@ -262,9 +323,24 @@ internal static class QueueLedger
                 string receivedAt = reader.GetString(3);
                 string chainHash = reader.GetString(4);
                 bool purged = !reader.IsDBNull(5);
-                entries++;
-                ledgered.Add(eventId);
+                if (!reader.IsDBNull(7))
+                {
+                    long end = reader.GetInt64(6);
+                    string before = reader.GetString(7);
+                    if (sequence != expected || before != previous ||
+                        reader.GetString(8) != CheckpointHash(sequence, end, before, chainHash))
+                    {
+                        issues.Add(new(sequence, string.Empty, "checkpoint-broken", "Retention checkpoint does not match its boundary."));
+                    }
+                    previous = chainHash;
+                    head = end;
+                    headHash = chainHash;
+                    expected = end + 1;
+                    continue;
+                }
 
+                ledgered.Add(sequence);
+                entries++;
                 if (sequence != expected)
                 {
                     issues.Add(new(sequence, eventId, "sequence-gap", $"Expected sequence {expected}, found {sequence}."));
@@ -278,16 +354,16 @@ internal static class QueueLedger
 
                 if (!purged)
                 {
-                    if (!payloads.TryGetValue(eventId, out string? storedPayloadHash))
+                    if (!payloads.TryGetValue(sequence, out var storedPayload))
                     {
                         issues.Add(new(sequence, eventId, "event-missing", "Event was removed without a purge record."));
                     }
-                    else if (!string.Equals(storedPayloadHash, payloadHash, StringComparison.Ordinal))
+                    else if ((!string.Equals(storedPayload.Hash, payloadHash, StringComparison.Ordinal) || storedPayload.EventId != eventId))
                     {
                         issues.Add(new(sequence, eventId, "payload-modified", "Stored payload no longer matches the ledger."));
                     }
                 }
-                else if (payloads.ContainsKey(eventId))
+                else if (payloads.ContainsKey(sequence))
                 {
                     issues.Add(new(sequence, eventId, "purge-mismatch", "Ledger marks the event purged but it is still stored."));
                 }
@@ -299,9 +375,9 @@ internal static class QueueLedger
             }
         }
 
-        foreach (string eventId in payloads.Keys.Where(id => !ledgered.Contains(id)))
+        foreach (long incarnation in payloads.Keys.Where(id => !ledgered.Contains(id)))
         {
-            issues.Add(new(0, eventId, "unledgered-event", "Event is stored without a ledger entry."));
+            issues.Add(new(incarnation, payloads[incarnation].EventId, "unledgered-event", "Event is stored without a ledger entry."));
         }
 
         return new Bower.Abstractions.LedgerVerification(issues.Count == 0, entries, head, headHash, issues);

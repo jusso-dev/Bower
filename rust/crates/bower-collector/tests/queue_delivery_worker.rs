@@ -86,6 +86,7 @@ fn enqueue(store: &SqliteEventStore, clock: &FakeClock, ids: &[&str]) {
     for id in ids {
         store
             .enqueue(&QueuedEvent {
+                lease_token: None,
                 event_id: id.to_string(),
                 fingerprint: format!("sha256:{id}"),
                 payload: format!("{{\"eventId\":\"{id}\"}}"),
@@ -230,9 +231,13 @@ async fn deliver_once_ignores_settlement_of_reclaimed_lease() {
     let output = FakeOutput(Box::new(move |_| {
         // Another worker reclaims and delivers the event while this delivery is slow.
         inner_clock.advance(Duration::from_secs(600));
-        let reclaimed = inner_store.lease(10, Duration::from_secs(300)).unwrap();
+        let reclaimed = inner_store.lease(1, Duration::from_secs(300)).unwrap();
         inner_store
-            .mark_delivered(&reclaimed[0].event_id, "other-worker")
+            .mark_delivered(
+                &reclaimed[0].event_id,
+                "other-worker",
+                reclaimed[0].lease_token.as_deref(),
+            )
             .unwrap();
         result(&[], vec![failure("slow", "timeout", true)], None)
     }));
@@ -255,8 +260,10 @@ async fn deliver_once_batch_acknowledgement_skips_only_the_reclaimed_event() {
     let output = FakeOutput(Box::new(move |_| {
         // Another worker reclaims "slow" and settles it before this batch acknowledges.
         inner_clock.advance(Duration::from_secs(600));
-        inner_store.lease(10, Duration::from_secs(300)).unwrap();
-        inner_store.mark_delivered("slow", "other-worker").unwrap();
+        let reclaimed = inner_store.lease(1, Duration::from_secs(300)).unwrap();
+        inner_store
+            .mark_delivered("slow", "other-worker", reclaimed[0].lease_token.as_deref())
+            .unwrap();
         result(&["slow", "fast"], Vec::new(), Some("ack-batch"))
     }));
 
@@ -424,8 +431,10 @@ impl DurableEventStore for FlakyStore {
         &self,
         event_ids: &[String],
         acknowledgement: &str,
+        lease_tokens: &std::collections::HashMap<String, String>,
     ) -> StoreResult<Vec<String>> {
-        self.inner.mark_delivered_batch(event_ids, acknowledgement)
+        self.inner
+            .mark_delivered_batch(event_ids, acknowledgement, lease_tokens)
     }
     fn mark_failed_batch(&self, failures: &[FailureSettlement]) -> StoreResult<Vec<String>> {
         let call = self.failed_batch_calls.fetch_add(1, Ordering::SeqCst) + 1;
@@ -451,20 +460,33 @@ impl DurableEventStore for FlakyStore {
         }
         self.inner.lease(maximum_count, lease_duration)
     }
-    fn mark_delivered(&self, event_id: &str, acknowledgement: &str) -> StoreResult<()> {
-        self.inner.mark_delivered(event_id, acknowledgement)
+    fn mark_delivered(
+        &self,
+        event_id: &str,
+        acknowledgement: &str,
+        lease_token: Option<&str>,
+    ) -> StoreResult<()> {
+        self.inner
+            .mark_delivered(event_id, acknowledgement, lease_token)
     }
     fn mark_retrying(
         &self,
         event_id: &str,
         failure_code: &str,
         retry_after: Timestamp,
+        lease_token: Option<&str>,
     ) -> StoreResult<()> {
         self.inner
-            .mark_retrying(event_id, failure_code, retry_after)
+            .mark_retrying(event_id, failure_code, retry_after, lease_token)
     }
-    fn mark_dead_lettered(&self, event_id: &str, failure_code: &str) -> StoreResult<()> {
-        self.inner.mark_dead_lettered(event_id, failure_code)
+    fn mark_dead_lettered(
+        &self,
+        event_id: &str,
+        failure_code: &str,
+        lease_token: Option<&str>,
+    ) -> StoreResult<()> {
+        self.inner
+            .mark_dead_lettered(event_id, failure_code, lease_token)
     }
     fn snapshot(&self) -> StoreResult<QueueSnapshot> {
         self.inner.snapshot()

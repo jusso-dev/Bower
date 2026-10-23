@@ -166,6 +166,7 @@ fn seeded_queue(path: &Path) {
     for (index, id) in ["e1", "e2", "e3"].iter().enumerate() {
         store
             .enqueue(&QueuedEvent {
+                lease_token: None,
                 event_id: (*id).to_owned(),
                 fingerprint: format!("fp-{index}"),
                 payload: format!("{{\"secret\":\"payload-{index}\"}}"),
@@ -175,9 +176,31 @@ fn seeded_queue(path: &Path) {
             })
             .unwrap();
     }
-    store.lease(10, std::time::Duration::from_secs(60)).unwrap();
-    store.mark_dead_lettered("e1", "http-400:bad-row").unwrap();
-    store.mark_dead_lettered("e2", "dcr-mismatch").unwrap();
+    let leases = store.lease(10, std::time::Duration::from_secs(60)).unwrap();
+    store
+        .mark_dead_lettered(
+            "e1",
+            "http-400:bad-row",
+            leases
+                .iter()
+                .find(|v| v.event_id == "e1")
+                .unwrap()
+                .lease_token
+                .as_deref(),
+        )
+        .unwrap();
+    store
+        .mark_dead_lettered(
+            "e2",
+            "dcr-mismatch",
+            leases
+                .iter()
+                .find(|v| v.event_id == "e2")
+                .unwrap()
+                .lease_token
+                .as_deref(),
+        )
+        .unwrap();
 }
 
 #[test]

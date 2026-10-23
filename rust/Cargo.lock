@@ -354,11 +354,13 @@ name = "bower-core"
 version = "0.1.0"
 dependencies = [
  "bower-contracts",
+ "bower-persistence",
  "chrono",
  "hex",
  "indexmap",
  "serde_json",
  "sha2",
+ "tempfile",
  "thiserror",
 ]
 

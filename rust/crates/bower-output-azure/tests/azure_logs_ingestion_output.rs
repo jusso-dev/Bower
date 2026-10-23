@@ -162,6 +162,7 @@ fn output(base: &Url) -> AzureLogsIngestionOutput {
 
 fn queued(event_id: &str, payload: String) -> QueuedEvent {
     QueuedEvent {
+        lease_token: None,
         event_id: event_id.to_owned(),
         fingerprint: format!("sha256:{event_id}"),
         payload,

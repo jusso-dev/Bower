@@ -219,7 +219,20 @@ impl SecurityEventProcessor {
         });
         arranged.collector = Some(collector.context(now));
 
-        let enqueue = self.queue.enqueue(&queued_event(&arranged, now)?)?;
+        let enqueue = match self.queue.enqueue(&queued_event(&arranged, now)?) {
+            Err(StoreError::Invalid(code)) if code == "event-identity-conflict" => {
+                return Ok(ProcessingResult {
+                    action: DecisionAction::Quarantine,
+                    event_id: Some(arranged.event_id.clone()),
+                    queued: false,
+                    duplicate: false,
+                    reasons: vec![code],
+                    policy_decision: Some(decision),
+                    privacy_alert_event_id: None,
+                });
+            }
+            other => other?,
+        };
 
         let privacy_alert_event_id =
             self.try_enqueue_privacy_alert(&arranged, &redaction, collector)?;
@@ -401,6 +414,7 @@ fn queued_event(
     let payload = json::to_string(envelope)
         .map_err(|error| ProcessError::Serialization(error.to_string()))?;
     Ok(QueuedEvent {
+        lease_token: None,
         event_id: envelope.event_id.clone(),
         fingerprint: fingerprint::create(envelope),
         payload,

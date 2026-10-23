@@ -29,7 +29,10 @@ pub const MAXIMUM_EVENT_ID_LENGTH: usize = 128;
 /// Connection-scoped settings applied to every pooled connection.
 const CONNECTION_PRAGMAS: &str = "PRAGMA busy_timeout = 5000;
 PRAGMA synchronous = FULL;
-PRAGMA foreign_keys = ON;";
+PRAGMA foreign_keys = ON;
+PRAGMA wal_autocheckpoint = 1;
+PRAGMA journal_size_limit = 0;
+PRAGMA cache_spill = OFF;";
 
 /// DDL identical to the C# batch (after raw-literal de-indentation) so
 /// `sqlite_master.sql` matches byte for byte. `PRAGMA journal_mode = WAL` runs first.
@@ -173,6 +176,53 @@ impl SqliteEventStore {
         })
     }
 
+    pub fn maximum_storage_bytes(&self) -> i64 {
+        self.maximum_bytes
+            .saturating_mul(4)
+            .saturating_add(16_777_216)
+    }
+
+    fn configure_budget(&self, connection: &Connection) -> StoreResult<()> {
+        let page_size: i64 = connection
+            .query_row("PRAGMA page_size;", [], |row| row.get(0))
+            .map_err(storage)?;
+        let requested = self.maximum_storage_bytes() / 4 / page_size;
+        let actual: i64 = connection
+            .query_row(
+                &format!("PRAGMA max_page_count = {requested};"),
+                [],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        if actual > requested {
+            return Err(capacity_error(
+                self.maximum_storage_bytes(),
+                actual.saturating_mul(page_size),
+                0,
+            ));
+        }
+        Ok(())
+    }
+
+    fn check_storage(&self) -> StoreResult<()> {
+        let file_size = |path: &Path| -> StoreResult<i64> {
+            match std::fs::metadata(path) {
+                Ok(value) => Ok(i64::try_from(value.len()).unwrap_or(i64::MAX)),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(0),
+                Err(_) => Err(StoreError::Storage("storage-size-unavailable".into())),
+            }
+        };
+        let wal = PathBuf::from(format!("{}-wal", self.pool.path().display()));
+        let current = file_size(self.pool.path())?.saturating_add(file_size(&wal)?);
+        let maximum = self.maximum_storage_bytes();
+        // Reserve a full WAL transaction plus database growth during checkpoint.
+        let reserve = maximum / 2 + maximum / 128 + 65_536;
+        if current > maximum - reserve {
+            return Err(capacity_error(maximum, current, reserve));
+        }
+        Ok(())
+    }
+
     pub fn database_path(&self) -> &Path {
         self.pool.path()
     }
@@ -196,7 +246,7 @@ impl SqliteEventStore {
         connection
             .query_row(
                 "SELECT COALESCE(SUM(payload_bytes), 0)
-FROM queue_events
+FROM queue_events_v5
 WHERE state IN (?1, ?2, ?3, ?4);",
                 params![QUEUED, UPLOADING, RETRYING, DEAD_LETTERED],
                 |row| row.get(0),
@@ -205,15 +255,25 @@ WHERE state IN (?1, ?2, ?3, ?4);",
     }
 
     fn exists(connection: &Connection, candidate: &QueuedEvent) -> StoreResult<bool> {
-        // Two EXISTS probes so each uses its own unique index.
-        connection
-            .query_row(
-                "SELECT EXISTS (SELECT 1 FROM queue_events WHERE event_id = ?1)
-    OR EXISTS (SELECT 1 FROM queue_events WHERE fingerprint = ?2);",
-                params![candidate.event_id, candidate.fingerprint],
-                |row| row.get::<_, bool>(0),
-            )
-            .map_err(storage)
+        let mut select = connection
+            .prepare("SELECT payload, fingerprint FROM queue_events_v5 WHERE event_id = ?1 OR fingerprint = ?2;")
+            .map_err(storage)?;
+        let rows = select
+            .query_map(params![candidate.event_id, candidate.fingerprint], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(storage)?;
+        let mut found = false;
+        for row in rows {
+            found = true;
+            let (payload, fingerprint) = row.map_err(storage)?;
+            if fingerprint != candidate.fingerprint
+                || replay_content(&payload) != replay_content(&candidate.payload)
+            {
+                return Err(StoreError::Invalid("event-identity-conflict".into()));
+            }
+        }
+        Ok(found)
     }
 
     fn transition(
@@ -223,11 +283,19 @@ WHERE state IN (?1, ?2, ?3, ?4);",
         extra: &[(&str, &dyn rusqlite::ToSql)],
     ) -> StoreResult<usize> {
         self.pool.with(|connection| {
-            let mut statement = connection.prepare(sql).map_err(storage)?;
+            self.configure_budget(connection)?;
+            let transaction = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(storage)?;
+            self.check_storage()?;
+            let mut statement = transaction.prepare(sql).map_err(storage)?;
             let mut bound: Vec<(&str, &dyn rusqlite::ToSql)> =
                 vec![(":event_id", &event_id), (":uploading", &UPLOADING)];
             bound.extend_from_slice(extra);
-            statement.execute(bound.as_slice()).map_err(storage)
+            let affected = statement.execute(bound.as_slice()).map_err(storage)?;
+            drop(statement);
+            transaction.commit().map_err(storage)?;
+            Ok(affected)
         })
     }
 }
@@ -243,6 +311,7 @@ fn read_queued(row: &Row<'_>) -> rusqlite::Result<QueuedEvent> {
         state: QueueState::from_ordinal(state)
             .ok_or_else(|| rusqlite::Error::IntegralValueOutOfRange(4, state))?,
         delivery_attempts: row.get(5)?,
+        lease_token: Some(row.get(6)?),
     })
 }
 
@@ -252,10 +321,42 @@ impl DurableEventStore for SqliteEventStore {
             let _mode: String = connection
                 .query_row("PRAGMA journal_mode = WAL;", [], |row| row.get(0))
                 .map_err(storage)?;
-            connection.execute_batch(QUEUE_SCHEMA).map_err(storage)?;
-            connection.execute_batch(ledger::SCHEMA).map_err(storage)?;
-            connection.execute_batch(QUEUE_SCHEMA_V4).map_err(storage)?;
-            ledger::backfill(connection)
+            let migrated: bool = connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='queue_events_v5');", [], |row| row.get(0)
+            ).map_err(storage)?;
+            if !migrated {
+                self.configure_budget(connection)?;
+                let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
+                self.check_storage()?;
+                let already_migrated: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='queue_events_v5');", [], |row| row.get(0)).map_err(storage)?;
+                if !already_migrated {
+                let has_ledger: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='queue_ledger');", [], |row| row.get(0)).map_err(storage)?;
+                transaction.execute_batch(QUEUE_SCHEMA).map_err(storage)?;
+                transaction.execute_batch(ledger::SCHEMA).map_err(storage)?;
+                transaction.execute_batch(QUEUE_SCHEMA_V4).map_err(storage)?;
+                if !has_ledger { ledger::backfill(&transaction)?; }
+                transaction.execute_batch(MIGRATION_V5).map_err(storage)?;
+                let mut last: Option<String> = None;
+                loop {
+                    let row = transaction.query_row("SELECT event_id, payload FROM queue_events_v5 WHERE ?1 IS NULL OR event_id > ?1 ORDER BY event_id LIMIT 1;", params![last], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))).optional().map_err(storage)?;
+                    let Some((id, payload)) = row else { break; };
+                    last = Some(id.clone());
+                    if let Ok(envelope) = bower_contracts::json::from_str::<bower_contracts::SecurityEventEnvelope>(&payload) {
+                        transaction.execute("UPDATE queue_events_v5 SET fingerprint = ?1 WHERE event_id = ?2;", params![crate::event_identity(&envelope), id]).map_err(storage)?;
+                    }
+                }
+                if !ledger::verify_snapshot(&transaction)?.intact { return Err(StoreError::Invalid("Cannot migrate a corrupt queue ledger.".into())); }
+                }
+                transaction.commit().map_err(storage)?;
+            }
+            let version: i64 = connection.query_row("SELECT MAX(version) FROM schema_history;", [], |row| row.get(0)).map_err(storage)?;
+            if version != 5 { return Err(StoreError::Invalid("Unsupported queue schema version.".into())); }
+            self.configure_budget(connection)?;
+            let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
+            self.check_storage()?;
+            transaction.execute_batch("CREATE INDEX IF NOT EXISTS ix_queue_events_state_bytes ON queue_events_v5(state, payload_bytes, received_at);").map_err(storage)?;
+            transaction.commit().map_err(storage)
+
         })?;
         let path = self.pool.path();
         let wal = PathBuf::from(format!("{}-wal", path.display()));
@@ -272,6 +373,7 @@ impl DurableEventStore for SqliteEventStore {
         self.pool.with(|connection| {
             // BEGIN IMMEDIATE takes the write lock before the duplicate and capacity
             // checks so concurrent enqueues cannot both pass them.
+            self.configure_budget(connection)?;
             let transaction = connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(storage)?;
@@ -284,6 +386,7 @@ impl DurableEventStore for SqliteEventStore {
                     event_id: candidate.event_id.clone(),
                 });
             }
+            self.check_storage()?;
             let current = Self::undelivered_bytes(&transaction)?;
             if current.saturating_add(payload_bytes) > self.maximum_bytes {
                 return Err(capacity_error(self.maximum_bytes, current, payload_bytes));
@@ -292,7 +395,7 @@ impl DurableEventStore for SqliteEventStore {
             // constraint failure is an error instead of being silently ignored.
             transaction
                 .execute(
-                    "INSERT INTO queue_events (
+                    "INSERT INTO queue_events_v5 (
     event_id, fingerprint, payload, payload_bytes, received_at, state,
     delivery_attempts)
 VALUES (
@@ -315,6 +418,7 @@ VALUES (
                 &candidate.payload,
                 &received_at,
             )?;
+            transaction.execute("UPDATE queue_events_v5 SET enqueue_sequence = (SELECT MAX(sequence) FROM queue_ledger) WHERE event_id = ?1;", params![candidate.event_id]).map_err(storage)?;
             transaction.commit().map_err(storage)?;
             Ok(EnqueueResult {
                 enqueued: true,
@@ -349,12 +453,15 @@ VALUES (
         let lease_value = stored(&until);
 
         self.pool.with(|connection| {
+            self.configure_budget(connection)?;
             let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
+            self.check_storage()?;
             let selected = {
                 let mut select = transaction
                     .prepare(
-                        "SELECT event_id, fingerprint, payload, received_at, state, delivery_attempts
-FROM queue_events
+                        "SELECT event_id, fingerprint, payload, received_at, state, delivery_attempts,
+CAST(enqueue_sequence AS TEXT) || ':' || CAST(lease_generation + 1 AS TEXT)
+FROM queue_events_v5
 WHERE (
         state = :queued
         OR (state = :retrying AND (next_attempt_at IS NULL OR next_attempt_at <= :now))
@@ -386,10 +493,11 @@ LIMIT :maximum_count;",
             {
                 let mut update = transaction
                     .prepare(
-                        "UPDATE queue_events
+                        "UPDATE queue_events_v5
 SET state = ?1,
     lease_until = ?2,
-    delivery_attempts = delivery_attempts + 1
+    delivery_attempts = delivery_attempts + 1,
+    lease_generation = lease_generation + 1
 WHERE event_id = ?3;",
                     )
                     .map_err(storage)?;
@@ -409,21 +517,28 @@ WHERE event_id = ?3;",
         })
     }
 
-    fn mark_delivered(&self, event_id: &str, acknowledgement: &str) -> StoreResult<()> {
+    fn mark_delivered(
+        &self,
+        event_id: &str,
+        acknowledgement: &str,
+        lease_token: Option<&str>,
+    ) -> StoreResult<()> {
         require_text(event_id, "eventId")?;
         require_text(acknowledgement, "acknowledgement")?;
         let delivered_at = self.now_text();
         let affected = self.transition(
-            "UPDATE queue_events
+            "UPDATE queue_events_v5
 SET state = :delivered,
     acknowledgement = :acknowledgement,
     delivered_at = :delivered_at,
     lease_until = NULL,
     next_attempt_at = NULL,
     last_failure_code = NULL
-WHERE event_id = :event_id AND state = :uploading;",
+WHERE event_id = :event_id AND state = :uploading
+AND CAST(enqueue_sequence AS TEXT) || ':' || CAST(lease_generation AS TEXT) = :lease_token;",
             event_id,
             &[
+                (":lease_token", &lease_token),
                 (":delivered", &DELIVERED),
                 (":acknowledgement", &acknowledgement),
                 (":delivered_at", &delivered_at),
@@ -441,19 +556,22 @@ WHERE event_id = :event_id AND state = :uploading;",
         event_id: &str,
         failure_code: &str,
         retry_after: Timestamp,
+        lease_token: Option<&str>,
     ) -> StoreResult<()> {
         require_text(event_id, "eventId")?;
         require_text(failure_code, "failureCode")?;
         let next_attempt_at = stored(&retry_after);
         let affected = self.transition(
-            "UPDATE queue_events
+            "UPDATE queue_events_v5
 SET state = :retrying,
     next_attempt_at = :next_attempt_at,
     last_failure_code = :failure_code,
     lease_until = NULL
-WHERE event_id = :event_id AND state = :uploading;",
+WHERE event_id = :event_id AND state = :uploading
+AND CAST(enqueue_sequence AS TEXT) || ':' || CAST(lease_generation AS TEXT) = :lease_token;",
             event_id,
             &[
+                (":lease_token", &lease_token),
                 (":retrying", &RETRYING),
                 (":next_attempt_at", &next_attempt_at),
                 (":failure_code", &failure_code),
@@ -466,18 +584,25 @@ WHERE event_id = :event_id AND state = :uploading;",
         }
     }
 
-    fn mark_dead_lettered(&self, event_id: &str, failure_code: &str) -> StoreResult<()> {
+    fn mark_dead_lettered(
+        &self,
+        event_id: &str,
+        failure_code: &str,
+        lease_token: Option<&str>,
+    ) -> StoreResult<()> {
         require_text(event_id, "eventId")?;
         require_text(failure_code, "failureCode")?;
         let affected = self.transition(
-            "UPDATE queue_events
+            "UPDATE queue_events_v5
 SET state = :dead_lettered,
     last_failure_code = :failure_code,
     lease_until = NULL,
     next_attempt_at = NULL
-WHERE event_id = :event_id AND state = :uploading;",
+WHERE event_id = :event_id AND state = :uploading
+AND CAST(enqueue_sequence AS TEXT) || ':' || CAST(lease_generation AS TEXT) = :lease_token;",
             event_id,
             &[
+                (":lease_token", &lease_token),
                 (":dead_lettered", &DEAD_LETTERED),
                 (":failure_code", &failure_code),
             ],
@@ -493,6 +618,7 @@ WHERE event_id = :event_id AND state = :uploading;",
         &self,
         event_ids: &[String],
         acknowledgement: &str,
+        lease_tokens: &std::collections::HashMap<String, String>,
     ) -> StoreResult<Vec<String>> {
         require_text(acknowledgement, "acknowledgement")?;
         for event_id in event_ids {
@@ -506,21 +632,24 @@ WHERE event_id = :event_id AND state = :uploading;",
         // transition as `mark_delivered`: only uploading rows change. On error the
         // transaction is dropped and nothing is settled.
         self.pool.with(|connection| {
+            self.configure_budget(connection)?;
             let transaction = connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(storage)?;
+            self.check_storage()?;
             let mut not_leased = Vec::new();
             {
                 let mut update = transaction
                     .prepare(
-                        "UPDATE queue_events
+                        "UPDATE queue_events_v5
 SET state = :delivered,
     acknowledgement = :acknowledgement,
     delivered_at = :delivered_at,
     lease_until = NULL,
     next_attempt_at = NULL,
     last_failure_code = NULL
-WHERE event_id = :event_id AND state = :uploading;",
+WHERE event_id = :event_id AND state = :uploading
+AND CAST(enqueue_sequence AS TEXT) || ':' || CAST(lease_generation AS TEXT) = :lease_token;",
                     )
                     .map_err(storage)?;
                 for event_id in event_ids {
@@ -531,6 +660,7 @@ WHERE event_id = :event_id AND state = :uploading;",
                             ":acknowledgement": acknowledgement,
                             ":delivered_at": delivered_at,
                             ":event_id": event_id,
+                            ":lease_token": lease_tokens.get(event_id).map(String::as_str),
                         })
                         .map_err(storage)?;
                     if affected != 1 {
@@ -556,30 +686,34 @@ WHERE event_id = :event_id AND state = :uploading;",
         // transaction, so the events stay leased and are redelivered after the lease
         // expires.
         self.pool.with(|connection| {
+            self.configure_budget(connection)?;
             let transaction = connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(storage)?;
+            self.check_storage()?;
             let mut not_leased = Vec::new();
             {
                 let mut retry = transaction
                     .prepare(
-                        "UPDATE queue_events
+                        "UPDATE queue_events_v5
 SET state = :retrying,
     next_attempt_at = :next_attempt_at,
     delivery_attempts = MAX(0, delivery_attempts - CASE WHEN :failure_code GLOB 'destination-*' THEN 1 ELSE 0 END),
     last_failure_code = :failure_code,
     lease_until = NULL
-WHERE event_id = :event_id AND state = :uploading;",
+WHERE event_id = :event_id AND state = :uploading
+AND CAST(enqueue_sequence AS TEXT) || ':' || CAST(lease_generation AS TEXT) = :lease_token;",
                     )
                     .map_err(storage)?;
                 let mut dead_letter = transaction
                     .prepare(
-                        "UPDATE queue_events
+                        "UPDATE queue_events_v5
 SET state = :dead_lettered,
     last_failure_code = :failure_code,
     lease_until = NULL,
     next_attempt_at = NULL
-WHERE event_id = :event_id AND state = :uploading;",
+WHERE event_id = :event_id AND state = :uploading
+AND CAST(enqueue_sequence AS TEXT) || ':' || CAST(lease_generation AS TEXT) = :lease_token;",
                     )
                     .map_err(storage)?;
                 for failure in failures {
@@ -590,12 +724,14 @@ WHERE event_id = :event_id AND state = :uploading;",
                             ":next_attempt_at": stored(retry_after),
                             ":failure_code": failure.failure_code,
                             ":event_id": failure.event_id,
+                            ":lease_token": failure.lease_token,
                         }),
                         None => dead_letter.execute(named_params! {
                             ":dead_lettered": DEAD_LETTERED,
                             ":uploading": UPLOADING,
                             ":failure_code": failure.failure_code,
                             ":event_id": failure.event_id,
+                            ":lease_token": failure.lease_token,
                         }),
                     }
                     .map_err(storage)?;
@@ -622,7 +758,7 @@ WHERE event_id = :event_id AND state = :uploading;",
     COALESCE(SUM(payload_bytes), 0),
     MIN(CASE WHEN state IN (0, 1, 2) THEN received_at END),
     COALESCE(SUM(CASE WHEN state <> 3 THEN payload_bytes ELSE 0 END), 0)
-FROM queue_events;",
+FROM queue_events_v5;",
                     [],
                     |row| {
                         let count = |index: usize| {
@@ -661,16 +797,18 @@ FROM queue_events;",
         }
         let before = stored(&delivered_before);
         self.pool.with(|connection| {
+            self.configure_budget(connection)?;
             let transaction = connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(storage)?;
+            self.check_storage()?;
             // Only acknowledged rows are eligible. Undelivered, retrying and
             // dead-lettered events are never deleted here.
             let event_ids = {
                 let mut select = transaction
                     .prepare(
                         "SELECT event_id
-FROM queue_events
+FROM queue_events_v5
 WHERE state = ?1
   AND acknowledgement IS NOT NULL
   AND delivered_at IS NOT NULL
@@ -689,7 +827,7 @@ LIMIT ?3;",
             };
             {
                 let mut delete = transaction
-                    .prepare("DELETE FROM queue_events WHERE event_id = ?1 AND state = ?2;")
+                    .prepare("DELETE FROM queue_events_v5 WHERE event_id = ?1 AND state = ?2;")
                     .map_err(storage)?;
                 for event_id in &event_ids {
                     delete
@@ -700,8 +838,8 @@ LIMIT ?3;",
             // Record the purge in the ledger in the same transaction so
             // verification can tell retention from tampering.
             ledger::mark_purged(&transaction, &event_ids, &self.now_text())?;
+            ledger::compact(&transaction, &self.now_text())?;
             transaction.commit().map_err(storage)?;
-            ledger::compact(connection, &self.now_text())?;
             Ok(event_ids.len())
         })
     }
@@ -712,9 +850,15 @@ LIMIT ?3;",
                 .query_row("PRAGMA wal_checkpoint(TRUNCATE);", [], |_| Ok(()))
                 .optional()
                 .map_err(storage)?;
-            connection
+            self.configure_budget(connection)?;
+            let transaction = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(storage)?;
+            self.check_storage()?;
+            transaction
                 .execute_batch("PRAGMA optimize;")
-                .map_err(storage)
+                .map_err(storage)?;
+            transaction.commit().map_err(storage)
         })
     }
 
@@ -728,7 +872,7 @@ LIMIT ?3;",
             let mut select = connection
                 .prepare(
                     "SELECT event_id, last_failure_code, delivery_attempts, received_at
-FROM queue_events
+FROM queue_events_v5
 WHERE state = ?1
 ORDER BY received_at ASC
 LIMIT ?2;",
@@ -768,14 +912,16 @@ LIMIT ?2;",
             return Ok(0);
         }
         self.pool.with(|connection| {
+            self.configure_budget(connection)?;
             let transaction = connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(storage)?;
+            self.check_storage()?;
             let mut selected = Vec::new();
             {
                 let mut select = transaction
                     .prepare(
-                        "SELECT event_id, last_failure_code FROM queue_events
+                        "SELECT event_id, last_failure_code FROM queue_events_v5
 WHERE state = ?1
 ORDER BY received_at ASC;",
                     )
@@ -799,7 +945,7 @@ ORDER BY received_at ASC;",
             {
                 let mut update = transaction
                     .prepare(
-                        "UPDATE queue_events
+                        "UPDATE queue_events_v5
 SET state = ?1, delivery_attempts = 0, next_attempt_at = NULL, lease_until = NULL
 WHERE event_id = ?2 AND state = ?3;",
                     )
@@ -825,4 +971,68 @@ WHERE event_id = ?2 AND state = ?3;",
     fn verify_ledger(&self) -> StoreResult<LedgerVerification> {
         self.pool.with(ledger::verify)
     }
+}
+
+const MIGRATION_V5: &str = r#"
+            ALTER TABLE queue_events RENAME TO queue_events_v5;
+            ALTER TABLE queue_events_v5 ADD COLUMN enqueue_sequence INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE queue_events_v5 ADD COLUMN lease_generation INTEGER NOT NULL DEFAULT 0;
+            UPDATE queue_events_v5 SET enqueue_sequence = (
+                SELECT MAX(sequence) FROM queue_ledger l
+                WHERE l.event_id = queue_events_v5.event_id AND l.purged_at IS NULL);
+            CREATE UNIQUE INDEX ix_queue_events_incarnation ON queue_events_v5(enqueue_sequence);
+            CREATE VIEW queue_events AS SELECT event_id, fingerprint, payload, payload_bytes,
+                received_at, state, delivery_attempts, lease_until, next_attempt_at,
+                last_failure_code, acknowledgement, delivered_at FROM queue_events_v5;
+            CREATE TABLE IF NOT EXISTS queue_ledger_segments (
+                start_sequence INTEGER PRIMARY KEY NOT NULL,
+                end_sequence INTEGER NOT NULL,
+                previous_hash TEXT NOT NULL,
+                chain_hash TEXT NOT NULL,
+                checkpoint_hash TEXT NOT NULL,
+                CHECK(end_sequence >= start_sequence)
+            );
+            INSERT INTO schema_history(version, applied_at, hash)
+            VALUES (5, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 'bower-queue-v5-fencing-segments');
+            "#;
+
+fn replay_content(payload: &str) -> String {
+    use bower_contracts::JsonElement;
+    fn sort(value: &mut JsonElement) {
+        match value {
+            JsonElement::Object(properties) => {
+                properties.sort_by(|a, b| a.0.encode_utf16().cmp(b.0.encode_utf16()));
+                for (_, value) in properties {
+                    sort(value);
+                }
+            }
+            JsonElement::Array(items) => {
+                for value in items {
+                    sort(value);
+                }
+            }
+            _ => {}
+        }
+    }
+    let Ok(mut value) = JsonElement::parse(payload) else {
+        return payload.to_owned();
+    };
+    let envelope = value.get("schemaVersion").is_some() && value.get("eventType").is_some();
+    let original = match &value {
+        JsonElement::Object(properties) => properties
+            .iter()
+            .rev()
+            .find(|(key, _)| key == "eventOriginalId")
+            .and_then(|(_, value)| value.as_str())
+            .is_some_and(|id| !id.is_empty()),
+        _ => false,
+    };
+    if envelope && let JsonElement::Object(properties) = &mut value {
+        properties.retain(|(key, _)| {
+            !matches!(key.as_str(), "collector" | "security" | "timeObserved")
+                && !(original && key == "eventId")
+        });
+    }
+    sort(&mut value);
+    bower_contracts::json::to_string(&value).unwrap_or_else(|_| payload.to_owned())
 }

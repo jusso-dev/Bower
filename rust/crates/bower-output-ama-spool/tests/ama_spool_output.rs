@@ -5,6 +5,7 @@ use bower_output_ama_spool::{AmaSpoolOptions, AmaSpoolOutput};
 
 fn event(id: &str, payload: &str) -> QueuedEvent {
     QueuedEvent {
+        lease_token: None,
         event_id: id.to_owned(),
         fingerprint: format!("sha256:{id}"),
         payload: payload.to_owned(),

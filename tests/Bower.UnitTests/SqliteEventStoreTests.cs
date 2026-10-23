@@ -16,7 +16,7 @@ public sealed class SqliteEventStoreTests
         await store.InitializeAsync(cancellationToken);
         QueuedEvent first = new("event-1", "sha256:same", """{"eventId":"event-1"}""", clock.UtcNow);
         QueuedEvent duplicate =
-            new("event-2", "sha256:same", """{"eventId":"event-2"}""", clock.UtcNow);
+            new("event-2", "sha256:same", first.Payload, clock.UtcNow);
 
         EnqueueResult firstResult = await store.EnqueueAsync(first, cancellationToken);
         EnqueueResult duplicateResult = await store.EnqueueAsync(duplicate, cancellationToken);
@@ -79,9 +79,9 @@ public sealed class SqliteEventStoreTests
             cancellationToken);
 
         await Assert.ThrowsAsync<InvalidQueueTransitionException>(
-            () => store.MarkDeliveredAsync("event-1", "not-leased", cancellationToken));
-        await store.LeaseAsync(1, TimeSpan.FromMinutes(1), cancellationToken);
-        await store.MarkDeliveredAsync("event-1", "ama-spool:file-1", cancellationToken);
+            () => store.MarkDeliveredAsync("event-1", "not-leased", LeaseTestClaims.Token(Array.Empty<QueuedEvent>(), "event-1"), cancellationToken));
+        var heldLease1 = await store.LeaseAsync(1, TimeSpan.FromMinutes(1), cancellationToken);
+        await store.MarkDeliveredAsync("event-1", "ama-spool:file-1", LeaseTestClaims.Token(heldLease1, "event-1"), cancellationToken);
         QueueSnapshot snapshot = await store.GetSnapshotAsync(cancellationToken);
 
         Assert.Equal(0, snapshot.Queued);
@@ -123,13 +123,13 @@ public sealed class SqliteEventStoreTests
         }
 
         IReadOnlyList<QueuedEvent> leased = await store.LeaseAsync(3, TimeSpan.FromMinutes(5), cancellationToken);
-        await store.MarkRetryingAsync("queued", "test", clock.UtcNow.AddHours(1), cancellationToken);
+        await store.MarkRetryingAsync("queued", "test", clock.UtcNow.AddHours(1), LeaseTestClaims.Token(leased, "queued"), cancellationToken);
 
         IReadOnlyList<string> notLeased = await store.MarkDeliveredBatchAsync(
             ["leased-1", "leased-2", "queued", "missing"],
-            "ack-batch",
+            "ack-batch", LeaseTestClaims.Map(leased),
             cancellationToken);
-        IReadOnlyList<string> empty = await store.MarkDeliveredBatchAsync([], "ack-batch", cancellationToken);
+        IReadOnlyList<string> empty = await store.MarkDeliveredBatchAsync([], "ack-batch", LeaseTestClaims.Map(leased), cancellationToken);
         QueueSnapshot snapshot = await store.GetSnapshotAsync(cancellationToken);
 
         Assert.Equal(3, leased.Count);
@@ -139,9 +139,9 @@ public sealed class SqliteEventStoreTests
         Assert.Equal(1, snapshot.Retrying);
         Assert.Equal(0, snapshot.Uploading);
         await Assert.ThrowsAsync<ArgumentException>(
-            () => store.MarkDeliveredBatchAsync(["ok", " "], "ack", cancellationToken));
+            () => store.MarkDeliveredBatchAsync(["ok", " "], "ack", LeaseTestClaims.Map(leased), cancellationToken));
         await Assert.ThrowsAsync<ArgumentException>(
-            () => store.MarkDeliveredBatchAsync(["ok"], " ", cancellationToken));
+            () => store.MarkDeliveredBatchAsync(["ok"], " ", LeaseTestClaims.Map(leased), cancellationToken));
         Assert.True((await store.VerifyLedgerAsync(cancellationToken)).Intact);
     }
 
@@ -160,8 +160,8 @@ public sealed class SqliteEventStoreTests
                 cancellationToken);
         }
 
-        await store.LeaseAsync(2, TimeSpan.FromMinutes(5), cancellationToken);
-        Assert.Empty(await store.MarkDeliveredBatchAsync(["event-1", "event-2"], "ack-1", cancellationToken));
+        var heldLease2 = await store.LeaseAsync(2, TimeSpan.FromMinutes(5), cancellationToken);
+        Assert.Empty(await store.MarkDeliveredBatchAsync(["event-1", "event-2"], "ack-1", LeaseTestClaims.Map(heldLease2), cancellationToken));
 
         // Restart: the committed batch survives, a replayed acknowledgement changes nothing,
         // and delivered events are never leased again.
@@ -169,7 +169,7 @@ public sealed class SqliteEventStoreTests
         await restarted.InitializeAsync(cancellationToken);
         IReadOnlyList<string> replay = await restarted.MarkDeliveredBatchAsync(
             ["event-1", "event-2"],
-            "ack-2",
+            "ack-2", LeaseTestClaims.Map(heldLease2),
             cancellationToken);
         clock.Advance(TimeSpan.FromMinutes(10));
         IReadOnlyList<QueuedEvent> releasable = await restarted.LeaseAsync(10, TimeSpan.FromMinutes(5), cancellationToken);
@@ -331,17 +331,17 @@ public sealed class SqliteEventStoreTests
         SqliteEventStore store = CreateStore(directory, clock);
         await store.InitializeAsync(cancellationToken);
         await EnqueueAllAsync(store, clock, ["retry", "dead", "delivered"], cancellationToken);
-        await store.LeaseAsync(3, TimeSpan.FromMinutes(5), cancellationToken);
-        await store.MarkDeliveredAsync("delivered", "ack", cancellationToken);
+        var heldLease3 = await store.LeaseAsync(3, TimeSpan.FromMinutes(5), cancellationToken);
+        await store.MarkDeliveredAsync("delivered", "ack", LeaseTestClaims.Token(heldLease3, "delivered"), cancellationToken);
         DateTimeOffset retryAt = new(2026, 8, 30, 9, 0, 0, TimeSpan.FromHours(5.5));
 
         IReadOnlyList<string> notLeased = await store.MarkFailedBatchAsync(
             [
-                new FailureSettlement("retry", "busy", retryAt),
-                new FailureSettlement("dead", "azure-http-400", null),
-                new FailureSettlement("delivered", "late", null),
-                new FailureSettlement("missing", "late", retryAt),
-                new FailureSettlement("retry", "twice", null)
+                new FailureSettlement("retry", "busy", retryAt, LeaseTestClaims.Token(heldLease3, "retry")),
+                new FailureSettlement("dead", "azure-http-400", null, LeaseTestClaims.Token(heldLease3, "dead")),
+                new FailureSettlement("delivered", "late", null, LeaseTestClaims.Token(heldLease3, "delivered")),
+                new FailureSettlement("missing", "late", retryAt, LeaseTestClaims.Token(heldLease3, "missing")),
+                new FailureSettlement("retry", "twice", null, LeaseTestClaims.Token(heldLease3, "retry"))
             ],
             cancellationToken);
         IReadOnlyList<string> empty = await store.MarkFailedBatchAsync([], cancellationToken);
@@ -367,9 +367,9 @@ public sealed class SqliteEventStoreTests
         await Assert.ThrowsAsync<ArgumentNullException>(
             () => store.MarkFailedBatchAsync([null!], cancellationToken));
         await Assert.ThrowsAsync<ArgumentException>(
-            () => store.MarkFailedBatchAsync([new FailureSettlement(" ", "code", null)], cancellationToken));
+            () => store.MarkFailedBatchAsync([new FailureSettlement(" ", "code", null, LeaseTestClaims.Token(heldLease3, " "))], cancellationToken));
         await Assert.ThrowsAsync<ArgumentException>(
-            () => store.MarkFailedBatchAsync([new FailureSettlement("retry", "", retryAt)], cancellationToken));
+            () => store.MarkFailedBatchAsync([new FailureSettlement("retry", "", retryAt, LeaseTestClaims.Token(heldLease3, "retry"))], cancellationToken));
         Assert.True((await store.VerifyLedgerAsync(cancellationToken)).Intact);
     }
 
@@ -382,13 +382,13 @@ public sealed class SqliteEventStoreTests
         SqliteEventStore store = CreateStore(directory, clock);
         await store.InitializeAsync(cancellationToken);
         await EnqueueAllAsync(store, clock, ["a", "b", "poison"], cancellationToken);
-        await store.LeaseAsync(3, TimeSpan.FromMinutes(5), cancellationToken);
+        var heldLease4 = await store.LeaseAsync(3, TimeSpan.FromMinutes(5), cancellationToken);
 
         // Adversarial storage failure on the last row of each batch.
         await ExecuteRawAsync(
             directory,
             """
-            CREATE TRIGGER fail_poison BEFORE UPDATE OF state ON queue_events
+            CREATE TRIGGER fail_poison BEFORE UPDATE OF state ON queue_events_v5
             WHEN NEW.event_id = 'poison'
             BEGIN SELECT RAISE(ABORT, 'injected failure'); END;
             """,
@@ -396,13 +396,13 @@ public sealed class SqliteEventStoreTests
 
         await Assert.ThrowsAsync<SqliteException>(() => store.MarkFailedBatchAsync(
             [
-                new FailureSettlement("a", "busy", clock.UtcNow.AddMinutes(1)),
-                new FailureSettlement("b", "bad", null),
-                new FailureSettlement("poison", "bad", null)
+                new FailureSettlement("a", "busy", clock.UtcNow.AddMinutes(1), LeaseTestClaims.Token(heldLease4, "a")),
+                new FailureSettlement("b", "bad", null, LeaseTestClaims.Token(heldLease4, "b")),
+                new FailureSettlement("poison", "bad", null, LeaseTestClaims.Token(heldLease4, "poison"))
             ],
             cancellationToken));
         await Assert.ThrowsAsync<SqliteException>(
-            () => store.MarkDeliveredBatchAsync(["a", "b", "poison"], "ack", cancellationToken));
+            () => store.MarkDeliveredBatchAsync(["a", "b", "poison"], "ack", LeaseTestClaims.Map(heldLease4), cancellationToken));
         QueueSnapshot afterFailure = await store.GetSnapshotAsync(cancellationToken);
         Assert.Equal((3L, 0L, 0L, 0L), (afterFailure.Uploading, afterFailure.Retrying, afterFailure.DeadLettered, afterFailure.Delivered));
 
@@ -417,9 +417,9 @@ public sealed class SqliteEventStoreTests
         Assert.Equal(["a", "b", "poison"], reclaimed.Select(item => item.EventId).Order(StringComparer.Ordinal).ToArray());
         Assert.All(reclaimed, item => Assert.Equal(2, item.DeliveryAttempts));
         Assert.Empty(await restarted.MarkFailedBatchAsync(
-            [new FailureSettlement("a", "busy", clock.UtcNow.AddMinutes(1)), new FailureSettlement("b", "bad", null)],
+            [new FailureSettlement("a", "busy", clock.UtcNow.AddMinutes(1), LeaseTestClaims.Token(reclaimed, "a")), new FailureSettlement("b", "bad", null, LeaseTestClaims.Token(reclaimed, "b"))],
             cancellationToken));
-        Assert.Empty(await restarted.MarkDeliveredBatchAsync(["poison"], "ack", cancellationToken));
+        Assert.Empty(await restarted.MarkDeliveredBatchAsync(["poison"], "ack", LeaseTestClaims.Map(reclaimed), cancellationToken));
         QueueSnapshot settled = await restarted.GetSnapshotAsync(cancellationToken);
         Assert.Equal((0L, 1L, 1L, 1L), (settled.Uploading, settled.Retrying, settled.DeadLettered, settled.Delivered));
         Assert.True((await restarted.VerifyLedgerAsync(cancellationToken)).Intact);

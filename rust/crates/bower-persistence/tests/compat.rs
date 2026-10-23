@@ -63,8 +63,13 @@ fn queue_scenario(path: &Path) {
     assert!(enqueue("e3", "sha256:e3", r#"{"n":3}"#, offset_time(), 0).enqueued);
     assert!(enqueue("e4", "sha256:e4", r#"{"n":4}"#, now + Span::seconds(2), 2).enqueued);
     assert!(enqueue("e5", "sha256:e5", r#"{"n":5}"#, now + Span::seconds(3), 0).enqueued);
-    assert!(enqueue("e6", "sha256:e5", r#"{"n":6}"#, now, 0).duplicate);
-    assert!(enqueue("e5", "sha256:other", r#"{"n":6}"#, now, 0).duplicate);
+    assert!(enqueue("e6", "sha256:e5", r#"{"n":5}"#, now, 0).duplicate);
+    // v5 rejects a changed source identity even when normalized payload matches.
+    // Like the old duplicate response, this leaves fixture rows and hashes unchanged.
+    assert!(matches!(
+        store.enqueue(&event("e5", "sha256:other", r#"{"n":5}"#, now)),
+        Err(bower_contracts::StoreError::Invalid(message)) if message == "event-identity-conflict"
+    ));
     // The C# fixture run reported these as duplicates (INSERT OR IGNORE swallowed the
     // CHECK failures); both implementations now reject them. Neither wrote a row, so
     // the fixture is unaffected.
@@ -99,9 +104,15 @@ fn queue_scenario(path: &Path) {
             "e3:1:2026-07-26T02:14:19.1234567+00:00"
         ]
     );
-    store.mark_delivered("e1", "ack-1").unwrap();
-    store.mark_delivered("e2", "ack-2").unwrap();
-    store.mark_dead_lettered("e3", "azure-http-400").unwrap();
+    store
+        .mark_delivered("e1", "ack-1", claim(&store, "e1").as_deref())
+        .unwrap();
+    store
+        .mark_delivered("e2", "ack-2", claim(&store, "e2").as_deref())
+        .unwrap();
+    store
+        .mark_dead_lettered("e3", "azure-http-400", claim(&store, "e3").as_deref())
+        .unwrap();
     clock.advance(Span::seconds(1));
     let leased = store.lease(1, Duration::from_secs(60)).unwrap();
     assert_eq!(
@@ -109,7 +120,9 @@ fn queue_scenario(path: &Path) {
         ("e4", 3)
     );
     let retry_after = time::parse("2026-08-30T09:00:00+05:30").unwrap() + ticks(50);
-    store.mark_retrying("e4", "busy", retry_after).unwrap();
+    store
+        .mark_retrying("e4", "busy", retry_after, claim(&store, "e4").as_deref())
+        .unwrap();
     clock.advance(Span::days(10));
     assert_eq!(
         store
@@ -243,10 +256,10 @@ fn v3_database_upgrades_to_v4_idempotently() {
     assert_eq!(
         index(&path).as_deref(),
         Some(
-            "CREATE INDEX ix_queue_events_state_bytes\n    ON queue_events(state, payload_bytes, received_at)"
+            "CREATE INDEX ix_queue_events_state_bytes\n    ON \"queue_events_v5\"(state, payload_bytes, received_at)"
         )
     );
-    assert_eq!(versions(&path), [1, 2, 3, 4]);
+    assert_eq!(versions(&path), [1, 2, 3, 4, 5]);
 
     // v4 recorded but index lost: the next start recreates it.
     raw(&path)
@@ -272,12 +285,7 @@ fn rust_queue_matches_csharp_database_byte_for_byte() {
     assert_eq!(schema(&rust_path), schema(&csharp_path));
     assert_eq!(pragmas(&rust_path), pragmas(&csharp_path));
     assert!(pragmas(&rust_path).contains(&"journal_mode=Text(\"wal\")".to_owned()));
-    for table in [
-        "queue_events",
-        "queue_ledger",
-        "queue_ledger_anchor",
-        "schema_history",
-    ] {
+    for table in ["queue_events", "queue_ledger", "schema_history"] {
         assert_eq!(
             rows(&rust_path, table),
             rows(&csharp_path, table),
@@ -387,7 +395,13 @@ fn csharp_queue_opens_verifies_and_operates_in_rust() {
         .collect();
     assert_eq!(ids, [("e4", 4), ("e5", 2), ("e7", 1)]);
     for item in &leased {
-        store.mark_delivered(&item.event_id, "rust-ack").unwrap();
+        store
+            .mark_delivered(
+                &item.event_id,
+                "rust-ack",
+                claim(&store, &item.event_id).as_deref(),
+            )
+            .unwrap();
     }
     assert!(
         store

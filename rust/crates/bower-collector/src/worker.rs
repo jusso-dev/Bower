@@ -108,6 +108,15 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
             return Ok(0);
         }
 
+        let claims: std::collections::HashMap<String, String> = events
+            .iter()
+            .filter_map(|item| {
+                item.lease_token
+                    .as_ref()
+                    .map(|token| (item.event_id.clone(), token.clone()))
+            })
+            .collect();
+        let failure_claims = claims.clone();
         let count = events.len();
         let order: Vec<String> = events.iter().map(|item| item.event_id.clone()).collect();
         let leased: HashMap<String, i32> = events
@@ -139,7 +148,7 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
             // One queue transaction for every acknowledged event in the batch.
             let reclaimed = self
                 .blocking(
-                    move |queue| queue.mark_delivered_batch(&delivered, &acknowledgement),
+                    move |queue| queue.mark_delivered_batch(&delivered, &acknowledgement, &claims),
                     shutdown,
                 )
                 .await?;
@@ -181,6 +190,9 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
             failed.push(self.to_settlement(leased[event_id], failure));
         }
 
+        for failure in &mut failed {
+            failure.lease_token = failure_claims.get(&failure.event_id).cloned();
+        }
         if !failed.is_empty() {
             // One queue transaction for every retrying and dead-lettered event in the
             // batch. On error nothing is settled and the events are redelivered after
@@ -255,6 +267,7 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
         } = failure;
         if !is_retryable {
             return FailureSettlement {
+                lease_token: None,
                 event_id,
                 failure_code: code,
                 retry_after: None,
@@ -267,6 +280,7 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
                 attempts, "Output adapter exhausted delivery attempts; event dead-lettered."
             );
             return FailureSettlement {
+                lease_token: None,
                 event_id,
                 failure_code: format!("max-attempts-exceeded:{code}"),
                 retry_after: None,
@@ -282,6 +296,7 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
             + chrono::TimeDelta::from_std(delay).unwrap_or(chrono::TimeDelta::MAX);
         let retry_at = retry_after.map_or(local, |server| server.max(local));
         FailureSettlement {
+            lease_token: None,
             event_id,
             failure_code: code,
             retry_after: Some(retry_at),
