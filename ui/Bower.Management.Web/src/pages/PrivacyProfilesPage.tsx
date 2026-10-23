@@ -1,5 +1,5 @@
-import { FilePlus2, KeyRound, ShieldCheck } from "lucide-react";
-import { useState } from "react";
+import { FilePlus2, KeyRound, ShieldCheck, ShieldOff } from "lucide-react";
+import { useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useApi } from "../api";
 import {
@@ -243,6 +243,9 @@ export function PrivacyProfilesPage() {
             )
           }
         </ResourceState>
+        {access.data?.roles.includes("Bower.Administrator") && collectors.data && (
+          <ClearAssignmentForm collectors={collectors.data} onChanged={changed} />
+        )}
       </section>
 
       <section className="sheet section-gap">
@@ -278,6 +281,99 @@ export function PrivacyProfilesPage() {
         </ResourceState>
       </section>
     </Page>
+  );
+}
+
+function ClearAssignmentForm({
+  collectors,
+  onChanged
+}: {
+  collectors: Collector[];
+  onChanged: (message: string) => void;
+}) {
+  const api = useApi();
+  const assigned = collectors.filter((collector) => collector.desiredPrivacyProfile);
+  const [collectorId, setCollectorId] = useState(assigned[0]?.id ?? "none");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!assigned.length) {
+    return null;
+  }
+  const target = assigned.find((collector) => collector.id === collectorId) ?? assigned[0]!;
+
+  async function clear(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmed = reason.trim();
+    if (!trimmed) {
+      setError("Enter a reason before clearing.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api<Collector>(
+        `/api/collectors/${encodeURIComponent(target.id)}/privacy-profile/clear`,
+        { method: "POST", body: JSON.stringify({ reason: trimmed }) }
+      );
+      setReason("");
+      onChanged(
+        `Cleared the privacy profile assignment on ${target.machineName}. It returns to the built-in default privacy profile on its next sync and restart.`
+      );
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Clearing failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      className="approval-form"
+      aria-labelledby="privacy-clear-title"
+      onSubmit={(event) => void clear(event)}
+    >
+      <h3 id="privacy-clear-title">Clear assignment</h3>
+      {error && (
+        <div className="alert alert--danger" role="alert">
+          {error}
+        </div>
+      )}
+      <label htmlFor="privacy-clear-collector">Collector</label>
+      <select
+        id="privacy-clear-collector"
+        value={target.id}
+        onChange={(event) => setCollectorId(event.target.value)}
+      >
+        {assigned.map((collector) => (
+          <option key={collector.id} value={collector.id}>
+            {collector.machineName} · {collector.desiredPrivacyProfile!.profileId}@
+            {collector.desiredPrivacyProfile!.version}
+          </option>
+        ))}
+      </select>
+      <label htmlFor="privacy-clear-reason">Clear reason</label>
+      <textarea
+        id="privacy-clear-reason"
+        value={reason}
+        maxLength={500}
+        required
+        aria-describedby="privacy-clear-help"
+        placeholder="Example: roll back employee-id masking per incident BWR-214"
+        onChange={(event) => setReason(event.target.value)}
+      />
+      <span className="approval-help" id="privacy-clear-help">
+        Required. The collector returns to the built-in default privacy profile, not its
+        local file.
+      </span>
+      <div className="button-row">
+        <button className="button button--danger" type="submit" disabled={busy}>
+          <ShieldOff aria-hidden="true" />
+          {busy ? "Clearing…" : "Clear assignment"}
+        </button>
+      </div>
+    </form>
   );
 }
 

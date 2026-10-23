@@ -473,6 +473,39 @@ describe("Privacy profiles page", () => {
     expect(postsTo(fetchMock, "/api/collectors/claims-prod-03/privacy-profile")).toEqual([body]);
   });
 
+  it("clears an assignment with a reason for administrators only", async () => {
+    const fetchMock = stubApi({
+      roles: ["Bower.Administrator"],
+      handler: (path) =>
+        path === "/api/collectors/claims-prod-03/privacy-profile/clear"
+          ? json(collectors[1])
+          : undefined
+    });
+    renderApp("/privacy-profiles");
+
+    const form = await screen.findByRole("form", { name: "Clear assignment" });
+    const select = within(form).getByLabelText("Collector");
+    expect(within(select).queryByText(/records-app-04/)).toBeNull();
+    fireEvent.change(select, { target: { value: "claims-prod-03" } });
+    fireEvent.change(within(form).getByLabelText("Clear reason"), {
+      target: { value: "Roll back" }
+    });
+    fireEvent.click(within(form).getByRole("button", { name: "Clear assignment" }));
+
+    expect(await screen.findByText(/Cleared the privacy profile assignment on claims-api-03/)).toBeTruthy();
+    expect(postsTo(fetchMock, "/api/collectors/claims-prod-03/privacy-profile/clear")).toEqual([
+      { reason: "Roll back" }
+    ]);
+  });
+
+  it("hides clear assignment from non-administrators", async () => {
+    stubApi({ roles: ["Bower.Approver"] });
+    renderApp("/privacy-profiles");
+
+    expect(await screen.findByText("In sync · contoso-hr@1.0.0")).toBeTruthy();
+    expect(screen.queryByRole("form", { name: "Clear assignment" })).toBeNull();
+  });
+
   it("labels collector privacy profile sync state and assignment history", async () => {
     stubApi({ roles: ["Bower.Viewer"] });
     renderApp("/privacy-profiles");
