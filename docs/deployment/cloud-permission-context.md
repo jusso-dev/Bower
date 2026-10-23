@@ -34,11 +34,11 @@ existing mapping. GCP deltas come from
 Deltas take precedence over request policies. An empty delta has `mode = delta`,
 `newValue = unknown` and zero entries; it does not assert a grant.
 
-Selection remains separate. Current AWS selection assets omit `DetachUserPolicy`,
-`DetachRolePolicy`, `DetachGroupPolicy` and `RemoveUserFromGroup`. Enabling that
-population requires coordinated EventBridge and collector policy updates, policy
-version/hash changes and population tests. This mapper change does not broaden
-collection or policy acceptance.
+Selection remains separate. AWS pack 1.1.0 and EventBridge identity rules now
+include `DetachUserPolicy`, `DetachRolePolicy`, `DetachGroupPolicy` and
+`RemoveUserFromGroup` alongside grants. Collector policy tests pin these revoke
+operations. Rules remain disabled by default until reviewed deployment. Other
+mapper support does not automatically broaden policy or upstream acceptance.
 
 ## Compound representation
 

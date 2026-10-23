@@ -17,7 +17,7 @@ reject them instead of silently accepting broader input.
 | SDK role add/remove | Default deny | New `BWR-POL-ROLE-MEMBERSHIP` 1.0.0; actor, target, changed role and correlation required |
 | SDK sensitive export | Default deny | New `BWR-POL-SENSITIVE-EXPORT` 1.0.0; actor, export ID, classification, count and correlation required |
 | Successful generic cloud inventory/read | Accepted by broad cloud category/type | Rejected locally even if upstream subscription broadens |
-| Named IAM, logging-control and security configuration changes | Accepted | Retained by explicit action lists |
+| Named IAM, logging-control and security configuration changes | Accepted | Retained by explicit action lists; AWS detach-policy and remove-group-member operations added upstream and locally |
 | Denied/failed cloud API operations | Accepted | Retained by new denied-operation policies, irrespective of API action |
 | Low/informational cloud findings | Accepted | Rejected; medium/high/critical retained |
 | Unknown software/event types | Denied | Denied |

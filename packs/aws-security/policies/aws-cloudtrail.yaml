@@ -17,10 +17,14 @@ match:
 
   eventActions:
     - AddUserToGroup
+    - RemoveUserFromGroup
     - AppLogs
     - AttachGroupPolicy
     - AttachRolePolicy
     - AttachUserPolicy
+    - DetachUserPolicy
+    - DetachRolePolicy
+    - DetachGroupPolicy
     - AuthorizeSecurityGroupIngress
     - ConsoleLogin
     - CreateAccessKey
