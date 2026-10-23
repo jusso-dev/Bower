@@ -9,7 +9,8 @@ namespace Bower.Collector.Jobs;
 /// Management mode only (BOWER_PRIVACY_PROFILE_SOURCE=management): fetches the privacy
 /// profile version assigned to this collector. A new verified version is staged in the
 /// cache atomically and the host stops gracefully so the supervisor (Docker restart policy,
-/// systemd <c>Restart=always</c>) restarts it with the new profile. Anything that does not
+/// systemd <c>Restart=on-failure</c>) restarts it with the new profile: the process exits
+/// with <see cref="RestartExitCode"/>. Anything that does not
 /// verify keeps the running profile and fails the job. Metadata-only logs.
 /// </summary>
 public sealed partial class ManagedPrivacyProfileJob(
@@ -21,6 +22,14 @@ public sealed partial class ManagedPrivacyProfileJob(
     ILogger<ManagedPrivacyProfileJob> logger)
 {
     public const string Id = "managed-privacy-profile";
+
+    /// <summary>EX_TEMPFAIL: a deliberate restart to apply a new privacy profile.</summary>
+    public const int RestartExitCode = 75;
+
+    private static int restartRequested;
+
+    /// <summary>True once a staged or cleared profile asked the supervisor for a restart.</summary>
+    public static bool RestartRequested => Volatile.Read(ref restartRequested) == 1;
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -100,7 +109,7 @@ public sealed partial class ManagedPrivacyProfileJob(
         // Only verified bytes reach the disk, and only through an atomic replace.
         ManagedPrivacyProfileCache.WriteAtomically(ManagedPrivacyProfileCache.CachePath(settings), document);
         LogStaged(logger, verified.ProfileId, verified.Version);
-        lifetime.StopApplication();
+        RequestRestart();
     }
 
     private void Clear()
@@ -118,6 +127,12 @@ public sealed partial class ManagedPrivacyProfileJob(
         }
 
         LogCleared(logger);
+        RequestRestart();
+    }
+
+    private void RequestRestart()
+    {
+        Volatile.Write(ref restartRequested, 1);
         lifetime.StopApplication();
     }
 

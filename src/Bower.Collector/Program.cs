@@ -6,7 +6,11 @@ try
     WebApplication app = CollectorApplication.Build(settings);
     await CollectorApplication.InitializeAsync(app, app.Lifetime.ApplicationStopping);
     await app.RunAsync();
-    return 0;
+    // Non-zero when the host asked the supervisor for a restart (managed privacy profile
+    // staged or cleared), so Restart=on-failure and restart: on-failure also apply it.
+    return Bower.Collector.Jobs.ManagedPrivacyProfileJob.RestartRequested
+        ? Bower.Collector.Jobs.ManagedPrivacyProfileJob.RestartExitCode
+        : 0;
 }
 catch (Exception exception) when (exception is not OperationCanceledException)
 {

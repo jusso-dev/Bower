@@ -237,6 +237,8 @@ public sealed class ManagedPrivacyProfileTests
 
         Assert.Equal(next, File.ReadAllBytes(ManagedPrivacyProfileCache.CachePath(settings)));
         Assert.Equal(1, harness.Lifetime.StopCalls);
+        // Exit 75, not 0, so Restart=on-failure supervisors bring the collector back.
+        Assert.True(ManagedPrivacyProfileJob.RestartRequested);
         Assert.Equal(
             [ManagedPrivacyProfileCache.CacheFileName],
             Directory.GetFiles(settings.ManagedPrivacyCacheDirectory, "*", SearchOption.AllDirectories)
