@@ -33,7 +33,7 @@ samples fail cannot be signed. Sample lines:
 
 `expect` is one of the policy decisions (`accept`, `reject`, `sample`, `aggregate`,
 `redact-and-accept`, `quarantine`, `dead-letter`; default `accept`). `accept` means
-"selected locally": it also passes when the privacy engine redacted something
+"selected locally": it also passes when the Privacy & Secret Protection Engine redacted something
 (`redact-and-accept`), so prove the redaction with `mustNotContain`. Write
 `redact-and-accept` to require that redaction happened; it fails for an event that
 was accepted unchanged. Every other expectation must match exactly.
@@ -60,7 +60,7 @@ BOWER_PRIVACY_HMAC_KEY_ID=k2026
 ```
 
 Pack policies are added to the policy directory's; duplicate policy ids fail start-up.
-Only one privacy profile may be active (from a pack or `BOWER_PRIVACY_PROFILE`). The
+Only one privacy profile may be active (from a pack, `BOWER_PRIVACY_PROFILE` or management; see [managed privacy profiles](../privacy/managed-privacy-profiles.md)). The
 collector reports a **policy bundle hash** (policies, packs and profile) to management,
 which compares it with the policy an administrator assigned.
 

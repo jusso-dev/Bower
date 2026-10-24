@@ -37,10 +37,14 @@ application**:
 
 | App role | Suggested group | Purpose |
 |---|---|---|
-| `Bower.Viewer` | Bower Readers | Fleet, health, approvals and audit read |
-| `Bower.Operator` | Bower Operators | Operational response |
-| `Bower.Approver` | Bower Approvers | Collector enrollment decisions |
-| `Bower.Administrator` | Bower Administrators | Suspension, revocation and administration |
+| `Bower.Viewer` | Bower Readers | Fleet, health, approvals, audit and privacy profile versions read |
+| `Bower.Operator` | Bower Operators | Operational response; validate, preview and submit privacy profile versions |
+| `Bower.Approver` | Bower Approvers | Collector enrollment decisions; approve or reject privacy profile versions authored by someone else |
+| `Bower.Administrator` | Bower Administrators | Suspension, revocation and administration; assign and clear privacy profile versions on collectors |
+
+Privacy profile versions follow a two-person rule enforced by the API: the reviewer's
+object id must differ from the author's, whatever roles either holds. See [managed
+privacy profiles](../privacy/managed-privacy-profiles.md).
 
 Users inherit a compact `roles` access-token claim through group assignment.
 Bower deliberately authorizes app roles rather than raw `groups` claims, so

@@ -178,7 +178,7 @@ Optional parameters: `userAssignedIdentityResourceId`, `producerClaim`,
 ## Delivery and duplicate semantics
 
 There is no local durable queue. A request succeeds only after the Logs Ingestion
-API accepted every record staged for it (the event and, when the privacy engine
+API accepted every record staged for it (the event and, when the Privacy & Secret Protection Engine
 raised one, its privacy alert). Otherwise the function answers 503 (or 429 when
 Azure throttles) with `Retry-After`, keeps nothing, and the producer retries:
 **at-least-once**. Bower forwarders (`Bower.Forwarding`) already treat 429/503 as retry and
