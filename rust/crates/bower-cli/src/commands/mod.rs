@@ -10,6 +10,7 @@ pub mod evidence;
 pub mod keys;
 pub mod pack;
 pub mod pipeline;
+pub mod privacy;
 pub mod queue;
 pub mod token;
 
@@ -18,7 +19,7 @@ use std::time::Duration;
 
 use crate::cli::{
     Command, DcrCommand, DeveloperCommand, EvidenceCommand, KeysCommand, PackCommand,
-    PipelineCommand, QueueCommand, TestCommand, TokenCommand,
+    PipelineCommand, PrivacyCommand, QueueCommand, TestCommand, TokenCommand,
 };
 use crate::support::{CliError, CliResult};
 
@@ -49,6 +50,7 @@ pub fn dispatch(command: Command) -> CliResult {
         Command::Evidence(EvidenceCommand::Run(args)) => evidence::run(&args),
         Command::Evidence(EvidenceCommand::Verify(args)) => evidence::verify(&args),
         Command::Developer(DeveloperCommand::Init(args)) => developer::init(&args),
+        Command::Privacy(PrivacyCommand::Validate(args)) => privacy::validate(&args),
     }
 }
 

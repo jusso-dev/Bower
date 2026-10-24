@@ -56,6 +56,29 @@ pub enum Command {
     /// Developer project scaffolding.
     #[command(subcommand)]
     Developer(DeveloperCommand),
+    /// Validate privacy profiles (custom detectors, secret field names) and preview redaction.
+    #[command(subcommand)]
+    Privacy(PrivacyCommand),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PrivacyCommand {
+    /// Load a privacy profile strictly, run its custom detector tests and print metadata
+    /// (exit 2 when the sample cannot be redacted).
+    Validate(PrivacyValidateArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct PrivacyValidateArgs {
+    /// Privacy profile YAML file.
+    #[arg(value_name = "FILE")]
+    pub file: Option<String>,
+    /// HMAC key file (base64 or at least 32 raw bytes) [default: a random key].
+    #[arg(long = "hmac-key-file", value_name = "FILE")]
+    pub hmac_key_file: Option<String>,
+    /// JSON event to redact with the profile; prints the redacted result.
+    #[arg(long = "sample", value_name = "FILE")]
+    pub sample: Option<String>,
 }
 
 #[derive(Debug, Args)]

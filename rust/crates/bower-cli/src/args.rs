@@ -12,8 +12,8 @@ use crate::cli::{
     DeveloperCommand, DeveloperInitArgs, DoctorArgs, EmitArgs, EvidenceCommand, EvidenceRunArgs,
     EvidenceVerifyArgs, KeysCommand, KeysGenerateArgs, PackBuildArgs, PackCommand, PackDiffArgs,
     PackFileArgs, PackTestArgs, PipelineCommand, PipelineTemplateArgs, PipelineValidateArgs,
-    QueueCommand, QueueVerifyArgs, ReplayArgs, TestCommand, TokenCommand, TokenGenerateArgs,
-    ValidateArgs,
+    PrivacyCommand, PrivacyValidateArgs, QueueCommand, QueueVerifyArgs, ReplayArgs, TestCommand,
+    TokenCommand, TokenGenerateArgs, ValidateArgs,
 };
 
 /// `CliOptions` over one command's remaining arguments.
@@ -82,6 +82,7 @@ pub fn parse(args: &[String]) -> Option<Command> {
                     | ("pack", "build" | "verify" | "inspect" | "test" | "diff")
                     | ("evidence", "run" | "verify")
                     | ("developer", "init")
+                    | ("privacy", "validate")
             ) =>
         {
             (&words[..2], &args[2..])
@@ -200,6 +201,13 @@ pub fn parse(args: &[String]) -> Option<Command> {
         ["developer", "init"] => Command::Developer(DeveloperCommand::Init(DeveloperInitArgs {
             path: o.get("--path"),
         })),
+        ["privacy", "validate"] => {
+            Command::Privacy(PrivacyCommand::Validate(PrivacyValidateArgs {
+                file: o.positional(),
+                hmac_key_file: o.get("--hmac-key-file"),
+                sample: o.get("--sample"),
+            }))
+        }
         _ => return None,
     })
 }

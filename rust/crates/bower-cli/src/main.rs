@@ -50,6 +50,7 @@ Commands:
   bower queue replay --database FILE (--code PREFIX | --event ID ...)
   bower queue verify --database FILE [--expect-head SEQUENCE:HASH]
   bower developer init [--path PATH]
+  bower privacy validate FILE [--hmac-key-file FILE] [--sample FILE]
   bower version";
 
 const UNKNOWN_COMMAND: &str = "Unknown command. Run 'bower --help'.";

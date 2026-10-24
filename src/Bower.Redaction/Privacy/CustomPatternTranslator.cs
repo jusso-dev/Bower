@@ -113,7 +113,7 @@ public static class CustomPatternReasons
 /// </summary>
 public static class CustomPatternTranslator
 {
-    public const int MaximumComplexity = 1000;
+    public const int MaximumComplexity = 512;
     public const int MaximumRepeat = 1000;
 
     private const int Saturated = MaximumComplexity + 1;

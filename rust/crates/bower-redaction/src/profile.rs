@@ -40,6 +40,8 @@ pub struct LoadedPrivacyProfile {
     pub version: Option<String>,
     /// `sha256:<hex>` of the YAML with line endings normalised to `\n`.
     pub hash: String,
+    /// Custom detector test samples (match and noMatch) that passed at load.
+    pub custom_detector_tests: usize,
 }
 
 // ------------------------------------------------------------------ document model
@@ -451,7 +453,7 @@ pub fn load(
     }
 
     let known: HashSet<&str> = detector_ids::ALL.iter().copied().collect();
-    let custom_detectors = load_custom_detectors(required_collection(
+    let (custom_detectors, custom_detector_tests) = load_custom_detectors(required_collection(
         document.custom_detectors,
         "customDetectors",
     )?)?;
@@ -580,12 +582,14 @@ pub fn load(
         id: metadata.id,
         version: metadata.version,
         hash,
+        custom_detector_tests,
     })
 }
 
+/// The validated definitions and the number of test samples they passed.
 fn load_custom_detectors(
     documents: Vec<Option<CustomDetectorDocument>>,
-) -> Result<Vec<CustomDetectorDefinition>, PrivacyError> {
+) -> Result<(Vec<CustomDetectorDefinition>, usize), PrivacyError> {
     if documents.len() > MAXIMUM_CUSTOM_DETECTORS {
         return Err(invalid(
             "Privacy profile may define at most 32 custom detectors.",
@@ -593,6 +597,7 @@ fn load_custom_detectors(
     }
 
     let mut ids = HashSet::new();
+    let mut tests_passed = 0;
     let mut definitions = Vec::with_capacity(documents.len());
     for document in documents {
         let document =
@@ -672,10 +677,11 @@ fn load_custom_detectors(
             }
         }
 
+        tests_passed += match_samples.len() + no_match_samples.len();
         definitions.push(detector.definition().clone());
     }
 
-    Ok(definitions)
+    Ok((definitions, tests_passed))
 }
 
 /// Normalises like the engine; duplicates after normalisation keep the first occurrence.

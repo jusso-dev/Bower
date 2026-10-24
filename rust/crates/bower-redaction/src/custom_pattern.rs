@@ -13,7 +13,7 @@
 //! occurrence.
 
 /// Maximum expansion estimate.
-pub const MAXIMUM_COMPLEXITY: u32 = 1000;
+pub const MAXIMUM_COMPLEXITY: u32 = 512;
 /// Maximum `{n,m}` bound.
 pub const MAXIMUM_REPEAT: u32 = 1000;
 

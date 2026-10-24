@@ -50,6 +50,27 @@ internal sealed record PackInspectOutput(
 
 internal sealed record PackInspectFile(string Path, string Role, long Bytes);
 
+/// <summary><c>bower privacy validate</c> output: metadata only, never patterns or samples.</summary>
+internal sealed record PrivacyValidationOutput(
+    [property: JsonPropertyName("valid")] bool Valid,
+    [property: JsonPropertyName("profileId")] string? ProfileId,
+    [property: JsonPropertyName("version")] string? Version,
+    [property: JsonPropertyName("hash")] string Hash,
+    [property: JsonPropertyName("customDetectors")] IReadOnlyList<PrivacyValidationDetector> CustomDetectors,
+    [property: JsonPropertyName("secretFieldNames")] int SecretFieldNames,
+    [property: JsonPropertyName("testsPassed")] int TestsPassed,
+    [property: JsonPropertyName("sample"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PrivacyValidationSample? Sample);
+
+internal sealed record PrivacyValidationDetector(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("action")] string Action);
+
+/// <summary>The sample after redaction (never the original).</summary>
+internal sealed record PrivacyValidationSample(
+    [property: JsonPropertyName("succeeded")] bool Succeeded,
+    [property: JsonPropertyName("failureCode")] string? FailureCode,
+    [property: JsonPropertyName("redacted")] string? Redacted);
+
 /// <summary>
 /// Source-generated metadata for CLI output: System.Text.Json default options with
 /// indentation, as the former <c>new JsonSerializerOptions { WriteIndented = true }</c>.
@@ -59,6 +80,7 @@ internal sealed record PackInspectFile(string Path, string Role, long Bytes);
 [JsonSerializable(typeof(PipelineValidationOutput))]
 [JsonSerializable(typeof(InitOutput))]
 [JsonSerializable(typeof(PackInspectOutput))]
+[JsonSerializable(typeof(PrivacyValidationOutput))]
 [JsonSerializable(typeof(QueueSnapshot))]
 [JsonSerializable(typeof(IReadOnlyList<DeadLetterRecord>))]
 [JsonSerializable(typeof(SignedEvidence))]

@@ -154,6 +154,114 @@ fn pipeline_validate_matches_csharp() {
 }
 
 #[test]
+fn privacy_validate_matches_csharp() {
+    let Some(cs) = csharp() else { return };
+    let root = repo_root();
+    let dir = tempfile::tempdir().unwrap();
+    let write = |name: &str, content: &str| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, content).unwrap();
+        path.to_str().unwrap().to_owned()
+    };
+    // A fixed key so HMAC pseudonyms in the redacted sample are deterministic.
+    let key = write("key.b64", "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=\n");
+    let short_key = write("short.key", "abc");
+    let sample = write(
+        "sample.json",
+        "{\"actor\":{\"username\":\"alice\"},\"msg\":\"EMP-123456 opened CUST-ab1234 see INC0012345 \u{1F600}x\",\"sessionKey\":\"s\",\"webhook_nonce\":1}",
+    );
+    let broken_sample = write("broken.json", "{ not json");
+    let header = "apiVersion: bower.security/v1\nkind: PrivacyProfile\nmetadata:\n  id: t\n  version: 1.0.0\n";
+    let untested = write(
+        "untested.yaml",
+        &format!(
+            "{header}customDetectors:\n  - id: custom.d\n    pattern: 'EMP-\\d{{6}}'\n    action: mask\n    tests:\n      match: [EMP-12345]\n"
+        ),
+    );
+    let syntax = write(
+        "syntax.yaml",
+        &format!(
+            "{header}customDetectors:\n  - id: custom.d\n    pattern: 'a(?=b)'\n    action: mask\n    tests:\n      match: [ab]\n"
+        ),
+    );
+    let secret = write(
+        "secret.yaml",
+        &format!("{header}secretFieldNames: ['---']\n"),
+    );
+    let example = "deploy/privacy/custom-redaction-example.yaml";
+    let cases: Vec<Vec<&str>> = vec![
+        vec!["privacy", "validate"],
+        vec!["privacy", "validate", "missing.yaml"],
+        vec!["privacy", "validate", example],
+        vec![
+            "privacy",
+            "validate",
+            "deploy/privacy/cloud-identities.yaml",
+        ],
+        vec![
+            "privacy",
+            "validate",
+            "packs/linux-ssh-gateway/privacy.yaml",
+        ],
+        vec!["privacy", "validate", example, "--hmac-key-file", &key],
+        vec![
+            "privacy",
+            "validate",
+            "--hmac-key-file",
+            &key,
+            example,
+            "--sample",
+            &sample,
+        ],
+        vec![
+            "privacy",
+            "validate",
+            example,
+            "--hmac-key-file",
+            &key,
+            "--sample",
+            &broken_sample,
+        ],
+        vec![
+            "privacy",
+            "validate",
+            example,
+            "--hmac-key-file",
+            &short_key,
+        ],
+        vec![
+            "privacy",
+            "validate",
+            example,
+            "--hmac-key-file",
+            "missing.key",
+        ],
+        vec![
+            "privacy",
+            "validate",
+            example,
+            "--hmac-key-file",
+            &key,
+            "--sample",
+            "missing.json",
+        ],
+        vec!["privacy", "validate", &untested],
+        vec!["privacy", "validate", &syntax],
+        vec!["privacy", "validate", &secret],
+    ];
+    for args in &cases {
+        assert_same(&cs, &root, args);
+    }
+
+    let run = assert_same(&cs, &root, &cases[6]);
+    assert_eq!(run.code, 0);
+    assert!(run.stdout.contains("\"testsPassed\": 13"), "{}", run.stdout);
+    assert!(!run.stdout.contains("EMP-123456"), "{}", run.stdout);
+    assert_eq!(assert_same(&cs, &root, &cases[7]).code, 2);
+    assert_eq!(assert_same(&cs, &root, &cases[11]).code, 1);
+}
+
+#[test]
 fn dcr_diff_matches_csharp() {
     let Some(cs) = csharp() else { return };
     let dir = tempfile::tempdir().unwrap();

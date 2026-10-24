@@ -79,7 +79,11 @@ public sealed record PrivacyFieldRuleDocument
     public int? MaxLength { get; init; }
 }
 
-public sealed record LoadedPrivacyProfile(PrivacyPolicy Policy, string Id, string Version, string Hash);
+public sealed record LoadedPrivacyProfile(PrivacyPolicy Policy, string Id, string Version, string Hash)
+{
+    /// <summary>Custom detector test samples (match and noMatch) that passed at load.</summary>
+    public int CustomDetectorTests { get; init; }
+}
 
 /// <summary>
 /// Loads a deterministic privacy profile. Strict YAML: unknown keys, unknown detector
@@ -122,7 +126,7 @@ public static class PrivacyProfileLoader
         // YamlDotNet does not enforce `required`: explicit YAML nulls arrive as null and
         // must fail the load with a clear message, never a NullReferenceException.
         List<CustomDetectorDefinition> customDetectors =
-            LoadCustomDetectors(RequireCollection(document.CustomDetectors, "customDetectors"));
+            LoadCustomDetectors(RequireCollection(document.CustomDetectors, "customDetectors"), out int customDetectorTests);
         HashSet<string> customIds = customDetectors.Select(detector => detector.Id).ToHashSet(StringComparer.Ordinal);
         PrivacyPolicy defaults = PrivacyPolicy.CreateDefault();
         Dictionary<string, PrivacyAction> actions = new(defaults.DetectorActions, StringComparer.Ordinal);
@@ -211,11 +215,17 @@ public static class PrivacyProfileLoader
         PrivacyProfileMetadata metadata = document.Metadata
             ?? throw new InvalidDataException("Privacy profile metadata is required.");
         string hash = "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(yaml.ReplaceLineEndings("\n"))));
-        return new LoadedPrivacyProfile(policy, metadata.Id, metadata.Version, hash);
+        return new LoadedPrivacyProfile(policy, metadata.Id, metadata.Version, hash)
+        {
+            CustomDetectorTests = customDetectorTests
+        };
     }
 
-    private static List<CustomDetectorDefinition> LoadCustomDetectors(List<PrivacyCustomDetectorDocument> documents)
+    private static List<CustomDetectorDefinition> LoadCustomDetectors(
+        List<PrivacyCustomDetectorDocument> documents,
+        out int tests)
     {
+        tests = 0;
         if (documents.Count > MaximumCustomDetectors)
         {
             throw new InvalidDataException("Privacy profile may define at most 32 custom detectors.");
@@ -285,6 +295,7 @@ public static class PrivacyProfileLoader
                 throw new InvalidDataException($"Custom detector '{id}' pattern is too complex.", exception);
             }
 
+            tests += match.Count + noMatch.Count;
             definitions.Add(definition);
         }
 
