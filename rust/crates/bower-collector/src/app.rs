@@ -108,6 +108,12 @@ pub struct BundleInfo {
     pub policies: Vec<PolicySummary>,
     pub packs: Vec<PackSummary>,
     pub privacy_profile: Option<String>,
+    /// Active privacy profile version; `None` for the built-in default.
+    pub privacy_profile_version: Option<String>,
+    /// Active privacy profile content hash; `None` for the built-in default.
+    pub privacy_profile_hash: Option<String>,
+    /// `BOWER_PRIVACY_PROFILE_SOURCE` that produced the active privacy profile.
+    pub privacy_profile_source: String,
 }
 
 #[derive(Clone)]
@@ -251,7 +257,7 @@ pub fn raw_json_text(bytes: &[u8]) -> Option<&str> {
     Some(raw.get())
 }
 
-fn exceeds_depth(text: &[u8], maximum: usize) -> bool {
+pub(crate) fn exceeds_depth(text: &[u8], maximum: usize) -> bool {
     let (mut depth, mut in_string, mut escaped) = (0usize, false, false);
     for &byte in text {
         if in_string {
@@ -508,6 +514,9 @@ struct StatusPolicy<'a> {
     policies: &'a [PolicySummary],
     packs: &'a [PackSummary],
     privacy_profile: Option<&'a str>,
+    privacy_profile_version: Option<&'a str>,
+    privacy_profile_hash: &'a str,
+    privacy_profile_source: &'a str,
 }
 
 #[derive(Serialize)]
@@ -567,6 +576,9 @@ async fn status(
                 policies: &bundle.policies,
                 packs: &bundle.packs,
                 privacy_profile: bundle.privacy_profile.as_deref(),
+                privacy_profile_version: bundle.privacy_profile_version.as_deref(),
+                privacy_profile_hash: bundle.privacy_profile_hash.as_deref().unwrap_or("default"),
+                privacy_profile_source: &bundle.privacy_profile_source,
             },
             ledger: StatusLedger {
                 sequence: ledger.sequence,

@@ -121,6 +121,8 @@ pub struct ManagementHeartbeat {
     pub version: String,
     pub configuration_hash: String,
     pub policy_hash: String,
+    /// Active privacy profile content hash, or `default` for the built-in profile.
+    pub privacy_profile_hash: String,
     pub output_type: String,
     pub maximum_queue_bytes: i64,
 }
@@ -181,12 +183,14 @@ struct Heartbeat<'a> {
     jobs: &'a [BackgroundJobStatus],
     dead_lettered: i64,
     ledger: LedgerReport<'a>,
+    privacy_profile_hash: &'a str,
 }
 
 impl ManagementHeartbeat {
     pub fn from_settings(
         settings: &CollectorSettings,
         policy_hash: String,
+        privacy_profile_hash: Option<&str>,
         credential: Arc<dyn AccessTokenSource>,
         store: Arc<dyn DurableEventStore>,
         catalog: Arc<JobCatalog>,
@@ -209,6 +213,7 @@ impl ManagementHeartbeat {
             version: settings.version.clone(),
             configuration_hash: settings.configuration_hash(),
             policy_hash,
+            privacy_profile_hash: privacy_profile_hash.unwrap_or("default").to_string(),
             output_type: settings.output_type.clone(),
             maximum_queue_bytes: settings.maximum_queue_bytes,
         })
@@ -294,6 +299,7 @@ impl ManagementHeartbeat {
                 sequence: ledger.sequence,
                 hash: &ledger.hash,
             },
+            privacy_profile_hash: &self.privacy_profile_hash,
         };
         let path = format!(
             "api/collectors/{}/heartbeat",

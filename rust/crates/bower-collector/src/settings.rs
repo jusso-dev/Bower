@@ -12,6 +12,11 @@ use crate::error::HostError;
 
 pub const MINIMUM_INGEST_TOKEN_LENGTH: usize = 32;
 
+/// `BOWER_PRIVACY_PROFILE_SOURCE=local` (C# `PrivacyProfileSources.Local`).
+pub const PRIVACY_PROFILE_SOURCE_LOCAL: &str = "local";
+/// `BOWER_PRIVACY_PROFILE_SOURCE=management` (C# `PrivacyProfileSources.Management`).
+pub const PRIVACY_PROFILE_SOURCE_MANAGEMENT: &str = "management";
+
 /// Explicit Azure credential source (C# `AzureCredentialMode`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AzureCredentialMode {
@@ -53,6 +58,15 @@ pub struct CollectorSettings {
     pub packs: Vec<String>,
     pub pack_trusted_key_files: Vec<String>,
     pub privacy_profile_path: Option<PathBuf>,
+    /// `local` (default): `BOWER_PRIVACY_PROFILE`, one pack profile or the built-in
+    /// default. `management`: the signed version assigned in the management API (cached
+    /// locally).
+    pub privacy_profile_source: String,
+    /// PEM public keys trusted to sign managed privacy profiles.
+    pub managed_privacy_trusted_key_files: Vec<String>,
+    /// Cache directory for the managed privacy profile; `None` means next to the queue
+    /// database.
+    pub managed_privacy_directory: Option<PathBuf>,
     pub privacy_hmac_key_file: Option<PathBuf>,
     pub privacy_hmac_key_id: String,
     pub allow_unauthenticated_ingest: bool,
@@ -109,6 +123,9 @@ impl CollectorSettings {
             packs: Vec::new(),
             pack_trusted_key_files: Vec::new(),
             privacy_profile_path: None,
+            privacy_profile_source: PRIVACY_PROFILE_SOURCE_LOCAL.into(),
+            managed_privacy_trusted_key_files: Vec::new(),
+            managed_privacy_directory: None,
             privacy_hmac_key_file: None,
             privacy_hmac_key_id: "k1".into(),
             allow_unauthenticated_ingest: false,
@@ -168,6 +185,15 @@ impl CollectorSettings {
             packs: split_list(read("BOWER_PACKS").as_deref()),
             pack_trusted_key_files: split_list(read("BOWER_PACK_TRUSTED_KEYS").as_deref()),
             privacy_profile_path: blank(read("BOWER_PRIVACY_PROFILE")).map(PathBuf::from),
+            privacy_profile_source: blank(read("BOWER_PRIVACY_PROFILE_SOURCE")).map_or_else(
+                || PRIVACY_PROFILE_SOURCE_LOCAL.into(),
+                |value| value.trim().to_lowercase(),
+            ),
+            managed_privacy_trusted_key_files: split_list(
+                read("BOWER_MANAGED_PRIVACY_TRUSTED_KEYS").as_deref(),
+            ),
+            managed_privacy_directory: blank(read("BOWER_MANAGED_PRIVACY_DIRECTORY"))
+                .map(PathBuf::from),
             privacy_hmac_key_file: blank(read("BOWER_PRIVACY_HMAC_KEY_FILE")).map(PathBuf::from),
             privacy_hmac_key_id: blank(read("BOWER_PRIVACY_HMAC_KEY_ID"))
                 .unwrap_or_else(|| "k1".into()),
@@ -193,6 +219,23 @@ impl CollectorSettings {
         };
         settings.validate()?;
         Ok(settings)
+    }
+
+    /// `BOWER_PRIVACY_PROFILE_SOURCE=management` (C# `UsesManagedPrivacyProfile`).
+    pub fn uses_managed_privacy_profile(&self) -> bool {
+        self.privacy_profile_source == PRIVACY_PROFILE_SOURCE_MANAGEMENT
+    }
+
+    /// Resolved managed privacy profile cache directory (C# `ManagedPrivacyCacheDirectory`):
+    /// `managed-privacy` next to the queue database unless configured.
+    pub fn managed_privacy_cache_directory(&self) -> PathBuf {
+        if let Some(directory) = &self.managed_privacy_directory {
+            return directory.clone();
+        }
+        full_path(&self.queue_path)
+            .parent()
+            .map_or_else(|| PathBuf::from("."), PathBuf::from)
+            .join("managed-privacy")
     }
 
     /// Parsed listen URL host is loopback (`localhost` or a loopback IP).
@@ -305,13 +348,48 @@ impl CollectorSettings {
             }
         }
 
+        self.validate_privacy_profile_source()
+    }
+
+    fn validate_privacy_profile_source(&self) -> Result<(), HostError> {
+        if self.privacy_profile_source != PRIVACY_PROFILE_SOURCE_LOCAL
+            && self.privacy_profile_source != PRIVACY_PROFILE_SOURCE_MANAGEMENT
+        {
+            return Err(invalid(
+                "BOWER_PRIVACY_PROFILE_SOURCE must be local or management.",
+            ));
+        }
+
+        if !self.uses_managed_privacy_profile() {
+            return Ok(());
+        }
+
+        if self.management_endpoint.is_none() {
+            return Err(invalid(
+                "BOWER_PRIVACY_PROFILE_SOURCE=management requires BOWER_MANAGEMENT_ENDPOINT and BOWER_MANAGEMENT_SCOPE.",
+            ));
+        }
+
+        if self.managed_privacy_trusted_key_files.is_empty() {
+            return Err(invalid(
+                "BOWER_PRIVACY_PROFILE_SOURCE=management requires BOWER_MANAGED_PRIVACY_TRUSTED_KEYS; \
+                 managed privacy profiles are never loaded unverified.",
+            ));
+        }
+
+        if self.privacy_profile_path.is_some() {
+            return Err(invalid(
+                "BOWER_PRIVACY_PROFILE cannot be combined with BOWER_PRIVACY_PROFILE_SOURCE=management.",
+            ));
+        }
+
         Ok(())
     }
 
     /// Hash of non-secret settings reported to management (C# `ConfigurationHash`).
     pub fn configuration_hash(&self) -> String {
         let retention_hours = self.delivered_retention.as_secs_f64() / 3600.0;
-        let material = [
+        let mut material = [
             self.listen_url.clone(),
             self.output_type.clone(),
             self.stream_name.clone(),
@@ -335,6 +413,13 @@ impl CollectorSettings {
                 .unwrap_or_default(),
         ]
         .join("\u{1f}");
+        if self.uses_managed_privacy_profile() {
+            // Appended only in management mode so existing local configuration hashes
+            // are unchanged.
+            material.push('\u{1f}');
+            material.push_str("privacy-source:");
+            material.push_str(&self.privacy_profile_source);
+        }
         format!(
             "sha256:{}",
             hex::encode(Sha256::digest(material.as_bytes()))
@@ -455,6 +540,28 @@ pub(crate) fn read_all_text(path: &str) -> Result<String, HostError> {
         .strip_prefix('\u{feff}')
         .map(str::to_string)
         .unwrap_or(text))
+}
+
+/// `Path.GetFullPath`: absolute against the current directory, with `.` and `..`
+/// segments resolved lexically (symbolic links are not followed).
+pub(crate) fn full_path(path: &std::path::Path) -> PathBuf {
+    use std::path::Component;
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir().unwrap_or_default().join(path)
+    };
+    let mut normalized = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other),
+        }
+    }
+    normalized
 }
 
 /// `AppContext.BaseDirectory`: the directory holding the executable.

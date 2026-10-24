@@ -22,6 +22,7 @@ use crate::worker::{random_unit, store_error_name};
 pub const QUEUE_RETENTION_JOB_ID: &str = "queue-retention";
 pub const QUEUE_MAINTENANCE_JOB_ID: &str = "queue-maintenance";
 pub const MANAGEMENT_HEARTBEAT_JOB_ID: &str = "management-heartbeat";
+pub const MANAGED_PRIVACY_PROFILE_JOB_ID: &str = "managed-privacy-profile";
 const RETENTION_BATCH_SIZE: usize = 5_000;
 
 /// UTC schedules used by the collector (Hangfire `Cron.*` helpers).

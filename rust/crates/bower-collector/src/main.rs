@@ -4,7 +4,7 @@ use std::process::ExitCode;
 
 use bower_collector::host::{self, BuildOptions};
 use bower_collector::{
-    CollectorSettings, HostError, bundle, credential, logging, server, shutdown,
+    CollectorSettings, HostError, bundle, credential, logging, managed_privacy, server, shutdown,
 };
 use tracing::info;
 
@@ -33,7 +33,10 @@ fn main() -> ExitCode {
         }
     };
     match runtime.block_on(run()) {
-        Ok(()) => ExitCode::SUCCESS,
+        // Non-zero when the host asked the supervisor for a restart (managed privacy
+        // profile staged or cleared), so Restart=on-failure also applies it.
+        Ok(true) => ExitCode::from(managed_privacy::RESTART_EXIT_CODE),
+        Ok(false) => ExitCode::SUCCESS,
         Err(error) => {
             // Exit with a status code so a supervisor restarts the process. Messages are
             // Bower-authored configuration or storage errors; no secrets.
@@ -43,7 +46,8 @@ fn main() -> ExitCode {
     }
 }
 
-async fn run() -> Result<(), HostError> {
+/// `Ok(true)` when a restart was requested.
+async fn run() -> Result<bool, HostError> {
     logging::init();
     let settings = CollectorSettings::from_process_environment()?;
     let bundle = bundle::load(&settings)?;
@@ -69,9 +73,10 @@ async fn run() -> Result<(), HostError> {
         trigger.cancel();
     });
     info!(listen_url, "Bower collector listening.");
+    let lifetime = collector.lifetime();
     collector.run(listeners, token).await;
     info!("Bower collector stopped.");
-    Ok(())
+    Ok(lifetime.restart_requested())
 }
 
 #[cfg(unix)]

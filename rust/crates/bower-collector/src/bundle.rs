@@ -144,9 +144,20 @@ fn load_inner(
             "Only one privacy profile may be active (BOWER_PRIVACY_PROFILE or one pack).",
         ));
     }
+    if settings.uses_managed_privacy_profile() && !pack_profiles.is_empty() {
+        return Err(HostError::new(
+            "InvalidDataException",
+            "BOWER_PRIVACY_PROFILE_SOURCE=management cannot be combined with pack privacy profiles.",
+        ));
+    }
     let profile_yaml = profile_yaml.or_else(|| pack_profiles.first().map(|yaml| (*yaml).clone()));
     let key = read_key()?;
+    // Management mode: the verified cached assignment, or the built-in default when none.
     let profile = match &profile_yaml {
+        _ if settings.uses_managed_privacy_profile() => {
+            crate::managed_privacy::load_verified(settings, key.as_deref())?
+                .map(|verified| verified.profile)
+        }
         Some(yaml) => Some(
             bower_redaction::load_privacy_profile(
                 yaml,
@@ -227,6 +238,9 @@ fn load_inner(
             })
             .collect(),
         privacy_profile: profile.as_ref().and_then(|profile| profile.id.clone()),
+        privacy_profile_version: profile.as_ref().and_then(|profile| profile.version.clone()),
+        privacy_profile_hash: profile.as_ref().map(|profile| profile.hash.clone()),
+        privacy_profile_source: settings.privacy_profile_source.clone(),
     };
     Ok(LoadedBundle {
         info,

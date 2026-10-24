@@ -15,6 +15,7 @@ path = "src/main.rs"
 axum.workspace = true
 bower-contracts.workspace = true
 bower-core.workspace = true
+bower-integrity.workspace = true
 bower-output-ama-spool.workspace = true
 bower-output-azure.workspace = true
 bower-packs.workspace = true
@@ -36,7 +37,6 @@ tracing-subscriber.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-bower-integrity.workspace = true
 flate2.workspace = true
 rusqlite.workspace = true
 chrono.workspace = true

@@ -12,6 +12,7 @@ pub mod heartbeat;
 pub mod host;
 pub mod jobs;
 pub mod logging;
+pub mod managed_privacy;
 pub mod rate_limit;
 pub mod server;
 pub mod settings;

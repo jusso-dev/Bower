@@ -27,12 +27,14 @@ use crate::auth::IngestAuthentication;
 use crate::error::HostError;
 use crate::heartbeat::{AccessTokenSource, ManagementHeartbeat};
 use crate::jobs::{
-    JobCatalog, JobFn, JobScheduler, MANAGEMENT_HEARTBEAT_JOB_ID, QUEUE_MAINTENANCE_JOB_ID,
-    QUEUE_RETENTION_JOB_ID, Schedule, run_queue_maintenance, run_queue_retention,
+    JobCatalog, JobFn, JobScheduler, MANAGED_PRIVACY_PROFILE_JOB_ID, MANAGEMENT_HEARTBEAT_JOB_ID,
+    QUEUE_MAINTENANCE_JOB_ID, QUEUE_RETENTION_JOB_ID, Schedule, run_queue_maintenance,
+    run_queue_retention,
 };
+use crate::managed_privacy::ManagedPrivacyProfileJob;
 use crate::rate_limit::TokenBucket;
 use crate::settings::CollectorSettings;
-use crate::shutdown::ShutdownToken;
+use crate::shutdown::{ApplicationLifetime, ShutdownToken};
 use crate::worker::{QueueDeliveryOptions, QueueDeliveryWorker};
 
 /// What the policy bundle contributes to the host: selection, redaction and the
@@ -128,7 +130,10 @@ pub struct Collector {
     pub catalog: Arc<JobCatalog>,
     pub clock: Arc<dyn Clock>,
     pub policy_hash: String,
+    /// Active privacy profile content hash; `None` for the built-in default.
+    pub privacy_profile_hash: Option<String>,
     pub auth: Arc<IngestAuthentication>,
+    lifetime: ApplicationLifetime,
     output: Option<BoxedOutput>,
     credential: Option<Arc<dyn AccessTokenSource>>,
     delivery: QueueDeliveryOptions,
@@ -180,6 +185,7 @@ pub fn build(
     )?);
     let catalog = Arc::new(JobCatalog::default());
     let policy_hash = bundle.info.hash.clone();
+    let privacy_profile_hash = bundle.info.privacy_profile_hash.clone();
     let state = AppState {
         processor: Arc::new(CoreProcessor {
             processor,
@@ -208,7 +214,9 @@ pub fn build(
         catalog,
         clock,
         policy_hash,
+        privacy_profile_hash,
         auth,
+        lifetime: ApplicationLifetime::new(),
         output: options.output,
         credential: options.credential,
         delivery,
@@ -221,6 +229,12 @@ impl Collector {
     /// Replaces the configured output (C# `Build(..., output: ...)`), before `run`.
     pub fn set_output(&mut self, output: Option<BoxedOutput>) {
         self.output = output;
+    }
+
+    /// Host lifetime (C# `IHostApplicationLifetime`): stops `run` gracefully and records
+    /// whether a restart was requested (exit code 75).
+    pub fn lifetime(&self) -> ApplicationLifetime {
+        self.lifetime.clone()
     }
 
     /// Initialises storage and registers recurring jobs (C# `InitializeAsync`).
@@ -281,7 +295,8 @@ impl Collector {
             let heartbeat = ManagementHeartbeat::from_settings(
                 &self.settings,
                 self.policy_hash.clone(),
-                credential,
+                self.privacy_profile_hash.as_deref(),
+                Arc::clone(&credential),
                 Arc::clone(&self.store),
                 Arc::clone(&self.catalog),
             )
@@ -302,13 +317,52 @@ impl Collector {
                 0,
                 heartbeat_job,
             );
+
+            if self.settings.uses_managed_privacy_profile() {
+                let sync = ManagedPrivacyProfileJob::from_settings(
+                    &self.settings,
+                    self.privacy_profile_hash.clone(),
+                    credential,
+                    self.lifetime.clone(),
+                )
+                .map(Arc::new)
+                .ok_or_else(|| {
+                    HostError::new(
+                        "InvalidOperationException",
+                        "Management HTTP client could not be created.",
+                    )
+                })?;
+                // Idempotent: an unchanged assignment is a no-op; a failed run is retried
+                // by the next scheduled occurrence with the current profile still active.
+                let sync_job: JobFn = Arc::new(move || {
+                    let sync = Arc::clone(&sync);
+                    Box::pin(async move { sync.run().await })
+                });
+                scheduler.add(
+                    MANAGED_PRIVACY_PROFILE_JOB_ID,
+                    Schedule::Minutely,
+                    0,
+                    sync_job,
+                );
+            }
         }
         self.scheduler = Some(scheduler);
         Ok(())
     }
 
-    /// Serves until `shutdown`, then drains HTTP, stops the worker and jobs.
+    /// Serves until `shutdown` (or a [`ApplicationLifetime`] stop request), then drains
+    /// HTTP, stops the worker and jobs.
     pub async fn run(mut self, listeners: Vec<TcpListener>, shutdown: ShutdownToken) {
+        let (trigger, merged) = crate::shutdown::channel();
+        let stopping = self.lifetime.stopping();
+        let merge = tokio::spawn(async move {
+            tokio::select! {
+                () = shutdown.cancelled() => {}
+                () = stopping.cancelled() => {}
+            }
+            trigger.cancel();
+        });
+        let shutdown = merged;
         let mut tasks: Vec<JoinHandle<()>> = Vec::new();
         if let Some(scheduler) = self.scheduler.take() {
             tasks.extend(scheduler.spawn(&shutdown));
@@ -337,6 +391,7 @@ impl Collector {
         {
             warn!("Background services did not stop within the shutdown timeout.");
         }
+        merge.abort();
     }
 }
 
