@@ -24,7 +24,11 @@ Set `BOWER_PRODUCER_SCOPES_FILE` to a local JSON array, for example:
 ```
 
 The producer is the ID in `BOWER_INGEST_TOKENS_FILE`; a shared token uses
-`default`, and unauthenticated loopback uses `anonymous`. Each array entry is one
+`default`, and unauthenticated loopback uses `anonymous`. The
+[Azure Functions collector](../deployment/azure-function.md) uses the same file
+format and semantics (or the same JSON in `BOWER_PRODUCER_SCOPES_JSON`); there the
+producer is the caller's Entra `oid` (service principal object ID, lower-case GUID),
+or its `azp` client ID with `BOWER_PRODUCER_CLAIM=azp`. Each array entry is one
 complete tuple: application name, environment, tenant ID, instance, source
 hostname, IP address and port. All comparisons are exact and case-sensitive.
 Missing and null optional values mean **only absent/null**, never wildcard.
