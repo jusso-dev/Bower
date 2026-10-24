@@ -43,6 +43,7 @@ control plane, or runtime AI filter.
 - `rust`: Rust port of the data plane (`bower-collector`, `bower` CLI and their libraries); C# is the specification. See `rust/AGENTS.md`.
 - `deploy/aws`, `deploy/gcp`: CloudFormation and Terraform for cloud signal (plan-only by default).
 - `deploy/azure-function`: Bicep for the Azure Functions collector (Flex Consumption, managed identity; plan-only by default).
+- `powershell`: PowerShell 7.4+ modules (events, management, plan-first deployment, privacy tooling). See `powershell/AGENTS.md`.
 - `schemas`, `policies`, `deploy`, `docs`, `tests`: versioned product assets.
 
 Inspect nearest `AGENTS.md` before editing.
@@ -56,6 +57,7 @@ dotnet test --configuration Release   # Microsoft.Testing.Platform runner
 dotnet format --verify-no-changes
 docker compose build
 cd ui/Bower.Management.Web && npm ci && npm run lint && npm test && npm run build
+pwsh -NoProfile -File powershell/build.ps1   # PSScriptAnalyzer + Pester
 ```
 
 ## Invariants

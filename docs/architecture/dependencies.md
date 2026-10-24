@@ -135,3 +135,17 @@ These SDK crates add 47 packages to `Cargo.lock` (the `aws-smithy-*` runtime, `a
 `base64` 0.22 next to the workspace's 0.23, and small helpers). TLS stays on rustls
 with `aws-lc-rs`, which the workspace already links through reqwest. The minimum Rust
 version of every added crate is at most 1.94.1, below the workspace's 1.97.
+
+## PowerShell modules (`powershell/`)
+
+The Bower PowerShell modules bundle no third-party code and declare no
+`RequiredModules`. Optional modules are imported only by the commands that need them,
+with a clear error when absent:
+
+| Module / tool | Used by | Why | Alternatives considered |
+|---|---|---|---|
+| `Az.Accounts` (optional) | `Connect-BowerManagement`, `Send-BowerSecurityEvent -Target AzureFunction -Audience` | First-party Entra token acquisition (`Get-AzAccessToken`, SecureString tokens) reusing the operator's existing Azure sign-in. `-AccessToken` and `-TokenProvider` work without it. | Bundling MSAL.PS (third-party, unmaintained); device-code flow in-module (token handling code to own). |
+| `AWS.Tools.Common` (optional) | `Send-BowerSecurityEvent -Target Lambda` | First-party AWS credential resolution (profiles, SSO, default chain). SigV4 signing itself is ~100 lines in `Private/Lambda/AwsSigV4.ps1`, pinned by the AWS documentation test vector. | Reading `~/.aws` files in-module (re-implements the credential chain); requiring the AWS CLI. |
+| `Microsoft.Graph.Applications` (optional) | `New-BowerEntraApplication -Apply` | First-party Graph cmdlets for app registrations and service principals. | Raw Graph REST calls (token handling and paging to own). |
+| `az`, `aws`, `terraform`, `bower` CLIs (optional) | `Bower.Deployment`, `Test-BowerPrivacyProfile` | The deployment commands wrap the existing templates with the tools those templates already require. Invoked with argument arrays through one mockable function. | Re-implementing what-if, change sets or plans. |
+| `Pester` 5.9, `PSScriptAnalyzer` 1.25 (development only) | `powershell/build.ps1`, CI | Standard PowerShell test framework and linter, both Microsoft/PowerShell-community maintained. Pinned in CI. | None comparable. |
