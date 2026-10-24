@@ -253,6 +253,52 @@ fn privacy_validate_matches_csharp() {
         assert_same(&cs, &root, args);
     }
 
+    // Council A5: characters the two YAML parsers treat differently fail identically, raw
+    // or escaped; allow is rejected; alert-only never hides other detectors.
+    let probes: Vec<String> = [
+        format!("{header}# nel \u{85}\n"),
+        format!("{header}# line separator \u{2028}\n"),
+        format!("{header}# form feed \u{C}\n"),
+        format!("{header}secretFieldNames: [\"a\\Lb\"]\n"),
+        format!("{header}secretFieldNames: [\"\\uD83D\\uDE00\"]\n"),
+        format!("{header}secretFieldNames: [\"\\x0C\"]\n"),
+        format!(
+            "{header}customDetectors:\n  - id: custom.d\n    pattern: 'x'\n    action: allow\n    tests:\n      match: [x]\n"
+        ),
+        format!(
+            "{header}customDetectors:\n  - id: custom.trace-line\n    pattern: 'trace: .+'\n    action: alert-only\n    tests:\n      match: ['trace: x']\n"
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, content)| write(&format!("probe-{index}.yaml"), &content))
+    .collect();
+    let trace_sample = write(
+        "trace.json",
+        r#"{"msg":"trace: card 4111111111111111 key AKIAIOSFODNN7EXAMPLE mail alice@example.test"}"#,
+    );
+    for (index, probe) in probes.iter().enumerate() {
+        let run = assert_same(
+            &cs,
+            &root,
+            &[
+                "privacy",
+                "validate",
+                probe,
+                "--hmac-key-file",
+                &key,
+                "--sample",
+                &trace_sample,
+            ],
+        );
+        assert_eq!(
+            run.code,
+            if index == 7 { 0 } else { 1 },
+            "{probe}: {}",
+            run.stderr
+        );
+    }
+
     let run = assert_same(&cs, &root, &cases[6]);
     assert_eq!(run.code, 0);
     assert!(run.stdout.contains("\"testsPassed\": 13"), "{}", run.stdout);

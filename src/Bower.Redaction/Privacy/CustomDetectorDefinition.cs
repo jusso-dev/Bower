@@ -14,7 +14,10 @@ public sealed class CustomDetectorDefinition
     public const int MaximumDescriptionLength = 256;
     public const int MaximumPatternLength = 512;
 
-    private static readonly TimeSpan MatchTimeout = TimeSpan.FromMilliseconds(100);
+    private const string WholeWordPrefix = "[^0-9A-Z_a-z](?:";
+    private const string WholeWordSuffix = ")[^0-9A-Z_a-z]";
+
+    private static readonly TimeSpan MatchTimeout = TimeSpan.FromSeconds(10);
 
     private CustomDetectorDefinition(
         string id,
@@ -68,7 +71,8 @@ public sealed class CustomDetectorDefinition
     {
         RequireValidId(id);
         RequireValidDescription(id, description);
-        (string canonical, Regex regex) = CompilePattern(id, pattern, ignoreCase);
+        (string canonical, Regex regex) = CompilePattern(id, pattern, ignoreCase, wholeWord);
+        RequireRedactingAction(id, action);
         return new CustomDetectorDefinition(id, description, pattern, canonical, ignoreCase, wholeWord, action, regex);
     }
 
@@ -114,7 +118,30 @@ public sealed class CustomDetectorDefinition
         }
     }
 
-    internal static (string Canonical, Regex Regex) CompilePattern(string id, string? pattern, bool ignoreCase)
+    /// <summary>
+    /// <c>allow</c> would let a custom detector's span hide other detectors' matches without
+    /// recording anything useful; <c>alert-only</c> records matches without redacting.
+    /// </summary>
+    internal static void RequireRedactingAction(string id, PrivacyAction action)
+    {
+        if (action == PrivacyAction.Allow)
+        {
+            throw new InvalidDataException(
+                $"Custom detector '{id}' cannot use action allow; use alert-only to record matches without redacting.");
+        }
+    }
+
+    /// <summary>
+    /// The canonical pattern actually compiled. With <paramref name="wholeWord"/> the
+    /// translated pattern sits between two non-word characters
+    /// (<c>[^0-9A-Z_a-z](?:P)[^0-9A-Z_a-z]</c>) and is run over the text wrapped in
+    /// <see cref="CustomPatternTranslator.WholeWordSentinel"/>, so the regex itself picks the
+    /// alternative or length that satisfies both boundaries, the match is exactly one
+    /// character wider than the redacted span on each side, and no anchors or capture
+    /// groups are needed (.NET NonBacktracking loses captures next to anchors on input
+    /// ending in a line feed).
+    /// </summary>
+    internal static (string Canonical, Regex Regex) CompilePattern(string id, string? pattern, bool ignoreCase, bool wholeWord)
     {
         if (pattern is not { Length: > 0 and <= MaximumPatternLength })
         {
@@ -124,7 +151,7 @@ public sealed class CustomDetectorDefinition
         CustomPatternTranslation translation;
         try
         {
-            translation = CustomPatternTranslator.Translate(pattern, ignoreCase);
+            translation = CustomPatternTranslator.Translate(pattern, ignoreCase, wholeWord);
         }
         catch (CustomPatternSyntaxException exception)
         {
@@ -143,13 +170,16 @@ public sealed class CustomDetectorDefinition
             throw new InvalidDataException($"Custom detector '{id}' pattern must not match an empty string.");
         }
 
+        string canonical = wholeWord
+            ? WholeWordPrefix + translation.CanonicalPattern + WholeWordSuffix
+            : translation.CanonicalPattern;
         try
         {
             Regex regex = new(
-                translation.CanonicalPattern,
+                canonical,
                 RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
                 MatchTimeout);
-            return (translation.CanonicalPattern, regex);
+            return (canonical, regex);
         }
         catch (Exception exception) when (exception is ArgumentException or NotSupportedException or InvalidOperationException)
         {

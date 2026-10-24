@@ -225,7 +225,16 @@ fn create_validates_like_the_loader() {
         Some("d"),
     )
     .unwrap();
-    assert_eq!(definition.canonical_pattern(), "[eE][mM][pP]-[0-9]{6}");
+    assert_eq!(
+        definition.canonical_pattern(),
+        r"[^0-9A-Z_a-z](?:[eE][mM][pP]-[0-9]{6})[^0-9A-Z_a-z]"
+    );
+    assert_eq!(
+        CustomDetectorDefinition::create("custom.d", "x", PrivacyAction::Allow, false, false, None)
+            .unwrap_err()
+            .to_string(),
+        "Custom detector 'custom.d' cannot use action allow; use alert-only to record matches without redacting."
+    );
     assert_eq!(definition.pattern(), r"emp-\d{6}");
     assert!(definition.whole_word());
     assert_eq!(definition.action(), PrivacyAction::Hmac);
@@ -500,7 +509,10 @@ fn load_puts_definitions_and_normalised_names_on_the_policy() {
     let definition = &policy.custom_detectors[0];
     assert_eq!(definition.id(), "custom.ref");
     assert_eq!(definition.description(), Some("refs"));
-    assert_eq!(definition.canonical_pattern(), "[rR][eE][fF]-[0-9]+");
+    assert_eq!(
+        definition.canonical_pattern(),
+        r"[^0-9A-Z_a-z](?:[rR][eE][fF]-[0-9]+)[^0-9A-Z_a-z]"
+    );
     assert!(definition.ignore_case());
     assert!(definition.whole_word());
     assert_eq!(definition.action(), PrivacyAction::AlertOnly);
@@ -655,13 +667,13 @@ fn custom_detectors_scan_property_names_numbers_and_arrays() {
 }
 
 #[test]
-fn custom_detectors_never_split_surrogate_pairs() {
+fn custom_detectors_widen_matches_to_whole_surrogate_pairs() {
     let engine = engine(
         "customDetectors:\n  - id: custom.one\n    pattern: 'P[^a]Q'\n    action: remove\n    tests:\n      match: [PxQ]\n  - id: custom.two\n    pattern: 'R[^a][^a]S'\n    action: remove\n    tests:\n      match: [RxyS]\n  - id: custom.dot\n    pattern: 'x.'\n    action: remove\n    tests:\n      match: [xy]\n",
     );
     assert_eq!(
         redact_text(&engine, "P\u{1F600}Q R\u{1F600}S x\u{1F600} xy"),
-        "P\u{1F600}Q  x\u{1F600} "
+        "P\u{1F600}Q   "
     );
 }
 
@@ -684,9 +696,9 @@ fn utf16_haystack_maps_matches_back_to_the_text() {
         .iter()
         .map(|found| &text[found.start..found.end])
         .collect();
-    // The first candidate is the emoji's low surrogate plus "b": it splits the pair.
-    assert_eq!(spans, ["\u{E9}b", "xb"]);
-    assert_eq!(matches[0].length_utf16, 2);
+    // The first candidate is the emoji's low surrogate plus "b": widened to the emoji.
+    assert_eq!(spans, ["\u{1F600}b", "\u{E9}b", "xb"]);
+    assert_eq!(matches[0].length_utf16, 3);
 }
 
 #[test]
@@ -774,7 +786,7 @@ fn field_name_normalizer_lowers_letters_and_drops_the_rest() {
 #[test]
 fn catastrophic_backtracking_shapes_run_in_linear_time() {
     let engine = engine(&simple("(a+)+b", "[ab]"));
-    let result = engine.redact_text(&format!("{}!", "a".repeat(100_000)));
+    let result = engine.redact_text(&format!("{}!", "a".repeat(60_000)));
     assert!(result.succeeded);
     assert!(result.findings.is_empty());
 }
@@ -826,7 +838,7 @@ fn redaction_failure_still_quarantines_with_custom_detectors() {
 #[test]
 fn long_single_matches_stay_bounded_and_succeed() {
     let engine = engine(&simple("(?:.+){8}", "[xxxxxxxx]"));
-    let result = engine.redact_json(&format!("{{\"a\":\"{}\"}}", "x".repeat(200_000)));
+    let result = engine.redact_json(&format!("{{\"a\":\"{}\"}}", "x".repeat(60_000)));
     assert!(result.succeeded);
     let node: Value = serde_json::from_str(result.redacted_json.as_deref().unwrap()).unwrap();
     assert!(node["a"].as_str().unwrap().starts_with("xx***"));

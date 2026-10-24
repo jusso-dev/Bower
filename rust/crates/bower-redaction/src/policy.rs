@@ -269,12 +269,22 @@ impl PrivacyPolicy {
         self.default_action == action
             || self.detector_actions.values().any(|value| *value == action)
             || self.field_rules.iter().any(|rule| rule.action == action)
+            || self
+                .custom_detectors
+                .iter()
+                .any(|definition| self.resolve_action(definition.id()) == action)
     }
 
+    /// Precedence: a `detector_actions` entry, then a custom detector's own action, then
+    /// `default_action`. Profiles and programmatic policies resolve identically.
     pub fn resolve_action(&self, detector_id: &str) -> PrivacyAction {
-        self.detector_actions
-            .get(detector_id)
-            .copied()
-            .unwrap_or(self.default_action)
+        if let Some(action) = self.detector_actions.get(detector_id) {
+            return *action;
+        }
+
+        self.custom_detectors
+            .iter()
+            .find(|definition| definition.id() == detector_id)
+            .map_or(self.default_action, CustomDetectorDefinition::action)
     }
 }

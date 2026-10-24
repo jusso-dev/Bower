@@ -174,8 +174,11 @@ public sealed class CustomRedactionTests
         CustomDetectorDefinition definition = CustomDetectorDefinition.Create(
             "custom.d", "emp-\\d{6}", PrivacyAction.Hmac, ignoreCase: true, wholeWord: true, description: "d");
 
-        Assert.Equal("[eE][mM][pP]-[0-9]{6}", definition.CanonicalPattern);
+        Assert.Equal(@"[^0-9A-Z_a-z](?:[eE][mM][pP]-[0-9]{6})[^0-9A-Z_a-z]", definition.CanonicalPattern);
         Assert.Equal("emp-\\d{6}", definition.Pattern);
+        Assert.Equal(
+            "Custom detector 'custom.d' cannot use action allow; use alert-only to record matches without redacting.",
+            Assert.Throws<InvalidDataException>(() => CustomDetectorDefinition.Create("custom.d", "x", PrivacyAction.Allow)).Message);
         Assert.True(definition.WholeWord);
         Assert.Equal(PrivacyAction.Hmac, definition.Action);
         Assert.Equal(
@@ -343,7 +346,7 @@ public sealed class CustomRedactionTests
 
         Assert.Equal("custom.ref", definition.Id);
         Assert.Equal("refs", definition.Description);
-        Assert.Equal("[rR][eE][fF]-[0-9]+", definition.CanonicalPattern);
+        Assert.Equal(@"[^0-9A-Z_a-z](?:[rR][eE][fF]-[0-9]+)[^0-9A-Z_a-z]", definition.CanonicalPattern);
         Assert.True(definition.IgnoreCase);
         Assert.True(definition.WholeWord);
         Assert.Equal(PrivacyAction.AlertOnly, definition.Action);
@@ -448,7 +451,7 @@ public sealed class CustomRedactionTests
     }
 
     [Fact]
-    public void CustomDetectors_NeverSplitSurrogatePairs()
+    public void CustomDetectors_WidenMatchesToWholeSurrogatePairs()
     {
         PrivacyEngine engine = Engine(
             "customDetectors:\n"
@@ -456,17 +459,26 @@ public sealed class CustomRedactionTests
             + "  - id: custom.two\n    pattern: 'R[^a][^a]S'\n    action: remove\n    tests:\n      match: [RxyS]\n"
             + "  - id: custom.dot\n    pattern: 'x.'\n    action: remove\n    tests:\n      match: [xy]\n");
 
-        // .NET sees two UTF-16 units per emoji: one-unit matches inside a pair are skipped.
-        Assert.Equal("P\U0001F600Q  x\U0001F600 ", engine.RedactText("P\U0001F600Q R\U0001F600S x\U0001F600 xy").RedactedText);
+        // .NET sees two UTF-16 units per emoji: "x" plus the high surrogate is widened to
+        // the whole emoji instead of being dropped.
+        Assert.Equal("P\U0001F600Q   ", engine.RedactText("P\U0001F600Q R\U0001F600S x\U0001F600 xy").RedactedText);
     }
 
     [Fact]
-    public void CustomDetectors_SkipMatchesStartingInsideAPair()
+    public void CustomDetectors_WidenMatchesStartingInsideAPair()
     {
-        // The first candidate is the emoji's low surrogate plus "b": it splits the pair.
+        // The first candidate is the emoji's low surrogate plus "b": widened to the emoji.
         PrivacyEngine engine = Engine(Detector(pattern: "[^a]b", action: "remove", tests: "[xb]"));
 
-        Assert.Equal("\U0001F600b  ", engine.RedactText("\U0001F600b éb xb").RedactedText);
+        Assert.Equal("  ", engine.RedactText("\U0001F600b éb xb").RedactedText);
+    }
+
+    [Fact]
+    public void CustomDetectors_RedactThroughASplitEmoji()
+    {
+        PrivacyEngine engine = Engine(Detector(pattern: "key=.{8}", action: "replace", tests: "[key=12345678]"));
+
+        Assert.Equal("***REDACTED*** rest", engine.RedactText("key=s3cr3tk\U0001F600 rest").RedactedText);
     }
 
     [Fact]
@@ -538,7 +550,7 @@ public sealed class CustomRedactionTests
     {
         PrivacyEngine engine = Engine(Detector(pattern: "(a+)+b", tests: "[ab]"));
 
-        PrivacyTextResult result = engine.RedactText(new string('a', 100_000) + "!");
+        PrivacyTextResult result = engine.RedactText(new string('a', 60_000) + "!");
 
         Assert.True(result.Succeeded);
         Assert.Empty(result.Findings);
@@ -565,9 +577,11 @@ public sealed class CustomRedactionTests
     {
         // Nested unbounded loops inside a counted repetition stay linear; .NET may spend
         // seconds on a 1 MB single match but must still redact (never a partial result).
-        PrivacyEngine engine = Engine(Detector(pattern: "(?:.+){8}", tests: "[xxxxxxxx]"));
+        // Only the custom detector: built-in detectors keep their own short timeouts.
+        PrivacyPolicy policy = Load(Header + Detector(pattern: "(?:.+){8}", tests: "[xxxxxxxx]")).Policy;
+        PrivacyEngine engine = new(policy, [new CustomPatternDetector(policy.CustomDetectors[0])]);
 
-        PrivacyScanResult result = engine.RedactJson("{\"a\":\"" + new string('x', 200_000) + "\"}");
+        PrivacyScanResult result = engine.RedactJson("{\"a\":\"" + new string('x', 60_000) + "\"}");
 
         Assert.True(result.Succeeded);
         Assert.StartsWith("xx***", JsonNode.Parse(result.RedactedJson!)!["a"]!.GetValue<string>(), StringComparison.Ordinal);

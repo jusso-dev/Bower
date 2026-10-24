@@ -463,6 +463,8 @@ fn custom_profile_vectors_cover_every_message() {
         "Privacy profile 'customDetectors' must not be null.",
         "Privacy profile 'secretFieldNames' must not be null.",
         "Privacy profile custom detector must not be null.",
+        "cannot use action allow; use alert-only",
+        "Privacy profile contains unsupported character U+",
     ] {
         assert!(
             messages.iter().any(|message| message.contains(fragment)),
@@ -477,23 +479,43 @@ fn custom_patterns_match_csharp() {
     assert_eq!(reasons, custom_pattern::reasons::ALL);
     let mut failures = Vec::new();
     let all = vectors("customPatterns");
+    check_patterns(all, false, &mut failures);
+    let whole_word = vectors("customPatternsWholeWord");
+    check_patterns(whole_word, true, &mut failures);
+    assert!(all.len() > 300, "pattern corpus: {}", all.len());
+    assert!(
+        whole_word.len() > 300,
+        "wholeWord corpus: {}",
+        whole_word.len()
+    );
+    assert!(
+        failures.is_empty(),
+        "{} of {} pattern vectors differ:\n{}",
+        failures.len(),
+        all.len() + whole_word.len(),
+        failures.join("\n")
+    );
+}
+
+fn check_patterns(all: &[Value], whole_word: bool, failures: &mut Vec<String>) {
     for vector in all {
         let pattern = vector["pattern"].as_str().unwrap();
         let ignore_case = vector["ignoreCase"].as_bool().unwrap();
         let expected = vector["translation"].as_array().unwrap();
-        let actual: Vec<Value> = match custom_pattern::translate(pattern, ignore_case) {
-            Ok(translation) => vec![
-                Value::Bool(true),
-                Value::from(translation.canonical_pattern),
-                Value::from(translation.complexity),
-                Value::Bool(translation.matches_empty),
-            ],
-            Err(error) => vec![
-                Value::Bool(false),
-                Value::from(error.position),
-                Value::from(error.reason),
-            ],
-        };
+        let actual: Vec<Value> =
+            match custom_pattern::translate_with(pattern, ignore_case, whole_word) {
+                Ok(translation) => vec![
+                    Value::Bool(true),
+                    Value::from(translation.canonical_pattern),
+                    Value::from(translation.complexity),
+                    Value::Bool(translation.matches_empty),
+                ],
+                Err(error) => vec![
+                    Value::Bool(false),
+                    Value::from(error.position),
+                    Value::from(error.reason),
+                ],
+            };
         if &actual != expected {
             failures.push(format!(
                 "{pattern:?} ignoreCase={ignore_case}: rust {actual:?} vs C# {expected:?}"
@@ -505,7 +527,7 @@ fn custom_patterns_match_csharp() {
             pattern,
             PrivacyAction::Mask,
             ignore_case,
-            false,
+            whole_word,
             None,
         ) {
             Ok(definition) => format!("ok:{}", definition.canonical_pattern()),
@@ -518,19 +540,14 @@ fn custom_patterns_match_csharp() {
             ));
         }
     }
-
-    assert!(all.len() > 300, "pattern corpus: {}", all.len());
-    assert!(
-        failures.is_empty(),
-        "{} of {} pattern vectors differ:\n{}",
-        failures.len(),
-        all.len(),
-        failures.join("\n")
-    );
 }
 
 fn custom_engines() -> Vec<(String, PrivacyEngine)> {
-    VECTORS["customEngineProfiles"]
+    engines_for("customEngineProfiles")
+}
+
+fn engines_for(section: &str) -> Vec<(String, PrivacyEngine)> {
+    VECTORS[section]
         .as_array()
         .unwrap()
         .iter()
@@ -604,6 +621,43 @@ fn custom_detector_redaction_matches_csharp() {
         }
     }
 
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Council A2: quadratic and long-match probes at doubling lengths up to the payload
+/// limit (and a 32-detector profile) finish or quarantine exactly like C#.
+#[test]
+fn custom_detector_limits_match_csharp() {
+    let engines = engines_for("customProbeProfiles");
+    let mut failures = Vec::new();
+    let all = vectors("customProbes");
+    for vector in all {
+        let profile = vector["profile"].as_str().unwrap();
+        let engine = &engines.iter().find(|(name, _)| name == profile).unwrap().1;
+        let count = usize::try_from(vector["count"].as_u64().unwrap()).unwrap();
+        let input = format!(
+            "{{\"v\":\"{}{}\"}}",
+            vector["prefix"].as_str().unwrap(),
+            vector["unit"].as_str().unwrap().repeat(count)
+        );
+        let result = engine.redact_json(&input);
+        if result.succeeded != vector["succeeded"].as_bool().unwrap()
+            || result.failure_code.as_deref() != opt_str(&vector["failureCode"])
+            || result.redacted_json.as_deref() != opt_str(&vector["redactedJson"])
+            || result.findings.len() as u64 != vector["findings"].as_u64().unwrap()
+        {
+            failures.push(format!(
+                "[{profile}] {:?} x {count}: rust {} {:?}, C# {} {}",
+                vector["unit"],
+                result.succeeded,
+                result.failure_code,
+                vector["succeeded"],
+                vector["failureCode"]
+            ));
+        }
+    }
+
+    assert!(all.len() >= 60, "probe vectors: {}", all.len());
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 

@@ -1,12 +1,16 @@
 //! Privacy & Secret Protection Engine (`PrivacyEngine`). Runs after parse and
 //! before persistence. Deterministic: regex, checksum and structure only.
 
+use std::cell::Cell;
 use std::panic::{self, AssertUnwindSafe};
 
 use bower_contracts::{EventRedactor, RedactionResult};
 use indexmap::IndexMap;
 
 use crate::applicator::PolicyApplicator;
+use crate::detectors::custom::{
+    CustomPatternDetector, MAXIMUM_MATCHES_PER_EVENT, MAXIMUM_SCANNED_LENGTH,
+};
 use crate::detectors::{
     DetectionMatch, FieldNameDetector, ScanText, SensitiveDetector, field_name_detector_for,
     value_detectors_for,
@@ -15,7 +19,9 @@ use crate::error::PrivacyError;
 use crate::ids::{detector_categories as categories, detector_ids as ids};
 use crate::json::{self, Node, Object};
 use crate::policy::{PrivacyAction, PrivacyFieldRule, PrivacyPolicy};
-use crate::text::{compare_ordinal, is_null_or_whitespace, normalize_field_name, truncate_utf16};
+use crate::text::{
+    compare_ordinal, is_null_or_whitespace, normalize_field_name, truncate_utf16, utf16_len,
+};
 
 pub const MAXIMUM_PAYLOAD_BYTES: usize = 1_048_576;
 
@@ -113,6 +119,38 @@ impl From<PrivacyError> for RedactionFailed {
 }
 
 type Step<T = ()> = Result<T, RedactionFailed>;
+
+/// Deterministic per-call bound on custom detector work (`CustomScanBudget`): values
+/// longer than [`MAXIMUM_SCANNED_LENGTH`] and more than [`MAXIMUM_MATCHES_PER_EVENT`]
+/// custom matches per event fail the redaction (quarantine).
+struct CustomScanBudget {
+    remaining: Cell<usize>,
+}
+
+impl Default for CustomScanBudget {
+    fn default() -> Self {
+        Self {
+            remaining: Cell::new(MAXIMUM_MATCHES_PER_EVENT),
+        }
+    }
+}
+
+impl CustomScanBudget {
+    fn scan(
+        &self,
+        detector: &CustomPatternDetector,
+        text: &ScanText<'_>,
+        matches: &mut Vec<DetectionMatch>,
+    ) -> Step {
+        let before = matches.len();
+        if !detector.detect_bounded(text, matches, self.remaining.get()) {
+            return Err(RedactionFailed);
+        }
+        self.remaining
+            .set(self.remaining.get() - (matches.len() - before));
+        Ok(())
+    }
+}
 
 pub struct PrivacyEngine {
     policy: PrivacyPolicy,
@@ -244,7 +282,7 @@ impl PrivacyEngine {
     fn redact_root(&self, root: &mut Object) -> Step<PrivacyScanResult> {
         let mut findings = Vec::new();
         sanitize_change(root, &mut findings)?;
-        self.walk_object(root, "$", &mut findings)?;
+        self.walk_object(root, "$", &mut findings, &CustomScanBudget::default())?;
         self.apply_field_rules(root, &mut findings)?;
         self.enforce_field_length_object(root, "$", &mut findings)?;
 
@@ -289,7 +327,7 @@ impl PrivacyEngine {
 
         let mut findings = Vec::new();
         let redacted = panic::catch_unwind(AssertUnwindSafe(|| {
-            self.apply_detectors_to_value(text, "$", &mut findings)
+            self.apply_detectors_to_value(text, "$", &mut findings, &CustomScanBudget::default())
         }));
         match redacted {
             Ok(Ok(redacted)) => PrivacyTextResult {
@@ -308,6 +346,7 @@ impl PrivacyEngine {
         object: &mut Object,
         parent_path: &str,
         findings: &mut Vec<AppliedFinding>,
+        budget: &CustomScanBudget,
     ) -> Step {
         if object.poisoned {
             return Err(RedactionFailed);
@@ -344,6 +383,7 @@ impl PrivacyEngine {
                 &property_name,
                 &format!("{parent_path}.[key]"),
                 findings,
+                budget,
             )?;
             if redacted_name != property_name {
                 let child = object
@@ -370,9 +410,9 @@ impl PrivacyEngine {
                 continue;
             };
             match child {
-                Node::Object(nested) => self.walk_object(nested, &path, findings)?,
-                Node::Array(items) => self.walk_array(items, &path, findings)?,
-                scalar => self.redact_scalar(scalar, &path, findings)?,
+                Node::Object(nested) => self.walk_object(nested, &path, findings, budget)?,
+                Node::Array(items) => self.walk_array(items, &path, findings, budget)?,
+                scalar => self.redact_scalar(scalar, &path, findings, budget)?,
             }
         }
 
@@ -384,13 +424,14 @@ impl PrivacyEngine {
         items: &mut [Node],
         path: &str,
         findings: &mut Vec<AppliedFinding>,
+        budget: &CustomScanBudget,
     ) -> Step {
         for (index, item) in items.iter_mut().enumerate() {
             let item_path = format!("{path}[{index}]");
             match item {
-                Node::Object(nested) => self.walk_object(nested, &item_path, findings)?,
-                Node::Array(nested) => self.walk_array(nested, &item_path, findings)?,
-                scalar => self.redact_scalar(scalar, &item_path, findings)?,
+                Node::Object(nested) => self.walk_object(nested, &item_path, findings, budget)?,
+                Node::Array(nested) => self.walk_array(nested, &item_path, findings, budget)?,
+                scalar => self.redact_scalar(scalar, &item_path, findings, budget)?,
             }
         }
 
@@ -405,11 +446,12 @@ impl PrivacyEngine {
         node: &mut Node,
         path: &str,
         findings: &mut Vec<AppliedFinding>,
+        budget: &CustomScanBudget,
     ) -> Step {
         let Some(text) = scannable_text(node)? else {
             return Ok(());
         };
-        let redacted = self.apply_detectors_to_value(&text, path, findings)?;
+        let redacted = self.apply_detectors_to_value(&text, path, findings, budget)?;
         if redacted != text {
             *node = Node::string(redacted);
         }
@@ -555,6 +597,7 @@ impl PrivacyEngine {
         text: &str,
         path: &str,
         findings: &mut Vec<AppliedFinding>,
+        budget: &CustomScanBudget,
     ) -> Step<String> {
         let safe = safe_url(text, path);
         if safe != text {
@@ -570,16 +613,54 @@ impl PrivacyEngine {
         let text = safe.as_str();
         let scan = ScanText::new(text);
         let mut matches: Vec<DetectionMatch> = Vec::new();
+        let mut observed: Vec<DetectionMatch> = Vec::new();
+        let mut length_checked = false;
         for detector in &self.detectors {
-            if self.policy.is_detector_enabled(detector.id()) {
-                detector.detect(&scan, path, &mut matches);
+            if !self.policy.is_detector_enabled(detector.id()) {
+                continue;
             }
+
+            let Some(custom) = detector.as_custom() else {
+                detector.detect(&scan, path, &mut matches);
+                continue;
+            };
+            if !length_checked {
+                if utf16_len(text) > MAXIMUM_SCANNED_LENGTH {
+                    return Err(RedactionFailed);
+                }
+                length_checked = true;
+            }
+
+            // Non-redacting custom detectors (alert-only, or allow set programmatically)
+            // record findings but never claim a span, so they cannot hide other matches.
+            let target = if self.policy.resolve_action(custom.id()).keeps_content() {
+                &mut observed
+            } else {
+                &mut matches
+            };
+            budget.scan(custom, &scan, target)?;
         }
 
-        if matches.is_empty() {
-            return Ok(text.to_owned());
+        let result = if matches.is_empty() {
+            text.to_owned()
+        } else {
+            self.apply_selected(text, path, matches, findings)?
+        };
+        for found in observed {
+            let action = self.policy.resolve_action(&found.detector_id);
+            findings.push(applied(found, path, action));
         }
 
+        Ok(result)
+    }
+
+    fn apply_selected(
+        &self,
+        text: &str,
+        path: &str,
+        mut matches: Vec<DetectionMatch>,
+        findings: &mut Vec<AppliedFinding>,
+    ) -> Step<String> {
         // A (custom) detector reporting offsets outside the text or inside a character
         // cannot be applied safely: quarantine instead of panicking on the slice.
         if matches.iter().any(|found| {

@@ -49,7 +49,8 @@ pub mod reasons {
     pub const TRAILING_BACKSLASH: &str = "trailing backslash";
     pub const SUPPLEMENTARY_CHARACTER: &str =
         "characters outside the Basic Multilingual Plane are not supported";
-    pub const RESERVED_CHARACTER: &str = "character U+FFFF is not supported";
+    pub const RESERVED_CHARACTER: &str = "characters U+FFFE and U+FFFF are not supported";
+    pub const ANCHOR_WITH_WHOLE_WORD: &str = "^ and $ are not supported with wholeWord";
 
     /// Every reason, in the C# order.
     pub const ALL: &[&str] = &[
@@ -77,6 +78,7 @@ pub mod reasons {
         TRAILING_BACKSLASH,
         SUPPLEMENTARY_CHARACTER,
         RESERVED_CHARACTER,
+        ANCHOR_WITH_WHOLE_WORD,
     ];
 }
 
@@ -103,12 +105,29 @@ fn error<T>(position: usize, reason: &'static str) -> Parsed<T> {
     Err(SyntaxError { position, reason })
 }
 
+/// Boundary sentinel for `wholeWord` patterns (`CustomPatternTranslator.WholeWordSentinel`):
+/// the scanned text is wrapped in it, so the boundary needs no anchors. Patterns can never
+/// match it (literal rejected, ranges end before it and, with `wholeWord`, every negated
+/// class excludes it).
+pub const WHOLE_WORD_SENTINEL: char = '\u{FFFE}';
+
 /// Validates `pattern` and returns its canonical translation.
 pub fn translate(pattern: &str, ignore_case: bool) -> Result<Translation, SyntaxError> {
+    translate_with(pattern, ignore_case, false)
+}
+
+/// Like [`translate`]; with `whole_word`, negated classes and `.` also exclude
+/// [`WHOLE_WORD_SENTINEL`], and `^`/`$` are rejected.
+pub fn translate_with(
+    pattern: &str,
+    ignore_case: bool,
+    whole_word: bool,
+) -> Result<Translation, SyntaxError> {
     let mut parser = Parser {
         pattern: pattern.chars().collect(),
         position: 0,
         ignore_case,
+        whole_word,
     };
     let piece = parser.parse_alternation()?;
     if parser.has(0) {
@@ -185,7 +204,7 @@ fn check_literal(value: char, start: usize) -> Parsed<char> {
         return error(start, reasons::SUPPLEMENTARY_CHARACTER);
     }
 
-    if value == '\u{FFFF}' {
+    if matches!(value, '\u{FFFE}' | '\u{FFFF}') {
         return error(start, reasons::RESERVED_CHARACTER);
     }
 
@@ -230,9 +249,15 @@ struct Parser {
     pattern: Vec<char>,
     position: usize,
     ignore_case: bool,
+    whole_word: bool,
 }
 
 impl Parser {
+    /// Characters every negated class also excludes.
+    fn excluded(&self) -> &'static str {
+        if self.whole_word { "\u{FFFE}" } else { "" }
+    }
+
     fn has(&self, offset: usize) -> bool {
         self.position + offset < self.pattern.len()
     }
@@ -393,8 +418,9 @@ impl Parser {
             '[' => self.parse_class(),
             '.' => {
                 self.position += 1;
-                Ok(Piece::class("[^\\n]".to_owned()))
+                Ok(Piece::class(format!("[^\\n{}]", self.excluded())))
             }
+            '^' | '$' if self.whole_word => error(start, reasons::ANCHOR_WITH_WHOLE_WORD),
             '^' | '$' => {
                 self.position += 1;
                 Ok(Piece {
@@ -464,11 +490,11 @@ impl Parser {
         self.position += 2;
         Ok(match escaped {
             'd' => Piece::class(format!("[{DIGIT}]")),
-            'D' => Piece::class(format!("[^{DIGIT}]")),
+            'D' => Piece::class(format!("[^{DIGIT}{}]", self.excluded())),
             'w' => Piece::class(format!("[{WORD}]")),
-            'W' => Piece::class(format!("[^{WORD}]")),
+            'W' => Piece::class(format!("[^{WORD}{}]", self.excluded())),
             's' => Piece::class(format!("[{SPACE}]")),
-            'S' => Piece::class(format!("[^{SPACE}]")),
+            'S' => Piece::class(format!("[^{SPACE}{}]", self.excluded())),
             't' => self.literal('\t'),
             'n' => self.literal('\n'),
             'r' => self.literal('\r'),
@@ -502,7 +528,8 @@ impl Parser {
         let open = self.position;
         self.position += 1;
         let mut text = String::from("[");
-        if self.has(0) && self.peek(0) == '^' {
+        let negated = self.has(0) && self.peek(0) == '^';
+        if negated {
             text.push('^');
             self.position += 1;
         }
@@ -568,6 +595,9 @@ impl Parser {
             }
         }
 
+        if negated {
+            text.push_str(self.excluded());
+        }
         text.push(']');
         Ok(Piece::class(text))
     }

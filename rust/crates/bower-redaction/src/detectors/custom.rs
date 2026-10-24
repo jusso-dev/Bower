@@ -17,6 +17,14 @@ use crate::text::utf16_len;
 pub const MAXIMUM_ID_LENGTH: usize = 64;
 pub const MAXIMUM_DESCRIPTION_LENGTH: usize = 256;
 pub const MAXIMUM_PATTERN_LENGTH: usize = 512;
+/// Longest value (UTF-16 units) custom detectors scan; a longer value fails the redaction
+/// (quarantine) while any custom detector is enabled.
+pub const MAXIMUM_SCANNED_LENGTH: usize = 65_536;
+/// Most custom detector matches per event (all custom detectors and values).
+pub const MAXIMUM_MATCHES_PER_EVENT: usize = 4_096;
+
+const WHOLE_WORD_PREFIX: &str = "[^0-9A-Z_a-z](?:";
+const WHOLE_WORD_SUFFIX: &str = ")[^0-9A-Z_a-z]";
 
 /// Compiled program limit. Patterns within the complexity limit compile far below it;
 /// anything above is reported as too complex.
@@ -83,7 +91,8 @@ impl CustomDetectorDefinition {
     ) -> Result<Self, PrivacyError> {
         require_valid_id(Some(id))?;
         require_valid_description(id, description)?;
-        let (canonical, regex) = compile_pattern(id, Some(pattern), ignore_case)?;
+        let (canonical, regex) = compile_pattern(id, Some(pattern), ignore_case, whole_word)?;
+        require_redacting_action(id, action)?;
         Ok(Self::from_validated(
             id,
             description,
@@ -189,10 +198,28 @@ pub(crate) fn require_valid_description(
     }
 }
 
+/// `allow` would let a custom detector's span hide other detectors' matches;
+/// `alert-only` records matches without redacting.
+pub(crate) fn require_redacting_action(
+    id: &str,
+    action: PrivacyAction,
+) -> Result<(), PrivacyError> {
+    if action == PrivacyAction::Allow {
+        return Err(invalid(format!(
+            "Custom detector '{id}' cannot use action allow; use alert-only to record matches without redacting."
+        )));
+    }
+    Ok(())
+}
+
+/// The canonical pattern actually compiled. With `whole_word` the translated pattern sits
+/// between two non-word characters (`[^0-9A-Z_a-z](?:P)[^0-9A-Z_a-z]`) and runs over the
+/// text wrapped in [`custom_pattern::WHOLE_WORD_SENTINEL`], exactly like C#.
 pub(crate) fn compile_pattern(
     id: &str,
     pattern: Option<&str>,
     ignore_case: bool,
+    whole_word: bool,
 ) -> Result<(String, Regex), PrivacyError> {
     let pattern = match pattern {
         Some(pattern) if (1..=MAXIMUM_PATTERN_LENGTH).contains(&utf16_len(pattern)) => pattern,
@@ -203,12 +230,13 @@ pub(crate) fn compile_pattern(
         }
     };
 
-    let translation = custom_pattern::translate(pattern, ignore_case).map_err(|error| {
-        invalid(format!(
-            "Custom detector '{id}' pattern has unsupported syntax at position {}: {}.",
-            error.position, error.reason
-        ))
-    })?;
+    let translation =
+        custom_pattern::translate_with(pattern, ignore_case, whole_word).map_err(|error| {
+            invalid(format!(
+                "Custom detector '{id}' pattern has unsupported syntax at position {}: {}.",
+                error.position, error.reason
+            ))
+        })?;
     let too_complex = || invalid(format!("Custom detector '{id}' pattern is too complex."));
     if translation.complexity > MAXIMUM_COMPLEXITY {
         return Err(too_complex());
@@ -220,18 +248,25 @@ pub(crate) fn compile_pattern(
         )));
     }
 
-    let regex = RegexBuilder::new(&translation.canonical_pattern)
+    let canonical = if whole_word {
+        format!(
+            "{WHOLE_WORD_PREFIX}{}{WHOLE_WORD_SUFFIX}",
+            translation.canonical_pattern
+        )
+    } else {
+        translation.canonical_pattern
+    };
+    let regex = RegexBuilder::new(&canonical)
         .size_limit(REGEX_SIZE_LIMIT)
         .dfa_size_limit(DFA_SIZE_LIMIT)
         .build()
         .map_err(|_| too_complex())?;
-    Ok((translation.canonical_pattern, regex))
+    Ok((canonical, regex))
 }
 
-/// Value detector for a custom detector (`CustomPatternDetector`). Matches that would
-/// split a UTF-16 surrogate pair are skipped in both engines (Rust strings cannot hold
-/// half a pair), as are, with `wholeWord`, matches next to an ASCII word character.
-/// Skipped matches do not stop the scan.
+/// Value detector for a custom detector (`CustomPatternDetector`). `wholeWord` is part of
+/// the compiled pattern (an ASCII boundary on both ends); a match whose start or end falls
+/// inside a UTF-16 surrogate pair is widened to the whole pair, exactly like C#.
 pub struct CustomPatternDetector {
     definition: CustomDetectorDefinition,
 }
@@ -253,8 +288,96 @@ impl CustomPatternDetector {
     }
 }
 
-fn is_ascii_word(character: Option<char>) -> bool {
-    character.is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+impl CustomPatternDetector {
+    /// Appends at most `limit` matches. Returns false (having stopped scanning) when the
+    /// text holds more (`CustomPatternDetector.Detect(text, matches, limit)`).
+    pub fn detect_bounded(
+        &self,
+        text: &ScanText<'_>,
+        matches: &mut Vec<DetectionMatch>,
+        limit: usize,
+    ) -> bool {
+        if text.is_empty() {
+            return true;
+        }
+
+        let (haystack, offsets) = text.utf16_haystack();
+        let mut found = 0usize;
+        let mut add = |start: usize, end: usize| {
+            let (start, end) = widen(offsets, start, end);
+            matches.push(text.detection(
+                &self.definition.id,
+                categories::CUSTOM,
+                Span { start, end },
+                true,
+                None,
+            ));
+        };
+
+        let regex = &self.definition.regex;
+        if !self.definition.whole_word {
+            for candidate in regex.find_iter(haystack) {
+                found += 1;
+                if found > limit {
+                    return false;
+                }
+                add(candidate.start(), candidate.end());
+            }
+            return true;
+        }
+
+        // The haystack is wrapped in the sentinel, so every match is one boundary character,
+        // the redacted span, then one boundary character. The next search starts at the
+        // span's last character, so a non-word last character can be the leading boundary
+        // of an adjacent match.
+        let sentinel = custom_pattern::WHOLE_WORD_SENTINEL;
+        let width = sentinel.len_utf8();
+        let wrapped = format!("{sentinel}{haystack}{sentinel}");
+        let mut start = 0usize;
+        while start < wrapped.len() {
+            let Some(candidate) = regex.find_at(&wrapped, start) else {
+                break;
+            };
+            found += 1;
+            if found > limit {
+                return false;
+            }
+
+            let first = candidate.as_str().chars().next().map_or(0, char::len_utf8);
+            let last = candidate
+                .as_str()
+                .chars()
+                .next_back()
+                .map_or(0, char::len_utf8);
+            // Wrapped offsets of the span, then haystack offsets (shifted by the sentinel).
+            let span_start = candidate.start() + first;
+            let span_end = candidate.end() - last;
+            add(span_start - width, span_end - width);
+            start = wrapped[..span_end]
+                .chars()
+                .next_back()
+                .map_or(span_end, |character| span_end - character.len_utf8());
+        }
+        true
+    }
+}
+
+/// Maps a haystack span back to the text, widening an end that falls between the two
+/// stand-ins of a surrogate pair outward to the whole character.
+fn widen(offsets: Option<&[usize]>, start: usize, end: usize) -> (usize, usize) {
+    let Some(offsets) = offsets else {
+        return (start, end);
+    };
+    let stand_in = super::SURROGATE_STAND_IN.len_utf8();
+    let start = match offsets[start] {
+        super::INSIDE_PAIR => offsets[start - stand_in],
+        offset => offset,
+    };
+    let end = match offsets[end] {
+        super::INSIDE_PAIR => offsets[end + stand_in],
+        offset => offset,
+    };
+    (start, end)
 }
 
 impl SensitiveDetector for CustomPatternDetector {
@@ -267,37 +390,11 @@ impl SensitiveDetector for CustomPatternDetector {
     }
 
     fn detect(&self, text: &ScanText<'_>, _path: &str, matches: &mut Vec<DetectionMatch>) {
-        if text.is_empty() {
-            return;
-        }
+        self.detect_bounded(text, matches, usize::MAX);
+    }
 
-        let (haystack, offsets) = text.utf16_haystack();
-        let original = text.text();
-        for found in self.definition.regex.find_iter(haystack) {
-            let (start, end) = match offsets {
-                Some(offsets) => (offsets[found.start()], offsets[found.end()]),
-                None => (found.start(), found.end()),
-            };
-            // Inside a surrogate pair (between its two stand-ins).
-            if start == super::INSIDE_PAIR || end == super::INSIDE_PAIR || start == end {
-                continue;
-            }
-
-            if self.definition.whole_word
-                && (is_ascii_word(original[..start].chars().next_back())
-                    || is_ascii_word(original[end..].chars().next()))
-            {
-                continue;
-            }
-
-            matches.push(text.detection(
-                &self.definition.id,
-                categories::CUSTOM,
-                Span { start, end },
-                true,
-                None,
-            ));
-        }
+    fn as_custom(&self) -> Option<&CustomPatternDetector> {
+        Some(self)
     }
 }
 
