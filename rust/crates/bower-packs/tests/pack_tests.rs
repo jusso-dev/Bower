@@ -314,6 +314,28 @@ fn cloud_identity_profile_pseudonymises_principals_like_csharp() {
     assert_eq!(redacted, vector("cloud-identities-gcp-audit.json"));
 }
 
+/// `PackPrivacyProfiles_CarryCustomDetectors`: pack privacy profiles load custom
+/// detectors and fail on custom detector tests exactly like the C# loader.
+#[test]
+fn pack_privacy_profiles_carry_custom_detectors() {
+    let yaml = std::fs::read_to_string(
+        manifest_dir().join("../../../deploy/privacy/custom-redaction-example.yaml"),
+    )
+    .unwrap();
+    assert_eq!(
+        test_privacy_policy(Some(&yaml))
+            .unwrap()
+            .custom_detectors
+            .len(),
+        3
+    );
+    let failing = "apiVersion: bower.security/v1\nkind: PrivacyProfile\nmetadata:\n  id: t\n  version: 1.0.0\ncustomDetectors:\n  - id: custom.d\n    pattern: 'x'\n    action: mask\n    tests:\n      match: [y]\n";
+    assert_eq!(
+        test_privacy_policy(Some(failing)).unwrap_err().to_string(),
+        "Custom detector 'custom.d' did not match tests.match[0]."
+    );
+}
+
 // ---------------------------------------------------------------- PackAndEvidenceTests
 
 #[test]

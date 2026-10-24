@@ -594,6 +594,19 @@ public sealed class CustomRedactionTests
         Assert.Equal("x secret", engine.RedactText("x secret").RedactedText);
     }
 
+    // ------------------------------------------------------------------ packs
+
+    [Fact]
+    public void PackPrivacyProfiles_CarryCustomDetectors()
+    {
+        PrivacyPolicy policy = Bower.Packs.PackArchive.TestPrivacyPolicy(ExampleProfile());
+
+        Assert.Equal(3, policy.CustomDetectors.Count);
+        Assert.Equal(
+            "Custom detector 'custom.d' did not match tests.match[0].",
+            Assert.Throws<InvalidDataException>(() => Bower.Packs.PackArchive.TestPrivacyPolicy(Header + Detector(tests: "[y]"))).Message);
+    }
+
     // ------------------------------------------------------------------ CLI
 
     [Fact]
