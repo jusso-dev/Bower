@@ -9,8 +9,9 @@ function Deploy-BowerAzureFunction {
     Entra authentication and forwards to the Logs Ingestion API.
 
     Parameters map one-to-one to the template: location, namePrefix, dcrResourceId,
-    logsIngestionEndpoint, streamName, entraTenantId, entraAudience and the optional
-    userAssignedIdentityResourceId. -WhatIf runs nothing. -Apply deploys only after
+    logsIngestionEndpoint, streamName, entraTenantId, entraAudience, producerScopesJson
+    (read from -ProducerScopesPath) and the optional userAssignedIdentityResourceId,
+    producerClaim and privacyProfilePath. -WhatIf runs nothing. -Apply deploys only after
     ShouldProcess confirmation (ConfirmImpact High).
 
     .PARAMETER ResourceGroupName
@@ -37,6 +38,17 @@ function Deploy-BowerAzureFunction {
     .PARAMETER EntraAudience
     Accepted token audience (application ID URI or client ID of the Function's app registration).
 
+    .PARAMETER ProducerScopesPath
+    Producer scopes JSON file (same format as the collector's BOWER_PRODUCER_SCOPES_FILE).
+    Required: without scopes the Function denies every producer.
+
+    .PARAMETER ProducerClaim
+    Token claim that names the producer: oid (default) or azp.
+
+    .PARAMETER PrivacyProfilePath
+    Privacy profile path inside the published Function package (for example
+    config/privacy.yaml). Omit to use the built-in default privacy profile.
+
     .PARAMETER UserAssignedIdentityResourceId
     Optional user-assigned managed identity resource ID for ingestion.
 
@@ -59,7 +71,8 @@ function Deploy-BowerAzureFunction {
     Deploy-BowerAzureFunction -ResourceGroupName rg-bower -Location australiaeast `
         -DcrResourceId /subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-sentinel/providers/Microsoft.Insights/dataCollectionRules/bower-dcr `
         -LogsIngestionEndpoint https://bower-dce.australiaeast-1.ingest.monitor.azure.com `
-        -EntraTenantId 11111111-2222-3333-4444-555555555555 -EntraAudience api://bower-function
+        -EntraTenantId 11111111-2222-3333-4444-555555555555 -EntraAudience api://bower-function `
+        -ProducerScopesPath ./producer-scopes.json
 
     Returns the what-if plan. Nothing is changed.
 
@@ -104,6 +117,16 @@ function Deploy-BowerAzureFunction {
         [ValidateLength(1, 256)]
         [string] $EntraAudience,
 
+        [Parameter(Mandatory)]
+        [ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf }, ErrorMessage = 'Producer scopes file was not found.')]
+        [string] $ProducerScopesPath,
+
+        [ValidateSet('oid', 'azp')]
+        [string] $ProducerClaim = 'oid',
+
+        [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$')]
+        [string] $PrivacyProfilePath,
+
         [ValidatePattern('^/subscriptions/[0-9a-fA-F-]{36}/resourceGroups/[^/]+/providers/Microsoft\.ManagedIdentity/userAssignedIdentities/[^/]+$')]
         [string] $UserAssignedIdentityResourceId,
 
@@ -121,6 +144,18 @@ function Deploy-BowerAzureFunction {
 
     try {
         $template = Resolve-BowerTemplatePath -Path $TemplatePath -Default 'deploy/azure-function/main.bicep'
+        try {
+            # Syntax-check and compact before it becomes an app setting; -NoEnumerate keeps
+            # a one-entry array an array.
+            $scopes = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $ProducerScopesPath -Raw) -Depth 16 -NoEnumerate -ErrorAction Stop
+        }
+        catch {
+            throw [System.ArgumentException]::new('Producer scopes file is not valid JSON.')
+        }
+        if ($scopes -isnot [array]) {
+            throw [System.ArgumentException]::new('Producer scopes file must contain a JSON array.')
+        }
+        $scopesJson = ConvertTo-Json -InputObject $scopes -Depth 16 -Compress
         $parameters = [ordered]@{
             location              = $Location
             namePrefix            = $NamePrefix
@@ -129,6 +164,11 @@ function Deploy-BowerAzureFunction {
             streamName            = $StreamName
             entraTenantId         = $EntraTenantId.ToString()
             entraAudience         = $EntraAudience
+            producerScopesJson    = $scopesJson
+            producerClaim         = $ProducerClaim
+        }
+        if ($PrivacyProfilePath) {
+            $parameters.privacyProfilePath = $PrivacyProfilePath
         }
         if ($UserAssignedIdentityResourceId) {
             $parameters.userAssignedIdentityResourceId = $UserAssignedIdentityResourceId

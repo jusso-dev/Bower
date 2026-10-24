@@ -95,7 +95,7 @@ function Send-BowerSecurityEvent {
     Sends newline-delimited JSON events to a remote collector with a producer token.
 
     .EXAMPLE
-    $events | Send-BowerSecurityEvent -Target AzureFunction -Uri https://bower-fn.azurewebsites.net/api `
+    $events | Send-BowerSecurityEvent -Target AzureFunction -Uri https://bower-fn.azurewebsites.net `
         -Audience api://11111111-2222-3333-4444-555555555555
 
     Sends to the Azure Function collector with a token acquired through Az.Accounts.

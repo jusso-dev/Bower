@@ -102,7 +102,10 @@ Describe 'Deploy-BowerAzureFunction' {
     BeforeAll {
         $script:FunctionTemplate = Join-Path $TestDrive 'function.bicep'
         Set-Content -LiteralPath $script:FunctionTemplate -Value "param location string`n"
+        $script:ScopesFile = Join-Path $TestDrive 'producer-scopes.json'
+        Set-Content -LiteralPath $script:ScopesFile -Value '[ { "producer": "app-1", "application": { "name": "payroll" } } ]'
         $script:FunctionParameters = @{
+            ProducerScopesPath    = $script:ScopesFile
             ResourceGroupName     = 'rg-bower'
             Location              = 'australiaeast'
             DcrResourceId         = '/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-sentinel/providers/Microsoft.Insights/dataCollectionRules/bower-dcr'
@@ -124,12 +127,26 @@ Describe 'Deploy-BowerAzureFunction' {
             $ArgumentList -contains 'streamName=Custom-BowerSecurity' -and
             $ArgumentList -contains 'entraTenantId=11111111-2222-3333-4444-555555555555' -and
             $ArgumentList -contains 'entraAudience=api://bower-function' -and
+            $ArgumentList -contains 'producerScopesJson=[{"producer":"app-1","application":{"name":"payroll"}}]' -and
+            $ArgumentList -contains 'producerClaim=oid' -and
             $ArgumentList -contains 'userAssignedIdentityResourceId=/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/bower-ingest'
         }
     }
 
     It 'omits the optional identity when not given' {
         (Deploy-BowerAzureFunction @script:FunctionParameters).Parameters.Contains('userAssignedIdentityResourceId') | Should -BeFalse
+    }
+
+    It 'passes the packaged privacy profile path and rejects invalid producer scopes' {
+        (Deploy-BowerAzureFunction @script:FunctionParameters -PrivacyProfilePath config/privacy.yaml).Parameters.privacyProfilePath |
+            Should -Be 'config/privacy.yaml'
+        $badScopes = Join-Path $TestDrive 'bad-scopes.json'
+        Set-Content -LiteralPath $badScopes -Value '{ not json'
+        $bad = $script:FunctionParameters.Clone()
+        $bad.ProducerScopesPath = $badScopes
+        { Deploy-BowerAzureFunction @bad } | Should -Throw '*not valid JSON*'
+        Set-Content -LiteralPath $badScopes -Value '{ "producer": "app-1" }'
+        { Deploy-BowerAzureFunction @bad } | Should -Throw '*JSON array*'
     }
 
     It 'applies only with -Apply and confirmation' {
