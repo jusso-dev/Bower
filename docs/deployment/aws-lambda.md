@@ -7,7 +7,7 @@
 - runs the same pipeline as the collector: contract validation, `bower-policy` default-deny
   selection, and the Privacy & Secret Protection Engine (including a privacy profile);
 - writes the selected, redacted events to **one destination** per deployment:
-  - **Amazon CloudWatch Logs** (`cloudwatch-logs`, the default): one log event per redacted
+  - **Amazon CloudWatch Logs** (`cloudwatch-logs`, recommended): one log event per redacted
     envelope, with `logs:PutLogEvents` on one log group;
   - **AWS CloudTrail Lake** (`cloudtrail-lake`): one audit event per redacted envelope, with
     `cloudtrail-data:PutAuditEvents` on a custom integration channel.
@@ -26,7 +26,7 @@ flowchart LR
     P2[Trusted invoker] -- lambda:InvokeFunction --> FN
     URL --> FN[bower-lambda<br/>provided.al2023 arm64]
     FN -- redact, validate, select --> FN
-    FN -- PutLogEvents<br/>execution role --> LG[(Log group<br/>/bower/events/stack)]
+    FN -- PutLogEvents<br/>execution role --> LG[(Event log group<br/>generated name)]
     LG --> LI[CloudWatch Logs Insights]
     LG -. optional subscription .-> AWSSEC[bower-aws-security<br/>to Sentinel]
     FN -- PutAuditEvents<br/>execution role --> CH[CloudTrail channel<br/>Source Custom]
@@ -361,15 +361,22 @@ aws cloudformation execute-change-set --region ap-southeast-2 \
   --stack-name bower-lambda --change-set-name initial
 ```
 
-For CloudTrail Lake, pass `Destination=cloudtrail-lake` and `RetentionDays=<7-3653>` instead
-of the event log settings. Template rules refuse settings of the other destination.
+`Destination` has no default: every create and update must name it, so an update can never
+switch an existing stack to another destination by omission. For CloudTrail Lake, pass
+`Destination=cloudtrail-lake` and `RetentionDays=<7-3653>` instead of the event log
+settings. Template rules refuse settings of the other destination.
+
+> **Upgrading a stack from `bower-aws-cloudtrail-lake.yaml`.** Pass
+> `Destination=cloudtrail-lake` (and your existing `RetentionDays`). Changing destination
+> later leaves the previous event log group or event data store in place: both are retained
+> evidence, and neither is reused if you switch back.
 
 The stack creates:
 
-- for `cloudwatch-logs`, the event log group `/bower/events/<stack>` with
-  `EventLogRetentionDays` and an optional KMS key (`EventLogKmsKeyArn`; its key policy must
-  allow the CloudWatch Logs service). It has `DeletionPolicy: Retain`, so deleting the stack
-  keeps the evidence;
+- for `cloudwatch-logs`, the event log group with `EventLogRetentionDays` and an optional
+  KMS key (`EventLogKmsKeyArn`; its key policy must allow the CloudWatch Logs service). Its
+  name is generated (the `EventLogGroupName` output) and it has `DeletionPolicy: Retain`, so
+  deleting the stack keeps the evidence and recreating it never collides with the old group;
 - for `cloudtrail-lake`, an event data store (`ActivityAuditLog` selector, single region,
   `RetentionDays`, extendable retention pricing, termination protection on, optional KMS
   key; `DeletionPolicy: Retain`) and a custom integration channel (`Source: Custom`)

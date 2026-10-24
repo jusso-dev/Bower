@@ -90,3 +90,70 @@ function Get-BowerPolicySourceArgument {
     }
     , $arguments.ToArray()
 }
+
+function Get-BowerCommandLineLength {
+    <#
+    Upper bound of the characters an argument list adds to a Windows command line: each
+    argument quoted, every embedded quote or backslash escaped, plus a separator.
+    #>
+    [CmdletBinding()]
+    [OutputType([int])]
+    param(
+        [AllowEmptyCollection()]
+        [string[]] $Argument = @()
+    )
+
+    $length = 0
+    foreach ($item in $Argument) {
+        $escapes = ([regex]::Matches($item, '["\\]')).Count
+        $length += $item.Length + $escapes + 3
+    }
+    $length
+}
+
+function Split-BowerPolicyFileBatch {
+    <#
+    Splits event files into bower policy test runs of at most 1,000 files whose whole
+    command line (executable, fixed arguments and files) stays within -Budget characters,
+    below the 32,767-character Windows CreateProcess limit. Each batch is one array.
+    #>
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Executable,
+
+        [Parameter(Mandatory)]
+        [string[]] $Files,
+
+        [AllowEmptyCollection()]
+        [string[]] $FixedArgument = @(),
+
+        [ValidateRange(1, 32767)]
+        [int] $Budget = 24000,
+
+        [ValidateRange(1, 1000)]
+        [int] $MaximumFiles = 1000
+    )
+
+    $fixed = (Get-BowerCommandLineLength -Argument @($Executable)) + (Get-BowerCommandLineLength -Argument $FixedArgument)
+    $batch = [System.Collections.Generic.List[string]]::new()
+    $length = $fixed
+    foreach ($file in $Files) {
+        $size = Get-BowerCommandLineLength -Argument @($file)
+        if ($fixed + $size -gt $Budget) {
+            throw [System.ArgumentException]::new(
+                "The bower command line for '$file' would exceed $Budget characters; shorten the paths or bundle options.")
+        }
+        if ($batch.Count -ge $MaximumFiles -or $length + $size -gt $Budget) {
+            , $batch.ToArray()
+            $batch.Clear()
+            $length = $fixed
+        }
+        $batch.Add($file)
+        $length += $size
+    }
+    if ($batch.Count -gt 0) {
+        , $batch.ToArray()
+    }
+}

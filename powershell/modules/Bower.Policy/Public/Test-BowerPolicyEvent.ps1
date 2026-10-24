@@ -8,9 +8,12 @@ function Test-BowerPolicyEvent {
     default-deny policy selection and privacy alerting as the collector, with nothing
     queued, sent or written. Each event file is evaluated as its own /v1/events request.
 
-    The bundle is loaded like the collector's: -PolicyDirectory (default policies/default
-    in the current directory), signed packs (-PackPath with -TrustedKeyPath) and an
-    optional privacy profile (-PrivacyProfilePath, with -HmacKeyFile for hmac rules).
+    The bundle is loaded like the collector's: -PolicyDirectory, signed packs (-PackPath
+    with -TrustedKeyPath) and an optional privacy profile (-PrivacyProfilePath, with
+    -HmacKeyFile for hmac rules). Packs alone are enough, as on the collector.
+
+    Large file sets are split into several bower runs so each command line stays within
+    the Windows limit; every run loads the same bundle, so results and BundleHash match.
 
     Output is metadata only: decision, reasons, policy id, version, hash and score. Event
     content never leaves the CLI. With -ExpectedDecision every result whose decision
@@ -22,7 +25,8 @@ function Test-BowerPolicyEvent {
     Event JSON files (one envelope each). Accepts pipeline input from Get-ChildItem.
 
     .PARAMETER PolicyDirectory
-    Policy directory. Defaults to policies/default in the current directory.
+    Policy directory. When omitted, policies/default in the current location is used if it
+    exists; otherwise only -PackPath supplies policies.
 
     .PARAMETER PackPath
     Signed .bowerpack files to load.
@@ -66,7 +70,7 @@ function Test-BowerPolicyEvent {
         [string[]] $Path,
 
         [ValidateNotNullOrEmpty()]
-        [string] $PolicyDirectory = (Join-Path (Get-Location).ProviderPath 'policies/default'),
+        [string] $PolicyDirectory,
 
         [ValidateNotNullOrEmpty()]
         [string[]] $PackPath,
@@ -104,14 +108,22 @@ function Test-BowerPolicyEvent {
 
     end {
         try {
-            $sources = Get-BowerPolicySourceArgument -PolicyDirectory $PolicyDirectory -PackPath $PackPath `
+            $directory = if ($PSBoundParameters.ContainsKey('PolicyDirectory')) {
+                $PolicyDirectory
+            }
+            else {
+                # The CLI's own default is relative to the process directory, not the
+                # PowerShell location, so resolve the default here and skip it when absent.
+                $default = Join-Path (Get-Location).ProviderPath 'policies/default'
+                if (Test-Path -LiteralPath $default -PathType Container) { $default } else { $null }
+            }
+            $sources = Get-BowerPolicySourceArgument -PolicyDirectory $directory -PackPath $PackPath `
                 -TrustedKeyPath $TrustedKeyPath -PrivacyProfilePath $PrivacyProfilePath -HmacKeyFile $HmacKeyFile
             $expected = if ($ExpectedDecision) { $ExpectedDecision.Replace('-', '') } else { $null }
-            # The CLI takes at most 1,000 files per run.
-            for ($offset = 0; $offset -lt $files.Count; $offset += 1000) {
-                $chunk = $files.GetRange($offset, [math]::Min(1000, $files.Count - $offset))
-                $arguments = @('policy', 'test') + $chunk + $sources
-                $run = Invoke-BowerPolicyCli -ArgumentList $arguments -BowerPath $BowerPath
+            $bower = Resolve-BowerCliPath -Name 'bower' -Path $BowerPath
+
+            foreach ($batch in @(Split-BowerPolicyFileBatch -Executable $bower -Files $files.ToArray() -FixedArgument (@('policy', 'test') + $sources))) {
+                $run = Invoke-BowerPolicyCli -ArgumentList (@('policy', 'test') + $batch + $sources) -BowerPath $bower
                 foreach ($entry in @($run.Document.results)) {
                     $result = [pscustomobject]@{
                         File               = $entry.file

@@ -131,6 +131,75 @@ Describe 'Test-BowerPolicyEvent' {
             Should -Throw '*bower policy test failed (exit code 1): Policy directory does not exist: x*'
     }
 
+    It 'loads packs alone when no policy directory is given or present' {
+        $pack = Join-Path $TestDrive 'only.bowerpack'; Set-Content -LiteralPath $pack -Value 'x'
+        $key = Join-Path $TestDrive 'only.pub'; Set-Content -LiteralPath $key -Value 'x'
+        $empty = Join-Path $TestDrive 'no-policies'; New-Item -ItemType Directory -Path $empty -Force | Out-Null
+        Push-Location $empty
+        try {
+            Test-BowerPolicyEvent -Path $script:Accepted -PackPath $pack -TrustedKeyPath $key | Out-Null
+        }
+        finally {
+            Pop-Location
+        }
+        Should -Invoke -ModuleName Bower.Policy Invoke-BowerCli -Times 1 -Exactly -ParameterFilter {
+            $ArgumentList -notcontains '--policy-directory' -and (Test-ArgumentSequence $ArgumentList @('--pack', (Resolve-Path $pack).ProviderPath))
+        }
+    }
+
+    It 'uses policies/default in the current location when it exists' {
+        $root = Join-Path $TestDrive 'with-policies'
+        New-Item -ItemType Directory -Path (Join-Path $root 'policies/default') -Force | Out-Null
+        Push-Location $root
+        try {
+            Test-BowerPolicyEvent -Path $script:Accepted | Out-Null
+        }
+        finally {
+            Pop-Location
+        }
+        Should -Invoke -ModuleName Bower.Policy Invoke-BowerCli -Times 1 -Exactly -ParameterFilter {
+            Test-ArgumentSequence $ArgumentList @('--policy-directory', (Join-Path (Resolve-Path $root).ProviderPath 'policies/default'))
+        }
+    }
+
+    It 'splits long file lists so every command line stays within the Windows limit' {
+        $deep = Join-Path $TestDrive ('long path with spaces ' + ('d' * 180))
+        New-Item -ItemType Directory -Path $deep -Force | Out-Null
+        $files = foreach ($index in 1..300) {
+            $file = Join-Path $deep ("sample event $index.json")
+            Set-Content -LiteralPath $file -Value '{}'
+            $file
+        }
+        $script:CommandLengths = [System.Collections.Generic.List[int]]::new()
+        $script:FileCounts = [System.Collections.Generic.List[int]]::new()
+        Mock -ModuleName Bower.Policy Invoke-BowerCli {
+            $script:CommandLengths.Add(($FilePath.Length + 3) + (($ArgumentList | ForEach-Object { $_.Length + 3 }) | Measure-Object -Sum).Sum)
+            $script:FileCounts.Add(@($ArgumentList | Where-Object { $_ -like '*.json' }).Count)
+            [pscustomobject]@{ ExitCode = 0; StdOut = $script:TestOutput; StdErr = '' }
+        }
+
+        $files | Test-BowerPolicyEvent -PolicyDirectory $script:PolicyDirectory | Out-Null
+
+        $script:CommandLengths.Count | Should -BeGreaterThan 1
+        $script:CommandLengths | ForEach-Object { $_ | Should -BeLessOrEqual 24000 }
+        ($script:FileCounts | Measure-Object -Sum).Sum | Should -Be 300
+    }
+
+    It 'batches by count, budget and fixed options' {
+        InModuleScope Bower.Policy {
+            $files = 1..2500 | ForEach-Object { "/e/$_.json" }
+            $batches = @(Split-BowerPolicyFileBatch -Executable '/bin/bower' -Files $files -FixedArgument @('policy', 'test'))
+            $batches.Count | Should -Be 3
+            $batches[0].Count | Should -Be 1000
+            $batches[2].Count | Should -Be 500
+
+            $option = 'x' * 23960
+            { Split-BowerPolicyFileBatch -Executable '/bin/bower' -Files @('/e/a-long-enough-name.json') -FixedArgument @('--pack', $option) } |
+                Should -Throw '*would exceed 24000 characters*'
+            Get-BowerCommandLineLength -Argument @('a"b\c') | Should -Be (5 + 2 + 3)
+        }
+    }
+
     It 'rejects unknown expected decisions' {
         { Test-BowerPolicyEvent -Path $script:Accepted -ExpectedDecision allow } | Should -Throw
     }

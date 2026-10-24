@@ -136,12 +136,20 @@ fn destination_selects_exactly_one_scoped_write_grant() {
         strings(&destination["AllowedValues"]),
         ["cloudwatch-logs", "cloudtrail-lake"]
     );
-    // CloudTrail Lake is closed to new customers, so the default works everywhere.
-    assert_eq!(destination["Default"].as_str(), Some("cloudwatch-logs"));
+    // No default: updating an existing stack must never switch destination silently.
+    assert!(
+        destination.get("Default").is_none(),
+        "Destination must be required"
+    );
 
     let events = &template["Resources"]["EventLogGroup"];
     assert_eq!(events["Condition"].as_str(), Some("LogsDestination"));
     assert_eq!(events["DeletionPolicy"].as_str(), Some("Retain"));
+    // A fixed name would collide with the retained group on recreate or switch-back.
+    assert!(
+        events["Properties"].get("LogGroupName").is_none(),
+        "the retained event log group must have a generated name"
+    );
 
     let statements = format!(
         "{:?}",

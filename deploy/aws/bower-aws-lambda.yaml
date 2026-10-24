@@ -37,12 +37,13 @@ Parameters:
       Invoke (invoke; all attributed to InvokeProducer).
   Destination:
     Type: String
-    Default: cloudwatch-logs
     AllowedValues: [cloudwatch-logs, cloudtrail-lake]
     Description: >-
-      cloudwatch-logs (default) writes each redacted envelope as one log event to a log
+      Required, no default, so updating an existing stack never switches destination
+      silently. cloudwatch-logs writes each redacted envelope as one log event to a log
       group this stack creates. cloudtrail-lake writes CloudTrail Lake audit events; it
-      needs an account that onboarded CloudTrail Lake before 31 May 2026.
+      needs an account that onboarded CloudTrail Lake before 31 May 2026. Switching later
+      leaves the previous group or event data store in place (both are retained).
   EventLogRetentionDays:
     Type: Number
     Default: 365
@@ -229,7 +230,9 @@ Resources:
         - Type: EVENT_DATA_STORE
           Location: !GetAtt EventDataStore.EventDataStoreArn
 
-  # Bower events (cloudwatch-logs): kept on delete, like the event data store. One
+  # Bower events (cloudwatch-logs): kept on delete, like the event data store. The name
+  # is generated (see the EventLogGroupName output): a fixed name would collide with the
+  # retained group when the stack is recreated or switches destination and back. One
   # stream per execution environment, created by the function at init.
   EventLogGroup:
     Type: AWS::Logs::LogGroup
@@ -237,7 +240,6 @@ Resources:
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
-      LogGroupName: !Sub "/bower/events/${AWS::StackName}"
       RetentionInDays: !Ref EventLogRetentionDays
       KmsKeyId: !If [HasEventLogKms, !Ref EventLogKmsKeyArn, !Ref "AWS::NoValue"]
 

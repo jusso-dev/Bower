@@ -238,7 +238,7 @@ Deploy-BowerAzureFunction -ResourceGroupName rg-bower -Location australiaeast `
     -DcrResourceId <dcr-resource-id> -LogsIngestionEndpoint https://<dce>.australiaeast-1.ingest.monitor.azure.com `
     -EntraTenantId <tenant-id> -EntraAudience api://bower-function
 
-# CloudWatch Logs (default): an event log group kept on stack deletion
+# CloudWatch Logs (the cmdlet default; always passed explicitly): an event log group kept on stack deletion
 Deploy-BowerAwsLambda -CodeS3Bucket bower-artifacts -CodeS3Key lambda/bower-lambda.zip `
     -AllowedInvokerPrincipalArns arn:aws:iam::123456789012:role/bower-producer -EventLogRetentionDays 365
 # CloudTrail Lake (accounts onboarded before 31 May 2026)

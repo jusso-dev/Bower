@@ -377,7 +377,7 @@ producers retry on failure (at-least-once).
 | Host | Ingest auth | Destination auth | Guide |
 |---|---|---|---|
 | **Azure Functions collector** (C#, isolated worker, Flex Consumption) | Entra token with the `Bower.Producer` app role, plus producer scopes | Managed identity (system-assigned by default) with Monitoring Metrics Publisher on the DCR only; no keys or connection strings | [Azure Functions](docs/deployment/azure-function.md) · [`deploy/azure-function`](deploy/azure-function/main.bicep) |
-| **AWS Lambda host** (Rust `bower-lambda`, arm64) | IAM: Function URL with `AuthType: AWS_IAM` or `lambda:InvokeFunction`, caller ARN mapped to producer scopes | Execution role only: `logs:PutLogEvents` on one CloudWatch Logs group (default), or `cloudtrail-data:PutAuditEvents` on one CloudTrail Lake channel | [AWS Lambda](docs/deployment/aws-lambda.md) · [`deploy/aws`](deploy/aws/bower-aws-lambda.yaml) |
+| **AWS Lambda host** (Rust `bower-lambda`, arm64) | IAM: Function URL with `AuthType: AWS_IAM` or `lambda:InvokeFunction`, caller ARN mapped to producer scopes | Execution role only: `logs:PutLogEvents` on one CloudWatch Logs group, or `cloudtrail-data:PutAuditEvents` on one CloudTrail Lake channel | [AWS Lambda](docs/deployment/aws-lambda.md) · [`deploy/aws`](deploy/aws/bower-aws-lambda.yaml) |
 
 > [!NOTE]
 > AWS closed CloudTrail Lake to new customers on 31 May 2026. The Lambda host writes

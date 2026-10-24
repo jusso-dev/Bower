@@ -81,6 +81,14 @@ impl CloudWatchLogsSink {
 }
 
 /// Positions (in sent order) that `rejectedLogEventsInfo` refuses, with a code.
+///
+/// The end indexes are read as inclusive. The SDK documents `tooOldLogEventEndIndex` as
+/// exclusive and says nothing for `expiredLogEventEndIndex`; the inclusive reading marks
+/// at most one more event retryable than the exclusive one. A wrongly retried event is
+/// a duplicate (queries deduplicate on `eventId`); a wrongly accepted one would be lost,
+/// so the wider reading is the safe one. `tooNewLogEventStartIndex` is documented as
+/// inclusive. Every record in a call carries the same receive-time timestamp, so these
+/// ranges are not expected in practice.
 fn rejected_log_events(
     count: usize,
     too_new_start: Option<i32>,
@@ -285,5 +293,30 @@ mod tests {
             ]
         );
         assert!(rejected_log_events(2, Some(-1), None, None).is_empty());
+    }
+
+    /// Whatever the service means by an end index (inclusive or exclusive), every event
+    /// it refused is reported as refused: the mapping never claims a rejected event.
+    #[test]
+    fn rejections_cover_both_readings_of_end_indexes() {
+        for count in 0..6usize {
+            for end in -1..6i32 {
+                for (too_old, expired) in [(Some(end), None), (None, Some(end))] {
+                    let marked: Vec<usize> = rejected_log_events(count, None, too_old, expired)
+                        .into_iter()
+                        .map(|(position, _)| position)
+                        .collect();
+                    let end = usize::try_from(end).ok();
+                    let exclusive: Vec<usize> = (0..count)
+                        .filter(|position| end.is_some_and(|end| *position < end))
+                        .collect();
+                    let inclusive: Vec<usize> = (0..count)
+                        .filter(|position| end.is_some_and(|end| *position <= end))
+                        .collect();
+                    assert!(exclusive.iter().all(|position| marked.contains(position)));
+                    assert_eq!(marked, inclusive, "count {count} end {end:?}");
+                }
+            }
+        }
     }
 }

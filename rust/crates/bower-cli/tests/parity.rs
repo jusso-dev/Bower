@@ -918,4 +918,62 @@ fn policy_test_matches_csharp() {
         let run = assert_same(&cs, &root, args);
         assert!(!run.stdout.contains("never-print"));
     }
+
+    // File.ReadAllText detects UTF-16 and UTF-32 byte order marks (Windows PowerShell 5.1
+    // writes UTF-16 LE); a truncated trailing code unit decodes to U+FFFD on both sides.
+    let text = std::fs::read_to_string(&secret).unwrap();
+    let encode = |name: &str, bom: &[u8], unit: &dyn Fn(char) -> Vec<u8>, trailing: &[u8]| {
+        let mut bytes = bom.to_vec();
+        for character in text.chars() {
+            bytes.extend(unit(character));
+        }
+        bytes.extend_from_slice(trailing);
+        let path = dir.path().join(name);
+        std::fs::write(&path, bytes).unwrap();
+        path.to_str().unwrap().to_owned()
+    };
+    let utf16 = |big: bool| {
+        move |character: char| -> Vec<u8> {
+            let mut buffer = [0u16; 2];
+            character
+                .encode_utf16(&mut buffer)
+                .iter()
+                .flat_map(|unit| {
+                    if big {
+                        unit.to_be_bytes()
+                    } else {
+                        unit.to_le_bytes()
+                    }
+                })
+                .collect()
+        }
+    };
+    let utf32 = |big: bool| {
+        move |character: char| -> Vec<u8> {
+            let unit = u32::from(character);
+            (if big {
+                unit.to_be_bytes()
+            } else {
+                unit.to_le_bytes()
+            })
+            .to_vec()
+        }
+    };
+    let samples = [
+        encode("utf16le.json", &[0xFF, 0xFE], &utf16(false), &[]),
+        encode("utf16be.json", &[0xFE, 0xFF], &utf16(true), &[]),
+        encode("utf32le.json", &[0xFF, 0xFE, 0, 0], &utf32(false), &[]),
+        encode("utf32be.json", &[0, 0, 0xFE, 0xFF], &utf32(true), &[]),
+        encode("utf16odd.json", &[0xFF, 0xFE], &utf16(false), b" "),
+    ];
+    for sample in &samples {
+        let run = assert_same(&cs, &root, &["policy", "test", sample]);
+        assert!(!run.stdout.contains("never-print"));
+    }
+    let utf16le = assert_same(&cs, &root, &["policy", "test", &samples[0]]);
+    assert!(
+        utf16le.stdout.contains("\"redactandaccept\""),
+        "UTF-16 sample decoded: {}",
+        utf16le.stdout
+    );
 }

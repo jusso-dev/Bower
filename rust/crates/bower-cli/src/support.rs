@@ -71,7 +71,46 @@ fn io_message(path: &str, error: &std::io::Error) -> String {
     }
 }
 
-/// `File.ReadAllText`: UTF-8 with the BOM stripped; .NET exception messages.
+/// `File.ReadAllText` decoding: the byte order mark picks UTF-8, UTF-16 LE/BE or UTF-32
+/// LE/BE (as `StreamReader` detects them, so `FF FE 00 00` is UTF-32 LE); without one the
+/// text is UTF-8. Invalid sequences become U+FFFD, as in .NET.
+pub fn decode_text(bytes: &[u8]) -> String {
+    fn units<const N: usize>(bytes: &[u8], read: impl Fn([u8; N]) -> u32) -> Vec<u32> {
+        let (chunks, remainder) = bytes.as_chunks::<N>();
+        let mut units: Vec<u32> = chunks.iter().map(|chunk| read(*chunk)).collect();
+        if !remainder.is_empty() {
+            units.push(0xFFFD);
+        }
+        units
+    }
+    let utf16 = |units: Vec<u32>| {
+        let units: Vec<u16> = units
+            .into_iter()
+            .map(|unit| u16::try_from(unit).unwrap_or(0xFFFD))
+            .collect();
+        String::from_utf16_lossy(&units)
+    };
+    let utf32 = |units: Vec<u32>| {
+        units
+            .into_iter()
+            .map(|unit| char::from_u32(unit).unwrap_or('\u{FFFD}'))
+            .collect()
+    };
+    match bytes {
+        [0xFF, 0xFE, 0x00, 0x00, rest @ ..] => utf32(units::<4>(rest, u32::from_le_bytes)),
+        [0x00, 0x00, 0xFE, 0xFF, rest @ ..] => utf32(units::<4>(rest, u32::from_be_bytes)),
+        [0xFF, 0xFE, rest @ ..] => {
+            utf16(units::<2>(rest, |pair| u32::from(u16::from_le_bytes(pair))))
+        }
+        [0xFE, 0xFF, rest @ ..] => {
+            utf16(units::<2>(rest, |pair| u32::from(u16::from_be_bytes(pair))))
+        }
+        [0xEF, 0xBB, 0xBF, rest @ ..] => String::from_utf8_lossy(rest).into_owned(),
+        _ => String::from_utf8_lossy(bytes).into_owned(),
+    }
+}
+
+/// `File.ReadAllText`: BOM-detected encoding (see [`decode_text`]); .NET exception messages.
 pub fn read_text(path: &str) -> CliResult<String> {
     if Path::new(path).is_dir() {
         return Err(CliError(format!(
@@ -80,8 +119,7 @@ pub fn read_text(path: &str) -> CliResult<String> {
         )));
     }
     let bytes = std::fs::read(path).map_err(|error| CliError(io_message(path, &error)))?;
-    let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
-    Ok(String::from_utf8_lossy(bytes).into_owned())
+    Ok(decode_text(&bytes))
 }
 
 /// `File.ReadAllBytes` with .NET exception messages.
@@ -198,5 +236,65 @@ mod tests {
     #[test]
     fn normalises_full_paths() {
         assert_eq!(full_path("/a/b/../c/./d"), PathBuf::from("/a/c/d"));
+    }
+}
+
+#[cfg(test)]
+mod decode_tests {
+    use super::decode_text;
+
+    fn utf16(text: &str, big_endian: bool) -> Vec<u8> {
+        let mut bytes = if big_endian {
+            vec![0xFE, 0xFF]
+        } else {
+            vec![0xFF, 0xFE]
+        };
+        for unit in text.encode_utf16() {
+            bytes.extend(if big_endian {
+                unit.to_be_bytes()
+            } else {
+                unit.to_le_bytes()
+            });
+        }
+        bytes
+    }
+
+    fn utf32(text: &str, big_endian: bool) -> Vec<u8> {
+        let mut bytes = if big_endian {
+            vec![0, 0, 0xFE, 0xFF]
+        } else {
+            vec![0xFF, 0xFE, 0, 0]
+        };
+        for character in text.chars() {
+            let unit = u32::from(character);
+            bytes.extend(if big_endian {
+                unit.to_be_bytes()
+            } else {
+                unit.to_le_bytes()
+            });
+        }
+        bytes
+    }
+
+    #[test]
+    fn detects_byte_order_marks_like_file_read_all_text() {
+        let text = "{\"name\":\"José 😀\"}";
+        assert_eq!(decode_text(text.as_bytes()), text);
+        assert_eq!(
+            decode_text(&[&[0xEF, 0xBB, 0xBF][..], text.as_bytes()].concat()),
+            text
+        );
+        assert_eq!(decode_text(&utf16(text, false)), text);
+        assert_eq!(decode_text(&utf16(text, true)), text);
+        assert_eq!(decode_text(&utf32(text, false)), text);
+        assert_eq!(decode_text(&utf32(text, true)), text);
+    }
+
+    #[test]
+    fn invalid_sequences_become_replacement_characters() {
+        assert_eq!(decode_text(&[0xFF, 0xFE, b'a', 0, b'b']), "a\u{FFFD}");
+        assert_eq!(decode_text(&[0xFF, 0xFE, 0x00, 0xD8]), "\u{FFFD}");
+        assert_eq!(decode_text(&[0xFF, 0xFE, 0, 0, 0, 0, 0x11, 0]), "\u{FFFD}");
+        assert_eq!(decode_text(&[b'a', 0xFF]), "a\u{FFFD}");
     }
 }
