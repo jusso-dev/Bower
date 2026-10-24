@@ -197,9 +197,32 @@ Describe 'Deploy-BowerAwsCloudTrailLake' {
             $ArgumentList -contains 'CodeS3Bucket=bower-artifacts' -and $ArgumentList -contains 'CodeS3Key=lambda/bower-lambda-0.1.0.zip' -and
             $ArgumentList -contains 'AllowedInvokerPrincipalArns=arn:aws:iam::123456789012:role/bower-producer,arn:aws:iam::123456789012:role/bower-ops' -and
             $ArgumentList -contains 'RetentionDays=365' -and
-            (Test-ArgumentSequence $ArgumentList @('--capabilities', 'CAPABILITY_IAM')) -and
+            $ArgumentList -contains 'IngressMode=function-url' -and
+            -not ($ArgumentList | Where-Object { $_ -like 'InvokeProducer=*' }) -and
+            (Test-ArgumentSequence $ArgumentList @('--capabilities', 'CAPABILITY_IAM', 'CAPABILITY_AUTO_EXPAND')) -and
             $ArgumentList -contains '--no-execute-changeset'
         }
+        $plan.RemainingChecks -join ' ' | Should -BeLike '*bower-lambda-deny-direct-invoke-scp.json*'
+    }
+
+    It 'plans a separate direct-invoke stack with its producer' {
+        $channel = 'arn:aws:cloudtrail:ap-southeast-2:123456789012:channel/0123abcd-89ab-cdef-0123-456789abcdef'
+        $plan = Deploy-BowerAwsCloudTrailLake @script:LakeParameters -IngressMode invoke -InvokeProducer batch-forwarder `
+            -StackName bower-cloudtrail-lake-invoke -ExistingChannelArn $channel
+        $plan.Mode | Should -Be 'Plan'
+        Should -Invoke -ModuleName Bower.Deployment Invoke-BowerCli -Times 1 -Exactly -ParameterFilter {
+            $ArgumentList -contains 'IngressMode=invoke' -and $ArgumentList -contains 'InvokeProducer=batch-forwarder' -and
+            $ArgumentList -contains "ExistingChannelArn=$channel" -and
+            (Test-ArgumentSequence $ArgumentList @('--stack-name', 'bower-cloudtrail-lake-invoke'))
+        }
+    }
+
+    It 'rejects mixed or incomplete ingress settings' {
+        { Deploy-BowerAwsCloudTrailLake @script:LakeParameters -IngressMode both } | Should -Throw
+        { Deploy-BowerAwsCloudTrailLake @script:LakeParameters -IngressMode invoke } | Should -Throw '*requires -InvokeProducer*'
+        { Deploy-BowerAwsCloudTrailLake @script:LakeParameters -InvokeProducer batch-forwarder } | Should -Throw '*only used with -IngressMode invoke*'
+        { Deploy-BowerAwsCloudTrailLake @script:LakeParameters -ExistingChannelArn 'arn:aws:sqs:x' } | Should -Throw
+        Should -Invoke -ModuleName Bower.Deployment Invoke-BowerCli -Times 0
     }
 
     It 'executes only with -Apply and confirmation' {

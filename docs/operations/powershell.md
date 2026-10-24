@@ -211,6 +211,10 @@ Deploy-BowerAzureFunction -ResourceGroupName rg-bower -Location australiaeast `
 
 Deploy-BowerAwsCloudTrailLake -CodeS3Bucket bower-artifacts -CodeS3Key lambda/bower-lambda.zip `
     -AllowedInvokerPrincipalArns arn:aws:iam::123456789012:role/bower-producer -RetentionDays 365
+# One ingress per stack: a separate stack for direct Invoke, attributed to one producer
+Deploy-BowerAwsCloudTrailLake -StackName bower-cloudtrail-lake-invoke -IngressMode invoke -InvokeProducer batch `
+    -ExistingChannelArn <ChannelArn output of the first stack> -CodeS3Bucket bower-artifacts -CodeS3Key lambda/bower-lambda.zip `
+    -AllowedInvokerPrincipalArns arn:aws:iam::123456789012:role/bower-batch -RetentionDays 365
 
 Deploy-BowerGcpSecurity -VarFile ./prod.tfvars -PlanFile ./bower-gcp.tfplan
 Deploy-BowerGcpSecurity -PlanFile ./bower-gcp.tfplan -Apply

@@ -57,6 +57,8 @@ Things the Lambda does **not** have, compared with the full collector:
 | Management heartbeat and maintenance jobs | None |
 | Bearer tokens (`BOWER_INGEST_TOKEN*`) | Refused at start-up. IAM is the only authentication. |
 | HMAC key file (`BOWER_PRIVACY_HMAC_KEY_FILE`) | Refused at start-up. Use `BOWER_PRIVACY_HMAC_KEY_SECRET_ARN`. |
+| Managed privacy profiles (`BOWER_PRIVACY_PROFILE_SOURCE=management`) | Refused at start-up. Package the reviewed profile, exported from the approved version. |
+| One host for several ingress paths | One ingress per function. Deploy a second stack for direct `Invoke`. |
 | Raw pack parser endpoint (`/v1/packs/.../events`) | Not exposed. Signed packs still add policies and detections. |
 | Rate limiting (`BOWER_INGEST_RATE_PER_SECOND`) | Reserved concurrency. Excess calls get Lambda's 429. |
 | Sentinel or AMA delivery | Not available. The only destination is CloudTrail Lake. |
@@ -95,21 +97,47 @@ There are three layers of access control, and every layer fails closed.
    everything. `BOWER_SINGLE_TRUST_DOMAIN=true` turns these checks off, as it does on the
    collector. It cannot be combined with a scopes file.
 
-**Direct Invoke.** Lambda passes no caller identity to the function for a direct `Invoke`.
-These payloads are therefore attributed to one configured producer,
-`BOWER_LAMBDA_INVOKE_PRODUCER`, whose scopes still apply. If it is not set, direct invokes are
-denied. `IngressMode` decides which paths exist:
+**One ingress per deployment.** A function serves either Function URL requests or direct
+`Invoke` payloads, never both. To accept both, deploy two stacks (two functions) with their
+own principal lists. `BOWER_LAMBDA_INGRESS=both` stops the function at init, and the
+template's `IngressMode` only allows `function-url` or `invoke`.
 
-| `IngressMode` | Function URL | Direct `Invoke` | Notes |
+| `IngressMode` | Function URL | Direct `Invoke` | Caller identity |
 |---|---|---|---|
-| `function-url` (default) | yes | refused by the handler | Resource policy grants `InvokeFunction` only through the URL |
-| `invoke` | no URL created | yes | The handler also refuses URL-shaped payloads, so an invoker cannot forge a caller ARN |
-| `both` | yes | yes | A direct invoker can send a URL-shaped payload with any `userArn`. Grant direct `Invoke` only to principals you trust as much as every mapped producer. |
+| `function-url` (default) | created, `AuthType: AWS_IAM` | not granted by the resource policy; a non-URL payload is refused by the handler | `requestContext.authorizer.iam.userArn`, mapped through `principals.json` (required) |
+| `invoke` | not created | granted to `AllowedInvokerPrincipalArns` | none from Lambda: every payload is attributed to `BOWER_LAMBDA_INVOKE_PRODUCER` (required). URL-shaped payloads are refused, so an invoker cannot claim a caller ARN. |
 
-Even in `function-url` mode, a principal **in the same account** whose identity policy
-allows `lambda:InvokeFunction` on this function (or on `*`) can invoke it directly, with no
-resource policy needed. With `IngressMode=both` it could then forge a caller. Keep broad
-`lambda:*` grants out of the account, or use a permissions boundary or SCP.
+A mismatched setting fails at init: an invoke producer on a URL function, a principals file
+on an invoke function, or a missing principals file or producer.
+
+**Residual risk: direct invokes of a URL function.** The handler cannot tell a real Function
+URL event from a direct `Invoke` payload shaped like one. In `function-url` mode it trusts the
+`userArn` in that payload, and the test
+`url_shaped_direct_payload_is_trusted_in_function_url_mode_and_refused_in_invoke_mode`
+pins this behaviour. Only IAM keeps direct invokers out.
+
+- The template's resource policy grants `lambda:InvokeFunction` only with
+  `InvokedViaFunctionUrl: true`, so it never allows a direct invoke.
+- Lambda resource policies can only Allow. A principal **in the same account** whose identity
+  policy allows `lambda:InvokeFunction` on the function (or on `*`) can still invoke it
+  directly, because no resource policy grant is needed. That principal can assert any mapped
+  producer.
+- To block it, apply
+  [`deploy/aws/policies/bower-lambda-deny-direct-invoke-scp.json`](../../deploy/aws/policies/bower-lambda-deny-direct-invoke-scp.json):
+  - Use it as a service control policy on the account, or add its statements to the
+    permissions boundary of every role and user in the account.
+  - First replace `BOWER_ACCOUNT_ID`, and `BOWER_URL_FUNCTION_NAME` with the stack's
+    `FunctionName` output.
+  - It denies `lambda:InvokeFunction` on the function unless `lambda:InvokedViaFunctionUrl`
+    is true, and it denies the legacy `lambda:InvokeAsync`.
+  - It uses `BoolIfExists`, so a missing key counts as a direct invoke. AWS does not
+    document whether the key is absent or `false` on direct calls.
+- SCPs do not apply to the organisation's management account, and a permissions boundary
+  only covers the principals it is attached to. This Deny has not been verified against a
+  live account. Test it in a sandbox account with a role that has `lambda:*`. A direct
+  `aws lambda invoke` must fail with `AccessDenied`, and the signed URL call must still work.
+- Anyone who can change the function, its resource policy or the SCP can remove these
+  controls. Keep those permissions with administrators.
 
 **Execution role** (least privilege, defined in the template):
 
@@ -136,14 +164,27 @@ Status codes per event follow the collector:
 
 | Status | Meaning |
 |---|---|
-| 202 | Selected, redacted and accepted by CloudTrail Lake (with its privacy alert, if any) |
-| 200 | Duplicate of an earlier element in the same request |
-| 422 | Rejected by policy, or refused for good by CloudTrail Lake (`InvalidData`, `FieldTooLong` and similar, or larger than `additionalEventData` allows) |
+| 202 | Selected, redacted, and **every** required audit event (the event and each privacy alert) accepted by CloudTrail Lake |
+| 200 | Duplicate of an earlier element in the same request whose complete required set was accepted |
+| 422 | Rejected by policy, or a required audit event (the event **or** a privacy alert) refused for good: by CloudTrail Lake (`InvalidData`, `FieldTooLong` and similar) or locally (`cloudtrail-lake-event-too-large`). `queued` is `false`; resending cannot succeed. |
 | 400 | Quarantined (schema, redaction or validation failure), or a malformed body |
 | 403 | The caller or producer is not allowed (see the IAM model) |
 | 409 | Identity conflict inside the request (same id, different content) |
 | 413 / 415 / 404 / 405 | Body too large or more than 100 elements / wrong content type / path other than `/v1/events` / method other than `POST` |
-| 503 | **Retry this event.** CloudTrail Lake did not accept every audit event (throttling, internal failure, access or network error, or a missing result) |
+| 503 | **Retry this event.** A required audit event was not accepted yet (throttling, internal failure, access or network error, or a missing result) |
+
+How an element's status is decided:
+
+- An element is successful only when every audit event it requires was accepted. That means
+  the source event and every privacy alert it raised.
+- If anything is still retryable, the element is 503, even when another record was refused.
+  It converges: once nothing is retryable any more, a refusal gives 422.
+- A duplicate depends on its original's complete set of required records, plus any records
+  of its own. This applies to a same-id duplicate and to a fingerprint alias (the same
+  `eventOriginalId` and content under another `eventId`).
+- A duplicate is therefore 503 and listed in `retryIndexes` when its original is 503, and
+  422 when its original is 422. It is never acknowledged unless the original was fully
+  accepted.
 
 A single-envelope request returns the collector's ingest response fields (`eventId`,
 `decision`, `queued`, `duplicate`, `reasons`, `policy`) plus `retryable` and `delivery`.
@@ -199,9 +240,10 @@ under 1 MB. That size counts `eventData` after JSON escaping.
 | `BOWER_CLOUDTRAIL_CHANNEL_ARN` | required | `arn:aws:cloudtrail:<region>:<account>:channel/<id>`. The account becomes `recipientAccountId`. |
 | `BOWER_CLOUDTRAIL_RECIPIENT_ACCOUNT_ID` | channel account | Optional. Must equal the channel account. |
 | `BOWER_CLOUDTRAIL_EXTERNAL_ID` | — | Optional `externalId` for channels whose resource policy requires one |
-| `BOWER_LAMBDA_INGRESS` | `function-url` | `function-url`, `invoke` or `both` |
-| `BOWER_LAMBDA_PRINCIPALS_FILE` | — | IAM principal to producer map. If it is missing, every URL caller is denied. |
-| `BOWER_LAMBDA_INVOKE_PRODUCER` | — | Producer for direct `Invoke`. If it is missing, direct invokes are denied. |
+| `BOWER_LAMBDA_INGRESS` | `function-url` | `function-url` or `invoke`. `both` is refused at init. |
+| `BOWER_LAMBDA_PRINCIPALS_FILE` | — | IAM principal to producer map. Required with `function-url`; refused with `invoke`. |
+| `BOWER_LAMBDA_INVOKE_PRODUCER` | — | Producer for every direct `Invoke` payload. Required with `invoke`; refused with `function-url`. |
+| `BOWER_PRIVACY_PROFILE_SOURCE` | `local` | Only `local`. `management` (managed profiles) and any other value stop the function at init: package a reviewed privacy profile, exported from the approved management version. |
 | `BOWER_PRODUCER_SCOPES_FILE` | — | Collector producer scopes. If it is missing, every event is denied unless single trust domain is on. |
 | `BOWER_SINGLE_TRUST_DOMAIN` | `false` | As on the collector |
 | `BOWER_POLICY_DIRECTORY` | `./policies/default` | Packaged policies |
@@ -293,8 +335,18 @@ The stack creates:
 - the execution role described above;
 - the function (`provided.al2023`, `arm64`, reserved concurrency, recursive loop
   detection on);
-- for `function-url` and `both`, a Function URL with `AuthType: AWS_IAM`;
-- resource-policy grants for each allowed invoker.
+- for `function-url`, a Function URL with `AuthType: AWS_IAM`, plus per-invoker grants of
+  `lambda:InvokeFunctionUrl` (`FunctionUrlAuthType: AWS_IAM`) and `lambda:InvokeFunction`
+  (`InvokedViaFunctionUrl: true`);
+- for `invoke`, per-invoker grants of `lambda:InvokeFunction`, and no URL.
+
+A template rule requires `InvokeProducer` with `IngressMode=invoke` and requires it to be
+empty with `function-url`. To offer direct `Invoke` as well, deploy a second stack with
+`IngressMode=invoke`, its own `AllowedInvokerPrincipalArns` and `InvokeProducer`, and set
+`ExistingChannelArn` to the first stack's `ChannelArn` output. The second stack then creates
+no event data store or channel, so both functions write to the same store. CloudTrail allows
+at most one channel per source. For a URL stack, apply the
+[direct-invoke Deny](#iam-model) after deployment.
 
 The template refuses regions other than `ap-southeast-2` and `ap-southeast-4` unless you set
 `EnforceAustralianRegion=false`.
@@ -349,7 +401,11 @@ WHERE eventData.eventName = 'sensitive_data_detected'
   `additionalEventData`, or 28 kB without `attributes`.
 - CloudTrail Lake does not document cross-request deduplication on `id`. Retries can store
   duplicates, so deduplicate on `eventData.uid`.
-- Direct `Invoke` has a single producer identity (see the IAM model).
+- Direct `Invoke` has a single producer identity, and only in an `invoke` deployment (see
+  the IAM model).
+- A URL function can be invoked directly by same-account principals with identity-policy
+  `lambda:InvokeFunction`, and they can then assert any mapped producer. Close this with the
+  shipped SCP or permissions-boundary Deny (see the IAM model).
 - Redaction runs inline on the invocation's CPU. Size `MemorySize` for your largest payloads.
 - Linux arm64 cross builds were not run in the Bower development environment for this change
   (no `aarch64-unknown-linux-gnu` standard library or cargo-lambda installed). Build with

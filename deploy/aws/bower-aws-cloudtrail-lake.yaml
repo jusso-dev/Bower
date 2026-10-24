@@ -7,7 +7,13 @@ Description: >-
   and writes the selected, redacted events to an AWS CloudTrail Lake event data store
   through a custom integration channel. The function authenticates only with its
   execution role (cloudtrail-data:PutAuditEvents on this channel). No keys are stored.
-  Deploy with change sets; see docs/deployment/aws-lambda-cloudtrail-lake.md.
+  One stack serves one ingress (function-url or invoke); deploy two stacks for both.
+  RESIDUAL RISK (function-url): Lambda resource policies only Allow, so any principal
+  that holds lambda:InvokeFunction on this function through an identity policy (same
+  account) can invoke it directly with a URL-shaped payload and assert any mapped
+  producer. Apply deploy/aws/policies/bower-lambda-deny-direct-invoke-scp.json as an
+  SCP or permissions-boundary Deny. Deploy with change sets; see
+  docs/deployment/aws-lambda-cloudtrail-lake.md.
 
 Parameters:
   CodeS3Bucket:
@@ -26,23 +32,32 @@ Parameters:
     Type: CommaDelimitedList
     AllowedPattern: "^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/[A-Za-z0-9+=,.@_/-]+$"
     Description: >-
-      IAM role or user ARNs allowed to call the function (Function URL and/or direct
-      Invoke, per IngressMode). Each also needs an identity policy allowing
-      lambda:InvokeFunctionUrl and lambda:InvokeFunction on the function, and a producer
-      entry in the packaged principals file.
+      IAM role or user ARNs allowed to call the function: through the Function URL
+      (function-url; each needs lambda:InvokeFunctionUrl and lambda:InvokeFunction in its
+      identity policy when cross-account, and a principals file entry) or by direct
+      Invoke (invoke; all attributed to InvokeProducer).
   IngressMode:
     Type: String
     Default: function-url
-    AllowedValues: [function-url, invoke, both]
+    AllowedValues: [function-url, invoke]
     Description: >-
-      function-url (default) grants URL access only (InvokeFunction restricted to calls
-      through the URL). invoke grants direct Invoke only and creates no URL. both does
-      both; direct invokers can then present any payload, including a URL-shaped one.
+      function-url (default) creates an AWS_IAM Function URL and grants InvokeFunction
+      only for calls through the URL (lambda:InvokedViaFunctionUrl). invoke creates no
+      URL, grants direct Invoke and attributes every payload to InvokeProducer (the
+      handler refuses URL-shaped payloads). There is no mixed mode: use two stacks.
   InvokeProducer:
     Type: String
     Default: ""
     AllowedPattern: "^$|^[^\\s]{1,64}$"
-    Description: Producer id for direct Invoke payloads (Lambda passes no caller identity). Empty denies direct invokes.
+    Description: Producer id for direct Invoke payloads (Lambda passes no caller identity). Required with IngressMode=invoke, must be empty with function-url.
+  ExistingChannelArn:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^arn:aws[a-z-]*:cloudtrail:[a-z0-9-]+:[0-9]{12}:channel/[A-Za-z0-9-]+$"
+    Description: >-
+      Optional. ChannelArn output of another Bower CloudTrail Lake stack in this account
+      (for example the function-url stack, when this is the separate invoke stack). The
+      stack then creates no event data store or channel and writes to that channel.
   RetentionDays:
     Type: Number
     Default: 366
@@ -119,6 +134,16 @@ Rules:
     Assertions:
       - Assert: !Contains [["ap-southeast-2", "ap-southeast-4"], !Ref "AWS::Region"]
         AssertDescription: Deploy in ap-southeast-2 or ap-southeast-4, or set EnforceAustralianRegion=false.
+  InvokeProducerMatchesIngress:
+    Assertions:
+      - Assert: !Or
+          - !And
+            - !Equals [!Ref IngressMode, invoke]
+            - !Not [!Equals [!Ref InvokeProducer, ""]]
+          - !And
+            - !Equals [!Ref IngressMode, function-url]
+            - !Equals [!Ref InvokeProducer, ""]
+        AssertDescription: IngressMode=invoke requires InvokeProducer; IngressMode=function-url requires it to be empty.
   HmacKeyKms:
     RuleCondition: !Not [!Equals [!Ref PrivacyHmacKeySecretKmsKeyArn, ""]]
     Assertions:
@@ -126,8 +151,9 @@ Rules:
         AssertDescription: PrivacyHmacKeySecretKmsKeyArn requires PrivacyHmacKeySecretArn.
 
 Conditions:
-  UrlIngress: !Not [!Equals [!Ref IngressMode, invoke]]
-  DirectIngress: !Not [!Equals [!Ref IngressMode, function-url]]
+  CreateLake: !Equals [!Ref ExistingChannelArn, ""]
+  UrlIngress: !Equals [!Ref IngressMode, function-url]
+  DirectIngress: !Equals [!Ref IngressMode, invoke]
   HasCodeVersion: !Not [!Equals [!Ref CodeS3ObjectVersion, ""]]
   HasEventDataStoreKms: !Not [!Equals [!Ref EventDataStoreKmsKeyId, ""]]
   HasHmacSecret: !Not [!Equals [!Ref PrivacyHmacKeySecretArn, ""]]
@@ -137,6 +163,7 @@ Resources:
   # Security evidence outlives the stack: retained on delete and protected from termination.
   EventDataStore:
     Type: AWS::CloudTrail::EventDataStore
+    Condition: CreateLake
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
@@ -156,6 +183,7 @@ Resources:
 
   Channel:
     Type: AWS::CloudTrail::Channel
+    Condition: CreateLake
     Properties:
       Name: !Sub "${AWS::StackName}-bower"
       Source: Custom
@@ -187,7 +215,7 @@ Resources:
               - Sid: PutAuditEventsOnBowerChannel
                 Effect: Allow
                 Action: cloudtrail-data:PutAuditEvents
-                Resource: !GetAtt Channel.ChannelArn
+                Resource: !If [CreateLake, !GetAtt Channel.ChannelArn, !Ref ExistingChannelArn]
               - Sid: WriteOwnLogs
                 Effect: Allow
                 Action:
@@ -233,10 +261,10 @@ Resources:
         LogFormat: Text
       Environment:
         Variables:
-          BOWER_CLOUDTRAIL_CHANNEL_ARN: !GetAtt Channel.ChannelArn
+          BOWER_CLOUDTRAIL_CHANNEL_ARN: !If [CreateLake, !GetAtt Channel.ChannelArn, !Ref ExistingChannelArn]
           BOWER_LAMBDA_INGRESS: !Ref IngressMode
-          BOWER_LAMBDA_INVOKE_PRODUCER: !Ref InvokeProducer
-          BOWER_LAMBDA_PRINCIPALS_FILE: !Ref PrincipalsFile
+          BOWER_LAMBDA_INVOKE_PRODUCER: !If [DirectIngress, !Ref InvokeProducer, ""]
+          BOWER_LAMBDA_PRINCIPALS_FILE: !If [UrlIngress, !Ref PrincipalsFile, ""]
           BOWER_PRODUCER_SCOPES_FILE: !Ref ProducerScopesFile
           BOWER_POLICY_DIRECTORY: !Ref PolicyDirectory
           BOWER_PRIVACY_PROFILE: !Ref PrivacyProfilePath
@@ -253,8 +281,9 @@ Resources:
       InvokeMode: BUFFERED
 
   # One set of grants per allowed principal (AWS::LanguageExtensions Fn::ForEach).
-  # Function URLs need both lambda:InvokeFunctionUrl and lambda:InvokeFunction; the
-  # latter is limited to calls made through the URL unless direct Invoke is enabled.
+  # Function URLs need both lambda:InvokeFunctionUrl and lambda:InvokeFunction; for a
+  # URL stack the latter is limited to calls made through the URL. Resource policies
+  # cannot Deny, so same-account identity grants need the shipped SCP/boundary Deny.
   Fn::ForEach::InvokerGrants:
     - PrincipalArn
     - !Ref AllowedInvokerPrincipalArns
@@ -286,13 +315,18 @@ Resources:
 Outputs:
   FunctionArn:
     Value: !GetAtt Function.Arn
+  FunctionName:
+    Description: Replace BOWER_URL_FUNCTION_NAME in deploy/aws/policies/bower-lambda-deny-direct-invoke-scp.json with this (function-url stacks).
+    Value: !Ref Function
   FunctionUrl:
     Condition: UrlIngress
     Description: POST signed (SigV4, service lambda) requests to <url>v1/events.
     Value: !GetAtt FunctionUrl.FunctionUrl
   ChannelArn:
-    Value: !GetAtt Channel.ChannelArn
+    Description: Pass as ExistingChannelArn to a second (invoke) stack in this account.
+    Value: !If [CreateLake, !GetAtt Channel.ChannelArn, !Ref ExistingChannelArn]
   EventDataStoreArn:
+    Condition: CreateLake
     Description: Query with CloudTrail Lake SQL (FROM <event data store id>).
     Value: !GetAtt EventDataStore.EventDataStoreArn
   ExecutionRoleArn:
