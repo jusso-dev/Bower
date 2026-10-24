@@ -59,7 +59,8 @@ impl FakeSink {
         self.calls().into_iter().flatten().collect()
     }
 
-    /// Refuse the audit event of this Bower event id with `code`.
+    /// Refuse the audit event of this Bower event id with `code` (`prefix*` matches a prefix,
+    /// for example `privacy-*` for every privacy alert).
     pub fn refuse(&self, bower_event_id: &str, code: &str) {
         self.0
             .lock()
@@ -95,7 +96,14 @@ impl AuditSink for FakeSink {
         }
         let mut result = PutResult::default();
         for record in records {
-            match state.refusals.get(&record.bower_event_id) {
+            let refusal = state.refusals.iter().find_map(|(key, code)| {
+                let matches = match key.strip_suffix('*') {
+                    Some(prefix) => record.bower_event_id.starts_with(prefix),
+                    None => *key == record.bower_event_id,
+                };
+                matches.then_some(code)
+            });
+            match refusal {
                 Some(code) => result.failed.push(RefusedEvent {
                     id: record.id.clone(),
                     error_code: code.clone(),
@@ -117,6 +125,8 @@ pub struct Config {
     pub hmac_key: Option<Vec<u8>>,
     pub policy_directory: Option<PathBuf>,
     pub single_trust_domain: bool,
+    /// Extra environment variables (for init failure tests).
+    pub extra: Vec<(&'static str, &'static str)>,
 }
 
 impl Default for Config {
@@ -128,6 +138,7 @@ impl Default for Config {
             hmac_key: None,
             policy_directory: None,
             single_trust_domain: false,
+            extra: Vec::new(),
         }
     }
 }
@@ -161,7 +172,6 @@ pub fn try_handler(sink: &FakeSink, config: Config) -> Result<Handler<FakeSink>,
     let mut env: HashMap<&str, String> = HashMap::from([
         ("BOWER_CLOUDTRAIL_CHANNEL_ARN", CHANNEL.to_string()),
         ("BOWER_LAMBDA_INGRESS", config.ingress.to_string()),
-        ("BOWER_LAMBDA_PRINCIPALS_FILE", path(&principals)),
         (
             "BOWER_POLICY_DIRECTORY",
             path(
@@ -172,6 +182,10 @@ pub fn try_handler(sink: &FakeSink, config: Config) -> Result<Handler<FakeSink>,
         ),
         ("BOWER_COLLECTOR_ID", "lambda-test".to_string()),
     ]);
+    // The principal map belongs to Function URL deployments only.
+    if config.ingress != "invoke" {
+        env.insert("BOWER_LAMBDA_PRINCIPALS_FILE", path(&principals));
+    }
     if config.single_trust_domain {
         env.insert("BOWER_SINGLE_TRUST_DOMAIN", "true".into());
     } else {
@@ -182,6 +196,9 @@ pub fn try_handler(sink: &FakeSink, config: Config) -> Result<Handler<FakeSink>,
     }
     if let Some(profile) = &config.privacy_profile {
         env.insert("BOWER_PRIVACY_PROFILE", path(profile));
+    }
+    for (name, value) in &config.extra {
+        env.insert(name, (*value).to_string());
     }
     let settings = LambdaSettings::from_environment(|name| env.get(name).cloned())?;
     Handler::new(&settings, config.hmac_key.as_deref(), sink.clone(), clock())

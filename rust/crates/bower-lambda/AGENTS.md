@@ -17,3 +17,8 @@ Function URL or direct Invoke, the collector pipeline, delivery to CloudTrail La
 - Handler logic stays AWS-free and tested through the `AuditSink` fake; `aws.rs` is
   the only module that talks to AWS.
 - Never deploy from tests; lint the template with `cfn-lint`.
+- One ingress per deployment (`function-url` or `invoke`); never reintroduce a mixed
+  mode. URL-shaped direct payloads are indistinguishable from URL events, so URL
+  functions rely on IAM (resource policy plus `deploy/aws/policies/` Deny).
+- An element succeeds only when every required audit record (event and privacy
+  alerts) was accepted; duplicates inherit their original's full outcome.

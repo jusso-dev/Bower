@@ -12,16 +12,19 @@ use std::path::PathBuf;
 use bower_collector::CollectorSettings;
 use sha2::{Digest, Sha256};
 
-/// Which invocation paths are accepted.
+/// The one invocation path a deployment accepts. URL and direct-Invoke ingress are
+/// separate deployments (separate functions or stacks), never one function serving
+/// both: a direct invoker of a URL function could otherwise present a URL-shaped
+/// payload with any caller ARN.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Ingress {
-    /// Only Function URL events (`AuthType: AWS_IAM`). Direct payloads are refused.
+    /// Only Function URL events (`AuthType: AWS_IAM`). Direct payloads that are not
+    /// URL-shaped are refused; URL-shaped direct payloads cannot be told apart, so
+    /// IAM must keep direct invokers out (resource policy plus the shipped Deny).
     FunctionUrl,
-    /// Only direct `Invoke` payloads. Function URL shaped events are refused, so a
-    /// direct invoker cannot forge a URL caller identity.
+    /// Only direct `Invoke` payloads, attributed to `BOWER_LAMBDA_INVOKE_PRODUCER`.
+    /// Function URL shaped events are refused, so an invoker cannot forge a caller.
     Invoke,
-    /// Both. Direct invokers are trusted not to forge URL events (see the docs).
-    Both,
 }
 
 impl Ingress {
@@ -32,9 +35,12 @@ impl Ingress {
         {
             None | Some("") | Some("function-url") => Ok(Self::FunctionUrl),
             Some("invoke") => Ok(Self::Invoke),
-            Some("both") => Ok(Self::Both),
+            Some("both") => Err(SettingsError::new(
+                "BOWER_LAMBDA_INGRESS=both is not supported; deploy separate function-url and \
+                 invoke functions.",
+            )),
             Some(_) => Err(SettingsError::new(
-                "BOWER_LAMBDA_INGRESS must be function-url, invoke or both.",
+                "BOWER_LAMBDA_INGRESS must be function-url or invoke.",
             )),
         }
     }
@@ -43,16 +49,15 @@ impl Ingress {
         match self {
             Self::FunctionUrl => "function-url",
             Self::Invoke => "invoke",
-            Self::Both => "both",
         }
     }
 
     pub fn allows_function_url(self) -> bool {
-        matches!(self, Self::FunctionUrl | Self::Both)
+        self == Self::FunctionUrl
     }
 
     pub fn allows_invoke(self) -> bool {
-        matches!(self, Self::Invoke | Self::Both)
+        self == Self::Invoke
     }
 }
 
@@ -122,6 +127,25 @@ impl LambdaSettings {
                 )));
             }
         }
+        // Serverless hosts have no managed profile sync: only a packaged, reviewed
+        // profile (or the default) is used, so refuse anything else loudly.
+        if let Some(source) = value("BOWER_PRIVACY_PROFILE_SOURCE") {
+            match source.trim().to_ascii_lowercase().as_str() {
+                "local" => {}
+                "management" => {
+                    return Err(SettingsError::new(
+                        "BOWER_PRIVACY_PROFILE_SOURCE=management is not supported by the AWS \
+                         Lambda host; package a reviewed privacy profile.",
+                    ));
+                }
+                _ => {
+                    return Err(SettingsError::new(
+                        "BOWER_PRIVACY_PROFILE_SOURCE must be local for the AWS Lambda host; \
+                         package a reviewed privacy profile.",
+                    ));
+                }
+            }
+        }
         if value("BOWER_PRIVACY_HMAC_KEY_FILE").is_some() {
             return Err(SettingsError::new(
                 "BOWER_PRIVACY_HMAC_KEY_FILE is not supported by the Lambda host; a key file would be \
@@ -165,6 +189,33 @@ impl LambdaSettings {
             ));
         }
 
+        let ingress = Ingress::parse(read("BOWER_LAMBDA_INGRESS").as_deref())?;
+        let principals_file = value("BOWER_LAMBDA_PRINCIPALS_FILE").map(PathBuf::from);
+        match ingress {
+            Ingress::FunctionUrl if invoke_producer.is_some() => {
+                return Err(SettingsError::new(
+                    "BOWER_LAMBDA_INVOKE_PRODUCER is only used with BOWER_LAMBDA_INGRESS=invoke; \
+                     a Function URL deployment never accepts direct invokes.",
+                ));
+            }
+            Ingress::FunctionUrl if principals_file.is_none() => {
+                return Err(SettingsError::new(
+                    "BOWER_LAMBDA_PRINCIPALS_FILE is required with BOWER_LAMBDA_INGRESS=function-url.",
+                ));
+            }
+            Ingress::Invoke if invoke_producer.is_none() => {
+                return Err(SettingsError::new(
+                    "BOWER_LAMBDA_INVOKE_PRODUCER is required with BOWER_LAMBDA_INGRESS=invoke.",
+                ));
+            }
+            Ingress::Invoke if principals_file.is_some() => {
+                return Err(SettingsError::new(
+                    "BOWER_LAMBDA_PRINCIPALS_FILE is only used with BOWER_LAMBDA_INGRESS=function-url.",
+                ));
+            }
+            _ => {}
+        }
+
         let privacy_hmac_key_secret_arn =
             value("BOWER_PRIVACY_HMAC_KEY_SECRET_ARN").map(|v| v.trim().to_string());
         if let Some(arn) = &privacy_hmac_key_secret_arn
@@ -195,9 +246,9 @@ impl LambdaSettings {
             channel_arn,
             recipient_account_id,
             external_id,
-            ingress: Ingress::parse(read("BOWER_LAMBDA_INGRESS").as_deref())?,
+            ingress,
             invoke_producer,
-            principals_file: value("BOWER_LAMBDA_PRINCIPALS_FILE").map(PathBuf::from),
+            principals_file,
             producer_scopes_file,
             single_trust_domain,
             policy_directory: value("BOWER_POLICY_DIRECTORY")
@@ -368,6 +419,7 @@ mod tests {
     fn reads_defaults_and_derives_recipient_account() {
         let settings = LambdaSettings::from_environment(read(&[
             ("BOWER_CLOUDTRAIL_CHANNEL_ARN", CHANNEL),
+            ("BOWER_LAMBDA_PRINCIPALS_FILE", "/var/task/principals.json"),
             ("AWS_LAMBDA_FUNCTION_NAME", "bower-ingest"),
         ]))
         .unwrap();
@@ -446,15 +498,79 @@ mod tests {
                 "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:bower/privacy-hmac-AbCdEf",
             ),
             ("BOWER_CLOUDTRAIL_EXTERNAL_ID", "bower-prod:2026"),
-            ("BOWER_LAMBDA_INGRESS", "Both"),
+            ("BOWER_LAMBDA_INGRESS", "Invoke"),
             ("BOWER_LAMBDA_INVOKE_PRODUCER", "batch-forwarder"),
+            ("BOWER_PRIVACY_PROFILE_SOURCE", "Local"),
         ]))
         .unwrap();
-        assert_eq!(settings.ingress, Ingress::Both);
+        assert_eq!(settings.ingress, Ingress::Invoke);
         assert!(settings.privacy_hmac_key_secret_arn.is_some());
         assert_eq!(settings.external_id.as_deref(), Some("bower-prod:2026"));
         let bundle = settings.bundle_settings();
         assert_eq!(bundle.privacy_hmac_key_id, "k1");
         assert!(bundle.privacy_hmac_key_file.is_none());
+    }
+
+    /// Council review B1 and B4: mixed ingress, mismatched ingress settings and a
+    /// managed privacy profile source never start.
+    #[test]
+    fn rejects_mixed_ingress_and_managed_profiles() {
+        let principals = ("BOWER_LAMBDA_PRINCIPALS_FILE", "/var/task/principals.json");
+        let producer = ("BOWER_LAMBDA_INVOKE_PRODUCER", "batch");
+        let channel = ("BOWER_CLOUDTRAIL_CHANNEL_ARN", CHANNEL);
+        let cases: &[(&[(&str, &str)], &str)] = &[
+            (
+                &[
+                    channel,
+                    ("BOWER_LAMBDA_INGRESS", "both"),
+                    principals,
+                    producer,
+                ],
+                "BOWER_LAMBDA_INGRESS=both is not supported",
+            ),
+            (
+                &[channel, principals, producer],
+                "only used with BOWER_LAMBDA_INGRESS=invoke",
+            ),
+            (&[channel], "BOWER_LAMBDA_PRINCIPALS_FILE is required"),
+            (
+                &[channel, ("BOWER_LAMBDA_INGRESS", "invoke")],
+                "BOWER_LAMBDA_INVOKE_PRODUCER is required",
+            ),
+            (
+                &[
+                    channel,
+                    ("BOWER_LAMBDA_INGRESS", "invoke"),
+                    producer,
+                    principals,
+                ],
+                "only used with BOWER_LAMBDA_INGRESS=function-url",
+            ),
+            (
+                &[
+                    channel,
+                    principals,
+                    ("BOWER_PRIVACY_PROFILE_SOURCE", "management"),
+                ],
+                "BOWER_PRIVACY_PROFILE_SOURCE=management is not supported by the AWS Lambda host; \
+                 package a reviewed privacy profile.",
+            ),
+            (
+                &[
+                    channel,
+                    principals,
+                    ("BOWER_PRIVACY_PROFILE_SOURCE", "Management "),
+                ],
+                "BOWER_PRIVACY_PROFILE_SOURCE=management is not supported",
+            ),
+            (
+                &[channel, principals, ("BOWER_PRIVACY_PROFILE_SOURCE", "s3")],
+                "BOWER_PRIVACY_PROFILE_SOURCE must be local",
+            ),
+        ];
+        for (environment, expected) in cases {
+            let error = LambdaSettings::from_environment(read(environment)).unwrap_err();
+            assert!(error.0.contains(expected), "{} / {}", error.0, expected);
+        }
     }
 }

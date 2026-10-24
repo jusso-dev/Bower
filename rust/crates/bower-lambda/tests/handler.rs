@@ -421,15 +421,20 @@ async fn ingress_modes_block_forged_url_events_and_unconfigured_invokes() {
         "aws-lambda-invoke:orders"
     );
 
-    // Invoke allowed but no producer configured: denied.
-    let no_producer = handler(
-        &FakeSink::default(),
+    // Invoke mode without a producer, and the mixed `both` mode, fail at init.
+    for config in [
         Config {
-            ingress: "both",
+            ingress: "invoke",
             ..Config::default()
         },
-    );
-    assert_eq!(no_producer.invoke(&event).await.status, 403);
+        Config {
+            ingress: "both",
+            invoke_producer: Some("orders"),
+            ..Config::default()
+        },
+    ] {
+        assert!(try_handler(&FakeSink::default(), config).is_err());
+    }
 
     // Function URL responses are Lambda URL response objects.
     let url = url_handler(&FakeSink::default())
@@ -520,4 +525,245 @@ fn missing_policy_directory_fails_closed_at_init() {
     .err()
     .expect("init must fail");
     assert!(error.0.contains("Policy directory does not exist"));
+}
+
+// ------------------------------------------------------------------ council review regressions
+
+/// B1 (Codex 1 / Claude 2): `IngressMode=both` let a direct invoker whose producer has no
+/// scope send a URL-shaped payload claiming another mapped producer's ARN. The mixed mode
+/// no longer exists.
+#[test]
+fn mixed_ingress_cannot_be_configured() {
+    let error = try_handler(
+        &FakeSink::default(),
+        Config {
+            ingress: "both",
+            invoke_producer: Some("ci"),
+            ..Config::default()
+        },
+    )
+    .err()
+    .expect("ingress both must not start");
+    assert!(error.0.contains("BOWER_LAMBDA_INGRESS"), "{}", error.0);
+}
+
+/// B1: trust boundary, pinned. The handler cannot tell a Function URL event from a
+/// URL-shaped direct `Invoke` payload, so in function-url mode it trusts the caller
+/// ARN in it: only IAM (the resource policy plus the shipped SCP / permissions
+/// boundary Deny) keeps direct invokers out. Invoke mode refuses the same payload.
+#[tokio::test]
+async fn url_shaped_direct_payload_is_trusted_in_function_url_mode_and_refused_in_invoke_mode() {
+    let event = authentication_failure("evt-trust").to_string();
+    let forged = url_event(Some(ROLE_SESSION), &event);
+
+    let sink = FakeSink::default();
+    let url_mode = url_handler(&sink).invoke(&forged).await;
+    assert_eq!(url_mode.status, 202, "{}", url_mode.body);
+    assert_eq!(sink.sent().len(), 1);
+
+    let sink = FakeSink::default();
+    let invoke_mode = handler(
+        &sink,
+        Config {
+            ingress: "invoke",
+            invoke_producer: Some("orders"),
+            ..Config::default()
+        },
+    )
+    .invoke(&forged)
+    .await;
+    assert_eq!(invoke_mode.status, 403);
+    assert!(sink.calls().is_empty());
+}
+
+fn secret_event(event_id: &str) -> Value {
+    let mut event = authentication_failure(event_id);
+    event["attributes"] = json!({"dbPassword": "never-send-this"});
+    event
+}
+
+/// B2 (Codex 4): source accepted, privacy alert refused for good (`InvalidData`)
+/// used to answer 202 queued=true. Every required record must be accepted.
+#[tokio::test]
+async fn permanently_refused_privacy_alert_prevents_success() {
+    let sink = FakeSink::default();
+    sink.refuse("privacy-*", "InvalidData");
+    let invocation = url_handler(&sink)
+        .invoke(&url_event(
+            Some(ROLE_SESSION),
+            &secret_event("evt-b2").to_string(),
+        ))
+        .await;
+
+    assert_eq!(invocation.status, 422, "{}", invocation.body);
+    let body: Value = serde_json::from_str(&invocation.body).unwrap();
+    assert_eq!(body["queued"], false);
+    assert_eq!(body["retryable"], false);
+    let statuses: Vec<&str> = body["delivery"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|report| report["status"].as_str().unwrap())
+        .collect();
+    assert_eq!(statuses, ["accepted", "refused"]);
+}
+
+/// B2: a retryable record still wins over a permanent refusal so the element converges
+/// (retry until nothing is retryable, then the definitive answer).
+#[tokio::test]
+async fn retryable_source_with_refused_alert_is_retried_first() {
+    let sink = FakeSink::default();
+    sink.refuse("evt-b2r", "Throttling");
+    sink.refuse("privacy-*", "InvalidData");
+    let handler = url_handler(&sink);
+    let first = handler
+        .invoke(&url_event(
+            Some(ROLE_SESSION),
+            &secret_event("evt-b2r").to_string(),
+        ))
+        .await;
+    assert_eq!(first.status, 503, "{}", first.body);
+    sink.clear_refusals();
+    sink.refuse("privacy-*", "InvalidData");
+    let second = handler
+        .invoke(&url_event(
+            Some(ROLE_SESSION),
+            &secret_event("evt-b2r").to_string(),
+        ))
+        .await;
+    assert_eq!(second.status, 422, "{}", second.body);
+}
+
+fn batch_results(body: &str) -> (Vec<Value>, Value) {
+    let response: Value = serde_json::from_str(body).unwrap();
+    (
+        response["results"].as_array().unwrap().clone(),
+        response["retryIndexes"].clone(),
+    )
+}
+
+/// B3 (Codex 5): `[event, event]` with the alert throttled answered `[503, 200]` and
+/// `retryIndexes: [0]`. A duplicate inherits the original's complete outcome.
+#[tokio::test]
+async fn same_id_duplicate_inherits_throttled_alert() {
+    let sink = FakeSink::default();
+    sink.refuse("privacy-*", "Throttling");
+    let event = secret_event("evt-b3");
+    let invocation = url_handler(&sink)
+        .invoke(&url_event(
+            Some(ROLE_SESSION),
+            &format!("[{event},{event}]"),
+        ))
+        .await;
+
+    assert_eq!(invocation.status, 503);
+    let (results, retry) = batch_results(&invocation.body);
+    assert_eq!(results[0]["status"], 503);
+    assert_eq!(results[1]["status"], 503, "{}", results[1]);
+    assert_eq!(results[1]["duplicate"], true);
+    assert_eq!(results[1]["queued"], false);
+    assert_eq!(results[1]["retryable"], true);
+    assert_eq!(retry, json!([0, 1]));
+}
+
+/// B3: same for a fingerprint alias (same source identity and content, another eventId)
+/// against permanent refusal and against a local mapping failure.
+#[tokio::test]
+async fn fingerprint_alias_duplicate_inherits_refusal_and_mapping_failure() {
+    let alias = |id: &str, original: Value| {
+        let mut event = original;
+        event["eventId"] = json!(id);
+        event
+    };
+
+    // Alert refused for good.
+    let sink = FakeSink::default();
+    sink.refuse("privacy-*", "InvalidData");
+    let original = secret_event("evt-b3-a");
+    let body = format!("[{original},{}]", alias("evt-b3-b", original.clone()));
+    let invocation = url_handler(&sink)
+        .invoke(&url_event(Some(ROLE_SESSION), &body))
+        .await;
+    let (results, _) = batch_results(&invocation.body);
+    assert_eq!(results[0]["status"], 422, "{}", results[0]);
+    assert_eq!(results[1]["duplicate"], true, "{}", results[1]);
+    assert_eq!(results[1]["status"], 422, "{}", results[1]);
+    assert_eq!(results[1]["queued"], false);
+
+    // Source cannot be mapped (labels larger than additionalEventData allows).
+    let sink = FakeSink::default();
+    let mut huge = authentication_failure("evt-b3-c");
+    huge["labels"] = Value::Object(
+        (0..400)
+            .map(|index| (format!("label{index}"), json!("x".repeat(90))))
+            .collect(),
+    );
+    let body = format!("[{huge},{}]", alias("evt-b3-d", huge.clone()));
+    let invocation = url_handler(&sink)
+        .invoke(&url_event(Some(ROLE_SESSION), &body))
+        .await;
+    let (results, _) = batch_results(&invocation.body);
+    assert_eq!(results[0]["status"], 422, "{}", results[0]);
+    assert_eq!(results[1]["duplicate"], true, "{}", results[1]);
+    assert_eq!(results[1]["status"], 422, "{}", results[1]);
+    assert_eq!(
+        results[1]["delivery"][0]["errorCode"],
+        "cloudtrail-lake-event-too-large"
+    );
+    assert!(sink.calls().is_empty());
+
+    // And a fully accepted original still acknowledges its alias as a duplicate.
+    let sink = FakeSink::default();
+    let original = secret_event("evt-b3-e");
+    let body = format!("[{original},{}]", alias("evt-b3-f", original.clone()));
+    let invocation = url_handler(&sink)
+        .invoke(&url_event(Some(ROLE_SESSION), &body))
+        .await;
+    let (results, retry) = batch_results(&invocation.body);
+    assert_eq!(results[0]["status"], 202);
+    assert_eq!(results[1]["status"], 200, "{}", results[1]);
+    assert_eq!(retry, json!([]));
+    // Original source and alert, plus the alias's own alert (its id derives from the
+    // alias eventId), exactly as the collector would queue them.
+    assert_eq!(sink.sent().len(), 3);
+}
+
+/// B4 (Claude 9): serverless hosts cannot use managed privacy profiles; refuse at init
+/// instead of silently using the packaged or default profile.
+#[test]
+fn managed_privacy_profile_source_fails_at_init() {
+    let error = try_handler(
+        &FakeSink::default(),
+        Config {
+            extra: vec![("BOWER_PRIVACY_PROFILE_SOURCE", "management")],
+            ..Config::default()
+        },
+    )
+    .err()
+    .expect("management profile source must not start");
+    assert_eq!(
+        error.0,
+        "BOWER_PRIVACY_PROFILE_SOURCE=management is not supported by the AWS Lambda host; \
+         package a reviewed privacy profile."
+    );
+    assert!(
+        try_handler(
+            &FakeSink::default(),
+            Config {
+                extra: vec![("BOWER_PRIVACY_PROFILE_SOURCE", "remote")],
+                ..Config::default()
+            },
+        )
+        .is_err()
+    );
+    assert!(
+        try_handler(
+            &FakeSink::default(),
+            Config {
+                extra: vec![("BOWER_PRIVACY_PROFILE_SOURCE", "local")],
+                ..Config::default()
+            },
+        )
+        .is_ok()
+    );
 }

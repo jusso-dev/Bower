@@ -228,6 +228,9 @@ enum Element {
 struct ProcessedElement {
     result: ProcessingResult,
     captured: Vec<QueuedEvent>,
+    /// For a duplicate: the event id of the original it matched (same id, or a
+    /// fingerprint alias with another id).
+    duplicate_of: Option<String>,
 }
 
 /// An audit record, or the local mapping failure code for a Bower event id.
@@ -414,10 +417,34 @@ impl<S: AuditSink> Handler<S> {
 
         let elements = self.process(producer, adapter, &candidates);
         let deliveries = self.deliver(&elements).await;
+        let own: Vec<Vec<DeliveryReport>> = elements
+            .iter()
+            .map(|(element, records)| own_reports(element, records, &deliveries))
+            .collect();
+        // Which element produced each captured Bower event (duplicates point here).
+        let mut owner: HashMap<&str, usize> = HashMap::new();
+        for (index, (element, _)) in elements.iter().enumerate() {
+            if let Element::Processed(processed) = element {
+                for queued in &processed.captured {
+                    owner.entry(queued.event_id.as_str()).or_insert(index);
+                }
+            }
+        }
+        let inherited: Vec<Option<Vec<DeliveryReport>>> = elements
+            .iter()
+            .map(|(element, _)| match element {
+                Element::Processed(processed) if processed.result.duplicate => {
+                    Some(inherited_reports(processed, &owner, &own))
+                }
+                _ => None,
+            })
+            .collect();
         let mut summary = Summary::default();
         let responses: Vec<(u16, EventResponse)> = elements
             .into_iter()
-            .map(|(element, records)| respond(element, &records, &deliveries, &mut summary))
+            .zip(own)
+            .zip(inherited)
+            .map(|(((element, _), own), inherited)| respond(element, own, inherited, &mut summary))
             .collect();
         info!(
             ingress = match kind {
@@ -500,10 +527,17 @@ impl<S: AuditSink> Handler<S> {
                         warn!(failure_type = "processing", "Event processing failed.");
                         // Drop anything a failed element managed to capture.
                         drop(store.take_new());
+                        drop(store.take_duplicates());
                         return (Element::Failed, Vec::new());
                     }
                 };
                 let captured = store.take_new();
+                let duplicate_of = store
+                    .take_duplicates()
+                    .into_iter()
+                    .find(|(candidate, _)| Some(candidate) == result.event_id.as_ref())
+                    .map(|(_, original)| original)
+                    .filter(|_| result.duplicate);
                 let records = captured
                     .iter()
                     .map(|queued| {
@@ -512,7 +546,11 @@ impl<S: AuditSink> Handler<S> {
                     })
                     .collect();
                 (
-                    Element::Processed(Box::new(ProcessedElement { result, captured })),
+                    Element::Processed(Box::new(ProcessedElement {
+                        result,
+                        captured,
+                        duplicate_of,
+                    })),
                     records,
                 )
             })
@@ -605,10 +643,89 @@ fn report(
     }
 }
 
-fn respond(
-    element: Element,
+/// Reports for the audit records an element itself produced (in capture order).
+fn own_reports(
+    element: &Element,
     records: &[MappedRecord],
     deliveries: &HashMap<String, Delivery>,
+) -> Vec<DeliveryReport> {
+    let Element::Processed(processed) = element else {
+        return Vec::new();
+    };
+    processed
+        .captured
+        .iter()
+        .zip(records)
+        .map(|(queued, record)| match record {
+            Ok(record) => report(
+                record.id.clone(),
+                record.bower_event_id.clone(),
+                &delivery_for(record, deliveries),
+                record.omitted_fields.clone(),
+            ),
+            Err((event_id, code)) => report(
+                audit::audit_id(event_id),
+                queued.event_id.clone(),
+                &Delivery::Refused((*code).to_string()),
+                Vec::new(),
+            ),
+        })
+        .collect()
+}
+
+/// A duplicate depends on everything its original required (the original event and
+/// every privacy alert). If the original's element is not known (it failed before its
+/// records were kept), the duplicate is retryable, never acknowledged.
+fn inherited_reports(
+    processed: &ProcessedElement,
+    owner: &HashMap<&str, usize>,
+    own: &[Vec<DeliveryReport>],
+) -> Vec<DeliveryReport> {
+    match processed
+        .duplicate_of
+        .as_deref()
+        .and_then(|original| owner.get(original))
+    {
+        Some(&index) => own[index].clone(),
+        None => {
+            let event_id = processed
+                .duplicate_of
+                .clone()
+                .or_else(|| processed.result.event_id.clone())
+                .unwrap_or_default();
+            vec![report(
+                audit::audit_id(&event_id),
+                event_id,
+                &Delivery::Retry("duplicate-original-not-delivered".into()),
+                Vec::new(),
+            )]
+        }
+    }
+}
+
+/// Aggregate over every required audit event: retry wins (the element can still
+/// converge), then any permanent refusal, then success.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Aggregate {
+    Accepted,
+    Retry,
+    Refused,
+}
+
+fn aggregate(reports: &[DeliveryReport]) -> Aggregate {
+    if reports.is_empty() || reports.iter().any(|report| report.status == "retry") {
+        Aggregate::Retry
+    } else if reports.iter().any(|report| report.status == "refused") {
+        Aggregate::Refused
+    } else {
+        Aggregate::Accepted
+    }
+}
+
+fn respond(
+    element: Element,
+    own: Vec<DeliveryReport>,
+    inherited: Option<Vec<DeliveryReport>>,
     summary: &mut Summary,
 ) -> (u16, EventResponse) {
     let empty = |status: u16, error: &'static str| EventResponse {
@@ -624,7 +741,7 @@ fn respond(
         retryable: status >= 500,
         delivery: Vec::new(),
     };
-    let (result, captured) = match element {
+    let result = match element {
         Element::Forbidden => {
             summary.rejected += 1;
             return (
@@ -636,7 +753,7 @@ fn respond(
             summary.retry += 1;
             return (500, empty(500, "Event processing failed."));
         }
-        Element::Processed(processed) => (processed.result, processed.captured),
+        Element::Processed(processed) => processed.result,
     };
 
     let accepted = matches!(
@@ -662,62 +779,50 @@ fn respond(
         status = 409;
     }
 
-    let mut delivery = Vec::new();
-    for (queued, record) in captured.iter().zip(records) {
-        match record {
-            Ok(record) => {
-                let outcome = delivery_for(record, deliveries);
-                delivery.push(report(
-                    record.id.clone(),
-                    record.bower_event_id.clone(),
-                    &outcome,
-                    record.omitted_fields.clone(),
-                ));
-            }
-            Err((event_id, code)) => delivery.push(report(
-                audit::audit_id(event_id),
-                queued.event_id.clone(),
-                &Delivery::Refused((*code).to_string()),
-                Vec::new(),
-            )),
+    // Required set: this element's own records plus, for a duplicate, the original's.
+    let mut delivery = own;
+    for report in inherited.into_iter().flatten() {
+        if !delivery
+            .iter()
+            .any(|existing| existing.audit_event_id == report.audit_event_id)
+        {
+            delivery.push(report);
         }
     }
-    // A duplicate inside one batch shares the delivery of the first copy.
-    if result.duplicate
-        && let Some(event_id) = &result.event_id
-    {
-        let id = audit::audit_id(event_id);
-        if let Some(outcome) = deliveries.get(&id) {
-            delivery.push(report(id, event_id.clone(), outcome, Vec::new()));
-        }
-    }
-
-    let source_event_id = result.event_id.clone().unwrap_or_default();
-    let source_outcome = delivery
-        .iter()
-        .find(|report| report.event_id == source_event_id)
-        .map(|report| report.status);
-    let any_retry = delivery.iter().any(|report| report.status == "retry");
     let mut reasons = result.reasons;
-    // Like the collector, a duplicate is not "queued" again.
-    let mut queued = accepted && !result.duplicate && source_outcome == Some("accepted");
-    if any_retry {
-        status = 503;
-        queued = false;
-        reasons.push("CloudTrail Lake did not accept every audit event; retry this event.".into());
-        summary.retry += 1;
-    } else if accepted && source_outcome == Some("refused") {
-        status = 422;
-        reasons.push("CloudTrail Lake refused the audit event.".into());
-        summary.refused += 1;
-    } else if accepted {
-        summary.accepted += 1;
+    let mut queued = false;
+    // A rejected or quarantined event only has privacy alerts to deliver; nothing
+    // to deliver at all is fine for it, but never for an accepted event.
+    let outcome = if delivery.is_empty() && !accepted {
+        Aggregate::Accepted
     } else {
-        summary.rejected += 1;
-    }
-    if accepted && source_outcome.is_none() && !any_retry {
-        // Accepted but nothing captured and no prior copy: never claim delivery.
-        queued = false;
+        aggregate(&delivery)
+    };
+    match outcome {
+        Aggregate::Retry => {
+            status = 503;
+            reasons.push(
+                "CloudTrail Lake did not accept every required audit event; retry this event."
+                    .into(),
+            );
+            summary.retry += 1;
+        }
+        Aggregate::Refused => {
+            if accepted {
+                status = 422;
+            }
+            reasons.push(
+                "CloudTrail Lake refused a required audit event (the event or its privacy alert)."
+                    .into(),
+            );
+            summary.refused += 1;
+        }
+        Aggregate::Accepted if accepted => {
+            // Like the collector, a duplicate is not "queued" again.
+            queued = !result.duplicate;
+            summary.accepted += 1;
+        }
+        Aggregate::Accepted => summary.rejected += 1,
     }
 
     (
@@ -741,4 +846,63 @@ fn respond(
             delivery,
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn delivery(status: &'static str) -> DeliveryReport {
+        DeliveryReport {
+            audit_event_id: status.into(),
+            event_id: status.into(),
+            status,
+            cloud_trail_event_id: None,
+            error_code: None,
+            omitted_fields: Vec::new(),
+        }
+    }
+
+    /// Council review B2: a local mapping failure of a privacy alert is a permanent
+    /// refusal of a required record, so the source's acceptance is not success.
+    #[test]
+    fn alert_mapping_failure_is_not_success() {
+        let result = ProcessingResult {
+            action: DecisionAction::RedactAndAccept,
+            event_id: Some("evt".into()),
+            queued: true,
+            duplicate: false,
+            reasons: Vec::new(),
+            policy_decision: None,
+            privacy_alert_event_id: Some("privacy-1".into()),
+        };
+        let element = Element::Processed(Box::new(ProcessedElement {
+            result,
+            captured: Vec::new(),
+            duplicate_of: None,
+        }));
+        let mut alert = report(
+            "privacy-1".into(),
+            "privacy-1".into(),
+            &Delivery::Refused("cloudtrail-lake-event-too-large".into()),
+            Vec::new(),
+        );
+        alert.audit_event_id = "privacy-1".into();
+        let mut summary = Summary::default();
+        let (status, response) = respond(
+            element,
+            vec![delivery("accepted"), alert],
+            None,
+            &mut summary,
+        );
+        assert_eq!(status, 422);
+        assert!(!response.queued);
+        assert!(!response.retryable);
+        assert_eq!(aggregate(&[delivery("accepted")]), Aggregate::Accepted);
+        assert_eq!(
+            aggregate(&[delivery("refused"), delivery("retry")]),
+            Aggregate::Retry
+        );
+        assert_eq!(aggregate(&[]), Aggregate::Retry);
+    }
 }

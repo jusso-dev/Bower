@@ -21,6 +21,10 @@ pub struct CaptureStore {
     events: Mutex<Vec<QueuedEvent>>,
     /// Index of the first event not yet returned by [`CaptureStore::take_new`].
     taken: Mutex<usize>,
+    /// `(duplicate candidate id, original event id)` since the last
+    /// [`CaptureStore::take_duplicates`], so a duplicate can inherit the original's
+    /// delivery outcome.
+    duplicates: Mutex<Vec<(String, String)>>,
 }
 
 fn unsupported<T>() -> StoreResult<T> {
@@ -47,6 +51,16 @@ impl CaptureStore {
         *taken = events.len();
         new
     }
+
+    /// Duplicate associations recorded since the previous call.
+    pub fn take_duplicates(&self) -> Vec<(String, String)> {
+        std::mem::take(
+            &mut *self
+                .duplicates
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+    }
 }
 
 impl DurableEventStore for CaptureStore {
@@ -56,7 +70,7 @@ impl DurableEventStore for CaptureStore {
 
     fn enqueue(&self, candidate: &QueuedEvent) -> StoreResult<EnqueueResult> {
         let mut events = self.lock();
-        let mut found = false;
+        let mut found: Option<String> = None;
         for existing in events.iter().filter(|existing| {
             existing.event_id == candidate.event_id || existing.fingerprint == candidate.fingerprint
         }) {
@@ -66,9 +80,13 @@ impl DurableEventStore for CaptureStore {
             {
                 return Err(StoreError::Invalid("event-identity-conflict".into()));
             }
-            found = true;
+            found.get_or_insert_with(|| existing.event_id.clone());
         }
-        if found {
+        if let Some(original) = found {
+            self.duplicates
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push((candidate.event_id.clone(), original));
             return Ok(EnqueueResult {
                 enqueued: false,
                 duplicate: true,
@@ -167,6 +185,13 @@ mod tests {
         ));
         // Same source identity and content under another event id: duplicate.
         assert!(store.enqueue(&event("b", "f1")).unwrap().duplicate);
+        assert_eq!(
+            store.take_duplicates(),
+            [
+                ("a".to_string(), "a".to_string()),
+                ("b".to_string(), "a".to_string())
+            ]
+        );
         let mut changed = event("b", "f1");
         changed.payload = r#"{"x":1}"#.into();
         assert!(matches!(
