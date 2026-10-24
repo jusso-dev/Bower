@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using Azure.Core;
+using Bower.Packs;
 using Bower.Redaction.Privacy;
 
 namespace Bower.Collector.Jobs;

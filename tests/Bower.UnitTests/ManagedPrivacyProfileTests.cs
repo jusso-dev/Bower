@@ -7,6 +7,7 @@ using Bower.Collector;
 using Bower.Collector.Jobs;
 using Bower.Integrity;
 using Bower.Jobs;
+using Bower.Packs;
 using Bower.Persistence;
 using Bower.Redaction.Privacy;
 using Microsoft.AspNetCore.Builder;
