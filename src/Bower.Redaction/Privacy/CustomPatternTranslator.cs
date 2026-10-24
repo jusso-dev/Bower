@@ -70,7 +70,8 @@ public static class CustomPatternReasons
     public const string UnsupportedEscape = "unsupported escape";
     public const string TrailingBackslash = "trailing backslash";
     public const string SupplementaryCharacter = "characters outside the Basic Multilingual Plane are not supported";
-    public const string ReservedCharacter = "character U+FFFF is not supported";
+    public const string ReservedCharacter = "characters U+FFFE and U+FFFF are not supported";
+    public const string AnchorWithWholeWord = "^ and $ are not supported with wholeWord";
 
     /// <summary>Every reason, in a stable order (documentation and parity tests).</summary>
     public static IReadOnlyList<string> All { get; } =
@@ -98,7 +99,8 @@ public static class CustomPatternReasons
         UnsupportedEscape,
         TrailingBackslash,
         SupplementaryCharacter,
-        ReservedCharacter
+        ReservedCharacter,
+        AnchorWithWholeWord
     ];
 }
 
@@ -121,11 +123,26 @@ public static class CustomPatternTranslator
     private const string Word = "0-9A-Z_a-z";
     private const string Space = "\\t\\n\\x0B\\f\\r ";
 
+    /// <summary>
+    /// Boundary sentinel for <c>wholeWord</c> patterns: the scanned text is wrapped in it, so the
+    /// boundary needs no anchors. Patterns can never match it (literal rejected, ranges end
+    /// before it and, with <c>wholeWord</c>, every negated class excludes it).
+    /// </summary>
+    public const char WholeWordSentinel = '\uFFFE';
+
     /// <exception cref="CustomPatternSyntaxException">The pattern uses unsupported syntax.</exception>
-    public static CustomPatternTranslation Translate(string pattern, bool ignoreCase)
+    public static CustomPatternTranslation Translate(string pattern, bool ignoreCase) =>
+        Translate(pattern, ignoreCase, wholeWord: false);
+
+    /// <summary>
+    /// With <paramref name="wholeWord"/>, negated classes and <c>.</c> also exclude
+    /// <see cref="WholeWordSentinel"/>, and <c>^</c>/<c>$</c> are rejected.
+    /// </summary>
+    /// <exception cref="CustomPatternSyntaxException">The pattern uses unsupported syntax.</exception>
+    public static CustomPatternTranslation Translate(string pattern, bool ignoreCase, bool wholeWord)
     {
         ArgumentNullException.ThrowIfNull(pattern);
-        Parser parser = new(pattern, ignoreCase);
+        Parser parser = new(pattern, ignoreCase, wholeWord);
         Piece piece = parser.ParseAlternation();
         if (!parser.AtEnd)
         {
@@ -149,8 +166,10 @@ public static class CustomPatternTranslator
     private static bool IsAsciiPunctuationOrSpace(char value) =>
         value is >= ' ' and <= '~' && !char.IsAsciiLetterOrDigit(value);
 
-    private sealed class Parser(string pattern, bool ignoreCase)
+    private sealed class Parser(string pattern, bool ignoreCase, bool wholeWord)
     {
+        private readonly string excluded = wholeWord ? WholeWordSentinel.ToString() : string.Empty;
+
         private int position;
 
         public int Position => position;
@@ -334,7 +353,9 @@ public static class CustomPatternTranslator
                     return ParseClass();
                 case '.':
                     position++;
-                    return new Piece("[^\\n]", 1, Nullable: false, Quantifiable: true);
+                    return Class($"[^\\n{excluded}]");
+                case '^' or '$' when wholeWord:
+                    throw new CustomPatternSyntaxException(start, CustomPatternReasons.AnchorWithWholeWord);
                 case '^':
                     position++;
                     return new Piece("\\A", 1, Nullable: true, Quantifiable: false);
@@ -405,15 +426,15 @@ public static class CustomPatternTranslator
                 case 'd':
                     return Class($"[{Digit}]");
                 case 'D':
-                    return Class($"[^{Digit}]");
+                    return Class($"[^{Digit}{excluded}]");
                 case 'w':
                     return Class($"[{Word}]");
                 case 'W':
-                    return Class($"[^{Word}]");
+                    return Class($"[^{Word}{excluded}]");
                 case 's':
                     return Class($"[{Space}]");
                 case 'S':
-                    return Class($"[^{Space}]");
+                    return Class($"[^{Space}{excluded}]");
                 case 't':
                     return Literal('\t');
                 case 'n':
@@ -456,7 +477,7 @@ public static class CustomPatternTranslator
                 throw new CustomPatternSyntaxException(start, CustomPatternReasons.SupplementaryCharacter);
             }
 
-            if (value == '\uFFFF')
+            if (value is '\uFFFE' or '\uFFFF')
             {
                 throw new CustomPatternSyntaxException(start, CustomPatternReasons.ReservedCharacter);
             }
@@ -490,7 +511,8 @@ public static class CustomPatternTranslator
             int open = position;
             position++;
             StringBuilder text = new("[");
-            if (Has() && Peek() == '^')
+            bool negated = Has() && Peek() == '^';
+            if (negated)
             {
                 text.Append('^');
                 position++;
@@ -562,6 +584,11 @@ public static class CustomPatternTranslator
                 {
                     AppendRange(text, low!.Value, low.Value);
                 }
+            }
+
+            if (negated)
+            {
+                text.Append(excluded);
             }
 
             text.Append(']');

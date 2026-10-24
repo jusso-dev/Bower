@@ -134,7 +134,7 @@ pub(crate) const INSIDE_PAIR: usize = usize::MAX;
 /// Stand-in for each UTF-16 surrogate of a supplementary character. Custom detector
 /// patterns can never contain it and character ranges never reach it, so like a .NET
 /// surrogate unit it only matches negated classes and `.`.
-const SURROGATE_STAND_IN: char = '\u{FFFF}';
+pub(crate) const SURROGATE_STAND_IN: char = '\u{FFFF}';
 
 /// Replaces each supplementary character by two [`SURROGATE_STAND_IN`]s and maps every
 /// haystack byte offset back to the text ([`INSIDE_PAIR`] between the two).
@@ -317,6 +317,12 @@ pub trait SensitiveDetector: Send + Sync {
 
     /// Scans `text` and appends matches.
     fn detect(&self, text: &ScanText<'_>, path: &str, matches: &mut Vec<DetectionMatch>);
+
+    /// A privacy profile's custom detector, which the engine bounds per event and never
+    /// lets claim spans when its action does not redact. Built-ins return `None`.
+    fn as_custom(&self) -> Option<&custom::CustomPatternDetector> {
+        None
+    }
 }
 
 /// Detector that decides whole JSON properties by field name (`IFieldNameDetector`).

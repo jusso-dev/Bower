@@ -360,7 +360,27 @@ let customProfileCases =
       + "  - id: custom.employee-id\n    description: Contoso employee numbers\n    pattern: 'EMP-\\d{6}'\n    wholeWord: true\n    action: mask\n    tests:\n      match: [EMP-123456, 'user EMP-000001 logged in']\n      noMatch: [EMP-12345]\n"
       + "  - id: custom.customer-ref\n    pattern: 'CUST-[A-Z]{2}\\d{4}'\n    ignoreCase: true\n    action: hmac\n    tests:\n      match: [cust-ab1234, CUST-ZZ0000]\n      noMatch: [CUST-A1234]\n"
       + "  - id: custom.ticket\n    pattern: '(?:INC|CHG)[0-9]{7}|^TKT-\\w+$'\n    action: Replace\n    tests:\n      match: [INC0012345, TKT-abc]\n      noMatch: [' TKT-abc', inc0012345]\n"
-      + "secretFieldNames: [sessionKey]\nfields:\n  - path: actor.username\n    action: hmac\n" ]
+      + "secretFieldNames: [sessionKey]\nfields:\n  - path: actor.username\n    action: hmac\n"
+      // Council round 1 (appended): allow rejected, wholeWord canonical form, unsupported characters.
+      header + customDetector "custom.d" "x" "allow" "" "[x]"
+      header + customDetector "custom.d" "x" "Allow" "" "[x]"
+      header + customDetector "custom.d" "x" "alert-only" "" "[x]"
+      header + customDetector "custom.d" emp "mask" "    wholeWord: true\n    ignoreCase: true\n" "[emp-123456]"
+      header + customDetector "custom.d" "TKN-[A-Z0-9]+?" "mask" "    wholeWord: true\n" "['issued TKN-ABC123 today']"
+      header + customDetector "custom.d" "ORD-\\d{4}|ORD-\\d{4}[A-Z]" "mask" "    wholeWord: true\n" "[ORD-1234X]\n      noMatch: [ORD-1234XY]"
+      header + customDetector "custom.d" "key=.{8}" "mask" "" "['key=s3cr3tk\U0001F600 rest']" ]
+    @ [ for code in [ 0x0; 0x8; 0xB; 0xC; 0xE; 0x1F; 0x7F; 0x80; 0x85; 0x9F; 0x2028; 0x2029 ] do
+          let c = string (char code)
+          yield header + "# comment " + c + "\n"
+          yield header + customDetector "custom.d" ("a" + c + "b") "mask" "" "[x]" ]
+    @ [ for scalar in [ "\"a\\x0Cb\""; "\"a\\Lb\""; "\"a\\Nb\""; "\"a\\Pb\""; "\"a\\0b\""; "\"a\\eb\""; "\"a\\x7Fb\""
+                        "\"\\uD83D\\uDE00\""; "\"\\udfff\""; "\"\\U0000DE00\""; "'\\uD800'"; "\"\\\\uD800\""
+                        "\"\\U0001F600x\""; "\"a\\tb\""; "\"a\\u00e9b\""; "\"\\uD7FF\\uE000\"" ] ->
+          header + "secretFieldNames: [" + scalar + "]\n" ]
+    @ [ header.Replace("\n", "\r\n") + "secretFieldNames: [ab]\r\n# tab\there\n"
+        header + "metadata:\n  id: t\n  version: 1\n  description: \"x\\x0Cy\"\n"
+        header + "detectors:\n  \"au.tfn\\L\": mask\n"
+        header + "fields:\n  - path: \"a\\Nb\"\n    action: mask\n" ]
 
 // ---------------------------------------------------------------- custom pattern translation (appended)
 let patternCorpus =
@@ -402,6 +422,22 @@ let patternVectors =
             dict [ "pattern", box pattern; "ignoreCase", box ignoreCase; "translation", box translation; "created", box created ] ]
 
 let reasonVector = List.ofSeq CustomPatternReasons.All
+
+// wholeWord translations (appended): negated classes exclude the sentinel, anchors rejected.
+let wholeWordPatternVectors =
+    [ for pattern in patternCorpus @ [ "x\uFFFE"; "[^a]"; "\\D\\W\\S."; "a$"; "(a|^b)" ] do
+        for ignoreCase in [ false; true ] ->
+            let translation: obj list =
+                try
+                    let t = CustomPatternTranslator.Translate(pattern, ignoreCase, true)
+                    [ box true; box t.CanonicalPattern; box t.Complexity; box t.MatchesEmpty ]
+                with :? CustomPatternSyntaxException as e -> [ box false; box e.Position; box e.Reason ]
+            let created =
+                try
+                    let d = CustomDetectorDefinition.Create("custom.t", pattern, PrivacyAction.Mask, ignoreCase, true)
+                    "ok:" + d.CanonicalPattern
+                with :? InvalidDataException as e -> e.Message
+            dict [ "pattern", box pattern; "ignoreCase", box ignoreCase; "translation", box translation; "created", box created ] ]
 
 // ---------------------------------------------------------------- custom detector engine (appended)
 let customEngineProfiles =
@@ -499,7 +535,71 @@ fields:
       match: [Abc]
 """
       "thirtytwo",
-      header + "customDetectors:\n" + String.Join("", [ for i in 0..31 -> sprintf "  - id: custom.rule-%d\n    pattern: 'R%02d-[A-Z0-9]{4,8}'\n    wholeWord: %b\n    ignoreCase: %b\n    action: mask\n    tests:\n      match: [R%02d-ABCD]\n" i i (i % 2 = 0) (i % 3 = 0) i ]) ]
+      header + "customDetectors:\n" + String.Join("", [ for i in 0..31 -> sprintf "  - id: custom.rule-%d\n    pattern: 'R%02d-[A-Z0-9]{4,8}'\n    wholeWord: %b\n    ignoreCase: %b\n    action: mask\n    tests:\n      match: [R%02d-ABCD]\n" i i (i % 2 = 0) (i % 3 = 0) i ])
+      // Council round 1 (appended).
+      "trace",
+      header + """customDetectors:
+  - id: custom.trace-line
+    pattern: 'trace: .+'
+    action: alert-only
+    tests:
+      match: ['trace: x']
+  - id: custom.employee-id
+    pattern: 'EMP-\d{6}'
+    wholeWord: true
+    action: mask
+    tests:
+      match: [EMP-123456]
+detectors:
+  id.email: mask
+"""
+      "wholeword",
+      header + """customDetectors:
+  - id: custom.token
+    pattern: 'TKN-[A-Z0-9]+?'
+    wholeWord: true
+    action: mask
+    tests:
+      match: ['issued TKN-ABC123 today']
+  - id: custom.order
+    pattern: 'ORD-\d{4}|ORD-\d{4}[A-Z]'
+    wholeWord: true
+    action: replace
+    tests:
+      match: [ORD-1234X]
+  - id: custom.dash
+    pattern: '-\d-'
+    wholeWord: true
+    action: remove
+    tests:
+      match: ['-1--2-']
+  - id: custom.short
+    pattern: 'E\d'
+    wholeWord: true
+    ignoreCase: true
+    action: sha256
+    tests:
+      match: ['e1 E2']
+"""
+      "widen",
+      header + """customDetectors:
+  - id: custom.key
+    pattern: 'key=.{8}'
+    action: replace
+    tests:
+      match: ['key=s3cr3tk😀 rest']
+  - id: custom.before
+    pattern: '[^a]b'
+    action: remove
+    tests:
+      match: [xb]
+  - id: custom.both
+    pattern: '[^a]{3}'
+    wholeWord: true
+    action: mask
+    tests:
+      match: [xyz]
+""" ]
 
 let loadedCustom =
     [ for (name, yaml) in customEngineProfiles -> name, yaml, PrivacyEngine(PrivacyProfileLoader.Load(yaml, Array.create 32 9uy, "kp").Policy) ]
@@ -513,7 +613,41 @@ let customJsonCases =
       """{"a":"P😀Q P😀😀Q PxQ","b":"R😀S R😀😀S RxyS","c":"x😀 😀y xy ay","d":"😀😀 ab😀 😀ab abc a😀c","e":"Z😀Z Z-Z aZ-Z","f":"日本😀語 中文","g":"A😀","h":"Ab😀"}"""
       """{"a":"PxQ","emoji":"😀😀😀😀😀😀","mixed":"EMP-123456😀EMP-654321"}"""
       """{"r":"R01-ABCD r00-abcd R03-abcd R02-ABCD9 xR04-ABCD R31-ABCDEFGH R30-abcdefgh"}"""
-      """{"none":"nothing to see","num":42,"t":true}""" ]
+      """{"none":"nothing to see","num":42,"t":true}"""
+      // Council round 1 (appended).
+      """{"msg":"trace: card 4111111111111111 key AKIAIOSFODNN7EXAMPLE mail alice@example.test EMP-123456"}"""
+      """{"a":"issued TKN-ABC123 today","b":"ORD-1234X ORD-1234 ORD-1234XY","c":"-1--2- x-3-","d":"e1 E2 xE3 E4_","e":"EMP-1 EMP-2 EMP-123456 EMP-654321"}"""
+      "{\"a\":\"key=s3cr3tk\U0001F600 rest\",\"b\":\"\U0001F600b \u00E9b xb\",\"c\":\"\U0001F600\U0001F600 a\U0001F600 \U0001F600xy\",\"\U0001F600b\":1}" ]
+
+// Council A2 probes: bounded work. Inputs are rebuilt from prefix + unit x count.
+let probeProfiles =
+    let probe i (p: string) (sample: string) = sprintf "  - id: custom.p%d\n    pattern: '%s'\n    action: mask\n    tests:\n      match: ['%s']\n" i p sample
+    [ "quadratic", header + "customDetectors:\n" + probe 0 "a+z|a" "a"
+      "token", header + "customDetectors:\n" + probe 0 "token=.+" "token=x"
+      "dotx", header + "customDetectors:\n" + probe 0 ".+x.+" "axb"
+      "mixed", header + "customDetectors:\n" + String.Join("", [ for i in 0..31 -> probe i ([| "a+z|a"; "token=.+"; ".+x.+"; "x[^a]{3}" |].[i % 4]) ([| "a"; "token=x"; "axb"; "xbcd" |].[i % 4]) ]) ]
+
+let probeInputs =
+    [ for n in [ 1024; 2048; 4096; 4097; 8192; 16384; 32768; 65536; 65537; 131072; 262144; 524288; 1_000_000 ] do
+        yield "quadratic", "", "a", n
+        yield "token", "token=", "x", n
+        yield "token", "", "token=a ", n / 8
+        yield "dotx", "", "x", n
+        yield "mixed", "", "ab x", n / 4 ]
+
+let probeVectors =
+    let engines = dict [ for (name, yaml) in probeProfiles -> name, PrivacyEngine(PrivacyProfileLoader.Load(yaml, Array.create 32 9uy, "kp").Policy) ]
+    [ for (profile, prefix, unit, count) in probeInputs ->
+        let input = "{\"v\":\"" + prefix + String.replicate count unit + "\"}"
+        let result = engines[profile].RedactJson(input)
+        dict [ "profile", box profile
+               "prefix", box prefix
+               "unit", box unit
+               "count", box count
+               "succeeded", box result.Succeeded
+               "failureCode", box result.FailureCode
+               "redactedJson", box result.RedactedJson
+               "findings", box result.Findings.Count ] ]
 
 let customEngineVectors =
     [ for (name, _, engine) in loadedCustom do
@@ -693,10 +827,13 @@ let document =
            "policyErrors", box policyErrorVectors
            "customPatterns", box patternVectors
            "customPatternReasons", box reasonVector
+           "customPatternsWholeWord", box wholeWordPatternVectors
            "customEngineProfiles", box [ for (name, yaml) in customEngineProfiles -> [ name; yaml ] ]
            "customEngine", box customEngineVectors
            "customText", box customTextVectors
-           "fieldNameNormalization", box normalizationVectors ]
+           "fieldNameNormalization", box normalizationVectors
+           "customProbeProfiles", box [ for (name, yaml) in probeProfiles -> [ name; yaml ] ]
+           "customProbes", box probeVectors ]
 
 // Gzipped so synthetic fuzzed credentials in the corpus do not trip secret scanning.
 do

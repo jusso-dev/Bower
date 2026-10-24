@@ -69,6 +69,7 @@ struct ProfileDocument {
 struct MetadataDocument {
     id: Option<String>,
     version: Option<String>,
+    description: Option<String>,
 }
 
 #[derive(Default)]
@@ -173,9 +174,7 @@ mapping_visitor!(
         match key.as_str() {
             "id" => doc.id = map.next_value()?,
             "version" => doc.version = map.next_value()?,
-            "description" => {
-                let _: Option<String> = map.next_value()?;
-            }
+            "description" => doc.description = map.next_value()?,
             other => {
                 let _: IgnoredAny = map.next_value()?;
                 return Err(unknown_property(other, "PrivacyProfileMetadata"));
@@ -433,6 +432,8 @@ pub fn load(
         return Err(invalid("Privacy profile exceeds 256 KiB."));
     }
 
+    require_supported_raw_text(yaml)?;
+
     let document = match serde_yaml_ng::from_str::<Option<ProfileDocument>>(yaml) {
         Ok(Some(document)) => document,
         Ok(None) => return Err(invalid("Privacy profile is empty.")),
@@ -444,6 +445,7 @@ pub fn load(
         }
     };
 
+    require_supported_values(&document)?;
     if document.api_version.flatten().as_deref() != Some("bower.security/v1")
         || document.kind.flatten().as_deref() != Some("PrivacyProfile")
     {
@@ -586,6 +588,121 @@ pub fn load(
     })
 }
 
+// ------------------------------------------------------------------ supported text
+
+/// `PrivacyProfileText`: C0 controls other than tab, LF and CR, DEL and C1 controls, the
+/// line and paragraph separators, and (raw text only) YAML escapes of UTF-16 surrogates
+/// are rejected identically by both loaders. Rust strings cannot hold lone surrogates.
+fn is_unsupported(character: char) -> bool {
+    matches!(character, '\0'..='\u{8}' | '\u{B}' | '\u{C}' | '\u{E}'..='\u{1F}' | '\u{7F}'..='\u{9F}' | '\u{2028}' | '\u{2029}')
+}
+
+fn unsupported(code_point: u32) -> PrivacyError {
+    invalid(format!(
+        "Privacy profile contains unsupported character U+{code_point:04X}."
+    ))
+}
+
+/// The code point of a `\uXXXX` or `\UXXXXXXXX` escape in the surrogate range.
+fn surrogate_escape(rest: &str) -> Option<u32> {
+    let mut characters = rest.chars();
+    let digits = match characters.next()? {
+        'u' => 4,
+        'U' => 8,
+        _ => return None,
+    };
+    let hex = rest.get(1..1 + digits)?;
+    if !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    let value = u64::from_str_radix(hex, 16).ok()?;
+    (0xD800..=0xDFFF)
+        .contains(&value)
+        .then(|| u32::try_from(value).unwrap_or_default())
+}
+
+fn require_supported_raw_text(yaml: &str) -> Result<(), PrivacyError> {
+    for (offset, character) in yaml.char_indices() {
+        if is_unsupported(character) {
+            return Err(unsupported(u32::from(character)));
+        }
+        if character == '\\'
+            && let Some(escaped) = surrogate_escape(&yaml[offset + 1..])
+        {
+            return Err(unsupported(escaped));
+        }
+    }
+    Ok(())
+}
+
+fn require_supported_value(value: Option<&str>) -> Result<(), PrivacyError> {
+    match value.and_then(|value| value.chars().find(|c| is_unsupported(*c))) {
+        Some(character) => Err(unsupported(u32::from(character))),
+        None => Ok(()),
+    }
+}
+
+/// Every parsed string, in the C# document-model order.
+fn require_supported_values(document: &ProfileDocument) -> Result<(), PrivacyError> {
+    let mut values: Vec<Option<&str>> = vec![
+        document
+            .api_version
+            .as_ref()
+            .and_then(|value| value.as_deref()),
+        document.kind.as_ref().and_then(|value| value.as_deref()),
+    ];
+    if let Some(Some(metadata)) = &document.metadata {
+        values.extend([
+            metadata.id.as_deref(),
+            metadata.version.as_deref(),
+            metadata.description.as_deref(),
+        ]);
+    }
+    values.push(
+        document
+            .default_action
+            .as_ref()
+            .and_then(|value| value.as_deref()),
+    );
+    if let Some(Some(detectors)) = &document.detectors {
+        for (key, value) in detectors {
+            values.extend([Some(key.as_str()), value.as_deref()]);
+        }
+    }
+    for list in [&document.disabled, &document.enable_opt_in] {
+        if let Some(Some(items)) = list {
+            values.extend(items.iter().map(Option::as_deref));
+        }
+    }
+    if let Some(Some(rules)) = &document.fields {
+        for rule in rules.iter().flatten() {
+            values.extend([rule.path.as_deref(), rule.action.as_deref()]);
+        }
+    }
+    if let Some(Some(detectors)) = &document.custom_detectors {
+        for detector in detectors.iter().flatten() {
+            values.extend([
+                detector.id.as_deref(),
+                detector.description.as_deref(),
+                detector.pattern.as_deref(),
+                detector.action.as_deref(),
+            ]);
+            if let Some(tests) = &detector.tests {
+                for samples in [&tests.match_samples, &tests.no_match_samples]
+                    .into_iter()
+                    .flatten()
+                {
+                    values.extend(samples.iter().map(Option::as_deref));
+                }
+            }
+        }
+    }
+    if let Some(Some(names)) = &document.secret_field_names {
+        values.extend(names.iter().map(Option::as_deref));
+    }
+    values.into_iter().try_for_each(require_supported_value)
+}
+
 /// The validated definitions and the number of test samples they passed.
 fn load_custom_detectors(
     documents: Vec<Option<CustomDetectorDocument>>,
@@ -612,12 +729,15 @@ fn load_custom_detectors(
 
         custom::require_valid_description(&id, document.description.as_deref())?;
         let ignore_case = document.ignore_case.is_some_and(|DotnetBool(value)| value);
+        let whole_word = document.whole_word.is_some_and(|DotnetBool(value)| value);
         let (canonical, regex) =
-            custom::compile_pattern(&id, document.pattern.as_deref(), ignore_case)?;
+            custom::compile_pattern(&id, document.pattern.as_deref(), ignore_case, whole_word)?;
         let action = document
             .action
+            .as_deref()
             .ok_or_else(|| invalid(format!("Custom detector '{id}' requires an action.")))?;
-        let action = parse_action(&action)?;
+        let action = parse_action(action)?;
+        custom::require_redacting_action(&id, action)?;
 
         let tests = document.tests;
         let match_samples = tests
@@ -657,7 +777,7 @@ fn load_custom_detectors(
             canonical,
             regex,
             ignore_case,
-            document.whole_word.is_some_and(|DotnetBool(value)| value),
+            whole_word,
             action,
         );
         let detector = CustomPatternDetector::new(definition);

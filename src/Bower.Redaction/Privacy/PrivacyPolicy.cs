@@ -154,13 +154,27 @@ public sealed class PrivacyPolicy
     public bool UsesAction(PrivacyAction action) =>
         DefaultAction == action
         || DetectorActions.Values.Any(value => value == action)
-        || FieldRules.Any(rule => rule.Action == action);
+        || FieldRules.Any(rule => rule.Action == action)
+        || CustomDetectors.Any(definition => ResolveAction(definition.Id) == action);
 
+    /// <summary>
+    /// Precedence: a <see cref="DetectorActions"/> entry, then a custom detector's own
+    /// action, then <see cref="DefaultAction"/>. Profiles and programmatic policies resolve
+    /// identically (the loader also records custom actions in <see cref="DetectorActions"/>).
+    /// </summary>
     public PrivacyAction ResolveAction(string detectorId)
     {
         if (DetectorActions.TryGetValue(detectorId, out PrivacyAction action))
         {
             return action;
+        }
+
+        foreach (CustomDetectorDefinition definition in CustomDetectors)
+        {
+            if (string.Equals(definition.Id, detectorId, StringComparison.Ordinal))
+            {
+                return definition.Action;
+            }
         }
 
         return DefaultAction;

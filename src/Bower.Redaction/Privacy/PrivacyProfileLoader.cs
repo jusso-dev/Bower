@@ -106,6 +106,8 @@ public static class PrivacyProfileLoader
             throw new InvalidDataException("Privacy profile exceeds 256 KiB.");
         }
 
+        PrivacyProfileText.RequireSupportedRawText(yaml);
+
         PrivacyProfileDocument document;
         try
         {
@@ -117,6 +119,7 @@ public static class PrivacyProfileLoader
             throw new InvalidDataException($"Privacy profile is invalid at line {exception.Start.Line}: {exception.Message}", exception);
         }
 
+        RequireSupportedValues(document);
         if (document.ApiVersion != "bower.security/v1" || document.Kind != "PrivacyProfile")
         {
             throw new InvalidDataException("Privacy profile must be apiVersion bower.security/v1, kind PrivacyProfile.");
@@ -249,9 +252,11 @@ public static class PrivacyProfileLoader
 
             CustomDetectorDefinition.RequireValidDescription(id, document.Description);
             bool ignoreCase = document.IgnoreCase ?? false;
-            (string canonical, Regex regex) = CustomDetectorDefinition.CompilePattern(id, document.Pattern, ignoreCase);
+            bool wholeWord = document.WholeWord ?? false;
+            (string canonical, Regex regex) = CustomDetectorDefinition.CompilePattern(id, document.Pattern, ignoreCase, wholeWord);
             PrivacyAction action = ParseAction(document.Action
                 ?? throw new InvalidDataException($"Custom detector '{id}' requires an action."));
+            CustomDetectorDefinition.RequireRedactingAction(id, action);
 
             List<string>? match = document.Tests?.Match;
             List<string>? noMatch = document.Tests?.NoMatch;
@@ -270,7 +275,7 @@ public static class PrivacyProfileLoader
             }
 
             CustomDetectorDefinition definition = CustomDetectorDefinition.FromValidated(
-                id, document.Description, document.Pattern, canonical, regex, ignoreCase, document.WholeWord ?? false, action);
+                id, document.Description, document.Pattern, canonical, regex, ignoreCase, wholeWord, action);
             CustomPatternDetector detector = new(definition);
             try
             {
@@ -328,6 +333,42 @@ public static class PrivacyProfileLoader
         }
 
         return normalised;
+    }
+
+    /// <summary>Every parsed string, in document-model order (identical in the Rust loader).</summary>
+    private static void RequireSupportedValues(PrivacyProfileDocument document)
+    {
+        List<string?> values = [document.ApiVersion, document.Kind];
+        if (document.Metadata is { } metadata)
+        {
+            values.AddRange([metadata.Id, metadata.Version, metadata.Description]);
+        }
+
+        values.Add(document.DefaultAction);
+        foreach ((string key, string? value) in document.Detectors ?? [])
+        {
+            values.AddRange([key, value]);
+        }
+
+        values.AddRange(document.Disabled ?? []);
+        values.AddRange(document.EnableOptIn ?? []);
+        foreach (PrivacyFieldRuleDocument? rule in document.Fields ?? [])
+        {
+            values.AddRange([rule?.Path, rule?.Action]);
+        }
+
+        foreach (PrivacyCustomDetectorDocument? detector in document.CustomDetectors ?? [])
+        {
+            values.AddRange([detector?.Id, detector?.Description, detector?.Pattern, detector?.Action]);
+            values.AddRange(detector?.Tests?.Match ?? []);
+            values.AddRange(detector?.Tests?.NoMatch ?? []);
+        }
+
+        values.AddRange(document.SecretFieldNames ?? []);
+        foreach (string? value in values)
+        {
+            PrivacyProfileText.RequireSupportedValue(value);
+        }
     }
 
     private static T RequireCollection<T>(T? value, string name)
