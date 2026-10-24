@@ -178,6 +178,15 @@ fn destination_selects_exactly_one_scoped_write_grant() {
         "no wildcard resources"
     );
 
+    // 0 must deploy on accounts with the default Lambda limit of 10 (none reservable).
+    let concurrency = &template["Parameters"]["ReservedConcurrency"];
+    assert_eq!(concurrency["MinValue"].as_u64(), Some(0));
+    let reserved = format!(
+        "{:?}",
+        template["Resources"]["Function"]["Properties"]["ReservedConcurrentExecutions"]
+    );
+    assert!(reserved.contains("HasReservedConcurrency") && reserved.contains("AWS::NoValue"));
+
     let environment = format!(
         "{:?}",
         template["Resources"]["Function"]["Properties"]["Environment"]["Variables"]

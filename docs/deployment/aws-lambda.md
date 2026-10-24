@@ -383,8 +383,10 @@ The stack creates:
   delivering to it;
 - the function's own log group with `LogRetentionDays`;
 - the execution role described above;
-- the function (`provided.al2023`, `arm64`, reserved concurrency, recursive loop
-  detection on);
+- the function (`provided.al2023`, `arm64`, `ReservedConcurrency` reserved executions,
+  recursive loop detection on). Lambda keeps 10 executions unreserved, so an account with
+  the default limit of 10 cannot reserve any: deploy with `ReservedConcurrency=0` there
+  (the function then shares the account pool and is not rate-bounded by reservation);
 - for `function-url`, a Function URL with `AuthType: AWS_IAM`, plus per-invoker grants of
   `lambda:InvokeFunctionUrl` (`FunctionUrlAuthType: AWS_IAM`) and `lambda:InvokeFunction`
   (`InvokedViaFunctionUrl: true`);
@@ -402,7 +404,12 @@ at most one channel per source. For a URL stack, apply the
 The template refuses regions other than `ap-southeast-2` and `ap-southeast-4` unless you set
 `EnforceAustralianRegion=false`.
 
-Validation status: `cfn-lint` 1.57.2 (the CI version) passes. `ValidateTemplate` needs AWS credentials, so it
+Validation status: `cfn-lint` 1.57.2 (the CI version) passes. On 24-10-2026 the
+`cloudwatch-logs` / `function-url` configuration was deployed to a live account and
+exercised end to end from an EC2 producer: accepted, redacted, rejected, out-of-scope,
+batched and unsigned requests behaved as documented, and the log group held only redacted
+envelopes. `cloudtrail-lake` has not been deployed live (the test account is not a CloudTrail
+Lake customer). `ValidateTemplate` needs AWS credentials, so it
 was not run, and Bower's test suite does not deploy the template.
 
 ## Send an event
@@ -426,14 +433,14 @@ requests for Lambda, so use the collector for them.
 ### CloudWatch Logs
 
 Query the `EventLogGroupName` output with CloudWatch Logs Insights. The messages are Bower
-envelopes, so their fields are discovered automatically. Illustrative; not run against a
-live log group:
+envelopes, so their fields are discovered automatically. `dedup` must come after `sort`
+and may only be followed by `limit`. Verified against a live log group on 24-10-2026:
 
 ```text
-fields @timestamp, eventId, timeGenerated, application.name, actor.userId, source.ipAddress
+fields @timestamp, eventId, timeGenerated, application.name, actor.userId, source.hostname
 | filter eventType = "authentication_failure"
-| dedup eventId
 | sort timeGenerated desc
+| dedup eventId
 | limit 100
 ```
 

@@ -94,9 +94,13 @@ Parameters:
   ReservedConcurrency:
     Type: Number
     Default: 10
-    MinValue: 1
+    MinValue: 0
     MaxValue: 1000
-    Description: Reserved concurrent executions. Bounds cost and destination write rate; excess calls get 429.
+    Description: >-
+      Reserved concurrent executions. Bounds cost and destination write rate; excess calls
+      get 429. 0 reserves nothing (the function shares the account pool): use it when the
+      account's Lambda limit is too low to reserve any (Lambda keeps 10 unreserved, so an
+      account with the default limit of 10 cannot reserve even 1).
   MemorySize:
     Type: Number
     Default: 512
@@ -193,6 +197,7 @@ Conditions:
   HasEventLogKms: !Not [!Equals [!Ref EventLogKmsKeyArn, ""]]
   UrlIngress: !Equals [!Ref IngressMode, function-url]
   DirectIngress: !Equals [!Ref IngressMode, invoke]
+  HasReservedConcurrency: !Not [!Equals [!Ref ReservedConcurrency, "0"]]
   HasCodeVersion: !Not [!Equals [!Ref CodeS3ObjectVersion, ""]]
   HasEventDataStoreKms: !Not [!Equals [!Ref EventDataStoreKmsKeyId, ""]]
   HasHmacSecret: !Not [!Equals [!Ref PrivacyHmacKeySecretArn, ""]]
@@ -319,7 +324,7 @@ Resources:
       Role: !GetAtt ExecutionRole.Arn
       MemorySize: !Ref MemorySize
       Timeout: !Ref TimeoutSeconds
-      ReservedConcurrentExecutions: !Ref ReservedConcurrency
+      ReservedConcurrentExecutions: !If [HasReservedConcurrency, !Ref ReservedConcurrency, !Ref "AWS::NoValue"]
       RecursiveLoop: Terminate
       LoggingConfig:
         LogGroup: !Ref LogGroup

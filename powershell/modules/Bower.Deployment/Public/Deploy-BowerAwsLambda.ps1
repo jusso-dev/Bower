@@ -48,6 +48,10 @@ function Deploy-BowerAwsLambda {
     ChannelArn output of another Bower CloudTrail Lake stack in the same account (cloudtrail-lake).
     The stack then creates no event data store or channel (use it for the second, invoke stack).
 
+    .PARAMETER ReservedConcurrency
+    Reserved concurrent executions (template default 10). 0 reserves nothing: required on
+    accounts whose Lambda limit is the default 10, which cannot reserve any.
+
     .PARAMETER IngressMode
     function-url (default) or invoke. One ingress per stack; there is no mixed mode.
 
@@ -121,6 +125,9 @@ function Deploy-BowerAwsLambda {
         [ValidatePattern('^arn:aws[a-z-]*:cloudtrail:[a-z0-9-]+:[0-9]{12}:channel/[A-Za-z0-9-]+$')]
         [string] $ExistingChannelArn,
 
+        [ValidateRange(0, 1000)]
+        [int] $ReservedConcurrency,
+
         [ValidateSet('function-url', 'invoke')]
         [string] $IngressMode = 'function-url',
 
@@ -187,6 +194,9 @@ function Deploy-BowerAwsLambda {
             if ($EventLogKmsKeyArn) {
                 $parameters.EventLogKmsKeyArn = $EventLogKmsKeyArn
             }
+        }
+        if ($PSBoundParameters.ContainsKey('ReservedConcurrency')) {
+            $parameters.ReservedConcurrency = $ReservedConcurrency
         }
         if ($InvokeProducer) {
             $parameters.InvokeProducer = $InvokeProducer

@@ -249,6 +249,16 @@ Describe 'Deploy-BowerAwsLambda' {
         Should -Invoke -ModuleName Bower.Deployment Invoke-BowerCli -Times 0
     }
 
+    It 'passes ReservedConcurrency only when given, including 0' {
+        Deploy-BowerAwsLambda @script:LambdaParameters | Out-Null
+        Should -Invoke -ModuleName Bower.Deployment Invoke-BowerCli -Times 1 -Exactly -ParameterFilter {
+            -not ($ArgumentList | Where-Object { $_ -like 'ReservedConcurrency=*' })
+        }
+        Deploy-BowerAwsLambda @script:LambdaParameters -ReservedConcurrency 0 | Out-Null
+        Should -Invoke -ModuleName Bower.Deployment Invoke-BowerCli -Times 1 -Exactly -ParameterFilter { $ArgumentList -contains 'ReservedConcurrency=0' }
+        { Deploy-BowerAwsLambda @script:LambdaParameters -ReservedConcurrency 1001 } | Should -Throw
+    }
+
     It 'passes the AWS profile when given' {
         Deploy-BowerAwsLambda @script:LambdaParameters -ProfileName bower-admin -Region ap-southeast-4 | Out-Null
         Should -Invoke -ModuleName Bower.Deployment Invoke-BowerCli -Times 1 -ParameterFilter {
