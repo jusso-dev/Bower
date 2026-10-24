@@ -1,4 +1,4 @@
-import { KeyRound, ShieldCheck } from "lucide-react";
+import { Download, KeyRound, ShieldCheck } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { useApi } from "../api";
 import { ResourceState, VersionStatusBadge } from "../components/ui";
@@ -10,6 +10,17 @@ import type { Access, Collector, PrivacyProfileVersionDetail } from "../types";
 export const versionDetailHeadingId = "privacy-version-detail-title";
 
 const reviewerRoles = ["Bower.Approver", "Bower.Administrator"];
+
+// Exports the exact reviewed bytes, for hosts that load a packaged privacy profile
+// (Azure Functions collector, AWS Lambda host, signed packs).
+function downloadContent(version: PrivacyProfileVersionDetail) {
+  const url = URL.createObjectURL(new Blob([version.content], { type: "application/yaml" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${version.profileId}-${version.version}.yaml`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 function versionPath(id: string) {
   return `/api/privacy-profiles/versions/${encodeURIComponent(id)}`;
@@ -58,7 +69,17 @@ export function PrivacyProfileVersionPanel({
                 onResults={setAssignResults}
               />
               <div>
-                <h3>Content</h3>
+                <div className="section-heading">
+                  <h3>Content</h3>
+                  <button
+                    className="button"
+                    type="button"
+                    onClick={() => downloadContent(version)}
+                  >
+                    <Download aria-hidden="true" />
+                    Download YAML
+                  </button>
+                </div>
                 <pre className="code-block code-block--tall" tabIndex={0} aria-label="Privacy profile content">
                   {version.content}
                 </pre>

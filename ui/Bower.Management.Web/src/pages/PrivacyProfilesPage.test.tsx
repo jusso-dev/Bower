@@ -307,7 +307,8 @@ describe("Privacy profiles page", () => {
             version: "1.2.0",
             contentHash: "sha256:3333",
             customDetectors: [
-              { id: "custom.employee-id", description: "Employee numbers", action: "mask" }
+              { id: "custom.employee-id", description: "Employee numbers", action: "Mask" },
+              { id: "custom.trace-line", action: "AlertOnly" }
             ],
             secretFieldNames: 2,
             detectorOverrides: 0,
@@ -343,6 +344,8 @@ describe("Privacy profiles page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Validate" }));
     expect(await screen.findByText("Validation passed")).toBeTruthy();
     expect(screen.getByText("custom.employee-id")).toBeTruthy();
+    // Only the alert-only custom detector is flagged as not redacting.
+    expect(screen.getAllByText(/Records matches without redacting them/)).toHaveLength(1);
     expect(postsTo(fetchMock, "/api/privacy-profiles/validate")).toEqual([{ content }]);
 
     const sample = '{"message":"user EMP-123456 logged in"}';
@@ -391,6 +394,26 @@ describe("Privacy profiles page", () => {
     expect(
       await screen.findByText("Custom detector 'custom.x' did not match tests.match[0].")
     ).toBeTruthy();
+  });
+
+  it("downloads the exact version content as YAML", async () => {
+    stubApi({ roles: ["Bower.Viewer"] });
+    const created: Blob[] = [];
+    const createObjectURL = vi.fn((blob: Blob) => {
+      created.push(blob);
+      return "blob:privacy-profile";
+    });
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL, revokeObjectURL }));
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    renderApp(`/privacy-profiles?version=${pendingSummary.id}`);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Download YAML" }));
+
+    expect(click).toHaveBeenCalledTimes(1);
+    expect(await created[0]!.text()).toBe(pendingContent);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:privacy-profile");
+    click.mockRestore();
   });
 
   it("renders a line diff against the previous approved version", async () => {

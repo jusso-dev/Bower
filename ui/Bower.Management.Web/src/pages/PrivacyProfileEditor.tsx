@@ -300,6 +300,11 @@ function ValidationResult({ validation }: { validation: PrivacyProfileValidation
             <li key={detector.id}>
               <strong className="mono">{detector.id}</strong>
               <span>Action: {detector.action}</span>
+              {detector.action === "AlertOnly" && (
+                <span className="form-help">
+                  Records matches without redacting them. Confirm this is intended.
+                </span>
+              )}
               {detector.description && <span>{detector.description}</span>}
             </li>
           ))}
