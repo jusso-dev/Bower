@@ -14,7 +14,7 @@ Consumption). Same `/v1/events` contract as `Bower.Collector`, no durable queue.
   before redaction, policy or delivery.
 - Processing reuses `SecurityEventProcessor`, `PolicyBundle` and `PackDetectionRedactor`
   unchanged. Do not fork redaction, validation or policy logic here.
-- `RequestEventBuffer` lives for one request only. Never persist, cache or log payloads,
+- `RequestEventBuffer` (in `Bower.Core`, shared with `bower policy test`) lives for one request only. Never persist, cache or log payloads,
   tokens or exception text. Answer success only after Logs Ingestion acknowledged every
   staged record; otherwise 503/429 with Retry-After (or 422 for permanent rejection).
 - Logs Ingestion uses exactly one managed identity credential (system-assigned unless

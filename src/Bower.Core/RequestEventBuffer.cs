@@ -1,13 +1,14 @@
 using Bower.Abstractions;
 
-namespace Bower.Functions.Collector;
+namespace Bower.Core;
 
 /// <summary>
 /// Holds the arranged events of exactly one request (the event and, at most, its privacy
-/// alert) so the unchanged <see cref="Bower.Core.SecurityEventProcessor"/> can run without a
-/// durable queue. It is created per request, never shared, never written to disk and dropped
-/// when the response is sent, whether or not delivery succeeded. Only enqueue is supported:
-/// every queue, lease and ledger operation throws because this host has none.
+/// alert) so the unchanged <see cref="SecurityEventProcessor"/> can run without a durable
+/// queue: the Azure Functions collector per request, <c>bower policy test</c> per sample.
+/// It is created per request, never shared, never written to disk and dropped when the
+/// request ends. Only enqueue is supported: every queue, lease and ledger operation throws
+/// because these hosts have none.
 /// </summary>
 public sealed class RequestEventBuffer : IDurableEventStore
 {
@@ -78,5 +79,5 @@ public sealed class RequestEventBuffer : IDurableEventStore
     public Task<LedgerVerification> VerifyLedgerAsync(CancellationToken cancellationToken = default) => throw Unsupported();
 
     private static NotSupportedException Unsupported() =>
-        new("The Azure Functions collector has no durable queue or ledger.");
+        new("This host has no durable queue or ledger.");
 }
