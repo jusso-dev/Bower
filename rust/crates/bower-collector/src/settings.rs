@@ -67,6 +67,10 @@ pub struct CollectorSettings {
     /// Cache directory for the managed privacy profile; `None` means next to the queue
     /// database.
     pub managed_privacy_directory: Option<PathBuf>,
+    /// `BOWER_MANAGED_PRIVACY_ALLOW_DEFAULT=true`: accept events under the built-in default
+    /// privacy profile before the first managed sync resolves. Off by default: a
+    /// management-mode collector without a verified cache refuses ingest (503) until then.
+    pub managed_privacy_allow_default: bool,
     pub privacy_hmac_key_file: Option<PathBuf>,
     pub privacy_hmac_key_id: String,
     pub allow_unauthenticated_ingest: bool,
@@ -126,6 +130,7 @@ impl CollectorSettings {
             privacy_profile_source: PRIVACY_PROFILE_SOURCE_LOCAL.into(),
             managed_privacy_trusted_key_files: Vec::new(),
             managed_privacy_directory: None,
+            managed_privacy_allow_default: false,
             privacy_hmac_key_file: None,
             privacy_hmac_key_id: "k1".into(),
             allow_unauthenticated_ingest: false,
@@ -194,6 +199,8 @@ impl CollectorSettings {
             ),
             managed_privacy_directory: blank(read("BOWER_MANAGED_PRIVACY_DIRECTORY"))
                 .map(PathBuf::from),
+            managed_privacy_allow_default: read("BOWER_MANAGED_PRIVACY_ALLOW_DEFAULT")
+                .is_some_and(|value| value.eq_ignore_ascii_case("true")),
             privacy_hmac_key_file: blank(read("BOWER_PRIVACY_HMAC_KEY_FILE")).map(PathBuf::from),
             privacy_hmac_key_id: blank(read("BOWER_PRIVACY_HMAC_KEY_ID"))
                 .unwrap_or_else(|| "k1".into()),
@@ -419,6 +426,9 @@ impl CollectorSettings {
             material.push('\u{1f}');
             material.push_str("privacy-source:");
             material.push_str(&self.privacy_profile_source);
+            material.push('\u{1f}');
+            material.push_str("privacy-allow-default:");
+            material.push_str(dotnet_bool(self.managed_privacy_allow_default));
         }
         format!(
             "sha256:{}",

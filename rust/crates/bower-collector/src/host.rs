@@ -31,7 +31,7 @@ use crate::jobs::{
     QUEUE_MAINTENANCE_JOB_ID, QUEUE_RETENTION_JOB_ID, Schedule, run_queue_maintenance,
     run_queue_retention,
 };
-use crate::managed_privacy::ManagedPrivacyProfileJob;
+use crate::managed_privacy::{ManagedPrivacyProfileJob, ManagedPrivacyState};
 use crate::rate_limit::TokenBucket;
 use crate::settings::CollectorSettings;
 use crate::shutdown::{ApplicationLifetime, ShutdownToken};
@@ -44,6 +44,8 @@ pub struct LoadedBundle {
     pub packs: Vec<bower_packs::LoadedPack>,
     pub redactor: Arc<dyn EventRedactor>,
     pub evaluator: Arc<dyn TelemetryPolicyEvaluator>,
+    /// Management mode: the verified cached assignment envelope the bundle loaded.
+    pub managed_privacy: Option<crate::managed_privacy::VerifiedManagedPrivacyProfile>,
 }
 
 type DeliverFuture<'a> = Pin<Box<dyn Future<Output = DeliveryResult> + Send + 'a>>;
@@ -133,6 +135,8 @@ pub struct Collector {
     /// Active privacy profile content hash; `None` for the built-in default.
     pub privacy_profile_hash: Option<String>,
     pub auth: Arc<IngestAuthentication>,
+    /// Management-mode ingest gate and status (local mode: never gates).
+    pub managed_privacy: Arc<ManagedPrivacyState>,
     lifetime: ApplicationLifetime,
     output: Option<BoxedOutput>,
     credential: Option<Arc<dyn AccessTokenSource>>,
@@ -186,6 +190,15 @@ pub fn build(
     let catalog = Arc::new(JobCatalog::default());
     let policy_hash = bundle.info.hash.clone();
     let privacy_profile_hash = bundle.info.privacy_profile_hash.clone();
+    // Management mode fails closed until the first sync resolves.
+    let managed_privacy = Arc::new(if settings.uses_managed_privacy_profile() {
+        ManagedPrivacyState::new(
+            bundle.managed_privacy.as_ref(),
+            settings.managed_privacy_allow_default,
+        )
+    } else {
+        ManagedPrivacyState::local()
+    });
     let state = AppState {
         processor: Arc::new(CoreProcessor {
             processor,
@@ -203,6 +216,7 @@ pub fn build(
         bundle: Arc::new(bundle.info),
         packs: Arc::new(bundle.packs),
         catalog: Arc::clone(&catalog),
+        managed_privacy: Arc::clone(&managed_privacy),
     };
     let delivery = options.delivery.unwrap_or(QueueDeliveryOptions {
         maximum_delivery_attempts: settings.maximum_delivery_attempts,
@@ -216,6 +230,7 @@ pub fn build(
         policy_hash,
         privacy_profile_hash,
         auth,
+        managed_privacy,
         lifetime: ApplicationLifetime::new(),
         output: options.output,
         credential: options.credential,
@@ -323,6 +338,7 @@ impl Collector {
                     &self.settings,
                     self.privacy_profile_hash.clone(),
                     credential,
+                    Arc::clone(&self.managed_privacy),
                     self.lifetime.clone(),
                 )
                 .map(Arc::new)
@@ -344,6 +360,10 @@ impl Collector {
                     0,
                     sync_job,
                 );
+                // Resolve immediately at start-up instead of waiting for the next minute:
+                // register first (heartbeat), then fetch the assignment.
+                scheduler.trigger(MANAGEMENT_HEARTBEAT_JOB_ID);
+                scheduler.trigger(MANAGED_PRIVACY_PROFILE_JOB_ID);
             }
         }
         self.scheduler = Some(scheduler);

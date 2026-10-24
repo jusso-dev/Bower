@@ -126,6 +126,8 @@ pub struct AppState {
     pub bundle: Arc<BundleInfo>,
     pub packs: Arc<Vec<bower_packs::LoadedPack>>,
     pub catalog: Arc<JobCatalog>,
+    /// Management-mode ingest gate (`ManagedPrivacyProfileGateFilter`).
+    pub managed_privacy: Arc<crate::managed_privacy::ManagedPrivacyState>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -189,6 +191,26 @@ fn unauthorized() -> Response {
         .headers_mut()
         .insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
     response
+}
+
+/// `ManagedPrivacyProfileGateFilter`: refuses ingest with 503 + `Retry-After` while a
+/// management-mode collector has not resolved its managed privacy profile, so no event is
+/// enqueued under an unintended profile.
+fn managed_privacy_gate(state: &crate::managed_privacy::ManagedPrivacyState) -> Option<Response> {
+    if state.accepts_events() {
+        return None;
+    }
+    let mut response = json_response(
+        StatusCode::SERVICE_UNAVAILABLE,
+        &ErrorBody {
+            error: crate::managed_privacy::GATE_MESSAGE,
+        },
+    );
+    response.headers_mut().insert(
+        header::RETRY_AFTER,
+        HeaderValue::from_static(crate::managed_privacy::GATE_RETRY_AFTER_SECONDS),
+    );
+    Some(response)
 }
 
 /// `IngestAuthenticationFilter`: the producer id, or the 401 response.
@@ -326,6 +348,10 @@ async fn ingest_candidate(
         Ok(producer) => producer,
         Err(response) => return *response,
     };
+    // After authentication, before any parsing, policy or enqueue.
+    if let Some(response) = managed_privacy_gate(&state.managed_privacy) {
+        return response;
+    }
     if !has_json_content_type(&parts.headers) {
         return StatusCode::UNSUPPORTED_MEDIA_TYPE.into_response();
     }
@@ -517,6 +543,8 @@ struct StatusPolicy<'a> {
     privacy_profile_version: Option<&'a str>,
     privacy_profile_hash: &'a str,
     privacy_profile_source: &'a str,
+    managed_privacy_profile_state: Option<&'static str>,
+    managed_privacy_profile_revision: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -579,6 +607,13 @@ async fn status(
                 privacy_profile_version: bundle.privacy_profile_version.as_deref(),
                 privacy_profile_hash: bundle.privacy_profile_hash.as_deref().unwrap_or("default"),
                 privacy_profile_source: &bundle.privacy_profile_source,
+                managed_privacy_profile_state: (!state.managed_privacy.is_local())
+                    .then(|| state.managed_privacy.state()),
+                managed_privacy_profile_revision: if state.managed_privacy.is_local() {
+                    None
+                } else {
+                    state.managed_privacy.revision()
+                },
             },
             ledger: StatusLedger {
                 sequence: ledger.sequence,

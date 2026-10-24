@@ -152,12 +152,18 @@ fn load_inner(
     }
     let profile_yaml = profile_yaml.or_else(|| pack_profiles.first().map(|yaml| (*yaml).clone()));
     let key = read_key()?;
-    // Management mode: the verified cached assignment, or the built-in default when none.
+    // Management mode: the verified cached envelope, read once so the ingest gate and the
+    // active profile always agree. No cache or a cached explicit clear resolves to the
+    // built-in default.
+    let managed_privacy = if settings.uses_managed_privacy_profile() {
+        crate::managed_privacy::load_verified(settings, key.as_deref())?
+    } else {
+        None
+    };
     let profile = match &profile_yaml {
-        _ if settings.uses_managed_privacy_profile() => {
-            crate::managed_privacy::load_verified(settings, key.as_deref())?
-                .map(|verified| verified.profile)
-        }
+        _ if settings.uses_managed_privacy_profile() => managed_privacy
+            .as_ref()
+            .and_then(|verified| verified.profile.clone()),
         Some(yaml) => Some(
             bower_redaction::load_privacy_profile(
                 yaml,
@@ -244,6 +250,7 @@ fn load_inner(
     };
     Ok(LoadedBundle {
         info,
+        managed_privacy,
         packs,
         redactor: Arc::new(
             bower_redaction::JsonEventRedactor::with_policy(privacy)
