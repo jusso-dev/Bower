@@ -98,6 +98,26 @@ public sealed class PrivacyProfileApiTests
     }
 
     [Fact]
+    public void Inspector_SummarisesAndPreviewsCustomDetectors()
+    {
+        string content = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "deploy", "privacy", "custom-redaction-example.yaml"));
+
+        PrivacyProfileValidation validation = PrivacyProfileInspector.Validate(content);
+        PrivacyProfilePreview preview = PrivacyProfileInspector.Preview(content, """{"msg":"EMP-123456 opened","sessionKey":"s"}""");
+
+        Assert.True(validation.Valid);
+        Assert.Equal(
+            ["custom.employee-id:Mask", "custom.customer-ref:Hmac", "custom.internal-ticket:Replace"],
+            validation.CustomDetectors.Select(detector => $"{detector.Id}:{detector.Action}"));
+        Assert.Equal("Contoso employee numbers (EMP- and six digits).", validation.CustomDetectors[0].Description);
+        Assert.Equal(3, validation.SecretFieldNames);
+        Assert.True(preview.Valid);
+        Assert.DoesNotContain("EMP-123456", preview.Redacted!, StringComparison.Ordinal);
+        Assert.Contains(preview.Findings, finding => finding.DetectorId == "custom.employee-id" && finding.Action == "Masked");
+        Assert.Contains(preview.Findings, finding => finding.DetectorId == "field-name-secret" && finding.Path == "$.sessionKey");
+    }
+
+    [Fact]
     public async Task Preview_RedactsSampleWithRandomKeyAndPersistsNothing()
     {
         CancellationToken ct = TestContext.Current.CancellationToken;

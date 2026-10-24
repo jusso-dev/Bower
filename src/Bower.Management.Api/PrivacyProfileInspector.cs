@@ -81,8 +81,9 @@ public static class PrivacyProfileInspector
                 candidate.ProfileId,
                 candidate.Version,
                 candidate.ContentHash,
-                facts.CustomDetectors,
-                facts.SecretFieldNames,
+                [.. loaded.Policy.CustomDetectors.Select(detector => new PrivacyProfileCustomDetectorSummary(
+                    detector.Id, detector.Description, detector.Action.ToString()))],
+                loaded.Policy.SecretFieldNames.Count,
                 facts.DetectorOverrides,
                 loaded.Policy.FieldRules.Count);
         }
@@ -143,11 +144,8 @@ public static class PrivacyProfileInspector
             _ => "Preview sample could not be redacted."
         };
 
-    // TODO(custom-detectors): single hook for Part 1 wiring after merge.
-    //  1. Fill CustomDetectors (id, description, action) and SecretFieldNames (normalised,
-    //     de-duplicated count) from the loaded PrivacyPolicy instead of returning empty/0.
-    //  2. Confirm CreateEngine builds built-in + custom detectors and the composite
-    //     field-name detector exactly as JsonEventRedactor(PrivacyPolicy) does.
+    // Built-in plus the profile's custom detectors and the field-name detector extended with
+    // its secret field names, exactly as JsonEventRedactor(PrivacyPolicy) builds them.
     private static PrivacyEngine CreateEngine(PrivacyPolicy policy) => new(policy);
 
     private static ProfileFacts Describe(string content)
@@ -161,12 +159,12 @@ public static class PrivacyProfileInspector
         }
         catch (YamlDotNet.Core.YamlException)
         {
-            return new ProfileFacts(null, [], 0, 0);
+            return new ProfileFacts(null, 0);
         }
 
         if (stream.Documents.Count == 0 || stream.Documents[0].RootNode is not YamlMappingNode root)
         {
-            return new ProfileFacts(null, [], 0, 0);
+            return new ProfileFacts(null, 0);
         }
 
         string? description = Child(root, "metadata") is YamlMappingNode metadata
@@ -174,17 +172,13 @@ public static class PrivacyProfileInspector
             ? scalar.Value
             : null;
         int detectorOverrides = Child(root, "detectors") is YamlMappingNode detectors ? detectors.Children.Count : 0;
-        return new ProfileFacts(description, [], 0, detectorOverrides);
+        return new ProfileFacts(description, detectorOverrides);
     }
 
     private static YamlNode? Child(YamlMappingNode node, string key) =>
         node.Children.TryGetValue(new YamlScalarNode(key), out YamlNode? value) ? value : null;
 
-    private sealed record ProfileFacts(
-        string? Description,
-        IReadOnlyList<PrivacyProfileCustomDetectorSummary> CustomDetectors,
-        int SecretFieldNames,
-        int DetectorOverrides);
+    private sealed record ProfileFacts(string? Description, int DetectorOverrides);
 }
 
 /// <summary>MAJOR.MINOR.PATCH with non-negative integers and no leading zeros (except 0).</summary>
