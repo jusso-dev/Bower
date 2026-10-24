@@ -43,7 +43,9 @@ internal sealed record StatusPolicyResponse(
     string? PrivacyProfile,
     string? PrivacyProfileVersion,
     string PrivacyProfileHash,
-    string PrivacyProfileSource);
+    string PrivacyProfileSource,
+    string? ManagedPrivacyProfileState,
+    long? ManagedPrivacyProfileRevision);
 
 internal sealed record StatusPolicyItem(string Id, string Version);
 

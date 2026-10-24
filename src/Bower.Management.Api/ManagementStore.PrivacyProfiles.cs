@@ -12,19 +12,26 @@ public enum PrivacyProfileDeploymentState
     /// <summary>The collector exists but is not Active.</summary>
     NotActive,
 
-    /// <summary>No privacy profile version is assigned.</summary>
+    /// <summary>The collector never had an assignment (no history row): HTTP 204.</summary>
     Unassigned,
 
-    Assigned
+    /// <summary>The latest assignment row assigns a version.</summary>
+    Assigned,
+
+    /// <summary>The latest assignment row is an explicit clear.</summary>
+    Cleared
 }
 
+/// <summary>
+/// The collector's latest assignment history row. <see cref="AssignmentRevision"/> is the
+/// row id (AUTOINCREMENT, so monotonic and never reused); <see cref="OccurredAt"/> is
+/// signed as <c>issuedAt</c>.
+/// </summary>
 public sealed record PrivacyProfileDeployment(
     PrivacyProfileDeploymentState State,
-    string? VersionId = null,
-    string? ProfileId = null,
-    string? Version = null,
-    string? ContentHash = null,
-    string? Content = null);
+    long AssignmentRevision = 0,
+    DateTimeOffset OccurredAt = default,
+    PrivacyProfileVersionContent? Version = null);
 
 /// <summary>A privacy profile state rule was violated (HTTP 409).</summary>
 public sealed class PrivacyProfileConflictException(string message) : InvalidOperationException(message);
@@ -356,8 +363,9 @@ public sealed partial class ManagementStore
     }
 
     /// <summary>
-    /// The assigned version for a collector, bound to its principal exactly like heartbeats:
-    /// a collector id registered by another principal is indistinguishable from an unknown one.
+    /// The collector's latest assignment history row (assigned or cleared), bound to its
+    /// principal exactly like heartbeats: a collector id registered by another principal is
+    /// indistinguishable from an unknown one. The row id is the signed assignment revision.
     /// </summary>
     public async Task<PrivacyProfileDeployment> GetPrivacyProfileDeploymentAsync(
         string collectorId,
@@ -368,9 +376,12 @@ public sealed partial class ManagementStore
         await using SqliteCommand command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT c.status, v.id, v.profile_id, v.version, v.content_hash, v.content
+            SELECT c.status, a.id, a.action, a.occurred_at,
+                   v.id, v.profile_id, v.version, v.content_hash, v.content
             FROM collectors c
-            LEFT JOIN privacy_profile_versions v ON v.id = c.desired_privacy_profile_version_id
+            LEFT JOIN privacy_profile_assignments a ON a.id = (
+                SELECT MAX(latest.id) FROM privacy_profile_assignments latest WHERE latest.collector_id = c.id)
+            LEFT JOIN privacy_profile_versions v ON v.id = a.version_id
             WHERE c.id = $id AND c.principal_object_id = $principal;
             """;
         command.Parameters.AddWithValue("$id", collectorId);
@@ -386,15 +397,34 @@ public sealed partial class ManagementStore
             return new PrivacyProfileDeployment(PrivacyProfileDeploymentState.NotActive);
         }
 
-        return reader.IsDBNull(1)
-            ? new PrivacyProfileDeployment(PrivacyProfileDeploymentState.Unassigned)
-            : new PrivacyProfileDeployment(
-                PrivacyProfileDeploymentState.Assigned,
-                reader.GetString(1),
-                reader.GetString(2),
-                reader.GetString(3),
+        if (reader.IsDBNull(1))
+        {
+            return new PrivacyProfileDeployment(PrivacyProfileDeploymentState.Unassigned);
+        }
+
+        long revision = reader.GetInt64(1);
+        DateTimeOffset occurredAt = Parse(reader.GetString(3));
+        if (reader.GetString(2) != "assigned")
+        {
+            return new PrivacyProfileDeployment(PrivacyProfileDeploymentState.Cleared, revision, occurredAt);
+        }
+
+        if (reader.IsDBNull(4))
+        {
+            // Unreachable through the foreign key; never sign an assignment without its version.
+            throw new InvalidOperationException("Assignment row references a missing privacy profile version.");
+        }
+
+        return new PrivacyProfileDeployment(
+            PrivacyProfileDeploymentState.Assigned,
+            revision,
+            occurredAt,
+            new PrivacyProfileVersionContent(
                 reader.GetString(4),
-                reader.GetString(5));
+                reader.GetString(5),
+                reader.GetString(6),
+                reader.GetString(7),
+                reader.GetString(8)));
     }
 
     /// <summary>True for <c>default</c> or <c>sha256:</c> followed by 64 lowercase hex characters.</summary>

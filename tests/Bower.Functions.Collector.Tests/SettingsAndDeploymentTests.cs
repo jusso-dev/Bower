@@ -62,6 +62,37 @@ public sealed class SettingsAndDeploymentTests
         Assert.Throws<InvalidOperationException>(() => Read(values));
     }
 
+    [Theory]
+    [InlineData("management")]
+    [InlineData("Management")]
+    [InlineData("pack-secret-value")]
+    public void Privacy_profile_source_other_than_local_fails_start_up_with_a_fixed_message(string source)
+    {
+        Dictionary<string, string?> values = Environment();
+        values["BOWER_PRIVACY_PROFILE_SOURCE"] = source;
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => Read(values));
+
+        Assert.Equal(
+            "The Azure Functions collector supports only BOWER_PRIVACY_PROFILE_SOURCE=local. Export an approved " +
+            "privacy profile version and set BOWER_PRIVACY_PROFILE instead.",
+            error.Message);
+        Assert.DoesNotContain(source, error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("local")]
+    [InlineData(" LOCAL ")]
+    public void Local_or_unset_privacy_profile_source_is_accepted(string? source)
+    {
+        Dictionary<string, string?> values = Environment();
+        values["BOWER_PRIVACY_PROFILE_SOURCE"] = source;
+
+        Assert.Equal("local", Read(values).PolicySources.PrivacyProfileSource);
+    }
+
     [Fact]
     public void Scopes_file_and_inline_scopes_are_mutually_exclusive()
     {

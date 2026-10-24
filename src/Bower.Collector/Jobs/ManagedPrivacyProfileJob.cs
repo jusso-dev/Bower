@@ -7,18 +7,26 @@ using Bower.Redaction.Privacy;
 namespace Bower.Collector.Jobs;
 
 /// <summary>
-/// Management mode only (BOWER_PRIVACY_PROFILE_SOURCE=management): fetches the privacy
-/// profile version assigned to this collector. A new verified version is staged in the
-/// cache atomically and the host stops gracefully so the supervisor (Docker restart policy,
-/// systemd <c>Restart=on-failure</c>) restarts it with the new profile: the process exits
-/// with <see cref="RestartExitCode"/>. Anything that does not
-/// verify keeps the running profile and fails the job. Metadata-only logs.
+/// Management mode only (BOWER_PRIVACY_PROFILE_SOURCE=management): fetches this collector's
+/// signed assignment envelope. The cache holds the last verified envelope (assigned or
+/// cleared) and is the assignment-revision high-water mark:
+/// <list type="bullet">
+/// <item>a lower revision is rejected (rollback/replay); the same revision must sign
+/// exactly the cached fields;</item>
+/// <item>a higher revision is verified, written atomically and, when it changes the active
+/// protection, applied by a graceful restart (exit <see cref="RestartExitCode"/> for the
+/// supervisor: Docker restart policy, systemd <c>Restart=on-failure</c>);</item>
+/// <item>an unsigned 204 never removes a verified cache: protection stays, the job fails;
+/// without a cache 204 means never assigned (the built-in default is intended).</item>
+/// </list>
+/// Anything that does not verify keeps the running profile and fails the job. Metadata-only logs.
 /// </summary>
 public sealed partial class ManagedPrivacyProfileJob(
     IHttpClientFactory httpClientFactory,
     TokenCredential credential,
     CollectorSettings settings,
     PolicyBundle bundle,
+    ManagedPrivacyProfileState state,
     IHostApplicationLifetime lifetime,
     ILogger<ManagedPrivacyProfileJob> logger)
 {
@@ -64,14 +72,14 @@ public sealed partial class ManagedPrivacyProfileJob(
             switch (response.StatusCode)
             {
                 case HttpStatusCode.NoContent:
-                    Clear();
+                    NoContent();
                     return;
                 case HttpStatusCode.Conflict:
                     LogCollectorNotActive(logger);
                     return;
                 case HttpStatusCode.OK:
                     byte[] document = await ReadBoundedAsync(response.Content, cancellationToken);
-                    Stage(document);
+                    Apply(document);
                     return;
                 default:
                     LogUnexpectedStatus(logger, (int)response.StatusCode);
@@ -81,20 +89,26 @@ public sealed partial class ManagedPrivacyProfileJob(
         }
     }
 
-    private void Stage(byte[] document)
+    private void Apply(byte[] document)
     {
+        VerifiedManagedPrivacyProfile? cached;
         VerifiedManagedPrivacyProfile verified;
         try
         {
             byte[]? key = settings.PrivacyHmacKeyFile is null
                 ? null
                 : PrivacyProfileLoader.ReadKeyFile(settings.PrivacyHmacKeyFile);
+            cached = ManagedPrivacyProfileCache.LoadVerified(settings, key);
             verified = ManagedPrivacyProfileCache.Verify(
                 document,
                 settings.CollectorId,
                 ManagedPrivacyProfileCache.ReadTrustedKeys(settings),
                 key,
                 settings.PrivacyHmacKeyId);
+            if (cached is not null)
+            {
+                RequireNotOlder(verified, cached);
+            }
         }
         catch (ManagedPrivacyProfileException exception)
         {
@@ -102,33 +116,69 @@ public sealed partial class ManagedPrivacyProfileJob(
             throw;
         }
 
-        if (string.Equals(verified.ContentHash, bundle.PrivacyProfileHash, StringComparison.Ordinal))
+        if (cached is not null && verified.AssignmentRevision == cached.AssignmentRevision)
         {
             return;
         }
 
-        // Only verified bytes reach the disk, and only through an atomic replace.
+        // Only verified bytes reach the disk, and only through an atomic replace. The new
+        // envelope becomes the high-water mark even when it needs no restart.
         ManagedPrivacyProfileCache.WriteAtomically(ManagedPrivacyProfileCache.CachePath(settings), document);
-        LogStaged(logger, verified.ProfileId, verified.Version);
+        bool changesProtection = verified.IsCleared
+            ? bundle.PrivacyProfileHash is not null
+            : !string.Equals(verified.ContentHash, bundle.PrivacyProfileHash, StringComparison.Ordinal);
+        if (!changesProtection)
+        {
+            state.MarkResolved(verified);
+            LogRecorded(logger, verified.AssignmentRevision, verified.Action);
+            return;
+        }
+
+        state.MarkRestartPending(verified);
+        if (verified.IsCleared)
+        {
+            LogCleared(logger, verified.AssignmentRevision);
+        }
+        else
+        {
+            LogStaged(logger, verified.ProfileId!, verified.Version!);
+        }
+
         RequestRestart();
     }
 
-    private void Clear()
+    /// <summary>Lower revisions are replays or rollbacks; the same revision must sign the same fields.</summary>
+    private static void RequireNotOlder(VerifiedManagedPrivacyProfile received, VerifiedManagedPrivacyProfile cached)
     {
-        string path = ManagedPrivacyProfileCache.CachePath(settings);
-        bool cached = File.Exists(path);
-        if (!cached && bundle.PrivacyProfileHash is null)
+        if (received.AssignmentRevision < cached.AssignmentRevision)
         {
-            return;
+            throw new ManagedPrivacyProfileException(
+                $"Managed privacy profile assignment revision {received.AssignmentRevision} is older than the " +
+                $"cached revision {cached.AssignmentRevision}.");
         }
 
-        if (cached)
+        if (received.AssignmentRevision == cached.AssignmentRevision
+            && !received.SignedPayload.AsSpan().SequenceEqual(cached.SignedPayload))
         {
-            File.Delete(path);
+            throw new ManagedPrivacyProfileException(
+                $"Managed privacy profile assignment revision {received.AssignmentRevision} does not match the " +
+                "cached document.");
+        }
+    }
+
+    private void NoContent()
+    {
+        // 204 is unsigned: it can never remove verified protection. Only a signed, newer
+        // "cleared" envelope returns a collector to the built-in default.
+        if (File.Exists(ManagedPrivacyProfileCache.CachePath(settings)))
+        {
+            LogUnsignedNoContent(logger);
+            throw new ManagedPrivacyProfileException(
+                "Management returned 204 although a verified assignment is cached; the cached privacy " +
+                "profile protection stays active.");
         }
 
-        LogCleared(logger);
-        RequestRestart();
+        state.MarkNeverAssigned();
     }
 
     private void RequestRestart()
@@ -194,6 +244,18 @@ public sealed partial class ManagedPrivacyProfileJob(
     [LoggerMessage(
         EventId = 1206,
         Level = LogLevel.Warning,
-        Message = "Managed privacy profile unassigned; cache cleared, restarting to apply the built-in default privacy profile")]
-    private static partial void LogCleared(ILogger logger);
+        Message = "Managed privacy profile assignment cleared (revision {Revision}); restarting to apply the built-in default privacy profile")]
+    private static partial void LogCleared(ILogger logger, long revision);
+
+    [LoggerMessage(
+        EventId = 1207,
+        Level = LogLevel.Information,
+        Message = "Managed privacy profile assignment revision {Revision} ({Action}) recorded; the active protection is unchanged")]
+    private static partial void LogRecorded(ILogger logger, long revision, string action);
+
+    [LoggerMessage(
+        EventId = 1208,
+        Level = LogLevel.Warning,
+        Message = "Management returned 204 although a verified assignment is cached; the cached privacy profile protection stays active")]
+    private static partial void LogUnsignedNoContent(ILogger logger);
 }

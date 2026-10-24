@@ -276,13 +276,15 @@ public sealed class ManagedPrivacyProfileSigner
         }
     }
 
+    /// <summary>
+    /// Signs the collector's latest assignment. <paramref name="issuedAt"/> is the
+    /// assignment time, so every fetch of one revision signs identical fields.
+    /// </summary>
     public ManagedPrivacyProfile Sign(
         string collectorId,
-        string versionId,
-        string profileId,
-        string version,
-        string contentHash,
-        string content,
+        long assignmentRevision,
+        string action,
+        PrivacyProfileVersionContent? version,
         DateTimeOffset issuedAt)
     {
         if (privateKeyPem is null)
@@ -291,35 +293,65 @@ public sealed class ManagedPrivacyProfileSigner
         }
 
         string issued = issuedAt.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture);
-        byte[] payload = SignedBytes(collectorId, versionId, profileId, version, contentHash, content, issued);
+        byte[] payload = SignedBytes(collectorId, assignmentRevision, action, version, issued);
         return new ManagedPrivacyProfile(
             collectorId,
-            versionId,
-            profileId,
-            version,
-            contentHash,
-            content,
+            assignmentRevision,
+            action,
+            version?.VersionId,
+            version?.ProfileId,
+            version?.Version,
+            version?.ContentHash,
+            version?.Content,
             issued,
             Bower.Integrity.DetachedSigner.Sign(payload, privateKeyPem));
     }
 
-    /// <summary>Canonical JSON of exactly the signed fields (everything but the signature).</summary>
+    /// <summary>
+    /// Canonical JSON of exactly the signed fields (everything but the signature):
+    /// <c>assigned</c> = collectorId, assignmentRevision, action, versionId, profileId,
+    /// version, contentHash, content, issuedAt; <c>cleared</c> = collectorId,
+    /// assignmentRevision, action, issuedAt.
+    /// </summary>
     public static byte[] SignedBytes(
         string collectorId,
-        string versionId,
-        string profileId,
-        string version,
-        string contentHash,
-        string content,
-        string issuedAt) =>
-        Bower.Integrity.CanonicalJson.Bytes(new System.Text.Json.Nodes.JsonObject
+        long assignmentRevision,
+        string action,
+        PrivacyProfileVersionContent? version,
+        string issuedAt)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(collectorId);
+        ArgumentOutOfRangeException.ThrowIfLessThan(assignmentRevision, 1);
+        System.Text.Json.Nodes.JsonObject fields = new()
         {
             ["collectorId"] = collectorId,
-            ["versionId"] = versionId,
-            ["profileId"] = profileId,
-            ["version"] = version,
-            ["contentHash"] = contentHash,
-            ["content"] = content,
+            ["assignmentRevision"] = assignmentRevision,
+            ["action"] = action,
             ["issuedAt"] = issuedAt
-        });
+        };
+        switch (action)
+        {
+            case ManagedPrivacyProfile.Assigned when version is not null:
+                fields["versionId"] = version.VersionId;
+                fields["profileId"] = version.ProfileId;
+                fields["version"] = version.Version;
+                fields["contentHash"] = version.ContentHash;
+                fields["content"] = version.Content;
+                break;
+            case ManagedPrivacyProfile.Cleared when version is null:
+                break;
+            default:
+                throw new ArgumentException("An assigned envelope needs a version; a cleared one must not have one.", nameof(action));
+        }
+
+        return Bower.Integrity.CanonicalJson.Bytes(fields);
+    }
 }
+
+/// <summary>The signed fields of an assigned privacy profile version.</summary>
+public sealed record PrivacyProfileVersionContent(
+    string VersionId,
+    string ProfileId,
+    string Version,
+    string ContentHash,
+    string Content);

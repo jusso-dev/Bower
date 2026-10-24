@@ -106,6 +106,7 @@ public static partial class CollectorApplication
                 return Results.Json(response, CollectorJsonContext.Default.IngestResponse, statusCode: status);
             })
             .AddEndpointFilter<IngestAuthenticationFilter>()
+            .AddEndpointFilter<ManagedPrivacyProfileGateFilter>()
             .RequireRateLimiting("ingest");
     }
 

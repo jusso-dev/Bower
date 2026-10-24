@@ -58,8 +58,13 @@ public static partial class CollectorApplication
 
         builder.Services.AddSingleton(settings);
         builder.Services.AddSingleton(TimeProvider.System);
-        PolicyBundle bundle = PolicyBundle.Load(settings.PolicySources());
+        VerifiedManagedPrivacyProfile? cachedManagedProfile = null;
+        PolicyBundle bundle = PolicyBundle.Load(settings.PolicySources(cached => cachedManagedProfile = cached));
         builder.Services.AddSingleton(bundle);
+        // Management mode fails closed until the first sync resolves (see ManagedPrivacyProfileState).
+        builder.Services.AddSingleton(settings.UsesManagedPrivacyProfile
+            ? new ManagedPrivacyProfileState(cachedManagedProfile, settings.ManagedPrivacyAllowDefault)
+            : ManagedPrivacyProfileState.Local);
         builder.Services.AddSingleton<IEventRedactor>(new PackDetectionRedactor(
             new JsonEventRedactor(bundle.Privacy), new DeterministicPolicyEvaluator(bundle.Policies),
             bundle.LoadedPacks.SelectMany(pack => pack.Detections).ToArray()));
@@ -162,6 +167,10 @@ public static partial class CollectorApplication
                     ManagedPrivacyProfileJob.Id,
                     (job, token) => job.RunAsync(token),
                     Cron.Minutely());
+                // Resolve immediately at start-up instead of waiting for the next minute:
+                // register first (heartbeat), then fetch the assignment.
+                jobs.Trigger(ManagementHeartbeatJob.Id);
+                jobs.Trigger(ManagedPrivacyProfileJob.Id);
             }
         }
     }
@@ -237,6 +246,7 @@ public static partial class CollectorApplication
                     return Results.Json(response, CollectorJsonContext.Default.IngestResponse, statusCode: statusCode);
                 })
             .AddEndpointFilter<IngestAuthenticationFilter>()
+            .AddEndpointFilter<ManagedPrivacyProfileGateFilter>()
             .RequireRateLimiting("ingest");
 
         // Liveness for probes: status only, no queue metadata without a token.
@@ -255,6 +265,8 @@ public static partial class CollectorApplication
                     BackgroundJobCatalog jobs,
                     EventIdentityConflicts conflicts,
                     PolicyBundle bundle,
+                    ManagedPrivacyProfileState managedPrivacy,
+                    CollectorSettings settings,
                     CancellationToken cancellationToken) =>
                 {
                     QueueSnapshot snapshot = await eventQueue.GetSnapshotAsync(cancellationToken);
@@ -274,7 +286,9 @@ public static partial class CollectorApplication
                             bundle.PrivacyProfile,
                             bundle.PrivacyProfileVersion,
                             bundle.PrivacyProfileHash ?? "default",
-                            bundle.PrivacyProfileSource),
+                            bundle.PrivacyProfileSource,
+                            settings.UsesManagedPrivacyProfile ? managedPrivacy.State : null,
+                            settings.UsesManagedPrivacyProfile ? managedPrivacy.Revision : null),
                         new LedgerResponse(ledger.Sequence, ledger.Hash),
                         new StatusQueueResponse(
                             snapshot.Queued,

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using Bower.Packs;
+using Bower.Redaction.Privacy;
 
 namespace Bower.Collector;
 
@@ -58,6 +59,13 @@ public sealed record CollectorSettings
 
     /// <summary>Cache directory for the managed privacy profile; null means next to the queue database.</summary>
     public string? ManagedPrivacyDirectory { get; init; }
+
+    /// <summary>
+    /// BOWER_MANAGED_PRIVACY_ALLOW_DEFAULT=true: accept events under the built-in default
+    /// privacy profile before the first managed sync resolves. Off by default: a management
+    /// mode collector without a verified cache refuses ingest (503) until then.
+    /// </summary>
+    public bool ManagedPrivacyAllowDefault { get; init; }
 
     public bool UsesManagedPrivacyProfile =>
         string.Equals(PrivacyProfileSource, PrivacyProfileSources.Management, StringComparison.Ordinal);
@@ -132,6 +140,10 @@ public sealed record CollectorSettings
                 ?? PrivacyProfileSources.Local,
             ManagedPrivacyTrustedKeyFiles = SplitList(read("BOWER_MANAGED_PRIVACY_TRUSTED_KEYS")),
             ManagedPrivacyDirectory = Blank(read("BOWER_MANAGED_PRIVACY_DIRECTORY")),
+            ManagedPrivacyAllowDefault = string.Equals(
+                read("BOWER_MANAGED_PRIVACY_ALLOW_DEFAULT"),
+                "true",
+                StringComparison.OrdinalIgnoreCase),
             PrivacyHmacKeyFile = Blank(read("BOWER_PRIVACY_HMAC_KEY_FILE")),
             PrivacyHmacKeyId = Blank(read("BOWER_PRIVACY_HMAC_KEY_ID")) ?? "k1",
             AllowUnauthenticatedIngest = string.Equals(
@@ -305,7 +317,8 @@ public sealed record CollectorSettings
         if (UsesManagedPrivacyProfile)
         {
             // Appended only in management mode so existing local configuration hashes are unchanged.
-            material += '\u001f' + "privacy-source:" + PrivacyProfileSource;
+            material += '\u001f' + "privacy-source:" + PrivacyProfileSource
+                + '\u001f' + "privacy-allow-default:" + ManagedPrivacyAllowDefault.ToString();
         }
 
         return "sha256:" + Convert.ToHexStringLower(
@@ -313,7 +326,11 @@ public sealed record CollectorSettings
     }
 
     /// <summary>Policy, pack and privacy profile sources for <see cref="PolicyBundle.Load"/>.</summary>
-    public PolicyBundleSources PolicySources() => new()
+    /// <param name="observeManaged">
+    /// Management mode: receives the verified cached document (or null when there is none),
+    /// read once with the bundle so the ingest gate and the active profile always agree.
+    /// </param>
+    public PolicyBundleSources PolicySources(Action<VerifiedManagedPrivacyProfile?>? observeManaged = null) => new()
     {
         PolicyDirectory = PolicyDirectory,
         Packs = Packs,
@@ -322,10 +339,16 @@ public sealed record CollectorSettings
         PrivacyHmacKeyFile = PrivacyHmacKeyFile,
         PrivacyHmacKeyId = PrivacyHmacKeyId,
         PrivacyProfileSource = PrivacyProfileSource,
-        ManagedPrivacyProfile = UsesManagedPrivacyProfile
-            ? key => ManagedPrivacyProfileCache.LoadVerified(this, key)?.Profile
-            : null
+        // A cached explicit clear resolves to the built-in default (null profile).
+        ManagedPrivacyProfile = UsesManagedPrivacyProfile ? key => LoadManagedProfile(key, observeManaged) : null
     };
+
+    private LoadedPrivacyProfile? LoadManagedProfile(byte[]? key, Action<VerifiedManagedPrivacyProfile?>? observe)
+    {
+        VerifiedManagedPrivacyProfile? cached = ManagedPrivacyProfileCache.LoadVerified(this, key);
+        observe?.Invoke(cached);
+        return cached?.Profile;
+    }
 
     private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 

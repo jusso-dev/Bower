@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Bower.Integrity;
 
 namespace Bower.Management.Api;
@@ -101,15 +102,25 @@ public sealed record DesiredPrivacyProfile(
     string ContentHash);
 
 /// <summary>
-/// Signed deployment document served to a collector. The signature covers the canonical
-/// JSON of every field except <see cref="Signature"/> (see <see cref="ManagedPrivacyProfileSigner"/>).
+/// Signed assignment envelope served to a collector: the collector's latest assignment
+/// (<c>assigned</c> with the version's fields, or an explicit <c>cleared</c> without them).
+/// <see cref="AssignmentRevision"/> is the assignment history row id, monotonic per
+/// management database; collectors never accept a lower revision than the one they hold.
+/// The signature covers the canonical JSON of every present field except
+/// <see cref="Signature"/> (see <see cref="ManagedPrivacyProfileSigner"/>).
 /// </summary>
 public sealed record ManagedPrivacyProfile(
     string CollectorId,
-    string VersionId,
-    string ProfileId,
-    string Version,
-    string ContentHash,
-    string Content,
+    long AssignmentRevision,
+    string Action,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? VersionId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ProfileId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Version,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ContentHash,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Content,
     string IssuedAt,
-    DetachedSignature Signature);
+    DetachedSignature Signature)
+{
+    public const string Assigned = "assigned";
+    public const string Cleared = "cleared";
+}

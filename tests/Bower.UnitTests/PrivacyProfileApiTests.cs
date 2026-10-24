@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using Bower.Collector;
 using Bower.Integrity;
 using Bower.Management.Api;
+using Bower.Redaction.Privacy;
 using Microsoft.AspNetCore.Builder;
 
 namespace Bower.UnitTests;
@@ -375,8 +376,11 @@ public sealed class PrivacyProfileApiTests
 
         JsonObject document = JsonNode.Parse(body)!.AsObject();
         Assert.Equal(
-            ["collectorId", "content", "contentHash", "issuedAt", "profileId", "signature", "version", "versionId"],
+            ["action", "assignmentRevision", "collectorId", "content", "contentHash", "issuedAt", "profileId",
+                "signature", "version", "versionId"],
             document.Select(item => item.Key).Order(StringComparer.Ordinal));
+        Assert.Equal("assigned", (string?)document["action"]);
+        Assert.True((long)document["assignmentRevision"]! >= 1);
         DetachedSignature signature = document["signature"].Deserialize<DetachedSignature>(JsonSerializerOptions.Web)!;
         Assert.Equal(("ES256", keyId), (signature.Algorithm, signature.KeyId));
         Assert.Equal("edge-01", (string?)document["collectorId"]);
@@ -393,14 +397,19 @@ public sealed class PrivacyProfileApiTests
         document.Remove("signature");
         byte[] canonical = CanonicalJson.Bytes(document);
         Assert.True(DetachedSigner.Verify(canonical, signature, [publicPem]));
+        long revision = (long)document["assignmentRevision"]!;
         Assert.Equal(
             canonical,
             ManagedPrivacyProfileSigner.SignedBytes(
-                "edge-01", version.Id, "contoso-app", "1.0.0", version.ContentHash, Profile("1.0.0"), issuedAt));
+                "edge-01",
+                revision,
+                "assigned",
+                new PrivacyProfileVersionContent(version.Id, "contoso-app", "1.0.0", version.ContentHash, Profile("1.0.0")),
+                issuedAt));
         foreach (string field in document.Select(item => item.Key).ToArray())
         {
             JsonObject tampered = document.DeepClone().AsObject();
-            tampered[field] = (string)tampered[field]! + "x";
+            tampered[field] = field == "assignmentRevision" ? revision + 1 : (string)tampered[field]! + "x";
             Assert.False(DetachedSigner.Verify(CanonicalJson.Bytes(tampered), signature, [publicPem]), field);
         }
 
@@ -409,6 +418,82 @@ public sealed class PrivacyProfileApiTests
         VerifiedManagedPrivacyProfile verified = ManagedPrivacyProfileCache.Verify(
             body, "edge-01", [publicPem], new byte[32], "k1");
         Assert.Equal((version.Id, version.ContentHash), (verified.VersionId, verified.ContentHash));
+    }
+
+    [Fact]
+    public async Task Deployment_SignsEveryAssignmentAndClearWithAStableMonotonicRevision()
+    {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (string privatePem, string publicPem, _) = DetachedSigner.GenerateKeyPair();
+        string keyFile = Path.Combine(directory.Path, "profile-signing.pem");
+        await File.WriteAllTextAsync(keyFile, privatePem, ct);
+        await using WebApplication app = await ManagementApiTests.StartAsync(
+            directory, ct, $"--{ManagedPrivacyProfileSigner.KeyFileSetting}={keyFile}");
+        HttpClient collector = ManagementApiTests.Client(app, BowerRoles.Collector);
+        HttpClient admin = ManagementApiTests.Client(app, BowerRoles.Administrator, "carol");
+        HttpClient author = ManagementApiTests.Client(app, BowerRoles.Operator, "alice");
+        await RegisterActiveAsync(collector, admin, "edge-01", ct);
+        await RegisterActiveAsync(collector, admin, "edge-02", ct);
+        const string DeploymentPath = "/api/collectors/edge-01/privacy-profile/deployment";
+        PrivacyProfileVersionDetail first = await SubmitAsync(author, Profile("1.0.0"), ct);
+        await Review(admin, first.Id, "approve", "Reviewed", ct);
+        PrivacyProfileVersionDetail second = await SubmitAsync(author, Profile("2.0.0"), ct);
+        await Review(admin, second.Id, "approve", "Reviewed", ct);
+
+        async Task<(JsonObject Document, byte[] Body)> FetchAsync()
+        {
+            using HttpResponseMessage response = await collector.GetAsync(DeploymentPath, ct);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            byte[] body = await response.Content.ReadAsByteArrayAsync(ct);
+            return (JsonNode.Parse(body)!.AsObject(), body);
+        }
+
+        static byte[] Signed(JsonObject document)
+        {
+            JsonObject copy = document.DeepClone().AsObject();
+            copy.Remove("signature");
+            return CanonicalJson.Bytes(copy);
+        }
+
+        await Assign(admin, "edge-01", first.Id, "Roll out 1.0.0", ct);
+        // Another collector's assignment also takes a revision: revisions are per database.
+        await Assign(admin, "edge-02", first.Id, "Roll out 1.0.0", ct);
+        (JsonObject assigned, _) = await FetchAsync();
+        (JsonObject refetched, _) = await FetchAsync();
+        await Assign(admin, "edge-01", second.Id, "Roll out 2.0.0", ct);
+        (JsonObject upgraded, _) = await FetchAsync();
+        await admin.PostAsJsonAsync(
+            "/api/collectors/edge-01/privacy-profile/clear", new ApprovalRequest("Back to default"), ct);
+        (JsonObject cleared, byte[] clearedBody) = await FetchAsync();
+        await Assign(admin, "edge-01", first.Id, "Explicit rollback", ct);
+        (JsonObject rolledBack, byte[] rolledBackBody) = await FetchAsync();
+
+        long[] revisions = [.. new[] { assigned, upgraded, cleared, rolledBack }
+            .Select(item => (long)item["assignmentRevision"]!)];
+        Assert.Equal(revisions.Order(), revisions);
+        Assert.Equal(revisions.Length, revisions.Distinct().Count());
+        // Same revision → identical signed fields on every fetch (issuedAt is the assignment time).
+        Assert.Equal(Signed(assigned), Signed(refetched));
+        Assert.Equal("2.0.0", (string?)upgraded["version"]);
+        Assert.Equal(
+            ["action", "assignmentRevision", "collectorId", "issuedAt", "signature"],
+            cleared.Select(item => item.Key).Order(StringComparer.Ordinal));
+        Assert.Equal(("cleared", "edge-01"), ((string?)cleared["action"], (string?)cleared["collectorId"]));
+        DetachedSignature clearSignature = cleared["signature"].Deserialize<DetachedSignature>(JsonSerializerOptions.Web)!;
+        Assert.True(DetachedSigner.Verify(Signed(cleared), clearSignature, [publicPem]));
+        Assert.Equal(
+            Signed(cleared),
+            ManagedPrivacyProfileSigner.SignedBytes(
+                "edge-01", revisions[2], "cleared", null, (string)cleared["issuedAt"]!));
+        Assert.Equal(("assigned", "1.0.0"), ((string?)rolledBack["action"], (string?)rolledBack["version"]));
+
+        VerifiedManagedPrivacyProfile verifiedClear = ManagedPrivacyProfileCache.Verify(
+            clearedBody, "edge-01", [publicPem], new byte[32], "k1");
+        VerifiedManagedPrivacyProfile verifiedRollback = ManagedPrivacyProfileCache.Verify(
+            rolledBackBody, "edge-01", [publicPem], new byte[32], "k1");
+        Assert.Equal((true, revisions[2], (LoadedPrivacyProfile?)null), (verifiedClear.IsCleared, verifiedClear.AssignmentRevision, verifiedClear.Profile));
+        Assert.Equal((revisions[3], first.ContentHash), (verifiedRollback.AssignmentRevision, verifiedRollback.ContentHash));
     }
 
     [Fact]

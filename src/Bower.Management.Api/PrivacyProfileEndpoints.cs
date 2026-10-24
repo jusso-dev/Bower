@@ -132,7 +132,6 @@ internal static class PrivacyProfileEndpoints
                     ClaimsPrincipal user,
                     ManagementStore store,
                     ManagedPrivacyProfileSigner signer,
-                    TimeProvider clock,
                     CancellationToken cancellationToken) =>
                 {
                     PrivacyProfileDeployment deployment = await store.GetPrivacyProfileDeploymentAsync(
@@ -158,14 +157,16 @@ internal static class PrivacyProfileEndpoints
                             statusCode: StatusCodes.Status503ServiceUnavailable);
                     }
 
+                    // Assigned or an explicit, signed clear. issuedAt is the assignment time, so
+                    // one revision always signs the same fields.
                     return Results.Ok(signer.Sign(
                         id,
-                        deployment.VersionId!,
-                        deployment.ProfileId!,
-                        deployment.Version!,
-                        deployment.ContentHash!,
-                        deployment.Content!,
-                        clock.GetUtcNow()));
+                        deployment.AssignmentRevision,
+                        deployment.State == PrivacyProfileDeploymentState.Assigned
+                            ? ManagedPrivacyProfile.Assigned
+                            : ManagedPrivacyProfile.Cleared,
+                        deployment.Version,
+                        deployment.OccurredAt));
                 })
             .RequireAuthorization("Collector");
     }

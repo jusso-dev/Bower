@@ -14,6 +14,15 @@ public sealed record FunctionSettings
     public const int MinimumDeliveryTimeoutSeconds = 5;
     public const int MaximumDeliveryTimeoutSeconds = 120;
 
+    /// <summary>
+    /// Managed privacy profiles need a persistent signed cache and a sync job, which a
+    /// serverless host does not have, so anything but <c>local</c> fails start-up. The value
+    /// is never echoed.
+    /// </summary>
+    public const string UnsupportedPrivacyProfileSourceMessage =
+        "The Azure Functions collector supports only BOWER_PRIVACY_PROFILE_SOURCE=local. Export an approved " +
+        "privacy profile version and set BOWER_PRIVACY_PROFILE instead.";
+
     /// <summary>Entra tenant (directory) ID that issues producer tokens.</summary>
     public string? EntraTenantId { get; init; }
 
@@ -76,7 +85,8 @@ public sealed record FunctionSettings
                 PackTrustedKeyFiles = SplitList(read("BOWER_PACK_TRUSTED_KEYS")).Select(Resolve).ToArray(),
                 PrivacyProfilePath = ResolveOptional(read("BOWER_PRIVACY_PROFILE")),
                 PrivacyHmacKeyFile = ResolveOptional(read("BOWER_PRIVACY_HMAC_KEY_FILE")),
-                PrivacyHmacKeyId = Blank(read("BOWER_PRIVACY_HMAC_KEY_ID")) ?? "k1"
+                PrivacyHmacKeyId = Blank(read("BOWER_PRIVACY_HMAC_KEY_ID")) ?? "k1",
+                PrivacyProfileSource = Blank(read("BOWER_PRIVACY_PROFILE_SOURCE"))?.Trim().ToLowerInvariant() ?? "local"
             },
             ProducerScopesFile = ResolveOptional(read("BOWER_PRODUCER_SCOPES_FILE")),
             ProducerScopesJson = Blank(read("BOWER_PRODUCER_SCOPES_JSON")),
@@ -95,6 +105,11 @@ public sealed record FunctionSettings
     public void Validate()
     {
         ArgumentNullException.ThrowIfNull(PolicySources);
+        if (PolicySources.PrivacyProfileSource != "local" || PolicySources.ManagedPrivacyProfile is not null)
+        {
+            throw new InvalidOperationException(UnsupportedPrivacyProfileSourceMessage);
+        }
+
         if (DevelopmentAuthentication)
         {
             // Never deployable: the platform default environment is Production and the Bicep
