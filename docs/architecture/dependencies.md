@@ -110,3 +110,25 @@ Rust collector tests add the internal workspace `bower-integrity` dev reference 
 build genuine signed packs before exercising the real host. This is test-only;
 production pack verification already depends on the same library through
 `bower-packs`. No new external Rust dependency is introduced.
+
+### AWS Lambda host (`bower-lambda`, 2026-10-24)
+
+`bower-lambda` is a separate binary (`bootstrap`, `provided.al2023`); none of these
+crates are linked into `bower-collector` or `bower` (the collector image still builds
+`-p bower-collector` only). Internally it reuses `bower-collector` (bundle loader,
+producer scopes, `/v1/events` body parsing), `bower-core`, `bower-packs`,
+`bower-redaction` and `bower-persistence` (`replay_content` for in-invocation identity
+checks) instead of copying their rules.
+
+| Crate | Used by | Why | Alternatives considered |
+|---|---|---|---|
+| `lambda_runtime` 1.5 (`tracing` only) | `bower-lambda` | AWS-maintained client for the Lambda Runtime API (`/next`, `/response`, `/error`, init errors) on the workspace `tokio`, `hyper` and `serde_json`. The payload is taken as `Box<RawValue>` so the handler sees the exact request bytes (duplicate keys, number text) like the collector. `lambda_http` and `aws_lambda_events` are not used: the Function URL request fields the handler needs are a few serde structs. | Hand-written Runtime API loop (re-implements error and deadline handling); `lambda_http` (pulls all API Gateway/ALB event types, normalises the body). |
+| `aws-config` 1.13 (default features off; `rt-tokio`, `default-https-client`, `behavior-version-latest`, so no SSO or credential-process providers) | `bower-lambda` | Region and credentials from the Lambda environment (the execution role's session variables) through the standard provider chain, so no key is configured or stored. Timeouts are set explicitly (3 s connect, 8 s attempt, 20 s operation). | Reading `AWS_ACCESS_KEY_ID`/`AWS_SESSION_TOKEN` and signing by hand (SigV4 is security-sensitive code to own). |
+| `aws-sdk-cloudtraildata` 1.118 | `bower-lambda` | `PutAuditEvents`, the only supported ingestion API for CloudTrail Lake custom integrations, with SigV4, retries for throttling and typed `successful`/`failed` results. | Raw HTTPS with `reqwest` plus hand-written SigV4 (more security-sensitive code, no retry classifier). |
+| `aws-sdk-secretsmanager` 1.123 | `bower-lambda` | Optional `GetSecretValue` for the privacy HMAC key by ARN with the execution role, once at cold start, held in memory only. Packaging a key file would put the secret in the code artefact. | The Parameters and Secrets Lambda extension (an extra layer and a localhost HTTP hop); not supporting HMAC profiles in Lambda. |
+
+These SDK crates add 47 packages to `Cargo.lock` (the `aws-smithy-*` runtime, `aws-sigv4`,
+`aws-sdk-sts` for the credential chain, `h2`, `futures`, `tokio-util`, `xmlparser`,
+`base64` 0.22 next to the workspace's 0.23, and small helpers). TLS stays on rustls
+with `aws-lc-rs`, which the workspace already links through reqwest. The minimum Rust
+version of every added crate is at most 1.94.1, below the workspace's 1.97.
