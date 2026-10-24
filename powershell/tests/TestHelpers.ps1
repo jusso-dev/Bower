@@ -63,3 +63,16 @@ function New-TestEvent {
         application   = [ordered]@{ name = 'payroll'; environment = 'test' }
     }
 }
+
+# True when $Sequence appears contiguously (case-sensitive) in $Arguments.
+function Test-ArgumentSequence {
+    param([string[]] $Arguments, [string[]] $Sequence)
+    for ($index = 0; $index -le $Arguments.Count - $Sequence.Count; $index++) {
+        $match = $true
+        for ($offset = 0; $offset -lt $Sequence.Count; $offset++) {
+            if ($Arguments[$index + $offset] -cne $Sequence[$offset]) { $match = $false; break }
+        }
+        if ($match) { return $true }
+    }
+    $false
+}

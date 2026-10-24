@@ -4,14 +4,15 @@
     Author               = 'Bower contributors'
     CompanyName          = 'Bower'
     Copyright            = '(c) Bower contributors. Licensed under the repository LICENSE.'
-    Description          = 'Bower PowerShell modules: Bower.Events, Bower.Management, Bower.Deployment and Bower.Privacy in one import.'
+    Description          = 'Bower PowerShell modules: Bower.Events, Bower.Management, Bower.Deployment, Bower.Privacy and Bower.Policy in one import.'
     PowerShellVersion    = '7.4'
     CompatiblePSEditions = @('Core')
     NestedModules        = @(
         '../Bower.Events/Bower.Events.psd1',
         '../Bower.Management/Bower.Management.psd1',
         '../Bower.Deployment/Bower.Deployment.psd1',
-        '../Bower.Privacy/Bower.Privacy.psd1'
+        '../Bower.Privacy/Bower.Privacy.psd1',
+        '../Bower.Policy/Bower.Policy.psd1'
     )
     FunctionsToExport    = @(
         'Approve-BowerCollector',
@@ -21,7 +22,7 @@
         'ConvertTo-BowerSecretFieldName',
         'Deny-BowerCollector',
         'Deny-BowerPrivacyProfileVersion',
-        'Deploy-BowerAwsCloudTrailLake',
+        'Deploy-BowerAwsLambda',
         'Deploy-BowerAwsSecurity',
         'Deploy-BowerAzureFunction',
         'Deploy-BowerGcpSecurity',
@@ -37,6 +38,7 @@
         'Invoke-BowerPrivacyProfilePreview',
         'New-BowerCustomDetector',
         'New-BowerEntraApplication',
+        'New-BowerPolicy',
         'New-BowerSecurityEvent',
         'Resume-BowerCollector',
         'Revoke-BowerCollector',
@@ -45,6 +47,8 @@
         'Start-BowerJob',
         'Submit-BowerPrivacyProfile',
         'Suspend-BowerCollector',
+        'Test-BowerPolicy',
+        'Test-BowerPolicyEvent',
         'Test-BowerPrivacyProfile',
         'Test-BowerSecurityEvent'
     )

@@ -377,14 +377,15 @@ producers retry on failure (at-least-once).
 | Host | Ingest auth | Destination auth | Guide |
 |---|---|---|---|
 | **Azure Functions collector** (C#, isolated worker, Flex Consumption) | Entra token with the `Bower.Producer` app role, plus producer scopes | Managed identity (system-assigned by default) with Monitoring Metrics Publisher on the DCR only; no keys or connection strings | [Azure Functions](docs/deployment/azure-function.md) · [`deploy/azure-function`](deploy/azure-function/main.bicep) |
-| **AWS Lambda host** (Rust `bower-lambda`, arm64) | IAM: Function URL with `AuthType: AWS_IAM` or `lambda:InvokeFunction`, caller ARN mapped to producer scopes | Execution role with `cloudtrail-data:PutAuditEvents` on one CloudTrail Lake channel | [AWS Lambda](docs/deployment/aws-lambda-cloudtrail-lake.md) · [`deploy/aws`](deploy/aws/bower-aws-cloudtrail-lake.yaml) |
+| **AWS Lambda host** (Rust `bower-lambda`, arm64) | IAM: Function URL with `AuthType: AWS_IAM` or `lambda:InvokeFunction`, caller ARN mapped to producer scopes | Execution role only: `logs:PutLogEvents` on one CloudWatch Logs group (default), or `cloudtrail-data:PutAuditEvents` on one CloudTrail Lake channel | [AWS Lambda](docs/deployment/aws-lambda.md) · [`deploy/aws`](deploy/aws/bower-aws-lambda.yaml) |
 
 > [!NOTE]
-> AWS closed CloudTrail Lake to new customers on 31 May 2026. The Lambda host works
-> for accounts already using CloudTrail Lake.
+> AWS closed CloudTrail Lake to new customers on 31 May 2026. The Lambda host writes
+> to CloudWatch Logs by default; choose `cloudtrail-lake` only for accounts already
+> using CloudTrail Lake.
 
 Both are plan-first: `az deployment group what-if` and CloudFormation change sets
-(or `Deploy-BowerAzureFunction` / `Deploy-BowerAwsCloudTrailLake` in PowerShell).
+(or `Deploy-BowerAzureFunction` / `Deploy-BowerAwsLambda` in PowerShell).
 Neither has been exercised against a live tenant or account yet.
 
 ## Collector configuration
@@ -443,6 +444,7 @@ Design, observability and how to add a job:
 | Replay dead letters | `bower queue dead-letters` · `bower queue replay --code preflight-` | [Fleet and queue integrity](docs/operations/fleet-and-queue-integrity.md) |
 | Verify queue integrity | `bower queue verify --database queue.db` | [Fleet and queue integrity](docs/operations/fleet-and-queue-integrity.md) |
 | Validate a privacy profile | `bower privacy validate profile.yaml --sample event.json` | [Custom redaction rules](docs/privacy/custom-redaction-rules.md) |
+| Test sample events against policies offline | `bower policy test samples/*.json --policy-directory policies/default --expect accept` | Metadata only; exit 3 when `--expect` does not match |
 | Review and roll out a privacy profile | Management console → **Privacy profiles** | [Managed privacy profiles](docs/privacy/managed-privacy-profiles.md) |
 | Pseudonymise identifiers | privacy profile `action: hmac` (detector, custom detector or field rule) + `BOWER_PRIVACY_HMAC_KEY_FILE` | [Privacy & Secret Protection Engine](docs/privacy/privacy-secret-engine.md) |
 | Forward AWS / GCP security signal | `deploy/aws` CloudFormation, `deploy/gcp` Terraform, `bower-cloud` agent | [AWS](docs/deployment/aws.md) · [Google Cloud](docs/deployment/gcp.md) |
@@ -680,8 +682,9 @@ PowerShell 7.4+ modules (Windows, Linux, macOS) wrap the collector, management A
 |---|---|
 | `Bower.Events` | `New-`, `Test-`, `Send-BowerSecurityEvent` (collector, Azure Functions collector, SigV4 Lambda Function URL) |
 | `Bower.Management` | Connect, collectors (approve, deny, suspend, resume, revoke), audit, jobs, privacy profile versions (preview, submit, approve, deny, assign, clear) |
-| `Bower.Deployment` | `New-BowerEntraApplication`, `Deploy-BowerSentinelResource`, `Deploy-BowerAzureFunction`, `Deploy-BowerAwsCloudTrailLake`, `Deploy-BowerAwsSecurity`, `Deploy-BowerGcpSecurity` |
+| `Bower.Deployment` | `New-BowerEntraApplication`, `Deploy-BowerSentinelResource`, `Deploy-BowerAzureFunction`, `Deploy-BowerAwsLambda`, `Deploy-BowerAwsSecurity`, `Deploy-BowerGcpSecurity` |
 | `Bower.Privacy` | `Test-BowerPrivacyProfile`, `New-BowerCustomDetector`, `ConvertTo-BowerSecretFieldName` |
+| `Bower.Policy` | `New-BowerPolicy`, `Test-BowerPolicy`, `Test-BowerPolicyEvent` (offline, through the `bower` CLI) |
 
 ```powershell
 Import-Module ./powershell/modules/Bower/Bower.psd1
@@ -718,6 +721,11 @@ decision:
   minimumValueScore: 70
   neverSample: true
 ```
+
+Test a policy change offline before rollout: `bower policy test samples/*.json`
+runs sample events through the collector's redaction, validation and selection and
+prints each decision with its reasons (metadata only; `--expect DECISION` exits 3 on
+a mismatch, for CI).
 
 Unknown events are rejected. Every policy must list `eventTypes`; unknown or
 misspelt YAML keys and numeric actions fail the load. Missing required

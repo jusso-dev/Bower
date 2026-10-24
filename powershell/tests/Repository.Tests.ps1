@@ -1,6 +1,6 @@
 BeforeDiscovery {
     $modulesRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../modules'))
-    $script:ModuleNames = @('Bower.Events', 'Bower.Management', 'Bower.Deployment', 'Bower.Privacy')
+    $script:ModuleNames = @('Bower.Events', 'Bower.Management', 'Bower.Deployment', 'Bower.Privacy', 'Bower.Policy')
     $script:ModuleCases = @($script:ModuleNames + 'Bower' | ForEach-Object { @{ Name = $_ } })
     $script:FunctionCases = foreach ($name in $script:ModuleNames) {
         foreach ($file in Get-ChildItem -Path (Join-Path $modulesRoot "$name/Public") -Filter *.ps1) {
@@ -11,7 +11,7 @@ BeforeDiscovery {
 
 BeforeAll {
     . (Join-Path $PSScriptRoot 'TestHelpers.ps1')
-    $script:ModuleNames = @('Bower.Events', 'Bower.Management', 'Bower.Deployment', 'Bower.Privacy')
+    $script:ModuleNames = @('Bower.Events', 'Bower.Management', 'Bower.Deployment', 'Bower.Privacy', 'Bower.Policy')
     foreach ($name in $script:ModuleNames) {
         Import-BowerTestModule -Name $name
     }
@@ -57,9 +57,9 @@ Describe 'Module manifest <Name>' -ForEach $script:ModuleCases {
 }
 
 Describe 'Bower meta-module' {
-    It 'declares the four modules as nested modules' {
+    It 'declares the five modules as nested modules' {
         $manifest = Import-PowerShellDataFile -Path (Join-Path $script:ModulesRoot 'Bower/Bower.psd1')
-        $manifest.NestedModules | Should -Be @('../Bower.Events/Bower.Events.psd1', '../Bower.Management/Bower.Management.psd1', '../Bower.Deployment/Bower.Deployment.psd1', '../Bower.Privacy/Bower.Privacy.psd1')
+        $manifest.NestedModules | Should -Be @('../Bower.Events/Bower.Events.psd1', '../Bower.Management/Bower.Management.psd1', '../Bower.Deployment/Bower.Deployment.psd1', '../Bower.Privacy/Bower.Privacy.psd1', '../Bower.Policy/Bower.Policy.psd1')
     }
 
     It 'imports every command in one line' {
@@ -128,7 +128,8 @@ Describe 'State-changing commands' {
         @{ Name = 'New-BowerEntraApplication'; Impact = 'High' }
         @{ Name = 'Deploy-BowerSentinelResource'; Impact = 'High' }
         @{ Name = 'Deploy-BowerAzureFunction'; Impact = 'High' }
-        @{ Name = 'Deploy-BowerAwsCloudTrailLake'; Impact = 'High' }
+        @{ Name = 'Deploy-BowerAwsLambda'; Impact = 'High' }
+        @{ Name = 'New-BowerPolicy'; Impact = 'Medium' }
         @{ Name = 'Deploy-BowerAwsSecurity'; Impact = 'High' }
         @{ Name = 'Deploy-BowerGcpSecurity'; Impact = 'High' }
     ) {
@@ -150,7 +151,7 @@ Describe 'State-changing commands' {
     }
 
     It 'Deploy commands default to planning (an -Apply switch is required to mutate)' {
-        foreach ($name in 'New-BowerEntraApplication', 'Deploy-BowerSentinelResource', 'Deploy-BowerAzureFunction', 'Deploy-BowerAwsCloudTrailLake', 'Deploy-BowerAwsSecurity', 'Deploy-BowerGcpSecurity') {
+        foreach ($name in 'New-BowerEntraApplication', 'Deploy-BowerSentinelResource', 'Deploy-BowerAzureFunction', 'Deploy-BowerAwsLambda', 'Deploy-BowerAwsSecurity', 'Deploy-BowerGcpSecurity') {
             (Get-Command -Name $name).Parameters['Apply'].ParameterType | Should -Be ([switch])
         }
     }
@@ -188,9 +189,16 @@ Describe 'Source safety rules' {
         }
     }
 
-    It 'keeps the shared CLI helper identical in Bower.Privacy and Bower.Deployment' {
-        (Get-FileHash (Join-Path $script:ModulesRoot 'Bower.Privacy/Private/Shared/BowerCli.ps1')).Hash |
-            Should -Be (Get-FileHash (Join-Path $script:ModulesRoot 'Bower.Deployment/Private/Shared/BowerCli.ps1')).Hash
+    It 'keeps the shared CLI helper identical in Bower.Privacy, Bower.Policy and Bower.Deployment' {
+        $privacy = (Get-FileHash (Join-Path $script:ModulesRoot 'Bower.Privacy/Private/Shared/BowerCli.ps1')).Hash
+        foreach ($module in 'Bower.Deployment', 'Bower.Policy') {
+            (Get-FileHash (Join-Path $script:ModulesRoot "$module/Private/Shared/BowerCli.ps1")).Hash | Should -Be $privacy -Because "$module shares it"
+        }
+    }
+
+    It 'keeps the shared YAML helper identical in Bower.Privacy and Bower.Policy' {
+        (Get-FileHash (Join-Path $script:ModulesRoot 'Bower.Privacy/Private/Shared/BowerYaml.ps1')).Hash |
+            Should -Be (Get-FileHash (Join-Path $script:ModulesRoot 'Bower.Policy/Private/Shared/BowerYaml.ps1')).Hash
     }
 }
 

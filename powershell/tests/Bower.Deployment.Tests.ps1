@@ -6,18 +6,6 @@ BeforeAll {
     Mock -ModuleName Bower.Deployment Resolve-BowerCliPath { "/mock/bin/$Name" }
     Mock -ModuleName Bower.Deployment Invoke-BowerCli { [pscustomobject]@{ ExitCode = 0; StdOut = '{"status":"Succeeded","changes":[]}'; StdErr = '' } }
     Mock -ModuleName Bower.Deployment Invoke-BowerGraphCommand { throw "Unmocked Microsoft Graph call: $Name" }
-
-    function Test-ArgumentSequence {
-        param([string[]] $Arguments, [string[]] $Sequence)
-        for ($index = 0; $index -le $Arguments.Count - $Sequence.Count; $index++) {
-            $match = $true
-            for ($offset = 0; $offset -lt $Sequence.Count; $offset++) {
-                if ($Arguments[$index + $offset] -cne $Sequence[$offset]) { $match = $false; break }
-            }
-            if ($match) { return $true }
-        }
-        $false
-    }
 }
 
 Describe 'Deploy-BowerSentinelResource' {
@@ -173,81 +161,108 @@ Describe 'Deploy-BowerAzureFunction' {
     }
 }
 
-Describe 'Deploy-BowerAwsCloudTrailLake' {
+Describe 'Deploy-BowerAwsLambda' {
     BeforeAll {
-        $script:LakeTemplate = Join-Path $TestDrive 'lake.yaml'
-        Set-Content -LiteralPath $script:LakeTemplate -Value "AWSTemplateFormatVersion: '2010-09-09'`n"
-        $script:LakeParameters = @{
+        $script:LambdaTemplate = Join-Path $TestDrive 'lambda.yaml'
+        Set-Content -LiteralPath $script:LambdaTemplate -Value "AWSTemplateFormatVersion: '2010-09-09'`n"
+        $script:LambdaParameters = @{
             CodeS3Bucket                = 'bower-artifacts'
             CodeS3Key                   = 'lambda/bower-lambda-0.1.0.zip'
             AllowedInvokerPrincipalArns = @('arn:aws:iam::123456789012:role/bower-producer', 'arn:aws:iam::123456789012:role/bower-ops')
-            RetentionDays               = 365
-            TemplatePath                = $script:LakeTemplate
+            TemplatePath                = $script:LambdaTemplate
         }
+        $script:LakeParameters = $script:LambdaParameters.Clone()
+        $script:LakeParameters.Destination = 'cloudtrail-lake'
+        $script:LakeParameters.RetentionDays = 365
     }
 
-    It 'creates a change set without executing it by default' {
-        $plan = Deploy-BowerAwsCloudTrailLake @script:LakeParameters
+    It 'creates a CloudWatch Logs change set without executing it by default' {
+        $plan = Deploy-BowerAwsLambda @script:LambdaParameters -EventLogRetentionDays 731
         $plan.Mode | Should -Be 'Plan'
         $plan.MutationsApplied | Should -BeFalse
         Should -Invoke -ModuleName Bower.Deployment Invoke-BowerCli -Times 1 -Exactly -ParameterFilter {
             $FilePath -eq '/mock/bin/aws' -and
-            (Test-ArgumentSequence $ArgumentList @('cloudformation', 'deploy', '--stack-name', 'bower-cloudtrail-lake', '--template-file')) -and
+            (Test-ArgumentSequence $ArgumentList @('cloudformation', 'deploy', '--stack-name', 'bower-lambda', '--template-file')) -and
             (Test-ArgumentSequence $ArgumentList @('--region', 'ap-southeast-2')) -and
             $ArgumentList -contains 'CodeS3Bucket=bower-artifacts' -and $ArgumentList -contains 'CodeS3Key=lambda/bower-lambda-0.1.0.zip' -and
             $ArgumentList -contains 'AllowedInvokerPrincipalArns=arn:aws:iam::123456789012:role/bower-producer,arn:aws:iam::123456789012:role/bower-ops' -and
-            $ArgumentList -contains 'RetentionDays=365' -and
+            $ArgumentList -contains 'Destination=cloudwatch-logs' -and
+            $ArgumentList -contains 'EventLogRetentionDays=731' -and
+            -not ($ArgumentList | Where-Object { $_ -like 'RetentionDays=*' -or $_ -like 'ExistingChannelArn=*' }) -and
             $ArgumentList -contains 'IngressMode=function-url' -and
             -not ($ArgumentList | Where-Object { $_ -like 'InvokeProducer=*' }) -and
             (Test-ArgumentSequence $ArgumentList @('--capabilities', 'CAPABILITY_IAM', 'CAPABILITY_AUTO_EXPAND')) -and
             $ArgumentList -contains '--no-execute-changeset'
         }
         $plan.RemainingChecks -join ' ' | Should -BeLike '*bower-lambda-deny-direct-invoke-scp.json*'
+        $plan.RemainingChecks -join ' ' | Should -BeLike '*CloudWatch Logs Insights*'
+    }
+
+    It 'plans a CloudTrail Lake stack with its retention' {
+        $plan = Deploy-BowerAwsLambda @script:LakeParameters
+        $plan.RemainingChecks -join ' ' | Should -BeLike '*query it in CloudTrail Lake*'
+        Should -Invoke -ModuleName Bower.Deployment Invoke-BowerCli -Times 1 -Exactly -ParameterFilter {
+            $ArgumentList -contains 'Destination=cloudtrail-lake' -and $ArgumentList -contains 'RetentionDays=365' -and
+            -not ($ArgumentList | Where-Object { $_ -like 'EventLog*' })
+        }
     }
 
     It 'plans a separate direct-invoke stack with its producer' {
         $channel = 'arn:aws:cloudtrail:ap-southeast-2:123456789012:channel/0123abcd-89ab-cdef-0123-456789abcdef'
-        $plan = Deploy-BowerAwsCloudTrailLake @script:LakeParameters -IngressMode invoke -InvokeProducer batch-forwarder `
-            -StackName bower-cloudtrail-lake-invoke -ExistingChannelArn $channel
+        $plan = Deploy-BowerAwsLambda @script:LakeParameters -IngressMode invoke -InvokeProducer batch-forwarder `
+            -StackName bower-lambda-invoke -ExistingChannelArn $channel
         $plan.Mode | Should -Be 'Plan'
         Should -Invoke -ModuleName Bower.Deployment Invoke-BowerCli -Times 1 -Exactly -ParameterFilter {
             $ArgumentList -contains 'IngressMode=invoke' -and $ArgumentList -contains 'InvokeProducer=batch-forwarder' -and
             $ArgumentList -contains "ExistingChannelArn=$channel" -and
-            (Test-ArgumentSequence $ArgumentList @('--stack-name', 'bower-cloudtrail-lake-invoke'))
+            (Test-ArgumentSequence $ArgumentList @('--stack-name', 'bower-lambda-invoke'))
         }
     }
 
     It 'rejects mixed or incomplete ingress settings' {
-        { Deploy-BowerAwsCloudTrailLake @script:LakeParameters -IngressMode both } | Should -Throw
-        { Deploy-BowerAwsCloudTrailLake @script:LakeParameters -IngressMode invoke } | Should -Throw '*requires -InvokeProducer*'
-        { Deploy-BowerAwsCloudTrailLake @script:LakeParameters -InvokeProducer batch-forwarder } | Should -Throw '*only used with -IngressMode invoke*'
-        { Deploy-BowerAwsCloudTrailLake @script:LakeParameters -ExistingChannelArn 'arn:aws:sqs:x' } | Should -Throw
+        { Deploy-BowerAwsLambda @script:LambdaParameters -IngressMode both } | Should -Throw
+        { Deploy-BowerAwsLambda @script:LambdaParameters -IngressMode invoke } | Should -Throw '*requires -InvokeProducer*'
+        { Deploy-BowerAwsLambda @script:LambdaParameters -InvokeProducer batch-forwarder } | Should -Throw '*only used with -IngressMode invoke*'
+        { Deploy-BowerAwsLambda @script:LakeParameters -ExistingChannelArn 'arn:aws:sqs:x' } | Should -Throw
+        Should -Invoke -ModuleName Bower.Deployment Invoke-BowerCli -Times 0
+    }
+
+    It 'rejects settings that belong to the other destination' {
+        { Deploy-BowerAwsLambda @script:LambdaParameters -RetentionDays 365 } | Should -Throw '*-RetentionDays is only used with -Destination cloudtrail-lake*'
+        $channel = 'arn:aws:cloudtrail:ap-southeast-2:123456789012:channel/0123abcd-89ab-cdef-0123-456789abcdef'
+        { Deploy-BowerAwsLambda @script:LambdaParameters -ExistingChannelArn $channel } | Should -Throw '*only used with -Destination cloudtrail-lake*'
+        { Deploy-BowerAwsLambda @script:LakeParameters -EventLogRetentionDays 365 } | Should -Throw '*only used with -Destination cloudwatch-logs*'
+        $noRetention = $script:LakeParameters.Clone(); $noRetention.Remove('RetentionDays')
+        { Deploy-BowerAwsLambda @noRetention } | Should -Throw '*requires -RetentionDays*'
+        { Deploy-BowerAwsLambda @script:LambdaParameters -Destination s3 } | Should -Throw
         Should -Invoke -ModuleName Bower.Deployment Invoke-BowerCli -Times 0
     }
 
     It 'executes only with -Apply and confirmation' {
-        (Deploy-BowerAwsCloudTrailLake @script:LakeParameters -Apply -Confirm:$false).Mode | Should -Be 'Apply'
+        (Deploy-BowerAwsLambda @script:LambdaParameters -Apply -Confirm:$false).Mode | Should -Be 'Apply'
         Should -Invoke -ModuleName Bower.Deployment Invoke-BowerCli -Times 1 -Exactly -ParameterFilter { $ArgumentList -notcontains '--no-execute-changeset' }
     }
 
     It 'runs nothing with -WhatIf' {
-        (Deploy-BowerAwsCloudTrailLake @script:LakeParameters -WhatIf).Commands[0] | Should -BeLike 'aws cloudformation deploy *--no-execute-changeset*'
-        (Deploy-BowerAwsCloudTrailLake @script:LakeParameters -Apply -WhatIf).Executed | Should -BeFalse
+        (Deploy-BowerAwsLambda @script:LambdaParameters -WhatIf).Commands[0] | Should -BeLike 'aws cloudformation deploy *--no-execute-changeset*'
+        (Deploy-BowerAwsLambda @script:LambdaParameters -Apply -WhatIf).Executed | Should -BeFalse
         Should -Invoke -ModuleName Bower.Deployment Invoke-BowerCli -Times 0
     }
 
     It 'passes the AWS profile when given' {
-        Deploy-BowerAwsCloudTrailLake @script:LakeParameters -ProfileName bower-admin -Region ap-southeast-4 | Out-Null
+        Deploy-BowerAwsLambda @script:LambdaParameters -ProfileName bower-admin -Region ap-southeast-4 | Out-Null
         Should -Invoke -ModuleName Bower.Deployment Invoke-BowerCli -Times 1 -ParameterFilter {
             (Test-ArgumentSequence $ArgumentList @('--profile', 'bower-admin')) -and (Test-ArgumentSequence $ArgumentList @('--region', 'ap-southeast-4'))
         }
     }
 
-    It 'validates principal ARNs and retention' {
-        $bad = $script:LakeParameters.Clone(); $bad.AllowedInvokerPrincipalArns = @('*')
-        { Deploy-BowerAwsCloudTrailLake @bad } | Should -Throw
+    It 'validates principal ARNs, retention and KMS keys' {
+        $bad = $script:LambdaParameters.Clone(); $bad.AllowedInvokerPrincipalArns = @('*')
+        { Deploy-BowerAwsLambda @bad } | Should -Throw
         $bad = $script:LakeParameters.Clone(); $bad.RetentionDays = 1
-        { Deploy-BowerAwsCloudTrailLake @bad } | Should -Throw
+        { Deploy-BowerAwsLambda @bad } | Should -Throw
+        { Deploy-BowerAwsLambda @script:LambdaParameters -EventLogRetentionDays 2 } | Should -Throw
+        { Deploy-BowerAwsLambda @script:LambdaParameters -EventLogKmsKeyArn 'alias/bower' } | Should -Throw
     }
 }
 

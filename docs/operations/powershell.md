@@ -10,9 +10,10 @@ servers do not already enforce. Windows PowerShell 5.1 is not supported.
 |---|---|---|
 | `Bower.Events` | Build, validate and send security events | `New-BowerSecurityEvent`, `Test-BowerSecurityEvent`, `Send-BowerSecurityEvent` |
 | `Bower.Management` | Operate the management API | `Connect-BowerManagement`, `Disconnect-BowerManagement`, `Get-BowerManagementConnection`, `Invoke-BowerManagementRequest`, `Get-BowerCollector`, `Approve-BowerCollector`, `Deny-BowerCollector`, `Suspend-BowerCollector`, `Resume-BowerCollector`, `Revoke-BowerCollector`, `Get-BowerAuditEvent`, `Get-BowerJob`, `Start-BowerJob`, `Invoke-BowerPrivacyProfilePreview`, `Submit-BowerPrivacyProfile`, `Get-BowerPrivacyProfileVersion`, `Approve-BowerPrivacyProfileVersion`, `Deny-BowerPrivacyProfileVersion`, `Set-BowerCollectorPrivacyProfile`, `Clear-BowerCollectorPrivacyProfile`, `Get-BowerPrivacyProfileAssignment` |
-| `Bower.Deployment` | Plan-first deployment wrappers | `New-BowerEntraApplication`, `Deploy-BowerSentinelResource`, `Deploy-BowerAzureFunction`, `Deploy-BowerAwsCloudTrailLake`, `Deploy-BowerAwsSecurity`, `Deploy-BowerGcpSecurity` |
+| `Bower.Deployment` | Plan-first deployment wrappers | `New-BowerEntraApplication`, `Deploy-BowerSentinelResource`, `Deploy-BowerAzureFunction`, `Deploy-BowerAwsLambda`, `Deploy-BowerAwsSecurity`, `Deploy-BowerGcpSecurity` |
 | `Bower.Privacy` | Local privacy profile tooling | `Test-BowerPrivacyProfile`, `New-BowerCustomDetector`, `ConvertTo-BowerSecretFieldName` |
-| `Bower` | Meta-module: nests all four | all of the above |
+| `Bower.Policy` | Local telemetry policy tooling | `New-BowerPolicy`, `Test-BowerPolicy`, `Test-BowerPolicyEvent` |
+| `Bower` | Meta-module: nests all five | all of the above |
 
 Every command has comment-based help: `Get-Help Send-BowerSecurityEvent -Full`.
 
@@ -25,7 +26,7 @@ Import-Module ./powershell/modules/Bower/Bower.psd1          # everything
 Import-Module ./powershell/modules/Bower.Events/Bower.Events.psd1   # or one module
 ```
 
-To import by name, copy the five folders under `powershell/modules/` into a
+To import by name, copy the six folders under `powershell/modules/` into a
 directory on `$env:PSModulePath` (for example `~/.local/share/powershell/Modules`
 on Linux/macOS or `Documents/PowerShell/Modules` on Windows), keeping them side by
 side. `Bower.Deployment` locates templates relative to the repository; outside a
@@ -42,6 +43,7 @@ Optional modules and tools, loaded only by the commands that need them:
 | CloudFormation deployments | AWS CLI v2 `aws` |
 | GCP deployment | `terraform` |
 | `Test-BowerPrivacyProfile` (local) | the `bower` CLI with `bower privacy validate` |
+| `Test-BowerPolicy`, `Test-BowerPolicyEvent` | the `bower` CLI with `bower validate` and `bower policy test` |
 
 ## Authentication
 
@@ -184,6 +186,33 @@ New-BowerCustomDetector -Id custom.employee-id -Pattern 'EMP-\d{6}' -Action mask
 - `ConvertTo-BowerSecretFieldName` shows the engine's normalisation (letters and digits,
   lower-cased) and duplicates, and emits a `secretFieldNames` snippet.
 
+## Bower.Policy
+
+```powershell
+New-BowerPolicy -Id BWR-POL-ORDERS-EXPORT -Name 'Order exports' -Version 1.0.0 -Owner 'Security Operations' `
+    -EventCategory data-access -EventType sensitive_data_exported `
+    -RequiredField timeGenerated, eventType, actor.userId, target.id -RecommendedField request.correlationId `
+    -Path ./policies/custom/orders-export.yaml
+
+Test-BowerPolicy -PolicyDirectory ./policies/custom                         # bower validate
+Get-ChildItem ./samples/must-accept -Filter *.json |
+    Test-BowerPolicyEvent -PolicyDirectory ./policies/custom -ExpectedDecision accept -ErrorAction Stop
+```
+
+- `New-BowerPolicy` writes a `bower.security/v1` `TelemetryPolicy` (every string quoted)
+  or returns the YAML without `-Path`. It needs a category or type to match, keeps an
+  existing file unless `-Force`, and asks before writing (`ConfirmImpact = 'Medium'`).
+- `Test-BowerPolicy` runs `bower validate --policy-directory DIR` and returns each
+  policy's id, version and hash. A policy the loader refuses is a result (`Valid` is
+  `$false`, `Error` holds the bounded loader message), not a command failure.
+- `Test-BowerPolicyEvent` runs `bower policy test` once for every piped file, with the
+  same bundle options as the collector (`-PolicyDirectory`, `-PackPath` with
+  `-TrustedKeyPath`, `-PrivacyProfilePath`, `-HmacKeyFile`). Each result carries the
+  decision, `WouldQueue`, `PrivacyAlert`, reasons and the policy id, version, hash and
+  score; never event content. With `-ExpectedDecision`, each mismatch also writes a
+  non-terminating error. Samples are judged at the current time, so a `timeGenerated`
+  more than five years old is quarantined, as in the collector.
+
 ## Bower.Deployment
 
 All deployment commands plan by default and change nothing until `-Apply` is given and
@@ -197,7 +226,7 @@ output and remaining manual checks. External CLIs run with argument arrays (no s
 | `New-BowerEntraApplication` | Returns the API and SPA application bodies from `deploy/entra/*.json`; calls nothing | Creates both registrations and service principals through Microsoft Graph. No secrets or certificates. |
 | `Deploy-BowerSentinelResource` | `az deployment group what-if` on `deploy/bicep/main.bicep` | `az deployment group create` |
 | `Deploy-BowerAzureFunction` | `az deployment group what-if` on `deploy/azure-function/main.bicep` | `az deployment group create` |
-| `Deploy-BowerAwsCloudTrailLake` | `aws cloudformation deploy --no-execute-changeset` on `deploy/aws/bower-aws-cloudtrail-lake.yaml` | `aws cloudformation deploy` |
+| `Deploy-BowerAwsLambda` | `aws cloudformation deploy --no-execute-changeset` on `deploy/aws/bower-aws-lambda.yaml` (CloudWatch Logs by default, or `-Destination cloudtrail-lake`) | `aws cloudformation deploy` |
 | `Deploy-BowerAwsSecurity` | same, for `bower-aws-security.yaml` or `bower-aws-global-forwarder.yaml` | `aws cloudformation deploy` |
 | `Deploy-BowerGcpSecurity` | `terraform init` + `terraform plan -out` in `deploy/gcp` (refuses to overwrite a plan) | `terraform apply <reviewed plan>` |
 
@@ -209,12 +238,16 @@ Deploy-BowerAzureFunction -ResourceGroupName rg-bower -Location australiaeast `
     -DcrResourceId <dcr-resource-id> -LogsIngestionEndpoint https://<dce>.australiaeast-1.ingest.monitor.azure.com `
     -EntraTenantId <tenant-id> -EntraAudience api://bower-function
 
-Deploy-BowerAwsCloudTrailLake -CodeS3Bucket bower-artifacts -CodeS3Key lambda/bower-lambda.zip `
-    -AllowedInvokerPrincipalArns arn:aws:iam::123456789012:role/bower-producer -RetentionDays 365
+# CloudWatch Logs (default): an event log group kept on stack deletion
+Deploy-BowerAwsLambda -CodeS3Bucket bower-artifacts -CodeS3Key lambda/bower-lambda.zip `
+    -AllowedInvokerPrincipalArns arn:aws:iam::123456789012:role/bower-producer -EventLogRetentionDays 365
+# CloudTrail Lake (accounts onboarded before 31 May 2026)
+Deploy-BowerAwsLambda -StackName bower-lambda-lake -Destination cloudtrail-lake -RetentionDays 365 `
+    -CodeS3Bucket bower-artifacts -CodeS3Key lambda/bower-lambda.zip -AllowedInvokerPrincipalArns arn:aws:iam::123456789012:role/bower-producer
 # One ingress per stack: a separate stack for direct Invoke, attributed to one producer
-Deploy-BowerAwsCloudTrailLake -StackName bower-cloudtrail-lake-invoke -IngressMode invoke -InvokeProducer batch `
-    -ExistingChannelArn <ChannelArn output of the first stack> -CodeS3Bucket bower-artifacts -CodeS3Key lambda/bower-lambda.zip `
-    -AllowedInvokerPrincipalArns arn:aws:iam::123456789012:role/bower-batch -RetentionDays 365
+Deploy-BowerAwsLambda -StackName bower-lambda-lake-invoke -Destination cloudtrail-lake -RetentionDays 365 `
+    -IngressMode invoke -InvokeProducer batch -ExistingChannelArn <ChannelArn output of the first stack> `
+    -CodeS3Bucket bower-artifacts -CodeS3Key lambda/bower-lambda.zip -AllowedInvokerPrincipalArns arn:aws:iam::123456789012:role/bower-batch
 
 Deploy-BowerGcpSecurity -VarFile ./prod.tfvars -PlanFile ./bower-gcp.tfplan
 Deploy-BowerGcpSecurity -PlanFile ./bower-gcp.tfplan -Apply

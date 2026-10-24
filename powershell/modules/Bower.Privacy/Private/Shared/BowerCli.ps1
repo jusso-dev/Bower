@@ -1,4 +1,4 @@
-# Shared by Bower.Privacy and Bower.Deployment. Keep both copies byte-identical
+# Shared by Bower.Privacy, Bower.Policy and Bower.Deployment. Keep every copy byte-identical
 # (powershell/tests/Repository.Tests.ps1 enforces it). Every external CLI call goes
 # through Invoke-BowerCli so tests can mock it; tests never run real cloud CLIs.
 

@@ -2,7 +2,7 @@
 
 `powershell/` holds the Bower PowerShell modules (PowerShell 7.4+, Core edition,
 cross-platform): `Bower.Events`, `Bower.Management`, `Bower.Deployment`,
-`Bower.Privacy` and the `Bower` meta-module that nests all four. They are thin
+`Bower.Privacy`, `Bower.Policy` and the `Bower` meta-module that nests all five. They are thin
 clients: the collector, management API, bower CLI and cloud CLIs remain the
 authority for every rule. Read the root `AGENTS.md`, `deploy/AGENTS.md` and
 `docs/operations/powershell.md` before editing.
@@ -22,7 +22,8 @@ authority for every rule. Read the root `AGENTS.md`, `deploy/AGENTS.md` and
   Management decisions take a mandatory 1-500 character `-Reason`.
 - `Private/Shared/*.ps1` files are duplicated on purpose (modules install
   independently) and must stay byte-identical: `BowerHttp.ps1`/`BowerToken.ps1` in
-  Events and Management, `BowerCli.ps1` in Privacy and Deployment.
+  Events and Management, `BowerCli.ps1` in Privacy, Policy and Deployment, `BowerYaml.ps1`
+  in Privacy and Policy.
 
 ## Security invariants
 
