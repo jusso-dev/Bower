@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using Bower.Packs;
 
 namespace Bower.Collector;
 
@@ -310,6 +311,21 @@ public sealed record CollectorSettings
         return "sha256:" + Convert.ToHexStringLower(
             System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(material)));
     }
+
+    /// <summary>Policy, pack and privacy profile sources for <see cref="PolicyBundle.Load"/>.</summary>
+    public PolicyBundleSources PolicySources() => new()
+    {
+        PolicyDirectory = PolicyDirectory,
+        Packs = Packs,
+        PackTrustedKeyFiles = PackTrustedKeyFiles,
+        PrivacyProfilePath = PrivacyProfilePath,
+        PrivacyHmacKeyFile = PrivacyHmacKeyFile,
+        PrivacyHmacKeyId = PrivacyHmacKeyId,
+        PrivacyProfileSource = PrivacyProfileSource,
+        ManagedPrivacyProfile = UsesManagedPrivacyProfile
+            ? key => ManagedPrivacyProfileCache.LoadVerified(this, key)?.Profile
+            : null
+    };
 
     private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 

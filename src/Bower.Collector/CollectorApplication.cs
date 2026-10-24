@@ -58,7 +58,7 @@ public static partial class CollectorApplication
 
         builder.Services.AddSingleton(settings);
         builder.Services.AddSingleton(TimeProvider.System);
-        PolicyBundle bundle = PolicyBundle.Load(settings);
+        PolicyBundle bundle = PolicyBundle.Load(settings.PolicySources());
         builder.Services.AddSingleton(bundle);
         builder.Services.AddSingleton<IEventRedactor>(new PackDetectionRedactor(
             new JsonEventRedactor(bundle.Privacy), new DeterministicPolicyEvaluator(bundle.Policies),

@@ -94,12 +94,12 @@ public sealed class ManagedPrivacyProfileTests
         using TemporaryDirectory directory = new();
         CollectorSettings settings = Settings(directory, WriteTrustedKey(directory, out _));
 
-        PolicyBundle managed = PolicyBundle.Load(settings);
-        PolicyBundle local = PolicyBundle.Load(settings with
+        PolicyBundle managed = PolicyBundle.Load(settings.PolicySources());
+        PolicyBundle local = PolicyBundle.Load((settings with
         {
             PrivacyProfileSource = PrivacyProfileSources.Local,
             ManagedPrivacyTrustedKeyFiles = []
-        });
+        }).PolicySources());
 
         Assert.Null(managed.PrivacyProfileHash);
         Assert.Null(managed.PrivacyProfile);
@@ -116,12 +116,12 @@ public sealed class ManagedPrivacyProfileTests
         string localProfile = Path.Combine(directory.Path, "profile.yaml");
         File.WriteAllText(localProfile, Content("1.0.0"));
 
-        PolicyBundle managed = PolicyBundle.Load(settings);
-        PolicyBundle local = PolicyBundle.Load(settings with
+        PolicyBundle managed = PolicyBundle.Load(settings.PolicySources());
+        PolicyBundle local = PolicyBundle.Load((settings with
         {
             PrivacyProfileSource = PrivacyProfileSources.Local,
             PrivacyProfilePath = localProfile
-        });
+        }).PolicySources());
 
         Assert.Equal("contoso-app", managed.PrivacyProfile);
         Assert.Equal("1.0.0", managed.PrivacyProfileVersion);
@@ -147,7 +147,7 @@ public sealed class ManagedPrivacyProfileTests
         CollectorSettings settings = Settings(directory, WriteTrustedKey(directory, out string privatePem));
         WriteCache(settings, Tampered(tamper, privatePem));
 
-        ManagedPrivacyProfileException error = Assert.Throws<ManagedPrivacyProfileException>(() => PolicyBundle.Load(settings));
+        ManagedPrivacyProfileException error = Assert.Throws<ManagedPrivacyProfileException>(() => PolicyBundle.Load(settings.PolicySources()));
         Assert.Throws<ManagedPrivacyProfileException>(() => CollectorApplication.Build(
             settings, builder => builder.WebHost.UseTestServer(), credential: new StaticCredential()));
 
@@ -170,7 +170,7 @@ public sealed class ManagedPrivacyProfileTests
             PackTrustedKeyFiles = [packKey]
         };
 
-        InvalidDataException error = Assert.Throws<InvalidDataException>(() => PolicyBundle.Load(settings));
+        InvalidDataException error = Assert.Throws<InvalidDataException>(() => PolicyBundle.Load(settings.PolicySources()));
         Assert.Contains("pack privacy profiles", error.Message, StringComparison.Ordinal);
     }
 
@@ -244,7 +244,7 @@ public sealed class ManagedPrivacyProfileTests
             Directory.GetFiles(settings.ManagedPrivacyCacheDirectory, "*", SearchOption.AllDirectories)
                 .Select(Path.GetFileName));
         // The staged cache is what the restarted host verifies and loads.
-        Assert.Equal("1.1.0", PolicyBundle.Load(settings).PrivacyProfileVersion);
+        Assert.Equal("1.1.0", PolicyBundle.Load(settings.PolicySources()).PrivacyProfileVersion);
     }
 
     [Fact]
@@ -361,12 +361,12 @@ public sealed class ManagedPrivacyProfileTests
         using TemporaryDirectory directory = new();
         CollectorSettings settings = Settings(directory, WriteTrustedKey(directory, out string privatePem));
         WriteCache(settings, Document(privatePem));
-        PolicyBundle managed = PolicyBundle.Load(settings);
-        PolicyBundle local = PolicyBundle.Load(settings with
+        PolicyBundle managed = PolicyBundle.Load(settings.PolicySources());
+        PolicyBundle local = PolicyBundle.Load((settings with
         {
             PrivacyProfileSource = PrivacyProfileSources.Local,
             ManagedPrivacyTrustedKeyFiles = []
-        });
+        }).PolicySources());
 
         string managedBody = await HeartbeatBodyAsync(settings, managed, ct);
         string defaultBody = await HeartbeatBodyAsync(settings, local, ct);
@@ -533,7 +533,7 @@ public sealed class ManagedPrivacyProfileTests
                 new SingleClientFactory(Handler),
                 new StaticCredential(),
                 settings,
-                PolicyBundle.Load(settings),
+                PolicyBundle.Load(settings.PolicySources()),
                 Lifetime,
                 NullLogger<ManagedPrivacyProfileJob>.Instance);
         }

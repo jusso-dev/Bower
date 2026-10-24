@@ -1,15 +1,45 @@
 using System.Security.Cryptography;
 using System.Text;
-using Bower.Packs;
 using Bower.PolicyEngine;
 using Bower.Redaction.Privacy;
 
-namespace Bower.Collector;
+namespace Bower.Packs;
+
+/// <summary>
+/// Where a host reads its selection and privacy configuration from. The collector maps its
+/// <c>BOWER_*</c> settings onto this; serverless hosts use the same setting names.
+/// </summary>
+public sealed record PolicyBundleSources
+{
+    public required string PolicyDirectory { get; init; }
+
+    /// <summary>Signed .bowerpack archives to load policies and privacy profile from.</summary>
+    public IReadOnlyList<string> Packs { get; init; } = [];
+
+    /// <summary>PEM public keys trusted to sign packs.</summary>
+    public IReadOnlyList<string> PackTrustedKeyFiles { get; init; } = [];
+
+    public string? PrivacyProfilePath { get; init; }
+
+    public string? PrivacyHmacKeyFile { get; init; }
+
+    public string PrivacyHmacKeyId { get; init; } = "k1";
+
+    /// <summary>BOWER_PRIVACY_PROFILE_SOURCE value reported with the bundle.</summary>
+    public string PrivacyProfileSource { get; init; } = "local";
+
+    /// <summary>
+    /// Management mode only: returns the verified cached assignment for the HMAC key, or
+    /// null for the built-in default. Replaces <see cref="PrivacyProfilePath"/> and packs.
+    /// </summary>
+    public Func<byte[]?, LoadedPrivacyProfile?>? ManagedPrivacyProfile { get; init; }
+}
 
 /// <summary>
 /// Everything that decides what the collector accepts and how it redacts: policies from
 /// the policy directory and signed packs, plus the privacy profile. Its hash is what the
-/// collector reports to management, which compares it with the desired policy.
+/// collector reports to management, which compares it with the desired policy. Shared by
+/// every host so selection and redaction never fork between runtimes.
 /// </summary>
 public sealed record PolicyBundle(
     IReadOnlyList<LoadedPolicy> Policies,
@@ -27,9 +57,9 @@ public sealed record PolicyBundle(
     public string? PrivacyProfileHash { get; init; }
 
     /// <summary>BOWER_PRIVACY_PROFILE_SOURCE that produced the active privacy profile.</summary>
-    public string PrivacyProfileSource { get; init; } = PrivacyProfileSources.Local;
+    public string PrivacyProfileSource { get; init; } = "local";
 
-    public static PolicyBundle Load(CollectorSettings settings)
+    public static PolicyBundle Load(PolicyBundleSources settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
         List<LoadedPolicy> policies = [];
@@ -68,7 +98,7 @@ public sealed record PolicyBundle(
             throw new InvalidDataException("Only one privacy profile may be active (BOWER_PRIVACY_PROFILE or one pack).");
         }
 
-        if (settings.UsesManagedPrivacyProfile && packProfiles.Length > 0)
+        if (settings.ManagedPrivacyProfile is not null && packProfiles.Length > 0)
         {
             throw new InvalidDataException(
                 "BOWER_PRIVACY_PROFILE_SOURCE=management cannot be combined with pack privacy profiles.");
@@ -77,8 +107,8 @@ public sealed record PolicyBundle(
         profileYaml ??= packProfiles.FirstOrDefault();
         byte[]? key = settings.PrivacyHmacKeyFile is null ? null : PrivacyProfileLoader.ReadKeyFile(settings.PrivacyHmacKeyFile);
         // Management mode: the verified cached assignment, or the built-in default when none.
-        LoadedPrivacyProfile? profile = settings.UsesManagedPrivacyProfile
-            ? ManagedPrivacyProfileCache.LoadVerified(settings, key)?.Profile
+        LoadedPrivacyProfile? profile = settings.ManagedPrivacyProfile is not null
+            ? settings.ManagedPrivacyProfile(key)
             : profileYaml is null
                 ? null
                 : PrivacyProfileLoader.Load(profileYaml, key, settings.PrivacyHmacKeyId);

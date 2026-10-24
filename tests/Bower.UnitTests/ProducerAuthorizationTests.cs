@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using Bower.Abstractions;
 using Bower.Collector;
 using Bower.Contracts;
+using Bower.Core;
 using Bower.PolicyEngine;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;

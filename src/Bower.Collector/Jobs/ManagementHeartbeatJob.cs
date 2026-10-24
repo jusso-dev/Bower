@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using Azure.Core;
 using Bower.Abstractions;
 using Bower.Jobs;
+using Bower.Packs;
 
 namespace Bower.Collector.Jobs;
 

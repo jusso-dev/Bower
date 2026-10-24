@@ -1,8 +1,12 @@
 using System.Text.Json;
 
-namespace Bower.Collector;
+namespace Bower.Core;
 
-/// <summary>Exact producer identity tuples. Loaded once; changing scopes requires restart.</summary>
+/// <summary>
+/// Exact producer identity tuples. Loaded once; changing scopes requires restart. Shared by
+/// the HTTP collector (producer = ingest token id) and the Azure Functions collector
+/// (producer = Entra caller identity); the file format and semantics are identical.
+/// </summary>
 public sealed class ProducerAuthorization
 {
     private sealed record Identity(
@@ -27,34 +31,76 @@ public sealed class ProducerAuthorization
 
         try
         {
-            if (new FileInfo(path).Length > 1_048_576)
+            if (new FileInfo(path).Length > MaximumScopesBytes)
             {
                 throw new FormatException();
             }
 
-            using JsonDocument document = JsonDocument.Parse(File.ReadAllText(path),
-                new JsonDocumentOptions { MaxDepth = 8 });
-            if (document.RootElement.GetArrayLength() > 4096)
-            {
-                throw new FormatException();
-            }
-
-            foreach (JsonElement item in document.RootElement.EnumerateArray())
-            {
-                CheckObject(item, ["producer", "application", "source"]);
-                string producer = RequiredString(item, "producer");
-                if (producer.Length > 64 || producer.Any(char.IsWhiteSpace))
-                {
-                    throw new FormatException();
-                }
-
-                scopes.Add((producer, ReadIdentity(item, configuration: true)));
-            }
+            Load(File.ReadAllText(path));
         }
         catch (Exception error) when (error is JsonException or InvalidOperationException or FormatException or KeyNotFoundException)
         {
             // Never echo configuration or candidate values in diagnostics.
             throw new FormatException("Invalid producer scopes file.");
+        }
+    }
+
+    private ProducerAuthorization()
+    {
+    }
+
+    /// <summary>Maximum scopes document size (file or inline setting).</summary>
+    public const int MaximumScopesBytes = 1_048_576;
+
+    /// <summary>Number of configured identity tuples (metadata only, for status).</summary>
+    public int ScopeCount => scopes.Count;
+
+    /// <summary>
+    /// Loads the same JSON array format as the scopes file from configuration text, for hosts
+    /// without a mounted file (for example an app setting). Null or blank means default deny.
+    /// </summary>
+    public static ProducerAuthorization FromJson(string? json)
+    {
+        ProducerAuthorization authorization = new();
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return authorization;
+        }
+
+        try
+        {
+            if (System.Text.Encoding.UTF8.GetByteCount(json) > MaximumScopesBytes)
+            {
+                throw new FormatException();
+            }
+
+            authorization.Load(json);
+            return authorization;
+        }
+        catch (Exception error) when (error is JsonException or InvalidOperationException or FormatException or KeyNotFoundException)
+        {
+            throw new FormatException("Invalid producer scopes document.");
+        }
+    }
+
+    private void Load(string json)
+    {
+        using JsonDocument document = JsonDocument.Parse(json, new JsonDocumentOptions { MaxDepth = 8 });
+        if (document.RootElement.GetArrayLength() > 4096)
+        {
+            throw new FormatException();
+        }
+
+        foreach (JsonElement item in document.RootElement.EnumerateArray())
+        {
+            CheckObject(item, ["producer", "application", "source"]);
+            string producer = RequiredString(item, "producer");
+            if (producer.Length > 64 || producer.Any(char.IsWhiteSpace))
+            {
+                throw new FormatException();
+            }
+
+            scopes.Add((producer, ReadIdentity(item, configuration: true)));
         }
     }
 
