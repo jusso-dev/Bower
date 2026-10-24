@@ -13,11 +13,11 @@
       },
       "AWSSDK.SecurityToken": {
         "type": "Direct",
-        "requested": "[4.0.101.1, )",
-        "resolved": "4.0.101.1",
-        "contentHash": "rZnMaqiYwDzbvTqeO7dWhqxEn96RleyR9KN6GYeWispPt9NQPRDUcfYZarvG7Eba5NvDNomhpcQJSNO+VoteGQ==",
+        "requested": "[4.0.101.5, )",
+        "resolved": "4.0.101.5",
+        "contentHash": "fkl96KvEKmMBOMN0WNBislkTNROCUW2qfta+75mYKG2FHuO4VckPcC23alumgJ3ZeDv2aD5k345CPXrnQJTfHg==",
         "dependencies": {
-          "AWSSDK.Core": "[4.0.102.8, 5.0.0)"
+          "AWSSDK.Core": "[4.0.102.12, 5.0.0)"
         }
       },
       "AWSSDK.SQS": {
@@ -43,8 +43,8 @@
       },
       "AWSSDK.Core": {
         "type": "Transitive",
-        "resolved": "4.0.102.8",
-        "contentHash": "90B9Skhl+ORbtWNXrrmGdGhGvAfZiPmZafRYrB/xHelZjePIwPvXioqz9UiiF1vo21eDLzTnXh5EC4RjbNWsFQ=="
+        "resolved": "4.0.102.12",
+        "contentHash": "/wJwMdRT5e9AbqRFfeazbyAbAZijYMDGlLDGAc07Ob2tPdeEUE0dC0zISIdtdWtCu0lV+oWf3qcsevpd7ejn9g=="
       },
       "bower.abstractions": {
         "type": "Project",
