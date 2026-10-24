@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bower.security/schemas/configuration/producer-scopes-v1.json",
+  "title": "Bower producer identity scopes",
+  "type": "array",
+  "maxItems": 4096,
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "producer",
+      "application"
+    ],
+    "properties": {
+      "producer": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^\\S+$"
+      },
+      "application": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "environment"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "environment": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tenantId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "instance": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "source": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "hostname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ipAddress": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": -2147483648,
+            "maximum": 2147483647
+          }
+        }
+      }
+    }
+  }
+}

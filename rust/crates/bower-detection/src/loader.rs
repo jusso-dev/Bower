@@ -76,14 +76,15 @@ pub fn load_yaml(yaml: &str, source_name: Option<&str>) -> Result<DetectionRule,
         ));
     }
 
-    // Only the first document is read, as YamlStream.Documents[0].
-    let first = serde_yaml_ng::Deserializer::from_str(yaml)
-        .next()
-        .ok_or_else(|| {
-            DetectionError::InvalidData("Sigma rule root must be a mapping.".to_owned())
-        })?;
+    let mut documents = serde_yaml_ng::Deserializer::from_str(yaml);
+    let first = documents.next().ok_or_else(|| {
+        DetectionError::InvalidData("Sigma rule root must be a mapping.".to_owned())
+    })?;
     let root: Option<YamlNode> = serde::Deserialize::deserialize(first).map_err(|error| {
-        DetectionError::InvalidData(format!("Sigma rule is not valid YAML: {error}"))
+        DetectionError::InvalidData({
+            let _ = error;
+            "Sigma rule is not valid YAML.".to_owned()
+        })
     })?;
     let root = match root {
         Some(root @ YamlNode::Mapping(_)) => root,
@@ -94,6 +95,26 @@ pub fn load_yaml(yaml: &str, source_name: Option<&str>) -> Result<DetectionRule,
         }
     };
 
+    if documents.next().is_some() {
+        return Err(crate::semantics::invalid());
+    }
+
+    for name in [
+        "id",
+        "title",
+        "level",
+        "status",
+        "description",
+        "version",
+        "date",
+    ] {
+        if matches!(
+            root.get(name),
+            Some(YamlNode::Sequence(_) | YamlNode::Mapping(_))
+        ) {
+            return Err(crate::semantics::invalid());
+        }
+    }
     let id = required_scalar(&root, "id", source_name)?;
     let title = required_scalar(&root, "title", source_name)?;
     let level = optional_scalar(&root, "level").unwrap_or_else(|| "medium".to_owned());
@@ -117,14 +138,22 @@ pub fn load_yaml(yaml: &str, source_name: Option<&str>) -> Result<DetectionRule,
     let mut fields = DetectionFields::default();
     let mut condition = "selection".to_owned();
     if let Some(detection @ YamlNode::Mapping(entries)) = root.get("detection") {
-        condition =
-            optional_scalar(detection, "condition").unwrap_or_else(|| "selection".to_owned());
+        condition = match detection.get("condition") {
+            None => "selection".to_owned(),
+            Some(YamlNode::Scalar(value)) => value.clone(),
+            _ => return Err(crate::semantics::invalid()),
+        };
         for (key, value) in entries {
-            let key = key.text();
+            let YamlNode::Scalar(key) = key else {
+                return Err(crate::semantics::invalid());
+            };
             if key.eq_ignore_ascii_case("condition") {
                 continue;
             }
-            fields.insert(&key, flatten_selection(value));
+            if fields.get(key).is_some() {
+                return Err(crate::semantics::invalid());
+            }
+            fields.insert(key, encode_selection(value)?);
         }
     }
     if fields.is_empty() {
@@ -132,6 +161,8 @@ pub fn load_yaml(yaml: &str, source_name: Option<&str>) -> Result<DetectionRule,
             "Sigma rule '{id}' has no detection selections."
         )));
     }
+
+    crate::semantics::Semantics::new(&fields, &condition)?;
 
     let mut techniques = Vec::new();
     if let Some(YamlNode::Sequence(tags)) = root.get("tags") {
@@ -178,20 +209,42 @@ pub fn load_yaml(yaml: &str, source_name: Option<&str>) -> Result<DetectionRule,
     })
 }
 
-fn flatten_selection(node: &YamlNode) -> String {
-    match node {
-        YamlNode::Scalar(value) => value.clone(),
-        YamlNode::Sequence(items) => items
-            .iter()
-            .map(YamlNode::text)
-            .collect::<Vec<_>>()
-            .join("|"),
-        YamlNode::Mapping(entries) => entries
-            .iter()
-            .map(|(key, value)| format!("{}:{}", key.text(), flatten_selection(value)))
-            .collect::<Vec<_>>()
-            .join(";"),
+fn encode_selection(node: &YamlNode) -> Result<String, DetectionError> {
+    use crate::semantics::{invalid, validate_clauses};
+    let YamlNode::Mapping(entries) = node else {
+        return Err(invalid());
+    };
+    let mut clauses = Vec::new();
+    for (key, value) in entries {
+        let YamlNode::Scalar(key) = key else {
+            return Err(invalid());
+        };
+        let parts: Vec<&str> = key.split('|').collect();
+        if parts.len() > 2 {
+            return Err(invalid());
+        }
+        let mut clause = vec![
+            parts[0].to_owned(),
+            parts.get(1).unwrap_or(&"equals").to_string(),
+        ];
+        match value {
+            YamlNode::Scalar(value) => clause.push(format!("s:{value}")),
+            YamlNode::TypedScalar(value) => clause.push(value.clone()),
+            YamlNode::Sequence(items) => {
+                for item in items {
+                    match item {
+                        YamlNode::Scalar(value) => clause.push(format!("s:{value}")),
+                        YamlNode::TypedScalar(value) => clause.push(value.clone()),
+                        _ => return Err(invalid()),
+                    }
+                }
+            }
+            _ => return Err(invalid()),
+        }
+        clauses.push(clause);
     }
+    validate_clauses(&clauses)?;
+    bower_contracts::json::to_string(&clauses).map_err(|_| invalid())
 }
 
 fn required_scalar(

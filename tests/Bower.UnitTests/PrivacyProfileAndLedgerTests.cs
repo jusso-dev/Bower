@@ -117,10 +117,10 @@ public sealed class PrivacyProfileAndLedgerTests
             await store.EnqueueAsync(new QueuedEvent($"e{index}", $"f{index}", $$"""{"n":{{index}}}""", clock.UtcNow), cancellationToken);
         }
 
-        await store.LeaseAsync(3, TimeSpan.FromMinutes(1), cancellationToken);
+        var heldLease1 = await store.LeaseAsync(3, TimeSpan.FromMinutes(1), cancellationToken);
         foreach (string id in new[] { "e0", "e1", "e2" })
         {
-            await store.MarkDeliveredAsync(id, "ack", cancellationToken);
+            await store.MarkDeliveredAsync(id, "ack", LeaseTestClaims.Token(heldLease1, id), cancellationToken);
         }
 
         clock.Advance(TimeSpan.FromDays(10));
@@ -153,9 +153,9 @@ public sealed class PrivacyProfileAndLedgerTests
             await using SqliteCommand tamper = connection.CreateCommand();
             tamper.CommandText =
                 """
-                UPDATE queue_events SET payload = '{"id":"a","attacker":true}' WHERE event_id = 'a';
-                DELETE FROM queue_events WHERE event_id = 'b';
-                INSERT INTO queue_events (event_id, fingerprint, payload, payload_bytes, received_at, state)
+                UPDATE queue_events_v5 SET payload = '{"id":"a","attacker":true}' WHERE event_id = 'a';
+                DELETE FROM queue_events_v5 WHERE event_id = 'b';
+                INSERT INTO queue_events_v5 (event_id, fingerprint, payload, payload_bytes, received_at, state)
                 VALUES ('forged', 'forged', '{}', 2, '2026-01-01T00:00:00Z', 0);
                 """;
             await tamper.ExecuteNonQueryAsync(cancellationToken);
@@ -205,9 +205,9 @@ public sealed class PrivacyProfileAndLedgerTests
             await store.EnqueueAsync(new QueuedEvent(id, id, """{"secret-free":true}""", clock.UtcNow), cancellationToken);
         }
 
-        await store.LeaseAsync(2, TimeSpan.FromMinutes(1), cancellationToken);
-        await store.MarkDeadLetteredAsync("x", "azure-http-400", cancellationToken);
-        await store.MarkDeadLetteredAsync("y", "preflight-field-too-large", cancellationToken);
+        var heldLease2 = await store.LeaseAsync(2, TimeSpan.FromMinutes(1), cancellationToken);
+        await store.MarkDeadLetteredAsync("x", "azure-http-400", LeaseTestClaims.Token(heldLease2, "x"), cancellationToken);
+        await store.MarkDeadLetteredAsync("y", "preflight-field-too-large", LeaseTestClaims.Token(heldLease2, "y"), cancellationToken);
 
         IReadOnlyList<DeadLetterRecord> listed = await store.ListDeadLetteredAsync(10, cancellationToken);
         int none = await store.ReplayDeadLetteredAsync(null, null, 10, cancellationToken);

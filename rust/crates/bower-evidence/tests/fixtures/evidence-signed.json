@@ -43,22 +43,22 @@
         "framework": "ISM",
         "id": "ISM-1988",
         "requirement": "Event logs are retained and searchable for at least 12 months.",
-        "status": "evidenced",
-        "evidence": "Table total retention 400 days (plan Analytics)."
+        "status": "not-assessed",
+        "evidence": "Table total retention 400 days (plan Analytics). Configured total retention does not establish searchable retention or historical data availability."
       },
       {
         "framework": "Essential Eight",
         "id": "E8-ML2-LOGGING",
         "requirement": "Event logs are centrally stored and protected from unauthorised modification and deletion.",
-        "status": "evidenced",
-        "evidence": "Canary BowerSecurity_CL row found by KQL after 12.3 s. Assessment guide grades a simulated-activity test as excellent evidence."
+        "status": "not-assessed",
+        "evidence": "Canary BowerSecurity_CL row found by KQL after 12.3 s. Protection against modification and deletion was not assessed."
       },
       {
         "framework": "Privacy Act",
         "id": "APP-11",
         "requirement": "Technical measures protect personal information (redaction before data leaves the host).",
-        "status": "evidenced",
-        "evidence": "The canary passed Bower\u0027s pre-persistence privacy engine; see collector policy hash in the row."
+        "status": "not-assessed",
+        "evidence": "Canary arrival and policy hashes do not establish redaction effectiveness. Independent privacy tests were not assessed."
       }
     ],
     "limitations": [
@@ -68,7 +68,7 @@
   },
   "signature": {
     "Algorithm": "ES256",
-    "KeyId": "3e84aa1044d76e0f",
-    "Value": "LDIcXFsROgOwGmpAKM66ubDX01j4RRYzvavsqDXg0IiHSh2LxCtwVqGPRP9HZU5qwz5jJquwI8NEd8a8NhkU\u002Bw=="
+    "KeyId": "378bf04840cebc9c",
+    "Value": "6sEAoAXy2vq0TzJXtheQvLqx9NEJma/ok2VM3sMzYdIDMf/vDwfuaZQZqvVry\u002BF4C8mJqLYInI\u002BOfxM5qf1qrw=="
   }
 }

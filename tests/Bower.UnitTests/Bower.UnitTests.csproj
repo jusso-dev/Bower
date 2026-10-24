@@ -60,12 +60,17 @@
       <Link>deploy/main.bicep</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="../../rust/crates/bower-detection/tests/fixtures/**/*">
+      <Link>detection-vectors/%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="../../rules/**/*.yml">
       <Link>rules/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="../../tools/queue-migration-check/Bower.QueueMigrationCheck.csproj" />
     <ProjectReference Include="..\..\src\Bower.Pipeline\Bower.Pipeline.csproj" />
     <ProjectReference Include="..\..\src\Bower.Analytics\Bower.Analytics.csproj" />
     <ProjectReference Include="..\..\src\Bower.Source.Ama\Bower.Source.Ama.csproj" />

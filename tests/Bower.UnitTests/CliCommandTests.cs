@@ -242,4 +242,62 @@ public sealed class CliCommandTests
         public override ValueTask<AccessToken> GetTokenAsync(TokenRequestContext requestContext, CancellationToken cancellationToken) =>
             ValueTask.FromResult(GetToken(requestContext, cancellationToken));
     }
+
+    [Fact]
+    public async Task PolicyTest_RunsCollectorIntakeAndReportsMetadataOnly()
+    {
+        PolicyBundle bundle = PolicyBundle.Load(new PolicyBundleSources
+        {
+            PolicyDirectory = Path.Combine(AppContext.BaseDirectory, "policies/default")
+        });
+        FakeClock clock = new(TestEvents.Now);
+        string secret = System.Text.Json.JsonSerializer.Serialize(
+            TestEvents.AuthenticationFailure(clock.GetUtcNow(), "evt-secret") with
+            {
+                Attributes = new Dictionary<string, System.Text.Json.JsonElement>
+                {
+                    ["password"] = System.Text.Json.JsonSerializer.SerializeToElement("never-print-this")
+                }
+            },
+            Contracts.BowerJson.Options);
+        string noise = System.Text.Json.JsonSerializer.Serialize(
+            TestEvents.AuthenticationFailure(clock.GetUtcNow(), "evt-noise") with
+            {
+                EventCategory = "telemetry",
+                EventType = "page_view"
+            },
+            Contracts.BowerJson.Options);
+
+        PolicyTestOutput output = await PolicyCommands.EvaluateAsync(
+            bundle,
+            [("secret.json", secret), ("noise.json", noise), ("broken.json", "{"), ("again.json", secret)],
+            clock);
+
+        Assert.Equal(bundle.Hash, output.BundleHash);
+        Assert.Collection(
+            output.Results,
+            accepted =>
+            {
+                Assert.Equal("redactandaccept", accepted.Decision);
+                Assert.True(accepted.WouldQueue);
+                Assert.True(accepted.PrivacyAlert);
+                Assert.Equal("BWR-POL-AUTH-FAILURE", accepted.Policy?.PolicyId);
+            },
+            rejected =>
+            {
+                Assert.Equal("reject", rejected.Decision);
+                Assert.False(rejected.WouldQueue);
+                Assert.Equal("BWR-POL-DEFAULT-DENY", rejected.Policy?.PolicyId);
+            },
+            broken =>
+            {
+                Assert.Equal("quarantine", broken.Decision);
+                Assert.Null(broken.Policy);
+            },
+            // Each sample is its own request: no deduplication against earlier samples.
+            again => Assert.True(again.WouldQueue));
+        string json = System.Text.Json.JsonSerializer.Serialize(output, CliJsonContext.Default.PolicyTestOutput);
+        Assert.DoesNotContain("never-print-this", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("test-user", json, StringComparison.Ordinal);
+    }
 }

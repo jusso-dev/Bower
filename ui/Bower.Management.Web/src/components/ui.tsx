@@ -1,7 +1,7 @@
 import { Activity, CheckCircle2, CircleDashed, XCircle } from "lucide-react";
 import { type ReactNode } from "react";
 import { formatDate } from "../lib/format";
-import type { Collector } from "../types";
+import type { Collector, PrivacyProfileVersionStatus } from "../types";
 
 export function Brand() {
   return (
@@ -65,6 +65,7 @@ export function CollectorTable({
             <th>Queue</th>
             <th>Delivery</th>
             <th>Policy</th>
+            {!compact && <th>Privacy profile</th>}
             <th>Last seen</th>
           </tr>
         </thead>
@@ -90,6 +91,11 @@ export function CollectorTable({
               <td data-label="Policy">
                 <PolicyLabel collector={collector} />
               </td>
+              {!compact && (
+                <td data-label="Privacy profile">
+                  <PrivacyProfileLabel collector={collector} />
+                </td>
+              )}
               <td data-label="Last seen">{formatDate(collector.lastSeenAt)}</td>
             </tr>
           ))}
@@ -292,6 +298,58 @@ export function PolicyLabel({ collector }: { collector: Collector }) {
   return (
     <span className="policy-label policy-label--unset" title={collector.policyHash}>
       Unassigned · {running}
+    </span>
+  );
+}
+
+const versionStatusLabels: Record<PrivacyProfileVersionStatus, string> = {
+  PendingReview: "Pending review",
+  Approved: "Approved",
+  Rejected: "Rejected"
+};
+
+/** Review state of an immutable privacy profile version. */
+export function VersionStatusBadge({ status }: { status: PrivacyProfileVersionStatus }) {
+  return (
+    <span className={`status-badge status-badge--${status.toLowerCase()}`}>
+      <span aria-hidden="true" />
+      {versionStatusLabels[status] ?? status}
+    </span>
+  );
+}
+
+function shortHash(value: string | null | undefined): string {
+  if (!value) {
+    return "not reported";
+  }
+  return value === "default" ? "default" : value.replace("sha256:", "").slice(0, 8);
+}
+
+/** Whether a collector runs the privacy profile version an administrator assigned. */
+export function PrivacyProfileLabel({ collector }: { collector: Collector }) {
+  const desired = collector.desiredPrivacyProfile;
+  const reported = collector.reportedPrivacyProfileHash ?? null;
+  if (!desired || collector.privacyProfileInSync == null) {
+    return (
+      <span className="policy-label policy-label--wrap policy-label--unset" title={reported ?? undefined}>
+        Unassigned
+      </span>
+    );
+  }
+  const assigned = `${desired.profileId}@${desired.version}`;
+  if (collector.privacyProfileInSync) {
+    return (
+      <span className="policy-label policy-label--wrap policy-label--sync" title={desired.contentHash}>
+        In sync · {assigned}
+      </span>
+    );
+  }
+  return (
+    <span
+      className="policy-label policy-label--wrap policy-label--drift"
+      title={`Running ${reported ?? "an unreported privacy profile"}, expected ${desired.contentHash}`}
+    >
+      Drift · {assigned} · running {shortHash(reported)}
     </span>
   );
 }

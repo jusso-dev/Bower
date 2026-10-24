@@ -18,14 +18,14 @@ public sealed class QueueRetentionTests
         await EnqueueAsync(store, clock, "delivered-old", cancellationToken);
         await EnqueueAsync(store, clock, "dead-lettered", cancellationToken);
         await EnqueueAsync(store, clock, "retrying", cancellationToken);
-        await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellationToken);
-        await store.MarkDeliveredAsync("delivered-old", "ack-1", cancellationToken);
-        await store.MarkDeadLetteredAsync("dead-lettered", "bad", cancellationToken);
-        await store.MarkRetryingAsync("retrying", "busy", clock.UtcNow.AddDays(30), cancellationToken);
+        var heldLease1 = await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellationToken);
+        await store.MarkDeliveredAsync("delivered-old", "ack-1", LeaseTestClaims.Token(heldLease1, "delivered-old"), cancellationToken);
+        await store.MarkDeadLetteredAsync("dead-lettered", "bad", LeaseTestClaims.Token(heldLease1, "dead-lettered"), cancellationToken);
+        await store.MarkRetryingAsync("retrying", "busy", clock.UtcNow.AddDays(30), LeaseTestClaims.Token(heldLease1, "retrying"), cancellationToken);
         clock.Advance(TimeSpan.FromDays(8));
         await EnqueueAsync(store, clock, "queued", cancellationToken);
-        await store.LeaseAsync(1, TimeSpan.FromMinutes(1), cancellationToken);
-        await store.MarkDeliveredAsync("queued", "ack-2", cancellationToken);
+        var heldLease2 = await store.LeaseAsync(1, TimeSpan.FromMinutes(1), cancellationToken);
+        await store.MarkDeliveredAsync("queued", "ack-2", LeaseTestClaims.Token(heldLease2, "queued"), cancellationToken);
 
         int purged = await store.PurgeDeliveredAsync(
             clock.UtcNow.AddDays(-7),
@@ -49,7 +49,7 @@ public sealed class QueueRetentionTests
         await store.InitializeAsync(cancellationToken);
         await EnqueueAsync(store, clock, "queued", cancellationToken);
         await EnqueueAsync(store, clock, "uploading", cancellationToken);
-        await store.LeaseAsync(1, TimeSpan.FromMinutes(1), cancellationToken);
+        var heldLease3 = await store.LeaseAsync(1, TimeSpan.FromMinutes(1), cancellationToken);
         clock.Advance(TimeSpan.FromDays(365));
 
         int purged = await store.PurgeDeliveredAsync(clock.UtcNow, 100, cancellationToken);
@@ -72,8 +72,8 @@ public sealed class QueueRetentionTests
         await store.EnqueueAsync(
             new QueuedEvent("delivered", "sha256:delivered", $$"""{"v":"{{large}}"}""", clock.UtcNow),
             cancellationToken);
-        await store.LeaseAsync(1, TimeSpan.FromMinutes(1), cancellationToken);
-        await store.MarkDeliveredAsync("delivered", "ack", cancellationToken);
+        var heldLease4 = await store.LeaseAsync(1, TimeSpan.FromMinutes(1), cancellationToken);
+        await store.MarkDeliveredAsync("delivered", "ack", LeaseTestClaims.Token(heldLease4, "delivered"), cancellationToken);
 
         EnqueueResult second = await store.EnqueueAsync(
             new QueuedEvent("next", "sha256:next", $$"""{"v":"{{large}}"}""", clock.UtcNow),
@@ -129,8 +129,8 @@ public sealed class QueueRetentionTests
         // Also after a restart, and for a duplicate that has since been delivered.
         SqliteEventStore restarted = new(Path.Combine(directory.Path, "queue.db"), OneMebibyte, clock);
         await restarted.InitializeAsync(cancellationToken);
-        await restarted.LeaseAsync(1, TimeSpan.FromMinutes(1), cancellationToken);
-        await restarted.MarkDeliveredAsync("first", "ack", cancellationToken);
+        var heldLease5 = await restarted.LeaseAsync(1, TimeSpan.FromMinutes(1), cancellationToken);
+        await restarted.MarkDeliveredAsync("first", "ack", LeaseTestClaims.Token(heldLease5, "first"), cancellationToken);
         await restarted.EnqueueAsync(new QueuedEvent("filler", "sha256:filler", payload, clock.UtcNow), cancellationToken);
         EnqueueResult delivered = await restarted.EnqueueAsync(
             new QueuedEvent("first", "sha256:first", payload, clock.UtcNow),

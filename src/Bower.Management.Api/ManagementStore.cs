@@ -4,7 +4,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Bower.Management.Api;
 
-public sealed class ManagementStore(string databasePath)
+public sealed partial class ManagementStore(string databasePath)
 {
     private readonly string _connectionString = new SqliteConnectionStringBuilder
     {
@@ -91,6 +91,34 @@ public sealed class ManagementStore(string databasePath)
                 actor_name TEXT NOT NULL,
                 occurred_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS privacy_profile_versions (
+                id TEXT PRIMARY KEY,
+                profile_id TEXT NOT NULL,
+                version TEXT NOT NULL,
+                description TEXT NULL,
+                content TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                change_summary TEXT NOT NULL,
+                status TEXT NOT NULL,
+                author_object_id TEXT NOT NULL,
+                author_name TEXT NULL,
+                created_at TEXT NOT NULL,
+                reviewer_object_id TEXT NULL,
+                reviewer_name TEXT NULL,
+                reviewed_at TEXT NULL,
+                review_reason TEXT NULL,
+                UNIQUE(profile_id, version)
+            );
+            CREATE TABLE IF NOT EXISTS privacy_profile_assignments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                collector_id TEXT NOT NULL REFERENCES collectors(id),
+                version_id TEXT NULL REFERENCES privacy_profile_versions(id),
+                action TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                actor_object_id TEXT NOT NULL,
+                actor_name TEXT NULL,
+                occurred_at TEXT NOT NULL
+            );
             """,
             cancellationToken);
         // Additive migrations for databases created by earlier versions.
@@ -98,6 +126,10 @@ public sealed class ManagementStore(string databasePath)
         await AddColumnIfMissingAsync(connection, "collectors", "ledger_sequence", "INTEGER NULL", cancellationToken);
         await AddColumnIfMissingAsync(connection, "collectors", "ledger_hash", "TEXT NULL", cancellationToken);
         await AddColumnIfMissingAsync(connection, "collectors", "dead_lettered", "INTEGER NOT NULL DEFAULT 0", cancellationToken);
+        await AddColumnIfMissingAsync(
+            connection, "collectors", "desired_privacy_profile_version_id", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync(
+            connection, "collectors", "reported_privacy_profile_hash", "TEXT NULL", cancellationToken);
     }
 
     public async Task<CollectorRecord> RegisterAsync(
@@ -121,6 +153,17 @@ public sealed class ManagementStore(string databasePath)
             !string.Equals(boundPrincipal, principalObjectId, StringComparison.Ordinal))
         {
             throw new CollectorIdentityConflictException(registration.CollectorId);
+        }
+
+        string? lifecycle = await ScalarAsync(connection, transaction,
+            "SELECT status FROM collectors WHERE id = $id;",
+            ("$id", registration.CollectorId), cancellationToken);
+        if (lifecycle is "Suspended" or "Revoked")
+        {
+            await InsertAuditAsync(connection, transaction, "collector.registration-denied",
+                registration.CollectorId, principalObjectId, registration.CollectorId, now, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            throw new CollectorStateException(registration.CollectorId, lifecycle);
         }
 
         await CommandAsync(
@@ -162,7 +205,7 @@ public sealed class ManagementStore(string databasePath)
         await InsertAuditAsync(
             connection,
             transaction,
-            "collector.registered",
+            boundPrincipal is null ? "collector.registered" : "collector.inventory-updated",
             registration.CollectorId,
             principalObjectId,
             registration.CollectorId,
@@ -236,7 +279,8 @@ public sealed class ManagementStore(string databasePath)
                 policy_hash = $policy,
                 queue_depth = $queue,
                 delivery_status = $delivery,
-                dead_lettered = $dead_lettered
+                dead_lettered = $dead_lettered,
+                reported_privacy_profile_hash = $privacy_profile
             WHERE id = $id;
             """,
             [
@@ -247,6 +291,7 @@ public sealed class ManagementStore(string databasePath)
                 ("$queue", heartbeat.QueueDepth),
                 ("$delivery", deliveryStatus),
                 ("$dead_lettered", heartbeat.DeadLettered ?? 0),
+                ("$privacy_profile", heartbeat.PrivacyProfileHash),
                 ("$id", collectorId)
             ],
             cancellationToken);
@@ -470,7 +515,7 @@ public sealed class ManagementStore(string databasePath)
                 item.LastSeenAt < staleBefore ||
                 item.PolicyInSync == false ||
                 item.DeadLettered > 0 ||
-                !string.Equals(item.DeliveryStatus, "healthy", StringComparison.OrdinalIgnoreCase))
+                !DeliveryOperational(item.DeliveryStatus))
             .Take(12)
             .ToArray();
         return new OverviewRecord(
@@ -478,16 +523,35 @@ public sealed class ManagementStore(string databasePath)
             collectors.Count(item => item.Status == CollectorStatus.Pending),
             collectors.Count(item =>
                 item.Status is CollectorStatus.Suspended or CollectorStatus.Revoked ||
-                !string.Equals(item.DeliveryStatus, "healthy", StringComparison.OrdinalIgnoreCase)),
+                !DeliveryOperational(item.DeliveryStatus)),
             collectors.Count(item => item.LastSeenAt < staleBefore),
-            collectors.Sum(item => item.QueueDepth),
+            SaturatingCount(collectors.Select(item => item.QueueDepth)),
             collectors.SelectMany(item => item.Sources)
                 .Count(item => string.Equals(item.Status, "healthy", StringComparison.OrdinalIgnoreCase)),
             collectors.SelectMany(item => item.Sources)
                 .Count(item => !string.Equals(item.Status, "healthy", StringComparison.OrdinalIgnoreCase)),
             exceptions,
             collectors.Count(item => item.PolicyInSync == false),
-            collectors.Sum(item => item.DeadLettered));
+            SaturatingCount(collectors.Select(item => item.DeadLettered)));
+    }
+
+    // Operational progress is distinct from a Sentinel destination-query claim.
+    // Keep normal waiting/pending states out of the fleet error count.
+    private static bool DeliveryOperational(string? status) => status?.ToLowerInvariant()
+        is "healthy" or "waiting" or "pending" or "idle" or "api-accepted" or "spooled";
+
+    // Existing databases can contain invalid counters from older collectors. Keep
+    // overview available without allowing negative rows to cancel valid counts.
+    private static long SaturatingCount(IEnumerable<long> values)
+    {
+        long total = 0;
+        foreach (long value in values)
+        {
+            if (value <= 0) continue;
+            if (value > long.MaxValue - total) return long.MaxValue;
+            total += value;
+        }
+        return total;
     }
 
     private async Task<CollectorRecord> ReadCollectorAsync(
@@ -513,6 +577,8 @@ public sealed class ManagementStore(string databasePath)
             ? null
             : reader.GetInt64(reader.GetOrdinal("ledger_sequence"));
         long deadLettered = reader.GetInt64(reader.GetOrdinal("dead_lettered"));
+        string? desiredPrivacyProfileId = ReadOptionalString(reader, "desired_privacy_profile_version_id");
+        string? reportedPrivacyProfile = ReadOptionalString(reader, "reported_privacy_profile_hash");
         await using SqliteConnection detailConnection = await OpenAsync(cancellationToken);
         IReadOnlyList<SourceReport> sources =
             await ReadSourcesAsync(detailConnection, id, cancellationToken);
@@ -520,10 +586,13 @@ public sealed class ManagementStore(string databasePath)
             await ReadOutputsAsync(detailConnection, id, cancellationToken);
         IReadOnlyList<BackgroundJobStatus> jobs =
             await ReadJobsAsync(detailConnection, id, cancellationToken);
+        DesiredPrivacyProfile? desiredPrivacyProfile = desiredPrivacyProfileId is null
+            ? null
+            : await ReadDesiredPrivacyProfileAsync(detailConnection, desiredPrivacyProfileId, cancellationToken);
         return new(
             id, machine, environment, version, status, principal, firstSeen, lastSeen,
             configuration, policy, queue, delivery, sources, outputs, jobs,
-            desiredPolicy, ledgerSequence, deadLettered);
+            desiredPolicy, ledgerSequence, deadLettered, desiredPrivacyProfile, reportedPrivacyProfile);
     }
 
     private static async Task<IReadOnlyList<SourceReport>> ReadSourcesAsync(
@@ -623,15 +692,20 @@ public sealed class ManagementStore(string databasePath)
 
     private static void ValidateHeartbeat(CollectorHeartbeat heartbeat)
     {
-        if (heartbeat.Sources.Count > 250
-            || heartbeat.Outputs.Count > 50
+        if (!ValidText(heartbeat.Version, 128)
+            || !ValidText(heartbeat.ConfigurationHash, 256)
+            || !ValidText(heartbeat.PolicyHash, 256)
+            || !ValidText(heartbeat.DeliveryStatus, 64)
+            || heartbeat.QueueDepth is < 0 or > MaximumReportedCount
+            || !ValidReports(heartbeat.Sources, heartbeat.Outputs)
             || heartbeat.Jobs is { Count: > 50 }
-            || heartbeat.Ledger is { } ledger && (ledger.Sequence < 0 || ledger.Hash.Length is 0 or > 128)
-            || heartbeat.DeadLettered is < 0
+            || heartbeat.Ledger is { } ledger && (ledger.Sequence < 0 || !ValidText(ledger.Hash, 128))
+            || heartbeat.DeadLettered is < 0 or > MaximumReportedCount
+            || heartbeat.PrivacyProfileHash is { } privacyProfileHash && !IsPrivacyProfileHash(privacyProfileHash)
             || (heartbeat.Jobs?.Any(job =>
-                string.IsNullOrWhiteSpace(job.Id)
-                || job.Id.Length > 128
-                || job.Schedule.Length > 128
+                job is null
+                || !ValidText(job.Id, 128)
+                || !ValidText(job.Schedule, 128)
                 || job.LastState?.Length > 64) ?? false))
         {
             throw new ArgumentException("Collector heartbeat is invalid.", nameof(heartbeat));
@@ -956,18 +1030,33 @@ public sealed class ManagementStore(string databasePath)
 
     private static void ValidateRegistration(CollectorRegistration registration)
     {
-        if (string.IsNullOrWhiteSpace(registration.CollectorId) ||
-            registration.CollectorId.Length > 128 ||
-            string.IsNullOrWhiteSpace(registration.MachineName) ||
-            registration.MachineName.Length > 256 ||
-            registration.ConfigurationHash.Length > 256 ||
-            registration.PolicyHash.Length > 256 ||
-            registration.Sources.Count > 250 ||
-            registration.Outputs.Count > 50)
+        if (!ValidText(registration.CollectorId, 128) ||
+            !ValidText(registration.MachineName, 256) ||
+            !ValidText(registration.Environment, 128) ||
+            !ValidText(registration.Version, 128) ||
+            !ValidText(registration.ConfigurationHash, 256) ||
+            !ValidText(registration.PolicyHash, 256) ||
+            !ValidReports(registration.Sources, registration.Outputs))
         {
             throw new ArgumentException("Collector registration is invalid.", nameof(registration));
         }
     }
+
+    public const long MaximumReportedCount = 1_000_000_000_000;
+
+    private static bool ValidText(string? value, int maximum) =>
+        !string.IsNullOrWhiteSpace(value) && value.Length <= maximum;
+
+    private static bool ValidReports(IReadOnlyList<SourceReport>? sources, IReadOnlyList<OutputReport>? outputs) =>
+        sources is { Count: <= 250 } && outputs is { Count: <= 50 }
+        && sources.All(source => source is not null && ValidText(source.Id, 128)
+            && ValidText(source.Type, 128) && ValidText(source.Status, 64)
+            && source.LagSeconds is not (< 0 or > MaximumReportedCount))
+        && outputs.All(output => output is not null && ValidText(output.Id, 128)
+            && ValidText(output.Type, 128) && ValidText(output.Status, 64)
+            && output.LastErrorCode?.Length is not > 128)
+        && sources.Select(source => source.Id).Distinct(StringComparer.Ordinal).Count() == sources.Count
+        && outputs.Select(output => output.Id).Distinct(StringComparer.Ordinal).Count() == outputs.Count;
 
     private static async Task InsertAuditAsync(
         SqliteConnection connection,
@@ -1095,4 +1184,4 @@ public sealed class CollectorIdentityConflictException(string collectorId)
     : InvalidOperationException($"Collector '{collectorId}' is bound to another identity.");
 
 public sealed class CollectorStateException(string collectorId, string state)
-    : InvalidOperationException($"Collector '{collectorId}' cannot heartbeat while {state}.");
+    : InvalidOperationException($"Collector '{collectorId}' cannot perform this operation while {state}.");

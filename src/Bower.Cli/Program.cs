@@ -36,6 +36,8 @@ static async Task<int> RunAsync(string[] args)
             ["evidence", "run", .. string[] rest] => await EvidenceCommands.RunAsync(rest),
             ["evidence", "verify", .. string[] rest] => EvidenceCommands.Verify(rest),
             ["developer", "init", .. string[] rest] => DeveloperInit(rest),
+            ["privacy", "validate", .. string[] rest] => PrivacyCommands.Validate(rest),
+            ["policy", "test", .. string[] rest] => await PolicyCommands.TestAsync(rest),
             [] or ["--help"] or ["help"] => WriteHelp(),
             _ => Fail("Unknown command. Run 'bower --help'.")
         };
@@ -272,6 +274,9 @@ static int WriteHelp()
           bower queue replay --database FILE (--code PREFIX | --event ID ...)
           bower queue verify --database FILE [--expect-head SEQUENCE:HASH]
           bower developer init [--path PATH]
+          bower privacy validate FILE [--hmac-key-file FILE] [--sample FILE]
+          bower policy test EVENT.json... [--policy-directory DIR] [--pack FILE --trusted-key PUB]
+                [--privacy-profile FILE --hmac-key-file FILE] [--expect DECISION]
           bower version
         """);
     return 0;

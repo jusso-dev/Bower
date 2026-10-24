@@ -3,13 +3,28 @@ using Bower.Contracts;
 
 namespace Bower.Sdk;
 
-internal sealed class BufferedBowerClient : IBowerTelemetry, IAsyncDisposable
+internal sealed class BufferedBowerClient : IBowerTelemetry, IBowerTelemetryDiagnostics, IAsyncDisposable
 {
     private readonly BowerOptions options;
     private readonly Channel<SecurityEventEnvelope> channel;
     private readonly LocalCollectorTransport transport;
     private readonly CancellationTokenSource shutdown = new();
     private readonly Task sender;
+    private readonly object stateLock = new();
+    private long accepted, delivered, failed, rejected, retries;
+    private string? lastFailureCode;
+    private string? stoppedCode;
+    private bool disposed;
+
+    public DeliveryStatus DeliveryStatus
+    {
+        get
+        {
+            lock (stateLock)
+                return new(accepted, delivered, failed, accepted - delivered - failed,
+                    rejected, retries, stoppedCode ?? "running", lastFailureCode);
+        }
+    }
 
     private readonly TimeProvider clock;
 
@@ -21,7 +36,7 @@ internal sealed class BufferedBowerClient : IBowerTelemetry, IAsyncDisposable
         channel = Channel.CreateBounded<SecurityEventEnvelope>(
             new BoundedChannelOptions(options.BufferCapacity)
             {
-                FullMode = BoundedChannelFullMode.DropWrite,
+                FullMode = BoundedChannelFullMode.Wait,
                 SingleReader = true,
                 SingleWriter = false,
                 AllowSynchronousContinuations = false
@@ -140,15 +155,23 @@ internal sealed class BufferedBowerClient : IBowerTelemetry, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        channel.Writer.TryComplete();
-        using CancellationTokenSource timeout = new(options.ShutdownFlushTimeout);
+        lock (stateLock)
+        {
+            if (disposed) return;
+            disposed = true;
+            stoppedCode ??= "sender-stopped";
+            channel.Writer.TryComplete();
+        }
         try
         {
-            await sender.WaitAsync(timeout.Token);
+            await sender.WaitAsync(options.ShutdownFlushTimeout);
         }
-        catch (OperationCanceledException)
+        catch (TimeoutException)
         {
             shutdown.Cancel();
+            // HttpClient and delay honour cancellation. Join before disposing resources
+            // so every accepted item has a final accounting state on return.
+            await sender;
         }
         finally
         {
@@ -162,40 +185,81 @@ internal sealed class BufferedBowerClient : IBowerTelemetry, IAsyncDisposable
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (channel.Writer.TryWrite(envelope))
+        string code;
+        lock (stateLock)
         {
-            return ValueTask.FromResult(new EmitResult(true, envelope.EventId, null));
+            if (stoppedCode is null && channel.Writer.TryWrite(envelope))
+            {
+                accepted++;
+                return ValueTask.FromResult(new EmitResult(true, envelope.EventId, null));
+            }
+            rejected++;
+            code = stoppedCode ?? "bounded-buffer-full";
         }
-
-        if (options.FailApplicationOnTelemetryFailure)
-        {
-            throw new BowerDeliveryException("bounded-buffer-full");
-        }
-
-        return ValueTask.FromResult(
-            new EmitResult(false, envelope.EventId, "bounded-buffer-full"));
+        if (options.FailApplicationOnTelemetryFailure) throw new BowerDeliveryException(code);
+        return ValueTask.FromResult(new EmitResult(false, envelope.EventId, code));
     }
 
     private async Task SendLoopAsync(CancellationToken cancellationToken)
     {
-        await foreach (SecurityEventEnvelope envelope in channel.Reader.ReadAllAsync(
-                           cancellationToken))
+        try
         {
-            try
+            await foreach (SecurityEventEnvelope envelope in channel.Reader.ReadAllAsync(cancellationToken))
             {
-                await transport.SendAsync(envelope, cancellationToken);
-            }
-            catch (Exception exception) when (
-                exception is HttpRequestException or TaskCanceledException)
-            {
-                if (options.FailApplicationOnTelemetryFailure)
+                bool sent = false;
+                for (int attempt = 1; attempt <= options.MaximumSendAttempts; attempt++)
                 {
-                    shutdown.Cancel();
-                    return;
+                    try
+                    {
+                        await transport.SendAsync(envelope, cancellationToken);
+                        sent = true;
+                        break;
+                    }
+                    catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        int status = exception is HttpRequestException { StatusCode: { } code } ? (int)code : 0;
+                        lock (stateLock) lastFailureCode = status == 0 ? "collector-unavailable" : $"collector-http-{status}";
+                        if (attempt == options.MaximumSendAttempts || status is > 0 and not (408 or 429 or >= 500)) break;
+                        lock (stateLock) retries++;
+                        await Task.Delay(options.RetryDelay, cancellationToken);
+                    }
                 }
-
-                // Transport failures stay payload-free. Host can observe failed send count
-                // through a future metrics adapter without exposing event content.
+                lock (stateLock)
+                {
+                    if (sent) delivered++;
+                    else failed++;
+                    if (!sent && options.FailApplicationOnTelemetryFailure)
+                    {
+                        stoppedCode = "sender-faulted";
+                        channel.Writer.TryComplete();
+                    }
+                }
+                if (!sent && options.FailApplicationOnTelemetryFailure) return;
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            lock (stateLock) lastFailureCode = "shutdown-timeout";
+        }
+        catch (Exception)
+        {
+            // Never expose exception text, response bodies or event data.
+            lock (stateLock)
+            {
+                lastFailureCode = "sender-unexpected-failure";
+                stoppedCode = "sender-faulted";
+            }
+        }
+        finally
+        {
+            lock (stateLock)
+            {
+                stoppedCode ??= "sender-stopped";
+                channel.Writer.TryComplete();
+                // Includes cancelled in-flight item and all unsent accepted items.
+                failed = accepted - delivered;
+                while (channel.Reader.TryRead(out _)) { }
             }
         }
     }

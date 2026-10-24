@@ -37,7 +37,9 @@ fn ledger_is_intact_through_normal_lifecycle_including_purge() {
     }
     store.lease(3, Duration::from_secs(60)).unwrap();
     for id in ["e0", "e1", "e2"] {
-        store.mark_delivered(id, "ack").unwrap();
+        store
+            .mark_delivered(id, "ack", claim(&store, id).as_deref())
+            .unwrap();
     }
 
     clock.advance(Span::days(10));
@@ -67,9 +69,9 @@ fn ledger_detects_modified_payload_deleted_row_and_injected_event() {
     }
     raw(&queue_path(directory.path()))
         .execute_batch(
-            r#"UPDATE queue_events SET payload = '{"id":"a","attacker":true}' WHERE event_id = 'a';
-DELETE FROM queue_events WHERE event_id = 'b';
-INSERT INTO queue_events (event_id, fingerprint, payload, payload_bytes, received_at, state)
+            r#"UPDATE queue_events_v5 SET payload = '{"id":"a","attacker":true}' WHERE event_id = 'a';
+DELETE FROM queue_events_v5 WHERE event_id = 'b';
+INSERT INTO queue_events_v5 (event_id, fingerprint, payload, payload_bytes, received_at, state)
 VALUES ('forged', 'forged', '{}', 2, '2026-01-01T00:00:00Z', 0);"#,
         )
         .unwrap();
@@ -137,7 +139,7 @@ fn ledger_detects_sequence_gap_and_purge_mismatch() {
         .execute("DELETE FROM queue_ledger WHERE sequence = 2;", [])
         .unwrap();
     connection
-        .execute("DELETE FROM queue_events WHERE event_id = 'b';", [])
+        .execute("DELETE FROM queue_events_v5 WHERE event_id = 'b';", [])
         .unwrap();
     let found = codes(&store);
     assert!(found.contains(&"purge-mismatch".to_owned()), "{found:?}");
@@ -194,8 +196,12 @@ fn full_purge_compacts_into_anchor_and_chain_continues() {
         enqueue(&store, &clock, id);
     }
     store.lease(2, Duration::from_secs(60)).unwrap();
-    store.mark_delivered("a", "ack").unwrap();
-    store.mark_delivered("b", "ack").unwrap();
+    store
+        .mark_delivered("a", "ack", claim(&store, "a").as_deref())
+        .unwrap();
+    store
+        .mark_delivered("b", "ack", claim(&store, "b").as_deref())
+        .unwrap();
     let head_before = store.ledger_head().unwrap();
     clock.advance(Span::days(10));
     assert_eq!(store.purge_delivered(clock.now(), 100).unwrap(), 2);
@@ -204,11 +210,11 @@ fn full_purge_compacts_into_anchor_and_chain_continues() {
     let ledger_rows: i64 = connection
         .query_row("SELECT COUNT(*) FROM queue_ledger", [], |row| row.get(0))
         .unwrap();
-    let anchor: (i64, String, String) = connection
+    let anchor: (i64, String) = connection
         .query_row(
-            "SELECT sequence, chain_hash, created_at FROM queue_ledger_anchor WHERE id = 1",
+            "SELECT end_sequence, chain_hash FROM queue_ledger_segments ORDER BY end_sequence DESC LIMIT 1",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .unwrap();
     assert_eq!(ledger_rows, 0);
@@ -216,7 +222,6 @@ fn full_purge_compacts_into_anchor_and_chain_continues() {
         (anchor.0, anchor.1.as_str()),
         (2, head_before.hash.as_str())
     );
-    assert_eq!(anchor.2, "2026-08-05T02:14:19.0000000+00:00");
     assert_eq!(store.ledger_head().unwrap(), head_before);
 
     enqueue(&store, &clock, "c");
@@ -237,8 +242,12 @@ fn crash_between_purge_and_compaction_recovers() {
         enqueue(&store, &clock, id);
     }
     store.lease(3, Duration::from_secs(60)).unwrap();
-    store.mark_delivered("a", "ack").unwrap();
-    store.mark_delivered("b", "ack").unwrap();
+    store
+        .mark_delivered("a", "ack", claim(&store, "a").as_deref())
+        .unwrap();
+    store
+        .mark_delivered("b", "ack", claim(&store, "b").as_deref())
+        .unwrap();
     let head_before = store.ledger_head().unwrap();
     drop(store);
     {
@@ -249,7 +258,7 @@ fn crash_between_purge_and_compaction_recovers() {
             .unwrap();
         transaction
             .execute_batch(
-                "DELETE FROM queue_events WHERE event_id IN ('a', 'b') AND state = 3;
+                "DELETE FROM queue_events_v5 WHERE event_id IN ('a', 'b') AND state = 3;
 UPDATE queue_ledger SET purged_at = '2026-08-05T02:14:19.0000000+00:00'
 WHERE event_id IN ('a', 'b') AND purged_at IS NULL;",
             )
@@ -270,7 +279,7 @@ WHERE event_id IN ('a', 'b') AND purged_at IS NULL;",
     assert_eq!(verification.entries, 1);
     let anchor: i64 = raw(&queue_path(directory.path()))
         .query_row(
-            "SELECT sequence FROM queue_ledger_anchor WHERE id = 1",
+            "SELECT end_sequence FROM queue_ledger_segments ORDER BY end_sequence DESC LIMIT 1",
             [],
             |row| row.get(0),
         )
@@ -355,7 +364,7 @@ VALUES ('z', 'fz', '{\"z\":1}', 7, '2026-01-01T00:00:01.0000000+00:00', 0),
     let versions: i64 = raw(&path)
         .query_row("SELECT COUNT(*) FROM schema_history", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(versions, 4);
+    assert_eq!(versions, 5);
 
     // Re-initialising is idempotent: no duplicate ledger entries.
     drop(store);

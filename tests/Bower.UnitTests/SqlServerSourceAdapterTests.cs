@@ -5,7 +5,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Bower.UnitTests;
 
-public sealed class SqlServerSourceAdapterTests
+public sealed partial class SqlServerSourceAdapterTests
 {
     [Fact]
     public void Options_AcceptReadOnlyBoundedEfMapping()

@@ -1,6 +1,6 @@
 # Privacy & Secret Protection Engine
 
-Bower's privacy engine inspects every event **after parse and before
+The Privacy & Secret Protection Engine inspects every event **after parse and before
 persistence / normalisation**. It is a core control for preventing accidental
 leakage of regulated Australian identifiers, credentials and cryptographic
 material into downstream SIEM platforms.
@@ -24,6 +24,14 @@ Raw Event → Parser → Privacy & Secret Engine → Normalisation → Output
 | Fail closed | Invalid / oversized payloads, duplicate keys, detector timeouts and any other detector or action failure → `redaction-failed` → quarantine. `RedactJson` / `RedactText` never throw; a policy that could fail at runtime (field rule path without segments, negative length, null replacement text or collections) is rejected when the engine is built |
 | Complete coverage | String **and number** values are scanned, and so are **property names** |
 
+## Semantic change values and URLs
+
+Before persistence, both runtimes remove change values except the reviewed
+`role_membership_changed` / `role` pair, and strip URL query, fragment and userinfo
+content. These structural guards run even when value detectors are disabled.
+See [SEC-01/SEC-05 migration](../security/producer-scopes.md) for exact scope,
+limitations, producer authorization and treatment of existing queued events.
+
 ## Actions
 
 | Action | Effect |
@@ -37,7 +45,7 @@ Raw Event → Parser → Privacy & Secret Engine → Normalisation → Output
 | `Encrypt` | AES-GCM (`enc:aesgcm:…`); requires 32-byte key; else remove |
 | `AlertOnly` | Detect only; do not rewrite |
 
-## Default policy (production-oriented)
+## Default detector actions (production-oriented)
 
 | Detector | Default |
 | --- | --- |
@@ -61,8 +69,11 @@ managed secret key. `Sha256` remains available for high-entropy values only.
 
 ### Privacy profiles, pseudonymisation and length limits
 
-A YAML profile changes detector actions and adds field rules
-(`BOWER_PRIVACY_PROFILE`, or inside a signed pack):
+A **privacy profile** (YAML, `kind: PrivacyProfile`) changes detector actions, adds
+field rules and defines custom redaction rules (custom detectors and secret field
+names). Load one with `BOWER_PRIVACY_PROFILE`, inside a signed pack, or from the
+management console ([managed privacy profiles](managed-privacy-profiles.md)). Only
+one privacy profile is active per host:
 
 ```yaml
 apiVersion: bower.security/v1
@@ -88,6 +99,11 @@ without a key fails at start-up. Unknown detector ids, actions or keys fail the 
 and so do a missing `metadata` block and explicit nulls where a value is required
 (`detectors: ~`, a null action or field rule): each is an `InvalidDataException`
 with a message naming the problem.
+
+Organisation-specific identifiers need no code: add `customDetectors` and
+`secretFieldNames` to the privacy profile. See [custom redaction
+rules](custom-redaction-rules.md) for syntax, limits, testing (`bower privacy
+validate`) and deployment.
 
 `maximumFieldLength` keeps values below the Logs Ingestion API's silent 64 KB
 truncation, so Bower decides where a value is cut and records it as
@@ -225,6 +241,11 @@ CABINET-IN-CONFIDENCE (opt-in).
 
 ## Configuration (code)
 
+Hosts build `PrivacyPolicy` from a privacy profile with `PrivacyProfileLoader.Load`;
+custom detectors and secret field names travel on the policy, so
+`new JsonEventRedactor(policy)` and `new PrivacyEngine(policy)` include them.
+Building a policy in code is for tests and embedding:
+
 ```csharp
 var defaults = PrivacyPolicy.CreateDefault();
 var policy = new PrivacyPolicy
@@ -248,6 +269,8 @@ var engine = new PrivacyEngine(policy, customDetectors);
 
 ## Extension points
 
+0. No code: custom detectors and secret field names in a privacy profile
+   ([custom redaction rules](custom-redaction-rules.md)).
 1. Implement `ISensitiveDetector` (value scan) and/or `IFieldNameDetector`.
 2. Pass detectors into `PrivacyEngine` constructor **or** extend
    `DetectorCatalog.CreateDefaultValueDetectors()`.
@@ -257,7 +280,7 @@ var engine = new PrivacyEngine(policy, customDetectors);
 
 ## Performance
 
-- Per-event JSON walk; detectors only run on string leaves.
+- Per-event JSON walk; detectors run on string and number leaves and property names.
 - Overlapping matches resolved once (prefer longer, then earlier) in O(n log n).
 - Replacements applied right-to-left in one pass.
 - Micro-benchmarks: `tests/Bower.Benchmarks` (Stopwatch; no extra packages).
@@ -275,6 +298,8 @@ var engine = new PrivacyEngine(policy, customDetectors);
 
 ## Related
 
+- [Custom redaction rules](custom-redaction-rules.md) — custom detectors, secret field names, testing
+- [Managed privacy profiles](managed-privacy-profiles.md) — versioning, two-person review, signed deployment
 - `src/Bower.Redaction/AGENTS.md` — contributor invariants
 - `src/Bower.Core/SecurityEventProcessor.cs` — redaction before enqueue
 }

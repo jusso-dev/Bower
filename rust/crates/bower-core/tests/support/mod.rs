@@ -189,13 +189,13 @@ impl DurableEventStore for MemoryStore {
     fn lease(&self, _: usize, _: Duration) -> StoreResult<Vec<QueuedEvent>> {
         unimplemented!()
     }
-    fn mark_delivered(&self, _: &str, _: &str) -> StoreResult<()> {
+    fn mark_delivered(&self, _: &str, _: &str, _: Option<&str>) -> StoreResult<()> {
         unimplemented!()
     }
-    fn mark_retrying(&self, _: &str, _: &str, _: Timestamp) -> StoreResult<()> {
+    fn mark_retrying(&self, _: &str, _: &str, _: Timestamp, _: Option<&str>) -> StoreResult<()> {
         unimplemented!()
     }
-    fn mark_dead_lettered(&self, _: &str, _: &str) -> StoreResult<()> {
+    fn mark_dead_lettered(&self, _: &str, _: &str, _: Option<&str>) -> StoreResult<()> {
         unimplemented!()
     }
     fn snapshot(&self) -> StoreResult<QueueSnapshot> {

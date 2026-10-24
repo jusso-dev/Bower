@@ -18,7 +18,11 @@ internal sealed record IngestResponse(
     bool Queued,
     bool Duplicate,
     IReadOnlyList<string> Reasons,
-    IngestPolicyResponse? Policy);
+    IngestPolicyResponse? Policy)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Remediation { get; init; }
+}
 
 internal sealed record IngestPolicyResponse(string PolicyId, string PolicyVersion, string PolicyHash, int Score);
 
@@ -27,17 +31,26 @@ internal sealed record StatusResponse(
     StatusPolicyResponse Policy,
     LedgerResponse Ledger,
     StatusQueueResponse Queue,
-    IReadOnlyList<BackgroundJobStatus> Jobs);
+    IReadOnlyList<BackgroundJobStatus> Jobs)
+{
+    public EventIdentityConflictSnapshot? EventIdentityConflicts { get; init; }
+}
 
 internal sealed record StatusPolicyResponse(
     string Hash,
     IReadOnlyList<StatusPolicyItem> Policies,
     IReadOnlyList<StatusPackItem> Packs,
-    string? PrivacyProfile);
+    string? PrivacyProfile,
+    string? PrivacyProfileVersion,
+    string PrivacyProfileHash,
+    string PrivacyProfileSource,
+    string? ManagedPrivacyProfileState,
+    long? ManagedPrivacyProfileRevision);
 
 internal sealed record StatusPolicyItem(string Id, string Version);
 
-internal sealed record StatusPackItem(string Id, string Version, string PackHash);
+internal sealed record StatusPackItem(string Id, string Version, string PackHash,
+    IReadOnlyList<string> ParserStatuses, string DetectionStatus, string DcrStatus);
 
 internal sealed record LedgerResponse(long Sequence, string Hash);
 
@@ -71,7 +84,8 @@ internal sealed record CollectorHeartbeat(
     IReadOnlyList<OutputReport> Outputs,
     IReadOnlyList<BackgroundJobStatus> Jobs,
     long DeadLettered,
-    LedgerResponse Ledger);
+    LedgerResponse Ledger,
+    string PrivacyProfileHash);
 
 internal sealed record SourceReport(string Id, string Type, string Status, long? LagSeconds, DateTimeOffset? LastEventAt);
 
@@ -91,4 +105,5 @@ internal sealed record OutputReport(
 [JsonSerializable(typeof(StatusResponse))]
 [JsonSerializable(typeof(CollectorRegistration))]
 [JsonSerializable(typeof(CollectorHeartbeat))]
+[JsonSerializable(typeof(ManagedPrivacyProfileDocument))]
 internal sealed partial class CollectorJsonContext : JsonSerializerContext;

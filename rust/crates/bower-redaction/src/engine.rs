@@ -1,21 +1,27 @@
 //! Privacy & Secret Protection Engine (`PrivacyEngine`). Runs after parse and
 //! before persistence. Deterministic: regex, checksum and structure only.
 
+use std::cell::Cell;
 use std::panic::{self, AssertUnwindSafe};
 
 use bower_contracts::{EventRedactor, RedactionResult};
 use indexmap::IndexMap;
 
 use crate::applicator::PolicyApplicator;
+use crate::detectors::custom::{
+    CustomPatternDetector, MAXIMUM_MATCHES_PER_EVENT, MAXIMUM_SCANNED_LENGTH,
+};
 use crate::detectors::{
-    DetectionMatch, FieldNameDetector, ScanText, SensitiveDetector, default_field_name_detector,
-    default_value_detectors,
+    DetectionMatch, FieldNameDetector, ScanText, SensitiveDetector, field_name_detector_for,
+    value_detectors_for,
 };
 use crate::error::PrivacyError;
 use crate::ids::{detector_categories as categories, detector_ids as ids};
 use crate::json::{self, Node, Object};
 use crate::policy::{PrivacyAction, PrivacyFieldRule, PrivacyPolicy};
-use crate::text::{compare_ordinal, is_null_or_whitespace, normalize_field_name, truncate_utf16};
+use crate::text::{
+    compare_ordinal, is_null_or_whitespace, normalize_field_name, truncate_utf16, utf16_len,
+};
 
 pub const MAXIMUM_PAYLOAD_BYTES: usize = 1_048_576;
 
@@ -114,6 +120,38 @@ impl From<PrivacyError> for RedactionFailed {
 
 type Step<T = ()> = Result<T, RedactionFailed>;
 
+/// Deterministic per-call bound on custom detector work (`CustomScanBudget`): values
+/// longer than [`MAXIMUM_SCANNED_LENGTH`] and more than [`MAXIMUM_MATCHES_PER_EVENT`]
+/// custom matches per event fail the redaction (quarantine).
+struct CustomScanBudget {
+    remaining: Cell<usize>,
+}
+
+impl Default for CustomScanBudget {
+    fn default() -> Self {
+        Self {
+            remaining: Cell::new(MAXIMUM_MATCHES_PER_EVENT),
+        }
+    }
+}
+
+impl CustomScanBudget {
+    fn scan(
+        &self,
+        detector: &CustomPatternDetector,
+        text: &ScanText<'_>,
+        matches: &mut Vec<DetectionMatch>,
+    ) -> Step {
+        let before = matches.len();
+        if !detector.detect_bounded(text, matches, self.remaining.get()) {
+            return Err(RedactionFailed);
+        }
+        self.remaining
+            .set(self.remaining.get() - (matches.len() - before));
+        Ok(())
+    }
+}
+
 pub struct PrivacyEngine {
     policy: PrivacyPolicy,
     detectors: Vec<Box<dyn SensitiveDetector>>,
@@ -134,17 +172,17 @@ impl std::fmt::Debug for PrivacyEngine {
 }
 
 impl PrivacyEngine {
-    /// Engine with the built-in detector catalogue. Fails when the policy needs an
-    /// HMAC key that is not configured.
+    /// Engine with the built-in detector catalogue plus the policy's custom detectors,
+    /// and the field-name detector extended with its secret field names. Fails when the
+    /// policy needs an HMAC key that is not configured.
     pub fn new(policy: PrivacyPolicy) -> Result<Self, PrivacyError> {
-        Self::with_detectors(
-            policy,
-            default_value_detectors(),
-            default_field_name_detector(),
-        )
+        let detectors = value_detectors_for(&policy);
+        let field_name_detector = field_name_detector_for(&policy);
+        Self::with_detectors(policy, detectors, field_name_detector)
     }
 
-    /// Engine with custom detectors (appended or replaced without modifying the engine).
+    /// Engine with explicit detectors (appended or replaced without modifying the
+    /// engine), used as given: the policy's custom detectors are not added.
     pub fn with_detectors(
         policy: PrivacyPolicy,
         detectors: Vec<Box<dyn SensitiveDetector>>,
@@ -243,7 +281,8 @@ impl PrivacyEngine {
 
     fn redact_root(&self, root: &mut Object) -> Step<PrivacyScanResult> {
         let mut findings = Vec::new();
-        self.walk_object(root, "$", &mut findings)?;
+        sanitize_change(root, &mut findings)?;
+        self.walk_object(root, "$", &mut findings, &CustomScanBudget::default())?;
         self.apply_field_rules(root, &mut findings)?;
         self.enforce_field_length_object(root, "$", &mut findings)?;
 
@@ -288,7 +327,7 @@ impl PrivacyEngine {
 
         let mut findings = Vec::new();
         let redacted = panic::catch_unwind(AssertUnwindSafe(|| {
-            self.apply_detectors_to_value(text, "$", &mut findings)
+            self.apply_detectors_to_value(text, "$", &mut findings, &CustomScanBudget::default())
         }));
         match redacted {
             Ok(Ok(redacted)) => PrivacyTextResult {
@@ -307,6 +346,7 @@ impl PrivacyEngine {
         object: &mut Object,
         parent_path: &str,
         findings: &mut Vec<AppliedFinding>,
+        budget: &CustomScanBudget,
     ) -> Step {
         if object.poisoned {
             return Err(RedactionFailed);
@@ -343,6 +383,7 @@ impl PrivacyEngine {
                 &property_name,
                 &format!("{parent_path}.[key]"),
                 findings,
+                budget,
             )?;
             if redacted_name != property_name {
                 let child = object
@@ -369,9 +410,9 @@ impl PrivacyEngine {
                 continue;
             };
             match child {
-                Node::Object(nested) => self.walk_object(nested, &path, findings)?,
-                Node::Array(items) => self.walk_array(items, &path, findings)?,
-                scalar => self.redact_scalar(scalar, &path, findings)?,
+                Node::Object(nested) => self.walk_object(nested, &path, findings, budget)?,
+                Node::Array(items) => self.walk_array(items, &path, findings, budget)?,
+                scalar => self.redact_scalar(scalar, &path, findings, budget)?,
             }
         }
 
@@ -383,13 +424,14 @@ impl PrivacyEngine {
         items: &mut [Node],
         path: &str,
         findings: &mut Vec<AppliedFinding>,
+        budget: &CustomScanBudget,
     ) -> Step {
         for (index, item) in items.iter_mut().enumerate() {
             let item_path = format!("{path}[{index}]");
             match item {
-                Node::Object(nested) => self.walk_object(nested, &item_path, findings)?,
-                Node::Array(nested) => self.walk_array(nested, &item_path, findings)?,
-                scalar => self.redact_scalar(scalar, &item_path, findings)?,
+                Node::Object(nested) => self.walk_object(nested, &item_path, findings, budget)?,
+                Node::Array(nested) => self.walk_array(nested, &item_path, findings, budget)?,
+                scalar => self.redact_scalar(scalar, &item_path, findings, budget)?,
             }
         }
 
@@ -404,11 +446,12 @@ impl PrivacyEngine {
         node: &mut Node,
         path: &str,
         findings: &mut Vec<AppliedFinding>,
+        budget: &CustomScanBudget,
     ) -> Step {
         let Some(text) = scannable_text(node)? else {
             return Ok(());
         };
-        let redacted = self.apply_detectors_to_value(&text, path, findings)?;
+        let redacted = self.apply_detectors_to_value(&text, path, findings, budget)?;
         if redacted != text {
             *node = Node::string(redacted);
         }
@@ -554,19 +597,70 @@ impl PrivacyEngine {
         text: &str,
         path: &str,
         findings: &mut Vec<AppliedFinding>,
+        budget: &CustomScanBudget,
     ) -> Step<String> {
+        let safe = safe_url(text, path);
+        if safe != text {
+            findings.push(AppliedFinding {
+                detector_id: ids::FIELD_NAME_SECRET.to_owned(),
+                category: categories::FIELD_NAME.to_owned(),
+                path: path.to_owned(),
+                action: PrivacyAction::Replace,
+                validated: true,
+                sub_kind: None,
+            });
+        }
+        let text = safe.as_str();
         let scan = ScanText::new(text);
         let mut matches: Vec<DetectionMatch> = Vec::new();
+        let mut observed: Vec<DetectionMatch> = Vec::new();
+        let mut length_checked = false;
         for detector in &self.detectors {
-            if self.policy.is_detector_enabled(detector.id()) {
-                detector.detect(&scan, path, &mut matches);
+            if !self.policy.is_detector_enabled(detector.id()) {
+                continue;
             }
+
+            let Some(custom) = detector.as_custom() else {
+                detector.detect(&scan, path, &mut matches);
+                continue;
+            };
+            if !length_checked {
+                if utf16_len(text) > MAXIMUM_SCANNED_LENGTH {
+                    return Err(RedactionFailed);
+                }
+                length_checked = true;
+            }
+
+            // Non-redacting custom detectors (alert-only, or allow set programmatically)
+            // record findings but never claim a span, so they cannot hide other matches.
+            let target = if self.policy.resolve_action(custom.id()).keeps_content() {
+                &mut observed
+            } else {
+                &mut matches
+            };
+            budget.scan(custom, &scan, target)?;
         }
 
-        if matches.is_empty() {
-            return Ok(text.to_owned());
+        let result = if matches.is_empty() {
+            text.to_owned()
+        } else {
+            self.apply_selected(text, path, matches, findings)?
+        };
+        for found in observed {
+            let action = self.policy.resolve_action(&found.detector_id);
+            findings.push(applied(found, path, action));
         }
 
+        Ok(result)
+    }
+
+    fn apply_selected(
+        &self,
+        text: &str,
+        path: &str,
+        mut matches: Vec<DetectionMatch>,
+        findings: &mut Vec<AppliedFinding>,
+    ) -> Step<String> {
         // A (custom) detector reporting offsets outside the text or inside a character
         // cannot be applied safely: quarantine instead of panicking on the slice.
         if matches.iter().any(|found| {
@@ -644,6 +738,121 @@ impl PrivacyEngine {
 
         Ok(result)
     }
+}
+
+// Explicit event/field allowlist; ordinary secret text has no reliable value signature.
+fn sanitize_change(root: &mut Object, findings: &mut Vec<AppliedFinding>) -> Step {
+    if root.poisoned {
+        return Err(RedactionFailed);
+    }
+    let role_event = matches!(root.map.get("eventType"), Some(Node::String(s)) if !s.invalid && s.value == "role_membership_changed");
+    let cloud_event = matches!(root.map.get("eventType"), Some(Node::String(s)) if !s.invalid && matches!(s.value.as_str(), "aws_cloudtrail" | "gcp_cloud_audit"));
+    let Some(Node::Object(change)) = root.map.get_mut("change") else {
+        return Ok(());
+    };
+    if change.poisoned {
+        return Err(RedactionFailed);
+    }
+    let role_field =
+        matches!(change.map.get("field"), Some(Node::String(s)) if !s.invalid && s.value == "role");
+    if role_event && role_field {
+        return Ok(());
+    }
+    let cloud_direction = cloud_event
+        && matches!(change.map.get("field"), Some(Node::String(s)) if !s.invalid && s.value == "permission_direction");
+    for name in ["previousValue", "newValue"] {
+        if cloud_direction
+            && name == "newValue"
+            && matches!(change.map.get(name), Some(Node::String(s)) if !s.invalid && matches!(s.value.as_str(), "grant" | "revoke" | "mixed" | "replace" | "unknown"))
+        {
+            continue;
+        }
+        if change.map.shift_remove(name).is_some() {
+            findings.push(AppliedFinding {
+                detector_id: ids::FIELD_NAME_SECRET.to_owned(),
+                category: categories::FIELD_NAME.to_owned(),
+                path: format!("$.change.{name}"),
+                action: PrivacyAction::Remove,
+                validated: true,
+                sub_kind: None,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn safe_url(text: &str, path: &str) -> String {
+    let name = normalize_field_name(path.rsplit('.').next().unwrap_or(path));
+    let lower = text.to_ascii_lowercase();
+    let absolute = lower.starts_with("http://") || lower.starts_with("https://");
+    if !absolute
+        && !matches!(
+            name.as_str(),
+            "path"
+                | "url"
+                | "uri"
+                | "href"
+                | "endpoint"
+                | "requesturl"
+                | "requesturi"
+                | "redirecturl"
+                | "redirecturi"
+        )
+    {
+        return text.to_owned();
+    }
+    if text.chars().any(|c| c.is_control() || c == '\\') {
+        return "[redacted]".into();
+    }
+    let end = ["?", "#", "%3f", "%23"]
+        .iter()
+        .filter_map(|d| lower.find(d))
+        .min()
+        .unwrap_or(text.len());
+    let safe = &text[..end];
+    let start = if absolute {
+        safe.find("://").map(|p| p + 3)
+    } else if safe.starts_with("//") {
+        Some(2)
+    } else {
+        None
+    };
+    if let Some(start) = start {
+        let authority_end = safe[start..].find('/').map_or(safe.len(), |p| p + start);
+        let authority = &safe[start..authority_end];
+        if authority.contains('%') {
+            return "[redacted]".into();
+        }
+        let authority = authority.rsplit('@').next().unwrap_or_default();
+        if authority.is_empty() || authority.chars().any(char::is_whitespace) {
+            return "[redacted]".into();
+        }
+        let port_start = if authority.starts_with('[') {
+            let Some(close) = authority.find(']') else {
+                return "[redacted]".into();
+            };
+            if authority[1..close].parse::<std::net::IpAddr>().is_err() {
+                return "[redacted]".into();
+            }
+            close + 1
+        } else {
+            authority.find(':').unwrap_or(authority.len())
+        };
+        if port_start < authority.len()
+            && (authority.as_bytes()[port_start] != b':'
+                || port_start == 0
+                || port_start + 1 == authority.len()
+                || !authority[port_start + 1..]
+                    .bytes()
+                    .all(|b| b.is_ascii_digit()))
+        {
+            return "[redacted]".into();
+        }
+        return format!("{}{}{}", &safe[..start], authority, &safe[authority_end..]);
+    } else if safe.contains([':', '@']) {
+        return "[redacted]".into();
+    }
+    safe.to_owned()
 }
 
 impl EventRedactor for PrivacyEngine {

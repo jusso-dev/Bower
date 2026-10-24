@@ -50,6 +50,48 @@ internal sealed record PackInspectOutput(
 
 internal sealed record PackInspectFile(string Path, string Role, long Bytes);
 
+/// <summary><c>bower privacy validate</c> output: metadata only, never patterns or samples.</summary>
+internal sealed record PrivacyValidationOutput(
+    [property: JsonPropertyName("valid")] bool Valid,
+    [property: JsonPropertyName("profileId")] string? ProfileId,
+    [property: JsonPropertyName("version")] string? Version,
+    [property: JsonPropertyName("hash")] string Hash,
+    [property: JsonPropertyName("customDetectors")] IReadOnlyList<PrivacyValidationDetector> CustomDetectors,
+    [property: JsonPropertyName("secretFieldNames")] int SecretFieldNames,
+    [property: JsonPropertyName("testsPassed")] int TestsPassed,
+    [property: JsonPropertyName("sample"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PrivacyValidationSample? Sample);
+
+internal sealed record PrivacyValidationDetector(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("action")] string Action);
+
+/// <summary>The sample after redaction (never the original).</summary>
+internal sealed record PrivacyValidationSample(
+    [property: JsonPropertyName("succeeded")] bool Succeeded,
+    [property: JsonPropertyName("failureCode")] string? FailureCode,
+    [property: JsonPropertyName("redacted")] string? Redacted);
+
+/// <summary><c>bower policy test</c> output: decisions and reasons only, never event content.</summary>
+internal sealed record PolicyTestOutput(
+    [property: JsonPropertyName("bundleHash")] string BundleHash,
+    [property: JsonPropertyName("policyCount")] int PolicyCount,
+    [property: JsonPropertyName("results")] IReadOnlyList<PolicyTestResult> Results);
+
+internal sealed record PolicyTestResult(
+    [property: JsonPropertyName("file")] string File,
+    [property: JsonPropertyName("eventId")] string? EventId,
+    [property: JsonPropertyName("decision")] string Decision,
+    [property: JsonPropertyName("wouldQueue")] bool WouldQueue,
+    [property: JsonPropertyName("privacyAlert")] bool PrivacyAlert,
+    [property: JsonPropertyName("reasons")] IReadOnlyList<string> Reasons,
+    [property: JsonPropertyName("policy")] PolicyTestPolicy? Policy);
+
+internal sealed record PolicyTestPolicy(
+    [property: JsonPropertyName("policyId")] string PolicyId,
+    [property: JsonPropertyName("policyVersion")] string PolicyVersion,
+    [property: JsonPropertyName("policyHash")] string PolicyHash,
+    [property: JsonPropertyName("score")] int Score);
+
 /// <summary>
 /// Source-generated metadata for CLI output: System.Text.Json default options with
 /// indentation, as the former <c>new JsonSerializerOptions { WriteIndented = true }</c>.
@@ -59,6 +101,8 @@ internal sealed record PackInspectFile(string Path, string Role, long Bytes);
 [JsonSerializable(typeof(PipelineValidationOutput))]
 [JsonSerializable(typeof(InitOutput))]
 [JsonSerializable(typeof(PackInspectOutput))]
+[JsonSerializable(typeof(PrivacyValidationOutput))]
+[JsonSerializable(typeof(PolicyTestOutput))]
 [JsonSerializable(typeof(QueueSnapshot))]
 [JsonSerializable(typeof(IReadOnlyList<DeadLetterRecord>))]
 [JsonSerializable(typeof(SignedEvidence))]

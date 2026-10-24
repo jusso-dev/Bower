@@ -62,7 +62,7 @@ public sealed record GcpMappedMessage(SecurityEventEnvelope? Event, string? Unsu
 /// Maps Pub/Sub message data from a Cloud Logging sink (Cloud Audit Logs) or a Security
 /// Command Center notification config into Bower security event envelopes.
 /// </summary>
-public sealed class GcpSecurityEventMapper
+public sealed partial class GcpSecurityEventMapper
 {
     private const string AuditLogType = "type.googleapis.com/google.cloud.audit.AuditLog";
 
@@ -169,7 +169,7 @@ public sealed class GcpSecurityEventMapper
         AddIfPresent(labels, "gcp.callerIp", callerIp is not null && !IPAddress.TryParse(callerIp, out _) ? callerIp : null);
         AddIfPresent(labels, "gcp.serviceAccountDelegation", FirstDelegate(payload));
 
-        return BuildEnvelope(
+        SecurityEventEnvelope envelope = BuildEnvelope(
             originalId: insertId,
             identity: $"{logName}\u001f{insertId}",
             timeGenerated,
@@ -193,6 +193,10 @@ public sealed class GcpSecurityEventMapper
             projectId,
             labels,
             entry);
+        return methodName.Equals("SetIamPolicy", StringComparison.OrdinalIgnoreCase)
+            || methodName.EndsWith(".SetIamPolicy", StringComparison.OrdinalIgnoreCase)
+            ? MapIamPermissionChange(envelope, payload, resourceName)
+            : envelope;
     }
 
     private SecurityEventEnvelope MapSccFinding(JsonElement message, JsonElement finding, DateTimeOffset observedAt)

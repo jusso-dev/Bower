@@ -53,6 +53,7 @@ public sealed class DockerSidecarWorkerTests
     }
 
     [Theory]
+    [InlineData(HttpStatusCode.Conflict)]
     [InlineData(HttpStatusCode.ServiceUnavailable)]
     [InlineData(HttpStatusCode.TooManyRequests)]
     [InlineData(HttpStatusCode.Unauthorized)]
@@ -75,6 +76,8 @@ public sealed class DockerSidecarWorkerTests
 
         Assert.True(failed.Backpressure);
         Assert.Equal(0, failed.Forwarded);
+        Assert.Equal(0, failed.Rejected);
+        Assert.Equal(0, failed.Dropped);
         Assert.Equal(2, recovered.Forwarded);
         Assert.Equal(3, handler.Bodies.Count);
         // The retried event keeps its deterministic id, so the collector deduplicates.

@@ -1,0 +1,28 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyDirectInvokeOfBowerUrlFunction",
+      "Effect": "Deny",
+      "Action": "lambda:InvokeFunction",
+      "Resource": [
+        "arn:aws:lambda:*:BOWER_ACCOUNT_ID:function:BOWER_URL_FUNCTION_NAME",
+        "arn:aws:lambda:*:BOWER_ACCOUNT_ID:function:BOWER_URL_FUNCTION_NAME:*"
+      ],
+      "Condition": {
+        "BoolIfExists": {
+          "lambda:InvokedViaFunctionUrl": "false"
+        }
+      }
+    },
+    {
+      "Sid": "DenyLegacyInvokeAsyncOfBowerUrlFunction",
+      "Effect": "Deny",
+      "Action": "lambda:InvokeAsync",
+      "Resource": [
+        "arn:aws:lambda:*:BOWER_ACCOUNT_ID:function:BOWER_URL_FUNCTION_NAME",
+        "arn:aws:lambda:*:BOWER_ACCOUNT_ID:function:BOWER_URL_FUNCTION_NAME:*"
+      ]
+    }
+  ]
+}

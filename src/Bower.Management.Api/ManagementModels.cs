@@ -57,7 +57,8 @@ public sealed record CollectorHeartbeat(
     IReadOnlyList<OutputReport> Outputs,
     IReadOnlyList<BackgroundJobStatus>? Jobs = null,
     LedgerReport? Ledger = null,
-    long? DeadLettered = null);
+    long? DeadLettered = null,
+    string? PrivacyProfileHash = null);
 
 /// <summary>Collector queue ledger head: management keeps the last one as a witness.</summary>
 public sealed record LedgerReport(long Sequence, string Hash);
@@ -82,12 +83,22 @@ public sealed record CollectorRecord(
     IReadOnlyList<BackgroundJobStatus>? Jobs = null,
     string? DesiredPolicyHash = null,
     long? LedgerSequence = null,
-    long DeadLettered = 0)
+    long DeadLettered = 0,
+    DesiredPrivacyProfile? DesiredPrivacyProfile = null,
+    string? ReportedPrivacyProfileHash = null)
 {
     /// <summary>Null when no policy is assigned; otherwise whether the collector runs it.</summary>
     public bool? PolicyInSync => DesiredPolicyHash is null
         ? null
         : string.Equals(DesiredPolicyHash, PolicyHash, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Null when no privacy profile version is assigned; otherwise whether the collector's
+    /// last heartbeat reported the assigned version's content hash.
+    /// </summary>
+    public bool? PrivacyProfileInSync => DesiredPrivacyProfile is null
+        ? null
+        : string.Equals(DesiredPrivacyProfile.ContentHash, ReportedPrivacyProfileHash, StringComparison.Ordinal);
 }
 
 public sealed record ApprovalRequest(string Reason);

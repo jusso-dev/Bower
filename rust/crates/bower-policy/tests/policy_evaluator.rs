@@ -83,6 +83,7 @@ fn evaluator_denies_unknown_type_even_for_category_only_policy() {
     category_only.policy.r#match = PolicyMatch {
         event_categories: vec!["authentication".to_owned()],
         event_types: Vec::new(),
+        ..Default::default()
     };
     let evaluator = DeterministicPolicyEvaluator::new([category_only]);
 
@@ -219,5 +220,119 @@ fn decisions_match_csharp_corpus() {
             decision.warnings.join("|"),
         );
         assert_eq!(actual, expected, "event {line}");
+    }
+}
+
+#[test]
+fn broadened_cloud_feeds_still_require_local_security_predicates() {
+    use bower_contracts::{EventResult, TargetContext};
+    for (pack, event_type, action, result, accepted) in [
+        (
+            "aws-security",
+            "aws_cloudtrail",
+            "ListBuckets",
+            EventResult::Success,
+            false,
+        ),
+        (
+            "aws-security",
+            "aws_cloudtrail",
+            "AppLogs",
+            EventResult::Success,
+            false,
+        ),
+        (
+            "aws-security",
+            "aws_cloudtrail",
+            "AttachUserPolicy",
+            EventResult::Success,
+            true,
+        ),
+        (
+            "aws-security",
+            "aws_cloudtrail",
+            "StopLogging",
+            EventResult::Success,
+            true,
+        ),
+        (
+            "aws-security",
+            "aws_cloudtrail",
+            "DetachUserPolicy",
+            EventResult::Success,
+            true,
+        ),
+        (
+            "aws-security",
+            "aws_cloudtrail",
+            "DetachRolePolicy",
+            EventResult::Success,
+            true,
+        ),
+        (
+            "aws-security",
+            "aws_cloudtrail",
+            "DetachGroupPolicy",
+            EventResult::Success,
+            true,
+        ),
+        (
+            "aws-security",
+            "aws_cloudtrail",
+            "RemoveUserFromGroup",
+            EventResult::Success,
+            true,
+        ),
+        (
+            "gcp-security",
+            "gcp_cloud_audit",
+            "ListProjects",
+            EventResult::Success,
+            false,
+        ),
+        (
+            "gcp-security",
+            "gcp_cloud_audit",
+            "SetIamPolicy",
+            EventResult::Success,
+            true,
+        ),
+        (
+            "gcp-security",
+            "gcp_cloud_audit",
+            "ListProjects",
+            EventResult::Denied,
+            true,
+        ),
+    ] {
+        let policies = load_directory(
+            common::repo_root()
+                .join("packs")
+                .join(pack)
+                .join("policies"),
+        )
+        .unwrap();
+        let evaluator = DeterministicPolicyEvaluator::new(policies);
+        let candidate = SecurityEventEnvelope {
+            event_category: "administrative-activity".into(),
+            event_type: event_type.into(),
+            event_action: action.into(),
+            event_result: result,
+            target: Some(TargetContext {
+                target_type: "resource".into(),
+                name: Some("fixture-resource".into()),
+                id: None,
+            }),
+            ..authentication_failure(now())
+        };
+        assert_eq!(
+            evaluator.evaluate(&candidate).action,
+            if accepted {
+                DecisionAction::Accept
+            } else {
+                DecisionAction::Reject
+            },
+            "{pack}/{action}"
+        );
     }
 }

@@ -2,20 +2,20 @@
 //!
 //! - `POST /v1/events`: rate limited (429), bearer authenticated (401), JSON only
 //!   (415), 1 MiB body limit (413), then redaction, policy and durable queueing.
-//!   202 accepted, 200 duplicate, 422 rejected, 400 quarantined, 503 queue full.
+//!   202 accepted, 200 duplicate, 422 rejected, 400 quarantined, 409 identity conflict, 503 queue full.
 //! - `GET /health`: anonymous, status only.
 //! - `GET /v1/status`: bearer authenticated queue, ledger, policy and job metadata.
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::Router;
 use axum::body::Body;
-use axum::extract::{Request, State};
+use axum::extract::{Path, Request, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use axum::{Extension, Router};
 use bower_contracts::time::{Timestamp, serde_offset_option};
 use bower_contracts::{DecisionAction, DurableEventStore, LedgerHead, QueueSnapshot, StoreError};
 use http_body_util::BodyExt;
@@ -23,6 +23,7 @@ use serde::Serialize;
 use tracing::error;
 
 use crate::auth::IngestAuthentication;
+use crate::conflicts::{CONFLICT_REASON, ConflictSnapshot, EventIdentityConflicts, REMEDIATION};
 use crate::jobs::{BackgroundJobStatus, JobCatalog};
 use crate::rate_limit::TokenBucket;
 use crate::worker::store_error_name;
@@ -95,6 +96,9 @@ pub struct PackSummary {
     pub id: String,
     pub version: String,
     pub pack_hash: String,
+    pub parser_statuses: Vec<String>,
+    pub detection_status: String,
+    pub dcr_status: String,
 }
 
 /// Status view of the loaded `PolicyBundle`.
@@ -104,6 +108,12 @@ pub struct BundleInfo {
     pub policies: Vec<PolicySummary>,
     pub packs: Vec<PackSummary>,
     pub privacy_profile: Option<String>,
+    /// Active privacy profile version; `None` for the built-in default.
+    pub privacy_profile_version: Option<String>,
+    /// Active privacy profile content hash; `None` for the built-in default.
+    pub privacy_profile_hash: Option<String>,
+    /// `BOWER_PRIVACY_PROFILE_SOURCE` that produced the active privacy profile.
+    pub privacy_profile_source: String,
 }
 
 #[derive(Clone)]
@@ -111,19 +121,31 @@ pub struct AppState {
     pub processor: Arc<dyn EventProcessor>,
     pub store: Arc<dyn DurableEventStore>,
     pub auth: Arc<IngestAuthentication>,
+    pub authorization: Arc<crate::authorization::ProducerAuthorization>,
     pub limiter: Arc<TokenBucket>,
     pub bundle: Arc<BundleInfo>,
+    pub packs: Arc<Vec<bower_packs::LoadedPack>>,
     pub catalog: Arc<JobCatalog>,
+    /// Management-mode ingest gate (`ManagedPrivacyProfileGateFilter`).
+    pub managed_privacy: Arc<crate::managed_privacy::ManagedPrivacyState>,
 }
 
 pub fn router(state: AppState) -> Router {
-    let ingest = Router::new().route("/v1/events", post(ingest)).route_layer(
-        middleware::from_fn_with_state(Arc::clone(&state.limiter), rate_limit),
-    );
+    let ingest = Router::new()
+        .route("/v1/events", post(ingest))
+        .route(
+            "/v1/packs/{pack_id}/parsers/{parser_index}/events",
+            post(ingest_pack),
+        )
+        .route_layer(middleware::from_fn_with_state(
+            Arc::clone(&state.limiter),
+            rate_limit,
+        ));
     Router::new()
         .merge(ingest)
         .route("/health", get(health))
         .route("/v1/status", get(status))
+        .layer(Extension(Arc::new(EventIdentityConflicts::default())))
         .with_state(state)
 }
 
@@ -169,6 +191,26 @@ fn unauthorized() -> Response {
         .headers_mut()
         .insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
     response
+}
+
+/// `ManagedPrivacyProfileGateFilter`: refuses ingest with 503 + `Retry-After` while a
+/// management-mode collector has not resolved its managed privacy profile, so no event is
+/// enqueued under an unintended profile.
+fn managed_privacy_gate(state: &crate::managed_privacy::ManagedPrivacyState) -> Option<Response> {
+    if state.accepts_events() {
+        return None;
+    }
+    let mut response = json_response(
+        StatusCode::SERVICE_UNAVAILABLE,
+        &ErrorBody {
+            error: crate::managed_privacy::GATE_MESSAGE,
+        },
+    );
+    response.headers_mut().insert(
+        header::RETRY_AFTER,
+        HeaderValue::from_static(crate::managed_privacy::GATE_RETRY_AFTER_SECONDS),
+    );
+    Some(response)
 }
 
 /// `IngestAuthenticationFilter`: the producer id, or the 401 response.
@@ -237,7 +279,7 @@ pub fn raw_json_text(bytes: &[u8]) -> Option<&str> {
     Some(raw.get())
 }
 
-fn exceeds_depth(text: &[u8], maximum: usize) -> bool {
+pub(crate) fn exceeds_depth(text: &[u8], maximum: usize) -> bool {
     let (mut depth, mut in_string, mut escaped) = (0usize, false, false);
     for &byte in text {
         if in_string {
@@ -273,15 +315,43 @@ struct IngestResponse {
     duplicate: bool,
     reasons: Vec<String>,
     policy: Option<PolicyReference>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    remediation: Option<&'static str>,
 }
 
-async fn ingest(State(state): State<AppState>, request: Request) -> Response {
+async fn ingest(
+    State(state): State<AppState>,
+    Extension(conflicts): Extension<Arc<EventIdentityConflicts>>,
+    request: Request,
+) -> Response {
+    ingest_candidate(state, conflicts, request, None).await
+}
+
+async fn ingest_pack(
+    State(state): State<AppState>,
+    Extension(conflicts): Extension<Arc<EventIdentityConflicts>>,
+    Path((pack_id, parser_index)): Path<(String, String)>,
+    request: Request,
+) -> Response {
+    ingest_candidate(state, conflicts, request, Some((pack_id, parser_index))).await
+}
+
+async fn ingest_candidate(
+    state: AppState,
+    conflicts: Arc<EventIdentityConflicts>,
+    request: Request,
+    pack_parser: Option<(String, String)>,
+) -> Response {
     let (parts, body) = request.into_parts();
     // Record which producer credential sent the event (never the token).
     let producer = match authenticate(&state.auth, &parts.headers) {
         Ok(producer) => producer,
         Err(response) => return *response,
     };
+    // After authentication, before any parsing, policy or enqueue.
+    if let Some(response) = managed_privacy_gate(&state.managed_privacy) {
+        return response;
+    }
     if !has_json_content_type(&parts.headers) {
         return StatusCode::UNSUPPORTED_MEDIA_TYPE.into_response();
     }
@@ -290,20 +360,79 @@ async fn ingest(State(state): State<AppState>, request: Request) -> Response {
         .get(header::CONTENT_LENGTH)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.trim().parse::<u64>().ok());
-    if declared.is_some_and(|length| length > MAXIMUM_PAYLOAD_BYTES as u64) {
+    let limit = if pack_parser.is_some() {
+        bower_packs::runtime::MAXIMUM_RAW_BYTES
+    } else {
+        MAXIMUM_PAYLOAD_BYTES
+    };
+    if declared.is_some_and(|length| length > limit as u64) {
         return StatusCode::PAYLOAD_TOO_LARGE.into_response();
     }
-    let bytes = match read_body(body, MAXIMUM_PAYLOAD_BYTES).await {
+    let bytes = match read_body(body, limit).await {
         Ok(bytes) => bytes,
         Err(status) => return status.into_response(),
     };
-    let Some(candidate) = raw_json_text(&bytes).map(str::to_string) else {
+    let Some(mut candidate) = raw_json_text(&bytes).map(str::to_string) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
     drop(bytes);
+    let source_adapter = if let Some((pack_id, parser_index)) = pack_parser {
+        let parser = parser_index.parse::<usize>().ok().and_then(|index| {
+            state
+                .packs
+                .iter()
+                .find(|pack| {
+                    pack.manifest
+                        .as_ref()
+                        .is_some_and(|manifest| manifest.id == pack_id)
+                })
+                .and_then(|pack| pack.parsers.get(index).map(|parser| (index, parser)))
+        });
+        let Some((index, parser)) = parser else {
+            return json_response(
+                StatusCode::NOT_FOUND,
+                &ErrorBody {
+                    error: "pack-parser-inactive-or-unknown",
+                },
+            );
+        };
+        let envelope = match bower_packs::runtime::map_raw(parser, &candidate) {
+            Ok(envelope) => envelope,
+            Err(error) => {
+                use bower_packs::runtime::MappingError;
+                let (status, error) = match error {
+                    MappingError::Inactive => {
+                        (StatusCode::NOT_FOUND, "pack-parser-inactive-or-unknown")
+                    }
+                    MappingError::Invalid => (StatusCode::BAD_REQUEST, "pack-record-invalid"),
+                    MappingError::TooLarge => {
+                        (StatusCode::PAYLOAD_TOO_LARGE, "pack-record-too-large")
+                    }
+                    MappingError::NoMatch => {
+                        (StatusCode::UNPROCESSABLE_ENTITY, "pack-record-not-selected")
+                    }
+                };
+                return json_response(status, &ErrorBody { error });
+            }
+        };
+        candidate = match bower_contracts::json::to_string(&envelope) {
+            Ok(text) => text,
+            Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+        };
+        format!("pack-http:{producer}:{pack_id}:{index}")
+    } else {
+        format!("local-http:{producer}")
+    };
+    if !state.authorization.is_authorized(&producer, &candidate) {
+        return json_response(
+            StatusCode::FORBIDDEN,
+            &ErrorBody {
+                error: "Producer is not authorized for this event identity.",
+            },
+        );
+    }
 
     let processor = Arc::clone(&state.processor);
-    let source_adapter = format!("local-http:{producer}");
     let processed =
         tokio::task::spawn_blocking(move || processor.process(&candidate, &source_adapter)).await;
     let result = match processed {
@@ -327,7 +456,7 @@ async fn ingest(State(state): State<AppState>, request: Request) -> Response {
         }
     };
 
-    let status = match result.action {
+    let mut status = match result.action {
         DecisionAction::Accept | DecisionAction::RedactAndAccept => {
             if result.duplicate {
                 StatusCode::OK
@@ -338,6 +467,14 @@ async fn ingest(State(state): State<AppState>, request: Request) -> Response {
         DecisionAction::Reject => StatusCode::UNPROCESSABLE_ENTITY,
         _ => StatusCode::BAD_REQUEST,
     };
+    let conflict = result
+        .reasons
+        .iter()
+        .any(|reason| reason == CONFLICT_REASON);
+    if conflict {
+        conflicts.record(&producer, state.auth.required());
+        status = StatusCode::CONFLICT;
+    }
     json_response(
         status,
         &IngestResponse {
@@ -347,6 +484,7 @@ async fn ingest(State(state): State<AppState>, request: Request) -> Response {
             duplicate: result.duplicate,
             reasons: result.reasons,
             policy: result.policy,
+            remediation: conflict.then_some(REMEDIATION),
         },
     )
 }
@@ -402,6 +540,11 @@ struct StatusPolicy<'a> {
     policies: &'a [PolicySummary],
     packs: &'a [PackSummary],
     privacy_profile: Option<&'a str>,
+    privacy_profile_version: Option<&'a str>,
+    privacy_profile_hash: &'a str,
+    privacy_profile_source: &'a str,
+    managed_privacy_profile_state: Option<&'static str>,
+    managed_privacy_profile_revision: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -431,9 +574,15 @@ struct StatusBody<'a> {
     ledger: StatusLedger,
     queue: StatusQueue,
     jobs: Vec<BackgroundJobStatus>,
+    #[serde(rename = "eventIdentityConflicts")]
+    event_identity_conflicts: ConflictSnapshot,
 }
 
-async fn status(State(state): State<AppState>, headers: HeaderMap) -> Response {
+async fn status(
+    State(state): State<AppState>,
+    Extension(conflicts): Extension<Arc<EventIdentityConflicts>>,
+    headers: HeaderMap,
+) -> Response {
     if let Err(response) = authenticate(&state.auth, &headers) {
         return *response;
     }
@@ -455,6 +604,16 @@ async fn status(State(state): State<AppState>, headers: HeaderMap) -> Response {
                 policies: &bundle.policies,
                 packs: &bundle.packs,
                 privacy_profile: bundle.privacy_profile.as_deref(),
+                privacy_profile_version: bundle.privacy_profile_version.as_deref(),
+                privacy_profile_hash: bundle.privacy_profile_hash.as_deref().unwrap_or("default"),
+                privacy_profile_source: &bundle.privacy_profile_source,
+                managed_privacy_profile_state: (!state.managed_privacy.is_local())
+                    .then(|| state.managed_privacy.state()),
+                managed_privacy_profile_revision: if state.managed_privacy.is_local() {
+                    None
+                } else {
+                    state.managed_privacy.revision()
+                },
             },
             ledger: StatusLedger {
                 sequence: ledger.sequence,
@@ -471,6 +630,7 @@ async fn status(State(state): State<AppState>, headers: HeaderMap) -> Response {
                 oldest_undelivered: snapshot.oldest_undelivered,
             },
             jobs: state.catalog.list(),
+            event_identity_conflicts: conflicts.snapshot(),
         },
     )
 }

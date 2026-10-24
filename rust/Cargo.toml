@@ -10,6 +10,7 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
+bower-collector = { path = "crates/bower-collector" }
 bower-contracts = { path = "crates/bower-contracts" }
 bower-core = { path = "crates/bower-core" }
 bower-dcr = { path = "crates/bower-dcr" }
@@ -60,6 +61,12 @@ sha1 = "0.11"
 rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "aws_lc_rs"] }
 rustls-platform-verifier = "0.7"
 tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs"] }
+# AWS Lambda host (bower-lambda): runtime API client and CloudTrail Lake / Secrets Manager via the execution role.
+lambda_runtime = { version = "1.5", default-features = false, features = ["tracing"] }
+aws-config = { version = "1.13", default-features = false, features = ["rt-tokio", "default-https-client", "behavior-version-latest"] }
+aws-sdk-cloudtraildata = { version = "1.118", default-features = false, features = ["rt-tokio", "default-https-client", "behavior-version-latest"] }
+aws-sdk-cloudwatchlogs = { version = "1.160", default-features = false, features = ["rt-tokio", "default-https-client", "behavior-version-latest"] }
+aws-sdk-secretsmanager = { version = "1.123", default-features = false, features = ["rt-tokio", "default-https-client", "behavior-version-latest"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

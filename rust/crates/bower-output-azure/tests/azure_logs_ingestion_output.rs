@@ -162,6 +162,7 @@ fn output(base: &Url) -> AzureLogsIngestionOutput {
 
 fn queued(event_id: &str, payload: String) -> QueuedEvent {
     QueuedEvent {
+        lease_token: None,
         event_id: event_id.to_owned(),
         fingerprint: format!("sha256:{event_id}"),
         payload,
@@ -194,7 +195,7 @@ async fn deliver_acknowledges_accepted_records_as_ingestion_acceptance_only() {
     assert!(result.failures.is_empty());
     assert_eq!(
         result.destination_acknowledgement.as_deref(),
-        Some("azure-logs-ingestion:accepted:req-1")
+        Some("azure-logs-ingestion:accepted:owned-batches")
     );
     let requests = mock.requests.lock().unwrap();
     assert_eq!(requests.len(), 1);
@@ -231,7 +232,7 @@ async fn deliver_attributes_failed_batch_to_exact_events() {
     assert_eq!(result.acknowledged_event_ids, ["accepted"]);
     assert_eq!(result.failures.len(), 1);
     assert_eq!(result.failures[0].event_id, "rejected");
-    assert_eq!(result.failures[0].code, "azure-http-400");
+    assert_eq!(result.failures[0].code, "azure-http-400-isolated");
     assert!(!result.failures[0].is_retryable);
     assert_eq!(mock.requests.lock().unwrap().len(), 2);
 }
@@ -245,7 +246,7 @@ async fn deliver_marks_server_errors_retryable() {
     assert!(result.acknowledged_event_ids.is_empty());
     assert_eq!(result.failures.len(), 1);
     assert!(result.failures[0].is_retryable);
-    assert_eq!(result.failures[0].code, "azure-http-503");
+    assert_eq!(result.failures[0].code, "destination-azure-http-503");
 }
 
 #[tokio::test]
@@ -350,7 +351,7 @@ async fn retries_retriable_statuses_and_honours_retry_after() {
     assert_eq!(mock.requests.lock().unwrap().len(), 2);
     assert_eq!(
         result.destination_acknowledgement.as_deref(),
-        Some("azure-logs-ingestion:accepted:req-2")
+        Some("azure-logs-ingestion:accepted:owned-batches")
     );
 }
 
@@ -360,14 +361,14 @@ async fn does_not_retry_client_errors_and_stops_after_max_retries() {
     let result = output_with(&base, 2, StaticCredential::new())
         .deliver(&[event("a", "")])
         .await;
-    assert_eq!(result.failures[0].code, "azure-http-400");
+    assert_eq!(result.failures[0].code, "destination-azure-http-400");
     assert_eq!(mock.requests.lock().unwrap().len(), 1);
 
     let (base, mock) = start(status(500)).await;
     let result = output_with(&base, 2, StaticCredential::new())
         .deliver(&[event("a", "")])
         .await;
-    assert_eq!(result.failures[0].code, "azure-http-500");
+    assert_eq!(result.failures[0].code, "destination-azure-http-500");
     assert!(result.failures[0].is_retryable);
     assert_eq!(mock.requests.lock().unwrap().len(), 3);
 }
@@ -416,7 +417,7 @@ async fn token_failure_fails_batch_as_retryable_without_sending() {
         .await;
 
     assert!(result.acknowledged_event_ids.is_empty());
-    assert_eq!(result.failures[0].code, "azure-upload-failed");
+    assert_eq!(result.failures[0].code, "destination-azure-unavailable");
     assert!(result.failures[0].is_retryable);
     assert!(mock.requests.lock().unwrap().is_empty());
 }
@@ -445,7 +446,7 @@ async fn transport_failure_is_retryable_upload_failure() {
 
     let result = output(&base).deliver(&[event("a", "")]).await;
 
-    assert_eq!(result.failures[0].code, "azure-upload-failed");
+    assert_eq!(result.failures[0].code, "destination-azure-unavailable");
     assert!(result.failures[0].is_retryable);
     assert!(result.destination_acknowledgement.is_none());
 }
@@ -754,8 +755,8 @@ async fn redirects_are_not_followed() {
         .deliver(&[event("a", "")])
         .await;
 
-    assert_eq!(result.failures[0].code, "azure-http-307");
-    assert!(!result.failures[0].is_retryable);
+    assert_eq!(result.failures[0].code, "destination-azure-http-307");
+    assert!(result.failures[0].is_retryable);
     assert_eq!(mock.requests.lock().unwrap().len(), 1);
 }
 
@@ -968,4 +969,226 @@ async fn nested_duplicate_properties_are_sent_like_csharp() {
         mock.requests.lock().unwrap()[0].body,
         format!("[{payload}]")
     );
+}
+
+// Independent response ordering oracle, not generated from the defective SDK.
+#[tokio::test]
+async fn default_concurrency_owns_reordered_mixed_outcomes() {
+    let started = Arc::new(tokio::sync::Barrier::new(4));
+    let completion = Arc::new(Mutex::new(Vec::<String>::new()));
+    let completed = completion.clone();
+    let app = Router::new().route(
+        "/dataCollectionRules/{rule}/streams/{stream}",
+        post(move |body: Bytes| {
+            let started = started.clone();
+            let completed = completed.clone();
+            async move {
+                let mut plain = Vec::new();
+                flate2::read::GzDecoder::new(&body[..])
+                    .read_to_end(&mut plain)
+                    .unwrap();
+                assert!(plain.len() <= 1024 * 1024);
+                let values: serde_json::Value = serde_json::from_slice(&plain).unwrap();
+                assert_eq!(values.as_array().unwrap().len(), 1);
+                let id = values[0]["eventId"].as_str().unwrap().to_owned();
+                started.wait().await;
+                tokio::time::sleep(Duration::from_millis(match id.as_str() {
+                    "one" => 80,
+                    "three" => 40,
+                    _ => 1,
+                }))
+                .await;
+                completed.lock().unwrap().push(id.clone());
+                (
+                    match id.as_str() {
+                        "one" => StatusCode::BAD_REQUEST,
+                        "three" => StatusCode::TOO_MANY_REQUESTS,
+                        _ => StatusCode::NO_CONTENT,
+                    },
+                    "{}",
+                )
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let output = AzureLogsIngestionOutput::with_client_options(
+        AzureLogsIngestionOptions::new(
+            "azure",
+            Url::parse("https://example.ingest.monitor.azure.com").unwrap(),
+            "dcr-test",
+            "Custom-BowerSecurity",
+        ),
+        StaticCredential::new(),
+        IngestionClientOptions {
+            max_retries: 0,
+            transport_base_url: Some(base),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let padding = "x".repeat(600 * 1024);
+    let result = tokio::time::timeout(
+        Duration::from_secs(10),
+        output.deliver(&[
+            event("one", &padding),
+            event("two", &padding),
+            event("three", &padding),
+            event("four", &padding),
+        ]),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.acknowledged_event_ids, ["two", "four"]);
+    let mut failed: Vec<_> = result
+        .failures
+        .iter()
+        .map(|item| item.event_id.as_str())
+        .collect();
+    failed.sort();
+    assert_eq!(failed, ["one", "three"]);
+    assert_eq!(
+        result
+            .failures
+            .iter()
+            .find(|item| item.event_id == "one")
+            .unwrap()
+            .code,
+        "azure-http-400-isolated"
+    );
+    assert!(
+        result
+            .failures
+            .iter()
+            .find(|item| item.event_id == "three")
+            .unwrap()
+            .is_destination_failure()
+    );
+    assert_eq!(completion.lock().unwrap().last().unwrap(), "one");
+}
+
+#[tokio::test]
+async fn final_retry_deadline_survives_exhaustion_and_outages_recover() {
+    for status_code in [401, 403, 429, 503] {
+        let repaired = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let repair = repaired.clone();
+        let (base, _) = start(Arc::new(move |n, _| {
+            if repair.load(Ordering::SeqCst) {
+                return (204, vec![]);
+            }
+            // Only the terminal response asks for the long cooldown; inner retries stay fast.
+            let seconds = if n >= 3 || status_code == 401 || status_code == 403 {
+                "120"
+            } else {
+                "0"
+            };
+            (status_code, vec![("retry-after", seconds.to_owned())])
+        }))
+        .await;
+        let output = output_with(&base, 2, StaticCredential::new());
+        let before = time::now();
+        let result = output.deliver(&[event("valid", "")]).await;
+        assert!(result.acknowledged_event_ids.is_empty());
+        assert!(result.destination_acknowledgement.is_none());
+        assert!(result.failures[0].is_destination_failure());
+        assert!(result.failures[0].retry_after.unwrap() >= before + chrono::Duration::seconds(120));
+        repaired.store(true, Ordering::SeqCst);
+        assert_eq!(
+            output
+                .deliver(&[event("valid", "")])
+                .await
+                .acknowledged_event_ids,
+            ["valid"]
+        );
+    }
+}
+
+#[tokio::test]
+async fn ambiguous_bad_request_isolates_siblings_with_bounded_requests() {
+    let (base, mock) = start(Arc::new(|_, ids| {
+        (
+            if ids.iter().any(|id| id == "bad") {
+                400
+            } else {
+                204
+            },
+            vec![],
+        )
+    }))
+    .await;
+    let result = output(&base)
+        .deliver(&[event("a", ""), event("bad", ""), event("b", "")])
+        .await;
+    assert_eq!(result.acknowledged_event_ids, ["a", "b"]);
+    assert_eq!(result.failures.len(), 1);
+    assert_eq!(result.failures[0].code, "azure-http-400-isolated");
+    assert!(!result.failures[0].is_retryable);
+    assert!(mock.count.load(Ordering::SeqCst) <= 17);
+}
+
+#[tokio::test]
+async fn final_http_date_deadline_and_cancellation_are_preserved() {
+    let deadline = chrono::Utc::now() + chrono::Duration::minutes(10);
+    let (base, _) = start(Arc::new(move |_, _| {
+        (429, vec![("retry-after", deadline.to_rfc2822())])
+    }))
+    .await;
+    let result = output(&base).deliver(&[event("a", "")]).await;
+    assert_eq!(
+        result.failures[0].retry_after.unwrap().timestamp(),
+        deadline.timestamp()
+    );
+
+    let (base, mock) = start(Arc::new(|_, _| (429, vec![("retry-after", "1".into())]))).await;
+    let client = output_with(&base, 3, StaticCredential::new());
+    let cancelled = tokio::time::timeout(
+        Duration::from_millis(100),
+        client.deliver(&[event("a", "")]),
+    )
+    .await;
+    assert!(cancelled.is_err());
+    assert_eq!(mock.count.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn configuration_wide_bad_request_has_bounded_isolation() {
+    let (base, mock) = start(status(400)).await;
+    let events: Vec<_> = (0..64).map(|n| event(&format!("e{n}"), "")).collect();
+    let result = output(&base).deliver(&events).await;
+    assert!(result.acknowledged_event_ids.is_empty());
+    assert_eq!(result.failures.len(), 64);
+    assert!(
+        result
+            .failures
+            .iter()
+            .all(|item| item.is_destination_failure())
+    );
+    assert!(mock.count.load(Ordering::SeqCst) <= 17);
+}
+
+#[tokio::test]
+async fn absurd_retry_headers_return_promptly_with_bounded_durable_deadlines() {
+    for (name, value) in [
+        ("retry-after", "Fri, 01 Jan 2100 00:00:00 GMT"),
+        ("retry-after-ms", "1e300"),
+        ("retry-after", "999999999999999999"),
+    ] {
+        let (base, mock) = start(Arc::new(move |_, _| (429, vec![(name, value.to_owned())]))).await;
+        let client = output_with(&base, 3, StaticCredential::new());
+        let before = time::now();
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            client.deliver(&[event("valid", "")]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(mock.count.load(Ordering::SeqCst), 1);
+        let failure = &result.failures[0];
+        assert!(failure.code.ends_with(":retry-after-capped"));
+        assert!(failure.is_destination_failure());
+        let deadline = failure.retry_after.unwrap();
+        assert!(deadline >= before + chrono::Duration::minutes(59));
+        assert!(deadline <= time::now() + chrono::Duration::hours(1));
+    }
 }

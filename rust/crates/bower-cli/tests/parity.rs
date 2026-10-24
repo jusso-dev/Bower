@@ -7,7 +7,7 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
-use common::{Run, bower_binary, command, repo_root};
+use common::{Run, bower_binary, command, policy_samples, repo_root};
 
 fn csharp_binary() -> Option<PathBuf> {
     if let Ok(path) = std::env::var("BOWER_CSHARP_CLI") {
@@ -154,6 +154,160 @@ fn pipeline_validate_matches_csharp() {
 }
 
 #[test]
+fn privacy_validate_matches_csharp() {
+    let Some(cs) = csharp() else { return };
+    let root = repo_root();
+    let dir = tempfile::tempdir().unwrap();
+    let write = |name: &str, content: &str| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, content).unwrap();
+        path.to_str().unwrap().to_owned()
+    };
+    // A fixed key so HMAC pseudonyms in the redacted sample are deterministic.
+    let key = write("key.b64", "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=\n");
+    let short_key = write("short.key", "abc");
+    let sample = write(
+        "sample.json",
+        "{\"actor\":{\"username\":\"alice\"},\"msg\":\"EMP-123456 opened CUST-ab1234 see INC0012345 \u{1F600}x\",\"sessionKey\":\"s\",\"webhook_nonce\":1}",
+    );
+    let broken_sample = write("broken.json", "{ not json");
+    let header = "apiVersion: bower.security/v1\nkind: PrivacyProfile\nmetadata:\n  id: t\n  version: 1.0.0\n";
+    let untested = write(
+        "untested.yaml",
+        &format!(
+            "{header}customDetectors:\n  - id: custom.d\n    pattern: 'EMP-\\d{{6}}'\n    action: mask\n    tests:\n      match: [EMP-12345]\n"
+        ),
+    );
+    let syntax = write(
+        "syntax.yaml",
+        &format!(
+            "{header}customDetectors:\n  - id: custom.d\n    pattern: 'a(?=b)'\n    action: mask\n    tests:\n      match: [ab]\n"
+        ),
+    );
+    let secret = write(
+        "secret.yaml",
+        &format!("{header}secretFieldNames: ['---']\n"),
+    );
+    let example = "deploy/privacy/custom-redaction-example.yaml";
+    let cases: Vec<Vec<&str>> = vec![
+        vec!["privacy", "validate"],
+        vec!["privacy", "validate", "missing.yaml"],
+        vec!["privacy", "validate", example],
+        vec![
+            "privacy",
+            "validate",
+            "deploy/privacy/cloud-identities.yaml",
+        ],
+        vec![
+            "privacy",
+            "validate",
+            "packs/linux-ssh-gateway/privacy.yaml",
+        ],
+        vec!["privacy", "validate", example, "--hmac-key-file", &key],
+        vec![
+            "privacy",
+            "validate",
+            "--hmac-key-file",
+            &key,
+            example,
+            "--sample",
+            &sample,
+        ],
+        vec![
+            "privacy",
+            "validate",
+            example,
+            "--hmac-key-file",
+            &key,
+            "--sample",
+            &broken_sample,
+        ],
+        vec![
+            "privacy",
+            "validate",
+            example,
+            "--hmac-key-file",
+            &short_key,
+        ],
+        vec![
+            "privacy",
+            "validate",
+            example,
+            "--hmac-key-file",
+            "missing.key",
+        ],
+        vec![
+            "privacy",
+            "validate",
+            example,
+            "--hmac-key-file",
+            &key,
+            "--sample",
+            "missing.json",
+        ],
+        vec!["privacy", "validate", &untested],
+        vec!["privacy", "validate", &syntax],
+        vec!["privacy", "validate", &secret],
+    ];
+    for args in &cases {
+        assert_same(&cs, &root, args);
+    }
+
+    // Council A5: characters the two YAML parsers treat differently fail identically, raw
+    // or escaped; allow is rejected; alert-only never hides other detectors.
+    let probes: Vec<String> = [
+        format!("{header}# nel \u{85}\n"),
+        format!("{header}# line separator \u{2028}\n"),
+        format!("{header}# form feed \u{C}\n"),
+        format!("{header}secretFieldNames: [\"a\\Lb\"]\n"),
+        format!("{header}secretFieldNames: [\"\\uD83D\\uDE00\"]\n"),
+        format!("{header}secretFieldNames: [\"\\x0C\"]\n"),
+        format!(
+            "{header}customDetectors:\n  - id: custom.d\n    pattern: 'x'\n    action: allow\n    tests:\n      match: [x]\n"
+        ),
+        format!(
+            "{header}customDetectors:\n  - id: custom.trace-line\n    pattern: 'trace: .+'\n    action: alert-only\n    tests:\n      match: ['trace: x']\n"
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, content)| write(&format!("probe-{index}.yaml"), &content))
+    .collect();
+    let trace_sample = write(
+        "trace.json",
+        r#"{"msg":"trace: card 4111111111111111 key AKIAIOSFODNN7EXAMPLE mail alice@example.test"}"#,
+    );
+    for (index, probe) in probes.iter().enumerate() {
+        let run = assert_same(
+            &cs,
+            &root,
+            &[
+                "privacy",
+                "validate",
+                probe,
+                "--hmac-key-file",
+                &key,
+                "--sample",
+                &trace_sample,
+            ],
+        );
+        assert_eq!(
+            run.code,
+            if index == 7 { 0 } else { 1 },
+            "{probe}: {}",
+            run.stderr
+        );
+    }
+
+    let run = assert_same(&cs, &root, &cases[6]);
+    assert_eq!(run.code, 0);
+    assert!(run.stdout.contains("\"testsPassed\": 13"), "{}", run.stdout);
+    assert!(!run.stdout.contains("EMP-123456"), "{}", run.stdout);
+    assert_eq!(assert_same(&cs, &root, &cases[7]).code, 2);
+    assert_eq!(assert_same(&cs, &root, &cases[11]).code, 1);
+}
+
+#[test]
 fn dcr_diff_matches_csharp() {
     let Some(cs) = csharp() else { return };
     let dir = tempfile::tempdir().unwrap();
@@ -253,6 +407,7 @@ fn queue_commands_match_csharp_on_shared_database() {
         for id in ["a", "b"] {
             store
                 .enqueue(&QueuedEvent {
+                    lease_token: None,
                     event_id: id.to_owned(),
                     fingerprint: format!("fp-{id}"),
                     payload: "{}".to_owned(),
@@ -263,8 +418,10 @@ fn queue_commands_match_csharp_on_shared_database() {
                 })
                 .unwrap();
         }
-        store.lease(1, std::time::Duration::from_secs(60)).unwrap();
-        store.mark_dead_lettered("a", "http-400").unwrap();
+        let leases = store.lease(1, std::time::Duration::from_secs(60)).unwrap();
+        store
+            .mark_dead_lettered("a", "http-400", leases[0].lease_token.as_deref())
+            .unwrap();
     }
     let db = rust_db.to_str().unwrap();
     for args in [
@@ -737,4 +894,86 @@ fn pack_fixtures_match_csharp() {
     ] {
         assert_same(&cs, &repo_root(), args);
     }
+}
+
+#[test]
+fn policy_test_matches_csharp() {
+    let Some(cs) = csharp() else {
+        eprintln!("skipping: no runnable C# bower binary");
+        return;
+    };
+    let root = repo_root();
+    let dir = tempfile::tempdir().unwrap();
+    let (secret, noise, broken) = policy_samples(dir.path());
+    let cases: Vec<Vec<&str>> = vec![
+        vec!["policy", "test"],
+        vec!["policy", "test", "missing.json"],
+        vec!["policy", "test", &secret, &noise, &broken],
+        vec!["policy", "test", &secret, "--expect", "redact-and-accept"],
+        vec!["policy", "test", &noise, "--expect", "accept"],
+        vec!["policy", "test", &noise, "--expect", "1"],
+        vec!["policy", "test", &noise, "--policy-directory", "missing"],
+    ];
+    for args in &cases {
+        let run = assert_same(&cs, &root, args);
+        assert!(!run.stdout.contains("never-print"));
+    }
+
+    // File.ReadAllText detects UTF-16 and UTF-32 byte order marks (Windows PowerShell 5.1
+    // writes UTF-16 LE); a truncated trailing code unit decodes to U+FFFD on both sides.
+    let text = std::fs::read_to_string(&secret).unwrap();
+    let encode = |name: &str, bom: &[u8], unit: &dyn Fn(char) -> Vec<u8>, trailing: &[u8]| {
+        let mut bytes = bom.to_vec();
+        for character in text.chars() {
+            bytes.extend(unit(character));
+        }
+        bytes.extend_from_slice(trailing);
+        let path = dir.path().join(name);
+        std::fs::write(&path, bytes).unwrap();
+        path.to_str().unwrap().to_owned()
+    };
+    let utf16 = |big: bool| {
+        move |character: char| -> Vec<u8> {
+            let mut buffer = [0u16; 2];
+            character
+                .encode_utf16(&mut buffer)
+                .iter()
+                .flat_map(|unit| {
+                    if big {
+                        unit.to_be_bytes()
+                    } else {
+                        unit.to_le_bytes()
+                    }
+                })
+                .collect()
+        }
+    };
+    let utf32 = |big: bool| {
+        move |character: char| -> Vec<u8> {
+            let unit = u32::from(character);
+            (if big {
+                unit.to_be_bytes()
+            } else {
+                unit.to_le_bytes()
+            })
+            .to_vec()
+        }
+    };
+    let samples = [
+        encode("utf16le.json", &[0xFF, 0xFE], &utf16(false), &[]),
+        encode("utf16be.json", &[0xFE, 0xFF], &utf16(true), &[]),
+        encode("utf32le.json", &[0xFF, 0xFE, 0, 0], &utf32(false), &[]),
+        encode("utf32be.json", &[0, 0, 0xFE, 0xFF], &utf32(true), &[]),
+        encode("utf16odd.json", &[0xFF, 0xFE], &utf16(false), b" "),
+    ];
+    for sample in &samples {
+        let run = assert_same(&cs, &root, &["policy", "test", sample]);
+        assert!(!run.stdout.contains("never-print"));
+    }
+    let utf16le = assert_same(&cs, &root, &["policy", "test", &samples[0]]);
+    assert!(
+        utf16le.stdout.contains("\"redactandaccept\""),
+        "UTF-16 sample decoded: {}",
+        utf16le.stdout
+    );
 }

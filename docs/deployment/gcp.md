@@ -1,5 +1,12 @@
 # Google Cloud security signal
 
+`SetIamPolicy` retains bounded member/role changes and grant/revoke direction from
+audit policy deltas. Replacement policies are explicitly snapshots, not inferred
+grants. Exact long resource/principal identifiers live in structured attributes
+and still pass privacy detectors. Raw records remain off by default. See the
+[permission event catalogue and population matrix](cloud-permission-context.md)
+for field population, supported audit shapes and rejection limits.
+
 Bower forwards Security Command Center findings and high-value Cloud Audit Logs to
 Sentinel through one Pub/Sub subscription. It does not ship Cloud Logging wholesale.
 

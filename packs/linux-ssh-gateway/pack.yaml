@@ -2,7 +2,7 @@ apiVersion: bower.security/v1
 kind: Pack
 metadata:
   id: linux-ssh-gateway
-  version: 1.0.0
+  version: 1.1.0
   name: Linux SSH gateway
   description: >-
     SSH and PAM sign-in failures and lockouts from Linux hosts and containers

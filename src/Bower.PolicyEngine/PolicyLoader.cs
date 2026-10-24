@@ -129,11 +129,25 @@ public static class PolicyLoader
             throw new InvalidDataException("Policy requirements section is required.");
         }
 
+        ValidatePredicate(policy.Match.EventActions, "eventActions");
+        ValidatePredicate(policy.Match.EventResults, "eventResults", ["unknown", "success", "failure", "denied"]);
+        ValidatePredicate(policy.Match.EventSeverities, "eventSeverities", ["informational", "low", "medium", "high", "critical"]);
+
         // A null or blank path can never be present: as a required field it would quarantine
         // every matching event with "Missing required field: ".
         ValidateFieldPaths(policy.Requirements.RequiredFields, "requiredFields");
         ValidateFieldPaths(policy.Requirements.AtLeastOne, "atLeastOne");
         ValidateFieldPaths(policy.Requirements.RecommendedFields, "recommendedFields");
+    }
+
+    private static void ValidatePredicate(List<string>? values, string name, string[]? allowed = null)
+    {
+        if (values is not null && (values.Count is 0 or > 256
+            || values.Any(value => string.IsNullOrWhiteSpace(value) || value.Length > 256
+                || allowed is not null && !allowed.Contains(value, StringComparer.Ordinal))))
+        {
+            throw new InvalidDataException($"Policy match {name} must contain 1–256 approved non-blank values.");
+        }
     }
 
     private static void ValidateFieldPaths(List<string>? paths, string name)

@@ -91,6 +91,7 @@ pub struct QueuedEvent {
     pub received_at: Timestamp,
     pub state: QueueState,
     pub delivery_attempts: i32,
+    pub lease_token: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -127,6 +128,7 @@ pub struct FailureSettlement {
     pub event_id: String,
     pub failure_code: String,
     pub retry_after: Option<Timestamp>,
+    pub lease_token: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -184,14 +186,25 @@ pub trait DurableEventStore: Send + Sync {
         maximum_count: usize,
         lease_duration: Duration,
     ) -> StoreResult<Vec<QueuedEvent>>;
-    fn mark_delivered(&self, event_id: &str, acknowledgement: &str) -> StoreResult<()>;
+    fn mark_delivered(
+        &self,
+        event_id: &str,
+        acknowledgement: &str,
+        lease_token: Option<&str>,
+    ) -> StoreResult<()>;
     fn mark_retrying(
         &self,
         event_id: &str,
         failure_code: &str,
         retry_after: Timestamp,
+        lease_token: Option<&str>,
     ) -> StoreResult<()>;
-    fn mark_dead_lettered(&self, event_id: &str, failure_code: &str) -> StoreResult<()>;
+    fn mark_dead_lettered(
+        &self,
+        event_id: &str,
+        failure_code: &str,
+        lease_token: Option<&str>,
+    ) -> StoreResult<()>;
     /// Marks every listed event that is still leased (uploading) as delivered and
     /// returns the ones that were not (for example reclaimed after lease expiry).
     ///
@@ -201,6 +214,7 @@ pub trait DurableEventStore: Send + Sync {
         &self,
         event_ids: &[String],
         acknowledgement: &str,
+        lease_tokens: &std::collections::HashMap<String, String>,
     ) -> StoreResult<Vec<String>> {
         require_batch_text(acknowledgement, "acknowledgement")?;
         for event_id in event_ids {
@@ -208,7 +222,11 @@ pub trait DurableEventStore: Send + Sync {
         }
         let mut not_leased = Vec::new();
         for event_id in event_ids {
-            match self.mark_delivered(event_id, acknowledgement) {
+            match self.mark_delivered(
+                event_id,
+                acknowledgement,
+                lease_tokens.get(event_id).map(String::as_str),
+            ) {
                 Ok(()) => {}
                 Err(StoreError::Invalid(_)) => not_leased.push(event_id.clone()),
                 Err(error) => return Err(error),
@@ -229,10 +247,17 @@ pub trait DurableEventStore: Send + Sync {
         let mut not_leased = Vec::new();
         for failure in failures {
             let settled = match failure.retry_after {
-                Some(retry_after) => {
-                    self.mark_retrying(&failure.event_id, &failure.failure_code, retry_after)
-                }
-                None => self.mark_dead_lettered(&failure.event_id, &failure.failure_code),
+                Some(retry_after) => self.mark_retrying(
+                    &failure.event_id,
+                    &failure.failure_code,
+                    retry_after,
+                    failure.lease_token.as_deref(),
+                ),
+                None => self.mark_dead_lettered(
+                    &failure.event_id,
+                    &failure.failure_code,
+                    failure.lease_token.as_deref(),
+                ),
             };
             match settled {
                 Ok(()) => {}
@@ -289,6 +314,13 @@ pub struct DeliveryFailure {
     pub code: String,
     pub is_retryable: bool,
     pub retry_after: Option<Timestamp>,
+}
+
+impl DeliveryFailure {
+    /// Reserved persisted code namespace: destination outages do not spend poison budgets.
+    pub fn is_destination_failure(&self) -> bool {
+        self.code.starts_with("destination-")
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]

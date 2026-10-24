@@ -110,6 +110,7 @@ public sealed partial class QueueDeliveryWorker(
             IReadOnlyList<string> reclaimed = await queue.MarkDeliveredBatchAsync(
                 delivered,
                 acknowledgement,
+                events.ToDictionary(item => item.EventId, item => item.LeaseToken!, StringComparer.Ordinal),
                 cancellationToken);
             for (int index = 0; index < reclaimed.Count; index++)
             {
@@ -159,19 +160,33 @@ public sealed partial class QueueDeliveryWorker(
     {
         if (!failure.IsRetryable)
         {
-            return new FailureSettlement(item.EventId, failure.Code, null);
+            return new FailureSettlement(item.EventId, failure.Code, null, item.LeaseToken);
         }
 
-        if (item.DeliveryAttempts >= options.MaximumDeliveryAttempts)
+        if (!failure.IsDestinationFailure && item.DeliveryAttempts >= options.MaximumDeliveryAttempts)
         {
             LogAttemptsExhausted(logger, output.Id, item.DeliveryAttempts);
-            return new FailureSettlement(item.EventId, $"max-attempts-exceeded:{failure.Code}", null);
+            return new FailureSettlement(item.EventId, $"max-attempts-exceeded:{failure.Code}", null, item.LeaseToken);
         }
 
-        DateTimeOffset retryAt = failure.RetryAfter
-            ?? clock.GetUtcNow().Add(CalculateRetryDelay(item.DeliveryAttempts));
-        return new FailureSettlement(item.EventId, failure.Code, retryAt);
+        DateTimeOffset retryAt = clock.GetUtcNow().Add(failure.IsDestinationFailure
+            ? TimeSpan.FromSeconds(30)
+            : CalculateRetryDelay(item.DeliveryAttempts));
+        if (failure.RetryAfter > retryAt) retryAt = failure.RetryAfter.Value;
+        DateTimeOffset maximum = clock.GetUtcNow().AddHours(1);
+        string code = failure.Code;
+        if (retryAt > maximum)
+        {
+            retryAt = maximum;
+            code += ":retry-after-capped";
+            LogRetryAfterCapped(logger, output.Id);
+        }
+        return new FailureSettlement(item.EventId, code, retryAt, item.LeaseToken);
     }
+
+    [LoggerMessage(EventId = 1006, Level = LogLevel.Warning,
+        Message = "Output adapter {OutputId} retry deadline exceeded one hour and was capped.")]
+    private static partial void LogRetryAfterCapped(ILogger logger, string outputId);
 
     internal static TimeSpan CalculateRetryDelay(int attempt)
     {

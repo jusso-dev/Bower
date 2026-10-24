@@ -5,9 +5,13 @@ namespace Bower.Detection;
 
 public sealed class DetectionEngine
 {
-    private readonly IReadOnlyList<DetectionRule> rules;
+    private readonly System.Collections.ObjectModel.ReadOnlyCollection<DetectionRule> rules;
     private readonly HashSet<string> suppressedRuleIds;
+    private const int MaximumFingerprints = 4096;
     private readonly HashSet<string> seenFingerprints = new(StringComparer.Ordinal);
+    private readonly Queue<string> fingerprintOrder = new();
+    private readonly object gate = new();
+    private readonly DetectionSemantics[] semantics;
 
     private readonly TimeProvider clock;
 
@@ -17,7 +21,8 @@ public sealed class DetectionEngine
         TimeProvider? clock = null)
     {
         this.clock = clock ?? TimeProvider.System;
-        this.rules = rules.ToArray();
+        this.rules = Array.AsReadOnly(rules.ToArray());
+        semantics = this.rules.Select(rule => new DetectionSemantics(rule.DetectionFields, rule.Condition)).ToArray();
         this.suppressedRuleIds = new HashSet<string>(
             suppressedRuleIds ?? [],
             StringComparer.OrdinalIgnoreCase);
@@ -34,29 +39,54 @@ public sealed class DetectionEngine
 
     public DetectionEvaluationResult Evaluate(SecurityEventEnvelope envelope, DateTimeOffset? now = null)
     {
+        lock (gate)
+        {
+            return EvaluateLocked(envelope, now);
+        }
+    }
+
+    private DetectionEvaluationResult EvaluateLocked(SecurityEventEnvelope envelope, DateTimeOffset? now)
+    {
         ArgumentNullException.ThrowIfNull(envelope);
         DateTimeOffset detectedAt = now ?? clock.GetUtcNow();
         List<DetectionAlert> alerts = [];
         List<string> suppressed = [];
 
-        foreach (DetectionRule rule in rules)
+        // Invalid event fields are an evaluation failure, never a successful no-match.
+        // PackDetectionRedactor converts this failure to quarantine before persistence.
+        if (envelope.Labels?.Count > 256 || envelope.Attributes?.Count > 256) { throw InvalidEvent(); }
+        if (envelope.Labels is not null && envelope.Labels.Keys.Distinct(StringComparer.OrdinalIgnoreCase).Count() != envelope.Labels.Count
+            || envelope.Attributes is not null && envelope.Attributes.Keys.Distinct(StringComparer.OrdinalIgnoreCase).Count() != envelope.Attributes.Count)
         {
+            throw InvalidEvent();
+        }
+        Dictionary<string, string> haystack = BuildHaystack(envelope);
+        if (haystack.Any(pair => pair.Key.Length > 128 || pair.Value.Length > 65538))
+        {
+            throw InvalidEvent();
+        }
+        for (int index = 0; index < rules.Count; index++)
+        {
+            DetectionRule rule = rules[index];
             if (suppressedRuleIds.Contains(rule.Id))
             {
                 suppressed.Add(rule.Id);
                 continue;
             }
 
-            if (!Matches(rule, envelope, out List<string> matchedFields))
+            if (!semantics[index].Matches(haystack, out List<string> matchedFields))
             {
                 continue;
             }
 
-            string fingerprint = $"{rule.Id}:{envelope.EventId}:{rule.RuleHash}";
+            string fingerprint = Fingerprint(rule, envelope.EventId);
             if (!seenFingerprints.Add(fingerprint))
             {
                 continue;
             }
+
+            fingerprintOrder.Enqueue(fingerprint);
+            if (fingerprintOrder.Count > MaximumFingerprints) { seenFingerprints.Remove(fingerprintOrder.Dequeue()); }
 
             alerts.Add(
                 new DetectionAlert(
@@ -82,6 +112,7 @@ public sealed class DetectionEngine
 
     public DetectionEvaluationResult EvaluateJson(string eventJson, DateTimeOffset? now = null)
     {
+        if (System.Text.Encoding.UTF8.GetByteCount(eventJson) > 1024 * 1024) { throw DetectionSemantics.Invalid(); }
         SecurityEventEnvelope? envelope = JsonSerializer.Deserialize(eventJson, BowerJson.Envelope);
         if (envelope is null)
         {
@@ -91,116 +122,20 @@ public sealed class DetectionEngine
         return Evaluate(envelope, now);
     }
 
-    private static bool Matches(
-        DetectionRule rule,
-        SecurityEventEnvelope envelope,
-        out List<string> matchedFields)
+    private static InvalidDataException InvalidEvent() => new("Ambiguous or over-limit detection event fields.");
+
+    private static string Fingerprint(DetectionRule rule, string eventId)
     {
-        matchedFields = [];
-        Dictionary<string, string> haystack = BuildHaystack(envelope);
-
-        // MVP: condition "selection" or "selection1 or selection2" — all keys under named selection groups.
-        string[] groups = rule.Condition
-            .Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(token => !token.Equals("or", StringComparison.OrdinalIgnoreCase)
-                && !token.Equals("and", StringComparison.OrdinalIgnoreCase)
-                && !token.Equals("not", StringComparison.OrdinalIgnoreCase)
-                && !token.Equals("1", StringComparison.Ordinal)
-                && !token.Equals("of", StringComparison.OrdinalIgnoreCase)
-                && !token.Equals("them", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-
-        if (groups.Length == 0)
+        using var hash = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
+        Span<byte> length = stackalloc byte[4];
+        foreach (string value in new[] { rule.Id, eventId, rule.RuleHash })
         {
-            groups = rule.DetectionFields.Keys.ToArray();
+            byte[] bytes = System.Text.Encoding.UTF8.GetBytes(value);
+            System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(length, bytes.Length);
+            hash.AppendData(length);
+            hash.AppendData(bytes);
         }
-
-        bool anyGroup = rule.Condition.Contains(" or ", StringComparison.OrdinalIgnoreCase)
-            || rule.Condition.Contains("1 of them", StringComparison.OrdinalIgnoreCase);
-
-        List<bool> groupResults = [];
-        foreach (string group in groups)
-        {
-            if (!rule.DetectionFields.TryGetValue(group, out string? selection))
-            {
-                groupResults.Add(false);
-                continue;
-            }
-
-            bool groupMatch = MatchSelection(selection, haystack, matchedFields);
-            groupResults.Add(groupMatch);
-        }
-
-        return anyGroup ? groupResults.Any(result => result) : groupResults.All(result => result);
-    }
-
-    private static bool MatchSelection(
-        string selection,
-        IReadOnlyDictionary<string, string> haystack,
-        List<string> matchedFields)
-    {
-        // selection forms: "field:value|value2;field2:value"
-        string[] clauses = selection.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (clauses.Length == 0)
-        {
-            return ContainsIgnoreCase(string.Join(' ', haystack.Values), selection, matchedFields, "payload");
-        }
-
-        foreach (string clause in clauses)
-        {
-            int separator = clause.IndexOf(':');
-            if (separator <= 0)
-            {
-                if (!ContainsIgnoreCase(string.Join(' ', haystack.Values), clause, matchedFields, "payload"))
-                {
-                    return false;
-                }
-
-                continue;
-            }
-
-            string field = clause[..separator].Trim().TrimEnd('|', '*');
-            string pattern = clause[(separator + 1)..];
-            if (!haystack.TryGetValue(field, out string? value))
-            {
-                // also try event.* aliases
-                string? alias = haystack.FirstOrDefault(pair =>
-                    pair.Key.EndsWith(field, StringComparison.OrdinalIgnoreCase)).Value;
-                if (alias is null)
-                {
-                    return false;
-                }
-
-                value = alias;
-            }
-
-            string[] alternatives = pattern.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            bool matched = alternatives.Any(option =>
-                value.Contains(option, StringComparison.OrdinalIgnoreCase));
-            if (!matched)
-            {
-                return false;
-            }
-
-            matchedFields.Add(field);
-        }
-
-        return true;
-    }
-
-    private static bool ContainsIgnoreCase(
-        string haystack,
-        string needle,
-        List<string> matchedFields,
-        string fieldName)
-    {
-        if (haystack.Contains(needle, StringComparison.OrdinalIgnoreCase))
-        {
-            matchedFields.Add(fieldName);
-            return true;
-        }
-
-        return false;
+        return Convert.ToHexString(hash.GetHashAndReset());
     }
 
     private static Dictionary<string, string> BuildHaystack(SecurityEventEnvelope envelope)
@@ -224,10 +159,30 @@ public sealed class DetectionEngine
         {
             foreach ((string key, string value) in envelope.Labels)
             {
-                values[key] = value;
+                if (!key.StartsWith("attributes.", StringComparison.OrdinalIgnoreCase)) { values.TryAdd(key, value); }
             }
         }
 
+        foreach (string key in values.Keys.ToArray()) { values[key] = "s:" + values[key]; }
+        // Attributes use an explicit namespace and retain their JSON scalar type.
+        // Label keys cannot shadow typed attributes.
+        if (envelope.Attributes is not null)
+        {
+            foreach ((string key, JsonElement value) in envelope.Attributes)
+            {
+                string field = "attributes." + key;
+                values.Remove(field);
+                string? scalar = value.ValueKind switch
+                {
+                    JsonValueKind.String => "s:" + value.GetString(),
+                    JsonValueKind.True => "b:true",
+                    JsonValueKind.False => "b:false",
+                    JsonValueKind.Number when value.TryGetInt64(out long number) => "n:" + number.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    _ => null
+                };
+                if (scalar is not null) { values[field] = scalar; }
+            }
+        }
         return values;
     }
 

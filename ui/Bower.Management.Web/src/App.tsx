@@ -2,6 +2,7 @@ import {
   Activity,
   Boxes,
   ClipboardCheck,
+  FileLock,
   GitBranch,
   KeyRound,
   Menu,
@@ -22,12 +23,14 @@ import { ApprovalsPage } from "./pages/ApprovalsPage";
 import { AccessPage } from "./pages/AccessPage";
 import { AuditPage } from "./pages/AuditPage";
 import { JobsPage } from "./pages/JobsPage";
+import { PrivacyProfilesPage } from "./pages/PrivacyProfilesPage";
 
 const navItems = [
   { to: "/", label: "Overview", icon: Activity },
   { to: "/collectors", label: "Collectors", icon: Boxes },
   { to: "/pipelines", label: "Pipelines", icon: GitBranch },
   { to: "/approvals", label: "Approvals", icon: ClipboardCheck },
+  { to: "/privacy-profiles", label: "Privacy profiles", icon: FileLock },
   { to: "/jobs", label: "Jobs", icon: Timer },
   { to: "/access", label: "Access", icon: KeyRound },
   { to: "/audit", label: "Audit", icon: ScrollText }
@@ -134,6 +137,7 @@ export function App() {
           <Route path="/collectors" element={<CollectorsPage />} />
           <Route path="/pipelines" element={<PipelinesPage />} />
           <Route path="/approvals" element={<ApprovalsPage />} />
+          <Route path="/privacy-profiles" element={<PrivacyProfilesPage />} />
           <Route path="/jobs" element={<JobsPage />} />
           <Route path="/access" element={<AccessPage />} />
           <Route path="/audit" element={<AuditPage />} />

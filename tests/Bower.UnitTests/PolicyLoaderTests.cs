@@ -46,7 +46,7 @@ public sealed class PolicyLoaderTests
         IReadOnlyList<LoadedPolicy> policies = PolicyLoader.LoadDirectory(
             Path.Combine(AppContext.BaseDirectory, "policies", "default"));
 
-        Assert.Equal(3, policies.Count);
+        Assert.Equal(5, policies.Count);
     }
 
     [Fact]

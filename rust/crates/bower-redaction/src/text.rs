@@ -203,9 +203,9 @@ pub fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
 
 /// `string.Concat(value.Where(char.IsLetterOrDigit)).ToLowerInvariant()`.
 ///
-/// Only membership against ASCII names is ever tested, so non-ASCII characters are
-/// kept as-is: invariant lowercasing never turns them into ASCII except for the
-/// Kelvin sign (U+212A to `k`). `İ` (U+0130) is left unchanged by .NET invariant casing.
+/// Letters are lowered with simple (one-to-one) case mapping, as .NET invariant casing
+/// does: privacy profiles may configure non-ASCII secret field names. `İ` (U+0130),
+/// whose only Unicode lowercase is the two-character `i̇`, is left unchanged like .NET.
 pub fn normalize_field_name(value: &str) -> String {
     let mut normalized = String::with_capacity(value.len());
     let mut buffer = [0u8; 4];
@@ -220,13 +220,23 @@ pub fn normalize_field_name(value: &str) -> String {
             continue;
         }
 
-        normalized.push(match character {
-            '\u{212A}' => 'k',
-            other => other.to_ascii_lowercase(),
-        });
+        normalized.push(lower_invariant(character));
     }
 
     normalized
+}
+
+/// `char.ToLowerInvariant` for a BMP letter or digit.
+fn lower_invariant(character: char) -> char {
+    if character.is_ascii() {
+        return character.to_ascii_lowercase();
+    }
+
+    let mut lower = character.to_lowercase();
+    match (lower.next(), lower.next()) {
+        (Some(single), None) => single,
+        _ => character,
+    }
 }
 
 /// `char.IsWhiteSpace` (identical to the Unicode `White_Space` property).

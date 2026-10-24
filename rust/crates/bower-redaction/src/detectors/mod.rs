@@ -7,16 +7,19 @@ use std::sync::LazyLock;
 
 use regex::{Captures, Regex};
 
+use crate::policy::PrivacyPolicy;
 use crate::text::{AsciiProxy, ProxyBytes, regex_haystack, utf16_len};
 
 pub mod australian;
 pub mod classification;
 pub mod crypto;
+pub mod custom;
 pub mod field_name;
 pub mod financial;
 pub mod identity;
 pub mod secrets;
 
+pub use custom::{CompositeFieldNameDetector, CustomDetectorDefinition, CustomPatternDetector};
 pub use field_name::FieldNameSecretDetector;
 
 /// A sensitive span inside a field value.
@@ -120,6 +123,40 @@ pub struct ScanText<'a> {
     proxy: OnceCell<Option<AsciiProxy>>,
     /// Proxy texts per stand-in variant, built on first use (see [`proxy_slot`]).
     proxy_texts: [OnceCell<String>; PROXY_SLOTS],
+    /// UTF-16 unit haystack for custom detectors, built on first use (see
+    /// [`ScanText::utf16_haystack`]); `None` when the text is all BMP.
+    utf16: OnceCell<Option<(String, Vec<usize>)>>,
+}
+
+/// Offset map entry for the position between the two stand-ins of a surrogate pair.
+pub(crate) const INSIDE_PAIR: usize = usize::MAX;
+
+/// Stand-in for each UTF-16 surrogate of a supplementary character. Custom detector
+/// patterns can never contain it and character ranges never reach it, so like a .NET
+/// surrogate unit it only matches negated classes and `.`.
+pub(crate) const SURROGATE_STAND_IN: char = '\u{FFFF}';
+
+/// Replaces each supplementary character by two [`SURROGATE_STAND_IN`]s and maps every
+/// haystack byte offset back to the text ([`INSIDE_PAIR`] between the two).
+fn build_utf16_haystack(text: &str) -> (String, Vec<usize>) {
+    let mut haystack = String::with_capacity(text.len() + text.len() / 2);
+    let mut offsets = Vec::with_capacity(text.len() + text.len() / 2 + 1);
+    for (offset, character) in text.char_indices() {
+        if character.len_utf16() == 2 {
+            offsets.push(offset);
+            offsets.extend(std::iter::repeat_n(0, SURROGATE_STAND_IN.len_utf8() - 1));
+            offsets.push(INSIDE_PAIR);
+            offsets.extend(std::iter::repeat_n(0, SURROGATE_STAND_IN.len_utf8() - 1));
+            haystack.push(SURROGATE_STAND_IN);
+            haystack.push(SURROGATE_STAND_IN);
+        } else {
+            offsets.push(offset);
+            offsets.extend(std::iter::repeat_n(0, character.len_utf8() - 1));
+            haystack.push(character);
+        }
+    }
+    offsets.push(text.len());
+    (haystack, offsets)
 }
 
 /// Digit stand-ins (absent, `9`, `0`, `_`) times Kelvin stand-ins (absent, `k`, `_`).
@@ -150,6 +187,25 @@ impl<'a> ScanText<'a> {
             ascii: text.is_ascii(),
             proxy: OnceCell::new(),
             proxy_texts: Default::default(),
+            utf16: OnceCell::new(),
+        }
+    }
+
+    /// Text for custom detector patterns, which see UTF-16 units like .NET: the text
+    /// itself when it is all BMP, otherwise a haystack with two stand-ins per
+    /// supplementary character plus the map from its byte offsets to the text's (entries
+    /// at non-boundaries are unused).
+    pub(crate) fn utf16_haystack(&self) -> (&str, Option<&[usize]>) {
+        // Supplementary characters are the only four-byte UTF-8 sequences.
+        let built = self.utf16.get_or_init(|| {
+            self.text
+                .bytes()
+                .any(|byte| byte >= 0xF0)
+                .then(|| build_utf16_haystack(self.text))
+        });
+        match built {
+            Some((haystack, offsets)) => (haystack, Some(offsets)),
+            None => (self.text, None),
         }
     }
 
@@ -261,6 +317,12 @@ pub trait SensitiveDetector: Send + Sync {
 
     /// Scans `text` and appends matches.
     fn detect(&self, text: &ScanText<'_>, path: &str, matches: &mut Vec<DetectionMatch>);
+
+    /// A privacy profile's custom detector, which the engine bounds per event and never
+    /// lets claim spans when its action does not redact. Built-ins return `None`.
+    fn as_custom(&self) -> Option<&custom::CustomPatternDetector> {
+        None
+    }
 }
 
 /// Detector that decides whole JSON properties by field name (`IFieldNameDetector`).
@@ -422,6 +484,29 @@ pub fn default_value_detectors() -> Vec<Box<dyn SensitiveDetector>> {
 /// Built-in field-name detector (`DetectorCatalog.CreateDefaultFieldNameDetector`).
 pub fn default_field_name_detector() -> Box<dyn FieldNameDetector> {
     Box::new(FieldNameSecretDetector)
+}
+
+/// Built-in value detectors followed by the policy's custom detectors, in definition
+/// order (`DetectorCatalog.CreateValueDetectors`).
+pub fn value_detectors_for(policy: &PrivacyPolicy) -> Vec<Box<dyn SensitiveDetector>> {
+    let mut detectors = default_value_detectors();
+    detectors.extend(policy.custom_detectors.iter().map(|definition| {
+        Box::new(CustomPatternDetector::new(definition.clone())) as Box<dyn SensitiveDetector>
+    }));
+    detectors
+}
+
+/// The built-in field-name detector extended with the policy's secret field names
+/// (`DetectorCatalog.CreateFieldNameDetector`).
+pub fn field_name_detector_for(policy: &PrivacyPolicy) -> Box<dyn FieldNameDetector> {
+    if policy.secret_field_names.is_empty() {
+        default_field_name_detector()
+    } else {
+        Box::new(CompositeFieldNameDetector::new(
+            default_field_name_detector(),
+            &policy.secret_field_names,
+        ))
+    }
 }
 
 #[cfg(test)]

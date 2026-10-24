@@ -108,6 +108,15 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
             return Ok(0);
         }
 
+        let claims: std::collections::HashMap<String, String> = events
+            .iter()
+            .filter_map(|item| {
+                item.lease_token
+                    .as_ref()
+                    .map(|token| (item.event_id.clone(), token.clone()))
+            })
+            .collect();
+        let failure_claims = claims.clone();
         let count = events.len();
         let order: Vec<String> = events.iter().map(|item| item.event_id.clone()).collect();
         let leased: HashMap<String, i32> = events
@@ -139,7 +148,7 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
             // One queue transaction for every acknowledged event in the batch.
             let reclaimed = self
                 .blocking(
-                    move |queue| queue.mark_delivered_batch(&delivered, &acknowledgement),
+                    move |queue| queue.mark_delivered_batch(&delivered, &acknowledgement, &claims),
                     shutdown,
                 )
                 .await?;
@@ -181,6 +190,9 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
             failed.push(self.to_settlement(leased[event_id], failure));
         }
 
+        for failure in &mut failed {
+            failure.lease_token = failure_claims.get(&failure.event_id).cloned();
+        }
         if !failed.is_empty() {
             // One queue transaction for every retrying and dead-lettered event in the
             // batch. On error nothing is settled and the events are redelivered after
@@ -246,6 +258,7 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
     /// C# `ToSettlement`: dead-letter permanent failures and exhausted retries,
     /// otherwise schedule a retry.
     fn to_settlement(&self, attempts: i32, failure: DeliveryFailure) -> FailureSettlement {
+        let destination = failure.is_destination_failure();
         let DeliveryFailure {
             event_id,
             code,
@@ -254,30 +267,47 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
         } = failure;
         if !is_retryable {
             return FailureSettlement {
+                lease_token: None,
                 event_id,
                 failure_code: code,
                 retry_after: None,
             };
         }
 
-        if attempts >= self.options.maximum_delivery_attempts {
+        if !destination && attempts >= self.options.maximum_delivery_attempts {
             warn!(
                 output_id = self.output.id(),
                 attempts, "Output adapter exhausted delivery attempts; event dead-lettered."
             );
             return FailureSettlement {
+                lease_token: None,
                 event_id,
                 failure_code: format!("max-attempts-exceeded:{code}"),
                 retry_after: None,
             };
         }
 
-        let retry_at = retry_after.unwrap_or_else(|| {
-            let delay = calculate_retry_delay(attempts);
-            self.clock.utc_now()
-                + chrono::TimeDelta::from_std(delay).unwrap_or(chrono::TimeDelta::MAX)
-        });
+        let delay = if destination {
+            Duration::from_secs(30)
+        } else {
+            calculate_retry_delay(attempts)
+        };
+        let local = self.clock.utc_now()
+            + chrono::TimeDelta::from_std(delay).unwrap_or(chrono::TimeDelta::MAX);
+        let requested = retry_after.map_or(local, |server| server.max(local));
+        let maximum = self.clock.utc_now() + chrono::TimeDelta::hours(1);
+        let code = if requested > maximum {
+            warn!(
+                output_id = self.output.id(),
+                "Retry deadline exceeded one hour and was capped."
+            );
+            format!("{code}:retry-after-capped")
+        } else {
+            code
+        };
+        let retry_at = requested.min(maximum);
         FailureSettlement {
+            lease_token: None,
             event_id,
             failure_code: code,
             retry_after: Some(retry_at),

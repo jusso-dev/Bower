@@ -17,12 +17,18 @@ use serde::de::{self, Deserializer, IgnoredAny, MapAccess, Visitor};
 use sha2::{Digest, Sha256};
 
 use crate::applicator::PolicyApplicator;
+use crate::detectors::custom::{self, CustomDetectorDefinition, CustomPatternDetector};
 use crate::error::PrivacyError;
 use crate::ids::detector_ids;
 use crate::policy::{PrivacyAction, PrivacyFieldRule, PrivacyPolicy};
-use crate::text::{is_null_or_whitespace, utf16_len};
+use crate::text::{is_null_or_whitespace, normalize_field_name, utf16_len};
 
 const MAXIMUM_PROFILE_BYTES: usize = 262_144;
+const MAXIMUM_CUSTOM_DETECTORS: usize = 32;
+const MAXIMUM_SAMPLES: usize = 16;
+const MAXIMUM_SAMPLE_LENGTH: usize = 1024;
+const MAXIMUM_SECRET_FIELD_NAMES: usize = 64;
+const MAXIMUM_SECRET_FIELD_NAME_LENGTH: usize = 128;
 
 /// A loaded profile: the policy plus identity and a hash of the normalised YAML.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -34,6 +40,8 @@ pub struct LoadedPrivacyProfile {
     pub version: Option<String>,
     /// `sha256:<hex>` of the YAML with line endings normalised to `\n`.
     pub hash: String,
+    /// Custom detector test samples (match and noMatch) that passed at load.
+    pub custom_detector_tests: usize,
 }
 
 // ------------------------------------------------------------------ document model
@@ -53,12 +61,41 @@ struct ProfileDocument {
     fields: Present<Vec<Option<FieldRuleDocument>>>,
     maximum_field_length: Present<DotnetInt>,
     emit_metadata: Present<DotnetBool>,
+    custom_detectors: Present<Vec<Option<CustomDetectorDocument>>>,
+    secret_field_names: Present<Vec<Option<String>>>,
 }
 
 #[derive(Default)]
 struct MetadataDocument {
     id: Option<String>,
     version: Option<String>,
+    description: Option<String>,
+}
+
+#[derive(Default)]
+struct CustomDetectorDocument {
+    id: Option<String>,
+    description: Option<String>,
+    pattern: Option<String>,
+    ignore_case: Option<DotnetBool>,
+    whole_word: Option<DotnetBool>,
+    action: Option<String>,
+    tests: Option<CustomDetectorTestsDocument>,
+}
+
+/// Lists default to empty when absent; an explicit YAML null stays null (`None`).
+struct CustomDetectorTestsDocument {
+    match_samples: Option<Vec<Option<String>>>,
+    no_match_samples: Option<Vec<Option<String>>>,
+}
+
+impl Default for CustomDetectorTestsDocument {
+    fn default() -> Self {
+        Self {
+            match_samples: Some(Vec::new()),
+            no_match_samples: Some(Vec::new()),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -119,6 +156,8 @@ mapping_visitor!(
             "fields" => doc.fields = Some(map.next_value()?),
             "maximumFieldLength" => doc.maximum_field_length = Some(map.next_value()?),
             "emitMetadata" => doc.emit_metadata = Some(map.next_value()?),
+            "customDetectors" => doc.custom_detectors = Some(map.next_value()?),
+            "secretFieldNames" => doc.secret_field_names = Some(map.next_value()?),
             other => {
                 let _: IgnoredAny = map.next_value()?;
                 return Err(unknown_property(other, "PrivacyProfileDocument"));
@@ -135,12 +174,50 @@ mapping_visitor!(
         match key.as_str() {
             "id" => doc.id = map.next_value()?,
             "version" => doc.version = map.next_value()?,
-            "description" => {
-                let _: Option<String> = map.next_value()?;
-            }
+            "description" => doc.description = map.next_value()?,
             other => {
                 let _: IgnoredAny = map.next_value()?;
                 return Err(unknown_property(other, "PrivacyProfileMetadata"));
+            }
+        }
+    }
+);
+
+mapping_visitor!(
+    CustomDetectorVisitor,
+    CustomDetectorDocument,
+    "PrivacyCustomDetectorDocument",
+    |map, doc, key| {
+        match key.as_str() {
+            "id" => doc.id = map.next_value()?,
+            "description" => doc.description = map.next_value()?,
+            "pattern" => doc.pattern = map.next_value()?,
+            "ignoreCase" => doc.ignore_case = map.next_value()?,
+            "wholeWord" => doc.whole_word = map.next_value()?,
+            "action" => doc.action = map.next_value()?,
+            "tests" => doc.tests = map.next_value()?,
+            other => {
+                let _: IgnoredAny = map.next_value()?;
+                return Err(unknown_property(other, "PrivacyCustomDetectorDocument"));
+            }
+        }
+    }
+);
+
+mapping_visitor!(
+    CustomDetectorTestsVisitor,
+    CustomDetectorTestsDocument,
+    "PrivacyCustomDetectorTestsDocument",
+    |map, doc, key| {
+        match key.as_str() {
+            "match" => doc.match_samples = map.next_value()?,
+            "noMatch" => doc.no_match_samples = map.next_value()?,
+            other => {
+                let _: IgnoredAny = map.next_value()?;
+                return Err(unknown_property(
+                    other,
+                    "PrivacyCustomDetectorTestsDocument",
+                ));
             }
         }
     }
@@ -355,6 +432,8 @@ pub fn load(
         return Err(invalid("Privacy profile exceeds 256 KiB."));
     }
 
+    require_supported_raw_text(yaml)?;
+
     let document = match serde_yaml_ng::from_str::<Option<ProfileDocument>>(yaml) {
         Ok(Some(document)) => document,
         Ok(None) => return Err(invalid("Privacy profile is empty.")),
@@ -366,6 +445,7 @@ pub fn load(
         }
     };
 
+    require_supported_values(&document)?;
     if document.api_version.flatten().as_deref() != Some("bower.security/v1")
         || document.kind.flatten().as_deref() != Some("PrivacyProfile")
     {
@@ -375,9 +455,23 @@ pub fn load(
     }
 
     let known: HashSet<&str> = detector_ids::ALL.iter().copied().collect();
+    let (custom_detectors, custom_detector_tests) = load_custom_detectors(required_collection(
+        document.custom_detectors,
+        "customDetectors",
+    )?)?;
+    let custom_ids: HashSet<String> = custom_detectors
+        .iter()
+        .map(|detector| detector.id().to_owned())
+        .collect();
     let defaults = PrivacyPolicy::create_default();
     let mut actions = defaults.detector_actions.clone();
     for (detector, action) in required_collection(document.detectors, "detectors")? {
+        if custom_ids.contains(&detector) {
+            return Err(invalid(format!(
+                "Custom detector '{detector}' sets its action in customDetectors, not detectors."
+            )));
+        }
+
         require_known(&known, Some(&detector))?;
         let action = action.ok_or_else(|| {
             invalid(format!(
@@ -387,9 +481,23 @@ pub fn load(
         actions.insert(detector, parse_action(&action)?);
     }
 
+    for detector in &custom_detectors {
+        actions.insert(detector.id().to_owned(), detector.action());
+    }
+
     let disabled = required_collection(document.disabled, "disabled")?;
     let enable_opt_in = required_collection(document.enable_opt_in, "enableOptIn")?;
-    for detector in disabled.iter().chain(&enable_opt_in) {
+    for detector in &disabled {
+        // Custom detectors are enabled by default and may be disabled, never opted in.
+        if !detector
+            .as_deref()
+            .is_some_and(|detector| custom_ids.contains(detector))
+        {
+            require_known(&known, detector.as_deref())?;
+        }
+    }
+
+    for detector in &enable_opt_in {
         require_known(&known, detector.as_deref())?;
     }
 
@@ -421,6 +529,11 @@ pub fn load(
         rules.push(PrivacyFieldRule::new(path, action, max_length));
     }
 
+    let secret_field_names = load_secret_field_names(required_collection(
+        document.secret_field_names,
+        "secretFieldNames",
+    )?)?;
+
     let maximum_field_length = match document.maximum_field_length.flatten() {
         Some(DotnetInt(value)) => value,
         None => defaults.maximum_field_length as i32,
@@ -440,6 +553,8 @@ pub fn load(
         disabled_detectors: disabled.into_iter().flatten().collect(),
         enabled_opt_in_detectors: enable_opt_in.into_iter().flatten().collect(),
         field_rules: rules,
+        custom_detectors,
+        secret_field_names,
         maximum_field_length: maximum_field_length as usize,
         emit_metadata: document
             .emit_metadata
@@ -469,14 +584,269 @@ pub fn load(
         id: metadata.id,
         version: metadata.version,
         hash,
+        custom_detector_tests,
     })
+}
+
+// ------------------------------------------------------------------ supported text
+
+/// `PrivacyProfileText`: C0 controls other than tab, LF and CR, DEL and C1 controls, the
+/// line and paragraph separators, and (raw text only) YAML escapes of UTF-16 surrogates
+/// are rejected identically by both loaders. Rust strings cannot hold lone surrogates.
+fn is_unsupported(character: char) -> bool {
+    matches!(character, '\0'..='\u{8}' | '\u{B}' | '\u{C}' | '\u{E}'..='\u{1F}' | '\u{7F}'..='\u{9F}' | '\u{2028}' | '\u{2029}')
+}
+
+fn unsupported(code_point: u32) -> PrivacyError {
+    invalid(format!(
+        "Privacy profile contains unsupported character U+{code_point:04X}."
+    ))
+}
+
+/// The code point of a `\uXXXX` or `\UXXXXXXXX` escape in the surrogate range.
+fn surrogate_escape(rest: &str) -> Option<u32> {
+    let mut characters = rest.chars();
+    let digits = match characters.next()? {
+        'u' => 4,
+        'U' => 8,
+        _ => return None,
+    };
+    let hex = rest.get(1..1 + digits)?;
+    if !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    let value = u64::from_str_radix(hex, 16).ok()?;
+    (0xD800..=0xDFFF)
+        .contains(&value)
+        .then(|| u32::try_from(value).unwrap_or_default())
+}
+
+fn require_supported_raw_text(yaml: &str) -> Result<(), PrivacyError> {
+    for (offset, character) in yaml.char_indices() {
+        if is_unsupported(character) {
+            return Err(unsupported(u32::from(character)));
+        }
+        if character == '\\'
+            && let Some(escaped) = surrogate_escape(&yaml[offset + 1..])
+        {
+            return Err(unsupported(escaped));
+        }
+    }
+    Ok(())
+}
+
+fn require_supported_value(value: Option<&str>) -> Result<(), PrivacyError> {
+    match value.and_then(|value| value.chars().find(|c| is_unsupported(*c))) {
+        Some(character) => Err(unsupported(u32::from(character))),
+        None => Ok(()),
+    }
+}
+
+/// Every parsed string, in the C# document-model order.
+fn require_supported_values(document: &ProfileDocument) -> Result<(), PrivacyError> {
+    let mut values: Vec<Option<&str>> = vec![
+        document
+            .api_version
+            .as_ref()
+            .and_then(|value| value.as_deref()),
+        document.kind.as_ref().and_then(|value| value.as_deref()),
+    ];
+    if let Some(Some(metadata)) = &document.metadata {
+        values.extend([
+            metadata.id.as_deref(),
+            metadata.version.as_deref(),
+            metadata.description.as_deref(),
+        ]);
+    }
+    values.push(
+        document
+            .default_action
+            .as_ref()
+            .and_then(|value| value.as_deref()),
+    );
+    if let Some(Some(detectors)) = &document.detectors {
+        for (key, value) in detectors {
+            values.extend([Some(key.as_str()), value.as_deref()]);
+        }
+    }
+    for list in [&document.disabled, &document.enable_opt_in] {
+        if let Some(Some(items)) = list {
+            values.extend(items.iter().map(Option::as_deref));
+        }
+    }
+    if let Some(Some(rules)) = &document.fields {
+        for rule in rules.iter().flatten() {
+            values.extend([rule.path.as_deref(), rule.action.as_deref()]);
+        }
+    }
+    if let Some(Some(detectors)) = &document.custom_detectors {
+        for detector in detectors.iter().flatten() {
+            values.extend([
+                detector.id.as_deref(),
+                detector.description.as_deref(),
+                detector.pattern.as_deref(),
+                detector.action.as_deref(),
+            ]);
+            if let Some(tests) = &detector.tests {
+                for samples in [&tests.match_samples, &tests.no_match_samples]
+                    .into_iter()
+                    .flatten()
+                {
+                    values.extend(samples.iter().map(Option::as_deref));
+                }
+            }
+        }
+    }
+    if let Some(Some(names)) = &document.secret_field_names {
+        values.extend(names.iter().map(Option::as_deref));
+    }
+    values.into_iter().try_for_each(require_supported_value)
+}
+
+/// The validated definitions and the number of test samples they passed.
+fn load_custom_detectors(
+    documents: Vec<Option<CustomDetectorDocument>>,
+) -> Result<(Vec<CustomDetectorDefinition>, usize), PrivacyError> {
+    if documents.len() > MAXIMUM_CUSTOM_DETECTORS {
+        return Err(invalid(
+            "Privacy profile may define at most 32 custom detectors.",
+        ));
+    }
+
+    let mut ids = HashSet::new();
+    let mut tests_passed = 0;
+    let mut definitions = Vec::with_capacity(documents.len());
+    for document in documents {
+        let document =
+            document.ok_or_else(|| invalid("Privacy profile custom detector must not be null."))?;
+        custom::require_valid_id(document.id.as_deref())?;
+        let id = document.id.unwrap_or_default();
+        if !ids.insert(id.clone()) {
+            return Err(invalid(format!(
+                "Custom detector id '{id}' is defined more than once."
+            )));
+        }
+
+        custom::require_valid_description(&id, document.description.as_deref())?;
+        let ignore_case = document.ignore_case.is_some_and(|DotnetBool(value)| value);
+        let whole_word = document.whole_word.is_some_and(|DotnetBool(value)| value);
+        let (canonical, regex) =
+            custom::compile_pattern(&id, document.pattern.as_deref(), ignore_case, whole_word)?;
+        let action = document
+            .action
+            .as_deref()
+            .ok_or_else(|| invalid(format!("Custom detector '{id}' requires an action.")))?;
+        let action = parse_action(action)?;
+        custom::require_redacting_action(&id, action)?;
+
+        let tests = document.tests;
+        let match_samples = tests
+            .as_ref()
+            .and_then(|tests| tests.match_samples.as_ref());
+        let no_match_samples = tests
+            .as_ref()
+            .and_then(|tests| tests.no_match_samples.as_ref());
+        let Some(match_samples) = match_samples.filter(|samples| !samples.is_empty()) else {
+            return Err(invalid(format!(
+                "Custom detector '{id}' requires at least one tests.match sample."
+            )));
+        };
+
+        let valid_sample = |sample: &Option<String>| {
+            sample
+                .as_deref()
+                .is_some_and(|sample| (1..=MAXIMUM_SAMPLE_LENGTH).contains(&utf16_len(sample)))
+        };
+        let Some(no_match_samples) = no_match_samples.filter(|no_match| {
+            match_samples.len() <= MAXIMUM_SAMPLES
+                && no_match.len() <= MAXIMUM_SAMPLES
+                && match_samples
+                    .iter()
+                    .chain(no_match.iter())
+                    .all(valid_sample)
+        }) else {
+            return Err(invalid(format!(
+                "Custom detector '{id}' may have at most 16 tests.match and 16 tests.noMatch samples of 1-1024 characters."
+            )));
+        };
+
+        let definition = CustomDetectorDefinition::from_validated(
+            &id,
+            document.description.as_deref(),
+            document.pattern.as_deref().unwrap_or_default(),
+            canonical,
+            regex,
+            ignore_case,
+            whole_word,
+            action,
+        );
+        let detector = CustomPatternDetector::new(definition);
+        for (index, sample) in match_samples.iter().flatten().enumerate() {
+            if !detector.matches(sample) {
+                return Err(invalid(format!(
+                    "Custom detector '{id}' did not match tests.match[{index}]."
+                )));
+            }
+        }
+
+        for (index, sample) in no_match_samples.iter().flatten().enumerate() {
+            if detector.matches(sample) {
+                return Err(invalid(format!(
+                    "Custom detector '{id}' matched tests.noMatch[{index}]."
+                )));
+            }
+        }
+
+        tests_passed += match_samples.len() + no_match_samples.len();
+        definitions.push(detector.definition().clone());
+    }
+
+    Ok((definitions, tests_passed))
+}
+
+/// Normalises like the engine; duplicates after normalisation keep the first occurrence.
+fn load_secret_field_names(names: Vec<Option<String>>) -> Result<Vec<String>, PrivacyError> {
+    let valid = names.len() <= MAXIMUM_SECRET_FIELD_NAMES
+        && names.iter().all(|name| {
+            name.as_deref().is_some_and(|name| {
+                (1..=MAXIMUM_SECRET_FIELD_NAME_LENGTH).contains(&utf16_len(name))
+            })
+        });
+    if !valid {
+        return Err(invalid(
+            "Privacy profile may list at most 64 secretFieldNames of 1-128 characters.",
+        ));
+    }
+
+    let mut seen = HashSet::new();
+    let mut normalised = Vec::with_capacity(names.len());
+    for name in names.into_iter().flatten() {
+        let value = normalize_field_name(&name);
+        if value.is_empty() {
+            return Err(invalid(format!(
+                "Secret field name '{name}' has no letters or digits."
+            )));
+        }
+
+        if seen.insert(value.clone()) {
+            normalised.push(value);
+        }
+    }
+
+    Ok(normalised)
 }
 
 /// Reads a key file holding base64 (preferred) or at least 32 raw bytes.
 pub fn read_key_file(path: impl AsRef<Path>) -> Result<Vec<u8>, PrivacyError> {
     let raw =
         std::fs::read(path.as_ref()).map_err(|error| PrivacyError::Io(error.kind().to_string()))?;
-    let key = decode_key(&raw);
+    decode_key_material(&raw)
+}
+
+/// Key material held in memory (for example a secret fetched with an IAM role):
+/// base64 (preferred) or at least 32 raw bytes, exactly as [`read_key_file`] reads it.
+pub fn decode_key_material(raw: &[u8]) -> Result<Vec<u8>, PrivacyError> {
+    let key = decode_key(raw);
     if key.len() >= 32 {
         Ok(key)
     } else {

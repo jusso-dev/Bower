@@ -610,6 +610,11 @@ tbody tr:last-child td {
   color: var(--color-ink-muted);
 }
 
+.policy-label--wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .empty-state {
   display: grid;
   justify-items: start;
@@ -1302,4 +1307,234 @@ tbody tr:last-child td {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+
+/* Privacy profiles */
+[tabindex]:focus-visible,
+input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.status-badge--pendingreview {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.status-badge--pendingreview span {
+  background: var(--color-warning);
+}
+
+.status-badge--rejected {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.status-badge--rejected span {
+  background: var(--color-danger);
+}
+
+.version-groups,
+.version-detail,
+.privacy-editor-side {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.version-detail h3,
+.result-panel h3,
+.help-panel h3,
+.approval-form h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.version-detail > *,
+.version-groups > *,
+.privacy-editor-side > * {
+  min-width: 0;
+}
+
+.version-detail .detail-list {
+  margin-block-start: 0;
+}
+
+.section-heading h3 {
+  margin: 0;
+  font-size: var(--text-base);
+}
+
+.row--selected td {
+  background: var(--color-accent-soft);
+}
+
+.code-block {
+  max-height: 20rem;
+  margin: 0;
+  overflow: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  color: var(--color-ink);
+  font-family: var(--font-technical);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  tab-size: 2;
+  white-space: pre;
+}
+
+.code-block--tall {
+  max-height: 32rem;
+}
+
+.help-panel,
+.result-panel {
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+}
+
+.help-panel p {
+  margin: var(--space-3) 0;
+  color: var(--color-ink-secondary);
+  font-size: var(--text-sm);
+}
+
+.help-panel p:last-child {
+  margin-block-end: 0;
+}
+
+.help-panel code {
+  font-family: var(--font-technical);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+.result-panel .responsive-table {
+  margin-block-start: var(--space-3);
+}
+
+.result-list {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 0;
+  padding-inline-start: var(--space-5);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.result-list__ok {
+  color: var(--color-positive);
+}
+
+.result-list__failed {
+  color: var(--color-danger);
+}
+
+.checkbox-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.checkbox-list legend {
+  margin-block-end: var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.checkbox-list label {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-height: 2.75rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  font-size: var(--text-sm);
+  font-weight: 400;
+}
+
+.checkbox-list input {
+  flex: 0 0 auto;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-block-start: var(--space-1);
+  accent-color: var(--color-accent);
+}
+
+.checkbox-list label > span {
+  display: grid;
+  min-width: 0;
+}
+
+.checkbox-list small {
+  color: var(--color-ink-muted);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+.diff-view {
+  display: grid;
+  grid-template-columns: minmax(100%, max-content);
+  max-height: 32rem;
+  overflow: auto;
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-family: var(--font-technical);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+}
+
+.diff-line {
+  display: grid;
+  grid-template-columns: 2.5rem 2.5rem 1.25rem max-content;
+}
+
+.diff-gutter {
+  padding-inline: var(--space-2);
+  color: var(--color-ink-muted);
+  text-align: end;
+  user-select: none;
+}
+
+.diff-marker {
+  color: var(--color-ink-muted);
+  text-align: center;
+}
+
+.diff-text {
+  padding-inline-end: var(--space-3);
+  white-space: pre;
+}
+
+.diff-line--add {
+  background: var(--color-positive-soft);
+  color: var(--color-positive);
+}
+
+.diff-line--remove {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.diff-line--add .diff-marker,
+.diff-line--remove .diff-marker {
+  color: inherit;
+}
+
+.diff-collapsed {
+  padding: var(--space-1) var(--space-3);
+  border-block: 1px solid var(--color-rule);
+  background: var(--color-surface-muted);
+  color: var(--color-ink-muted);
 }

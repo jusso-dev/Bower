@@ -60,10 +60,10 @@ a JSON object with a `bundle` object.
 
 | Control | Evidenced when |
 |---|---|
-| ISM-0580 security monitoring (event logging) policy | The canary is found in Sentinel. |
-| ISM-1988 searchable retention of at least 12 months | Table total retention is 365 days or more. |
-| Essential Eight ML2 centralised, protected event logs | The canary is found (a simulated-activity test, graded "excellent" evidence in ASD's assessment guide). |
-| Privacy Act APP 11 technical measures | The canary passed the pre-persistence privacy engine. |
+| ISM-0580 central logging observation | The specific canary is found in Sentinel; this does not assess the organisation's entire logging policy. |
+| ISM-1988 searchable retention of at least 12 months | `not-assessed` when total retention is sufficient: archive retention does not prove searchability or historic availability. Insufficient total retention is `not-evidenced`. |
+| Essential Eight ML2 centralised, protected event logs | `not-assessed`: arrival does not establish access controls, immutability or deletion protection. |
+| Privacy Act APP 11 technical measures | `not-assessed`: a policy hash and canary arrival do not establish effective redaction. Independent privacy testing is required. |
 
 Statuses are evidence statements for an assessor, not compliance determinations.
 Control identifiers follow the ISM release current in October 2026; confirm them

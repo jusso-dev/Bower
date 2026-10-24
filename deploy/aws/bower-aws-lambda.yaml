@@ -1,0 +1,418 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::LanguageExtensions
+Description: >-
+  Bower native AWS hosting: a Rust Lambda (arm64) taking the collector /v1/events
+  contract over an IAM Function URL or direct Invoke, applying default-deny policy and
+  redaction, and writing to one destination with its execution role only: a CloudWatch
+  Logs group (default) or a CloudTrail Lake channel (closed to new customers since
+  31 May 2026). No keys are stored. One stack serves one ingress (function-url or
+  invoke); deploy two stacks for both.
+  RESIDUAL RISK (function-url): Lambda resource policies only Allow, so any principal
+  that holds lambda:InvokeFunction on this function through an identity policy (same
+  account) can invoke it directly with a URL-shaped payload and assert any mapped
+  producer. Apply deploy/aws/policies/bower-lambda-deny-direct-invoke-scp.json as an
+  SCP or permissions-boundary Deny. Deploy with change sets; see
+  docs/deployment/aws-lambda.md.
+
+Parameters:
+  CodeS3Bucket:
+    Type: String
+    AllowedPattern: "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+    Description: Bucket holding the bower-lambda zip (bootstrap at the zip root). Same region as the stack.
+  CodeS3Key:
+    Type: String
+    MinLength: 1
+    Description: Object key of the zip, for example bower-lambda/0.1.0/bootstrap.zip.
+  CodeS3ObjectVersion:
+    Type: String
+    Default: ""
+    Description: Optional object version, to pin the exact package reviewed.
+  AllowedInvokerPrincipalArns:
+    Type: CommaDelimitedList
+    AllowedPattern: "^arn:aws[a-z-]*:iam::[0-9]{12}:(role|user)/[A-Za-z0-9+=,.@_/-]+$"
+    Description: >-
+      IAM role or user ARNs allowed to call the function: through the Function URL
+      (function-url; each needs lambda:InvokeFunctionUrl and lambda:InvokeFunction in its
+      identity policy when cross-account, and a principals file entry) or by direct
+      Invoke (invoke; all attributed to InvokeProducer).
+  Destination:
+    Type: String
+    AllowedValues: [cloudwatch-logs, cloudtrail-lake]
+    Description: >-
+      Required, no default, so updating an existing stack never switches destination
+      silently. cloudwatch-logs writes each redacted envelope as one log event to a log
+      group this stack creates. cloudtrail-lake writes CloudTrail Lake audit events; it
+      needs an account that onboarded CloudTrail Lake before 31 May 2026. Switching later
+      leaves the previous group or event data store in place (both are retained).
+  EventLogRetentionDays:
+    Type: Number
+    Default: 365
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653]
+    Description: Retention of the Bower event log group (cloudwatch-logs).
+  EventLogKmsKeyArn:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$"
+    Description: >-
+      Optional customer managed KMS key ARN for the Bower event log group
+      (cloudwatch-logs). The key policy must allow the CloudWatch Logs service principal
+      for this log group.
+  IngressMode:
+    Type: String
+    Default: function-url
+    AllowedValues: [function-url, invoke]
+    Description: >-
+      function-url (default) creates an AWS_IAM Function URL and grants InvokeFunction
+      only for calls through the URL (lambda:InvokedViaFunctionUrl). invoke creates no
+      URL, grants direct Invoke and attributes every payload to InvokeProducer (the
+      handler refuses URL-shaped payloads). There is no mixed mode: use two stacks.
+  InvokeProducer:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^[^\\s]{1,64}$"
+    Description: Producer id for direct Invoke payloads (Lambda passes no caller identity). Required with IngressMode=invoke, must be empty with function-url.
+  ExistingChannelArn:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^arn:aws[a-z-]*:cloudtrail:[a-z0-9-]+:[0-9]{12}:channel/[A-Za-z0-9-]+$"
+    Description: >-
+      Optional, cloudtrail-lake only. ChannelArn output of another Bower CloudTrail Lake stack in this account
+      (for example the function-url stack, when this is the separate invoke stack). The
+      stack then creates no event data store or channel and writes to that channel.
+  RetentionDays:
+    Type: Number
+    Default: 366
+    MinValue: 7
+    MaxValue: 3653
+    Description: Event data store retention in days (cloudtrail-lake; EXTENDABLE_RETENTION_PRICING allows 7-3653).
+  EventDataStoreKmsKeyId:
+    Type: String
+    Default: ""
+    Description: >-
+      Optional, cloudtrail-lake only. Customer managed KMS key (ARN, alias or id) for the event data store. The
+      key policy must allow CloudTrail; it cannot be changed or removed later.
+  ReservedConcurrency:
+    Type: Number
+    Default: 10
+    MinValue: 0
+    MaxValue: 1000
+    Description: >-
+      Reserved concurrent executions. Bounds cost and destination write rate; excess calls
+      get 429. 0 reserves nothing (the function shares the account pool): use it when the
+      account's Lambda limit is too low to reserve any (Lambda keeps 10 unreserved, so an
+      account with the default limit of 10 cannot reserve even 1).
+  MemorySize:
+    Type: Number
+    Default: 512
+    MinValue: 128
+    MaxValue: 10240
+    Description: Memory in MB (CPU scales with memory; redaction is CPU-bound).
+  TimeoutSeconds:
+    Type: Number
+    Default: 30
+    MinValue: 5
+    MaxValue: 900
+  LogRetentionDays:
+    Type: Number
+    Default: 30
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653]
+    Description: Function log retention. Logs carry counts and failure codes only, never payloads.
+  PolicyDirectory:
+    Type: String
+    Default: /var/task/policies/default
+    Description: Packaged policy directory (BOWER_POLICY_DIRECTORY).
+  PrincipalsFile:
+    Type: String
+    Default: /var/task/principals.json
+    Description: Packaged IAM principal to producer map (BOWER_LAMBDA_PRINCIPALS_FILE).
+  ProducerScopesFile:
+    Type: String
+    Default: /var/task/producer-scopes.json
+    Description: Packaged producer scopes file, collector format (BOWER_PRODUCER_SCOPES_FILE). Missing scope denies.
+  PrivacyProfilePath:
+    Type: String
+    Default: ""
+    Description: Optional packaged privacy profile (BOWER_PRIVACY_PROFILE). Empty uses the default profile.
+  PrivacyHmacKeySecretArn:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+$"
+    Description: Optional full Secrets Manager ARN of the privacy HMAC key (needed by profiles with hmac rules).
+  PrivacyHmacKeySecretKmsKeyArn:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$"
+    Description: Optional customer managed KMS key ARN that encrypts the HMAC key secret (kms:Decrypt via Secrets Manager only).
+  PrivacyHmacKeyId:
+    Type: String
+    Default: k1
+    AllowedPattern: "^[A-Za-z0-9._-]{1,64}$"
+  EnforceAustralianRegion:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Refuse to deploy outside ap-southeast-2 (Sydney) or ap-southeast-4 (Melbourne).
+
+Rules:
+  AustralianRegion:
+    RuleCondition: !Equals [!Ref EnforceAustralianRegion, "true"]
+    Assertions:
+      - Assert: !Contains [["ap-southeast-2", "ap-southeast-4"], !Ref "AWS::Region"]
+        AssertDescription: Deploy in ap-southeast-2 or ap-southeast-4, or set EnforceAustralianRegion=false.
+  InvokeProducerMatchesIngress:
+    Assertions:
+      - Assert: !Or
+          - !And
+            - !Equals [!Ref IngressMode, invoke]
+            - !Not [!Equals [!Ref InvokeProducer, ""]]
+          - !And
+            - !Equals [!Ref IngressMode, function-url]
+            - !Equals [!Ref InvokeProducer, ""]
+        AssertDescription: IngressMode=invoke requires InvokeProducer; IngressMode=function-url requires it to be empty.
+  CloudTrailLakeOnlySettings:
+    RuleCondition: !Equals [!Ref Destination, cloudwatch-logs]
+    Assertions:
+      - Assert: !And
+          - !Equals [!Ref ExistingChannelArn, ""]
+          - !Equals [!Ref EventDataStoreKmsKeyId, ""]
+        AssertDescription: ExistingChannelArn and EventDataStoreKmsKeyId are only used with Destination=cloudtrail-lake.
+  CloudWatchLogsOnlySettings:
+    RuleCondition: !Equals [!Ref Destination, cloudtrail-lake]
+    Assertions:
+      - Assert: !Equals [!Ref EventLogKmsKeyArn, ""]
+        AssertDescription: EventLogKmsKeyArn is only used with Destination=cloudwatch-logs.
+  HmacKeyKms:
+    RuleCondition: !Not [!Equals [!Ref PrivacyHmacKeySecretKmsKeyArn, ""]]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref PrivacyHmacKeySecretArn, ""]]
+        AssertDescription: PrivacyHmacKeySecretKmsKeyArn requires PrivacyHmacKeySecretArn.
+
+Conditions:
+  LakeDestination: !Equals [!Ref Destination, cloudtrail-lake]
+  LogsDestination: !Equals [!Ref Destination, cloudwatch-logs]
+  CreateLake: !And
+    - !Condition LakeDestination
+    - !Equals [!Ref ExistingChannelArn, ""]
+  HasExistingChannel: !Not [!Equals [!Ref ExistingChannelArn, ""]]
+  HasEventLogKms: !Not [!Equals [!Ref EventLogKmsKeyArn, ""]]
+  UrlIngress: !Equals [!Ref IngressMode, function-url]
+  DirectIngress: !Equals [!Ref IngressMode, invoke]
+  HasReservedConcurrency: !Not [!Equals [!Ref ReservedConcurrency, "0"]]
+  HasCodeVersion: !Not [!Equals [!Ref CodeS3ObjectVersion, ""]]
+  HasEventDataStoreKms: !Not [!Equals [!Ref EventDataStoreKmsKeyId, ""]]
+  HasHmacSecret: !Not [!Equals [!Ref PrivacyHmacKeySecretArn, ""]]
+  HasHmacSecretKms: !Not [!Equals [!Ref PrivacyHmacKeySecretKmsKeyArn, ""]]
+
+Resources:
+  # Security evidence outlives the stack: retained on delete and protected from termination.
+  EventDataStore:
+    Type: AWS::CloudTrail::EventDataStore
+    Condition: CreateLake
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Sub "${AWS::StackName}-events"
+      AdvancedEventSelectors:
+        - Name: Bower custom integration events
+          FieldSelectors:
+            - Field: eventCategory
+              Equals: [ActivityAuditLog]
+      BillingMode: EXTENDABLE_RETENTION_PRICING
+      RetentionPeriod: !Ref RetentionDays
+      MultiRegionEnabled: false
+      OrganizationEnabled: false
+      IngestionEnabled: true
+      TerminationProtectionEnabled: true
+      KmsKeyId: !If [HasEventDataStoreKms, !Ref EventDataStoreKmsKeyId, !Ref "AWS::NoValue"]
+
+  Channel:
+    Type: AWS::CloudTrail::Channel
+    Condition: CreateLake
+    Properties:
+      Name: !Sub "${AWS::StackName}-bower"
+      Source: Custom
+      Destinations:
+        - Type: EVENT_DATA_STORE
+          Location: !GetAtt EventDataStore.EventDataStoreArn
+
+  # Bower events (cloudwatch-logs): kept on delete, like the event data store. The name
+  # is generated (see the EventLogGroupName output): a fixed name would collide with the
+  # retained group when the stack is recreated or switches destination and back. One
+  # stream per execution environment, created by the function at init.
+  EventLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: LogsDestination
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RetentionInDays: !Ref EventLogRetentionDays
+      KmsKeyId: !If [HasEventLogKms, !Ref EventLogKmsKeyArn, !Ref "AWS::NoValue"]
+
+  # The function's own operational logs (counts and failure codes, never payloads).
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/bower/lambda/${AWS::StackName}"
+      RetentionInDays: !Ref LogRetentionDays
+
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: bower-lambda
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - !If
+                - LakeDestination
+                - Sid: PutAuditEventsOnBowerChannel
+                  Effect: Allow
+                  Action: cloudtrail-data:PutAuditEvents
+                  Resource: !If [HasExistingChannel, !Ref ExistingChannelArn, !GetAtt Channel.ChannelArn]
+                - !Ref "AWS::NoValue"
+              - !If
+                - LogsDestination
+                - Sid: WriteBowerEventLogGroup
+                  Effect: Allow
+                  Action:
+                    - logs:CreateLogStream
+                    - logs:PutLogEvents
+                  Resource: !GetAtt EventLogGroup.Arn
+                - !Ref "AWS::NoValue"
+              - Sid: WriteOwnLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt LogGroup.Arn
+              - !If
+                - HasHmacSecret
+                - Sid: ReadPrivacyHmacKey
+                  Effect: Allow
+                  Action: secretsmanager:GetSecretValue
+                  Resource: !Ref PrivacyHmacKeySecretArn
+                - !Ref "AWS::NoValue"
+              - !If
+                - HasHmacSecretKms
+                - Sid: DecryptPrivacyHmacKeyViaSecretsManager
+                  Effect: Allow
+                  Action: kms:Decrypt
+                  Resource: !Ref PrivacyHmacKeySecretKmsKeyArn
+                  Condition:
+                    StringEquals:
+                      kms:ViaService: !Sub "secretsmanager.${AWS::Region}.amazonaws.com"
+                - !Ref "AWS::NoValue"
+
+  Function:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: !Sub "Bower ingest to ${Destination} (redact, select, deliver)."
+      Runtime: provided.al2023
+      Architectures: [arm64]
+      Handler: bootstrap
+      Code:
+        S3Bucket: !Ref CodeS3Bucket
+        S3Key: !Ref CodeS3Key
+        S3ObjectVersion: !If [HasCodeVersion, !Ref CodeS3ObjectVersion, !Ref "AWS::NoValue"]
+      Role: !GetAtt ExecutionRole.Arn
+      MemorySize: !Ref MemorySize
+      Timeout: !Ref TimeoutSeconds
+      ReservedConcurrentExecutions: !If [HasReservedConcurrency, !Ref ReservedConcurrency, !Ref "AWS::NoValue"]
+      RecursiveLoop: Terminate
+      LoggingConfig:
+        LogGroup: !Ref LogGroup
+        LogFormat: Text
+      Environment:
+        Variables:
+          BOWER_LAMBDA_DESTINATION: !Ref Destination
+          BOWER_CLOUDWATCH_LOG_GROUP: !If [LogsDestination, !Ref EventLogGroup, ""]
+          BOWER_CLOUDTRAIL_CHANNEL_ARN: !If
+            - LakeDestination
+            - !If [HasExistingChannel, !Ref ExistingChannelArn, !GetAtt Channel.ChannelArn]
+            - ""
+          BOWER_LAMBDA_INGRESS: !Ref IngressMode
+          BOWER_LAMBDA_INVOKE_PRODUCER: !If [DirectIngress, !Ref InvokeProducer, ""]
+          BOWER_LAMBDA_PRINCIPALS_FILE: !If [UrlIngress, !Ref PrincipalsFile, ""]
+          BOWER_PRODUCER_SCOPES_FILE: !Ref ProducerScopesFile
+          BOWER_POLICY_DIRECTORY: !Ref PolicyDirectory
+          BOWER_PRIVACY_PROFILE: !Ref PrivacyProfilePath
+          BOWER_PRIVACY_HMAC_KEY_SECRET_ARN: !Ref PrivacyHmacKeySecretArn
+          BOWER_PRIVACY_HMAC_KEY_ID: !Ref PrivacyHmacKeyId
+          RUST_LOG: info
+
+  FunctionUrl:
+    Type: AWS::Lambda::Url
+    Condition: UrlIngress
+    Properties:
+      TargetFunctionArn: !GetAtt Function.Arn
+      AuthType: AWS_IAM
+      InvokeMode: BUFFERED
+
+  # One set of grants per allowed principal (AWS::LanguageExtensions Fn::ForEach).
+  # Function URLs need both lambda:InvokeFunctionUrl and lambda:InvokeFunction; for a
+  # URL stack the latter is limited to calls made through the URL. Resource policies
+  # cannot Deny, so same-account identity grants need the shipped SCP/boundary Deny.
+  Fn::ForEach::InvokerGrants:
+    - PrincipalArn
+    - !Ref AllowedInvokerPrincipalArns
+    - UrlInvokeUrl&{PrincipalArn}:
+        Type: AWS::Lambda::Permission
+        Condition: UrlIngress
+        DependsOn: FunctionUrl
+        Properties:
+          FunctionName: !GetAtt Function.Arn
+          Action: lambda:InvokeFunctionUrl
+          Principal: !Ref PrincipalArn
+          FunctionUrlAuthType: AWS_IAM
+      UrlInvoke&{PrincipalArn}:
+        Type: AWS::Lambda::Permission
+        Condition: UrlIngress
+        Properties:
+          FunctionName: !GetAtt Function.Arn
+          Action: lambda:InvokeFunction
+          Principal: !Ref PrincipalArn
+          InvokedViaFunctionUrl: true
+      DirectInvoke&{PrincipalArn}:
+        Type: AWS::Lambda::Permission
+        Condition: DirectIngress
+        Properties:
+          FunctionName: !GetAtt Function.Arn
+          Action: lambda:InvokeFunction
+          Principal: !Ref PrincipalArn
+
+Outputs:
+  FunctionArn:
+    Value: !GetAtt Function.Arn
+  FunctionName:
+    Description: Replace BOWER_URL_FUNCTION_NAME in deploy/aws/policies/bower-lambda-deny-direct-invoke-scp.json with this (function-url stacks).
+    Value: !Ref Function
+  FunctionUrl:
+    Condition: UrlIngress
+    Description: POST signed (SigV4, service lambda) requests to <url>v1/events.
+    Value: !GetAtt FunctionUrl.FunctionUrl
+  EventLogGroupName:
+    Condition: LogsDestination
+    Description: >-
+      Bower events, one redacted envelope per log event. Query with CloudWatch Logs
+      Insights, or pass as the log group of deploy/aws/bower-aws-security.yaml to carry
+      them to Sentinel.
+    Value: !Ref EventLogGroup
+  ChannelArn:
+    Condition: LakeDestination
+    Description: Pass as ExistingChannelArn to a second (invoke) stack in this account.
+    Value: !If [HasExistingChannel, !Ref ExistingChannelArn, !GetAtt Channel.ChannelArn]
+  EventDataStoreArn:
+    Condition: CreateLake
+    Description: Query with CloudTrail Lake SQL (FROM <event data store id>).
+    Value: !GetAtt EventDataStore.EventDataStoreArn
+  ExecutionRoleArn:
+    Value: !GetAtt ExecutionRole.Arn
+  LogGroupName:
+    Value: !Ref LogGroup

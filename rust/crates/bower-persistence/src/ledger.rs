@@ -28,6 +28,15 @@ pub(crate) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS queue_ledger (
 
 CREATE INDEX IF NOT EXISTS ix_queue_ledger_event ON queue_ledger(event_id);
 
+CREATE TABLE IF NOT EXISTS queue_ledger_segments (
+    start_sequence INTEGER PRIMARY KEY NOT NULL,
+    end_sequence INTEGER NOT NULL,
+    previous_hash TEXT NOT NULL,
+    chain_hash TEXT NOT NULL,
+    checkpoint_hash TEXT NOT NULL,
+    CHECK(end_sequence >= start_sequence)
+);
+
 CREATE TABLE IF NOT EXISTS queue_ledger_anchor (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     sequence INTEGER NOT NULL,
@@ -74,7 +83,10 @@ pub fn genesis_hash() -> String {
 pub(crate) fn head(connection: &Connection) -> StoreResult<(i64, String)> {
     let latest = connection
         .query_row(
-            "SELECT sequence, chain_hash FROM queue_ledger ORDER BY sequence DESC LIMIT 1;",
+            "SELECT sequence, chain_hash FROM (
+SELECT sequence, chain_hash FROM queue_ledger
+UNION ALL SELECT end_sequence, chain_hash FROM queue_ledger_segments
+) ORDER BY sequence DESC LIMIT 1;",
             [],
             |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
         )
@@ -120,10 +132,7 @@ VALUES (?1, ?2, ?3, ?4, ?5);",
 }
 
 /// Adds ledger entries for events stored before the ledger existed.
-pub(crate) fn backfill(connection: &mut Connection) -> StoreResult<()> {
-    let transaction = connection
-        .transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(storage)?;
+pub(crate) fn backfill(transaction: &Connection) -> StoreResult<()> {
     let missing = {
         let mut select = transaction
             .prepare(
@@ -145,9 +154,9 @@ ORDER BY e.received_at ASC, e.event_id ASC;",
         rows.collect::<Result<Vec<_>, _>>().map_err(storage)?
     };
     for (event_id, payload, received_at) in &missing {
-        append(&transaction, event_id, payload, received_at)?;
+        append(transaction, event_id, payload, received_at)?;
     }
-    transaction.commit().map_err(storage)
+    Ok(())
 }
 
 /// Must run inside the purge transaction so retention is distinguishable from tampering.
@@ -169,40 +178,87 @@ pub(crate) fn mark_purged(
     Ok(())
 }
 
-/// Folds the longest fully purged prefix into the anchor and deletes it.
-pub(crate) fn compact(connection: &mut Connection, now: &str) -> StoreResult<usize> {
-    let transaction = connection
-        .transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(storage)?;
-    let boundary = transaction
-        .query_row(
-            "SELECT sequence, chain_hash FROM queue_ledger
-WHERE sequence < COALESCE((SELECT MIN(sequence) FROM queue_ledger WHERE purged_at IS NULL), 9223372036854775807)
-ORDER BY sequence DESC LIMIT 1;",
-            [],
-            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
-        )
-        .optional()
-        .map_err(storage)?;
-    let Some((sequence, hash)) = boundary else {
-        // Read-only: nothing to fold. Dropping the transaction rolls back.
-        return Ok(0);
-    };
-    transaction
-        .execute(
-            "INSERT INTO queue_ledger_anchor (id, sequence, chain_hash, created_at)
-VALUES (1, ?1, ?2, ?3)
-ON CONFLICT(id) DO UPDATE SET sequence = excluded.sequence, chain_hash = excluded.chain_hash, created_at = excluded.created_at;",
-            params![sequence, hash, now],
-        )
-        .map_err(storage)?;
-    let removed = transaction
-        .execute(
-            "DELETE FROM queue_ledger WHERE sequence <= ?1;",
-            params![sequence],
-        )
-        .map_err(storage)?;
-    transaction.commit().map_err(storage)?;
+fn checkpoint_hash(start: i64, end: i64, previous: &str, hash: &str) -> String {
+    sha256_hex(&format!(
+        "bower-ledger-segment-v1\u{1f}{start}\u{1f}{end}\u{1f}{previous}\u{1f}{hash}"
+    ))
+}
+
+/// Compact purged runs even behind unresolved events, preserving the chain head.
+pub(crate) fn compact(transaction: &Connection, _now: &str) -> StoreResult<usize> {
+    let (anchor, mut previous) = anchor(transaction)?;
+    let mut expected = anchor + 1;
+    let mut runs: Vec<(i64, i64, String, String)> = Vec::new();
+    let mut run: Option<(i64, i64, String, String)> = None;
+    {
+        let mut select = transaction.prepare("SELECT sequence, sequence, chain_hash, purged_at IS NOT NULL, event_id, payload_sha256, received_at, NULL, NULL FROM queue_ledger
+UNION ALL SELECT start_sequence, end_sequence, chain_hash, 1, '', '', '', previous_hash, checkpoint_hash FROM queue_ledger_segments ORDER BY 1;").map_err(storage)?;
+        let rows = select
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, bool>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, Option<String>>(7)?,
+                    row.get::<_, Option<String>>(8)?,
+                ))
+            })
+            .map_err(storage)?;
+        for row in rows {
+            let (start, end, hash, purged, id, payload, received, before, checkpoint) =
+                row.map_err(storage)?;
+            let valid = if let Some(before) = before {
+                before == previous
+                    && checkpoint == Some(checkpoint_hash(start, end, &previous, &hash))
+            } else {
+                hash == chain_hash(&previous, start, &id, &payload, &received)
+            };
+            if start != expected || !valid {
+                return Err(bower_contracts::StoreError::Invalid(
+                    "Cannot compact a corrupt queue ledger.".into(),
+                ));
+            }
+            expected = end + 1;
+            if run.as_ref().is_some_and(|r| !purged || start != r.1 + 1) {
+                runs.push(run.take().expect("run exists"));
+            }
+            if purged {
+                let r = run.get_or_insert_with(|| (start, end, previous.clone(), hash.clone()));
+                r.1 = end;
+                r.3.clone_from(&hash);
+            }
+            previous = hash;
+        }
+    }
+    if let Some(run) = run {
+        runs.push(run);
+    }
+    let mut removed = 0;
+    for (start, end, previous, hash) in runs {
+        transaction
+            .execute(
+                "DELETE FROM queue_ledger_segments WHERE start_sequence BETWEEN ?1 AND ?2;",
+                params![start, end],
+            )
+            .map_err(storage)?;
+        transaction
+            .execute(
+                "INSERT INTO queue_ledger_segments VALUES (?1, ?2, ?3, ?4, ?5);",
+                params![
+                    start,
+                    end,
+                    previous,
+                    hash,
+                    checkpoint_hash(start, end, &previous, &hash)
+                ],
+            )
+            .map_err(storage)?;
+        removed += transaction.execute("DELETE FROM queue_ledger WHERE sequence BETWEEN ?1 AND ?2 AND purged_at IS NOT NULL;", params![start, end]).map_err(storage)?;
+    }
     Ok(removed)
 }
 
@@ -222,6 +278,9 @@ struct LedgerRow {
     received_at: String,
     chain_hash: String,
     purged: bool,
+    end: i64,
+    previous: Option<String>,
+    checkpoint: Option<String>,
 }
 
 /// Recomputes the chain and cross-checks stored events. Reads run in one
@@ -231,20 +290,30 @@ pub(crate) fn verify(connection: &mut Connection) -> StoreResult<LedgerVerificat
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Deferred)
         .map_err(storage)?;
+    verify_snapshot(&transaction)
+}
+
+pub(crate) fn verify_snapshot(transaction: &Connection) -> StoreResult<LedgerVerification> {
     let mut issues = Vec::new();
-    let (anchor_sequence, mut previous) = anchor(&transaction)?;
+    let (anchor_sequence, mut previous) = anchor(transaction)?;
     let mut expected = anchor_sequence + 1;
     let mut entries = 0_i64;
     let mut head_sequence = anchor_sequence;
     let mut head_hash = previous.clone();
 
-    let payloads: IndexMap<String, String> = {
+    let payloads: IndexMap<i64, (String, String)> = {
         let mut select = transaction
-            .prepare("SELECT event_id, payload FROM queue_events;")
+            .prepare("SELECT enqueue_sequence, event_id, payload FROM queue_events_v5;")
             .map_err(storage)?;
         let rows = select
             .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    (
+                        row.get::<_, String>(1)?,
+                        payload_hash(&row.get::<_, String>(2)?),
+                    ),
+                ))
             })
             .map_err(storage)?;
         rows.collect::<Result<_, _>>().map_err(storage)?
@@ -253,7 +322,8 @@ pub(crate) fn verify(connection: &mut Connection) -> StoreResult<LedgerVerificat
     let rows: Vec<LedgerRow> = {
         let mut select = transaction
             .prepare(
-                "SELECT sequence, event_id, payload_sha256, received_at, chain_hash, purged_at FROM queue_ledger ORDER BY sequence;",
+                "SELECT sequence, event_id, payload_sha256, received_at, chain_hash, purged_at, sequence, NULL, NULL FROM queue_ledger
+UNION ALL SELECT start_sequence, '', '', '', chain_hash, 'segment', end_sequence, previous_hash, checkpoint_hash FROM queue_ledger_segments ORDER BY 1;",
             )
             .map_err(storage)?;
         let mapped = select
@@ -265,17 +335,43 @@ pub(crate) fn verify(connection: &mut Connection) -> StoreResult<LedgerVerificat
                     received_at: row.get(3)?,
                     chain_hash: row.get(4)?,
                     purged: row.get_ref(5)?.data_type() != rusqlite::types::Type::Null,
+                    end: row.get(6)?,
+                    previous: row.get(7)?,
+                    checkpoint: row.get(8)?,
                 })
             })
             .map_err(storage)?;
         mapped.collect::<Result<_, _>>().map_err(storage)?
     };
-    drop(transaction);
 
     let mut ledgered = HashSet::new();
     for row in rows {
+        if let Some(before) = row.previous.as_ref() {
+            if row.sequence != expected
+                || before != &previous
+                || row.checkpoint.as_deref()
+                    != Some(&checkpoint_hash(
+                        row.sequence,
+                        row.end,
+                        before,
+                        &row.chain_hash,
+                    ))
+            {
+                issues.push(issue(
+                    row.sequence,
+                    "",
+                    "checkpoint-broken",
+                    "Retention checkpoint does not match its boundary.",
+                ));
+            }
+            previous.clone_from(&row.chain_hash);
+            head_sequence = row.end;
+            head_hash = row.chain_hash;
+            expected = row.end + 1;
+            continue;
+        }
+        ledgered.insert(row.sequence);
         entries += 1;
-        ledgered.insert(row.event_id.clone());
         let sequence = row.sequence;
         let event_id = row.event_id.as_str();
 
@@ -305,14 +401,14 @@ pub(crate) fn verify(connection: &mut Connection) -> StoreResult<LedgerVerificat
         }
 
         if !row.purged {
-            match payloads.get(event_id) {
+            match payloads.get(&sequence) {
                 None => issues.push(issue(
                     sequence,
                     event_id,
                     "event-missing",
                     "Event was removed without a purge record.",
                 )),
-                Some(payload) if payload_hash(payload) != row.payload_sha256 => {
+                Some((id, hash)) if hash != &row.payload_sha256 || id != event_id => {
                     issues.push(issue(
                         sequence,
                         event_id,
@@ -322,7 +418,7 @@ pub(crate) fn verify(connection: &mut Connection) -> StoreResult<LedgerVerificat
                 }
                 Some(_) => {}
             }
-        } else if payloads.contains_key(event_id) {
+        } else if payloads.contains_key(&sequence) {
             issues.push(issue(
                 sequence,
                 event_id,
@@ -337,9 +433,9 @@ pub(crate) fn verify(connection: &mut Connection) -> StoreResult<LedgerVerificat
         expected = sequence + 1;
     }
 
-    for event_id in payloads.keys().filter(|id| !ledgered.contains(*id)) {
+    for (incarnation, (event_id, _)) in payloads.iter().filter(|(id, _)| !ledgered.contains(*id)) {
         issues.push(issue(
-            0,
+            *incarnation,
             event_id,
             "unledgered-event",
             "Event is stored without a ledger entry.",

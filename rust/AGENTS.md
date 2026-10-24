@@ -6,8 +6,9 @@ Root `AGENTS.md` invariants apply unchanged.
 ## Scope
 
 `bower-collector` and `bower` CLI plus their libraries: contracts, integrity,
-packs, policy, redaction, persistence, core, outputs. Agents, Management API and
-the console stay C# only.
+packs, policy, redaction, persistence, core, outputs. `bower-lambda` is a Rust-only
+AWS Lambda host that reuses the collector pipeline (see its `AGENTS.md`). Agents,
+Management API and the console stay C# only.
 
 ## Parity rules
 

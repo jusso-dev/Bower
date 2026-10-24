@@ -4,18 +4,64 @@ kind: TelemetryPolicy
 metadata:
   id: BWR-POL-GCP-AUDIT
   name: High-value Google Cloud Audit Logs
-  version: 1.0.0
+  version: 1.1.0
   owner: Security Operations
   reviewDate: 2027-06-30
 
-# The log sink filter in deploy/gcp selects which audit entries reach Bower; this
-# policy decides which of those are kept and what they must carry.
 match:
   eventCategories:
     - administrative-activity
     - authentication
   eventTypes:
     - gcp_cloud_audit
+
+  eventActions:
+    - CreateExclusion
+    - CreateRole
+    - CreateServiceAccount
+    - CreateServiceAccountKey
+    - CreateSink
+    - CreateWorkloadIdentityPoolProvider
+    - DeleteBucket
+    - DeleteNotificationConfig
+    - DeleteSink
+    - DestroyCryptoKeyVersion
+    - DisableServiceAccountKey
+    - SetIamPolicy
+    - SetOrgPolicy
+    - UpdateBucket
+    - UpdateCryptoKeyPrimaryVersion
+    - UpdateExclusion
+    - UpdateNotificationConfig
+    - UpdateRole
+    - UpdateSink
+    - UpdateWorkloadIdentityPoolProvider
+    - UploadServiceAccountKey
+    - compute.firewalls.insert
+    - compute.firewalls.patch
+    - google.api.apikeys.v2.ApiKeys.CreateKey
+    - google.api.apikeys.v2.ApiKeys.DeleteKey
+    - google.api.apikeys.v2.ApiKeys.UpdateKey
+    - google.cloud.kms.v1.KeyManagementService.DestroyCryptoKeyVersion
+    - google.cloud.kms.v1.KeyManagementService.SetIamPolicy
+    - google.cloud.kms.v1.KeyManagementService.UpdateCryptoKeyPrimaryVersion
+    - google.cloud.resourcemanager.v1.Projects.SetIamPolicy
+    - google.cloud.resourcemanager.v1.Projects.SetOrgPolicy
+    - google.cloud.resourcemanager.v3.Projects.SetIamPolicy
+    - google.iam.admin.v1.CreateRole
+    - google.iam.admin.v1.CreateServiceAccount
+    - google.iam.admin.v1.CreateServiceAccountKey
+    - google.iam.admin.v1.DisableServiceAccountKey
+    - google.iam.admin.v1.UpdateRole
+    - google.iam.admin.v1.UploadServiceAccountKey
+    - google.iam.v1.IAMPolicy.SetIamPolicy
+    - google.logging.v2.ConfigServiceV2.CreateExclusion
+    - google.logging.v2.ConfigServiceV2.CreateSink
+    - google.logging.v2.ConfigServiceV2.DeleteBucket
+    - google.logging.v2.ConfigServiceV2.DeleteSink
+    - google.logging.v2.ConfigServiceV2.UpdateBucket
+    - google.logging.v2.ConfigServiceV2.UpdateExclusion
+    - google.logging.v2.ConfigServiceV2.UpdateSink
 
 requirements:
   requiredFields:

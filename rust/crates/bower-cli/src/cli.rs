@@ -56,6 +56,67 @@ pub enum Command {
     /// Developer project scaffolding.
     #[command(subcommand)]
     Developer(DeveloperCommand),
+    /// Validate privacy profiles (custom detectors, secret field names) and preview redaction.
+    #[command(subcommand)]
+    Privacy(PrivacyCommand),
+    /// Test sample events against policies offline (redaction, validation, selection).
+    #[command(subcommand)]
+    Policy(PolicyCommand),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PolicyCommand {
+    /// Run sample events through the collector's intake offline and print each decision
+    /// (metadata only; exit 3 when --expect does not match).
+    Test(PolicyTestArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct PolicyTestArgs {
+    /// Event JSON files (each evaluated as its own /v1/events request).
+    #[arg(value_name = "EVENT.json")]
+    pub files: Vec<String>,
+    /// Policy directory [default: ./policies/default].
+    #[arg(long = "policy-directory", value_name = "DIR")]
+    pub policy_directory: Option<String>,
+    /// Signed content pack (repeatable).
+    #[arg(long = "pack", value_name = "FILE")]
+    pub packs: Vec<String>,
+    /// Public key trusted to sign packs (repeatable).
+    #[arg(long = "trusted-key", value_name = "PUB")]
+    pub trusted_keys: Vec<String>,
+    /// Privacy profile YAML.
+    #[arg(long = "privacy-profile", value_name = "FILE")]
+    pub privacy_profile: Option<String>,
+    /// Privacy HMAC key file.
+    #[arg(long = "hmac-key-file", value_name = "FILE")]
+    pub hmac_key_file: Option<String>,
+    /// Privacy HMAC key id [default: k1].
+    #[arg(long = "hmac-key-id", value_name = "ID")]
+    pub hmac_key_id: Option<String>,
+    /// Expected decision for every event (accept, redact-and-accept, reject, quarantine, ...).
+    #[arg(long = "expect", value_name = "DECISION")]
+    pub expect: Option<String>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PrivacyCommand {
+    /// Load a privacy profile strictly, run its custom detector tests and print metadata
+    /// (exit 2 when the sample cannot be redacted).
+    Validate(PrivacyValidateArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct PrivacyValidateArgs {
+    /// Privacy profile YAML file.
+    #[arg(value_name = "FILE")]
+    pub file: Option<String>,
+    /// HMAC key file (base64 or at least 32 raw bytes) [default: a random key].
+    #[arg(long = "hmac-key-file", value_name = "FILE")]
+    pub hmac_key_file: Option<String>,
+    /// JSON event to redact with the profile; prints the redacted result.
+    #[arg(long = "sample", value_name = "FILE")]
+    pub sample: Option<String>,
 }
 
 #[derive(Debug, Args)]

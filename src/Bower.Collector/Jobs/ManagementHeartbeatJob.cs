@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using Azure.Core;
 using Bower.Abstractions;
 using Bower.Jobs;
+using Bower.Packs;
 
 namespace Bower.Collector.Jobs;
 
@@ -45,7 +46,8 @@ public sealed partial class ManagementHeartbeatJob(
         HttpClient client = httpClientFactory.CreateClient(HttpClientName);
 
         QueueSnapshot snapshot = await eventStore.GetSnapshotAsync(cancellationToken);
-        string deliveryStatus = snapshot.DeadLettered > 0 ? "degraded" : "healthy";
+        string deliveryStatus = DeliveryHealth.Evaluate(settings.OutputType, snapshot,
+            settings.MaximumQueueBytes, DateTimeOffset.UtcNow);
         SourceReport[] sources = [new SourceReport("local-http", "local-http", "healthy", null, null)];
         OutputReport[] outputs =
         [
@@ -91,7 +93,8 @@ public sealed partial class ManagementHeartbeatJob(
                     outputs,
                     jobReports,
                     snapshot.DeadLettered,
-                    new LedgerResponse(ledger.Sequence, ledger.Hash)),
+                    new LedgerResponse(ledger.Sequence, ledger.Hash),
+                    bundle.PrivacyProfileHash ?? "default"),
                 CollectorJsonContext.Default.CollectorHeartbeat));
         using HttpResponseMessage response = await client.SendAsync(heartbeat, cancellationToken);
         if (response.StatusCode == HttpStatusCode.Conflict)

@@ -1,11 +1,12 @@
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Azure;
 using Azure.Core;
-using Azure.Core.Serialization;
+using Azure.Core.Pipeline;
 using Azure.Monitor.Ingestion;
 using Bower.Abstractions;
 using Bower.Dcr;
@@ -24,12 +25,11 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
     {
         options.Validate();
         this.options = options;
-        client = clientOptions is null
-            ? new LogsIngestionClient(options.Endpoint, credential)
-            : new LogsIngestionClient(options.Endpoint, credential, clientOptions);
+        clientOptions ??= new LogsIngestionClientOptions();
+        // Long server delays belong in the durable queue, never an in-memory SDK sleep.
+        clientOptions.RetryPolicy = new DurableRetryPolicy(clientOptions.Retry);
+        client = new LogsIngestionClient(options.Endpoint, credential, clientOptions);
     }
-
-    private static readonly JsonRecordSerializer RecordSerializer = new();
 
     public string Id => options.Id;
 
@@ -42,9 +42,6 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
             return new DeliveryResult([], [], null);
         }
 
-        // The SDK reports failed logs by the objects it was given, so failures map back to
-        // events by the eventId each record carries. The queue guarantees ids are unique.
-        HashSet<string> batchEventIds = new(StringComparer.Ordinal);
         List<PreparedRecord> records = new(events.Count);
         List<DeliveryFailure> failures = [];
         RecordEncoder encoder = new();
@@ -67,10 +64,13 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
                 // with the reason instead.
                 failures.Add(new DeliveryFailure(item.EventId, $"preflight-{issues[0].Code}", false, null));
             }
+            else if (entry.Length + 2 > MaximumBatchBytes)
+            {
+                failures.Add(new DeliveryFailure(item.EventId, "payload-too-large", false, null));
+            }
             else
             {
                 records.Add(new PreparedRecord(item.EventId, entry));
-                batchEventIds.Add(item.EventId);
             }
         }
 
@@ -79,95 +79,141 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
             return new DeliveryResult([], failures, null);
         }
 
-        ConcurrentDictionary<string, DeliveryFailure> uploadFailures = new(StringComparer.Ordinal);
-        int unattributed = 0;
-        LogsUploadOptions uploadOptions = new()
+        // Own every request and its IDs. Never use SDK UploadFailed attribution: the
+        // enumerable upload overload may attach another concurrent batch's records.
+        List<List<PreparedRecord>> batches = [];
+        List<PreparedRecord> current = [];
+        int bytes = 2;
+        foreach (PreparedRecord record in records)
         {
-            MaxConcurrency = options.MaximumConcurrency,
-            // Copies the prepared bytes, so the SDK never falls back to reflection.
-            Serializer = RecordSerializer
-        };
-        uploadOptions.UploadFailed += args =>
-        {
-            int status = args.Exception is RequestFailedException requestFailure
-                ? requestFailure.Status
-                : 0;
-            foreach (object failedLog in args.FailedLogs)
+            if (current.Count > 0 && bytes + record.Utf8Json.Length + 1 > MaximumBatchBytes)
             {
-                string? eventId = failedLog switch
-                {
-                    PreparedRecord record => record.EventId,
-                    BinaryData data => RecordEncoder.TryReadEventId(data.ToMemory().Span),
-                    _ => null
-                };
-                if (eventId is not null && batchEventIds.Contains(eventId))
-                {
-                    uploadFailures[eventId] = new DeliveryFailure(
-                        eventId,
-                        status == 0 ? "azure-upload-failed" : $"azure-http-{status}",
-                        status is 0 or 408 or 429 or >= 500,
-                        null);
-                }
-                else
-                {
-                    Interlocked.Increment(ref unattributed);
-                }
+                batches.Add(current);
+                current = [];
+                bytes = 2;
             }
 
-            return Task.CompletedTask;
-        };
-
-        Response response = await UploadAsync(records, uploadOptions, cancellationToken);
-
-        if (Volatile.Read(ref unattributed) > 0)
-        {
-            // A failure that cannot be tied to an event must never be counted as delivered.
-            failures.AddRange(batchEventIds
-                .Select(eventId => new DeliveryFailure(eventId, "azure-upload-unattributed", true, null)));
-            return new DeliveryResult([], failures, null);
+            bytes += record.Utf8Json.Length + (current.Count == 0 ? 0 : 1);
+            current.Add(record);
         }
 
-        failures.AddRange(uploadFailures.Values);
-        string[] acknowledged = batchEventIds
-            .Where(eventId => !uploadFailures.ContainsKey(eventId))
-            .ToArray();
+        if (current.Count > 0) batches.Add(current);
+        ConcurrentBag<string> acknowledged = [];
+        ConcurrentBag<DeliveryFailure> uploadFailures = [];
+        ConcurrentBag<string> isolatedBadRequests = [];
+        int isolationBudget = 16;
+        await Parallel.ForEachAsync(batches, new ParallelOptions
+        {
+            MaxDegreeOfParallelism = options.MaximumConcurrency,
+            CancellationToken = cancellationToken
+        }, async (batch, token) => await UploadBatchAsync(batch, token));
+        HashSet<string> accepted = new(acknowledged, StringComparer.Ordinal);
+        HashSet<string> isolated = new(isolatedBadRequests, StringComparer.Ordinal);
+        failures.AddRange(uploadFailures.Select(failure => accepted.Count > 0 && isolated.Contains(failure.EventId)
+            ? failure with { Code = "azure-http-400-isolated", IsRetryable = false, RetryAfter = null }
+            : failure));
+        return new DeliveryResult(
+            records.Where(record => accepted.Contains(record.EventId)).Select(record => record.EventId).ToArray(),
+            failures,
+            accepted.Count == 0 ? null : "azure-logs-ingestion:accepted:owned-batches");
 
-        // Ingestion API acceptance only. Sentinel queryability is proven separately.
-        string acknowledgement =
-            $"azure-logs-ingestion:accepted:{response.Headers.RequestId ?? $"http-{response.Status}"}";
-        return new DeliveryResult(acknowledged, failures, acknowledgement);
+        async Task UploadBatchAsync(List<PreparedRecord> batch, CancellationToken token)
+        {
+            using MemoryStream body = new();
+            body.WriteByte((byte)'[');
+            for (int index = 0; index < batch.Count; index++)
+            {
+                if (index > 0) body.WriteByte((byte)',');
+                body.Write(batch[index].Utf8Json.Span);
+            }
+            body.WriteByte((byte)']');
+            using RequestContent content = RequestContent.Create(body.ToArray());
+            int status;
+            DateTimeOffset? retryAfter = null;
+            bool retryCapped = false;
+            try
+            {
+                // Protocol overload sends exactly one owned request (AOT safe). NoThrow
+                // preserves terminal response headers without exposing service bodies.
+                using Response response = await client.UploadAsync(options.DcrImmutableId,
+                    options.StreamName, content, context: new RequestContext
+                    {
+                        CancellationToken = token,
+                        ErrorOptions = ErrorOptions.NoThrow
+                    });
+                status = response.Status;
+                DateTimeOffset now = DateTimeOffset.UtcNow;
+                retryAfter = ReadRetryAfter(response, now);
+                retryCapped = retryAfter > now.Add(MaximumDurableRetryDelay);
+                if (retryCapped) retryAfter = now.Add(MaximumDurableRetryDelay);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException || !token.IsCancellationRequested)
+            {
+                // Credential/transport exceptions may contain secrets. Never retain text.
+                status = 0;
+            }
+
+            if (status is >= 200 and < 300)
+            {
+                foreach (PreparedRecord record in batch) acknowledged.Add(record.EventId);
+                return;
+            }
+
+            // An ambiguous 400 is not proof of record poison. Bounded bisection lets
+            // valid siblings progress. Singletons are held unless another record succeeds.
+            if (status == 400 && batch.Count > 1 && (retryAfter is null || retryAfter <= DateTimeOffset.UtcNow)
+                && Interlocked.Add(ref isolationBudget, -2) >= 0)
+            {
+                int middle = batch.Count / 2;
+                await UploadBatchAsync(batch.GetRange(0, middle), token);
+                await UploadBatchAsync(batch.GetRange(middle, batch.Count - middle), token);
+                return;
+            }
+
+            if (status == 400 && batch.Count == 1 && (retryAfter is null || retryAfter <= DateTimeOffset.UtcNow))
+                isolatedBadRequests.Add(batch[0].EventId);
+            foreach (PreparedRecord record in batch)
+            {
+                uploadFailures.Add(new DeliveryFailure(record.EventId,
+                    status == 0 ? "destination-azure-unavailable" : $"destination-azure-http-{status}{(retryCapped ? ":retry-after-capped" : "")}",
+                    true, retryAfter));
+            }
+        }
     }
 
-    // UploadAsync<T> is annotated RequiresUnreferencedCode/RequiresDynamicCode only because
-    // it serializes each T with LogsUploadOptions.Serializer, which defaults to the
-    // reflection-based JsonObjectSerializer. Every call passes RecordSerializer, which
-    // copies each PreparedRecord's bytes (no type metadata), and T is PreparedRecord, so
-    // nothing is reached through reflection and no code is generated at run time. The
-    // guard below keeps that true; AzureLogsIngestionOutputTests pin the uploaded bytes.
-    [UnconditionalSuppressMessage(
-        "Trimming",
-        "IL2026:RequiresUnreferencedCode",
-        Justification = "Records are pre-serialized bytes written by JsonRecordSerializer without reflection.")]
-    [UnconditionalSuppressMessage(
-        "AOT",
-        "IL3050:RequiresDynamicCode",
-        Justification = "Records are pre-serialized bytes written by JsonRecordSerializer without reflection.")]
-    private Task<Response> UploadAsync(
-        List<PreparedRecord> records,
-        LogsUploadOptions uploadOptions,
-        CancellationToken cancellationToken)
-    {
-        if (!ReferenceEquals(uploadOptions.Serializer, RecordSerializer))
-        {
-            throw new InvalidOperationException("Log records must use the prepared-record serializer.");
-        }
+    public const int MaximumBatchBytes = 1024 * 1024;
+    public static readonly TimeSpan MaximumDurableRetryDelay = TimeSpan.FromHours(1);
 
-        return client.UploadAsync(
-            options.DcrImmutableId,
-            options.StreamName,
-            records,
-            uploadOptions,
-            cancellationToken);
+    private sealed class DurableRetryPolicy(RetryOptions retry) : RetryPolicy(retry.MaxRetries,
+        retry.Mode == RetryMode.Fixed
+            ? DelayStrategy.CreateFixedDelayStrategy(retry.Delay)
+            : DelayStrategy.CreateExponentialDelayStrategy(retry.Delay, retry.MaxDelay))
+    {
+        private static bool HasLongDelay(HttpMessage message) => message.HasResponse &&
+            ReadRetryAfter(message.Response, DateTimeOffset.UtcNow) > DateTimeOffset.UtcNow.AddSeconds(60);
+
+        protected override bool ShouldRetry(HttpMessage message, Exception? exception) =>
+            !HasLongDelay(message) && base.ShouldRetry(message, exception);
+
+        protected override ValueTask<bool> ShouldRetryAsync(HttpMessage message, Exception? exception) =>
+            HasLongDelay(message) ? ValueTask.FromResult(false) : base.ShouldRetryAsync(message, exception);
+    }
+
+    private static DateTimeOffset? ReadRetryAfter(Response response, DateTimeOffset now)
+    {
+        foreach (string name in new[] { "retry-after-ms", "x-ms-retry-after-ms", "Retry-After" })
+        {
+            if (!response.Headers.TryGetValue(name, out string? value)) continue;
+            if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double number)
+                && double.IsFinite(number) && number >= 0)
+            {
+                double seconds = name == "Retry-After" ? number : number / 1000;
+                return now.AddSeconds(Math.Min(seconds, (DateTimeOffset.MaxValue - now).TotalSeconds - 1));
+            }
+            if (name == "Retry-After" && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal, out DateTimeOffset date)) return date;
+        }
+        return null;
     }
 }
 
@@ -274,37 +320,6 @@ internal sealed class RecordEncoder
         }
     }
 
-    /// <summary>The top-level string <c>eventId</c> of an encoded entry, if any.</summary>
-    public static string? TryReadEventId(ReadOnlySpan<byte> utf8Json)
-    {
-        try
-        {
-            Utf8JsonReader reader = new(utf8Json);
-            if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
-            {
-                return null;
-            }
-
-            while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
-            {
-                bool match = reader.ValueTextEquals("eventId"u8);
-                reader.Read();
-                if (match)
-                {
-                    return reader.TokenType == JsonTokenType.String ? reader.GetString() : null;
-                }
-
-                reader.Skip();
-            }
-
-            return null;
-        }
-        catch (Exception exception) when (exception is JsonException or InvalidOperationException)
-        {
-            return null;
-        }
-    }
-
     private bool Copy(ReadOnlySpan<byte> utf8, Utf8JsonWriter writer, out string? eventId)
     {
         eventId = null;
@@ -399,43 +414,4 @@ internal sealed class RecordEncoder
         int written = reader.CopyString(scratch);
         return scratch.AsSpan(0, written);
     }
-}
-
-/// <summary>
-/// Writes <see cref="PreparedRecord"/> entries for the Logs Ingestion SDK without
-/// reflection: the prepared bytes, unchanged.
-/// </summary>
-internal sealed class JsonRecordSerializer : ObjectSerializer
-{
-    public override void Serialize(Stream stream, object? value, Type inputType, CancellationToken cancellationToken) =>
-        stream.Write(Bytes(value).Span);
-
-    public override async ValueTask SerializeAsync(
-        Stream stream,
-        object? value,
-        Type inputType,
-        CancellationToken cancellationToken) =>
-        await stream.WriteAsync(Bytes(value), cancellationToken);
-
-    public override BinaryData Serialize(object? value, Type? inputType = null, CancellationToken cancellationToken = default) =>
-        new(Bytes(value));
-
-    public override ValueTask<BinaryData> SerializeAsync(
-        object? value,
-        Type? inputType = null,
-        CancellationToken cancellationToken = default) =>
-        ValueTask.FromResult(new BinaryData(Bytes(value)));
-
-    public override object? Deserialize(Stream stream, Type returnType, CancellationToken cancellationToken) =>
-        throw new NotSupportedException("Log records are write-only.");
-
-    public override ValueTask<object?> DeserializeAsync(Stream stream, Type returnType, CancellationToken cancellationToken) =>
-        throw new NotSupportedException("Log records are write-only.");
-
-    private static ReadOnlyMemory<byte> Bytes(object? value) => value switch
-    {
-        PreparedRecord record => record.Utf8Json,
-        null => "null"u8.ToArray(),
-        _ => throw new NotSupportedException($"Unsupported log record type {value.GetType().Name}.")
-    };
 }

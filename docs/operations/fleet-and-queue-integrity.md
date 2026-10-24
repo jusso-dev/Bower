@@ -17,7 +17,9 @@ customer-portal sha256:9ab2…
 The file holds SHA-256 hashes only. Remove a line to revoke that producer; the
 collector reloads the file within seconds without a restart. Each accepted event
 records its producer in `collector.sourceAdapter` (`local-http:sidecar-01`).
-`BOWER_INGEST_TOKEN` still works and is producer `default`.
+`BOWER_INGEST_TOKEN` still works and is producer `default`. Credentials must also
+match [producer identity scopes](../security/producer-scopes.md). Ingest defaults
+to deny without scopes; single-trust-domain compatibility requires explicit opt-in.
 
 ## Policy assignment and acknowledgement
 
@@ -61,7 +63,10 @@ the dead-letter count, which the console shows per collector and fleet-wide.
 Every accepted event gets an entry in an append-only hash chain: each entry commits
 to the previous entry, the event id, a SHA-256 of the stored (already redacted)
 payload and the receive time. Retention marks entries as purged in the same
-transaction, then folds fully purged prefixes into an anchor.
+transaction. Queue schema v5 folds each contiguous purged run into a hash-bound
+checkpoint, including runs behind unresolved events. Verification binds each live
+row to its enqueue sequence, so a later replay of the same event ID is a separate
+incarnation. See [queue v5 migration and limits](queue-v5-durability.md).
 
 ```bash
 bower queue verify --database /var/lib/bower/queue.db [--expect-head 902114:<hash>]

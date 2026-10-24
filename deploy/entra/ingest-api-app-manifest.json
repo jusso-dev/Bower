@@ -1,0 +1,21 @@
+{
+  "displayName": "Bower Ingest API",
+  "signInAudience": "AzureADMyOrg",
+  "identifierUris": [
+    "api://00000000-0000-0000-0000-000000000000"
+  ],
+  "api": {
+    "requestedAccessTokenVersion": 2,
+    "oauth2PermissionScopes": []
+  },
+  "appRoles": [
+    {
+      "allowedMemberTypes": ["Application"],
+      "description": "Send semantic security events to the Bower Azure Functions collector.",
+      "displayName": "Bower Producer",
+      "id": "12859e27-8403-42a7-b3e4-66cc808de79f",
+      "isEnabled": true,
+      "value": "Bower.Producer"
+    }
+  ]
+}

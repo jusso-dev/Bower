@@ -30,6 +30,9 @@ pub struct PolicyMetadata {
 pub struct PolicyMatch {
     pub event_categories: Vec<String>,
     pub event_types: Vec<String>,
+    pub event_actions: Option<Vec<String>>,
+    pub event_results: Option<Vec<String>>,
+    pub event_severities: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

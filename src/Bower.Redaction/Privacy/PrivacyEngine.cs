@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Bower.Abstractions;
+using Bower.Redaction.Detectors;
 
 namespace Bower.Redaction.Privacy;
 
@@ -10,7 +11,7 @@ namespace Bower.Redaction.Privacy;
 /// Operates after parse / before persistence and normalisation.
 /// Deterministic: regex, checksum, structure — no AI at runtime.
 /// </summary>
-public sealed class PrivacyEngine : IEventRedactor
+public sealed partial class PrivacyEngine : IEventRedactor
 {
     public const int MaximumPayloadBytes = 1_048_576;
 
@@ -25,9 +26,12 @@ public sealed class PrivacyEngine : IEventRedactor
         IFieldNameDetector? fieldNameDetector = null)
     {
         this.policy = policy ?? PrivacyPolicy.CreateDefault();
-        this.detectors = (detectors ?? DetectorCatalog.CreateDefaultValueDetectors()).ToArray();
-        this.fieldNameDetector = fieldNameDetector ?? DetectorCatalog.CreateDefaultFieldNameDetector();
         applicator = new PolicyApplicator(this.policy);
+        // Defaults follow the policy: built-ins plus its custom detectors, and the
+        // field-name detector extended with its secret field names. Explicit detectors
+        // are used as given.
+        this.detectors = (detectors ?? DetectorCatalog.CreateValueDetectors(this.policy)).ToArray();
+        this.fieldNameDetector = fieldNameDetector ?? DetectorCatalog.CreateFieldNameDetector(this.policy);
     }
 
     public PrivacyPolicy Policy => policy;
@@ -111,7 +115,8 @@ public sealed class PrivacyEngine : IEventRedactor
             }
 
             List<AppliedFinding> findings = [];
-            WalkObject(rootObject, "$", findings);
+            SanitizeChange(rootObject, findings);
+            WalkObject(rootObject, "$", findings, new CustomScanBudget());
             ApplyFieldRules(rootObject, findings);
             EnforceFieldLength(rootObject, "$", findings);
 
@@ -172,7 +177,7 @@ public sealed class PrivacyEngine : IEventRedactor
         try
         {
             List<AppliedFinding> findings = [];
-            string redacted = ApplyDetectorsToValue(text, "$", findings);
+            string redacted = ApplyDetectorsToValue(text, "$", findings, new CustomScanBudget());
             PrivacyMetadata metadata = BuildMetadata(findings);
             return new PrivacyTextResult(true, redacted, findings, metadata, null);
         }
@@ -183,7 +188,7 @@ public sealed class PrivacyEngine : IEventRedactor
         }
     }
 
-    private void WalkObject(JsonObject value, string parentPath, List<AppliedFinding> findings)
+    private void WalkObject(JsonObject value, string parentPath, List<AppliedFinding> findings, CustomScanBudget budget)
     {
         int redactedKeyIndex = 0;
         string keyPath = $"{parentPath}.[key]";
@@ -218,7 +223,8 @@ public sealed class PrivacyEngine : IEventRedactor
             string redactedName = ApplyDetectorsToValue(
                 propertyName,
                 keyPath,
-                findings);
+                findings,
+                budget);
             if (!string.Equals(redactedName, propertyName, StringComparison.Ordinal))
             {
                 // Compare names as they will be written: System.Text.Json writes every
@@ -241,7 +247,7 @@ public sealed class PrivacyEngine : IEventRedactor
             string path = $"{parentPath}.{propertyName}";
             if (child is JsonValue jsonValue && TryGetScannableText(jsonValue, out string? text))
             {
-                string redacted = ApplyDetectorsToValue(text, path, findings);
+                string redacted = ApplyDetectorsToValue(text, path, findings, budget);
                 if (!string.Equals(redacted, text, StringComparison.Ordinal))
                 {
                     value[propertyName] = redacted;
@@ -252,32 +258,32 @@ public sealed class PrivacyEngine : IEventRedactor
 
             if (child is JsonObject childObject)
             {
-                WalkObject(childObject, path, findings);
+                WalkObject(childObject, path, findings, budget);
             }
             else if (child is JsonArray array)
             {
-                WalkArray(array, path, findings);
+                WalkArray(array, path, findings, budget);
             }
         }
     }
 
-    private void WalkArray(JsonArray array, string path, List<AppliedFinding> findings)
+    private void WalkArray(JsonArray array, string path, List<AppliedFinding> findings, CustomScanBudget budget)
     {
         for (int index = 0; index < array.Count; index++)
         {
             string itemPath = $"{path}[{index}]";
             if (array[index] is JsonObject nested)
             {
-                WalkObject(nested, itemPath, findings);
+                WalkObject(nested, itemPath, findings, budget);
             }
             else if (array[index] is JsonArray nestedArray)
             {
-                WalkArray(nestedArray, itemPath, findings);
+                WalkArray(nestedArray, itemPath, findings, budget);
             }
             else if (array[index] is JsonValue arrayValue &&
                      TryGetScannableText(arrayValue, out string? arrayText))
             {
-                string redacted = ApplyDetectorsToValue(arrayText, itemPath, findings);
+                string redacted = ApplyDetectorsToValue(arrayText, itemPath, findings, budget);
                 if (!string.Equals(redacted, arrayText, StringComparison.Ordinal))
                 {
                     array[index] = redacted;
@@ -414,9 +420,19 @@ public sealed class PrivacyEngine : IEventRedactor
         }
     }
 
-    private string ApplyDetectorsToValue(string text, string path, List<AppliedFinding> findings)
+    private string ApplyDetectorsToValue(string text, string path, List<AppliedFinding> findings, CustomScanBudget budget)
     {
+        string safeUrl = SafeUrl(text, path);
+        if (!string.Equals(text, safeUrl, StringComparison.Ordinal))
+        {
+            findings.Add(new AppliedFinding(
+                DetectorIds.FieldNameSecret, DetectorCategories.FieldName, path,
+                PrivacyAction.Replace, Validated: true, SubKind: null));
+            text = safeUrl;
+        }
+
         List<DetectionMatch> matches = [];
+        List<DetectionMatch>? observed = null;
         ReadOnlySpan<char> span = text.AsSpan();
         foreach (ISensitiveDetector detector in detectors)
         {
@@ -425,13 +441,42 @@ public sealed class PrivacyEngine : IEventRedactor
                 continue;
             }
 
+            if (detector is CustomPatternDetector custom)
+            {
+                // Non-redacting custom detectors (alert-only, or allow set programmatically)
+                // record findings but never claim a span, so they cannot hide other matches.
+                List<DetectionMatch> target = IsNonRedacting(policy.ResolveAction(custom.Id))
+                    ? observed ??= []
+                    : matches;
+                budget.Scan(custom, span, target);
+                continue;
+            }
+
             detector.Detect(span, path, matches);
         }
 
-        if (matches.Count == 0)
+        string result = matches.Count == 0 ? text : ApplySelected(text, path, matches, findings);
+        if (observed is not null)
         {
-            return text;
+            foreach (DetectionMatch match in observed)
+            {
+                findings.Add(new AppliedFinding(
+                    match.DetectorId,
+                    match.Category,
+                    path,
+                    policy.ResolveAction(match.DetectorId),
+                    match.Validated,
+                    match.SubKind));
+            }
         }
+
+        return result;
+    }
+
+    private static bool IsNonRedacting(PrivacyAction action) => action is PrivacyAction.Allow or PrivacyAction.AlertOnly;
+
+    private string ApplySelected(string text, string path, List<DetectionMatch> matches, List<AppliedFinding> findings)
+    {
 
         // Resolve overlaps: prefer longer validated matches, then earlier start.
         List<DetectionMatch> ordered = matches.Count == 1
@@ -655,28 +700,33 @@ public sealed class PrivacyEngine : IEventRedactor
             ? Encoding.UTF8.GetString(Encoding.UTF8.GetBytes(value))
             : value;
 
-    // Letters and digits only, lower-cased invariantly. Surrogates are not letters or
-    // digits here, so per-char invariant lowering equals string.ToLowerInvariant.
-    // Returns the input unchanged (no allocation) when it is already normalised.
-    private static string NormalizeFieldName(string value)
-    {
-        Span<char> buffer = value.Length <= 256 ? stackalloc char[value.Length] : new char[value.Length];
-        int length = 0;
-        bool changed = false;
-        foreach (char character in value)
-        {
-            if (!char.IsLetterOrDigit(character))
-            {
-                changed = true;
-                continue;
-            }
+    private static string NormalizeFieldName(string value) => FieldNameNormalizer.Normalize(value);
+}
 
-            char lower = char.ToLowerInvariant(character);
-            changed |= lower != character;
-            buffer[length++] = lower;
+/// <summary>
+/// Deterministic per-call bound on custom detector work (identical in the Rust engine):
+/// values longer than <see cref="CustomPatternDetector.MaximumScannedLength"/> and more than
+/// <see cref="CustomPatternDetector.MaximumMatchesPerEvent"/> custom matches per event fail
+/// the redaction (quarantine) instead of running unbounded.
+/// </summary>
+internal sealed class CustomScanBudget
+{
+    private int remaining = CustomPatternDetector.MaximumMatchesPerEvent;
+
+    public void Scan(CustomPatternDetector detector, ReadOnlySpan<char> text, List<DetectionMatch> matches)
+    {
+        if (text.Length > CustomPatternDetector.MaximumScannedLength)
+        {
+            throw new InvalidOperationException("Value exceeds the custom detector scan limit.");
         }
 
-        return changed ? new string(buffer[..length]) : value;
+        int before = matches.Count;
+        if (!detector.Detect(text, matches, remaining))
+        {
+            throw new InvalidOperationException("Custom detector match limit exceeded.");
+        }
+
+        remaining -= matches.Count - before;
     }
 }
 

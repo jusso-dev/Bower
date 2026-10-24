@@ -106,7 +106,7 @@ public sealed class QueueDeliveryWorkerTests
                 .LeaseAsync(10, TimeSpan.FromMinutes(5), CancellationToken.None)
                 .GetAwaiter()
                 .GetResult();
-            store.MarkDeliveredAsync(reclaimed[0].EventId, "other-worker", CancellationToken.None)
+            store.MarkDeliveredAsync(reclaimed[0].EventId, "other-worker", reclaimed[0].LeaseToken, CancellationToken.None)
                 .GetAwaiter()
                 .GetResult();
             return new DeliveryResult(
@@ -132,8 +132,8 @@ public sealed class QueueDeliveryWorkerTests
         {
             // Another worker reclaims "slow" and settles it before this batch acknowledges.
             clock.Advance(TimeSpan.FromMinutes(10));
-            store.LeaseAsync(10, TimeSpan.FromMinutes(5), CancellationToken.None).GetAwaiter().GetResult();
-            store.MarkDeliveredAsync("slow", "other-worker", CancellationToken.None).GetAwaiter().GetResult();
+            var reclaimed = store.LeaseAsync(1, TimeSpan.FromMinutes(5), CancellationToken.None).GetAwaiter().GetResult();
+            store.MarkDeliveredAsync("slow", "other-worker", reclaimed[0].LeaseToken, CancellationToken.None).GetAwaiter().GetResult();
             return new DeliveryResult(["slow", "fast"], [], "ack-batch");
         });
 
@@ -211,6 +211,85 @@ public sealed class QueueDeliveryWorkerTests
         await worker.StopAsync(cancellationToken);
 
         Assert.Equal(2, flaky.Failures);
+    }
+
+    [Theory]
+    [InlineData(401)]
+    [InlineData(403)]
+    [InlineData(429)]
+    [InlineData(503)]
+    public async Task DestinationOutage_SurvivesRestartPreservesBudgetAndPausesNewBacklog(int status)
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore store, FakeClock clock) = await CreateStoreAsync(directory, cancellationToken);
+        await EnqueueAsync(store, clock, ["valid"], cancellationToken);
+        bool repaired = false;
+        int calls = 0;
+        FakeOutput output = new(events =>
+        {
+            calls++;
+            Assert.All(events, item => Assert.Equal(1, item.DeliveryAttempts));
+            return repaired ? new DeliveryResult(events.Select(item => item.EventId).ToArray(), [], "accepted")
+                : new DeliveryResult([], events.Select(item => new DeliveryFailure(item.EventId,
+                    $"destination-azure-http-{status}", true, clock.UtcNow.AddMinutes(2))).ToArray(), null);
+        });
+        // A poison budget of one must never dead-letter a destination outage.
+        await CreateWorker(store, output, clock, maximumAttempts: 1).DeliverOnceAsync(cancellationToken);
+        await EnqueueAsync(store, clock, ["new-backlog"], cancellationToken);
+        SqliteEventStore reopened = new(Path.Combine(directory.Path, "queue.db"), 10 * 1024 * 1024, clock);
+        await reopened.InitializeAsync(cancellationToken);
+        QueueDeliveryWorker restarted = CreateWorker(reopened, output, clock, maximumAttempts: 1);
+        clock.Advance(TimeSpan.FromSeconds(119));
+        Assert.Equal(0, await restarted.DeliverOnceAsync(cancellationToken));
+        Assert.Equal(1, calls);
+        clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal(2, await restarted.DeliverOnceAsync(cancellationToken));
+        Assert.Equal(0, (await reopened.GetSnapshotAsync(cancellationToken)).DeadLettered);
+        repaired = true;
+        clock.Advance(TimeSpan.FromMinutes(2));
+        Assert.Equal(2, await restarted.DeliverOnceAsync(cancellationToken));
+        Assert.Equal(2, (await reopened.GetSnapshotAsync(cancellationToken)).Delivered);
+    }
+
+    [Fact]
+    public async Task ExcessiveDestinationDeadline_IsCappedAndRecoversAfterRestart()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore store, FakeClock clock) = await CreateStoreAsync(directory, token);
+        await EnqueueAsync(store, clock, ["valid"], token);
+        FakeOutput failing = new(events => new DeliveryResult([], events.Select(item =>
+            new DeliveryFailure(item.EventId, "destination-azure-http-429", true, clock.UtcNow.AddYears(50))).ToArray(), null));
+        await CreateWorker(store, failing, clock).DeliverOnceAsync(token);
+        SqliteEventStore reopened = new(Path.Combine(directory.Path, "queue.db"), 10 * 1024 * 1024, clock);
+        await reopened.InitializeAsync(token);
+        FakeOutput accepting = new(events => new DeliveryResult(events.Select(item => item.EventId).ToArray(), [], "accepted"));
+        QueueDeliveryWorker worker = CreateWorker(reopened, accepting, clock);
+        clock.Advance(TimeSpan.FromMinutes(59));
+        Assert.Equal(0, await worker.DeliverOnceAsync(token));
+        clock.Advance(TimeSpan.FromMinutes(1));
+        Assert.Equal(1, await worker.DeliverOnceAsync(token));
+        Assert.Equal(1, (await reopened.GetSnapshotAsync(token)).Delivered);
+    }
+
+    [Fact]
+    public async Task IsolatedRejectedRecord_DoesNotPauseHealthyBacklog()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore store, FakeClock clock) = await CreateStoreAsync(directory, token);
+        await EnqueueAsync(store, clock, ["bad", "good"], token);
+        FakeOutput output = new(events => new DeliveryResult(
+            events.Where(item => item.EventId != "bad").Select(item => item.EventId).ToArray(),
+            events.Where(item => item.EventId == "bad").Select(item =>
+                new DeliveryFailure(item.EventId, "azure-http-400-isolated", false, null)).ToArray(), "accepted"));
+        QueueDeliveryWorker worker = CreateWorker(store, output, clock);
+        Assert.Equal(2, await worker.DeliverOnceAsync(token));
+        await EnqueueAsync(store, clock, ["backlog"], token);
+        Assert.Equal(1, await worker.DeliverOnceAsync(token));
+        Assert.Equal(2, (await store.GetSnapshotAsync(token)).Delivered);
+        Assert.Equal(1, (await store.GetSnapshotAsync(token)).DeadLettered);
     }
 
     private static QueueDeliveryWorker CreateWorker(
@@ -301,17 +380,17 @@ public sealed class QueueDeliveryWorkerTests
         public Task<EnqueueResult> EnqueueAsync(QueuedEvent candidate, CancellationToken cancellationToken = default) =>
             inner.EnqueueAsync(candidate, cancellationToken);
 
-        public Task MarkDeliveredAsync(string eventId, string acknowledgement, CancellationToken cancellationToken = default) =>
-            inner.MarkDeliveredAsync(eventId, acknowledgement, cancellationToken);
+        public Task MarkDeliveredAsync(string eventId, string acknowledgement, string? leaseToken, CancellationToken cancellationToken = default) =>
+            inner.MarkDeliveredAsync(eventId, acknowledgement, leaseToken, cancellationToken);
 
-        public Task<IReadOnlyList<string>> MarkDeliveredBatchAsync(IReadOnlyList<string> eventIds, string acknowledgement, CancellationToken cancellationToken = default) =>
-            inner.MarkDeliveredBatchAsync(eventIds, acknowledgement, cancellationToken);
+        public Task<IReadOnlyList<string>> MarkDeliveredBatchAsync(IReadOnlyList<string> eventIds, string acknowledgement, IReadOnlyDictionary<string, string>? leaseTokens, CancellationToken cancellationToken = default) =>
+            inner.MarkDeliveredBatchAsync(eventIds, acknowledgement, leaseTokens, cancellationToken);
 
-        public Task MarkRetryingAsync(string eventId, string failureCode, DateTimeOffset retryAfter, CancellationToken cancellationToken = default) =>
-            inner.MarkRetryingAsync(eventId, failureCode, retryAfter, cancellationToken);
+        public Task MarkRetryingAsync(string eventId, string failureCode, DateTimeOffset retryAfter, string? leaseToken, CancellationToken cancellationToken = default) =>
+            inner.MarkRetryingAsync(eventId, failureCode, retryAfter, leaseToken, cancellationToken);
 
-        public Task MarkDeadLetteredAsync(string eventId, string failureCode, CancellationToken cancellationToken = default) =>
-            inner.MarkDeadLetteredAsync(eventId, failureCode, cancellationToken);
+        public Task MarkDeadLetteredAsync(string eventId, string failureCode, string? leaseToken, CancellationToken cancellationToken = default) =>
+            inner.MarkDeadLetteredAsync(eventId, failureCode, leaseToken, cancellationToken);
 
         public Task<QueueSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default) =>
             inner.GetSnapshotAsync(cancellationToken);

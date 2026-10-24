@@ -1,0 +1,43 @@
+# Default security event catalogue
+
+Shipped default policies cover these semantic events. Producer identity scopes
+are checked before processing; events are redacted before the durable queue.
+Each event still needs valid contract fields and its policy's required context.
+An SDK memory-buffer acceptance is not collector, Azure or Sentinel acceptance.
+
+| Semantic type | Security purpose | Required investigation context | Default policy |
+|---|---|---|---|
+| `authentication_failure`, `account_lockout` | Authentication abuse and account compromise | Time, application, result and actor; source and correlation recommended | `BWR-POL-AUTH-FAILURE` |
+| `role_membership_changed` | Privilege grants and removals | Actor, target user, role change, correlation; action `role.add` or `role.remove`, successful outcome | `BWR-POL-ROLE-MEMBERSHIP` 1.0.0 |
+| `sensitive_data_exported` | Sensitive export investigation | Actor, export ID, classification, record count, correlation; successful `data.export` | `BWR-POL-SENSITIVE-EXPORT` 1.0.0 |
+| `sensitive_data_detected` | Collector privacy-control intervention | Detector/rule metadata, never original detected value | `BWR-POL-PRIVACY-DETECT` |
+| `collector_canary` | Synthetic delivery validation | Unique canary identity and synthetic marker | `BWR-POL-EVIDENCE-CANARY` |
+
+Destination: `BowerSecurity_CL` through the configured approved output. Default
+application policies never sample. Retention is a destination/operator decision;
+the sample Bicep retains 90 interactive days and 365 total days, which includes
+archive. Synthetic canaries must be excluded from operational detections.
+
+Ownership: application teams own correct emission and source semantics; Security
+Operations owns policy population and triage. Unknown types remain denied.
+See [population changes](../operations/policy-population-2026-10-23.md),
+[producer scopes](producer-scopes.md) and
+[Entra destination gates](../deployment/entra-ingestion-plan.md).
+
+## Extending software support
+
+Language-neutral HTTP envelopes allow additional software to integrate, but do
+not establish a tested integration. For each software/version, require bounded
+mapping, explicit high-value selection, privacy fixtures, durable source progress,
+replay/backpressure/cancellation tests and destination field assertions. Prefer
+native Sentinel connectors when they already supply the required security signal.
+SQL library support does not imply an installed polling service. Broad JSONL,
+Windows Event Log and audit-API coverage and extra language SDKs remain separately
+scoped integrations; no claim of support for every software package is made.
+
+## Event identity
+
+Every event type uses globally unique, retry-stable IDs across producers.
+Collector HTTP 409 `event-identity-conflict` is an intake outcome, not a new
+security event type. Preserve upstream events pending producer repair; see
+[event identity conflict recovery](../operations/event-identity-conflicts.md).

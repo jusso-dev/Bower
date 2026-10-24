@@ -176,7 +176,7 @@ Resources:
   CloudTrailIdentityRule:
     Type: AWS::Events::Rule
     Properties:
-      Description: Bower - IAM changes that grant, persist or weaken access.
+      Description: Bower - IAM changes that grant, revoke, persist or weaken access.
       State: !Ref RuleState
       EventPattern:
         source: [aws.iam]
@@ -190,6 +190,10 @@ Resources:
             - UpdateLoginProfile
             - AddUserToGroup
             - AttachUserPolicy
+            - DetachUserPolicy
+            - DetachRolePolicy
+            - DetachGroupPolicy
+            - RemoveUserFromGroup
             - AttachGroupPolicy
             - AttachRolePolicy
             - PutUserPolicy

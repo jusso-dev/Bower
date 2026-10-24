@@ -109,7 +109,10 @@ public sealed class DeterministicPolicyEvaluator : ITelemetryPolicyEvaluator
         bool categoryMatch = match.EventCategories.Count == 0
             || match.EventCategories.Contains(candidate.EventCategory);
         bool typeMatch = match.EventTypes.Contains(candidate.EventType);
-        return categoryMatch && typeMatch;
+        return categoryMatch && typeMatch
+            && (match.EventActions is null || match.EventActions.Contains(candidate.EventAction))
+            && (match.EventResults is null || match.EventResults.Contains(candidate.EventResult.ToString().ToLowerInvariant()))
+            && (match.EventSeverities is null || match.EventSeverities.Contains(candidate.EventSeverity.ToString().ToLowerInvariant()));
     }
 
     private static int CalculateScore(

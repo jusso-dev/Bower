@@ -61,11 +61,12 @@ fn loader_matches_csharp_for_every_shipped_rule() {
         "rules/sigma/auth_failure_burst.yml",
     ];
     let expected = std::fs::read_to_string(fixture("sigma.jsonl")).unwrap();
-    let mut actual: Vec<String> = files
+    let actual: Vec<String> = files
         .iter()
         .map(|file| rule_json(&load_file(&repo(file)).unwrap()))
         .collect();
-    actual.push(rule_json(&load_file(&fixture("odd.yml")).unwrap()));
+    // Previously accepted nested clauses and duplicate conditions now fail closed.
+    assert!(load_file(&fixture("odd.yml")).is_err());
 
     assert_eq!(actual, expected.lines().collect::<Vec<_>>());
 }
@@ -140,6 +141,52 @@ fn envelope(event_type: &str) -> SecurityEventEnvelope {
 }
 
 #[test]
+fn over_limit_values_fail_without_consuming_detection() {
+    for attribute in [false, true] {
+        let rule = load_yaml("title: Auth Fail\nid: bounds\ndetection:\n  selection:\n    EventType: authentication_failure\n  condition: selection\n", None).unwrap();
+        let mut engine = DetectionEngine::new(vec![rule], []);
+        let mut event = envelope("authentication_failure");
+        if attribute {
+            event.attributes = Some(
+                [("x".into(), "x".repeat(65537).into())]
+                    .into_iter()
+                    .collect(),
+            );
+        } else {
+            event.labels = Some([("x".into(), "x".repeat(65537))].into_iter().collect());
+        }
+        let invalid = bower_contracts::json::to_string(&event).unwrap();
+        assert_eq!(
+            engine
+                .evaluate_json(&invalid, None)
+                .unwrap_err()
+                .to_string(),
+            "Ambiguous or over-limit detection event fields."
+        );
+
+        let mut metadata: IndexMap<String, String> = (0..255)
+            .map(|index| (format!("x{index}"), "harmless".into()))
+            .collect();
+        metadata.insert(
+            "x".repeat(if attribute { 117 } else { 128 }),
+            "x".repeat(65536),
+        );
+        if attribute {
+            event.attributes = Some(
+                metadata
+                    .into_iter()
+                    .map(|(key, value)| (key, value.into()))
+                    .collect(),
+            );
+        } else {
+            event.labels = Some(metadata);
+        }
+        let valid = bower_contracts::json::to_string(&event).unwrap();
+        assert_eq!(engine.evaluate_json(&valid, None).unwrap().alerts.len(), 1);
+    }
+}
+
+#[test]
 fn evaluate_raises_alert_for_authentication_failure() {
     let rule = load_yaml(
         "title: Auth Fail\nid: test-auth-1\nlevel: high\nversion: 1.0.0\ndetection:\n  selection:\n    EventType: authentication_failure\n  condition: selection\ntags:\n  - attack.t1110\n",
@@ -157,7 +204,7 @@ fn evaluate_raises_alert_for_authentication_failure() {
         ..SourceContext::default()
     });
 
-    let result = engine.evaluate(&event, None);
+    let result = engine.evaluate(&event, None).unwrap();
 
     assert_eq!(result.alerts.len(), 1);
     let alert = &result.alerts[0];
@@ -169,7 +216,7 @@ fn evaluate_raises_alert_for_authentication_failure() {
     assert_eq!(alert.matched_fields, ["EventType"]);
 
     // The same event never alerts twice for the same rule version.
-    assert!(engine.evaluate(&event, None).alerts.is_empty());
+    assert!(engine.evaluate(&event, None).unwrap().alerts.is_empty());
 }
 
 #[test]
@@ -181,14 +228,16 @@ fn evaluate_suppresses_configured_rule_ids() {
     .unwrap();
     let mut engine = DetectionEngine::new(vec![rule], vec!["SUPPRESSED-1".to_owned()]);
 
-    let result = engine.evaluate(&envelope("authentication_failure"), None);
+    let result = engine
+        .evaluate(&envelope("authentication_failure"), None)
+        .unwrap();
 
     assert!(result.alerts.is_empty());
     assert_eq!(result.suppressed_rule_ids, ["suppressed-1"]);
 }
 
 #[test]
-fn pack_detections_fire_on_matching_labels_and_aliases() {
+fn pack_detections_fire_on_exact_labels_without_suffix_aliases() {
     let rules: Vec<DetectionRule> = ["aws-root-activity", "aws-console-login-failure"]
         .iter()
         .map(|name| load_file(&repo(&format!("packs/aws-security/detections/{name}.yml"))).unwrap())
@@ -202,6 +251,7 @@ fn pack_detections_fire_on_matching_labels_and_aliases() {
 
     let mut fired: Vec<String> = engine
         .evaluate(&event, None)
+        .unwrap()
         .alerts
         .into_iter()
         .map(|alert| alert.rule_id)
@@ -226,37 +276,37 @@ fn pack_detections_fire_on_matching_labels_and_aliases() {
         Vec::new(),
     );
     assert_eq!(
-        engine.evaluate(&event, None).alerts.len(),
-        1,
-        "falls back to a key ending with the field name"
+        engine.evaluate(&event, None).unwrap().alerts.len(),
+        0,
+        "field names must match exactly; suffix aliases could match unrelated context"
     );
 }
 
 #[test]
-fn any_group_conditions_and_payload_clauses() {
-    let rule = load_yaml(
-        "title: t\nid: or-1\ndetection:\n  first:\n    EventType: nope\n  second:\n    - FAILURE\n  condition: first or second\n",
-        None,
-    )
-    .unwrap();
-    let mut engine = DetectionEngine::new(vec![rule], Vec::new());
-    let result = engine.evaluate(&envelope("authentication_failure"), None);
-    assert_eq!(result.alerts.len(), 1);
-    assert_eq!(result.alerts[0].matched_fields, ["payload"]);
-
-    let json = bower_contracts::json::to_string(&envelope("authentication_failure")).unwrap();
-    let mut engine = DetectionEngine::new(
-        vec![
-            load_yaml(
-                "title: t\nid: j\ndetection:\n  selection:\n    EventCategory: auth\n",
-                None,
-            )
-            .unwrap(),
-        ],
-        Vec::new(),
-    );
-    assert_eq!(engine.evaluate_json(&json, None).unwrap().alerts.len(), 1);
-    assert!(engine.evaluate_json("{}", None).is_err());
+fn shared_semantic_vectors() {
+    let vectors: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/semantics.json")).unwrap();
+    for vector in vectors.as_array().unwrap() {
+        let rule = load_yaml(vector["yaml"].as_str().unwrap(), None);
+        let name = vector["name"].as_str().unwrap();
+        if !vector["valid"].as_bool().unwrap() {
+            assert!(rule.is_err(), "{name}");
+            continue;
+        }
+        let mut event = envelope("authentication_failure");
+        event.labels = Some(serde_json::from_value(vector["labels"].clone()).unwrap());
+        event.attributes = Some(serde_json::from_value(vector["attributes"].clone()).unwrap());
+        let mut engine = DetectionEngine::new(vec![rule.unwrap()], []);
+        if vector["evaluationFailure"].as_bool().unwrap_or(false) {
+            assert!(engine.evaluate(&event, None).is_err(), "{name}");
+            continue;
+        }
+        assert_eq!(
+            !engine.evaluate(&event, None).unwrap().alerts.is_empty(),
+            vector["match"].as_bool().unwrap(),
+            "{name}"
+        );
+    }
 }
 
 /// `fixtures/csharp-alerts.txt` was written by C# `DetectionEngine.EvaluateJson` (temporary
@@ -307,6 +357,9 @@ fn alerts_match_csharp_for_pack_samples_and_mapped_cloud_events() {
                 .enumerate()
             {
                 let value: serde_json::Value = serde_json::from_str(line).unwrap();
+                if value.get("event").is_none() {
+                    continue;
+                } // raw samples covered by actual collector tests
                 let event = value["event"]
                     .to_string()
                     .replace("{{now}}", "2026-10-17T01:00:00Z");

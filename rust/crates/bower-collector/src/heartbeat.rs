@@ -19,6 +19,89 @@ use crate::worker::store_error_name;
 
 pub type TokenFuture<'a> = Pin<Box<dyn Future<Output = Result<String, &'static str>> + Send + 'a>>;
 
+/// Queue observations only; retained acknowledgements are not destination proof.
+pub fn delivery_health(
+    output: &str,
+    snapshot: &QueueSnapshot,
+    capacity: i64,
+    now: Timestamp,
+) -> &'static str {
+    if output.eq_ignore_ascii_case("none") {
+        return "disabled";
+    }
+    if snapshot.dead_lettered > 0 {
+        return "degraded";
+    }
+    if snapshot.undelivered_bytes >= capacity - capacity / 10 {
+        return "backpressure";
+    }
+    if snapshot
+        .oldest_undelivered
+        .is_some_and(|oldest| (now - oldest).num_seconds() > 300)
+    {
+        return "stalled";
+    }
+    if snapshot.retrying > 0 {
+        return "retrying";
+    }
+    if snapshot.uploading > 0 || snapshot.queued > 0 {
+        return "pending";
+    }
+    // Historical receipts may belong to a previously configured output.
+    if snapshot.delivered > 0 {
+        "idle"
+    } else {
+        "waiting"
+    }
+}
+
+#[cfg(test)]
+mod health_tests {
+    use super::*;
+
+    #[test]
+    fn disabled_stalled_and_full_delivery_is_never_healthy() {
+        let now = bower_contracts::time::now();
+        let mut snapshot = QueueSnapshot {
+            queued: 0,
+            retrying: 0,
+            uploading: 0,
+            delivered: 0,
+            dead_lettered: 0,
+            total_bytes: 0,
+            oldest_undelivered: None,
+            undelivered_bytes: 0,
+        };
+        assert_eq!(delivery_health("none", &snapshot, 1000, now), "disabled");
+        assert_eq!(
+            delivery_health("azure-logs-ingestion", &snapshot, 1000, now),
+            "waiting"
+        );
+        snapshot.delivered = 1;
+        assert_eq!(delivery_health("ama-spool", &snapshot, 1000, now), "idle");
+        assert_eq!(
+            delivery_health("azure-logs-ingestion", &snapshot, 1000, now),
+            "idle"
+        );
+        snapshot.delivered = 0;
+        snapshot.retrying = 1;
+        assert_eq!(
+            delivery_health("azure-logs-ingestion", &snapshot, 1000, now),
+            "retrying"
+        );
+        snapshot.oldest_undelivered = Some(now - chrono::Duration::minutes(6));
+        assert_eq!(
+            delivery_health("azure-logs-ingestion", &snapshot, 1000, now),
+            "stalled"
+        );
+        snapshot.undelivered_bytes = 950;
+        assert_eq!(
+            delivery_health("azure-logs-ingestion", &snapshot, 1000, now),
+            "backpressure"
+        );
+    }
+}
+
 /// Bearer token source for the management API (one explicit Azure credential).
 /// Errors are type names only.
 pub trait AccessTokenSource: Send + Sync {
@@ -38,7 +121,10 @@ pub struct ManagementHeartbeat {
     pub version: String,
     pub configuration_hash: String,
     pub policy_hash: String,
+    /// Active privacy profile content hash, or `default` for the built-in profile.
+    pub privacy_profile_hash: String,
     pub output_type: String,
+    pub maximum_queue_bytes: i64,
 }
 
 #[derive(Serialize)]
@@ -97,12 +183,14 @@ struct Heartbeat<'a> {
     jobs: &'a [BackgroundJobStatus],
     dead_lettered: i64,
     ledger: LedgerReport<'a>,
+    privacy_profile_hash: &'a str,
 }
 
 impl ManagementHeartbeat {
     pub fn from_settings(
         settings: &CollectorSettings,
         policy_hash: String,
+        privacy_profile_hash: Option<&str>,
         credential: Arc<dyn AccessTokenSource>,
         store: Arc<dyn DurableEventStore>,
         catalog: Arc<JobCatalog>,
@@ -125,7 +213,9 @@ impl ManagementHeartbeat {
             version: settings.version.clone(),
             configuration_hash: settings.configuration_hash(),
             policy_hash,
+            privacy_profile_hash: privacy_profile_hash.unwrap_or("default").to_string(),
             output_type: settings.output_type.clone(),
+            maximum_queue_bytes: settings.maximum_queue_bytes,
         })
     }
 
@@ -152,11 +242,12 @@ impl ManagementHeartbeat {
             .map_err(|_| "JoinError")?
             .map_err(|error| store_error_name(&error))?;
 
-        let delivery_status = if snapshot.dead_lettered > 0 {
-            "degraded"
-        } else {
-            "healthy"
-        };
+        let delivery_status = delivery_health(
+            &self.output_type,
+            &snapshot,
+            self.maximum_queue_bytes,
+            bower_contracts::time::now(),
+        );
         let sources = [SourceReport {
             id: "local-http",
             kind: "local-http",
@@ -208,6 +299,7 @@ impl ManagementHeartbeat {
                 sequence: ledger.sequence,
                 hash: &ledger.hash,
             },
+            privacy_profile_hash: &self.privacy_profile_hash,
         };
         let path = format!(
             "api/collectors/{}/heartbeat",

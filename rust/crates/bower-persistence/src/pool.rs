@@ -77,7 +77,11 @@ impl ConnectionPool {
 
 pub(crate) fn storage(error: rusqlite::Error) -> StoreError {
     // rusqlite messages carry SQLite codes and constraint names, never bound values.
-    StoreError::Storage(error.to_string())
+    if error.sqlite_error_code() == Some(rusqlite::ErrorCode::DiskFull) {
+        StoreError::Full("physical-storage-budget-exceeded".into())
+    } else {
+        StoreError::Storage(error.to_string())
+    }
 }
 
 #[cfg(unix)]

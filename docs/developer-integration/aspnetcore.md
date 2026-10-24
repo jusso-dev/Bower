@@ -11,3 +11,11 @@ contain secrets.
 
 SDK acceptance means bounded local handoff. It does not mean collector, Azure or
 Sentinel delivery succeeded.
+
+## Event ID scope and conflicts
+
+Event IDs must be globally unique across producers and stable across retries.
+Generate a random ID once per event, or use a globally namespaced stable source
+ID. HTTP 409 `event-identity-conflict` requires producer repair: preserve the
+upstream event without acknowledging or discarding it. See
+[event identity conflict recovery](../operations/event-identity-conflicts.md).

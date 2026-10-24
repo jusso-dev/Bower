@@ -6,6 +6,7 @@ pub mod engine;
 pub mod loader;
 pub mod model;
 mod ordinal;
+mod semantics;
 pub mod yaml_node;
 
 pub use engine::DetectionEngine;

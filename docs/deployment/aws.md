@@ -1,5 +1,9 @@
 # AWS security signal
 
+To run Bower natively on AWS and store selected, redacted events in CloudWatch Logs or
+CloudTrail Lake instead of Sentinel, see [AWS Lambda host](aws-lambda.md). Its
+CloudWatch Logs group can also be subscribed by this stack (`AppLogGroupName`).
+
 Bower forwards a small set of high-value AWS security events to Sentinel:
 GuardDuty and Security Hub findings, CloudTrail events that change who can do what
 or switch off detection, and Bower events that Lambda or ECS applications write to
@@ -47,7 +51,7 @@ enabled exists in the account (an organisation trail is fine).
 
 | `eventType` | `eventCategory` | `eventAction` | `eventResult` | Actor | Target |
 |---|---|---|---|---|---|
-| `aws_cloudtrail` | `administrative-activity`, or `authentication` for `ConsoleLogin` | CloudTrail `eventName` | `failure` with `errorCode`, `denied` for AccessDenied/Unauthorized, `failure` for a failed console sign-in, else `success` | `username` = IAM user, assumed role name or `root`; `userId` = principal ARN | `aws-api`, the service endpoint |
+| `aws_cloudtrail` | `administrative-activity`, or `authentication` for `ConsoleLogin` | CloudTrail `eventName` | `failure` with `errorCode`, `denied` for AccessDenied/Unauthorized, `failure` for a failed console sign-in, else `success` | `username` = IAM user, assumed role name or `root`; `userId` = principal ARN | Affected IAM user/group/role for mapped permission actions; otherwise `aws-api`, the service endpoint |
 | `aws_guardduty` | `application-security` | finding `type` | `failure` | — | `finding`, the finding type |
 | `aws_security_hub` | `application-security` | finding `Title` | `failure` when compliance FAILED | — | `finding`, the product ARN |
 
@@ -57,6 +61,13 @@ delivered twice becomes one queued event. Labels carry `aws.accountId`,
 and similar fields for detections. The original record is **not** copied into the
 event unless `BOWER_INCLUDE_RAW_RECORDS=true`; CloudTrail request parameters can
 hold sensitive values. Long titles are cut to the schema limits on the host.
+
+Mapped IAM permission actions replace the generic API target with the affected
+user, group or role. They also carry bounded member/permission pairs, exact long
+identifiers and grant/revoke/replacement direction without raw forwarding. See
+the [permission event catalogue and population matrix](cloud-permission-context.md)
+for supported actions, conditional/replacement semantics and privacy limits.
+The direct AWS mapper now defaults raw inclusion off too.
 
 Application events from CloudWatch Logs are forwarded only when a log line is a
 Bower envelope (plain JSON, a Lambda JSON log whose `message` is the envelope, or

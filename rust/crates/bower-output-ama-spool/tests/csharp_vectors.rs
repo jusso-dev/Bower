@@ -12,6 +12,7 @@ use sha2::{Digest, Sha256};
 
 fn event(id: &str, payload: String) -> QueuedEvent {
     QueuedEvent {
+        lease_token: None,
         event_id: id.to_owned(),
         fingerprint: format!("sha256:{id}"),
         payload,

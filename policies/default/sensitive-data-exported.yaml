@@ -1,0 +1,31 @@
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+metadata:
+  id: BWR-POL-SENSITIVE-EXPORT
+  name: Sensitive data exports
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-01-01
+match:
+  eventCategories: [data-access]
+  eventTypes: [sensitive_data_exported]
+  eventActions: [data.export]
+  eventResults: [success]
+requirements:
+  requiredFields:
+    - timeGenerated
+    - eventType
+    - eventResult
+    - application.name
+    - actor.userId
+    - target.id
+    - labels.dataClassification
+    - attributes.recordCount
+    - request.correlationId
+decision:
+  action: accept
+  minimumValueScore: 70
+  neverSample: true
+routing:
+  profile: application-security
+  destination: security-events

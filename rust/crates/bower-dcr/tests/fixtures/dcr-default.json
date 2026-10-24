@@ -109,6 +109,26 @@
             {
               "name": "RawEnvelope",
               "type": "dynamic"
+            },
+            {
+              "name": "TimeObserved",
+              "type": "dateTime"
+            },
+            {
+              "name": "EventOutcomeReason",
+              "type": "string"
+            },
+            {
+              "name": "Target",
+              "type": "dynamic"
+            },
+            {
+              "name": "Change",
+              "type": "dynamic"
+            },
+            {
+              "name": "Attributes",
+              "type": "dynamic"
             }
           ]
         }
@@ -194,6 +214,26 @@
               {
                 "name": "privacy",
                 "type": "dynamic"
+              },
+              {
+                "name": "timeObserved",
+                "type": "datetime"
+              },
+              {
+                "name": "eventOutcomeReason",
+                "type": "string"
+              },
+              {
+                "name": "target",
+                "type": "dynamic"
+              },
+              {
+                "name": "change",
+                "type": "dynamic"
+              },
+              {
+                "name": "attributes",
+                "type": "dynamic"
               }
             ]
           }
@@ -215,7 +255,7 @@
               "BowerWorkspace"
             ],
             "outputStream": "Custom-BowerSecurity_CL",
-            "transformKql": "source\n| where schemaVersion == \u00221.0.0\u0022\n| project\n    TimeGenerated = timeGenerated,\n    EventId = substring(tostring(eventId), 0, 128),\n    EventOriginalId = substring(tostring(eventOriginalId), 0, 256),\n    EventCategory = substring(tostring(eventCategory), 0, 128),\n    EventType = substring(tostring(eventType), 0, 128),\n    EventAction = substring(tostring(eventAction), 0, 128),\n    EventResult = substring(tostring(eventResult), 0, 32),\n    EventSeverity = substring(tostring(eventSeverity), 0, 32),\n    ApplicationName = substring(tostring(application.name), 0, 128),\n    ApplicationEnvironment = substring(tostring(application.environment), 0, 64),\n    ActorUserId = substring(tostring(actor.userId), 0, 256),\n    ActorUsername = substring(tostring(actor.username), 0, 256),\n    SourceIpAddress = substring(tostring(source.ipAddress), 0, 64),\n    CorrelationId = substring(tostring(request.correlationId), 0, 256),\n    PolicyId = substring(tostring(security.policyId), 0, 128),\n    PolicyVersion = substring(tostring(security.policyVersion), 0, 32),\n    PolicyHash = substring(tostring(security.policyHash), 0, 128),\n    ValueScore = toint(security.valueScore),\n    CollectorId = substring(tostring(collector.id), 0, 128),\n    PrivacyDetected = privacy.detected,\n    Labels = labels,\n    RawEnvelope = pack_all()"
+            "transformKql": "source\n| where schemaVersion == \u00221.0.0\u0022\n| project\n    TimeGenerated = timeGenerated,\n    EventId = substring(tostring(eventId), 0, 128),\n    EventOriginalId = substring(tostring(eventOriginalId), 0, 256),\n    EventCategory = substring(tostring(eventCategory), 0, 128),\n    EventType = substring(tostring(eventType), 0, 128),\n    EventAction = substring(tostring(eventAction), 0, 128),\n    EventResult = substring(tostring(eventResult), 0, 32),\n    EventSeverity = substring(tostring(eventSeverity), 0, 32),\n    ApplicationName = substring(tostring(application.name), 0, 128),\n    ApplicationEnvironment = substring(tostring(application.environment), 0, 64),\n    ActorUserId = substring(tostring(actor.userId), 0, 256),\n    ActorUsername = substring(tostring(actor.username), 0, 256),\n    SourceIpAddress = substring(tostring(source.ipAddress), 0, 64),\n    CorrelationId = substring(tostring(request.correlationId), 0, 256),\n    PolicyId = substring(tostring(security.policyId), 0, 128),\n    PolicyVersion = substring(tostring(security.policyVersion), 0, 32),\n    PolicyHash = substring(tostring(security.policyHash), 0, 128),\n    ValueScore = toint(security.valueScore),\n    CollectorId = substring(tostring(collector.id), 0, 128),\n    PrivacyDetected = privacy.detected,\n    Labels = labels,\n    RawEnvelope = pack_all(),\n    TimeObserved = timeObserved,\n    EventOutcomeReason = substring(tostring(eventOutcomeReason), 0, 1024),\n    Target = target,\n    Change = change,\n    Attributes = attributes"
           }
         ]
       }

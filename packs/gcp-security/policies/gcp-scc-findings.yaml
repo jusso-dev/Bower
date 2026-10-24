@@ -4,7 +4,7 @@ kind: TelemetryPolicy
 metadata:
   id: BWR-POL-GCP-SCC
   name: Security Command Center findings
-  version: 1.0.0
+  version: 1.1.0
   owner: Security Operations
   reviewDate: 2027-06-30
 
@@ -13,6 +13,8 @@ match:
     - application-security
   eventTypes:
     - gcp_scc_finding
+
+  eventSeverities: [medium, high, critical]
 
 requirements:
   requiredFields:

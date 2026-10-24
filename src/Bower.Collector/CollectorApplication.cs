@@ -8,6 +8,7 @@ using Bower.Core;
 using Bower.Jobs;
 using Bower.Output.AmaSpool;
 using Bower.Output.AzureLogsIngestion;
+using Bower.Packs;
 using Bower.Persistence;
 using Bower.PolicyEngine;
 using Bower.Redaction;
@@ -57,9 +58,16 @@ public static partial class CollectorApplication
 
         builder.Services.AddSingleton(settings);
         builder.Services.AddSingleton(TimeProvider.System);
-        PolicyBundle bundle = PolicyBundle.Load(settings);
+        VerifiedManagedPrivacyProfile? cachedManagedProfile = null;
+        PolicyBundle bundle = PolicyBundle.Load(settings.PolicySources(cached => cachedManagedProfile = cached));
         builder.Services.AddSingleton(bundle);
-        builder.Services.AddSingleton<IEventRedactor>(new JsonEventRedactor(bundle.Privacy));
+        // Management mode fails closed until the first sync resolves (see ManagedPrivacyProfileState).
+        builder.Services.AddSingleton(settings.UsesManagedPrivacyProfile
+            ? new ManagedPrivacyProfileState(cachedManagedProfile, settings.ManagedPrivacyAllowDefault)
+            : ManagedPrivacyProfileState.Local);
+        builder.Services.AddSingleton<IEventRedactor>(new PackDetectionRedactor(
+            new JsonEventRedactor(bundle.Privacy), new DeterministicPolicyEvaluator(bundle.Policies),
+            bundle.LoadedPacks.SelectMany(pack => pack.Detections).ToArray()));
         builder.Services.AddSingleton<IDurableEventStore>(services =>
             new SqliteEventStore(
                 settings.QueuePath,
@@ -67,8 +75,10 @@ public static partial class CollectorApplication
                 services.GetRequiredService<TimeProvider>()));
         builder.Services.AddSingleton<ITelemetryPolicyEvaluator>(new DeterministicPolicyEvaluator(bundle.Policies));
         builder.Services.AddSingleton<SecurityEventProcessor>();
+        builder.Services.AddSingleton<EventIdentityConflicts>();
         builder.Services.AddSingleton(
             new CollectorIdentity(settings.CollectorId, settings.Version, "local-http", settings.ConfigurationHash()));
+        builder.Services.AddSingleton(new ProducerAuthorization(settings.ProducerScopesFile, settings.SingleTrustDomain));
         builder.Services.AddSingleton(new IngestAuthentication(settings.IngestToken, settings.IngestTokensFile));
         builder.Services.AddRateLimiter(options =>
         {
@@ -106,6 +116,10 @@ public static partial class CollectorApplication
                 client.Timeout = TimeSpan.FromSeconds(15);
             });
             builder.Services.AddTransient<ManagementHeartbeatJob>();
+            if (settings.UsesManagedPrivacyProfile)
+            {
+                builder.Services.AddTransient<ManagedPrivacyProfileJob>();
+            }
         }
 
         configure?.Invoke(builder);
@@ -145,22 +159,47 @@ public static partial class CollectorApplication
                 ManagementHeartbeatJob.Id,
                 (job, token) => job.RunAsync(token),
                 Cron.Minutely());
+            if (settings.UsesManagedPrivacyProfile)
+            {
+                // Idempotent: an unchanged assignment is a no-op; a failed run is retried
+                // by the next scheduled occurrence with the current profile still active.
+                jobs.AddOrUpdate<ManagedPrivacyProfileJob>(
+                    ManagedPrivacyProfileJob.Id,
+                    (job, token) => job.RunAsync(token),
+                    Cron.Minutely());
+                // Resolve immediately at start-up instead of waiting for the next minute:
+                // register first (heartbeat), then fetch the assignment.
+                jobs.Trigger(ManagementHeartbeatJob.Id);
+                jobs.Trigger(ManagedPrivacyProfileJob.Id);
+            }
         }
     }
 
     private static void MapEndpoints(WebApplication app)
     {
+        MapPackEndpoints(app);
         app.MapPost(
                 "/v1/events",
                 async (
                     JsonElement candidate,
                     HttpContext context,
                     SecurityEventProcessor processor,
+                    ProducerAuthorization authorization,
+                    EventIdentityConflicts conflicts,
+                    IngestAuthentication authentication,
                     CollectorIdentity identity,
                     CancellationToken cancellationToken) =>
                 {
                     // Record which producer credential sent the event (never the token).
                     string producer = context.Items[IngestAuthenticationFilter.ProducerItem] as string ?? "anonymous";
+                    if (!authorization.IsAuthorized(producer, candidate))
+                    {
+                        return Results.Json(
+                            new ErrorResponse("Producer is not authorized for this event identity."),
+                            CollectorJsonContext.Default.ErrorResponse,
+                            statusCode: StatusCodes.Status403Forbidden);
+                    }
+
                     ProcessingResult result;
                     try
                     {
@@ -198,9 +237,16 @@ public static partial class CollectorApplication
                         DecisionAction.Reject => 422,
                         _ => 400
                     };
+                    if (result.Reasons.Contains(EventIdentityConflicts.Reason, StringComparer.Ordinal))
+                    {
+                        conflicts.Record(producer, authentication.Required);
+                        statusCode = StatusCodes.Status409Conflict;
+                        response = response with { Remediation = EventIdentityConflicts.Remediation };
+                    }
                     return Results.Json(response, CollectorJsonContext.Default.IngestResponse, statusCode: statusCode);
                 })
             .AddEndpointFilter<IngestAuthenticationFilter>()
+            .AddEndpointFilter<ManagedPrivacyProfileGateFilter>()
             .RequireRateLimiting("ingest");
 
         // Liveness for probes: status only, no queue metadata without a token.
@@ -217,7 +263,10 @@ public static partial class CollectorApplication
                 async (
                     IDurableEventStore eventQueue,
                     BackgroundJobCatalog jobs,
+                    EventIdentityConflicts conflicts,
                     PolicyBundle bundle,
+                    ManagedPrivacyProfileState managedPrivacy,
+                    CollectorSettings settings,
                     CancellationToken cancellationToken) =>
                 {
                     QueueSnapshot snapshot = await eventQueue.GetSnapshotAsync(cancellationToken);
@@ -229,8 +278,17 @@ public static partial class CollectorApplication
                             [.. bundle.Policies.Select(item => new StatusPolicyItem(
                                 item.Policy.Metadata.Id,
                                 item.Policy.Metadata.Version))],
-                            [.. bundle.Packs.Select(pack => new StatusPackItem(pack.Id, pack.Version, pack.PackHash))],
-                            bundle.PrivacyProfile),
+                            [.. bundle.LoadedPacks.Select(pack => new StatusPackItem(
+                                pack.Manifest.Id, pack.Manifest.Version, pack.Manifest.PackHash,
+                                [.. pack.Parsers.Select(parser => parser.Runtime is null ? "inactive-preview-only" : "active-local-json")],
+                                pack.Detections.Count == 0 ? "absent" : "active-local",
+                                pack.DcrTemplateJson is null ? "absent" : "packaged-only"))],
+                            bundle.PrivacyProfile,
+                            bundle.PrivacyProfileVersion,
+                            bundle.PrivacyProfileHash ?? "default",
+                            bundle.PrivacyProfileSource,
+                            settings.UsesManagedPrivacyProfile ? managedPrivacy.State : null,
+                            settings.UsesManagedPrivacyProfile ? managedPrivacy.Revision : null),
                         new LedgerResponse(ledger.Sequence, ledger.Hash),
                         new StatusQueueResponse(
                             snapshot.Queued,
@@ -241,7 +299,8 @@ public static partial class CollectorApplication
                             snapshot.TotalBytes,
                             snapshot.UndeliveredBytes,
                             snapshot.OldestUndelivered),
-                        jobs.List());
+                        jobs.List())
+                    { EventIdentityConflicts = conflicts.Snapshot() };
                     return Results.Json(status, CollectorJsonContext.Default.StatusResponse);
                 })
             .AddEndpointFilter<IngestAuthenticationFilter>();

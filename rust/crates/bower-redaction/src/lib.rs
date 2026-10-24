@@ -11,6 +11,7 @@
 
 pub mod applicator;
 pub mod checksum;
+pub mod custom_pattern;
 pub mod detectors;
 pub mod engine;
 pub mod error;
@@ -24,8 +25,10 @@ pub mod text;
 
 pub use applicator::PolicyApplicator;
 pub use detectors::{
-    DetectionMatch, FieldNameDetector, FieldNameSecretDetector, ScanText, SensitiveDetector,
-    default_field_name_detector, default_value_detectors,
+    CompositeFieldNameDetector, CustomDetectorDefinition, CustomPatternDetector, DetectionMatch,
+    FieldNameDetector, FieldNameSecretDetector, ScanText, SensitiveDetector,
+    default_field_name_detector, default_value_detectors, field_name_detector_for,
+    value_detectors_for,
 };
 pub use engine::{
     AppliedFinding, JsonEventRedactor, MAXIMUM_PAYLOAD_BYTES, PrivacyEngine, PrivacyMetadata,
@@ -38,4 +41,6 @@ pub use facade::{
 pub use hasher::KeyedFieldHasher;
 pub use ids::{detector_categories, detector_ids};
 pub use policy::{PrivacyAction, PrivacyFieldRule, PrivacyPolicy};
-pub use profile::{LoadedPrivacyProfile, load as load_privacy_profile, read_key_file};
+pub use profile::{
+    LoadedPrivacyProfile, decode_key_material, load as load_privacy_profile, read_key_file,
+};

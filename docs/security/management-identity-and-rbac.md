@@ -18,7 +18,16 @@ Create two single-tenant app registrations:
    `Bower.Access`, using
    [`spa-app-manifest.json`](../../deploy/entra/spa-app-manifest.json).
 
-Replace every `00000000-...` placeholder before importing. Grant tenant admin
+Replace every `00000000-...` placeholder before importing.
+
+The optional [Azure Functions collector](../deployment/azure-function.md) uses a
+third, separate registration, **Bower Ingest API**
+([`ingest-api-app-manifest.json`](../../deploy/entra/ingest-api-app-manifest.json)).
+It exposes one application-only role, `Bower.Producer`
+(`12859e27-8403-42a7-b3e4-66cc808de79f`, a stable contract identifier), and no
+delegated scopes. Assign it directly to each producer's managed identity or
+service principal. Keeping ingest on its own audience means a management token
+can never be replayed against ingest, and the reverse. Grant tenant admin
 consent to the SPA's delegated API permission.
 
 ## Group-to-role mapping
@@ -28,10 +37,14 @@ application**:
 
 | App role | Suggested group | Purpose |
 |---|---|---|
-| `Bower.Viewer` | Bower Readers | Fleet, health, approvals and audit read |
-| `Bower.Operator` | Bower Operators | Operational response |
-| `Bower.Approver` | Bower Approvers | Collector enrollment decisions |
-| `Bower.Administrator` | Bower Administrators | Suspension, revocation and administration |
+| `Bower.Viewer` | Bower Readers | Fleet, health, approvals, audit and privacy profile versions read |
+| `Bower.Operator` | Bower Operators | Operational response; validate, preview and submit privacy profile versions |
+| `Bower.Approver` | Bower Approvers | Collector enrollment decisions; approve or reject privacy profile versions authored by someone else |
+| `Bower.Administrator` | Bower Administrators | Suspension, revocation and administration; assign and clear privacy profile versions on collectors |
+
+Privacy profile versions follow a two-person rule enforced by the API: the reviewer's
+object id must differ from the author's, whatever roles either holds. See [managed
+privacy profiles](../privacy/managed-privacy-profiles.md).
 
 Users inherit a compact `roles` access-token claim through group assignment.
 Bower deliberately authorizes app roles rather than raw `groups` claims, so
@@ -44,7 +57,7 @@ principal. Do not assign it to interactive users in production.
 
 ```text
 Bower__Entra__TenantId=<tenant-guid>
-Bower__Entra__Audience=api://<api-application-client-id>
+Bower__Entra__Audience=<api-application-client-id-guid>
 Bower__AllowedOrigins__0=https://bower.example.gov.au
 AllowedHosts=bower-api.example.gov.au
 BOWER_MANAGEMENT_LISTEN_URL=http://127.0.0.1:4320
@@ -52,6 +65,10 @@ BOWER_MANAGEMENT_DB_PATH=/var/lib/bower-management/management.db
 ```
 
 The API validates signature, tenant issuer, audience, lifetime and app roles.
+The supplied manifest requests v2 access tokens: their `aud` is the API client-ID
+GUID. Keep `api://<api-application-client-id>` in resource/scope identifiers, not
+the audience setting. Management API authentication is separate from Azure Monitor
+ingestion authentication.
 `BOWER_AUTH_MODE=development` is rejected unless
 `ASPNETCORE_ENVIRONMENT=Development`.
 
@@ -68,8 +85,11 @@ profile to a LAN, reverse proxy or production environment.
 
 Copy `ui/Bower.Management.Web/.env.example` and set the API and SPA application
 IDs. Vite variables are public client configuration, never secrets. MSAL uses
-redirect sign-in, session storage and silent access-token acquisition. No token
-is written to local storage by Bower code.
+popup sign-in, in-memory token caching and silent access-token acquisition with
+popup fallback. Tokens are not persisted in local/session storage. Refreshing the
+page clears the token cache; sign in again using the existing Entra session.
+Allow sign-in popups for the approved console origin. Redirect authentication is
+not supported with the in-memory cache.
 
 ## Collector enrollment flow
 

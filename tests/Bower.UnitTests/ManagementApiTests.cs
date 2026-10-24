@@ -285,13 +285,13 @@ public sealed class ManagementApiTests
         Assert.Single(audit, item => item.Action == "collector.stale");
     }
 
-    private static readonly System.Text.Json.JsonSerializerOptions ApiJson =
+    internal static readonly System.Text.Json.JsonSerializerOptions ApiJson =
         new(System.Text.Json.JsonSerializerDefaults.Web)
         {
             Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
         };
 
-    private static async Task<WebApplication> StartAsync(
+    internal static async Task<WebApplication> StartAsync(
         TemporaryDirectory directory,
         CancellationToken cancellationToken,
         params string[] extraArgs)
@@ -318,12 +318,17 @@ public sealed class ManagementApiTests
         return app;
     }
 
-    private static HttpClient Client(WebApplication app, string roles)
+    internal static HttpClient Client(WebApplication app, string roles, string? objectId = null)
     {
         HttpClient client = app.GetTestClient();
         if (!string.IsNullOrEmpty(roles))
         {
             client.DefaultRequestHeaders.Add(HeaderAuthenticationHandler.RolesHeader, roles);
+        }
+
+        if (objectId is not null)
+        {
+            client.DefaultRequestHeaders.Add(HeaderAuthenticationHandler.ObjectIdHeader, objectId);
         }
 
         return client;
@@ -339,6 +344,9 @@ public sealed class ManagementApiTests
         public const string SchemeName = "BowerTest";
         public const string RolesHeader = "X-Test-Roles";
 
+        /// <summary>Optional: overrides the default <c>principal-{roles}</c> object id.</summary>
+        public const string ObjectIdHeader = "X-Test-Oid";
+
         protected override Task<AuthenticateResult> HandleAuthenticateAsync()
         {
             if (!Request.Headers.TryGetValue(RolesHeader, out Microsoft.Extensions.Primitives.StringValues roles))
@@ -348,7 +356,9 @@ public sealed class ManagementApiTests
 
             List<Claim> claims =
             [
-                new("oid", $"principal-{roles}"),
+                new("oid", Request.Headers.TryGetValue(ObjectIdHeader, out Microsoft.Extensions.Primitives.StringValues oid)
+                    ? oid.ToString()
+                    : $"principal-{roles}"),
                 new("name", "Test principal")
             ];
             claims.AddRange(roles.ToString()

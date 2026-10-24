@@ -18,21 +18,22 @@
 > instrument security-relevant actions consistently without needing to understand
 > Sentinel ingestion internals.
 
-**Turn scattered application noise into trusted security signal — without
-shipping Australian PII, credentials or secrets downstream.**
+**Turn application security events into selected signal, with privacy controls
+applied before persistence and forwarding.**
 
 ## Why Bower
 
 Azure Monitor Agent, Elastic Agent and Cribl Stream move logs. Bower makes a narrower
-promise and proves it: **only approved security events, with Australian personal data
-removed on the host, provably arriving in Sentinel.**
+scope: **approved semantic security events, configured host-side redaction, durable
+delivery accounting, and destination-query evidence when verification is run.**
+Local tests do not prove tenant delivery or complete detection of arbitrary secrets.
 
 | | Bower | Typical alternative |
 |---|---|---|
-| **Proof of arrival** | `bower evidence run` sends a canary, finds it in Sentinel with KQL, records latency and retention, maps it to ISM / Essential Eight controls and signs the result | AMA, Elastic and Cribl stop at "the API accepted it"; checking Sentinel is manual |
+| **Proof of arrival** | `bower evidence run` can query a canary in Sentinel and sign the observed result; unrelated privacy, retention and regulatory dimensions remain `not-assessed` without separate evidence | AMA, Elastic and Cribl stop at "the API accepted it"; checking Sentinel is manual |
 | **Redaction before data leaves the host** | Deterministic engine with checksum-validated TFN, Medicare, IHI, ABN/ACN and cards, pattern-matched CRN and secrets; runs before anything is stored; any failure quarantines | DCR transformations redact in Azure after transfer; Elastic's redact processor runs in Elasticsearch on a paid licence; ML-based detectors elsewhere |
 | **Default deny** | Only event types an approved, versioned policy names are kept; everything else is rejected and explained | Forward everything configured, then filter |
-| **No silent loss** | Durable queue that deletes only after acknowledgement, attempt-limited dead letters with replay, preflight against Azure's 64 KB / type / schema limits, `bower doctor` and DCR drift checks | Azure truncates and drops rows without a per-record error |
+| **Delivery accounting** | Durable queue with acknowledged retention, bounded destination outages, retained dead letters and audited replay; SDK acceptance is memory-only until collector acceptance; preflight and DCR drift checks | Azure truncates and drops rows without a per-record error |
 | **Tamper evidence** | Hash-chained queue ledger, head witnessed by the management plane | Not offered at the collector |
 | **Signed content** | Packs (policy, privacy profile, parsers, detections, samples, DCR) are signed, hash-pinned and tested before signing | Unsigned community content |
 | **AWS and Google Cloud, same contract** | GuardDuty, Security Hub, high-value CloudTrail, Security Command Center and admin audit logs arrive as the same semantic events through the same redaction and policy; cloud queues are acknowledged only after the collector accepts, with no stored cloud keys and Australian region pinning | Per-cloud connectors that forward everything, or polling with stored access keys |
@@ -75,6 +76,11 @@ Configurable actions per detector: Allow, Remove, Replace, Mask, SHA-256, HMAC,
 Encrypt, AlertOnly. Events emit `privacy` metadata describing what was detected
 and which action ran — **never** the original values.
 
+Your own identifiers need no code: a **privacy profile** can add custom detectors
+(custom redaction rules) and secret field names, tested on load and reviewed and
+rolled out from the management console. See [privacy profiles and custom redaction
+rules](#privacy-profiles-and-custom-redaction-rules).
+
 **Security team notification:** high-risk findings (regulated AU identifiers,
 secrets, crypto material, payment cards, field-name secrets) also enqueue a
 first-class semantic event `sensitive_data_detected` (`privacy-control`) so the
@@ -110,7 +116,7 @@ represented as Sentinel delivery.
 ```mermaid
 flowchart LR
     A[Application or source] --> B[Candidate event]
-    B --> C[Privacy and secret engine]
+    B --> C["Privacy & Secret Protection Engine"]
     C --> D[Schema validation]
     D --> E[Deterministic value policy]
     E -->|reject/quarantine| F[Decision evidence]
@@ -133,8 +139,9 @@ The C# code is the specification. Both implementations share `policies/`,
 `schemas/`, `packs/` and configuration (`BOWER_*` variables), produce the same
 payload bytes, fingerprints, policy hashes and ledger hashes, verify each other's
 pack and evidence signatures, and can open each other's SQLite queue. Parity is
-enforced by tests built from C#-generated vectors. Agents, the management API
-and the console remain C# only.
+enforced by tests built from C#-generated vectors. `bower-lambda` reuses these
+crates as an AWS Lambda host. Agents, the management API, the console and the
+Azure Functions collector remain C# only.
 
 ```bash
 cd rust
@@ -162,10 +169,10 @@ See [`rust/AGENTS.md`](rust/AGENTS.md) for parity rules.
 | Docker, systemd, Kubernetes | Baseline deployment assets |
 | Console container | Standalone nginx image configured at runtime (`Dockerfile.web`) |
 | Docker sidecar | Read-only collection from opted-in containers' json-file logs (`Bower.Agent.Docker`) |
-| Management UI and API | Fleet inventory, approval, health, audit, custom-log parser generation and Entra app-role RBAC implemented |
+| Management UI and API | Fleet inventory, approval, health, audit, custom-log parser generation, privacy profile versioning with two-person review and signed assignment, and Entra app-role RBAC implemented |
 | AI-assisted custom log parser generator | Deterministic local JSON, CSV, key/value and common-regex inference with OCSF/ASIM mappings and redacted preview |
 | Windows Service self-install | Not implemented |
-| SQL Server source | EF Core adapter with durable SQLite cursors implemented |
+| SQL Server source | EF Core adapter library with durable keyset/overlap cursors; collector polling orchestration not yet wired |
 | AWS security signal | GuardDuty, Security Hub and high-value CloudTrail via EventBridge → SQS, plus Bower events from CloudWatch Logs via Firehose → S3; CloudFormation, signed `aws-security` pack, `bower-cloud` agent with IAM-role credentials |
 | Google Cloud security signal | Security Command Center findings and Admin Activity audit logs via Pub/Sub with Australian storage policy; Terraform, signed `gcp-security` pack, ADC / Workload Identity Federation (key files refused) |
 | File, REST, Event Log sources | Not implemented |
@@ -174,7 +181,10 @@ See [`rust/AGENTS.md`](rust/AGENTS.md) for parity rules.
 | DCR generator, drift and doctor | Implemented: schema-driven ARM template, live/offline drift, ingestion preflight, region checks |
 | Fleet controls | Per-producer revocable ingest tokens, desired-policy acknowledgement, inactivity suspension and reinstate |
 | Queue integrity | Hash-chained ledger witnessed by management; dead-letter holding area with replay |
-| Privacy profiles | YAML detector actions, HMAC pseudonymisation with key ids, truncation, field-length cap |
+| Privacy profiles | YAML detector actions, custom detectors (custom redaction rules), secret field names, field rules, HMAC pseudonymisation with key ids, truncation, field-length cap; local file, signed pack or management console |
+| Azure Functions collector | Native C# isolated worker (Flex Consumption): Entra-authenticated `/v1/events`, managed identity to Logs Ingestion; no durable queue; tenant test required |
+| AWS Lambda host | Rust `bower-lambda`: IAM Function URL or Invoke, execution role writes to CloudTrail Lake; no durable queue; AWS test required |
+| PowerShell modules | `Bower.Events`, `Bower.Management`, `Bower.Deployment` (plan-first), `Bower.Privacy` for PowerShell 7.4+ |
 
 ## Getting started
 
@@ -191,9 +201,12 @@ dotnet test --configuration Release
 
 ### 2. Run a collector and send a canary event
 
-A collector bound to loopback accepts events without a token:
+For this isolated local demo, explicitly use one trust domain. Production collectors
+should configure [producer identity scopes](docs/security/producer-scopes.md);
+unscoped ingest is denied by default, including loopback.
 
 ```bash
+BOWER_SINGLE_TRUST_DOMAIN=true \
 BOWER_QUEUE_PATH=./artifacts/bower.db \
 BOWER_POLICY_DIRECTORY=./policies/default \
 BOWER_OUTPUT=ama-spool \
@@ -217,7 +230,8 @@ queue/output state only; it does not prove Sentinel queryability.
 ### 3. Expose the collector to other hosts
 
 Any non-loopback listener requires a shared ingest token; the collector refuses to
-start without one.
+start without one. Configure `BOWER_PRODUCER_SCOPES_FILE` before ingesting;
+a valid token alone does not authorize an application, tenant or source.
 
 ```bash
 export BOWER_INGEST_TOKEN="$(dotnet run --project src/Bower.Cli -- token generate)"
@@ -352,6 +366,28 @@ docker pull ghcr.io/jusso-dev/bower-cloud:edge
 Tags, verification and runtime configuration:
 [container images](docs/deployment/container-images.md).
 
+## Serverless hosting
+
+Where a VM or container is not wanted, two native hosts run the same validation,
+default-deny policy and privacy profile (custom detectors included) as the
+collector. Neither has the collector's durable queue, ledger or management
+heartbeat: they answer success only after the destination accepted the event, so
+producers retry on failure (at-least-once).
+
+| Host | Ingest auth | Destination auth | Guide |
+|---|---|---|---|
+| **Azure Functions collector** (C#, isolated worker, Flex Consumption) | Entra token with the `Bower.Producer` app role, plus producer scopes | Managed identity (system-assigned by default) with Monitoring Metrics Publisher on the DCR only; no keys or connection strings | [Azure Functions](docs/deployment/azure-function.md) · [`deploy/azure-function`](deploy/azure-function/main.bicep) |
+| **AWS Lambda host** (Rust `bower-lambda`, arm64) | IAM: Function URL with `AuthType: AWS_IAM` or `lambda:InvokeFunction`, caller ARN mapped to producer scopes | Execution role only: `logs:PutLogEvents` on one CloudWatch Logs group, or `cloudtrail-data:PutAuditEvents` on one CloudTrail Lake channel | [AWS Lambda](docs/deployment/aws-lambda.md) · [`deploy/aws`](deploy/aws/bower-aws-lambda.yaml) |
+
+> [!NOTE]
+> AWS closed CloudTrail Lake to new customers on 31 May 2026. The Lambda host writes
+> to CloudWatch Logs by default; choose `cloudtrail-lake` only for accounts already
+> using CloudTrail Lake.
+
+Both are plan-first: `az deployment group what-if` and CloudFormation change sets
+(or `Deploy-BowerAzureFunction` / `Deploy-BowerAwsLambda` in PowerShell).
+Neither has been exercised against a live tenant or account yet.
+
 ## Collector configuration
 
 | Variable | Default | Purpose |
@@ -359,8 +395,12 @@ Tags, verification and runtime configuration:
 | `BOWER_LISTEN_URL` | `http://127.0.0.1:4319` | HTTP listener. Non-loopback requires a token. |
 | `BOWER_INGEST_TOKEN` / `BOWER_INGEST_TOKEN_FILE` | — | Shared bearer token (≥ 32 characters) for `/v1/events` and `/v1/status`. |
 | `BOWER_INGEST_TOKENS_FILE` | — | Per-producer revocable credentials (`<producer> sha256:<hex>` lines, hot reloaded). |
+| `BOWER_PRODUCER_SCOPES_FILE` | — | Exact per-producer application/environment/tenant/instance/source tuples; restart to reload. Missing scope denies ingest. |
+| `BOWER_SINGLE_TRUST_DOMAIN` | `false` | Explicit legacy trust mode; every producer may assert any identity. Mutually exclusive with scopes file. |
 | `BOWER_PACKS` / `BOWER_PACK_TRUSTED_KEYS` | — | Signed `.bowerpack` files to load, and the public keys trusted to sign them. |
-| `BOWER_PRIVACY_PROFILE` | — | Privacy profile YAML (detector actions, HMAC field rules, length limits). |
+| `BOWER_PRIVACY_PROFILE` | — | Privacy profile YAML (detector actions, custom detectors, secret field names, field rules, length limits). |
+| `BOWER_PRIVACY_PROFILE_SOURCE` | `local` | `management` takes the privacy profile from the management console (signed, verified, cached). |
+| `BOWER_MANAGED_PRIVACY_TRUSTED_KEYS` / `BOWER_MANAGED_PRIVACY_DIRECTORY` | — / `managed-privacy` next to the queue | Public keys trusted to sign managed privacy profiles, and the verified cache directory. |
 | `BOWER_PRIVACY_HMAC_KEY_FILE` / `BOWER_PRIVACY_HMAC_KEY_ID` | — / `k1` | Pseudonymisation key (32+ bytes, base64) and the id embedded in HMAC output. |
 | `BOWER_ALLOW_UNAUTHENTICATED_INGEST` | `false` | Explicit opt-out for isolated networks only. |
 | `BOWER_INGEST_RATE_PER_SECOND` | `500` | Token-bucket limit (burst 2×); excess returns HTTP 429. |
@@ -385,6 +425,7 @@ low-latency worker.
 | Collector | `queue-retention` — purge acknowledged events past retention | Hourly |
 | Collector | `queue-maintenance` — WAL checkpoint and `PRAGMA optimize` | Daily 03:00 |
 | Collector | `management-heartbeat` — register and report health | Every minute |
+| Collector | `managed-privacy-profile` — fetch, verify and stage the assigned privacy profile (management mode) | Every minute |
 | Management API | `collector-staleness` — flag and audit silent collectors | Every 5 minutes |
 
 Design, observability and how to add a job:
@@ -402,7 +443,10 @@ Design, observability and how to add a job:
 | Issue / revoke a producer token | `bower token generate --id sidecar-01` | [Fleet and queue integrity](docs/operations/fleet-and-queue-integrity.md) |
 | Replay dead letters | `bower queue dead-letters` · `bower queue replay --code preflight-` | [Fleet and queue integrity](docs/operations/fleet-and-queue-integrity.md) |
 | Verify queue integrity | `bower queue verify --database queue.db` | [Fleet and queue integrity](docs/operations/fleet-and-queue-integrity.md) |
-| Pseudonymise identifiers | privacy profile `action: hmac` + `BOWER_PRIVACY_HMAC_KEY_FILE` | [Privacy engine](docs/privacy/privacy-secret-engine.md) |
+| Validate a privacy profile | `bower privacy validate profile.yaml --sample event.json` | [Custom redaction rules](docs/privacy/custom-redaction-rules.md) |
+| Test sample events against policies offline | `bower policy test samples/*.json --policy-directory policies/default --expect accept` | Metadata only; exit 3 when `--expect` does not match |
+| Review and roll out a privacy profile | Management console → **Privacy profiles** | [Managed privacy profiles](docs/privacy/managed-privacy-profiles.md) |
+| Pseudonymise identifiers | privacy profile `action: hmac` (detector, custom detector or field rule) + `BOWER_PRIVACY_HMAC_KEY_FILE` | [Privacy & Secret Protection Engine](docs/privacy/privacy-secret-engine.md) |
 | Forward AWS / GCP security signal | `deploy/aws` CloudFormation, `deploy/gcp` Terraform, `bower-cloud` agent | [AWS](docs/deployment/aws.md) · [Google Cloud](docs/deployment/gcp.md) |
 | Validate a pipeline document | `bower pipeline validate --file pipeline.yaml` · `bower pipeline template aws-security` | Exit 2 when invalid |
 
@@ -532,7 +576,8 @@ collectors stand out.
 
 The authenticated session and the group-assignable `Bower.Viewer`,
 `Bower.Operator`, `Bower.Approver`, `Bower.Administrator` and machine-only
-`Bower.Collector` app roles.
+`Bower.Collector` app roles. The Azure Functions collector uses a separate
+registration with one application-only role, `Bower.Producer`.
 
 ![Access control: current Entra identity, assigned app roles and the RBAC model](docs/images/bower-management-access.png)
 
@@ -542,6 +587,15 @@ Who changed collector state, which job was triggered, and when. Event payloads
 and credentials are never displayed.
 
 ![Management audit: timestamps, actions, targets, actors and Entra object IDs](docs/images/bower-management-audit.png)
+
+### Privacy profiles
+
+Submit a new privacy profile version from a YAML editor that validates it and
+previews redaction of a sample event. Reviewers see a line diff against the previous
+approved version. A second person (`Bower.Approver`, never the author) approves or
+rejects it. An administrator then assigns the approved version to collectors and
+watches each one report **In sync**. Every step needs a reason and is audited.
+[Managed privacy profiles](docs/privacy/managed-privacy-profiles.md).
 
 ### Responsive operations
 
@@ -619,6 +673,31 @@ bower developer init --path ./CustomerPortal
 
 Existing `AGENTS.md` content is preserved; Bower owns only marked section.
 
+## PowerShell modules
+
+PowerShell 7.4+ modules (Windows, Linux, macOS) wrap the collector, management API,
+`bower` CLI and deployment templates:
+
+| Module | Commands |
+|---|---|
+| `Bower.Events` | `New-`, `Test-`, `Send-BowerSecurityEvent` (collector, Azure Functions collector, SigV4 Lambda Function URL) |
+| `Bower.Management` | Connect, collectors (approve, deny, suspend, resume, revoke), audit, jobs, privacy profile versions (preview, submit, approve, deny, assign, clear) |
+| `Bower.Deployment` | `New-BowerEntraApplication`, `Deploy-BowerSentinelResource`, `Deploy-BowerAzureFunction`, `Deploy-BowerAwsLambda`, `Deploy-BowerAwsSecurity`, `Deploy-BowerGcpSecurity` |
+| `Bower.Privacy` | `Test-BowerPrivacyProfile`, `New-BowerCustomDetector`, `ConvertTo-BowerSecretFieldName` |
+| `Bower.Policy` | `New-BowerPolicy`, `Test-BowerPolicy`, `Test-BowerPolicyEvent` (offline, through the `bower` CLI) |
+
+```powershell
+Import-Module ./powershell/modules/Bower/Bower.psd1
+Test-BowerPrivacyProfile -Path ./contoso.privacy.yaml -SamplePath ./sample-event.json
+Connect-BowerManagement -Endpoint https://bower-api.example.gov.au -Audience api://<api-client-id>
+Submit-BowerPrivacyProfile -Path ./contoso.privacy.yaml -ChangeSummary 'Add custom.employee-id'
+```
+
+Deployments only plan until `-Apply` is confirmed. Revoke, privacy profile
+assignment and deployments prompt for confirmation, and management decisions need
+`-Reason`. Tokens stay in memory as `SecureString`. Guide:
+[PowerShell](docs/operations/powershell.md).
+
 ## Policy
 
 Policies are versioned YAML, hashed after parsing and cannot execute code:
@@ -643,6 +722,11 @@ decision:
   neverSample: true
 ```
 
+Test a policy change offline before rollout: `bower policy test samples/*.json`
+runs sample events through the collector's redaction, validation and selection and
+prints each decision with its reasons (metadata only; `--expect DECISION` exits 3 on
+a mismatch, for CI).
+
 Unknown events are rejected. Every policy must list `eventTypes`; unknown or
 misspelt YAML keys and numeric actions fail the load. Missing required
 investigation context is quarantined. Policy response includes ID, version, hash, score and reasons.
@@ -665,6 +749,60 @@ fields (`timeGenerated`, `actor.userId`, `request.correlationId`, ...), a label 
 `labels.<key>` or a top-level attribute as `attributes.<key>`. Label and attribute
 keys match exactly; an attribute is present unless it is JSON `null` or a blank
 string. Unknown paths are never present.
+
+## Privacy profiles and custom redaction rules
+
+Policies decide *which* events are kept. A **privacy profile** decides *how* they
+are redacted by the Privacy & Secret Protection Engine, before anything is stored
+or forwarded. Without one, the built-in Australian defaults apply. A privacy profile
+can:
+
+| Rule | YAML key | Example |
+|---|---|---|
+| Change a built-in detector | `detectors`, `disabled`, `enableOptIn` | `id.email: remove` |
+| Add a **custom detector** (custom redaction rule) | `customDetectors` | Mask `EMP-123456` employee numbers anywhere in an event |
+| Add **secret field names** | `secretFieldNames` | Always remove `sessionKey` properties |
+| Add a **field rule** | `fields` | HMAC-pseudonymise `actor.username` |
+
+```yaml
+apiVersion: bower.security/v1
+kind: PrivacyProfile
+metadata: { id: contoso-custom-redaction, version: 1.1.0 }
+customDetectors:
+  - id: custom.employee-id
+    description: Contoso employee numbers (EMP- and six digits).
+    pattern: 'EMP-\d{6}'
+    wholeWord: true
+    action: mask
+    tests:
+      match: ["EMP-123456", "user EMP-000001 logged in"]
+      noMatch: ["EMP-12345", "XEMP-123456"]
+secretFieldNames: [sessionKey, x-contoso-signature]
+fields:
+  - path: actor.username
+    action: hmac        # needs BOWER_PRIVACY_HMAC_KEY_FILE
+```
+
+1. **Write** custom detectors with the portable pattern syntax (no lookaround or
+   back-references; `wholeWord` instead of `\b`). Every custom detector carries its
+   own `tests`: each `match` sample must match and no `noMatch` sample may. A host
+   refuses to load a privacy profile whose tests fail.
+2. **Test** locally or in CI: `bower privacy validate profile.yaml --sample event.json`
+   (or `Test-BowerPrivacyProfile` in PowerShell). Editor validation:
+   [`schemas/privacy-profile.schema.json`](schemas/privacy-profile.schema.json).
+3. **Version and review**: keep the file in Git and bump `metadata.version` on every
+   change. Or submit it in the management console, where every privacy profile
+   version is immutable, diffed and approved by a second person.
+4. **Deploy** one privacy profile per host: `BOWER_PRIVACY_PROFILE`, a signed pack,
+   or `BOWER_PRIVACY_PROFILE_SOURCE=management` so collectors fetch the version an
+   administrator assigned, verify its signature and restart to apply it.
+
+Full syntax, limits and troubleshooting: [custom redaction
+rules](docs/privacy/custom-redaction-rules.md). Review, signing and roll-out:
+[managed privacy profiles](docs/privacy/managed-privacy-profiles.md). Built-in
+detectors and actions: [Privacy & Secret Protection
+Engine](docs/privacy/privacy-secret-engine.md). Starting point:
+[`deploy/privacy/custom-redaction-example.yaml`](deploy/privacy/custom-redaction-example.yaml).
 
 ## Outputs
 

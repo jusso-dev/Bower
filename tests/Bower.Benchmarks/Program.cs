@@ -41,17 +41,28 @@ const string dirtyEvent =
       "pan": "4111111111111111",
       "awsKey": "AKIAIOSFODNN7EXAMPLE",
       "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.signature",
-      "note": "contact +61 412 345 678 and abn 51 824 753 556"
+      "note": "contact +61 412 345 678 and abn 51 824 753 556",
+      "change": { "field": "password", "previousValue": "ordinary-before", "newValue": "ordinary-after" },
+      "request": { "path": "https://user:ordinary-url@example.test/login?state=ordinary-query#ordinary-fragment" }
     }
     """;
 
 PrivacyEngine engine = new();
+
+const string permissionEvent =
+    """
+    {"eventType":"gcp_cloud_audit","change":{"field":"permission_direction","newValue":"mixed"},
+     "attributes":{"cloud.permissionChanges":{"mode":"delta","target":"projects/example","entries":[
+       {"member":"allUsers","permission":"roles/viewer","direction":"grant","conditionPresent":false},
+       {"member":"user:alice@example.test","permission":"roles/owner","direction":"revoke","conditionPresent":true}]}}}
+    """;
 
 // Warmup
 for (int i = 0; i < 200; i++)
 {
     _ = engine.RedactJson(cleanEvent);
     _ = engine.RedactJson(dirtyEvent);
+    _ = engine.RedactJson(permissionEvent);
 }
 
 static (double opsPerSec, double meanUs) Measure(PrivacyEngine engine, string payload, int iterations)
@@ -101,9 +112,32 @@ string licenceEvent = licences.Append("\"}").ToString();
 
 (double cleanOps, double cleanUs) = Measure(engine, cleanEvent, iterations);
 (double dirtyOps, double dirtyUs) = Measure(engine, dirtyEvent, iterations);
+(double permissionOps, double permissionUs) = Measure(engine, permissionEvent, iterations);
 (double wideOps, double wideUs) = Measure(engine, wideEvent, 500);
 (double denseOps, double denseUs) = Measure(engine, denseEvent, 3);
 (double licenceOps, double licenceUs) = Measure(engine, licenceEvent, 20);
+// Privacy profile with 32 custom detectors (the maximum), half whole-word, a third
+// case-insensitive, on the clean, dirty and wide events.
+System.Text.StringBuilder customProfile = new(
+    "apiVersion: bower.security/v1\nkind: PrivacyProfile\nmetadata:\n  id: bench\n  version: 1.0.0\ncustomDetectors:\n");
+for (int i = 0; i < 32; i++)
+{
+    customProfile.Append(
+        System.Globalization.CultureInfo.InvariantCulture,
+        $"  - id: custom.rule-{i}\n    pattern: 'R{i:D2}-[A-Z0-9]{{4,8}}'\n    wholeWord: {(i % 2 == 0 ? "true" : "false")}\n    ignoreCase: {(i % 3 == 0 ? "true" : "false")}\n    action: mask\n    tests:\n      match: [R{i:D2}-ABCD]\n");
+}
+
+PrivacyEngine customEngine = new(PrivacyProfileLoader.Load(customProfile.ToString()).Policy);
+for (int i = 0; i < 200; i++)
+{
+    _ = customEngine.RedactJson(cleanEvent);
+    _ = customEngine.RedactJson(dirtyEvent);
+}
+
+(double customCleanOps, double customCleanUs) = Measure(customEngine, cleanEvent, iterations);
+(double customDirtyOps, double customDirtyUs) = Measure(customEngine, dirtyEvent, iterations);
+(double customWideOps, double customWideUs) = Measure(customEngine, wideEvent, 500);
+
 long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
 for (int i = 0; i < 1_000; i++)
 {
@@ -116,10 +150,14 @@ Console.WriteLine("Bower PrivacyEngine micro-benchmark");
 Console.WriteLine($"  iterations: {iterations}");
 Console.WriteLine($"  clean event: {cleanOps:F0} ops/s  mean {cleanUs:F1} µs  alloc {cleanAllocated} B/op");
 Console.WriteLine($"  dirty event: {dirtyOps:F0} ops/s  mean {dirtyUs:F1} µs");
+Console.WriteLine($"  cloud permission event: {permissionOps:F0} ops/s  mean {permissionUs:F1} µs");
 Console.WriteLine($"  wide event (200 fields): {wideOps:F0} ops/s  mean {wideUs:F1} µs");
 Console.WriteLine($"  dense value (20k emails, {denseEvent.Length / 1024} KiB): mean {denseUs / 1000:F1} ms");
 Console.WriteLine($"  licence value (10k licence tokens, {licenceEvent.Length / 1024} KiB): mean {licenceUs / 1000:F1} ms");
 Console.WriteLine($"  detectors:   {engine.Detectors.Count}");
+Console.WriteLine($"  32 custom detectors, clean event: {customCleanOps:F0} ops/s  mean {customCleanUs:F1} µs");
+Console.WriteLine($"  32 custom detectors, dirty event: {customDirtyOps:F0} ops/s  mean {customDirtyUs:F1} µs");
+Console.WriteLine($"  32 custom detectors, wide event:  {customWideOps:F0} ops/s  mean {customWideUs:F1} µs");
 
 // Queue settlement: one transaction per acknowledged event vs one per delivery batch.
 const int settleBatch = 500;
@@ -132,7 +170,7 @@ try
     string payload = "{\"eventId\":\"x\",\"note\":\"" + new string('p', 1_000) + "\"}";
     int nextId = 0;
 
-    async Task<IReadOnlyList<string>> EnqueueAndLeaseAsync(int count)
+    async Task<IReadOnlyList<QueuedEvent>> EnqueueAndLeaseAsync(int count)
     {
         for (int i = 0; i < count; i++)
         {
@@ -140,7 +178,7 @@ try
             await store.EnqueueAsync(new QueuedEvent(id, $"sha256:{id}", payload, DateTimeOffset.UtcNow));
         }
 
-        return [.. (await store.LeaseAsync(count, TimeSpan.FromMinutes(5))).Select(item => item.EventId)];
+        return await store.LeaseAsync(count, TimeSpan.FromMinutes(5));
     }
 
     double perEventMs = 0;
@@ -148,18 +186,18 @@ try
     const int rounds = 3;
     for (int round = 0; round < rounds; round++)
     {
-        IReadOnlyList<string> ids = await EnqueueAndLeaseAsync(settleBatch);
+        IReadOnlyList<QueuedEvent> ids = await EnqueueAndLeaseAsync(settleBatch);
         Stopwatch perEvent = Stopwatch.StartNew();
-        foreach (string id in ids)
+        foreach (QueuedEvent item in ids)
         {
-            await store.MarkDeliveredAsync(id, "bench");
+            await store.MarkDeliveredAsync(item.EventId, "bench", item.LeaseToken);
         }
 
         perEventMs += perEvent.Elapsed.TotalMilliseconds;
 
         ids = await EnqueueAndLeaseAsync(settleBatch);
         Stopwatch batch = Stopwatch.StartNew();
-        await store.MarkDeliveredBatchAsync(ids, "bench");
+        await store.MarkDeliveredBatchAsync(ids.Select(item => item.EventId).ToArray(), "bench", ids.ToDictionary(item => item.EventId, item => item.LeaseToken!));
         batchMs += batch.Elapsed.TotalMilliseconds;
     }
 

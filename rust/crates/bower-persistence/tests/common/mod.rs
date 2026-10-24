@@ -55,6 +55,7 @@ pub fn event(
     received_at: Timestamp,
 ) -> QueuedEvent {
     QueuedEvent {
+        lease_token: None,
         event_id: event_id.into(),
         fingerprint: fingerprint.into(),
         payload: payload.into(),
@@ -123,4 +124,20 @@ pub fn schema(path: &Path) -> Vec<String> {
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap()
+}
+
+pub fn claims(
+    store: &bower_persistence::SqliteEventStore,
+) -> std::collections::HashMap<String, String> {
+    let connection = raw(store.database_path());
+    let mut query = connection.prepare("SELECT event_id, CAST(enqueue_sequence AS TEXT) || ':' || CAST(lease_generation AS TEXT) FROM queue_events_v5;").unwrap();
+    query
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+}
+
+pub fn claim(store: &bower_persistence::SqliteEventStore, id: &str) -> Option<String> {
+    claims(store).get(id).cloned()
 }

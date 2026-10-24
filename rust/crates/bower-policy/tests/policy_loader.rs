@@ -63,7 +63,7 @@ fn load_file_parses_and_hashes_versioned_yaml_deterministically() {
 fn load_directory_accepts_shipped_default_policies() {
     let policies = load_directory(default_policies_dir()).unwrap();
 
-    assert_eq!(policies.len(), 3);
+    assert_eq!(policies.len(), 5);
     // Hashes computed by C# PolicyLoader over the same files.
     let hashes: Vec<(&str, &str)> = policies
         .iter()
@@ -81,8 +81,16 @@ fn load_directory_accepts_shipped_default_policies() {
                 "sha256:89fd345ecd0730c6f25cb1a5b4a0c07133e5f2d0ffd22dc567ee96b28fcf8bae"
             ),
             (
+                "BWR-POL-ROLE-MEMBERSHIP",
+                "sha256:361e8c93eaa9b2fed9634c07aec9d1441d52deff832634a7f8fa9e971f78c73c"
+            ),
+            (
                 "BWR-POL-PRIVACY-DETECT",
                 "sha256:df7e78bb696a190bca3405f0d2b75690d48303bbfd8b0913ed98464dc68af146"
+            ),
+            (
+                "BWR-POL-SENSITIVE-EXPORT",
+                "sha256:2677651e2b28b27145f9df569536b1a9b7a16080b568dae61e10017324ec1d53"
             ),
         ]
     );
@@ -543,4 +551,17 @@ fn loader_vectors_match_csharp() {
             "i11.yaml"
         ]
     );
+}
+
+#[test]
+fn invalid_optional_selection_predicates_fail_closed() {
+    for predicate in [
+        "eventActions: []",
+        "eventActions: null",
+        "eventResults: [typo]",
+        "eventSeverities: [urgent]",
+    ] {
+        let yaml = VALID_POLICY.replace("match:", &format!("match:\n  {predicate}"));
+        assert!(load_yaml(&yaml, "predicate.yaml").is_err(), "{predicate}");
+    }
 }

@@ -1,0 +1,43 @@
+apiVersion: bower.security/v1
+kind: PrivacyProfile
+metadata:
+  id: contoso-custom-redaction
+  version: 1.0.0
+  description: >-
+    Example privacy profile with custom detectors (custom redaction rules) for
+    organisation-specific identifiers, extra secret field names and one field rule.
+    Everything else keeps the default Australian redaction. Set with
+    BOWER_PRIVACY_PROFILE plus BOWER_PRIVACY_HMAC_KEY_FILE and BOWER_PRIVACY_HMAC_KEY_ID
+    (the customer reference and actor.username use keyed HMAC pseudonyms).
+customDetectors:
+  - id: custom.employee-id
+    description: Contoso employee numbers (EMP- and six digits).
+    pattern: 'EMP-\d{6}'
+    wholeWord: true
+    action: mask
+    tests:
+      match: ["EMP-123456", "user EMP-000001 logged in"]
+      noMatch: ["EMP-12345", "XEMP-123456", "EMP-1234567"]
+  - id: custom.customer-ref
+    description: Customer references, written in any letter case.
+    pattern: 'CUST-[A-Z]{2}\d{4}'
+    ignoreCase: true
+    action: hmac
+    tests:
+      match: ["CUST-AB1234", "ref cust-xy0001 opened"]
+      noMatch: ["CUST-A1234", "CUSTOMER-AB1234"]
+  - id: custom.internal-ticket
+    description: Internal incident and change tickets.
+    pattern: '(INC|CHG)\d{7}'
+    wholeWord: true
+    action: replace
+    tests:
+      match: ["INC0012345", "see CHG7654321."]
+      noMatch: ["INC001234", "XINC0012345"]
+secretFieldNames:
+  - sessionKey
+  - x-contoso-signature
+  - webhookNonce
+fields:
+  - path: actor.username
+    action: hmac

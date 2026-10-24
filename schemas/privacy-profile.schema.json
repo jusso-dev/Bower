@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bower.security/schemas/privacy/privacy-profile-v1.json",
+  "title": "Bower Privacy Profile",
+  "description": "Privacy profile for the Privacy & Secret Protection Engine (kind: PrivacyProfile). Editor support only: the loader is authoritative and also rejects unknown keys, invalid custom detector patterns and failing custom detector tests.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata"],
+  "$defs": {
+    "action": {
+      "description": "Privacy action. Case-insensitive; hyphens are ignored (alert-only = AlertOnly). hmac needs a host HMAC key; encrypt without a 32-byte key removes the value.",
+      "type": "string",
+      "enum": [
+        "allow", "remove", "replace", "mask", "sha256", "hmac", "encrypt", "alert-only", "alertonly", "truncate",
+        "Allow", "Remove", "Replace", "Mask", "Sha256", "SHA256", "Hmac", "HMAC", "Encrypt", "AlertOnly", "Alert-Only", "Truncate"
+      ]
+    },
+    "detectorId": {
+      "description": "Built-in detector id.",
+      "type": "string",
+      "enum": [
+        "field-name-secret", "field-rule", "limit.field-length",
+        "au.tfn", "au.crn", "au.medicare", "au.ihi", "au.passport", "au.driver-licence", "au.abn", "au.acn", "au.dva",
+        "fin.credit-card", "fin.bsb-account", "fin.iban", "fin.swift-bic", "fin.payid",
+        "id.email", "id.phone.au", "id.phone.intl", "id.dob", "id.address", "id.gps", "id.ip", "id.hostname", "id.username",
+        "secret.aws", "secret.azure", "secret.entra", "secret.gcp", "secret.jwt", "secret.oauth", "secret.api-key",
+        "secret.kubernetes", "secret.docker", "secret.database", "secret.env-var",
+        "crypto.material", "class.security-marking"
+      ]
+    },
+    "customDetectorId": {
+      "description": "Custom detector id: custom.<name>, lowercase letters, digits and single hyphens, at most 64 characters.",
+      "type": "string",
+      "pattern": "^custom\\.[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 64
+    },
+    "sample": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "customDetector": {
+      "description": "Custom detector (custom redaction rule): a restricted, deterministic pattern applied wherever built-in value detectors run (string and number values, property names).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "pattern", "action", "tests"],
+      "properties": {
+        "id": { "$ref": "#/$defs/customDetectorId" },
+        "description": { "type": ["string", "null"], "maxLength": 256 },
+        "pattern": {
+          "description": "Restricted syntax: literals, escaped punctuation, \\t \\n \\r, \\d \\w \\s (ASCII) and negations, ., classes and ranges, (...) and (?:...), * + ? {n} {n,} {n,m} (bounds at most 1000) with optional lazy ?, |, ^ and $ (whole value). No lookaround, back-references, inline flags, named groups, \\b, \\p{...} or other escapes. Expansion estimate at most 512; must not match an empty string.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "ignoreCase": {
+          "description": "ASCII letters only; non-ASCII letters stay case-sensitive.",
+          "type": ["boolean", "null"],
+          "default": false
+        },
+        "wholeWord": {
+          "description": "Keep a match only when the characters around it are not ASCII letters, digits or underscore.",
+          "type": ["boolean", "null"],
+          "default": false
+        },
+        "action": { "$ref": "#/$defs/action" },
+        "tests": {
+          "description": "Checked at load: every match sample must match and no noMatch sample may match (after wholeWord filtering).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["match"],
+          "properties": {
+            "match": { "type": "array", "minItems": 1, "maxItems": 16, "items": { "$ref": "#/$defs/sample" } },
+            "noMatch": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/sample" } }
+          }
+        }
+      }
+    },
+    "fieldRule": {
+      "description": "Deterministic action on a dot-separated JSON path from the event root; * matches one segment.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "action"],
+      "properties": {
+        "path": { "type": "string", "pattern": "^[^.]{1,64}(\\.[^.]{1,64})*$" },
+        "action": { "$ref": "#/$defs/action" },
+        "maxLength": { "description": "Required (1-65536) for truncate.", "type": "integer", "minimum": 1, "maximum": 65536 }
+      }
+    }
+  },
+  "properties": {
+    "apiVersion": { "const": "bower.security/v1" },
+    "kind": { "const": "PrivacyProfile" },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "type": ["string", "number"] },
+        "version": { "type": ["string", "number"] },
+        "description": { "type": ["string", "null"] }
+      }
+    },
+    "defaultAction": { "$ref": "#/$defs/action" },
+    "detectors": {
+      "description": "Built-in detector action overrides. Custom detectors set their action in customDetectors.",
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/detectorId" },
+      "additionalProperties": { "$ref": "#/$defs/action" }
+    },
+    "disabled": {
+      "description": "Built-in or custom detector ids to switch off.",
+      "type": "array",
+      "items": { "anyOf": [{ "$ref": "#/$defs/detectorId" }, { "$ref": "#/$defs/customDetectorId" }] }
+    },
+    "enableOptIn": {
+      "description": "Opt-in built-in detectors to switch on (custom detectors are always on unless disabled).",
+      "type": "array",
+      "items": { "$ref": "#/$defs/detectorId" }
+    },
+    "fields": { "type": "array", "items": { "$ref": "#/$defs/fieldRule" } },
+    "maximumFieldLength": { "type": "integer", "minimum": 256, "maximum": 65536, "default": 32768 },
+    "emitMetadata": { "type": "boolean", "default": true },
+    "customDetectors": {
+      "type": "array",
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/customDetector" }
+    },
+    "secretFieldNames": {
+      "description": "Extra field names removed like built-in field-name secrets. Compared after normalisation (letters and digits only, lower-cased), so sessionKey also covers session_key and SESSION-KEY.",
+      "type": "array",
+      "maxItems": 64,
+      "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+    }
+  }
+}

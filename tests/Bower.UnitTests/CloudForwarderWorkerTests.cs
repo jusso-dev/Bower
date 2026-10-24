@@ -46,6 +46,7 @@ public sealed class CloudForwarderWorkerTests
     }
 
     [Theory]
+    [InlineData(HttpStatusCode.Conflict)]
     [InlineData(HttpStatusCode.ServiceUnavailable)]
     [InlineData(HttpStatusCode.Unauthorized)]
     [InlineData(HttpStatusCode.InternalServerError)]
@@ -68,16 +69,20 @@ public sealed class CloudForwarderWorkerTests
         Assert.All(source.Released, item => Assert.Equal(TimeSpan.FromSeconds(60), item.Delay));
     }
 
-    [Fact]
-    public async Task Pass_RetriedMessageResendsSameEventIds()
+    [Theory]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    [InlineData(HttpStatusCode.Conflict)]
+    public async Task Pass_RetriedMessageResendsSameEventIds(HttpStatusCode initialStatus)
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         FakeSource source = new(Message("m1", CloudSourceTests.StopLogging));
-        HttpStatusCode status = HttpStatusCode.ServiceUnavailable;
+        HttpStatusCode status = initialStatus;
         Collector collector = new(_ => status);
         CloudForwarderWorker worker = Worker(source, collector);
 
         await worker.ProcessOnceAsync(cancellationToken);
+        Assert.Empty(source.Acknowledged);
+        Assert.Equal("m1", Assert.Single(source.Released).Id);
         source.Redeliver();
         status = HttpStatusCode.Accepted;
         await worker.ProcessOnceAsync(cancellationToken);
@@ -100,6 +105,23 @@ public sealed class CloudForwarderWorkerTests
         (string id, TimeSpan delay) = Assert.Single(source.Released);
         Assert.Equal("bad", id);
         Assert.Equal(TimeSpan.Zero, delay);
+    }
+
+    [Fact]
+    public async Task Pass_InvalidPermissionContextIsReleasedForDeadLetterWithoutAcknowledgement()
+    {
+        const string body = """
+            {"detail-type":"AWS API Call via CloudTrail","source":"aws.iam","detail":
+            {"eventID":"bad-permission","eventName":"AttachUserPolicy","eventSource":"iam.amazonaws.com",
+             "requestParameters":{"userName":"affected-user","policyArn":{"password":"unapproved-canary"}}}}
+            """;
+        FakeSource source = new(Message("bad", body));
+        Collector collector = new(_ => HttpStatusCode.Accepted);
+        CloudPassResult result = await Worker(source, collector).ProcessOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(1, result.Malformed);
+        Assert.Empty(source.Acknowledged);
+        Assert.Empty(collector.Bodies);
+        Assert.Equal(("bad", TimeSpan.Zero), Assert.Single(source.Released));
     }
 
     [Fact]

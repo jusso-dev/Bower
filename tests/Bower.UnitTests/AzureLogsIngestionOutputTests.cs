@@ -44,7 +44,7 @@ public sealed class AzureLogsIngestionOutputTests
         Assert.Equal(["accepted"], result.AcknowledgedEventIds);
         DeliveryFailure failure = Assert.Single(result.Failures);
         Assert.Equal("rejected", failure.EventId);
-        Assert.Equal("azure-http-400", failure.Code);
+        Assert.Equal("azure-http-400-isolated", failure.Code);
         Assert.False(failure.IsRetryable);
     }
 
@@ -193,12 +193,179 @@ public sealed class AzureLogsIngestionOutputTests
             new Uri("http://example.ingest.monitor.azure.com")));
     }
 
-    private static AzureLogsIngestionOutput CreateOutput(RecordingHandler handler, Uri? endpoint = null)
+    [Fact]
+    public async Task Deliver_DefaultConcurrencyOwnsFourReorderedMixedResponses()
+    {
+        ReorderedHandler handler = new();
+        AzureLogsIngestionOutput output = CreateOutput(handler);
+        string padding = new('x', 600 * 1024);
+        DeliveryResult result = await output.DeliverAsync(
+            [Event("one", padding), Event("two", padding), Event("three", padding), Event("four", padding)],
+            TestContext.Current.CancellationToken);
+        Assert.Equal(["two", "four"], result.AcknowledgedEventIds);
+        Assert.Equal(["one", "three"], result.Failures.Select(item => item.EventId).Order());
+        Assert.Equal("azure-http-400-isolated", result.Failures.Single(item => item.EventId == "one").Code);
+        Assert.True(result.Failures.Single(item => item.EventId == "three").IsDestinationFailure);
+        Assert.Equal(4, handler.Count);
+    }
+
+    [Fact]
+    public async Task Deliver_BoundedIsolationRetainsRejectedSingletonForAuditedRecovery()
+    {
+        RecordingHandler handler = new(ids => ids.Contains("bad") ? HttpStatusCode.BadRequest : HttpStatusCode.NoContent);
+        DeliveryResult result = await CreateOutput(handler).DeliverAsync(
+            [Event("good1"), Event("bad"), Event("good2")], TestContext.Current.CancellationToken);
+        Assert.Equal(["good1", "good2"], result.AcknowledgedEventIds);
+        Assert.Equal("azure-http-400-isolated", Assert.Single(result.Failures).Code);
+        Assert.False(Assert.Single(result.Failures).IsRetryable);
+        Assert.InRange(handler.Requests.Count, 3, 17);
+    }
+
+    [Theory]
+    [InlineData(401)]
+    [InlineData(403)]
+    [InlineData(429)]
+    [InlineData(503)]
+    public async Task Deliver_OutagePreservesRecordsAndFinalRetryAfter(int status)
+    {
+        HeaderHandler handler = new(status, "120");
+        AzureLogsIngestionOutput output = CreateOutput(handler);
+        DateTimeOffset before = DateTimeOffset.UtcNow;
+        DeliveryResult failure = await output.DeliverAsync([Event("valid")], TestContext.Current.CancellationToken);
+        Assert.Empty(failure.AcknowledgedEventIds);
+        DeliveryFailure item = Assert.Single(failure.Failures);
+        Assert.True(item.IsDestinationFailure);
+        Assert.True(item.IsRetryable);
+        Assert.True(item.RetryAfter >= before.AddSeconds(120));
+        Assert.Null(failure.DestinationAcknowledgement);
+        handler.Status = 204;
+        Assert.Equal(["valid"], (await output.DeliverAsync([Event("valid")], TestContext.Current.CancellationToken)).AcknowledgedEventIds);
+    }
+
+    [Fact]
+    public async Task Deliver_PreservesHttpDateRetryAfter()
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.AddMinutes(10);
+        HeaderHandler handler = new(429, deadline.ToString("R"));
+        DeliveryResult result = await CreateOutput(handler).DeliverAsync([Event("a")], TestContext.Current.CancellationToken);
+        Assert.Equal(deadline.ToUnixTimeSeconds(), Assert.Single(result.Failures).RetryAfter!.Value.ToUnixTimeSeconds());
+    }
+
+    [Theory]
+    [InlineData("Retry-After", "Fri, 01 Jan 2100 00:00:00 GMT")]
+    [InlineData("retry-after-ms", "1e300")]
+    [InlineData("Retry-After", "999999999999999999")]
+    public async Task Deliver_AbsurdRetryAfterReturnsPromptlyWithBoundedDurableDeadline(string name, string value)
+    {
+        HeaderHandler handler = new(429, value, name);
+        DateTimeOffset before = DateTimeOffset.UtcNow;
+        DeliveryResult result = await CreateOutput(handler, retries: 3).DeliverAsync([Event("valid")],
+            TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        DeliveryFailure failure = Assert.Single(result.Failures);
+        Assert.EndsWith(":retry-after-capped", failure.Code, StringComparison.Ordinal);
+        Assert.InRange(failure.RetryAfter!.Value, before.AddMinutes(59), DateTimeOffset.UtcNow.AddHours(1));
+        Assert.True(failure.IsDestinationFailure);
+    }
+
+    [Fact]
+    public async Task Deliver_FinalRetryAfterSurvivesExhaustedSdkRetries()
+    {
+        ExhaustedHandler handler = new();
+        DateTimeOffset before = DateTimeOffset.UtcNow;
+        DeliveryResult result = await CreateOutput(handler, retries: 2).DeliverAsync([Event("valid")], TestContext.Current.CancellationToken);
+        Assert.Equal(3, handler.Calls);
+        Assert.True(Assert.Single(result.Failures).RetryAfter >= before.AddSeconds(120));
+    }
+
+    private sealed class ExhaustedHandler : HttpMessageHandler
+    {
+        public int Calls { get; private set; }
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Calls++;
+            HttpResponseMessage response = new(HttpStatusCode.TooManyRequests) { Content = new StringContent("{}") };
+            response.Headers.TryAddWithoutValidation("Retry-After", Calls == 3 ? "120" : "0");
+            return Task.FromResult(response);
+        }
+    }
+
+    [Fact]
+    public async Task Deliver_CancellationDuringServerCooldownNeverAcknowledges()
+    {
+        CancellationHandler handler = new();
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        Task<DeliveryResult> upload = CreateOutput(handler, retries: 2).DeliverAsync([Event("valid")], stop.Token);
+        await handler.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await stop.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => upload);
+        Assert.Equal(1, handler.Calls);
+    }
+
+    [Fact]
+    public async Task Deliver_ConfigurationWide400HasBoundedIsolation()
+    {
+        RecordingHandler handler = new(_ => HttpStatusCode.BadRequest);
+        DeliveryResult result = await CreateOutput(handler).DeliverAsync(
+            Enumerable.Range(0, 64).Select(index => Event($"event-{index}")).ToArray(), TestContext.Current.CancellationToken);
+        Assert.Empty(result.AcknowledgedEventIds);
+        Assert.Equal(64, result.Failures.Count);
+        Assert.All(result.Failures, item => Assert.True(item.IsDestinationFailure));
+        Assert.InRange(handler.Requests.Count, 1, 17);
+    }
+
+    private sealed class CancellationHandler : HttpMessageHandler
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int Calls { get; private set; }
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Calls++;
+            HttpResponseMessage response = new(HttpStatusCode.TooManyRequests) { Content = new StringContent("{}") };
+            response.Headers.TryAddWithoutValidation("Retry-After", "1");
+            Entered.TrySetResult();
+            return Task.FromResult(response);
+        }
+    }
+
+    private sealed class HeaderHandler(int status, string retryAfter, string headerName = "Retry-After") : HttpMessageHandler
+    {
+        public int Status { get; set; } = status;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            HttpResponseMessage response = new((HttpStatusCode)Status) { Content = new StringContent("synthetic-secret-response") };
+            response.Headers.TryAddWithoutValidation(headerName, retryAfter);
+            return Task.FromResult(response);
+        }
+    }
+
+    private sealed class ReorderedHandler : HttpMessageHandler
+    {
+        private readonly TaskCompletionSource allStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int count;
+        public int Count => count;
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            byte[] compressed = await request.Content!.ReadAsByteArrayAsync(cancellationToken);
+            using GZipStream gzip = new(new MemoryStream(compressed), CompressionMode.Decompress);
+            using MemoryStream plain = new();
+            await gzip.CopyToAsync(plain, cancellationToken);
+            Assert.InRange(plain.Length, 1, AzureLogsIngestionOutput.MaximumBatchBytes);
+            using JsonDocument document = JsonDocument.Parse(plain.ToArray());
+            string id = Assert.Single(document.RootElement.EnumerateArray()).GetProperty("eventId").GetString()!;
+            if (Interlocked.Increment(ref count) == 4) allStarted.TrySetResult();
+            await allStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+            await Task.Delay(id == "one" ? 80 : id == "three" ? 40 : 1, cancellationToken);
+            return new HttpResponseMessage(id == "one" ? HttpStatusCode.BadRequest : id == "three" ? HttpStatusCode.TooManyRequests : HttpStatusCode.NoContent)
+            { Content = new StringContent("{}") };
+        }
+    }
+
+    private static AzureLogsIngestionOutput CreateOutput(HttpMessageHandler handler, Uri? endpoint = null, int retries = 0)
     {
         LogsIngestionClientOptions clientOptions = new()
         {
             Transport = new HttpClientTransport(new HttpClient(handler)),
-            Retry = { MaxRetries = 0 }
+            Retry = { MaxRetries = retries, Delay = TimeSpan.FromMilliseconds(1), MaxDelay = TimeSpan.FromMilliseconds(10) }
         };
         return new AzureLogsIngestionOutput(
             new AzureLogsIngestionOptions
@@ -206,8 +373,7 @@ public sealed class AzureLogsIngestionOutputTests
                 Id = "azure-logs-ingestion",
                 Endpoint = endpoint ?? new Uri("https://example.ingest.monitor.azure.com"),
                 DcrImmutableId = "dcr-00000000000000000000000000000000",
-                StreamName = "Custom-BowerSecurity",
-                MaximumConcurrency = 1
+                StreamName = "Custom-BowerSecurity"
             },
             new StaticCredential(),
             clientOptions);

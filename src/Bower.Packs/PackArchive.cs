@@ -301,6 +301,12 @@ public static partial class PackArchive
             throw new InvalidDataException("A pack must contain at least one policy.");
         }
 
+        if (parsers.Count > 64 || detections.Count > 64
+            || detections.Select(rule => rule.Id).Distinct(StringComparer.Ordinal).Count() != detections.Count)
+        {
+            throw new InvalidDataException("Pack has duplicate detection identities or exceeds 64 parsers/detections.");
+        }
+
         return new ParsedContent(policies, privacy, detections, parsers, samples, dcr);
     }
 

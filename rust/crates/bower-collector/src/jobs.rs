@@ -22,6 +22,7 @@ use crate::worker::{random_unit, store_error_name};
 pub const QUEUE_RETENTION_JOB_ID: &str = "queue-retention";
 pub const QUEUE_MAINTENANCE_JOB_ID: &str = "queue-maintenance";
 pub const MANAGEMENT_HEARTBEAT_JOB_ID: &str = "management-heartbeat";
+pub const MANAGED_PRIVACY_PROFILE_JOB_ID: &str = "managed-privacy-profile";
 const RETENTION_BATCH_SIZE: usize = 5_000;
 
 /// UTC schedules used by the collector (Hangfire `Cron.*` helpers).
@@ -117,6 +118,8 @@ struct RegisteredJob {
     schedule: Schedule,
     retry_attempts: u32,
     run: JobFn,
+    /// Run once immediately instead of waiting for the first occurrence.
+    triggered: bool,
 }
 
 /// Registers jobs and runs each on its own task (one execution at a time per job,
@@ -154,7 +157,20 @@ impl JobScheduler {
             schedule,
             retry_attempts,
             run,
+            triggered: false,
         });
+    }
+
+    /// `RecurringJobRegistry.Trigger`: requests an immediate run. Returns false for an
+    /// unknown job id.
+    pub fn trigger(&mut self, id: &str) -> bool {
+        match self.jobs.iter_mut().find(|job| job.id == id) {
+            Some(job) => {
+                job.triggered = true;
+                true
+            }
+            None => false,
+        }
     }
 
     pub fn spawn(self, shutdown: &ShutdownToken) -> Vec<JoinHandle<()>> {
@@ -176,16 +192,20 @@ async fn run_recurring(
     clock: Arc<dyn Clock>,
     shutdown: ShutdownToken,
 ) {
+    let mut triggered = job.triggered;
     loop {
         // Re-check the wall clock at least every minute so long sleeps track clock changes.
         let next = job.schedule.next_after(clock.utc_now());
-        loop {
-            let remaining = (next - clock.utc_now()).to_std().unwrap_or(Duration::ZERO);
-            if remaining.is_zero() {
-                break;
-            }
-            if !shutdown.sleep(remaining.min(Duration::from_secs(60))).await {
-                return;
+        // A triggered job runs once immediately, then follows its schedule.
+        if !std::mem::take(&mut triggered) {
+            loop {
+                let remaining = (next - clock.utc_now()).to_std().unwrap_or(Duration::ZERO);
+                if remaining.is_zero() {
+                    break;
+                }
+                if !shutdown.sleep(remaining.min(Duration::from_secs(60))).await {
+                    return;
+                }
             }
         }
 

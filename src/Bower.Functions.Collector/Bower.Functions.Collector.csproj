@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AzureFunctionsVersion>v4</AzureFunctionsVersion>
+    <!-- All comparisons are ordinal, like the collector. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Not published as Native AOT: the Azure Functions host loads the isolated worker as a
+         framework-dependent .NET app. The trim/AOT analyzers stay on for Bower code. -->
+    <PublishAot>false</PublishAot>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Azure.Functions.Worker" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Bower.Core/Bower.Core.csproj" />
+    <ProjectReference Include="../Bower.Output.AzureLogsIngestion/Bower.Output.AzureLogsIngestion.csproj" />
+    <ProjectReference Include="../Bower.Packs/Bower.Packs.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="host.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- The default policy set ships inside the deployment package (BOWER_POLICY_DIRECTORY
+         defaults to policies/default next to the worker). -->
+    <None Include="../../policies/default/*.yaml" Link="policies/default/%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- Optional tenant files (privacy profile, producer scopes, signed packs and their
+         trusted public keys) placed in config/ before publishing. Never put secrets here. -->
+    <None Include="config/**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

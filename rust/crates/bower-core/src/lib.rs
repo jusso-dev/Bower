@@ -4,6 +4,7 @@
 //! processor depends only on the `bower-contracts` traits, so any redactor, policy
 //! evaluator and durable store implementation plugs in.
 
+pub mod capture;
 pub mod fingerprint;
 pub mod privacy;
 mod processor;

@@ -401,6 +401,7 @@ fn regex_configuration(pattern: &str) -> CustomLogParserConfiguration {
         delimiter: None,
         key_value_separator: None,
         pattern: Some(pattern.to_owned()),
+        runtime: None,
     }
 }
 
@@ -438,6 +439,7 @@ fn configuration_validation_reports_every_issue() {
         delimiter: Some("|".to_owned()),
         key_value_separator: None,
         pattern: None,
+        runtime: None,
     };
 
     assert_eq!(
@@ -462,9 +464,14 @@ fn pack_parser_configuration_reads_and_validates() {
     let configuration = CustomLogParserConfiguration::from_json(&text).unwrap();
 
     assert_eq!(configuration.format, CustomLogFormat::Json);
-    assert_eq!(configuration.fields.len(), 4);
+    assert_eq!(configuration.fields.len(), 5);
     assert_eq!(
-        configuration.fields[2].value_type,
+        configuration
+            .fields
+            .iter()
+            .find(|field| field.source_name == "source_ip")
+            .unwrap()
+            .value_type,
         CustomLogValueType::IpAddress
     );
     assert!(validate_configuration(&configuration).is_empty());

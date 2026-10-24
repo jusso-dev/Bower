@@ -54,6 +54,7 @@ public interface IDurableEventStore
     Task MarkDeliveredAsync(
         string eventId,
         string acknowledgement,
+        string? leaseToken,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -64,17 +65,20 @@ public interface IDurableEventStore
     Task<IReadOnlyList<string>> MarkDeliveredBatchAsync(
         IReadOnlyList<string> eventIds,
         string acknowledgement,
+        IReadOnlyDictionary<string, string>? leaseTokens,
         CancellationToken cancellationToken = default);
 
     Task MarkRetryingAsync(
         string eventId,
         string failureCode,
         DateTimeOffset retryAfter,
+        string? leaseToken,
         CancellationToken cancellationToken = default);
 
     Task MarkDeadLetteredAsync(
         string eventId,
         string failureCode,
+        string? leaseToken,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -130,7 +134,8 @@ public interface IDurableEventStore
 public sealed record FailureSettlement(
     string EventId,
     string FailureCode,
-    DateTimeOffset? RetryAfter);
+    DateTimeOffset? RetryAfter,
+    string? LeaseToken = null);
 
 public sealed record DeadLetterRecord(
     string EventId,
@@ -155,7 +160,8 @@ public sealed record QueuedEvent(
     string Payload,
     DateTimeOffset ReceivedAt,
     QueueState State = QueueState.Queued,
-    int DeliveryAttempts = 0);
+    int DeliveryAttempts = 0,
+    string? LeaseToken = null);
 
 public sealed record EnqueueResult(bool Enqueued, bool Duplicate, string EventId);
 
@@ -196,4 +202,9 @@ public sealed record DeliveryFailure(
     string EventId,
     string Code,
     bool IsRetryable,
-    DateTimeOffset? RetryAfter);
+    DateTimeOffset? RetryAfter)
+{
+    /// <summary>Destination-wide faults preserve records and do not spend poison budgets.
+    /// The reserved prefix is persisted with the retry deadline for restart-safe circuits.</summary>
+    public bool IsDestinationFailure => Code.StartsWith("destination-", StringComparison.Ordinal);
+}

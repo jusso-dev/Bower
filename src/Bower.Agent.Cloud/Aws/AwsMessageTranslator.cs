@@ -134,6 +134,7 @@ public sealed partial class AwsMessageTranslator(
 
     private static bool IsMalformed(Exception exception) =>
         exception is AwsTelemetryMalformedRecordException
+            or AwsTelemetryPermissionContextException
             or AwsTelemetryPayloadTooLargeException
             or AwsTelemetryBatchTooLargeException
             or JsonException;

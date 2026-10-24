@@ -124,7 +124,18 @@ fn matches(rule: &PolicyMatch, candidate: &SecurityEventEnvelope) -> bool {
     let category_match = rule.event_categories.is_empty()
         || rule.event_categories.contains(&candidate.event_category);
     let type_match = rule.event_types.contains(&candidate.event_type);
-    category_match && type_match
+    category_match
+        && type_match
+        && rule
+            .event_actions
+            .as_ref()
+            .is_none_or(|values| values.contains(&candidate.event_action))
+        && rule.event_results.as_ref().is_none_or(|values| {
+            values.contains(&candidate.event_result.pascal_name().to_lowercase())
+        })
+        && rule.event_severities.as_ref().is_none_or(|values| {
+            values.contains(&candidate.event_severity.pascal_name().to_lowercase())
+        })
 }
 
 fn calculate_score(

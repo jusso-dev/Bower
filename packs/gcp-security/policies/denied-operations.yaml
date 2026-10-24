@@ -1,0 +1,44 @@
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+
+metadata:
+  id: BWR-POL-GCP-DENIED
+  name: Denied Google Cloud audit operations
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-06-30
+
+match:
+  eventCategories:
+    - administrative-activity
+    - authentication
+  eventTypes:
+    - gcp_cloud_audit
+
+
+  eventResults: [denied, failure]
+
+requirements:
+  requiredFields:
+    - timeGenerated
+    - eventType
+    - eventAction
+    - eventResult
+    - application.name
+    - target.type
+  atLeastOne:
+    - actor.username
+    - actor.userId
+  recommendedFields:
+    - source.ipAddress
+    - target.name
+    - eventOutcomeReason
+
+decision:
+  action: accept
+  minimumValueScore: 70
+  neverSample: true
+
+routing:
+  profile: cloud-control-plane
+  destination: security-events

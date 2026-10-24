@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.Net;
+using Bower.Packs;
+using Bower.Redaction.Privacy;
 
 namespace Bower.Collector;
 
@@ -33,6 +35,11 @@ public sealed record CollectorSettings
     /// <summary>One revocable credential per producer: lines of "&lt;producer&gt; sha256:&lt;hex&gt;".</summary>
     public string? IngestTokensFile { get; init; }
 
+    public string? ProducerScopesFile { get; init; }
+
+    /// <summary>Explicit legacy mode: every producer belongs to one trusted domain.</summary>
+    public bool SingleTrustDomain { get; init; }
+
     /// <summary>Signed .bowerpack archives to load policies and privacy profile from.</summary>
     public IReadOnlyList<string> Packs { get; init; } = [];
 
@@ -40,6 +47,33 @@ public sealed record CollectorSettings
     public IReadOnlyList<string> PackTrustedKeyFiles { get; init; } = [];
 
     public string? PrivacyProfilePath { get; init; }
+
+    /// <summary>
+    /// <c>local</c> (default): BOWER_PRIVACY_PROFILE, one pack profile or the built-in default.
+    /// <c>management</c>: the signed version assigned in the management API (cached locally).
+    /// </summary>
+    public string PrivacyProfileSource { get; init; } = PrivacyProfileSources.Local;
+
+    /// <summary>PEM public keys trusted to sign managed privacy profiles.</summary>
+    public IReadOnlyList<string> ManagedPrivacyTrustedKeyFiles { get; init; } = [];
+
+    /// <summary>Cache directory for the managed privacy profile; null means next to the queue database.</summary>
+    public string? ManagedPrivacyDirectory { get; init; }
+
+    /// <summary>
+    /// BOWER_MANAGED_PRIVACY_ALLOW_DEFAULT=true: accept events under the built-in default
+    /// privacy profile before the first managed sync resolves. Off by default: a management
+    /// mode collector without a verified cache refuses ingest (503) until then.
+    /// </summary>
+    public bool ManagedPrivacyAllowDefault { get; init; }
+
+    public bool UsesManagedPrivacyProfile =>
+        string.Equals(PrivacyProfileSource, PrivacyProfileSources.Management, StringComparison.Ordinal);
+
+    /// <summary>Resolved managed privacy profile cache directory.</summary>
+    public string ManagedPrivacyCacheDirectory =>
+        ManagedPrivacyDirectory
+        ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(QueuePath)) ?? ".", "managed-privacy");
 
     public string? PrivacyHmacKeyFile { get; init; }
 
@@ -97,9 +131,19 @@ public sealed record CollectorSettings
                 ReadInt64(read, "BOWER_QUEUE_RETENTION_HOURS", 7 * 24)),
             IngestToken = string.IsNullOrWhiteSpace(token) ? null : token,
             IngestTokensFile = Blank(read("BOWER_INGEST_TOKENS_FILE")),
+            ProducerScopesFile = Blank(read("BOWER_PRODUCER_SCOPES_FILE")),
+            SingleTrustDomain = string.Equals(read("BOWER_SINGLE_TRUST_DOMAIN"), "true", StringComparison.OrdinalIgnoreCase),
             Packs = SplitList(read("BOWER_PACKS")),
             PackTrustedKeyFiles = SplitList(read("BOWER_PACK_TRUSTED_KEYS")),
             PrivacyProfilePath = Blank(read("BOWER_PRIVACY_PROFILE")),
+            PrivacyProfileSource = Blank(read("BOWER_PRIVACY_PROFILE_SOURCE"))?.Trim().ToLowerInvariant()
+                ?? PrivacyProfileSources.Local,
+            ManagedPrivacyTrustedKeyFiles = SplitList(read("BOWER_MANAGED_PRIVACY_TRUSTED_KEYS")),
+            ManagedPrivacyDirectory = Blank(read("BOWER_MANAGED_PRIVACY_DIRECTORY")),
+            ManagedPrivacyAllowDefault = string.Equals(
+                read("BOWER_MANAGED_PRIVACY_ALLOW_DEFAULT"),
+                "true",
+                StringComparison.OrdinalIgnoreCase),
             PrivacyHmacKeyFile = Blank(read("BOWER_PRIVACY_HMAC_KEY_FILE")),
             PrivacyHmacKeyId = Blank(read("BOWER_PRIVACY_HMAC_KEY_ID")) ?? "k1",
             AllowUnauthenticatedIngest = string.Equals(
@@ -149,6 +193,11 @@ public sealed record CollectorSettings
                 "BOWER_LISTEN_URL is not loopback, so BOWER_INGEST_TOKEN, BOWER_INGEST_TOKEN_FILE " +
                 "or BOWER_INGEST_TOKENS_FILE is required. Set BOWER_ALLOW_UNAUTHENTICATED_INGEST=true " +
                 "only on an isolated network you control.");
+        }
+
+        if (SingleTrustDomain && ProducerScopesFile is not null)
+        {
+            throw new InvalidOperationException("Producer scopes and single trust domain mode are mutually exclusive.");
         }
 
         if (Packs.Count > 0 && PackTrustedKeyFiles.Count == 0)
@@ -207,6 +256,40 @@ public sealed record CollectorSettings
                     "BOWER_MANAGEMENT_ENDPOINT must use HTTPS unless it targets loopback.");
             }
         }
+
+        ValidatePrivacyProfileSource();
+    }
+
+    private void ValidatePrivacyProfileSource()
+    {
+        if (PrivacyProfileSource is not (PrivacyProfileSources.Local or PrivacyProfileSources.Management))
+        {
+            throw new InvalidOperationException("BOWER_PRIVACY_PROFILE_SOURCE must be local or management.");
+        }
+
+        if (!UsesManagedPrivacyProfile)
+        {
+            return;
+        }
+
+        if (ManagementEndpoint is null)
+        {
+            throw new InvalidOperationException(
+                "BOWER_PRIVACY_PROFILE_SOURCE=management requires BOWER_MANAGEMENT_ENDPOINT and BOWER_MANAGEMENT_SCOPE.");
+        }
+
+        if (ManagedPrivacyTrustedKeyFiles.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "BOWER_PRIVACY_PROFILE_SOURCE=management requires BOWER_MANAGED_PRIVACY_TRUSTED_KEYS; " +
+                "managed privacy profiles are never loaded unverified.");
+        }
+
+        if (PrivacyProfilePath is not null)
+        {
+            throw new InvalidOperationException(
+                "BOWER_PRIVACY_PROFILE cannot be combined with BOWER_PRIVACY_PROFILE_SOURCE=management.");
+        }
     }
 
     /// <summary>
@@ -228,9 +311,43 @@ public sealed record CollectorSettings
             IngestRequestsPerSecond.ToString(CultureInfo.InvariantCulture),
             MaximumDeliveryAttempts.ToString(CultureInfo.InvariantCulture),
             (IngestToken is not null || IngestTokensFile is not null).ToString(),
-            PrivacyHmacKeyId);
+            PrivacyHmacKeyId,
+            SingleTrustDomain.ToString(),
+            ProducerScopesFile ?? string.Empty);
+        if (UsesManagedPrivacyProfile)
+        {
+            // Appended only in management mode so existing local configuration hashes are unchanged.
+            material += '\u001f' + "privacy-source:" + PrivacyProfileSource
+                + '\u001f' + "privacy-allow-default:" + ManagedPrivacyAllowDefault.ToString();
+        }
+
         return "sha256:" + Convert.ToHexStringLower(
             System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(material)));
+    }
+
+    /// <summary>Policy, pack and privacy profile sources for <see cref="PolicyBundle.Load"/>.</summary>
+    /// <param name="observeManaged">
+    /// Management mode: receives the verified cached document (or null when there is none),
+    /// read once with the bundle so the ingest gate and the active profile always agree.
+    /// </param>
+    public PolicyBundleSources PolicySources(Action<VerifiedManagedPrivacyProfile?>? observeManaged = null) => new()
+    {
+        PolicyDirectory = PolicyDirectory,
+        Packs = Packs,
+        PackTrustedKeyFiles = PackTrustedKeyFiles,
+        PrivacyProfilePath = PrivacyProfilePath,
+        PrivacyHmacKeyFile = PrivacyHmacKeyFile,
+        PrivacyHmacKeyId = PrivacyHmacKeyId,
+        PrivacyProfileSource = PrivacyProfileSource,
+        // A cached explicit clear resolves to the built-in default (null profile).
+        ManagedPrivacyProfile = UsesManagedPrivacyProfile ? key => LoadManagedProfile(key, observeManaged) : null
+    };
+
+    private LoadedPrivacyProfile? LoadManagedProfile(byte[]? key, Action<VerifiedManagedPrivacyProfile?>? observe)
+    {
+        VerifiedManagedPrivacyProfile? cached = ManagedPrivacyProfileCache.LoadVerified(this, key);
+        observe?.Invoke(cached);
+        return cached?.Profile;
     }
 
     private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
@@ -274,6 +391,13 @@ public sealed record CollectorSettings
             _ => throw new InvalidOperationException(
                 "BOWER_AZURE_CREDENTIAL must be managed-identity, workload-identity, environment or azure-cli.")
         };
+}
+
+/// <summary>Values of BOWER_PRIVACY_PROFILE_SOURCE.</summary>
+public static class PrivacyProfileSources
+{
+    public const string Local = "local";
+    public const string Management = "management";
 }
 
 /// <summary>

@@ -71,6 +71,11 @@ static DEFAULT_SCHEMA: LazyLock<SentinelSchema> = LazyLock::new(|| {
         ("collector", "dynamic"),
         ("labels", "dynamic"),
         ("privacy", "dynamic"),
+        ("timeObserved", "datetime"),
+        ("eventOutcomeReason", "string"),
+        ("target", "dynamic"),
+        ("change", "dynamic"),
+        ("attributes", "dynamic"),
     ];
     let table = [
         ("TimeGenerated", "datetime", "timeGenerated"),
@@ -159,6 +164,15 @@ static DEFAULT_SCHEMA: LazyLock<SentinelSchema> = LazyLock::new(|| {
         ("PrivacyDetected", "dynamic", "privacy.detected"),
         ("Labels", "dynamic", "labels"),
         ("RawEnvelope", "dynamic", "pack_all()"),
+        ("TimeObserved", "datetime", "timeObserved"),
+        (
+            "EventOutcomeReason",
+            "string",
+            "substring(tostring(eventOutcomeReason), 0, 1024)",
+        ),
+        ("Target", "dynamic", "target"),
+        ("Change", "dynamic", "change"),
+        ("Attributes", "dynamic", "attributes"),
     ];
     SentinelSchema {
         stream_name: "Custom-BowerSecurity".to_owned(),

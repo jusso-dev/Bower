@@ -344,3 +344,41 @@ fn queue_capacity_errors_propagate() {
     .unwrap_err();
     assert!(matches!(error, ProcessError::Store(StoreError::Full(_))));
 }
+
+#[test]
+fn durable_processor_reports_conflict_without_duplicate_success() {
+    use bower_contracts::DurableEventStore;
+    let directory = tempfile::tempdir().unwrap();
+    let store = Arc::new(
+        bower_persistence::SqliteEventStore::new(
+            directory.path().join("queue.db"),
+            1_048_576,
+            None,
+        )
+        .unwrap(),
+    );
+    store.initialize().unwrap();
+    let processor = SecurityEventProcessor::new(
+        Arc::new(FieldRedactor {
+            remove: vec![],
+            mask: vec![],
+            detected: vec![],
+        }),
+        Arc::new(TestPolicy),
+        store.clone(),
+        Arc::new(now),
+    );
+    let json = authentication_failure_json("");
+    assert!(processor.process(&json, &identity()).unwrap().queued);
+    assert!(processor.process(&json, &identity()).unwrap().duplicate);
+    let conflict = processor
+        .process(
+            &json.replace("authentication.attempt", "changed.action"),
+            &identity(),
+        )
+        .unwrap();
+    assert_eq!(conflict.action, DecisionAction::Quarantine);
+    assert!(!conflict.duplicate);
+    assert_eq!(conflict.reasons, ["event-identity-conflict"]);
+    assert_eq!(store.snapshot().unwrap().queued, 1);
+}
