@@ -1,5 +1,12 @@
-//! Bower envelope to CloudTrail Lake audit event (`PutAuditEvents` `AuditEvent`).
+//! Bower envelope to destination record: a CloudWatch Logs log event
+//! (`PutLogEvents`) or a CloudTrail Lake audit event (`PutAuditEvents`).
 //!
+//! CloudWatch Logs: the message is the redacted envelope exactly as the collector
+//! would queue it (so CloudWatch subscriptions and the AWS cloud source read it
+//! unchanged), stamped with the invocation's receive time. An envelope above the
+//! 1 MB log event limit is refused locally, never sent truncated.
+//!
+//! CloudTrail Lake:
 //! `eventData` follows the CloudTrail Lake integration event schema: `version`,
 //! `userIdentity`, `eventSource`, `eventName`, `eventTime`, `UID`,
 //! `recipientAccountId` and optional `errorCode`, `errorMessage`,
@@ -20,6 +27,14 @@ use serde::Serialize;
 use serde_json::value::RawValue;
 use sha2::{Digest, Sha256};
 
+/// `PutLogEvents`: at most 10,000 log events per call.
+pub const MAXIMUM_LOG_EVENTS_PER_CALL: usize = 10_000;
+/// `PutLogEvents`: at most 1,048,576 bytes per call, counted as every message's
+/// UTF-8 bytes plus 26 bytes per log event. One log event is at most 1 MB.
+pub const MAXIMUM_LOG_REQUEST_BYTES: usize = 1_048_576;
+pub const LOG_EVENT_OVERHEAD_BYTES: usize = 26;
+pub const MAXIMUM_LOG_MESSAGE_BYTES: usize = MAXIMUM_LOG_REQUEST_BYTES - LOG_EVENT_OVERHEAD_BYTES;
+
 /// `PutAuditEvents`: at most 100 audit events per call.
 pub const MAXIMUM_EVENTS_PER_CALL: usize = 100;
 /// `PutAuditEvents`: at most 1 MB per call. Kept below 1,048,576 for headroom.
@@ -30,31 +45,53 @@ pub const MAXIMUM_ADDITIONAL_EVENT_DATA_BYTES: usize = 28_000;
 const REQUEST_OVERHEAD_BYTES: usize = 64;
 const ENTRY_OVERHEAD_BYTES: usize = 64;
 
-/// One audit event ready for `PutAuditEvents`.
+/// The destination record shape, fixed by the sink.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RecordFormat {
+    CloudWatchLogs,
+    CloudTrailLake,
+}
+
+/// One record ready for the destination.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AuditRecord {
-    /// `AuditEvent.id`: the Bower event id when it fits `[-_A-Za-z0-9]{1,128}`,
-    /// else a stable digest of it. Retries send the same id.
+    pub format: RecordFormat,
+    /// Record id: the Bower event id when it fits `[-_A-Za-z0-9]{1,128}`, else a
+    /// stable digest of it (`AuditEvent.id` for CloudTrail Lake). Retries send the
+    /// same id.
     pub id: String,
-    /// The Bower `eventId` (also `eventData.UID`).
+    /// The Bower `eventId` (also `eventData.UID` for CloudTrail Lake).
     pub bower_event_id: String,
+    /// The log event message, or the CloudTrail Lake `eventData`.
     pub event_data: String,
-    /// `eventDataChecksum`: base64 SHA-256 of `event_data`.
+    /// `eventDataChecksum`: base64 SHA-256 of `event_data` (CloudTrail Lake only).
     pub checksum: String,
+    /// Log event timestamp in Unix milliseconds (CloudWatch Logs only).
+    pub timestamp_ms: i64,
     /// Envelope fields left out to respect the `additionalEventData` limit.
     pub omitted_fields: Vec<&'static str>,
 }
 
 impl AuditRecord {
-    /// Bytes this record adds to a `PutAuditEvents` JSON body (`eventData` is a JSON
-    /// string, so its quotes and backslashes are escaped once more).
+    /// Bytes this record adds to its destination request. CloudWatch Logs counts the
+    /// message plus 26 bytes. For CloudTrail Lake `eventData` is a JSON string in the
+    /// body, so its quotes and backslashes are escaped once more.
     pub fn request_bytes(&self) -> usize {
-        let escapes = self
-            .event_data
-            .bytes()
-            .filter(|byte| matches!(byte, b'"' | b'\\'))
-            .count();
-        self.event_data.len() + escapes + self.id.len() + self.checksum.len() + ENTRY_OVERHEAD_BYTES
+        match self.format {
+            RecordFormat::CloudWatchLogs => self.event_data.len() + LOG_EVENT_OVERHEAD_BYTES,
+            RecordFormat::CloudTrailLake => {
+                let escapes = self
+                    .event_data
+                    .bytes()
+                    .filter(|byte| matches!(byte, b'"' | b'\\'))
+                    .count();
+                self.event_data.len()
+                    + escapes
+                    + self.id.len()
+                    + self.checksum.len()
+                    + ENTRY_OVERHEAD_BYTES
+            }
+        }
     }
 }
 
@@ -64,8 +101,11 @@ pub enum MappingError {
     /// `attributes`. Definitive: resending the same event cannot succeed.
     #[error("cloudtrail-lake-event-too-large")]
     TooLarge,
+    /// The redacted envelope is larger than one CloudWatch Logs log event. Definitive.
+    #[error("cloudwatch-logs-event-too-large")]
+    LogEventTooLarge,
     /// The queued payload is not an envelope (never expected after processing).
-    #[error("cloudtrail-lake-mapping-failed")]
+    #[error("event-mapping-failed")]
     Invalid,
 }
 
@@ -73,7 +113,8 @@ impl MappingError {
     pub fn code(self) -> &'static str {
         match self {
             Self::TooLarge => "cloudtrail-lake-event-too-large",
-            Self::Invalid => "cloudtrail-lake-mapping-failed",
+            Self::LogEventTooLarge => "cloudwatch-logs-event-too-large",
+            Self::Invalid => "event-mapping-failed",
         }
     }
 }
@@ -81,8 +122,14 @@ impl MappingError {
 /// Context the mapper adds to every event.
 #[derive(Clone, Copy, Debug)]
 pub struct MappingContext<'a> {
+    pub format: RecordFormat,
+    /// CloudTrail Lake `recipientAccountId`; unused for CloudWatch Logs.
     pub recipient_account_id: &'a str,
     pub producer: &'a str,
+    /// Invocation receive time in Unix milliseconds: the log event timestamp. The
+    /// event's own time stays in the message (`timeGenerated`), so old events are
+    /// never refused as too old and one call never spans more than 24 hours.
+    pub received_at_ms: i64,
 }
 
 /// `AuditEvent.id` for a Bower event id.
@@ -196,7 +243,36 @@ fn additional_event_data(
 pub fn map(queued: &QueuedEvent, context: MappingContext<'_>) -> Result<AuditRecord, MappingError> {
     let envelope: SecurityEventEnvelope =
         json::from_str(&queued.payload).map_err(|_| MappingError::Invalid)?;
+    match context.format {
+        RecordFormat::CloudWatchLogs => map_log_event(queued, envelope, context),
+        RecordFormat::CloudTrailLake => map_audit_event(queued, envelope, context),
+    }
+}
 
+fn map_log_event(
+    queued: &QueuedEvent,
+    envelope: SecurityEventEnvelope,
+    context: MappingContext<'_>,
+) -> Result<AuditRecord, MappingError> {
+    if queued.payload.len() > MAXIMUM_LOG_MESSAGE_BYTES {
+        return Err(MappingError::LogEventTooLarge);
+    }
+    Ok(AuditRecord {
+        format: RecordFormat::CloudWatchLogs,
+        id: audit_id(&envelope.event_id),
+        bower_event_id: envelope.event_id,
+        event_data: queued.payload.clone(),
+        checksum: String::new(),
+        timestamp_ms: context.received_at_ms,
+        omitted_fields: Vec::new(),
+    })
+}
+
+fn map_audit_event(
+    queued: &QueuedEvent,
+    envelope: SecurityEventEnvelope,
+    context: MappingContext<'_>,
+) -> Result<AuditRecord, MappingError> {
     let mut omitted_fields: Vec<&'static str> = Vec::new();
     let mut additional =
         additional_event_data(&queued.payload, envelope.privacy.as_ref(), &omitted_fields)?;
@@ -268,28 +344,39 @@ pub fn map(queued: &QueuedEvent, context: MappingContext<'_>) -> Result<AuditRec
         base64::engine::general_purpose::STANDARD.encode(Sha256::digest(event_data.as_bytes()))
     };
     Ok(AuditRecord {
+        format: RecordFormat::CloudTrailLake,
         id: audit_id(&envelope.event_id),
         bower_event_id: envelope.event_id,
         event_data,
         checksum,
+        timestamp_ms: context.received_at_ms,
         omitted_fields,
     })
 }
 
-/// Splits records into `PutAuditEvents` calls of at most 100 events and 1 MB.
-/// Returns index ranges into `records`, in order.
-pub fn batches(records: &[AuditRecord]) -> Vec<std::ops::Range<usize>> {
+/// Splits records into destination calls: `PutAuditEvents` (100 events, 1 MB) or
+/// `PutLogEvents` (10,000 events, 1,048,576 bytes). Returns index ranges into
+/// `records`, in order.
+pub fn batches(records: &[AuditRecord], format: RecordFormat) -> Vec<std::ops::Range<usize>> {
+    let (maximum_events, maximum_bytes, overhead) = match format {
+        RecordFormat::CloudWatchLogs => (MAXIMUM_LOG_EVENTS_PER_CALL, MAXIMUM_LOG_REQUEST_BYTES, 0),
+        RecordFormat::CloudTrailLake => (
+            MAXIMUM_EVENTS_PER_CALL,
+            MAXIMUM_REQUEST_BYTES,
+            REQUEST_OVERHEAD_BYTES,
+        ),
+    };
     let mut ranges = Vec::new();
     let mut start = 0;
-    let mut bytes = REQUEST_OVERHEAD_BYTES;
+    let mut bytes = overhead;
     for (index, record) in records.iter().enumerate() {
         let size = record.request_bytes();
-        let full = index - start == MAXIMUM_EVENTS_PER_CALL
-            || (index > start && bytes + size > MAXIMUM_REQUEST_BYTES);
+        let full =
+            index - start == maximum_events || (index > start && bytes + size > maximum_bytes);
         if full {
             ranges.push(start..index);
             start = index;
-            bytes = REQUEST_OVERHEAD_BYTES;
+            bytes = overhead;
         }
         bytes += size;
     }
@@ -329,20 +416,54 @@ mod tests {
 
     fn record(id: usize, data_bytes: usize) -> AuditRecord {
         AuditRecord {
+            format: RecordFormat::CloudTrailLake,
             id: format!("id-{id}"),
             bower_event_id: format!("id-{id}"),
             event_data: "x".repeat(data_bytes),
             checksum: "c".repeat(44),
+            timestamp_ms: 0,
             omitted_fields: Vec::new(),
         }
+    }
+
+    fn log_record(id: usize, message_bytes: usize) -> AuditRecord {
+        AuditRecord {
+            format: RecordFormat::CloudWatchLogs,
+            checksum: String::new(),
+            ..record(id, message_bytes)
+        }
+    }
+
+    #[test]
+    fn log_batches_count_messages_plus_26_bytes() {
+        let many: Vec<_> = (0..10_050).map(|index| log_record(index, 1)).collect();
+        assert_eq!(
+            batches(&many, RecordFormat::CloudWatchLogs),
+            vec![0..10_000, 10_000..10_050]
+        );
+        // 1 MiB per call: two half-MiB messages plus their overhead do not fit together.
+        let half = MAXIMUM_LOG_REQUEST_BYTES / 2;
+        let large = vec![log_record(0, half), log_record(1, half), log_record(2, 10)];
+        assert_eq!(
+            batches(&large, RecordFormat::CloudWatchLogs),
+            vec![0..1, 1..3]
+        );
+        let exact = vec![log_record(0, MAXIMUM_LOG_MESSAGE_BYTES)];
+        assert_eq!(exact[0].request_bytes(), MAXIMUM_LOG_REQUEST_BYTES);
+        assert_eq!(batches(&exact, RecordFormat::CloudWatchLogs), vec![0..1]);
+        // A quote is one byte in a log message, not an escaped pair.
+        assert_eq!(log_record(0, 0).request_bytes(), LOG_EVENT_OVERHEAD_BYTES);
     }
 
     #[test]
     fn batches_respect_count_and_byte_limits() {
         let small: Vec<_> = (0..250).map(|index| record(index, 100)).collect();
-        assert_eq!(batches(&small), vec![0..100, 100..200, 200..250]);
+        assert_eq!(
+            batches(&small, RecordFormat::CloudTrailLake),
+            vec![0..100, 100..200, 200..250]
+        );
         let large: Vec<_> = (0..40).map(|index| record(index, 60_000)).collect();
-        let ranges = batches(&large);
+        let ranges = batches(&large, RecordFormat::CloudTrailLake);
         assert!(ranges.len() >= 3);
         for range in &ranges {
             let bytes: usize = large[range.clone()]
@@ -353,7 +474,7 @@ mod tests {
             assert!(range.len() <= MAXIMUM_EVENTS_PER_CALL);
         }
         assert_eq!(ranges.last().unwrap().end, 40);
-        assert!(batches(&[]).is_empty());
+        assert!(batches(&[], RecordFormat::CloudTrailLake).is_empty());
         let escaped = AuditRecord {
             event_data: "\"\\".into(),
             ..record(0, 0)

@@ -4,8 +4,9 @@
 
 use std::sync::Arc;
 
-use bower_lambda::aws::{CloudTrailLakeSink, fetch_hmac_key, sdk_config};
-use bower_lambda::{Handler, LambdaSettings};
+use bower_lambda::aws::{CloudTrailLakeSink, CloudWatchLogsSink, fetch_hmac_key, sdk_config};
+use bower_lambda::sink::AuditSink;
+use bower_lambda::{Destination, Handler, LambdaSettings};
 use lambda_runtime::{Error, LambdaEvent, service_fn};
 use serde_json::value::RawValue;
 use tracing::info;
@@ -29,19 +30,39 @@ async fn main() -> Result<(), Error> {
         Some(arn) => Some(fetch_hmac_key(&config, arn).await?),
         None => None,
     };
-    let sink = CloudTrailLakeSink::new(
-        &config,
-        settings.channel_arn.clone(),
-        settings.external_id.clone(),
-    );
+    match settings.destination.clone() {
+        Destination::CloudWatchLogs {
+            log_group,
+            log_stream,
+        } => {
+            let sink = CloudWatchLogsSink::new(&config, log_group, log_stream).await?;
+            serve(&settings, key, sink).await
+        }
+        Destination::CloudTrailLake {
+            channel_arn,
+            external_id,
+            ..
+        } => {
+            let sink = CloudTrailLakeSink::new(&config, channel_arn, external_id);
+            serve(&settings, key, sink).await
+        }
+    }
+}
+
+async fn serve<S: AuditSink + 'static>(
+    settings: &LambdaSettings,
+    key: Option<Vec<u8>>,
+    sink: S,
+) -> Result<(), Error> {
     let handler = Arc::new(Handler::new(
-        &settings,
+        settings,
         key.as_deref(),
         sink,
         Arc::new(bower_contracts::time::SystemClock),
     )?);
     drop(key);
     info!(
+        destination = settings.destination.name(),
         ingress = settings.ingress.name(),
         hmac_key = settings.privacy_hmac_key_secret_arn.is_some(),
         "Bower Lambda initialised."

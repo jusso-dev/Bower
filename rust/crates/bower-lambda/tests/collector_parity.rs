@@ -1,8 +1,9 @@
-//! Parity: for the same input and clock, the envelope the Lambda sends to
-//! CloudTrail Lake (`additionalEventData.envelope`) is byte-identical to what the
-//! Rust collector queues, apart from the `collector` context (host id, source
-//! adapter, configuration hash). Privacy alerts included. Rust collector to C#
-//! redaction parity is proven by `bower-redaction/tests/parity.rs`.
+//! Parity: for the same input and clock, the envelope the Lambda sends (the
+//! CloudWatch Logs message, or CloudTrail Lake `additionalEventData.envelope`) is
+//! byte-identical to what the Rust collector queues, apart from the `collector`
+//! context (host id, source adapter, configuration hash). Privacy alerts included.
+//! Rust collector to C# redaction parity is proven by
+//! `bower-redaction/tests/parity.rs`.
 
 mod support;
 
@@ -13,6 +14,7 @@ use axum::http::{Request, StatusCode, header};
 use bower_collector::host::{self, BuildOptions};
 use bower_collector::{CollectorSettings, bundle};
 use bower_contracts::SecurityEventEnvelope;
+use bower_lambda::audit::RecordFormat;
 use serde::Deserialize;
 use serde_json::json;
 use serde_json::value::RawValue;
@@ -80,8 +82,11 @@ async fn collector_payloads(candidate: &str, profile: bool) -> (u16, Vec<(String
 }
 
 /// Sent envelopes by event id, from the Lambda (direct invoke, same trust model).
-async fn lambda_envelopes(candidate: &str, profile: bool) -> (u16, Vec<(String, String)>) {
-    let sink = FakeSink::default();
+async fn lambda_envelopes(
+    candidate: &str,
+    profile: bool,
+    sink: FakeSink,
+) -> (u16, Vec<(String, String)>) {
     let handler = handler(
         &sink,
         Config {
@@ -98,12 +103,16 @@ async fn lambda_envelopes(candidate: &str, profile: bool) -> (u16, Vec<(String, 
     let mut envelopes: Vec<(String, String)> = sink
         .sent()
         .into_iter()
-        .map(|record| {
-            let data: EventData = serde_json::from_str(&record.event_data).unwrap();
-            (
-                record.bower_event_id,
-                data.additional.envelope.get().to_string(),
-            )
+        .map(|record| match record.format {
+            // The log event message is the envelope itself.
+            RecordFormat::CloudWatchLogs => (record.bower_event_id, record.event_data),
+            RecordFormat::CloudTrailLake => {
+                let data: EventData = serde_json::from_str(&record.event_data).unwrap();
+                (
+                    record.bower_event_id,
+                    data.additional.envelope.get().to_string(),
+                )
+            }
         })
         .collect();
     envelopes.sort();
@@ -111,8 +120,18 @@ async fn lambda_envelopes(candidate: &str, profile: bool) -> (u16, Vec<(String, 
 }
 
 async fn assert_parity(candidate: &str, profile: bool) -> usize {
+    let lake = assert_parity_for(candidate, profile, FakeSink::default()).await;
+    let logs = assert_parity_for(candidate, profile, FakeSink::cloudwatch_logs()).await;
+    assert_eq!(
+        lake, logs,
+        "both destinations send the same events for {candidate}"
+    );
+    lake
+}
+
+async fn assert_parity_for(candidate: &str, profile: bool, sink: FakeSink) -> usize {
     let (collector_status, collector) = collector_payloads(candidate, profile).await;
-    let (lambda_status, lambda) = lambda_envelopes(candidate, profile).await;
+    let (lambda_status, lambda) = lambda_envelopes(candidate, profile, sink).await;
     assert_eq!(lambda_status, collector_status, "status for {candidate}");
     assert_eq!(
         lambda.iter().map(|(id, _)| id).collect::<Vec<_>>(),
@@ -183,11 +202,13 @@ async fn sent_envelopes_match_collector_queue_bytes() {
 async fn collector_and_lambda_agree_on_status_for_invalid_bodies() {
     for body in ["{", "[1,2", "null"] {
         let (collector_status, _) = collector_payloads(body, false).await;
-        let (lambda_status, _) = lambda_envelopes(body, false).await;
-        assert_eq!(lambda_status, collector_status, "{body}");
+        for sink in [FakeSink::default(), FakeSink::cloudwatch_logs()] {
+            let (lambda_status, _) = lambda_envelopes(body, false, sink).await;
+            assert_eq!(lambda_status, collector_status, "{body}");
+        }
     }
     let (collector_status, _) = collector_payloads("{}", false).await;
     assert_eq!(collector_status, StatusCode::BAD_REQUEST.as_u16());
-    let (lambda_status, _) = lambda_envelopes("{}", false).await;
+    let (lambda_status, _) = lambda_envelopes("{}", false, FakeSink::cloudwatch_logs()).await;
     assert_eq!(lambda_status, collector_status);
 }

@@ -1,12 +1,12 @@
-//! Per-invocation capture of the events `SecurityEventProcessor` would queue.
+//! Per-request capture of the events `SecurityEventProcessor` would queue.
 //!
-//! The Lambda host has no durable queue: it runs the collector's processor
-//! unchanged against this in-memory store, then delivers what was "enqueued" to
-//! CloudTrail Lake before answering. Identity checks mirror the SQLite queue
-//! inside one invocation (`SqliteEventStore::exists`): an event matching an
-//! existing event id or fingerprint is a duplicate when fingerprint and replay
-//! content agree, and an `event-identity-conflict` otherwise. Nothing survives the invocation, so there is no
-//! duplicate detection across invocations.
+//! Hosts without a durable queue run the collector's processor unchanged against
+//! this in-memory store: the AWS Lambda host delivers what was "enqueued" before
+//! answering, and `bower policy test` only reports it. Identity checks mirror the
+//! SQLite queue inside one store (`SqliteEventStore::exists`): an event matching
+//! an existing event id or fingerprint is a duplicate when fingerprint and replay
+//! content agree, and an `event-identity-conflict` otherwise. Nothing survives the
+//! store, so there is no duplicate detection across requests.
 
 use std::sync::Mutex;
 use std::time::Duration;
@@ -29,7 +29,7 @@ pub struct CaptureStore {
 
 fn unsupported<T>() -> StoreResult<T> {
     Err(StoreError::Invalid(
-        "operation not supported by the Lambda capture store".into(),
+        "operation not supported by the in-memory capture store".into(),
     ))
 }
 

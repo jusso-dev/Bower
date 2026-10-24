@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use bower_contracts::time::{Clock, Timestamp};
-use bower_lambda::audit::AuditRecord;
+use bower_lambda::audit::{AuditRecord, RecordFormat};
 use bower_lambda::sink::{AcceptedEvent, AuditSink, PutResult, RefusedEvent, SinkFailure};
 use bower_lambda::{Handler, LambdaSettings, SettingsError};
 use serde_json::{Value, json};
@@ -14,6 +14,7 @@ use sha2::Digest;
 pub const CHANNEL: &str =
     "arn:aws:cloudtrail:ap-southeast-2:123456789012:channel/01234567-89ab-cdef-0123-456789abcdef";
 pub const NOW: &str = "2026-10-24T01:02:03Z";
+pub const LOG_GROUP: &str = "/bower/events/test";
 
 pub fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -38,19 +39,38 @@ pub fn clock() -> Arc<dyn Clock> {
     Arc::new(FixedClock(bower_contracts::time::parse(NOW).unwrap()))
 }
 
-#[derive(Default)]
 struct SinkState {
+    format: RecordFormat,
     calls: Vec<Vec<AuditRecord>>,
     refusals: HashMap<String, String>,
     fail_calls: Option<String>,
     drop_results: bool,
 }
 
-/// Fake `PutAuditEvents`: records every call, accepts by default.
+impl Default for SinkState {
+    fn default() -> Self {
+        Self {
+            format: RecordFormat::CloudTrailLake,
+            calls: Vec::new(),
+            refusals: HashMap::new(),
+            fail_calls: None,
+            drop_results: false,
+        }
+    }
+}
+
+/// Fake `PutAuditEvents` (default) or `PutLogEvents`: records every call, accepts
+/// by default.
 #[derive(Clone, Default)]
 pub struct FakeSink(Arc<Mutex<SinkState>>);
 
 impl FakeSink {
+    pub fn cloudwatch_logs() -> Self {
+        let sink = Self::default();
+        sink.0.lock().unwrap().format = RecordFormat::CloudWatchLogs;
+        sink
+    }
+
     pub fn calls(&self) -> Vec<Vec<AuditRecord>> {
         self.0.lock().unwrap().calls.clone()
     }
@@ -83,6 +103,10 @@ impl FakeSink {
 }
 
 impl AuditSink for FakeSink {
+    fn format(&self) -> RecordFormat {
+        self.0.lock().unwrap().format
+    }
+
     async fn put_audit_events(&self, records: &[&AuditRecord]) -> Result<PutResult, SinkFailure> {
         let mut state = self.0.lock().unwrap();
         state
@@ -110,7 +134,8 @@ impl AuditSink for FakeSink {
                 }),
                 None => result.successful.push(AcceptedEvent {
                     id: record.id.clone(),
-                    event_id: format!("ct-{}", record.id),
+                    event_id: (state.format == RecordFormat::CloudTrailLake)
+                        .then(|| format!("ct-{}", record.id)),
                 }),
             }
         }
@@ -169,8 +194,17 @@ pub fn try_handler(sink: &FakeSink, config: Config) -> Result<Handler<FakeSink>,
         .to_string(),
     )
     .unwrap();
+    let destination = match sink.format() {
+        RecordFormat::CloudTrailLake => [
+            ("BOWER_LAMBDA_DESTINATION", "cloudtrail-lake".to_string()),
+            ("BOWER_CLOUDTRAIL_CHANNEL_ARN", CHANNEL.to_string()),
+        ],
+        RecordFormat::CloudWatchLogs => [
+            ("BOWER_LAMBDA_DESTINATION", "cloudwatch-logs".to_string()),
+            ("BOWER_CLOUDWATCH_LOG_GROUP", LOG_GROUP.to_string()),
+        ],
+    };
     let mut env: HashMap<&str, String> = HashMap::from([
-        ("BOWER_CLOUDTRAIL_CHANNEL_ARN", CHANNEL.to_string()),
         ("BOWER_LAMBDA_INGRESS", config.ingress.to_string()),
         (
             "BOWER_POLICY_DIRECTORY",
@@ -182,6 +216,7 @@ pub fn try_handler(sink: &FakeSink, config: Config) -> Result<Handler<FakeSink>,
         ),
         ("BOWER_COLLECTOR_ID", "lambda-test".to_string()),
     ]);
+    env.extend(destination);
     // The principal map belongs to Function URL deployments only.
     if config.ingress != "invoke" {
         env.insert("BOWER_LAMBDA_PRINCIPALS_FILE", path(&principals));

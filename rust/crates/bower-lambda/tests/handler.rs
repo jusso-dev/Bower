@@ -1,12 +1,12 @@
-//! Handler tests with a fake CloudTrail Lake sink: IAM principal mapping, producer
-//! scopes, policy, redaction before send, batching, partial failures, input bounds
-//! and `additionalEventData` limits. Parity with the Rust collector is in
-//! `collector_parity.rs`.
+//! Handler tests with fake CloudTrail Lake and CloudWatch Logs sinks: IAM principal
+//! mapping, producer scopes, policy, redaction before send, batching, partial
+//! failures, input bounds and `additionalEventData` limits. Parity with the Rust
+//! collector is in `collector_parity.rs`.
 
 mod support;
 
 use base64::Engine;
-use bower_lambda::audit::{MAXIMUM_EVENTS_PER_CALL, MAXIMUM_REQUEST_BYTES};
+use bower_lambda::audit::{MAXIMUM_EVENTS_PER_CALL, MAXIMUM_REQUEST_BYTES, RecordFormat};
 use bower_lambda::{Handler, InvocationKind};
 use serde_json::{Value, json};
 use support::*;
@@ -765,5 +765,93 @@ fn managed_privacy_profile_source_fails_at_init() {
             },
         )
         .is_ok()
+    );
+}
+
+#[tokio::test]
+async fn cloudwatch_logs_receives_the_redacted_envelope_stamped_with_receive_time() {
+    let sink = FakeSink::cloudwatch_logs();
+    let handler = url_handler(&sink);
+    let mut event = authentication_failure("evt-cwl-1");
+    event["timeGenerated"] = json!("2026-09-01T00:00:00Z");
+    event["attributes"] = json!({"dbPassword": "never-send-this"});
+
+    let invocation = handler
+        .invoke(&url_event(Some(ROLE_SESSION), &event.to_string()))
+        .await;
+
+    assert_eq!(invocation.status, 202, "{}", invocation.body);
+    let body: Value = serde_json::from_str(&invocation.body).unwrap();
+    assert_eq!(body["queued"], true);
+    for report in body["delivery"].as_array().unwrap() {
+        assert_eq!(report["status"], "accepted");
+        assert!(report.get("cloudTrailEventId").is_none(), "{report}");
+    }
+    let sent = sink.sent();
+    assert_eq!(sent.len(), 2, "source event and its privacy alert");
+    let now = bower_contracts::time::parse(NOW)
+        .unwrap()
+        .timestamp_millis();
+    for record in &sent {
+        assert_eq!(record.format, RecordFormat::CloudWatchLogs);
+        assert_eq!(record.timestamp_ms, now, "receive time, not timeGenerated");
+        assert!(record.checksum.is_empty());
+        assert!(!record.event_data.contains("never-send-this"));
+    }
+    let source = sent.iter().find(|record| record.id == "evt-cwl-1").unwrap();
+    let message: Value = serde_json::from_str(&source.event_data).unwrap();
+    // The message is the envelope itself (what the AWS cloud source and Firehose
+    // subscription filter on `schemaVersion` read), not a CloudTrail record.
+    assert_eq!(message["schemaVersion"], "1.0.0");
+    assert_eq!(message["eventId"], "evt-cwl-1");
+    assert_eq!(message["timeGenerated"], "2026-09-01T00:00:00+00:00");
+    assert_eq!(
+        message["collector"]["sourceAdapter"],
+        "aws-lambda-url:orders"
+    );
+    assert_eq!(message["security"]["policyId"], "BWR-POL-AUTH-FAILURE");
+    assert!(message.get("UID").is_none());
+}
+
+#[tokio::test]
+async fn cloudwatch_logs_rejections_and_call_failures_are_retryable() {
+    let sink = FakeSink::cloudwatch_logs();
+    let handler = url_handler(&sink);
+    sink.refuse("evt-cwl-2", "cloudwatch-logs-too-old");
+    let event = authentication_failure("evt-cwl-2");
+
+    let invocation = handler
+        .invoke(&url_event(Some(ROLE_SESSION), &event.to_string()))
+        .await;
+    assert_eq!(invocation.status, 503, "{}", invocation.body);
+    let body: Value = serde_json::from_str(&invocation.body).unwrap();
+    assert_eq!(body["queued"], false);
+    assert_eq!(body["retryable"], true);
+
+    sink.clear_refusals();
+    sink.fail_calls("ResourceNotFoundException");
+    let invocation = handler
+        .invoke(&url_event(Some(ROLE_SESSION), &event.to_string()))
+        .await;
+    assert_eq!(invocation.status, 503, "{}", invocation.body);
+    assert!(invocation.body.contains("ResourceNotFoundException"));
+}
+
+#[test]
+fn cloudwatch_logs_destination_refuses_cloudtrail_settings_at_init() {
+    let sink = FakeSink::cloudwatch_logs();
+    let error = try_handler(
+        &sink,
+        Config {
+            extra: vec![("BOWER_CLOUDTRAIL_CHANNEL_ARN", CHANNEL)],
+            ..Config::default()
+        },
+    )
+    .err()
+    .unwrap();
+    assert!(
+        error
+            .0
+            .contains("is not used with BOWER_LAMBDA_DESTINATION=cloudwatch-logs")
     );
 }

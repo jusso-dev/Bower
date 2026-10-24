@@ -1,7 +1,8 @@
 # AWS security signal
 
-To run Bower natively on AWS and store selected, redacted events in CloudTrail Lake
-instead of Sentinel, see [AWS Lambda to CloudTrail Lake](aws-lambda-cloudtrail-lake.md).
+To run Bower natively on AWS and store selected, redacted events in CloudWatch Logs or
+CloudTrail Lake instead of Sentinel, see [AWS Lambda host](aws-lambda.md). Its
+CloudWatch Logs group can also be subscribed by this stack (`AppLogGroupName`).
 
 Bower forwards a small set of high-value AWS security events to Sentinel:
 GuardDuty and Security Hub findings, CloudTrail events that change who can do what

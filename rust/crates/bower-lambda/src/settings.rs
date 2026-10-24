@@ -1,7 +1,7 @@
 //! `LambdaSettings`: read once from environment variables at cold start and
 //! validated before the first invocation. Names follow the collector's `BOWER_*`
 //! variables where the meaning is the same; Lambda-only settings use
-//! `BOWER_LAMBDA_*` and `BOWER_CLOUDTRAIL_*`.
+//! `BOWER_LAMBDA_*`, `BOWER_CLOUDWATCH_*` and `BOWER_CLOUDTRAIL_*`.
 //!
 //! Fail closed: unknown ingress modes, malformed ARNs and settings that only make
 //! sense for the bearer-token collector (or would place a secret in the package)
@@ -61,6 +61,152 @@ impl Ingress {
     }
 }
 
+/// Where accepted events are written. Chosen explicitly with
+/// `BOWER_LAMBDA_DESTINATION`; settings that belong to the other destination are
+/// refused rather than ignored.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Destination {
+    /// `logs:PutLogEvents` into one log group. Each log event is the redacted
+    /// envelope exactly as the collector would queue it.
+    CloudWatchLogs {
+        log_group: String,
+        /// This execution environment's stream (created at init).
+        log_stream: String,
+    },
+    /// `cloudtrail-data:PutAuditEvents` on a custom integration channel. AWS closed
+    /// CloudTrail Lake to new customers on 31 May 2026.
+    CloudTrailLake {
+        channel_arn: String,
+        /// Account that owns the channel (`recipientAccountId` in every audit event).
+        recipient_account_id: String,
+        external_id: Option<String>,
+    },
+}
+
+impl Destination {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::CloudWatchLogs { .. } => "cloudwatch-logs",
+            Self::CloudTrailLake { .. } => "cloudtrail-lake",
+        }
+    }
+
+    /// The account written into CloudTrail Lake audit events; empty for CloudWatch Logs.
+    pub fn recipient_account_id(&self) -> &str {
+        match self {
+            Self::CloudWatchLogs { .. } => "",
+            Self::CloudTrailLake {
+                recipient_account_id,
+                ..
+            } => recipient_account_id,
+        }
+    }
+
+    fn parse(read: &dyn Fn(&str) -> Option<String>) -> Result<Self, SettingsError> {
+        const CLOUDTRAIL: [&str; 3] = [
+            "BOWER_CLOUDTRAIL_CHANNEL_ARN",
+            "BOWER_CLOUDTRAIL_RECIPIENT_ACCOUNT_ID",
+            "BOWER_CLOUDTRAIL_EXTERNAL_ID",
+        ];
+        const CLOUDWATCH: [&str; 2] = ["BOWER_CLOUDWATCH_LOG_GROUP", "BOWER_CLOUDWATCH_LOG_STREAM"];
+        let refuse_other = |names: &[&str], destination: &str| match names
+            .iter()
+            .find(|name| read(name).is_some())
+        {
+            Some(name) => Err(SettingsError::new(format!(
+                "{name} is not used with BOWER_LAMBDA_DESTINATION={destination}."
+            ))),
+            None => Ok(()),
+        };
+        match read("BOWER_LAMBDA_DESTINATION")
+            .map(|value| value.trim().to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("cloudwatch-logs") => {
+                refuse_other(&CLOUDTRAIL, "cloudwatch-logs")?;
+                let log_group = read("BOWER_CLOUDWATCH_LOG_GROUP")
+                    .ok_or_else(|| {
+                        SettingsError::new(
+                            "BOWER_CLOUDWATCH_LOG_GROUP is required with \
+                             BOWER_LAMBDA_DESTINATION=cloudwatch-logs.",
+                        )
+                    })?
+                    .trim()
+                    .to_string();
+                if !valid_log_group(&log_group) {
+                    return Err(SettingsError::new(
+                        "BOWER_CLOUDWATCH_LOG_GROUP must be 1-512 characters of [A-Za-z0-9._/#-].",
+                    ));
+                }
+                // One stream per execution environment by default: the runtime's own
+                // stream name is unique to it and needs no coordination.
+                let log_stream = read("BOWER_CLOUDWATCH_LOG_STREAM")
+                    .or_else(|| read("AWS_LAMBDA_LOG_STREAM_NAME"))
+                    .map(|value| value.trim().to_string())
+                    .unwrap_or_else(|| "bower-lambda".into());
+                if !valid_log_stream(&log_stream) {
+                    return Err(SettingsError::new(
+                        "BOWER_CLOUDWATCH_LOG_STREAM must be 1-512 characters without ':' or '*'.",
+                    ));
+                }
+                Ok(Self::CloudWatchLogs {
+                    log_group,
+                    log_stream,
+                })
+            }
+            Some("cloudtrail-lake") => {
+                refuse_other(&CLOUDWATCH, "cloudtrail-lake")?;
+                Self::parse_cloudtrail_lake(read)
+            }
+            None => Err(SettingsError::new(
+                "BOWER_LAMBDA_DESTINATION is required: cloudwatch-logs or cloudtrail-lake.",
+            )),
+            Some(_) => Err(SettingsError::new(
+                "BOWER_LAMBDA_DESTINATION must be cloudwatch-logs or cloudtrail-lake.",
+            )),
+        }
+    }
+
+    fn parse_cloudtrail_lake(read: &dyn Fn(&str) -> Option<String>) -> Result<Self, SettingsError> {
+        let channel_arn = read("BOWER_CLOUDTRAIL_CHANNEL_ARN")
+            .ok_or_else(|| {
+                SettingsError::new(
+                    "BOWER_CLOUDTRAIL_CHANNEL_ARN is required with \
+                     BOWER_LAMBDA_DESTINATION=cloudtrail-lake.",
+                )
+            })?
+            .trim()
+            .to_string();
+        let channel_account = channel_account_id(&channel_arn).ok_or_else(|| {
+            SettingsError::new(
+                "BOWER_CLOUDTRAIL_CHANNEL_ARN must be arn:<partition>:cloudtrail:<region>:<account>:channel/<id>.",
+            )
+        })?;
+        let recipient_account_id = match read("BOWER_CLOUDTRAIL_RECIPIENT_ACCOUNT_ID") {
+            Some(account) if account.trim() == channel_account => account.trim().to_string(),
+            Some(_) => {
+                return Err(SettingsError::new(
+                    "BOWER_CLOUDTRAIL_RECIPIENT_ACCOUNT_ID must equal the account that owns the channel.",
+                ));
+            }
+            None => channel_account.to_string(),
+        };
+        let external_id = read("BOWER_CLOUDTRAIL_EXTERNAL_ID");
+        if let Some(external_id) = &external_id
+            && !valid_external_id(external_id)
+        {
+            return Err(SettingsError::new(
+                "BOWER_CLOUDTRAIL_EXTERNAL_ID must be 2-1224 characters of [A-Za-z0-9_+=,.@:/-].",
+            ));
+        }
+        Ok(Self::CloudTrailLake {
+            channel_arn,
+            recipient_account_id,
+            external_id,
+        })
+    }
+}
+
 /// A configuration error. Messages name variables, never their values.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
@@ -74,10 +220,7 @@ impl SettingsError {
 
 #[derive(Clone, PartialEq)]
 pub struct LambdaSettings {
-    pub channel_arn: String,
-    /// Account that owns the channel (`recipientAccountId` in every audit event).
-    pub recipient_account_id: String,
-    pub external_id: Option<String>,
+    pub destination: Destination,
     pub ingress: Ingress,
     /// Producer id used for direct `Invoke` payloads (Lambda passes no caller identity).
     pub invoke_producer: Option<String>,
@@ -101,6 +244,7 @@ impl std::fmt::Debug for LambdaSettings {
         formatter
             .debug_struct("LambdaSettings")
             .field("collector_id", &self.collector_id)
+            .field("destination", &self.destination.name())
             .field("ingress", &self.ingress)
             .finish_non_exhaustive()
     }
@@ -153,32 +297,7 @@ impl LambdaSettings {
             ));
         }
 
-        let channel_arn = value("BOWER_CLOUDTRAIL_CHANNEL_ARN")
-            .ok_or_else(|| SettingsError::new("BOWER_CLOUDTRAIL_CHANNEL_ARN is required."))?
-            .trim()
-            .to_string();
-        let channel_account = channel_account_id(&channel_arn).ok_or_else(|| {
-            SettingsError::new(
-                "BOWER_CLOUDTRAIL_CHANNEL_ARN must be arn:<partition>:cloudtrail:<region>:<account>:channel/<id>.",
-            )
-        })?;
-        let recipient_account_id = match value("BOWER_CLOUDTRAIL_RECIPIENT_ACCOUNT_ID") {
-            Some(account) if account.trim() == channel_account => account.trim().to_string(),
-            Some(_) => {
-                return Err(SettingsError::new(
-                    "BOWER_CLOUDTRAIL_RECIPIENT_ACCOUNT_ID must equal the account that owns the channel.",
-                ));
-            }
-            None => channel_account.to_string(),
-        };
-        let external_id = value("BOWER_CLOUDTRAIL_EXTERNAL_ID");
-        if let Some(external_id) = &external_id
-            && !valid_external_id(external_id)
-        {
-            return Err(SettingsError::new(
-                "BOWER_CLOUDTRAIL_EXTERNAL_ID must be 2-1224 characters of [A-Za-z0-9_+=,.@:/-].",
-            ));
-        }
+        let destination = Destination::parse(&value)?;
 
         let invoke_producer = value("BOWER_LAMBDA_INVOKE_PRODUCER").map(|v| v.trim().to_string());
         if let Some(producer) = &invoke_producer
@@ -243,9 +362,7 @@ impl LambdaSettings {
         }
 
         Ok(Self {
-            channel_arn,
-            recipient_account_id,
-            external_id,
+            destination,
             ingress,
             invoke_producer,
             principals_file,
@@ -289,17 +406,31 @@ impl LambdaSettings {
 
     /// Hash of non-secret settings stamped into `collector.configurationHash`.
     pub fn configuration_hash(&self) -> String {
+        // The stream is per execution environment, so it is left out: every
+        // environment of one deployment reports the same hash.
+        let (target, recipient, external_id) = match &self.destination {
+            Destination::CloudWatchLogs { log_group, .. } => (log_group.clone(), "", false),
+            Destination::CloudTrailLake {
+                channel_arn,
+                recipient_account_id,
+                external_id,
+            } => (
+                channel_arn.clone(),
+                recipient_account_id.as_str(),
+                external_id.is_some(),
+            ),
+        };
         let material = [
-            "aws-lambda-cloudtrail-lake".to_string(),
-            self.channel_arn.clone(),
-            self.recipient_account_id.clone(),
+            format!("aws-lambda-{}", self.destination.name()),
+            target,
+            recipient.to_string(),
             self.ingress.name().to_string(),
             self.invoke_producer.clone().unwrap_or_default(),
             self.privacy_hmac_key_id.clone(),
             self.single_trust_domain.to_string(),
             path_text(self.producer_scopes_file.as_ref()),
             path_text(self.principals_file.as_ref()),
-            self.external_id.is_some().to_string(),
+            external_id.to_string(),
         ]
         .join("\u{1f}");
         format!(
@@ -388,6 +519,19 @@ fn valid_secret_arn(arn: &str) -> bool {
         })
 }
 
+/// `PutLogEvents` `logGroupName`: 1-512 characters of `[\.\-_/#A-Za-z0-9]`.
+fn valid_log_group(value: &str) -> bool {
+    (1..=512).contains(&value.len())
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b'/' | b'#')
+        })
+}
+
+/// `PutLogEvents` `logStreamName`: 1-512 characters matching `[^:*]*`.
+fn valid_log_stream(value: &str) -> bool {
+    (1..=512).contains(&value.len()) && !value.contains([':', '*'])
+}
+
 /// `PutAuditEvents` `externalId`: 2-1224 characters of `[\w+=,.@:\/-]`.
 fn valid_external_id(value: &str) -> bool {
     (2..=1224).contains(&value.len())
@@ -407,11 +551,17 @@ mod tests {
 
     const CHANNEL: &str = "arn:aws:cloudtrail:ap-southeast-2:123456789012:channel/01234567-89ab-cdef-0123-456789abcdef";
 
+    /// Pairs as an environment. Cases that name a CloudTrail channel default to the
+    /// cloudtrail-lake destination unless they set one.
     fn read(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
-        let map: HashMap<String, String> = pairs
+        let mut map: HashMap<String, String> = pairs
             .iter()
             .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
             .collect();
+        if map.contains_key("BOWER_CLOUDTRAIL_CHANNEL_ARN") {
+            map.entry("BOWER_LAMBDA_DESTINATION".into())
+                .or_insert_with(|| "cloudtrail-lake".into());
+        }
         move |name| map.get(name).cloned()
     }
 
@@ -423,7 +573,8 @@ mod tests {
             ("AWS_LAMBDA_FUNCTION_NAME", "bower-ingest"),
         ]))
         .unwrap();
-        assert_eq!(settings.recipient_account_id, "123456789012");
+        assert_eq!(settings.destination.recipient_account_id(), "123456789012");
+        assert_eq!(settings.destination.name(), "cloudtrail-lake");
         assert_eq!(settings.ingress, Ingress::FunctionUrl);
         assert_eq!(settings.collector_id, "bower-ingest");
         assert_eq!(settings.privacy_hmac_key_id, "k1");
@@ -505,7 +656,10 @@ mod tests {
         .unwrap();
         assert_eq!(settings.ingress, Ingress::Invoke);
         assert!(settings.privacy_hmac_key_secret_arn.is_some());
-        assert_eq!(settings.external_id.as_deref(), Some("bower-prod:2026"));
+        let Destination::CloudTrailLake { external_id, .. } = &settings.destination else {
+            panic!("expected cloudtrail-lake");
+        };
+        assert_eq!(external_id.as_deref(), Some("bower-prod:2026"));
         let bundle = settings.bundle_settings();
         assert_eq!(bundle.privacy_hmac_key_id, "k1");
         assert!(bundle.privacy_hmac_key_file.is_none());
@@ -571,6 +725,109 @@ mod tests {
         for (environment, expected) in cases {
             let error = LambdaSettings::from_environment(read(environment)).unwrap_err();
             assert!(error.0.contains(expected), "{} / {}", error.0, expected);
+        }
+    }
+
+    const GROUP: (&str, &str) = ("BOWER_CLOUDWATCH_LOG_GROUP", "/bower/events/prod");
+    const PRINCIPALS: (&str, &str) = ("BOWER_LAMBDA_PRINCIPALS_FILE", "/var/task/principals.json");
+
+    #[test]
+    fn cloudwatch_logs_uses_the_runtime_stream_and_a_stream_free_hash() {
+        let first = LambdaSettings::from_environment(read(&[
+            ("BOWER_LAMBDA_DESTINATION", "CloudWatch-Logs"),
+            GROUP,
+            PRINCIPALS,
+            ("AWS_LAMBDA_LOG_STREAM_NAME", "2026/10/24/[$LATEST]0123abcd"),
+        ]))
+        .unwrap();
+        assert_eq!(
+            first.destination,
+            Destination::CloudWatchLogs {
+                log_group: "/bower/events/prod".into(),
+                log_stream: "2026/10/24/[$LATEST]0123abcd".into(),
+            }
+        );
+        assert_eq!(first.destination.recipient_account_id(), "");
+        let second = LambdaSettings::from_environment(read(&[
+            ("BOWER_LAMBDA_DESTINATION", "cloudwatch-logs"),
+            GROUP,
+            PRINCIPALS,
+            ("AWS_LAMBDA_LOG_STREAM_NAME", "2026/10/24/[$LATEST]4567ef01"),
+        ]))
+        .unwrap();
+        assert_eq!(first.configuration_hash(), second.configuration_hash());
+        let explicit = LambdaSettings::from_environment(read(&[
+            ("BOWER_LAMBDA_DESTINATION", "cloudwatch-logs"),
+            GROUP,
+            PRINCIPALS,
+            ("BOWER_CLOUDWATCH_LOG_STREAM", "orders"),
+            ("AWS_LAMBDA_LOG_STREAM_NAME", "2026/10/24/[$LATEST]4567ef01"),
+        ]))
+        .unwrap();
+        assert!(matches!(
+            explicit.destination,
+            Destination::CloudWatchLogs { ref log_stream, .. } if log_stream == "orders"
+        ));
+    }
+
+    #[test]
+    fn destination_is_explicit_and_never_mixed() {
+        let lake = ("BOWER_LAMBDA_DESTINATION", "cloudtrail-lake");
+        let logs = ("BOWER_LAMBDA_DESTINATION", "cloudwatch-logs");
+        let cases: &[(&[(&str, &str)], &str)] = &[
+            (&[PRINCIPALS], "BOWER_LAMBDA_DESTINATION is required"),
+            (
+                &[("BOWER_LAMBDA_DESTINATION", "s3"), PRINCIPALS],
+                "must be cloudwatch-logs or cloudtrail-lake",
+            ),
+            (
+                &[logs, PRINCIPALS],
+                "BOWER_CLOUDWATCH_LOG_GROUP is required",
+            ),
+            (
+                &[lake, PRINCIPALS],
+                "BOWER_CLOUDTRAIL_CHANNEL_ARN is required",
+            ),
+            (
+                &[
+                    logs,
+                    GROUP,
+                    PRINCIPALS,
+                    ("BOWER_CLOUDTRAIL_CHANNEL_ARN", CHANNEL),
+                ],
+                "BOWER_CLOUDTRAIL_CHANNEL_ARN is not used with BOWER_LAMBDA_DESTINATION=cloudwatch-logs",
+            ),
+            (
+                &[
+                    lake,
+                    GROUP,
+                    PRINCIPALS,
+                    ("BOWER_CLOUDTRAIL_CHANNEL_ARN", CHANNEL),
+                ],
+                "BOWER_CLOUDWATCH_LOG_GROUP is not used with BOWER_LAMBDA_DESTINATION=cloudtrail-lake",
+            ),
+            (
+                &[
+                    logs,
+                    ("BOWER_CLOUDWATCH_LOG_GROUP", "bad group"),
+                    PRINCIPALS,
+                ],
+                "BOWER_CLOUDWATCH_LOG_GROUP must be",
+            ),
+            (
+                &[
+                    logs,
+                    GROUP,
+                    PRINCIPALS,
+                    ("BOWER_CLOUDWATCH_LOG_STREAM", "a:b"),
+                ],
+                "BOWER_CLOUDWATCH_LOG_STREAM must be",
+            ),
+        ];
+        for (environment, expected) in cases {
+            let error = LambdaSettings::from_environment(read(environment)).unwrap_err();
+            assert!(error.0.contains(expected), "{} / {}", error.0, expected);
+            assert!(!error.0.contains("/bower/events/prod") && !error.0.contains(CHANNEL));
         }
     }
 }

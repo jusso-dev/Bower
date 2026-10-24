@@ -1,20 +1,22 @@
-//! Destination seam: one `PutAuditEvents` call. The handler is generic over it so
-//! tests use a fake without AWS; `crate::aws::CloudTrailLakeSink` is the real one.
+//! Destination seam: one `PutLogEvents` or `PutAuditEvents` call. The handler is
+//! generic over it so tests use a fake without AWS; `crate::aws::CloudWatchLogsSink`
+//! and `crate::aws::CloudTrailLakeSink` are the real ones.
 
 use std::future::Future;
 
-use crate::audit::AuditRecord;
+use crate::audit::{AuditRecord, RecordFormat};
 
-/// An event CloudTrail Lake accepted.
+/// An event the destination accepted.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AcceptedEvent {
     pub id: String,
-    /// CloudTrail's `eventID` for the stored event.
-    pub event_id: String,
+    /// CloudTrail's `eventID` for the stored event. CloudWatch Logs returns none.
+    pub event_id: Option<String>,
 }
 
-/// An event CloudTrail Lake refused (`ResultErrorEntry`). The message is dropped:
-/// it is not needed to decide on a retry and may echo event content.
+/// An event the destination refused (CloudTrail Lake `ResultErrorEntry`, or a
+/// CloudWatch Logs `rejectedLogEventsInfo` range). The message is dropped: it is not
+/// needed to decide on a retry and may echo event content.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RefusedEvent {
     pub id: String,
@@ -57,7 +59,10 @@ impl SinkFailure {
 }
 
 pub trait AuditSink: Send + Sync {
-    /// Sends at most [`crate::audit::MAXIMUM_EVENTS_PER_CALL`] records in one call.
+    /// The record shape this destination takes; the handler maps and batches with it.
+    fn format(&self) -> RecordFormat;
+
+    /// Sends one batch from [`crate::audit::batches`] for [`Self::format`].
     fn put_audit_events(
         &self,
         records: &[&AuditRecord],
@@ -65,8 +70,9 @@ pub trait AuditSink: Send + Sync {
 }
 
 /// `ResultErrorEntry.errorCode` values that resending the same event cannot fix.
-/// Everything else (`Throttling`, `InternalFailure`, `AccountNotSubscribed`, and
-/// codes added later) is retryable, so an unknown code never loses an event.
+/// Everything else (`Throttling`, `InternalFailure`, `AccountNotSubscribed`, codes
+/// added later, and CloudWatch Logs timestamp rejections, which a retry restamps) is
+/// retryable, so an unknown code never loses an event.
 pub fn is_retryable(error_code: &str) -> bool {
     !matches!(
         error_code,

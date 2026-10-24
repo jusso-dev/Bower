@@ -6,8 +6,9 @@ use std::time::Duration;
 
 use aws_sdk_cloudtraildata::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_cloudtraildata::types::AuditEvent;
+use aws_sdk_cloudwatchlogs::types::InputLogEvent;
 
-use crate::audit::AuditRecord;
+use crate::audit::{AuditRecord, RecordFormat};
 use crate::settings::SettingsError;
 use crate::sink::{AcceptedEvent, AuditSink, PutResult, RefusedEvent, SinkFailure};
 
@@ -37,6 +38,126 @@ fn failure_code<E: ProvideErrorMetadata, R>(error: &SdkError<E, R>) -> String {
     }
 }
 
+/// `logs:PutLogEvents` into one stream of one log group. The stream belongs to this
+/// execution environment and is created at init (`logs:CreateLogStream`).
+pub struct CloudWatchLogsSink {
+    client: aws_sdk_cloudwatchlogs::Client,
+    log_group: String,
+    log_stream: String,
+}
+
+impl CloudWatchLogsSink {
+    /// Creates the stream if it does not exist. Any other failure stops init: the
+    /// function never serves without a writable destination.
+    pub async fn new(
+        config: &aws_config::SdkConfig,
+        log_group: String,
+        log_stream: String,
+    ) -> Result<Self, SettingsError> {
+        let client = aws_sdk_cloudwatchlogs::Client::new(config);
+        let created = client
+            .create_log_stream()
+            .log_group_name(&log_group)
+            .log_stream_name(&log_stream)
+            .send()
+            .await;
+        if let Err(error) = created {
+            let exists = error
+                .as_service_error()
+                .is_some_and(|service| service.is_resource_already_exists_exception());
+            if !exists {
+                return Err(SettingsError::new(format!(
+                    "CloudWatch Logs CreateLogStream for BOWER_CLOUDWATCH_LOG_GROUP failed ({}).",
+                    SinkFailure::new(failure_code(&error)).code
+                )));
+            }
+        }
+        Ok(Self {
+            client,
+            log_group,
+            log_stream,
+        })
+    }
+}
+
+/// Positions (in sent order) that `rejectedLogEventsInfo` refuses, with a code.
+fn rejected_log_events(
+    count: usize,
+    too_new_start: Option<i32>,
+    too_old_end: Option<i32>,
+    expired_end: Option<i32>,
+) -> Vec<(usize, &'static str)> {
+    let index = |value: Option<i32>| value.and_then(|value| usize::try_from(value).ok());
+    (0..count)
+        .filter_map(|position| {
+            if index(too_new_start).is_some_and(|start| position >= start) {
+                Some((position, "cloudwatch-logs-too-new"))
+            } else if index(expired_end).is_some_and(|end| position <= end) {
+                Some((position, "cloudwatch-logs-expired"))
+            } else if index(too_old_end).is_some_and(|end| position <= end) {
+                Some((position, "cloudwatch-logs-too-old"))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+impl AuditSink for CloudWatchLogsSink {
+    fn format(&self) -> RecordFormat {
+        RecordFormat::CloudWatchLogs
+    }
+
+    async fn put_audit_events(&self, records: &[&AuditRecord]) -> Result<PutResult, SinkFailure> {
+        // PutLogEvents needs chronological order; rejections index the sent order.
+        let mut order: Vec<&AuditRecord> = records.to_vec();
+        order.sort_by_key(|record| record.timestamp_ms);
+        let events = order
+            .iter()
+            .map(|record| {
+                InputLogEvent::builder()
+                    .message(&record.event_data)
+                    .timestamp(record.timestamp_ms)
+                    .build()
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| SinkFailure::new("request-build-failed"))?;
+        let output = self
+            .client
+            .put_log_events()
+            .log_group_name(&self.log_group)
+            .log_stream_name(&self.log_stream)
+            .set_log_events(Some(events))
+            .send()
+            .await
+            .map_err(|error| SinkFailure::new(failure_code(&error)))?;
+        let rejected = output
+            .rejected_log_events_info()
+            .map_or_else(Vec::new, |info| {
+                rejected_log_events(
+                    order.len(),
+                    info.too_new_log_event_start_index(),
+                    info.too_old_log_event_end_index(),
+                    info.expired_log_event_end_index(),
+                )
+            });
+        let mut result = PutResult::default();
+        for (position, record) in order.iter().enumerate() {
+            match rejected.iter().find(|(index, _)| *index == position) {
+                Some((_, code)) => result.failed.push(RefusedEvent {
+                    id: record.id.clone(),
+                    error_code: (*code).to_string(),
+                }),
+                None => result.successful.push(AcceptedEvent {
+                    id: record.id.clone(),
+                    event_id: None,
+                }),
+            }
+        }
+        Ok(result)
+    }
+}
+
 /// `cloudtrail-data:PutAuditEvents` on one custom integration channel.
 pub struct CloudTrailLakeSink {
     client: aws_sdk_cloudtraildata::Client,
@@ -59,6 +180,10 @@ impl CloudTrailLakeSink {
 }
 
 impl AuditSink for CloudTrailLakeSink {
+    fn format(&self) -> RecordFormat {
+        RecordFormat::CloudTrailLake
+    }
+
     async fn put_audit_events(&self, records: &[&AuditRecord]) -> Result<PutResult, SinkFailure> {
         let events = records
             .iter()
@@ -86,7 +211,7 @@ impl AuditSink for CloudTrailLakeSink {
                 .iter()
                 .map(|entry| AcceptedEvent {
                     id: entry.id().to_string(),
-                    event_id: entry.event_id().to_string(),
+                    event_id: Some(entry.event_id().to_string()),
                 })
                 .collect(),
             failed: output
@@ -135,4 +260,30 @@ pub async fn fetch_hmac_key(
             "The privacy HMAC key secret must hold at least 32 bytes (base64 or raw).",
         )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejected_ranges_map_to_positions() {
+        assert!(rejected_log_events(3, None, None, None).is_empty());
+        assert_eq!(
+            rejected_log_events(5, Some(3), Some(0), None),
+            vec![
+                (0, "cloudwatch-logs-too-old"),
+                (3, "cloudwatch-logs-too-new"),
+                (4, "cloudwatch-logs-too-new")
+            ]
+        );
+        assert_eq!(
+            rejected_log_events(3, None, Some(1), Some(0)),
+            vec![
+                (0, "cloudwatch-logs-expired"),
+                (1, "cloudwatch-logs-too-old")
+            ]
+        );
+        assert!(rejected_log_events(2, Some(-1), None, None).is_empty());
+    }
 }

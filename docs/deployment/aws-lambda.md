@@ -1,4 +1,4 @@
-# AWS Lambda to CloudTrail Lake
+# AWS Lambda host (CloudWatch Logs or CloudTrail Lake)
 
 `bower-lambda` is a native AWS hosting option for Bower. It is a small Rust Lambda that:
 
@@ -6,16 +6,19 @@
   (`AuthType: AWS_IAM`) or as a direct `Invoke` payload;
 - runs the same pipeline as the collector: contract validation, `bower-policy` default-deny
   selection, and the Privacy & Secret Protection Engine (including a privacy profile);
-- writes the selected, redacted events to an AWS CloudTrail Lake event data store with
-  `cloudtrail-data:PutAuditEvents` on a custom integration channel.
+- writes the selected, redacted events to **one destination** per deployment:
+  - **Amazon CloudWatch Logs** (`cloudwatch-logs`, the default): one log event per redacted
+    envelope, with `logs:PutLogEvents` on one log group;
+  - **AWS CloudTrail Lake** (`cloudtrail-lake`): one audit event per redacted envelope, with
+    `cloudtrail-data:PutAuditEvents` on a custom integration channel.
 
 It signs in with nothing but its execution role. No access keys, ingest tokens or Azure
 credentials are stored or configured.
 
 > **CloudTrail Lake availability.** AWS closed CloudTrail Lake to new customers from
 > 31 May 2026. Accounts that were not using CloudTrail Lake before then cannot create an event
-> data store. Check this before you plan a rollout. If your account cannot use it, run the
-> [collector](../../README.md) with Sentinel delivery instead.
+> data store. Use `cloudwatch-logs` (AWS's recommended replacement) unless your account
+> already uses CloudTrail Lake.
 
 ```mermaid
 flowchart LR
@@ -23,6 +26,9 @@ flowchart LR
     P2[Trusted invoker] -- lambda:InvokeFunction --> FN
     URL --> FN[bower-lambda<br/>provided.al2023 arm64]
     FN -- redact, validate, select --> FN
+    FN -- PutLogEvents<br/>execution role --> LG[(Log group<br/>/bower/events/stack)]
+    LG --> LI[CloudWatch Logs Insights]
+    LG -. optional subscription .-> AWSSEC[bower-aws-security<br/>to Sentinel]
     FN -- PutAuditEvents<br/>execution role --> CH[CloudTrail channel<br/>Source Custom]
     CH --> EDS[(Event data store<br/>ActivityAuditLog)]
     EDS --> Q[CloudTrail Lake SQL]
@@ -34,14 +40,19 @@ flowchart LR
 | Collect | The Function URL (verified IAM caller) or direct `Invoke` |
 | Select | The packaged policy directory and signed packs (default deny), after producer scopes |
 | Arrange | The collector's `SecurityEventProcessor`: redaction before anything else, schema validation, privacy alerts |
-| Deliver | `PutAuditEvents`. An event counts as accepted only after CloudTrail Lake accepts it. |
-| Prove | CloudTrail Lake SQL over the event data store (see [Query](#query)) |
+| Deliver | `PutLogEvents` or `PutAuditEvents`. An event counts as accepted only after the destination accepts it. |
+| Prove | CloudWatch Logs Insights or CloudTrail Lake SQL (see [Query](#query)) |
+
+Test the policies you package offline first: `bower policy test EVENT.json...` (or
+`Test-BowerPolicyEvent` from the `Bower.Policy` PowerShell module) runs sample events
+through the same intake and prints each decision.
 
 ## What is the same as the collector, and what is not
 
 The Lambda builds its policy bundle with the collector's own loader and runs the
-collector's processor. The redacted envelope it sends is **byte-identical** to the one the
-Rust collector would queue for the same input. The only difference is the `collector`
+collector's processor. The redacted envelope it sends (the CloudWatch Logs message, or
+CloudTrail Lake `additionalEventData.envelope`) is **byte-identical** to the one the Rust
+collector would queue for the same input. The only difference is the `collector`
 context: the host id, a source adapter of `aws-lambda-url:<producer>` or
 `aws-lambda-invoke:<producer>`, and the configuration hash. The test
 `rust/crates/bower-lambda/tests/collector_parity.rs` proves this, privacy alerts included.
@@ -52,8 +63,8 @@ Things the Lambda does **not** have, compared with the full collector:
 | Collector feature | Lambda |
 |---|---|
 | Durable SQLite queue and retry worker | None. The caller retries: any event that was not accepted gets a 503 for that event. |
-| Tamper-evident ledger, `/v1/status`, evidence bundles | None. CloudTrail Lake is the store of record. |
-| Duplicate detection across requests | Only inside one request. CloudTrail Lake does not document cross-request deduplication on `id`, so a retried event can appear twice. Deduplicate in queries on `eventData.uid`. |
+| Tamper-evident ledger, `/v1/status`, evidence bundles | None. The log group or event data store is the store of record. |
+| Duplicate detection across requests | Only inside one request. Neither CloudWatch Logs nor CloudTrail Lake deduplicates across requests, so a retried event can appear twice. Deduplicate in queries on `eventId` (`eventData.uid` in CloudTrail Lake). |
 | Management heartbeat and maintenance jobs | None |
 | Bearer tokens (`BOWER_INGEST_TOKEN*`) | Refused at start-up. IAM is the only authentication. |
 | HMAC key file (`BOWER_PRIVACY_HMAC_KEY_FILE`) | Refused at start-up. Use `BOWER_PRIVACY_HMAC_KEY_SECRET_ARN`. |
@@ -61,7 +72,7 @@ Things the Lambda does **not** have, compared with the full collector:
 | One host for several ingress paths | One ingress per function. Deploy a second stack for direct `Invoke`. |
 | Raw pack parser endpoint (`/v1/packs/.../events`) | Not exposed. Signed packs still add policies and detections. |
 | Rate limiting (`BOWER_INGEST_RATE_PER_SECOND`) | Reserved concurrency. Excess calls get Lambda's 429. |
-| Sentinel or AMA delivery | Not available. The only destination is CloudTrail Lake. |
+| Sentinel or AMA delivery | Not direct. The destination is CloudWatch Logs or CloudTrail Lake. A `cloudwatch-logs` log group can be subscribed by [`bower-aws-security`](aws.md), whose agent forwards Bower envelopes to a collector (not yet tested end to end with this host). |
 
 ## IAM model
 
@@ -143,13 +154,14 @@ pins this behaviour. Only IAM keeps direct invokers out.
 
 | Permission | Resource |
 |---|---|
-| `cloudtrail-data:PutAuditEvents` | this stack's channel ARN only |
-| `logs:CreateLogStream`, `logs:PutLogEvents` | this stack's log group only |
+| `logs:CreateLogStream`, `logs:PutLogEvents` (`cloudwatch-logs`) | this stack's event log group only |
+| `cloudtrail-data:PutAuditEvents` (`cloudtrail-lake`) | this stack's channel ARN only |
+| `logs:CreateLogStream`, `logs:PutLogEvents` | this stack's function log group only |
 | `secretsmanager:GetSecretValue` (optional) | `PrivacyHmacKeySecretArn` only |
 | `kms:Decrypt` (optional) | `PrivacyHmacKeySecretKmsKeyArn`, only through `secretsmanager.<region>.amazonaws.com` |
 
-`PutAuditEvents` must be called from the account that owns the channel, so the function and
-the channel live in the same account.
+Only the grant for the chosen destination is created. `PutAuditEvents` must be called from
+the account that owns the channel, so the function and the channel live in the same account.
 
 ## Request and response
 
@@ -164,14 +176,14 @@ Status codes per event follow the collector:
 
 | Status | Meaning |
 |---|---|
-| 202 | Selected, redacted, and **every** required audit event (the event and each privacy alert) accepted by CloudTrail Lake |
+| 202 | Selected, redacted, and **every** required record (the event and each privacy alert) accepted by the destination |
 | 200 | Duplicate of an earlier element in the same request whose complete required set was accepted |
-| 422 | Rejected by policy, or a required audit event (the event **or** a privacy alert) refused for good: by CloudTrail Lake (`InvalidData`, `FieldTooLong` and similar) or locally (`cloudtrail-lake-event-too-large`). `queued` is `false`; resending cannot succeed. |
+| 422 | Rejected by policy, or a required record (the event **or** a privacy alert) refused for good: by CloudTrail Lake (`InvalidData`, `FieldTooLong` and similar) or locally (`cloudtrail-lake-event-too-large`, `cloudwatch-logs-event-too-large`). `queued` is `false`; resending cannot succeed. |
 | 400 | Quarantined (schema, redaction or validation failure), or a malformed body |
 | 403 | The caller or producer is not allowed (see the IAM model) |
 | 409 | Identity conflict inside the request (same id, different content) |
 | 413 / 415 / 404 / 405 | Body too large or more than 100 elements / wrong content type / path other than `/v1/events` / method other than `POST` |
-| 503 | **Retry this event.** A required audit event was not accepted yet (throttling, internal failure, access or network error, or a missing result) |
+| 503 | **Retry this event.** A required record was not accepted yet (throttling, internal failure, access or network error, a CloudWatch Logs timestamp rejection, or a missing result) |
 
 How an element's status is decided:
 
@@ -188,8 +200,9 @@ How an element's status is decided:
 
 A single-envelope request returns the collector's ingest response fields (`eventId`,
 `decision`, `queued`, `duplicate`, `reasons`, `policy`) plus `retryable` and `delivery`.
-`delivery` has one entry per audit event (the event and its privacy alert): `auditEventId`,
-`eventId`, `status` (`accepted`, `retry` or `refused`), `cloudTrailEventId` and `errorCode`.
+`delivery` has one entry per record (the event and its privacy alert): `auditEventId` (the
+record id), `eventId`, `status` (`accepted`, `retry` or `refused`), `cloudTrailEventId`
+(CloudTrail Lake only) and `errorCode`.
 
 A batch returns `207` with `results[]`, where each result carries its own `index` and
 `status`. If any element must be retried, the batch returns `503` instead, and
@@ -202,7 +215,24 @@ response is thrown away, so retryable failures would be lost.
 Responses and logs never contain payload values, tokens or caller ARNs. Logs record one line
 per invocation with counts and failure codes.
 
-## Audit event mapping
+## CloudWatch Logs log events
+
+Each accepted event, and each privacy alert, becomes one log event:
+
+| Field | Value |
+|---|---|
+| `message` | The redacted envelope exactly as the collector queues it (JSON, one line) |
+| `timestamp` | The invocation's receive time. The event's own time stays in the message as `timeGenerated`, so old events are never refused as too old and one call never spans 24 hours. |
+
+The function writes to one stream per execution environment, named after the runtime's own
+log stream (`AWS_LAMBDA_LOG_STREAM_NAME`) unless `BOWER_CLOUDWATCH_LOG_STREAM` is set, and
+creates it at init. Calls are split at 10,000 events or 1,048,576 bytes (messages plus 26
+bytes each). An envelope above the 1 MB log event limit is refused locally with
+`cloudwatch-logs-event-too-large` (status 422); it is never sent truncated. A log event
+CloudWatch Logs rejects for its timestamp (`rejectedLogEventsInfo`) is retryable: a retry
+restamps it.
+
+## CloudTrail Lake audit event mapping
 
 Each accepted event, and each privacy alert, becomes one `AuditEvent`:
 
@@ -237,7 +267,10 @@ under 1 MB. That size counts `eventData` after JSON escaping.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `BOWER_CLOUDTRAIL_CHANNEL_ARN` | required | `arn:aws:cloudtrail:<region>:<account>:channel/<id>`. The account becomes `recipientAccountId`. |
+| `BOWER_LAMBDA_DESTINATION` | required | `cloudwatch-logs` or `cloudtrail-lake`. Settings of the other destination are refused at init. |
+| `BOWER_CLOUDWATCH_LOG_GROUP` | required for `cloudwatch-logs` | Log group name (`[A-Za-z0-9._/#-]`, 1-512) |
+| `BOWER_CLOUDWATCH_LOG_STREAM` | runtime log stream name | Optional fixed stream (no `:` or `*`). Concurrent environments may share one stream. |
+| `BOWER_CLOUDTRAIL_CHANNEL_ARN` | required for `cloudtrail-lake` | `arn:aws:cloudtrail:<region>:<account>:channel/<id>`. The account becomes `recipientAccountId`. |
 | `BOWER_CLOUDTRAIL_RECIPIENT_ACCOUNT_ID` | channel account | Optional. Must equal the channel account. |
 | `BOWER_CLOUDTRAIL_EXTERNAL_ID` | — | Optional `externalId` for channels whose resource policy requires one |
 | `BOWER_LAMBDA_INGRESS` | `function-url` | `function-url` or `invoke`. `both` is refused at init. |
@@ -303,35 +336,45 @@ configuration, so review changes to it the way you review policy changes.
 
 ## Deploy with a change set
 
-The template uses `AWS::LanguageExtensions` (`Fn::ForEach` over the invoker ARNs), so it
-needs `CAPABILITY_AUTO_EXPAND` as well as `CAPABILITY_IAM`. Review the change set before you
-run it:
+The template is [`deploy/aws/bower-aws-lambda.yaml`](../../deploy/aws/bower-aws-lambda.yaml)
+(or use `Deploy-BowerAwsLambda` from the `Bower.Deployment` PowerShell module). It uses
+`AWS::LanguageExtensions` (`Fn::ForEach` over the invoker ARNs), so it needs
+`CAPABILITY_AUTO_EXPAND` as well as `CAPABILITY_IAM`. Review the change set before you run
+it:
 
 ```bash
 aws cloudformation create-change-set --region ap-southeast-2 \
-  --stack-name bower-cloudtrail-lake --change-set-name initial \
+  --stack-name bower-lambda --change-set-name initial \
   --change-set-type CREATE \
-  --template-body file://deploy/aws/bower-aws-cloudtrail-lake.yaml \
+  --template-body file://deploy/aws/bower-aws-lambda.yaml \
   --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND \
   --parameters \
     ParameterKey=CodeS3Bucket,ParameterValue=acme-bower-artifacts \
     ParameterKey=CodeS3Key,ParameterValue=bower-lambda/0.1.0/bootstrap.zip \
     'ParameterKey=AllowedInvokerPrincipalArns,ParameterValue="arn:aws:iam::123456789012:role/apps/orders-api"' \
-    ParameterKey=RetentionDays,ParameterValue=366
+    ParameterKey=Destination,ParameterValue=cloudwatch-logs \
+    ParameterKey=EventLogRetentionDays,ParameterValue=365
 
 aws cloudformation describe-change-set --region ap-southeast-2 \
-  --stack-name bower-cloudtrail-lake --change-set-name initial
+  --stack-name bower-lambda --change-set-name initial
 aws cloudformation execute-change-set --region ap-southeast-2 \
-  --stack-name bower-cloudtrail-lake --change-set-name initial
+  --stack-name bower-lambda --change-set-name initial
 ```
+
+For CloudTrail Lake, pass `Destination=cloudtrail-lake` and `RetentionDays=<7-3653>` instead
+of the event log settings. Template rules refuse settings of the other destination.
 
 The stack creates:
 
-- an event data store (`ActivityAuditLog` selector, single region, `RetentionDays`,
-  extendable retention pricing, termination protection on, optional KMS key). It has
-  `DeletionPolicy: Retain`, so deleting the stack keeps the evidence;
-- a custom integration channel (`Source: Custom`) delivering to that store;
-- a log group with `LogRetentionDays`;
+- for `cloudwatch-logs`, the event log group `/bower/events/<stack>` with
+  `EventLogRetentionDays` and an optional KMS key (`EventLogKmsKeyArn`; its key policy must
+  allow the CloudWatch Logs service). It has `DeletionPolicy: Retain`, so deleting the stack
+  keeps the evidence;
+- for `cloudtrail-lake`, an event data store (`ActivityAuditLog` selector, single region,
+  `RetentionDays`, extendable retention pricing, termination protection on, optional KMS
+  key; `DeletionPolicy: Retain`) and a custom integration channel (`Source: Custom`)
+  delivering to it;
+- the function's own log group with `LogRetentionDays`;
 - the execution role described above;
 - the function (`provided.al2023`, `arm64`, reserved concurrency, recursive loop
   detection on);
@@ -343,15 +386,16 @@ The stack creates:
 A template rule requires `InvokeProducer` with `IngressMode=invoke` and requires it to be
 empty with `function-url`. To offer direct `Invoke` as well, deploy a second stack with
 `IngressMode=invoke`, its own `AllowedInvokerPrincipalArns` and `InvokeProducer`, and set
-`ExistingChannelArn` to the first stack's `ChannelArn` output. The second stack then creates
-no event data store or channel, so both functions write to the same store. CloudTrail allows
+`ExistingChannelArn` to the first stack's `ChannelArn` output (`cloudtrail-lake`). The second
+stack then creates no event data store or channel, so both functions write to the same
+store. With `cloudwatch-logs` each stack has its own event log group; query both. CloudTrail allows
 at most one channel per source. For a URL stack, apply the
 [direct-invoke Deny](#iam-model) after deployment.
 
 The template refuses regions other than `ap-southeast-2` and `ap-southeast-4` unless you set
 `EnforceAustralianRegion=false`.
 
-Validation status: `cfn-lint` 1.58 passes. `ValidateTemplate` needs AWS credentials, so it
+Validation status: `cfn-lint` 1.57.2 (the CI version) passes. `ValidateTemplate` needs AWS credentials, so it
 was not run, and Bower's test suite does not deploy the template.
 
 ## Send an event
@@ -371,6 +415,22 @@ Bower's forwarders (`Bower.Forwarding`) send bearer tokens to a collector. They 
 requests for Lambda, so use the collector for them.
 
 ## Query
+
+### CloudWatch Logs
+
+Query the `EventLogGroupName` output with CloudWatch Logs Insights. The messages are Bower
+envelopes, so their fields are discovered automatically. Illustrative; not run against a
+live log group:
+
+```text
+fields @timestamp, eventId, timeGenerated, application.name, actor.userId, source.ipAddress
+| filter eventType = "authentication_failure"
+| dedup eventId
+| sort timeGenerated desc
+| limit 100
+```
+
+### CloudTrail Lake
 
 Find the event data store id (the last part of the `EventDataStoreArn` output) and query with
 CloudTrail Lake SQL. The examples below are illustrative. They have not been run against a
@@ -395,12 +455,15 @@ WHERE eventData.eventName = 'sensitive_data_detected'
 
 ## Limits
 
-- No durable queue: if CloudTrail Lake is unavailable, events return 503 and the caller must
+- No durable queue: if the destination is unavailable, events return 503 and the caller must
   retry. Nothing is buffered in the function.
-- At most 1 MiB and 100 envelopes per request. A redacted envelope must fit 28 kB of
-  `additionalEventData`, or 28 kB without `attributes`.
-- CloudTrail Lake does not document cross-request deduplication on `id`. Retries can store
-  duplicates, so deduplicate on `eventData.uid`.
+- At most 1 MiB and 100 envelopes per request. For CloudTrail Lake a redacted envelope must
+  fit 28 kB of `additionalEventData`, or 28 kB without `attributes`; for CloudWatch Logs it
+  must fit one 1 MB log event.
+- Neither destination deduplicates across requests. Retries can store duplicates, so
+  deduplicate on `eventId` (`eventData.uid` in CloudTrail Lake).
+- Neither destination has been exercised against a live AWS account by Bower's tests; the
+  sinks are tested through fakes and the template with `cfn-lint`.
 - Direct `Invoke` has a single producer identity, and only in an `invoke` deployment (see
   the IAM model).
 - A URL function can be invoked directly by same-account principals with identity-policy

@@ -185,7 +185,7 @@ Pick one source per host. Only one privacy profile can be active.
 | Collector, management console | `BOWER_PRIVACY_PROFILE_SOURCE=management` ([managed privacy profiles](managed-privacy-profiles.md)) |
 | Signed pack | `privacyProfile: privacy.yaml` in `pack.yaml` ([packs](../deployment/packs.md)) |
 | Azure Functions collector | Package the file and set `privacyProfilePath` ([Azure Functions](../deployment/azure-function.md)) |
-| AWS Lambda host | Package the file and set `BOWER_PRIVACY_PROFILE` ([AWS Lambda](../deployment/aws-lambda-cloudtrail-lake.md)) |
+| AWS Lambda host | Package the file and set `BOWER_PRIVACY_PROFILE` ([AWS Lambda](../deployment/aws-lambda.md)) |
 
 Profiles that use `hmac`, in any rule, need `BOWER_PRIVACY_HMAC_KEY_FILE` (32+
 bytes, base64) and `BOWER_PRIVACY_HMAC_KEY_ID` on the host. Without the key the host

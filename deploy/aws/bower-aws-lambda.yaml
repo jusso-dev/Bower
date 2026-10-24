@@ -1,19 +1,18 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::LanguageExtensions
 Description: >-
-  Bower native AWS hosting: a Rust Lambda (provided.al2023, arm64) that accepts the
-  collector /v1/events contract over an IAM-authenticated Function URL and/or direct
-  Invoke, applies Bower default-deny policy and the Privacy & Secret Protection Engine,
-  and writes the selected, redacted events to an AWS CloudTrail Lake event data store
-  through a custom integration channel. The function authenticates only with its
-  execution role (cloudtrail-data:PutAuditEvents on this channel). No keys are stored.
-  One stack serves one ingress (function-url or invoke); deploy two stacks for both.
+  Bower native AWS hosting: a Rust Lambda (arm64) taking the collector /v1/events
+  contract over an IAM Function URL or direct Invoke, applying default-deny policy and
+  redaction, and writing to one destination with its execution role only: a CloudWatch
+  Logs group (default) or a CloudTrail Lake channel (closed to new customers since
+  31 May 2026). No keys are stored. One stack serves one ingress (function-url or
+  invoke); deploy two stacks for both.
   RESIDUAL RISK (function-url): Lambda resource policies only Allow, so any principal
   that holds lambda:InvokeFunction on this function through an identity policy (same
   account) can invoke it directly with a URL-shaped payload and assert any mapped
   producer. Apply deploy/aws/policies/bower-lambda-deny-direct-invoke-scp.json as an
   SCP or permissions-boundary Deny. Deploy with change sets; see
-  docs/deployment/aws-lambda-cloudtrail-lake.md.
+  docs/deployment/aws-lambda.md.
 
 Parameters:
   CodeS3Bucket:
@@ -36,6 +35,27 @@ Parameters:
       (function-url; each needs lambda:InvokeFunctionUrl and lambda:InvokeFunction in its
       identity policy when cross-account, and a principals file entry) or by direct
       Invoke (invoke; all attributed to InvokeProducer).
+  Destination:
+    Type: String
+    Default: cloudwatch-logs
+    AllowedValues: [cloudwatch-logs, cloudtrail-lake]
+    Description: >-
+      cloudwatch-logs (default) writes each redacted envelope as one log event to a log
+      group this stack creates. cloudtrail-lake writes CloudTrail Lake audit events; it
+      needs an account that onboarded CloudTrail Lake before 31 May 2026.
+  EventLogRetentionDays:
+    Type: Number
+    Default: 365
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653]
+    Description: Retention of the Bower event log group (cloudwatch-logs).
+  EventLogKmsKeyArn:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$"
+    Description: >-
+      Optional customer managed KMS key ARN for the Bower event log group
+      (cloudwatch-logs). The key policy must allow the CloudWatch Logs service principal
+      for this log group.
   IngressMode:
     Type: String
     Default: function-url
@@ -55,7 +75,7 @@ Parameters:
     Default: ""
     AllowedPattern: "^$|^arn:aws[a-z-]*:cloudtrail:[a-z0-9-]+:[0-9]{12}:channel/[A-Za-z0-9-]+$"
     Description: >-
-      Optional. ChannelArn output of another Bower CloudTrail Lake stack in this account
+      Optional, cloudtrail-lake only. ChannelArn output of another Bower CloudTrail Lake stack in this account
       (for example the function-url stack, when this is the separate invoke stack). The
       stack then creates no event data store or channel and writes to that channel.
   RetentionDays:
@@ -63,19 +83,19 @@ Parameters:
     Default: 366
     MinValue: 7
     MaxValue: 3653
-    Description: Event data store retention in days (EXTENDABLE_RETENTION_PRICING allows 7-3653).
+    Description: Event data store retention in days (cloudtrail-lake; EXTENDABLE_RETENTION_PRICING allows 7-3653).
   EventDataStoreKmsKeyId:
     Type: String
     Default: ""
     Description: >-
-      Optional customer managed KMS key (ARN, alias or id) for the event data store. The
+      Optional, cloudtrail-lake only. Customer managed KMS key (ARN, alias or id) for the event data store. The
       key policy must allow CloudTrail; it cannot be changed or removed later.
   ReservedConcurrency:
     Type: Number
     Default: 10
     MinValue: 1
     MaxValue: 1000
-    Description: Reserved concurrent executions. Bounds cost and PutAuditEvents rate; excess calls get 429.
+    Description: Reserved concurrent executions. Bounds cost and destination write rate; excess calls get 429.
   MemorySize:
     Type: Number
     Default: 512
@@ -144,6 +164,18 @@ Rules:
             - !Equals [!Ref IngressMode, function-url]
             - !Equals [!Ref InvokeProducer, ""]
         AssertDescription: IngressMode=invoke requires InvokeProducer; IngressMode=function-url requires it to be empty.
+  CloudTrailLakeOnlySettings:
+    RuleCondition: !Equals [!Ref Destination, cloudwatch-logs]
+    Assertions:
+      - Assert: !And
+          - !Equals [!Ref ExistingChannelArn, ""]
+          - !Equals [!Ref EventDataStoreKmsKeyId, ""]
+        AssertDescription: ExistingChannelArn and EventDataStoreKmsKeyId are only used with Destination=cloudtrail-lake.
+  CloudWatchLogsOnlySettings:
+    RuleCondition: !Equals [!Ref Destination, cloudtrail-lake]
+    Assertions:
+      - Assert: !Equals [!Ref EventLogKmsKeyArn, ""]
+        AssertDescription: EventLogKmsKeyArn is only used with Destination=cloudwatch-logs.
   HmacKeyKms:
     RuleCondition: !Not [!Equals [!Ref PrivacyHmacKeySecretKmsKeyArn, ""]]
     Assertions:
@@ -151,7 +183,13 @@ Rules:
         AssertDescription: PrivacyHmacKeySecretKmsKeyArn requires PrivacyHmacKeySecretArn.
 
 Conditions:
-  CreateLake: !Equals [!Ref ExistingChannelArn, ""]
+  LakeDestination: !Equals [!Ref Destination, cloudtrail-lake]
+  LogsDestination: !Equals [!Ref Destination, cloudwatch-logs]
+  CreateLake: !And
+    - !Condition LakeDestination
+    - !Equals [!Ref ExistingChannelArn, ""]
+  HasExistingChannel: !Not [!Equals [!Ref ExistingChannelArn, ""]]
+  HasEventLogKms: !Not [!Equals [!Ref EventLogKmsKeyArn, ""]]
   UrlIngress: !Equals [!Ref IngressMode, function-url]
   DirectIngress: !Equals [!Ref IngressMode, invoke]
   HasCodeVersion: !Not [!Equals [!Ref CodeS3ObjectVersion, ""]]
@@ -191,6 +229,19 @@ Resources:
         - Type: EVENT_DATA_STORE
           Location: !GetAtt EventDataStore.EventDataStoreArn
 
+  # Bower events (cloudwatch-logs): kept on delete, like the event data store. One
+  # stream per execution environment, created by the function at init.
+  EventLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: LogsDestination
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/bower/events/${AWS::StackName}"
+      RetentionInDays: !Ref EventLogRetentionDays
+      KmsKeyId: !If [HasEventLogKms, !Ref EventLogKmsKeyArn, !Ref "AWS::NoValue"]
+
+  # The function's own operational logs (counts and failure codes, never payloads).
   LogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -208,14 +259,26 @@ Resources:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: bower-cloudtrail-lake
+        - PolicyName: bower-lambda
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              - Sid: PutAuditEventsOnBowerChannel
-                Effect: Allow
-                Action: cloudtrail-data:PutAuditEvents
-                Resource: !If [CreateLake, !GetAtt Channel.ChannelArn, !Ref ExistingChannelArn]
+              - !If
+                - LakeDestination
+                - Sid: PutAuditEventsOnBowerChannel
+                  Effect: Allow
+                  Action: cloudtrail-data:PutAuditEvents
+                  Resource: !If [HasExistingChannel, !Ref ExistingChannelArn, !GetAtt Channel.ChannelArn]
+                - !Ref "AWS::NoValue"
+              - !If
+                - LogsDestination
+                - Sid: WriteBowerEventLogGroup
+                  Effect: Allow
+                  Action:
+                    - logs:CreateLogStream
+                    - logs:PutLogEvents
+                  Resource: !GetAtt EventLogGroup.Arn
+                - !Ref "AWS::NoValue"
               - Sid: WriteOwnLogs
                 Effect: Allow
                 Action:
@@ -243,7 +306,7 @@ Resources:
   Function:
     Type: AWS::Lambda::Function
     Properties:
-      Description: Bower ingest to CloudTrail Lake (redact, select, PutAuditEvents).
+      Description: !Sub "Bower ingest to ${Destination} (redact, select, deliver)."
       Runtime: provided.al2023
       Architectures: [arm64]
       Handler: bootstrap
@@ -261,7 +324,12 @@ Resources:
         LogFormat: Text
       Environment:
         Variables:
-          BOWER_CLOUDTRAIL_CHANNEL_ARN: !If [CreateLake, !GetAtt Channel.ChannelArn, !Ref ExistingChannelArn]
+          BOWER_LAMBDA_DESTINATION: !Ref Destination
+          BOWER_CLOUDWATCH_LOG_GROUP: !If [LogsDestination, !Ref EventLogGroup, ""]
+          BOWER_CLOUDTRAIL_CHANNEL_ARN: !If
+            - LakeDestination
+            - !If [HasExistingChannel, !Ref ExistingChannelArn, !GetAtt Channel.ChannelArn]
+            - ""
           BOWER_LAMBDA_INGRESS: !Ref IngressMode
           BOWER_LAMBDA_INVOKE_PRODUCER: !If [DirectIngress, !Ref InvokeProducer, ""]
           BOWER_LAMBDA_PRINCIPALS_FILE: !If [UrlIngress, !Ref PrincipalsFile, ""]
@@ -322,9 +390,17 @@ Outputs:
     Condition: UrlIngress
     Description: POST signed (SigV4, service lambda) requests to <url>v1/events.
     Value: !GetAtt FunctionUrl.FunctionUrl
+  EventLogGroupName:
+    Condition: LogsDestination
+    Description: >-
+      Bower events, one redacted envelope per log event. Query with CloudWatch Logs
+      Insights, or pass as the log group of deploy/aws/bower-aws-security.yaml to carry
+      them to Sentinel.
+    Value: !Ref EventLogGroup
   ChannelArn:
+    Condition: LakeDestination
     Description: Pass as ExistingChannelArn to a second (invoke) stack in this account.
-    Value: !If [CreateLake, !GetAtt Channel.ChannelArn, !Ref ExistingChannelArn]
+    Value: !If [HasExistingChannel, !Ref ExistingChannelArn, !GetAtt Channel.ChannelArn]
   EventDataStoreArn:
     Condition: CreateLake
     Description: Query with CloudTrail Lake SQL (FROM <event data store id>).

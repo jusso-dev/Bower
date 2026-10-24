@@ -1,6 +1,7 @@
 //! Invocation handling, independent of AWS: classify the Lambda event, identify
 //! the producer, run the collector's redaction and policy pipeline, map accepted
-//! events to CloudTrail Lake audit events, deliver them and answer per event.
+//! events to destination records (CloudWatch Logs log events or CloudTrail Lake
+//! audit events), deliver them and answer per event.
 //!
 //! Request contract: the collector's `POST /v1/events` body (one envelope, 1 MiB,
 //! JSON depth 64). As an additive extension a JSON array of up to 100 envelopes is
@@ -8,9 +9,9 @@
 //!
 //! Status codes per event follow the collector (202 accepted, 422 rejected by
 //! policy, 400 quarantined, 403 outside the producer's scope, 409 identity
-//! conflict), with delivery folded in: an event counts as accepted only after
-//! CloudTrail Lake accepted every audit event it produced (the event and any
-//! privacy alert). A retryable CloudTrail failure makes the event 503 and lists it
+//! conflict), with delivery folded in: an event counts as accepted only after the
+//! destination accepted every record it produced (the event and any privacy
+//! alert). A retryable destination failure makes the event 503 and lists it
 //! in `retryIndexes`; a definitive refusal makes it 422. A batch answers 207, or
 //! 503 when any element should be retried. Only failed elements need resending.
 
@@ -28,13 +29,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use tracing::{info, warn};
 
-use crate::audit::{self, AuditRecord, MappingContext};
+use crate::audit::{self, AuditRecord, MappingContext, RecordFormat};
 use crate::capture::CaptureStore;
 use crate::principals::PrincipalMap;
 use crate::settings::{Ingress, LambdaSettings, SettingsError};
 use crate::sink::{AuditSink, is_retryable};
 
-/// Elements accepted in one batch body (one `PutAuditEvents` call worth).
+/// Elements accepted in one batch body (one `PutAuditEvents` call worth; well inside
+/// one `PutLogEvents` call).
 pub const MAXIMUM_EVENTS_PER_REQUEST: usize = 100;
 /// Collector `ConflictReason`.
 const CONFLICT_REASON: &str = "event-identity-conflict";
@@ -159,7 +161,7 @@ struct ErrorBody {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DeliveryReport {
-    /// `AuditEvent.id` sent to CloudTrail Lake.
+    /// Record id sent to the destination (`AuditEvent.id` for CloudTrail Lake).
     audit_event_id: String,
     /// The Bower event id (the source event or its privacy alert).
     event_id: String,
@@ -186,7 +188,7 @@ struct EventResponse {
     event_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     decision: Option<String>,
-    /// This request's event was accepted by CloudTrail Lake (the collector's
+    /// This request's event was accepted by the destination (the collector's
     /// "queued"); false for duplicates, as in the collector.
     queued: bool,
     duplicate: bool,
@@ -239,7 +241,8 @@ type ProcessedBatch = Vec<(Element, Vec<MappedRecord>)>;
 
 #[derive(Clone, Debug)]
 enum Delivery {
-    Accepted(String),
+    /// Accepted, with CloudTrail's `eventID` when the destination returns one.
+    Accepted(Option<String>),
     Retry(String),
     Refused(String),
 }
@@ -265,6 +268,7 @@ pub struct Handler<S> {
     ingress: Ingress,
     invoke_producer: Option<String>,
     recipient_account_id: String,
+    format: RecordFormat,
     sink: S,
 }
 
@@ -308,7 +312,8 @@ impl<S: AuditSink> Handler<S> {
             principals: PrincipalMap::load(settings.principals_file.as_deref())?,
             ingress: settings.ingress,
             invoke_producer: settings.invoke_producer.clone(),
-            recipient_account_id: settings.recipient_account_id.clone(),
+            recipient_account_id: settings.destination.recipient_account_id().to_string(),
+            format: sink.format(),
             sink,
         })
     }
@@ -508,8 +513,10 @@ impl<S: AuditSink> Handler<S> {
             ..self.identity.clone()
         };
         let context = MappingContext {
+            format: self.format,
             recipient_account_id: &self.recipient_account_id,
             producer,
+            received_at_ms: self.clock.utc_now().timestamp_millis(),
         };
         // Redaction is CPU-bound and synchronous; Lambda runs one invocation per
         // execution environment, so it runs inline on the handler task.
@@ -557,8 +564,8 @@ impl<S: AuditSink> Handler<S> {
             .collect()
     }
 
-    /// Sends every mapped record in `PutAuditEvents` sized calls. Returns the
-    /// outcome per audit id.
+    /// Sends every mapped record in destination sized calls. Returns the outcome
+    /// per record id.
     async fn deliver(&self, elements: &ProcessedBatch) -> HashMap<String, Delivery> {
         let mut outcomes: HashMap<String, Delivery> = HashMap::new();
         let mut seen = HashSet::new();
@@ -568,8 +575,9 @@ impl<S: AuditSink> Handler<S> {
                 if seen.insert(record.id.clone()) {
                     pending.push(record.clone());
                 } else {
-                    // Two Bower ids mapped to one audit id: CloudTrail would refuse
-                    // the whole call (DuplicatedAuditEventId). Refuse the later one.
+                    // Two Bower ids mapped to one record id: CloudTrail would refuse
+                    // the whole call (DuplicatedAuditEventId), and outcomes are keyed
+                    // by id for every destination. Refuse the later one.
                     outcomes.insert(
                         format!("{}\u{1f}{}", record.id, record.bower_event_id),
                         Delivery::Refused("audit-id-collision".into()),
@@ -577,7 +585,7 @@ impl<S: AuditSink> Handler<S> {
                 }
             }
         }
-        for range in audit::batches(&pending) {
+        for range in audit::batches(&pending, self.format) {
             let batch: Vec<&AuditRecord> = pending[range].iter().collect();
             match self.sink.put_audit_events(&batch).await {
                 Ok(result) => {
@@ -597,7 +605,7 @@ impl<S: AuditSink> Handler<S> {
                     warn!(
                         failure_type = failure.code.as_str(),
                         events = batch.len(),
-                        "CloudTrail Lake PutAuditEvents failed; events are retryable."
+                        "Destination write failed; events are retryable."
                     );
                     for record in &batch {
                         outcomes.insert(record.id.clone(), Delivery::Retry(failure.code.clone()));
@@ -629,7 +637,7 @@ fn report(
     omitted: Vec<&'static str>,
 ) -> DeliveryReport {
     let (status, cloud_trail_event_id, error_code) = match delivery {
-        Delivery::Accepted(id) => ("accepted", Some(id.clone()), None),
+        Delivery::Accepted(id) => ("accepted", id.clone(), None),
         Delivery::Retry(code) => ("retry", None, Some(code.clone())),
         Delivery::Refused(code) => ("refused", None, Some(code.clone())),
     };

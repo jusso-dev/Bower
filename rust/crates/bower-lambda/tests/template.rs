@@ -1,5 +1,6 @@
 //! B1 (council review): the CloudFormation template and the shipped Deny policy keep
-//! URL and direct-Invoke ingress separate. Read from `deploy/aws` (never copied).
+//! URL and direct-Invoke ingress separate; each destination gets only its own grant.
+//! Read from `deploy/aws` (never copied).
 
 use std::path::{Path, PathBuf};
 
@@ -15,8 +16,7 @@ fn repo_root() -> PathBuf {
 /// The template with CloudFormation short-form tags (`!Ref`, `!If`) kept as tagged values.
 fn template() -> Value {
     let text =
-        std::fs::read_to_string(repo_root().join("deploy/aws/bower-aws-cloudtrail-lake.yaml"))
-            .unwrap();
+        std::fs::read_to_string(repo_root().join("deploy/aws/bower-aws-lambda.yaml")).unwrap();
     serde_yaml_ng::from_str(&text).unwrap()
 }
 
@@ -125,5 +125,60 @@ fn separate_invoke_stack_can_reuse_the_channel() {
             Some("CreateLake"),
             "{resource}"
         );
+    }
+}
+
+#[test]
+fn destination_selects_exactly_one_scoped_write_grant() {
+    let template = template();
+    let destination = &template["Parameters"]["Destination"];
+    assert_eq!(
+        strings(&destination["AllowedValues"]),
+        ["cloudwatch-logs", "cloudtrail-lake"]
+    );
+    // CloudTrail Lake is closed to new customers, so the default works everywhere.
+    assert_eq!(destination["Default"].as_str(), Some("cloudwatch-logs"));
+
+    let events = &template["Resources"]["EventLogGroup"];
+    assert_eq!(events["Condition"].as_str(), Some("LogsDestination"));
+    assert_eq!(events["DeletionPolicy"].as_str(), Some("Retain"));
+
+    let statements = format!(
+        "{:?}",
+        template["Resources"]["ExecutionRole"]["Properties"]["Policies"][0]["PolicyDocument"]["Statement"]
+    );
+    for (condition, action, resource) in [
+        (
+            "LakeDestination",
+            "cloudtrail-data:PutAuditEvents",
+            "Channel.ChannelArn",
+        ),
+        ("LogsDestination", "logs:PutLogEvents", "EventLogGroup.Arn"),
+    ] {
+        let grant = statements
+            .split(condition)
+            .nth(1)
+            .unwrap_or_else(|| panic!("{condition} grant missing: {statements}"));
+        let grant = &grant[..grant.find("AWS::NoValue").unwrap()];
+        assert!(
+            grant.contains(action) && grant.contains(resource),
+            "{grant}"
+        );
+    }
+    assert!(
+        !statements.contains("String(\"*\")"),
+        "no wildcard resources"
+    );
+
+    let environment = format!(
+        "{:?}",
+        template["Resources"]["Function"]["Properties"]["Environment"]["Variables"]
+    );
+    for name in [
+        "BOWER_LAMBDA_DESTINATION",
+        "BOWER_CLOUDWATCH_LOG_GROUP",
+        "BOWER_CLOUDTRAIL_CHANNEL_ARN",
+    ] {
+        assert!(environment.contains(name), "{name}");
     }
 }
