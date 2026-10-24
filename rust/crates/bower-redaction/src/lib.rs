@@ -38,4 +38,6 @@ pub use facade::{
 pub use hasher::KeyedFieldHasher;
 pub use ids::{detector_categories, detector_ids};
 pub use policy::{PrivacyAction, PrivacyFieldRule, PrivacyPolicy};
-pub use profile::{LoadedPrivacyProfile, load as load_privacy_profile, read_key_file};
+pub use profile::{
+    LoadedPrivacyProfile, decode_key_material, load as load_privacy_profile, read_key_file,
+};

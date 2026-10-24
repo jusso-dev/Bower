@@ -476,7 +476,13 @@ pub fn load(
 pub fn read_key_file(path: impl AsRef<Path>) -> Result<Vec<u8>, PrivacyError> {
     let raw =
         std::fs::read(path.as_ref()).map_err(|error| PrivacyError::Io(error.kind().to_string()))?;
-    let key = decode_key(&raw);
+    decode_key_material(&raw)
+}
+
+/// Key material held in memory (for example a secret fetched with an IAM role):
+/// base64 (preferred) or at least 32 raw bytes, exactly as [`read_key_file`] reads it.
+pub fn decode_key_material(raw: &[u8]) -> Result<Vec<u8>, PrivacyError> {
+    let key = decode_key(raw);
     if key.len() >= 32 {
         Ok(key)
     } else {

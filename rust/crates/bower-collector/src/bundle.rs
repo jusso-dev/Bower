@@ -44,6 +44,29 @@ fn manifest(pack: &bower_packs::LoadedPack) -> &bower_packs::PackManifest {
 }
 
 pub fn load(settings: &CollectorSettings) -> Result<LoadedBundle, HostError> {
+    load_inner(settings, || match &settings.privacy_hmac_key_file {
+        Some(path) => bower_redaction::read_key_file(path)
+            .map(Some)
+            .map_err(|error| HostError::new(error.dotnet_type(), error.to_string())),
+        None => Ok(None),
+    })
+}
+
+/// [`load`] with the privacy HMAC key supplied by the host instead of
+/// `privacy_hmac_key_file` (which is ignored). Used by hosts that fetch the key
+/// with their own identity, such as the AWS Lambda host. Load order and error
+/// precedence are unchanged.
+pub fn load_with_key(
+    settings: &CollectorSettings,
+    key: Option<&[u8]>,
+) -> Result<LoadedBundle, HostError> {
+    load_inner(settings, || Ok(key.map(<[u8]>::to_vec)))
+}
+
+fn load_inner(
+    settings: &CollectorSettings,
+    read_key: impl FnOnce() -> Result<Option<Vec<u8>>, HostError>,
+) -> Result<LoadedBundle, HostError> {
     let mut policies = Vec::new();
     if settings.policy_directory.is_dir() {
         policies.extend(
@@ -122,13 +145,7 @@ pub fn load(settings: &CollectorSettings) -> Result<LoadedBundle, HostError> {
         ));
     }
     let profile_yaml = profile_yaml.or_else(|| pack_profiles.first().map(|yaml| (*yaml).clone()));
-    let key = match &settings.privacy_hmac_key_file {
-        Some(path) => Some(
-            bower_redaction::read_key_file(path)
-                .map_err(|error| HostError::new(error.dotnet_type(), error.to_string()))?,
-        ),
-        None => None,
-    };
+    let key = read_key()?;
     let profile = match &profile_yaml {
         Some(yaml) => Some(
             bower_redaction::load_privacy_profile(

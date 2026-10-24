@@ -996,7 +996,10 @@ const MIGRATION_V5: &str = r#"
             VALUES (5, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 'bower-queue-v5-fencing-segments');
             "#;
 
-fn replay_content(payload: &str) -> String {
+/// Payload content that decides duplicate versus identity conflict: collector,
+/// security and `timeObserved` removed, `eventId` removed when an original id
+/// exists, keys sorted. Shared with hosts that mirror the queue's identity rules.
+pub fn replay_content(payload: &str) -> String {
     use bower_contracts::JsonElement;
     fn sort(value: &mut JsonElement) {
         match value {
