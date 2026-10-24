@@ -480,6 +480,7 @@
         "type": "Project",
         "dependencies": {
           "Bower.Contracts": "[1.0.0, )",
+          "Bower.Core": "[1.0.0, )",
           "Bower.Dcr": "[1.0.0, )",
           "Bower.Evidence": "[1.0.0, )",
           "Bower.Packs": "[1.0.0, )",

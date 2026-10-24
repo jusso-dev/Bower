@@ -7,7 +7,7 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
-use common::{Run, bower_binary, command, repo_root};
+use common::{Run, bower_binary, command, policy_samples, repo_root};
 
 fn csharp_binary() -> Option<PathBuf> {
     if let Ok(path) = std::env::var("BOWER_CSHARP_CLI") {
@@ -893,5 +893,29 @@ fn pack_fixtures_match_csharp() {
         ][..],
     ] {
         assert_same(&cs, &repo_root(), args);
+    }
+}
+
+#[test]
+fn policy_test_matches_csharp() {
+    let Some(cs) = csharp() else {
+        eprintln!("skipping: no runnable C# bower binary");
+        return;
+    };
+    let root = repo_root();
+    let dir = tempfile::tempdir().unwrap();
+    let (secret, noise, broken) = policy_samples(dir.path());
+    let cases: Vec<Vec<&str>> = vec![
+        vec!["policy", "test"],
+        vec!["policy", "test", "missing.json"],
+        vec!["policy", "test", &secret, &noise, &broken],
+        vec!["policy", "test", &secret, "--expect", "redact-and-accept"],
+        vec!["policy", "test", &noise, "--expect", "accept"],
+        vec!["policy", "test", &noise, "--expect", "1"],
+        vec!["policy", "test", &noise, "--policy-directory", "missing"],
+    ];
+    for args in &cases {
+        let run = assert_same(&cs, &root, args);
+        assert!(!run.stdout.contains("never-print"));
     }
 }

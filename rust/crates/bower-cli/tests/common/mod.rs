@@ -119,3 +119,32 @@ pub fn one_shot_server(
     });
     (address, handle)
 }
+
+/// Sample events stamped now (the intake rejects times outside its window).
+pub fn policy_samples(dir: &Path) -> (String, String, String) {
+    use bower_contracts::time::Clock as _;
+    let now = bower_contracts::time::SystemClock.utc_now().to_rfc3339();
+    let event = |id: &str, category: &str, kind: &str, extra: &str| {
+        format!(
+            "{{\"schemaVersion\":\"1.0.0\",\"eventId\":\"{id}\",\"timeGenerated\":\"{now}\",\"eventCategory\":\"{category}\",\"eventType\":\"{kind}\",\"eventAction\":\"authentication.attempt\",\"eventResult\":\"failure\",\"eventOutcomeReason\":\"InvalidPassword\",\"application\":{{\"name\":\"App\",\"environment\":\"test\"}},\"actor\":{{\"username\":\"u\"}},\"source\":{{\"ipAddress\":\"192.0.2.10\"}},\"request\":{{\"correlationId\":\"c-1\"}}{extra}}}"
+        )
+    };
+    let write = |name: &str, content: String| {
+        let path = dir.join(name);
+        std::fs::write(&path, content).unwrap();
+        path.to_str().unwrap().to_owned()
+    };
+    (
+        write(
+            "secret.json",
+            event(
+                "evt-1",
+                "authentication",
+                "authentication_failure",
+                ",\"attributes\":{\"password\":\"never-print\"}",
+            ),
+        ),
+        write("noise.json", event("evt-2", "telemetry", "page_view", "")),
+        write("broken.json", "{".into()),
+    )
+}

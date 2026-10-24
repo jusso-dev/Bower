@@ -12,7 +12,9 @@ name = "bower"
 path = "src/main.rs"
 
 [dependencies]
+bower-collector.workspace = true
 bower-contracts.workspace = true
+bower-core.workspace = true
 bower-dcr.workspace = true
 bower-evidence.workspace = true
 bower-integrity.workspace = true

@@ -7,7 +7,7 @@ use std::path::Path;
 
 use bower_contracts::{DurableEventStore, QueueState, QueuedEvent};
 use bower_persistence::SqliteEventStore;
-use common::{bower, bower_in, one_shot_server};
+use common::{bower, bower_in, one_shot_server, policy_samples};
 
 #[test]
 fn help_matches_csharp_text_for_all_entry_forms() {
@@ -672,4 +672,41 @@ fn evidence_run_requires_a_positive_bounded_timeout() {
             "{minutes}"
         );
     }
+}
+
+#[test]
+fn policy_test_reports_collector_decisions_without_event_content() {
+    let dir = tempfile::tempdir().unwrap();
+    let (secret, noise, broken) = policy_samples(dir.path());
+    let run = bower(&["policy", "test", &secret, &noise, &broken]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let output: serde_json::Value = serde_json::from_str(&run.stdout).unwrap();
+    let decisions: Vec<&str> = output["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|result| result["decision"].as_str().unwrap())
+        .collect();
+    assert_eq!(decisions, ["redactandaccept", "reject", "quarantine"]);
+    assert_eq!(output["results"][0]["wouldQueue"], true);
+    assert_eq!(output["results"][0]["privacyAlert"], true);
+    assert_eq!(
+        output["results"][1]["policy"]["policyId"],
+        "BWR-POL-DEFAULT-DENY"
+    );
+    assert!(output["results"][2]["policy"].is_null());
+    assert!(!run.stdout.contains("never-print"));
+
+    assert_eq!(
+        bower(&["policy", "test", &noise, "--expect", "reject"]).code,
+        0
+    );
+    assert_eq!(
+        bower(&["policy", "test", &noise, "--expect", "accept"]).code,
+        3
+    );
+    let bad = bower(&["policy", "test", &noise, "--expect", "allow"]);
+    assert_eq!(bad.code, 1);
+    assert!(bad.stderr.contains("--expect must be a decision"));
+    assert_eq!(bower(&["policy", "test"]).code, 1);
 }

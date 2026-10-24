@@ -12,8 +12,8 @@ use crate::cli::{
     DeveloperCommand, DeveloperInitArgs, DoctorArgs, EmitArgs, EvidenceCommand, EvidenceRunArgs,
     EvidenceVerifyArgs, KeysCommand, KeysGenerateArgs, PackBuildArgs, PackCommand, PackDiffArgs,
     PackFileArgs, PackTestArgs, PipelineCommand, PipelineTemplateArgs, PipelineValidateArgs,
-    PrivacyCommand, PrivacyValidateArgs, QueueCommand, QueueVerifyArgs, ReplayArgs, TestCommand,
-    TokenCommand, TokenGenerateArgs, ValidateArgs,
+    PolicyCommand, PolicyTestArgs, PrivacyCommand, PrivacyValidateArgs, QueueCommand,
+    QueueVerifyArgs, ReplayArgs, TestCommand, TokenCommand, TokenGenerateArgs, ValidateArgs,
 };
 
 /// `CliOptions` over one command's remaining arguments.
@@ -54,6 +54,21 @@ impl<'a> Options<'a> {
         None
     }
 
+    /// Every argument that is not a `--option` or its value (`policy test` files).
+    pub fn positionals(self) -> Vec<String> {
+        let mut values = Vec::new();
+        let mut index = 0;
+        while index < self.0.len() {
+            if self.0[index].starts_with("--") {
+                index += 2;
+                continue;
+            }
+            values.push(self.0[index].clone());
+            index += 1;
+        }
+        values
+    }
+
     /// `pack diff`: arguments ending with `.bowerpack` (ordinal, case-insensitive).
     pub fn bowerpacks(self) -> Vec<String> {
         self.0
@@ -83,6 +98,7 @@ pub fn parse(args: &[String]) -> Option<Command> {
                     | ("evidence", "run" | "verify")
                     | ("developer", "init")
                     | ("privacy", "validate")
+                    | ("policy", "test")
             ) =>
         {
             (&words[..2], &args[2..])
@@ -200,6 +216,16 @@ pub fn parse(args: &[String]) -> Option<Command> {
         })),
         ["developer", "init"] => Command::Developer(DeveloperCommand::Init(DeveloperInitArgs {
             path: o.get("--path"),
+        })),
+        ["policy", "test"] => Command::Policy(PolicyCommand::Test(PolicyTestArgs {
+            files: o.positionals(),
+            policy_directory: o.get("--policy-directory"),
+            packs: o.all("--pack"),
+            trusted_keys: o.all("--trusted-key"),
+            privacy_profile: o.get("--privacy-profile"),
+            hmac_key_file: o.get("--hmac-key-file"),
+            hmac_key_id: o.get("--hmac-key-id"),
+            expect: o.get("--expect"),
         })),
         ["privacy", "validate"] => {
             Command::Privacy(PrivacyCommand::Validate(PrivacyValidateArgs {

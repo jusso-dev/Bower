@@ -178,6 +178,15 @@
       "bower.contracts": {
         "type": "Project"
       },
+      "bower.core": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Persistence": "[1.0.0, )",
+          "Bower.PolicyEngine": "[1.0.0, )",
+          "Bower.Redaction": "[1.0.0, )"
+        }
+      },
       "bower.dcr": {
         "type": "Project"
       },
