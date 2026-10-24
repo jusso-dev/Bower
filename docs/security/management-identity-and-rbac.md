@@ -18,7 +18,16 @@ Create two single-tenant app registrations:
    `Bower.Access`, using
    [`spa-app-manifest.json`](../../deploy/entra/spa-app-manifest.json).
 
-Replace every `00000000-...` placeholder before importing. Grant tenant admin
+Replace every `00000000-...` placeholder before importing.
+
+The optional [Azure Functions collector](../deployment/azure-function.md) uses a
+third, separate registration, **Bower Ingest API**
+([`ingest-api-app-manifest.json`](../../deploy/entra/ingest-api-app-manifest.json)).
+It exposes one application-only role, `Bower.Producer`
+(`12859e27-8403-42a7-b3e4-66cc808de79f`, a stable contract identifier), and no
+delegated scopes. Assign it directly to each producer's managed identity or
+service principal. Keeping ingest on its own audience means a management token
+can never be replayed against ingest, and the reverse. Grant tenant admin
 consent to the SPA's delegated API permission.
 
 ## Group-to-role mapping
