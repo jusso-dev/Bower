@@ -19,7 +19,8 @@ public sealed partial class ManagementHeartbeatJob(
     BackgroundJobCatalog jobs,
     CollectorSettings settings,
     PolicyBundle bundle,
-    ILogger<ManagementHeartbeatJob> logger)
+    ILogger<ManagementHeartbeatJob> logger,
+    SourceHealth? sourceHealth = null)
 {
     public const string Id = "management-heartbeat";
     public const string HttpClientName = "bower-management";
@@ -48,7 +49,17 @@ public sealed partial class ManagementHeartbeatJob(
         QueueSnapshot snapshot = await eventStore.GetSnapshotAsync(cancellationToken);
         string deliveryStatus = DeliveryHealth.Evaluate(settings.OutputType, snapshot,
             settings.MaximumQueueBytes, DateTimeOffset.UtcNow);
-        SourceReport[] sources = [new SourceReport("local-http", "local-http", "healthy", null, null)];
+        // Expected applications report as sources so silent ones show in the console.
+        SourceReport[] sources =
+        [
+            new SourceReport("local-http", "local-http", "healthy", null, null),
+            .. (sourceHealth?.Evaluate() ?? []).Select(item => new SourceReport(
+                $"{item.Application}/{item.Environment}",
+                "application",
+                item.IsActive ? "healthy" : item.State,
+                item.SilentSeconds,
+                item.LastSeenAt))
+        ];
         OutputReport[] outputs =
         [
             new OutputReport(settings.OutputType, settings.OutputType, deliveryStatus, null, null)

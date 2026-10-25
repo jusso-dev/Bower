@@ -138,6 +138,73 @@ public static class PolicyLoader
         ValidateFieldPaths(policy.Requirements.RequiredFields, "requiredFields");
         ValidateFieldPaths(policy.Requirements.AtLeastOne, "atLeastOne");
         ValidateFieldPaths(policy.Requirements.RecommendedFields, "recommendedFields");
+
+        if (policy.Suppression is { } suppression)
+        {
+            ValidateSuppression(policy, suppression);
+        }
+    }
+
+    public const int MaximumSuppressionKeyFields = 5;
+
+    private static void ValidateSuppression(TelemetryPolicy policy, PolicySuppression suppression)
+    {
+        if (policy.Decision.NeverSample)
+        {
+            throw new InvalidDataException("A neverSample policy cannot define suppression.");
+        }
+
+        if (!TryParseAction(policy.Decision.Action, out DecisionAction action)
+            || action is not (DecisionAction.Accept or DecisionAction.RedactAndAccept))
+        {
+            throw new InvalidDataException("Suppression applies only to accept or redact-and-accept policies.");
+        }
+
+        if (policy.Match.EventTypes.Contains(SecurityEventTypes.TelemetryAggregationSummary))
+        {
+            throw new InvalidDataException("Suppression summaries cannot themselves be suppressed.");
+        }
+
+        if (suppression.KeyFields is not { Count: >= 1 and <= MaximumSuppressionKeyFields } keyFields
+            || keyFields.Distinct(StringComparer.Ordinal).Count() != keyFields.Count
+            || keyFields.Any(path => !EventFieldReader.IsSuppressionKey(path)))
+        {
+            throw new InvalidDataException(
+                $"Policy suppression keyFields must list 1–{MaximumSuppressionKeyFields} distinct string field paths.");
+        }
+
+        if (suppression.WindowSeconds is < 1 or > 86_400)
+        {
+            throw new InvalidDataException("Policy suppression windowSeconds must be between 1 and 86400.");
+        }
+
+        if (suppression.AllowPerWindow is < 1 or > 100_000)
+        {
+            throw new InvalidDataException("Policy suppression allowPerWindow must be between 1 and 100000.");
+        }
+    }
+
+    /// <summary>
+    /// A set that suppresses must also accept the summary event, so suppressed counts are
+    /// always delivered. Checked when a bundle is assembled from directories and packs.
+    /// </summary>
+    public static void ValidateSet(IReadOnlyCollection<LoadedPolicy> policies)
+    {
+        ArgumentNullException.ThrowIfNull(policies);
+        if (!policies.Any(item => item.Policy.Suppression is not null))
+        {
+            return;
+        }
+
+        bool summaryAccepted = policies.Any(item =>
+            item.Policy.Match.EventTypes.Contains(SecurityEventTypes.TelemetryAggregationSummary)
+            && TryParseAction(item.Policy.Decision.Action, out DecisionAction action)
+            && action is DecisionAction.Accept or DecisionAction.RedactAndAccept);
+        if (!summaryAccepted)
+        {
+            throw new InvalidDataException(
+                $"Policies define suppression but none accepts '{SecurityEventTypes.TelemetryAggregationSummary}'.");
+        }
     }
 
     private static void ValidatePredicate(List<string>? values, string name, string[]? allowed = null)

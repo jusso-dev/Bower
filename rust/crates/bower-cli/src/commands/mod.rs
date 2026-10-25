@@ -1,5 +1,6 @@
 //! Command handlers. Each returns the C# exit code or a [`CliError`] (exit 1).
 
+pub mod archive;
 pub mod azure;
 pub mod content;
 pub mod dcr;
@@ -18,6 +19,7 @@ pub mod token;
 use std::future::Future;
 use std::time::Duration;
 
+use crate::cli::{ArchiveCommand, SourcesCommand};
 use crate::cli::{
     Command, DcrCommand, DeveloperCommand, EvidenceCommand, KeysCommand, PackCommand,
     PipelineCommand, PolicyCommand, PrivacyCommand, QueueCommand, TestCommand, TokenCommand,
@@ -53,6 +55,11 @@ pub fn dispatch(command: Command) -> CliResult {
         Command::Developer(DeveloperCommand::Init(args)) => developer::init(&args),
         Command::Privacy(PrivacyCommand::Validate(args)) => privacy::validate(&args),
         Command::Policy(PolicyCommand::Test(args)) => policy::test(&args),
+        Command::Policy(PolicyCommand::Diff(args)) => policy::diff(&args),
+        Command::Archive(ArchiveCommand::Create(args)) => archive::create(&args),
+        Command::Archive(ArchiveCommand::Verify(args)) => archive::verify(&args),
+        Command::Archive(ArchiveCommand::Replay(args)) => archive::replay(&args),
+        Command::Sources(SourcesCommand::Check(args)) => archive::sources_check(&args),
     }
 }
 

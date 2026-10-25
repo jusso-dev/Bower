@@ -398,6 +398,20 @@ public sealed class QueueDeliveryWorkerTests
         public Task<int> PurgeDeliveredAsync(DateTimeOffset deliveredBefore, int maximumCount, CancellationToken cancellationToken = default) =>
             inner.PurgeDeliveredAsync(deliveredBefore, maximumCount, cancellationToken);
 
+        public Task<int> PurgeDeliveredAsync(DateTimeOffset deliveredBefore, int maximumCount, long archivedThroughSequence,
+            CancellationToken cancellationToken = default) =>
+            inner.PurgeDeliveredAsync(deliveredBefore, maximumCount, archivedThroughSequence, cancellationToken);
+
+        public Task<int> CloseExpiredSuppressionWindowsAsync(DateTimeOffset now, Func<SuppressionWindow, QueuedEvent> createSummary,
+            CancellationToken cancellationToken = default) =>
+            inner.CloseExpiredSuppressionWindowsAsync(now, createSummary, cancellationToken);
+
+        public Task<IReadOnlyList<SourceActivity>> GetSourceActivityAsync(CancellationToken cancellationToken = default) =>
+            inner.GetSourceActivityAsync(cancellationToken);
+
+        public Task UpsertSourceActivityAsync(IReadOnlyCollection<SourceActivity> activity, CancellationToken cancellationToken = default) =>
+            inner.UpsertSourceActivityAsync(activity, cancellationToken);
+
         public Task MaintainAsync(CancellationToken cancellationToken = default) =>
             inner.MaintainAsync(cancellationToken);
 

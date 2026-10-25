@@ -8,7 +8,8 @@ namespace Bower.Core;
 /// queue: the Azure Functions collector per request, <c>bower policy test</c> per sample.
 /// It is created per request, never shared, never written to disk and dropped when the
 /// request ends. Only enqueue is supported: every queue, lease and ledger operation throws
-/// because these hosts have none.
+/// because these hosts have none. Suppression needs durable windows, so a suppressing
+/// policy's request is staged as accepted here: these hosts never suppress.
 /// </summary>
 public sealed class RequestEventBuffer : IDurableEventStore
 {
@@ -65,6 +66,10 @@ public sealed class RequestEventBuffer : IDurableEventStore
     public Task<int> PurgeDeliveredAsync(DateTimeOffset deliveredBefore, int maximumCount, CancellationToken cancellationToken = default) =>
         throw Unsupported();
 
+    public Task<int> PurgeDeliveredAsync(DateTimeOffset deliveredBefore, int maximumCount, long archivedThroughSequence,
+        CancellationToken cancellationToken = default) =>
+        throw Unsupported();
+
     public Task MaintainAsync(CancellationToken cancellationToken = default) => throw Unsupported();
 
     public Task<IReadOnlyList<DeadLetterRecord>> ListDeadLetteredAsync(int maximumCount, CancellationToken cancellationToken = default) =>
@@ -80,4 +85,14 @@ public sealed class RequestEventBuffer : IDurableEventStore
 
     private static NotSupportedException Unsupported() =>
         new("This host has no durable queue or ledger.");
+
+    public Task<int> CloseExpiredSuppressionWindowsAsync(DateTimeOffset now, Func<SuppressionWindow, QueuedEvent> createSummary,
+        CancellationToken cancellationToken = default) =>
+        throw Unsupported();
+
+    public Task<IReadOnlyList<SourceActivity>> GetSourceActivityAsync(CancellationToken cancellationToken = default) =>
+        throw Unsupported();
+
+    public Task UpsertSourceActivityAsync(IReadOnlyCollection<SourceActivity> activity, CancellationToken cancellationToken = default) =>
+        throw Unsupported();
 }

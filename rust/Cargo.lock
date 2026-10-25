@@ -805,6 +805,7 @@ version = "0.1.0"
 dependencies = [
  "bower-contracts",
  "bower-persistence",
+ "bower-policy",
  "chrono",
  "hex",
  "indexmap",
@@ -978,11 +979,14 @@ version = "0.1.0"
 dependencies = [
  "bower-contracts",
  "chrono",
+ "flate2",
  "hex",
  "indexmap",
  "rusqlite",
+ "serde",
  "sha2",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]

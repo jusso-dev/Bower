@@ -101,6 +101,12 @@ public sealed record CollectorSettings
 
     public Uri? ManagementEndpoint { get; init; }
 
+    /// <summary>JSON file of applications that must keep sending events (BOWER_SOURCE_EXPECTATIONS).</summary>
+    public string? SourceExpectationsPath { get; init; }
+
+    /// <summary>Directory for the verifiable long-term archive (BOWER_ARCHIVE_PATH).</summary>
+    public string? ArchivePath { get; init; }
+
     public string? ManagementScope { get; init; }
 
     public bool IsLoopbackListener => IsLoopback(new Uri(ListenUrl).Host);
@@ -165,7 +171,9 @@ public sealed record CollectorSettings
             ManagementEndpoint = string.IsNullOrWhiteSpace(managementEndpoint)
                 ? null
                 : new Uri(managementEndpoint, UriKind.Absolute),
-            ManagementScope = read("BOWER_MANAGEMENT_SCOPE")
+            ManagementScope = read("BOWER_MANAGEMENT_SCOPE"),
+            SourceExpectationsPath = Blank(read("BOWER_SOURCE_EXPECTATIONS")),
+            ArchivePath = Blank(read("BOWER_ARCHIVE_PATH"))
         };
         settings.Validate();
         return settings;
@@ -314,6 +322,17 @@ public sealed record CollectorSettings
             PrivacyHmacKeyId,
             SingleTrustDomain.ToString(),
             ProducerScopesFile ?? string.Empty);
+        // Appended only when set so existing configuration hashes are unchanged.
+        if (SourceExpectationsPath is not null)
+        {
+            material += '\u001f' + "source-expectations:" + SourceExpectationsPath;
+        }
+
+        if (ArchivePath is not null)
+        {
+            material += '\u001f' + "archive:" + ArchivePath;
+        }
+
         if (UsesManagedPrivacyProfile)
         {
             // Appended only in management mode so existing local configuration hashes are unchanged.

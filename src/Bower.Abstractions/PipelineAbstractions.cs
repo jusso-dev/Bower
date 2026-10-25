@@ -36,7 +36,15 @@ public sealed record PolicyDecision(
     string PolicyHash,
     int Score,
     IReadOnlyList<string> Reasons,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    SuppressionDirective? Suppression = null);
+
+/// <summary>Suppression key resolved for one accepted event from its policy.</summary>
+public sealed record SuppressionDirective(
+    IReadOnlyList<string> KeyFields,
+    IReadOnlyList<string> KeyValues,
+    int WindowSeconds,
+    int AllowPerWindow);
 
 public interface IDurableEventStore
 {
@@ -102,6 +110,17 @@ public interface IDurableEventStore
         int maximumCount,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// As <see cref="PurgeDeliveredAsync(DateTimeOffset, int, CancellationToken)"/>, but only
+    /// events whose ledger sequence is at or below <paramref name="archivedThroughSequence"/>
+    /// are eligible, so nothing is purged before the archive holds it.
+    /// </summary>
+    Task<int> PurgeDeliveredAsync(
+        DateTimeOffset deliveredBefore,
+        int maximumCount,
+        long archivedThroughSequence,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Checkpoints and optimises storage. Never changes event state.</summary>
     Task MaintainAsync(CancellationToken cancellationToken = default);
 
@@ -125,7 +144,60 @@ public interface IDurableEventStore
 
     /// <summary>Recomputes the ledger chain and compares it with stored events.</summary>
     Task<LedgerVerification> VerifyLedgerAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Closes every suppression window that ended at or before <paramref name="now"/>. A
+    /// window that suppressed events is replaced, in the same transaction, by the summary
+    /// event <paramref name="createSummary"/> builds; if that throws nothing is closed.
+    /// </summary>
+    Task<int> CloseExpiredSuppressionWindowsAsync(
+        DateTimeOffset now,
+        Func<SuppressionWindow, QueuedEvent> createSummary,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Last accepted event per application and environment.</summary>
+    Task<IReadOnlyList<SourceActivity>> GetSourceActivityAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Merges observations: keeps the later time and the larger count per source.</summary>
+    Task UpsertSourceActivityAsync(
+        IReadOnlyCollection<SourceActivity> activity,
+        CancellationToken cancellationToken = default);
 }
+
+/// <summary>Application and environment that produced an accepted event.</summary>
+public sealed record SourceActivity(
+    string Application,
+    string Environment,
+    DateTimeOffset LastSeenAt,
+    long EventCount);
+
+/// <summary>
+/// Admission request for an event accepted by a suppressing policy. Key values come from the
+/// redacted envelope and are stored until the window closes.
+/// </summary>
+public sealed record SuppressionRequest(
+    string PolicyId,
+    string PolicyVersion,
+    string PolicyHash,
+    string KeyHash,
+    IReadOnlyList<string> KeyFields,
+    IReadOnlyList<string> KeyValues,
+    int WindowSeconds,
+    int AllowPerWindow,
+    string EventCategory,
+    string EventType,
+    string Application,
+    string Environment,
+    string? TenantId);
+
+public sealed record SuppressionWindow(
+    SuppressionRequest Rule,
+    DateTimeOffset WindowStart,
+    DateTimeOffset WindowEnd,
+    long Admitted,
+    long Suppressed,
+    DateTimeOffset? FirstSuppressedAt,
+    DateTimeOffset? LastSuppressedAt);
 
 /// <summary>
 /// One failed delivery to settle. A <see cref="RetryAfter"/> value schedules a retry;
@@ -161,9 +233,10 @@ public sealed record QueuedEvent(
     DateTimeOffset ReceivedAt,
     QueueState State = QueueState.Queued,
     int DeliveryAttempts = 0,
-    string? LeaseToken = null);
+    string? LeaseToken = null,
+    SuppressionRequest? Suppression = null);
 
-public sealed record EnqueueResult(bool Enqueued, bool Duplicate, string EventId);
+public sealed record EnqueueResult(bool Enqueued, bool Duplicate, string EventId, bool Suppressed = false);
 
 public sealed record QueueSnapshot(
     long Queued,

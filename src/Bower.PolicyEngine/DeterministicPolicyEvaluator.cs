@@ -91,6 +91,16 @@ public sealed class DeterministicPolicyEvaluator : ITelemetryPolicyEvaluator
             reasons.Add($"Value score {score} meets minimum {policy.Decision.MinimumValueScore}");
         }
 
+        SuppressionDirective? suppression =
+            action is DecisionAction.Accept or DecisionAction.RedactAndAccept
+            && policy.Suppression is { } rule
+                ? new SuppressionDirective(
+                    rule.KeyFields,
+                    rule.KeyFields.Select(path => EventFieldReader.GetSuppressionKeyValue(candidate, path)).ToArray(),
+                    rule.WindowSeconds,
+                    rule.AllowPerWindow)
+                : null;
+
         return new PolicyDecision(
             action,
             policy.Metadata.Id,
@@ -98,7 +108,8 @@ public sealed class DeterministicPolicyEvaluator : ITelemetryPolicyEvaluator
             loaded.Hash,
             score,
             reasons,
-            warnings);
+            warnings,
+            suppression);
     }
 
     private static bool Matches(PolicyMatch match, SecurityEventEnvelope candidate)

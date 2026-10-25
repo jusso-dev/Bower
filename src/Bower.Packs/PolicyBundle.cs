@@ -91,6 +91,8 @@ public sealed record PolicyBundle(
             throw new InvalidDataException($"Policy id '{duplicate}' is defined more than once across the directory and packs.");
         }
 
+        PolicyLoader.ValidateSet(policies);
+
         string? profileYaml = settings.PrivacyProfilePath is null ? null : File.ReadAllText(settings.PrivacyProfilePath);
         string[] packProfiles = packs.Where(pack => pack.PrivacyProfileYaml is not null).Select(pack => pack.PrivacyProfileYaml!).ToArray();
         if (packProfiles.Length + (profileYaml is null ? 0 : 1) > 1)

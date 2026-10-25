@@ -27,6 +27,7 @@ use crate::conflicts::{CONFLICT_REASON, ConflictSnapshot, EventIdentityConflicts
 use crate::jobs::{BackgroundJobStatus, JobCatalog};
 use crate::rate_limit::TokenBucket;
 use crate::worker::store_error_name;
+use bower_core::source_expectations::SourceSilenceStatus;
 
 /// `JsonEventRedactor.MaximumPayloadBytes` (Kestrel `MaxRequestBodySize`).
 pub const MAXIMUM_PAYLOAD_BYTES: usize = 1_048_576;
@@ -55,6 +56,8 @@ pub struct ProcessingOutcome {
     pub duplicate: bool,
     pub reasons: Vec<String>,
     pub policy: Option<PolicyReference>,
+    /// Accepted, but counted instead of queued (window allowance spent).
+    pub suppressed: bool,
 }
 
 #[derive(Debug)]
@@ -128,6 +131,10 @@ pub struct AppState {
     pub catalog: Arc<JobCatalog>,
     /// Management-mode ingest gate (`ManagedPrivacyProfileGateFilter`).
     pub managed_privacy: Arc<crate::managed_privacy::ManagedPrivacyState>,
+    /// Selection counters since start (`PipelineTelemetry`).
+    pub telemetry: Arc<bower_core::PipelineTelemetry>,
+    /// Expected sources (`SourceHealth`).
+    pub source_health: Arc<crate::source_health::SourceHealth>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -317,6 +324,9 @@ struct IngestResponse {
     policy: Option<PolicyReference>,
     #[serde(skip_serializing_if = "Option::is_none")]
     remediation: Option<&'static str>,
+    /// Present only when true: accepted, but counted instead of queued.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    suppressed: bool,
 }
 
 async fn ingest(
@@ -485,12 +495,13 @@ async fn ingest_candidate(
             reasons: result.reasons,
             policy: result.policy,
             remediation: conflict.then_some(REMEDIATION),
+            suppressed: result.suppressed,
         },
     )
 }
 
-fn health_status(snapshot: &QueueSnapshot) -> &'static str {
-    if snapshot.dead_lettered > 0 {
+fn health_status(snapshot: &QueueSnapshot, sources: &[SourceSilenceStatus]) -> &'static str {
+    if snapshot.dead_lettered > 0 || sources.iter().any(|source| !source.is_active()) {
         "degraded"
     } else {
         "healthy"
@@ -526,7 +537,7 @@ async fn health(State(state): State<AppState>) -> Response {
         Ok(snapshot) => json_response(
             StatusCode::OK,
             &HealthBody {
-                status: health_status(&snapshot),
+                status: health_status(&snapshot, &state.source_health.evaluate()),
             },
         ),
         Err(status) => status.into_response(),
@@ -576,6 +587,95 @@ struct StatusBody<'a> {
     jobs: Vec<BackgroundJobStatus>,
     #[serde(rename = "eventIdentityConflicts")]
     event_identity_conflicts: ConflictSnapshot,
+    /// Selection counters since start. Metadata only.
+    pipeline: PipelineBody,
+    /// Expected sources; omitted when BOWER_SOURCE_EXPECTATIONS is not set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sources: Option<Vec<SourceStatusBody>>,
+}
+
+/// `PipelineMetricsSnapshot` (Web defaults).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PipelineBody {
+    #[serde(with = "bower_contracts::time::serde_offset")]
+    started_at: Timestamp,
+    events_in: i64,
+    events_queued: i64,
+    duplicates: i64,
+    suppressed: i64,
+    bytes_in: i64,
+    bytes_queued: i64,
+    rows: Vec<PipelineRowBody>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PipelineRowBody {
+    stage: String,
+    policy_id: String,
+    action: String,
+    events: i64,
+    queued: i64,
+    duplicates: i64,
+    suppressed: i64,
+    bytes_in: i64,
+    bytes_queued: i64,
+}
+
+impl From<bower_core::PipelineMetricsSnapshot> for PipelineBody {
+    fn from(value: bower_core::PipelineMetricsSnapshot) -> Self {
+        Self {
+            started_at: value.started_at,
+            events_in: value.events_in,
+            events_queued: value.events_queued,
+            duplicates: value.duplicates,
+            suppressed: value.suppressed,
+            bytes_in: value.bytes_in,
+            bytes_queued: value.bytes_queued,
+            rows: value
+                .rows
+                .into_iter()
+                .map(|row| PipelineRowBody {
+                    stage: row.stage,
+                    policy_id: row.policy_id,
+                    action: row.action,
+                    events: row.events,
+                    queued: row.queued,
+                    duplicates: row.duplicates,
+                    suppressed: row.suppressed,
+                    bytes_in: row.bytes_in,
+                    bytes_queued: row.bytes_queued,
+                })
+                .collect(),
+        }
+    }
+}
+
+/// `SourceSilenceStatus` (Web defaults: null written; `IsActive` ignored).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SourceStatusBody {
+    application: String,
+    environment: String,
+    state: String,
+    #[serde(with = "serde_offset_option")]
+    last_seen_at: Option<Timestamp>,
+    silent_seconds: i64,
+    allowed_silence_seconds: i64,
+}
+
+impl From<SourceSilenceStatus> for SourceStatusBody {
+    fn from(value: SourceSilenceStatus) -> Self {
+        Self {
+            application: value.application,
+            environment: value.environment,
+            state: value.state,
+            last_seen_at: value.last_seen_at,
+            silent_seconds: value.silent_seconds,
+            allowed_silence_seconds: value.allowed_silence_seconds,
+        }
+    }
 }
 
 async fn status(
@@ -595,10 +695,12 @@ async fn status(
         Err(status) => return status.into_response(),
     };
     let bundle = &state.bundle;
+    let sources = state.source_health.evaluate();
+    let status = health_status(&snapshot, &sources);
     json_response(
         StatusCode::OK,
         &StatusBody {
-            status: health_status(&snapshot),
+            status,
             policy: StatusPolicy {
                 hash: &bundle.hash,
                 policies: &bundle.policies,
@@ -631,6 +733,11 @@ async fn status(
             },
             jobs: state.catalog.list(),
             event_identity_conflicts: conflicts.snapshot(),
+            pipeline: state.telemetry.snapshot().into(),
+            sources: state
+                .source_health
+                .is_configured()
+                .then(|| sources.into_iter().map(Into::into).collect()),
         },
     )
 }

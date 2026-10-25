@@ -115,6 +115,7 @@ pub fn authentication_policy() -> LoadedPolicy {
                 never_sample: true,
             },
             routing: None,
+            suppression: None,
         },
         hash: "sha256:test-policy".to_owned(),
         source_path: "test".to_owned(),

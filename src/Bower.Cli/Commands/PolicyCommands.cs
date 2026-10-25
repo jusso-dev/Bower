@@ -14,6 +14,8 @@ internal static class PolicyCommands
 {
     public const int MaximumEventFiles = 1_000;
 
+    private const string FailOnChange = "--fail-on-change";
+
     private static readonly CollectorIdentity Identity = new("bower-cli", "0.1.0", "policy-test", "policy-test");
 
     /// <summary>
@@ -78,6 +80,88 @@ internal static class PolicyCommands
         Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(output, CliJsonContext.Default.PolicyTestOutput));
         return expect is not null && output.Results.Any(result => result.Decision != expect) ? 3 : 0;
     }
+
+    /// <summary>
+    /// <c>bower policy diff --baseline DIR --candidate DIR EVENT.json...</c>: population diff.
+    /// Runs every sample through both policy directories and lists each event whose decision
+    /// or deciding policy changes. Exit 3 with <c>--fail-on-change</c> when any changes.
+    /// </summary>
+    public static async Task<int> DiffAsync(string[] args)
+    {
+        List<string> files = DiffFiles(args);
+        if (files.Count == 0 || files.Count > MaximumEventFiles)
+        {
+            Console.Error.WriteLine(
+                $"Provide 1-{MaximumEventFiles} event files: bower policy diff --baseline DIR --candidate DIR EVENT.json [EVENT.json ...].");
+            return 1;
+        }
+
+        List<(string File, string Json)> events = [];
+        foreach (string file in files)
+        {
+            FileInfo info = new(file);
+            if (!info.Exists)
+            {
+                Console.Error.WriteLine($"Event file not found: {file}");
+                return 1;
+            }
+
+            if (info.Length > JsonEventRedactor.MaximumPayloadBytes)
+            {
+                Console.Error.WriteLine($"Event file exceeds {JsonEventRedactor.MaximumPayloadBytes} bytes: {file}");
+                return 1;
+            }
+
+            events.Add((file, await File.ReadAllTextAsync(file)));
+        }
+
+        PolicyBundle baseline = PolicyBundle.Load(new PolicyBundleSources
+        {
+            PolicyDirectory = CliOptions.Required(args, "--baseline")
+        });
+        PolicyBundle candidate = PolicyBundle.Load(new PolicyBundleSources
+        {
+            PolicyDirectory = CliOptions.Required(args, "--candidate")
+        });
+        PolicyDiffOutput output = await ComputeDiffAsync(baseline, candidate, events, TimeProvider.System);
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(output, CliJsonContext.Default.PolicyDiffOutput));
+        return output.Changed > 0 && CliOptions.Has(args, FailOnChange) ? 3 : 0;
+    }
+
+    /// <summary>Population diff of <paramref name="events"/> between two loaded bundles.</summary>
+    public static async Task<PolicyDiffOutput> ComputeDiffAsync(
+        PolicyBundle baseline,
+        PolicyBundle candidate,
+        IReadOnlyList<(string File, string Json)> events,
+        TimeProvider clock)
+    {
+        PolicyTestOutput before = await EvaluateAsync(baseline, events, clock);
+        PolicyTestOutput after = await EvaluateAsync(candidate, events, clock);
+
+        List<PolicyDiffChange> changes = [];
+        for (int index = 0; index < events.Count; index++)
+        {
+            PolicyDiffOutcome old = Outcome(before.Results[index]);
+            PolicyDiffOutcome updated = Outcome(after.Results[index]);
+            if (old != updated)
+            {
+                changes.Add(new PolicyDiffChange(
+                    events[index].File,
+                    after.Results[index].EventId ?? before.Results[index].EventId,
+                    old,
+                    updated));
+            }
+        }
+
+        return new PolicyDiffOutput(baseline.Hash, candidate.Hash, events.Count, changes.Count, changes);
+    }
+
+    /// <summary>Event files of <c>policy diff</c>. <c>--fail-on-change</c> takes no value, so it never swallows a file.</summary>
+    internal static List<string> DiffFiles(string[] args) =>
+        Positionals([.. args.Where(arg => arg != FailOnChange)]);
+
+    private static PolicyDiffOutcome Outcome(PolicyTestResult result) =>
+        new(result.Decision, result.Policy?.PolicyId);
 
     /// <summary>
     /// Each event runs alone (its own buffer), as its own <c>/v1/events</c> request would, so

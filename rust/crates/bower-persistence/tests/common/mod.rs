@@ -62,6 +62,7 @@ pub fn event(
         received_at,
         state: QueueState::Queued,
         delivery_attempts: 0,
+        suppression: None,
     }
 }
 

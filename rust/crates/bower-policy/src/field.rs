@@ -84,3 +84,69 @@ pub fn has_value(value: &SecurityEventEnvelope, path: &str) -> bool {
         _ => false,
     }
 }
+
+/// String-valued paths a suppression key may use: identity and context fields plus
+/// `labels.<key>`. Times, results, ids and change values are excluded.
+const SUPPRESSION_KEY_PATHS: &[&str] = &[
+    "eventCategory",
+    "eventType",
+    "eventAction",
+    "eventOutcomeReason",
+    "application.name",
+    "application.environment",
+    "application.tenantId",
+    "actor.userId",
+    "actor.username",
+    "target.id",
+    "target.type",
+    "target.name",
+    "change.field",
+    "source.ipAddress",
+    "request.correlationId",
+    "request.traceId",
+];
+
+/// C# `EventFieldReader.IsSuppressionKey`.
+pub fn is_suppression_key(path: Option<&str>) -> bool {
+    path.is_some_and(|path| {
+        SUPPRESSION_KEY_PATHS.contains(&path)
+            || path
+                .strip_prefix("labels.")
+                .is_some_and(|key| !key.is_empty())
+    })
+}
+
+/// Value of a suppression key path; an absent value is the empty string.
+pub fn get_suppression_key_value(value: &SecurityEventEnvelope, path: &str) -> String {
+    if let Some(key) = path.strip_prefix("labels.") {
+        return value
+            .labels
+            .as_ref()
+            .and_then(|labels| labels.get(key))
+            .cloned()
+            .unwrap_or_default();
+    }
+    let text: Option<&str> = match path {
+        "eventCategory" => Some(&value.event_category),
+        "eventType" => Some(&value.event_type),
+        "eventAction" => Some(&value.event_action),
+        "eventOutcomeReason" => value.event_outcome_reason.as_deref(),
+        "application.name" => Some(&value.application.name),
+        "application.environment" => Some(&value.application.environment),
+        "application.tenantId" => value.application.tenant_id.as_deref(),
+        "actor.userId" => value.actor.as_ref().and_then(|a| a.user_id.as_deref()),
+        "actor.username" => value.actor.as_ref().and_then(|a| a.username.as_deref()),
+        "target.id" => value.target.as_ref().and_then(|t| t.id.as_deref()),
+        "target.type" => value.target.as_ref().map(|t| t.target_type.as_str()),
+        "target.name" => value.target.as_ref().and_then(|t| t.name.as_deref()),
+        "change.field" => value.change.as_ref().and_then(|c| c.field.as_deref()),
+        "source.ipAddress" => value.source.as_ref().and_then(|s| s.ip_address.as_deref()),
+        "request.correlationId" => value
+            .request
+            .as_ref()
+            .and_then(|r| r.correlation_id.as_deref()),
+        "request.traceId" => value.request.as_ref().and_then(|r| r.trace_id.as_deref()),
+        _ => None,
+    };
+    text.unwrap_or_default().to_owned()
+}

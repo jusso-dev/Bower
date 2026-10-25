@@ -38,6 +38,11 @@ static async Task<int> RunAsync(string[] args)
             ["developer", "init", .. string[] rest] => DeveloperInit(rest),
             ["privacy", "validate", .. string[] rest] => PrivacyCommands.Validate(rest),
             ["policy", "test", .. string[] rest] => await PolicyCommands.TestAsync(rest),
+            ["policy", "diff", .. string[] rest] => await PolicyCommands.DiffAsync(rest),
+            ["archive", "create", .. string[] rest] => await ArchiveCommands.CreateAsync(rest),
+            ["archive", "verify", .. string[] rest] => await ArchiveCommands.VerifyAsync(rest),
+            ["archive", "replay", .. string[] rest] => await ArchiveCommands.ReplayAsync(rest),
+            ["sources", "check", .. string[] rest] => await SourceCommands.CheckAsync(rest),
             [] or ["--help"] or ["help"] => WriteHelp(),
             _ => Fail("Unknown command. Run 'bower --help'.")
         };
@@ -277,6 +282,12 @@ static int WriteHelp()
           bower privacy validate FILE [--hmac-key-file FILE] [--sample FILE]
           bower policy test EVENT.json... [--policy-directory DIR] [--pack FILE --trusted-key PUB]
                 [--privacy-profile FILE --hmac-key-file FILE] [--expect DECISION]
+          bower policy diff --baseline DIR --candidate DIR EVENT.json... [--fail-on-change]
+          bower archive create --archive DIR [--database FILE] [--collector-id ID]
+          bower archive verify --archive DIR [--anchor SEQUENCE:HASH]
+          bower archive replay --archive DIR --collector-url URL [--from ISO] [--to ISO]
+                               [--event-type TYPE]... [--dry-run]
+          bower sources check --expectations FILE [--database FILE]
           bower version
         """);
     return 0;

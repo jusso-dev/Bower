@@ -125,6 +125,8 @@ pub struct ManagementHeartbeat {
     pub privacy_profile_hash: String,
     pub output_type: String,
     pub maximum_queue_bytes: i64,
+    /// Expected applications report as sources so silent ones show in the console.
+    pub source_health: Option<Arc<crate::source_health::SourceHealth>>,
 }
 
 #[derive(Serialize)]
@@ -216,6 +218,7 @@ impl ManagementHeartbeat {
             privacy_profile_hash: privacy_profile_hash.unwrap_or("default").to_string(),
             output_type: settings.output_type.clone(),
             maximum_queue_bytes: settings.maximum_queue_bytes,
+            source_health: None,
         })
     }
 
@@ -248,13 +251,41 @@ impl ManagementHeartbeat {
             self.maximum_queue_bytes,
             bower_contracts::time::now(),
         );
-        let sources = [SourceReport {
+        // Expected applications report as sources so silent ones show in the console.
+        let expected: Vec<(String, String, Option<i64>, Option<Timestamp>)> = self
+            .source_health
+            .as_ref()
+            .map(|health| health.evaluate())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|item| {
+                let status = if item.is_active() {
+                    "healthy".to_owned()
+                } else {
+                    item.state.clone()
+                };
+                (
+                    format!("{}/{}", item.application, item.environment),
+                    status,
+                    Some(item.silent_seconds),
+                    item.last_seen_at,
+                )
+            })
+            .collect();
+        let mut sources = vec![SourceReport {
             id: "local-http",
             kind: "local-http",
             status: "healthy",
             lag_seconds: None,
             last_event_at: None,
         }];
+        sources.extend(expected.iter().map(|(id, status, lag, last)| SourceReport {
+            id,
+            kind: "application",
+            status,
+            lag_seconds: *lag,
+            last_event_at: *last,
+        }));
         let outputs = [OutputReport {
             id: &self.output_type,
             kind: &self.output_type,

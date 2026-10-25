@@ -8,7 +8,8 @@ use std::time::Duration;
 use bower_contracts::time::{self, Timestamp};
 use bower_contracts::{
     DeadLetterRecord, DurableEventStore, EnqueueResult, FailureSettlement, LedgerHead,
-    LedgerVerification, QueueSnapshot, QueueState, QueuedEvent, StoreError, StoreResult,
+    LedgerVerification, QueueSnapshot, QueueState, QueuedEvent, SourceActivity, StoreError,
+    StoreResult, SuppressionWindow,
 };
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension, Row, TransactionBehavior, named_params, params};
@@ -106,11 +107,11 @@ impl std::fmt::Debug for SqliteEventStore {
 }
 
 /// `DateTimeOffset.ToUniversalTime().ToString("O")`.
-fn stored(value: &Timestamp) -> String {
+pub(crate) fn stored(value: &Timestamp) -> String {
     time::format_round_trip(&time::to_utc(time::truncate_to_ticks(*value)))
 }
 
-fn parse_stored(text: &str, column: usize) -> rusqlite::Result<Timestamp> {
+pub(crate) fn parse_stored(text: &str, column: usize) -> rusqlite::Result<Timestamp> {
     time::parse(text).ok_or_else(|| {
         rusqlite::Error::FromSqlConversionFailure(
             column,
@@ -276,6 +277,138 @@ WHERE state IN (?1, ?2, ?3, ?4);",
         Ok(found)
     }
 
+    /// Capacity check, insert and ledger append for a candidate already proven new
+    /// under the caller's write transaction (C# `InsertAsync`).
+    pub(crate) fn insert(
+        &self,
+        transaction: &Connection,
+        candidate: &QueuedEvent,
+    ) -> StoreResult<()> {
+        let payload_bytes = i64::try_from(candidate.payload.len()).unwrap_or(i64::MAX);
+        let received_at = stored(&candidate.received_at);
+        self.check_storage()?;
+        let current = Self::undelivered_bytes(transaction)?;
+        if current.saturating_add(payload_bytes) > self.maximum_bytes {
+            return Err(capacity_error(self.maximum_bytes, current, payload_bytes));
+        }
+        // Plain INSERT: duplicates were ruled out under the write lock, so any
+        // constraint failure is an error instead of being silently ignored.
+        transaction
+            .execute(
+                "INSERT INTO queue_events_v5 (
+    event_id, fingerprint, payload, payload_bytes, received_at, state,
+    delivery_attempts)
+VALUES (
+    :event_id, :fingerprint, :payload, :payload_bytes, :received_at,
+    :state, :delivery_attempts);",
+                named_params! {
+                    ":event_id": candidate.event_id,
+                    ":fingerprint": candidate.fingerprint,
+                    ":payload": candidate.payload,
+                    ":payload_bytes": payload_bytes,
+                    ":received_at": received_at,
+                    ":state": QUEUED,
+                    ":delivery_attempts": candidate.delivery_attempts,
+                },
+            )
+            .map_err(storage)?;
+        ledger::append(
+            transaction,
+            &candidate.event_id,
+            &candidate.payload,
+            &received_at,
+        )?;
+        transaction.execute("UPDATE queue_events_v5 SET enqueue_sequence = (SELECT MAX(sequence) FROM queue_ledger) WHERE event_id = ?1;", params![candidate.event_id]).map_err(storage)?;
+        Ok(())
+    }
+
+    pub(crate) fn validate(candidate: &QueuedEvent) -> StoreResult<()> {
+        validate_candidate(candidate)
+    }
+
+    pub(crate) fn exists_in(connection: &Connection, candidate: &QueuedEvent) -> StoreResult<bool> {
+        Self::exists(connection, candidate)
+    }
+
+    pub(crate) fn pool(&self) -> &ConnectionPool {
+        &self.pool
+    }
+
+    pub(crate) fn budget(&self, connection: &Connection) -> StoreResult<()> {
+        self.configure_budget(connection)
+    }
+
+    pub(crate) fn storage_check(&self) -> StoreResult<()> {
+        self.check_storage()
+    }
+
+    fn purge_delivered_core(
+        &self,
+        delivered_before: Timestamp,
+        maximum_count: usize,
+        archived_through_sequence: Option<i64>,
+    ) -> StoreResult<usize> {
+        if !(1..=MAXIMUM_PURGE_COUNT).contains(&maximum_count) {
+            return Err(StoreError::Invalid(
+                "maximumCount must be between 1 and 100000.".into(),
+            ));
+        }
+        let before = stored(&delivered_before);
+        self.pool.with(|connection| {
+            self.configure_budget(connection)?;
+            let transaction = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(storage)?;
+            self.check_storage()?;
+            // Only acknowledged rows are eligible. Undelivered, retrying and
+            // dead-lettered events are never deleted here, nor (with an archive)
+            // events the archive does not hold yet.
+            let event_ids = {
+                let mut select = transaction
+                    .prepare(
+                        "SELECT event_id
+FROM queue_events_v5
+WHERE state = ?1
+  AND acknowledgement IS NOT NULL
+  AND delivered_at IS NOT NULL
+  AND delivered_at < ?2
+  AND (?4 IS NULL OR enqueue_sequence <= ?4)
+ORDER BY delivered_at ASC
+LIMIT ?3;",
+                    )
+                    .map_err(storage)?;
+                let rows = select
+                    .query_map(
+                        params![
+                            DELIVERED,
+                            before,
+                            sql_limit(maximum_count),
+                            archived_through_sequence
+                        ],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .map_err(storage)?;
+                rows.collect::<Result<Vec<_>, _>>().map_err(storage)?
+            };
+            {
+                let mut delete = transaction
+                    .prepare("DELETE FROM queue_events_v5 WHERE event_id = ?1 AND state = ?2;")
+                    .map_err(storage)?;
+                for event_id in &event_ids {
+                    delete
+                        .execute(params![event_id, DELIVERED])
+                        .map_err(storage)?;
+                }
+            }
+            // Record the purge in the ledger in the same transaction so
+            // verification can tell retention from tampering.
+            ledger::mark_purged(&transaction, &event_ids, &self.now_text())?;
+            ledger::compact(&transaction, &self.now_text())?;
+            transaction.commit().map_err(storage)?;
+            Ok(event_ids.len())
+        })
+    }
+
     fn transition(
         &self,
         sql: &str,
@@ -312,6 +445,7 @@ fn read_queued(row: &Row<'_>) -> rusqlite::Result<QueuedEvent> {
             .ok_or_else(|| rusqlite::Error::IntegralValueOutOfRange(4, state))?,
         delivery_attempts: row.get(5)?,
         lease_token: Some(row.get(6)?),
+        suppression: None,
     })
 }
 
@@ -355,6 +489,8 @@ impl DurableEventStore for SqliteEventStore {
             let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
             self.check_storage()?;
             transaction.execute_batch("CREATE INDEX IF NOT EXISTS ix_queue_events_state_bytes ON queue_events_v5(state, payload_bytes, received_at);").map_err(storage)?;
+            // Additive auxiliary tables, created on every start without a schema version.
+            transaction.execute_batch(crate::suppression::AUXILIARY_SCHEMA).map_err(storage)?;
             transaction.commit().map_err(storage)
 
         })?;
@@ -368,8 +504,6 @@ impl DurableEventStore for SqliteEventStore {
         // Reject what the NOT NULL and CHECK constraints would refuse, so invalid
         // input is an error and never mistaken for a duplicate.
         validate_candidate(candidate)?;
-        let payload_bytes = i64::try_from(candidate.payload.len()).unwrap_or(i64::MAX);
-        let received_at = stored(&candidate.received_at);
         self.pool.with(|connection| {
             // BEGIN IMMEDIATE takes the write lock before the duplicate and capacity
             // checks so concurrent enqueues cannot both pass them.
@@ -384,46 +518,30 @@ impl DurableEventStore for SqliteEventStore {
                     enqueued: false,
                     duplicate: true,
                     event_id: candidate.event_id.clone(),
+                    suppressed: false,
                 });
             }
-            self.check_storage()?;
-            let current = Self::undelivered_bytes(&transaction)?;
-            if current.saturating_add(payload_bytes) > self.maximum_bytes {
-                return Err(capacity_error(self.maximum_bytes, current, payload_bytes));
+            // Suppression is decided under the same write lock, after the duplicate
+            // check so a retried event never consumes allowance, and committed with
+            // the count it changed.
+            if let Some(rule) = &candidate.suppression
+                && !crate::suppression::admit(&transaction, rule, &candidate.received_at)?
+            {
+                transaction.commit().map_err(storage)?;
+                return Ok(EnqueueResult {
+                    enqueued: false,
+                    duplicate: false,
+                    event_id: candidate.event_id.clone(),
+                    suppressed: true,
+                });
             }
-            // Plain INSERT: duplicates were ruled out under the write lock, so any
-            // constraint failure is an error instead of being silently ignored.
-            transaction
-                .execute(
-                    "INSERT INTO queue_events_v5 (
-    event_id, fingerprint, payload, payload_bytes, received_at, state,
-    delivery_attempts)
-VALUES (
-    :event_id, :fingerprint, :payload, :payload_bytes, :received_at,
-    :state, :delivery_attempts);",
-                    named_params! {
-                        ":event_id": candidate.event_id,
-                        ":fingerprint": candidate.fingerprint,
-                        ":payload": candidate.payload,
-                        ":payload_bytes": payload_bytes,
-                        ":received_at": received_at,
-                        ":state": QUEUED,
-                        ":delivery_attempts": candidate.delivery_attempts,
-                    },
-                )
-                .map_err(storage)?;
-            ledger::append(
-                &transaction,
-                &candidate.event_id,
-                &candidate.payload,
-                &received_at,
-            )?;
-            transaction.execute("UPDATE queue_events_v5 SET enqueue_sequence = (SELECT MAX(sequence) FROM queue_ledger) WHERE event_id = ?1;", params![candidate.event_id]).map_err(storage)?;
+            self.insert(&transaction, candidate)?;
             transaction.commit().map_err(storage)?;
             Ok(EnqueueResult {
                 enqueued: true,
                 duplicate: false,
                 event_id: candidate.event_id.clone(),
+                suppressed: false,
             })
         })
     }
@@ -790,58 +908,36 @@ FROM queue_events_v5;",
         delivered_before: Timestamp,
         maximum_count: usize,
     ) -> StoreResult<usize> {
-        if !(1..=MAXIMUM_PURGE_COUNT).contains(&maximum_count) {
-            return Err(StoreError::Invalid(
-                "maximumCount must be between 1 and 100000.".into(),
-            ));
-        }
-        let before = stored(&delivered_before);
-        self.pool.with(|connection| {
-            self.configure_budget(connection)?;
-            let transaction = connection
-                .transaction_with_behavior(TransactionBehavior::Immediate)
-                .map_err(storage)?;
-            self.check_storage()?;
-            // Only acknowledged rows are eligible. Undelivered, retrying and
-            // dead-lettered events are never deleted here.
-            let event_ids = {
-                let mut select = transaction
-                    .prepare(
-                        "SELECT event_id
-FROM queue_events_v5
-WHERE state = ?1
-  AND acknowledgement IS NOT NULL
-  AND delivered_at IS NOT NULL
-  AND delivered_at < ?2
-ORDER BY delivered_at ASC
-LIMIT ?3;",
-                    )
-                    .map_err(storage)?;
-                let rows = select
-                    .query_map(
-                        params![DELIVERED, before, sql_limit(maximum_count)],
-                        |row| row.get::<_, String>(0),
-                    )
-                    .map_err(storage)?;
-                rows.collect::<Result<Vec<_>, _>>().map_err(storage)?
-            };
-            {
-                let mut delete = transaction
-                    .prepare("DELETE FROM queue_events_v5 WHERE event_id = ?1 AND state = ?2;")
-                    .map_err(storage)?;
-                for event_id in &event_ids {
-                    delete
-                        .execute(params![event_id, DELIVERED])
-                        .map_err(storage)?;
-                }
-            }
-            // Record the purge in the ledger in the same transaction so
-            // verification can tell retention from tampering.
-            ledger::mark_purged(&transaction, &event_ids, &self.now_text())?;
-            ledger::compact(&transaction, &self.now_text())?;
-            transaction.commit().map_err(storage)?;
-            Ok(event_ids.len())
-        })
+        self.purge_delivered_core(delivered_before, maximum_count, None)
+    }
+
+    fn purge_delivered_archived(
+        &self,
+        delivered_before: Timestamp,
+        maximum_count: usize,
+        archived_through_sequence: i64,
+    ) -> StoreResult<usize> {
+        self.purge_delivered_core(
+            delivered_before,
+            maximum_count,
+            Some(archived_through_sequence),
+        )
+    }
+
+    fn close_expired_suppression_windows(
+        &self,
+        now: Timestamp,
+        create_summary: &mut dyn FnMut(&SuppressionWindow) -> StoreResult<QueuedEvent>,
+    ) -> StoreResult<usize> {
+        crate::suppression::close_expired(self, now, create_summary)
+    }
+
+    fn get_source_activity(&self) -> StoreResult<Vec<SourceActivity>> {
+        crate::suppression::get_source_activity(self)
+    }
+
+    fn upsert_source_activity(&self, activity: &[SourceActivity]) -> StoreResult<()> {
+        crate::suppression::upsert_source_activity(self, activity)
     }
 
     fn maintain(&self) -> StoreResult<()> {

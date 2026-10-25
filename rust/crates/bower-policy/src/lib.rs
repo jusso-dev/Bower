@@ -28,12 +28,12 @@ pub use evaluator::{
     DEFAULT_DENY_POLICY_HASH, DEFAULT_DENY_POLICY_ID, DEFAULT_DENY_POLICY_VERSION,
     DeterministicPolicyEvaluator,
 };
-pub use field::has_value;
+pub use field::{get_suppression_key_value, has_value, is_suppression_key};
 pub use loader::{
-    MAXIMUM_POLICY_BYTES, PolicyError, SUPPORTED_API_VERSION, SUPPORTED_KIND, load_directory,
-    load_file, load_yaml, try_parse_action,
+    MAXIMUM_POLICY_BYTES, MAXIMUM_SUPPRESSION_KEY_FIELDS, PolicyError, SUPPORTED_API_VERSION,
+    SUPPORTED_KIND, load_directory, load_file, load_yaml, try_parse_action, validate_set,
 };
 pub use model::{
     LoadedPolicy, PolicyAction, PolicyMatch, PolicyMetadata, PolicyRequirements, PolicyRouting,
-    TelemetryPolicy,
+    PolicySuppression, TelemetryPolicy,
 };

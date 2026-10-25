@@ -130,6 +130,8 @@ fn load_inner(
         ));
     }
 
+    bower_policy::validate_set(&policies).map_err(policy_error)?;
+
     let profile_yaml = match &settings.privacy_profile_path {
         Some(path) => Some(read_all_text(&path.to_string_lossy())?),
         None => None,

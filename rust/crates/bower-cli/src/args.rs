@@ -8,6 +8,10 @@
 //! known option's value nor an unknown option's value is taken as the positional.
 
 use crate::cli::{
+    ArchiveCommand, ArchiveCreateArgs, ArchiveReplayArgs, ArchiveVerifyArgs, PolicyDiffArgs,
+    SourcesCheckArgs, SourcesCommand,
+};
+use crate::cli::{
     Command, DatabaseArgs, DcrCommand, DcrDiffArgs, DcrGenerateArgs, DeadLettersArgs,
     DeveloperCommand, DeveloperInitArgs, DoctorArgs, EmitArgs, EvidenceCommand, EvidenceRunArgs,
     EvidenceVerifyArgs, KeysCommand, KeysGenerateArgs, PackBuildArgs, PackCommand, PackDiffArgs,
@@ -98,7 +102,9 @@ pub fn parse(args: &[String]) -> Option<Command> {
                     | ("evidence", "run" | "verify")
                     | ("developer", "init")
                     | ("privacy", "validate")
-                    | ("policy", "test")
+                    | ("policy", "test" | "diff")
+                    | ("archive", "create" | "verify" | "replay")
+                    | ("sources", "check")
             ) =>
         {
             (&words[..2], &args[2..])
@@ -226,6 +232,40 @@ pub fn parse(args: &[String]) -> Option<Command> {
             hmac_key_file: o.get("--hmac-key-file"),
             hmac_key_id: o.get("--hmac-key-id"),
             expect: o.get("--expect"),
+        })),
+        ["policy", "diff"] => Command::Policy(PolicyCommand::Diff(PolicyDiffArgs {
+            // --fail-on-change takes no value; drop it so it cannot swallow the next file.
+            files: Options(
+                &o.0.iter()
+                    .filter(|argument| *argument != "--fail-on-change")
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            )
+            .positionals(),
+            baseline: o.get("--baseline"),
+            candidate: o.get("--candidate"),
+            fail_on_change: o.has("--fail-on-change"),
+        })),
+        ["archive", "create"] => Command::Archive(ArchiveCommand::Create(ArchiveCreateArgs {
+            archive: o.get("--archive"),
+            database: database(),
+            collector_id: o.get("--collector-id"),
+        })),
+        ["archive", "verify"] => Command::Archive(ArchiveCommand::Verify(ArchiveVerifyArgs {
+            archive: o.get("--archive"),
+            anchor: o.get("--anchor"),
+        })),
+        ["archive", "replay"] => Command::Archive(ArchiveCommand::Replay(ArchiveReplayArgs {
+            archive: o.get("--archive"),
+            collector_url: o.get("--collector-url"),
+            from: o.get("--from"),
+            to: o.get("--to"),
+            event_types: o.all("--event-type"),
+            dry_run: o.has("--dry-run"),
+        })),
+        ["sources", "check"] => Command::Sources(SourcesCommand::Check(SourcesCheckArgs {
+            expectations: o.get("--expectations"),
+            database: database(),
         })),
         ["privacy", "validate"] => {
             Command::Privacy(PrivacyCommand::Validate(PrivacyValidateArgs {

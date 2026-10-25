@@ -415,6 +415,7 @@ fn queue_commands_match_csharp_on_shared_database() {
                         .unwrap(),
                     state: QueueState::Queued,
                     delivery_attempts: 0,
+                    suppression: None,
                 })
                 .unwrap();
         }

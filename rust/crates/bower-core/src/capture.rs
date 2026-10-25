@@ -91,6 +91,7 @@ impl DurableEventStore for CaptureStore {
                 enqueued: false,
                 duplicate: true,
                 event_id: candidate.event_id.clone(),
+                suppressed: false,
             });
         }
         events.push(candidate.clone());
@@ -98,6 +99,7 @@ impl DurableEventStore for CaptureStore {
             enqueued: true,
             duplicate: false,
             event_id: candidate.event_id.clone(),
+            suppressed: false,
         })
     }
 
@@ -171,6 +173,7 @@ mod tests {
             state: QueueState::Queued,
             delivery_attempts: 0,
             lease_token: None,
+            suppression: None,
         }
     }
 

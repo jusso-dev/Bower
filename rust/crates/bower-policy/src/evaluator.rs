@@ -1,10 +1,11 @@
 //! Port of `DeterministicPolicyEvaluator`.
 
 use bower_contracts::{
-    DecisionAction, PolicyDecision, SecurityEventEnvelope, TelemetryPolicyEvaluator,
+    DecisionAction, PolicyDecision, SecurityEventEnvelope, SuppressionDirective,
+    TelemetryPolicyEvaluator,
 };
 
-use crate::field::{has_value, present};
+use crate::field::{get_suppression_key_value, has_value, present};
 use crate::loader::{ordinal_cmp, try_parse_action};
 use crate::model::{LoadedPolicy, PolicyMatch, TelemetryPolicy};
 
@@ -49,6 +50,7 @@ impl TelemetryPolicyEvaluator for DeterministicPolicyEvaluator {
                 score: 0,
                 reasons: vec!["No approved policy matched event category and type".to_owned()],
                 warnings: Vec::new(),
+                suppression: None,
             };
         };
 
@@ -82,6 +84,7 @@ impl TelemetryPolicyEvaluator for DeterministicPolicyEvaluator {
                     .map(|path| format!("Missing required field: {path}"))
                     .collect(),
                 warnings: Vec::new(),
+                suppression: None,
             };
         }
 
@@ -106,6 +109,27 @@ impl TelemetryPolicyEvaluator for DeterministicPolicyEvaluator {
             try_parse_action(Some(&policy.decision.action)).unwrap_or(DecisionAction::Reject)
         };
 
+        // Only an accepted event carries a suppression key.
+        let suppression = policy
+            .suppression
+            .as_ref()
+            .filter(|_| {
+                matches!(
+                    action,
+                    DecisionAction::Accept | DecisionAction::RedactAndAccept
+                )
+            })
+            .map(|rule| SuppressionDirective {
+                key_fields: rule.key_fields.clone(),
+                key_values: rule
+                    .key_fields
+                    .iter()
+                    .map(|path| get_suppression_key_value(candidate, path))
+                    .collect(),
+                window_seconds: rule.window_seconds,
+                allow_per_window: rule.allow_per_window,
+            });
+
         PolicyDecision {
             action,
             policy_id: policy.metadata.id.clone(),
@@ -114,6 +138,7 @@ impl TelemetryPolicyEvaluator for DeterministicPolicyEvaluator {
             score,
             reasons,
             warnings,
+            suppression,
         }
     }
 }

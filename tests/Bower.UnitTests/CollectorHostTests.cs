@@ -335,6 +335,59 @@ public sealed class CollectorHostTests
         Assert.Equal(AzureCredentialMode.WorkloadIdentity, settings.AzureCredential);
     }
 
+    [Fact]
+    public async Task Ingest_ReportsSuppressionAndStatusShowsPipelineAndExpectedSources()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string policies = Path.Combine(directory.Path, "policies");
+        Directory.CreateDirectory(policies);
+        File.WriteAllText(Path.Combine(policies, "auth.yaml"), SuppressionTests.SuppressingPolicy);
+        File.WriteAllText(Path.Combine(policies, "summary.yaml"), SuppressionTests.SummaryPolicy);
+        string expectations = Path.Combine(directory.Path, "sources.json");
+        File.WriteAllText(
+            expectations,
+            """
+            {"apiVersion":"bower.security/v1","kind":"SourceExpectations","sources":[
+              {"application":"TestApplication","environment":"test","maximumSilenceMinutes":5},
+              {"application":"Payroll","environment":"production","maximumSilenceMinutes":5}]}
+            """);
+        await using WebApplication app = await StartAsync(
+            directory,
+            Token,
+            cancellationToken,
+            settings => settings with { PolicyDirectory = policies, SourceExpectationsPath = expectations });
+        HttpClient client = app.GetTestClient();
+
+        List<string> bodies = [];
+        for (int index = 0; index < 3; index++)
+        {
+            using HttpRequestMessage request = Post(
+                AuthenticationFailure() with { EventOriginalId = $"original-{index}" },
+                Token);
+            using HttpResponseMessage response = await client.SendAsync(request, cancellationToken);
+            Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+            bodies.Add(await response.Content.ReadAsStringAsync(cancellationToken));
+        }
+
+        using HttpRequestMessage statusRequest = new(HttpMethod.Get, "/v1/status");
+        statusRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Token);
+        using HttpResponseMessage statusResponse = await client.SendAsync(statusRequest, cancellationToken);
+        using JsonDocument status = JsonDocument.Parse(await statusResponse.Content.ReadAsStringAsync(cancellationToken));
+        JsonElement pipeline = status.RootElement.GetProperty("pipeline");
+        JsonElement sources = status.RootElement.GetProperty("sources");
+
+        Assert.DoesNotContain("\"suppressed\"", bodies[0], StringComparison.Ordinal);
+        Assert.Contains("\"suppressed\":true", bodies[2], StringComparison.Ordinal);
+        Assert.Equal(3, pipeline.GetProperty("eventsIn").GetInt64());
+        Assert.Equal(2, pipeline.GetProperty("eventsQueued").GetInt64());
+        Assert.Equal(1, pipeline.GetProperty("suppressed").GetInt64());
+        Assert.Equal(2, sources.GetArrayLength());
+        Assert.Equal("active", sources[0].GetProperty("state").GetString());
+        Assert.Equal("TestApplication", sources[0].GetProperty("application").GetString());
+        Assert.Equal(JsonValueKind.Null, sources[1].GetProperty("lastSeenAt").ValueKind);
+    }
+
     private static async Task<WebApplication> StartAsync(
         TemporaryDirectory directory,
         string? token,

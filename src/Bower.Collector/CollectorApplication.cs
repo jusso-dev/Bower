@@ -74,7 +74,17 @@ public static partial class CollectorApplication
                 settings.MaximumQueueBytes,
                 services.GetRequiredService<TimeProvider>()));
         builder.Services.AddSingleton<ITelemetryPolicyEvaluator>(new DeterministicPolicyEvaluator(bundle.Policies));
+        builder.Services.AddSingleton<PipelineTelemetry>();
         builder.Services.AddSingleton<SecurityEventProcessor>();
+        // Loaded at build so a malformed expectations file stops start-up.
+        SourceExpectations? expectations = settings.SourceExpectationsPath is null
+            ? null
+            : SourceExpectationsLoader.LoadFile(settings.SourceExpectationsPath);
+        builder.Services.AddSingleton(services => new SourceHealth(
+            expectations,
+            services.GetRequiredService<PipelineTelemetry>(),
+            services.GetRequiredService<TimeProvider>()));
+        builder.Services.AddHostedService<SuppressionWindowWorker>();
         builder.Services.AddSingleton<EventIdentityConflicts>();
         builder.Services.AddSingleton(
             new CollectorIdentity(settings.CollectorId, settings.Version, "local-http", settings.ConfigurationHash()));
@@ -107,6 +117,15 @@ public static partial class CollectorApplication
         builder.Services.AddBowerBackgroundJobs($"bower-collector:{settings.CollectorId}");
         builder.Services.AddTransient<QueueRetentionJob>();
         builder.Services.AddTransient<QueueMaintenanceJob>();
+        builder.Services.AddTransient<SourceActivityJob>();
+        if (settings.ArchivePath is not null)
+        {
+            builder.Services.AddSingleton(services => new QueueArchive(
+                settings.ArchivePath,
+                settings.CollectorId,
+                services.GetRequiredService<TimeProvider>()));
+            builder.Services.AddTransient<QueueArchiveJob>();
+        }
         if (settings.ManagementEndpoint is not null)
         {
             builder.Services.AddSingleton(credential ?? AzureCredentialFactory.Create(settings));
@@ -139,9 +158,25 @@ public static partial class CollectorApplication
             LogUnauthenticatedIngest(app.Logger);
         }
 
-        await app.Services.GetRequiredService<IDurableEventStore>().InitializeAsync(cancellationToken);
+        IDurableEventStore queue = app.Services.GetRequiredService<IDurableEventStore>();
+        await queue.InitializeAsync(cancellationToken);
+        app.Services.GetRequiredService<PipelineTelemetry>().Load(
+            await queue.GetSourceActivityAsync(cancellationToken));
 
         RecurringJobRegistry jobs = app.Services.GetRequiredService<RecurringJobRegistry>();
+        // Superseded by the next run on failure; the in-memory set keeps unsaved changes.
+        jobs.AddOrUpdate<SourceActivityJob>(
+            SourceActivityJob.Id,
+            (job, token) => job.RunAsync(token),
+            Cron.Minutely());
+        if (settings.ArchivePath is not null)
+        {
+            jobs.AddOrUpdate<QueueArchiveJob>(
+                QueueArchiveJob.Id,
+                (job, token) => job.RunAsync(token),
+                Cron.Minutely());
+        }
+
         jobs.AddOrUpdate<QueueRetentionJob>(
             QueueRetentionJob.Id,
             (job, token) => job.RunAsync(token),
@@ -229,7 +264,8 @@ public static partial class CollectorApplication
                                 result.PolicyDecision.PolicyId,
                                 result.PolicyDecision.PolicyVersion,
                                 result.PolicyDecision.PolicyHash,
-                                result.PolicyDecision.Score));
+                                result.PolicyDecision.Score))
+                    { Suppressed = result.Suppressed };
 
                     int statusCode = result.Action switch
                     {
@@ -252,10 +288,10 @@ public static partial class CollectorApplication
         // Liveness for probes: status only, no queue metadata without a token.
         app.MapGet(
             "/health",
-            async (IDurableEventStore eventQueue, CancellationToken cancellationToken) =>
+            async (IDurableEventStore eventQueue, SourceHealth sources, CancellationToken cancellationToken) =>
             {
                 QueueSnapshot snapshot = await eventQueue.GetSnapshotAsync(cancellationToken);
-                return Results.Json(new HealthResponse(Status(snapshot)), CollectorJsonContext.Default.HealthResponse);
+                return Results.Json(new HealthResponse(Status(snapshot, sources.Evaluate())), CollectorJsonContext.Default.HealthResponse);
             });
 
         app.MapGet(
@@ -267,12 +303,15 @@ public static partial class CollectorApplication
                     PolicyBundle bundle,
                     ManagedPrivacyProfileState managedPrivacy,
                     CollectorSettings settings,
+                    PipelineTelemetry telemetry,
+                    SourceHealth sourceHealth,
                     CancellationToken cancellationToken) =>
                 {
                     QueueSnapshot snapshot = await eventQueue.GetSnapshotAsync(cancellationToken);
                     LedgerHead ledger = await eventQueue.GetLedgerHeadAsync(cancellationToken);
+                    IReadOnlyList<SourceSilenceStatus> sources = sourceHealth.Evaluate();
                     StatusResponse status = new(
-                        Status(snapshot),
+                        Status(snapshot, sources),
                         new StatusPolicyResponse(
                             bundle.Hash,
                             [.. bundle.Policies.Select(item => new StatusPolicyItem(
@@ -300,14 +339,18 @@ public static partial class CollectorApplication
                             snapshot.UndeliveredBytes,
                             snapshot.OldestUndelivered),
                         jobs.List())
-                    { EventIdentityConflicts = conflicts.Snapshot() };
+                    {
+                        EventIdentityConflicts = conflicts.Snapshot(),
+                        Pipeline = telemetry.Snapshot(),
+                        Sources = sourceHealth.IsConfigured ? sources : null
+                    };
                     return Results.Json(status, CollectorJsonContext.Default.StatusResponse);
                 })
             .AddEndpointFilter<IngestAuthenticationFilter>();
     }
 
-    private static string Status(QueueSnapshot snapshot) =>
-        snapshot.DeadLettered > 0 ? "degraded" : "healthy";
+    private static string Status(QueueSnapshot snapshot, IReadOnlyList<SourceSilenceStatus> sources) =>
+        snapshot.DeadLettered > 0 || sources.Any(source => !source.IsActive) ? "degraded" : "healthy";
 
     private static IOutputAdapter? CreateOutput(CollectorSettings settings, TokenCredential? credential)
     {

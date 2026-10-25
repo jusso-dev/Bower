@@ -12,12 +12,67 @@ public sealed class SecurityEventProcessor(
     IEventRedactor redactor,
     ITelemetryPolicyEvaluator policyEvaluator,
     IDurableEventStore queue,
-    TimeProvider clock)
+    TimeProvider clock,
+    PipelineTelemetry? telemetry = null)
 {
     public async Task<ProcessingResult> ProcessAsync(
         string candidateJson,
         CollectorIdentity collector,
         CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(candidateJson);
+        ProcessingResult result = await ProcessCoreAsync(candidateJson, collector, cancellationToken);
+        telemetry?.Record(result, Encoding.UTF8.GetByteCount(candidateJson));
+        return result;
+    }
+
+    /// <summary>
+    /// Closes ended suppression windows and queues one policy-approved summary for each
+    /// window that suppressed events. A summary the policy set does not accept aborts the
+    /// close, so suppressed counts are never discarded.
+    /// </summary>
+    public Task<int> CloseSuppressionWindowsAsync(
+        CollectorIdentity collector,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(collector);
+        DateTimeOffset now = clock.GetUtcNow();
+        return queue.CloseExpiredSuppressionWindowsAsync(
+            now,
+            window =>
+            {
+                SecurityEventEnvelope summary = Suppression.CreateSummary(window, collector, now);
+                PolicyDecision decision = policyEvaluator.Evaluate(summary);
+                if (decision.Action is not (DecisionAction.Accept or DecisionAction.RedactAndAccept))
+                {
+                    throw new SuppressionSummaryRejectedException(decision.PolicyId, decision.Action);
+                }
+
+                SecurityEventEnvelope arranged = summary with
+                {
+                    Security = new SecurityDecisionContext
+                    {
+                        PolicyId = decision.PolicyId,
+                        PolicyVersion = decision.PolicyVersion,
+                        PolicyHash = decision.PolicyHash,
+                        ValueScore = decision.Score,
+                        Decision = DecisionAction.Aggregate,
+                        ClassificationReasons = decision.Reasons
+                    }
+                };
+                return new QueuedEvent(
+                    arranged.EventId,
+                    EventFingerprint.Create(arranged),
+                    JsonSerializer.Serialize(arranged, BowerJson.Envelope),
+                    now);
+            },
+            cancellationToken);
+    }
+
+    private async Task<ProcessingResult> ProcessCoreAsync(
+        string candidateJson,
+        CollectorIdentity collector,
+        CancellationToken cancellationToken)
     {
         RedactionResult redaction;
         try
@@ -27,14 +82,15 @@ public sealed class SecurityEventProcessor(
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             // Redaction failure is a security failure: quarantine without persisting.
-            return ProcessingResult.Failed(DecisionAction.Quarantine, "redaction-failed");
+            return ProcessingResult.Failed(DecisionAction.Quarantine, "redaction-failed", ProcessingStage.Redaction);
         }
 
         if (!redaction.Succeeded || redaction.RedactedJson is null)
         {
             return ProcessingResult.Failed(
                 DecisionAction.Quarantine,
-                redaction.FailureCode ?? "redaction-failed");
+                redaction.FailureCode ?? "redaction-failed",
+                ProcessingStage.Redaction);
         }
 
         SecurityEventEnvelope? candidate;
@@ -44,12 +100,12 @@ public sealed class SecurityEventProcessor(
         }
         catch (JsonException)
         {
-            return ProcessingResult.Failed(DecisionAction.Quarantine, "schema-invalid");
+            return ProcessingResult.Failed(DecisionAction.Quarantine, "schema-invalid", ProcessingStage.Schema);
         }
 
         if (candidate is null)
         {
-            return ProcessingResult.Failed(DecisionAction.Quarantine, "schema-invalid");
+            return ProcessingResult.Failed(DecisionAction.Quarantine, "schema-invalid", ProcessingStage.Schema);
         }
 
         DateTimeOffset now = clock.GetUtcNow();
@@ -70,7 +126,8 @@ public sealed class SecurityEventProcessor(
                 false,
                 validationFailures,
                 null,
-                alertId);
+                alertId,
+                ProcessingStage.Validation);
         }
 
         PolicyDecision decision = policyEvaluator.Evaluate(candidate);
@@ -123,7 +180,10 @@ public sealed class SecurityEventProcessor(
             arranged.EventId,
             EventFingerprint.Create(arranged),
             payload,
-            now);
+            now,
+            Suppression: decision.Suppression is { } directive
+                ? Suppression.CreateRequest(arranged, decision, directive)
+                : null);
         EnqueueResult enqueue;
         try
         {
@@ -162,6 +222,11 @@ public sealed class SecurityEventProcessor(
             reasons.Add("Duplicate fingerprint already present");
         }
 
+        if (enqueue.Suppressed)
+        {
+            reasons.Add("Suppressed: window allowance reached; counted in a summary event");
+        }
+
         return new ProcessingResult(
             arranged.Security.Decision,
             arranged.EventId,
@@ -169,7 +234,11 @@ public sealed class SecurityEventProcessor(
             enqueue.Duplicate,
             reasons,
             decision,
-            privacyAlertEventId);
+            privacyAlertEventId,
+            ProcessingStage.Policy,
+            enqueue.Suppressed,
+            enqueue.Enqueued ? Encoding.UTF8.GetByteCount(payload) : 0,
+            new SourceKey(arranged.Application.Name, arranged.Application.Environment));
     }
 
     private async Task<string?> TryEnqueuePrivacyAlertAsync(
@@ -392,6 +461,10 @@ public sealed record CollectorIdentity(
     string SourceAdapter,
     string ConfigurationHash);
 
+/// <param name="Stage">Pipeline stage that decided the event.</param>
+/// <param name="Suppressed">Accepted but counted instead of queued (window allowance spent).</param>
+/// <param name="QueuedBytes">Payload bytes queued for this event; 0 when nothing was queued.</param>
+/// <param name="Source">Application and environment of an accepted event.</param>
 public sealed record ProcessingResult(
     DecisionAction Action,
     string? EventId,
@@ -399,10 +472,30 @@ public sealed record ProcessingResult(
     bool Duplicate,
     IReadOnlyList<string> Reasons,
     PolicyDecision? PolicyDecision,
-    string? PrivacyAlertEventId = null)
+    string? PrivacyAlertEventId = null,
+    ProcessingStage Stage = ProcessingStage.Policy,
+    bool Suppressed = false,
+    long QueuedBytes = 0,
+    SourceKey? Source = null)
 {
-    public static ProcessingResult Failed(DecisionAction action, string reason)
+    public static ProcessingResult Failed(DecisionAction action, string reason) =>
+        Failed(action, reason, ProcessingStage.Policy);
+
+    public static ProcessingResult Failed(DecisionAction action, string reason, ProcessingStage stage)
     {
-        return new ProcessingResult(action, null, false, false, [reason], null);
+        return new ProcessingResult(action, null, false, false, [reason], null, Stage: stage);
     }
 }
+
+public enum ProcessingStage
+{
+    Redaction,
+    Schema,
+    Validation,
+    Policy
+}
+
+public sealed record SourceKey(string Application, string Environment);
+
+public sealed class SuppressionSummaryRejectedException(string policyId, DecisionAction action)
+    : InvalidOperationException($"Suppression summary was not accepted ({policyId}: {action}); windows stay open.");

@@ -1,0 +1,31 @@
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+metadata:
+  id: BWR-POL-API-RATE-LIMITED
+  name: API rate limiting, suppressed per client address
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-10-01
+match:
+  eventCategories:
+    - api-security
+  eventTypes:
+    - rate_limited
+requirements:
+  requiredFields:
+    - timeGenerated
+    - eventType
+    - application.name
+  atLeastOne:
+    - actor.username
+    - source.ipAddress
+  recommendedFields: []
+decision:
+  action: accept
+  minimumValueScore: 50
+  neverSample: false
+suppression:
+  keyFields:
+    - source.ipAddress
+  windowSeconds: 60
+  allowPerWindow: 20

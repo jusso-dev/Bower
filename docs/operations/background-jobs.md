@@ -15,6 +15,8 @@ ids and UTC schedules are unchanged.
 | Collector | `queue-retention` | Hourly | Deletes `delivered` rows older than `BOWER_QUEUE_RETENTION_HOURS` (default 168). Never touches queued, uploading, retrying or dead-lettered events. |
 | Collector | `queue-maintenance` | Daily 03:00 | `PRAGMA wal_checkpoint(TRUNCATE)` and `PRAGMA optimize` on the queue database. |
 | Collector | `management-heartbeat` | Every minute | Registers the collector and reports queue, output and job health. Only when `BOWER_MANAGEMENT_ENDPOINT` is set. |
+| Collector | `source-activity` | Every minute | Saves per-application last-seen times to the queue database so source silence detection survives restarts. Metadata only. |
+| Collector | `queue-archive` | Every minute | Copies newly stored events into the verifiable archive. Only when `BOWER_ARCHIVE_PATH` is set; reads the queue, never changes event state. |
 | Management API | `collector-staleness` | Every 5 minutes | Marks approved/active collectors that have not reported for 15 minutes as `stale` and writes one `collector.stale` audit row per transition. |
 | Management API | `collector-inactivity` | Daily 02:00 | Suspends collector identities that have not reported for `BOWER_COLLECTOR_INACTIVE_DAYS` (default 30). |
 
@@ -24,7 +26,15 @@ progress or the process was stopped are coalesced into one run, never replayed.
 Failed runs are retried with a 15 s, 30 s, 60 s … (capped at 10 minutes) delay up to
 the job's retry count: `queue-retention` 3, `queue-maintenance` 2,
 `collector-staleness` 2, `collector-inactivity` 2, and
-`management-heartbeat` 0 (the next minute's run supersedes a failed one).
+`management-heartbeat`, `source-activity` and `queue-archive` 0 (the next minute's
+run supersedes a failed one).
+
+With an archive configured, `queue-retention` purges only events the archive already
+holds, so a stalled archive delays purging rather than losing events.
+
+Closing suppression windows is **not** a scheduled job: it queues summary events,
+which is queue state, so it runs in the hosted `SuppressionWindowWorker` loop every
+5 seconds beside the delivery worker.
 
 ## Why delivery stays out of the scheduler
 

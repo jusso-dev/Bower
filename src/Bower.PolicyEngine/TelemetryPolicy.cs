@@ -15,6 +15,13 @@ public sealed record TelemetryPolicy
     public required PolicyAction Decision { get; init; }
 
     public PolicyRouting? Routing { get; init; }
+
+    /// <summary>
+    /// Optional per-key cap on accepted events. Omitted from the hash input when absent so
+    /// existing policy hashes are unchanged.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public PolicySuppression? Suppression { get; init; }
 }
 
 public sealed record PolicyMetadata
@@ -69,4 +76,18 @@ public sealed record PolicyRouting
     public string? Profile { get; init; }
 
     public string? Destination { get; init; }
+}
+
+/// <summary>
+/// Admits at most <see cref="AllowPerWindow"/> accepted events per key in each fixed,
+/// epoch-aligned window of <see cref="WindowSeconds"/>. Later events are counted durably
+/// and reported by one <c>telemetry_aggregation_summary</c> event when the window ends.
+/// </summary>
+public sealed record PolicySuppression
+{
+    public List<string> KeyFields { get; init; } = [];
+
+    public int WindowSeconds { get; init; }
+
+    public int AllowPerWindow { get; init; }
 }

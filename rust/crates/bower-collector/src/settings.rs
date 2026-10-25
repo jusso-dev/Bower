@@ -85,6 +85,10 @@ pub struct CollectorSettings {
     pub azure_client_id: Option<String>,
     pub management_endpoint: Option<Url>,
     pub management_scope: Option<String>,
+    /// JSON file of applications that must keep sending events (BOWER_SOURCE_EXPECTATIONS).
+    pub source_expectations_path: Option<PathBuf>,
+    /// Directory for the verifiable long-term archive (BOWER_ARCHIVE_PATH).
+    pub archive_path: Option<PathBuf>,
 }
 
 // Never print the ingest token.
@@ -145,6 +149,8 @@ impl CollectorSettings {
             azure_client_id: None,
             management_endpoint: None,
             management_scope: None,
+            source_expectations_path: None,
+            archive_path: None,
         }
     }
 
@@ -223,6 +229,8 @@ impl CollectorSettings {
             azure_client_id: read("BOWER_AZURE_CLIENT_ID"),
             management_endpoint: absolute_uri(management_endpoint)?,
             management_scope: read("BOWER_MANAGEMENT_SCOPE"),
+            source_expectations_path: blank(read("BOWER_SOURCE_EXPECTATIONS")).map(PathBuf::from),
+            archive_path: blank(read("BOWER_ARCHIVE_PATH")).map(PathBuf::from),
         };
         settings.validate()?;
         Ok(settings)
@@ -420,6 +428,17 @@ impl CollectorSettings {
                 .unwrap_or_default(),
         ]
         .join("\u{1f}");
+        // Appended only when set so existing configuration hashes are unchanged.
+        if let Some(path) = &self.source_expectations_path {
+            material.push('\u{1f}');
+            material.push_str("source-expectations:");
+            material.push_str(&path.to_string_lossy());
+        }
+        if let Some(path) = &self.archive_path {
+            material.push('\u{1f}');
+            material.push_str("archive:");
+            material.push_str(&path.to_string_lossy());
+        }
         if self.uses_managed_privacy_profile() {
             // Appended only in management mode so existing local configuration hashes
             // are unchanged.

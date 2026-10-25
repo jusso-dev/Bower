@@ -93,6 +93,7 @@ fn enqueue(store: &SqliteEventStore, clock: &FakeClock, ids: &[&str]) {
                 received_at: clock.utc_now(),
                 state: QueueState::Queued,
                 delivery_attempts: 0,
+                suppression: None,
             })
             .unwrap();
     }
@@ -500,6 +501,37 @@ impl DurableEventStore for FlakyStore {
     }
     fn maintain(&self) -> StoreResult<()> {
         self.inner.maintain()
+    }
+    fn purge_delivered_archived(
+        &self,
+        delivered_before: Timestamp,
+        maximum_count: usize,
+        archived_through_sequence: i64,
+    ) -> StoreResult<usize> {
+        self.inner.purge_delivered_archived(
+            delivered_before,
+            maximum_count,
+            archived_through_sequence,
+        )
+    }
+    fn close_expired_suppression_windows(
+        &self,
+        now: Timestamp,
+        create_summary: &mut dyn FnMut(
+            &bower_contracts::SuppressionWindow,
+        ) -> StoreResult<QueuedEvent>,
+    ) -> StoreResult<usize> {
+        self.inner
+            .close_expired_suppression_windows(now, create_summary)
+    }
+    fn get_source_activity(&self) -> StoreResult<Vec<bower_contracts::SourceActivity>> {
+        self.inner.get_source_activity()
+    }
+    fn upsert_source_activity(
+        &self,
+        activity: &[bower_contracts::SourceActivity],
+    ) -> StoreResult<()> {
+        self.inner.upsert_source_activity(activity)
     }
     fn list_dead_lettered(&self, maximum_count: usize) -> StoreResult<Vec<DeadLetterRecord>> {
         self.inner.list_dead_lettered(maximum_count)

@@ -22,6 +22,10 @@ internal sealed record IngestResponse(
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Remediation { get; init; }
+
+    /// <summary>Present only when true: accepted, but counted instead of queued.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Suppressed { get; init; }
 }
 
 internal sealed record IngestPolicyResponse(string PolicyId, string PolicyVersion, string PolicyHash, int Score);
@@ -34,6 +38,13 @@ internal sealed record StatusResponse(
     IReadOnlyList<BackgroundJobStatus> Jobs)
 {
     public EventIdentityConflictSnapshot? EventIdentityConflicts { get; init; }
+
+    /// <summary>Selection counters since start. Metadata only.</summary>
+    public Bower.Core.PipelineMetricsSnapshot? Pipeline { get; init; }
+
+    /// <summary>Expected sources; omitted when BOWER_SOURCE_EXPECTATIONS is not set.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<Bower.Core.SourceSilenceStatus>? Sources { get; init; }
 }
 
 internal sealed record StatusPolicyResponse(

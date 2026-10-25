@@ -13,13 +13,14 @@ use bower_contracts::time::{Clock, Timestamp};
 use bower_contracts::types::{event_categories, event_types};
 use bower_contracts::{
     DurableEventStore, EventRedactor, PolicyDecision, QueueState, QueuedEvent, RedactionResult,
-    StoreError, TelemetryPolicyEvaluator, json,
+    StoreError, SuppressionRequest, TelemetryPolicyEvaluator, json,
 };
 use chrono::{Duration, Months};
 use indexmap::IndexMap;
 use sha2::{Digest, Sha256};
 
-use crate::{fingerprint, privacy};
+use crate::telemetry::PipelineTelemetry;
+use crate::{fingerprint, privacy, suppression};
 
 /// Identity stamped into `collector` on every queued event.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -57,6 +58,23 @@ impl CollectorIdentity {
     }
 }
 
+/// Pipeline stage that decided an event (C# `ProcessingStage`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ProcessingStage {
+    Redaction,
+    Schema,
+    Validation,
+    #[default]
+    Policy,
+}
+
+/// Application and environment of an accepted event (C# `SourceKey`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourceKey {
+    pub application: String,
+    pub environment: String,
+}
+
 /// Outcome returned to producers. `reasons` never carry payload content.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProcessingResult {
@@ -67,10 +85,26 @@ pub struct ProcessingResult {
     pub reasons: Vec<String>,
     pub policy_decision: Option<PolicyDecision>,
     pub privacy_alert_event_id: Option<String>,
+    /// Pipeline stage that decided the event.
+    pub stage: ProcessingStage,
+    /// Accepted but counted instead of queued (window allowance spent).
+    pub suppressed: bool,
+    /// Payload bytes queued for this event; 0 when nothing was queued.
+    pub queued_bytes: i64,
+    /// Application and environment of an accepted event.
+    pub source: Option<SourceKey>,
 }
 
 impl ProcessingResult {
     pub fn failed(action: DecisionAction, reason: impl Into<String>) -> Self {
+        Self::failed_at(action, reason, ProcessingStage::Policy)
+    }
+
+    pub fn failed_at(
+        action: DecisionAction,
+        reason: impl Into<String>,
+        stage: ProcessingStage,
+    ) -> Self {
         Self {
             action,
             event_id: None,
@@ -79,8 +113,49 @@ impl ProcessingResult {
             reasons: vec![reason.into()],
             policy_decision: None,
             privacy_alert_event_id: None,
+            stage,
+            suppressed: false,
+            queued_bytes: 0,
+            source: None,
         }
     }
+
+    /// Policy-stage result without suppression, bytes or source.
+    fn decided(
+        action: DecisionAction,
+        event_id: String,
+        reasons: Vec<String>,
+        policy_decision: Option<PolicyDecision>,
+        privacy_alert_event_id: Option<String>,
+    ) -> Self {
+        Self {
+            action,
+            event_id: Some(event_id),
+            queued: false,
+            duplicate: false,
+            reasons,
+            policy_decision,
+            privacy_alert_event_id,
+            stage: ProcessingStage::Policy,
+            suppressed: false,
+            queued_bytes: 0,
+            source: None,
+        }
+    }
+}
+
+/// Failures of [`SecurityEventProcessor::close_suppression_windows`].
+#[derive(Debug, thiserror::Error)]
+pub enum SuppressionCloseError {
+    /// C# `SuppressionSummaryRejectedException`: the policy set does not accept the
+    /// summary, so every window stays open.
+    #[error("Suppression summary was not accepted ({policy_id}: {action}); windows stay open.")]
+    Rejected {
+        policy_id: String,
+        action: &'static str,
+    },
+    #[error(transparent)]
+    Store(#[from] StoreError),
 }
 
 /// Failures the C# processor surfaces as exceptions.
@@ -102,6 +177,7 @@ pub struct SecurityEventProcessor {
     policy_evaluator: Arc<dyn TelemetryPolicyEvaluator>,
     queue: Arc<dyn DurableEventStore>,
     clock: Arc<dyn Clock>,
+    telemetry: Option<Arc<PipelineTelemetry>>,
 }
 
 fn accepts(action: DecisionAction) -> bool {
@@ -123,10 +199,74 @@ impl SecurityEventProcessor {
             policy_evaluator,
             queue,
             clock,
+            telemetry: None,
         }
     }
 
+    /// Records every processed candidate in `telemetry` (C# optional constructor argument).
+    #[must_use]
+    pub fn with_telemetry(mut self, telemetry: Arc<PipelineTelemetry>) -> Self {
+        self.telemetry = Some(telemetry);
+        self
+    }
+
     pub fn process(
+        &self,
+        candidate_json: &str,
+        collector: &CollectorIdentity,
+    ) -> Result<ProcessingResult, ProcessError> {
+        let result = self.process_core(candidate_json, collector)?;
+        if let Some(telemetry) = &self.telemetry {
+            telemetry.record(
+                &result,
+                i64::try_from(candidate_json.len()).unwrap_or(i64::MAX),
+            );
+        }
+        Ok(result)
+    }
+
+    /// Closes ended suppression windows and queues one policy-approved summary for each
+    /// window that suppressed events. A summary the policy set does not accept aborts
+    /// the close, so suppressed counts are never discarded.
+    pub fn close_suppression_windows(
+        &self,
+        collector: &CollectorIdentity,
+    ) -> Result<usize, SuppressionCloseError> {
+        let now = self.clock.utc_now();
+        let mut rejected: Option<SuppressionCloseError> = None;
+        let closed = self
+            .queue
+            .close_expired_suppression_windows(now, &mut |window| {
+                let summary = suppression::create_summary(window, collector, now);
+                let decision = self.policy_evaluator.evaluate(&summary);
+                if !accepts(decision.action) {
+                    rejected = Some(SuppressionCloseError::Rejected {
+                        policy_id: decision.policy_id.clone(),
+                        action: decision.action.pascal_name(),
+                    });
+                    return Err(StoreError::Invalid("suppression-summary-rejected".into()));
+                }
+                let mut arranged = summary;
+                arranged.security = Some(SecurityDecisionContext {
+                    policy_id: decision.policy_id,
+                    policy_version: decision.policy_version,
+                    value_score: decision.score,
+                    decision: DecisionAction::Aggregate,
+                    classification_reasons: decision.reasons,
+                    policy_hash: decision.policy_hash,
+                });
+                queued_event(&arranged, now, None)
+                    .map(|(queued, _)| queued)
+                    .map_err(|_| StoreError::Invalid("suppression-summary-serialization".into()))
+            });
+        match (closed, rejected) {
+            (_, Some(rejected)) => Err(rejected),
+            (Ok(count), None) => Ok(count),
+            (Err(error), None) => Err(error.into()),
+        }
+    }
+
+    fn process_core(
         &self,
         candidate_json: &str,
         collector: &CollectorIdentity,
@@ -135,29 +275,32 @@ impl SecurityEventProcessor {
         // without persisting.
         let Ok(redaction) = catch_unwind(AssertUnwindSafe(|| self.redactor.redact(candidate_json)))
         else {
-            return Ok(ProcessingResult::failed(
+            return Ok(ProcessingResult::failed_at(
                 DecisionAction::Quarantine,
                 "redaction-failed",
+                ProcessingStage::Redaction,
             ));
         };
 
         let redacted_json = match (&redaction.succeeded, &redaction.redacted_json) {
             (true, Some(json)) => json,
             _ => {
-                return Ok(ProcessingResult::failed(
+                return Ok(ProcessingResult::failed_at(
                     DecisionAction::Quarantine,
                     redaction
                         .failure_code
                         .clone()
                         .unwrap_or_else(|| "redaction-failed".to_owned()),
+                    ProcessingStage::Redaction,
                 ));
             }
         };
 
         let Ok(candidate) = json::from_str::<SecurityEventEnvelope>(redacted_json) else {
-            return Ok(ProcessingResult::failed(
+            return Ok(ProcessingResult::failed_at(
                 DecisionAction::Quarantine,
                 "schema-invalid",
+                ProcessingStage::Schema,
             ));
         };
 
@@ -167,13 +310,14 @@ impl SecurityEventProcessor {
             // Still notify SOC when high-risk secrets/PII were present in invalid payloads.
             let alert_id = self.try_enqueue_privacy_alert(&candidate, &redaction, collector)?;
             return Ok(ProcessingResult {
-                action: DecisionAction::Quarantine,
-                event_id: Some(candidate.event_id),
-                queued: false,
-                duplicate: false,
-                reasons: validation_failures,
-                policy_decision: None,
-                privacy_alert_event_id: alert_id,
+                stage: ProcessingStage::Validation,
+                ..ProcessingResult::decided(
+                    DecisionAction::Quarantine,
+                    candidate.event_id,
+                    validation_failures,
+                    None,
+                    alert_id,
+                )
             });
         }
 
@@ -186,15 +330,13 @@ impl SecurityEventProcessor {
                 .chain(&decision.warnings)
                 .cloned()
                 .collect();
-            return Ok(ProcessingResult {
-                action: decision.action,
-                event_id: Some(candidate.event_id),
-                queued: false,
-                duplicate: false,
+            return Ok(ProcessingResult::decided(
+                decision.action,
+                candidate.event_id,
                 reasons,
-                policy_decision: Some(decision),
-                privacy_alert_event_id: alert_id,
-            });
+                Some(decision),
+                alert_id,
+            ));
         }
 
         let redacted = !redaction.removed_paths.is_empty()
@@ -219,17 +361,20 @@ impl SecurityEventProcessor {
         });
         arranged.collector = Some(collector.context(now));
 
-        let enqueue = match self.queue.enqueue(&queued_event(&arranged, now)?) {
+        let request = decision
+            .suppression
+            .as_ref()
+            .map(|directive| suppression::create_request(&arranged, &decision, directive));
+        let (queued, payload_bytes) = queued_event(&arranged, now, request)?;
+        let enqueue = match self.queue.enqueue(&queued) {
             Err(StoreError::Invalid(code)) if code == "event-identity-conflict" => {
-                return Ok(ProcessingResult {
-                    action: DecisionAction::Quarantine,
-                    event_id: Some(arranged.event_id.clone()),
-                    queued: false,
-                    duplicate: false,
-                    reasons: vec![code],
-                    policy_decision: Some(decision),
-                    privacy_alert_event_id: None,
-                });
+                return Ok(ProcessingResult::decided(
+                    DecisionAction::Quarantine,
+                    arranged.event_id.clone(),
+                    vec![code],
+                    Some(decision),
+                    None,
+                ));
             }
             other => other?,
         };
@@ -261,6 +406,11 @@ impl SecurityEventProcessor {
         if enqueue.duplicate {
             reasons.push("Duplicate fingerprint already present".to_owned());
         }
+        if enqueue.suppressed {
+            reasons.push(
+                "Suppressed: window allowance reached; counted in a summary event".to_owned(),
+            );
+        }
 
         let action = arranged
             .security
@@ -274,6 +424,13 @@ impl SecurityEventProcessor {
             reasons,
             policy_decision: Some(decision),
             privacy_alert_event_id,
+            stage: ProcessingStage::Policy,
+            suppressed: enqueue.suppressed,
+            queued_bytes: if enqueue.enqueued { payload_bytes } else { 0 },
+            source: Some(SourceKey {
+                application: arranged.application.name,
+                environment: arranged.application.environment,
+            }),
         })
     }
 
@@ -402,18 +559,23 @@ impl SecurityEventProcessor {
             policy_hash: alert_decision.policy_hash,
         });
 
-        let enqueue = self.queue.enqueue(&queued_event(&arranged_alert, now)?)?;
+        let enqueue = self
+            .queue
+            .enqueue(&queued_event(&arranged_alert, now, None)?.0)?;
         Ok((enqueue.enqueued || enqueue.duplicate).then_some(arranged_alert.event_id))
     }
 }
 
+/// The queued event and its UTF-8 payload byte count.
 fn queued_event(
     envelope: &SecurityEventEnvelope,
     now: Timestamp,
-) -> Result<QueuedEvent, ProcessError> {
+    suppression: Option<SuppressionRequest>,
+) -> Result<(QueuedEvent, i64), ProcessError> {
     let payload = json::to_string(envelope)
         .map_err(|error| ProcessError::Serialization(error.to_string()))?;
-    Ok(QueuedEvent {
+    let payload_bytes = i64::try_from(payload.len()).unwrap_or(i64::MAX);
+    let queued = QueuedEvent {
         lease_token: None,
         event_id: envelope.event_id.clone(),
         fingerprint: fingerprint::create(envelope),
@@ -421,7 +583,9 @@ fn queued_event(
         received_at: now,
         state: QueueState::Queued,
         delivery_attempts: 0,
-    })
+        suppression,
+    };
+    Ok((queued, payload_bytes))
 }
 
 /// C# `StringComparer.Ordinal`: UTF-16 code unit order.

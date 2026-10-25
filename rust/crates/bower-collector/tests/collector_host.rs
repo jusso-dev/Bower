@@ -513,6 +513,7 @@ async fn pack_backpressure_preserves_existing_rows_and_retry_can_succeed() {
             received_at: bower_contracts::time::now(),
             state: bower_contracts::QueueState::Queued,
             delivery_attempts: 0,
+            suppression: None,
         })
         .unwrap();
     let raw = raw_ssh("after-capacity", "failure");

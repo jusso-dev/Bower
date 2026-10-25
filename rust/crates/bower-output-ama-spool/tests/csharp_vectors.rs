@@ -19,6 +19,7 @@ fn event(id: &str, payload: String) -> QueuedEvent {
         received_at: time::now(),
         state: QueueState::Queued,
         delivery_attempts: 0,
+        suppression: None,
     }
 }
 

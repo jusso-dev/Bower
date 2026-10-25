@@ -152,6 +152,7 @@ internal static class ScalarExtensions
 [YamlSerializable(typeof(PolicyRequirements))]
 [YamlSerializable(typeof(PolicyAction))]
 [YamlSerializable(typeof(PolicyRouting))]
+[YamlSerializable(typeof(PolicySuppression))]
 public partial class PolicyYamlContext : StaticContext;
 
 internal sealed class TelemetryPolicy
@@ -170,6 +171,14 @@ internal sealed class TelemetryPolicy
 
     public PolicyRouting? Routing { get; set; }
 
+    private PolicySuppression? suppression;
+
+    public PolicySuppression? Suppression
+    {
+        get => suppression;
+        set => suppression = value ?? throw new InvalidDataException("Null suppression is not permitted.");
+    }
+
     public Model.TelemetryPolicy ToModel() => new()
     {
         ApiVersion = ApiVersion!,
@@ -178,7 +187,8 @@ internal sealed class TelemetryPolicy
         Match = Match?.ToModel()!,
         Requirements = Requirements?.ToModel()!,
         Decision = Decision?.ToModel()!,
-        Routing = Routing?.ToModel()
+        Routing = Routing?.ToModel(),
+        Suppression = Suppression?.ToModel()
     };
 }
 
@@ -256,6 +266,22 @@ internal sealed class PolicyAction
         Action = Action!,
         MinimumValueScore = MinimumValueScore,
         NeverSample = NeverSample
+    };
+}
+
+internal sealed class PolicySuppression
+{
+    public List<string> KeyFields { get; set; } = [];
+
+    public int WindowSeconds { get; set; }
+
+    public int AllowPerWindow { get; set; }
+
+    public Model.PolicySuppression ToModel() => new()
+    {
+        KeyFields = KeyFields,
+        WindowSeconds = WindowSeconds,
+        AllowPerWindow = AllowPerWindow
     };
 }
 

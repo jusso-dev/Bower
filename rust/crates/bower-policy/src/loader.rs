@@ -10,9 +10,12 @@ use sha2::{Digest, Sha256};
 use crate::field::present;
 use crate::model::{
     LoadedPolicy, PolicyAction, PolicyMatch, PolicyMetadata, PolicyRequirements, PolicyRouting,
-    TelemetryPolicy,
+    PolicySuppression, TelemetryPolicy,
 };
-use crate::yaml::{self, Ctx, Failure, RawList, RawPolicy};
+use crate::yaml::{self, Ctx, Failure, RawList, RawPolicy, RawSuppression};
+use bower_contracts::types::event_types::TELEMETRY_AGGREGATION_SUMMARY;
+
+pub const MAXIMUM_SUPPRESSION_KEY_FIELDS: usize = 5;
 
 /// Maximum policy size in bytes (file length and UTF-8 text length).
 pub const MAXIMUM_POLICY_BYTES: usize = 1_048_576;
@@ -327,6 +330,12 @@ fn validate(raw: &RawPolicy) -> Result<TelemetryPolicy, PolicyError> {
         "eventSeverities",
         &["informational", "low", "medium", "high", "critical"],
     )?;
+    let event_types = strings(event_types);
+    let suppression = raw
+        .suppression
+        .as_ref()
+        .map(|suppression| validate_suppression(decision, &event_types, suppression))
+        .transpose()?;
 
     Ok(TelemetryPolicy {
         api_version: SUPPORTED_API_VERSION.to_owned(),
@@ -340,7 +349,7 @@ fn validate(raw: &RawPolicy) -> Result<TelemetryPolicy, PolicyError> {
         },
         r#match: PolicyMatch {
             event_categories: strings(event_categories),
-            event_types: strings(event_types),
+            event_types,
             event_actions,
             event_results,
             event_severities,
@@ -359,7 +368,98 @@ fn validate(raw: &RawPolicy) -> Result<TelemetryPolicy, PolicyError> {
             profile: routing.profile.clone(),
             destination: routing.destination.clone(),
         }),
+        suppression,
     })
+}
+
+/// C# `PolicyLoader.ValidateSuppression` (same checks, order and messages).
+fn validate_suppression(
+    decision: &yaml::RawAction,
+    event_types: &[String],
+    suppression: &RawSuppression,
+) -> Result<PolicySuppression, PolicyError> {
+    if decision.never_sample {
+        return Err(invalid("A neverSample policy cannot define suppression."));
+    }
+    if !matches!(
+        try_parse_action(decision.action.as_deref()),
+        Some(DecisionAction::Accept | DecisionAction::RedactAndAccept)
+    ) {
+        return Err(invalid(
+            "Suppression applies only to accept or redact-and-accept policies.",
+        ));
+    }
+    if event_types
+        .iter()
+        .any(|item| item == TELEMETRY_AGGREGATION_SUMMARY)
+    {
+        return Err(invalid(
+            "Suppression summaries cannot themselves be suppressed.",
+        ));
+    }
+    let key_fields = suppression
+        .key_fields
+        .as_ref()
+        .filter(|fields| {
+            (1..=MAXIMUM_SUPPRESSION_KEY_FIELDS).contains(&fields.len())
+                && fields
+                    .iter()
+                    .enumerate()
+                    .all(|(index, field)| !fields[..index].contains(field))
+                && fields
+                    .iter()
+                    .all(|field| crate::field::is_suppression_key(field.as_deref()))
+        })
+        .ok_or_else(|| {
+            invalid(format!(
+                "Policy suppression keyFields must list 1–{MAXIMUM_SUPPRESSION_KEY_FIELDS} distinct string field paths."
+            ))
+        })?;
+    if !(1..=86_400).contains(&suppression.window_seconds) {
+        return Err(invalid(
+            "Policy suppression windowSeconds must be between 1 and 86400.",
+        ));
+    }
+    if !(1..=100_000).contains(&suppression.allow_per_window) {
+        return Err(invalid(
+            "Policy suppression allowPerWindow must be between 1 and 100000.",
+        ));
+    }
+    Ok(PolicySuppression {
+        key_fields: strings(key_fields),
+        window_seconds: suppression.window_seconds,
+        allow_per_window: suppression.allow_per_window,
+    })
+}
+
+/// C# `PolicyLoader.ValidateSet`: a set that suppresses must also accept the summary
+/// event, so suppressed counts are always delivered. Checked when a bundle is
+/// assembled from directories and packs.
+pub fn validate_set(policies: &[LoadedPolicy]) -> Result<(), PolicyError> {
+    if !policies
+        .iter()
+        .any(|item| item.policy.suppression.is_some())
+    {
+        return Ok(());
+    }
+    let summary_accepted = policies.iter().any(|item| {
+        item.policy
+            .r#match
+            .event_types
+            .iter()
+            .any(|value| value == TELEMETRY_AGGREGATION_SUMMARY)
+            && matches!(
+                try_parse_action(Some(&item.policy.decision.action)),
+                Some(DecisionAction::Accept | DecisionAction::RedactAndAccept)
+            )
+    });
+    if summary_accepted {
+        Ok(())
+    } else {
+        Err(invalid(format!(
+            "Policies define suppression but none accepts '{TELEMETRY_AGGREGATION_SUMMARY}'."
+        )))
+    }
 }
 
 /// No null, empty or white-space item (`string.IsNullOrWhiteSpace`).

@@ -883,6 +883,7 @@ mod tests {
             reasons: Vec::new(),
             policy_decision: None,
             privacy_alert_event_id: Some("privacy-1".into()),
+            ..ProcessingResult::failed(DecisionAction::RedactAndAccept, "")
         };
         let element = Element::Processed(Box::new(ProcessedElement {
             result,

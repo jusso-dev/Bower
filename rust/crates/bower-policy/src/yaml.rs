@@ -103,6 +103,9 @@ pub(crate) struct RawPolicy {
     pub requirements: Option<RawRequirements>,
     pub decision: Option<RawAction>,
     pub routing: Option<RawRouting>,
+    /// `[JsonIgnore(WhenWritingNull)]`: absent from the hash input when not set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suppression: Option<RawSuppression>,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -174,6 +177,24 @@ pub(crate) struct RawRouting {
     pub destination: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub(crate) struct RawSuppression {
+    pub key_fields: RawList,
+    pub window_seconds: i32,
+    pub allow_per_window: i32,
+}
+
+impl Default for RawSuppression {
+    fn default() -> Self {
+        Self {
+            key_fields: Some(Vec::new()),
+            window_seconds: 0,
+            allow_per_window: 0,
+        }
+    }
+}
+
 fn serialize_date_only<S: serde::Serializer>(
     value: &Option<NaiveDate>,
     serializer: S,
@@ -225,6 +246,7 @@ impl Section for RawPolicy {
         "requirements",
         "decision",
         "routing",
+        "suppression",
     ];
 
     fn read_field<'de, A: MapAccess<'de>>(
@@ -240,7 +262,16 @@ impl Section for RawPolicy {
             3 => self.r#match = section(map, ctx)?,
             4 => self.requirements = section(map, ctx)?,
             5 => self.decision = section(map, ctx)?,
-            _ => self.routing = section(map, ctx)?,
+            6 => self.routing = section(map, ctx)?,
+            _ => {
+                // The C# setter throws on null ("Null suppression is not permitted."),
+                // which YamlDotNet reports as a conversion failure at the value.
+                self.suppression = map.next_value_seed(SectionSeed::<RawSuppression> {
+                    ctx,
+                    non_null: true,
+                    marker: PhantomData,
+                })?;
+            }
         }
         Ok(())
     }
@@ -369,6 +400,34 @@ impl Section for RawRouting {
     }
 }
 
+impl Section for RawSuppression {
+    const TYPE_NAME: &'static str = "PolicySuppression";
+    const FIELDS: &'static [&'static str] = &["keyFields", "windowSeconds", "allowPerWindow"];
+
+    fn read_field<'de, A: MapAccess<'de>>(
+        &mut self,
+        index: usize,
+        map: &mut A,
+        ctx: &Ctx,
+    ) -> Result<(), A::Error> {
+        // A YAML null for a value type leaves the CLR default.
+        match index {
+            0 => self.key_fields = list(map, ctx)?,
+            1 => {
+                self.window_seconds = map
+                    .next_value_seed(ScalarSeed::<IntKind>::new(ctx))?
+                    .unwrap_or_default();
+            }
+            _ => {
+                self.allow_per_window = map
+                    .next_value_seed(ScalarSeed::<IntKind>::new(ctx))?
+                    .unwrap_or_default();
+            }
+        }
+        Ok(())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Seeds.
 
@@ -382,6 +441,8 @@ pub(crate) fn read_policy<'de, D: Deserializer<'de>>(
 
 struct SectionSeed<'a, T> {
     ctx: &'a Ctx,
+    /// The C# property setter rejects null (a conversion failure at the value).
+    non_null: bool,
     marker: PhantomData<T>,
 }
 
@@ -389,6 +450,7 @@ impl<'a, T> SectionSeed<'a, T> {
     fn new(ctx: &'a Ctx) -> Self {
         Self {
             ctx,
+            non_null: false,
             marker: PhantomData,
         }
     }
@@ -398,11 +460,51 @@ impl<'de, T: Section> DeserializeSeed<'de> for SectionSeed<'_, T> {
     type Value = Option<T>;
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Value, D::Error> {
-        deserializer.deserialize_option(self)
+        if self.non_null {
+            // `deserialize_any` keeps the node mark on a null failure.
+            deserializer.deserialize_any(self)
+        } else {
+            deserializer.deserialize_option(self)
+        }
     }
 }
 
+impl<'a, T> SectionSeed<'a, T> {
+    fn section_visitor(&self) -> SectionVisitor<'a, T> {
+        SectionVisitor {
+            ctx: self.ctx,
+            marker: PhantomData,
+        }
+    }
+}
+
+macro_rules! scalar_delegates_to_section {
+    ($($method:ident: $type:ty),* $(,)?) => {
+        $(fn $method<E: de::Error>(self, value: $type) -> Result<Self::Value, E> {
+            self.section_visitor().$method(value).map(Some)
+        })*
+    };
+}
+
 impl<'de, T: Section> Visitor<'de> for SectionSeed<'_, T> {
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+        self.section_visitor().visit_map(map).map(Some)
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> Result<Self::Value, A::Error> {
+        self.section_visitor().visit_seq(seq).map(Some)
+    }
+
+    scalar_delegates_to_section!(
+        visit_str: &str,
+        visit_bool: bool,
+        visit_i64: i64,
+        visit_u64: u64,
+        visit_i128: i128,
+        visit_u128: u128,
+        visit_f64: f64,
+    );
+
     type Value = Option<T>;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -410,10 +512,16 @@ impl<'de, T: Section> Visitor<'de> for SectionSeed<'_, T> {
     }
 
     fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+        if self.non_null {
+            return Err(self.ctx.fail(conversion_failed()));
+        }
         Ok(None)
     }
 
     fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+        if self.non_null {
+            return Err(self.ctx.fail(conversion_failed()));
+        }
         Ok(None)
     }
 

@@ -36,7 +36,7 @@ pub fn open_store(path: &str) -> CliResult<SqliteEventStore> {
 }
 
 /// `QueueCommands.OpenAsync`: the database must already exist.
-fn open_existing(args: &DatabaseArgs) -> CliResult<SqliteEventStore> {
+pub(crate) fn open_existing(args: &DatabaseArgs) -> CliResult<SqliteEventStore> {
     let path = args.database.clone().unwrap_or_else(default_database);
     if !Path::new(&path).is_file() {
         return Err(CliError(format!("Queue database not found: {path}")));

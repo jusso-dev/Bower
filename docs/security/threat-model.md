@@ -34,6 +34,19 @@ evidence.
   back-off, and ingest is rate limited (HTTP 429). Poison events dead-letter
   individually or after `BOWER_MAX_DELIVERY_ATTEMPTS`. Filesystem quota and
   disk-free health enforcement remain required.
+- Hiding activity behind suppression: suppression is opt-in per policy, refused for
+  `neverSample` policies, counted durably in the enqueue transaction and reported
+  by a policy-approved summary event per window with the key values; a policy set
+  that suppresses must accept the summary or it does not load, and a refused summary
+  keeps the window open rather than dropping counts. Poorly chosen key fields can
+  still merge distinct actors, so review keys like any policy change.
+- Silent loss of a source: optional source expectations degrade `/health` and the
+  heartbeat when an application stops delivering accepted events.
+- Archive tampering or loss after retention: archive segments carry file digests and
+  continue the queue ledger chain; `bower archive verify --anchor` recomputes every
+  link and proves it reaches a management-witnessed head. Retention purges only
+  archived events while an archive is configured. Write-once storage for the archive
+  directory remains an operator control.
 - Policy tampering: loaded policy is validated and hashed. Signed bundles and file
   permission checks remain required.
 - Parser exploitation: no arbitrary expressions or code execution. YAML documents

@@ -14,9 +14,9 @@ use bower_contracts::{DecisionAction, EventRedactor};
 use bower_core::capture::CaptureStore;
 use bower_core::{CollectorIdentity, ProcessingResult, SecurityEventProcessor};
 
-use crate::cli::PolicyTestArgs;
+use crate::cli::{PolicyDiffArgs, PolicyTestArgs};
 use crate::output::Json;
-use crate::support::{CliError, CliResult, read_text};
+use crate::support::{CliError, CliResult, read_text, required};
 
 pub const MAXIMUM_EVENT_FILES: usize = 1_000;
 
@@ -108,13 +108,12 @@ pub fn test(args: &PolicyTestArgs) -> CliResult {
 }
 
 /// Each event runs alone (its own capture store), as its own `/v1/events` request
-/// would, so one sample never deduplicates against another. Returns the output
-/// document and the decision per event.
-pub fn evaluate(
+/// would, so one sample never deduplicates against another.
+fn process_each(
     bundle: &LoadedBundle,
     events: &[(String, String)],
     clock: Arc<dyn Clock>,
-) -> (Json, Vec<String>) {
+) -> Vec<ProcessingResult> {
     // Same redaction path as the collector and serverless hosts.
     let redactor: Arc<dyn EventRedactor> = Arc::new(bower_packs::runtime::PackDetectionRedactor {
         inner: Arc::clone(&bundle.redactor),
@@ -126,18 +125,31 @@ pub fn evaluate(
             .collect(),
     });
     let identity = CollectorIdentity::new("bower-cli", "0.1.0", "policy-test", "policy-test");
+    events
+        .iter()
+        .map(|(_, json)| {
+            let processor = SecurityEventProcessor::new(
+                Arc::clone(&redactor),
+                Arc::clone(&bundle.evaluator),
+                Arc::new(CaptureStore::default()),
+                Arc::clone(&clock),
+            );
+            processor.process(json, &identity).unwrap_or_else(|_| {
+                ProcessingResult::failed(DecisionAction::Quarantine, "processing-failed")
+            })
+        })
+        .collect()
+}
+
+/// Returns the `policy test` output document and the decision per event.
+pub fn evaluate(
+    bundle: &LoadedBundle,
+    events: &[(String, String)],
+    clock: Arc<dyn Clock>,
+) -> (Json, Vec<String>) {
     let mut results = Vec::with_capacity(events.len());
     let mut decisions = Vec::with_capacity(events.len());
-    for (file, json) in events {
-        let processor = SecurityEventProcessor::new(
-            Arc::clone(&redactor),
-            Arc::clone(&bundle.evaluator),
-            Arc::new(CaptureStore::default()),
-            Arc::clone(&clock),
-        );
-        let result = processor.process(json, &identity).unwrap_or_else(|_| {
-            ProcessingResult::failed(DecisionAction::Quarantine, "processing-failed")
-        });
+    for ((file, _), result) in events.iter().zip(process_each(bundle, events, clock)) {
         let decision = decision_name(result.action);
         decisions.push(decision.clone());
         results.push(Json::object([
@@ -175,6 +187,116 @@ pub fn evaluate(
         ("results", Json::Array(results)),
     ]);
     (output, decisions)
+}
+
+/// Reads event files like C# `DiffAsync`/`TestAsync`: each must exist and be at
+/// most [`MAXIMUM_PAYLOAD_BYTES`].
+fn read_events(files: &[String]) -> CliResult<Vec<(String, String)>> {
+    let mut events = Vec::with_capacity(files.len());
+    for file in files {
+        let path = Path::new(file);
+        if !path.is_file() {
+            return Err(CliError::new(format!("Event file not found: {file}")));
+        }
+        let length = std::fs::metadata(path)
+            .map_err(CliError::from_display)?
+            .len();
+        if length > MAXIMUM_PAYLOAD_BYTES as u64 {
+            return Err(CliError::new(format!(
+                "Event file exceeds {MAXIMUM_PAYLOAD_BYTES} bytes: {file}"
+            )));
+        }
+        events.push((file.clone(), read_text(file)?));
+    }
+    Ok(events)
+}
+
+/// `PolicyBundle.Load(new PolicyBundleSources { PolicyDirectory = directory })`.
+pub fn load_directory_bundle(directory: &str) -> CliResult<LoadedBundle> {
+    let settings = CollectorSettings::new(
+        "http://127.0.0.1:4319",
+        std::env::temp_dir().join("bower-policy-test-unused.db"),
+        PathBuf::from(directory),
+        "bower-cli",
+    );
+    bower_collector::bundle::load(&settings).map_err(|error| CliError::new(error.message))
+}
+
+/// `bower policy diff --baseline DIR --candidate DIR EVENT.json... [--fail-on-change]`
+/// (C# `PolicyCommands.DiffAsync`): population diff. Runs every sample through both
+/// policy directories and lists each event whose decision or deciding policy
+/// changes. Exit 3 with `--fail-on-change` when any changes.
+pub fn diff(args: &PolicyDiffArgs) -> CliResult {
+    if args.files.is_empty() || args.files.len() > MAXIMUM_EVENT_FILES {
+        return Err(CliError::new(format!(
+            "Provide 1-{MAXIMUM_EVENT_FILES} event files: bower policy diff --baseline DIR --candidate DIR EVENT.json [EVENT.json ...]."
+        )));
+    }
+    let events = read_events(&args.files)?;
+    let baseline = load_directory_bundle(required(args.baseline.as_deref(), "--baseline")?)?;
+    let candidate = load_directory_bundle(required(args.candidate.as_deref(), "--candidate")?)?;
+    let (output, changed) = compute_diff(&baseline, &candidate, &events, Arc::new(SystemClock));
+    println!("{}", output.to_indented());
+    Ok(if changed > 0 && args.fail_on_change {
+        3
+    } else {
+        0
+    })
+}
+
+/// Population diff of `events` between two loaded bundles (C# `ComputeDiffAsync`):
+/// the `PolicyDiffOutput` document and the number of changed events.
+pub fn compute_diff(
+    baseline: &LoadedBundle,
+    candidate: &LoadedBundle,
+    events: &[(String, String)],
+    clock: Arc<dyn Clock>,
+) -> (Json, usize) {
+    let before = process_each(baseline, events, Arc::clone(&clock));
+    let after = process_each(candidate, events, clock);
+    let outcome = |result: &ProcessingResult| {
+        (
+            decision_name(result.action),
+            result
+                .policy_decision
+                .as_ref()
+                .map(|decision| decision.policy_id.clone()),
+        )
+    };
+    let outcome_json = |(decision, policy_id): (String, Option<String>)| {
+        Json::object([
+            ("decision", Json::str(decision)),
+            ("policyId", Json::opt_str(policy_id)),
+        ])
+    };
+    let mut changes = Vec::new();
+    for (((file, _), old), new) in events.iter().zip(&before).zip(&after) {
+        let (previous, updated) = (outcome(old), outcome(new));
+        if previous != updated {
+            changes.push(Json::object([
+                ("file", Json::str(file.clone())),
+                (
+                    "eventId",
+                    Json::opt_str(new.event_id.clone().or_else(|| old.event_id.clone())),
+                ),
+                ("baseline", outcome_json(previous)),
+                ("candidate", outcome_json(updated)),
+            ]));
+        }
+    }
+    let changed = changes.len();
+    let count = |value: usize| Json::Int(i64::try_from(value).unwrap_or(i64::MAX));
+    let output = Json::object([
+        ("baselineBundleHash", Json::str(baseline.info.hash.clone())),
+        (
+            "candidateBundleHash",
+            Json::str(candidate.info.hash.clone()),
+        ),
+        ("events", count(events.len())),
+        ("changed", count(changed)),
+        ("changes", Json::Array(changes)),
+    ]);
+    (output, changed)
 }
 
 #[cfg(test)]

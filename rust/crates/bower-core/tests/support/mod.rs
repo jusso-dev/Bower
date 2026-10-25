@@ -108,6 +108,7 @@ impl TelemetryPolicyEvaluator for TestPolicy {
                     score,
                     reasons: reasons.into_iter().map(str::to_owned).collect(),
                     warnings: warnings.into_iter().map(str::to_owned).collect(),
+                    suppression: None,
                 }
             };
         if candidate.event_type == event_types::SENSITIVE_DATA_DETECTED {
@@ -183,6 +184,7 @@ impl DurableEventStore for MemoryStore {
             enqueued: !duplicate,
             duplicate,
             event_id: candidate.event_id.clone(),
+            suppressed: false,
         })
     }
 

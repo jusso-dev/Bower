@@ -94,6 +94,8 @@ internal static class EvidenceCommands
 
 internal static class QueueCommands
 {
+    internal static Task<SqliteEventStore> OpenStoreAsync(string[] args) => OpenAsync(args);
+
     private static async Task<SqliteEventStore> OpenAsync(string[] args)
     {
         string path = CliOptions.Get(args, "--database") ?? Path.Combine(Directory.GetCurrentDirectory(), "data", "bower.db");

@@ -62,6 +62,12 @@ pub enum Command {
     /// Test sample events against policies offline (redaction, validation, selection).
     #[command(subcommand)]
     Policy(PolicyCommand),
+    /// Create, verify and replay the verifiable long-term queue archive.
+    #[command(subcommand)]
+    Archive(ArchiveCommand),
+    /// Check expected sources for silence from the activity the collector persisted.
+    #[command(subcommand)]
+    Sources(SourcesCommand),
 }
 
 #[derive(Debug, Subcommand)]
@@ -69,6 +75,94 @@ pub enum PolicyCommand {
     /// Run sample events through the collector's intake offline and print each decision
     /// (metadata only; exit 3 when --expect does not match).
     Test(PolicyTestArgs),
+    /// Population diff: run sample events through two policy directories and list each
+    /// event whose decision or deciding policy changes (exit 3 with --fail-on-change).
+    Diff(PolicyDiffArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct PolicyDiffArgs {
+    /// Event JSON files (each evaluated as its own /v1/events request).
+    #[arg(value_name = "EVENT.json")]
+    pub files: Vec<String>,
+    /// Current policy directory.
+    #[arg(long = "baseline", value_name = "DIR")]
+    pub baseline: Option<String>,
+    /// Proposed policy directory.
+    #[arg(long = "candidate", value_name = "DIR")]
+    pub candidate: Option<String>,
+    /// Exit 3 when any event's decision or deciding policy changes.
+    #[arg(long = "fail-on-change")]
+    pub fail_on_change: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ArchiveCommand {
+    /// Copy every stored event not yet archived into new verifiable segments.
+    Create(ArchiveCreateArgs),
+    /// Recompute the archived ledger chain and segment digests (exit 3 when broken).
+    Verify(ArchiveVerifyArgs),
+    /// Verify the archive, then post selected events through a collector's full intake.
+    Replay(ArchiveReplayArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct ArchiveCreateArgs {
+    /// Archive directory.
+    #[arg(long = "archive", value_name = "DIR")]
+    pub archive: Option<String>,
+    #[command(flatten)]
+    pub database: DatabaseArgs,
+    /// Collector id recorded in manifests [default: machine name].
+    #[arg(long = "collector-id", value_name = "ID")]
+    pub collector_id: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct ArchiveVerifyArgs {
+    /// Archive directory.
+    #[arg(long = "archive", value_name = "DIR")]
+    pub archive: Option<String>,
+    /// Ledger head witnessed elsewhere that the archived chain must pass through.
+    #[arg(long = "anchor", value_name = "SEQUENCE:HASH")]
+    pub anchor: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct ArchiveReplayArgs {
+    /// Archive directory.
+    #[arg(long = "archive", value_name = "DIR")]
+    pub archive: Option<String>,
+    /// Collector base URL (sends BOWER_INGEST_TOKEN when set).
+    #[arg(long = "collector-url", value_name = "URL")]
+    pub collector_url: Option<String>,
+    /// Earliest timeGenerated to replay (inclusive).
+    #[arg(long = "from", value_name = "ISO")]
+    pub from: Option<String>,
+    /// Latest timeGenerated to replay (exclusive).
+    #[arg(long = "to", value_name = "ISO")]
+    pub to: Option<String>,
+    /// Event type to replay (repeatable).
+    #[arg(long = "event-type", value_name = "TYPE")]
+    pub event_types: Vec<String>,
+    /// Count the selection without sending.
+    #[arg(long = "dry-run")]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SourcesCommand {
+    /// Offline silence check (exit 3 when any expected source is quiet).
+    Check(SourcesCheckArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct SourcesCheckArgs {
+    /// Source expectations JSON file.
+    #[arg(long = "expectations", value_name = "FILE")]
+    pub expectations: Option<String>,
+    #[command(flatten)]
+    pub database: DatabaseArgs,
 }
 
 #[derive(Debug, Args)]

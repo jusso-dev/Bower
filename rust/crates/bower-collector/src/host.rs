@@ -11,10 +11,11 @@ use bower_contracts::{
     DeliveryResult, DurableEventStore, EventRedactor, OutputAdapter, QueuedEvent,
     TelemetryPolicyEvaluator,
 };
-use bower_core::{CollectorIdentity, ProcessError, SecurityEventProcessor};
+use bower_core::source_expectations::{self, SourceExpectationsError};
+use bower_core::{CollectorIdentity, PipelineTelemetry, ProcessError, SecurityEventProcessor};
 use bower_output_ama_spool::{AmaSpoolOptions, AmaSpoolOutput};
 use bower_output_azure::{AzureLogsIngestionOptions, AzureLogsIngestionOutput, TokenProvider};
-use bower_persistence::SqliteEventStore;
+use bower_persistence::{QueueArchive, SqliteEventStore};
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use tracing::warn;
@@ -28,13 +29,14 @@ use crate::error::HostError;
 use crate::heartbeat::{AccessTokenSource, ManagementHeartbeat};
 use crate::jobs::{
     JobCatalog, JobFn, JobScheduler, MANAGED_PRIVACY_PROFILE_JOB_ID, MANAGEMENT_HEARTBEAT_JOB_ID,
-    QUEUE_MAINTENANCE_JOB_ID, QUEUE_RETENTION_JOB_ID, Schedule, run_queue_maintenance,
-    run_queue_retention,
+    QUEUE_ARCHIVE_JOB_ID, QUEUE_MAINTENANCE_JOB_ID, QUEUE_RETENTION_JOB_ID, SOURCE_ACTIVITY_JOB_ID,
+    Schedule, run_queue_archive, run_queue_maintenance, run_queue_retention, run_source_activity,
 };
 use crate::managed_privacy::{ManagedPrivacyProfileJob, ManagedPrivacyState};
 use crate::rate_limit::TokenBucket;
 use crate::settings::CollectorSettings;
 use crate::shutdown::{ApplicationLifetime, ShutdownToken};
+use crate::source_health::SourceHealth;
 use crate::worker::{QueueDeliveryOptions, QueueDeliveryWorker};
 
 /// What the policy bundle contributes to the host: selection, redaction and the
@@ -109,6 +111,7 @@ impl EventProcessor for CoreProcessor {
                     policy_hash: decision.policy_hash,
                     score: decision.score,
                 }),
+                suppressed: result.suppressed,
             }),
             Err(ProcessError::Store(error)) => Err(error.into()),
             Err(ProcessError::Serialization(_)) => Err(ProcessFailure::Other("JsonException")),
@@ -137,6 +140,14 @@ pub struct Collector {
     pub auth: Arc<IngestAuthentication>,
     /// Management-mode ingest gate and status (local mode: never gates).
     pub managed_privacy: Arc<ManagedPrivacyState>,
+    /// Selection counters and source activity (`PipelineTelemetry`).
+    pub telemetry: Arc<PipelineTelemetry>,
+    pub source_health: Arc<SourceHealth>,
+    /// Long-term archive when `BOWER_ARCHIVE_PATH` is set.
+    pub archive: Option<Arc<QueueArchive>>,
+    sqlite: Arc<SqliteEventStore>,
+    processor: SecurityEventProcessor,
+    identity: CollectorIdentity,
     lifetime: ApplicationLifetime,
     output: Option<BoxedOutput>,
     credential: Option<Arc<dyn AccessTokenSource>>,
@@ -154,7 +165,7 @@ pub fn build(
     let clock = options
         .clock
         .unwrap_or_else(|| Arc::new(bower_contracts::time::SystemClock));
-    let store: Arc<dyn DurableEventStore> = Arc::new(
+    let sqlite = Arc::new(
         SqliteEventStore::new(
             &settings.queue_path,
             settings.maximum_queue_bytes,
@@ -162,6 +173,8 @@ pub fn build(
         )
         .map_err(|error| HostError::new("InvalidOperationException", error.to_string()))?,
     );
+    let store: Arc<dyn DurableEventStore> = sqlite.clone();
+    let telemetry = Arc::new(PipelineTelemetry::new(Arc::clone(&clock)));
     let identity = CollectorIdentity::new(
         settings.collector_id.clone(),
         settings.version.clone(),
@@ -181,7 +194,34 @@ pub fn build(
         bundle.evaluator,
         Arc::clone(&store),
         Arc::clone(&clock),
-    );
+    )
+    .with_telemetry(Arc::clone(&telemetry));
+    // Loaded at build so a malformed expectations file stops start-up.
+    let expectations = settings
+        .source_expectations_path
+        .as_ref()
+        .map(source_expectations::load_file)
+        .transpose()
+        .map_err(|error| {
+            let kind = match &error {
+                SourceExpectationsError::FileNotFound => "FileNotFoundException",
+                SourceExpectationsError::InvalidData(_) => "InvalidDataException",
+                SourceExpectationsError::Io(_) => "IOException",
+            };
+            HostError::new(kind, error.to_string())
+        })?;
+    let source_health = Arc::new(SourceHealth::new(
+        expectations,
+        Arc::clone(&telemetry),
+        Arc::clone(&clock),
+    ));
+    let archive = settings
+        .archive_path
+        .as_ref()
+        .map(|path| QueueArchive::new(path, &settings.collector_id, Some(Arc::clone(&clock))))
+        .transpose()
+        .map_err(|error| HostError::new("ArgumentException", error.to_string()))?
+        .map(Arc::new);
     let auth = Arc::new(IngestAuthentication::with_clock(
         settings.ingest_token.as_deref(),
         settings.ingest_tokens_file.as_deref(),
@@ -201,9 +241,11 @@ pub fn build(
     });
     let state = AppState {
         processor: Arc::new(CoreProcessor {
-            processor,
-            identity,
+            processor: processor.clone(),
+            identity: identity.clone(),
         }),
+        telemetry: Arc::clone(&telemetry),
+        source_health: Arc::clone(&source_health),
         store: Arc::clone(&store),
         auth: Arc::clone(&auth),
         authorization: Arc::new(crate::authorization::ProducerAuthorization::new(
@@ -231,6 +273,12 @@ pub fn build(
         privacy_profile_hash,
         auth,
         managed_privacy,
+        telemetry,
+        source_health,
+        archive,
+        sqlite,
+        processor,
+        identity,
         lifetime: ApplicationLifetime::new(),
         output: options.output,
         credential: options.credential,
@@ -271,17 +319,45 @@ impl Collector {
                 )
             })?
             .map_err(|error| HostError::new("InvalidOperationException", error.to_string()))?;
+        let store = Arc::clone(&self.store);
+        let activity = tokio::task::spawn_blocking(move || store.get_source_activity())
+            .await
+            .map_err(|_| {
+                HostError::new(
+                    "InvalidOperationException",
+                    "Source activity read panicked.",
+                )
+            })?
+            .map_err(|error| HostError::new("InvalidOperationException", error.to_string()))?;
+        self.telemetry.load(activity);
 
         let mut scheduler = JobScheduler::new(Arc::clone(&self.catalog), Arc::clone(&self.clock));
-        let (store, clock, retention) = (
+        // Superseded by the next run on failure; the in-memory set keeps unsaved changes.
+        let (store, telemetry) = (Arc::clone(&self.store), Arc::clone(&self.telemetry));
+        let activity_job: JobFn = Arc::new(move || {
+            let (store, telemetry) = (Arc::clone(&store), Arc::clone(&telemetry));
+            Box::pin(async move { run_source_activity(store, telemetry).await })
+        });
+        scheduler.add(SOURCE_ACTIVITY_JOB_ID, Schedule::Minutely, 0, activity_job);
+        if let Some(archive) = &self.archive {
+            let (sqlite, archive) = (Arc::clone(&self.sqlite), Arc::clone(archive));
+            let archive_job: JobFn = Arc::new(move || {
+                let (sqlite, archive) = (Arc::clone(&sqlite), Arc::clone(&archive));
+                Box::pin(async move { run_queue_archive(sqlite, archive).await })
+            });
+            scheduler.add(QUEUE_ARCHIVE_JOB_ID, Schedule::Minutely, 0, archive_job);
+        }
+
+        let (store, clock, retention, archive) = (
             Arc::clone(&self.store),
             Arc::clone(&self.clock),
             self.settings.delivered_retention,
+            self.archive.clone(),
         );
         let retention_job: JobFn = Arc::new(move || {
-            let (store, clock) = (Arc::clone(&store), Arc::clone(&clock));
+            let (store, clock, archive) = (Arc::clone(&store), Arc::clone(&clock), archive.clone());
             Box::pin(async move {
-                run_queue_retention(store, clock, retention)
+                run_queue_retention(store, clock, retention, archive)
                     .await
                     .map(|_| ())
             })
@@ -315,7 +391,10 @@ impl Collector {
                 Arc::clone(&self.store),
                 Arc::clone(&self.catalog),
             )
-            .map(Arc::new)
+            .map(|mut heartbeat| {
+                heartbeat.source_health = Some(Arc::clone(&self.source_health));
+                Arc::new(heartbeat)
+            })
             .ok_or_else(|| {
                 HostError::new(
                     "InvalidOperationException",
@@ -387,6 +466,14 @@ impl Collector {
         if let Some(scheduler) = self.scheduler.take() {
             tasks.extend(scheduler.spawn(&shutdown));
         }
+        let (processor, identity, token) = (
+            self.processor.clone(),
+            self.identity.clone(),
+            shutdown.clone(),
+        );
+        tasks.push(tokio::spawn(async move {
+            crate::suppression_worker::run(processor, identity, token).await;
+        }));
         if let Some(output) = self.output.clone() {
             let worker = QueueDeliveryWorker::new(
                 Arc::clone(&self.store),

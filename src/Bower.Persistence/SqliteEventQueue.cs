@@ -5,7 +5,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Bower.Persistence;
 
-public sealed class SqliteEventStore : IDurableEventStore
+public sealed partial class SqliteEventStore : IDurableEventStore
 {
     private const string TimestampFormat = "O";
     private const int MaximumEventIdLength = 128;
@@ -70,7 +70,7 @@ public sealed class SqliteEventStore : IDurableEventStore
             CREATE INDEX IF NOT EXISTS ix_queue_events_state_bytes ON queue_events_v5(state, payload_bytes, received_at);
             INSERT OR IGNORE INTO schema_history(version, applied_at, hash)
             VALUES (4, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 'bower-queue-v4-capacity-index');
-            """;
+            """ + AuxiliarySchema;
         await check.ExecuteNonQueryAsync(cancellationToken);
         await repair.CommitAsync(cancellationToken);
         ApplyRestrictivePermissions();
@@ -168,7 +168,6 @@ public sealed class SqliteEventStore : IDurableEventStore
         // Reject what the table's NOT NULL and CHECK constraints would refuse, so invalid
         // input is an error and never mistaken for a duplicate.
         ValidateCandidate(candidate);
-        int payloadBytes = System.Text.Encoding.UTF8.GetByteCount(candidate.Payload);
 
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
         // BEGIN IMMEDIATE takes the write lock before the duplicate and capacity checks so
@@ -183,6 +182,31 @@ public sealed class SqliteEventStore : IDurableEventStore
             return new EnqueueResult(false, true, candidate.EventId);
         }
 
+        // Suppression is decided under the same write lock, after the duplicate check so a
+        // retried event never consumes allowance, and committed with the count it changed.
+        if (candidate.Suppression is { } suppression
+            && !await AdmitAsync(connection, transaction, suppression, candidate.ReceivedAt, cancellationToken))
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return new EnqueueResult(false, false, candidate.EventId, Suppressed: true);
+        }
+
+        await InsertAsync(connection, transaction, candidate, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new EnqueueResult(true, false, candidate.EventId);
+    }
+
+    /// <summary>
+    /// Capacity check, insert and ledger append for a candidate already proven new under
+    /// the caller's write transaction.
+    /// </summary>
+    private async Task InsertAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        QueuedEvent candidate,
+        CancellationToken cancellationToken)
+    {
+        int payloadBytes = System.Text.Encoding.UTF8.GetByteCount(candidate.Payload);
         CheckStorage();
         long currentBytes = await GetUndeliveredBytesAsync(connection, transaction, cancellationToken);
         if (payloadBytes > maximumBytes - currentBytes)
@@ -221,9 +245,6 @@ public sealed class SqliteEventStore : IDurableEventStore
             candidate.Payload,
             (string)command.Parameters["$received_at"].Value!,
             cancellationToken);
-
-        await transaction.CommitAsync(cancellationToken);
-        return new EnqueueResult(true, false, candidate.EventId);
     }
 
     /// <summary>
@@ -691,10 +712,24 @@ public sealed class SqliteEventStore : IDurableEventStore
             GetInt64OrZero(reader, 7));
     }
 
-    public async Task<int> PurgeDeliveredAsync(
+    public Task<int> PurgeDeliveredAsync(
         DateTimeOffset deliveredBefore,
         int maximumCount,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        PurgeDeliveredCoreAsync(deliveredBefore, maximumCount, null, cancellationToken);
+
+    public Task<int> PurgeDeliveredAsync(
+        DateTimeOffset deliveredBefore,
+        int maximumCount,
+        long archivedThroughSequence,
+        CancellationToken cancellationToken = default) =>
+        PurgeDeliveredCoreAsync(deliveredBefore, maximumCount, archivedThroughSequence, cancellationToken);
+
+    private async Task<int> PurgeDeliveredCoreAsync(
+        DateTimeOffset deliveredBefore,
+        int maximumCount,
+        long? archivedThroughSequence,
+        CancellationToken cancellationToken)
     {
         if (maximumCount is < 1 or > 100_000)
         {
@@ -718,9 +753,11 @@ public sealed class SqliteEventStore : IDurableEventStore
                   AND acknowledgement IS NOT NULL
                   AND delivered_at IS NOT NULL
                   AND delivered_at < $delivered_before
+                  AND ($archived_through IS NULL OR enqueue_sequence <= $archived_through)
                 ORDER BY delivered_at ASC
                 LIMIT $maximum_count;
                 """;
+            select.Parameters.AddWithValue("$archived_through", (object?)archivedThroughSequence ?? DBNull.Value);
             select.Parameters.AddWithValue("$delivered", (int)QueueState.Delivered);
             select.Parameters.AddWithValue(
                 "$delivered_before",

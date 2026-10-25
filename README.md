@@ -104,7 +104,9 @@ policy evaluation, SQLite WAL queue and deduplication, retry/dead-letter
 transitions, AMA spool output, real Azure Monitor Logs Ingestion SDK output,
 Entra-protected fleet management and approval UI, Sentinel query-verified evidence
 bundles, signed packs, DCR generation and drift checks, a tamper-evident queue
-ledger, CLI tooling, schemas and deployment examples.
+ledger, per-key suppression with summary events, selection metrics, source silence
+detection, policy population diff, a ledger-verified long-term archive with replay,
+CLI tooling, schemas and deployment examples.
 
 Runtime file, REST and Windows Event Log source adapters, complete catalogue commands,
 Roslyn packages, Azure plan/apply, release-signing automation, a tenant-tested
@@ -413,6 +415,8 @@ Neither has been exercised against a live tenant or account yet.
 | `BOWER_AZURE_CREDENTIAL` | `managed-identity` | `managed-identity`, `workload-identity`, `environment` or `azure-cli`. |
 | `BOWER_AZURE_CLIENT_ID` | — | User-assigned managed identity client id. |
 | `BOWER_MANAGEMENT_ENDPOINT` / `BOWER_MANAGEMENT_SCOPE` | — | Enables the heartbeat job. HTTPS required unless loopback. |
+| `BOWER_SOURCE_EXPECTATIONS` | — | JSON file of applications that must keep sending events; quiet ones degrade `/health`. [Details](docs/operations/suppression-archive-and-source-silence.md#source-silence) |
+| `BOWER_ARCHIVE_PATH` | — | Directory for the ledger-verified long-term archive; retention then purges only archived events. [Details](docs/operations/suppression-archive-and-source-silence.md#archive-and-replay) |
 
 ## Background jobs
 
@@ -426,6 +430,8 @@ low-latency worker.
 | Collector | `queue-maintenance` — WAL checkpoint and `PRAGMA optimize` | Daily 03:00 |
 | Collector | `management-heartbeat` — register and report health | Every minute |
 | Collector | `managed-privacy-profile` — fetch, verify and stage the assigned privacy profile (management mode) | Every minute |
+| Collector | `source-activity` — save per-application last-seen times | Every minute |
+| Collector | `queue-archive` — copy new events into the archive (`BOWER_ARCHIVE_PATH`) | Every minute |
 | Management API | `collector-staleness` — flag and audit silent collectors | Every 5 minutes |
 
 Design, observability and how to add a job:
@@ -445,6 +451,9 @@ Design, observability and how to add a job:
 | Verify queue integrity | `bower queue verify --database queue.db` | [Fleet and queue integrity](docs/operations/fleet-and-queue-integrity.md) |
 | Validate a privacy profile | `bower privacy validate profile.yaml --sample event.json` | [Custom redaction rules](docs/privacy/custom-redaction-rules.md) |
 | Test sample events against policies offline | `bower policy test samples/*.json --policy-directory policies/default --expect accept` | Metadata only; exit 3 when `--expect` does not match |
+| Show which events a policy change affects | `bower policy diff --baseline policies/current --candidate policies/proposed samples/*.json` | [Population diff](docs/operations/suppression-archive-and-source-silence.md#population-diff) |
+| Check expected sources offline | `bower sources check --expectations sources.json --database queue.db` | [Source silence](docs/operations/suppression-archive-and-source-silence.md#source-silence) |
+| Verify or replay the archive | `bower archive verify --archive DIR --anchor SEQ:HASH` · `bower archive replay --archive DIR --collector-url URL` | [Archive and replay](docs/operations/suppression-archive-and-source-silence.md#archive-and-replay) |
 | Review and roll out a privacy profile | Management console → **Privacy profiles** | [Managed privacy profiles](docs/privacy/managed-privacy-profiles.md) |
 | Pseudonymise identifiers | privacy profile `action: hmac` (detector, custom detector or field rule) + `BOWER_PRIVACY_HMAC_KEY_FILE` | [Privacy & Secret Protection Engine](docs/privacy/privacy-secret-engine.md) |
 | Forward AWS / GCP security signal | `deploy/aws` CloudFormation, `deploy/gcp` Terraform, `bower-cloud` agent | [AWS](docs/deployment/aws.md) · [Google Cloud](docs/deployment/gcp.md) |
@@ -725,7 +734,13 @@ decision:
 Test a policy change offline before rollout: `bower policy test samples/*.json`
 runs sample events through the collector's redaction, validation and selection and
 prints each decision with its reasons (metadata only; `--expect DECISION` exits 3 on
-a mismatch, for CI).
+a mismatch, for CI). `bower policy diff --baseline DIR --candidate DIR samples/*.json`
+lists every sample whose decision or deciding policy changes between two policy sets.
+
+A policy can cap a noisy event type per key with `suppression` (key fields, window
+seconds, allowance). Events over the allowance are counted durably and reported by
+one `telemetry_aggregation_summary` event per window, so nothing disappears silently.
+See [suppression](docs/operations/suppression-archive-and-source-silence.md#suppression).
 
 Unknown events are rejected. Every policy must list `eventTypes`; unknown or
 misspelt YAML keys and numeric actions fail the load. Missing required
@@ -901,7 +916,8 @@ not create, alter or delete source database objects.
 with a KQL query under a separate read-only identity, records latency, retention and
 region, maps the result to ISM and Essential Eight controls, and signs the bundle.
 Without a workspace the bundle is labelled `simulated`; a 2xx from the ingestion API
-is never treated as proof. See [evidence bundles](docs/operations/evidence-bundles.md).
+is never treated as proof. See [evidence bundles](docs/operations/evidence-bundles.md)
+and how Bower supports the ISM [security monitoring controls](docs/security/ism-alignment.md).
 
 ## Contributing
 

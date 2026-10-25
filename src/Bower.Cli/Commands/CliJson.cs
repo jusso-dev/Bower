@@ -92,6 +92,66 @@ internal sealed record PolicyTestPolicy(
     [property: JsonPropertyName("policyHash")] string PolicyHash,
     [property: JsonPropertyName("score")] int Score);
 
+/// <summary><c>bower policy diff</c> output: decisions only, never event content.</summary>
+internal sealed record PolicyDiffOutput(
+    [property: JsonPropertyName("baselineBundleHash")] string BaselineBundleHash,
+    [property: JsonPropertyName("candidateBundleHash")] string CandidateBundleHash,
+    [property: JsonPropertyName("events")] int Events,
+    [property: JsonPropertyName("changed")] int Changed,
+    [property: JsonPropertyName("changes")] IReadOnlyList<PolicyDiffChange> Changes);
+
+internal sealed record PolicyDiffChange(
+    [property: JsonPropertyName("file")] string File,
+    [property: JsonPropertyName("eventId")] string? EventId,
+    [property: JsonPropertyName("baseline")] PolicyDiffOutcome Baseline,
+    [property: JsonPropertyName("candidate")] PolicyDiffOutcome Candidate);
+
+internal sealed record PolicyDiffOutcome(
+    [property: JsonPropertyName("decision")] string Decision,
+    [property: JsonPropertyName("policyId")] string? PolicyId);
+
+/// <summary><c>bower archive create</c> output.</summary>
+internal sealed record ArchiveCreateOutput(
+    [property: JsonPropertyName("segments")] int Segments,
+    [property: JsonPropertyName("events")] long Events,
+    [property: JsonPropertyName("headSequence")] long HeadSequence,
+    [property: JsonPropertyName("headHash")] string? HeadHash);
+
+/// <summary><c>bower archive verify</c> output (also printed when replay refuses a broken archive).</summary>
+internal sealed record ArchiveVerifyOutput(
+    [property: JsonPropertyName("intact")] bool Intact,
+    [property: JsonPropertyName("segments")] int Segments,
+    [property: JsonPropertyName("verifiedEvents")] long VerifiedEvents,
+    [property: JsonPropertyName("firstSequence")] long FirstSequence,
+    [property: JsonPropertyName("headSequence")] long HeadSequence,
+    [property: JsonPropertyName("headHash")] string? HeadHash,
+    [property: JsonPropertyName("anchorVerified")] bool AnchorVerified,
+    [property: JsonPropertyName("breakSegment")] string? BreakSegment,
+    [property: JsonPropertyName("breakReason")] string? BreakReason)
+{
+    public static ArchiveVerifyOutput From(Bower.Persistence.ArchiveVerification value) =>
+        new(value.Intact, value.Segments, value.VerifiedEvents, value.FirstSequence, value.HeadSequence,
+            value.HeadHash, value.AnchorVerified, value.BreakSegment, value.BreakReason);
+}
+
+/// <summary><c>bower archive replay</c> output: counts per collector response, never payloads.</summary>
+internal sealed record ArchiveReplayOutput(
+    [property: JsonPropertyName("selected")] long Selected,
+    [property: JsonPropertyName("dryRun")] bool DryRun,
+    [property: JsonPropertyName("responses")] IReadOnlyDictionary<string, long> Responses);
+
+internal sealed record SourcesCheckOutput(
+    [property: JsonPropertyName("healthy")] bool Healthy,
+    [property: JsonPropertyName("sources")] IReadOnlyList<SourceCheckItem> Sources);
+
+internal sealed record SourceCheckItem(
+    [property: JsonPropertyName("application")] string Application,
+    [property: JsonPropertyName("environment")] string Environment,
+    [property: JsonPropertyName("state")] string State,
+    [property: JsonPropertyName("lastSeenAt")] DateTimeOffset? LastSeenAt,
+    [property: JsonPropertyName("silentSeconds")] long? SilentSeconds,
+    [property: JsonPropertyName("allowedSilenceSeconds")] long AllowedSilenceSeconds);
+
 /// <summary>
 /// Source-generated metadata for CLI output: System.Text.Json default options with
 /// indentation, as the former <c>new JsonSerializerOptions { WriteIndented = true }</c>.
@@ -103,6 +163,11 @@ internal sealed record PolicyTestPolicy(
 [JsonSerializable(typeof(PackInspectOutput))]
 [JsonSerializable(typeof(PrivacyValidationOutput))]
 [JsonSerializable(typeof(PolicyTestOutput))]
+[JsonSerializable(typeof(PolicyDiffOutput))]
+[JsonSerializable(typeof(ArchiveReplayOutput))]
+[JsonSerializable(typeof(SourcesCheckOutput))]
+[JsonSerializable(typeof(ArchiveCreateOutput))]
+[JsonSerializable(typeof(ArchiveVerifyOutput))]
 [JsonSerializable(typeof(QueueSnapshot))]
 [JsonSerializable(typeof(IReadOnlyList<DeadLetterRecord>))]
 [JsonSerializable(typeof(SignedEvidence))]

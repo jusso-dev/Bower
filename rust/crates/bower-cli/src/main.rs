@@ -53,6 +53,12 @@ Commands:
   bower privacy validate FILE [--hmac-key-file FILE] [--sample FILE]
   bower policy test EVENT.json... [--policy-directory DIR] [--pack FILE --trusted-key PUB]
         [--privacy-profile FILE --hmac-key-file FILE] [--expect DECISION]
+  bower policy diff --baseline DIR --candidate DIR EVENT.json... [--fail-on-change]
+  bower archive create --archive DIR [--database FILE] [--collector-id ID]
+  bower archive verify --archive DIR [--anchor SEQUENCE:HASH]
+  bower archive replay --archive DIR --collector-url URL [--from ISO] [--to ISO]
+                       [--event-type TYPE]... [--dry-run]
+  bower sources check --expectations FILE [--database FILE]
   bower version";
 
 const UNKNOWN_COMMAND: &str = "Unknown command. Run 'bower --help'.";

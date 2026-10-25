@@ -1,0 +1,8 @@
+{
+  "apiVersion": "bower.security/v1",
+  "kind": "SourceExpectations",
+  "sources": [
+    { "application": "FinanceApi", "environment": "production", "maximumSilenceMinutes": 15 },
+    { "application": "CustomerPortal", "environment": "production", "maximumSilenceMinutes": 60 }
+  ]
+}

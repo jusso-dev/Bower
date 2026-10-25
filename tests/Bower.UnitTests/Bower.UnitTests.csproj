@@ -60,6 +60,15 @@
       <Link>deploy/main.bicep</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- C# suppression outcomes pinned for the Rust port (rust/crates/bower-core). -->
+    <Content Include="../../rust/crates/bower-core/tests/fixtures/suppression-vectors.json">
+      <Link>core-vectors/suppression-vectors.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="../../rust/crates/bower-persistence/tests/fixtures/**/*">
+      <Link>persistence-vectors/%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="../../rust/crates/bower-detection/tests/fixtures/**/*">
       <Link>detection-vectors/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

@@ -1057,5 +1057,95 @@
   "name": "i22.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: X\n  name: y\n  version: \"1\"\n  owner: z\nmatch:\n  eventTypes: [a]\nrequirements: ~\ndecision:\n  action: accept\nrouting:\n",
   "csharp": "ERR Policy requirements section is required."
+ },
+ {
+  "name": "s00-suppression-valid.yaml",
+  "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: false\nsuppression:\n  keyFields:\n    - actor.username\n    - source.ipAddress\n  windowSeconds: 60\n  allowPerWindow: 5\n",
+  "csharp": "OK sha256:d39aed8464a6582c136ca5614686972657d05f9dee0913df5a0e0844b77881ee"
+ },
+ {
+  "name": "s01-suppression-labels-key.yaml",
+  "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: false\nsuppression:\n  keyFields:\n    - actor.username\n    - labels.tenant.region\n  windowSeconds: 60\n  allowPerWindow: 5\n",
+  "csharp": "OK sha256:bc995e949951baec7fdd6daf05c4ba3b318e919c8bb581ac980773b127d8b04c"
+ },
+ {
+  "name": "s02-suppression-never-sample.yaml",
+  "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\nsuppression:\n  keyFields:\n    - actor.username\n    - source.ipAddress\n  windowSeconds: 60\n  allowPerWindow: 5\n",
+  "csharp": "ERR A neverSample policy cannot define suppression."
+ },
+ {
+  "name": "s03-suppression-reject-action.yaml",
+  "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: reject\n  minimumValueScore: 1\n  neverSample: false\nsuppression:\n  keyFields:\n    - actor.username\n    - source.ipAddress\n  windowSeconds: 60\n  allowPerWindow: 5\n",
+  "csharp": "ERR Suppression applies only to accept or redact-and-accept policies."
+ },
+ {
+  "name": "s04-suppression-unknown-key.yaml",
+  "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: false\nsuppression:\n  keyFields:\n    - actor.username\n    - attributes.password\n  windowSeconds: 60\n  allowPerWindow: 5\n",
+  "csharp": "ERR Policy suppression keyFields must list 1–5 distinct string field paths."
+ },
+ {
+  "name": "s05-suppression-duplicate-key.yaml",
+  "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: false\nsuppression:\n  keyFields:\n    - actor.username\n    - actor.username\n  windowSeconds: 60\n  allowPerWindow: 5\n",
+  "csharp": "ERR Policy suppression keyFields must list 1–5 distinct string field paths."
+ },
+ {
+  "name": "s06-suppression-no-keys.yaml",
+  "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: false\nsuppression:\n  keyFields: []\n  windowSeconds: 60\n  allowPerWindow: 5\n",
+  "csharp": "ERR Policy suppression keyFields must list 1–5 distinct string field paths."
+ },
+ {
+  "name": "s07-suppression-six-keys.yaml",
+  "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: false\nsuppression:\n  keyFields:\n    - eventType\n    - eventAction\n    - actor.userId\n    - actor.username\n    - target.id\n    - source.ipAddress\n  windowSeconds: 60\n  allowPerWindow: 5\n",
+  "csharp": "ERR Policy suppression keyFields must list 1–5 distinct string field paths."
+ },
+ {
+  "name": "s08-suppression-window-zero.yaml",
+  "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: false\nsuppression:\n  keyFields:\n    - actor.username\n    - source.ipAddress\n  windowSeconds: 0\n  allowPerWindow: 5\n",
+  "csharp": "ERR Policy suppression windowSeconds must be between 1 and 86400."
+ },
+ {
+  "name": "s09-suppression-window-max.yaml",
+  "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: false\nsuppression:\n  keyFields:\n    - actor.username\n    - source.ipAddress\n  windowSeconds: 86400\n  allowPerWindow: 5\n",
+  "csharp": "OK sha256:56ad414c5ef1ced4c5d1029dbc8164d52f157fb3357f74ca3548b0d72b3cdb1c"
+ },
+ {
+  "name": "s10-suppression-window-over.yaml",
+  "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: false\nsuppression:\n  keyFields:\n    - actor.username\n    - source.ipAddress\n  windowSeconds: 86401\n  allowPerWindow: 5\n",
+  "csharp": "ERR Policy suppression windowSeconds must be between 1 and 86400."
+ },
+ {
+  "name": "s11-suppression-allow-over.yaml",
+  "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: false\nsuppression:\n  keyFields:\n    - actor.username\n    - source.ipAddress\n  windowSeconds: 60\n  allowPerWindow: 100001\n",
+  "csharp": "ERR Policy suppression allowPerWindow must be between 1 and 100000."
+ },
+ {
+  "name": "s12-suppression-null.yaml",
+  "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: false\nsuppression: ~\n",
+  "csharp": "ERR Policy 's12-suppression-null.yaml' is invalid at line 18: Exception during deserialization"
+ },
+ {
+  "name": "s13-suppression-unknown-field.yaml",
+  "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: false\nsuppression:\n  keyFields:\n    - actor.username\n    - source.ipAddress\n  windowSeconds: 60\n  allowPerWindow: 5\n  sampleRate: 2\n",
+  "csharp": "ERR Policy 's13-suppression-unknown-field.yaml' is invalid at line 24: Property 'sampleRate' not found on type 'Bower.PolicyEngine.Yaml.PolicySuppression'."
+ },
+ {
+  "name": "s14-suppression-summary-type.yaml",
+  "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - telemetry_aggregation_summary\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: false\nsuppression:\n  keyFields:\n    - actor.username\n    - source.ipAddress\n  windowSeconds: 60\n  allowPerWindow: 5\n",
+  "csharp": "ERR Suppression summaries cannot themselves be suppressed."
+ },
+ {
+  "name": "s15-suppression-time-key.yaml",
+  "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: false\nsuppression:\n  keyFields:\n    - actor.username\n    - timeGenerated\n  windowSeconds: 60\n  allowPerWindow: 5\n",
+  "csharp": "ERR Policy suppression keyFields must list 1–5 distinct string field paths."
+ },
+ {
+  "name": "s16-suppression-blank-label.yaml",
+  "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: false\nsuppression:\n  keyFields:\n    - actor.username\n    - labels.\n  windowSeconds: 60\n  allowPerWindow: 5\n",
+  "csharp": "ERR Policy suppression keyFields must list 1–5 distinct string field paths."
+ },
+ {
+  "name": "s17-suppression-window-text.yaml",
+  "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: false\nsuppression:\n  keyFields:\n    - actor.username\n    - source.ipAddress\n  windowSeconds: sixty\n  allowPerWindow: 5\n",
+  "csharp": "ERR Policy 's17-suppression-window-text.yaml' is invalid at line 22: Expected a decimal integer such as 70."
  }
 ]

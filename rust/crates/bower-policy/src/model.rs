@@ -15,6 +15,8 @@ pub struct TelemetryPolicy {
     pub requirements: PolicyRequirements,
     pub decision: PolicyAction,
     pub routing: Option<PolicyRouting>,
+    /// Optional per-key cap on accepted events; omitted from the hash when absent.
+    pub suppression: Option<PolicySuppression>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -53,6 +55,16 @@ pub struct PolicyAction {
 pub struct PolicyRouting {
     pub profile: Option<String>,
     pub destination: Option<String>,
+}
+
+/// Admits at most `allow_per_window` accepted events per key in each fixed,
+/// epoch-aligned window of `window_seconds`. Later events are counted durably and
+/// reported by one `telemetry_aggregation_summary` event when the window ends.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PolicySuppression {
+    pub key_fields: Vec<String>,
+    pub window_seconds: i32,
+    pub allow_per_window: i32,
 }
 
 /// A validated policy with its content hash (`sha256:<hex>`) and source name.

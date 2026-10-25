@@ -74,6 +74,12 @@ fn every_subcommand_has_help() {
         &["evidence", "run"],
         &["evidence", "verify"],
         &["developer", "init"],
+        &["policy", "diff"],
+        &["archive"],
+        &["archive", "create"],
+        &["archive", "verify"],
+        &["archive", "replay"],
+        &["sources", "check"],
     ];
     for command in commands {
         let mut args = command.to_vec();
@@ -173,6 +179,7 @@ fn seeded_queue(path: &Path) {
                 received_at: bower_contracts::time::parse("2026-05-01T10:20:30+00:00").unwrap(),
                 state: QueueState::Queued,
                 delivery_attempts: 0,
+                suppression: None,
             })
             .unwrap();
     }

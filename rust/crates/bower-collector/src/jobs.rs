@@ -11,6 +11,8 @@ use std::time::Duration;
 
 use bower_contracts::DurableEventStore;
 use bower_contracts::time::{Clock, Timestamp, serde_offset_option, to_utc, truncate_to_ticks};
+use bower_core::PipelineTelemetry;
+use bower_persistence::{ArchiveError, QueueArchive, SqliteEventStore};
 use chrono::{DurationRound, TimeDelta};
 use serde::Serialize;
 use tokio::task::JoinHandle;
@@ -23,6 +25,8 @@ pub const QUEUE_RETENTION_JOB_ID: &str = "queue-retention";
 pub const QUEUE_MAINTENANCE_JOB_ID: &str = "queue-maintenance";
 pub const MANAGEMENT_HEARTBEAT_JOB_ID: &str = "management-heartbeat";
 pub const MANAGED_PRIVACY_PROFILE_JOB_ID: &str = "managed-privacy-profile";
+pub const SOURCE_ACTIVITY_JOB_ID: &str = "source-activity";
+pub const QUEUE_ARCHIVE_JOB_ID: &str = "queue-archive";
 const RETENTION_BATCH_SIZE: usize = 5_000;
 
 /// UTC schedules used by the collector (Hangfire `Cron.*` helpers).
@@ -266,31 +270,95 @@ fn hangfire_retry_delay(attempt: u32) -> Duration {
 
 /// Removes acknowledged events older than the duplicate-detection window
 /// (C# `QueueRetentionJob`). Undelivered, retrying and dead-lettered events are
-/// never touched.
+/// never touched, nor are events a configured archive does not hold yet.
 pub async fn run_queue_retention(
     queue: Arc<dyn DurableEventStore>,
     clock: Arc<dyn Clock>,
     retention: Duration,
+    archive: Option<Arc<QueueArchive>>,
 ) -> Result<usize, &'static str> {
     let cutoff = clock.utc_now() - TimeDelta::from_std(retention).unwrap_or(TimeDelta::MAX);
     let total = tokio::task::spawn_blocking(move || {
+        // With an archive, purge only what the archive already holds.
+        let archived_through = archive
+            .map(|archive| archive.archived_through_sequence())
+            .transpose()
+            .map_err(|error| archive_error_name(&error))?;
         let mut total = 0usize;
         loop {
-            let purged = queue.purge_delivered(cutoff, RETENTION_BATCH_SIZE)?;
+            let purged = match archived_through {
+                Some(through) => {
+                    queue.purge_delivered_archived(cutoff, RETENTION_BATCH_SIZE, through)
+                }
+                None => queue.purge_delivered(cutoff, RETENTION_BATCH_SIZE),
+            }
+            .map_err(|error| store_error_name(&error))?;
             total += purged;
             if purged != RETENTION_BATCH_SIZE {
-                return Ok(total);
+                return Ok::<usize, &'static str>(total);
             }
         }
     })
     .await
-    .map_err(|_| "JoinError")?
-    .map_err(|error| store_error_name(&error))?;
+    .map_err(|_| "JoinError")??;
     info!(
         count = total,
         "Queue retention removed acknowledged event(s)."
     );
     Ok(total)
+}
+
+fn archive_error_name(error: &ArchiveError) -> &'static str {
+    match error {
+        ArchiveError::InvalidArgument(_) => "ArgumentException",
+        ArchiveError::InvalidData(_) => "InvalidDataException",
+        ArchiveError::Io(_) => "IOException",
+        ArchiveError::Store(error) => store_error_name(error),
+    }
+}
+
+/// Persists per-source last-seen times so silence detection survives restarts
+/// (C# `SourceActivityJob`). Reporting metadata only: never touches event, lease or
+/// delivery state. A failed flush returns the sources to the changed set.
+pub async fn run_source_activity(
+    queue: Arc<dyn DurableEventStore>,
+    telemetry: Arc<PipelineTelemetry>,
+) -> Result<(), &'static str> {
+    let changed = telemetry.take_changed_sources();
+    let flushed = changed.clone();
+    let result = tokio::task::spawn_blocking(move || queue.upsert_source_activity(&flushed))
+        .await
+        .map_err(|_| "JoinError")
+        .and_then(|result| result.map_err(|error| store_error_name(&error)));
+    if result.is_err() {
+        telemetry.mark_changed(&changed);
+    }
+    result
+}
+
+/// Copies newly stored events into the long-term archive (C# `QueueArchiveJob`).
+/// Reads the queue only; retention consults the archive so nothing is purged
+/// unarchived.
+pub async fn run_queue_archive(
+    store: Arc<SqliteEventStore>,
+    archive: Arc<QueueArchive>,
+) -> Result<(), &'static str> {
+    let result = tokio::task::spawn_blocking(move || archive.archive(&store))
+        .await
+        .map_err(|_| "JoinError")?
+        .map_err(|error| archive_error_name(&error))?;
+    if result.segments > 0 {
+        info!(
+            events = result.events,
+            segments = result.segments,
+            head_sequence = result.head_sequence,
+            "Archived {} event(s) in {} segment(s); archive head {}.",
+            result.events,
+            result.segments,
+            result.head_sequence
+        );
+    }
+    Ok(())
 }
 
 /// Checkpoints the WAL and refreshes SQLite statistics (C# `QueueMaintenanceJob`).

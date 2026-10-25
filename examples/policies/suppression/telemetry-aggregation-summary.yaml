@@ -1,0 +1,27 @@
+# Required alongside any suppressing policy: it accepts the summary events that carry
+# suppressed counts. Without it the bundle does not load.
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+metadata:
+  id: BWR-POL-SUPPRESSION-SUMMARY
+  name: Suppression summaries
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-10-01
+match:
+  eventTypes:
+    - telemetry_aggregation_summary
+  eventActions:
+    - telemetry.suppressed
+requirements:
+  requiredFields:
+    - timeGenerated
+    - eventType
+    - application.name
+    - target.id
+  atLeastOne: []
+  recommendedFields: []
+decision:
+  action: accept
+  minimumValueScore: 50
+  neverSample: true

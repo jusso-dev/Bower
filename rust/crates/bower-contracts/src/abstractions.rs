@@ -48,6 +48,58 @@ pub struct PolicyDecision {
     pub score: i32,
     pub reasons: Vec<String>,
     pub warnings: Vec<String>,
+    /// Suppression key resolved for an accepted event from its policy.
+    pub suppression: Option<SuppressionDirective>,
+}
+
+/// Suppression key resolved for one accepted event from its policy (C# `SuppressionDirective`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SuppressionDirective {
+    pub key_fields: Vec<String>,
+    pub key_values: Vec<String>,
+    pub window_seconds: i32,
+    pub allow_per_window: i32,
+}
+
+/// Application and environment that produced an accepted event (C# `SourceActivity`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourceActivity {
+    pub application: String,
+    pub environment: String,
+    pub last_seen_at: Timestamp,
+    pub event_count: i64,
+}
+
+/// Admission request for an event accepted by a suppressing policy (C#
+/// `SuppressionRequest`). Key values come from the redacted envelope and are stored
+/// until the window closes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SuppressionRequest {
+    pub policy_id: String,
+    pub policy_version: String,
+    pub policy_hash: String,
+    pub key_hash: String,
+    pub key_fields: Vec<String>,
+    pub key_values: Vec<String>,
+    pub window_seconds: i32,
+    pub allow_per_window: i32,
+    pub event_category: String,
+    pub event_type: String,
+    pub application: String,
+    pub environment: String,
+    pub tenant_id: Option<String>,
+}
+
+/// One closed (or closing) suppression window (C# `SuppressionWindow`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SuppressionWindow {
+    pub rule: SuppressionRequest,
+    pub window_start: Timestamp,
+    pub window_end: Timestamp,
+    pub admitted: i64,
+    pub suppressed: i64,
+    pub first_suppressed_at: Option<Timestamp>,
+    pub last_suppressed_at: Option<Timestamp>,
 }
 
 pub trait TelemetryPolicyEvaluator: Send + Sync {
@@ -92,6 +144,8 @@ pub struct QueuedEvent {
     pub state: QueueState,
     pub delivery_attempts: i32,
     pub lease_token: Option<String>,
+    /// Set for an event accepted by a suppressing policy; never persisted with the event.
+    pub suppression: Option<SuppressionRequest>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -99,6 +153,8 @@ pub struct EnqueueResult {
     pub enqueued: bool,
     pub duplicate: bool,
     pub event_id: String,
+    /// Accepted but counted instead of queued: the window allowance was spent.
+    pub suppressed: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -289,6 +345,44 @@ pub trait DurableEventStore: Send + Sync {
     ) -> StoreResult<usize>;
     fn ledger_head(&self) -> StoreResult<LedgerHead>;
     fn verify_ledger(&self) -> StoreResult<LedgerVerification>;
+
+    /// As [`DurableEventStore::purge_delivered`], but only events whose ledger sequence is
+    /// at or below `archived_through_sequence` are eligible, so nothing is purged before
+    /// the archive holds it. Stores without a ledger refuse (nothing is purged).
+    fn purge_delivered_archived(
+        &self,
+        _delivered_before: Timestamp,
+        _maximum_count: usize,
+        _archived_through_sequence: i64,
+    ) -> StoreResult<usize> {
+        Err(unsupported_store_operation())
+    }
+
+    /// Closes every suppression window that ended at or before `now`. A window that
+    /// suppressed events is replaced, in the same transaction, by the summary event
+    /// `create_summary` builds; if that fails nothing is closed.
+    fn close_expired_suppression_windows(
+        &self,
+        _now: Timestamp,
+        _create_summary: &mut dyn FnMut(&SuppressionWindow) -> StoreResult<QueuedEvent>,
+    ) -> StoreResult<usize> {
+        Err(unsupported_store_operation())
+    }
+
+    /// Last accepted event per application and environment.
+    fn get_source_activity(&self) -> StoreResult<Vec<SourceActivity>> {
+        Err(unsupported_store_operation())
+    }
+
+    /// Merges observations: keeps the later time and the larger count per source.
+    fn upsert_source_activity(&self, _activity: &[SourceActivity]) -> StoreResult<()> {
+        Err(unsupported_store_operation())
+    }
+}
+
+/// C# `RequestEventBuffer.Unsupported()`: hosts without a durable queue or ledger.
+pub fn unsupported_store_operation() -> StoreError {
+    StoreError::Invalid("This host has no durable queue or ledger.".into())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
