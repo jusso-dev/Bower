@@ -94,18 +94,21 @@ public static class SourceExpectationsLoader
 public static class SourceSilenceEvaluator
 {
     /// <summary>
-    /// Compares expected sources with observed activity. A source never seen is silent once
-    /// its allowance has passed since <paramref name="monitoringSince"/>, so a fresh start does
-    /// not raise immediate false alarms.
+    /// Compares expected sources with observed activity. A source never seen runs its
+    /// allowance from its durable monitoring start in <paramref name="monitoring"/>, or from
+    /// <paramref name="monitoringSince"/> when it has none: <c>pending</c> while inside the
+    /// allowance, then <c>never-seen</c>. A restart therefore cannot extend the deadline.
     /// </summary>
     public static IReadOnlyList<SourceSilenceStatus> Evaluate(
         SourceExpectations expectations,
         IReadOnlyList<SourceActivity> activity,
+        IReadOnlyList<SourceMonitoring> monitoring,
         DateTimeOffset monitoringSince,
         DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(expectations);
         ArgumentNullException.ThrowIfNull(activity);
+        ArgumentNullException.ThrowIfNull(monitoring);
 
         Dictionary<(string, string), SourceActivity> byKey = [];
         foreach (SourceActivity item in activity)
@@ -113,14 +116,28 @@ public static class SourceSilenceEvaluator
             byKey[(item.Application, item.Environment)] = item;
         }
 
+        Dictionary<(string, string), DateTimeOffset> started = [];
+        foreach (SourceMonitoring item in monitoring)
+        {
+            started[(item.Application, item.Environment)] = item.MonitoringSince;
+        }
+
         return expectations.Sources
             .Select(expected =>
             {
                 long allowed = expected.MaximumSilenceMinutes * 60L;
-                byKey.TryGetValue((expected.Application, expected.Environment), out SourceActivity? seen);
-                DateTimeOffset reference = seen?.LastSeenAt ?? monitoringSince;
+                (string, string) key = (expected.Application, expected.Environment);
+                byKey.TryGetValue(key, out SourceActivity? seen);
+                DateTimeOffset reference = seen?.LastSeenAt
+                    ?? (started.TryGetValue(key, out DateTimeOffset since) ? since : monitoringSince);
                 long silent = Math.Max(0, (long)Math.Floor((now - reference).TotalSeconds));
-                string state = silent <= allowed ? "active" : seen is null ? "never-seen" : "silent";
+                string state = (silent <= allowed, seen is null) switch
+                {
+                    (true, false) => "active",
+                    (true, true) => "pending",
+                    (false, true) => "never-seen",
+                    (false, false) => "silent"
+                };
                 return new SourceSilenceStatus(
                     expected.Application,
                     expected.Environment,
@@ -133,7 +150,10 @@ public static class SourceSilenceEvaluator
     }
 }
 
-/// <param name="State"><c>active</c>, <c>silent</c> or <c>never-seen</c>.</param>
+/// <param name="State">
+/// <c>active</c> (seen within the allowance), <c>pending</c> (not yet seen, still within the
+/// allowance from its monitoring start), <c>silent</c> or <c>never-seen</c> (overdue).
+/// </param>
 public sealed record SourceSilenceStatus(
     string Application,
     string Environment,
@@ -142,8 +162,13 @@ public sealed record SourceSilenceStatus(
     long SilentSeconds,
     long AllowedSilenceSeconds)
 {
+    /// <summary>Seen within its allowance. A <c>pending</c> source is not active: it has no evidence yet.</summary>
     [JsonIgnore]
     public bool IsActive => State == "active";
+
+    /// <summary>Past its allowance: <c>silent</c> or <c>never-seen</c>.</summary>
+    [JsonIgnore]
+    public bool IsOverdue => State is "silent" or "never-seen";
 }
 
 [JsonSourceGenerationOptions(

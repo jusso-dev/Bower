@@ -62,8 +62,9 @@ ledger checkpoints. The old table name becomes a read-only view, refusing old
 writers. DB/WAL limits include retained payloads, indexes and ledger history.
 See [upgrade, rollback and storage contract](../operations/queue-v5-durability.md).
 
-Suppression windows (`suppression_windows`) and per-source activity
-(`source_activity`) are auxiliary tables created on every start without a schema
+Suppression windows (`suppression_windows`), per-source activity
+(`source_activity`) and per-source monitoring starts (`source_monitoring`) are
+auxiliary tables created on every start without a schema
 version, so a version 5 queue stays openable by either runtime. Suppression is
 decided inside the enqueue transaction after the duplicate check; a hosted
 `SuppressionWindowWorker` closes ended windows and queues their summaries in one

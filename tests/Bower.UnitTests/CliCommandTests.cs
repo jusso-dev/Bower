@@ -2,11 +2,14 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text.Json.Nodes;
 using Azure.Core;
+using Bower.Abstractions;
 using Bower.Cli.Commands;
+using Bower.Core;
 using Bower.Dcr;
 using Bower.Evidence;
 using Bower.Integrity;
 using Bower.Packs;
+using Bower.Persistence;
 
 namespace Bower.UnitTests;
 
@@ -44,6 +47,38 @@ public sealed class CliCommandTests
         Assert.Equal("simulated", EvidenceRunner.ModeOf(evidence));
         Assert.False(EvidenceRunner.Verify(evidence, []));
         Assert.Equal("unknown", EvidenceRunner.ModeOf(EvidenceRunner.Parse("{\"bundle\":{\"mode\":5}}")));
+    }
+
+    [Fact]
+    public async Task SourcesCheck_ReadsCollectorMonitoringStartsWithoutWritingThem()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        SqliteEventStore store = new(Path.Combine(directory.Path, "queue.db"), 10 * 1024 * 1024);
+        await store.InitializeAsync(cancellationToken);
+        DateTimeOffset now = TestEvents.Now;
+        await store.StartSourceMonitoringAsync(
+            [new SourceMonitoring("Payroll", "production", now.AddMinutes(-10))],
+            cancellationToken);
+        SourceExpectations both = SourceExpectationsLoader.Parse(
+            """
+            {"apiVersion":"bower.security/v1","kind":"SourceExpectations","sources":[
+              {"application":"Payroll","environment":"production","maximumSilenceMinutes":30},
+              {"application":"Portal","environment":"production","maximumSilenceMinutes":30}]}
+            """);
+        SourceExpectations payroll = both with { Sources = [both.Sources[0]] };
+
+        SourcesCheckOutput checkedBoth = await SourceCommands.EvaluateAsync(both, store, now);
+        SourcesCheckOutput checkedPayroll = await SourceCommands.EvaluateAsync(payroll, store, now);
+
+        // The collector's pending source is pending here too; one it never monitored has no grace.
+        Assert.False(checkedBoth.Healthy);
+        Assert.Equal(["pending", "never-seen"], checkedBoth.Sources.Select(item => item.State));
+        Assert.True(checkedPayroll.Healthy);
+        Assert.Equal(
+            [("Payroll", "production", now.AddMinutes(-10))],
+            (await store.GetSourceMonitoringAsync(cancellationToken))
+                .Select(item => (item.Application, item.Environment, item.MonitoringSince)));
     }
 
     [Theory]

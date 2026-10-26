@@ -8,8 +8,8 @@ use std::time::Duration;
 use bower_contracts::time::{self, Timestamp};
 use bower_contracts::{
     DeadLetterRecord, DurableEventStore, EnqueueResult, FailureSettlement, LedgerHead,
-    LedgerVerification, QueueSnapshot, QueueState, QueuedEvent, SourceActivity, StoreError,
-    StoreResult, SuppressionWindow,
+    LedgerVerification, QueueSnapshot, QueueState, QueuedEvent, SourceActivity, SourceMonitoring,
+    StoreError, StoreResult, SuppressionWindow,
 };
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension, Row, TransactionBehavior, named_params, params};
@@ -948,6 +948,17 @@ FROM queue_events_v5;",
 
     fn upsert_source_activity(&self, activity: &[SourceActivity]) -> StoreResult<()> {
         crate::suppression::upsert_source_activity(self, activity)
+    }
+
+    fn get_source_monitoring(&self) -> StoreResult<Vec<SourceMonitoring>> {
+        crate::suppression::get_source_monitoring(self)
+    }
+
+    fn start_source_monitoring(
+        &self,
+        expected: &[SourceMonitoring],
+    ) -> StoreResult<Vec<SourceMonitoring>> {
+        crate::suppression::start_source_monitoring(self, expected)
     }
 
     fn maintain(&self) -> StoreResult<()> {
