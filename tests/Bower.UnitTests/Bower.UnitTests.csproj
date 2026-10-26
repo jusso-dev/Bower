@@ -87,6 +87,15 @@
       <Link>pipeline-vectors/node-kinds.txt</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="../../rust/crates/bower-packs/tests/fixtures/csharp-vectors/transform-journald-ssh.json">
+      <Link>pack-vectors/transform-journald-ssh.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- Transform language conformance vectors shared with the Rust port (rust/crates/bower-pipeline). -->
+    <Content Include="../../rust/crates/bower-pipeline/tests/fixtures/transform-vectors.json">
+      <Link>pipeline-vectors/transform-vectors.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="../../rules/**/*.yml">
       <Link>rules/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

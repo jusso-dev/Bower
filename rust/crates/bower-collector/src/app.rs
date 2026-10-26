@@ -434,8 +434,32 @@ async fn ingest_candidate(
                 },
             );
         };
-        let envelope = match bower_packs::runtime::map_raw(parser, &candidate) {
+        let now = bower_contracts::time::now();
+        let envelope = match bower_packs::runtime::map_raw(parser, &candidate, &now) {
             Ok(envelope) => envelope,
+            Err(bower_packs::runtime::MappingError::Transform(code)) => {
+                // Quarantine without persisting: the raw record never reaches redaction,
+                // policy or the queue, and only the stable code is reported.
+                let result = bower_core::ProcessingResult::failed_at(
+                    DecisionAction::Quarantine,
+                    code,
+                    bower_core::ProcessingStage::Transform,
+                );
+                state.telemetry.record(&result, candidate.len() as i64);
+                return json_response(
+                    StatusCode::BAD_REQUEST,
+                    &IngestResponse {
+                        event_id: None,
+                        decision: "quarantine".into(),
+                        queued: false,
+                        duplicate: false,
+                        reasons: result.reasons,
+                        policy: None,
+                        remediation: None,
+                        suppressed: false,
+                    },
+                );
+            }
             Err(error) => {
                 use bower_packs::runtime::MappingError;
                 let (status, error) = match error {
@@ -446,7 +470,7 @@ async fn ingest_candidate(
                     MappingError::TooLarge => {
                         (StatusCode::PAYLOAD_TOO_LARGE, "pack-record-too-large")
                     }
-                    MappingError::NoMatch => {
+                    MappingError::NoMatch | MappingError::Transform(_) => {
                         (StatusCode::UNPROCESSABLE_ENTITY, "pack-record-not-selected")
                     }
                 };

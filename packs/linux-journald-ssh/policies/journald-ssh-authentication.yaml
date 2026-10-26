@@ -1,0 +1,36 @@
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+
+metadata:
+  id: BWR-PACK-JOURNALD-SSH-AUTH
+  name: sshd authentication failures from journald
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-06-30
+
+match:
+  eventCategories:
+    - authentication
+  eventTypes:
+    - authentication_failure
+
+requirements:
+  requiredFields:
+    - timeGenerated
+    - eventType
+    - eventResult
+    - application.name
+    - source.ipAddress
+  atLeastOne:
+    - actor.username
+  recommendedFields:
+    - eventOutcomeReason
+
+decision:
+  action: accept
+  minimumValueScore: 75
+  neverSample: true
+
+routing:
+  profile: authentication
+  destination: security-events

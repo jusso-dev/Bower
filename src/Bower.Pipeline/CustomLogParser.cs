@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using Bower.Pipeline.Transforms;
 using Bower.Redaction.Privacy;
 
 namespace Bower.Pipeline;
@@ -44,7 +45,12 @@ public sealed record CustomLogParserConfiguration(
     string? Pattern = null,
     CustomLogRuntimeMapping? Runtime = null);
 
-/// <summary>Explicit signed semantic mapping; absent means preview-only, never active ingest.</summary>
+/// <summary>
+/// Explicit signed semantic mapping; absent means preview-only, never active ingest.
+/// <see cref="Transforms"/> and <see cref="Tables"/> are an optional transform program
+/// (<see cref="TransformProgram"/>) that runs on the parsed record before
+/// <see cref="Match"/> and <see cref="Fields"/>, and before redaction and policy.
+/// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record CustomLogRuntimeMapping(
     string ApplicationName,
@@ -54,7 +60,14 @@ public sealed record CustomLogRuntimeMapping(
     string EventAction,
     string EventResult,
     IReadOnlyDictionary<string, string> Match,
-    IReadOnlyDictionary<string, string> Fields);
+    IReadOnlyDictionary<string, string> Fields,
+    IReadOnlyList<string?>? Transforms = null,
+    IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>? Tables = null)
+{
+    /// <summary>The transform program this mapping carries, or null when it has none.</summary>
+    public TransformDefinition? ToTransformDefinition(IReadOnlyList<CustomLogField> fields) =>
+        Transforms is null && Tables is null ? null : new TransformDefinition(Transforms, Tables, fields);
+}
 
 public sealed record CustomLogSchemaField(
     string Name,
@@ -428,6 +441,11 @@ public static partial class CustomLogParser
                 || runtime.Match.Any(pair => !names.Contains(pair.Key) || string.IsNullOrEmpty(pair.Value) || pair.Value.Length > 2048))
             {
                 issues.Add("Invalid runtime semantic mapping; only bounded, filtered JSON mappings are supported.");
+            }
+
+            if (runtime.ToTransformDefinition(configuration.Fields) is { } transforms)
+            {
+                issues.AddRange(TransformProgram.Validate(transforms).Select(issue => issue.ToString()));
             }
         }
 
@@ -1155,13 +1173,13 @@ public static partial class CustomLogParser
         }
     }
 
-    private static bool IsValidFieldName(string value) =>
+    internal static bool IsValidFieldName(string value) =>
         value.Length is > 0 and <= 128
         && value.All(character =>
             char.IsAsciiLetterOrDigit(character)
             || character is '_' or '-' or '.' or '@');
 
-    private static bool IsProhibited(string name) =>
+    internal static bool IsProhibited(string name) =>
         ProhibitedFieldNames.Contains(Canonical(name))
         || Canonical(name).Contains("password", StringComparison.Ordinal)
         || Canonical(name).Contains("secret", StringComparison.Ordinal)

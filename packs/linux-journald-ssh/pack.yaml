@@ -1,0 +1,20 @@
+apiVersion: bower.security/v1
+kind: Pack
+metadata:
+  id: linux-journald-ssh
+  version: 1.0.0
+  name: Linux SSH failures from journald
+  description: >-
+    sshd authentication failures from systemd journal JSON export records
+    (journalctl -o json). A signed transform program extracts the account, source
+    address and method from MESSAGE inside the collector, before redaction and
+    policy; the message itself is never forwarded. Pseudonymises usernames with HMAC.
+  owner: Security Operations
+policies:
+  - policies/journald-ssh-authentication.yaml
+privacyProfile: privacy.yaml
+parsers:
+  - parsers/sshd-journald.json
+samples:
+  - samples/journald.jsonl
+dcr: true

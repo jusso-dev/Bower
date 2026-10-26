@@ -333,7 +333,7 @@ public sealed partial class ParserProbeEvidenceTests
         using TemporaryDirectory directory = new();
         (string privatePem, string publicPem, _) = DetachedSigner.GenerateKeyPair();
         LoadedPack pack = PackArchive.Load(PackArchive.Build(Source, privatePem, directory.Path), [publicPem]);
-        SecurityEventEnvelope envelope = PackRuntime.Parse(pack.Parsers[fixture.ParserIndex], raw)!;
+        SecurityEventEnvelope envelope = PackRuntime.Parse(pack.Parsers[fixture.ParserIndex], raw, DateTimeOffset.UnixEpoch)!;
         Assert.Equal("bower-probe-0190aaaabbbbccccddddeeeeffff0000", envelope.EventId);
         Assert.Equal(fixture.ExpectedEventType, envelope.EventType);
     }

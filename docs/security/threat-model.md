@@ -53,8 +53,19 @@ evidence.
   operator control.
 - Policy tampering: loaded policy is validated and hashed. Signed bundles and file
   permission checks remain required.
-- Parser exploitation: no arbitrary expressions or code execution. YAML documents
-  are size-limited. Regex/XML parsers are not present.
+- Parser exploitation: no arbitrary code execution. YAML documents are size-limited.
+  XML parsers are not present. Signed pack parsers may carry a transform program
+  (new trust boundary: signed pack content operating on raw, pre-redaction records
+  inside the collector). Controls: only signed packs from trusted keys load; a fixed
+  allow-list of 20 pure functions, no loops, recursion, I/O, environment, randomness or
+  clock (evaluation time is an explicit input); static limits and a 1,000,000-step
+  per-record budget with string, array, record and output size limits; Bower's own
+  linear-time regex engine (Pike VM, no backtracking); static sensitivity flow checks;
+  reserved targets (`security*`, `bower*`, credential-like names). Failures quarantine
+  the record before redaction and persist nothing; errors carry only a statement
+  number, column and code, never statement text or values. Transform output reaches
+  persistence only through the allowlisted semantic mapping and the privacy engine.
+  Management preview validates but never runs transforms.
 - Credential theft and overprivilege: one explicit Azure credential source
   (`BOWER_AZURE_CREDENTIAL`: managed identity by default, workload identity,
   environment or Azure CLI) instead of `DefaultAzureCredential` probing.
@@ -137,5 +148,9 @@ collectors time-synchronised. A collector whose command ledger cannot be read re
 every command until an operator removes or repairs the file. A `reload` restarts the
 process: delivery resumes from the durable queue, but the restart briefly interrupts
 ingest.
+
+A signed transform can still select the wrong substring of a free-text field into an
+allowlisted target (for example a password typed as a username); the privacy engine
+redacts the mapped envelope, but review transform programs like policy changes.
 
 Treat pseudonymised identifiers as potentially personal information.

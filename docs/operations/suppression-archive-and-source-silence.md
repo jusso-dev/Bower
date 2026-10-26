@@ -132,8 +132,9 @@ exist), bundle load or trust failures, or an unreadable sample. The C# and Rust 
 ## Selection metrics
 
 `GET /v1/status` (token protected) includes `pipeline`: events and bytes received,
-queued, duplicated and suppressed since start, per stage (`redaction`, `schema`,
-`validation`, `policy`), policy id and decision. No payload content. Queued bytes
+queued, duplicated and suppressed since start, per stage (`transform`, `redaction`,
+`schema`, `validation`, `policy`), policy id and decision. `transform` counts signed
+pack transform failures, quarantined before redaction. No payload content. Queued bytes
 include Bower's decision context.
 
 ## Intake metrics

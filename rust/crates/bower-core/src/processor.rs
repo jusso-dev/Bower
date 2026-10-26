@@ -66,6 +66,8 @@ pub enum ProcessingStage {
     Validation,
     #[default]
     Policy,
+    /// A signed pack transform failed before redaction; nothing was persisted.
+    Transform,
 }
 
 /// Application and environment of an accepted event (C# `SourceKey`).

@@ -7,12 +7,13 @@ signed:
 |---|---|
 | `policies/*.yaml` | Default-deny selection for the app's event types |
 | `privacy.yaml` (optional) | Privacy profile: detector actions, HMAC field rules, length limits |
-| `parsers/*.json` | Custom log parser configurations |
+| `parsers/*.json` | Custom log parser configurations, optionally with a signed [transform program](../developer-integration/transform-language.md) |
 | `detections/*.yml` | Sigma-compatible detections |
 | `samples/*.jsonl` | Expected decisions and values that must never survive redaction |
 | `dcr/bower-dcr.json` | Generated table and DCR template (`dcr: true`) |
 
-Example: [`packs/linux-ssh-gateway`](../../packs/linux-ssh-gateway).
+Examples: [`packs/linux-ssh-gateway`](../../packs/linux-ssh-gateway) and
+[`packs/linux-journald-ssh`](../../packs/linux-journald-ssh) (uses transforms).
 
 ## Build, sign, verify
 
@@ -107,7 +108,19 @@ Runtime mapping targets are restricted to identity/time, actor, source IP,
 correlation ID and outcome reason. Secrets and unrestricted bodies cannot be
 forwarded through arbitrary field mappings.
 
-Responses: 202 durable local acceptance, 200 duplicate, 400 invalid input, 401
+A parser may carry a signed transform program (`runtime.transforms`, optional
+`runtime.tables`) that reshapes the parsed record before `match` and `fields` apply:
+parse, transform, map, redact, select, queue. The program is validated at build and
+load, is bounded (steps, sizes, depth) and cannot set the security decision, write
+reserved or credential-like fields, or move sensitive values into non-sensitive fields.
+A run-time failure (`transform-type-error`, `transform-budget-exceeded`,
+`transform-size-exceeded`) returns HTTP 400 with decision `quarantine` and the code as
+the only reason; nothing is persisted and `/v1/status` counts it under stage
+`transform`. Collectors that predate transforms refuse to load such a parser. See the
+[transform language reference](../developer-integration/transform-language.md).
+
+Responses: 202 durable local acceptance, 200 duplicate, 400 invalid input or
+transform quarantine, 401
 missing/invalid credential, 403 scope denied, 404 inactive/unknown parser, 409
 event identity conflict, 413 oversize, 415 wrong content type, 422 unmatched or
 policy rejected, 429 rate limit,
@@ -129,8 +142,10 @@ Raw pack samples use `raw`, `parser` and `expectedDetections` instead of `event`
 {"name":"raw failure","parser":0,"expect":"accept","raw":{"id":"sample-raw","timestamp":"{{now}}","user":"synthetic-user","source_ip":"203.0.113.5","result":"failure"},"expectedDetections":["bower-pack-ssh-auth-failure-001"],"mustNotContain":["synthetic-user"]}
 ```
 
-Build executes mapping, privacy, selection and detection expectations before
-signing. Actual host tests separately establish queue, authentication, scope,
+Raw samples run the parser's transforms with the `{{now}}` time as evaluation time; a
+transform failure is decision `quarantine`, so an adversarial record can be pinned with
+`"expect":"quarantine"`. Build executes mapping, privacy, selection and detection
+expectations before signing. Actual host tests separately establish queue, authentication, scope,
 rate, replay, restart, cancellation and backpressure behavior. These tests use
 synthetic local input; they are not destination query evidence.
 
