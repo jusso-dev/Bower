@@ -67,6 +67,126 @@ last heartbeat is fresh.
   shows "12 of N shown" when the list is truncated and links each row to the
   assigned version on the privacy profiles page.
 
+## Heartbeat v2
+
+Collectors send `schemaVersion: 2` heartbeats. v2 adds metadata to the v1 body:
+
+- the heartbeat interval (60 s)
+- the age of the oldest undelivered event
+- the last successful delivery (the last output acknowledgement since start-up;
+  management keeps the last time it was told)
+- the last canary result
+- the command types the collector supports
+- command results
+
+Management works out the source health summary (`sourceSummary`) from the per-source
+report. Sources that are `pending` (#81) get their own count and are neither healthy
+nor degraded.
+
+The design is in [heartbeat v2](../architecture/heartbeat-v2.md). Compatibility:
+
+| Collector | Management | Result |
+|---|---|---|
+| v1 | v2 | Works as before. The response is the collector record and no commands are sent. |
+| v2 | v1 | The extra fields are ignored. The response has no `schemaVersion: 2`, so the collector takes no commands and keeps its results. |
+| v2 | v2 | The response holds signed commands and the result ids management recorded. |
+
+### Connectivity
+
+`GET /api/collectors`, `GET /api/collectors/{id}` and the overview exceptions carry a
+query-time `connectivity` value:
+
+| Value | Meaning |
+|---|---|
+| `online` | Heartbeating normally. |
+| `stale` | No heartbeat for more than 2 intervals, so it shows within 2 minutes. Reported intervals are limited to 15–300 s, so `stale` always comes before `offline`. |
+| `offline` | No heartbeat for 15 minutes (the `collector-staleness` threshold). |
+| `unhealthy` | Heartbeating, but every heartbeat for at least 15 minutes reported a failing delivery status. |
+| `pending`, `suspended`, `revoked` | The lifecycle state. |
+
+This sits apart from the 30-day inactivity suspension below.
+
+### Commands
+
+Commands travel outbound only, inside the heartbeat response. Nothing connects in to a
+collector. The set is closed:
+
+| Command | Collector action | Role to issue |
+|---|---|---|
+| `fetch-bundle` | Fetches the signed privacy profile assignment now (`managed-privacy-profile` job). Management privacy mode only. | `Bower.Operator` |
+| `run-canary` | Queues one synthetic `collector_canary` event through redaction and policy. `queued` means local admission, not Sentinel arrival. Use an evidence bundle for delivery proof. | `Bower.Operator` |
+| `reload` | Graceful supervised restart (exit code 75), at most once every 10 minutes. | `Bower.Administrator` |
+| `rotate-credential` | Not supported yet (#109). Collectors never advertise it, so it cannot be issued. | `Bower.Administrator` |
+
+```http
+POST /api/collectors/{id}/commands
+{ "command": "run-canary", "reason": "Check the pipeline after a firewall change", "expiresInMinutes": 15 }
+
+GET /api/collectors/{id}/commands
+```
+
+Management signs each command once with `BOWER_MANAGEMENT_COMMAND_SIGNING_KEY_FILE`
+(ECDSA P-256). It binds the command to the collector id, a random nonce and an expiry of
+1–60 minutes (default 15). Without the key, issuing returns 503 and everything else
+keeps working. A command can only be issued to an active collector that advertised it
+on its last heartbeat. At most 16 can be outstanding per collector.
+
+Collectors trust the PEM public keys in `BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS`. Without
+them a collector advertises nothing and refuses every command. The collector:
+
+1. Verifies the signature, collector id, closed set and validity window. It allows
+   5 minutes of clock skew.
+2. Records the command in a durable ledger (`management-commands/ledger.json` next to the
+   queue).
+3. Runs the command once, from a hosted worker rather than the heartbeat job.
+4. Reports the result on the next heartbeat until management acknowledges it.
+
+A replayed, forged, expired, unknown or unsupported command is refused with a code, as
+listed in the design note. Only signature-verified documents are reported with their
+command id.
+
+Overdue commands are expired by the v2 heartbeat exchange and by the 5-minute
+`collector-staleness` job. The job covers offline, suspended and v1 collectors. Reads
+show them as `expired` straight away.
+
+Management audits every step:
+
+- `collector.command-issued:<command>`
+- `collector.command-refused` (an unknown command at the API)
+- `collector.command-forbidden:<command>` (the caller's role may not issue it)
+- `collector.command-delivered`
+- `collector.command-succeeded`, `-failed` and `-rejected`
+- `collector.command-expired`
+- `collector.command-result-unknown` (a result for a command management never issued)
+
+### Proxies and TLS inspection
+
+The management channel honours the standard `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`
+variables. To use one proxy for management only, or to keep credentials out of the
+environment, set:
+
+```text
+BOWER_MANAGEMENT_PROXY=http://proxy.corp.example:3128
+BOWER_MANAGEMENT_PROXY_USERNAME=bower-collector
+BOWER_MANAGEMENT_PROXY_PASSWORD_FILE=/run/secrets/proxy-password
+BOWER_MANAGEMENT_CA_BUNDLE=/etc/bower/tls-inspection-ca.pem
+```
+
+The proxy URL must not contain credentials. The collector refuses to start if it does,
+and the error never repeats the value. The password is read once at start-up and is
+never logged, hashed or reported.
+
+`BOWER_MANAGEMENT_CA_BUNDLE` adds roots to the platform roots, for a TLS-inspection
+proxy that re-signs traffic. Certificate and host name verification are never turned
+off. The configuration hash includes the proxy scheme, host and port, whether
+credentials are set, and the CA bundle path.
+
+These settings cover the heartbeat, commands and managed privacy profile requests. The
+Entra token and Logs Ingestion clients follow the standard proxy variables.
+
+Note for macOS hosts: Apple's verifier refuses TLS leaf certificates valid for more than
+825 days, including ones issued by a CA in the bundle.
+
 ## Inactive collectors
 
 The `collector-inactivity` job (daily, 02:00 UTC) suspends approved or active

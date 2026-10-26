@@ -109,6 +109,31 @@ public sealed record CollectorSettings
 
     public string? ManagementScope { get; init; }
 
+    /// <summary>
+    /// Explicit HTTP(S) proxy for the management channel (BOWER_MANAGEMENT_PROXY). Unset: the
+    /// runtime's standard HTTPS_PROXY, HTTP_PROXY and NO_PROXY variables apply.
+    /// </summary>
+    public Uri? ManagementProxy { get; init; }
+
+    /// <summary>Proxy user name (BOWER_MANAGEMENT_PROXY_USERNAME); the password comes from a file.</summary>
+    public string? ManagementProxyUsername { get; init; }
+
+    /// <summary>File holding the proxy password (BOWER_MANAGEMENT_PROXY_PASSWORD_FILE). Never logged.</summary>
+    public string? ManagementProxyPasswordFile { get; init; }
+
+    /// <summary>
+    /// PEM bundle of extra roots trusted for the management channel (BOWER_MANAGEMENT_CA_BUNDLE),
+    /// for example a TLS-inspection proxy CA. Merged with the system roots; verification stays on.
+    /// </summary>
+    public string? ManagementCaBundle { get; init; }
+
+    /// <summary>PEM public keys trusted to sign management commands (BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS).</summary>
+    public IReadOnlyList<string> ManagementCommandTrustedKeyFiles { get; init; } = [];
+
+    /// <summary>Durable command ledger directory: <c>management-commands</c> next to the queue database.</summary>
+    public string ManagementCommandDirectory =>
+        Path.Combine(Path.GetDirectoryName(Path.GetFullPath(QueuePath)) ?? ".", "management-commands");
+
     public bool IsLoopbackListener => IsLoopback(new Uri(ListenUrl).Host);
 
     public static CollectorSettings FromEnvironment(Func<string, string?>? read = null)
@@ -172,6 +197,11 @@ public sealed record CollectorSettings
                 ? null
                 : new Uri(managementEndpoint, UriKind.Absolute),
             ManagementScope = read("BOWER_MANAGEMENT_SCOPE"),
+            ManagementProxy = ReadProxy(Blank(read("BOWER_MANAGEMENT_PROXY"))),
+            ManagementProxyUsername = Blank(read("BOWER_MANAGEMENT_PROXY_USERNAME")),
+            ManagementProxyPasswordFile = Blank(read("BOWER_MANAGEMENT_PROXY_PASSWORD_FILE")),
+            ManagementCaBundle = Blank(read("BOWER_MANAGEMENT_CA_BUNDLE")),
+            ManagementCommandTrustedKeyFiles = SplitList(read("BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS")),
             SourceExpectationsPath = Blank(read("BOWER_SOURCE_EXPECTATIONS")),
             ArchivePath = Blank(read("BOWER_ARCHIVE_PATH"))
         };
@@ -265,8 +295,52 @@ public sealed record CollectorSettings
             }
         }
 
+        ValidateManagementConnection();
         ValidatePrivacyProfileSource();
     }
+
+    /// <summary>Proxy, CA bundle and command keys apply to the management channel only.</summary>
+    private void ValidateManagementConnection()
+    {
+        bool connectionSettings = ManagementProxy is not null || ManagementProxyUsername is not null
+            || ManagementProxyPasswordFile is not null || ManagementCaBundle is not null
+            || ManagementCommandTrustedKeyFiles.Count > 0;
+        if (connectionSettings && ManagementEndpoint is null)
+        {
+            throw new InvalidOperationException(
+                "BOWER_MANAGEMENT_PROXY, BOWER_MANAGEMENT_CA_BUNDLE and BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS " +
+                "require BOWER_MANAGEMENT_ENDPOINT.");
+        }
+
+        // Messages never echo the proxy URL: it may have been written with credentials.
+        if (ManagementProxy is not null && !IsValidProxy(ManagementProxy))
+        {
+            throw new InvalidOperationException(
+                "BOWER_MANAGEMENT_PROXY must be an absolute http:// or https:// URL with a host and no " +
+                "credentials, path or query. Put credentials in BOWER_MANAGEMENT_PROXY_USERNAME and " +
+                "BOWER_MANAGEMENT_PROXY_PASSWORD_FILE.");
+        }
+
+        if ((ManagementProxyUsername is null) != (ManagementProxyPasswordFile is null))
+        {
+            throw new InvalidOperationException(
+                "BOWER_MANAGEMENT_PROXY_USERNAME and BOWER_MANAGEMENT_PROXY_PASSWORD_FILE must be set together.");
+        }
+
+        if (ManagementProxyUsername is not null && ManagementProxy is null)
+        {
+            throw new InvalidOperationException("BOWER_MANAGEMENT_PROXY_USERNAME requires BOWER_MANAGEMENT_PROXY.");
+        }
+    }
+
+    internal static bool IsValidProxy(Uri proxy) =>
+        proxy.IsAbsoluteUri
+        && proxy.Scheme is "http" or "https"
+        && !string.IsNullOrEmpty(proxy.Host)
+        && string.IsNullOrEmpty(proxy.UserInfo)
+        && proxy.AbsolutePath == "/"
+        && string.IsNullOrEmpty(proxy.Query)
+        && string.IsNullOrEmpty(proxy.Fragment);
 
     private void ValidatePrivacyProfileSource()
     {
@@ -340,6 +414,25 @@ public sealed record CollectorSettings
                 + '\u001f' + "privacy-allow-default:" + ManagedPrivacyAllowDefault.ToString();
         }
 
+        // Appended only when set so existing configuration hashes are unchanged. The proxy
+        // contributes scheme, host and port only; credentials never enter the hash.
+        if (ManagementProxy is not null)
+        {
+            material += '\u001f' + "management-proxy:" + ManagementProxy.Scheme + "://" + ManagementProxy.Host
+                + ":" + ManagementProxy.Port.ToString(CultureInfo.InvariantCulture)
+                + '\u001f' + "management-proxy-auth:" + (ManagementProxyUsername is not null).ToString();
+        }
+
+        if (ManagementCaBundle is not null)
+        {
+            material += '\u001f' + "management-ca:" + ManagementCaBundle;
+        }
+
+        if (ManagementCommandTrustedKeyFiles.Count > 0)
+        {
+            material += '\u001f' + "management-commands:True";
+        }
+
         return "sha256:" + Convert.ToHexStringLower(
             System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(material)));
     }
@@ -367,6 +460,19 @@ public sealed record CollectorSettings
         VerifiedManagedPrivacyProfile? cached = ManagedPrivacyProfileCache.LoadVerified(this, key);
         observe?.Invoke(cached);
         return cached?.Profile;
+    }
+
+    private static Uri? ReadProxy(string? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        // The value is never echoed: a proxy URL may carry credentials.
+        return Uri.TryCreate(value.Trim(), UriKind.Absolute, out Uri? proxy)
+            ? proxy
+            : throw new InvalidOperationException("BOWER_MANAGEMENT_PROXY must be an absolute http:// or https:// URL.");
     }
 
     private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;

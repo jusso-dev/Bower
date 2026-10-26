@@ -112,6 +112,9 @@ public static class ManagementApplication
         // Optional: without a key the deployment endpoint answers 503 and all else works.
         builder.Services.AddSingleton(ManagedPrivacyProfileSigner.FromFile(
             builder.Configuration[ManagedPrivacyProfileSigner.KeyFileSetting]));
+        // Optional: without a key commands cannot be issued (503) and all else works.
+        builder.Services.AddSingleton(ManagementCommandSigner.FromFile(
+            builder.Configuration[ManagementCommandSigner.KeyFileSetting]));
 
         string[] allowedOrigins = builder.Configuration
             .GetSection("Bower:AllowedOrigins")
@@ -255,10 +258,17 @@ public static class ManagementApplication
 
         api.MapGet(
                 "/overview",
-                (ManagementStore store, TimeProvider clock, CancellationToken cancellationToken) =>
-                    store.OverviewAsync(
-                        clock.GetUtcNow() - CollectorStalenessJob.StaleAfter,
-                        cancellationToken))
+                async (ManagementStore store, TimeProvider clock, CancellationToken cancellationToken) =>
+                {
+                    DateTimeOffset now = clock.GetUtcNow();
+                    OverviewRecord overview = await store.OverviewAsync(
+                        now - CollectorStalenessJob.StaleAfter,
+                        cancellationToken);
+                    return overview with
+                    {
+                        Exceptions = [.. overview.Exceptions.Select(record => CollectorConnectivity.With(record, now))]
+                    };
+                })
             .RequireAuthorization("View");
 
         api.MapGet(
@@ -266,6 +276,7 @@ public static class ManagementApplication
                 async (
                     string? status,
                     ManagementStore store,
+                    TimeProvider clock,
                     CancellationToken cancellationToken) =>
                 {
                     CollectorStatus? parsed = null;
@@ -280,17 +291,33 @@ public static class ManagementApplication
                         parsed = value;
                     }
 
-                    return Results.Ok(await store.ListAsync(parsed, cancellationToken));
+                    DateTimeOffset now = clock.GetUtcNow();
+                    return Results.Ok((await store.ListAsync(parsed, cancellationToken))
+                        .Select(record => CollectorConnectivity.With(record, now))
+                        .ToList());
                 })
             .RequireAuthorization("View");
 
         api.MapGet(
                 "/collectors/{id}",
-                async (string id, ManagementStore store, CancellationToken cancellationToken) =>
+                async (string id, ManagementStore store, TimeProvider clock, CancellationToken cancellationToken) =>
                     await store.GetAsync(id, cancellationToken) is { } record
-                        ? Results.Ok(record)
+                        ? Results.Ok(CollectorConnectivity.With(record, clock.GetUtcNow()))
                         : Results.NotFound())
             .RequireAuthorization("View");
+
+        api.MapGet(
+                "/collectors/{id}/commands",
+                async (string id, ManagementStore store, TimeProvider clock, CancellationToken cancellationToken) =>
+                    await store.GetAsync(id, cancellationToken) is null
+                        ? Results.NotFound()
+                        : Results.Ok(await store.ListCommandsAsync(id, clock.GetUtcNow(), cancellationToken)))
+            .RequireAuthorization("View");
+
+        api.MapPost(
+                "/collectors/{id}/commands",
+                IssueCommandAsync)
+            .RequireAuthorization("Operate");
 
         api.MapPost(
                 "/collectors/register",
@@ -342,13 +369,26 @@ public static class ManagementApplication
                 {
                     try
                     {
-                        CollectorRecord? record = await store.HeartbeatAsync(
+                        HeartbeatExchange? exchange = await store.ExchangeHeartbeatAsync(
                             id,
                             heartbeat,
                             ObjectId(user),
                             clock.GetUtcNow(),
                             cancellationToken);
-                        return record is null ? Results.NotFound() : Results.Ok(record);
+                        if (exchange is null)
+                        {
+                            return Results.NotFound();
+                        }
+
+                        // v1 collectors keep receiving the collector record they always did.
+                        return heartbeat.IsV2
+                            ? Results.Ok(new HeartbeatResponse(
+                                2,
+                                exchange.Record.Id,
+                                exchange.Record.Status,
+                                exchange.Commands,
+                                exchange.AcknowledgedResults))
+                            : Results.Ok(exchange.Record);
                     }
                     catch (CollectorStateException)
                     {
@@ -600,6 +640,92 @@ public static class ManagementApplication
             FileNotFoundException => "Custom-log sample file was not found.",
             _ => "Custom-log request is invalid."
         };
+
+    /// <summary>
+    /// Issues a command from the closed set. Unknown commands are refused and audited.
+    /// <c>reload</c> and <c>rotate-credential</c> need an administrator.
+    /// </summary>
+    private static async Task<IResult> IssueCommandAsync(
+        string id,
+        CollectorCommandRequest request,
+        ClaimsPrincipal user,
+        ManagementStore store,
+        ManagementCommandSigner signer,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        string command = request.Command?.Trim() ?? string.Empty;
+        if (!CollectorCommandTypes.All.Contains(command, StringComparer.Ordinal))
+        {
+            if (await store.GetAsync(id, cancellationToken) is not null)
+            {
+                await store.RecordAuditAsync(
+                    "collector.command-refused", "collector", id, ObjectId(user), DisplayName(user),
+                    clock.GetUtcNow(), cancellationToken);
+            }
+
+            return Results.BadRequest(new ErrorResponse(
+                "Unknown command. Allowed: fetch-bundle, run-canary, reload, rotate-credential."));
+        }
+
+        if (CollectorCommandTypes.RequiresAdministrator(command) && !user.IsInRole(BowerRoles.Administrator))
+        {
+            if (await store.GetAsync(id, cancellationToken) is not null)
+            {
+                await store.RecordAuditAsync(
+                    $"collector.command-forbidden:{command}", "collector", id, ObjectId(user), DisplayName(user),
+                    clock.GetUtcNow(), cancellationToken);
+            }
+
+            return Results.Forbid();
+        }
+
+        if (!signer.Configured)
+        {
+            return Results.Json(
+                new ErrorResponse("Collector command signing is not configured."),
+                ManagementJsonContext.Default.ErrorResponse,
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        try
+        {
+            CollectorCommandRecord? record = await store.IssueCommandAsync(
+                id,
+                command,
+                request.Reason,
+                request.ExpiresInMinutes ?? ManagementStore.DefaultCommandLifetimeMinutes,
+                signer,
+                ObjectId(user),
+                DisplayName(user),
+                clock.GetUtcNow(),
+                cancellationToken);
+            return record is null
+                ? Results.NotFound()
+                : Results.Accepted($"/api/collectors/{record.CollectorId}/commands", record);
+        }
+        catch (ArgumentException)
+        {
+            return Results.ValidationProblem(
+                new Dictionary<string, string[]>
+                {
+                    ["command"] = ["A 1–500 character reason and a lifetime of 1–60 minutes are required."]
+                });
+        }
+        catch (CollectorStateException)
+        {
+            return Results.Conflict(new ErrorResponse("Collector is not active."));
+        }
+        catch (CollectorCommandCapabilityException)
+        {
+            return Results.Conflict(new ErrorResponse(
+                "Collector did not advertise this command on its last heartbeat."));
+        }
+        catch (CollectorCommandLimitException)
+        {
+            return Results.Conflict(new ErrorResponse("Collector has too many outstanding commands."));
+        }
+    }
 
     private static async Task<IResult> DecideAsync(
         string collectorId,

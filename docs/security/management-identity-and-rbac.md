@@ -42,6 +42,12 @@ application**:
 | `Bower.Approver` | Bower Approvers | Collector enrollment decisions; approve or reject privacy profile versions authored by someone else |
 | `Bower.Administrator` | Bower Administrators | Suspension, revocation and administration; assign and clear privacy profile versions on collectors |
 
+Collector commands (heartbeat v2): `Bower.Operator` and above may issue `fetch-bundle`
+and `run-canary`. Only `Bower.Administrator` may issue `reload` and `rotate-credential`.
+Viewers may list commands. No command changes approval state or privacy content, so the
+two-person rule below is unaffected. `fetch-bundle` only fetches the version already
+approved and assigned. See [fleet controls](../operations/fleet-and-queue-integrity.md#commands).
+
 Privacy profile versions follow a two-person rule enforced by the API: the reviewer's
 object id must differ from the author's, whatever roles either holds. See [managed
 privacy profiles](../privacy/managed-privacy-profiles.md).
@@ -62,7 +68,12 @@ Bower__AllowedOrigins__0=https://bower.example.gov.au
 AllowedHosts=bower-api.example.gov.au
 BOWER_MANAGEMENT_LISTEN_URL=http://127.0.0.1:4320
 BOWER_MANAGEMENT_DB_PATH=/var/lib/bower-management/management.db
+# Optional: P-256 private key that signs collector commands (issuing returns 503 without it).
+BOWER_MANAGEMENT_COMMAND_SIGNING_KEY_FILE=/run/secrets/bower-command-signing.pem
 ```
+
+Use a key separate from `BOWER_MANAGEMENT_PROFILE_SIGNING_KEY_FILE`, and distribute its
+public key to collectors as `BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS`.
 
 The API validates signature, tenant issuer, audience, lifetime and app roles.
 The supplied manifest requests v2 access tokens: their `aud` is the API client-ID
@@ -110,6 +121,11 @@ Set on each collector:
 BOWER_MANAGEMENT_ENDPOINT=https://bower-api.example.gov.au/
 BOWER_MANAGEMENT_SCOPE=api://<api-application-client-id>/.default
 BOWER_ENVIRONMENT=production
+# Optional (heartbeat v2): accept signed commands, use an explicit proxy, trust an
+# inspection CA. See fleet-and-queue-integrity.md.
+BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS=/etc/bower/command-signing.pub.pem
+BOWER_MANAGEMENT_PROXY=http://proxy.corp.example:3128
+BOWER_MANAGEMENT_CA_BUNDLE=/etc/bower/tls-inspection-ca.pem
 ```
 
 The credential selected by `BOWER_AZURE_CREDENTIAL` (managed identity by default)

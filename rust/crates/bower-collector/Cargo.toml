@@ -41,7 +41,10 @@ bower-evidence.workspace = true
 flate2.workspace = true
 rusqlite.workspace = true
 chrono.workspace = true
+# TLS server for the management proxy and CA bundle tests (as in bower-output-azure).
+rustls.workspace = true
 tempfile.workspace = true
+tokio-rustls.workspace = true
 tower = { workspace = true, features = ["util"] }
 
 [lints]

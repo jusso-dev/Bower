@@ -85,6 +85,18 @@ pub struct CollectorSettings {
     pub azure_client_id: Option<String>,
     pub management_endpoint: Option<Url>,
     pub management_scope: Option<String>,
+    /// Explicit HTTP(S) proxy for the management channel (BOWER_MANAGEMENT_PROXY). Unset:
+    /// the standard HTTPS_PROXY, HTTP_PROXY and NO_PROXY variables apply.
+    pub management_proxy: Option<Url>,
+    /// Proxy user name (BOWER_MANAGEMENT_PROXY_USERNAME); the password comes from a file.
+    pub management_proxy_username: Option<String>,
+    /// File holding the proxy password (BOWER_MANAGEMENT_PROXY_PASSWORD_FILE). Never logged.
+    pub management_proxy_password_file: Option<PathBuf>,
+    /// Extra CA roots for the management channel (BOWER_MANAGEMENT_CA_BUNDLE), merged with
+    /// the platform roots. Verification is never disabled.
+    pub management_ca_bundle: Option<PathBuf>,
+    /// PEM public keys trusted to sign management commands (BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS).
+    pub management_command_trusted_key_files: Vec<String>,
     /// JSON file of applications that must keep sending events (BOWER_SOURCE_EXPECTATIONS).
     pub source_expectations_path: Option<PathBuf>,
     /// Directory for the verifiable long-term archive (BOWER_ARCHIVE_PATH).
@@ -149,6 +161,11 @@ impl CollectorSettings {
             azure_client_id: None,
             management_endpoint: None,
             management_scope: None,
+            management_proxy: None,
+            management_proxy_username: None,
+            management_proxy_password_file: None,
+            management_ca_bundle: None,
+            management_command_trusted_key_files: Vec::new(),
             source_expectations_path: None,
             archive_path: None,
         }
@@ -229,6 +246,14 @@ impl CollectorSettings {
             azure_client_id: read("BOWER_AZURE_CLIENT_ID"),
             management_endpoint: absolute_uri(management_endpoint)?,
             management_scope: read("BOWER_MANAGEMENT_SCOPE"),
+            management_proxy: read_proxy(blank(read("BOWER_MANAGEMENT_PROXY")))?,
+            management_proxy_username: blank(read("BOWER_MANAGEMENT_PROXY_USERNAME")),
+            management_proxy_password_file: blank(read("BOWER_MANAGEMENT_PROXY_PASSWORD_FILE"))
+                .map(PathBuf::from),
+            management_ca_bundle: blank(read("BOWER_MANAGEMENT_CA_BUNDLE")).map(PathBuf::from),
+            management_command_trusted_key_files: split_list(
+                read("BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS").as_deref(),
+            ),
             source_expectations_path: blank(read("BOWER_SOURCE_EXPECTATIONS")).map(PathBuf::from),
             archive_path: blank(read("BOWER_ARCHIVE_PATH")).map(PathBuf::from),
         };
@@ -251,6 +276,15 @@ impl CollectorSettings {
             .parent()
             .map_or_else(|| PathBuf::from("."), PathBuf::from)
             .join("managed-privacy")
+    }
+
+    /// Durable command ledger directory (C# `ManagementCommandDirectory`):
+    /// `management-commands` next to the queue database.
+    pub fn management_command_directory(&self) -> PathBuf {
+        full_path(&self.queue_path)
+            .parent()
+            .map_or_else(|| PathBuf::from("."), PathBuf::from)
+            .join("management-commands")
     }
 
     /// Parsed listen URL host is loopback (`localhost` or a loopback IP).
@@ -363,7 +397,51 @@ impl CollectorSettings {
             }
         }
 
+        self.validate_management_connection()?;
         self.validate_privacy_profile_source()
+    }
+
+    /// Proxy, CA bundle and command keys apply to the management channel only (C#
+    /// `ValidateManagementConnection`). Messages never echo the proxy URL.
+    fn validate_management_connection(&self) -> Result<(), HostError> {
+        let connection_settings = self.management_proxy.is_some()
+            || self.management_proxy_username.is_some()
+            || self.management_proxy_password_file.is_some()
+            || self.management_ca_bundle.is_some()
+            || !self.management_command_trusted_key_files.is_empty();
+        if connection_settings && self.management_endpoint.is_none() {
+            return Err(invalid(
+                "BOWER_MANAGEMENT_PROXY, BOWER_MANAGEMENT_CA_BUNDLE and BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS \
+                 require BOWER_MANAGEMENT_ENDPOINT.",
+            ));
+        }
+
+        if self
+            .management_proxy
+            .as_ref()
+            .is_some_and(|proxy| !is_valid_proxy(proxy))
+        {
+            return Err(invalid(
+                "BOWER_MANAGEMENT_PROXY must be an absolute http:// or https:// URL with a host and no \
+                 credentials, path or query. Put credentials in BOWER_MANAGEMENT_PROXY_USERNAME and \
+                 BOWER_MANAGEMENT_PROXY_PASSWORD_FILE.",
+            ));
+        }
+
+        if self.management_proxy_username.is_none() != self.management_proxy_password_file.is_none()
+        {
+            return Err(invalid(
+                "BOWER_MANAGEMENT_PROXY_USERNAME and BOWER_MANAGEMENT_PROXY_PASSWORD_FILE must be set together.",
+            ));
+        }
+
+        if self.management_proxy_username.is_some() && self.management_proxy.is_none() {
+            return Err(invalid(
+                "BOWER_MANAGEMENT_PROXY_USERNAME requires BOWER_MANAGEMENT_PROXY.",
+            ));
+        }
+
+        Ok(())
     }
 
     fn validate_privacy_profile_source(&self) -> Result<(), HostError> {
@@ -449,6 +527,29 @@ impl CollectorSettings {
             material.push_str("privacy-allow-default:");
             material.push_str(dotnet_bool(self.managed_privacy_allow_default));
         }
+        // Appended only when set so existing configuration hashes are unchanged. The proxy
+        // contributes scheme, host and port only; credentials never enter the hash.
+        if let Some(proxy) = &self.management_proxy {
+            material.push('\u{1f}');
+            material.push_str(&format!(
+                "management-proxy:{}://{}:{}",
+                proxy.scheme(),
+                proxy.host_str().unwrap_or_default(),
+                proxy.port_or_known_default().unwrap_or_default()
+            ));
+            material.push('\u{1f}');
+            material.push_str("management-proxy-auth:");
+            material.push_str(dotnet_bool(self.management_proxy_username.is_some()));
+        }
+        if let Some(path) = &self.management_ca_bundle {
+            material.push('\u{1f}');
+            material.push_str("management-ca:");
+            material.push_str(&path.to_string_lossy());
+        }
+        if !self.management_command_trusted_key_files.is_empty() {
+            material.push('\u{1f}');
+            material.push_str("management-commands:True");
+        }
         format!(
             "sha256:{}",
             hex::encode(Sha256::digest(material.as_bytes()))
@@ -533,6 +634,27 @@ fn absolute_uri(value: Option<String>) -> Result<Option<Url>, HostError> {
             }),
         _ => Ok(None),
     }
+}
+
+/// C# `ReadProxy`: an absolute URI or a start-up error that never echoes the value.
+fn read_proxy(value: Option<String>) -> Result<Option<Url>, HostError> {
+    match value {
+        Some(value) => Url::parse(value.trim()).map(Some).map_err(|_| {
+            invalid("BOWER_MANAGEMENT_PROXY must be an absolute http:// or https:// URL.")
+        }),
+        None => Ok(None),
+    }
+}
+
+/// C# `IsValidProxy`: http(s), a host, no credentials, no path, query or fragment.
+pub fn is_valid_proxy(proxy: &Url) -> bool {
+    matches!(proxy.scheme(), "http" | "https")
+        && proxy.host_str().is_some_and(|host| !host.is_empty())
+        && proxy.username().is_empty()
+        && proxy.password().is_none()
+        && proxy.path() == "/"
+        && proxy.query().is_none()
+        && proxy.fragment().is_none()
 }
 
 fn parse_credential_mode(value: Option<&str>) -> Result<AzureCredentialMode, HostError> {

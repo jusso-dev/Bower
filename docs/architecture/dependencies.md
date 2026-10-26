@@ -94,6 +94,15 @@ dependencies. `flate2` decodes captured Azure gzip request bodies so privacy ass
 inspect actual outbound content; `rusqlite` holds a read transaction open so SQLite
 WAL bytes remain available for inspection. Neither adds a production dependency.
 
+### Collector management proxy tests (heartbeat v2)
+
+The Rust collector test target also reuses workspace `rustls` and `tokio-rustls` as
+dev-only dependencies, as `bower-output-azure` already does. They serve the HTTPS
+endpoint behind the in-process CONNECT proxy, so the test proves the management channel
+trusts `BOWER_MANAGEMENT_CA_BUNDLE` and still refuses a host name mismatch or an
+unrelated CA. They add no production dependency and no lock-file packages. The proxy and
+CA bundle themselves use reqwest's `Proxy` and `tls_certs_merge`; no new crate is linked.
+
 ## Queue v5 identity and regression tests (2026-10-23)
 
 `bower-core` now references the existing workspace `bower-persistence` crate,

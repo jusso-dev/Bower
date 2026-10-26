@@ -20,10 +20,24 @@ public sealed partial class ManagementHeartbeatJob(
     CollectorSettings settings,
     PolicyBundle bundle,
     ILogger<ManagementHeartbeatJob> logger,
-    SourceHealth? sourceHealth = null)
+    SourceHealth? sourceHealth = null,
+    ManagementCommandProcessor? commands = null,
+    DeliveryActivity? deliveryActivity = null,
+    TimeSpan? exchangeTimeout = null)
 {
     public const string Id = "management-heartbeat";
     public const string HttpClientName = "bower-management";
+
+    /// <summary>The job runs every minute; management derives staleness from this interval.</summary>
+    public const int IntervalSeconds = 60;
+
+    /// <summary>
+    /// Budget for one heartbeat exchange: request, response headers and the bounded body.
+    /// <c>HttpClient.Timeout</c> stops at the headers, so the body read needs its own bound.
+    /// </summary>
+    public static readonly TimeSpan DefaultExchangeTimeout = TimeSpan.FromSeconds(15);
+
+    internal TimeSpan ExchangeTimeout => exchangeTimeout ?? DefaultExchangeTimeout;
 
     // A missed heartbeat is superseded by the next scheduled run; never retry-stack.
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -47,8 +61,11 @@ public sealed partial class ManagementHeartbeatJob(
         HttpClient client = httpClientFactory.CreateClient(HttpClientName);
 
         QueueSnapshot snapshot = await eventStore.GetSnapshotAsync(cancellationToken);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
         string deliveryStatus = DeliveryHealth.Evaluate(settings.OutputType, snapshot,
-            settings.MaximumQueueBytes, DateTimeOffset.UtcNow);
+            settings.MaximumQueueBytes, now);
+        // Finished command results stay pending until management acknowledges them.
+        IReadOnlyList<CommandResultReport> results = commands?.Ledger.PendingResults() ?? [];
         // Expected applications report as sources so silent ones show in the console.
         SourceReport[] sources =
         [
@@ -105,16 +122,43 @@ public sealed partial class ManagementHeartbeatJob(
                     jobReports,
                     snapshot.DeadLettered,
                     new LedgerResponse(ledger.Sequence, ledger.Hash),
-                    bundle.PrivacyProfileHash ?? "default"),
+                    bundle.PrivacyProfileHash ?? "default")
+                {
+                    HeartbeatIntervalSeconds = IntervalSeconds,
+                    OldestUndeliveredAgeSeconds = snapshot.OldestUndelivered is { } oldest
+                        ? Math.Max(0, (long)(now - oldest).TotalSeconds)
+                        : null,
+                    LastSuccessfulDeliveryAt = deliveryActivity?.LastSuccessfulDeliveryAt,
+                    LastCanary = commands?.Ledger.LastCanary,
+                    CommandCapabilities = commands?.Capabilities ?? [],
+                    CommandResults = results
+                },
                 CollectorJsonContext.Default.CollectorHeartbeat));
-        using HttpResponseMessage response = await client.SendAsync(heartbeat, cancellationToken);
-        if (response.StatusCode == HttpStatusCode.Conflict)
+        // One budget for the whole exchange, body included: a stalled body cannot hold the
+        // job (and so every later heartbeat) forever.
+        using CancellationTokenSource exchange = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        exchange.CancelAfter(ExchangeTimeout);
+        try
         {
-            LogCollectorNotActive(logger);
-            return;
-        }
+            using HttpResponseMessage response = await client.SendAsync(
+                heartbeat, HttpCompletionOption.ResponseHeadersRead, exchange.Token);
+            if (response.StatusCode == HttpStatusCode.Conflict)
+            {
+                LogCollectorNotActive(logger);
+                return;
+            }
 
-        response.EnsureSuccessStatusCode();
+            response.EnsureSuccessStatusCode();
+            if (commands is not null)
+            {
+                // Commands are verified and handed to the hosted worker; never executed here.
+                await commands.HandleResponseAsync(response.Content, results, exchange.Token);
+            }
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException("The management heartbeat exchange exceeded its time budget.");
+        }
     }
 
     // The bearer token is attached per request, never to shared default headers.

@@ -104,6 +104,7 @@ public static partial class CollectorApplication
             });
         });
 
+        builder.Services.AddSingleton<DeliveryActivity>();
         output ??= CreateOutput(settings, credential);
         if (output is not null)
         {
@@ -130,11 +131,20 @@ public static partial class CollectorApplication
         if (settings.ManagementEndpoint is not null)
         {
             builder.Services.AddSingleton(credential ?? AzureCredentialFactory.Create(settings));
+            // Proxy and CA bundle are read here, so a bad proxy password file or CA bundle stops start-up.
+            SocketsHttpHandler managementHandler = ManagementHttp.CreateHandler(settings);
             builder.Services.AddHttpClient(ManagementHeartbeatJob.HttpClientName, client =>
             {
                 client.BaseAddress = settings.ManagementEndpoint;
                 client.Timeout = TimeSpan.FromSeconds(15);
-            });
+            })
+                .ConfigurePrimaryHttpMessageHandler(() => managementHandler)
+                .SetHandlerLifetime(Timeout.InfiniteTimeSpan);
+            builder.Services.AddSingleton(services => new ManagementCommandLedger(
+                settings.ManagementCommandDirectory, services.GetRequiredService<TimeProvider>()));
+            builder.Services.AddSingleton<ManagementCommandInbox>();
+            builder.Services.AddSingleton<ManagementCommandProcessor>();
+            builder.Services.AddHostedService<ManagementCommandWorker>();
             builder.Services.AddTransient<ManagementHeartbeatJob>();
             if (settings.UsesManagedPrivacyProfile)
             {
@@ -191,6 +201,8 @@ public static partial class CollectorApplication
             QueueMaintenanceJob.RetryAttempts);
         if (settings.ManagementEndpoint is not null)
         {
+            // Parses the trusted command keys now, so an invalid key is reported at start-up.
+            _ = app.Services.GetRequiredService<ManagementCommandProcessor>();
             // A missed heartbeat is superseded by the next scheduled run; never retry-stack.
             jobs.AddOrUpdate<ManagementHeartbeatJob>(
                 ManagementHeartbeatJob.Id,

@@ -72,6 +72,32 @@ evidence.
   a `Retry-After`. Back-pressure waits for a request slot over the already-leased
   batch; queue byte caps and producer 503s still apply. The `delivery` status block
   is counters, limits and a deadline only, behind the token. No new trust boundary.
+- Management command channel (heartbeat v2): commands travel outbound only, in the
+  heartbeat response, and come from a closed set. That set is `fetch-bundle`,
+  `run-canary`, `reload` and `rotate-credential` (always refused for now). No command
+  carries code, paths or arguments.
+  - Signing: each command is signed with a dedicated P-256 key and bound to one
+    collector id, a 128-bit nonce and an expiry of at most 1 hour. The signed `kind`
+    keeps a command signature from verifying as any other Bower document.
+  - Collector checks: the collector verifies against its own trusted keys, so a TLS
+    inspection proxy or a network attacker that alters the response cannot forge or
+    replay a command.
+  - At most once: a durable ledger written before execution makes each command run at
+    most once across restarts.
+  - Refusals: unknown, expired, replayed and forged commands are refused, reported and
+    audited.
+  - Blast radius of a compromised management plane or signing key: it can only issue
+    the enumerated commands. That means fetching the currently assigned (already
+    two-person approved) privacy profile, queuing synthetic canaries (bounded by
+    lifetime, 8 per heartbeat and 16 outstanding), and restarting the collector at most
+    once every 10 minutes. It cannot read events, change policy or privacy content,
+    approve anything or run code.
+- Management proxies: the management channel honours the standard proxy variables or
+  an explicit proxy. A CA bundle adds roots for TLS-inspection proxies. Verification and
+  host name checks are never disabled. Proxy URLs carrying credentials are refused, and
+  the password comes from a file that is never logged, hashed or reported. An inspecting
+  proxy can read heartbeat metadata and the bearer token in transit, so trust it as you
+  would the management host. It cannot forge commands.
 - Management API abuse: Entra-only endpoints, per-principal rate limiting, HSTS on
   HTTPS, restricted CORS headers and methods, and fixed error messages that never
   echo framework exception detail or server paths.
@@ -97,5 +123,11 @@ than `CommitSettleDelay`; transactions open longer than that can still be skippe
 Applications must use typed contracts and avoid unrestricted attributes. Local DB
 encryption is deployment responsibility. Current collector does not verify
 configuration ownership/mode. Current Azure path is not tenant-tested here.
+
+Command expiry relies on the collector clock (5 minutes of skew tolerated), so keep
+collectors time-synchronised. A collector whose command ledger cannot be read refuses
+every command until an operator removes or repairs the file. A `reload` restarts the
+process: delivery resumes from the durable queue, but the restart briefly interrupts
+ingest.
 
 Treat pseudonymised identifiers as potentially personal information.

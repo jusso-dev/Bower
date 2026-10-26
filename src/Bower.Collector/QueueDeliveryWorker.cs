@@ -2,6 +2,27 @@ using Bower.Abstractions;
 
 namespace Bower.Collector;
 
+/// <summary>
+/// When the output last acknowledged an event, for the heartbeat. In memory, so null until
+/// the first acknowledgement after start-up; management keeps the last reported time.
+/// </summary>
+public sealed class DeliveryActivity
+{
+    private long lastTicks;
+
+    public DateTimeOffset? LastSuccessfulDeliveryAt
+    {
+        get
+        {
+            long ticks = Interlocked.Read(ref lastTicks);
+            return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero);
+        }
+    }
+
+    public void RecordDelivery(DateTimeOffset at) =>
+        Interlocked.Exchange(ref lastTicks, at.UtcTicks);
+}
+
 public sealed record QueueDeliveryOptions
 {
     public int BatchSize { get; init; } = 500;
@@ -26,7 +47,8 @@ public sealed partial class QueueDeliveryWorker(
     IOutputAdapter output,
     TimeProvider clock,
     QueueDeliveryOptions options,
-    ILogger<QueueDeliveryWorker> logger) : BackgroundService
+    ILogger<QueueDeliveryWorker> logger,
+    DeliveryActivity? activity = null) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -116,6 +138,11 @@ public sealed partial class QueueDeliveryWorker(
             {
                 // The lease expired and the event was reclaimed; the newer lease owns it now.
                 LogStaleLease(logger, output.Id);
+            }
+
+            if (reclaimed.Count < delivered.Count)
+            {
+                activity?.RecordDelivery(clock.GetUtcNow());
             }
         }
 
