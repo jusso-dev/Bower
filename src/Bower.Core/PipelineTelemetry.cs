@@ -8,19 +8,73 @@ namespace Bower.Core;
 /// bytes arrived, which stage and policy decided each, and what was queued, duplicated or
 /// suppressed. They reset on restart and never hold payload content. Source activity is
 /// loaded from and flushed to the queue so silence detection survives restarts.
+/// Intake counters (<see cref="IntakeSnapshot"/>) count every candidate submitted to
+/// processing, including those the queue refused for capacity, which never reach the
+/// selection counters. They also reset only on restart; there is no reset operation.
 /// </summary>
 public sealed class PipelineTelemetry(TimeProvider clock)
 {
     public const string NoPolicy = "-";
     public const int MaximumSources = 10_000;
 
+    /// <summary>Bounded reason code: the durable queue refused the event for capacity.</summary>
+    public const string QueueCapacityReason = "queue-capacity";
+
     private readonly DateTimeOffset startedAt = clock.GetUtcNow();
     private readonly Lock gate = new();
     private readonly Dictionary<(ProcessingStage, string, DecisionAction), Counter> counters = [];
     private readonly Dictionary<(string, string), SourceActivity> sources = [];
     private readonly HashSet<(string, string)> dirty = [];
+    private long attemptedRequests;
+    private long attemptedBytes;
+    private long capacityRefusals;
+    private long capacityRefusedBytes;
+    private long lastRefusalTicks;
 
     public DateTimeOffset StartedAt => startedAt;
+
+    /// <summary>Counts one candidate submitted to processing, before any outcome is known.</summary>
+    public void RecordAttempt(long bytesIn)
+    {
+        Interlocked.Increment(ref attemptedRequests);
+        Interlocked.Add(ref attemptedBytes, bytesIn);
+    }
+
+    /// <summary>Counts one attempt the durable queue refused for capacity (HTTP 503).</summary>
+    public void RecordCapacityRefusal(long bytesIn)
+    {
+        long ticks = clock.GetUtcNow().UtcTicks;
+        Interlocked.Add(ref capacityRefusedBytes, bytesIn);
+        Interlocked.Increment(ref capacityRefusals);
+        long seen = Interlocked.Read(ref lastRefusalTicks);
+        while (ticks > seen)
+        {
+            long previous = Interlocked.CompareExchange(ref lastRefusalTicks, ticks, seen);
+            if (previous == seen)
+            {
+                break;
+            }
+
+            seen = previous;
+        }
+    }
+
+    public IntakeMetricsSnapshot IntakeSnapshot()
+    {
+        // Refusals first: each refusal's attempt was counted before it, so refusals never
+        // exceed attempts in a snapshot taken during concurrent intake.
+        long refusals = Interlocked.Read(ref capacityRefusals);
+        long refusedBytes = Interlocked.Read(ref capacityRefusedBytes);
+        long lastTicks = Interlocked.Read(ref lastRefusalTicks);
+        return new IntakeMetricsSnapshot(
+            startedAt,
+            Interlocked.Read(ref attemptedRequests),
+            Interlocked.Read(ref attemptedBytes),
+            refusals,
+            refusedBytes,
+            lastTicks == 0 ? null : new DateTimeOffset(lastTicks, TimeSpan.Zero),
+            lastTicks == 0 ? null : QueueCapacityReason);
+    }
 
     public void Record(ProcessingResult result, long bytesIn)
     {
@@ -201,6 +255,20 @@ public sealed record PipelineMetricsSnapshot(
     long BytesIn,
     long BytesQueued,
     IReadOnlyList<PipelineMetricsRow> Rows);
+
+/// <summary>
+/// Intake counters since <see cref="ObservedSince"/> (process start). Attempts are candidates
+/// submitted to processing after authentication and authorisation; capacity refusals are the
+/// subset the durable queue refused. Metadata only: no payloads, event ids or credentials.
+/// </summary>
+public sealed record IntakeMetricsSnapshot(
+    DateTimeOffset ObservedSince,
+    long AttemptedRequests,
+    long AttemptedBytes,
+    long CapacityRefusals,
+    long CapacityRefusedBytes,
+    DateTimeOffset? LastRefusalAt,
+    string? LastRefusalReason);
 
 public sealed record PipelineMetricsRow(
     string Stage,

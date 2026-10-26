@@ -215,12 +215,24 @@ impl SecurityEventProcessor {
         candidate_json: &str,
         collector: &CollectorIdentity,
     ) -> Result<ProcessingResult, ProcessError> {
-        let result = self.process_core(candidate_json, collector)?;
+        let bytes_in = i64::try_from(candidate_json.len()).unwrap_or(i64::MAX);
         if let Some(telemetry) = &self.telemetry {
-            telemetry.record(
-                &result,
-                i64::try_from(candidate_json.len()).unwrap_or(i64::MAX),
-            );
+            telemetry.record_attempt(bytes_in);
+        }
+        let result = match self.process_core(candidate_json, collector) {
+            Ok(result) => result,
+            Err(error) => {
+                // Not a selection decision: count the refusal apart from the selection counters.
+                if let (Some(telemetry), ProcessError::Store(StoreError::Full(_))) =
+                    (&self.telemetry, &error)
+                {
+                    telemetry.record_capacity_refusal(bytes_in);
+                }
+                return Err(error);
+            }
+        };
+        if let Some(telemetry) = &self.telemetry {
+            telemetry.record(&result, bytes_in);
         }
         Ok(result)
     }

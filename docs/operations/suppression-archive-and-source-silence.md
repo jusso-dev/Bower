@@ -61,6 +61,34 @@ queued, duplicated and suppressed since start, per stage (`redaction`, `schema`,
 `validation`, `policy`), policy id and decision. No payload content. Queued bytes
 include Bower's decision context.
 
+## Intake metrics
+
+`GET /v1/status` also includes `intake`, so a full queue is distinguishable from an
+idle collector. Same shape in the C# and Rust collectors:
+
+```json
+"intake": {"observedSince": "2026-10-26T01:00:00+00:00",
+  "attemptedRequests": 42, "attemptedBytes": 51234,
+  "capacityRefusals": 5, "capacityRefusedBytes": 6100,
+  "lastRefusalAt": "2026-10-26T01:20:31.5+00:00", "lastRefusalReason": "queue-capacity"}
+```
+
+- Boundary: one attempt per candidate submitted to processing on `/v1/events` or a
+  signed pack parser endpoint, after authentication, producer authorisation and (for
+  packs) parsing. Rate-limited, unauthorised, oversized or unparseable requests are not
+  attempts. Bytes are the UTF-8 candidate JSON, as for `pipeline.bytesIn`.
+- `capacityRefusals` counts attempts the durable queue refused for capacity (HTTP 503),
+  whichever admission branch refused them. They never appear in
+  `pipeline`, never count as queued or seen sources, and create no queue rows or
+  evidence. A retry is a new attempt; once admitted it counts in `pipeline` as usual,
+  and a repeat is still reported as a duplicate.
+- `lastRefusalReason` is a bounded code (`queue-capacity`), or `null` with
+  `lastRefusalAt` before any refusal.
+- Counters are process lifetime: they start at zero at `observedSince` (collector start)
+  and reset only on restart. There is no reset endpoint. Updates are lock free and
+  safe under concurrent intake. Metadata only: no payloads, event ids, credentials or
+  request text.
+
 ## Source silence
 
 Set `BOWER_SOURCE_EXPECTATIONS` to a JSON file

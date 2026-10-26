@@ -4,17 +4,26 @@
 //! each, and what was queued, duplicated or suppressed. They reset on restart and never
 //! hold payload content. Source activity is loaded from and flushed to the queue so
 //! silence detection survives restarts.
+//!
+//! Intake counters ([`PipelineTelemetry::intake_snapshot`]) count every candidate
+//! submitted to processing, including those the queue refused for capacity, which never
+//! reach the selection counters. They also reset only on restart; there is no reset.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use bower_contracts::time::{Clock, Timestamp};
+use bower_contracts::time::{self, Clock, Timestamp};
 use bower_contracts::{DecisionAction, SourceActivity};
 
 use crate::processor::{ProcessingResult, ProcessingStage};
 
 pub const NO_POLICY: &str = "-";
 pub const MAXIMUM_SOURCES: usize = 10_000;
+/// Bounded reason code: the durable queue refused the event for capacity.
+pub const QUEUE_CAPACITY_REASON: &str = "queue-capacity";
+/// `last_refusal_nanos` before any refusal.
+const NO_REFUSAL: i64 = i64::MIN;
 
 #[derive(Clone, Copy, Debug, Default)]
 struct Counter {
@@ -37,6 +46,11 @@ pub struct PipelineTelemetry {
     clock: Arc<dyn Clock>,
     started_at: Timestamp,
     state: Mutex<State>,
+    attempted_requests: AtomicI64,
+    attempted_bytes: AtomicI64,
+    capacity_refusals: AtomicI64,
+    capacity_refused_bytes: AtomicI64,
+    last_refusal_nanos: AtomicI64,
 }
 
 impl std::fmt::Debug for PipelineTelemetry {
@@ -62,6 +76,21 @@ pub struct PipelineMetricsSnapshot {
     pub rows: Vec<PipelineMetricsRow>,
 }
 
+/// Intake counters since `observed_since` (process start). Attempts are candidates
+/// submitted to processing after authentication and authorisation; capacity refusals
+/// are the subset the durable queue refused. Metadata only: no payloads, event ids or
+/// credentials.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IntakeMetricsSnapshot {
+    pub observed_since: Timestamp,
+    pub attempted_requests: i64,
+    pub attempted_bytes: i64,
+    pub capacity_refusals: i64,
+    pub capacity_refused_bytes: i64,
+    pub last_refusal_at: Option<Timestamp>,
+    pub last_refusal_reason: Option<&'static str>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PipelineMetricsRow {
     pub stage: String,
@@ -85,6 +114,49 @@ impl PipelineTelemetry {
             started_at: clock.utc_now(),
             clock,
             state: Mutex::new(State::default()),
+            attempted_requests: AtomicI64::new(0),
+            attempted_bytes: AtomicI64::new(0),
+            capacity_refusals: AtomicI64::new(0),
+            capacity_refused_bytes: AtomicI64::new(0),
+            last_refusal_nanos: AtomicI64::new(NO_REFUSAL),
+        }
+    }
+
+    /// Counts one candidate submitted to processing, before any outcome is known.
+    pub fn record_attempt(&self, bytes_in: i64) {
+        self.attempted_requests.fetch_add(1, Ordering::SeqCst);
+        self.attempted_bytes.fetch_add(bytes_in, Ordering::SeqCst);
+    }
+
+    /// Counts one attempt the durable queue refused for capacity (HTTP 503).
+    pub fn record_capacity_refusal(&self, bytes_in: i64) {
+        let nanos = self
+            .clock
+            .utc_now()
+            .timestamp_nanos_opt()
+            .unwrap_or(i64::MAX);
+        self.capacity_refused_bytes
+            .fetch_add(bytes_in, Ordering::SeqCst);
+        self.capacity_refusals.fetch_add(1, Ordering::SeqCst);
+        self.last_refusal_nanos.fetch_max(nanos, Ordering::SeqCst);
+    }
+
+    pub fn intake_snapshot(&self) -> IntakeMetricsSnapshot {
+        // Refusals first: each refusal's attempt was counted before it, so refusals
+        // never exceed attempts in a snapshot taken during concurrent intake.
+        let capacity_refusals = self.capacity_refusals.load(Ordering::SeqCst);
+        let capacity_refused_bytes = self.capacity_refused_bytes.load(Ordering::SeqCst);
+        let last = self.last_refusal_nanos.load(Ordering::SeqCst);
+        let last_refusal_at = (last != NO_REFUSAL)
+            .then(|| time::to_utc(chrono::DateTime::from_timestamp_nanos(last).fixed_offset()));
+        IntakeMetricsSnapshot {
+            observed_since: self.started_at,
+            attempted_requests: self.attempted_requests.load(Ordering::SeqCst),
+            attempted_bytes: self.attempted_bytes.load(Ordering::SeqCst),
+            capacity_refusals,
+            capacity_refused_bytes,
+            last_refusal_reason: last_refusal_at.map(|_| QUEUE_CAPACITY_REASON),
+            last_refusal_at,
         }
     }
 

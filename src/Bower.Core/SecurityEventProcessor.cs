@@ -21,8 +21,21 @@ public sealed class SecurityEventProcessor(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(candidateJson);
-        ProcessingResult result = await ProcessCoreAsync(candidateJson, collector, cancellationToken);
-        telemetry?.Record(result, Encoding.UTF8.GetByteCount(candidateJson));
+        long bytesIn = Encoding.UTF8.GetByteCount(candidateJson);
+        telemetry?.RecordAttempt(bytesIn);
+        ProcessingResult result;
+        try
+        {
+            result = await ProcessCoreAsync(candidateJson, collector, cancellationToken);
+        }
+        catch (QueueCapacityExceededException)
+        {
+            // Not a selection decision: count the refusal apart from the selection counters.
+            telemetry?.RecordCapacityRefusal(bytesIn);
+            throw;
+        }
+
+        telemetry?.Record(result, bytesIn);
         return result;
     }
 

@@ -342,6 +342,7 @@ public static partial class CollectorApplication
                     {
                         EventIdentityConflicts = conflicts.Snapshot(),
                         Pipeline = telemetry.Snapshot(),
+                        Intake = telemetry.IntakeSnapshot(),
                         Sources = sourceHealth.IsConfigured ? sources : null
                     };
                     return Results.Json(status, CollectorJsonContext.Default.StatusResponse);
