@@ -42,6 +42,9 @@ internal sealed record StatusResponse(
     /// <summary>Selection counters since start. Metadata only.</summary>
     public Bower.Core.PipelineMetricsSnapshot? Pipeline { get; init; }
 
+    /// <summary>Intake attempts and queue-capacity refusals since start. Metadata only.</summary>
+    public Bower.Core.IntakeMetricsSnapshot? Intake { get; init; }
+
     /// <summary>Expected sources; omitted when BOWER_SOURCE_EXPECTATIONS is not set.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<Bower.Core.SourceSilenceStatus>? Sources { get; init; }

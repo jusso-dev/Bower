@@ -545,6 +545,122 @@ async fn pack_backpressure_preserves_existing_rows_and_retry_can_succeed() {
     );
 }
 
+/// Port of `Intake_CapacityRefusalsOnBothPathsAreCountedApartFromCommittedEvents`.
+#[tokio::test]
+async fn intake_capacity_refusals_on_both_paths_are_counted_apart_from_committed_events() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut settings = signed_ssh_settings(directory.path());
+    settings.maximum_queue_bytes = 1_048_576;
+    let mut collector = host::build(
+        settings.clone(),
+        bundle::load(&settings).unwrap(),
+        BuildOptions::default(),
+    )
+    .unwrap();
+    collector.initialize().await.unwrap();
+    collector
+        .store
+        .enqueue(&bower_contracts::QueuedEvent {
+            lease_token: None,
+            event_id: "filler".into(),
+            fingerprint: "sha256:filler".into(),
+            payload: "x".repeat(1_048_000),
+            received_at: bower_contracts::time::now(),
+            state: bower_contracts::QueueState::Queued,
+            delivery_attempts: 0,
+            suppression: None,
+        })
+        .unwrap();
+    let raw = raw_ssh("activation-1", "failure");
+    let mut generic = authentication_failure("generic-1");
+    generic.application.name = "ssh-gateway".into();
+    generic.application.environment = "production".into();
+    let generic_bytes =
+        i64::try_from(bower_contracts::json::to_vec(&generic).unwrap().len()).unwrap();
+
+    let attempts = 2;
+    for _ in 0..attempts {
+        let (generic_status, _, _) = send(&collector.router, post(&generic, Some(TOKEN))).await;
+        let (pack_status, _, _) = send(
+            &collector.router,
+            post_raw(SSH_RUNTIME_PATH, raw.clone(), Some(TOKEN)),
+        )
+        .await;
+        assert_eq!(generic_status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(pack_status, StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    let refused = status_body(&collector.router).await;
+    let intake = &refused["intake"];
+    assert_eq!(intake["attemptedRequests"], 2 * attempts);
+    assert_eq!(intake["capacityRefusals"], 2 * attempts);
+    assert_eq!(intake["attemptedBytes"], intake["capacityRefusedBytes"]);
+    assert_eq!(intake["lastRefusalReason"], "queue-capacity");
+    assert!(intake["lastRefusalAt"].is_string());
+    assert!(intake["observedSince"].is_string());
+    // Wire shape shared with the C# collector.
+    assert_eq!(
+        intake
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        [
+            "observedSince",
+            "attemptedRequests",
+            "attemptedBytes",
+            "capacityRefusals",
+            "capacityRefusedBytes",
+            "privacyAlertRefusals",
+            "privacyAlertRefusedBytes",
+            "lastRefusalAt",
+            "lastRefusalReason"
+        ]
+    );
+    let text = intake.to_string();
+    assert!(!text.contains("generic-1"));
+    assert!(!text.contains("activation-1"));
+    assert!(!text.contains("discard-unknown-secret"));
+    assert_eq!(refused["pipeline"]["eventsIn"], 0);
+    assert_eq!(refused["pipeline"]["eventsQueued"], 0);
+
+    let rows = collector.store.lease(10, Duration::from_secs(60)).unwrap();
+    assert_eq!(rows.len(), 1);
+    collector
+        .store
+        .mark_delivered("filler", "test-ack", rows[0].lease_token.as_deref())
+        .unwrap();
+    let (pack_retried, _, _) = send(
+        &collector.router,
+        post_raw(SSH_RUNTIME_PATH, raw, Some(TOKEN)),
+    )
+    .await;
+    assert_eq!(pack_retried, StatusCode::ACCEPTED);
+    let after_pack = status_body(&collector.router).await;
+    let pack_bytes = after_pack["pipeline"]["bytesIn"].as_i64().unwrap();
+    assert_eq!(
+        after_pack["intake"]["capacityRefusedBytes"],
+        attempts * (generic_bytes + pack_bytes)
+    );
+    assert_eq!(
+        after_pack["intake"]["attemptedBytes"],
+        attempts * (generic_bytes + pack_bytes) + pack_bytes
+    );
+
+    let (generic_retried, _, _) = send(&collector.router, post(&generic, Some(TOKEN))).await;
+    let (generic_repeated, _, _) = send(&collector.router, post(&generic, Some(TOKEN))).await;
+    assert_eq!(generic_retried, StatusCode::ACCEPTED);
+    assert_eq!(generic_repeated, StatusCode::OK);
+    let last = status_body(&collector.router).await;
+    assert_eq!(last["intake"]["attemptedRequests"], 2 * attempts + 3);
+    assert_eq!(last["intake"]["capacityRefusals"], 2 * attempts);
+    assert_eq!(last["pipeline"]["eventsIn"], 3);
+    assert_eq!(last["pipeline"]["eventsQueued"], 2);
+    assert_eq!(last["pipeline"]["duplicates"], 1);
+    assert_eq!(collector.store.snapshot().unwrap().queued, 2);
+}
+
 #[tokio::test]
 async fn pack_rate_limit_and_cancelled_body_never_persist_input() {
     let directory = tempfile::tempdir().unwrap();
@@ -752,6 +868,12 @@ async fn send(
         .await
         .unwrap();
     (status, headers, String::from_utf8(body.to_vec()).unwrap())
+}
+
+async fn status_body(router: &Router) -> serde_json::Value {
+    let (status, _, body) = send(router, get("/v1/status", Some(TOKEN))).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    serde_json::from_str(&body).unwrap()
 }
 
 fn get(path: &str, token: Option<&str>) -> Request<Body> {
