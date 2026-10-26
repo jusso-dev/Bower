@@ -250,7 +250,7 @@ public sealed class CloudForwarderWorkerTests
         LeasedSource source = new(clock, Lease, Message("m1", "{}"), Message("m2", "{}"))
         {
             Extend = (id, attempt, token) => id == "m1" && attempt == 2
-                ? Task.Delay(Timeout.InfiniteTimeSpan, token)
+                ? clock.Delay(Timeout.InfiniteTimeSpan, token)
                 : Task.CompletedTask
         };
         SlowTranslator translator = new(clock, message => (TimeSpan.Zero, message.Id == "m1" ? 31 : 1));
@@ -264,6 +264,57 @@ public sealed class CloudForwarderWorkerTests
         Assert.Equal(0, source.ExpiredCalls);
         // Ownership from the receive-time renewal ended at 60 s: no m1 event was sent after it.
         Assert.InRange(collector.Bodies.Count(body => body.Contains("m1", StringComparison.Ordinal)), 1, 30);
+    }
+
+    [Fact]
+    public async Task Lease_LateTimerCallbacksNeverRenewOrSettleAfterTheDeadline()
+    {
+        // Timer callbacks can run late (a starved thread pool). Translation takes 90 s while
+        // no timer fires, then the overdue renewal and expiry timers fire together: the worker
+        // must judge ownership by the clock, not by whether the expiry callback has run.
+        ManualTimeProvider clock = new(TestEvents.Now);
+        LeasedSource source = new(clock, Lease, Message("m1", "{}"), Message("m2", "{}"));
+        SlowTranslator translator = new(clock, message =>
+        {
+            if (message.Id == "m1")
+            {
+                clock.Jump(TimeSpan.FromSeconds(90));
+                clock.Advance(TimeSpan.Zero);
+            }
+
+            return (TimeSpan.Zero, 1);
+        });
+        TimedCollector collector = new(clock, _ => TimeSpan.Zero, _ => HttpStatusCode.Accepted);
+
+        CloudPassResult result = await DriveAsync(clock, () => LeaseWorker(source, translator, collector, clock)
+            .ProcessOnceAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal(0, source.ExpiredCalls);
+        Assert.Equal(2, result.LeaseLost);
+        Assert.Empty(source.Acknowledged);
+        Assert.Empty(source.Released);
+        Assert.Equal(2, source.Extensions.Count);
+    }
+
+    [Fact]
+    public async Task Lease_SettlementJudgesTheDeadlineByTheClock()
+    {
+        // The expiry callback never gets to run before settlement.
+        ManualTimeProvider clock = new(TestEvents.Now);
+        LeasedSource source = new(clock, Lease, Message("m1", "{}"));
+        SlowTranslator translator = new(clock, _ =>
+        {
+            clock.Jump(TimeSpan.FromSeconds(61));
+            return (TimeSpan.Zero, 1);
+        });
+        TimedCollector collector = new(clock, _ => TimeSpan.Zero, _ => HttpStatusCode.Accepted);
+
+        CloudPassResult result = await LeaseWorker(source, translator, collector, clock)
+            .ProcessOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, source.ExpiredCalls);
+        Assert.Equal(1, result.LeaseLost);
+        Assert.Empty(source.Acknowledged);
     }
 
     [Fact]
@@ -717,7 +768,7 @@ public sealed class CloudForwarderWorkerTests
         }
     }
 
-    private sealed class SlowTranslator(TimeProvider clock, Func<CloudMessage, (TimeSpan Delay, int Events)> plan)
+    private sealed class SlowTranslator(ManualTimeProvider clock, Func<CloudMessage, (TimeSpan Delay, int Events)> plan)
         : ICloudMessageTranslator
     {
         public List<(string Id, DateTimeOffset At)> Translated { get; } = [];
@@ -728,7 +779,7 @@ public sealed class CloudForwarderWorkerTests
             (TimeSpan delay, int events) = plan(message);
             if (delay > TimeSpan.Zero)
             {
-                await Task.Delay(delay, clock, cancellationToken);
+                await clock.Delay(delay, cancellationToken);
             }
 
             return new CloudTranslation(
@@ -739,7 +790,7 @@ public sealed class CloudForwarderWorkerTests
     }
 
     /// <summary>Collector whose event posts take <paramref name="delay"/> of fake time.</summary>
-    private sealed class TimedCollector(TimeProvider clock, Func<string, TimeSpan> delay, Func<string, HttpStatusCode> respond) : HttpMessageHandler
+    private sealed class TimedCollector(ManualTimeProvider clock, Func<string, TimeSpan> delay, Func<string, HttpStatusCode> respond) : HttpMessageHandler
     {
         public List<string> Bodies { get; } = [];
 
@@ -754,7 +805,7 @@ public sealed class CloudForwarderWorkerTests
             Bodies.Add(body);
             if (delay(body) is { Ticks: > 0 } wait)
             {
-                await Task.Delay(wait, clock, cancellationToken);
+                await clock.Delay(wait, cancellationToken);
             }
 
             return new HttpResponseMessage(respond(body));

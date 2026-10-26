@@ -93,12 +93,46 @@ internal sealed class ManualTimeProvider(DateTimeOffset start) : TimeProvider
                     return;
                 }
 
-                now = next.Due!.Value;
+                // A timer that is overdue (after Jump) fires late, at the current time.
+                now = next.Due!.Value > now ? next.Due.Value : now;
                 next.Due = next.Period > TimeSpan.Zero ? now + next.Period : null;
             }
 
             next.Callback(next.State);
         }
+    }
+
+    /// <summary>Moves time without firing timers, as if their callbacks were starved.</summary>
+    public void Jump(TimeSpan duration)
+    {
+        lock (gate)
+        {
+            now += duration;
+        }
+    }
+
+    /// <summary>
+    /// A fake-time wait whose completion and cancellation both run continuations inline
+    /// (a cancelled <c>Task.Delay</c> continuation may resume on the thread pool).
+    /// </summary>
+    public Task Delay(TimeSpan duration, CancellationToken cancellationToken)
+    {
+        TaskCompletionSource completion = new();
+        ITimer? timer = duration == Timeout.InfiniteTimeSpan
+            ? null
+            : CreateTimer(static state => ((TaskCompletionSource)state!).TrySetResult(), completion, duration, Timeout.InfiniteTimeSpan);
+        CancellationTokenRegistration registration = cancellationToken.Register(
+            () => completion.TrySetCanceled(cancellationToken));
+        completion.Task.ContinueWith(
+            _ =>
+            {
+                timer?.Dispose();
+                registration.Dispose();
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+        return completion.Task;
     }
 
     private sealed class ManualTimer(ManualTimeProvider owner, TimerCallback callback, object? state) : ITimer

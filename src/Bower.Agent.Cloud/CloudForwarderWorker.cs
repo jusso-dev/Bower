@@ -285,12 +285,11 @@ public sealed partial class CloudForwarderWorker(
                     return;
                 }
 
-                // The new deadline counts from when the request was sent, not when it returned.
                 DateTimeOffset sent = clock.GetUtcNow();
                 try
                 {
                     await source.ExtendAsync(lease.Message, settings.Lease, lease.Token);
-                    lease.Renewed(sent + settings.Lease - clock.GetUtcNow());
+                    lease.Renewed(sent, settings.Lease);
                 }
                 catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
                 {
@@ -393,24 +392,31 @@ public sealed partial class CloudForwarderWorker(
     private static partial void LogLeaseLost(ILogger logger, string source, string messageId, int attempt, string reason);
 
     /// <summary>
-    /// Ownership of one received message. Its token cancels the message's work when a renewal
-    /// fails or the deadline passes; a lost lease is never acknowledged or released.
+    /// Ownership of one received message. Ownership is judged by the clock against the renewed
+    /// deadline, so a late timer callback can never let the worker extend, acknowledge or
+    /// release an expired lease; the expiry timer only stops in-flight work promptly. The token
+    /// cancels the message's work when a renewal fails or the deadline passes; a lost lease is
+    /// never acknowledged or released.
     /// </summary>
     private sealed class SourceLease : IDisposable
     {
+        private const string DeadlinePassed = "lease deadline passed";
         private readonly Lock sync = new();
+        private readonly TimeProvider clock;
         private readonly CancellationTokenSource ownership;
         private readonly ITimer expiry;
+        // Null until the first renewal; until then the message is not worked on.
+        private DateTimeOffset? deadline;
         private string? lossReason;
         private bool settled;
 
         public SourceLease(CloudMessage message, TimeProvider clock, CancellationToken batch)
         {
             Message = message;
+            this.clock = clock;
             ownership = CancellationTokenSource.CreateLinkedTokenSource(batch);
-            // Armed by the first renewal; until then the message is not worked on.
             expiry = clock.CreateTimer(
-                static state => ((SourceLease)state!).Lose("lease deadline passed"),
+                static state => ((SourceLease)state!).Lose(DeadlinePassed),
                 this,
                 Timeout.InfiniteTimeSpan,
                 Timeout.InfiniteTimeSpan);
@@ -434,12 +440,20 @@ public sealed partial class CloudForwarderWorker(
             }
         }
 
-        public bool IsLost => LossReason is not null;
+        public bool IsLost
+        {
+            get
+            {
+                ExpireIfDue();
+                return LossReason is not null;
+            }
+        }
 
         public bool IsOutstanding
         {
             get
             {
+                ExpireIfDue();
                 lock (sync)
                 {
                     return !settled && lossReason is null;
@@ -447,29 +461,40 @@ public sealed partial class CloudForwarderWorker(
             }
         }
 
-        public void Renewed(TimeSpan remaining)
+        /// <summary>Records a renewal whose request was sent at <paramref name="sent"/>.</summary>
+        public void Renewed(DateTimeOffset sent, TimeSpan lease)
         {
-            if (remaining <= TimeSpan.Zero)
-            {
-                Lose("lease deadline passed");
-                return;
-            }
-
+            bool expired;
             lock (sync)
             {
-                if (!settled && lossReason is null)
+                if (settled || lossReason is not null)
                 {
+                    return;
+                }
+
+                // The new deadline counts from when the request was sent, not when it returned.
+                TimeSpan remaining = sent + lease - clock.GetUtcNow();
+                expired = remaining <= TimeSpan.Zero;
+                if (!expired)
+                {
+                    deadline = sent + lease;
                     expiry.Change(remaining, Timeout.InfiniteTimeSpan);
                 }
+            }
+
+            if (expired)
+            {
+                Lose(DeadlinePassed);
             }
         }
 
         /// <summary>Claims the message for acknowledgement or release; false once ownership is lost.</summary>
         public bool TrySettle()
         {
+            ExpireIfDue();
             lock (sync)
             {
-                if (lossReason is not null)
+                if (lossReason is not null || deadline is null || clock.GetUtcNow() >= deadline)
                 {
                     return false;
                 }
@@ -507,6 +532,20 @@ public sealed partial class CloudForwarderWorker(
             expiry.Dispose();
             ownership.Dispose();
             Gate.Dispose();
+        }
+
+        private void ExpireIfDue()
+        {
+            bool due;
+            lock (sync)
+            {
+                due = !settled && lossReason is null && deadline is not null && clock.GetUtcNow() >= deadline;
+            }
+
+            if (due)
+            {
+                Lose(DeadlinePassed);
+            }
         }
     }
 }
