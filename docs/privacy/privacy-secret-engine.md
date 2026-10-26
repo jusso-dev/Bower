@@ -21,7 +21,7 @@ Raw Event → Parser → Privacy & Secret Engine → Normalisation → Output
 | Streaming / per-event | Events processed independently; safe under concurrent callers |
 | Extensible | `ISensitiveDetector` plugins; provider API keys via pattern registry |
 | Configurable | Global default action + per-detector overrides |
-| Fail closed | Invalid / oversized payloads, duplicate keys, detector timeouts and any other detector or action failure → `redaction-failed` → quarantine. `RedactJson` / `RedactText` never throw; a policy that could fail at runtime (field rule path without segments, negative length, null replacement text or collections) is rejected when the engine is built |
+| Fail closed | Invalid / oversized payloads, duplicate keys, custom detector scan limits or match timeouts and any other detector or action failure → `redaction-failed` → quarantine. `RedactJson` / `RedactText` never throw; a policy that could fail at runtime (field rule path without segments, negative length, null replacement text or collections) is rejected when the engine is built |
 | Complete coverage | String **and number** values are scanned, and so are **property names** |
 
 ## Semantic change values and URLs
