@@ -63,7 +63,11 @@ pub fn parse_yaml(yaml: &str) -> Result<TelemetryPipeline, PipelineError> {
     for node in dto.nodes.unwrap_or_default() {
         let kind_text = node.kind.unwrap_or_default();
         let kind = PipelineNodeKind::parse(&kind_text).ok_or_else(|| {
-            PipelineError::InvalidData(format!("Unknown node kind '{kind_text}'."))
+            PipelineError::InvalidData(format!(
+                "Node '{}' has unknown kind '{kind_text}'. Supported: {}.",
+                node.id.as_deref().unwrap_or_default(),
+                PipelineNodeKind::supported()
+            ))
         })?;
         let config = match node.config {
             None => None,

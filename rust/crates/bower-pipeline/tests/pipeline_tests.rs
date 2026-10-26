@@ -387,6 +387,77 @@ fn yaml_parse_reads_scalars_as_text_and_rejects_bad_documents() {
     assert!(parse_yaml(&format!("id: {}", "x".repeat(512 * 1024))).is_err());
 }
 
+const SUPPORTED_KINDS: &str = "Source, Filter, Redact, Normalise, Detect, Enrich, Output";
+
+fn unknown_kind(node: &str, kind: &str) -> String {
+    format!("Node '{node}' has unknown kind '{kind}'. Supported: {SUPPORTED_KINDS}.")
+}
+
+/// `fixtures/node-kinds.txt`, shared with C# `PipelineValidatorTests`: one
+/// `kind text|parsed kind name or error` per line, read as the middle node of a
+/// connected graph. Declared names (ASCII case-insensitive) and declared ordinals only.
+#[test]
+fn node_kind_vectors_accept_declared_names_and_ordinals_only() {
+    let vectors = fixture("node-kinds.txt");
+    assert!(!vectors.is_empty());
+    for line in vectors.lines() {
+        let (text, expected) = line.rsplit_once('|').unwrap();
+        let yaml = format!(
+            "id: p\nname: P\nversion: 1.0.0\ndescription: d\nnodes:\n- id: s\n  kind: Source\n  type: http-collector\n- id: m\n  kind: '{text}'\n  type: policy-engine\n- id: o\n  kind: Output\n  type: http\nedges:\n- from: s\n  to: m\n- from: m\n  to: o\n"
+        );
+        match parse_yaml(&yaml) {
+            Ok(parsed) => assert_eq!(parsed.nodes[1].kind.as_str(), expected, "{line}"),
+            Err(error) => {
+                assert_eq!(expected, "error", "{line}");
+                assert_eq!(error.to_string(), unknown_kind("m", text));
+            }
+        }
+    }
+}
+
+#[test]
+fn yaml_parse_rejects_undefined_numeric_kind_in_any_graph_position() {
+    for kind in ["999", "-1"] {
+        for (position, node) in ["s", "m", "o"].into_iter().enumerate() {
+            let mut kinds = ["Source", "Filter", "Output"];
+            kinds[position] = kind;
+            let yaml = format!(
+                "id: p\nname: P\nversion: 1.0.0\ndescription: d\nnodes:\n- id: s\n  kind: {}\n  type: http-collector\n- id: m\n  kind: {}\n  type: policy-engine\n- id: o\n  kind: {}\n  type: http\nedges:\n- from: s\n  to: m\n- from: m\n  to: o\n",
+                kinds[0], kinds[1], kinds[2]
+            );
+            let error = parse_yaml(&yaml).unwrap_err();
+            assert_eq!(error.to_string(), unknown_kind(node, kind));
+        }
+    }
+}
+
+/// C# also flags an undefined integer cast to `PipelineNodeKind` on a model built in
+/// code (`node-kind`); the Rust enum cannot hold one, so every value is declared.
+#[test]
+fn validate_accepts_every_declared_kind() {
+    for kind in PipelineNodeKind::ALL {
+        let node_type = match kind {
+            PipelineNodeKind::Source => "http-collector",
+            PipelineNodeKind::Output => "http",
+            _ => "policy-engine",
+        };
+        let connected = pipeline(
+            vec![
+                PipelineNode::new("s", PipelineNodeKind::Source, "http-collector"),
+                PipelineNode::new("m", kind, node_type),
+                PipelineNode::new("o", PipelineNodeKind::Output, "http"),
+            ],
+            vec![PipelineEdge::new("s", "m"), PipelineEdge::new("m", "o")],
+        );
+        let result = validate(&connected);
+        assert!(result.is_valid, "{kind}: {:?}", result.issues);
+        assert_eq!(
+            parse_yaml(&to_yaml(&connected)).unwrap().nodes[1].kind,
+            kind
+        );
+    }
+}
+
 fn regex_configuration(pattern: &str) -> CustomLogParserConfiguration {
     CustomLogParserConfiguration {
         version: "1.0".to_owned(),

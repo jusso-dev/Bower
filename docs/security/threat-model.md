@@ -13,7 +13,8 @@ evidence.
   records written from parsed envelopes. Enum fields (`eventResult`,
   `eventSeverity`, `actor.type`, `security.decision`) accept a declared member name
   (any case) or a declared ordinal only; undefined ordinals, numeric strings and
-  comma-joined names are schema-invalid, never fingerprinted or queued.
+  comma-joined names are schema-invalid, never fingerprinted or queued. Pipeline
+  document node kinds follow the same rule in both runtimes.
 - Poison records at delivery: a queued payload the Azure output can never upload
   (invalid JSON, a repeated top-level property, invalid escapes) dead-letters alone
   as `payload-invalid-json`; it never fails or blocks the rest of the batch.
