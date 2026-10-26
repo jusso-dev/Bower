@@ -29,8 +29,13 @@ the job's retry count: `queue-retention` 3, `queue-maintenance` 2,
 `management-heartbeat`, `source-activity` and `queue-archive` 0 (the next minute's
 run supersedes a failed one).
 
-With an archive configured, `queue-retention` purges only events the archive already
-holds, so a stalled archive delays purging rather than losing events.
+With an archive configured, `queue-retention` purges only events covered by a verified
+archive of this queue (segments present, digests and chain intact, starting at or below
+the oldest stored event, chain equal to the queue ledger). Otherwise it purges nothing
+and logs a metadata-only warning (event 1202) with the reason, so a stalled or damaged
+archive delays purging rather than losing events. `queue-archive` holds the archive
+writer lock for each run; a run that finds the lock held fails and the next minute's run
+retries.
 
 Closing suppression windows is **not** a scheduled job: it queues summary events,
 which is queue state, so it runs in the hosted `SuppressionWindowWorker` loop every

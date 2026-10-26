@@ -68,8 +68,8 @@ version, so a version 5 queue stays openable by either runtime. Suppression is
 decided inside the enqueue transaction after the duplicate check; a hosted
 `SuppressionWindowWorker` closes ended windows and queues their summaries in one
 transaction. The optional archive reads stored events with their ledger entries and
-writes segments that continue the ledger chain; retention then purges only archived
-events. See [suppression, metrics, source silence and archive](../operations/suppression-archive-and-source-silence.md).
+writes segments that continue the ledger chain under an exclusive writer lock;
+retention then purges only events a verified archive of the same queue covers. See [suppression, metrics, source silence and archive](../operations/suppression-archive-and-source-silence.md).
 
 ## Agents and cloud queues
 

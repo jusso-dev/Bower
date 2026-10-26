@@ -270,20 +270,36 @@ fn hangfire_retry_delay(attempt: u32) -> Duration {
 
 /// Removes acknowledged events older than the duplicate-detection window
 /// (C# `QueueRetentionJob`). Undelivered, retrying and dead-lettered events are
-/// never touched, nor are events a configured archive does not hold yet.
+/// never touched, nor are events a configured archive does not verifiably hold for
+/// this queue: unverified coverage purges nothing. The archive comes with the SQLite
+/// store whose ledger it is checked against (C# requires `queue is SqliteEventStore`).
 pub async fn run_queue_retention(
     queue: Arc<dyn DurableEventStore>,
     clock: Arc<dyn Clock>,
     retention: Duration,
-    archive: Option<Arc<QueueArchive>>,
+    archive: Option<(Arc<QueueArchive>, Arc<SqliteEventStore>)>,
 ) -> Result<usize, &'static str> {
     let cutoff = clock.utc_now() - TimeDelta::from_std(retention).unwrap_or(TimeDelta::MAX);
     let total = tokio::task::spawn_blocking(move || {
-        // With an archive, purge only what the archive already holds.
-        let archived_through = archive
-            .map(|archive| archive.archived_through_sequence())
-            .transpose()
-            .map_err(|error| archive_error_name(&error))?;
+        // With an archive, purge only what verified archive coverage of this queue holds.
+        let archived_through = match archive {
+            Some((archive, ledger)) => {
+                let coverage = archive
+                    .verify_coverage(&ledger)
+                    .map_err(|error| archive_error_name(&error))?;
+                if !coverage.verified {
+                    warn!(
+                        reason = coverage.reason.as_deref().unwrap_or_default(),
+                        first_sequence = coverage.first_sequence,
+                        through_sequence = coverage.through_sequence,
+                        "Queue retention purged nothing: archive coverage is not verified."
+                    );
+                    return Ok(None);
+                }
+                Some(coverage.through_sequence)
+            }
+            None => None,
+        };
         let mut total = 0usize;
         loop {
             let purged = match archived_through {
@@ -295,12 +311,15 @@ pub async fn run_queue_retention(
             .map_err(|error| store_error_name(&error))?;
             total += purged;
             if purged != RETENTION_BATCH_SIZE {
-                return Ok::<usize, &'static str>(total);
+                return Ok::<Option<usize>, &'static str>(Some(total));
             }
         }
     })
     .await
     .map_err(|_| "JoinError")??;
+    let Some(total) = total else {
+        return Ok(0);
+    };
     info!(
         count = total,
         "Queue retention removed acknowledged event(s)."

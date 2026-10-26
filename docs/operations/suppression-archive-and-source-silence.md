@@ -90,8 +90,17 @@ example for a records-authority period such as AFDA Express v2.
 
 - Every minute the collector writes `segment-<first sequence>.jsonl.gz` files of up to
   10,000 events, each with a manifest holding the file digest, sequence range and the
-  queue ledger chain hash at both ends. Files are flushed and renamed into place; a
-  segment left without a manifest by a crash is rewritten.
+  queue ledger chain hash at both ends. A segment is committed once its manifest is
+  published. Files are written under unique temporary names, flushed and moved into
+  place without replacing an existing file; a segment left without a manifest by a
+  crash is an uncommitted orphan and is rewritten.
+- Every writer (the collector job and `bower archive create`, in either runtime) holds
+  an exclusive OS lock on `archive.lock` in the archive directory for its whole run,
+  taken before it reads the archive head. A second writer fails at once with an I/O
+  error and writes nothing. Orphan segments and abandoned `segment-*.tmp` files (up to
+  1,000 per run) are removed only by the lock owner. The lock is `flock` on Unix, so
+  keep the archive on a local or lock-capable file system and do not set
+  `DOTNET_SYSTEM_IO_DISABLEFILELOCKING`.
 - The archive continues the queue ledger chain, so it verifies without the queue:
 
   ```bash
@@ -101,15 +110,27 @@ example for a records-authority period such as AFDA Express v2.
   Use a ledger head witnessed by the management console as the anchor. Without one,
   verification proves the archive is internally consistent from its first segment;
   only an anchor proves nothing was cut from the start or rewritten wholesale.
-- While an archive is configured, retention purges only archived events. An archive
-  started on an existing queue begins at the oldest event still stored.
-- Bower never deletes or rewrites archive segments. Put the directory on write-once
-  storage and manage retention there.
+- While an archive is configured, retention purges acknowledged events only up to
+  verified archive coverage of this queue. Before each run it checks that every
+  segment exists and matches its manifest digest and ledger chain, that the archive
+  starts at or below the oldest event still stored, and that the archived chain hash
+  equals the queue ledger hash at the highest boundary both record (so an archive
+  written by another queue, even with overlapping sequence numbers, is refused).
+  Otherwise retention purges nothing and logs event 1202 with a reason code
+  (`segment-missing`, `segment-digest-mismatch`, `archive-starts-above-retained`,
+  `lineage-mismatch`, `manifest-invalid` and so on) and sequence numbers only.
+  Undelivered, retrying and dead-lettered events are never purged. Segments already
+  verified are not re-read while their manifest, size and write time are unchanged; any
+  change triggers full verification. An archive started on an existing queue begins at
+  the oldest event still stored.
+- Bower never deletes or rewrites committed archive segments. Put the directory on
+  write-once storage and manage retention there.
 - `bower archive replay --archive DIR --collector-url URL [--from ISO] [--to ISO]
   [--event-type TYPE]... [--dry-run]` verifies the archive, then posts each selected
   event through a collector's full intake, labelled `bowerReplay: archive`, with
   `BOWER_INGEST_TOKEN`. Replay into a collector with its own queue; the original
   queue reports replayed events as duplicates. Events older than five years fail
   `timeGenerated` validation.
-- `bower archive create --archive DIR --database queue.db` archives a stopped
-  collector's queue by hand. Never run it against an archive a collector is writing.
+- `bower archive create --archive DIR --database queue.db` archives a queue by hand.
+  While a collector is writing the same archive it fails on the writer lock instead
+  of racing it; rerun it later.

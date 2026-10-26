@@ -329,16 +329,21 @@ async fn retention_purges_only_archived_events_and_activity_flushes() {
         store.clone(),
         clock.clone(),
         retention,
-        Some(archive.clone()),
+        Some((archive.clone(), sqlite.clone())),
     )
     .await
     .unwrap();
     run_queue_archive(sqlite.clone(), archive.clone())
         .await
         .unwrap();
-    let all = run_queue_retention(store.clone(), clock, retention, Some(archive.clone()))
-        .await
-        .unwrap();
+    let all = run_queue_retention(
+        store.clone(),
+        clock,
+        retention,
+        Some((archive.clone(), sqlite.clone())),
+    )
+    .await
+    .unwrap();
     assert_eq!((none, all), (0, 3));
     assert!(archive.verify(None).unwrap().intact);
 
@@ -357,4 +362,61 @@ async fn retention_purges_only_archived_events_and_activity_flushes() {
         .unwrap();
     assert_eq!(store.get_source_activity().unwrap().len(), 1);
     assert!(telemetry.take_changed_sources().is_empty());
+}
+
+/// Issue #66 (C# `Retention_KeepsRowsWhenASegmentIsDeleted`): a manifest alone no longer
+/// authorises purging; the segment it names must verify.
+#[tokio::test]
+async fn retention_keeps_rows_when_an_archived_segment_is_missing() {
+    let directory = tempfile::tempdir().unwrap();
+    let past = bower_contracts::time::now() - chrono::Duration::days(30);
+    let past_clock: Arc<dyn bower_contracts::time::Clock> = Arc::new(move || past);
+    let sqlite = Arc::new(
+        SqliteEventStore::new(
+            directory.path().join("queue.db"),
+            10 * 1024 * 1024,
+            Some(past_clock),
+        )
+        .unwrap(),
+    );
+    sqlite.initialize().unwrap();
+    for id in ["a", "b", "c"] {
+        sqlite.enqueue(&queued(id, past)).unwrap();
+    }
+    let leased = sqlite
+        .lease(10, std::time::Duration::from_secs(60))
+        .unwrap();
+    let tokens = leased
+        .iter()
+        .map(|item| (item.event_id.clone(), item.lease_token.clone().unwrap()))
+        .collect();
+    let ids: Vec<String> = leased.iter().map(|item| item.event_id.clone()).collect();
+    sqlite.mark_delivered_batch(&ids, "ack", &tokens).unwrap();
+    let archive = Arc::new(
+        QueueArchive::new(directory.path().join("archive"), "collector-test", None).unwrap(),
+    );
+    run_queue_archive(sqlite.clone(), archive.clone())
+        .await
+        .unwrap();
+    std::fs::remove_file(
+        directory
+            .path()
+            .join("archive")
+            .join("segment-000000000001.jsonl.gz"),
+    )
+    .unwrap();
+    let store: Arc<dyn DurableEventStore> = sqlite.clone();
+    let clock: Arc<dyn bower_contracts::time::Clock> = Arc::new(bower_contracts::time::SystemClock);
+
+    let purged = run_queue_retention(
+        store.clone(),
+        clock,
+        std::time::Duration::from_secs(7 * 24 * 3600),
+        Some((archive.clone(), sqlite.clone())),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(purged, 0);
+    assert_eq!(store.snapshot().unwrap().delivered, 3);
 }

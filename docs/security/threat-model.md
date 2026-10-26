@@ -44,9 +44,12 @@ evidence.
   heartbeat when an application stops delivering accepted events.
 - Archive tampering or loss after retention: archive segments carry file digests and
   continue the queue ledger chain; `bower archive verify --anchor` recomputes every
-  link and proves it reaches a management-witnessed head. Retention purges only
-  archived events while an archive is configured. Write-once storage for the archive
-  directory remains an operator control.
+  link and proves it reaches a management-witnessed head. Retention purges only events
+  covered by a verified archive of the same queue (segments present and intact,
+  contiguous from at or below the oldest stored event, chain equal to the queue
+  ledger) and otherwise purges nothing. Archive writers hold an exclusive lock and never
+  replace a committed segment. Write-once storage for the archive directory remains an
+  operator control.
 - Policy tampering: loaded policy is validated and hashed. Signed bundles and file
   permission checks remain required.
 - Parser exploitation: no arbitrary expressions or code execution. YAML documents

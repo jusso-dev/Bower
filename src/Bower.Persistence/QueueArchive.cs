@@ -16,23 +16,34 @@ namespace Bower.Persistence;
 /// be verified without the queue and checked against a head witnessed by management.
 /// </summary>
 /// <remarks>
-/// Bower never deletes or rewrites a completed segment. Place the directory on write-once
-/// storage to meet records-authority retention. While an archive is configured, retention
-/// purges only events the archive already holds (see <see cref="ArchivedThroughSequence"/>).
+/// Bower never deletes or rewrites a committed segment (one with a manifest). Place the
+/// directory on write-once storage to meet records-authority retention. Writers take the
+/// exclusive <see cref="WriterLockFile"/> lock before reading the watermark, so writers in
+/// either runtime and process exclude each other. While an archive is configured,
+/// retention purges only events the archive verifiably holds for this queue (see
+/// <see cref="VerifyCoverageAsync"/>).
 /// </remarks>
 public sealed class QueueArchive
 {
     public const int MaximumEventsPerSegment = 10_000;
     public const string ManifestKind = "BowerArchiveSegment";
 
+    /// <summary>
+    /// Lock file every archive writer (C# and Rust) holds exclusively for a whole run: an OS
+    /// file lock (<c>flock</c> on Unix, a share-mode lock on Windows). It is never deleted.
+    /// </summary>
+    public const string WriterLockFile = "archive.lock";
+
     private const string ManifestSuffix = ".manifest.json";
     private const string SegmentSuffix = ".jsonl.gz";
     private const int MaximumManifestBytes = 65_536;
     private const int MaximumLineBytes = 4 * 1_048_576;
+    private const int MaximumTemporaryCleanup = 1_000;
 
     private readonly string directory;
     private readonly string collectorId;
     private readonly TimeProvider clock;
+    private VerifiedPrefix? verifiedPrefix;
 
     public QueueArchive(string directory, string collectorId, TimeProvider? clock = null)
     {
@@ -43,7 +54,13 @@ public sealed class QueueArchive
         this.clock = clock ?? TimeProvider.System;
     }
 
-    /// <summary>Last ledger sequence the archive holds; 0 when empty.</summary>
+    /// <summary>Test hook: runs while the writer owns the archive, before a segment is published.</summary>
+    internal Func<CancellationToken, Task>? BeforePublishAsync { get; set; }
+
+    /// <summary>
+    /// Last ledger sequence the manifests claim; 0 when empty. Unverified: retention uses
+    /// <see cref="VerifyCoverageAsync"/>.
+    /// </summary>
     public long ArchivedThroughSequence()
     {
         List<ArchiveManifest> manifests = ReadManifests();
@@ -52,7 +69,8 @@ public sealed class QueueArchive
 
     /// <summary>
     /// Copies every stored event not yet archived into new segments. Safe to rerun after a
-    /// crash: a segment left without a manifest is rewritten from the queue.
+    /// crash: a segment left without a manifest is rewritten from the queue. Throws
+    /// <see cref="IOException"/> without writing when another writer owns the archive.
     /// </summary>
     public async Task<ArchiveRunResult> ArchiveAsync(
         SqliteEventStore store,
@@ -61,6 +79,10 @@ public sealed class QueueArchive
         ArgumentNullException.ThrowIfNull(store);
         Directory.CreateDirectory(directory);
 
+        // Own the archive before reading the watermark, so no other writer can publish
+        // between the read and this run's segments.
+        using FileStream ownership = AcquireWriterLock();
+        RemoveAbandonedTemporaryFiles();
         List<ArchiveManifest> manifests = ReadManifests();
         long lastSequence;
         string lastHash;
@@ -151,11 +173,152 @@ public sealed class QueueArchive
             return ArchiveVerification.Broken(0, 0, null, "archive-empty");
         }
 
-        long verified = 0;
-        bool anchorVerified = false;
+        return await VerifyFromAsync(
+            manifests,
+            0,
+            manifests[0].PreviousChainHash,
+            manifests[0].FirstSequence,
+            anchor,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Verified, contiguous coverage of <paramref name="store"/>'s retained events. Fails
+    /// closed (with a metadata-only reason) unless every segment exists and matches its
+    /// manifest digest and chain, the archive starts at or below the oldest stored event, and
+    /// the archived chain equals the queue ledger chain (same lineage). Segments verified
+    /// earlier are not re-read while their manifests, sizes and write times are unchanged.
+    /// </summary>
+    public async Task<ArchiveCoverage> VerifyCoverageAsync(
+        SqliteEventStore store,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        IReadOnlyList<LedgerEvent> oldest = await store.ReadLedgerEventsAsync(0, 1, cancellationToken);
+        List<ArchiveManifest> manifests;
+        try
+        {
+            manifests = ReadManifests();
+        }
+        catch (Exception exception) when (exception is InvalidDataException or JsonException)
+        {
+            return ArchiveCoverage.Refused("manifest-invalid");
+        }
+
+        if (manifests.Count == 0)
+        {
+            // Nothing stored means nothing to purge; otherwise nothing is covered yet.
+            return oldest.Count == 0 ? new ArchiveCoverage(true, 0, 0, null) : ArchiveCoverage.Refused("archive-empty");
+        }
+
+        long first = manifests[0].FirstSequence;
+        if (oldest.Count > 0 && oldest[0].Sequence < first)
+        {
+            return ArchiveCoverage.Refused("archive-starts-above-retained", first, manifests[^1].LastSequence);
+        }
+
+        try
+        {
+            ArchiveVerification verification = await VerifyIncrementallyAsync(manifests, cancellationToken);
+            if (!verification.Intact)
+            {
+                return ArchiveCoverage.Refused(verification.BreakReason ?? "archive-broken", first);
+            }
+
+            // The ledger chain is the queue's lineage: equal hashes at the highest boundary
+            // both record prove every archived event up to it came from this queue. Every
+            // sequence between that boundary and the archive head is already purged.
+            long through = verification.HeadSequence;
+            LedgerHead? boundary = await store.GetLedgerBoundaryAtOrBelowAsync(through, cancellationToken);
+            if (boundary is null || boundary.Sequence < first - 1)
+            {
+                return ArchiveCoverage.Refused("lineage-unverifiable", first, through);
+            }
+
+            string? archived = await ArchivedHashAtAsync(manifests, boundary.Sequence, cancellationToken);
+            return string.Equals(archived, boundary.Hash, StringComparison.Ordinal)
+                ? new ArchiveCoverage(true, first, through, null)
+                : ArchiveCoverage.Refused("lineage-mismatch", first, through);
+        }
+        catch (Exception exception) when (exception is InvalidDataException or JsonException or IOException)
+        {
+            verifiedPrefix = null;
+            return ArchiveCoverage.Refused("segment-unreadable", first);
+        }
+    }
+
+    private async Task<ArchiveVerification> VerifyIncrementallyAsync(
+        List<ArchiveManifest> manifests,
+        CancellationToken cancellationToken)
+    {
+        // Stamp before reading, so a change made during verification invalidates the cache.
+        SegmentStamp[] stamps = [.. manifests.Select(manifest =>
+        {
+            FileInfo segment = new(Path.Combine(directory, manifest.SegmentFile));
+            return segment.Exists
+                ? new SegmentStamp(manifest, segment.Length, segment.LastWriteTimeUtc)
+                : new SegmentStamp(manifest, -1, default);
+        })];
+        int start = 0;
         string previous = manifests[0].PreviousChainHash;
         long expected = manifests[0].FirstSequence;
-        foreach (ArchiveManifest manifest in manifests)
+        if (verifiedPrefix is { } cached
+            && cached.Stamps.Length <= stamps.Length
+            && cached.Stamps.AsSpan().SequenceEqual(stamps.AsSpan(0, cached.Stamps.Length)))
+        {
+            start = cached.Stamps.Length;
+            previous = cached.HeadHash;
+            expected = cached.HeadSequence + 1;
+        }
+
+        verifiedPrefix = null;
+        ArchiveVerification result = await VerifyFromAsync(manifests, start, previous, expected, null, cancellationToken);
+        if (result.Intact)
+        {
+            verifiedPrefix = new VerifiedPrefix(stamps, result.HeadSequence, result.HeadHash!);
+        }
+
+        return result;
+    }
+
+    private async Task<string?> ArchivedHashAtAsync(
+        List<ArchiveManifest> manifests,
+        long sequence,
+        CancellationToken cancellationToken)
+    {
+        if (sequence == manifests[0].FirstSequence - 1)
+        {
+            return manifests[0].PreviousChainHash;
+        }
+
+        ArchiveManifest? manifest = manifests.Find(item => item.FirstSequence <= sequence && sequence <= item.LastSequence);
+        if (manifest is null || sequence == manifest.LastSequence)
+        {
+            return manifest?.LastChainHash;
+        }
+
+        await foreach (ArchivedEvent item in ReadSegmentAsync(Path.Combine(directory, manifest.SegmentFile), cancellationToken))
+        {
+            if (item.Sequence == sequence)
+            {
+                return item.ChainHash;
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<ArchiveVerification> VerifyFromAsync(
+        List<ArchiveManifest> manifests,
+        int start,
+        string previous,
+        long expected,
+        LedgerHead? anchor,
+        CancellationToken cancellationToken)
+    {
+        long verified = 0;
+        bool anchorVerified = false;
+        foreach (ArchiveManifest manifest in manifests.Skip(start))
         {
             string segmentPath = Path.Combine(directory, manifest.SegmentFile);
             if (!File.Exists(segmentPath))
@@ -256,8 +419,38 @@ public sealed class QueueArchive
         string name = $"segment-{rows[0].Sequence.ToString("D12", CultureInfo.InvariantCulture)}";
         string segmentFile = name + SegmentSuffix;
         string segmentPath = Path.Combine(directory, segmentFile);
-        string temporary = segmentPath + ".tmp";
+        string manifestPath = Path.Combine(directory, name + ManifestSuffix);
+        string temporary = TemporaryPath(segmentPath);
+        string manifestTemporary = TemporaryPath(manifestPath);
+        try
+        {
+            return await PublishSegmentAsync(
+                rows,
+                previousHash,
+                segmentFile,
+                segmentPath,
+                manifestPath,
+                temporary,
+                manifestTemporary,
+                cancellationToken);
+        }
+        finally
+        {
+            File.Delete(temporary);
+            File.Delete(manifestTemporary);
+        }
+    }
 
+    private async Task<ArchiveManifest> PublishSegmentAsync(
+        LedgerEvent[] rows,
+        string previousHash,
+        string segmentFile,
+        string segmentPath,
+        string manifestPath,
+        string temporary,
+        string manifestTemporary,
+        CancellationToken cancellationToken)
+    {
         await using (FileStream file = new(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
         {
             await using (GZipStream gzip = new(file, CompressionLevel.Optimal, leaveOpen: true))
@@ -275,7 +468,19 @@ public sealed class QueueArchive
             file.Flush(flushToDisk: true);
         }
 
-        File.Move(temporary, segmentPath, overwrite: true);
+        if (BeforePublishAsync is { } beforePublish)
+        {
+            await beforePublish(cancellationToken);
+        }
+
+        // Only the lock owner gets here, so a segment without a manifest is an uncommitted
+        // orphan of a crashed run. A committed segment is never replaced: the move fails.
+        if (!Path.Exists(manifestPath) && File.Exists(segmentPath))
+        {
+            File.Delete(segmentPath);
+        }
+
+        File.Move(temporary, segmentPath, overwrite: false);
         RestrictPermissions(segmentPath);
 
         ArchiveManifest manifest = new(
@@ -290,8 +495,6 @@ public sealed class QueueArchive
             previousHash,
             rows[^1].ChainHash,
             clock.GetUtcNow());
-        string manifestPath = Path.Combine(directory, name + ManifestSuffix);
-        string manifestTemporary = manifestPath + ".tmp";
         await using (FileStream file = new(manifestTemporary, FileMode.Create, FileAccess.Write, FileShare.None))
         {
             await JsonSerializer.SerializeAsync(file, manifest, ArchiveJsonContext.Default.ArchiveManifest, cancellationToken);
@@ -303,6 +506,34 @@ public sealed class QueueArchive
         RestrictPermissions(manifestPath);
         return manifest;
     }
+
+    private FileStream AcquireWriterLock()
+    {
+        try
+        {
+            return new FileStream(
+                Path.Combine(directory, WriterLockFile),
+                FileMode.OpenOrCreate,
+                FileAccess.ReadWrite,
+                FileShare.None);
+        }
+        catch (IOException exception)
+        {
+            throw new IOException("Another writer holds the archive writer lock.", exception);
+        }
+    }
+
+    /// <summary>Removes temporary files of crashed runs. Call only while owning the archive.</summary>
+    private void RemoveAbandonedTemporaryFiles()
+    {
+        foreach (string path in Directory.EnumerateFiles(directory, "segment-*.tmp").Take(MaximumTemporaryCleanup).ToArray())
+        {
+            File.Delete(path);
+        }
+    }
+
+    private static string TemporaryPath(string path) =>
+        $"{path}.{Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)}.tmp";
 
     private List<ArchiveManifest> ReadManifests()
     {
@@ -404,6 +635,17 @@ public sealed record ArchiveManifest(
     string LastChainHash,
     DateTimeOffset CreatedAt);
 
+/// <summary>
+/// Archive coverage retention may rely on: events <paramref name="FirstSequence"/> to
+/// <paramref name="ThroughSequence"/> when <paramref name="Verified"/>; otherwise a
+/// metadata-only <paramref name="Reason"/> and nothing may be purged.
+/// </summary>
+public sealed record ArchiveCoverage(bool Verified, long FirstSequence, long ThroughSequence, string? Reason)
+{
+    public static ArchiveCoverage Refused(string reason, long firstSequence = 0, long throughSequence = 0) =>
+        new(false, firstSequence, throughSequence, reason);
+}
+
 public sealed record ArchiveRunResult(int Segments, long Events, long HeadSequence, string? HeadHash);
 
 public sealed record ArchiveVerification(
@@ -420,6 +662,10 @@ public sealed record ArchiveVerification(
     internal static ArchiveVerification Broken(long verified, int segments, string? segment, string reason) =>
         new(false, segments, verified, 0, 0, null, false, segment, reason);
 }
+
+internal readonly record struct SegmentStamp(ArchiveManifest Manifest, long Length, DateTime WrittenUtc);
+
+internal sealed record VerifiedPrefix(SegmentStamp[] Stamps, long HeadSequence, string HeadHash);
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(ArchivedEvent))]

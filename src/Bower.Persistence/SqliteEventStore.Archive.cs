@@ -1,3 +1,4 @@
+using Bower.Abstractions;
 using Microsoft.Data.Sqlite;
 
 namespace Bower.Persistence;
@@ -73,6 +74,33 @@ public sealed partial class SqliteEventStore
             """;
         command.Parameters.AddWithValue("$sequence", sequence);
         return await command.ExecuteScalarAsync(cancellationToken) as string;
+    }
+
+    /// <summary>
+    /// Highest chain hash boundary the ledger records at or below
+    /// <paramref name="sequence"/> (entry, compacted segment end or anchor); null when none.
+    /// Every sequence above it and up to <paramref name="sequence"/> has been purged.
+    /// </summary>
+    public async Task<LedgerHead?> GetLedgerBoundaryAtOrBelowAsync(long sequence, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(sequence);
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT sequence, chain_hash FROM (
+                SELECT * FROM (SELECT sequence, chain_hash FROM queue_ledger
+                    WHERE sequence <= $sequence ORDER BY sequence DESC LIMIT 1)
+                UNION ALL SELECT * FROM (SELECT end_sequence, chain_hash FROM queue_ledger_segments
+                    WHERE end_sequence <= $sequence ORDER BY end_sequence DESC LIMIT 1)
+                UNION ALL SELECT sequence, chain_hash FROM queue_ledger_anchor WHERE sequence <= $sequence
+            ) ORDER BY sequence DESC LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$sequence", sequence);
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) && !reader.IsDBNull(1)
+            ? new LedgerHead(reader.GetInt64(0), reader.GetString(1))
+            : null;
     }
 }
 
