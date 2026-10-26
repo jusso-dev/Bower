@@ -114,7 +114,7 @@ impl OutputAdapter for ConcurrencyReportingOutput {
             decreases: 2,
             increases: 1,
             pauses: 1,
-            paused_until: time::parse("2026-07-26T02:16:19Z"),
+            process_local_paused_until: time::parse("2026-07-26T02:16:19Z"),
         })
     }
 }
@@ -126,7 +126,7 @@ async fn status_reports_adaptive_delivery_concurrency_as_metadata_only() {
     // Same text as the C# collector (CollectorHostTests).
     assert!(
         body.contains(
-            r#""delivery":{"outputId":"azure-logs-ingestion","limit":2,"minimumLimit":1,"maximumLimit":4,"inFlight":1,"latencyEwmaMilliseconds":163,"requests":9,"throttles":3,"serverErrors":1,"timeouts":0,"latencySpikes":1,"decreases":2,"increases":1,"pauses":1,"pausedUntil":"2026-07-26T02:16:19+00:00"}"#
+            r#""delivery":{"outputId":"azure-logs-ingestion","limit":2,"minimumLimit":1,"maximumLimit":4,"inFlight":1,"latencyEwmaMilliseconds":163,"requests":9,"throttles":3,"serverErrors":1,"timeouts":0,"latencySpikes":1,"decreases":2,"increases":1,"pauses":1,"processLocalPausedUntil":"2026-07-26T02:16:19+00:00"}"#
         ),
         "{body}"
     );

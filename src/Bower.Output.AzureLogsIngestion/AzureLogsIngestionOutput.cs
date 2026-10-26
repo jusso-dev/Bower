@@ -29,18 +29,21 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter, IOutputConcurrenc
         options.Validate();
         this.options = options;
         clock = timeProvider ?? TimeProvider.System;
-        // One controller per output: one DCR stream. MaximumConcurrency is its ceiling.
+        // One controller per output (one DCR stream), or one per delivery with
+        // ConcurrencyScope.Delivery. MaximumConcurrency is its ceiling.
         concurrency = new AdaptiveConcurrencyController(options.MaximumConcurrency);
         clientOptions ??= new LogsIngestionClientOptions();
         // Long server delays belong in the durable queue, never an in-memory SDK sleep.
         clientOptions.RetryPolicy = new DurableRetryPolicy(clientOptions.Retry);
-        clientOptions.AddPolicy(new ConcurrencyObserverPolicy(concurrency, clock), HttpPipelinePosition.PerRetry);
+        clientOptions.AddPolicy(new ConcurrencyObserverPolicy(clock), HttpPipelinePosition.PerRetry);
         client = new LogsIngestionClient(options.Endpoint, credential, clientOptions);
     }
 
     public string Id => options.Id;
 
-    public OutputConcurrencySnapshot GetConcurrencySnapshot() => concurrency.Snapshot(Id, clock.GetUtcNow());
+    public OutputConcurrencySnapshot? GetConcurrencySnapshot() => options.ConcurrencyScope == ConcurrencyScope.Output
+        ? concurrency.Snapshot(Id, clock.GetUtcNow())
+        : null;
 
     public async Task<DeliveryResult> DeliverAsync(
         IReadOnlyList<QueuedEvent> events,
@@ -111,22 +114,22 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter, IOutputConcurrenc
         ConcurrentBag<DeliveryFailure> uploadFailures = [];
         ConcurrentBag<string> isolatedBadRequests = [];
         int isolationBudget = 16;
-        // Server-requested pause seen during this delivery (UTC ticks, 0 = none). Across
-        // deliveries the durable destination circuit holds the stream instead.
-        long pausedUntilTicks = 0;
+        // The observer policy reports every attempt of this delivery's uploads here.
+        DeliveryScope scope = new(options.ConcurrencyScope == ConcurrencyScope.Output
+            ? concurrency
+            : new AdaptiveConcurrencyController(options.MaximumConcurrency));
+        DeliveryScope.Current.Value = scope;
         List<Task> uploads = new(batches.Count);
         try
         {
             for (int index = 0; index < batches.Count; index++)
             {
                 // Back-pressure: wait for a slot under the adaptive limit, in batch order.
-                await concurrency.AcquireAsync(cancellationToken);
-                long paused = Interlocked.Read(ref pausedUntilTicks);
-                if (paused > clock.GetUtcNow().UtcTicks)
+                await scope.Controller.AcquireAsync(cancellationToken);
+                if (scope.PausedUntil(clock.GetUtcNow()) is { } until)
                 {
-                    concurrency.Release();
+                    scope.Controller.Release();
                     // Never sent: keep the records retryable behind the destination circuit.
-                    DateTimeOffset until = new(paused, TimeSpan.Zero);
                     foreach (PreparedRecord record in batches.Skip(index).SelectMany(batch => batch))
                     {
                         uploadFailures.Add(new DeliveryFailure(record.EventId, "destination-azure-paused", true, until));
@@ -163,7 +166,7 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter, IOutputConcurrenc
             }
             finally
             {
-                concurrency.Release();
+                scope.Controller.Release();
             }
         }
 
@@ -196,18 +199,6 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter, IOutputConcurrenc
                 retryAfter = ReadRetryAfter(response, now);
                 retryCapped = retryAfter > now.Add(MaximumDurableRetryDelay);
                 if (retryCapped) retryAfter = now.Add(MaximumDurableRetryDelay);
-                if (status is < 200 or >= 300 && retryAfter > now)
-                {
-                    // Output-level Retry-After: no further batch of this stream starts in
-                    // this delivery before the deadline.
-                    concurrency.Pause(retryAfter.Value, now);
-                    long ticks = retryAfter.Value.UtcTicks;
-                    long seen;
-                    while ((seen = Interlocked.Read(ref pausedUntilTicks)) < ticks
-                        && Interlocked.CompareExchange(ref pausedUntilTicks, ticks, seen) != seen)
-                    {
-                    }
-                }
             }
             catch (Exception exception) when (exception is not OperationCanceledException || !token.IsCancellationRequested)
             {
@@ -261,7 +252,7 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter, IOutputConcurrenc
             HasLongDelay(message) ? ValueTask.FromResult(false) : base.ShouldRetryAsync(message, exception);
     }
 
-    private static DateTimeOffset? ReadRetryAfter(Response response, DateTimeOffset now)
+    internal static DateTimeOffset? ReadRetryAfter(Response response, DateTimeOffset now)
     {
         foreach (string name in new[] { "retry-after-ms", "x-ms-retry-after-ms", "Retry-After" })
         {
@@ -291,6 +282,9 @@ public sealed record AzureLogsIngestionOptions
 
     public int MaximumConcurrency { get; init; } = 4;
 
+    /// <summary>What one adaptive controller bounds; see <see cref="AzureLogsIngestion.ConcurrencyScope"/>.</summary>
+    public ConcurrencyScope ConcurrencyScope { get; init; } = ConcurrencyScope.Output;
+
     /// <summary>Stream schema used for preflight checks before upload.</summary>
     public SentinelSchema Schema { get; init; } = SentinelSchema.Default;
 
@@ -310,6 +304,19 @@ public sealed record AzureLogsIngestionOptions
             throw new ArgumentOutOfRangeException(nameof(MaximumConcurrency));
         }
     }
+}
+
+/// <summary>What one adaptive concurrency controller bounds.</summary>
+public enum ConcurrencyScope
+{
+    /// <summary>Every delivery of the output (one DCR stream): the collector's single delivery loop.</summary>
+    Output,
+
+    /// <summary>
+    /// Each delivery on its own, as the fixed setting did: hosts that deliver many
+    /// caller requests concurrently through one output (Azure Functions).
+    /// </summary>
+    Delivery
 }
 
 /// <summary>One upload entry: the record exactly as it is sent, and its event id.</summary>

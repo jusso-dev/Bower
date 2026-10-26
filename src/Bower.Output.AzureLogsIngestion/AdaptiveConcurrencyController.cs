@@ -241,11 +241,43 @@ public sealed class AdaptiveConcurrencyController
 }
 
 /// <summary>
-/// Per-retry pipeline policy: feeds every upload attempt (including SDK retries) to the
-/// controller with its status and RTT. Caller cancellation is not a capacity signal.
+/// One delivery: the controller bounding it and the Retry-After deadline seen by any of
+/// its attempts. Across deliveries the durable destination circuit holds the stream.
 /// </summary>
-internal sealed class ConcurrencyObserverPolicy(AdaptiveConcurrencyController controller, TimeProvider clock)
-    : HttpPipelinePolicy
+internal sealed class DeliveryScope(AdaptiveConcurrencyController controller)
+{
+    /// <summary>Flows from <c>DeliverAsync</c> into the pipeline policy of its uploads.</summary>
+    public static readonly AsyncLocal<DeliveryScope?> Current = new();
+
+    private long pausedUntilTicks;
+
+    public AdaptiveConcurrencyController Controller { get; } = controller;
+
+    public void Pause(DateTimeOffset until, DateTimeOffset now)
+    {
+        Controller.Pause(until, now);
+        long ticks = until.UtcTicks;
+        long seen;
+        while ((seen = Interlocked.Read(ref pausedUntilTicks)) < ticks
+            && Interlocked.CompareExchange(ref pausedUntilTicks, ticks, seen) != seen)
+        {
+        }
+    }
+
+    public DateTimeOffset? PausedUntil(DateTimeOffset now)
+    {
+        long ticks = Interlocked.Read(ref pausedUntilTicks);
+        return ticks > now.UtcTicks ? new DateTimeOffset(ticks, TimeSpan.Zero) : null;
+    }
+}
+
+/// <summary>
+/// Per-retry pipeline policy: feeds every upload attempt (including SDK retries) to the
+/// delivery's controller with its status and RTT, and records any Retry-After as a
+/// pause, so a short delay the SDK sleeps through in memory still holds new batches.
+/// Caller cancellation is not a capacity signal.
+/// </summary>
+internal sealed class ConcurrencyObserverPolicy(TimeProvider clock) : HttpPipelinePolicy
 {
     public override void Process(HttpMessage message, ReadOnlyMemory<HttpPipelinePolicy> pipeline) =>
         ProcessAsync(message, pipeline, false).AsTask().GetAwaiter().GetResult();
@@ -255,6 +287,13 @@ internal sealed class ConcurrencyObserverPolicy(AdaptiveConcurrencyController co
 
     private async ValueTask ProcessAsync(HttpMessage message, ReadOnlyMemory<HttpPipelinePolicy> pipeline, bool async)
     {
+        if (DeliveryScope.Current.Value is not { } scope)
+        {
+            await ProcessNextAsync(message, pipeline, async).ConfigureAwait(false);
+            return;
+        }
+
+        AdaptiveConcurrencyController controller = scope.Controller;
         long attempt = controller.BeginAttempt();
         long started = clock.GetTimestamp();
         try
@@ -274,9 +313,29 @@ internal sealed class ConcurrencyObserverPolicy(AdaptiveConcurrencyController co
             throw;
         }
 
-        controller.Complete(
-            attempt,
-            AdaptiveConcurrencyController.Classify(message.Response.Status),
-            clock.GetElapsedTime(started));
+        int status = message.Response.Status;
+        controller.Complete(attempt, AdaptiveConcurrencyController.Classify(status), clock.GetElapsedTime(started));
+        if (status is >= 200 and < 300) return;
+        DateTimeOffset now = clock.GetUtcNow();
+        if (AzureLogsIngestionOutput.ReadRetryAfter(message.Response, now) is { } retryAfter && retryAfter > now)
+        {
+            DateTimeOffset maximum = now.Add(AzureLogsIngestionOutput.MaximumDurableRetryDelay);
+            scope.Pause(retryAfter > maximum ? maximum : retryAfter, now);
+        }
+    }
+
+    private static async ValueTask ProcessNextAsync(
+        HttpMessage message,
+        ReadOnlyMemory<HttpPipelinePolicy> pipeline,
+        bool async)
+    {
+        if (async)
+        {
+            await HttpPipelinePolicy.ProcessNextAsync(message, pipeline).ConfigureAwait(false);
+        }
+        else
+        {
+            HttpPipelinePolicy.ProcessNext(message, pipeline);
+        }
     }
 }

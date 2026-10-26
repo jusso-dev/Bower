@@ -85,6 +85,9 @@ public static class FunctionCollectorServices
             new AzureLogsIngestionOptions
             {
                 Id = "azure-logs-ingestion",
+                // Up to httpPerInstanceConcurrency requests share this output; each keeps
+                // its own bound, as the fixed setting did.
+                ConcurrencyScope = ConcurrencyScope.Delivery,
                 Endpoint = settings.LogsIngestionEndpoint!,
                 DcrImmutableId = settings.DcrImmutableId!,
                 StreamName = settings.StreamName

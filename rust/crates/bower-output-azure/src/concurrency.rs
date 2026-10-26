@@ -235,7 +235,7 @@ impl AdaptiveConcurrencyController {
             decreases: state.decreases,
             increases: state.increases,
             pauses: state.pauses,
-            paused_until: state.paused_until.filter(|paused| *paused > now),
+            process_local_paused_until: state.paused_until.filter(|paused| *paused > now),
         }
     }
 

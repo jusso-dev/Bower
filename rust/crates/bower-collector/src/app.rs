@@ -646,7 +646,7 @@ struct DeliveryBody {
     increases: i64,
     pauses: i64,
     #[serde(with = "serde_offset_option")]
-    paused_until: Option<Timestamp>,
+    process_local_paused_until: Option<Timestamp>,
 }
 
 impl From<bower_contracts::OutputConcurrencySnapshot> for DeliveryBody {
@@ -666,7 +666,7 @@ impl From<bower_contracts::OutputConcurrencySnapshot> for DeliveryBody {
             decreases: value.decreases,
             increases: value.increases,
             pauses: value.pauses,
-            paused_until: value.paused_until,
+            process_local_paused_until: value.process_local_paused_until,
         }
     }
 }

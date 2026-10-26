@@ -165,7 +165,7 @@ public sealed class CollectorHostTests
         // Same text as the Rust collector (collector_host.rs).
         Assert.Contains(
             """
-            "delivery":{"outputId":"azure-logs-ingestion","limit":2,"minimumLimit":1,"maximumLimit":4,"inFlight":1,"latencyEwmaMilliseconds":163,"requests":9,"throttles":3,"serverErrors":1,"timeouts":0,"latencySpikes":1,"decreases":2,"increases":1,"pauses":1,"pausedUntil":"2026-07-26T02:16:19+00:00"}
+            "delivery":{"outputId":"azure-logs-ingestion","limit":2,"minimumLimit":1,"maximumLimit":4,"inFlight":1,"latencyEwmaMilliseconds":163,"requests":9,"throttles":3,"serverErrors":1,"timeouts":0,"latencySpikes":1,"decreases":2,"increases":1,"pauses":1,"processLocalPausedUntil":"2026-07-26T02:16:19+00:00"}
             """.Trim(),
             body,
             StringComparison.Ordinal);
@@ -196,7 +196,7 @@ public sealed class CollectorHostTests
             Task.FromResult(new Bower.Abstractions.DeliveryResult(
                 [], [.. events.Select(item => new Bower.Abstractions.DeliveryFailure(item.EventId, "destination-test", true, null))], null));
 
-        public Bower.Abstractions.OutputConcurrencySnapshot GetConcurrencySnapshot() =>
+        public Bower.Abstractions.OutputConcurrencySnapshot? GetConcurrencySnapshot() =>
             new(Id, 2, 1, 4, 1, 163, 9, 3, 1, 0, 1, 2, 1, 1, TestEvents.Now.AddMinutes(2));
     }
 

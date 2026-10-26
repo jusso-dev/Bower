@@ -177,11 +177,11 @@ public sealed class AdaptiveConcurrencyTests
         controller.Pause(clock.UtcNow.AddSeconds(10), clock.UtcNow);
 
         Assert.Equal(clock.UtcNow.AddSeconds(30), controller.PausedUntil(clock.UtcNow));
-        Assert.Equal(clock.UtcNow.AddSeconds(30), controller.Snapshot("out", clock.UtcNow).PausedUntil);
+        Assert.Equal(clock.UtcNow.AddSeconds(30), controller.Snapshot("out", clock.UtcNow).ProcessLocalPausedUntil);
         clock.Advance(TimeSpan.FromSeconds(30));
         Assert.Null(controller.PausedUntil(clock.UtcNow));
         OutputConcurrencySnapshot snapshot = controller.Snapshot("out", clock.UtcNow);
-        Assert.Null(snapshot.PausedUntil);
+        Assert.Null(snapshot.ProcessLocalPausedUntil);
         Assert.Equal(1, snapshot.Pauses);
     }
 
@@ -226,7 +226,7 @@ public sealed class AdaptiveConcurrencyTests
             Assert.True(failure.IsRetryable);
             Assert.True(failure.IsDestinationFailure);
         });
-        OutputConcurrencySnapshot afterThrottle = output.GetConcurrencySnapshot();
+        OutputConcurrencySnapshot afterThrottle = output.GetConcurrencySnapshot()!;
         Assert.InRange(afterThrottle.Limit, 1, 4);
         Assert.Equal(8, afterThrottle.Throttles);
         Assert.Equal(0, afterThrottle.InFlight);
@@ -242,7 +242,7 @@ public sealed class AdaptiveConcurrencyTests
         }
 
         Assert.Equal(96, acknowledged.Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(8, output.GetConcurrencySnapshot().Limit);
+        Assert.Equal(8, output.GetConcurrencySnapshot()!.Limit);
         Assert.InRange(endpoint.Peak, 1, 8);
     }
 
@@ -257,7 +257,7 @@ public sealed class AdaptiveConcurrencyTests
 
         Assert.Equal(8, result.AcknowledgedEventIds.Count);
         Assert.Equal(4, endpoint.Peak);
-        Assert.Equal(4, output.GetConcurrencySnapshot().Limit);
+        Assert.Equal(4, output.GetConcurrencySnapshot()!.Limit);
     }
 
     [Fact]
@@ -269,7 +269,7 @@ public sealed class AdaptiveConcurrencyTests
         await output.DeliverAsync(Events("burst", 1), token);
         await output.DeliverAsync(Events("burst-2", 1), token);
         await output.DeliverAsync(Events("burst-3", 1), token);
-        Assert.Equal(1, output.GetConcurrencySnapshot().Limit);
+        Assert.Equal(1, output.GetConcurrencySnapshot()!.Limit);
 
         endpoint.Respond = (_, _) => (HttpStatusCode.NoContent, null);
         endpoint.ResetPeak();
@@ -278,7 +278,7 @@ public sealed class AdaptiveConcurrencyTests
         Assert.Equal(3, result.AcknowledgedEventIds.Count);
         // Limit 1 lets one request out; it then grows to 2 after one healthy attempt.
         Assert.InRange(endpoint.Peak, 1, 2);
-        Assert.Equal(3, output.GetConcurrencySnapshot().ServerErrors);
+        Assert.Equal(3, output.GetConcurrencySnapshot()!.ServerErrors);
     }
 
     [Fact]
@@ -304,13 +304,60 @@ public sealed class AdaptiveConcurrencyTests
             Assert.Equal(clock.UtcNow.AddSeconds(120), failure.RetryAfter);
         });
         Assert.Equal(3, result.Failures.Count(failure => failure.Code == "destination-azure-paused"));
-        OutputConcurrencySnapshot snapshot = output.GetConcurrencySnapshot();
-        Assert.Equal(clock.UtcNow.AddSeconds(120), snapshot.PausedUntil);
+        OutputConcurrencySnapshot snapshot = output.GetConcurrencySnapshot()!;
+        Assert.Equal(clock.UtcNow.AddSeconds(120), snapshot.ProcessLocalPausedUntil);
         Assert.Equal(1, snapshot.Pauses);
 
         clock.Advance(TimeSpan.FromSeconds(121));
-        Assert.Null(output.GetConcurrencySnapshot().PausedUntil);
+        Assert.Null(output.GetConcurrencySnapshot()!.ProcessLocalPausedUntil);
         Assert.Equal(4, (await output.DeliverAsync(Events("p", 4), token)).AcknowledgedEventIds.Count);
+    }
+
+    [Fact]
+    public async Task Output_ShortRetryAfterDuringSdkRetriesPausesTheStream()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        FakeClock clock = new(TestEvents.Now);
+        // The common Azure case: a short Retry-After the SDK honours in memory, then success.
+        ScriptedEndpoint endpoint = new((_, count) => count == 1
+            ? (HttpStatusCode.TooManyRequests, "1")
+            : (HttpStatusCode.NoContent, null))
+        { RetryAfterHeader = "retry-after-ms" };
+        AzureLogsIngestionOutput output = CreateOutput(endpoint, maximumConcurrency: 1, clock: clock, retries: 2);
+
+        DeliveryResult result = await output.DeliverAsync(Events("s", 3), token);
+
+        // The throttled batch succeeded on its SDK retry; the paused rest was never sent.
+        Assert.Equal(2, endpoint.Count);
+        Assert.Equal(["s-0"], result.AcknowledgedEventIds);
+        Assert.Equal(["s-1", "s-2"], result.Failures.Select(failure => failure.EventId).Order());
+        Assert.All(result.Failures, failure =>
+        {
+            Assert.Equal("destination-azure-paused", failure.Code);
+            Assert.True(failure.IsRetryable);
+            Assert.Equal(clock.UtcNow.AddMilliseconds(1), failure.RetryAfter);
+        });
+        OutputConcurrencySnapshot snapshot = output.GetConcurrencySnapshot()!;
+        Assert.Equal(1, snapshot.Pauses);
+        Assert.Equal(1, snapshot.Throttles);
+        Assert.Equal(clock.UtcNow.AddMilliseconds(1), snapshot.ProcessLocalPausedUntil);
+    }
+
+    [Fact]
+    public async Task Output_DeliveryScopeBoundsEachDeliveryNotTheWholeOutput()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        // Eight concurrent single-event deliveries must all be in flight together.
+        ScriptedEndpoint endpoint = new((_, _) => (HttpStatusCode.NoContent, null)) { HoldUntilConcurrent = 8 };
+        AzureLogsIngestionOutput output = CreateOutput(endpoint, maximumConcurrency: 4, scope: ConcurrencyScope.Delivery);
+
+        DeliveryResult[] results = await Task.WhenAll(Enumerable.Range(0, 8)
+            .Select(index => output.DeliverAsync(Events($"d{index}", 1), token)));
+
+        Assert.All(results, result => Assert.Single(result.AcknowledgedEventIds));
+        Assert.Equal(8, endpoint.Peak);
+        // No shared controller: nothing output-wide to report.
+        Assert.Null(output.GetConcurrencySnapshot());
     }
 
     [Fact]
@@ -330,7 +377,7 @@ public sealed class AdaptiveConcurrencyTests
             await output.DeliverAsync(Events($"l{index}", 1), token);
         }
 
-        OutputConcurrencySnapshot snapshot = output.GetConcurrencySnapshot();
+        OutputConcurrencySnapshot snapshot = output.GetConcurrencySnapshot()!;
         Assert.Equal(3, snapshot.Limit);
         Assert.Equal(1, snapshot.LatencySpikes);
         Assert.Equal(163, snapshot.LatencyEwmaMilliseconds);
@@ -358,7 +405,7 @@ public sealed class AdaptiveConcurrencyTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => delivery);
         Assert.Equal(1, endpoint.Count);
-        Assert.Equal(0, output.GetConcurrencySnapshot().InFlight);
+        Assert.Equal(0, output.GetConcurrencySnapshot()!.InFlight);
     }
 
     [Fact]
@@ -417,12 +464,14 @@ public sealed class AdaptiveConcurrencyTests
     private static AzureLogsIngestionOutput CreateOutput(
         HttpMessageHandler handler,
         int maximumConcurrency,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        int retries = 0,
+        ConcurrencyScope scope = ConcurrencyScope.Output)
     {
         LogsIngestionClientOptions clientOptions = new()
         {
             Transport = new HttpClientTransport(new HttpClient(handler)),
-            Retry = { MaxRetries = 0, Delay = TimeSpan.FromMilliseconds(1), MaxDelay = TimeSpan.FromMilliseconds(10) }
+            Retry = { MaxRetries = retries, Delay = TimeSpan.FromMilliseconds(1), MaxDelay = TimeSpan.FromMilliseconds(10) }
         };
         return new AzureLogsIngestionOutput(
             new AzureLogsIngestionOptions
@@ -431,7 +480,8 @@ public sealed class AdaptiveConcurrencyTests
                 Endpoint = new Uri("https://example.ingest.monitor.azure.com"),
                 DcrImmutableId = "dcr-00000000000000000000000000000000",
                 StreamName = "Custom-BowerSecurity",
-                MaximumConcurrency = maximumConcurrency
+                MaximumConcurrency = maximumConcurrency,
+                ConcurrencyScope = scope
             },
             new StaticCredential(),
             clientOptions,
@@ -453,6 +503,8 @@ public sealed class AdaptiveConcurrencyTests
         public Func<CancellationToken, Task>? BeforeRespond { get; init; }
 
         public int HoldUntilConcurrent { get; init; }
+
+        public string RetryAfterHeader { get; init; } = "Retry-After";
 
         public int Count => Volatile.Read(ref count);
 
@@ -493,7 +545,7 @@ public sealed class AdaptiveConcurrencyTests
                 if (BeforeRespond is not null) await BeforeRespond(cancellationToken);
                 (HttpStatusCode status, string? retryAfter) = Respond(eventIds, number);
                 HttpResponseMessage response = new(status) { Content = new StringContent("{}") };
-                if (retryAfter is not null) response.Headers.TryAddWithoutValidation("Retry-After", retryAfter);
+                if (retryAfter is not null) response.Headers.TryAddWithoutValidation(RetryAfterHeader, retryAfter);
                 return response;
             }
             finally

@@ -1,7 +1,7 @@
 //! Port of `AdaptiveConcurrencyTests`: the AIMD controller, and the output against a
 //! fake ingestion endpoint injecting throttling, 5xx bursts, latency and Retry-After.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -11,11 +11,12 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
+use bower_contracts::time::Timestamp;
 use bower_contracts::{OutputAdapter, OutputConcurrencySnapshot, QueueState, QueuedEvent, time};
 use bower_output_azure::{
     AccessToken, AdaptiveConcurrencyController, AzureLogsIngestionOptions,
-    AzureLogsIngestionOutput, ConcurrencySignal, IngestionClientOptions, TokenFuture,
-    TokenProvider,
+    AzureLogsIngestionOutput, ConcurrencyScope, ConcurrencySignal, IngestionClientOptions,
+    TimeSource, TokenFuture, TokenProvider,
 };
 use reqwest::Url;
 
@@ -95,7 +96,7 @@ fn controller_follows_the_shared_aimd_trace() {
             decreases: 5,
             increases: 7,
             pauses: 0,
-            paused_until: None,
+            process_local_paused_until: None,
         }
     );
 }
@@ -201,12 +202,15 @@ fn controller_pause_is_bounded_visible_and_expires_on_the_clock() {
 
     assert_eq!(controller.paused_until(now), Some(seconds(30)));
     assert_eq!(
-        controller.snapshot("out", now).paused_until,
+        controller.snapshot("out", now).process_local_paused_until,
         Some(seconds(30))
     );
     assert_eq!(controller.paused_until(seconds(30)), None);
     let snapshot = controller.snapshot("out", seconds(30));
-    assert_eq!((snapshot.paused_until, snapshot.pauses), (None, 1));
+    assert_eq!(
+        (snapshot.process_local_paused_until, snapshot.pauses),
+        (None, 1)
+    );
 }
 
 #[tokio::test]
@@ -239,12 +243,49 @@ async fn controller_acquire_waits_for_a_slot_and_cancellation_leaks_nothing() {
 }
 
 type Respond = Arc<dyn Fn(usize) -> (u16, Option<&'static str>) + Send + Sync>;
+type Latency = Arc<dyn Fn(usize) -> Duration + Send + Sync>;
+
+/// C# `ManualTimestamps` / `FakeClock`: wall time pinned, monotonic time moves only
+/// when the endpoint says a request took that long. Real scheduling never shows up.
+#[derive(Debug)]
+struct ManualTime {
+    wall: Timestamp,
+    nanos: AtomicU64,
+}
+
+impl ManualTime {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            wall: time::parse("2026-07-26T02:14:19Z").unwrap(),
+            nanos: AtomicU64::new(0),
+        })
+    }
+
+    fn advance(&self, by: Duration) {
+        self.nanos
+            .fetch_add(u64::try_from(by.as_nanos()).unwrap(), Ordering::SeqCst);
+    }
+}
+
+impl TimeSource for ManualTime {
+    fn utc_now(&self) -> Timestamp {
+        self.wall
+    }
+
+    fn monotonic(&self) -> Duration {
+        Duration::from_nanos(self.nanos.load(Ordering::SeqCst))
+    }
+}
 
 /// Fake ingestion endpoint: scripted status and Retry-After, delay and peak concurrency.
 #[derive(Clone)]
 struct Endpoint {
     respond: Arc<Mutex<Respond>>,
     delay: Arc<Mutex<Duration>>,
+    /// Simulated RTT per request number, applied to `time`.
+    latency: Arc<Mutex<Latency>>,
+    time: Arc<ManualTime>,
+    retry_after_header: &'static str,
     hold_until_concurrent: usize,
     concurrent: Arc<tokio::sync::Notify>,
     released: Arc<std::sync::atomic::AtomicBool>,
@@ -260,6 +301,9 @@ impl Endpoint {
         Self {
             respond: Arc::new(Mutex::new(respond)),
             delay: Arc::default(),
+            latency: Arc::new(Mutex::new(Arc::new(|_| Duration::ZERO))),
+            time: ManualTime::new(),
+            retry_after_header: "retry-after",
             hold_until_concurrent: 0,
             concurrent: Arc::default(),
             released: Arc::default(),
@@ -316,6 +360,8 @@ async fn ingest(State(endpoint): State<Endpoint>, _body: Bytes) -> Response {
     if !delay.is_zero() {
         tokio::time::sleep(delay).await;
     }
+    let latency = endpoint.latency.lock().unwrap().clone();
+    endpoint.time.advance(latency(number));
     let respond = endpoint.respond.lock().unwrap().clone();
     let (status, retry_after) = respond(number);
     endpoint.in_flight.fetch_sub(1, Ordering::SeqCst);
@@ -323,7 +369,7 @@ async fn ingest(State(endpoint): State<Endpoint>, _body: Bytes) -> Response {
     if let Some(value) = retry_after {
         response
             .headers_mut()
-            .insert("retry-after", value.parse().unwrap());
+            .insert(endpoint.retry_after_header, value.parse().unwrap());
     }
     response
 }
@@ -345,9 +391,26 @@ impl TokenProvider for StaticCredential {
     }
 }
 
-fn output(base: &Url, maximum_concurrency: usize) -> AzureLogsIngestionOutput {
+fn output(endpoint: &Endpoint, base: &Url, maximum_concurrency: usize) -> AzureLogsIngestionOutput {
+    output_with(
+        endpoint,
+        base,
+        maximum_concurrency,
+        0,
+        ConcurrencyScope::Output,
+    )
+}
+
+fn output_with(
+    endpoint: &Endpoint,
+    base: &Url,
+    maximum_concurrency: usize,
+    max_retries: u32,
+    concurrency_scope: ConcurrencyScope,
+) -> AzureLogsIngestionOutput {
     let options = AzureLogsIngestionOptions {
         maximum_concurrency,
+        concurrency_scope,
         ..AzureLogsIngestionOptions::new(
             "azure-logs-ingestion",
             Url::parse("https://example.ingest.monitor.azure.com").unwrap(),
@@ -359,10 +422,11 @@ fn output(base: &Url, maximum_concurrency: usize) -> AzureLogsIngestionOutput {
         options,
         Arc::new(StaticCredential),
         IngestionClientOptions {
-            max_retries: 0,
+            max_retries,
             retry_delay: Duration::from_millis(1),
             max_retry_delay: Duration::from_millis(10),
             transport_base_url: Some(base.clone()),
+            time: endpoint.time.clone(),
             ..IngestionClientOptions::default()
         },
     )
@@ -398,7 +462,7 @@ fn snapshot(output: &AzureLogsIngestionOutput) -> OutputConcurrencySnapshot {
 #[tokio::test]
 async fn output_throttling_drops_concurrency_and_recovers_without_losing_events() {
     let (base, endpoint) = Endpoint::new(status(429)).start().await;
-    let output = output(&base, 8);
+    let output = output(&endpoint, &base, 8);
 
     let throttled = output.deliver(&events("t", 8)).await;
 
@@ -432,7 +496,7 @@ async fn output_healthy_throughput_uses_the_full_fixed_setting() {
     let mut endpoint = Endpoint::new(status(204));
     endpoint.hold_until_concurrent = 4;
     let (base, endpoint) = endpoint.start().await;
-    let output = output(&base, 4);
+    let output = output(&endpoint, &base, 4);
 
     let result = tokio::time::timeout(Duration::from_secs(20), output.deliver(&events("h", 8)))
         .await
@@ -446,7 +510,7 @@ async fn output_healthy_throughput_uses_the_full_fixed_setting() {
 #[tokio::test]
 async fn output_concurrency_gate_bounds_requests_in_flight_after_a_throttle() {
     let (base, endpoint) = Endpoint::new(status(503)).start().await;
-    let output = output(&base, 8);
+    let output = output(&endpoint, &base, 8);
     for name in ["burst", "burst-2", "burst-3"] {
         output.deliver(&events(name, 1)).await;
     }
@@ -474,20 +538,18 @@ async fn output_retry_after_pauses_the_stream_and_is_visible_in_metrics() {
     }))
     .start()
     .await;
-    let output = output(&base, 1);
-    let before = time::now();
+    let output = output(&endpoint, &base, 1);
+    let deadline = endpoint.time.utc_now() + chrono::TimeDelta::seconds(120);
 
     let result = output.deliver(&events("p", 4)).await;
 
-    let after = time::now();
     // The first request was throttled; the rest of the batch was never sent.
     assert_eq!(endpoint.count(), 1);
     assert!(result.acknowledged_event_ids.is_empty());
     assert_eq!(result.failures.len(), 4);
-    let window = before + chrono::TimeDelta::seconds(120)..=after + chrono::TimeDelta::seconds(120);
     for failure in &result.failures {
         assert!(failure.is_retryable && failure.is_destination_failure());
-        assert!(window.contains(&failure.retry_after.unwrap()));
+        assert_eq!(failure.retry_after, Some(deadline));
     }
     assert_eq!(
         result
@@ -498,7 +560,7 @@ async fn output_retry_after_pauses_the_stream_and_is_visible_in_metrics() {
         3
     );
     let snapshot = snapshot(&output);
-    assert!(window.contains(&snapshot.paused_until.unwrap()));
+    assert_eq!(snapshot.process_local_paused_until, Some(deadline));
     assert_eq!(snapshot.pauses, 1);
     // Across deliveries the durable destination circuit holds the stream, not the output.
     assert_eq!(
@@ -514,20 +576,119 @@ async fn output_retry_after_pauses_the_stream_and_is_visible_in_metrics() {
 #[tokio::test]
 async fn output_latency_spike_reduces_concurrency() {
     let (base, endpoint) = Endpoint::new(status(204)).start().await;
-    let output = output(&base, 4);
-    for index in 0..4 {
+    *endpoint.latency.lock().unwrap() =
+        Arc::new(|number| Duration::from_millis(if number <= 4 { 50 } else { 500 }));
+    let output = output(&endpoint, &base, 4);
+
+    for index in 0..5 {
         output.deliver(&events(&format!("l{index}"), 1)).await;
     }
-    *endpoint.delay.lock().unwrap() = Duration::from_millis(600);
 
-    output.deliver(&events("slow", 1)).await;
-
+    // Same numbers as C# Output_LatencySpikeReducesConcurrency: EWMA 50, then 162.5.
     let snapshot = snapshot(&output);
     assert_eq!(
-        (snapshot.limit, snapshot.latency_spikes),
-        (3, 1),
+        (
+            snapshot.limit,
+            snapshot.latency_spikes,
+            snapshot.latency_ewma_milliseconds
+        ),
+        (3, 1, Some(163)),
         "{snapshot:?}"
     );
+}
+
+#[tokio::test]
+async fn output_short_retry_after_during_sdk_retries_pauses_the_stream() {
+    // The common Azure case: a short Retry-After the retry loop honours in memory.
+    let mut endpoint = Endpoint::new(Arc::new(|number| {
+        if number == 1 {
+            (429, Some("1"))
+        } else {
+            (204, None)
+        }
+    }));
+    endpoint.retry_after_header = "retry-after-ms";
+    let (base, endpoint) = endpoint.start().await;
+    let output = output_with(&endpoint, &base, 1, 2, ConcurrencyScope::Output);
+    let deadline = endpoint.time.utc_now() + chrono::TimeDelta::milliseconds(1);
+
+    let result = output.deliver(&events("s", 3)).await;
+
+    // The throttled batch succeeded on its retry; the paused rest was never sent.
+    assert_eq!(endpoint.count(), 2);
+    assert_eq!(result.acknowledged_event_ids, ["s-0"]);
+    let mut paused: Vec<_> = result
+        .failures
+        .iter()
+        .map(|failure| failure.event_id.as_str())
+        .collect();
+    paused.sort_unstable();
+    assert_eq!(paused, ["s-1", "s-2"]);
+    for failure in &result.failures {
+        assert_eq!(failure.code, "destination-azure-paused");
+        assert!(failure.is_retryable);
+        assert_eq!(failure.retry_after, Some(deadline));
+    }
+    let snapshot = snapshot(&output);
+    assert_eq!((snapshot.pauses, snapshot.throttles), (1, 1));
+    assert_eq!(snapshot.process_local_paused_until, Some(deadline));
+}
+
+#[tokio::test]
+async fn output_delivery_scope_bounds_each_delivery_not_the_whole_output() {
+    // Eight concurrent single-event deliveries must all be in flight together.
+    let mut endpoint = Endpoint::new(status(204));
+    endpoint.hold_until_concurrent = 8;
+    let (base, endpoint) = endpoint.start().await;
+    let output = output_with(&endpoint, &base, 4, 0, ConcurrencyScope::Delivery);
+    let batches: Vec<_> = (0..8)
+        .map(|index| events(&format!("d{index}"), 1))
+        .collect();
+
+    let results = tokio::time::timeout(
+        Duration::from_secs(20),
+        futures_join_all(batches.iter().map(|batch| output.deliver(batch))),
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        results
+            .iter()
+            .all(|result| result.acknowledged_event_ids.len() == 1)
+    );
+    assert_eq!(endpoint.peak(), 8);
+    // No shared controller: nothing output-wide to report.
+    assert!(output.concurrency_snapshot().is_none());
+}
+
+/// Polls every future on this task until all complete (no extra dependency).
+async fn futures_join_all<F: std::future::Future>(
+    futures: impl Iterator<Item = F>,
+) -> Vec<F::Output> {
+    let mut pending: Vec<_> = futures.map(Box::pin).map(Some).collect();
+    let mut results: Vec<Option<F::Output>> = pending.iter().map(|_| None).collect();
+    std::future::poll_fn(|context| {
+        let mut done = true;
+        for (slot, result) in pending.iter_mut().zip(results.iter_mut()) {
+            if let Some(future) = slot {
+                match future.as_mut().poll(context) {
+                    std::task::Poll::Ready(value) => {
+                        *result = Some(value);
+                        *slot = None;
+                    }
+                    std::task::Poll::Pending => done = false,
+                }
+            }
+        }
+        if done {
+            std::task::Poll::Ready(())
+        } else {
+            std::task::Poll::Pending
+        }
+    })
+    .await;
+    results.into_iter().map(Option::unwrap).collect()
 }
 
 #[tokio::test]
@@ -535,7 +696,7 @@ async fn output_cancellation_while_waiting_for_a_slot_never_acknowledges() {
     let (base, endpoint) = Endpoint::new(status(204)).start().await;
     // The first request never completes on its own; the other two wait for its slot.
     *endpoint.delay.lock().unwrap() = Duration::from_secs(3600);
-    let output = output(&base, 1);
+    let output = output(&endpoint, &base, 1);
 
     // Cancel only once the first request has reached the endpoint: dropping the
     // delivery future is cancellation (the worker aborts its task). No timer races
