@@ -13,10 +13,11 @@ use bower_contracts::time::{self, Clock, SystemClock, Timestamp};
 use bower_contracts::{DecisionAction, EventRedactor, RedactionResult};
 use bower_core::capture::CaptureStore;
 use bower_core::{CollectorIdentity, ProcessingResult, ProcessingStage, SecurityEventProcessor};
+use bower_redaction::{AppliedFinding, JsonEventRedactor};
 
 use crate::cli::{PolicyDiffArgs, PolicyTestArgs};
 use crate::output::Json;
-use crate::support::{CliError, CliResult, read_text, required};
+use crate::support::{CliError, CliResult, read_text, required, timestamp};
 
 pub const MAXIMUM_EVENT_FILES: usize = 1_000;
 
@@ -145,30 +146,54 @@ impl EventRedactor for RecordingRedactor {
     }
 }
 
+/// `JsonEventRedactor` that also keeps the per-finding metadata, never values
+/// (C# `FindingsRedactor`).
+struct FindingsRedactor {
+    privacy: Arc<JsonEventRedactor>,
+    findings: Mutex<Vec<AppliedFinding>>,
+}
+
+impl EventRedactor for FindingsRedactor {
+    fn redact(&self, json: &str) -> RedactionResult {
+        let scan = self.privacy.engine().redact_json(json);
+        if let Ok(mut findings) = self.findings.lock() {
+            findings.clone_from(&scan.findings);
+        }
+        scan.to_redaction_result()
+    }
+}
+
 /// Each event runs alone (its own capture store), as its own `/v1/events` request
-/// would, so one sample never deduplicates against another. Returns each result with
-/// the one redaction the processor ran (`None` when the redactor panicked).
-fn process_each(
+/// would, so one sample never deduplicates against another. `reduce` runs straight
+/// away on the result, the one redaction the processor ran (`None` when the redactor
+/// panicked) and the privacy engine's findings.
+fn process_each<T>(
     bundle: &LoadedBundle,
     events: &[(String, String)],
     clock: Arc<dyn Clock>,
-) -> Vec<(ProcessingResult, Option<RedactionResult>)> {
-    // Same redaction path as the collector and serverless hosts.
-    let redactor: Arc<dyn EventRedactor> = Arc::new(bower_packs::runtime::PackDetectionRedactor {
-        inner: Arc::clone(&bundle.redactor),
-        evaluator: Arc::clone(&bundle.evaluator),
-        rules: bundle
-            .packs
-            .iter()
-            .flat_map(|pack| pack.detections.iter().cloned())
-            .collect(),
-    });
+    reduce: impl Fn(ProcessingResult, Option<RedactionResult>, Vec<AppliedFinding>) -> T,
+) -> Vec<T> {
+    let rules: Vec<_> = bundle
+        .packs
+        .iter()
+        .flat_map(|pack| pack.detections.iter().cloned())
+        .collect();
     let identity = CollectorIdentity::new("bower-cli", "0.1.0", "policy-test", "policy-test");
     events
         .iter()
         .map(|(_, json)| {
+            // Same redaction path as the collector and serverless hosts: the bundle's
+            // `JsonEventRedactor` under the pack detection redactor.
+            let findings = Arc::new(FindingsRedactor {
+                privacy: Arc::clone(&bundle.privacy),
+                findings: Mutex::new(Vec::new()),
+            });
             let recording = Arc::new(RecordingRedactor {
-                inner: Arc::clone(&redactor),
+                inner: Arc::new(bower_packs::runtime::PackDetectionRedactor {
+                    inner: Arc::clone(&findings) as Arc<dyn EventRedactor>,
+                    evaluator: Arc::clone(&bundle.evaluator),
+                    rules: rules.clone(),
+                }),
                 result: Mutex::new(None),
             });
             let processor = SecurityEventProcessor::new(
@@ -185,7 +210,12 @@ fn process_each(
                 .lock()
                 .ok()
                 .and_then(|mut recorded| recorded.take());
-            (result, redaction)
+            let findings = findings
+                .findings
+                .lock()
+                .map(|mut findings| std::mem::take(&mut *findings))
+                .unwrap_or_default();
+            reduce(result, redaction, findings)
         })
         .collect()
 }
@@ -198,7 +228,11 @@ pub fn evaluate(
 ) -> (Json, Vec<String>) {
     let mut results = Vec::with_capacity(events.len());
     let mut decisions = Vec::with_capacity(events.len());
-    for ((file, _), (result, _)) in events.iter().zip(process_each(bundle, events, clock)) {
+    for ((file, _), result) in
+        events
+            .iter()
+            .zip(process_each(bundle, events, clock, |result, _, _| result))
+    {
         let decision = decision_name(result.action);
         decisions.push(decision.clone());
         results.push(Json::object([
@@ -336,14 +370,8 @@ pub fn compute_diff(
     events: &[(String, String)],
     clock: Arc<dyn Clock>,
 ) -> (Json, usize) {
-    let results = |bundle, clock| -> Vec<ProcessingResult> {
-        process_each(bundle, events, clock)
-            .into_iter()
-            .map(|(result, _)| result)
-            .collect()
-    };
-    let before = results(baseline, Arc::clone(&clock));
-    let after = results(candidate, clock);
+    let before = process_each(baseline, events, Arc::clone(&clock), |result, _, _| result);
+    let after = process_each(candidate, events, clock, |result, _, _| result);
     let outcome = |result: &ProcessingResult| {
         (
             decision_name(result.action),
@@ -410,17 +438,12 @@ const NOT_EXERCISED_OFFLINE: [&str; 7] = [
     "management-privacy-assignment",
 ];
 
-/// C# `ParseAt`: `--at` as UTC; `None` when absent. ISO 8601 only: other shapes
-/// `DateTimeOffset.TryParse` accepts are refused here (fail closed).
+/// C# `ParseAt`: `--at` as UTC ([`timestamp`]); `None` when absent.
 fn parse_at(args: &PolicyDiffArgs) -> CliResult<Option<Timestamp>> {
     if !args.at_given {
         return Ok(None);
     }
-    args.at
-        .as_deref()
-        .and_then(|text| time::parse(text.trim()))
-        .map(|at| Some(time::to_utc(at)))
-        .ok_or_else(|| CliError::new("--at must be an ISO 8601 timestamp."))
+    timestamp(Some(args.at.as_deref().unwrap_or_default()), "--at")
 }
 
 /// C# `BundleSources`: one side of the bundle comparison.
@@ -438,9 +461,15 @@ fn side_sources(
             "--{side} or --{side}-pack is required."
         )));
     }
+    // The bundle loader skips a missing directory when packs are given; a directory the
+    // operator names must exist, so a typo never silently drops that side's policies.
+    if let Some(directory) = directory.filter(|directory| !Path::new(directory).is_dir()) {
+        return Err(CliError::new(format!(
+            "Policy directory does not exist: {directory}"
+        )));
+    }
     Ok(BundleSources {
-        // No directory: the bundle is the packs alone (a missing directory is skipped
-        // when packs are given).
+        // No directory: the bundle is the packs alone.
         policy_directory: PathBuf::from(directory.unwrap_or_default()),
         packs: packs.to_vec(),
         trusted_keys: trusted_keys.to_vec(),
@@ -458,8 +487,18 @@ struct BundleOutcome {
     failure_stage: Option<&'static str>,
     failure_reasons: Vec<String>,
     privacy_actions: Vec<(String, String)>,
+    /// `(detector[:subKind], path, action)` per finding, sorted and deduplicated.
+    privacy_findings: Vec<(String, String, String)>,
+    removed_count: usize,
+    masked_count: usize,
     privacy_alert: bool,
-    detections: Vec<String>,
+    /// `(ruleId, ruleVersion, ruleHash)` per detection.
+    detections: Vec<(String, String, String)>,
+}
+
+/// `string.CompareOrdinal`: UTF-16 code unit order.
+fn ordinal(left: &str, right: &str) -> std::cmp::Ordering {
+    left.encode_utf16().cmp(right.encode_utf16())
 }
 
 fn stage_name(stage: ProcessingStage) -> &'static str {
@@ -471,8 +510,9 @@ fn stage_name(stage: ProcessingStage) -> &'static str {
     }
 }
 
-/// Rule ids of the evidence the pack detection redactor attached (never matched values).
-fn detection_rule_ids(redaction: Option<&RedactionResult>) -> Vec<String> {
+/// Rule id, version and hash of the evidence the pack detection redactor attached
+/// (never matched values).
+fn detections(redaction: Option<&RedactionResult>) -> Vec<(String, String, String)> {
     let Some(text) = redaction
         .filter(|redaction| redaction.succeeded)
         .and_then(|redaction| redaction.redacted_json.as_deref())
@@ -487,21 +527,25 @@ fn detection_rule_ids(redaction: Option<&RedactionResult>) -> Vec<String> {
         .map(|evidence| {
             evidence
                 .iter()
-                .map(|item| item["ruleId"].as_str().unwrap_or_default().to_owned())
+                .map(|item| {
+                    let text = |name: &str| item[name].as_str().unwrap_or_default().to_owned();
+                    (text("ruleId"), text("ruleVersion"), text("ruleHash"))
+                })
                 .collect()
         })
         .unwrap_or_default()
 }
 
 fn bundle_outcome(
-    (result, redaction): &(ProcessingResult, Option<RedactionResult>),
+    result: &ProcessingResult,
+    redaction: Option<&RedactionResult>,
+    findings: &[AppliedFinding],
 ) -> BundleOutcome {
     let accepted = matches!(
         result.action,
         DecisionAction::Accept | DecisionAction::RedactAndAccept
     );
     let mut privacy_actions: Vec<(String, String)> = redaction
-        .as_ref()
         .and_then(|redaction| redaction.privacy_actions.as_ref())
         .map(|actions| {
             actions
@@ -510,7 +554,26 @@ fn bundle_outcome(
                 .collect()
         })
         .unwrap_or_default();
-    privacy_actions.sort_by(|left, right| left.0.cmp(&right.0));
+    privacy_actions.sort_by(|left, right| ordinal(&left.0, &right.0));
+    let mut privacy_findings: Vec<(String, String, String)> = findings
+        .iter()
+        .map(|finding| {
+            (
+                finding.sub_kind.as_ref().map_or_else(
+                    || finding.detector_id.clone(),
+                    |sub_kind| format!("{}:{sub_kind}", finding.detector_id),
+                ),
+                finding.path.clone(),
+                finding.action.label().to_owned(),
+            )
+        })
+        .collect();
+    privacy_findings.sort_by(|left, right| {
+        ordinal(&left.0, &right.0)
+            .then_with(|| ordinal(&left.1, &right.1))
+            .then_with(|| ordinal(&left.2, &right.2))
+    });
+    privacy_findings.dedup();
     BundleOutcome {
         decision: decision_name(result.action),
         policy_id: result
@@ -525,10 +588,13 @@ fn bundle_outcome(
             result.reasons.clone()
         },
         privacy_actions,
+        privacy_findings,
+        removed_count: redaction.map_or(0, |redaction| redaction.removed_paths.len()),
+        masked_count: redaction.map_or(0, |redaction| redaction.masked_paths.len()),
         privacy_alert: result.privacy_alert_event_id.is_some(),
         // Detection evidence only travels with an accepted event.
         detections: if accepted {
-            detection_rule_ids(redaction.as_ref())
+            detections(redaction)
         } else {
             Vec::new()
         },
@@ -543,6 +609,12 @@ fn changed_fields(old: &BundleOutcome, new: &BundleOutcome) -> Vec<&'static str>
         ("failureStage", old.failure_stage == new.failure_stage),
         ("failureReasons", old.failure_reasons == new.failure_reasons),
         ("privacyActions", old.privacy_actions == new.privacy_actions),
+        (
+            "privacyFindings",
+            old.privacy_findings == new.privacy_findings,
+        ),
+        ("removedCount", old.removed_count == new.removed_count),
+        ("maskedCount", old.masked_count == new.masked_count),
         ("privacyAlert", old.privacy_alert == new.privacy_alert),
         ("detections", old.detections == new.detections),
     ]
@@ -575,8 +647,41 @@ fn outcome_json(outcome: &BundleOutcome) -> Json {
                     .collect(),
             ),
         ),
+        (
+            "privacyFindings",
+            Json::Array(
+                outcome
+                    .privacy_findings
+                    .iter()
+                    .map(|(detector, path, action)| {
+                        Json::object([
+                            ("detector", Json::str(detector.clone())),
+                            ("path", Json::str(path.clone())),
+                            ("action", Json::str(action.clone())),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
+        ("removedCount", count(outcome.removed_count)),
+        ("maskedCount", count(outcome.masked_count)),
         ("privacyAlert", Json::Bool(outcome.privacy_alert)),
-        ("detections", strings(&outcome.detections)),
+        (
+            "detections",
+            Json::Array(
+                outcome
+                    .detections
+                    .iter()
+                    .map(|(id, version, hash)| {
+                        Json::object([
+                            ("ruleId", Json::str(id.clone())),
+                            ("ruleVersion", Json::str(version.clone())),
+                            ("ruleHash", Json::str(hash.clone())),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
     ])
 }
 
@@ -634,21 +739,29 @@ pub fn compute_bundle_diff(
     at: Timestamp,
 ) -> (Json, usize) {
     let clock: Arc<dyn Clock> = Arc::new(move || at);
-    let before = process_each(baseline, events, Arc::clone(&clock));
-    let after = process_each(candidate, events, clock);
+    // Each sample is reduced to metadata as soon as it is processed; no redacted payload is kept.
+    let reduce = |result: ProcessingResult,
+                  redaction: Option<RedactionResult>,
+                  findings: Vec<AppliedFinding>| {
+        let outcome = bundle_outcome(&result, redaction.as_ref(), &findings);
+        (result.event_id, outcome)
+    };
+    let before = process_each(baseline, events, Arc::clone(&clock), reduce);
+    let after = process_each(candidate, events, clock, reduce);
     let mut changes = Vec::new();
-    for (((file, _), old), new) in events.iter().zip(&before).zip(&after) {
-        let (previous, updated) = (bundle_outcome(old), bundle_outcome(new));
-        let fields = changed_fields(&previous, &updated);
+    for (((file, _), (old_id, previous)), (new_id, updated)) in
+        events.iter().zip(&before).zip(&after)
+    {
+        let fields = changed_fields(previous, updated);
         if !fields.is_empty() {
             changes.push(Json::object([
                 ("file", Json::str(file.clone())),
                 (
                     "eventId",
-                    Json::opt_str(new.0.event_id.clone().or_else(|| old.0.event_id.clone())),
+                    Json::opt_str(new_id.clone().or_else(|| old_id.clone())),
                 ),
-                ("baseline", outcome_json(&previous)),
-                ("candidate", outcome_json(&updated)),
+                ("baseline", outcome_json(previous)),
+                ("candidate", outcome_json(updated)),
                 (
                     "changedFields",
                     Json::Array(fields.into_iter().map(Json::str).collect()),

@@ -1,0 +1,7 @@
+apiVersion: bower.security/v1
+kind: PrivacyProfile
+metadata: { id: bundle-diff-remove-username, version: 1.0.0 }
+# Synthetic test profile: one field rule.
+fields:
+  - path: actor.username
+    action: remove

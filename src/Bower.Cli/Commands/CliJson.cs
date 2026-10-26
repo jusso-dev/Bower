@@ -140,12 +140,27 @@ internal sealed record PolicyBundleOutcome(
     [property: JsonPropertyName("failureStage")] string? FailureStage,
     [property: JsonPropertyName("failureReasons")] IReadOnlyList<string> FailureReasons,
     [property: JsonPropertyName("privacyActions")] IReadOnlyList<PolicyBundlePrivacyAction> PrivacyActions,
+    [property: JsonPropertyName("privacyFindings")] IReadOnlyList<PolicyBundlePrivacyFinding> PrivacyFindings,
+    [property: JsonPropertyName("removedCount")] int RemovedCount,
+    [property: JsonPropertyName("maskedCount")] int MaskedCount,
     [property: JsonPropertyName("privacyAlert")] bool PrivacyAlert,
-    [property: JsonPropertyName("detections")] IReadOnlyList<string> Detections);
+    [property: JsonPropertyName("detections")] IReadOnlyList<PolicyBundleDetection> Detections);
 
+/// <summary>First action per detector, as the privacy metadata on the event records it.</summary>
 internal sealed record PolicyBundlePrivacyAction(
     [property: JsonPropertyName("detector")] string Detector,
     [property: JsonPropertyName("action")] string Action);
+
+/// <summary>One privacy finding: detector (with sub-kind), field path and action label. Never the value.</summary>
+internal sealed record PolicyBundlePrivacyFinding(
+    [property: JsonPropertyName("detector")] string Detector,
+    [property: JsonPropertyName("path")] string Path,
+    [property: JsonPropertyName("action")] string Action);
+
+internal sealed record PolicyBundleDetection(
+    [property: JsonPropertyName("ruleId")] string RuleId,
+    [property: JsonPropertyName("ruleVersion")] string RuleVersion,
+    [property: JsonPropertyName("ruleHash")] string RuleHash);
 
 internal sealed record PolicyBundleProvenance(
     [property: JsonPropertyName("bundleHash")] string BundleHash,

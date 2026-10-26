@@ -73,12 +73,18 @@ bower policy diff \
 
 | Option (per side) | Meaning |
 |---|---|
-| `--baseline DIR` / `--candidate DIR` | Policy directory. Optional when the side has a pack. |
+| `--baseline DIR` / `--candidate DIR` | Policy directory. Optional when the side has a pack; when given it must exist, even alongside packs. |
 | `--{side}-pack FILE` | Signed `.bowerpack` (repeatable). |
 | `--{side}-trusted-key PUB` | PEM public key trusted to sign that side's packs (repeatable). |
 | `--{side}-privacy-profile FILE` | Privacy profile (at most one per side, including pack profiles). |
 | `--{side}-hmac-key-file FILE`, `--{side}-hmac-key-id ID` | HMAC key for `hmac` actions (id defaults to `k1`). |
 | `--at ISO` | Evaluate every sample at this time, so results are reproducible. Defaults to now, taken once. |
+
+`--at` (like `archive replay --from` and `--to`) takes only
+`YYYY-MM-DDTHH:MM[:SS[.FFFFFFF]]` followed by `Z` or `+HH:MM`/`-HH:MM` (at most 14:00).
+Date-only and time-only values, missing offsets, other date formats and more than 7
+fractional digits are refused with exit 1, so neither CLI rounds, truncates or fills in
+today's date.
 
 Any `--baseline-*` or `--candidate-*` bundle option, or `--at`, selects this mode.
 Without them the command is the directory comparison above, with unchanged output and
@@ -99,9 +105,11 @@ The output keeps the directory-mode fields (`baselineBundleHash`, `candidateBund
 |---|---|
 | `accepted` | Decision is `accept` or `redactandaccept`. |
 | `failureStage`, `failureReasons` | `redaction`, `schema`, `validation` or `policy`, and the reasons, when not accepted. |
-| `privacyActions` | `{detector, action}` per privacy detector that fired (for example `secret.aws` / `Removed`). Never values. |
+| `privacyActions` | `{detector, action}`: the first action per detector, as the event's privacy metadata records it (for example `secret.aws` / `Removed`). Never values. |
+| `privacyFindings` | `{detector, path, action}` per finding, sorted and deduplicated; `detector` includes a sub-kind as `id:subKind`, and every field rule is `field-rule`. Shows a second field rule or a changed action on a later finding that `privacyActions` hides. Never values. |
+| `removedCount`, `maskedCount` | Number of distinct field paths removed, and masked, hashed, encrypted, replaced or truncated. |
 | `privacyAlert` | Whether a privacy alert event would be raised. |
-| `detections` | Pack detection rule ids that match an accepted event. Never matched values. |
+| `detections` | `{ruleId, ruleVersion, ruleHash}` per pack detection rule that matches an accepted event, so a rule content change is visible. Never matched values. |
 | `changedFields` | Which of the fields above differ. |
 
 Top-level `evaluatedAt`, `baselineBundle` and `candidateBundle` (bundle hash, policy
@@ -114,9 +122,9 @@ assignments. A privacy-only change, such as masking instead of removing a detect
 match, is reported even when acceptance stays the same.
 
 Exit codes: 0 when the comparison completes, 3 when `--fail-on-change` is set and any
-sample has a changed field, and 1 for invalid arguments (`--at` that is not an ISO 8601
-time, a side with neither a directory nor a pack), bundle load or trust failures, or an
-unreadable sample. The C# and Rust CLIs print the same JSON for the same inputs and
+sample has a changed field, and 1 for invalid arguments (an `--at` outside the format
+above, a side with neither a directory nor a pack, a named directory that does not
+exist), bundle load or trust failures, or an unreadable sample. The C# and Rust CLIs print the same JSON for the same inputs and
 `--at`; `rust/crates/bower-cli/tests/fixtures/bundle-diff` pins it.
 
 ## Selection metrics
@@ -175,6 +183,8 @@ example for a records-authority period such as AFDA Express v2.
   event through a collector's full intake, labelled `bowerReplay: archive`, with
   `BOWER_INGEST_TOKEN`. Replay into a collector with its own queue; the original
   queue reports replayed events as duplicates. Events older than five years fail
-  `timeGenerated` validation.
+  `timeGenerated` validation. `--from` and `--to` take the same strict format as
+  `policy diff --at` (`YYYY-MM-DDTHH:MM[:SS[.FFFFFFF]]` with `Z` or an offset); other
+  forms, including date-only values, exit 1.
 - `bower archive create --archive DIR --database queue.db` archives a stopped
   collector's queue by hand. Never run it against an archive a collector is writing.

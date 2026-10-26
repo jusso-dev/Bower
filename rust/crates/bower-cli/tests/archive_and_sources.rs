@@ -323,6 +323,35 @@ fn archive_create_verify_and_dry_run_replay() {
         dry.stdout,
         "{\n  \"selected\": 1,\n  \"dryRun\": true,\n  \"responses\": {}\n}\n"
     );
+    // Same strict ISO 8601 parsing as `policy diff --at` (C# `CliOptions.Timestamp`).
+    for (option, value) in [
+        ("--from", "2026-05-01"),
+        ("--to", "05/01/2026"),
+        ("--from", "2026-05-01T10:21:00"),
+        ("--to", "2026-05-01T10:21:00.123456789Z"),
+    ] {
+        let refused = bower(&[
+            "archive",
+            "replay",
+            "--archive",
+            &archive,
+            "--collector-url",
+            "http://127.0.0.1:9",
+            option,
+            value,
+            "--dry-run",
+        ]);
+        assert_eq!(
+            (refused.code, refused.stderr),
+            (
+                1,
+                format!(
+                    "{option} must be an ISO 8601 timestamp with Z or an offset: YYYY-MM-DDTHH:MM[:SS[.FFFFFFF]](Z|+HH:MM|-HH:MM).\n"
+                )
+            ),
+            "{option} {value}"
+        );
+    }
     assert_eq!(empty.code, 3);
     assert!(empty.stdout.contains("\"breakReason\": \"archive-empty\""));
     assert_eq!(no_queue.code, 1);

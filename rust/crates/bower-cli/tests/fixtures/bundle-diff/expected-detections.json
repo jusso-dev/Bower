@@ -14,6 +14,9 @@
         "failureStage": null,
         "failureReasons": [],
         "privacyActions": [],
+        "privacyFindings": [],
+        "removedCount": 0,
+        "maskedCount": 0,
         "privacyAlert": false,
         "detections": []
       },
@@ -24,10 +27,21 @@
         "failureStage": null,
         "failureReasons": [],
         "privacyActions": [],
+        "privacyFindings": [],
+        "removedCount": 0,
+        "maskedCount": 0,
         "privacyAlert": false,
         "detections": [
-          "bower-pack-aws-console-login-failure-001",
-          "bower-pack-aws-root-activity-001"
+          {
+            "ruleId": "bower-pack-aws-console-login-failure-001",
+            "ruleVersion": "1.0.0",
+            "ruleHash": "849cef1d85aacdb8275fa04ea7b2817634aa29037cc1cdbc11e568b2eb4ca66f"
+          },
+          {
+            "ruleId": "bower-pack-aws-root-activity-001",
+            "ruleVersion": "1.0.0",
+            "ruleHash": "e6c03b31ffc09f01d2b2b3f44be3f94f52a5b10e864586988403254007501e2f"
+          }
         ]
       },
       "changedFields": [
@@ -49,6 +63,15 @@
             "action": "Removed"
           }
         ],
+        "privacyFindings": [
+          {
+            "detector": "secret.aws:access-key-id",
+            "path": "$.eventOutcomeReason",
+            "action": "Removed"
+          }
+        ],
+        "removedCount": 1,
+        "maskedCount": 0,
         "privacyAlert": false,
         "detections": []
       },
@@ -64,9 +87,22 @@
             "action": "Removed"
           }
         ],
+        "privacyFindings": [
+          {
+            "detector": "secret.aws:access-key-id",
+            "path": "$.eventOutcomeReason",
+            "action": "Removed"
+          }
+        ],
+        "removedCount": 1,
+        "maskedCount": 0,
         "privacyAlert": false,
         "detections": [
-          "bower-pack-aws-access-key-created-001"
+          {
+            "ruleId": "bower-pack-aws-access-key-created-001",
+            "ruleVersion": "1.0.0",
+            "ruleHash": "2c53cca1674edcd8aab4b3fad6ea57662de8aecdfc4e40fc497df88d15997748"
+          }
         ]
       },
       "changedFields": [

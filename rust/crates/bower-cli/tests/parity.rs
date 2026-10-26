@@ -1073,7 +1073,72 @@ fn policy_diff_bundles_match_csharp() {
             &policies,
             "--fail-on-change",
         ],
+        // Another field rule of the same detector, then a later finding's action.
+        vec![
+            "--baseline-pack",
+            &new_pack,
+            "--baseline-trusted-key",
+            &new_key,
+            "--baseline-privacy-profile",
+            "remove-username.privacy.yaml",
+            "--candidate-pack",
+            &new_pack,
+            "--candidate-trusted-key",
+            &new_key,
+            "--candidate-privacy-profile",
+            "remove-username-and-ip.privacy.yaml",
+            "--at",
+            at,
+            "--fail-on-change",
+        ],
+        vec![
+            "--baseline-pack",
+            &new_pack,
+            "--baseline-trusted-key",
+            &new_key,
+            "--baseline-privacy-profile",
+            "remove-username-and-ip.privacy.yaml",
+            "--candidate-pack",
+            &new_pack,
+            "--candidate-trusted-key",
+            &new_key,
+            "--candidate-privacy-profile",
+            "remove-username-mask-ip.privacy.yaml",
+            "--at",
+            at,
+        ],
+        // A named directory must exist even when the side has packs.
+        vec![
+            "--baseline",
+            &policies,
+            "--candidate",
+            "no-such-directory",
+            "--candidate-pack",
+            &new_pack,
+            "--candidate-trusted-key",
+            &new_key,
+        ],
     ];
+    let mut cases = cases;
+    for value in [
+        "01:02",
+        "2026-10-17",
+        "2026-10-17T01:02:03",
+        "2026-10-17T01:02:03.123456789Z",
+        "10/17/2026",
+        "Oct 17 2026",
+        "2026-10-17T01:02:03.1234567Z",
+        "2026-10-17T01:02Z",
+    ] {
+        cases.push(vec![
+            "--baseline",
+            &policies,
+            "--candidate",
+            &policies,
+            "--at",
+            value,
+        ]);
+    }
     for case in &cases {
         let mut args = vec!["policy", "diff"];
         args.extend_from_slice(case);

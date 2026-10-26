@@ -81,11 +81,168 @@ fn refs(args: &[String]) -> Vec<&str> {
     args.iter().map(String::as_str).collect()
 }
 
+/// The same signed pack on both sides, each with its own privacy profile fixture.
+fn field_args(baseline_profile: &str, candidate_profile: &str) -> Vec<String> {
+    let mut args = vec![
+        "--baseline-pack".into(),
+        pack("aws-security-1.1.0.bowerpack"),
+        "--baseline-trusted-key".into(),
+        pack("csharp-current-signing.pub.pem"),
+        "--baseline-privacy-profile".into(),
+        format!("{baseline_profile}.privacy.yaml"),
+    ];
+    args.extend(current_aws());
+    args.extend([
+        "--candidate-privacy-profile".into(),
+        format!("{candidate_profile}.privacy.yaml"),
+        "--at".into(),
+        AT.into(),
+    ]);
+    args
+}
+
+fn change<'a>(output: &'a Value, file: &str) -> &'a Value {
+    output["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|change| change["file"] == file)
+        .unwrap()
+}
+
+#[test]
+fn another_field_rule_of_the_same_detector_is_reported() {
+    let mut args = field_args("remove-username", "remove-username-and-ip");
+    args.push("--fail-on-change".into());
+    let run = diff(&refs(&args));
+    assert_eq!(run.code, 3, "{}", run.stderr);
+    let output: Value = serde_json::from_str(&run.stdout).unwrap();
+    assert_eq!(output["changed"], 4);
+    let root = change(&output, "root-login.json");
+    // One action per detector hides the second field-rule finding; per-finding metadata does not.
+    assert_eq!(
+        root["baseline"]["privacyActions"],
+        root["candidate"]["privacyActions"]
+    );
+    assert_eq!(
+        root["changedFields"],
+        serde_json::json!(["privacyFindings", "removedCount"])
+    );
+    assert_eq!(
+        root["candidate"]["privacyFindings"],
+        serde_json::json!([
+            { "detector": "field-rule", "path": "$.actor.username", "action": "Removed" },
+            { "detector": "field-rule", "path": "$.source.ipAddress", "action": "Removed" }
+        ])
+    );
+    assert_eq!(root["baseline"]["removedCount"], 1);
+    assert_eq!(root["candidate"]["removedCount"], 2);
+    for value in ["203.0.113.10", "198.51.100.7", "visitor", "Admin"] {
+        assert!(!run.stdout.contains(value), "{value}");
+    }
+}
+
+#[test]
+fn changed_action_on_a_later_finding_of_the_same_detector_is_reported() {
+    let run = diff(&refs(&field_args(
+        "remove-username-and-ip",
+        "remove-username-mask-ip",
+    )));
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let output: Value = serde_json::from_str(&run.stdout).unwrap();
+    let root = change(&output, "root-login.json");
+    assert_eq!(
+        root["baseline"]["privacyActions"],
+        root["candidate"]["privacyActions"]
+    );
+    assert_eq!(
+        root["changedFields"],
+        serde_json::json!(["privacyFindings", "removedCount", "maskedCount"])
+    );
+    assert!(
+        root["candidate"]["privacyFindings"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!(
+                { "detector": "field-rule", "path": "$.source.ipAddress", "action": "Masked" }
+            ))
+    );
+}
+
+#[test]
+fn explicit_directory_must_exist_even_with_packs() {
+    let missing = fixtures().join("no-such-policy-directory");
+    let missing = missing.to_str().unwrap();
+    let mut args = vec!["--candidate".to_owned(), missing.to_owned()];
+    args.extend(current_aws());
+    args.extend(["--baseline".into(), aws_policies()]);
+    let run = diff(&refs(&args));
+    assert_eq!(
+        (run.code, run.stderr.as_str(), run.stdout.as_str()),
+        (
+            1,
+            format!("Policy directory does not exist: {missing}\n").as_str(),
+            ""
+        )
+    );
+}
+
+#[test]
+fn at_refuses_anything_but_iso_8601_with_an_offset() {
+    let policies = aws_policies();
+    for value in [
+        "01:02",
+        "2026-10-17",
+        "2026-10-17T01:02:03",
+        "2026-10-17T01:02:03.123456789Z",
+        "10/17/2026",
+        "Oct 17 2026",
+        "2026-10-17 01:02:03Z",
+        "2026-10-17T01:02:60Z",
+        "2026-10-17T01:02:03+15:00",
+        "2026-10-17t01:02:03z",
+        " 2026-10-17T01:02:03Z",
+        "2026-02-30T01:02:03Z",
+    ] {
+        let run = diff(&[
+            "--baseline",
+            &policies,
+            "--candidate",
+            &policies,
+            "--at",
+            value,
+        ]);
+        assert_eq!(
+            (run.code, run.stderr.as_str(), run.stdout.as_str()),
+            (
+                1,
+                "--at must be an ISO 8601 timestamp with Z or an offset: YYYY-MM-DDTHH:MM[:SS[.FFFFFFF]](Z|+HH:MM|-HH:MM).\n",
+                ""
+            ),
+            "{value}"
+        );
+    }
+    let run = diff(&[
+        "--baseline",
+        &policies,
+        "--candidate",
+        &policies,
+        "--at",
+        "2026-10-17T11:02:03.1234567+10:00",
+    ]);
+    let output: Value = serde_json::from_str(&run.stdout).unwrap();
+    assert_eq!(output["evaluatedAt"], "2026-10-17T01:02:03.1234567+00:00");
+}
+
 #[test]
 fn bundle_diff_matches_pinned_csharp_output() {
     for (scenario, args) in [
         ("detections", detection_args()),
         ("privacy", privacy_args()),
+        (
+            "fields",
+            field_args("remove-username", "remove-username-and-ip"),
+        ),
     ] {
         let run = diff(&refs(&args));
         assert_eq!(run.code, 0, "{scenario}: {}", run.stderr);
@@ -107,7 +264,12 @@ fn privacy_only_change_is_reported_while_acceptance_is_unchanged() {
     assert_eq!(change["file"], "access-key.json");
     assert_eq!(
         change["changedFields"],
-        serde_json::json!(["privacyActions"])
+        serde_json::json!([
+            "privacyActions",
+            "privacyFindings",
+            "removedCount",
+            "maskedCount"
+        ])
     );
     assert_eq!(change["baseline"]["accepted"], true);
     assert_eq!(change["candidate"]["accepted"], true);
@@ -138,13 +300,26 @@ fn detection_changes_use_stable_rule_ids_without_matched_values() {
         .find(|change| change["file"] == "root-login.json")
         .unwrap();
     assert_eq!(root["changedFields"], serde_json::json!(["detections"]));
+    let detections = root["candidate"]["detections"].as_array().unwrap();
+    let ids: Vec<&str> = detections
+        .iter()
+        .map(|detection| detection["ruleId"].as_str().unwrap())
+        .collect();
     assert_eq!(
-        root["candidate"]["detections"],
-        serde_json::json!([
+        ids,
+        [
             "bower-pack-aws-console-login-failure-001",
             "bower-pack-aws-root-activity-001"
-        ])
+        ]
     );
+    for detection in detections {
+        assert!(!detection["ruleVersion"].as_str().unwrap().is_empty());
+        let hash = detection["ruleHash"].as_str().unwrap();
+        assert!(
+            hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit()),
+            "{hash}"
+        );
+    }
     assert_eq!(output["baselineBundle"]["detectionRules"], 0);
     assert_eq!(output["candidateBundle"]["detectionRules"], 4);
     for value in [
@@ -253,7 +428,10 @@ fn bundle_options_are_validated_and_directory_mode_is_unchanged() {
     ]);
     assert_eq!(
         (bad_time.code, bad_time.stderr.as_str()),
-        (1, "--at must be an ISO 8601 timestamp.\n")
+        (
+            1,
+            "--at must be an ISO 8601 timestamp with Z or an offset: YYYY-MM-DDTHH:MM[:SS[.FFFFFFF]](Z|+HH:MM|-HH:MM).\n"
+        )
     );
     // Directory mode: same document shape as before, no bundle fields.
     let legacy = diff(&["--baseline", &policies, "--candidate", &policies]);

@@ -250,14 +250,16 @@ fn load_inner(
         privacy_profile_hash: profile.as_ref().map(|profile| profile.hash.clone()),
         privacy_profile_source: settings.privacy_profile_source.clone(),
     };
+    let privacy = Arc::new(
+        bower_redaction::JsonEventRedactor::with_policy(privacy)
+            .map_err(|error| HostError::new(error.dotnet_type(), error.to_string()))?,
+    );
     Ok(LoadedBundle {
         info,
         managed_privacy,
         packs,
-        redactor: Arc::new(
-            bower_redaction::JsonEventRedactor::with_policy(privacy)
-                .map_err(|error| HostError::new(error.dotnet_type(), error.to_string()))?,
-        ),
+        redactor: Arc::clone(&privacy) as Arc<dyn bower_contracts::EventRedactor>,
+        privacy,
         evaluator: Arc::new(bower_policy::DeterministicPolicyEvaluator::new(policies)),
     })
 }

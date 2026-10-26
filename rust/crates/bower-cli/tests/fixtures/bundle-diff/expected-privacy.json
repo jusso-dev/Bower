@@ -19,9 +19,22 @@
             "action": "Removed"
           }
         ],
+        "privacyFindings": [
+          {
+            "detector": "secret.aws:access-key-id",
+            "path": "$.eventOutcomeReason",
+            "action": "Removed"
+          }
+        ],
+        "removedCount": 1,
+        "maskedCount": 0,
         "privacyAlert": false,
         "detections": [
-          "bower-pack-aws-access-key-created-001"
+          {
+            "ruleId": "bower-pack-aws-access-key-created-001",
+            "ruleVersion": "1.0.0",
+            "ruleHash": "2c53cca1674edcd8aab4b3fad6ea57662de8aecdfc4e40fc497df88d15997748"
+          }
         ]
       },
       "candidate": {
@@ -36,13 +49,29 @@
             "action": "Masked"
           }
         ],
+        "privacyFindings": [
+          {
+            "detector": "secret.aws:access-key-id",
+            "path": "$.eventOutcomeReason",
+            "action": "Masked"
+          }
+        ],
+        "removedCount": 0,
+        "maskedCount": 1,
         "privacyAlert": false,
         "detections": [
-          "bower-pack-aws-access-key-created-001"
+          {
+            "ruleId": "bower-pack-aws-access-key-created-001",
+            "ruleVersion": "1.0.0",
+            "ruleHash": "2c53cca1674edcd8aab4b3fad6ea57662de8aecdfc4e40fc497df88d15997748"
+          }
         ]
       },
       "changedFields": [
-        "privacyActions"
+        "privacyActions",
+        "privacyFindings",
+        "removedCount",
+        "maskedCount"
       ]
     }
   ],
