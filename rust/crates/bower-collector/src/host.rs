@@ -362,7 +362,9 @@ impl Collector {
             Arc::clone(&self.store),
             Arc::clone(&self.clock),
             self.settings.delivered_retention,
-            self.archive.clone(),
+            self.archive
+                .clone()
+                .map(|archive| (archive, Arc::clone(&self.sqlite))),
         );
         let retention_job: JobFn = Arc::new(move || {
             let (store, clock, archive) = (Arc::clone(&store), Arc::clone(&clock), archive.clone());
