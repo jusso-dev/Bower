@@ -10,9 +10,11 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use bower_collector::host::{self, BuildOptions, Collector};
 use bower_collector::jobs::{run_queue_archive, run_queue_retention, run_source_activity};
+use bower_collector::source_health::SourceHealth;
 use bower_collector::{CollectorSettings, bundle};
 use bower_contracts::time::{Clock, Timestamp};
 use bower_contracts::{DurableEventStore, QueueState, QueuedEvent};
+use bower_core::source_expectations;
 use bower_persistence::{QueueArchive, SqliteEventStore};
 use serde_json::Value;
 use tower::ServiceExt;
@@ -381,6 +383,86 @@ async fn never_seen_deadline_survives_collector_restarts() {
             .map(|item| item.monitoring_since)
             .collect::<Vec<_>>(),
         [first_start, clock.utc_now()]
+    );
+}
+
+#[tokio::test]
+async fn monitoring_start_recorded_while_the_clock_ran_ahead_is_corrected_at_the_next_start() {
+    let directory = tempfile::tempdir().unwrap();
+    // First start before time synchronisation: the host clock is an hour ahead.
+    let clock = FakeClock(Arc::new(Mutex::new(
+        bower_contracts::time::now() + chrono::Duration::hours(1),
+    )));
+    let one = ["TestApplication/test"];
+
+    drop(start_expecting(directory.path(), &clock, &one).await);
+    clock.advance(-3600);
+    let collector = start_expecting(directory.path(), &clock, &one).await;
+    assert_eq!(
+        source_states(&collector).await,
+        states(&[("pending", 0)], "healthy")
+    );
+    clock.advance(120);
+
+    assert_eq!(
+        source_states(&collector).await,
+        states(&[("never-seen", 120)], "degraded")
+    );
+    drop(collector);
+    let collector = start_expecting(directory.path(), &clock, &one).await;
+    assert_eq!(
+        source_states(&collector).await,
+        states(&[("never-seen", 120)], "degraded")
+    );
+}
+
+#[tokio::test]
+async fn initialize_returns_forgotten_monitoring_starts() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock(Arc::new(Mutex::new(bower_contracts::time::now())));
+    let collector = start_expecting(
+        directory.path(),
+        &clock,
+        &["TestApplication/test", "Payroll/production"],
+    )
+    .await;
+    let store = collector.store.clone();
+    let expectations = source_expectations::parse(
+        r#"{"apiVersion":"bower.security/v1","kind":"SourceExpectations","sources":[
+  {"application":"TestApplication","environment":"test","maximumSilenceMinutes":1}]}"#,
+    )
+    .unwrap();
+    let health = |expectations: Option<source_expectations::SourceExpectations>| {
+        SourceHealth::new(
+            expectations,
+            Arc::new(bower_core::PipelineTelemetry::new(Arc::new(clock.clone()))),
+            Arc::new(clock.clone()),
+        )
+    };
+    let keys = |forgotten: Vec<bower_contracts::SourceMonitoring>| -> Vec<(String, String)> {
+        forgotten
+            .into_iter()
+            .map(|item| (item.application, item.environment))
+            .collect()
+    };
+
+    let removed = health(Some(expectations.clone()))
+        .initialize(store.as_ref())
+        .unwrap();
+    let unchanged = health(Some(expectations))
+        .initialize(store.as_ref())
+        .unwrap();
+    // Starting without expectations forgets every start.
+    let unconfigured = health(None).initialize(store.as_ref()).unwrap();
+
+    assert_eq!(
+        keys(removed),
+        [("Payroll".to_owned(), "production".to_owned())]
+    );
+    assert!(unchanged.is_empty());
+    assert_eq!(
+        keys(unconfigured),
+        [("TestApplication".to_owned(), "test".to_owned())]
     );
 }
 

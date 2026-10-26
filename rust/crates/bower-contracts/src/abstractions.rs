@@ -389,8 +389,14 @@ pub trait DurableEventStore: Send + Sync {
         Err(unsupported_store_operation())
     }
 
+    /// Stored monitoring start per application and environment. Reads only.
+    fn get_source_monitoring(&self) -> StoreResult<Vec<SourceMonitoring>> {
+        Err(unsupported_store_operation())
+    }
+
     /// Makes `expected` the monitored set. A source already monitored keeps its stored
-    /// start; a new one starts at its proposed time; a source no longer expected is
+    /// start unless the proposed start is earlier (a start stored while the clock ran
+    /// ahead); a new one starts at its proposed time; a source no longer expected is
     /// forgotten, so expecting it again starts afresh. Returns the stored starts.
     fn start_source_monitoring(
         &self,

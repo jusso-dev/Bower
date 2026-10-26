@@ -83,7 +83,8 @@ public static partial class CollectorApplication
         builder.Services.AddSingleton(services => new SourceHealth(
             expectations,
             services.GetRequiredService<PipelineTelemetry>(),
-            services.GetRequiredService<TimeProvider>()));
+            services.GetRequiredService<TimeProvider>(),
+            services.GetRequiredService<ILogger<SourceHealth>>()));
         builder.Services.AddHostedService<SuppressionWindowWorker>();
         builder.Services.AddSingleton<EventIdentityConflicts>();
         builder.Services.AddSingleton(

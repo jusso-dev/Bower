@@ -284,6 +284,30 @@ public sealed partial class SqliteEventStore
         await transaction.CommitAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<SourceMonitoring>> GetSourceMonitoringAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT application, environment, monitoring_since
+            FROM source_monitoring
+            ORDER BY application, environment;
+            """;
+        List<SourceMonitoring> monitoring = [];
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            monitoring.Add(new SourceMonitoring(
+                reader.GetString(0),
+                reader.GetString(1),
+                ParseTimestamp(reader.GetString(2))));
+        }
+
+        return monitoring;
+    }
+
     public async Task<IReadOnlyList<SourceMonitoring>> StartSourceMonitoringAsync(
         IReadOnlyCollection<SourceMonitoring> expected,
         CancellationToken cancellationToken = default)
@@ -319,13 +343,16 @@ public sealed partial class SqliteEventStore
         command.CommandText =
             """
             INSERT INTO source_monitoring (application, environment, monitoring_since)
-            VALUES ($application, $environment, $since);
+            VALUES ($application, $environment, $since)
+            ON CONFLICT (application, environment) DO UPDATE SET monitoring_since = excluded.monitoring_since;
             """;
         List<SourceMonitoring> monitoring = [];
         foreach (SourceMonitoring item in expected)
         {
             (string, string) key = (item.Application, item.Environment);
-            if (!stored.TryGetValue(key, out DateTimeOffset start))
+            // A start stored while the clock ran ahead yields to an earlier one. That can
+            // only shorten a deadline, never extend it.
+            if (!stored.TryGetValue(key, out DateTimeOffset start) || start > item.MonitoringSince)
             {
                 start = item.MonitoringSince;
                 application.Value = item.Application;

@@ -86,11 +86,19 @@ Set `BOWER_SOURCE_EXPECTATIONS` to a JSON file
   the deadline. A source added to the expectations file gets its own allowance from
   the next start; existing sources keep theirs. A source removed from the file is
   forgotten at the next start, and listing it again later starts a fresh allowance.
-  Starting without `BOWER_SOURCE_EXPECTATIONS` forgets every monitoring start.
+  Starting without `BOWER_SOURCE_EXPECTATIONS` forgets every monitoring start. Each
+  start that forgets sources logs a warning (`EventId 1321`) with the count and the
+  `application/environment` ids, so a reset is auditable.
+- A monitoring start recorded while the host clock ran ahead (for example before time
+  synchronisation) is replaced by the earlier time at the next start. A start only
+  ever moves earlier, which can shorten a deadline but never extend it.
 - Last-seen times are saved every minute; after a crash up to a minute of activity
   is lost, which can only make a source look quieter, never healthier.
 - Offline: `bower sources check --expectations sources.json --database queue.db`
-  exits 3 when any source is quiet (no start-up grace).
+  exits 3 when any source is overdue. It reads, never writes, the collector's
+  monitoring starts, so a source the collector reports as `pending` is `pending` here
+  too. A source the collector has never monitored gets no grace and, never seen, is
+  reported as `never-seen` at once.
 
 ## Archive and replay
 

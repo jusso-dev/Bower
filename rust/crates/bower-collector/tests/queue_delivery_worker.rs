@@ -533,6 +533,9 @@ impl DurableEventStore for FlakyStore {
     ) -> StoreResult<()> {
         self.inner.upsert_source_activity(activity)
     }
+    fn get_source_monitoring(&self) -> StoreResult<Vec<bower_contracts::SourceMonitoring>> {
+        self.inner.get_source_monitoring()
+    }
     fn start_source_monitoring(
         &self,
         expected: &[bower_contracts::SourceMonitoring],

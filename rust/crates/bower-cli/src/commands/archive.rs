@@ -257,8 +257,10 @@ pub fn replay(args: &ArchiveReplayArgs) -> CliResult {
 }
 
 /// `bower sources check --expectations FILE [--database FILE]`: offline silence check
-/// from the activity the collector last persisted. Exit 3 when any expected source is
-/// quiet. Offline there is no grace period: a source never seen is reported at once.
+/// from the activity and monitoring starts the collector last persisted. Exit 3 when any
+/// expected source is overdue. Monitoring starts are read, never written, so a source
+/// the collector reports as pending is pending here too; a source the collector never
+/// monitored has no grace period and, never seen, is reported at once.
 pub fn sources_check(args: &SourcesCheckArgs) -> CliResult {
     let expectations =
         source_expectations::load_file(required(args.expectations.as_deref(), "--expectations")?)
@@ -267,9 +269,12 @@ pub fn sources_check(args: &SourcesCheckArgs) -> CliResult {
     let activity = store.get_source_activity().map_err(store_error)?;
     // DateTimeOffset.MinValue.
     let minimum = time::parse("0001-01-01T00:00:00+00:00").expect("minimum timestamp");
+    let monitoring = store.get_source_monitoring().map_err(store_error)?;
     let statuses =
-        source_expectations::evaluate(&expectations, &activity, &[], minimum, time::now());
-    let healthy = statuses.iter().all(|item| item.is_active());
+        source_expectations::evaluate(&expectations, &activity, &monitoring, minimum, time::now());
+    let healthy = !statuses
+        .iter()
+        .any(source_expectations::SourceSilenceStatus::is_overdue);
     let sources = statuses
         .into_iter()
         .map(|item| {

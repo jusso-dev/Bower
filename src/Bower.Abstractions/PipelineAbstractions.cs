@@ -163,10 +163,14 @@ public interface IDurableEventStore
         IReadOnlyCollection<SourceActivity> activity,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Stored monitoring start per application and environment. Reads only.</summary>
+    Task<IReadOnlyList<SourceMonitoring>> GetSourceMonitoringAsync(CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Makes <paramref name="expected"/> the monitored set. A source already monitored keeps
-    /// its stored start; a new one starts at its proposed time; a source no longer expected
-    /// is forgotten, so expecting it again starts afresh. Returns the stored starts.
+    /// its stored start unless the proposed start is earlier (a start stored while the clock
+    /// ran ahead); a new one starts at its proposed time; a source no longer expected is
+    /// forgotten, so expecting it again starts afresh. Returns the stored starts.
     /// </summary>
     Task<IReadOnlyList<SourceMonitoring>> StartSourceMonitoringAsync(
         IReadOnlyCollection<SourceMonitoring> expected,

@@ -96,6 +96,9 @@ public sealed class RequestEventBuffer : IDurableEventStore
     public Task UpsertSourceActivityAsync(IReadOnlyCollection<SourceActivity> activity, CancellationToken cancellationToken = default) =>
         throw Unsupported();
 
+    public Task<IReadOnlyList<SourceMonitoring>> GetSourceMonitoringAsync(CancellationToken cancellationToken = default) =>
+        throw Unsupported();
+
     public Task<IReadOnlyList<SourceMonitoring>> StartSourceMonitoringAsync(IReadOnlyCollection<SourceMonitoring> expected,
         CancellationToken cancellationToken = default) =>
         throw Unsupported();

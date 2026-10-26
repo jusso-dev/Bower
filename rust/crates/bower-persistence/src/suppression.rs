@@ -309,8 +309,33 @@ ON CONFLICT (application, environment) DO UPDATE SET
     })
 }
 
-/// C# `StartSourceMonitoringAsync`: keeps stored starts, records new sources at their
-/// proposed start and forgets sources no longer expected, in one write transaction.
+pub(crate) fn get_source_monitoring(
+    store: &SqliteEventStore,
+) -> StoreResult<Vec<SourceMonitoring>> {
+    store.pool().with(|connection| {
+        let mut select = connection
+            .prepare(
+                "SELECT application, environment, monitoring_since
+FROM source_monitoring
+ORDER BY application, environment;",
+            )
+            .map_err(storage)?;
+        let rows = select
+            .query_map([], |row| {
+                Ok(SourceMonitoring {
+                    application: row.get(0)?,
+                    environment: row.get(1)?,
+                    monitoring_since: parse_stored(&row.get::<_, String>(2)?, 2)?,
+                })
+            })
+            .map_err(storage)?;
+        rows.collect::<Result<_, _>>().map_err(storage)
+    })
+}
+
+/// C# `StartSourceMonitoringAsync`: keeps stored starts unless the proposed one is
+/// earlier, records new sources at their proposed start and forgets sources no longer
+/// expected, in one write transaction.
 pub(crate) fn start_source_monitoring(
     store: &SqliteEventStore,
     expected: &[SourceMonitoring],
@@ -362,13 +387,16 @@ pub(crate) fn start_source_monitoring(
         let mut monitoring = Vec::with_capacity(expected.len());
         for item in expected {
             let key = (item.application.clone(), item.environment.clone());
+            // A start stored while the clock ran ahead yields to an earlier one. That can
+            // only shorten a deadline, never extend it.
             let since = match known.get(&key) {
-                Some(since) => *since,
-                None => {
+                Some(since) if *since <= item.monitoring_since => *since,
+                _ => {
                     transaction
                         .execute(
                             "INSERT INTO source_monitoring (application, environment, monitoring_since)
-VALUES (?1, ?2, ?3);",
+VALUES (?1, ?2, ?3)
+ON CONFLICT (application, environment) DO UPDATE SET monitoring_since = excluded.monitoring_since;",
                             params![item.application, item.environment, stored(&item.monitoring_since)],
                         )
                         .map_err(storage)?;

@@ -242,6 +242,10 @@ fn source_monitoring_keeps_starts_across_restarts_and_forgets_removed_sources() 
     let readded = store(directory.path(), 10 * ONE_MEBIBYTE, &clock)
         .start_source_monitoring(&[source("App", 9), source("Payroll", 9)])
         .unwrap();
+    // A start stored while the clock ran ahead is replaced by an earlier one, never a later one.
+    let earlier = store(directory.path(), 10 * ONE_MEBIBYTE, &clock)
+        .start_source_monitoring(&[source("App", -3), source("Payroll", 9)])
+        .unwrap();
     let none = store(directory.path(), 10 * ONE_MEBIBYTE, &clock)
         .start_source_monitoring(&[])
         .unwrap();
@@ -249,6 +253,7 @@ fn source_monitoring_keeps_starts_across_restarts_and_forgets_removed_sources() 
     assert_eq!(first, [source("App", 0), source("Payroll", 0)]);
     assert_eq!(restarted, [source("App", 0)]);
     assert_eq!(readded, [source("App", 0), source("Payroll", 9)]);
+    assert_eq!(earlier, [source("App", -3), source("Payroll", 9)]);
     assert!(none.is_empty());
     let connection = rusqlite::Connection::open(queue_path(directory.path())).unwrap();
     let (rows, ddl): (i64, String) = connection

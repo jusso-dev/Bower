@@ -7,6 +7,7 @@ using Bower.Persistence;
 using Bower.PolicyEngine;
 using Bower.Redaction;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
 
 namespace Bower.UnitTests;
 
@@ -121,11 +122,14 @@ public sealed class SourceSilenceTests
         // Restarts propose later starts; stored starts win and an unlisted source is forgotten.
         IReadOnlyList<SourceMonitoring> restarted = await OpenAndStartAsync(Source("App", 5));
         IReadOnlyList<SourceMonitoring> readded = await OpenAndStartAsync(Source("App", 9), Source("Payroll", 9));
+        // A start stored while the clock ran ahead is replaced by an earlier one, never a later one.
+        IReadOnlyList<SourceMonitoring> earlier = await OpenAndStartAsync(Source("App", -3), Source("Payroll", 9));
         IReadOnlyList<SourceMonitoring> none = await OpenAndStartAsync();
 
         Assert.Equal([Source("App", 0), Source("Payroll", 0)], first);
         Assert.Equal([Source("App", 0)], restarted);
         Assert.Equal([Source("App", 0), Source("Payroll", 9)], readded);
+        Assert.Equal([Source("App", -3), Source("Payroll", 9)], earlier);
         Assert.Empty(none);
         await using SqliteConnection connection = new($"Data Source={path};Pooling=False");
         await connection.OpenAsync(cancellationToken);
@@ -143,6 +147,77 @@ public sealed class SourceSilenceTests
             )
             """,
             (string?)await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    [Fact]
+    public async Task MonitoringStart_RecordedWhileTheClockRanAheadIsCorrectedAtTheNextStart()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        // First start before time synchronisation: the host clock is an hour ahead.
+        FakeClock clock = new(TestEvents.Now.AddHours(1));
+        string path = Path.Combine(directory.Path, "queue.db");
+        SourceExpectations one = OneMinute(("TestApplication", "test"));
+
+        await StartAsync(path, one, clock, cancellationToken);
+        clock.Advance(TimeSpan.FromHours(-1));
+        (SourceHealth health, _, _) = await StartAsync(path, one, clock, cancellationToken);
+        Assert.Equal([("pending", 0L)], States(health));
+        clock.Advance(TimeSpan.FromMinutes(2));
+
+        Assert.Equal([("never-seen", 120L)], States(health));
+        (health, _, _) = await StartAsync(path, one, clock, cancellationToken);
+        Assert.Equal([("never-seen", 120L)], States(health));
+    }
+
+    [Fact]
+    public async Task Initialize_LogsForgottenMonitoringStartsAsMetadata()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        string path = Path.Combine(directory.Path, "queue.db");
+        SourceExpectations one = OneMinute(("TestApplication", "test"));
+        await StartAsync(path, OneMinute(("TestApplication", "test"), ("Payroll", "production")), clock, cancellationToken);
+        SqliteEventStore store = new(path, 10 * 1024 * 1024, clock);
+        await store.InitializeAsync(cancellationToken);
+        ListLogger logger = new();
+
+        IReadOnlyList<SourceMonitoring> removed =
+            await new SourceHealth(one, new PipelineTelemetry(clock), clock, logger).InitializeAsync(store, cancellationToken);
+        IReadOnlyList<SourceMonitoring> unchanged =
+            await new SourceHealth(one, new PipelineTelemetry(clock), clock, logger).InitializeAsync(store, cancellationToken);
+        // Starting without expectations forgets every start.
+        IReadOnlyList<SourceMonitoring> unconfigured =
+            await new SourceHealth(null, new PipelineTelemetry(clock), clock, logger).InitializeAsync(store, cancellationToken);
+
+        Assert.Equal([("Payroll", "production")], removed.Select(item => (item.Application, item.Environment)));
+        Assert.Empty(unchanged);
+        Assert.Equal([("TestApplication", "test")], unconfigured.Select(item => (item.Application, item.Environment)));
+        Assert.Equal(
+            [
+                (LogLevel.Warning, 1321, "Forgot the monitoring start of 1 source(s) no longer expected: Payroll/production. Expecting one again starts a fresh allowance."),
+                (LogLevel.Warning, 1321, "Forgot the monitoring start of 1 source(s) no longer expected: TestApplication/test. Expecting one again starts a fresh allowance.")
+            ],
+            logger.Entries);
+    }
+
+    private sealed class ListLogger : ILogger<SourceHealth>
+    {
+        public List<(LogLevel Level, int EventId, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Add((logLevel, eventId.Id, formatter(state, exception)));
     }
 
     private static SourceExpectations OneMinute(params (string Application, string Environment)[] sources) =>

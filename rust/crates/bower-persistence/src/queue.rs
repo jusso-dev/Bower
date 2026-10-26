@@ -940,6 +940,10 @@ FROM queue_events_v5;",
         crate::suppression::upsert_source_activity(self, activity)
     }
 
+    fn get_source_monitoring(&self) -> StoreResult<Vec<SourceMonitoring>> {
+        crate::suppression::get_source_monitoring(self)
+    }
+
     fn start_source_monitoring(
         &self,
         expected: &[SourceMonitoring],
