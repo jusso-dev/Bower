@@ -412,6 +412,9 @@ public sealed class QueueDeliveryWorkerTests
         public Task UpsertSourceActivityAsync(IReadOnlyCollection<SourceActivity> activity, CancellationToken cancellationToken = default) =>
             inner.UpsertSourceActivityAsync(activity, cancellationToken);
 
+        public Task<IReadOnlyList<SourceMonitoring>> StartSourceMonitoringAsync(IReadOnlyCollection<SourceMonitoring> expected, CancellationToken cancellationToken = default) =>
+            inner.StartSourceMonitoringAsync(expected, cancellationToken);
+
         public Task MaintainAsync(CancellationToken cancellationToken = default) =>
             inner.MaintainAsync(cancellationToken);
 

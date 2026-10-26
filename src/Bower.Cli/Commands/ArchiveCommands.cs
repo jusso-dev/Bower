@@ -154,6 +154,7 @@ internal static class SourceCommands
         IReadOnlyList<SourceSilenceStatus> statuses = SourceSilenceEvaluator.Evaluate(
             expectations,
             await store.GetSourceActivityAsync(),
+            [],
             DateTimeOffset.MinValue,
             DateTimeOffset.UtcNow);
         SourcesCheckOutput output = new(

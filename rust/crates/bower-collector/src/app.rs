@@ -501,7 +501,7 @@ async fn ingest_candidate(
 }
 
 fn health_status(snapshot: &QueueSnapshot, sources: &[SourceSilenceStatus]) -> &'static str {
-    if snapshot.dead_lettered > 0 || sources.iter().any(|source| !source.is_active()) {
+    if snapshot.dead_lettered > 0 || sources.iter().any(SourceSilenceStatus::is_overdue) {
         "degraded"
     } else {
         "healthy"

@@ -330,6 +330,16 @@ impl Collector {
             })?
             .map_err(|error| HostError::new("InvalidOperationException", error.to_string()))?;
         self.telemetry.load(activity);
+        let (store, source_health) = (Arc::clone(&self.store), Arc::clone(&self.source_health));
+        tokio::task::spawn_blocking(move || source_health.initialize(store.as_ref()))
+            .await
+            .map_err(|_| {
+                HostError::new(
+                    "InvalidOperationException",
+                    "Source monitoring start panicked.",
+                )
+            })?
+            .map_err(|error| HostError::new("InvalidOperationException", error.to_string()))?;
 
         let mut scheduler = JobScheduler::new(Arc::clone(&self.catalog), Arc::clone(&self.clock));
         // Superseded by the next run on failure; the in-memory set keeps unsaved changes.

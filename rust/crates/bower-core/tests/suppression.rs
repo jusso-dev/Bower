@@ -490,9 +490,10 @@ fn evaluate_reports_active_silent_and_never_seen_sources() {
             event_count: 4,
         },
     ];
-    let statuses = source_expectations::evaluate(&expectations, &activity, started, now);
+    let statuses = source_expectations::evaluate(&expectations, &activity, &[], started, now);
     let early = source_expectations::evaluate(
         &expectations,
+        &[],
         &[],
         started,
         started + chrono::Duration::minutes(10),
@@ -502,7 +503,12 @@ fn evaluate_reports_active_silent_and_never_seen_sources() {
     assert_eq!(states, ["silent", "active", "never-seen"]);
     assert_eq!(statuses[0].silent_seconds, 1200);
     assert_eq!(statuses[0].allowed_silence_seconds, 900);
-    assert!(early.iter().all(|item| item.is_active()));
+    // Never observed and inside the allowance: pending, not active, not overdue.
+    assert!(
+        early
+            .iter()
+            .all(|item| item.state == "pending" && !item.is_active() && !item.is_overdue())
+    );
 }
 
 #[test]

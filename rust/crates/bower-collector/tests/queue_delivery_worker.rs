@@ -533,6 +533,12 @@ impl DurableEventStore for FlakyStore {
     ) -> StoreResult<()> {
         self.inner.upsert_source_activity(activity)
     }
+    fn start_source_monitoring(
+        &self,
+        expected: &[bower_contracts::SourceMonitoring],
+    ) -> StoreResult<Vec<bower_contracts::SourceMonitoring>> {
+        self.inner.start_source_monitoring(expected)
+    }
     fn list_dead_lettered(&self, maximum_count: usize) -> StoreResult<Vec<DeadLetterRecord>> {
         self.inner.list_dead_lettered(maximum_count)
     }

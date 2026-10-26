@@ -267,7 +267,8 @@ pub fn sources_check(args: &SourcesCheckArgs) -> CliResult {
     let activity = store.get_source_activity().map_err(store_error)?;
     // DateTimeOffset.MinValue.
     let minimum = time::parse("0001-01-01T00:00:00+00:00").expect("minimum timestamp");
-    let statuses = source_expectations::evaluate(&expectations, &activity, minimum, time::now());
+    let statuses =
+        source_expectations::evaluate(&expectations, &activity, &[], minimum, time::now());
     let healthy = statuses.iter().all(|item| item.is_active());
     let sources = statuses
         .into_iter()

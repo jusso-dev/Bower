@@ -1,4 +1,4 @@
-//! Suppression windows and source activity (C# `SqliteEventStore.Suppression.cs`).
+//! Suppression windows, source activity and source monitoring starts (C# `SqliteEventStore.Suppression.cs`).
 //!
 //! Auxiliary tables are additive and created on every start without a schema
 //! version, so a queue stays at version 5 and either runtime can open the other's
@@ -6,10 +6,12 @@
 //! runtime computes the same boundaries and a restart continues an open window
 //! from its durable counts.
 
+use std::collections::{HashMap, HashSet};
+
 use bower_contracts::time::Timestamp;
 use bower_contracts::{
-    JsonElement, QueuedEvent, SourceActivity, StoreError, StoreResult, SuppressionRequest,
-    SuppressionWindow,
+    JsonElement, QueuedEvent, SourceActivity, SourceMonitoring, StoreError, StoreResult,
+    SuppressionRequest, SuppressionWindow,
 };
 use rusqlite::{Connection, TransactionBehavior, named_params, params};
 
@@ -48,6 +50,13 @@ CREATE TABLE IF NOT EXISTS source_activity (
     environment TEXT NOT NULL,
     last_seen_at TEXT NOT NULL,
     event_count INTEGER NOT NULL,
+    PRIMARY KEY (application, environment)
+);
+
+CREATE TABLE IF NOT EXISTS source_monitoring (
+    application TEXT NOT NULL,
+    environment TEXT NOT NULL,
+    monitoring_since TEXT NOT NULL,
     PRIMARY KEY (application, environment)
 );";
 
@@ -297,6 +306,83 @@ ON CONFLICT (application, environment) DO UPDATE SET
             }
         }
         transaction.commit().map_err(storage)
+    })
+}
+
+/// C# `StartSourceMonitoringAsync`: keeps stored starts, records new sources at their
+/// proposed start and forgets sources no longer expected, in one write transaction.
+pub(crate) fn start_source_monitoring(
+    store: &SqliteEventStore,
+    expected: &[SourceMonitoring],
+) -> StoreResult<Vec<SourceMonitoring>> {
+    let keys: HashSet<(&str, &str)> = expected
+        .iter()
+        .map(|item| (item.application.as_str(), item.environment.as_str()))
+        .collect();
+    store.pool().with(|connection| {
+        store.budget(connection)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        store.storage_check()?;
+        let mut known: HashMap<(String, String), Timestamp> = HashMap::new();
+        {
+            let mut select = transaction
+                .prepare("SELECT application, environment, monitoring_since FROM source_monitoring;")
+                .map_err(storage)?;
+            let rows = select
+                .query_map([], |row| {
+                    Ok((
+                        (row.get::<_, String>(0)?, row.get::<_, String>(1)?),
+                        parse_stored(&row.get::<_, String>(2)?, 2)?,
+                    ))
+                })
+                .map_err(storage)?;
+            for row in rows {
+                let (key, since) = row.map_err(storage)?;
+                known.insert(key, since);
+            }
+        }
+        let forgotten: Vec<(String, String)> = known
+            .keys()
+            .filter(|(application, environment)| {
+                !keys.contains(&(application.as_str(), environment.as_str()))
+            })
+            .cloned()
+            .collect();
+        for key in forgotten {
+            transaction
+                .execute(
+                    "DELETE FROM source_monitoring WHERE application = ?1 AND environment = ?2;",
+                    params![key.0, key.1],
+                )
+                .map_err(storage)?;
+            known.remove(&key);
+        }
+        let mut monitoring = Vec::with_capacity(expected.len());
+        for item in expected {
+            let key = (item.application.clone(), item.environment.clone());
+            let since = match known.get(&key) {
+                Some(since) => *since,
+                None => {
+                    transaction
+                        .execute(
+                            "INSERT INTO source_monitoring (application, environment, monitoring_since)
+VALUES (?1, ?2, ?3);",
+                            params![item.application, item.environment, stored(&item.monitoring_since)],
+                        )
+                        .map_err(storage)?;
+                    known.insert(key, item.monitoring_since);
+                    item.monitoring_since
+                }
+            };
+            monitoring.push(SourceMonitoring {
+                monitoring_since: since,
+                ..item.clone()
+            });
+        }
+        transaction.commit().map_err(storage)?;
+        Ok(monitoring)
     })
 }
 
