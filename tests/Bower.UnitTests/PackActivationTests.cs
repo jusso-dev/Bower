@@ -347,6 +347,82 @@ public sealed class PackActivationTests
     }
 
     [Fact]
+    public async Task Intake_CapacityRefusalsOnBothPathsAreCountedApartFromCommittedEvents()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await Start(directory, cancellation);
+        using HttpClient client = app.GetTestClient();
+        IDurableEventStore store = app.Services.GetRequiredService<IDurableEventStore>();
+        await store.EnqueueAsync(new QueuedEvent("filler", "sha256:filler", new string('x', 1_048_000), DateTimeOffset.UtcNow), cancellation);
+        string raw = Raw();
+        string generic = JsonSerializer.Serialize(TestEvents.AuthenticationFailure(DateTimeOffset.UtcNow, "generic-1") with
+        {
+            Application = new ApplicationContext { Name = "ssh-gateway", Environment = "production" }
+        }, BowerJson.Envelope);
+        long genericBytes = Encoding.UTF8.GetByteCount(generic);
+
+        const int attempts = 2;
+        for (int index = 0; index < attempts; index++)
+        {
+            using HttpResponseMessage genericBlocked = await Send(client, generic, cancellation, endpoint: "/v1/events");
+            using HttpResponseMessage packBlocked = await Send(client, raw, cancellation);
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, genericBlocked.StatusCode);
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, packBlocked.StatusCode);
+        }
+
+        using (JsonDocument refused = await Status(client, cancellation))
+        {
+            JsonElement intake = refused.RootElement.GetProperty("intake");
+            Assert.Equal(2 * attempts, intake.GetProperty("attemptedRequests").GetInt64());
+            Assert.Equal(2 * attempts, intake.GetProperty("capacityRefusals").GetInt64());
+            Assert.Equal(intake.GetProperty("attemptedBytes").GetInt64(), intake.GetProperty("capacityRefusedBytes").GetInt64());
+            Assert.Equal("queue-capacity", intake.GetProperty("lastRefusalReason").GetString());
+            Assert.NotEqual(JsonValueKind.Null, intake.GetProperty("lastRefusalAt").ValueKind);
+            // Wire shape shared with the Rust collector.
+            Assert.Equal(
+                ["observedSince", "attemptedRequests", "attemptedBytes", "capacityRefusals",
+                    "capacityRefusedBytes", "privacyAlertRefusals", "privacyAlertRefusedBytes", "lastRefusalAt",
+                    "lastRefusalReason"],
+                intake.EnumerateObject().Select(property => property.Name));
+            string text = intake.GetRawText();
+            Assert.DoesNotContain("generic-1", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("activation-1", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("raw-secret", text, StringComparison.Ordinal);
+            JsonElement pipeline = refused.RootElement.GetProperty("pipeline");
+            Assert.Equal(0, pipeline.GetProperty("eventsIn").GetInt64());
+            Assert.Equal(0, pipeline.GetProperty("eventsQueued").GetInt64());
+        }
+
+        QueuedEvent filler = Assert.Single(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
+        await store.MarkDeliveredAsync(filler.EventId, "test-ack", filler.LeaseToken, cancellation);
+        using HttpResponseMessage packRetried = await Send(client, raw, cancellation);
+        Assert.Equal(HttpStatusCode.Accepted, packRetried.StatusCode);
+        long packBytes;
+        using (JsonDocument afterPack = await Status(client, cancellation))
+        {
+            packBytes = afterPack.RootElement.GetProperty("pipeline").GetProperty("bytesIn").GetInt64();
+            JsonElement intake = afterPack.RootElement.GetProperty("intake");
+            Assert.Equal(attempts * (genericBytes + packBytes), intake.GetProperty("capacityRefusedBytes").GetInt64());
+            Assert.Equal(attempts * (genericBytes + packBytes) + packBytes, intake.GetProperty("attemptedBytes").GetInt64());
+        }
+
+        using HttpResponseMessage genericRetried = await Send(client, generic, cancellation, endpoint: "/v1/events");
+        using HttpResponseMessage genericRepeated = await Send(client, generic, cancellation, endpoint: "/v1/events");
+        Assert.Equal(HttpStatusCode.Accepted, genericRetried.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, genericRepeated.StatusCode);
+        using JsonDocument final = await Status(client, cancellation);
+        JsonElement finalIntake = final.RootElement.GetProperty("intake");
+        Assert.Equal(2 * attempts + 3, finalIntake.GetProperty("attemptedRequests").GetInt64());
+        Assert.Equal(2 * attempts, finalIntake.GetProperty("capacityRefusals").GetInt64());
+        JsonElement finalPipeline = final.RootElement.GetProperty("pipeline");
+        Assert.Equal(3, finalPipeline.GetProperty("eventsIn").GetInt64());
+        Assert.Equal(2, finalPipeline.GetProperty("eventsQueued").GetInt64());
+        Assert.Equal(1, finalPipeline.GetProperty("duplicates").GetInt64());
+        Assert.Equal(2, (await store.GetSnapshotAsync(cancellation)).Queued);
+    }
+
+    [Fact]
     public async Task RawIntake_RateLimitsBeforeParsing()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
@@ -471,6 +547,15 @@ public sealed class PackActivationTests
         using HttpRequestMessage request = new(HttpMethod.Post, endpoint) { Content = new StringContent(raw, Encoding.UTF8, "application/json") };
         if (token) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Token);
         return await client.SendAsync(request, cancellation);
+    }
+
+    private static async Task<JsonDocument> Status(HttpClient client, CancellationToken cancellation)
+    {
+        using HttpRequestMessage request = new(HttpMethod.Get, "/v1/status");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Token);
+        using HttpResponseMessage response = await client.SendAsync(request, cancellation);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellation));
     }
 
     private static void CopyPack(string destination)

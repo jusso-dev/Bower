@@ -5,7 +5,7 @@ namespace Bower.Collector.Jobs;
 
 /// <summary>
 /// Copies newly stored events into the long-term archive. Reads the queue only; retention
-/// consults <see cref="QueueArchive.ArchivedThroughSequence"/> so nothing is purged unarchived.
+/// consults <see cref="QueueArchive.VerifyCoverageAsync"/> so nothing is purged unarchived.
 /// </summary>
 public sealed partial class QueueArchiveJob(
     IDurableEventStore queue,

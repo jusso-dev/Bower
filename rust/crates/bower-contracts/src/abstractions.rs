@@ -70,6 +70,16 @@ pub struct SourceActivity {
     pub event_count: i64,
 }
 
+/// When the collector began expecting an application and environment (C#
+/// `SourceMonitoring`). The silence allowance of a source never seen runs from here,
+/// independent of process start.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourceMonitoring {
+    pub application: String,
+    pub environment: String,
+    pub monitoring_since: Timestamp,
+}
+
 /// Admission request for an event accepted by a suppressing policy (C#
 /// `SuppressionRequest`). Key values come from the redacted envelope and are stored
 /// until the window closes.
@@ -376,6 +386,22 @@ pub trait DurableEventStore: Send + Sync {
 
     /// Merges observations: keeps the later time and the larger count per source.
     fn upsert_source_activity(&self, _activity: &[SourceActivity]) -> StoreResult<()> {
+        Err(unsupported_store_operation())
+    }
+
+    /// Stored monitoring start per application and environment. Reads only.
+    fn get_source_monitoring(&self) -> StoreResult<Vec<SourceMonitoring>> {
+        Err(unsupported_store_operation())
+    }
+
+    /// Makes `expected` the monitored set. A source already monitored keeps its stored
+    /// start unless the proposed start is earlier (a start stored while the clock ran
+    /// ahead); a new one starts at its proposed time; a source no longer expected is
+    /// forgotten, so expecting it again starts afresh. Returns the stored starts.
+    fn start_source_monitoring(
+        &self,
+        _expected: &[SourceMonitoring],
+    ) -> StoreResult<Vec<SourceMonitoring>> {
         Err(unsupported_store_operation())
     }
 }

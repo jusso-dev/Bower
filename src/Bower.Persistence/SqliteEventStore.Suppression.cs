@@ -47,6 +47,13 @@ public sealed partial class SqliteEventStore
             event_count INTEGER NOT NULL,
             PRIMARY KEY (application, environment)
         );
+
+        CREATE TABLE IF NOT EXISTS source_monitoring (
+            application TEXT NOT NULL,
+            environment TEXT NOT NULL,
+            monitoring_since TEXT NOT NULL,
+            PRIMARY KEY (application, environment)
+        );
         """;
 
     private const int MaximumWindowsPerClose = 1_000;
@@ -275,6 +282,91 @@ public sealed partial class SqliteEventStore
         }
 
         await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<SourceMonitoring>> GetSourceMonitoringAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT application, environment, monitoring_since
+            FROM source_monitoring
+            ORDER BY application, environment;
+            """;
+        List<SourceMonitoring> monitoring = [];
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            monitoring.Add(new SourceMonitoring(
+                reader.GetString(0),
+                reader.GetString(1),
+                ParseTimestamp(reader.GetString(2))));
+        }
+
+        return monitoring;
+    }
+
+    public async Task<IReadOnlyList<SourceMonitoring>> StartSourceMonitoringAsync(
+        IReadOnlyCollection<SourceMonitoring> expected,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(expected);
+        HashSet<(string, string)> keys = [.. expected.Select(item => (item.Application, item.Environment))];
+
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteTransaction transaction = await BeginWriteAsync(connection, true, cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT application, environment, monitoring_since FROM source_monitoring;";
+        Dictionary<(string, string), DateTimeOffset> stored = [];
+        await using (SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                stored[(reader.GetString(0), reader.GetString(1))] = ParseTimestamp(reader.GetString(2));
+            }
+        }
+
+        SqliteParameter application = command.Parameters.Add("$application", SqliteType.Text);
+        SqliteParameter environment = command.Parameters.Add("$environment", SqliteType.Text);
+        command.CommandText = "DELETE FROM source_monitoring WHERE application = $application AND environment = $environment;";
+        foreach ((string, string) key in stored.Keys.Where(key => !keys.Contains(key)).ToArray())
+        {
+            (application.Value, environment.Value) = key;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            stored.Remove(key);
+        }
+
+        SqliteParameter since = command.Parameters.Add("$since", SqliteType.Text);
+        command.CommandText =
+            """
+            INSERT INTO source_monitoring (application, environment, monitoring_since)
+            VALUES ($application, $environment, $since)
+            ON CONFLICT (application, environment) DO UPDATE SET monitoring_since = excluded.monitoring_since;
+            """;
+        List<SourceMonitoring> monitoring = [];
+        foreach (SourceMonitoring item in expected)
+        {
+            (string, string) key = (item.Application, item.Environment);
+            // A start stored while the clock ran ahead yields to an earlier one. That can
+            // only shorten a deadline, never extend it.
+            if (!stored.TryGetValue(key, out DateTimeOffset start) || start > item.MonitoringSince)
+            {
+                start = item.MonitoringSince;
+                application.Value = item.Application;
+                environment.Value = item.Environment;
+                since.Value = start.ToUniversalTime().ToString(TimestampFormat, CultureInfo.InvariantCulture);
+                await command.ExecuteNonQueryAsync(cancellationToken);
+                stored[key] = start;
+            }
+
+            monitoring.Add(item with { MonitoringSince = start });
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return monitoring;
     }
 
     private static DateTimeOffset ParseTimestamp(string value) =>

@@ -8,8 +8,8 @@ use std::time::Duration;
 use bower_contracts::time::{self, Timestamp};
 use bower_contracts::{
     DeadLetterRecord, DurableEventStore, EnqueueResult, FailureSettlement, LedgerHead,
-    LedgerVerification, QueueSnapshot, QueueState, QueuedEvent, SourceActivity, StoreError,
-    StoreResult, SuppressionWindow,
+    LedgerVerification, QueueSnapshot, QueueState, QueuedEvent, SourceActivity, SourceMonitoring,
+    StoreError, StoreResult, SuppressionWindow,
 };
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension, Row, TransactionBehavior, named_params, params};
@@ -183,6 +183,13 @@ impl SqliteEventStore {
             .saturating_add(16_777_216)
     }
 
+    /// Physical headroom a write must leave below `maximum_storage_bytes` before it
+    /// starts: one full WAL transaction plus database growth during checkpoint.
+    pub fn storage_reserve_bytes(&self) -> i64 {
+        let maximum = self.maximum_storage_bytes();
+        maximum / 2 + maximum / 128 + 65_536
+    }
+
     fn configure_budget(&self, connection: &Connection) -> StoreResult<()> {
         let page_size: i64 = connection
             .query_row("PRAGMA page_size;", [], |row| row.get(0))
@@ -216,8 +223,7 @@ impl SqliteEventStore {
         let wal = PathBuf::from(format!("{}-wal", self.pool.path().display()));
         let current = file_size(self.pool.path())?.saturating_add(file_size(&wal)?);
         let maximum = self.maximum_storage_bytes();
-        // Reserve a full WAL transaction plus database growth during checkpoint.
-        let reserve = maximum / 2 + maximum / 128 + 65_536;
+        let reserve = self.storage_reserve_bytes();
         if current > maximum - reserve {
             return Err(capacity_error(maximum, current, reserve));
         }
@@ -340,6 +346,49 @@ VALUES (
 
     pub(crate) fn storage_check(&self) -> StoreResult<()> {
         self.check_storage()
+    }
+
+    /// Ledger sequences of the events the archive-bounded purge would remove next with the
+    /// same arguments: same filter, order and limit (C# `ReadPurgeCandidateSequencesAsync`).
+    pub fn read_purge_candidate_sequences(
+        &self,
+        delivered_before: Timestamp,
+        maximum_count: usize,
+        archived_through_sequence: i64,
+    ) -> StoreResult<Vec<i64>> {
+        if !(1..=MAXIMUM_PURGE_COUNT).contains(&maximum_count) {
+            return Err(StoreError::Invalid(
+                "maximumCount must be between 1 and 100000.".into(),
+            ));
+        }
+        let before = stored(&delivered_before);
+        self.pool.with(|connection| {
+            let mut select = connection
+                .prepare(
+                    "SELECT enqueue_sequence
+FROM queue_events_v5
+WHERE state = ?1
+  AND acknowledgement IS NOT NULL
+  AND delivered_at IS NOT NULL
+  AND delivered_at < ?2
+  AND enqueue_sequence <= ?4
+ORDER BY delivered_at ASC
+LIMIT ?3;",
+                )
+                .map_err(storage)?;
+            let rows = select
+                .query_map(
+                    params![
+                        DELIVERED,
+                        before,
+                        sql_limit(maximum_count),
+                        archived_through_sequence
+                    ],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(storage)?;
+            rows.collect::<Result<Vec<_>, _>>().map_err(storage)
+        })
     }
 
     fn purge_delivered_core(
@@ -524,16 +573,20 @@ impl DurableEventStore for SqliteEventStore {
             // Suppression is decided under the same write lock, after the duplicate
             // check so a retried event never consumes allowance, and committed with
             // the count it changed.
-            if let Some(rule) = &candidate.suppression
-                && !crate::suppression::admit(&transaction, rule, &candidate.received_at)?
-            {
-                transaction.commit().map_err(storage)?;
-                return Ok(EnqueueResult {
-                    enqueued: false,
-                    duplicate: false,
-                    event_id: candidate.event_id.clone(),
-                    suppressed: true,
-                });
+            if let Some(rule) = &candidate.suppression {
+                // A suppressed event commits a counter change, so it needs the same
+                // physical budget as an insert; refusing here leaves the counters
+                // untouched.
+                self.check_storage()?;
+                if !crate::suppression::admit(&transaction, rule, &candidate.received_at)? {
+                    transaction.commit().map_err(storage)?;
+                    return Ok(EnqueueResult {
+                        enqueued: false,
+                        duplicate: false,
+                        event_id: candidate.event_id.clone(),
+                        suppressed: true,
+                    });
+                }
             }
             self.insert(&transaction, candidate)?;
             transaction.commit().map_err(storage)?;
@@ -938,6 +991,17 @@ FROM queue_events_v5;",
 
     fn upsert_source_activity(&self, activity: &[SourceActivity]) -> StoreResult<()> {
         crate::suppression::upsert_source_activity(self, activity)
+    }
+
+    fn get_source_monitoring(&self) -> StoreResult<Vec<SourceMonitoring>> {
+        crate::suppression::get_source_monitoring(self)
+    }
+
+    fn start_source_monitoring(
+        &self,
+        expected: &[SourceMonitoring],
+    ) -> StoreResult<Vec<SourceMonitoring>> {
+        crate::suppression::start_source_monitoring(self, expected)
     }
 
     fn maintain(&self) -> StoreResult<()> {

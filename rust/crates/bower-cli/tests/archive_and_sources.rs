@@ -6,7 +6,9 @@ mod common;
 
 use std::path::Path;
 
-use bower_contracts::{DurableEventStore, QueueState, QueuedEvent, SourceActivity};
+use bower_contracts::{
+    DurableEventStore, QueueState, QueuedEvent, SourceActivity, SourceMonitoring,
+};
 use bower_persistence::SqliteEventStore;
 use common::{bower, one_shot_server};
 use serde_json::Value;
@@ -392,6 +394,65 @@ fn archive_replay_posts_labelled_events_and_stops_on_refusal() {
         unreachable.stdout.contains("\"unreachable\": 1"),
         "{}",
         unreachable.stdout
+    );
+}
+
+#[test]
+fn sources_check_reads_collector_monitoring_starts_without_writing_them() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = directory.path().join("queue.db");
+    let store = SqliteEventStore::new(&database, 10 * 1024 * 1024, None).unwrap();
+    store.initialize().unwrap();
+    let started = bower_contracts::time::now();
+    store
+        .start_source_monitoring(&[SourceMonitoring {
+            application: "Payroll".into(),
+            environment: "production".into(),
+            monitoring_since: started,
+        }])
+        .unwrap();
+    let both = write(
+        &directory.path().join("both.json"),
+        r#"{"apiVersion":"bower.security/v1","kind":"SourceExpectations","sources":[
+  {"application":"Payroll","environment":"production","maximumSilenceMinutes":30},
+  {"application":"Portal","environment":"production","maximumSilenceMinutes":30}]}"#,
+    );
+    let payroll = write(
+        &directory.path().join("payroll.json"),
+        r#"{"apiVersion":"bower.security/v1","kind":"SourceExpectations","sources":[
+  {"application":"Payroll","environment":"production","maximumSilenceMinutes":30}]}"#,
+    );
+    let database = database.to_str().unwrap();
+    let check = |expectations: &str| {
+        bower(&[
+            "sources",
+            "check",
+            "--expectations",
+            expectations,
+            "--database",
+            database,
+        ])
+    };
+
+    let checked_both = check(&both);
+    let checked_payroll = check(&payroll);
+
+    // The collector's pending source is pending here too; one it never monitored has no grace.
+    assert_eq!(checked_both.code, 3, "{}", checked_both.stderr);
+    let output: Value = serde_json::from_str(&checked_both.stdout).unwrap();
+    assert_eq!(output["healthy"], false);
+    assert_eq!(output["sources"][0]["state"], "pending");
+    assert_eq!(output["sources"][1]["state"], "never-seen");
+    assert_eq!(checked_payroll.code, 0, "{}", checked_payroll.stderr);
+    let output: Value = serde_json::from_str(&checked_payroll.stdout).unwrap();
+    assert_eq!(output["healthy"], true);
+    let stored = store.get_source_monitoring().unwrap();
+    assert_eq!(
+        stored
+            .iter()
+            .map(|item| (item.application.as_str(), item.monitoring_since))
+            .collect::<Vec<_>>(),
+        [("Payroll", started)]
     );
 }
 

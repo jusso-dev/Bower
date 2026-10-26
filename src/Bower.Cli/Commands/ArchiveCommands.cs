@@ -144,20 +144,36 @@ internal static class SourceCommands
 {
     /// <summary>
     /// bower sources check --expectations FILE [--database FILE]: offline silence check from
-    /// the activity the collector last persisted. Exit 3 when any expected source is quiet.
+    /// the activity and monitoring starts the collector last persisted. Exit 3 when any
+    /// expected source is overdue.
     /// </summary>
     public static async Task<int> CheckAsync(string[] args)
     {
         SourceExpectations expectations = SourceExpectationsLoader.LoadFile(CliOptions.Required(args, "--expectations"));
         SqliteEventStore store = await QueueCommands.OpenStoreAsync(args);
-        // Offline there is no grace period: a source never seen is reported at once.
+        SourcesCheckOutput output = await EvaluateAsync(expectations, store, DateTimeOffset.UtcNow);
+        Console.WriteLine(JsonSerializer.Serialize(output, CliJsonContext.Default.SourcesCheckOutput));
+        return output.Healthy ? 0 : 3;
+    }
+
+    /// <summary>
+    /// Reads, never writes, the collector's monitoring starts, so a source the collector
+    /// reports as pending is pending here too. A source the collector never monitored has
+    /// no grace period: never seen is reported at once.
+    /// </summary>
+    internal static async Task<SourcesCheckOutput> EvaluateAsync(
+        SourceExpectations expectations,
+        SqliteEventStore store,
+        DateTimeOffset now)
+    {
         IReadOnlyList<SourceSilenceStatus> statuses = SourceSilenceEvaluator.Evaluate(
             expectations,
             await store.GetSourceActivityAsync(),
+            await store.GetSourceMonitoringAsync(),
             DateTimeOffset.MinValue,
-            DateTimeOffset.UtcNow);
-        SourcesCheckOutput output = new(
-            statuses.All(item => item.IsActive),
+            now);
+        return new SourcesCheckOutput(
+            !statuses.Any(item => item.IsOverdue),
             [.. statuses.Select(item => new SourceCheckItem(
                 item.Application,
                 item.Environment,
@@ -165,7 +181,5 @@ internal static class SourceCommands
                 item.LastSeenAt,
                 item.LastSeenAt is null ? null : item.SilentSeconds,
                 item.AllowedSilenceSeconds))]);
-        Console.WriteLine(JsonSerializer.Serialize(output, CliJsonContext.Default.SourcesCheckOutput));
-        return output.Healthy ? 0 : 3;
     }
 }

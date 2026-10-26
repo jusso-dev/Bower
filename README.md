@@ -416,7 +416,7 @@ Neither has been exercised against a live tenant or account yet.
 | `BOWER_AZURE_CLIENT_ID` | — | User-assigned managed identity client id. |
 | `BOWER_MANAGEMENT_ENDPOINT` / `BOWER_MANAGEMENT_SCOPE` | — | Enables the heartbeat job. HTTPS required unless loopback. |
 | `BOWER_SOURCE_EXPECTATIONS` | — | JSON file of applications that must keep sending events; quiet ones degrade `/health`. [Details](docs/operations/suppression-archive-and-source-silence.md#source-silence) |
-| `BOWER_ARCHIVE_PATH` | — | Directory for the ledger-verified long-term archive; retention then purges only archived events. [Details](docs/operations/suppression-archive-and-source-silence.md#archive-and-replay) |
+| `BOWER_ARCHIVE_PATH` | — | Directory for the ledger-verified long-term archive; retention then purges only events a verified archive of this queue covers. [Details](docs/operations/suppression-archive-and-source-silence.md#archive-and-replay) |
 
 ## Background jobs
 

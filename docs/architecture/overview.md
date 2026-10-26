@@ -62,14 +62,15 @@ ledger checkpoints. The old table name becomes a read-only view, refusing old
 writers. DB/WAL limits include retained payloads, indexes and ledger history.
 See [upgrade, rollback and storage contract](../operations/queue-v5-durability.md).
 
-Suppression windows (`suppression_windows`) and per-source activity
-(`source_activity`) are auxiliary tables created on every start without a schema
+Suppression windows (`suppression_windows`), per-source activity
+(`source_activity`) and per-source monitoring starts (`source_monitoring`) are
+auxiliary tables created on every start without a schema
 version, so a version 5 queue stays openable by either runtime. Suppression is
 decided inside the enqueue transaction after the duplicate check; a hosted
 `SuppressionWindowWorker` closes ended windows and queues their summaries in one
 transaction. The optional archive reads stored events with their ledger entries and
-writes segments that continue the ledger chain; retention then purges only archived
-events. See [suppression, metrics, source silence and archive](../operations/suppression-archive-and-source-silence.md).
+writes segments that continue the ledger chain under an exclusive writer lock;
+retention then purges only events a verified archive of the same queue covers. See [suppression, metrics, source silence and archive](../operations/suppression-archive-and-source-silence.md).
 
 ## Agents and cloud queues
 
@@ -79,7 +80,9 @@ they map source records to candidate events and post them to a collector through
 policy there. Their upstream position (a file cursor, an SQS message, a Pub/Sub ack
 id) advances only when the collector accepted or definitively rejected every event
 derived from it. Cloud queues keep their own dead-letter policies; the cloud agent
-releases malformed messages to them and never deletes on backpressure. See
+releases malformed messages to them and never deletes on backpressure. It renews the
+lease of every received message by elapsed time until the message is settled; a message
+whose lease cannot be held is left for redelivery, never acknowledged. See
 [AWS](../deployment/aws.md) and [Google Cloud](../deployment/gcp.md).
 
 ## Background jobs

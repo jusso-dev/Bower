@@ -411,6 +411,7 @@ fn csharp_vector_bundle() -> EvidenceBundle {
         retention: Some(retention),
         ingestion_errors_last_hour: Some(0),
         limitations: vec!["l1".to_owned(), "l2 \u{e9}".to_owned()],
+        probe: None,
     }
 }
 

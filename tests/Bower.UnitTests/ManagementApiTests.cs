@@ -291,8 +291,15 @@ public sealed class ManagementApiTests
             Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
         };
 
+    internal static Task<WebApplication> StartAsync(
+        TemporaryDirectory directory,
+        CancellationToken cancellationToken,
+        params string[] extraArgs) =>
+        StartAsync(directory, null, cancellationToken, extraArgs);
+
     internal static async Task<WebApplication> StartAsync(
         TemporaryDirectory directory,
+        TimeProvider? clock,
         CancellationToken cancellationToken,
         params string[] extraArgs)
     {
@@ -311,6 +318,10 @@ public sealed class ManagementApiTests
                     .AddScheme<AuthenticationSchemeOptions, HeaderAuthenticationHandler>(
                         HeaderAuthenticationHandler.SchemeName,
                         _ => { });
+                if (clock is not null)
+                {
+                    builder.Services.AddSingleton(clock);
+                }
             },
             environmentName: "Production");
         await ManagementApplication.InitializeAsync(app, cancellationToken);

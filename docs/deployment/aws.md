@@ -141,6 +141,12 @@ stored in Bower.
   definitively rejected by policy (400/413/422).
 - Collector backpressure (503, 5xx, 401/403, network errors) releases the message
   with `BOWER_RETRY_SECONDS` visibility; a 429 is retried in place.
+- Every received message is leased by elapsed time: on receive the agent sets its
+  visibility to the 5-minute lease and renews it every 2.5 minutes until the message is
+  deleted or released, including while earlier messages in the batch, translation,
+  S3 reads, forwarding or 429 retries are still running. If a renewal fails or the lease
+  deadline passes, work on that message stops and it is neither deleted nor released;
+  SQS redelivers it and the collector deduplicates its deterministic event ids.
 - Before each receive the agent probes the collector's `/health`. While the collector
   is unreachable it does not receive, so an outage does not spend delivery attempts
   and push healthy messages into the dead-letter queue.

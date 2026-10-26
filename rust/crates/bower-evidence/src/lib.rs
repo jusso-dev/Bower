@@ -9,11 +9,12 @@
 pub mod bundle;
 pub mod clients;
 pub mod controls;
+pub mod probe;
 pub mod runner;
 
 pub use bundle::{
-    ArrivalRecord, CURRENT_SCHEMA, CanaryRecord, ControlRecord, EvidenceBundle, RetentionRecord,
-    SignedEvidence, modes,
+    ArrivalRecord, CURRENT_SCHEMA, CanaryRecord, ControlRecord, EvidenceBundle, ProbeRecord,
+    RetentionRecord, SignedEvidence, modes,
 };
 pub use clients::{
     HttpArmReader, HttpCanarySender, LogAnalyticsQueryClient, default_http_client,
@@ -21,7 +22,7 @@ pub use clients::{
 };
 pub use runner::{
     ArmReader, BoxFuture, CanarySender, CollectorResponse, EvidenceOptions, EvidenceRunner,
-    LogAnalyticsQuery, QueryRows,
+    LogAnalyticsQuery, ParserProbeSender, QueryRows,
 };
 
 /// Evidence failures. Messages never carry tokens, payloads or response bodies.

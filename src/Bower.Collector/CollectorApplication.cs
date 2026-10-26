@@ -83,7 +83,8 @@ public static partial class CollectorApplication
         builder.Services.AddSingleton(services => new SourceHealth(
             expectations,
             services.GetRequiredService<PipelineTelemetry>(),
-            services.GetRequiredService<TimeProvider>()));
+            services.GetRequiredService<TimeProvider>(),
+            services.GetRequiredService<ILogger<SourceHealth>>()));
         builder.Services.AddHostedService<SuppressionWindowWorker>();
         builder.Services.AddSingleton<EventIdentityConflicts>();
         builder.Services.AddSingleton(
@@ -162,6 +163,7 @@ public static partial class CollectorApplication
         await queue.InitializeAsync(cancellationToken);
         app.Services.GetRequiredService<PipelineTelemetry>().Load(
             await queue.GetSourceActivityAsync(cancellationToken));
+        await app.Services.GetRequiredService<SourceHealth>().InitializeAsync(queue, cancellationToken);
 
         RecurringJobRegistry jobs = app.Services.GetRequiredService<RecurringJobRegistry>();
         // Superseded by the next run on failure; the in-memory set keeps unsaved changes.
@@ -343,6 +345,7 @@ public static partial class CollectorApplication
                     {
                         EventIdentityConflicts = conflicts.Snapshot(),
                         Pipeline = telemetry.Snapshot(),
+                        Intake = telemetry.IntakeSnapshot(),
                         Sources = sourceHealth.IsConfigured ? sources : null,
                         Delivery = (context.RequestServices.GetService<IOutputAdapter>() as IOutputConcurrencyStatus)
                             ?.GetConcurrencySnapshot()
@@ -353,7 +356,7 @@ public static partial class CollectorApplication
     }
 
     private static string Status(QueueSnapshot snapshot, IReadOnlyList<SourceSilenceStatus> sources) =>
-        snapshot.DeadLettered > 0 || sources.Any(source => !source.IsActive) ? "degraded" : "healthy";
+        snapshot.DeadLettered > 0 || sources.Any(source => source.IsOverdue) ? "degraded" : "healthy";
 
     private static IOutputAdapter? CreateOutput(CollectorSettings settings, TokenCredential? credential)
     {

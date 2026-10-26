@@ -154,7 +154,10 @@ configure an adequate limit before migration. Database free pages are reused.
 The physical cap includes retained delivered payloads, ledger/checkpoint pages and
 indexes; it can reject new events before the logical undelivered payload limit.
 SQLite `FULL` is surfaced as capacity, not duplicate success. Exact replay still
-wins over normal admission backpressure. This limit covers the queue DB and WAL,
+wins over normal admission backpressure. A suppressed event commits a counter
+change, so it takes the same physical check after the duplicate lookup: when the
+budget is spent it is refused with capacity, its window counts stay unchanged and
+it is not reported as suppressed. This limit covers the queue DB and WAL,
 not unrelated disk users, output spool directories or filesystem failure. SQLite's
 small shared-memory file and transient memory are additional overhead. All writers
 must use the supported APIs and matching limits; raw administrative SQL is outside

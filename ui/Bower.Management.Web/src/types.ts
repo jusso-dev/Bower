@@ -79,6 +79,34 @@ export interface Overview {
   exceptions: Collector[];
   policyDrift?: number;
   deadLettered?: number;
+  /** Active collectors whose fresh heartbeat reports a hash other than the assigned version's. */
+  privacyProfileDrift?: number;
+  /** At most 12 rows; fewer than privacyProfileDrift when truncated. */
+  privacyProfileExceptions?: PrivacyProfileDrift[] | null;
+  /**
+   * Part of sourcesDegraded without evidence: every source of a stale, pending, suspended
+   * or revoked collector, and "pending" sources (not yet seen, in allowance) of active ones.
+   * sourcesReporting + sourcesDegraded is every known source.
+   */
+  sourcesUnknown?: number;
+}
+
+/** Desired privacy profile assignment against the collector's observed hash. Metadata only. */
+export interface PrivacyProfileDrift {
+  collectorId: string;
+  machineName: string;
+  assignmentRevision: number;
+  assignedAt: string;
+  versionId: string;
+  profileId: string;
+  version: string;
+  assignedHash: string;
+  /** "sha256:<hex>", "default" or null when the collector did not report one. */
+  observedHash: string | null;
+  /** Time of the heartbeat that reported observedHash. */
+  observedAt: string;
+  /** True once a heartbeat at least two minutes after the assignment still differs. */
+  mismatchConfirmed: boolean;
 }
 
 export interface Approval {

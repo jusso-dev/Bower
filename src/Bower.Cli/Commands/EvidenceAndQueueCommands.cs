@@ -11,20 +11,31 @@ internal static class EvidenceCommands
     /// <summary>
     /// bower evidence run --collector-url URL [--workspace-id ID] [--workspace-resource-id RID]
     ///   [--table NAME] [--credential MODE] [--timeout-minutes N] [--signing-key FILE] [--out FILE]
+    ///   [--probe-profile generic|parser:PACK:INDEX]
     /// Reads the ingest token from BOWER_INGEST_TOKEN. Without --workspace-id the bundle is simulated.
+    /// The default generic probe posts a canary to /v1/events; a parser profile posts a trusted
+    /// synthetic fixture through that signed pack parser's intake instead.
     /// </summary>
     public static async Task<int> RunAsync(string[] args)
     {
         TimeSpan timeout = TimeSpan.FromMinutes(TimeoutMinutes(args));
+        string probeProfile = CliOptions.Get(args, "--probe-profile") ?? ProbeProfiles.Generic;
+        if (probeProfile != ProbeProfiles.Generic)
+        {
+            ProbeProfiles.ResolveParser(probeProfile);
+        }
+
         string? workspaceId = CliOptions.Get(args, "--workspace-id");
         HttpClient http = new() { Timeout = TimeSpan.FromSeconds(30) };
         Azure.Core.TokenCredential? credential = workspaceId is null && CliOptions.Get(args, "--workspace-resource-id") is null
             ? null
             : VerifierCredential.Create(CliOptions.Get(args, "--credential"), CliOptions.Get(args, "--client-id"));
+        HttpCanarySender sender = new(http);
         EvidenceRunner runner = new(
-            new HttpCanarySender(http),
+            sender,
             workspaceId is null || credential is null ? null : new LogAnalyticsQueryClient(http, credential),
-            credential is null ? null : new ArmReader(http, credential));
+            credential is null ? null : new ArmReader(http, credential),
+            parserSender: sender);
         string collector = CliOptions.Required(args, "--collector-url");
         EvidenceBundle bundle = await runner.RunAsync(
             new EvidenceOptions
@@ -34,7 +45,8 @@ internal static class EvidenceCommands
                 WorkspaceId = workspaceId,
                 WorkspaceResourceId = CliOptions.Get(args, "--workspace-resource-id"),
                 Table = CliOptions.Get(args, "--table") ?? "BowerSecurity_CL",
-                Timeout = timeout
+                Timeout = timeout,
+                ProbeProfile = probeProfile
             },
             CancellationToken.None);
 
@@ -46,6 +58,11 @@ internal static class EvidenceCommands
 
         Console.WriteLine($"Mode:     {bundle.Mode}");
         Console.WriteLine($"Canary:   {bundle.Canary.EventId} -> collector HTTP {bundle.Canary.CollectorStatus} ({bundle.Canary.CollectorDecision ?? "no decision"})");
+        if (bundle.Probe is { } probe)
+        {
+            Console.WriteLine($"Probe:    {probe.Profile} pack {probe.PackVersion ?? "unknown"} ({probe.ParserStatus ?? "unknown"}) -> {probe.Outcome}");
+        }
+
         if (bundle.Arrival.Found)
         {
             Console.WriteLine($"Arrival:  found in {bundle.Arrival.Table} after {bundle.Arrival.LatencySeconds} s ({bundle.Arrival.Attempts} queries)");

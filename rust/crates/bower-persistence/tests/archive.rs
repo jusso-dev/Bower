@@ -790,3 +790,326 @@ fn constructor_rejects_blank_arguments() {
     // A missing directory is an empty archive.
     assert_eq!(archive.archived_through_sequence().unwrap(), 0);
 }
+
+fn segment_files(root: &Path) -> usize {
+    std::fs::read_dir(root)
+        .unwrap()
+        .filter(|entry| {
+            entry
+                .as_ref()
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with("segment-")
+        })
+        .count()
+}
+
+/// Issue #67: the exclusive writer lock either runtime holds for a whole run
+/// (C# `Archive_RefusesWhileAnotherWriterHoldsTheArchiveLock`).
+#[test]
+fn archive_refuses_while_another_writer_holds_the_archive_lock() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    let store = store(directory.path(), 10 * ONE_MEBIBYTE, &clock);
+    let archive = new_archive(directory.path(), &clock);
+    enqueue_range(&store, 1, 2, &clock);
+    let root = archive_path(directory.path());
+    std::fs::create_dir_all(&root).unwrap();
+
+    {
+        let held = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(root.join("archive.lock"))
+            .unwrap();
+        held.try_lock().unwrap();
+        let error = archive.archive(&store).unwrap_err();
+        assert!(
+            matches!(&error, ArchiveError::Io(io) if io.kind() == std::io::ErrorKind::WouldBlock),
+            "{error:?}"
+        );
+        assert_eq!(segment_files(&root), 0);
+    }
+
+    assert_eq!(archive.archive(&store).unwrap().events, 2);
+}
+
+fn archive_delivered(
+    store: &SqliteEventStore,
+    archive: &QueueArchive,
+    first: i32,
+    last: i32,
+    clock: &FakeClock,
+) {
+    enqueue_range(store, first, last, clock);
+    deliver_all(store);
+    archive.archive(store).unwrap();
+}
+
+fn segment(directory: &Path, first: i64) -> PathBuf {
+    archive_path(directory).join(format!("segment-{first:012}.jsonl.gz"))
+}
+
+fn forge_segment(path: &Path, line: usize, from: &str, to: &str) {
+    let mut lines = read_segment(path);
+    lines[line] = lines[line].replace(from, to);
+    write_segment(path, &lines);
+}
+
+/// Issue #66 (C# `QueueArchiveRetentionTests`): coverage requires verified segments,
+/// a start at or below the oldest stored event and the queue's own ledger chain.
+#[test]
+fn coverage_refuses_deleted_and_corrupted_segments() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    let store = store(directory.path(), 10 * ONE_MEBIBYTE, &clock);
+    let archive = new_archive(directory.path(), &clock);
+    archive_delivered(&store, &archive, 1, 4, &clock);
+    let path = segment(directory.path(), 1);
+    let original = std::fs::read(&path).unwrap();
+
+    forge_segment(&path, 0, "event-1", "forged1");
+    let corrupted = archive.verify_coverage(&store).unwrap();
+    std::fs::remove_file(&path).unwrap();
+    let deleted = archive.verify_coverage(&store).unwrap();
+    std::fs::write(&path, original).unwrap();
+    let restored = archive.verify_coverage(&store).unwrap();
+
+    assert!(!corrupted.verified);
+    assert_eq!(corrupted.reason.as_deref(), Some("segment-digest-mismatch"));
+    assert_eq!(deleted.reason.as_deref(), Some("segment-missing"));
+    assert!(restored.verified, "{restored:?}");
+    assert_eq!((restored.first_sequence, restored.through_sequence), (1, 4));
+}
+
+#[test]
+fn coverage_refuses_a_foreign_archive_with_overlapping_sequences() {
+    let directory = tempfile::tempdir().unwrap();
+    let foreign_directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    let store = store(directory.path(), 10 * ONE_MEBIBYTE, &clock);
+    let foreign = common::store(foreign_directory.path(), 10 * ONE_MEBIBYTE, &clock);
+    enqueue_range(&store, 1, 4, &clock);
+    deliver_all(&store);
+    enqueue_range(&foreign, 101, 106, &clock);
+    let archive = new_archive(directory.path(), &clock);
+    archive.archive(&foreign).unwrap();
+
+    let coverage = archive.verify_coverage(&store).unwrap();
+
+    assert!(archive.verify(None).unwrap().intact);
+    assert_eq!(coverage.reason.as_deref(), Some("lineage-mismatch"));
+    assert_eq!(
+        store
+            .purge_delivered_archived(clock.now() + Span::days(10), 100, 0)
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn coverage_protects_rows_below_an_archive_that_lost_its_first_manifest() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    let store = store(directory.path(), 10 * ONE_MEBIBYTE, &clock);
+    let archive = new_archive(directory.path(), &clock);
+    archive_delivered(&store, &archive, 1, 2, &clock);
+    archive_delivered(&store, &archive, 3, 4, &clock);
+    std::fs::remove_file(archive_path(directory.path()).join("segment-000000000001.manifest.json"))
+        .unwrap();
+
+    let coverage = archive.verify_coverage(&store).unwrap();
+
+    assert_eq!(
+        coverage.reason.as_deref(),
+        Some("archive-starts-above-retained")
+    );
+    assert_eq!(coverage.first_sequence, 3);
+}
+
+#[test]
+fn coverage_permits_purging_only_verified_acknowledged_rows_and_notices_later_corruption() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    let store = store(directory.path(), 10 * ONE_MEBIBYTE, &clock);
+    let archive = new_archive(directory.path(), &clock);
+    enqueue_range(&store, 1, 5, &clock);
+    let leased = store.lease(4, Duration::from_secs(60)).unwrap();
+    let token = |id: &str| {
+        leased
+            .iter()
+            .find(|item| item.event_id == id)
+            .and_then(|item| item.lease_token.clone())
+    };
+    store
+        .mark_delivered("event-1", "ack-1", token("event-1").as_deref())
+        .unwrap();
+    store
+        .mark_delivered("event-2", "ack-2", token("event-2").as_deref())
+        .unwrap();
+    store
+        .mark_dead_lettered("event-3", "bad", token("event-3").as_deref())
+        .unwrap();
+    store
+        .mark_retrying(
+            "event-4",
+            "busy",
+            clock.now() + Span::days(30),
+            token("event-4").as_deref(),
+        )
+        .unwrap();
+    archive.archive(&store).unwrap();
+    clock.advance(Span::days(10));
+
+    let coverage = archive.verify_coverage(&store).unwrap();
+    let purged = store
+        .purge_delivered_archived(clock.now(), 100, coverage.through_sequence)
+        .unwrap();
+    let snapshot = store.snapshot().unwrap();
+
+    assert!(coverage.verified, "{coverage:?}");
+    assert_eq!((coverage.first_sequence, coverage.through_sequence), (1, 5));
+    assert_eq!(purged, 2);
+    assert_eq!(
+        (
+            snapshot.delivered,
+            snapshot.dead_lettered,
+            snapshot.retrying,
+            snapshot.queued
+        ),
+        (0, 1, 1, 1)
+    );
+    assert!(store.verify_ledger().unwrap().intact);
+
+    // The cached verification must notice a segment changed after it was verified.
+    archive_delivered(&store, &archive, 6, 7, &clock);
+    assert!(archive.verify_coverage(&store).unwrap().verified);
+    forge_segment(&segment(directory.path(), 6), 1, "event-7", "forged7");
+
+    assert_eq!(
+        archive.verify_coverage(&store).unwrap().reason.as_deref(),
+        Some("segment-digest-mismatch")
+    );
+}
+
+/// Crash after a segment was published, before its manifest, with temporary files of a
+/// crashed writer left behind (C# `Retention_AfterCrashBeforeManifest...`).
+#[test]
+fn coverage_after_crash_before_manifest_is_the_committed_prefix_and_recovers() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    let store = store(directory.path(), 10 * ONE_MEBIBYTE, &clock);
+    let archive = new_archive(directory.path(), &clock);
+    archive_delivered(&store, &archive, 1, 2, &clock);
+    archive_delivered(&store, &archive, 3, 4, &clock);
+    let root = archive_path(directory.path());
+    std::fs::remove_file(root.join("segment-000000000003.manifest.json")).unwrap();
+    std::fs::write(
+        root.join("segment-000000000003.manifest.json.0123.tmp"),
+        "{",
+    )
+    .unwrap();
+    std::fs::write(root.join("segment-000000000003.jsonl.gz.tmp"), "partial").unwrap();
+    clock.advance(Span::days(10));
+
+    let committed = archive.verify_coverage(&store).unwrap();
+    let first_purge = store
+        .purge_delivered_archived(clock.now(), 100, committed.through_sequence)
+        .unwrap();
+    let recovered = archive.archive(&store).unwrap();
+    let coverage = archive.verify_coverage(&store).unwrap();
+    let second_purge = store
+        .purge_delivered_archived(clock.now(), 100, coverage.through_sequence)
+        .unwrap();
+    let report = archive.verify(Some(&store.ledger_head().unwrap())).unwrap();
+
+    assert_eq!(committed.through_sequence, 2);
+    assert_eq!((first_purge, recovered.events, second_purge), (2, 2, 2));
+    assert!(report.intact, "{report:?}");
+    assert_eq!(report.verified_events, 4);
+    let leftovers = std::fs::read_dir(&root)
+        .unwrap()
+        .filter(|entry| {
+            entry
+                .as_ref()
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .ends_with(".tmp")
+        })
+        .count();
+    assert_eq!(leftovers, 0);
+}
+
+#[test]
+fn ledger_boundary_at_or_below_resolves_entries_segments_and_validates() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    let store = store(directory.path(), 10 * ONE_MEBIBYTE, &clock);
+    assert_eq!(store.ledger_boundary_at_or_below(5).unwrap(), None);
+    enqueue_range(&store, 1, 3, &clock);
+    deliver_all(&store);
+    enqueue_range(&store, 4, 4, &clock);
+    let entry = store.ledger_boundary_at_or_below(10).unwrap().unwrap();
+    clock.advance(Span::days(10));
+    store.purge_delivered(clock.now(), 100).unwrap();
+
+    // Rows 1-3 are compacted into one segment ending at 3.
+    let compacted = store.ledger_boundary_at_or_below(2).unwrap();
+    let end = store.ledger_boundary_at_or_below(3).unwrap().unwrap();
+
+    assert_eq!(entry.sequence, 4);
+    assert_eq!(Some(entry.hash), store.ledger_hash_at(4).unwrap());
+    assert_eq!(compacted, None);
+    assert_eq!(end.sequence, 3);
+    assert_eq!(Some(end.hash), store.ledger_hash_at(3).unwrap());
+    assert!(matches!(
+        store.ledger_boundary_at_or_below(-1),
+        Err(StoreError::Invalid(_))
+    ));
+}
+
+fn snapshot_files(root: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    std::fs::read_dir(root)
+        .unwrap()
+        .map(|entry| entry.unwrap())
+        .filter(|entry| entry.file_name() != "archive.lock")
+        .map(|entry| {
+            (
+                entry.file_name().to_string_lossy().into_owned(),
+                std::fs::read(entry.path()).unwrap(),
+            )
+        })
+        .collect()
+}
+
+/// C# `Archive_RefusesToExtendAForeignOrNewerArchiveWithoutWriting`: 8 queue events
+/// give sequence 6 a different hash (another queue or a diverged restore); 2 leave the
+/// archive ahead of the queue.
+#[test]
+fn archive_refuses_to_extend_a_foreign_or_newer_archive_without_writing() {
+    for queue_events in [8, 2] {
+        let directory = tempfile::tempdir().unwrap();
+        let foreign_directory = tempfile::tempdir().unwrap();
+        let clock = FakeClock::new(test_now());
+        let store = store(directory.path(), 10 * ONE_MEBIBYTE, &clock);
+        let foreign = common::store(foreign_directory.path(), 10 * ONE_MEBIBYTE, &clock);
+        enqueue_range(&foreign, 101, 106, &clock);
+        let archive = new_archive(directory.path(), &clock);
+        archive.archive(&foreign).unwrap();
+        enqueue_range(&store, 1, queue_events, &clock);
+        let root = archive_path(directory.path());
+        let before = snapshot_files(&root);
+
+        let error = archive.archive(&store).unwrap_err();
+
+        assert!(
+            matches!(&error, ArchiveError::InvalidData(message) if message.contains("lineage-mismatch") && !message.contains("eventId")),
+            "{error:?}"
+        );
+        assert_eq!(snapshot_files(&root), before, "{queue_events}");
+    }
+}

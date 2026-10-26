@@ -6,17 +6,21 @@
 //! continues the queue ledger chain, so it can be verified without the queue and checked
 //! against a head witnessed by management.
 //!
-//! Bower never deletes or rewrites a completed segment. While an archive is configured,
-//! retention purges only events the archive already holds
-//! (see [`QueueArchive::archived_through_sequence`]).
+//! Bower never deletes or rewrites a committed segment (one with a manifest). Writers take
+//! the exclusive [`WRITER_LOCK_FILE`] lock before reading the watermark, so writers in
+//! either runtime and process exclude each other. While an archive is configured,
+//! retention purges only events the archive verifiably holds for this queue
+//! (see [`QueueArchive::verify_coverage`]).
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use bower_contracts::time::{self, Clock, SystemClock, Timestamp};
-use bower_contracts::{LedgerHead, StoreError, StoreResult};
+use bower_contracts::{DurableEventStore, LedgerHead, StoreError, StoreResult};
 use flate2::Compression;
 use flate2::read::MultiGzDecoder;
 use flate2::write::GzEncoder;
@@ -32,6 +36,10 @@ use crate::queue::SqliteEventStore;
 pub const MAXIMUM_EVENTS_PER_SEGMENT: usize = 10_000;
 /// `kind` of every archive manifest.
 pub const MANIFEST_KIND: &str = "BowerArchiveSegment";
+/// Lock file every archive writer (C# and Rust) holds exclusively for a whole run: an OS
+/// file lock (`flock` on Unix, `LockFileEx` here and a share-mode lock in C# on Windows).
+/// It is never deleted.
+pub const WRITER_LOCK_FILE: &str = "archive.lock";
 
 const API_VERSION: &str = "bower.security/v1";
 const MANIFEST_SUFFIX: &str = ".manifest.json";
@@ -44,6 +52,7 @@ const MAXIMUM_LINE_CHARACTERS: usize = 4 * 1_048_576;
 /// line longer than this is always over the character limit; reading stops there.
 const MAXIMUM_LINE_RAW_BYTES: usize = 3 * MAXIMUM_LINE_CHARACTERS;
 const MAXIMUM_LEDGER_READ: usize = 100_000;
+const MAXIMUM_TEMPORARY_CLEANUP: usize = 1_000;
 
 /// Stored event with its ledger entry (C# `LedgerEvent`).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -123,6 +132,52 @@ impl ArchiveVerification {
             break_reason: Some(reason.to_owned()),
         }
     }
+}
+
+/// Archive coverage retention may rely on (C# `ArchiveCoverage`): events
+/// `first_sequence` to `through_sequence` when `verified`; otherwise a metadata-only
+/// `reason` and nothing may be purged.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ArchiveCoverage {
+    pub verified: bool,
+    pub first_sequence: i64,
+    pub through_sequence: i64,
+    pub reason: Option<String>,
+}
+
+impl ArchiveCoverage {
+    pub fn refused(reason: &str, first_sequence: i64, through_sequence: i64) -> Self {
+        Self {
+            verified: false,
+            first_sequence,
+            through_sequence,
+            reason: Some(reason.to_owned()),
+        }
+    }
+
+    fn covered(first_sequence: i64, through_sequence: i64) -> Self {
+        Self {
+            verified: true,
+            first_sequence,
+            through_sequence,
+            reason: None,
+        }
+    }
+}
+
+/// A verified segment as it was on disk: any change to its manifest, size or write time
+/// invalidates the cached verification.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SegmentStamp {
+    manifest: ArchiveManifest,
+    length: i64,
+    written: Option<SystemTime>,
+}
+
+struct VerifiedPrefix {
+    stamps: Vec<SegmentStamp>,
+    head_sequence: i64,
+    head_hash: String,
 }
 
 fn segment_count(count: usize) -> i32 {
@@ -221,6 +276,44 @@ LIMIT 1;",
                 })
         })
     }
+
+    /// Highest chain hash boundary the ledger records at or below `sequence` (entry,
+    /// compacted segment end or anchor); `None` when none. Every sequence above it and up
+    /// to `sequence` has been purged.
+    pub fn ledger_boundary_at_or_below(&self, sequence: i64) -> StoreResult<Option<LedgerHead>> {
+        if sequence < 0 {
+            return Err(StoreError::Invalid(
+                "sequence must be a non-negative value.".into(),
+            ));
+        }
+        self.pool().with(|connection| {
+            connection
+                .query_row(
+                    "SELECT sequence, chain_hash FROM (
+    SELECT * FROM (SELECT sequence, chain_hash FROM queue_ledger
+        WHERE sequence <= ?1 ORDER BY sequence DESC LIMIT 1)
+    UNION ALL SELECT * FROM (SELECT end_sequence, chain_hash FROM queue_ledger_segments
+        WHERE end_sequence <= ?1 ORDER BY end_sequence DESC LIMIT 1)
+    UNION ALL SELECT sequence, chain_hash FROM queue_ledger_anchor WHERE sequence <= ?1
+) ORDER BY sequence DESC LIMIT 1;",
+                    params![sequence],
+                    |row| {
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, rusqlite::types::Value>(1)?,
+                        ))
+                    },
+                )
+                .optional()
+                .map_err(storage)
+                .map(|value| match value {
+                    Some((sequence, rusqlite::types::Value::Text(hash))) => {
+                        Some(LedgerHead { sequence, hash })
+                    }
+                    _ => None,
+                })
+        })
+    }
 }
 
 /// Long-term, self-verifying archive of every accepted event (C# `QueueArchive`).
@@ -228,6 +321,10 @@ pub struct QueueArchive {
     directory: PathBuf,
     collector_id: String,
     clock: Arc<dyn Clock>,
+    verified_prefix: Mutex<Option<VerifiedPrefix>>,
+    /// Test hook: runs once while the writer owns the archive, before a segment is published.
+    #[cfg(test)]
+    before_publish: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 
 impl std::fmt::Debug for QueueArchive {
@@ -263,6 +360,7 @@ fn full_path(path: &Path) -> io::Result<PathBuf> {
 impl QueueArchive {
     pub const MAXIMUM_EVENTS_PER_SEGMENT: usize = MAXIMUM_EVENTS_PER_SEGMENT;
     pub const MANIFEST_KIND: &'static str = MANIFEST_KIND;
+    pub const WRITER_LOCK_FILE: &'static str = WRITER_LOCK_FILE;
 
     pub fn new(
         directory: impl AsRef<Path>,
@@ -284,6 +382,9 @@ impl QueueArchive {
             directory: full_path(directory)?,
             collector_id: collector_id.to_owned(),
             clock: clock.unwrap_or_else(|| Arc::new(SystemClock)),
+            verified_prefix: Mutex::new(None),
+            #[cfg(test)]
+            before_publish: Mutex::new(None),
         })
     }
 
@@ -291,7 +392,8 @@ impl QueueArchive {
         &self.directory
     }
 
-    /// Last ledger sequence the archive holds; 0 when empty.
+    /// Last ledger sequence the manifests claim; 0 when empty. Unverified: retention uses
+    /// [`QueueArchive::verify_coverage`].
     pub fn archived_through_sequence(&self) -> Result<i64, ArchiveError> {
         Ok(self
             .read_manifests()?
@@ -300,13 +402,34 @@ impl QueueArchive {
     }
 
     /// Copies every stored event not yet archived into new segments. Safe to rerun after
-    /// a crash: a segment left without a manifest is rewritten from the queue.
+    /// a crash: a segment left without a manifest is rewritten from the queue. Fails with
+    /// an `io::ErrorKind::WouldBlock` I/O error, writing nothing, when another writer owns
+    /// the archive.
     pub fn archive(&self, store: &SqliteEventStore) -> Result<ArchiveRunResult, ArchiveError> {
         fs::create_dir_all(&self.directory)?;
 
+        // Own the archive before reading the watermark, so no other writer can publish
+        // between the read and this run's segments.
+        let _ownership = self.acquire_writer_lock()?;
         let manifests = self.read_manifests()?;
         let (mut last_sequence, mut last_hash) = match manifests.last() {
-            Some(manifest) => (manifest.last_sequence, manifest.last_chain_hash.clone()),
+            Some(manifest) => {
+                // Extend only this queue's chain. Another queue's archive, a diverged
+                // restore or an archive ahead of the queue is refused before anything is
+                // written.
+                // A boundary compacted away (the events after it were purged) is left to
+                // the purged-before-archived check below, which writes nothing either.
+                let queue_hash = store.ledger_hash_at(manifest.last_sequence)?;
+                let compacted =
+                    queue_hash.is_none() && store.ledger_head()?.sequence >= manifest.last_sequence;
+                if !compacted && queue_hash.as_deref() != Some(manifest.last_chain_hash.as_str()) {
+                    return Err(ArchiveError::InvalidData(format!(
+                        "Archive lineage-mismatch: the queue ledger does not match the archive head at sequence {}.",
+                        manifest.last_sequence
+                    )));
+                }
+                (manifest.last_sequence, manifest.last_chain_hash.clone())
+            }
             None => {
                 // A new archive starts at the oldest event still stored; its first manifest
                 // records the ledger hash before it, so the chain continues from the queue.
@@ -329,6 +452,7 @@ impl QueueArchive {
             }
         };
 
+        self.remove_abandoned_temporary_files()?;
         let mut segments = 0i32;
         let mut events = 0i64;
         loop {
@@ -385,12 +509,253 @@ impl QueueArchive {
             return Ok(ArchiveVerification::broken(0, 0, None, "archive-empty"));
         }
 
+        let (previous, expected) = (
+            manifests[0].previous_chain_hash.clone(),
+            manifests[0].first_sequence,
+        );
+        self.verify_from(&manifests, 0, previous, expected, anchor)
+    }
+
+    /// Verified, contiguous coverage of `store`'s retained events (C#
+    /// `VerifyCoverageAsync`). Refused (with a metadata-only reason) unless every segment
+    /// exists and matches its manifest digest and chain, the archive starts at or below the
+    /// oldest stored event, and the archived chain equals the queue ledger chain (same
+    /// lineage). Segments verified earlier are not re-read while their manifests, sizes and
+    /// write times are unchanged. Store failures are errors.
+    pub fn verify_coverage(
+        &self,
+        store: &SqliteEventStore,
+    ) -> Result<ArchiveCoverage, ArchiveError> {
+        let oldest = store.read_ledger_events(0, 1)?;
+        let manifests = match self.read_manifests() {
+            Ok(manifests) => manifests,
+            Err(ArchiveError::InvalidData(_)) => {
+                return Ok(ArchiveCoverage::refused("manifest-invalid", 0, 0));
+            }
+            Err(error) => return Err(error),
+        };
+        let (Some(first_manifest), Some(last_manifest)) = (manifests.first(), manifests.last())
+        else {
+            // Nothing stored means nothing to purge; otherwise nothing is covered yet.
+            return Ok(if oldest.is_empty() {
+                ArchiveCoverage::covered(0, 0)
+            } else {
+                ArchiveCoverage::refused("archive-empty", 0, 0)
+            });
+        };
+
+        let first = first_manifest.first_sequence;
+        if oldest.first().is_some_and(|oldest| oldest.sequence < first) {
+            return Ok(ArchiveCoverage::refused(
+                "archive-starts-above-retained",
+                first,
+                last_manifest.last_sequence,
+            ));
+        }
+
+        match self.verify_lineage(store, &manifests) {
+            Err(ArchiveError::InvalidData(_) | ArchiveError::Io(_)) => {
+                Ok(ArchiveCoverage::refused("segment-unreadable", first, 0))
+            }
+            result => result,
+        }
+    }
+
+    fn verify_lineage(
+        &self,
+        store: &SqliteEventStore,
+        manifests: &[ArchiveManifest],
+    ) -> Result<ArchiveCoverage, ArchiveError> {
+        let first = manifests[0].first_sequence;
+        let verification = self.verify_incrementally(manifests)?;
+        if !verification.intact {
+            return Ok(ArchiveCoverage::refused(
+                verification
+                    .break_reason
+                    .as_deref()
+                    .unwrap_or("archive-broken"),
+                first,
+                0,
+            ));
+        }
+
+        // The ledger chain is the queue's lineage: equal hashes at the highest boundary
+        // both record prove every archived event up to it came from this queue. Every
+        // sequence between that boundary and the archive head is already purged.
+        let through = verification.head_sequence;
+        let Some(boundary) = store
+            .ledger_boundary_at_or_below(through)?
+            .filter(|boundary| boundary.sequence >= first - 1)
+        else {
+            return Ok(ArchiveCoverage::refused(
+                "lineage-unverifiable",
+                first,
+                through,
+            ));
+        };
+        let archived = self.archived_hash_at(manifests, boundary.sequence)?;
+        Ok(if archived.as_deref() == Some(boundary.hash.as_str()) {
+            ArchiveCoverage::covered(first, through)
+        } else {
+            ArchiveCoverage::refused("lineage-mismatch", first, through)
+        })
+    }
+
+    /// Re-hashes, bypassing the verification cache, each segment holding one of
+    /// `sequences` (the events about to be purged), and checks its manifest is the one
+    /// [`QueueArchive::verify_coverage`] last verified (C# `VerifySegmentsForPurgeAsync`).
+    /// `None` when all match; otherwise a metadata-only reason, and the cache is dropped
+    /// so the next coverage check verifies everything again.
+    pub fn verify_segments_for_purge(&self, sequences: &[i64]) -> Option<String> {
+        let mut cache = self
+            .verified_prefix
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let reason = match cache.as_ref() {
+            Some(cached) => self.rehash(cached, sequences),
+            None => Some("archive-unverified"),
+        };
+        if reason.is_some() {
+            *cache = None;
+        }
+        reason.map(str::to_owned)
+    }
+
+    fn rehash(&self, cached: &VerifiedPrefix, sequences: &[i64]) -> Option<&'static str> {
+        let mut needed = std::collections::BTreeSet::new();
+        for &sequence in sequences {
+            let index = cached
+                .stamps
+                .binary_search_by(|stamp| {
+                    if sequence < stamp.manifest.first_sequence {
+                        std::cmp::Ordering::Greater
+                    } else if sequence > stamp.manifest.last_sequence {
+                        std::cmp::Ordering::Less
+                    } else {
+                        std::cmp::Ordering::Equal
+                    }
+                })
+                .ok()?;
+            needed.insert(index);
+        }
+        let current: std::collections::HashMap<i64, ArchiveManifest> = match self.read_manifests() {
+            Ok(manifests) => manifests
+                .into_iter()
+                .map(|manifest| (manifest.first_sequence, manifest))
+                .collect(),
+            Err(ArchiveError::InvalidData(_)) => return Some("manifest-invalid"),
+            Err(_) => return Some("segment-unreadable"),
+        };
+        for index in needed {
+            let manifest = &cached.stamps[index].manifest;
+            if current.get(&manifest.first_sequence) != Some(manifest) {
+                return Some("archive-changed");
+            }
+            let segment_path = self.directory.join(&manifest.segment_file);
+            if !segment_path.is_file() {
+                return Some("segment-missing");
+            }
+            match digest(&segment_path) {
+                Ok(value) if value == manifest.segment_sha256 => {}
+                Ok(_) => return Some("segment-digest-mismatch"),
+                Err(_) => return Some("segment-unreadable"),
+            }
+        }
+        None
+    }
+
+    fn verify_incrementally(
+        &self,
+        manifests: &[ArchiveManifest],
+    ) -> Result<ArchiveVerification, ArchiveError> {
+        // Stamp before reading, so a change made during verification invalidates the cache.
+        let stamps: Vec<SegmentStamp> = manifests
+            .iter()
+            .map(|manifest| {
+                let (length, written) =
+                    match fs::metadata(self.directory.join(&manifest.segment_file)) {
+                        Ok(metadata) if metadata.is_file() => (
+                            i64::try_from(metadata.len()).unwrap_or(i64::MAX),
+                            metadata.modified().ok(),
+                        ),
+                        _ => (-1, None),
+                    };
+                SegmentStamp {
+                    manifest: manifest.clone(),
+                    length,
+                    written,
+                }
+            })
+            .collect();
+        let mut cache = self
+            .verified_prefix
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let (start, previous, expected) = match cache.take() {
+            Some(cached)
+                if cached.stamps.len() <= stamps.len()
+                    && cached.stamps[..] == stamps[..cached.stamps.len()] =>
+            {
+                (
+                    cached.stamps.len(),
+                    cached.head_hash,
+                    cached.head_sequence + 1,
+                )
+            }
+            _ => (
+                0,
+                manifests[0].previous_chain_hash.clone(),
+                manifests[0].first_sequence,
+            ),
+        };
+        let result = self.verify_from(manifests, start, previous, expected, None)?;
+        if result.intact {
+            *cache = Some(VerifiedPrefix {
+                stamps,
+                head_sequence: result.head_sequence,
+                head_hash: result.head_hash.clone().unwrap_or_default(),
+            });
+        }
+        Ok(result)
+    }
+
+    fn archived_hash_at(
+        &self,
+        manifests: &[ArchiveManifest],
+        sequence: i64,
+    ) -> Result<Option<String>, ArchiveError> {
+        if sequence == manifests[0].first_sequence - 1 {
+            return Ok(Some(manifests[0].previous_chain_hash.clone()));
+        }
+        let Some(manifest) = manifests.iter().find(|manifest| {
+            manifest.first_sequence <= sequence && sequence <= manifest.last_sequence
+        }) else {
+            return Ok(None);
+        };
+        if sequence == manifest.last_sequence {
+            return Ok(Some(manifest.last_chain_hash.clone()));
+        }
+        for item in SegmentReader::open(&self.directory.join(&manifest.segment_file))? {
+            let item = item?;
+            if item.sequence == sequence {
+                return Ok(item.chain_hash);
+            }
+        }
+        Ok(None)
+    }
+
+    fn verify_from(
+        &self,
+        manifests: &[ArchiveManifest],
+        start: usize,
+        mut previous: String,
+        mut expected: i64,
+        anchor: Option<&LedgerHead>,
+    ) -> Result<ArchiveVerification, ArchiveError> {
         let count = manifests.len();
         let mut verified = 0i64;
         let mut anchor_verified = false;
-        let mut previous = manifests[0].previous_chain_hash.clone();
-        let mut expected = manifests[0].first_sequence;
-        for manifest in &manifests {
+        for manifest in &manifests[start..] {
             let segment = Some(manifest.segment_file.as_str());
             let broken = |verified: i64, reason: &str| {
                 ArchiveVerification::broken(verified, count, segment, reason)
@@ -501,7 +866,10 @@ impl QueueArchive {
         let name = format!("{SEGMENT_PREFIX}{:012}", first.sequence);
         let segment_file = format!("{name}{SEGMENT_SUFFIX}");
         let segment_path = self.directory.join(&segment_file);
+        let manifest_path = self.directory.join(format!("{name}{MANIFEST_SUFFIX}"));
         let temporary = temporary_path(&segment_path);
+        let manifest_temporary = temporary_path(&manifest_path);
+        let _cleanup = TemporaryFiles([&temporary, &manifest_temporary]);
 
         {
             let file = create_private(&temporary)?;
@@ -527,9 +895,27 @@ impl QueueArchive {
             file.sync_all()?;
         }
 
-        // Overwrite allowed: a segment left without a manifest by a crash is rewritten.
-        fs::rename(&temporary, &segment_path)?;
+        #[cfg(test)]
+        {
+            let hook = self
+                .before_publish
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .take();
+            if let Some(hook) = hook {
+                hook();
+            }
+        }
+
+        // Only the lock owner gets here, so a segment without a manifest is an uncommitted
+        // orphan of a crashed run. A committed segment is never replaced: the move fails.
+        if !manifest_path.exists() && segment_path.is_file() {
+            fs::remove_file(&segment_path)?;
+        }
+        move_without_overwrite(&temporary, &segment_path)?;
         restrict_permissions(&segment_path)?;
+        // Make the published names durable before retention can rely on them.
+        sync_directory(&self.directory)?;
 
         let manifest = ArchiveManifest {
             api_version: API_VERSION.into(),
@@ -544,8 +930,6 @@ impl QueueArchive {
             last_chain_hash: last.chain_hash.clone(),
             created_at: time::to_utc(time::truncate_to_ticks(self.clock.utc_now())),
         };
-        let manifest_path = self.directory.join(format!("{name}{MANIFEST_SUFFIX}"));
-        let manifest_temporary = temporary_path(&manifest_path);
         {
             let bytes = bower_contracts::json::to_vec(&manifest).map_err(|_| {
                 ArchiveError::InvalidData("Archive manifest cannot be serialized.".into())
@@ -558,7 +942,49 @@ impl QueueArchive {
         // Never replace a completed manifest: a collision means two writers share the archive.
         move_without_overwrite(&manifest_temporary, &manifest_path)?;
         restrict_permissions(&manifest_path)?;
+        sync_directory(&self.directory)?;
         Ok(manifest)
+    }
+
+    fn acquire_writer_lock(&self) -> Result<File, ArchiveError> {
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(self.directory.join(WRITER_LOCK_FILE))?;
+        match file.try_lock() {
+            Ok(()) => Ok(file),
+            Err(fs::TryLockError::WouldBlock) => Err(ArchiveError::Io(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "Another writer holds the archive writer lock.",
+            ))),
+            Err(fs::TryLockError::Error(error)) => Err(error.into()),
+        }
+    }
+
+    /// Removes temporary files of crashed runs. Call only while owning the archive.
+    fn remove_abandoned_temporary_files(&self) -> io::Result<()> {
+        let mut removed = 0;
+        for entry in fs::read_dir(&self.directory)? {
+            if removed == MAXIMUM_TEMPORARY_CLEANUP {
+                break;
+            }
+            let entry = entry?;
+            let file_name = entry.file_name();
+            let Some(file_name) = file_name.to_str() else {
+                continue;
+            };
+            // `Directory.EnumerateFiles(directory, "segment-*.tmp")`.
+            if file_name.starts_with(SEGMENT_PREFIX)
+                && file_name.ends_with(".tmp")
+                && entry.file_type()?.is_file()
+            {
+                fs::remove_file(entry.path())?;
+                removed += 1;
+            }
+        }
+        Ok(())
     }
 
     fn read_manifests(&self) -> Result<Vec<ArchiveManifest>, ArchiveError> {
@@ -654,10 +1080,54 @@ fn is_file_name(value: &str) -> bool {
     }
 }
 
+/// C# `DirectorySync.Flush`: fsync the directory so names moved into it survive a power
+/// loss. File systems that cannot sync a directory (EINVAL, ENOTSUP) have nothing more to
+/// make durable. No-op off Unix (Windows journals renames).
+#[cfg(unix)]
+fn sync_directory(directory: &Path) -> io::Result<()> {
+    match File::open(directory)?.sync_all() {
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::InvalidInput | io::ErrorKind::Unsupported
+            ) =>
+        {
+            Ok(())
+        }
+        result => result,
+    }
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_directory: &Path) -> io::Result<()> {
+    Ok(())
+}
+
+/// A temporary name no other run uses: `<path>.<process>-<time>-<counter>.tmp`.
 fn temporary_path(path: &Path) -> PathBuf {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_nanos());
     let mut text = path.as_os_str().to_owned();
-    text.push(".tmp");
+    text.push(format!(
+        ".{:x}-{nanos:x}-{:x}.tmp",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
     PathBuf::from(text)
+}
+
+/// Removes a run's temporary files however publication ends.
+struct TemporaryFiles<'a>([&'a Path; 2]);
+
+impl Drop for TemporaryFiles<'_> {
+    fn drop(&mut self) {
+        for path in self.0 {
+            // Absent once published; anything left is swept by the next owner.
+            let _ = fs::remove_file(path);
+        }
+    }
 }
 
 /// `FileMode.Create` (create or truncate); owner-only from the start on Unix.
@@ -696,7 +1166,7 @@ fn move_without_overwrite(source: &Path, destination: &Path) -> io::Result<()> {
             if fs::symlink_metadata(destination).is_ok() {
                 return Err(io::Error::new(
                     io::ErrorKind::AlreadyExists,
-                    "archive manifest already exists",
+                    "archive file already exists",
                 ));
             }
             fs::rename(source, destination)
@@ -919,5 +1389,81 @@ fn segment_read_error(error: io::Error) -> ArchiveError {
         ArchiveError::InvalidData("Archive segment is not valid gzip data.".into())
     } else {
         ArchiveError::Io(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+
+    use bower_contracts::{QueueState, QueuedEvent};
+
+    use super::*;
+
+    fn enqueue(store: &SqliteEventStore, first: i32, last: i32) {
+        for index in first..=last {
+            store
+                .enqueue(&QueuedEvent {
+                    lease_token: None,
+                    event_id: format!("event-{index}"),
+                    fingerprint: format!("sha256:event-{index}"),
+                    payload: format!("{{\"eventId\":\"event-{index}\"}}"),
+                    received_at: time::now(),
+                    state: QueueState::Queued,
+                    delivery_attempts: 0,
+                    suppression: None,
+                })
+                .unwrap();
+        }
+    }
+
+    /// Issue #67 (C# `Archive_LosingConcurrentWriterLeavesCommittedSegmentByteIdentical`):
+    /// a writer paused after capturing two rows still owns the archive, so a second writer
+    /// that would capture five rows from the same watermark loses without touching it.
+    #[test]
+    fn losing_concurrent_writer_leaves_committed_segment_byte_identical() {
+        let directory = tempfile::tempdir().unwrap();
+        let store =
+            SqliteEventStore::new(directory.path().join("queue.db"), 10 << 20, None).unwrap();
+        store.initialize().unwrap();
+        let root = directory.path().join("archive");
+        let scheduled = QueueArchive::new(&root, "collector-1", None).unwrap();
+        let manual = QueueArchive::new(&root, "manual", None).unwrap();
+        enqueue(&store, 1, 2);
+        let (captured, on_captured) = mpsc::channel::<()>();
+        let (release, on_release) = mpsc::channel::<()>();
+        *scheduled.before_publish.lock().unwrap() = Some(Box::new(move || {
+            captured.send(()).unwrap();
+            on_release.recv().unwrap();
+        }));
+
+        std::thread::scope(|scope| {
+            let first = scope.spawn(|| scheduled.archive(&store).unwrap());
+            on_captured.recv().unwrap();
+            enqueue(&store, 3, 5);
+            let error = manual.archive(&store).unwrap_err();
+            assert!(
+                matches!(&error, ArchiveError::Io(io) if io.kind() == io::ErrorKind::WouldBlock),
+                "{error:?}"
+            );
+            release.send(()).unwrap();
+            let committed = first.join().unwrap();
+            // The winner published rows 1-2, then (still owning the archive) rows 3-5.
+            assert_eq!((committed.segments, committed.events), (2, 5));
+        });
+        let segment = root.join("segment-000000000001.jsonl.gz");
+        let manifest = root.join("segment-000000000001.manifest.json");
+        let (segment_bytes, manifest_bytes) =
+            (fs::read(&segment).unwrap(), fs::read(&manifest).unwrap());
+        enqueue(&store, 6, 6);
+
+        let later = manual.archive(&store).unwrap();
+        let report = manual.verify(Some(&store.ledger_head().unwrap())).unwrap();
+
+        assert_eq!(later.events, 1);
+        assert_eq!(fs::read(&segment).unwrap(), segment_bytes);
+        assert_eq!(fs::read(&manifest).unwrap(), manifest_bytes);
+        assert!(report.intact, "{report:?}");
+        assert_eq!(report.verified_events, 6);
     }
 }

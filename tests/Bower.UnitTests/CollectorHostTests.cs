@@ -7,6 +7,7 @@ using Bower.Contracts;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Bower.UnitTests;
 
@@ -446,17 +447,75 @@ public sealed class CollectorHostTests
         Assert.Equal(JsonValueKind.Null, sources[1].GetProperty("lastSeenAt").ValueKind);
     }
 
+    [Fact]
+    public async Task SourceHealth_NeverSeenDeadlineSurvivesCollectorRestart()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        string expectations = Path.Combine(directory.Path, "sources.json");
+        File.WriteAllText(
+            expectations,
+            """
+            {"apiVersion":"bower.security/v1","kind":"SourceExpectations","sources":[
+              {"application":"Payroll","environment":"production","maximumSilenceMinutes":1}]}
+            """);
+        CollectorSettings Adjust(CollectorSettings settings) => settings with { SourceExpectationsPath = expectations };
+
+        await using (WebApplication first = await StartAsync(directory, Token, cancellationToken, Adjust, clock))
+        {
+            Assert.Equal(("pending", 0L, "healthy"), await SourceStateAsync(first, cancellationToken));
+            clock.Advance(TimeSpan.FromMinutes(2));
+            Assert.Equal(("never-seen", 120L, "degraded"), await SourceStateAsync(first, cancellationToken));
+        }
+
+        for (int restart = 1; restart <= 3; restart++)
+        {
+            await using WebApplication restarted = await StartAsync(directory, Token, cancellationToken, Adjust, clock);
+            Assert.Equal(
+                ("never-seen", 120L + ((restart - 1) * 30), "degraded"),
+                await SourceStateAsync(restarted, cancellationToken));
+            clock.Advance(TimeSpan.FromSeconds(30));
+        }
+    }
+
+    private static async Task<(string? State, long SilentSeconds, string? Health)> SourceStateAsync(
+        WebApplication app,
+        CancellationToken cancellationToken)
+    {
+        HttpClient client = app.GetTestClient();
+        using HttpRequestMessage request = new(HttpMethod.Get, "/v1/status");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Token);
+        using HttpResponseMessage response = await client.SendAsync(request, cancellationToken);
+        using JsonDocument status = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        using JsonDocument health = JsonDocument.Parse(await client.GetStringAsync("/health", cancellationToken));
+        JsonElement source = Assert.Single(status.RootElement.GetProperty("sources").EnumerateArray());
+        Assert.Equal(JsonValueKind.Null, source.GetProperty("lastSeenAt").ValueKind);
+        return (
+            source.GetProperty("state").GetString(),
+            source.GetProperty("silentSeconds").GetInt64(),
+            health.RootElement.GetProperty("status").GetString());
+    }
+
     private static async Task<WebApplication> StartAsync(
         TemporaryDirectory directory,
         string? token,
         CancellationToken cancellationToken,
-        Func<CollectorSettings, CollectorSettings>? adjust = null)
+        Func<CollectorSettings, CollectorSettings>? adjust = null,
+        TimeProvider? clock = null)
     {
         CollectorSettings settings = BaseSettings(directory.Path) with { IngestToken = token };
         settings = adjust?.Invoke(settings) ?? settings;
         WebApplication app = CollectorApplication.Build(
             settings,
-            builder => builder.WebHost.UseTestServer());
+            builder =>
+            {
+                builder.WebHost.UseTestServer();
+                if (clock is not null)
+                {
+                    builder.Services.AddSingleton(clock);
+                }
+            });
         await CollectorApplication.InitializeAsync(app, cancellationToken);
         await app.StartAsync(cancellationToken);
         return app;

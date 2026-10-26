@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <!-- Preview privacy floor reuses the built-in redaction detectors. -->
+    <ProjectReference Include="../Bower.Redaction/Bower.Redaction.csproj" />
     <PackageReference Include="YamlDotNet" />
     <!-- Compile-time YamlDotNet static context: reflection-free YAML for Native AOT. -->
     <PackageReference Include="Vecc.YamlDotNet.Analyzers.StaticGenerator" PrivateAssets="all" />

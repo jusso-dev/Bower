@@ -38,6 +38,54 @@ Preview values for identities, IP addresses, URLs, messages and unmapped fields
 are redacted. Preview proves parsing and mapping only. Destination query
 validation remains required before claiming Sentinel delivery.
 
+### Preview privacy floor
+
+Bower Management applies a minimum preview privacy policy that the submitted
+configuration cannot lower. Setting `sensitive: false` or assigning any OCSF or
+ASIM mapping can add masking but never removes it. Whatever the configuration
+says, a preview value stays redacted when:
+
+- the field type is `IpAddress`, or the value contains an IPv4 (dotted quad) or
+  IPv6 address, in any format;
+- the source field name is not one of the known non-sensitive names (timestamp,
+  severity, action, outcome, application and process ID aliases). This applies
+  to every type: an unknown whole number, boolean or date is masked too;
+- the source field name is credential-like or describes identity, network or
+  account data (for example `user`, `email`, `client_ip`, `host`, `url`,
+  `message`, `account`, `session`, `phone`);
+- the field type is `Text` and the value is longer than 64 characters or
+  contains characters other than letters, digits and `. _ - : +`;
+- a built-in privacy detector (Australian identifiers, financial, identity
+  including IP, hostname and username, secrets and cryptographic material) finds
+  sensitive data in the value. Public identifiers the default privacy policy
+  allows (ABN, ACN, SWIFT BIC) are not counted.
+
+Regex parsers get stricter rules, because the operator's pattern decides what
+each capture holds:
+
+- With an operator-authored pattern (anything other than the built-in HTTP
+  access-log, timestamp/severity and syslog patterns), no value previews. Every
+  configured field appears in every row as redacted, whether or not its group
+  took part in the match, so captures carry no per-line information.
+- With a built-in pattern, a `Text` capture previews only when it is a closed
+  vocabulary word (a severity level, an HTTP method, an outcome word such as
+  `success`, `failure`, `allow`, `deny`, `accepted` or `rejected`, or a
+  three-digit status code). A capture that overlaps sensitive data that a
+  detector finds in the whole source line stays masked.
+- A zero-length capture is treated as a group that did not take part.
+
+Field names come from the sample too. A JSON key, key/value key or CSV header
+that contains an IP address, an all-digit segment (such as `counts.1002`) or
+anything a detector finds is renamed to a neutral `field_N` alias, numbered in
+order of first appearance, and the original name is never returned. A CSV whose
+first row contains a number, boolean, date, IP address or detected value is
+not treated as having a header row.
+
+Pasted samples and server-path samples get the same floor. Timestamps, process
+IDs, severities, HTTP methods and status codes under the known names still
+preview. Preview issues and errors are Bower-authored and never echo sample
+values.
+
 ## Point Bower at a server file
 
 Server-path input is disabled unless one or more roots are configured:

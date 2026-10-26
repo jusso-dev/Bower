@@ -525,6 +525,9 @@ pub struct EvidenceRunArgs {
     /// Bundle output file [default: bower-evidence-<time>.json].
     #[arg(long = "out", value_name = "FILE")]
     pub out: Option<String>,
+    /// Probe profile: generic (default, /v1/events canary) or parser:PACK:INDEX.
+    #[arg(long = "probe-profile", value_name = "PROFILE")]
+    pub probe_profile: Option<String>,
 }
 
 #[derive(Debug, Args)]

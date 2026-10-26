@@ -48,6 +48,87 @@ after 30 seconds; a timeout is reported as an error with exit code 1, never a cr
 `evidence verify` exits 1 with `Evidence bundle is unreadable.` for a file that is not
 a JSON object with a `bundle` object.
 
+## Parser probes (opt-in)
+
+The generic probe proves `/v1/events` and nothing else. A working generic probe can
+coexist with a broken source parser, so `--probe-profile parser:PACK:INDEX` probes a
+signed pack parser's HTTP intake instead. The default stays `generic`: its canary, claim
+and bundle bytes are unchanged.
+
+```bash
+bower evidence run --probe-profile parser:linux-ssh-gateway:0 \
+  --collector-url https://collector.example.org:4319 \
+  --workspace-id <log-analytics-workspace-guid> --signing-key ./keys/bower-signing.key.pem
+```
+
+Supported profiles (repo-owned, synthetic fixtures; anything else fails before a request
+is sent):
+
+| Profile | Fixture | Expected event |
+|---|---|---|
+| `parser:linux-ssh-gateway:0` | `linux-ssh-gateway/sshd-json/authentication-failure@1`: `{"id":"bower-probe-…","timestamp":…,"user":"bower-evidence-probe","source_ip":"192.0.2.10","result":"failure"}` | `authentication_failure` |
+
+The fixture holds no secrets or production samples: a fixed probe username (pseudonymised
+by the pack's privacy profile like any other) and a documentation (TEST-NET-1) address.
+Its `id` is a fresh `bower-probe-<uuid7>`, so the destination query matches exactly that
+event.
+
+What a parser probe does:
+
+1. Reads `GET /v1/status` with the ingest token and records the collector policy hash,
+   pack version, pack hash and parser state. A missing pack or a parser that is not
+   `active-local-json` is `parser-inactive`, and the fixture is not sent.
+2. Posts the fixture to `POST /v1/packs/PACK/parsers/INDEX/events`: the normal
+   authentication, parser, privacy, policy, queue and delivery path.
+   An accepted probe that the collector did not queue (`queued: false`, `duplicate` or
+   `suppressed`) is `probe-not-queued`, and the destination is not queried.
+3. Queries the destination for the probe id and projects `EventType` and `PolicyHash`.
+   Only a row with the exact probe `EventId`, the expected event type and the policy hash
+   the collector returned for the probe (`eventPolicyHash`) verifies. Collector acceptance
+   alone never does.
+
+The pack version, pack hash, parser state and `collectorPolicyHash` come from the
+separate `/v1/status` read, not from the intake response. Behind a load balancer with
+several collector replicas, the status read and the intake post can reach different
+replicas. A replica running a different policy shows up as `configuration-mismatch`
+(the row's policy hash differs from `eventPolicyHash`), but a replica with the same
+policy and a different pack build does not. Probe a single replica directly when the
+pack hash must be tied to the exact instance.
+
+The bundle adds a `probe` object (additive; generic bundles omit it; signed as before):
+`profile`, `testedPath`, `fixture`, `packId`, `parserIndex`, `packVersion`, `packHash`,
+`parserStatus`, `collectorPolicyHash`, `eventId`, `expectedEventType`, `eventPolicyId`,
+`eventPolicyVersion`, `eventPolicyHash`, `destinationWorkspaceId`, `destinationTable`,
+`queriedAt`, `outcome` and `untestedPaths`. `canary.collectorStatus` is `0` when the
+fixture was not sent.
+
+| Outcome | Meaning |
+|---|---|
+| `verified` | The exact probe row, with the expected event type, was returned from the intended workspace and table. |
+| `accepted-not-verified` | The collector accepted the probe but no destination query ran (`simulated`). |
+| `parser-inactive` | The pack is not loaded or the parser has no active runtime (status, or HTTP 404). |
+| `parser-not-selected` | The parser source filter no longer selects the fixture (422 `pack-record-not-selected`). |
+| `parser-record-rejected` | The parser refused the fixture (400, 413 or 415): a mapping or field regression. |
+| `parser-wrong-event` | Accepted, but the collector reports a different event id: a mapping regression. |
+| `probe-not-queued` | Accepted but not queued (duplicate or suppressed), so it can never arrive; no query runs. |
+| `policy-not-selected` | The parser mapped the fixture but policy (or redaction) rejected or quarantined it. |
+| `collector-permission-denied` | The collector refused the ingest token or producer scope (401/403). |
+| `collector-status-unreadable` | `/v1/status` could not be read, so the tested configuration is unknown. |
+| `collector-rejected` | Any other refusal (capacity, rate limit, identity conflict). |
+| `destination-permission-denied` | The verifier identity may not query the workspace (stops at once). |
+| `destination-row-missing` | At least one query answered, and none returned the probe row before the timeout (later queries may have failed). |
+| `destination-wrong-event` | A row came back but it is not the exact probe event. |
+| `configuration-mismatch` | The exact probe row arrived, but its policy hash differs from the one the collector reported for the probe. |
+| `destination-timeout` | No query was ever answered: they timed out (including gateway 408/504 with any body). |
+| `destination-query-failed` | No query was ever answered: they failed with another error. |
+
+Every parser bundle lists what it did not test: generic intake, other packs and parsers,
+other event types and privacy rules of the pack, upstream agents and readers, and any
+event other than the probe. A probe row is a real `authentication_failure` row in the
+table; filter `EventId startswith "bower-probe-"` out of analytics if needed. Probes run
+only when someone runs the command: there is no automatic scheduling and no remote
+trigger. The C# and Rust CLIs implement the same profiles, fixture bytes and outcomes.
+
 ## Modes
 
 | Mode | Meaning |
