@@ -8,6 +8,10 @@ it adds no NuGet packages. Unit tests reference the tool to exercise the exact
 command and read-only checker without duplicating identity logic in a script or
 adding a native CLI command in either runtime.
 
+`Bower.Pipeline` references `Bower.Redaction` so the custom-log parser preview
+reuses the built-in privacy detectors for its server-owned masking floor rather
+than duplicating detector patterns. It adds no NuGet packages.
+
 | Package | Used by | Why | Alternatives considered |
 |---|---|---|---|
 | `AWSSDK.SQS`, `AWSSDK.S3` 4.0 | `Bower.Agent.Cloud` | SigV4-signed SQS receive/delete/visibility and bounded S3 `GetObject` with `ExpectedBucketOwner`, using the AWS default credential chain (EC2 instance profile with IMDSv2, ECS task role, EKS IRSA). Apache-2.0, first-party. Only these two service clients are referenced. | Hand-written SigV4 over `HttpClient` (security-sensitive code to own and audit); AWS CLI sidecar (shell, extra image surface). |
