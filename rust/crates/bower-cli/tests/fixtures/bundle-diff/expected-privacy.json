@@ -1,0 +1,118 @@
+{
+  "baselineBundleHash": "sha256:c52e83ee21ce3dc634d7bbddfa7a0eda1d6f482055f36f6bb8b02c708660e234",
+  "candidateBundleHash": "sha256:138334e8cafa2a83b0d0d05b31d236fd68fa8a9613e6531aaf4a49c190eed73d",
+  "events": 4,
+  "changed": 1,
+  "changes": [
+    {
+      "file": "access-key.json",
+      "eventId": "bundle-diff-2",
+      "baseline": {
+        "decision": "redactandaccept",
+        "policyId": "BWR-POL-AWS-CLOUDTRAIL",
+        "accepted": true,
+        "failureStage": null,
+        "failureReasons": [],
+        "privacyActions": [
+          {
+            "detector": "secret.aws",
+            "action": "Removed"
+          }
+        ],
+        "privacyFindings": [
+          {
+            "detector": "secret.aws:access-key-id",
+            "path": "$.eventOutcomeReason",
+            "action": "Removed"
+          }
+        ],
+        "removedCount": 1,
+        "maskedCount": 0,
+        "privacyAlert": false,
+        "detections": [
+          {
+            "ruleId": "bower-pack-aws-access-key-created-001",
+            "ruleVersion": "1.0.0",
+            "ruleHash": "2c53cca1674edcd8aab4b3fad6ea57662de8aecdfc4e40fc497df88d15997748"
+          }
+        ]
+      },
+      "candidate": {
+        "decision": "redactandaccept",
+        "policyId": "BWR-POL-AWS-CLOUDTRAIL",
+        "accepted": true,
+        "failureStage": null,
+        "failureReasons": [],
+        "privacyActions": [
+          {
+            "detector": "secret.aws",
+            "action": "Masked"
+          }
+        ],
+        "privacyFindings": [
+          {
+            "detector": "secret.aws:access-key-id",
+            "path": "$.eventOutcomeReason",
+            "action": "Masked"
+          }
+        ],
+        "removedCount": 0,
+        "maskedCount": 1,
+        "privacyAlert": false,
+        "detections": [
+          {
+            "ruleId": "bower-pack-aws-access-key-created-001",
+            "ruleVersion": "1.0.0",
+            "ruleHash": "2c53cca1674edcd8aab4b3fad6ea57662de8aecdfc4e40fc497df88d15997748"
+          }
+        ]
+      },
+      "changedFields": [
+        "privacyActions",
+        "privacyFindings",
+        "removedCount",
+        "maskedCount"
+      ]
+    }
+  ],
+  "evaluatedAt": "2026-10-17T01:02:03+00:00",
+  "baselineBundle": {
+    "bundleHash": "sha256:c52e83ee21ce3dc634d7bbddfa7a0eda1d6f482055f36f6bb8b02c708660e234",
+    "policyCount": 3,
+    "packs": [
+      {
+        "id": "aws-security",
+        "version": "1.1.0",
+        "packHash": "sha256:1f56975acdc82cb42f31c26f47a659c7cf9f189de8d29528a91967c3632f6a4e"
+      }
+    ],
+    "privacyProfile": null,
+    "detectionRules": 4
+  },
+  "candidateBundle": {
+    "bundleHash": "sha256:138334e8cafa2a83b0d0d05b31d236fd68fa8a9613e6531aaf4a49c190eed73d",
+    "policyCount": 3,
+    "packs": [
+      {
+        "id": "aws-security",
+        "version": "1.1.0",
+        "packHash": "sha256:1f56975acdc82cb42f31c26f47a659c7cf9f189de8d29528a91967c3632f6a4e"
+      }
+    ],
+    "privacyProfile": {
+      "id": "bundle-diff-mask-aws-keys",
+      "version": "1.0.0",
+      "hash": "sha256:ee4ae6dd6f8b6055436b3631fc62c27abef940214bcaa8511e18cf5de4cf2cd8"
+    },
+    "detectionRules": 4
+  },
+  "notExercisedOffline": [
+    "suppression-windows",
+    "source-silence",
+    "cross-event-deduplication",
+    "queue-capacity-and-backpressure",
+    "delivery-and-destination-validation",
+    "pack-parsers",
+    "management-privacy-assignment"
+  ]
+}

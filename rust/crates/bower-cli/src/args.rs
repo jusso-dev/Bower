@@ -246,6 +246,26 @@ pub fn parse(args: &[String]) -> Option<Command> {
             baseline: o.get("--baseline"),
             candidate: o.get("--candidate"),
             fail_on_change: o.has("--fail-on-change"),
+            baseline_packs: o.all("--baseline-pack"),
+            baseline_trusted_keys: o.all("--baseline-trusted-key"),
+            baseline_privacy_profile: o.get("--baseline-privacy-profile"),
+            baseline_hmac_key_file: o.get("--baseline-hmac-key-file"),
+            baseline_hmac_key_id: o.get("--baseline-hmac-key-id"),
+            candidate_packs: o.all("--candidate-pack"),
+            candidate_trusted_keys: o.all("--candidate-trusted-key"),
+            candidate_privacy_profile: o.get("--candidate-privacy-profile"),
+            candidate_hmac_key_file: o.get("--candidate-hmac-key-file"),
+            candidate_hmac_key_id: o.get("--candidate-hmac-key-id"),
+            at: o.get("--at"),
+            at_given: o.has("--at"),
+            // C# `PolicyCommands.IsBundleComparison`.
+            bundle: o.has("--at")
+                || crate::commands::policy::BUNDLE_OPTIONS
+                    .iter()
+                    .any(|option| {
+                        o.has(&format!("--baseline-{option}"))
+                            || o.has(&format!("--candidate-{option}"))
+                    }),
         })),
         ["archive", "create"] => Command::Archive(ArchiveCommand::Create(ArchiveCreateArgs {
             archive: o.get("--archive"),

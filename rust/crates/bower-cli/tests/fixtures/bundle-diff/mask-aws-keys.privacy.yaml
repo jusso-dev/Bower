@@ -1,0 +1,6 @@
+apiVersion: bower.security/v1
+kind: PrivacyProfile
+metadata: { id: bundle-diff-mask-aws-keys, version: 1.0.0 }
+# Synthetic test profile: mask AWS access keys instead of removing them.
+detectors:
+  secret.aws: mask

@@ -1,0 +1,348 @@
+{
+  "baselineBundleHash": "sha256:90a4995db0a6a9cb95503ea3059f50bf26e1cb764fdce72947ca3bb644701de9",
+  "candidateBundleHash": "sha256:fc068a0f6c608eb7966be2b8c62127fd4a33e4d47e3c99534052afac6cb6c0f7",
+  "events": 4,
+  "changed": 4,
+  "changes": [
+    {
+      "file": "root-login.json",
+      "eventId": "bundle-diff-1",
+      "baseline": {
+        "decision": "redactandaccept",
+        "policyId": "BWR-POL-AWS-CLOUDTRAIL",
+        "accepted": true,
+        "failureStage": null,
+        "failureReasons": [],
+        "privacyActions": [
+          {
+            "detector": "field-rule",
+            "action": "Removed"
+          }
+        ],
+        "privacyFindings": [
+          {
+            "detector": "field-rule",
+            "path": "$.actor.username",
+            "action": "Removed"
+          }
+        ],
+        "removedCount": 1,
+        "maskedCount": 0,
+        "privacyAlert": false,
+        "detections": [
+          {
+            "ruleId": "bower-pack-aws-console-login-failure-001",
+            "ruleVersion": "1.0.0",
+            "ruleHash": "849cef1d85aacdb8275fa04ea7b2817634aa29037cc1cdbc11e568b2eb4ca66f"
+          },
+          {
+            "ruleId": "bower-pack-aws-root-activity-001",
+            "ruleVersion": "1.0.0",
+            "ruleHash": "e6c03b31ffc09f01d2b2b3f44be3f94f52a5b10e864586988403254007501e2f"
+          }
+        ]
+      },
+      "candidate": {
+        "decision": "redactandaccept",
+        "policyId": "BWR-POL-AWS-CLOUDTRAIL",
+        "accepted": true,
+        "failureStage": null,
+        "failureReasons": [],
+        "privacyActions": [
+          {
+            "detector": "field-rule",
+            "action": "Removed"
+          }
+        ],
+        "privacyFindings": [
+          {
+            "detector": "field-rule",
+            "path": "$.actor.username",
+            "action": "Removed"
+          },
+          {
+            "detector": "field-rule",
+            "path": "$.source.ipAddress",
+            "action": "Removed"
+          }
+        ],
+        "removedCount": 2,
+        "maskedCount": 0,
+        "privacyAlert": false,
+        "detections": [
+          {
+            "ruleId": "bower-pack-aws-console-login-failure-001",
+            "ruleVersion": "1.0.0",
+            "ruleHash": "849cef1d85aacdb8275fa04ea7b2817634aa29037cc1cdbc11e568b2eb4ca66f"
+          },
+          {
+            "ruleId": "bower-pack-aws-root-activity-001",
+            "ruleVersion": "1.0.0",
+            "ruleHash": "e6c03b31ffc09f01d2b2b3f44be3f94f52a5b10e864586988403254007501e2f"
+          }
+        ]
+      },
+      "changedFields": [
+        "privacyFindings",
+        "removedCount"
+      ]
+    },
+    {
+      "file": "access-key.json",
+      "eventId": "bundle-diff-2",
+      "baseline": {
+        "decision": "quarantine",
+        "policyId": "BWR-POL-AWS-CLOUDTRAIL",
+        "accepted": false,
+        "failureStage": "policy",
+        "failureReasons": [
+          "Missing required field: one-of(actor.username,actor.userId)"
+        ],
+        "privacyActions": [
+          {
+            "detector": "field-rule",
+            "action": "Removed"
+          },
+          {
+            "detector": "secret.aws",
+            "action": "Removed"
+          }
+        ],
+        "privacyFindings": [
+          {
+            "detector": "field-rule",
+            "path": "$.actor.username",
+            "action": "Removed"
+          },
+          {
+            "detector": "secret.aws:access-key-id",
+            "path": "$.eventOutcomeReason",
+            "action": "Removed"
+          }
+        ],
+        "removedCount": 2,
+        "maskedCount": 0,
+        "privacyAlert": false,
+        "detections": []
+      },
+      "candidate": {
+        "decision": "quarantine",
+        "policyId": "BWR-POL-AWS-CLOUDTRAIL",
+        "accepted": false,
+        "failureStage": "policy",
+        "failureReasons": [
+          "Missing required field: one-of(actor.username,actor.userId)"
+        ],
+        "privacyActions": [
+          {
+            "detector": "field-rule",
+            "action": "Removed"
+          },
+          {
+            "detector": "secret.aws",
+            "action": "Removed"
+          }
+        ],
+        "privacyFindings": [
+          {
+            "detector": "field-rule",
+            "path": "$.actor.username",
+            "action": "Removed"
+          },
+          {
+            "detector": "field-rule",
+            "path": "$.source.ipAddress",
+            "action": "Removed"
+          },
+          {
+            "detector": "secret.aws:access-key-id",
+            "path": "$.eventOutcomeReason",
+            "action": "Removed"
+          }
+        ],
+        "removedCount": 3,
+        "maskedCount": 0,
+        "privacyAlert": false,
+        "detections": []
+      },
+      "changedFields": [
+        "privacyFindings",
+        "removedCount"
+      ]
+    },
+    {
+      "file": "page-view.json",
+      "eventId": "bundle-diff-3",
+      "baseline": {
+        "decision": "reject",
+        "policyId": "BWR-POL-DEFAULT-DENY",
+        "accepted": false,
+        "failureStage": "policy",
+        "failureReasons": [
+          "No approved policy matched event category and type"
+        ],
+        "privacyActions": [
+          {
+            "detector": "field-rule",
+            "action": "Removed"
+          }
+        ],
+        "privacyFindings": [
+          {
+            "detector": "field-rule",
+            "path": "$.actor.username",
+            "action": "Removed"
+          }
+        ],
+        "removedCount": 1,
+        "maskedCount": 0,
+        "privacyAlert": false,
+        "detections": []
+      },
+      "candidate": {
+        "decision": "reject",
+        "policyId": "BWR-POL-DEFAULT-DENY",
+        "accepted": false,
+        "failureStage": "policy",
+        "failureReasons": [
+          "No approved policy matched event category and type"
+        ],
+        "privacyActions": [
+          {
+            "detector": "field-rule",
+            "action": "Removed"
+          }
+        ],
+        "privacyFindings": [
+          {
+            "detector": "field-rule",
+            "path": "$.actor.username",
+            "action": "Removed"
+          },
+          {
+            "detector": "field-rule",
+            "path": "$.source.ipAddress",
+            "action": "Removed"
+          }
+        ],
+        "removedCount": 2,
+        "maskedCount": 0,
+        "privacyAlert": false,
+        "detections": []
+      },
+      "changedFields": [
+        "privacyFindings",
+        "removedCount"
+      ]
+    },
+    {
+      "file": "future.json",
+      "eventId": "bundle-diff-4",
+      "baseline": {
+        "decision": "quarantine",
+        "policyId": null,
+        "accepted": false,
+        "failureStage": "validation",
+        "failureReasons": [
+          "timeGenerated is outside allowed range"
+        ],
+        "privacyActions": [
+          {
+            "detector": "field-rule",
+            "action": "Removed"
+          }
+        ],
+        "privacyFindings": [
+          {
+            "detector": "field-rule",
+            "path": "$.actor.username",
+            "action": "Removed"
+          }
+        ],
+        "removedCount": 1,
+        "maskedCount": 0,
+        "privacyAlert": false,
+        "detections": []
+      },
+      "candidate": {
+        "decision": "quarantine",
+        "policyId": null,
+        "accepted": false,
+        "failureStage": "validation",
+        "failureReasons": [
+          "timeGenerated is outside allowed range"
+        ],
+        "privacyActions": [
+          {
+            "detector": "field-rule",
+            "action": "Removed"
+          }
+        ],
+        "privacyFindings": [
+          {
+            "detector": "field-rule",
+            "path": "$.actor.username",
+            "action": "Removed"
+          },
+          {
+            "detector": "field-rule",
+            "path": "$.source.ipAddress",
+            "action": "Removed"
+          }
+        ],
+        "removedCount": 2,
+        "maskedCount": 0,
+        "privacyAlert": false,
+        "detections": []
+      },
+      "changedFields": [
+        "privacyFindings",
+        "removedCount"
+      ]
+    }
+  ],
+  "evaluatedAt": "2026-10-17T01:02:03+00:00",
+  "baselineBundle": {
+    "bundleHash": "sha256:90a4995db0a6a9cb95503ea3059f50bf26e1cb764fdce72947ca3bb644701de9",
+    "policyCount": 3,
+    "packs": [
+      {
+        "id": "aws-security",
+        "version": "1.1.0",
+        "packHash": "sha256:1f56975acdc82cb42f31c26f47a659c7cf9f189de8d29528a91967c3632f6a4e"
+      }
+    ],
+    "privacyProfile": {
+      "id": "bundle-diff-remove-username",
+      "version": "1.0.0",
+      "hash": "sha256:d9b606603be22d7d0ed34159efa4c5329845964e79fdabf354764daf796a1537"
+    },
+    "detectionRules": 4
+  },
+  "candidateBundle": {
+    "bundleHash": "sha256:fc068a0f6c608eb7966be2b8c62127fd4a33e4d47e3c99534052afac6cb6c0f7",
+    "policyCount": 3,
+    "packs": [
+      {
+        "id": "aws-security",
+        "version": "1.1.0",
+        "packHash": "sha256:1f56975acdc82cb42f31c26f47a659c7cf9f189de8d29528a91967c3632f6a4e"
+      }
+    ],
+    "privacyProfile": {
+      "id": "bundle-diff-remove-username-and-ip",
+      "version": "1.0.0",
+      "hash": "sha256:ec76b4a0d3194ae62f7048b8076c53245b6bedb13b93cd96f6732a021db7db35"
+    },
+    "detectionRules": 4
+  },
+  "notExercisedOffline": [
+    "suppression-windows",
+    "source-silence",
+    "cross-event-deduplication",
+    "queue-capacity-and-backpressure",
+    "delivery-and-destination-validation",
+    "pack-parsers",
+    "management-privacy-assignment"
+  ]
+}

@@ -1,0 +1,1 @@
+{"schemaVersion":"1.0.0","eventId":"bundle-diff-3","timeGenerated":"2026-10-17T01:00:00+00:00","application":{"name":"aws-security","environment":"production"},"eventCategory":"telemetry","eventType":"page_view","eventAction":"view","eventResult":"success","actor":{"username":"visitor"},"source":{"ipAddress":"192.0.2.10"}}

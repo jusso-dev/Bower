@@ -6,6 +6,8 @@ use std::fmt;
 use std::io::ErrorKind;
 use std::path::{Component, Path, PathBuf};
 
+use bower_contracts::time::{self, Timestamp};
+
 /// A failure reported as one stderr line with exit code 1.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CliError(pub String);
@@ -201,9 +203,137 @@ pub fn default_database() -> String {
         .into_owned()
 }
 
+const TIMESTAMP_SHAPE: &str = "YYYY-MM-DDTHH:MM[:SS[.FFFFFFF]](Z|+HH:MM|-HH:MM)";
+
+/// C# `CliOptions.Timestamp`: a time option (`--at`, `--from`, `--to`) as UTC; `None`
+/// when absent. Only [`TIMESTAMP_SHAPE`] is accepted: an explicit `Z` or offset (at most
+/// 14:00), at most 7 fractional digits, no date-only or time-only values, so no input is
+/// rounded, truncated or completed with today's date.
+pub fn timestamp(value: Option<&str>, name: &str) -> CliResult<Option<Timestamp>> {
+    let Some(text) = value else {
+        return Ok(None);
+    };
+    strict_timestamp(text).map(Some).ok_or_else(|| {
+        CliError(format!(
+            "{name} must be an ISO 8601 timestamp with Z or an offset: {TIMESTAMP_SHAPE}."
+        ))
+    })
+}
+
+fn strict_timestamp(text: &str) -> Option<Timestamp> {
+    let bytes = text.as_bytes();
+    let number = |start: usize, end: usize| -> Option<u32> {
+        let part = bytes.get(start..end)?;
+        part.iter().all(u8::is_ascii_digit).then(|| {
+            part.iter()
+                .fold(0, |value, digit| value * 10 + u32::from(digit - b'0'))
+        })
+    };
+    if bytes.len() < 17
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || bytes[10] != b'T'
+        || bytes[13] != b':'
+    {
+        return None;
+    }
+    // Month and day are checked by the calendar parse below.
+    let (year, hour, minute) = (number(0, 4)?, number(11, 13)?, number(14, 16)?);
+    number(5, 7)?;
+    number(8, 10)?;
+    if year == 0 || hour > 23 || minute > 59 {
+        return None;
+    }
+    let (mut index, mut seconds, mut fraction) = (16, "00", "");
+    if bytes[index] == b':' {
+        if number(17, 19)? > 59 {
+            return None;
+        }
+        seconds = &text[17..19];
+        index = 19;
+        if bytes.get(index) == Some(&b'.') {
+            let digits = bytes[index + 1..]
+                .iter()
+                .take_while(|byte| byte.is_ascii_digit())
+                .count();
+            if digits == 0 || digits > 7 {
+                return None;
+            }
+            fraction = &text[index..index + 1 + digits];
+            index += 1 + digits;
+        }
+    }
+    let offset = &text[index..];
+    if offset != "Z" {
+        let [b'+' | b'-', _, _, b':', _, _] = offset.as_bytes() else {
+            return None;
+        };
+        let (hours, minutes) = (number(index + 1, index + 3)?, number(index + 4, index + 6)?);
+        if minutes > 59 || hours * 60 + minutes > 14 * 60 {
+            return None;
+        }
+    }
+    let utc = time::to_utc(time::parse(&format!(
+        "{}:{seconds}{fraction}{offset}",
+        &text[..16]
+    ))?);
+    // DateTimeOffset range: UTC years 0001-9999.
+    let round_trip = time::format_round_trip(&utc);
+    (round_trip.as_bytes().get(4) == Some(&b'-') && !round_trip.starts_with("0000")).then_some(utc)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn timestamps_are_strict_iso_8601_with_an_offset() {
+        for (value, expected) in [
+            ("2026-10-17T01:02Z", "2026-10-17T01:02:00.0000000+00:00"),
+            (
+                "2026-10-17T11:02:03.1234567+10:00",
+                "2026-10-17T01:02:03.1234567+00:00",
+            ),
+            (
+                "2026-10-16T20:02:03.5-05:00",
+                "2026-10-17T01:02:03.5000000+00:00",
+            ),
+            (
+                "2026-10-17T01:02:03-00:00",
+                "2026-10-17T01:02:03.0000000+00:00",
+            ),
+        ] {
+            let parsed = timestamp(Some(value), "--from").unwrap().unwrap();
+            assert_eq!(time::format_round_trip(&parsed), expected, "{value}");
+        }
+        assert_eq!(timestamp(None, "--from").unwrap(), None);
+        for value in [
+            "01:02",
+            "2026-10-17",
+            "2026-10-17T01:02:03",
+            "2026-10-17T01:02:03.123456789Z",
+            "10/17/2026",
+            "Oct 17 2026",
+            "2026-10-17 01:02:03Z",
+            "2026-10-17T01:02:60Z",
+            "2026-10-17T01:02:03+15:00",
+            "2026-10-17t01:02:03z",
+            " 2026-10-17T01:02:03Z",
+            "2026-02-30T01:02:03Z",
+            "0000-01-01T00:00:00Z",
+            "0001-01-01T00:00:00+01:00",
+            "9999-12-31T23:59:59-01:00",
+            "2026-10-17T01:02:03.Z",
+            "2026-10-17T01:02:03Z\n",
+            "",
+        ] {
+            assert_eq!(
+                timestamp(Some(value), "--to").unwrap_err().0,
+                "--to must be an ISO 8601 timestamp with Z or an offset: YYYY-MM-DDTHH:MM[:SS[.FFFFFFF]](Z|+HH:MM|-HH:MM).",
+                "{value:?}"
+            );
+        }
+    }
 
     #[test]
     fn parses_ints_like_invariant_culture() {

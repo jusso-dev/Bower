@@ -45,6 +45,9 @@ pub struct LoadedBundle {
     pub info: BundleInfo,
     pub packs: Vec<bower_packs::LoadedPack>,
     pub redactor: Arc<dyn EventRedactor>,
+    /// The privacy redactor behind `redactor`, for offline previews that read
+    /// per-finding metadata (`bower policy diff`). Never values.
+    pub privacy: Arc<bower_redaction::JsonEventRedactor>,
     pub evaluator: Arc<dyn TelemetryPolicyEvaluator>,
     /// Management mode: the verified cached assignment envelope the bundle loaded.
     pub managed_privacy: Option<crate::managed_privacy::VerifiedManagedPrivacyProfile>,
