@@ -524,16 +524,20 @@ impl DurableEventStore for SqliteEventStore {
             // Suppression is decided under the same write lock, after the duplicate
             // check so a retried event never consumes allowance, and committed with
             // the count it changed.
-            if let Some(rule) = &candidate.suppression
-                && !crate::suppression::admit(&transaction, rule, &candidate.received_at)?
-            {
-                transaction.commit().map_err(storage)?;
-                return Ok(EnqueueResult {
-                    enqueued: false,
-                    duplicate: false,
-                    event_id: candidate.event_id.clone(),
-                    suppressed: true,
-                });
+            if let Some(rule) = &candidate.suppression {
+                // A suppressed event commits a counter change, so it needs the same
+                // physical budget as an insert; refusing here leaves the counters
+                // untouched.
+                self.check_storage()?;
+                if !crate::suppression::admit(&transaction, rule, &candidate.received_at)? {
+                    transaction.commit().map_err(storage)?;
+                    return Ok(EnqueueResult {
+                        enqueued: false,
+                        duplicate: false,
+                        event_id: candidate.event_id.clone(),
+                        suppressed: true,
+                    });
+                }
             }
             self.insert(&transaction, candidate)?;
             transaction.commit().map_err(storage)?;
