@@ -525,23 +525,38 @@ public sealed partial class ManagementStore(string databasePath)
             .Take(12)
             .ToArray();
         CollectorRecord[] privacyDrift = collectors.Where(PrivacyDrift).ToArray();
-        IReadOnlyDictionary<string, (long Revision, DateTimeOffset OccurredAt)> assignments = privacyDrift.Length == 0
-            ? new Dictionary<string, (long, DateTimeOffset)>()
+        IReadOnlyDictionary<string, PrivacyProfileAssignmentHead> assignments = privacyDrift.Length == 0
+            ? new Dictionary<string, PrivacyProfileAssignmentHead>()
             : await LatestPrivacyProfileAssignmentsAsync(cancellationToken);
-        PrivacyProfileDriftRecord[] privacyExceptions = privacyDrift
-            .Take(12)
-            .Select(item =>
+        // The history is read after the collector snapshot. A row is described only when the
+        // latest history row assigns exactly the version the snapshot holds; a missing or
+        // different row (a concurrent change) omits it rather than inventing a revision.
+        PrivacyProfileDriftRecord? Describe(CollectorRecord item)
+        {
+            DesiredPrivacyProfile desired = item.DesiredPrivacyProfile!;
+            if (!assignments.TryGetValue(item.Id, out PrivacyProfileAssignmentHead head)
+                || !head.Assigned
+                || !string.Equals(head.VersionId, desired.VersionId, StringComparison.Ordinal))
             {
-                DesiredPrivacyProfile desired = item.DesiredPrivacyProfile!;
-                (long revision, DateTimeOffset assignedAt) = assignments.GetValueOrDefault(item.Id);
-                return new PrivacyProfileDriftRecord(
-                    item.Id, item.MachineName, revision, assignedAt, desired.VersionId, desired.ProfileId,
-                    desired.Version, desired.ContentHash, item.ReportedPrivacyProfileHash, item.LastSeenAt);
-            })
+                return null;
+            }
+
+            return new PrivacyProfileDriftRecord(
+                item.Id, item.MachineName, head.Revision, head.OccurredAt, desired.VersionId,
+                desired.ProfileId, desired.Version, desired.ContentHash, item.ReportedPrivacyProfileHash,
+                item.LastSeenAt);
+        }
+
+        PrivacyProfileDriftRecord[] privacyExceptions = privacyDrift
+            .Select(Describe)
+            .OfType<PrivacyProfileDriftRecord>()
+            .Take(12)
             .ToArray();
-        int reporting = collectors.Where(Eligible).SelectMany(item => item.Sources)
-            .Count(item => string.Equals(item.Status, "healthy", StringComparison.OrdinalIgnoreCase));
-        int unknown = collectors.Where(item => !Eligible(item)).Sum(item => item.Sources.Count);
+        SourceReport[] eligibleSources = collectors.Where(Eligible).SelectMany(item => item.Sources).ToArray();
+        int reporting = eligibleSources.Count(item => SourceIs(item, "healthy"));
+        // Pending: not seen yet but still inside its allowance, so no evidence either way.
+        int unknown = collectors.Where(item => !Eligible(item)).Sum(item => item.Sources.Count)
+            + eligibleSources.Count(item => SourceIs(item, "pending"));
         return new OverviewRecord(
             collectors.Count,
             collectors.Count(item => item.Status == CollectorStatus.Pending),
@@ -559,6 +574,9 @@ public sealed partial class ManagementStore(string databasePath)
             privacyExceptions,
             unknown);
     }
+
+    private static bool SourceIs(SourceReport source, string status) =>
+        string.Equals(source.Status, status, StringComparison.OrdinalIgnoreCase);
 
     // Operational progress is distinct from a Sentinel destination-query claim.
     // Keep normal waiting/pending states out of the fleet error count.

@@ -126,7 +126,11 @@ public sealed record AuditRecord(
 /// heartbeat is fresh. <see cref="SourcesReporting"/> counts healthy sources of eligible
 /// collectors; <see cref="SourcesDegraded"/> counts every other source, so reporting plus
 /// degraded stays the whole denominator. <see cref="SourcesUnknown"/> is the part of
-/// <see cref="SourcesDegraded"/> whose collector is stale or not Active.
+/// <see cref="SourcesDegraded"/> without evidence either way: every source of a collector
+/// that is stale or not Active, and <c>pending</c> sources (not yet seen, still inside
+/// their allowance) of eligible collectors. <see cref="PrivacyProfileDrift"/> counts every
+/// eligible drifting collector; <see cref="PrivacyProfileExceptions"/> holds at most 12 and
+/// omits any whose latest assignment history row does not assign the version held.
 /// </summary>
 public sealed record OverviewRecord(
     int TotalCollectors,
@@ -161,10 +165,18 @@ public sealed record PrivacyProfileDriftRecord(
     DateTimeOffset ObservedAt)
 {
     /// <summary>
-    /// True when the observing heartbeat arrived at or after the assignment, so the collector
-    /// had the chance to apply it; false while the latest heartbeat predates the assignment.
+    /// The collector's heartbeat and privacy-profile deployment jobs each run every minute,
+    /// independently: one poll interval plus margin before a reported hash counts as a
+    /// rejected rollout rather than one not yet fetched.
     /// </summary>
-    public bool ObservedAfterAssignment => ObservedAt >= AssignedAt;
+    public static readonly TimeSpan ConfirmationDelay = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// True when the observing heartbeat arrived at least <see cref="ConfirmationDelay"/>
+    /// after the assignment, so the collector had the chance to apply it; false while it is
+    /// still awaiting a heartbeat that could confirm the assignment.
+    /// </summary>
+    public bool MismatchConfirmed => ObservedAt >= AssignedAt + ConfirmationDelay;
 }
 
 public sealed record CurrentAccess(

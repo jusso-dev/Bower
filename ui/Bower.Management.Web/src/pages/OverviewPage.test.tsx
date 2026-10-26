@@ -100,7 +100,7 @@ describe("Overview page", () => {
           assignedHash,
           observedHash: "default",
           observedAt: "2026-10-07T01:10:00Z",
-          observedAfterAssignment: true
+          mismatchConfirmed: true
         }
       ]
     });
@@ -141,14 +141,45 @@ describe("Overview page", () => {
           assignedHash,
           observedHash: null,
           observedAt: "2026-10-07T01:10:00Z",
-          observedAfterAssignment: false
+          mismatchConfirmed: false
         }
       ]
     });
     renderApp();
 
     const drift = await screen.findByRole("region", { name: "Privacy profile not applied" });
-    expect(within(drift).getByText("Awaiting heartbeat · not reported")).toBeTruthy();
+    const awaiting = within(drift).getByText("Awaiting heartbeat · not reported");
+    // Not yet a failed rollout: no drift (danger) styling.
+    expect(awaiting.className).not.toContain("policy-label--drift");
+    expect(within(drift).queryByText(/Not applied/)).toBeNull();
+    expect(within(drift).getByText("Assigned version against the hash in the latest heartbeat")).toBeTruthy();
+  });
+
+  it("states how many drifting collectors are shown when the list is truncated", async () => {
+    const rows = Array.from({ length: 12 }, (_, index) => ({
+      collectorId: `edge-${index}`,
+      machineName: `edge-app-${index}`,
+      assignmentRevision: index + 1,
+      assignedAt: "2026-10-07T01:00:00Z",
+      versionId: "a".repeat(32),
+      profileId: "contoso-hr",
+      version: "1.1.0",
+      assignedHash,
+      observedHash: "default",
+      observedAt: "2026-10-07T01:10:00Z",
+      mismatchConfirmed: true
+    }));
+    stubOverview({
+      ...healthyOverview,
+      exceptions: [driftedCollector],
+      privacyProfileDrift: 30,
+      privacyProfileExceptions: rows
+    });
+    renderApp();
+
+    const drift = await screen.findByRole("region", { name: "Privacy profile not applied" });
+    expect(within(drift).getByText("12 of 30 shown")).toBeTruthy();
+    expect(within(drift).getAllByRole("link")).toHaveLength(12);
   });
 
   it("omits the privacy drift section and keeps the empty state when nothing is drifting", async () => {
@@ -159,6 +190,13 @@ describe("Overview page", () => {
     expect(screen.queryByRole("region", { name: "Privacy profile not applied" })).toBeNull();
     expect(screen.getByLabelText("Reporting: 100%")).toBeTruthy();
     expect(screen.getByLabelText("Unknown: 0%")).toBeTruthy();
+  });
+
+  it("explains that pending sources count as unknown", async () => {
+    stubOverview(healthyOverview);
+    renderApp();
+
+    expect(await screen.findByText(/pending sources not yet seen/)).toBeTruthy();
   });
 
   it("counts stale and inactive collectors' sources as unknown within the coverage total", async () => {

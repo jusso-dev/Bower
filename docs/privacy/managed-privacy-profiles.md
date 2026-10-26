@@ -132,8 +132,9 @@ fleet exception (**Privacy drift** count and a *Privacy profile not applied* tab
 even when delivery and heartbeats are otherwise healthy, so a rejected deployment
 is visible without opening this page. Each row shows the assigned version, its
 assignment revision and time, the reported hash and the heartbeat time, and links
-here. *Awaiting heartbeat* means the latest heartbeat predates the assignment; *Not
-applied* means a later heartbeat still reports a different hash. See
+here. *Awaiting heartbeat* means no heartbeat has arrived at least two minutes after
+the assignment yet (one deployment poll plus margin); *Not applied* means such a
+heartbeat still reports a different hash. See
 [fleet overview](../operations/fleet-and-queue-integrity.md#fleet-overview-exceptions-and-source-coverage).
 
 ## Automation

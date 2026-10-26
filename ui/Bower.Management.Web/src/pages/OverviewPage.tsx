@@ -79,14 +79,18 @@ export function OverviewPage() {
                   />
                   <p>
                     Coverage reflects fresh heartbeats from active collectors. Sources of stale,
-                    pending, suspended or revoked collectors are unknown and stay in the total.
+                    pending, suspended or revoked collectors, and pending sources not yet seen
+                    inside their allowance, are unknown and stay in the total.
                     It does not prove destination queryability; use a Bower Evidence Bundle for
                     that claim.
                   </p>
                 </aside>
               </div>
               {privacyExceptions.length > 0 && (
-                <PrivacyProfileDriftTable records={privacyExceptions} />
+                <PrivacyProfileDriftTable
+                  records={privacyExceptions}
+                  total={overview.privacyProfileDrift ?? privacyExceptions.length}
+                />
               )}
             </>
           );
@@ -96,12 +100,23 @@ export function OverviewPage() {
   );
 }
 
-function PrivacyProfileDriftTable({ records }: { records: PrivacyProfileDrift[] }) {
+function PrivacyProfileDriftTable({
+  records,
+  total
+}: {
+  records: PrivacyProfileDrift[];
+  /** Every drifting collector; the API lists at most 12. */
+  total: number;
+}) {
   return (
     <section className="sheet section-gap" aria-labelledby="privacy-drift-title">
       <div className="section-heading">
         <h2 id="privacy-drift-title">Privacy profile not applied</h2>
-        <span>Assigned version against the hash in the latest heartbeat</span>
+        <span>
+          {records.length < total
+            ? `${records.length} of ${total} shown`
+            : "Assigned version against the hash in the latest heartbeat"}
+        </span>
       </div>
       <div className="responsive-table">
         <table>
@@ -131,10 +146,12 @@ function PrivacyProfileDriftTable({ records }: { records: PrivacyProfileDrift[] 
                 </td>
                 <td data-label="Reported">
                   <span
-                    className="policy-label policy-label--wrap policy-label--drift"
+                    className={`policy-label policy-label--wrap ${
+                      record.mismatchConfirmed ? "policy-label--drift" : "policy-label--unset"
+                    }`}
                     title={record.observedHash ?? undefined}
                   >
-                    {record.observedAfterAssignment ? "Not applied" : "Awaiting heartbeat"} ·{" "}
+                    {record.mismatchConfirmed ? "Not applied" : "Awaiting heartbeat"} ·{" "}
                     {shortHash(record.observedHash)}
                   </span>
                 </td>

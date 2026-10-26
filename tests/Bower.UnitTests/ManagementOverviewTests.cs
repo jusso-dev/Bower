@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Bower.Management.Api;
 using Bower.Management.Api.Jobs;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Bower.UnitTests;
@@ -26,8 +27,9 @@ public sealed class ManagementOverviewTests
         PrivacyProfileVersionDetail version = await ApprovedVersionAsync(store, ct);
         DateTimeOffset assignedAt = TestEvents.Now.AddMinutes(1);
         await store.AssignPrivacyProfileAsync("edge-01", version.Id, "Roll out", "admin", "Admin", assignedAt, ct);
-        DateTimeOffset observedAt = TestEvents.Now.AddMinutes(2);
-        // The collector rejected the deployment and kept the built-in default.
+        // One poll interval plus margin after the assignment, the collector still reports
+        // the built-in default: it rejected the deployment.
+        DateTimeOffset observedAt = assignedAt + PrivacyProfileDriftRecord.ConfirmationDelay;
         await store.HeartbeatAsync("edge-01", Heartbeat("default"), "principal", observedAt, ct);
 
         OverviewRecord overview = await store.OverviewAsync(observedAt - StaleAfter, ct);
@@ -47,7 +49,67 @@ public sealed class ManagementOverviewTests
         Assert.Equal(version.ContentHash, drift.AssignedHash);
         Assert.Equal("default", drift.ObservedHash);
         Assert.Equal(observedAt, drift.ObservedAt);
-        Assert.True(drift.ObservedAfterAssignment);
+        Assert.True(drift.MismatchConfirmed);
+    }
+
+    [Fact]
+    public async Task PrivacyDrift_HeartbeatWithinTheConfirmationDelayIsAwaitingNotFailed()
+    {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        using TemporaryDirectory root = new();
+        ManagementStore store = await StoreAsync(root, ct);
+        await ActiveAsync(store, "edge-01", TestEvents.Now, ct, "default");
+        PrivacyProfileVersionDetail version = await ApprovedVersionAsync(store, ct);
+        await store.AssignPrivacyProfileAsync("edge-01", version.Id, "Roll out", "admin", "Admin", TestEvents.Now, ct);
+        // The heartbeat and privacy-profile jobs run independently every minute: this
+        // heartbeat may simply precede the collector's next deployment poll.
+        DateTimeOffset observedAt = TestEvents.Now
+            + PrivacyProfileDriftRecord.ConfirmationDelay - TimeSpan.FromSeconds(1);
+        await store.HeartbeatAsync("edge-01", Heartbeat("default"), "principal", observedAt, ct);
+
+        OverviewRecord overview = await store.OverviewAsync(observedAt - StaleAfter, ct);
+
+        PrivacyProfileDriftRecord drift = Assert.Single(overview.PrivacyProfileExceptions!);
+        Assert.False(drift.MismatchConfirmed);
+        Assert.Equal(observedAt, drift.ObservedAt);
+        Assert.Equal(TimeSpan.FromMinutes(2), PrivacyProfileDriftRecord.ConfirmationDelay);
+    }
+
+    [Fact]
+    public async Task PrivacyDrift_RowWithoutAMatchingAssignmentHistoryRowIsOmittedNotZeroFilled()
+    {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        using TemporaryDirectory root = new();
+        string path = Path.Combine(root.Path, "management.db");
+        ManagementStore store = new(path);
+        await store.InitializeAsync(ct);
+        await ActiveAsync(store, "edge-01", TestEvents.Now, ct, "default");
+        await ActiveAsync(store, "edge-02", TestEvents.Now, ct, "default");
+        PrivacyProfileVersionDetail version = await ApprovedVersionAsync(store, ct);
+        await store.AssignPrivacyProfileAsync("edge-01", version.Id, "Roll out", "admin", "Admin", TestEvents.Now, ct);
+        await store.AssignPrivacyProfileAsync("edge-02", version.Id, "Roll out", "admin", "Admin", TestEvents.Now, ct);
+        await using (SqliteConnection connection = new($"Data Source={path};Pooling=False"))
+        {
+            await connection.OpenAsync(ct);
+            await using SqliteCommand command = connection.CreateCommand();
+            // edge-01: history row missing. edge-02: the latest history row clears the
+            // assignment, so it does not describe the version the collector row still holds.
+            command.CommandText =
+                """
+                DELETE FROM privacy_profile_assignments WHERE collector_id = 'edge-01';
+                INSERT INTO privacy_profile_assignments (
+                    collector_id, version_id, action, reason, actor_object_id, actor_name, occurred_at)
+                VALUES ('edge-02', NULL, 'cleared', 'Race', 'admin', 'Admin', '2026-07-26T02:20:19.0000000+00:00');
+                """;
+            await command.ExecuteNonQueryAsync(ct);
+        }
+
+        OverviewRecord overview = await store.OverviewAsync(TestEvents.Now - StaleAfter, ct);
+
+        // Both still drift and stay exceptions; neither gets a fabricated revision or time.
+        Assert.Equal(2, overview.PrivacyProfileDrift);
+        Assert.Equal(2, overview.Exceptions.Count);
+        Assert.Empty(overview.PrivacyProfileExceptions!);
     }
 
     [Fact]
@@ -65,7 +127,7 @@ public sealed class ManagementOverviewTests
 
         // Desired assignment differs from the last observation, which predates it.
         PrivacyProfileDriftRecord drift = Assert.Single(overview.PrivacyProfileExceptions!);
-        Assert.False(drift.ObservedAfterAssignment);
+        Assert.False(drift.MismatchConfirmed);
         Assert.Equal(1, overview.PrivacyProfileDrift);
     }
 
@@ -95,7 +157,8 @@ public sealed class ManagementOverviewTests
     {
         CancellationToken ct = TestContext.Current.CancellationToken;
         using TemporaryDirectory directory = new();
-        await using WebApplication app = await ManagementApiTests.StartAsync(directory, ct);
+        FakeClock clock = new(TestEvents.Now);
+        await using WebApplication app = await ManagementApiTests.StartAsync(directory, clock, ct);
         HttpClient collector = ManagementApiTests.Client(app, BowerRoles.Collector);
         HttpClient admin = ManagementApiTests.Client(app, BowerRoles.Administrator, "carol");
         HttpClient author = ManagementApiTests.Client(app, BowerRoles.Operator, "alice");
@@ -104,6 +167,7 @@ public sealed class ManagementOverviewTests
             author, PrivacyProfileApiTests.Profile("1.0.0"), ct);
         await PrivacyProfileApiTests.Review(admin, version.Id, "approve", "Reviewed", ct);
         using HttpResponseMessage assigned = await PrivacyProfileApiTests.Assign(admin, "edge-01", version.Id, "Roll out", ct);
+        clock.Advance(PrivacyProfileDriftRecord.ConfirmationDelay);
         using HttpResponseMessage heartbeat = await collector.PostAsJsonAsync(
             "/api/collectors/edge-01/heartbeat", PrivacyProfileApiTests.Heartbeat("default"), ct);
 
@@ -119,7 +183,7 @@ public sealed class ManagementOverviewTests
         PrivacyProfileDriftRecord drift = Assert.Single(overview.PrivacyProfileExceptions!);
         Assert.Equal(version.ContentHash, drift.AssignedHash);
         Assert.Contains("\"privacyProfileExceptions\":[{\"collectorId\":\"edge-01\"", body, StringComparison.Ordinal);
-        Assert.Contains("\"observedAfterAssignment\":true", body, StringComparison.Ordinal);
+        Assert.Contains("\"mismatchConfirmed\":true", body, StringComparison.Ordinal);
         // Hashes and identifiers only: no profile document, rule or key material.
         Assert.DoesNotContain("apiVersion", body, StringComparison.Ordinal);
         Assert.DoesNotContain("actor.username", body, StringComparison.Ordinal);
@@ -162,6 +226,31 @@ public sealed class ManagementOverviewTests
         Assert.Equal(
             (unmaintained.SourcesReporting, unmaintained.SourcesDegraded, unmaintained.SourcesUnknown),
             (maintained.SourcesReporting, maintained.SourcesDegraded, maintained.SourcesUnknown));
+    }
+
+    [Fact]
+    public async Task Coverage_PendingSourcesOnAFreshCollectorAreUnknownAndOverdueOnesDegraded()
+    {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        using TemporaryDirectory root = new();
+        ManagementStore store = await StoreAsync(root, ct);
+        SourceReport[] sources =
+        [
+            new("http", "local-http", "healthy", 0, null),
+            new("new-app", "application", "pending", null, null),
+            new("new-api", "application", "Pending", null, null),
+            new("old-app", "application", "never-seen", null, null),
+            new("quiet-app", "application", "silent", 330, null)
+        ];
+        await store.RegisterAsync(Registration("edge-01") with { Sources = sources }, "principal", TestEvents.Now, ct);
+        await store.DecideAsync("edge-01", CollectorStatus.Approved, "approved", "Expected", "admin", "Admin", TestEvents.Now, ct);
+        await store.HeartbeatAsync("edge-01", Heartbeat() with { Sources = sources }, "principal", TestEvents.Now, ct);
+
+        OverviewRecord overview = await store.OverviewAsync(TestEvents.Now - StaleAfter, ct);
+
+        // pending has no evidence yet (unknown); never-seen and silent are overdue (degraded).
+        // Unknown stays part of degraded, so reporting + degraded is all five sources.
+        Assert.Equal((1, 4, 2), (overview.SourcesReporting, overview.SourcesDegraded, overview.SourcesUnknown));
     }
 
     [Theory]
