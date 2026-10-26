@@ -248,6 +248,8 @@ struct Endpoint {
     hold_until_concurrent: usize,
     concurrent: Arc<tokio::sync::Notify>,
     released: Arc<std::sync::atomic::AtomicBool>,
+    /// Signalled (permit stored) every time a request reaches the endpoint.
+    entered: Arc<tokio::sync::Notify>,
     count: Arc<AtomicUsize>,
     in_flight: Arc<AtomicUsize>,
     peak: Arc<AtomicUsize>,
@@ -261,6 +263,7 @@ impl Endpoint {
             hold_until_concurrent: 0,
             concurrent: Arc::default(),
             released: Arc::default(),
+            entered: Arc::default(),
             count: Arc::default(),
             in_flight: Arc::default(),
             peak: Arc::default(),
@@ -298,6 +301,7 @@ async fn ingest(State(endpoint): State<Endpoint>, _body: Bytes) -> Response {
     // Registered before counting, so the request that completes the set wakes it.
     let notified = endpoint.concurrent.notified();
     let number = endpoint.count.fetch_add(1, Ordering::SeqCst) + 1;
+    endpoint.entered.notify_one();
     let current = endpoint.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
     endpoint.peak.fetch_max(current, Ordering::SeqCst);
     if endpoint.hold_until_concurrent > 0 && !endpoint.released.load(Ordering::SeqCst) {
@@ -529,21 +533,32 @@ async fn output_latency_spike_reduces_concurrency() {
 #[tokio::test]
 async fn output_cancellation_while_waiting_for_a_slot_never_acknowledges() {
     let (base, endpoint) = Endpoint::new(status(204)).start().await;
-    *endpoint.delay.lock().unwrap() = Duration::from_secs(30);
+    // The first request never completes on its own; the other two wait for its slot.
+    *endpoint.delay.lock().unwrap() = Duration::from_secs(3600);
     let output = output(&base, 1);
 
-    // Dropping the delivery future is cancellation (the worker aborts its task).
-    let cancelled =
-        tokio::time::timeout(Duration::from_millis(300), output.deliver(&events("c", 3))).await;
-
-    assert!(cancelled.is_err());
-    assert_eq!(endpoint.count(), 1);
-    // Aborted upload tasks drop their permits when the runtime next polls them.
-    for _ in 0..100 {
-        if snapshot(&output).in_flight == 0 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
+    // Cancel only once the first request has reached the endpoint: dropping the
+    // delivery future is cancellation (the worker aborts its task). No timer races
+    // batch preparation, which is slow on loaded runners.
+    let batch = events("c", 3);
+    let delivery = output.deliver(&batch);
+    tokio::select! {
+        result = delivery => panic!("delivery finished despite a held request: {result:?}"),
+        () = endpoint.entered.notified() => {}
     }
+
+    assert_eq!(endpoint.count(), 1);
+    // Aborted upload tasks drop their permits when the runtime next polls them. The
+    // timeout only guards against a hang; release does not depend on elapsed time.
+    tokio::time::timeout(Duration::from_secs(60), async {
+        while snapshot(&output).in_flight != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("aborted uploads release their slots");
     assert_eq!(snapshot(&output).in_flight, 0);
+    // Nothing else was sent after cancellation, so nothing could be acknowledged.
+    tokio::task::yield_now().await;
+    assert_eq!(endpoint.count(), 1);
 }
