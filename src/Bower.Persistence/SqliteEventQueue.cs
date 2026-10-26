@@ -13,6 +13,12 @@ public sealed partial class SqliteEventStore : IDurableEventStore
     private readonly string connectionString;
     private readonly long maximumBytes;
     public long MaximumStorageBytes { get; }
+
+    /// <summary>
+    /// Physical headroom a write must leave below <see cref="MaximumStorageBytes"/> before
+    /// it starts: one full WAL transaction plus database growth during checkpoint.
+    /// </summary>
+    public long StorageReserveBytes => MaximumStorageBytes / 2 + MaximumStorageBytes / 128 + 65_536;
     private readonly TimeProvider clock;
 
     public SqliteEventStore(string databasePath, long maximumBytes, TimeProvider? clock = null)
@@ -184,11 +190,16 @@ public sealed partial class SqliteEventStore : IDurableEventStore
 
         // Suppression is decided under the same write lock, after the duplicate check so a
         // retried event never consumes allowance, and committed with the count it changed.
-        if (candidate.Suppression is { } suppression
-            && !await AdmitAsync(connection, transaction, suppression, candidate.ReceivedAt, cancellationToken))
+        if (candidate.Suppression is { } suppression)
         {
-            await transaction.CommitAsync(cancellationToken);
-            return new EnqueueResult(false, false, candidate.EventId, Suppressed: true);
+            // A suppressed event commits a counter change, so it needs the same physical
+            // budget as an insert; refusing here leaves the counters untouched.
+            CheckStorage();
+            if (!await AdmitAsync(connection, transaction, suppression, candidate.ReceivedAt, cancellationToken))
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return new EnqueueResult(false, false, candidate.EventId, Suppressed: true);
+            }
         }
 
         await InsertAsync(connection, transaction, candidate, cancellationToken);
@@ -979,7 +990,7 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         {
             current += new FileInfo(wal).Length;
         }
-        long reserve = MaximumStorageBytes / 2 + MaximumStorageBytes / 128 + 65_536;
+        long reserve = StorageReserveBytes;
         if (current > MaximumStorageBytes - reserve)
         {
             throw new QueueCapacityExceededException(MaximumStorageBytes, current, reserve);

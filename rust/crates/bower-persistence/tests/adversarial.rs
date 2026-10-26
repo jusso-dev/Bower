@@ -1,6 +1,8 @@
 mod common;
 
-use bower_contracts::{DurableEventStore, FailureSettlement, StoreError};
+use bower_contracts::{
+    DurableEventStore, FailureSettlement, QueuedEvent, StoreError, SuppressionRequest,
+};
 use bower_persistence::SqliteEventStore;
 use chrono::Duration as Span;
 use common::*;
@@ -285,6 +287,121 @@ fn pinned_wal_reader_backpressures_before_physical_budget_and_preserves_event() 
             .enqueued
     );
     assert!(store.verify_ledger().unwrap().intact);
+}
+
+/// SQLite WAL format: every frame is this header followed by one page.
+const WAL_FRAME_HEADER_BYTES: i64 = 24;
+
+#[test]
+fn pinned_wal_reader_backpressures_suppression_counters_within_physical_budget() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    let store = store(directory.path(), ONE_MEBIBYTE, &clock);
+    let suppressible = |id: &str| QueuedEvent {
+        suppression: Some(SuppressionRequest {
+            policy_id: "BWR-POL-X".into(),
+            policy_version: "1.0.0".into(),
+            policy_hash: "sha256:p".into(),
+            key_hash: "abc".into(),
+            key_fields: vec!["source.ipAddress".into()],
+            key_values: vec!["192.0.2.1".into()],
+            window_seconds: 60,
+            allow_per_window: 1,
+            event_category: "authentication".into(),
+            event_type: "authentication_failure".into(),
+            application: "App".into(),
+            environment: "prod".into(),
+            tenant_id: None,
+        }),
+        ..event(
+            id,
+            &format!("sha256:{id}"),
+            &format!("{{\"eventId\":\"{id}\"}}"),
+            clock.now(),
+        )
+    };
+    let suppressed_count = || -> i64 {
+        raw(store.database_path())
+            .query_row("SELECT suppressed FROM suppression_windows", [], |row| {
+                row.get(0)
+            })
+            .unwrap()
+    };
+    assert!(store.enqueue(&suppressible("admitted")).unwrap().enqueued);
+    let mut connection = raw(store.database_path());
+    let transaction = connection.transaction().unwrap();
+    transaction
+        .query_row("SELECT COUNT(*) FROM queue_events_v5", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .unwrap();
+
+    // Allowance is spent: every unique event only updates the window counters, and
+    // each commit grows the WAL the pinned reader keeps from being reset.
+    let mut counted = 0;
+    let mut blocked = false;
+    for index in 0..6000 {
+        match store.enqueue(&suppressible(&format!("unique-{index}"))) {
+            Err(StoreError::Full(_)) => {
+                blocked = true;
+                break;
+            }
+            result => assert!(result.unwrap().suppressed),
+        }
+        counted += 1;
+    }
+    assert!(blocked);
+    assert!(counted > 0);
+    // Refusal starts at the ceiling minus the reserve; the last admitted commit can
+    // add one WAL frame for the counter page it changed.
+    let page_size: i64 = raw(store.database_path())
+        .query_row("PRAGMA page_size", [], |row| row.get(0))
+        .unwrap();
+    let admission_bound = store.maximum_storage_bytes() - store.storage_reserve_bytes()
+        + WAL_FRAME_HEADER_BYTES
+        + page_size;
+    let storage = storage_bytes(store.database_path());
+    assert!(storage <= admission_bound as u64);
+    for index in 0..3 {
+        assert!(matches!(
+            store.enqueue(&suppressible(&format!("refused-{index}"))),
+            Err(StoreError::Full(_))
+        ));
+    }
+
+    // Refusals leave the counters and the files untouched; exact replay still wins.
+    assert_eq!(storage_bytes(store.database_path()), storage);
+    assert_eq!(suppressed_count(), counted);
+    assert!(store.enqueue(&suppressible("admitted")).unwrap().duplicate);
+
+    drop(transaction);
+    store.maintain().unwrap();
+    assert!(storage_bytes(store.database_path()) <= store.maximum_storage_bytes() as u64);
+    drop(store);
+    let restarted = common::store(directory.path(), ONE_MEBIBYTE, &clock);
+    assert!(
+        restarted
+            .enqueue(&suppressible("recovered"))
+            .unwrap()
+            .suppressed
+    );
+    clock.advance(Span::minutes(2));
+    let mut closed = None;
+    let summaries = restarted
+        .close_expired_suppression_windows(clock.now(), &mut |window| {
+            closed = Some((window.admitted, window.suppressed));
+            Ok(event(
+                "summary",
+                "sha256:summary",
+                "{\"eventId\":\"summary\"}",
+                clock.now(),
+            ))
+        })
+        .unwrap();
+    assert_eq!(summaries, 1);
+    assert_eq!(closed, Some((1, counted + 1)));
+    assert_eq!(restarted.snapshot().unwrap().queued, 2);
+    assert!(restarted.verify_ledger().unwrap().intact);
 }
 
 fn storage_bytes(path: &std::path::Path) -> u64 {

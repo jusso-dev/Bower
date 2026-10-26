@@ -9,6 +9,9 @@ namespace Bower.UnitTests;
 
 public sealed class DurabilityAdversarialTests
 {
+    /// <summary>SQLite WAL format: every frame is this header followed by one page.</summary>
+    private const int WalFrameHeaderBytes = 24;
+
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
     [Fact]
@@ -189,6 +192,83 @@ public sealed class DurabilityAdversarialTests
         Assert.True((await store.VerifyLedgerAsync(Cancellation)).Intact);
         Assert.Equal(1, (await store.GetSnapshotAsync(Cancellation)).Retrying + (await store.GetSnapshotAsync(Cancellation)).Uploading);
         Assert.True((await store.EnqueueAsync(new("recovered", "recovered", "{}", TestEvents.Now), Cancellation)).Enqueued);
+    }
+
+    [Fact]
+    public async Task PinnedWalReader_BackpressuresSuppressionCountersWithinPhysicalBound()
+    {
+        using TemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "queue.db");
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = new(path, 1_048_576, clock);
+        await store.InitializeAsync(Cancellation);
+        SuppressionRequest rule = new(
+            "BWR-POL-X", "1.0.0", "sha256:p", "abc", ["source.ipAddress"], ["192.0.2.1"], 60, 1,
+            "authentication", "authentication_failure", "App", "prod", null);
+        QueuedEvent Suppressible(string id) =>
+            new(id, $"sha256:{id}", $$"""{"eventId":"{{id}}"}""", clock.UtcNow, Suppression: rule);
+        Assert.True((await store.EnqueueAsync(Suppressible("admitted"), Cancellation)).Enqueued);
+        await using SqliteConnection readerConnection = new($"Data Source={path};Pooling=False");
+        await readerConnection.OpenAsync(Cancellation);
+        using SqliteTransaction snapshot = readerConnection.BeginTransaction(deferred: true);
+        using SqliteCommand read = readerConnection.CreateCommand();
+        read.Transaction = snapshot;
+        read.CommandText = "SELECT COUNT(*) FROM queue_events_v5;";
+        await read.ExecuteScalarAsync(Cancellation);
+
+        // Allowance is spent: every unique event only updates the window counters, and
+        // each commit grows the WAL the pinned reader keeps from being reset.
+        long counted = 0;
+        bool blocked = false;
+        for (int index = 0; index < 6_000; index++)
+        {
+            try
+            {
+                Assert.True((await store.EnqueueAsync(Suppressible($"unique-{index}"), Cancellation)).Suppressed);
+                counted++;
+            }
+            catch (QueueCapacityExceededException)
+            {
+                blocked = true;
+                break;
+            }
+        }
+
+        Assert.True(blocked);
+        Assert.True(counted > 0);
+        // Refusal starts at the ceiling minus the reserve; the last admitted commit can
+        // add one WAL frame for the counter page it changed.
+        long pageSize = await ScalarAsync(path, "PRAGMA page_size;");
+        long admissionBound = store.MaximumStorageBytes - store.StorageReserveBytes + WalFrameHeaderBytes + pageSize;
+        Assert.True(StorageBytes(path) <= admissionBound);
+        long storage = StorageBytes(path);
+        for (int index = 0; index < 3; index++)
+        {
+            await Assert.ThrowsAsync<QueueCapacityExceededException>(
+                () => store.EnqueueAsync(Suppressible($"refused-{index}"), Cancellation));
+        }
+
+        // Refusals leave the counters and the files untouched; exact replay still wins.
+        Assert.Equal(storage, StorageBytes(path));
+        Assert.Equal(counted, await ScalarAsync(path, "SELECT suppressed FROM suppression_windows;"));
+        Assert.True((await store.EnqueueAsync(Suppressible("admitted"), Cancellation)).Duplicate);
+
+        snapshot.Dispose();
+        await store.MaintainAsync(Cancellation);
+        Assert.True(StorageBytes(path) <= store.MaximumStorageBytes);
+        SqliteEventStore restarted = new(path, 1_048_576, clock);
+        await restarted.InitializeAsync(Cancellation);
+        Assert.True((await restarted.EnqueueAsync(Suppressible("recovered"), Cancellation)).Suppressed);
+        clock.Advance(TimeSpan.FromMinutes(2));
+        SuppressionWindow? closed = null;
+        Assert.Equal(1, await restarted.CloseExpiredSuppressionWindowsAsync(clock.UtcNow, window =>
+        {
+            closed = window;
+            return new QueuedEvent("summary", "sha256:summary", """{"eventId":"summary"}""", clock.UtcNow);
+        }, Cancellation));
+        Assert.Equal((1L, counted + 1), (closed!.Admitted, closed.Suppressed));
+        Assert.Equal(2, (await restarted.GetSnapshotAsync(Cancellation)).Queued);
+        Assert.True((await restarted.VerifyLedgerAsync(Cancellation)).Intact);
     }
 
     [Fact]

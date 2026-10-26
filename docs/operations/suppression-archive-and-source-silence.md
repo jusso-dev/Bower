@@ -22,7 +22,9 @@ suppression:
 - The first `allowPerWindow` events per key in each window are queued as usual.
   Later ones are counted in the queue database inside the same transaction as the
   duplicate check, and the collector answers `"suppressed": true` (HTTP 202).
-  Duplicates never consume allowance. Counts survive restarts.
+  Duplicates never consume allowance. Counts survive restarts. When the queue
+  database is at its physical storage limit a suppressible event is refused with
+  the same capacity backpressure as any other event and is not counted.
 - Within 5 seconds of a window ending, one `telemetry_aggregation_summary` event
   (action `telemetry.suppressed`) is queued with the suppressed and admitted counts,
   the key fields and their redacted values, the window bounds and the first and last
