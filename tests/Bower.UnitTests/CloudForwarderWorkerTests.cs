@@ -15,6 +15,7 @@ namespace Bower.UnitTests;
 public sealed class CloudForwarderWorkerTests
 {
     private const string Token = "cloud-token-0123456789abcdef0123456789";
+    private static readonly TimeSpan Lease = TimeSpan.FromSeconds(60);
 
     [Fact]
     public async Task Pass_AcknowledgesOnlyAfterCollectorAccepts()
@@ -165,6 +166,185 @@ public sealed class CloudForwarderWorkerTests
         Assert.Equal(["m1"], source.Acknowledged);
     }
 
+    [Theory]
+    [InlineData("forwarding")]
+    [InlineData("translation")]
+    [InlineData("throttling")]
+    public async Task Lease_EveryOutstandingMessageIsRenewedByElapsedTime(string slow)
+    {
+        // Issue #65: 60 s lease, a slow first message (31 events at 2 s each, a 90 s
+        // translation, or three events throttled for 25 s each) and a second message
+        // waiting in the batch. Fewer than 200 events, so count-based renewal never ran.
+        ManualTimeProvider clock = new(TestEvents.Now);
+        LeasedSource source = new(clock, Lease, Message("m1", "{}"), Message("m2", "{}"));
+        SlowTranslator translator = new(clock, message => slow switch
+        {
+            "translation" when message.Id == "m1" => (TimeSpan.FromSeconds(90), 1),
+            "forwarding" when message.Id == "m1" => (TimeSpan.Zero, 31),
+            "throttling" when message.Id == "m1" => (TimeSpan.Zero, 3),
+            _ => (TimeSpan.Zero, 1)
+        });
+        Dictionary<string, int> attempts = new(StringComparer.Ordinal);
+        TimedCollector collector = new(
+            clock,
+            _ => slow == "forwarding" ? TimeSpan.FromSeconds(2) : TimeSpan.Zero,
+            body => slow == "throttling" && body.Contains("m1", StringComparison.Ordinal)
+                && (attempts[body] = attempts.GetValueOrDefault(body) + 1) <= 25
+                    ? HttpStatusCode.TooManyRequests
+                    : HttpStatusCode.Accepted);
+
+        CloudPassResult result = await DriveAsync(clock, () => LeaseWorker(source, translator, collector, clock)
+            .ProcessOnceAsync(TestContext.Current.CancellationToken));
+
+        Assert.True(clock.GetUtcNow() - TestEvents.Now > Lease, "the scenario must outlast one lease");
+        Assert.Equal(0, result.LeaseLost);
+        Assert.False(result.Backpressure);
+        Assert.Equal(["m1", "m2"], source.Acknowledged);
+        Assert.Empty(source.Released);
+        Assert.Equal(0, source.ExpiredCalls);
+        // The waiting message is renewed while the first one is still being worked on.
+        DateTimeOffset waitingStarted = translator.Translated.Single(item => item.Id == "m2").At;
+        Assert.True(source.Extensions.Count(item => item.Id == "m2" && item.At < waitingStarted) >= 2);
+    }
+
+    [Theory]
+    [InlineData("m1")]
+    [InlineData("m2")]
+    public async Task Lease_RenewalFailureStopsWorkAndIsNotAcknowledged(string failing)
+    {
+        ManualTimeProvider clock = new(TestEvents.Now);
+        LeasedSource source = new(clock, Lease, Message("m1", "{}"), Message("m2", "{}"))
+        {
+            // The first renewal (on receive) succeeds; the one at 30 s fails.
+            Extend = (id, attempt, _) => id == failing && attempt == 2
+                ? Task.FromException(new HttpRequestException("queue unavailable"))
+                : Task.CompletedTask
+        };
+        SlowTranslator translator = new(clock, message => (TimeSpan.Zero, message.Id == "m1" ? 31 : 1));
+        TimedCollector collector = new(clock, SlowFirstMessage, _ => HttpStatusCode.Accepted);
+
+        CloudPassResult result = await DriveAsync(clock, () => LeaseWorker(source, translator, collector, clock)
+            .ProcessOnceAsync(TestContext.Current.CancellationToken));
+
+        string other = failing == "m1" ? "m2" : "m1";
+        Assert.Equal(1, result.LeaseLost);
+        Assert.True(result.Backpressure);
+        Assert.Equal([other], source.Acknowledged);
+        Assert.DoesNotContain(source.Released, item => item.Id == failing);
+        Assert.Equal(0, source.ExpiredCalls);
+        if (failing == "m1")
+        {
+            // Forwarding stopped when ownership was lost instead of running to the end.
+            Assert.InRange(collector.Bodies.Count(body => body.Contains("m1", StringComparison.Ordinal)), 1, 16);
+        }
+        else
+        {
+            Assert.DoesNotContain(translator.Translated, item => item.Id == "m2");
+        }
+    }
+
+    [Fact]
+    public async Task Lease_StalledRenewalLosesOwnershipAtTheDeadline()
+    {
+        ManualTimeProvider clock = new(TestEvents.Now);
+        LeasedSource source = new(clock, Lease, Message("m1", "{}"), Message("m2", "{}"))
+        {
+            Extend = (id, attempt, token) => id == "m1" && attempt == 2
+                ? clock.Delay(Timeout.InfiniteTimeSpan, token)
+                : Task.CompletedTask
+        };
+        SlowTranslator translator = new(clock, message => (TimeSpan.Zero, message.Id == "m1" ? 31 : 1));
+        TimedCollector collector = new(clock, SlowFirstMessage, _ => HttpStatusCode.Accepted);
+
+        CloudPassResult result = await DriveAsync(clock, () => LeaseWorker(source, translator, collector, clock)
+            .ProcessOnceAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal(1, result.LeaseLost);
+        Assert.Equal(["m2"], source.Acknowledged);
+        Assert.Equal(0, source.ExpiredCalls);
+        // Ownership from the receive-time renewal ended at 60 s: no m1 event was sent after it.
+        Assert.InRange(collector.Bodies.Count(body => body.Contains("m1", StringComparison.Ordinal)), 1, 30);
+    }
+
+    [Fact]
+    public async Task Lease_LateTimerCallbacksNeverRenewOrSettleAfterTheDeadline()
+    {
+        // Timer callbacks can run late (a starved thread pool). Translation takes 90 s while
+        // no timer fires, then the overdue renewal and expiry timers fire together: the worker
+        // must judge ownership by the clock, not by whether the expiry callback has run.
+        ManualTimeProvider clock = new(TestEvents.Now);
+        LeasedSource source = new(clock, Lease, Message("m1", "{}"), Message("m2", "{}"));
+        SlowTranslator translator = new(clock, message =>
+        {
+            if (message.Id == "m1")
+            {
+                clock.Jump(TimeSpan.FromSeconds(90));
+                clock.Advance(TimeSpan.Zero);
+            }
+
+            return (TimeSpan.Zero, 1);
+        });
+        TimedCollector collector = new(clock, _ => TimeSpan.Zero, _ => HttpStatusCode.Accepted);
+
+        CloudPassResult result = await DriveAsync(clock, () => LeaseWorker(source, translator, collector, clock)
+            .ProcessOnceAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal(0, source.ExpiredCalls);
+        Assert.Equal(2, result.LeaseLost);
+        Assert.Empty(source.Acknowledged);
+        Assert.Empty(source.Released);
+        Assert.Equal(2, source.Extensions.Count);
+    }
+
+    [Fact]
+    public async Task Lease_SettlementJudgesTheDeadlineByTheClock()
+    {
+        // The expiry callback never gets to run before settlement.
+        ManualTimeProvider clock = new(TestEvents.Now);
+        LeasedSource source = new(clock, Lease, Message("m1", "{}"));
+        SlowTranslator translator = new(clock, _ =>
+        {
+            clock.Jump(TimeSpan.FromSeconds(61));
+            return (TimeSpan.Zero, 1);
+        });
+        TimedCollector collector = new(clock, _ => TimeSpan.Zero, _ => HttpStatusCode.Accepted);
+
+        CloudPassResult result = await LeaseWorker(source, translator, collector, clock)
+            .ProcessOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, source.ExpiredCalls);
+        Assert.Equal(1, result.LeaseLost);
+        Assert.Empty(source.Acknowledged);
+    }
+
+    [Fact]
+    public async Task Lease_CancellationStopsRenewalAndDoesNotAcknowledge()
+    {
+        ManualTimeProvider clock = new(TestEvents.Now);
+        LeasedSource source = new(clock, Lease, Message("m1", "{}"), Message("m2", "{}"));
+        SlowTranslator translator = new(clock, message => (TimeSpan.Zero, message.Id == "m1" ? 31 : 1));
+        TimedCollector collector = new(clock, _ => TimeSpan.FromSeconds(2), _ => HttpStatusCode.Accepted);
+        using CancellationTokenSource stopping = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+
+        Task<CloudPassResult> pass = null!;
+        Inline(() =>
+        {
+            pass = LeaseWorker(source, translator, collector, clock).ProcessOnceAsync(stopping.Token);
+            clock.Advance(TimeSpan.FromSeconds(40));
+        });
+        Assert.False(pass.IsCompleted);
+        Inline(stopping.Cancel);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pass);
+        int renewals = source.Extensions.Count;
+        Inline(() => clock.Advance(TimeSpan.FromMinutes(5)));
+
+        Assert.True(renewals >= 4);
+        Assert.Equal(renewals, source.Extensions.Count);
+        Assert.Equal(0, clock.ActiveTimers);
+        Assert.Empty(source.Acknowledged);
+        Assert.Equal(0, source.ExpiredCalls);
+    }
+
     [Fact]
     public async Task Pass_S3ObjectsAreReadOnlyFromAllowedBuckets()
     {
@@ -312,6 +492,15 @@ public sealed class CloudForwarderWorkerTests
             () => CloudAgentSettings.FromEnvironment(item => environment.GetValueOrDefault(item)));
     }
 
+    [Theory]
+    [InlineData(9)]
+    [InlineData(601)]
+    public void Settings_RejectLeaseOutsideQueueLimits(int seconds)
+    {
+        Assert.Throws<InvalidOperationException>(() => (Settings() with { Lease = TimeSpan.FromSeconds(seconds) }).Validate());
+        (Settings() with { Lease = TimeSpan.FromSeconds(60) }).Validate();
+    }
+
     [Fact]
     public void Settings_AllowTemporaryAwsCredentials()
     {
@@ -443,6 +632,184 @@ public sealed class CloudForwarderWorkerTests
         }
 
         public Task ExtendAsync(CloudMessage message, TimeSpan lease, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    /// <summary>Only m1's events take fake time, so work after m1's lease is lost does not.</summary>
+    private static TimeSpan SlowFirstMessage(string body) =>
+        body.Contains("m1", StringComparison.Ordinal) ? TimeSpan.FromSeconds(2) : TimeSpan.Zero;
+
+    private static CloudForwarderWorker LeaseWorker(
+        LeasedSource source,
+        ICloudMessageTranslator translator,
+        HttpMessageHandler collector,
+        TimeProvider clock) =>
+        new(
+            source,
+            translator,
+            new CollectorClient(new HttpClient(collector) { BaseAddress = new Uri("http://bower-collector:4319/") }, Token),
+            Settings() with { Lease = Lease },
+            clock,
+            NullLogger<CloudForwarderWorker>.Instance);
+
+    /// <summary>
+    /// Every fake here waits only on the fake clock, and timer continuations run inline, so
+    /// advancing the clock steps the pass deterministically. Continuations of cancelled waits
+    /// may resume on the thread pool, so work after a lease is lost or the batch ends must not
+    /// need fake time; the pass is then awaited in real time.
+    /// </summary>
+    private static async Task<T> DriveAsync<T>(ManualTimeProvider clock, Func<Task<T>> start)
+    {
+        Task<T> pass = null!;
+        Inline(() =>
+        {
+            pass = start();
+            for (int second = 0; !pass.IsCompleted && second < 3600; second++)
+            {
+                clock.Advance(TimeSpan.FromSeconds(1));
+            }
+        });
+
+        return await pass.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>
+    /// Runs on a fresh thread with a large stack and no synchronization context. Continuations
+    /// are only inlined while enough stack remains, and a test thread can already be deep.
+    /// </summary>
+    private static void Inline(Action action)
+    {
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo? failure = null;
+        Thread thread = new(
+            () =>
+            {
+                try
+                {
+                    action();
+                }
+                catch (Exception exception)
+                {
+                    failure = System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception);
+                }
+            },
+            64 * 1024 * 1024);
+        thread.Start();
+        thread.Join();
+        failure?.Throw();
+    }
+
+    /// <summary>
+    /// Queue with real lease semantics: a message received or extended is owned for the
+    /// lease; any call made for it after the deadline counts as an expired call.
+    /// </summary>
+    private sealed class LeasedSource(TimeProvider clock, TimeSpan visibility, params CloudMessage[] messages) : ICloudMessageSource
+    {
+        private readonly Dictionary<string, DateTimeOffset> deadlines = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, int> extendAttempts = new(StringComparer.Ordinal);
+        private bool received;
+
+        public string Name => "fake";
+
+        /// <summary>Called before each extension with the message id and 1-based attempt.</summary>
+        public Func<string, int, CancellationToken, Task>? Extend { get; init; }
+
+        public List<string> Acknowledged { get; } = [];
+
+        public List<(string Id, TimeSpan Delay)> Released { get; } = [];
+
+        public List<(string Id, DateTimeOffset At)> Extensions { get; } = [];
+
+        public int ExpiredCalls { get; private set; }
+
+        public Task<IReadOnlyList<CloudMessage>> ReceiveAsync(int maximum, CancellationToken cancellationToken)
+        {
+            IReadOnlyList<CloudMessage> batch = received ? [] : messages.Take(maximum).ToList();
+            received = true;
+            foreach (CloudMessage message in batch)
+            {
+                deadlines[message.Id] = clock.GetUtcNow() + visibility;
+            }
+
+            return Task.FromResult(batch);
+        }
+
+        public Task AcknowledgeAsync(CloudMessage message, CancellationToken cancellationToken)
+        {
+            CountExpired(message);
+            Acknowledged.Add(message.Id);
+            return Task.CompletedTask;
+        }
+
+        public Task ReleaseAsync(CloudMessage message, TimeSpan delay, CancellationToken cancellationToken)
+        {
+            CountExpired(message);
+            Released.Add((message.Id, delay));
+            return Task.CompletedTask;
+        }
+
+        public async Task ExtendAsync(CloudMessage message, TimeSpan lease, CancellationToken cancellationToken)
+        {
+            int attempt = extendAttempts[message.Id] = extendAttempts.GetValueOrDefault(message.Id) + 1;
+            if (Extend is not null)
+            {
+                await Extend(message.Id, attempt, cancellationToken);
+            }
+
+            CountExpired(message);
+            deadlines[message.Id] = clock.GetUtcNow() + lease;
+            Extensions.Add((message.Id, clock.GetUtcNow()));
+        }
+
+        private void CountExpired(CloudMessage message)
+        {
+            if (clock.GetUtcNow() >= deadlines[message.Id])
+            {
+                ExpiredCalls++;
+            }
+        }
+    }
+
+    private sealed class SlowTranslator(ManualTimeProvider clock, Func<CloudMessage, (TimeSpan Delay, int Events)> plan)
+        : ICloudMessageTranslator
+    {
+        public List<(string Id, DateTimeOffset At)> Translated { get; } = [];
+
+        public async Task<CloudTranslation> TranslateAsync(CloudMessage message, CancellationToken cancellationToken)
+        {
+            Translated.Add((message.Id, clock.GetUtcNow()));
+            (TimeSpan delay, int events) = plan(message);
+            if (delay > TimeSpan.Zero)
+            {
+                await clock.Delay(delay, cancellationToken);
+            }
+
+            return new CloudTranslation(
+                [.. Enumerable.Range(0, events).Select(index => $$"""{"eventId":"{{message.Id}}-{{index}}"}""")],
+                0,
+                null);
+        }
+    }
+
+    /// <summary>Collector whose event posts take <paramref name="delay"/> of fake time.</summary>
+    private sealed class TimedCollector(ManualTimeProvider clock, Func<string, TimeSpan> delay, Func<string, HttpStatusCode> respond) : HttpMessageHandler
+    {
+        public List<string> Bodies { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Method == HttpMethod.Get)
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            }
+
+            string body = await request.Content!.ReadAsStringAsync(cancellationToken);
+            Bodies.Add(body);
+            if (delay(body) is { Ticks: > 0 } wait)
+            {
+                await clock.Delay(wait, cancellationToken);
+            }
+
+            return new HttpResponseMessage(respond(body));
+        }
     }
 
     private sealed class FakeObjects(byte[]? content) : IS3ObjectReader
