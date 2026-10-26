@@ -507,6 +507,11 @@ public sealed partial class ManagementStore(string databasePath)
         CancellationToken cancellationToken)
     {
         IReadOnlyList<CollectorRecord> collectors = await ListAsync(null, cancellationToken);
+        // Computed at query time, so the result does not depend on whether the staleness
+        // job has run: only an Active collector with a fresh heartbeat is evidence.
+        bool Eligible(CollectorRecord item) =>
+            item.Status == CollectorStatus.Active && item.LastSeenAt >= staleBefore;
+        bool PrivacyDrift(CollectorRecord item) => Eligible(item) && item.PrivacyProfileInSync == false;
         CollectorRecord[] exceptions = collectors
             .Where(item =>
                 item.Status is CollectorStatus.Pending
@@ -514,10 +519,44 @@ public sealed partial class ManagementStore(string databasePath)
                     or CollectorStatus.Revoked ||
                 item.LastSeenAt < staleBefore ||
                 item.PolicyInSync == false ||
+                PrivacyDrift(item) ||
                 item.DeadLettered > 0 ||
                 !DeliveryOperational(item.DeliveryStatus))
             .Take(12)
             .ToArray();
+        CollectorRecord[] privacyDrift = collectors.Where(PrivacyDrift).ToArray();
+        IReadOnlyDictionary<string, PrivacyProfileAssignmentHead> assignments = privacyDrift.Length == 0
+            ? new Dictionary<string, PrivacyProfileAssignmentHead>()
+            : await LatestPrivacyProfileAssignmentsAsync(cancellationToken);
+        // The history is read after the collector snapshot. A row is described only when the
+        // latest history row assigns exactly the version the snapshot holds; a missing or
+        // different row (a concurrent change) omits it rather than inventing a revision.
+        PrivacyProfileDriftRecord? Describe(CollectorRecord item)
+        {
+            DesiredPrivacyProfile desired = item.DesiredPrivacyProfile!;
+            if (!assignments.TryGetValue(item.Id, out PrivacyProfileAssignmentHead head)
+                || !head.Assigned
+                || !string.Equals(head.VersionId, desired.VersionId, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            return new PrivacyProfileDriftRecord(
+                item.Id, item.MachineName, head.Revision, head.OccurredAt, desired.VersionId,
+                desired.ProfileId, desired.Version, desired.ContentHash, item.ReportedPrivacyProfileHash,
+                item.LastSeenAt);
+        }
+
+        PrivacyProfileDriftRecord[] privacyExceptions = privacyDrift
+            .Select(Describe)
+            .OfType<PrivacyProfileDriftRecord>()
+            .Take(12)
+            .ToArray();
+        SourceReport[] eligibleSources = collectors.Where(Eligible).SelectMany(item => item.Sources).ToArray();
+        int reporting = eligibleSources.Count(item => SourceIs(item, "healthy"));
+        // Pending: not seen yet but still inside its allowance, so no evidence either way.
+        int unknown = collectors.Where(item => !Eligible(item)).Sum(item => item.Sources.Count)
+            + eligibleSources.Count(item => SourceIs(item, "pending"));
         return new OverviewRecord(
             collectors.Count,
             collectors.Count(item => item.Status == CollectorStatus.Pending),
@@ -526,14 +565,18 @@ public sealed partial class ManagementStore(string databasePath)
                 !DeliveryOperational(item.DeliveryStatus)),
             collectors.Count(item => item.LastSeenAt < staleBefore),
             SaturatingCount(collectors.Select(item => item.QueueDepth)),
-            collectors.SelectMany(item => item.Sources)
-                .Count(item => string.Equals(item.Status, "healthy", StringComparison.OrdinalIgnoreCase)),
-            collectors.SelectMany(item => item.Sources)
-                .Count(item => !string.Equals(item.Status, "healthy", StringComparison.OrdinalIgnoreCase)),
+            reporting,
+            collectors.Sum(item => item.Sources.Count) - reporting,
             exceptions,
             collectors.Count(item => item.PolicyInSync == false),
-            SaturatingCount(collectors.Select(item => item.DeadLettered)));
+            SaturatingCount(collectors.Select(item => item.DeadLettered)),
+            privacyDrift.Length,
+            privacyExceptions,
+            unknown);
     }
+
+    private static bool SourceIs(SourceReport source, string status) =>
+        string.Equals(source.Status, status, StringComparison.OrdinalIgnoreCase);
 
     // Operational progress is distinct from a Sentinel destination-query claim.
     // Keep normal waiting/pending states out of the fleet error count.
