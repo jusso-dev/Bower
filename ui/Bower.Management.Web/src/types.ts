@@ -127,6 +127,9 @@ export interface Audit {
   actorObjectId: string;
   actorName: string;
   occurredAt: string;
+  /** Set when Bower acted for a person, for example a setup canary result. */
+  initiatedByObjectId?: string | null;
+  initiatedByName?: string | null;
 }
 
 export interface Access {

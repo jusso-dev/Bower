@@ -147,7 +147,7 @@ internal static partial class SetupEndpoints
                         SetupCanaryRun run = await store.StartSetupCanaryRunAsync(
                             probe!.Profile, destination!.WorkspaceId, destination.Table, actorObjectId, actorName,
                             clock.GetUtcNow(), cancellationToken);
-                        canary.Launch(run, destination, actorObjectId, actorName);
+                        canary.Launch(run, destination);
                         return Results.Accepted("/api/setup", run);
                     }
                     catch (SetupCanaryBusyException)
@@ -359,7 +359,7 @@ internal static partial class SetupEndpoints
             state = SetupStepStates.NotStarted;
             checks.Add(Pending("run", "Ready to send a test event.", "Choose Send test event."));
         }
-        else if (run.CollectorAccepted)
+        else if (run.CollectorAccepted && run.EventId is not null)
         {
             state = SetupStepStates.Complete;
             checks.Add(Pass("run", $"The collector accepted test event {run.EventId}. Acceptance alone does not prove delivery; see step 7."));
@@ -367,7 +367,7 @@ internal static partial class SetupEndpoints
         else
         {
             state = SetupStepStates.Attention;
-            checks.Add(Fail("run", run.Message!, run.Fix!));
+            checks.Add(Fail("run", run.Message ?? SetupOutcomes.Describe(run.Outcome).Message, run.Fix ?? SetupOutcomes.Describe(run.Outcome).Fix));
         }
 
         return new SetupStep(SetupStepIds.Canary, state, checks, run?.RequestedBy, run?.RequestedAt);

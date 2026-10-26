@@ -23,6 +23,16 @@ export default defineConfig({
     screenshot: "only-on-failure",
     trace: "on-first-retry"
   },
+  // BOWER_E2E_CANARY=1: the management API under test sends setup canaries to this stub
+  // (Bower:Setup:Canary:CollectorUrl=http://127.0.0.1:4399/), so the wizard can reach a
+  // simulated proof without Azure.
+  webServer: process.env.BOWER_E2E_CANARY === "1"
+    ? {
+        command: "node e2e/stub-collector.mjs",
+        url: "http://127.0.0.1:4399/health",
+        reuseExistingServer: !process.env.CI
+      }
+    : undefined,
   projects: [
     {
       name: "readme-chromium",

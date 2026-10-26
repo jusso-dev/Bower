@@ -119,6 +119,7 @@ public static class SetupOutcomes
     public const string SigningKeyUnreadable = "signing-key-unreadable";
     public const string Interrupted = "interrupted";
     public const string CanaryError = "canary-error";
+    public const string AcceptedNotChecked = "accepted-not-checked";
 
     private static readonly Dictionary<string, (string Message, string Fix)> Descriptions = new(StringComparer.Ordinal)
     {
@@ -173,6 +174,9 @@ public static class SetupOutcomes
         [ProbeOutcomes.DestinationQueryFailed] = (
             "Bower's queries to Sentinel failed.",
             "Check the workspace ID in step 3 and network access to api.loganalytics.azure.com, then run the test again."),
+        [AcceptedNotChecked] = (
+            "Accepted by the collector; Sentinel could not be checked (verifier sign-in failed).",
+            "Check Bower:Setup:Canary:Credential (and ClientId for a user-assigned identity) on the management host, then run the test again."),
         [CollectorUnreachable] = (
             "Bower could not reach the collector.",
             "Check Bower:Setup:Canary:CollectorUrl and that the collector is running and reachable from the management host."),
@@ -253,10 +257,10 @@ internal sealed partial class SetupCanaryService(
     IHostApplicationLifetime lifetime,
     ILogger<SetupCanaryService> logger)
 {
-    public void Launch(SetupCanaryRun run, SetupDestination destination, string actorObjectId, string actorName) =>
-        _ = Task.Run(() => ExecuteAsync(run, destination, actorObjectId, actorName));
+    public void Launch(SetupCanaryRun run, SetupDestination destination) =>
+        _ = Task.Run(() => ExecuteAsync(run, destination));
 
-    private async Task ExecuteAsync(SetupCanaryRun run, SetupDestination destination, string actorObjectId, string actorName)
+    private async Task ExecuteAsync(SetupCanaryRun run, SetupDestination destination)
     {
         CancellationToken stopping = lifetime.ApplicationStopping;
         SetupCanaryResult result;
@@ -277,7 +281,7 @@ internal sealed partial class SetupCanaryService(
 
         try
         {
-            await store.CompleteSetupCanaryRunAsync(run.Id, result, actorObjectId, actorName, clock.GetUtcNow(), CancellationToken.None);
+            await store.CompleteSetupCanaryRunAsync(run.Id, result, clock.GetUtcNow(), CancellationToken.None);
         }
         catch (Exception exception)
         {
@@ -331,8 +335,12 @@ internal sealed partial class SetupCanaryService(
         }
         catch (SetupCanaryFailure failure)
         {
-            // The collector may have accepted the event before the verifier failed; say so.
-            return new SetupCanaryResult(EvidenceModes.Failed, failure.Outcome, guarded.Accepted, null, null, false, null);
+            // A verifier failure after acceptance: the event exists but Sentinel was never queried.
+            string failed = failure.Outcome == SetupOutcomes.VerifierCredentialUnavailable && guarded.Accepted
+                ? SetupOutcomes.AcceptedNotChecked
+                : failure.Outcome;
+            return new SetupCanaryResult(
+                EvidenceModes.Failed, failed, guarded.Accepted, guarded.Accepted ? guarded.EventId : null, null, false, null);
         }
         SignedEvidence signed;
         try
@@ -400,8 +408,12 @@ internal sealed partial class SetupCanaryService(
         /// <summary>Whether the last event post (canary or parser record) was accepted with 200 or 202.</summary>
         public bool Accepted { get; private set; }
 
+        /// <summary>The event id Bower sent, kept so a later verifier failure still names the event.</summary>
+        public string? EventId { get; private set; }
+
         public async Task<(int Status, JsonObject? Body)> SendAsync(Uri collector, string? token, string json, CancellationToken cancellationToken)
         {
+            EventId = SentId(json, "eventId");
             (int status, JsonObject? body) = await CollectorAsync(() => inner.Sender.SendAsync(collector, token, json, cancellationToken));
             Accepted = status is 200 or 202;
             return (status, body);
@@ -413,13 +425,16 @@ internal sealed partial class SetupCanaryService(
         public async Task<(int Status, JsonObject? Body)> SendRecordAsync(
             Uri collector, string? token, string packId, int parserIndex, string json, CancellationToken cancellationToken)
         {
+            EventId = SentId(json, "id");
             (int status, JsonObject? body) = await CollectorAsync(
                 () => inner.ParserSender.SendRecordAsync(collector, token, packId, parserIndex, json, cancellationToken));
-            // Accepted and queued: duplicate, suppressed or unqueued records can never arrive.
-            string? eventId = body?["eventId"] is JsonValue value && value.TryGetValue(out string? text) ? text : null;
-            Accepted = eventId is not null && ProbeOutcomes.Classify(status, body, eventId) is null;
+            // Accepted as the same event and queued: duplicate, suppressed or unqueued records never arrive.
+            Accepted = EventId is not null && ProbeOutcomes.Classify(status, body, EventId) is null;
             return (status, body);
         }
+
+        private static string? SentId(string json, string property) =>
+            JsonNode.Parse(json)?[property] is JsonValue value && value.TryGetValue(out string? text) ? text : null;
 
         public async Task<QueryRows> QueryAsync(string workspaceId, string kql, TimeSpan timespan, CancellationToken cancellationToken)
         {

@@ -204,7 +204,9 @@ public sealed record AuditRecord(
     string TargetId,
     string ActorObjectId,
     string ActorName,
-    DateTimeOffset OccurredAt);
+    DateTimeOffset OccurredAt,
+    string? InitiatedByObjectId = null,
+    string? InitiatedByName = null);
 
 /// <summary>
 /// Fleet posture at query time. A collector is eligible when it is Active and its last

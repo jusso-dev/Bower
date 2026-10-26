@@ -21,12 +21,14 @@ test("capture onboarding wizard", async ({ page }, testInfo) => {
   await page.goto("/setup");
   const steps = page.getByRole("navigation", { name: "Setup steps" });
   await steps.getByRole("button", { name: /^Step 4: Approve the first collector/ }).click();
-  await expect(page.getByRole("heading", { name: "Approve the first collector" })).toBeVisible();
+  // Only the collector step is captured: it depends on seeded collectors alone, so the image
+  // does not change with destination, probe or canary state left by other runs.
+  const step = page.getByRole("region", { name: "Approve the first collector" });
+  await expect(step.getByText(/2 collectors approved/)).toBeVisible();
   await page.waitForLoadState("networkidle");
   await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({
+  await step.screenshot({
     path: path.join(screenshotDirectory, "bower-management-setup.png"),
-    fullPage: true,
     animations: "disabled"
   });
 });

@@ -153,7 +153,10 @@ public sealed partial class ManagementStore
         await transaction.CommitAsync(cancellationToken);
     }
 
-    /// <summary>Records a new running canary. At most one runs at a time (unique partial index).</summary>
+    /// <summary>
+    /// Records a new running canary. At most one runs at a time (unique partial index). Insertion
+    /// order (rowid), not the caller's timestamp, decides which run is latest.
+    /// </summary>
     public async Task<SetupCanaryRun> StartSetupCanaryRunAsync(
         string profile,
         string workspaceId,
@@ -202,12 +205,14 @@ public sealed partial class ManagementStore
             workspaceId, table, null, false, false, actorName, now, null);
     }
 
-    /// <summary>Stores a finished run once; a run that is no longer running is left unchanged.</summary>
+    /// <summary>
+    /// Stores a finished run once; a run that is no longer running is left unchanged. The audit
+    /// row's actor is Bower (<see cref="SetupActorId"/>), which produced the result; the person
+    /// who requested the run is recorded as its initiator.
+    /// </summary>
     public async Task CompleteSetupCanaryRunAsync(
         string id,
         SetupCanaryResult result,
-        string actorObjectId,
-        string actorName,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -216,6 +221,21 @@ public sealed partial class ManagementStore
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
         await using SqliteTransaction transaction =
             (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        string? requesterId = null;
+        string? requesterName = null;
+        await using (SqliteCommand requester = connection.CreateCommand())
+        {
+            requester.Transaction = transaction;
+            requester.CommandText =
+                "SELECT requested_by_object_id, requested_by_name FROM setup_canary_runs WHERE id = $id;";
+            requester.Parameters.AddWithValue("$id", id);
+            await using SqliteDataReader reader = await requester.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                requesterId = reader.GetString(0);
+                requesterName = reader.GetString(1);
+            }
+        }
         int changed = await CommandAsync(
             connection,
             transaction,
@@ -248,7 +268,8 @@ public sealed partial class ManagementStore
                 _ => "setup.canary-failed"
             };
             await InsertAuditAsync(
-                connection, transaction, action, id, actorObjectId, actorName, now, cancellationToken, "setup-canary");
+                connection, transaction, action, id, SetupActorId, SetupActorName, now, cancellationToken,
+                "setup-canary", requesterId, requesterName);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -272,7 +293,7 @@ public sealed partial class ManagementStore
         SetupCanaryResult interrupted = new(null, SetupOutcomes.Interrupted, false, null, null, false, null);
         foreach (string id in running)
         {
-            await CompleteSetupCanaryRunAsync(id, interrupted, SetupActorId, SetupActorName, now, cancellationToken);
+            await CompleteSetupCanaryRunAsync(id, interrupted, now, cancellationToken);
         }
 
         return running.Count;
@@ -286,7 +307,7 @@ public sealed partial class ManagementStore
             """
             SELECT id, profile, workspace_id, table_name, state, mode, outcome, collector_accepted, event_id,
                    latency_seconds, signed, bundle IS NOT NULL AS has_bundle, requested_by_name, requested_at, completed_at
-            FROM setup_canary_runs ORDER BY requested_at DESC, rowid DESC LIMIT 1;
+            FROM setup_canary_runs ORDER BY rowid DESC LIMIT 1;
             """;
         await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))

@@ -276,7 +276,7 @@ authentication. Then walk through the console:
    server; only administrators change it. See
    [console onboarding](docs/operations/console-onboarding.md).
 
-   ![Setup wizard: seven steps with plain-language status, the collector approval step with checks and suggested fixes](docs/images/bower-management-setup.png)
+   ![Setup wizard, step 4: approved and waiting collectors with plain-language checks and a suggested fix](docs/images/bower-management-setup.png)
 
 1. **Overview** (shown at the top of this README) puts exceptions first: the
    pending `hr-app-02`, the degraded `claims-api-03` with 1,294 queued events,

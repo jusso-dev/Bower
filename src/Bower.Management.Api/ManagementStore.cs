@@ -131,6 +131,11 @@ public sealed partial class ManagementStore(string databasePath)
         await AddColumnIfMissingAsync(
             connection, "collectors", "reported_privacy_profile_hash", "TEXT NULL", cancellationToken);
         await InitializeHeartbeatV2Async(connection, cancellationToken);
+        // Who asked for an action Bower itself performed (for example a setup canary result).
+        await AddColumnIfMissingAsync(
+            connection, "management_audit", "initiated_by_object_id", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync(
+            connection, "management_audit", "initiated_by_name", "TEXT NULL", cancellationToken);
         await InitializeSetupAsync(connection, cancellationToken);
     }
 
@@ -517,7 +522,9 @@ public sealed partial class ManagementStore(string databasePath)
                 reader.GetString(reader.GetOrdinal("target_id")),
                 reader.GetString(reader.GetOrdinal("actor_object_id")),
                 reader.GetString(reader.GetOrdinal("actor_name")),
-                Parse(reader.GetString(reader.GetOrdinal("occurred_at")))));
+                Parse(reader.GetString(reader.GetOrdinal("occurred_at"))),
+                ReadOptionalString(reader, "initiated_by_object_id"),
+                ReadOptionalString(reader, "initiated_by_name")));
         }
 
         return records;
@@ -1145,15 +1152,18 @@ public sealed partial class ManagementStore(string databasePath)
         string actorName,
         DateTimeOffset now,
         CancellationToken cancellationToken,
-        string targetType = "collector")
+        string targetType = "collector",
+        string? initiatedByObjectId = null,
+        string? initiatedByName = null)
     {
         await CommandAsync(
             connection,
             transaction,
             """
             INSERT INTO management_audit (
-                id, action, target_type, target_id, actor_object_id, actor_name, occurred_at)
-            VALUES ($id, $action, $target_type, $target, $actor, $name, $occurred);
+                id, action, target_type, target_id, actor_object_id, actor_name, occurred_at,
+                initiated_by_object_id, initiated_by_name)
+            VALUES ($id, $action, $target_type, $target, $actor, $name, $occurred, $initiated_by, $initiated_name);
             """,
             [
                 ("$id", Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)),
@@ -1162,7 +1172,9 @@ public sealed partial class ManagementStore(string databasePath)
                 ("$target", targetId),
                 ("$actor", actorObjectId),
                 ("$name", actorName),
-                ("$occurred", Format(now))
+                ("$occurred", Format(now)),
+                ("$initiated_by", initiatedByObjectId),
+                ("$initiated_name", initiatedByName)
             ],
             cancellationToken);
     }

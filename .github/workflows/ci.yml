@@ -153,8 +153,12 @@ jobs:
         run: |
           # Run from the publish folder so the content root (and wwwroot) resolves.
           cd out/management
+          # Setup canaries go to the loopback stub collector Playwright starts (simulated only).
+          printf 'e2e-canary-token' > "$RUNNER_TEMP/canary.token"
           ASPNETCORE_ENVIRONMENT=Development BOWER_AUTH_MODE=development \
             BOWER_MANAGEMENT_DB_PATH="$RUNNER_TEMP/management.db" \
+            Bower__Setup__Canary__CollectorUrl=http://127.0.0.1:4399/ \
+            Bower__Setup__Canary__IngestTokenFile="$RUNNER_TEMP/canary.token" \
             ./Bower.Management.Api > "$RUNNER_TEMP/management.log" 2>&1 &
           cd "$GITHUB_WORKSPACE"
           for _ in $(seq 1 30); do curl -sf http://127.0.0.1:4320/health && break; sleep 1; done
@@ -163,6 +167,8 @@ jobs:
       - run: npx --prefix ui/Bower.Management.Web playwright install --with-deps chromium
       - run: npx playwright test e2e/management.spec.ts
         working-directory: ui/Bower.Management.Web
+        env:
+          BOWER_E2E_CANARY: "1"
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

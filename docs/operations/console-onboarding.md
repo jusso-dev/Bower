@@ -41,9 +41,10 @@ The test event reuses `Bower.Evidence.EvidenceRunner` unchanged, exactly as
   `bower evidence verify`.
 
 Outcome codes are the evidence outcomes (`verified`, `accepted-not-verified`,
-`collector-permission-denied`, `destination-row-missing`, …) plus four codes for
-failures before the runner produces a bundle: `collector-unreachable`,
-`verifier-credential-unavailable`, `canary-token-unreadable`,
+`collector-permission-denied`, `destination-row-missing`, …) plus codes for failures
+outside the bundle: `collector-unreachable`, `verifier-credential-unavailable`,
+`accepted-not-checked` (the collector accepted the event, then the verifier could not sign
+in, so Sentinel was never queried; the event id is kept), `canary-token-unreadable`,
 `signing-key-unreadable` and `interrupted` (the service restarted mid-run). The API
 maps each code to a fixed message and fix. Raw Azure or framework error text stays
 on the server.
@@ -68,6 +69,17 @@ for the generic profile, and to the probe pack's identity for parser profiles. T
 verifier identity needs only **Log Analytics Reader** on the workspace (and Reader
 on the DCR and table for the rule check). Keep it separate from the ingest identity.
 
+## Local and end-to-end testing
+
+With development authentication (never in production) every request has all roles. The
+`X-Bower-Development-Roles` header narrows a request to the listed roles (for example
+`Bower.Viewer`); it can only remove roles. The Playwright journey uses it for the
+read-only viewer check. With `BOWER_E2E_CANARY=1`, Playwright starts a loopback stub
+collector (`e2e/stub-collector.mjs`, port 4399, token `e2e-canary-token`) and expects the
+API to be started with `Bower:Setup:Canary:CollectorUrl=http://127.0.0.1:4399/` and a token
+file holding that token. No verifier is configured, so the journey ends at a run labelled
+**Simulated, not proof**.
+
 ## API
 
 All endpoints are under `/api/setup` and enforced by the API (UI role checks only
@@ -80,8 +92,13 @@ guide the interface). Every state change writes a `management_audit` row.
 | `POST /api/setup/destination/check` | Administer | `setup.destination-checked` |
 | `GET /api/setup/dcr-template` | View | — |
 | `POST /api/setup/probe-profile` | Administer | `setup.probe-profile-set` |
-| `POST /api/setup/canary` | Administer | `setup.canary-requested`, then `setup.canary-verified`, `setup.canary-failed`, `setup.canary-simulated` or `setup.canary-interrupted` |
+| `POST /api/setup/canary` | Administer | `setup.canary-requested` (the administrator), then `setup.canary-verified`, `setup.canary-failed`, `setup.canary-simulated` or `setup.canary-interrupted` with actor `bower.setup` and the requester in `initiatedByObjectId` / `initiatedByName` |
 | `GET /api/setup/canary/runs/{id}/bundle` | View | — |
+
+The console polls every 5 seconds while a run is in progress. A failed poll keeps the last
+progress on screen with a polite warning and retries with backoff (10, 20, 40, at most 60
+seconds). Finished runs and step changes are announced in a polite live region. The latest
+run is the last one started (insertion order), whatever its timestamp.
 
 `POST /api/setup/canary` answers `202` with the run, or `409` with a fixed message
 when a run is already in progress, a prerequisite step is missing, or the server is

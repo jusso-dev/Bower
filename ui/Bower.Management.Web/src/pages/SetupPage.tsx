@@ -1,5 +1,5 @@
 import { Download, KeyRound, Send } from "lucide-react";
-import { type FormEvent, type ReactNode, useEffect, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useApi, useApiDownload } from "../api";
 import { CheckList, GuidedStep, Stepper } from "../components/guided";
@@ -46,12 +46,18 @@ const stepCopy: Record<SetupStepId, { title: string; why: string }> = {
 };
 
 const POLL_MILLISECONDS = 5000;
+/** Failed polls back off (10 s, 20 s, 40 s) up to this ceiling. */
+const MAX_POLL_MILLISECONDS = 60000;
 
 export function SetupPage() {
   const setup = useResource<SetupStatus>("/api/setup");
   const { revalidate } = setup;
   const [selected, setSelected] = useState<SetupStepId | null>(null);
+  const [failures, setFailures] = useState(0);
+  const [polls, setPolls] = useState(0);
   const running = setup.data?.latestRun?.state === "running";
+  const announcement = useAnnouncement(setup.data);
+  const pollDelay = Math.min(POLL_MILLISECONDS * 2 ** failures, MAX_POLL_MILLISECONDS);
 
   // Open the first unfinished step once, then stay on the step the person chose, so saving
   // shows that step's new state instead of jumping ahead.
@@ -61,19 +67,34 @@ export function SetupPage() {
     }
   }, [selected, setup.data]);
 
+  // Every attempt re-arms the timer (polls changes), so one failed request never stops polling.
   useEffect(() => {
     if (!running) {
       return undefined;
     }
-    const timer = window.setTimeout(() => void revalidate(), POLL_MILLISECONDS);
+    const timer = window.setTimeout(() => {
+      void revalidate().then((ok) => {
+        setFailures((count) => (ok ? 0 : count + 1));
+        setPolls((count) => count + 1);
+      });
+    }, pollDelay);
     return () => window.clearTimeout(timer);
-  }, [running, revalidate, setup.data]);
+  }, [running, revalidate, pollDelay, polls]);
 
   return (
     <Page
       title="Set up Bower"
       description="Seven steps from an empty tenant to a test event Bower has found in Microsoft Sentinel. Progress is saved on the server, so you can stop and come back."
     >
+      <p className="visually-hidden" role="status" aria-live="polite" aria-atomic="true" data-testid="setup-announcer">
+        {announcement}
+      </p>
+      {setup.refreshError && setup.data && (
+        <div className="alert" role="status">
+          Could not refresh setup progress. Showing what was last loaded
+          {running ? `; trying again in ${Math.round(pollDelay / 1000)} seconds.` : "."}
+        </div>
+      )}
       <ResourceState loading={setup.loading} error={setup.error} data={setup.data}>
         {(status) => {
           const current = selected ?? firstUnfinished(status.steps);
@@ -148,6 +169,50 @@ export function SetupPage() {
   );
 }
 
+const announcedStates: Record<SetupStep["state"], string> = {
+  complete: "Done",
+  attention: "Needs attention",
+  blocked: "Waiting on earlier steps",
+  "in-progress": "In progress",
+  "not-started": "Not started"
+};
+
+/**
+ * Polite announcement of what changed since the last load: a finished test event, or steps
+ * whose state changed. Nothing is announced for the first load.
+ */
+function useAnnouncement(status: SetupStatus | null): string {
+  const previous = useRef<SetupStatus | null>(null);
+  const [message, setMessage] = useState("");
+  useEffect(() => {
+    const before = previous.current;
+    previous.current = status;
+    if (!before || !status || before === status) {
+      return;
+    }
+    const parts: string[] = [];
+    const run = status.latestRun;
+    // A run that finished since the last load, including one that finished between polls.
+    if (
+      run &&
+      run.state !== "running" &&
+      (before.latestRun?.id !== run.id || before.latestRun.state === "running")
+    ) {
+      parts.push(`Test event finished. ${proofResult(run)}.`);
+    }
+    for (const step of status.steps) {
+      const old = before.steps.find((item) => item.id === step.id);
+      if (old && old.state !== step.state) {
+        parts.push(`${stepCopy[step.id].title}: ${announcedStates[step.state]}.`);
+      }
+    }
+    if (parts.length) {
+      setMessage(parts.join(" "));
+    }
+  }, [status]);
+  return message;
+}
+
 function firstUnfinished(steps: SetupStep[]): SetupStepId {
   return (steps.find((step) => step.state !== "complete") ?? steps.at(-1))?.id ?? "sign-in";
 }
@@ -184,7 +249,7 @@ function StepBody({
 }: {
   step: SetupStep;
   status: SetupStatus;
-  onChanged: () => Promise<void>;
+  onChanged: () => Promise<unknown>;
 }) {
   switch (step.id) {
     case "entra":
@@ -216,7 +281,7 @@ function StepBody({
   }
 }
 
-function useAction(onChanged: () => Promise<void>) {
+function useAction(onChanged: () => Promise<unknown>) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function run(action: () => Promise<unknown>) {
@@ -247,7 +312,7 @@ function DestinationBody({
   onChanged
 }: {
   status: SetupStatus;
-  onChanged: () => Promise<void>;
+  onChanged: () => Promise<unknown>;
 }) {
   const api = useApi();
   const download = useApiDownload();
@@ -373,14 +438,16 @@ function DestinationBody({
           them with what it sends, as <code>bower doctor</code> does.
         </p>
         <div className="button-row">
-          <button
-            className="button button--secondary"
-            type="button"
-            disabled={!canCheck || checking}
-            onClick={() => void check()}
-          >
-            {checking ? "Checking…" : "Check the rule and table"}
-          </button>
+          {status.canChange && (
+            <button
+              className="button button--secondary"
+              type="button"
+              disabled={!canCheck || checking}
+              onClick={() => void check()}
+            >
+              {checking ? "Checking…" : "Check the rule and table"}
+            </button>
+          )}
           <button
             className="button button--secondary"
             type="button"
@@ -416,7 +483,7 @@ function DestinationBody({
   );
 }
 
-function ProbeBody({ status, onChanged }: { status: SetupStatus; onChanged: () => Promise<void> }) {
+function ProbeBody({ status, onChanged }: { status: SetupStatus; onChanged: () => Promise<unknown> }) {
   const api = useApi();
   const save = useAction(onChanged);
   const chosen = status.probe?.profile;
@@ -477,7 +544,7 @@ function CanaryBody({
 }: {
   step: SetupStep;
   status: SetupStatus;
-  onChanged: () => Promise<void>;
+  onChanged: () => Promise<unknown>;
 }) {
   const api = useApi();
   const send = useAction(onChanged);
@@ -583,7 +650,11 @@ function proofResult(run: SetupCanaryRun): string {
   if (run.mode === "simulated") {
     return "Simulated: no Sentinel query ran, so this is not proof";
   }
-  return run.collectorAccepted ? "Not proven: accepted by the collector, not found in Sentinel" : "Not sent";
+  // Failed runs use the server's outcome text, which says whether Sentinel was queried at all.
+  if (run.state === "interrupted" || run.collectorAccepted) {
+    return `Not proven. ${run.message ?? "The test did not complete."}`;
+  }
+  return "Not sent";
 }
 
 function Detail({ label, children }: { label: string; children: ReactNode }) {

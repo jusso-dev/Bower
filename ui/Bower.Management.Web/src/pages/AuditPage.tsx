@@ -26,7 +26,9 @@ export function AuditPage() {
                   formatDate(item.occurredAt),
                   item.action,
                   item.targetId,
-                  item.actorName,
+                  item.initiatedByName
+                    ? `${item.actorName} (for ${item.initiatedByName})`
+                    : item.actorName,
                   item.actorObjectId
                 ])}
               />

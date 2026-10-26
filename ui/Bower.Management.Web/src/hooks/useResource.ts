@@ -19,13 +19,20 @@ export function useResource<T>(path: string, refresh = 0) {
     }
   }, [api, path]);
 
-  /** Refetches without the loading state, so the current view stays in place (polling). */
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+
+  /**
+   * Refetches without the loading state, so the current view stays in place (polling). A
+   * failure keeps the last good data and sets `refreshError`; resolves true on success.
+   */
   const revalidate = useCallback(async () => {
     try {
       setData(await api<T>(path));
-      setError(null);
+      setRefreshError(null);
+      return true;
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Unknown request failure.");
+      setRefreshError(loadError instanceof Error ? loadError.message : "Unknown request failure.");
+      return false;
     }
   }, [api, path]);
 
@@ -33,5 +40,5 @@ export function useResource<T>(path: string, refresh = 0) {
     void load();
   }, [load, refresh]);
 
-  return { data, loading, error, reload: load, revalidate };
+  return { data, loading, error, refreshError, reload: load, revalidate };
 }

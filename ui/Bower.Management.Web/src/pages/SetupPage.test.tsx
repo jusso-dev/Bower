@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
@@ -75,7 +75,7 @@ const finishedRun: SetupCanaryRun = {
 
 let requests: { method: string; path: string; body: unknown }[] = [];
 
-function stubSetup(sequence: SetupStatus[], roles = ["Bower.Administrator"]) {
+function stubSetup(sequence: (SetupStatus | "error")[], roles = ["Bower.Administrator"]) {
   let index = 0;
   requests = [];
   vi.stubGlobal(
@@ -90,7 +90,7 @@ function stubSetup(sequence: SetupStatus[], roles = ["Bower.Administrator"]) {
       if (path === "/api/setup" && method === "GET") {
         const status = sequence[Math.min(index, sequence.length - 1)]!;
         index += 1;
-        return json(status);
+        return status === "error" ? json({ error: "Service unavailable." }, 503) : json(status);
       }
       if (path === "/api/setup/destination" && method === "POST") {
         return json({});
@@ -111,6 +111,7 @@ describe("Setup page", () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -173,6 +174,63 @@ describe("Setup page", () => {
     const step = screen.getByRole("region", { name: "Choose where events go" });
     await waitFor(() => expect(within(step).getByText("Done")).toBeTruthy());
     expect(screen.queryByLabelText("Loading")).toBeNull();
+    expect(liveRegion().textContent).toContain("Choose where events go: Done");
+  });
+
+  it("keeps the last progress on a failed poll, backs off, recovers and announces the result", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const running: SetupStatus = {
+      ...baseStatus,
+      steps: steps({ canary: "in-progress", proof: "in-progress" }),
+      latestRun: { ...finishedRun, state: "running", mode: null, outcome: null, completedAt: null }
+    };
+    stubSetup([running, "error", "error", { ...baseStatus, steps: steps({}), latestRun: finishedRun }]);
+    renderSetup();
+    await screen.findByRole("region", { name: "Send a test event" });
+
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    await screen.findByText(/Could not refresh setup progress/);
+    // The wizard stays in place with the last good data.
+    expect(screen.getByRole("region", { name: "Send a test event" })).toBeTruthy();
+    expect(screen.queryByText("Could not load this view.")).toBeNull();
+    const polls = () => requests.filter((request) => request.path === "/api/setup").length;
+    expect(polls()).toBe(2);
+
+    // Backoff: the second attempt waits 10 seconds, not 5.
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    expect(polls()).toBe(2);
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    expect(polls()).toBe(3);
+    await act(() => vi.advanceTimersByTimeAsync(20000));
+    await waitFor(() => expect(polls()).toBe(4));
+
+    await waitFor(() => expect(screen.queryByText(/Could not refresh setup progress/)).toBeNull());
+    expect(liveRegion().textContent).toContain("Test event finished. Verified in Sentinel");
+    vi.useRealTimers();
+  });
+
+  it("says Sentinel was not checked when the verifier could not sign in after acceptance", async () => {
+    stubSetup([
+      {
+        ...baseStatus,
+        steps: steps({ proof: "attention" }),
+        latestRun: {
+          ...finishedRun,
+          mode: "failed",
+          outcome: "accepted-not-checked",
+          message: "Accepted by the collector; Sentinel could not be checked (verifier sign-in failed).",
+          latencySeconds: null,
+          hasSignature: false,
+          hasBundle: false
+        }
+      }
+    ]);
+    renderSetup();
+
+    const step = await screen.findByRole("region", { name: "See proof it arrived" });
+    expect(within(step).getByText(/Sentinel could not be checked \(verifier sign-in failed\)/)).toBeTruthy();
+    expect(within(step).queryByText(/not found in Sentinel/)).toBeNull();
+    expect(within(step).getByText("bower-canary-0192")).toBeTruthy();
   });
 
   it("labels a simulated run as simulated and never as verified", async () => {
@@ -220,14 +278,20 @@ describe("Setup page", () => {
       {
         ...baseStatus,
         steps: steps({ proof: "attention" }),
-        latestRun: { ...finishedRun, mode: "failed", outcome: "destination-row-missing", latencySeconds: null }
+        latestRun: {
+          ...finishedRun,
+          mode: "failed",
+          outcome: "destination-row-missing",
+          message: "The collector accepted the test event, but it was not found in Sentinel before the time limit.",
+          latencySeconds: null
+        }
       }
     ]);
     renderSetup();
 
     const step = await screen.findByRole("region", { name: "See proof it arrived" });
     expect(within(step).getByText("Needs attention")).toBeTruthy();
-    expect(within(step).getByText(/accepted by the collector, not found in Sentinel/)).toBeTruthy();
+    expect(within(step).getByText(/it was not found in Sentinel before the time limit/)).toBeTruthy();
     expect(within(step).queryByText("Verified in Sentinel")).toBeNull();
   });
 
@@ -246,6 +310,10 @@ describe("Setup page", () => {
     expect((button as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+function liveRegion(): HTMLElement {
+  return screen.getByTestId("setup-announcer");
+}
 
 function renderSetup() {
   render(

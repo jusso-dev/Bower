@@ -7,6 +7,8 @@ using Bower.Evidence;
 using Bower.Integrity;
 using Bower.Management.Api;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Bower.UnitTests;
@@ -221,8 +223,92 @@ public sealed partial class SetupApiTests
         Assert.DoesNotContain("canary-token-value", statusJson, StringComparison.Ordinal);
         Assert.DoesNotContain("canary-token-value", bundleJson, StringComparison.Ordinal);
         Assert.DoesNotContain(directory.Path, statusJson, StringComparison.Ordinal);
-        Assert.Contains(audit!, item => item.Action == "setup.canary-requested" && item.TargetId == run.Id);
-        Assert.Contains(audit!, item => item.Action == "setup.canary-verified" && item.TargetId == run.Id);
+        AuditRecord requested = Assert.Single(audit!, item => item.Action == "setup.canary-requested" && item.TargetId == run.Id);
+        Assert.Equal("principal-Bower.Administrator", requested.ActorObjectId);
+        // Bower records the outcome; the person who asked for the run is kept separately.
+        AuditRecord completed = Assert.Single(audit!, item => item.Action == "setup.canary-verified" && item.TargetId == run.Id);
+        Assert.Equal(ManagementStore.SetupActorId, completed.ActorObjectId);
+        Assert.Equal(ManagementStore.SetupActorName, completed.ActorName);
+        Assert.Equal("principal-Bower.Administrator", completed.InitiatedByObjectId);
+        Assert.Equal("Test principal", completed.InitiatedByName);
+        Assert.Null(requested.InitiatedByObjectId);
+    }
+
+    [Fact]
+    public async Task Canary_VerifierSignInFailureAfterAcceptanceKeepsTheEventAndSaysSentinelWasNotChecked()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeQuery query = new() { CredentialFails = true };
+        await using WebApplication app = await StartConfiguredAsync(directory, new FakeCollector(), query, cancellationToken);
+        await ReadyAsync(app, ProbeProfiles.Generic, cancellationToken);
+        HttpClient admin = ManagementApiTests.Client(app, BowerRoles.Administrator);
+
+        await admin.PostAsync("/api/setup/canary", null, cancellationToken);
+        SetupStatus status = await CompletedAsync(admin, cancellationToken);
+
+        SetupCanaryRun run = status.LatestRun!;
+        Assert.Equal(SetupOutcomes.AcceptedNotChecked, run.Outcome);
+        Assert.Equal(EvidenceModes.Failed, run.Mode);
+        Assert.True(run.CollectorAccepted);
+        Assert.StartsWith("bower-canary-", run.EventId, StringComparison.Ordinal);
+        Assert.Contains("Sentinel could not be checked", run.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("not found", run.Message, StringComparison.OrdinalIgnoreCase);
+        SetupStep canary = Step(status, SetupStepIds.Canary);
+        Assert.Equal(SetupStepStates.Complete, canary.State);
+        Assert.Contains(canary.Checks, check => check.Id == "run" && check.Message.Contains(run.EventId!, StringComparison.Ordinal));
+        Assert.Equal(SetupStepStates.Attention, Step(status, SetupStepIds.Proof).State);
+    }
+
+    [Fact]
+    public async Task Store_LatestRunIsTheLastStartedEvenWhenItsClockIsEarlier()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        ManagementStore store = new(Path.Combine(directory.Path, "management.db"));
+        await store.InitializeAsync(cancellationToken);
+        SetupCanaryRun first = await store.StartSetupCanaryRunAsync(
+            ProbeProfiles.Generic, WorkspaceId, "BowerSecurity_CL", "admin", "Admin", TestEvents.Now.AddMinutes(5), cancellationToken);
+        await store.CompleteSetupCanaryRunAsync(
+            first.Id, new SetupCanaryResult(EvidenceModes.Simulated, ProbeOutcomes.AcceptedNotVerified, true, "bower-canary-1", null, false, null),
+            TestEvents.Now.AddMinutes(6), cancellationToken);
+        // Timestamps are read before the insert; a later request can carry an earlier time.
+        SetupCanaryRun second = await store.StartSetupCanaryRunAsync(
+            ProbeProfiles.Generic, WorkspaceId, "BowerSecurity_CL", "admin", "Admin", TestEvents.Now, cancellationToken);
+
+        SetupCanaryRun? latest = await store.LatestSetupCanaryRunAsync(cancellationToken);
+
+        Assert.Equal(second.Id, latest!.Id);
+        Assert.Equal(SetupCanaryRunStates.Running, latest.State);
+    }
+
+    [Fact]
+    public async Task DevelopmentAuthentication_RoleHeaderOnlyNarrowsRoles()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = ManagementApplication.Build(
+            ["--BOWER_AUTH_MODE=development", $"--BOWER_MANAGEMENT_DB_PATH={Path.Combine(directory.Path, "management.db")}"],
+            builder => builder.WebHost.UseTestServer(),
+            environmentName: "Development");
+        await ManagementApplication.InitializeAsync(app, cancellationToken);
+        await app.StartAsync(cancellationToken);
+        HttpClient administrator = app.GetTestClient();
+        HttpClient viewer = app.GetTestClient();
+        viewer.DefaultRequestHeaders.Add(DevelopmentAuthenticationHandler.RolesHeader, BowerRoles.Viewer);
+        HttpClient unknown = app.GetTestClient();
+        unknown.DefaultRequestHeaders.Add(DevelopmentAuthenticationHandler.RolesHeader, "Bower.Superuser");
+
+        SetupStatus admin = await StatusAsync(administrator, cancellationToken);
+        SetupStatus readOnly = await StatusAsync(viewer, cancellationToken);
+        using HttpResponseMessage write = await viewer.PostAsJsonAsync(
+            "/api/setup/destination", new SetupDestinationRequest(WorkspaceId, null, null, null), cancellationToken);
+        using HttpResponseMessage none = await unknown.GetAsync("/api/setup", cancellationToken);
+
+        Assert.True(admin.CanChange);
+        Assert.False(readOnly.CanChange);
+        Assert.Equal(HttpStatusCode.Forbidden, write.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, none.StatusCode);
     }
 
     [Fact]
@@ -601,10 +687,17 @@ public sealed partial class SetupApiTests
     {
         public bool Found { get; init; } = true;
 
+        public bool CredentialFails { get; init; }
+
         public string EventType { get; set; } = "authentication_failure";
 
         public Task<QueryRows> QueryAsync(string workspaceId, string kql, TimeSpan timespan, CancellationToken cancellationToken)
         {
+            if (CredentialFails)
+            {
+                throw new Azure.Identity.CredentialUnavailableException("ManagedIdentityCredential secret-detail");
+            }
+
             Match match = EventIdPattern().Match(kql);
             if (!Found || !match.Success)
             {
