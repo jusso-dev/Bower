@@ -9,11 +9,39 @@ permissions:
   contents: read
 
 jobs:
+  workflow-lint:
+    # Static analysis of the workflows themselves (unpinned actions, injection,
+    # dangerous triggers). Fails on high-severity zizmor findings.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Lint workflows with actionlint
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo "$RUNNER_TEMP/$archive" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/$archive"
+          echo "$ACTIONLINT_SHA256  $RUNNER_TEMP/$archive" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -color
+      - name: Audit workflows with zizmor
+        env:
+          # Read-only token enables zizmor's online audits (impostor commits, known-vulnerable actions).
+          GH_TOKEN: ${{ github.token }}
+        run: uvx zizmor==1.31.1 --format github --min-severity high .github/workflows
+
   build-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
       - run: dotnet restore Bower.sln --locked-mode
@@ -29,7 +57,9 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # rustup is preinstalled on the runner; Cargo.toml rust-version sets the floor.
       - run: rustup toolchain install stable --profile minimal -c clippy,rustfmt && rustup default stable
       - run: cargo fmt --all --check
@@ -41,14 +71,14 @@ jobs:
   infrastructure:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # cfn-lint and Terraform providers are third-party code; keep the token out of .git/config.
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
       - name: Lint CloudFormation
         run: uvx cfn-lint==1.57.2 deploy/aws/*.yaml
-      - uses: hashicorp/setup-terraform@v4
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: 1.15.8
       - name: Validate GCP Terraform
@@ -61,7 +91,7 @@ jobs:
   powershell:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # PowerShell 7 is preinstalled on ubuntu-latest; pin the test tooling versions.
@@ -81,8 +111,10 @@ jobs:
       run:
         working-directory: ui/Bower.Management.Web
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
           cache: npm
@@ -99,11 +131,13 @@ jobs:
     needs: [build-test, ui]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
           cache: npm
@@ -123,14 +157,14 @@ jobs:
             BOWER_MANAGEMENT_DB_PATH="$RUNNER_TEMP/management.db" \
             ./Bower.Management.Api > "$RUNNER_TEMP/management.log" 2>&1 &
           cd "$GITHUB_WORKSPACE"
-          for attempt in $(seq 1 30); do curl -sf http://127.0.0.1:4320/health && break; sleep 1; done
+          for _ in $(seq 1 30); do curl -sf http://127.0.0.1:4320/health && break; sleep 1; done
           curl -sf http://127.0.0.1:4320/ | grep -q '<div id="root">'
           npm run seed:preview --prefix ui/Bower.Management.Web
       - run: npx --prefix ui/Bower.Management.Web playwright install --with-deps chromium
       - run: npx playwright test e2e/management.spec.ts
         working-directory: ui/Bower.Management.Web
       - if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report
           path: ui/Bower.Management.Web/playwright-report
@@ -140,7 +174,9 @@ jobs:
     needs: [build-test, rust]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: docker build -f deploy/docker/Dockerfile -t bower-collector:ci .
       - run: docker build -f deploy/docker/Dockerfile.management -t bower-management:ci --build-arg BOWER_AUTH_MODE=development .
       - run: docker build -f deploy/docker/Dockerfile.web -t bower-web:ci .
@@ -177,8 +213,10 @@ jobs:
           - deploy/docker/Dockerfile.sidecar
           - deploy/docker/Dockerfile.cloud
     steps:
-      - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - run: >
           docker buildx build --platform linux/arm64
           --file ${{ matrix.dockerfile }}
@@ -201,8 +239,10 @@ jobs:
           - { rid: osx-x64, os: macos-15-intel }
           - { rid: osx-arm64, os: macos-latest }
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
       - run: dotnet restore Bower.sln --locked-mode
@@ -221,7 +261,7 @@ jobs:
           --self-contained true
           --no-restore
           --output artifacts/${{ matrix.rid }}/collector
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bower-${{ matrix.rid }}
           path: artifacts/${{ matrix.rid }}
