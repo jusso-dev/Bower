@@ -96,6 +96,15 @@ public static class ProbeOutcomes
     /// <summary>The parser mapped the fixture but policy (or redaction) did not accept it.</summary>
     public const string PolicyNotSelected = "policy-not-selected";
 
+    /// <summary>The collector accepted the probe but did not queue it (duplicate or suppressed).</summary>
+    public const string ProbeNotQueued = "probe-not-queued";
+
+    /// <summary>
+    /// The exact probe row arrived but its policy hash differs from the one the collector
+    /// reported for the probe (for example another replica answered the status read).
+    /// </summary>
+    public const string ConfigurationMismatch = "configuration-mismatch";
+
     /// <summary>The collector refused the ingest token or producer scope (401/403).</summary>
     public const string CollectorPermissionDenied = "collector-permission-denied";
 
@@ -155,7 +164,13 @@ public static class ProbeOutcomes
     {
         if (status is 200 or 202)
         {
-            return string.Equals(Text(body?["eventId"]), expectedEventId, StringComparison.Ordinal) ? null : ParserWrongEvent;
+            if (!string.Equals(Text(body?["eventId"]), expectedEventId, StringComparison.Ordinal))
+            {
+                return ParserWrongEvent;
+            }
+
+            // Accepted but counted, deduplicated or not queued: nothing will reach the destination.
+            return IsTrue(body?["duplicate"]) || IsTrue(body?["suppressed"]) || IsFalse(body?["queued"]) ? ProbeNotQueued : null;
         }
 
         string? error = Text(body?["error"]);
@@ -169,6 +184,10 @@ public static class ProbeOutcomes
             _ => CollectorRejected
         };
     }
+
+    private static bool IsTrue(JsonNode? node) => node is JsonValue value && value.TryGetValue(out bool flag) && flag;
+
+    private static bool IsFalse(JsonNode? node) => node is JsonValue value && value.TryGetValue(out bool flag) && !flag;
 
     internal static string? Text(JsonNode? node) =>
         node is JsonValue value && value.TryGetValue(out string? text) ? text : null;

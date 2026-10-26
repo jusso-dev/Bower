@@ -268,7 +268,8 @@ public sealed partial class EvidenceRunner(
 
         if (outcome is null)
         {
-            (arrival, outcome, queriedAt) = await PollProbeAsync(options, eventId, fixture.ExpectedEventType, sentAt, cancellationToken);
+            (arrival, outcome, queriedAt) = await PollProbeAsync(
+                options, eventId, fixture.ExpectedEventType, ProbeOutcomes.Text(eventPolicy?["policyHash"]), sentAt, cancellationToken);
         }
         else
         {
@@ -313,7 +314,8 @@ public sealed partial class EvidenceRunner(
     }
 
     private async Task<(ArrivalRecord Arrival, string Outcome, DateTimeOffset? QueriedAt)> PollProbeAsync(
-        EvidenceOptions options, string eventId, string expectedEventType, DateTimeOffset sentAt, CancellationToken cancellationToken)
+        EvidenceOptions options, string eventId, string expectedEventType, string? expectedPolicyHash, DateTimeOffset sentAt,
+        CancellationToken cancellationToken)
     {
         string kql =
             $"{options.Table}\n| where TimeGenerated > ago(1d)\n| where EventId == \"{eventId}\"\n" +
@@ -321,6 +323,7 @@ public sealed partial class EvidenceRunner(
         ArrivalRecord missing = new(false, options.WorkspaceId, options.Table, kql, 0, null, null, null, null, null);
         DateTimeOffset deadline = clock.GetUtcNow() + options.Timeout;
         int attempts = 0;
+        bool answered = false;
         while (true)
         {
             attempts++;
@@ -355,21 +358,34 @@ public sealed partial class EvidenceRunner(
                         ProbeOutcomes.DestinationWrongEvent, queriedAt);
                 }
 
+                // The row must carry the policy hash the collector reported for this probe;
+                // otherwise the evidence would not identify the configuration it tested.
+                string? rowPolicyHash = ProbeOutcomes.Text(row.GetValueOrDefault("PolicyHash"));
+                if (rowPolicyHash != expectedPolicyHash)
+                {
+                    return (missing with { Attempts = attempts, RowPolicyHash = rowPolicyHash, QueryError = ProbeOutcomes.ConfigurationMismatch },
+                        ProbeOutcomes.ConfigurationMismatch, queriedAt);
+                }
+
                 DateTimeOffset? generated = ReadTime(row, "TimeGenerated");
                 DateTimeOffset? ingested = ReadTime(row, "IngestionTime");
                 return (new ArrivalRecord(
                     true, options.WorkspaceId, options.Table, kql, attempts, generated, ingested,
                     ingested is null ? null : Math.Round((ingested.Value - sentAt).TotalSeconds, 1),
-                    ProbeOutcomes.Text(row.GetValueOrDefault("PolicyHash")),
+                    rowPolicyHash,
                     null), ProbeOutcomes.Verified, queriedAt);
             }
 
+            answered |= error is null;
             if (clock.GetUtcNow() + options.PollInterval > deadline)
             {
-                string outcome = error is null
+                // Any answered query means the destination was reachable and the row absent;
+                // timeout or failure only when no query was ever answered.
+                string outcome = answered || error is null
                     ? ProbeOutcomes.DestinationRowMissing
                     : ProbeOutcomes.IsTimeoutError(error) ? ProbeOutcomes.DestinationTimeout : ProbeOutcomes.DestinationQueryFailed;
-                return (missing with { Attempts = attempts, QueryError = error ?? outcome }, outcome, queriedAt);
+                return (missing with { Attempts = attempts, QueryError = outcome == ProbeOutcomes.DestinationRowMissing ? outcome : error },
+                    outcome, queriedAt);
             }
 
             await Task.Delay(options.PollInterval, clock, cancellationToken);

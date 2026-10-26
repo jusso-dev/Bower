@@ -417,7 +417,14 @@ impl EvidenceRunner {
             }
             (None, Some((workspace, query))) => {
                 let (polled, outcome, at) = self
-                    .poll_probe(query, workspace, options, &event_id, fixture, sent_at)
+                    .poll_probe(
+                        (workspace, query),
+                        options,
+                        &event_id,
+                        fixture,
+                        policy_field("policyHash").as_deref(),
+                        sent_at,
+                    )
                     .await?;
                 arrival = polled;
                 queried_at = at;
@@ -487,11 +494,11 @@ impl EvidenceRunner {
     /// missing row and a failed one a timeout or query failure.
     async fn poll_probe(
         &self,
-        query: &dyn LogAnalyticsQuery,
-        workspace: &str,
+        (workspace, query): (&str, &dyn LogAnalyticsQuery),
         options: &EvidenceOptions,
         event_id: &str,
         fixture: ParserProbeFixture,
+        expected_policy_hash: Option<&str>,
         sent_at: Timestamp,
     ) -> Result<(ArrivalRecord, &'static str, Option<Timestamp>), EvidenceError> {
         let table = &options.table;
@@ -507,6 +514,7 @@ impl EvidenceRunner {
         };
         let deadline = self.clock.utc_now() + chrono_duration(options.timeout);
         let mut attempts = 0;
+        let mut answered = false;
         loop {
             attempts += 1;
             let queried_at = self.clock.utc_now();
@@ -551,6 +559,19 @@ impl EvidenceRunner {
                         Some(queried_at),
                     ));
                 }
+                // The row must carry the policy hash the collector reported for this probe;
+                // otherwise the evidence would not identify the configuration it tested.
+                let row_policy_hash = string_at(row.get("PolicyHash"));
+                if row_policy_hash.as_deref() != expected_policy_hash {
+                    return Ok((
+                        ArrivalRecord {
+                            row_policy_hash,
+                            ..missing(attempts, outcomes::CONFIGURATION_MISMATCH.to_owned())
+                        },
+                        outcomes::CONFIGURATION_MISMATCH,
+                        Some(queried_at),
+                    ));
+                }
                 let generated = read_time(row, "TimeGenerated");
                 let ingested = read_time(row, "IngestionTime");
                 return Ok((
@@ -564,7 +585,7 @@ impl EvidenceRunner {
                         ingestion_time: ingested,
                         latency_seconds: ingested
                             .map(|ingested| latency_seconds(ingested, sent_at)),
-                        row_policy_hash: string_at(row.get("PolicyHash")),
+                        row_policy_hash,
                         query_error: None,
                     },
                     outcomes::VERIFIED,
@@ -572,13 +593,20 @@ impl EvidenceRunner {
                 ));
             }
 
+            answered |= result.error.is_none();
             if self.clock.utc_now() + chrono_duration(options.poll_interval) > deadline {
+                // Any answered query means the destination was reachable and the row absent;
+                // timeout or failure only when no query was ever answered.
                 let outcome = match result.error.as_deref() {
+                    _ if answered => outcomes::DESTINATION_ROW_MISSING,
                     None => outcomes::DESTINATION_ROW_MISSING,
                     Some(error) if probe::is_timeout_error(error) => outcomes::DESTINATION_TIMEOUT,
                     Some(_) => outcomes::DESTINATION_QUERY_FAILED,
                 };
-                let error = result.error.unwrap_or_else(|| outcome.to_owned());
+                let error = match result.error {
+                    Some(error) if outcome != outcomes::DESTINATION_ROW_MISSING => error,
+                    _ => outcome.to_owned(),
+                };
                 return Ok((missing(attempts, error), outcome, Some(queried_at)));
             }
 

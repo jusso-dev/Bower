@@ -100,6 +100,10 @@ pub mod outcomes {
     pub const PARSER_NOT_SELECTED: &str = "parser-not-selected";
     pub const PARSER_WRONG_EVENT: &str = "parser-wrong-event";
     pub const POLICY_NOT_SELECTED: &str = "policy-not-selected";
+    /// Accepted but not queued (duplicate or suppressed): nothing reaches the destination.
+    pub const PROBE_NOT_QUEUED: &str = "probe-not-queued";
+    /// The exact probe row arrived with a policy hash other than the collector reported.
+    pub const CONFIGURATION_MISMATCH: &str = "configuration-mismatch";
     pub const COLLECTOR_PERMISSION_DENIED: &str = "collector-permission-denied";
     pub const COLLECTOR_STATUS_UNREADABLE: &str = "collector-status-unreadable";
     pub const COLLECTOR_REJECTED: &str = "collector-rejected";
@@ -160,8 +164,18 @@ pub fn classify(
 ) -> Option<&'static str> {
     if matches!(status, 200 | 202) {
         let event_id = text(body.and_then(|body| body.get("eventId")));
-        return (event_id.as_deref() != Some(expected_event_id))
-            .then_some(outcomes::PARSER_WRONG_EVENT);
+        if event_id.as_deref() != Some(expected_event_id) {
+            return Some(outcomes::PARSER_WRONG_EVENT);
+        }
+        // Accepted but counted, deduplicated or not queued: nothing will reach the destination.
+        let flag = |name: &str| {
+            body.and_then(|body| body.get(name))
+                .and_then(Value::as_bool)
+        };
+        return (flag("duplicate") == Some(true)
+            || flag("suppressed") == Some(true)
+            || flag("queued") == Some(false))
+        .then_some(outcomes::PROBE_NOT_QUEUED);
     }
     let error = text(body.and_then(|body| body.get("error")));
     let has_decision = body

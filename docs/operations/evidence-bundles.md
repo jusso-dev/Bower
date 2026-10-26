@@ -80,9 +80,20 @@ What a parser probe does:
    `active-local-json` is `parser-inactive`, and the fixture is not sent.
 2. Posts the fixture to `POST /v1/packs/PACK/parsers/INDEX/events`: the normal
    authentication, parser, privacy, policy, queue and delivery path.
-3. Queries the destination for the probe id and projects `EventType`. Only a row with the
-   exact probe `EventId` and the expected event type verifies. Collector acceptance alone
-   never does.
+   An accepted probe that the collector did not queue (`queued: false`, `duplicate` or
+   `suppressed`) is `probe-not-queued`, and the destination is not queried.
+3. Queries the destination for the probe id and projects `EventType` and `PolicyHash`.
+   Only a row with the exact probe `EventId`, the expected event type and the policy hash
+   the collector returned for the probe (`eventPolicyHash`) verifies. Collector acceptance
+   alone never does.
+
+The pack version, pack hash, parser state and `collectorPolicyHash` come from the
+separate `/v1/status` read, not from the intake response. Behind a load balancer with
+several collector replicas, the status read and the intake post can reach different
+replicas. A replica running a different policy shows up as `configuration-mismatch`
+(the row's policy hash differs from `eventPolicyHash`), but a replica with the same
+policy and a different pack build does not. Probe a single replica directly when the
+pack hash must be tied to the exact instance.
 
 The bundle adds a `probe` object (additive; generic bundles omit it; signed as before):
 `profile`, `testedPath`, `fixture`, `packId`, `parserIndex`, `packVersion`, `packHash`,
@@ -99,15 +110,17 @@ fixture was not sent.
 | `parser-not-selected` | The parser source filter no longer selects the fixture (422 `pack-record-not-selected`). |
 | `parser-record-rejected` | The parser refused the fixture (400, 413 or 415): a mapping or field regression. |
 | `parser-wrong-event` | Accepted, but the collector reports a different event id: a mapping regression. |
+| `probe-not-queued` | Accepted but not queued (duplicate or suppressed), so it can never arrive; no query runs. |
 | `policy-not-selected` | The parser mapped the fixture but policy (or redaction) rejected or quarantined it. |
 | `collector-permission-denied` | The collector refused the ingest token or producer scope (401/403). |
 | `collector-status-unreadable` | `/v1/status` could not be read, so the tested configuration is unknown. |
 | `collector-rejected` | Any other refusal (capacity, rate limit, identity conflict). |
 | `destination-permission-denied` | The verifier identity may not query the workspace (stops at once). |
-| `destination-row-missing` | Every query answered and none returned the probe row before the timeout. |
+| `destination-row-missing` | At least one query answered, and none returned the probe row before the timeout (later queries may have failed). |
 | `destination-wrong-event` | A row came back but it is not the exact probe event. |
-| `destination-timeout` | The destination query itself timed out until the deadline. |
-| `destination-query-failed` | The destination query failed with another error until the deadline. |
+| `configuration-mismatch` | The exact probe row arrived, but its policy hash differs from the one the collector reported for the probe. |
+| `destination-timeout` | No query was ever answered: they timed out (including gateway 408/504 with any body). |
+| `destination-query-failed` | No query was ever answered: they failed with another error. |
 
 Every parser bundle lists what it did not test: generic intake, other packs and parsers,
 other event types and privacy rules of the pack, upstream agents and readers, and any

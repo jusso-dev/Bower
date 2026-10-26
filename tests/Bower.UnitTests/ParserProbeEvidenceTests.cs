@@ -146,6 +146,8 @@ public sealed partial class ParserProbeEvidenceTests
     [InlineData("timeout", ProbeOutcomes.DestinationTimeout, 3)]
     [InlineData("gateway", ProbeOutcomes.DestinationTimeout, 3)]
     [InlineData("other", ProbeOutcomes.DestinationQueryFailed, 3)]
+    [InlineData("answered-then-timeout", ProbeOutcomes.DestinationRowMissing, 3)]
+    [InlineData("answered-then-failed", ProbeOutcomes.DestinationRowMissing, 3)]
     public async Task ParserProbe_DestinationFailuresStayDistinct(string failure, string outcome, int attempts)
     {
         FakeClock clock = new(TestEvents.Now);
@@ -166,6 +168,93 @@ public sealed partial class ParserProbeEvidenceTests
         Assert.Equal(outcome, bundle.Probe!.Outcome);
         Assert.Equal(attempts, bundle.Arrival.Attempts);
         Assert.False(bundle.Arrival.Found);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("<html><body>504 Gateway Time-out</body></html>")]
+    public async Task ParserProbe_NonJsonQueryErrorBodyIsATimeoutNotACrash(string body)
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        StubHandler handler = new(System.Net.HttpStatusCode.GatewayTimeout, body);
+        LogAnalyticsQueryClient client = new(new HttpClient(handler), new StaticCredential());
+
+        QueryRows rows = await client.QueryAsync(Workspace, "BowerSecurity_CL | take 1", TimeSpan.FromHours(1), cancellation);
+        EvidenceOptions options = new()
+        {
+            CollectorUrl = new Uri("http://collector.test:4319/"),
+            WorkspaceId = Workspace,
+            Timeout = TimeSpan.FromMilliseconds(30),
+            PollInterval = TimeSpan.FromMilliseconds(10)
+        };
+        EvidenceBundle parser = await new EvidenceRunner(new FakeCollector(), client, null, TimeProvider.System)
+            .RunAsync(options with { ProbeProfile = Profile }, cancellation);
+        EvidenceBundle generic = await new EvidenceRunner(new FakeCollector(), client, null, TimeProvider.System)
+            .RunAsync(options, cancellation);
+
+        Assert.Equal("http-504", rows.Error);
+        Assert.Empty(rows.Rows);
+        Assert.Equal(ProbeOutcomes.DestinationTimeout, parser.Probe!.Outcome);
+        Assert.Equal("http-504", parser.Arrival.QueryError);
+        Assert.Equal(EvidenceModes.Failed, parser.Mode);
+        // The generic probe keeps its claim: not found, with the status code as the error.
+        Assert.Equal(EvidenceModes.Failed, generic.Mode);
+        Assert.Equal("http-504", generic.Arrival.QueryError);
+        Assert.Null(generic.Probe);
+    }
+
+    [Fact]
+    public async Task ParserProbe_DestinationPolicyHashMismatchIsNotVerified()
+    {
+        ProbeEchoDestination destination = new("sha256:another-replica");
+        EvidenceRunner runner = new(new FakeCollector(), destination, null, new FakeClock(TestEvents.Now));
+
+        EvidenceBundle bundle = await runner.RunAsync(
+            new EvidenceOptions { CollectorUrl = new Uri("http://collector.test:4319/"), WorkspaceId = Workspace, ProbeProfile = Profile },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(EvidenceModes.Failed, bundle.Mode);
+        Assert.Equal(ProbeOutcomes.ConfigurationMismatch, bundle.Probe!.Outcome);
+        Assert.False(bundle.Arrival.Found);
+        Assert.Equal("sha256:another-replica", bundle.Arrival.RowPolicyHash);
+        Assert.Equal("sha256:policy", bundle.Probe.EventPolicyHash);
+    }
+
+    [Theory]
+    [InlineData("queued-false")]
+    [InlineData("duplicate")]
+    [InlineData("suppressed")]
+    public async Task ParserProbe_AcceptedButNotQueuedSkipsTheDestinationQuery(string variant)
+    {
+        ProbeEchoDestination destination = new();
+        EvidenceRunner runner = new(new FakeCollector(notQueued: variant), destination, null, new FakeClock(TestEvents.Now));
+
+        EvidenceBundle bundle = await runner.RunAsync(
+            new EvidenceOptions { CollectorUrl = new Uri("http://collector.test:4319/"), WorkspaceId = Workspace, ProbeProfile = Profile },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(EvidenceModes.Failed, bundle.Mode);
+        Assert.Equal(ProbeOutcomes.ProbeNotQueued, bundle.Probe!.Outcome);
+        Assert.Equal(202, bundle.Canary.CollectorStatus);
+        Assert.DoesNotContain(destination.Queries, kql => kql.Contains(bundle.Probe.EventId, StringComparison.Ordinal));
+    }
+
+    private sealed class StubHandler(System.Net.HttpStatusCode status, string body) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(status)
+            {
+                Content = new StringContent(body, System.Text.Encoding.UTF8, body.Length == 0 ? "text/plain" : "text/html")
+            });
+    }
+
+    private sealed class StaticCredential : Azure.Core.TokenCredential
+    {
+        public override Azure.Core.AccessToken GetToken(Azure.Core.TokenRequestContext requestContext, CancellationToken cancellationToken) =>
+            new("synthetic", DateTimeOffset.UtcNow.AddHours(1));
+
+        public override ValueTask<Azure.Core.AccessToken> GetTokenAsync(Azure.Core.TokenRequestContext requestContext, CancellationToken cancellationToken) =>
+            ValueTask.FromResult(GetToken(requestContext, cancellationToken));
     }
 
     [Theory]
@@ -372,10 +461,13 @@ public sealed partial class ParserProbeEvidenceTests
     }
 
     /// <summary>Returns the probe row for whatever EventId is queried (signing and metadata tests).</summary>
-    private sealed partial class ProbeEchoDestination : ILogAnalyticsQuery
+    private sealed partial class ProbeEchoDestination(string policyHash = "sha256:policy") : ILogAnalyticsQuery
     {
+        public List<string> Queries { get; } = [];
+
         public Task<QueryRows> QueryAsync(string workspaceId, string kql, TimeSpan timespan, CancellationToken cancellationToken)
         {
+            Queries.Add(kql);
             Match match = Filter().Match(kql);
             return Task.FromResult(match.Success
                 ? new QueryRows(
@@ -384,7 +476,7 @@ public sealed partial class ParserProbeEvidenceTests
                         ["EventId"] = match.Groups[1].Value,
                         ["EventType"] = kql.Contains("EventType", StringComparison.Ordinal) ? "authentication_failure" : null,
                         ["IngestionTime"] = "2026-07-26T02:16:19Z",
-                        ["PolicyHash"] = "sha256:policy"
+                        ["PolicyHash"] = policyHash
                     }],
                     null)
                 : new QueryRows([], null));
@@ -396,6 +488,8 @@ public sealed partial class ParserProbeEvidenceTests
 
     private sealed class FailingDestination(string failure, FakeClock clock) : ILogAnalyticsQuery
     {
+        private int probeQueries;
+
         public Task<QueryRows> QueryAsync(string workspaceId, string kql, TimeSpan timespan, CancellationToken cancellationToken)
         {
             if (kql.StartsWith("DCRLogErrors", StringComparison.Ordinal))
@@ -405,11 +499,16 @@ public sealed partial class ParserProbeEvidenceTests
 
             // Each probe query takes 30 seconds, so three queries cover the one-minute window.
             clock.Advance(TimeSpan.FromSeconds(30));
+            if (failure.StartsWith("answered-then-", StringComparison.Ordinal) && ++probeQueries == 1)
+            {
+                return Task.FromResult(new QueryRows([], null));
+            }
+
             return failure switch
             {
                 "permission" => Task.FromResult(new QueryRows([], "InsufficientAccessError")),
                 "missing" => Task.FromResult(new QueryRows([], null)),
-                "timeout" => Task.FromException<QueryRows>(new TaskCanceledException("synthetic timeout")),
+                "timeout" or "answered-then-timeout" => Task.FromException<QueryRows>(new TaskCanceledException("synthetic timeout")),
                 "gateway" => Task.FromResult(new QueryRows([], "GatewayTimeout")),
                 _ => Task.FromResult(new QueryRows([], "BadArgumentError"))
             };
@@ -417,7 +516,7 @@ public sealed partial class ParserProbeEvidenceTests
     }
 
     /// <summary>A collector reporting an active linux-ssh-gateway parser that accepts the probe.</summary>
-    private sealed class FakeCollector(int statusCode = 200) : ICanarySender, IParserProbeSender
+    private sealed class FakeCollector(int statusCode = 200, string? notQueued = null) : ICanarySender, IParserProbeSender
     {
         public int StatusReads { get; private set; }
 
@@ -457,6 +556,9 @@ public sealed partial class ParserProbeEvidenceTests
             {
                 ["eventId"] = eventId,
                 ["decision"] = "redactandaccept",
+                ["queued"] = notQueued is null or "suppressed",
+                ["duplicate"] = notQueued == "duplicate",
+                ["suppressed"] = notQueued == "suppressed",
                 ["policy"] = new JsonObject { ["policyId"] = "BWR-PACK-SSH-AUTH", ["policyVersion"] = "1.0.0", ["policyHash"] = "sha256:policy" }
             }));
         }

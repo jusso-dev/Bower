@@ -52,14 +52,20 @@ fn object(value: Value) -> Map<String, Value> {
 /// A collector reporting an active linux-ssh-gateway parser that accepts the probe.
 struct FakeCollector {
     status_code: u16,
+    not_queued: Option<&'static str>,
     status_reads: Mutex<usize>,
     records: Mutex<usize>,
 }
 
 impl FakeCollector {
     fn new(status_code: u16) -> Arc<Self> {
+        Self::with_not_queued(status_code, None)
+    }
+
+    fn with_not_queued(status_code: u16, not_queued: Option<&'static str>) -> Arc<Self> {
         Arc::new(Self {
             status_code,
+            not_queued,
             status_reads: Mutex::new(0),
             records: Mutex::new(0),
         })
@@ -108,6 +114,9 @@ impl ParserProbeSender for FakeCollector {
         let record: Value = serde_json::from_str(&json).unwrap();
         let body = object(json!({
             "eventId": record["id"], "decision": "redactandaccept",
+            "queued": matches!(self.not_queued, None | Some("suppressed")),
+            "duplicate": self.not_queued == Some("duplicate"),
+            "suppressed": self.not_queued == Some("suppressed"),
             "policy": {"policyId": "BWR-PACK-SSH-AUTH", "policyVersion": "1.0.0", "policyHash": "sha256:policy"}
         }));
         Box::pin(async move { Ok((202, Some(body))) })
@@ -121,7 +130,19 @@ fn event_id_in(kql: &str) -> Option<String> {
 }
 
 /// Returns the probe row for whatever EventId is queried.
-struct EchoDestination;
+struct EchoDestination {
+    policy_hash: &'static str,
+    queries: Mutex<Vec<String>>,
+}
+
+impl EchoDestination {
+    fn new(policy_hash: &'static str) -> Arc<Self> {
+        Arc::new(Self {
+            policy_hash,
+            queries: Mutex::new(Vec::new()),
+        })
+    }
+}
 
 impl LogAnalyticsQuery for EchoDestination {
     fn query<'a>(
@@ -130,13 +151,14 @@ impl LogAnalyticsQuery for EchoDestination {
         kql: &'a str,
         _timespan: Duration,
     ) -> BoxFuture<'a, Result<QueryRows, EvidenceError>> {
+        self.queries.lock().unwrap().push(kql.to_owned());
         let rows = event_id_in(kql)
             .map(|id| {
                 vec![object(json!({
                     "EventId": id,
                     "EventType": if kql.contains("EventType") { Value::from("authentication_failure") } else { Value::Null },
                     "IngestionTime": "2026-07-26T02:16:19Z",
-                    "PolicyHash": "sha256:policy"
+                    "PolicyHash": self.policy_hash
                 }))]
             })
             .unwrap_or_default();
@@ -163,6 +185,7 @@ impl LogAnalyticsQuery for FixedRowDestination {
 struct FailingDestination {
     failure: &'static str,
     clock: Arc<SteppingClock>,
+    probe_queries: Mutex<usize>,
 }
 
 impl LogAnalyticsQuery for FailingDestination {
@@ -177,6 +200,9 @@ impl LogAnalyticsQuery for FailingDestination {
         } else {
             // Each probe query takes 30 seconds, so three queries cover the one-minute window.
             self.clock.advance(30);
+            let mut probe_queries = self.probe_queries.lock().unwrap();
+            *probe_queries += 1;
+            let first = *probe_queries == 1;
             let error = |code: &str| {
                 Ok(QueryRows {
                     rows: Vec::new(),
@@ -184,9 +210,10 @@ impl LogAnalyticsQuery for FailingDestination {
                 })
             };
             match self.failure {
+                failure if first && failure.starts_with("answered-then-") => Ok(QueryRows::default()),
                 "permission" => error("InsufficientAccessError"),
                 "missing" => Ok(QueryRows::default()),
-                "timeout" => Err(EvidenceError::Http(
+                "timeout" | "answered-then-timeout" => Err(EvidenceError::Http(
                     "The request was canceled due to the configured HttpClient.Timeout of 30 seconds elapsing."
                         .to_owned(),
                 )),
@@ -222,11 +249,18 @@ async fn destination_failures_stay_distinct() {
         ("timeout", outcomes::DESTINATION_TIMEOUT, 3),
         ("gateway", outcomes::DESTINATION_TIMEOUT, 3),
         ("other", outcomes::DESTINATION_QUERY_FAILED, 3),
+        (
+            "answered-then-timeout",
+            outcomes::DESTINATION_ROW_MISSING,
+            3,
+        ),
+        ("answered-then-failed", outcomes::DESTINATION_ROW_MISSING, 3),
     ] {
         let clock = SteppingClock::new();
         let destination = Arc::new(FailingDestination {
             failure,
             clock: clock.clone(),
+            probe_queries: Mutex::new(0),
         });
         let mut options = options(Some(WORKSPACE));
         options.timeout = Duration::from_secs(60);
@@ -318,10 +352,13 @@ async fn only_the_exact_event_verifies() {
         outcomes::DESTINATION_WRONG_EVENT
     );
 
-    let exact = runner(FakeCollector::new(200), Some(Arc::new(EchoDestination)))
-        .run(&options(Some(WORKSPACE)))
-        .await
-        .unwrap();
+    let exact = runner(
+        FakeCollector::new(200),
+        Some(EchoDestination::new("sha256:policy")),
+    )
+    .run(&options(Some(WORKSPACE)))
+    .await
+    .unwrap();
     assert_eq!(exact.mode, modes::VERIFIED);
     let probe = exact.probe.unwrap();
     assert_eq!(probe.outcome, outcomes::VERIFIED);
@@ -336,7 +373,10 @@ async fn only_the_exact_event_verifies() {
 
 #[tokio::test]
 async fn bundle_is_signed_additive_and_metadata_only() {
-    let runner = runner(FakeCollector::new(200), Some(Arc::new(EchoDestination)));
+    let runner = runner(
+        FakeCollector::new(200),
+        Some(EchoDestination::new("sha256:policy")),
+    );
     let parser = runner.run(&options(Some(WORKSPACE))).await.unwrap();
     let mut generic_options = options(Some(WORKSPACE));
     generic_options.probe_profile = probe::GENERIC.to_owned();
@@ -462,4 +502,116 @@ async fn http_sender_uses_status_and_parser_intake_endpoints() {
             ("linux-ssh-gateway/0".to_owned(), expected)
         ]
     );
+}
+
+#[tokio::test]
+async fn destination_policy_hash_mismatch_is_not_verified() {
+    let bundle = runner(
+        FakeCollector::new(200),
+        Some(EchoDestination::new("sha256:another-replica")),
+    )
+    .run(&options(Some(WORKSPACE)))
+    .await
+    .unwrap();
+    assert_eq!(bundle.mode, modes::FAILED);
+    assert!(!bundle.arrival.found);
+    assert_eq!(
+        bundle.arrival.row_policy_hash.as_deref(),
+        Some("sha256:another-replica")
+    );
+    let probe = bundle.probe.unwrap();
+    assert_eq!(probe.outcome, outcomes::CONFIGURATION_MISMATCH);
+    assert_eq!(probe.event_policy_hash.as_deref(), Some("sha256:policy"));
+}
+
+#[tokio::test]
+async fn accepted_but_not_queued_skips_the_destination_query() {
+    for variant in ["queued-false", "duplicate", "suppressed"] {
+        let destination = EchoDestination::new("sha256:policy");
+        let bundle = runner(
+            FakeCollector::with_not_queued(200, Some(variant)),
+            Some(destination.clone()),
+        )
+        .run(&options(Some(WORKSPACE)))
+        .await
+        .unwrap();
+        assert_eq!(bundle.mode, modes::FAILED, "{variant}");
+        assert_eq!(bundle.canary.collector_status, 202);
+        let probe = bundle.probe.unwrap();
+        assert_eq!(probe.outcome, outcomes::PROBE_NOT_QUEUED, "{variant}");
+        assert!(
+            !destination
+                .queries
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|kql| kql.contains(&probe.event_id))
+        );
+    }
+}
+
+struct StaticToken;
+
+impl bower_output_azure::TokenProvider for StaticToken {
+    fn get_token<'a>(&'a self, _scope: &'a str) -> bower_output_azure::TokenFuture<'a> {
+        Box::pin(async move {
+            Ok(bower_output_azure::AccessToken {
+                token: "synthetic".to_owned(),
+                expires_on: parse("2099-01-01T00:00:00Z").unwrap(),
+            })
+        })
+    }
+}
+
+/// C# `ParserProbe_NonJsonQueryErrorBodyIsATimeoutNotACrash`: a gateway 504 with an
+/// empty or HTML body keeps the status code and reads as a destination timeout.
+#[tokio::test]
+async fn non_json_query_error_body_is_a_timeout_not_a_crash() {
+    for body in ["", "<html><body>504 Gateway Time-out</body></html>"] {
+        let app = Router::new().route(
+            "/v1/workspaces/{workspace}/query",
+            post(move || async move { (axum::http::StatusCode::GATEWAY_TIMEOUT, body) }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = Arc::new(
+            bower_evidence::LogAnalyticsQueryClient::new(
+                bower_evidence::default_http_client(),
+                Arc::new(StaticToken),
+            )
+            .with_endpoint(base),
+        );
+
+        let rows = client
+            .query(
+                WORKSPACE,
+                "BowerSecurity_CL | take 1",
+                Duration::from_secs(3_600),
+            )
+            .await
+            .unwrap();
+        let mut probe_options = options(Some(WORKSPACE));
+        probe_options.timeout = Duration::from_millis(30);
+        probe_options.poll_interval = Duration::from_millis(10);
+        let parser = runner(FakeCollector::new(200), Some(client.clone()))
+            .run(&probe_options)
+            .await
+            .unwrap();
+        let mut generic_options = probe_options.clone();
+        generic_options.probe_profile = probe::GENERIC.to_owned();
+        let generic = runner(FakeCollector::new(200), Some(client))
+            .run(&generic_options)
+            .await
+            .unwrap();
+
+        assert_eq!(rows.error.as_deref(), Some("http-504"));
+        assert!(rows.rows.is_empty());
+        assert_eq!(parser.mode, modes::FAILED);
+        assert_eq!(parser.probe.unwrap().outcome, outcomes::DESTINATION_TIMEOUT);
+        assert_eq!(parser.arrival.query_error.as_deref(), Some("http-504"));
+        assert_eq!(generic.mode, modes::FAILED);
+        assert_eq!(generic.arrival.query_error.as_deref(), Some("http-504"));
+        assert!(generic.probe.is_none());
+    }
 }
