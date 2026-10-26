@@ -183,6 +183,13 @@ impl SqliteEventStore {
             .saturating_add(16_777_216)
     }
 
+    /// Physical headroom a write must leave below `maximum_storage_bytes` before it
+    /// starts: one full WAL transaction plus database growth during checkpoint.
+    pub fn storage_reserve_bytes(&self) -> i64 {
+        let maximum = self.maximum_storage_bytes();
+        maximum / 2 + maximum / 128 + 65_536
+    }
+
     fn configure_budget(&self, connection: &Connection) -> StoreResult<()> {
         let page_size: i64 = connection
             .query_row("PRAGMA page_size;", [], |row| row.get(0))
@@ -216,8 +223,7 @@ impl SqliteEventStore {
         let wal = PathBuf::from(format!("{}-wal", self.pool.path().display()));
         let current = file_size(self.pool.path())?.saturating_add(file_size(&wal)?);
         let maximum = self.maximum_storage_bytes();
-        // Reserve a full WAL transaction plus database growth during checkpoint.
-        let reserve = maximum / 2 + maximum / 128 + 65_536;
+        let reserve = self.storage_reserve_bytes();
         if current > maximum - reserve {
             return Err(capacity_error(maximum, current, reserve));
         }

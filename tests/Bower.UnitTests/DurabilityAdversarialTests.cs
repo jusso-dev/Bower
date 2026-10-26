@@ -9,6 +9,9 @@ namespace Bower.UnitTests;
 
 public sealed class DurabilityAdversarialTests
 {
+    /// <summary>SQLite WAL format: every frame is this header followed by one page.</summary>
+    private const int WalFrameHeaderBytes = 24;
+
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
     [Fact]
@@ -233,7 +236,11 @@ public sealed class DurabilityAdversarialTests
 
         Assert.True(blocked);
         Assert.True(counted > 0);
-        Assert.True(StorageBytes(path) <= store.MaximumStorageBytes);
+        // Refusal starts at the ceiling minus the reserve; the last admitted commit can
+        // add one WAL frame for the counter page it changed.
+        long pageSize = await ScalarAsync(path, "PRAGMA page_size;");
+        long admissionBound = store.MaximumStorageBytes - store.StorageReserveBytes + WalFrameHeaderBytes + pageSize;
+        Assert.True(StorageBytes(path) <= admissionBound);
         long storage = StorageBytes(path);
         for (int index = 0; index < 3; index++)
         {

@@ -289,6 +289,9 @@ fn pinned_wal_reader_backpressures_before_physical_budget_and_preserves_event() 
     assert!(store.verify_ledger().unwrap().intact);
 }
 
+/// SQLite WAL format: every frame is this header followed by one page.
+const WAL_FRAME_HEADER_BYTES: i64 = 24;
+
 #[test]
 fn pinned_wal_reader_backpressures_suppression_counters_within_physical_budget() {
     let directory = tempfile::tempdir().unwrap();
@@ -349,8 +352,16 @@ fn pinned_wal_reader_backpressures_suppression_counters_within_physical_budget()
     }
     assert!(blocked);
     assert!(counted > 0);
+    // Refusal starts at the ceiling minus the reserve; the last admitted commit can
+    // add one WAL frame for the counter page it changed.
+    let page_size: i64 = raw(store.database_path())
+        .query_row("PRAGMA page_size", [], |row| row.get(0))
+        .unwrap();
+    let admission_bound = store.maximum_storage_bytes() - store.storage_reserve_bytes()
+        + WAL_FRAME_HEADER_BYTES
+        + page_size;
     let storage = storage_bytes(store.database_path());
-    assert!(storage <= store.maximum_storage_bytes() as u64);
+    assert!(storage <= admission_bound as u64);
     for index in 0..3 {
         assert!(matches!(
             store.enqueue(&suppressible(&format!("refused-{index}"))),

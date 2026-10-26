@@ -13,6 +13,12 @@ public sealed partial class SqliteEventStore : IDurableEventStore
     private readonly string connectionString;
     private readonly long maximumBytes;
     public long MaximumStorageBytes { get; }
+
+    /// <summary>
+    /// Physical headroom a write must leave below <see cref="MaximumStorageBytes"/> before
+    /// it starts: one full WAL transaction plus database growth during checkpoint.
+    /// </summary>
+    public long StorageReserveBytes => MaximumStorageBytes / 2 + MaximumStorageBytes / 128 + 65_536;
     private readonly TimeProvider clock;
 
     public SqliteEventStore(string databasePath, long maximumBytes, TimeProvider? clock = null)
@@ -984,7 +990,7 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         {
             current += new FileInfo(wal).Length;
         }
-        long reserve = MaximumStorageBytes / 2 + MaximumStorageBytes / 128 + 65_536;
+        long reserve = StorageReserveBytes;
         if (current > MaximumStorageBytes - reserve)
         {
             throw new QueueCapacityExceededException(MaximumStorageBytes, current, reserve);
