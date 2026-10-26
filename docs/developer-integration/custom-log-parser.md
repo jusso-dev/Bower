@@ -38,6 +38,32 @@ Preview values for identities, IP addresses, URLs, messages and unmapped fields
 are redacted. Preview proves parsing and mapping only. Destination query
 validation remains required before claiming Sentinel delivery.
 
+### Preview privacy floor
+
+Bower Management applies a minimum preview privacy policy that the submitted
+configuration cannot lower. Setting `sensitive: false` or assigning any OCSF or
+ASIM mapping can add masking but never removes it. Whatever the configuration
+says, a preview value stays redacted when:
+
+- the field type is `IpAddress`;
+- the source field name is credential-like or describes identity, network or
+  account data (for example `user`, `email`, `client_ip`, `host`, `url`,
+  `message`, `account`, `session`, `phone`);
+- the field type is `Text` and the source name is not one of the known
+  non-sensitive names (timestamp, severity, action, outcome, application and
+  process ID aliases), or the value is longer than 64 characters or contains
+  characters other than letters, digits and `. _ - : +`;
+- a built-in privacy detector (Australian identifiers, financial, identity
+  including IP, hostname and username, secrets and cryptographic material) finds
+  sensitive data in the value. Public identifiers the default privacy policy
+  allows (ABN, ACN, SWIFT BIC) are not counted;
+- for regex parsers, the capture overlaps sensitive data that a detector finds
+  in the whole source line, so slicing a value across captures cannot hide it.
+
+Pasted samples and server-path samples get the same floor. Typed values such as
+whole numbers, booleans and timestamps in non-sensitive fields still preview.
+Preview issues and errors are Bower-authored and never echo sample values.
+
 ## Point Bower at a server file
 
 Server-path input is disabled unless one or more roots are configured:

@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using Bower.Redaction.Privacy;
 
 namespace Bower.Pipeline;
 
@@ -127,6 +128,31 @@ public static partial class CustomLogParser
         ],
         StringComparer.Ordinal);
 
+    private const int MaximumPreviewTokenLength = 64;
+
+    // Server-owned preview floor: every built-in detector, opt-in ones included, whatever
+    // the submitted configuration says. Public identifiers the default policy allows (ABN,
+    // ACN, SWIFT BIC) are skipped so severities such as CRITICAL still preview. Detectors
+    // are stateless and safe to share.
+    private static readonly ISensitiveDetector[] PreviewDetectors =
+    [
+        .. DetectorCatalog.CreateDefaultValueDetectors().Where(detector =>
+            PrivacyPolicy.CreateDefault().ResolveAction(detector.Id) != PrivacyAction.Allow)
+    ];
+
+    private static readonly IFieldNameDetector PreviewFieldNameDetector =
+        DetectorCatalog.CreateDefaultFieldNameDetector();
+
+    // Name fragments that mark identity, network or account data in any value type.
+    private static readonly string[] SensitiveNameFragments =
+    [
+        "user", "email", "mail", "phone", "mobile", "ip", "addr", "host", "url", "uri", "path",
+        "message", "msg", "description", "account", "session", "auth", "key", "principal",
+        "identity", "actor", "subject", "owner", "firstname", "lastname", "fullname", "surname",
+        "givenname", "displayname", "birth", "dob", "ssn", "tfn", "medicare", "passport",
+        "licence", "license", "card", "iban", "bsb", "location", "gps", "device", "computer"
+    ];
+
     public static CustomLogGenerationResult Generate(string sample)
     {
         IReadOnlyList<SourceRecord> records = ReadSourceRecords(sample, null, out Detection detection);
@@ -237,6 +263,9 @@ public static partial class CustomLogParser
 
         foreach (SourceRecord record in records)
         {
+            List<DetectionMatch>? lineMatches = record.Line is null
+                ? null
+                : FindSensitiveSpans(record.Line);
             Dictionary<string, CustomLogPreviewValue> values = new(StringComparer.Ordinal);
             foreach ((string sourceName, CustomLogField field) in fieldLookup)
             {
@@ -252,7 +281,9 @@ public static partial class CustomLogParser
                     break;
                 }
 
-                bool redacted = field.Sensitive || IsFreeText(field);
+                bool redacted = field.Sensitive
+                    || IsFreeText(field)
+                    || RequiresPreviewMasking(field, value, record, lineMatches);
                 values[sourceName] = new CustomLogPreviewValue(
                     field.Type,
                     redacted ? RedactionMarker(field.Type) : value,
@@ -780,16 +811,18 @@ public static partial class CustomLogParser
                     "One or more records do not match regex configuration.");
             }
             Dictionary<string, string> values = new(StringComparer.Ordinal);
+            Dictionary<string, (int Start, int Length)> spans = new(StringComparer.Ordinal);
             foreach (string group in groups)
             {
                 if (!IsProhibited(group) && match.Groups[group].Success)
                 {
                     values[group] = match.Groups[group].Value;
+                    spans[group] = (match.Groups[group].Index, match.Groups[group].Length);
                 }
             }
             if (values.Count > 0)
             {
-                parsed.Add(new SourceRecord(index + 1, values));
+                parsed.Add(new SourceRecord(index + 1, values, spans, lines[index]));
             }
         }
         return parsed;
@@ -1051,6 +1084,71 @@ public static partial class CustomLogParser
         && field.OcsfPath is null
         && field.AsimField is null;
 
+    /// <summary>
+    /// Minimum preview privacy owned by the server. Submitted sensitivity flags and
+    /// mappings can add masking but never remove it: IP values, sensitive field names,
+    /// text outside the known non-sensitive field names, text that is not a short token
+    /// and anything a built-in detector finds stay masked.
+    /// </summary>
+    private static bool RequiresPreviewMasking(
+        CustomLogField field,
+        string value,
+        SourceRecord record,
+        List<DetectionMatch>? lineMatches)
+    {
+        if (field.Type == CustomLogValueType.IpAddress || IsSensitiveFieldName(field.SourceName))
+        {
+            return true;
+        }
+        if (field.Type == CustomLogValueType.Text
+            && (MapField(field.SourceName).Sensitive || !IsPreviewToken(value)))
+        {
+            return true;
+        }
+        // Regex captures can slice a sensitive span so no single value looks sensitive;
+        // check each capture against detections over the whole source line.
+        if (lineMatches is not null
+            && record.Spans is not null
+            && record.Spans.TryGetValue(field.SourceName, out (int Start, int Length) span)
+            && lineMatches.Any(match => match.Start < span.Start + span.Length
+                && span.Start < match.End))
+        {
+            return true;
+        }
+        return FindSensitiveSpans(value).Count > 0;
+    }
+
+    private static bool IsSensitiveFieldName(string name)
+    {
+        string canonical = Canonical(name);
+        return PreviewFieldNameDetector.MatchesFieldName(canonical)
+            || SensitiveNameFragments.Any(fragment =>
+                canonical.Contains(fragment, StringComparison.Ordinal));
+    }
+
+    private static bool IsPreviewToken(string value) =>
+        value.Length <= MaximumPreviewTokenLength
+        && value.All(character =>
+            char.IsAsciiLetterOrDigit(character) || character is '.' or '_' or '-' or ':' or '+');
+
+    private static List<DetectionMatch> FindSensitiveSpans(string text)
+    {
+        List<DetectionMatch> matches = [];
+        try
+        {
+            foreach (ISensitiveDetector detector in PreviewDetectors)
+            {
+                detector.Detect(text, "$", matches);
+            }
+        }
+        catch (Exception)
+        {
+            // Fail closed: an unscanned value is treated as sensitive over its whole length.
+            matches.Add(new DetectionMatch("preview.scan-failed", "preview", 0, text.Length, false));
+        }
+        return matches;
+    }
+
     private static string RedactionMarker(CustomLogValueType type) =>
         type == CustomLogValueType.IpAddress ? "[redacted:ip]" : "[redacted]";
 
@@ -1080,7 +1178,9 @@ public static partial class CustomLogParser
 
     private sealed record SourceRecord(
         int SourceLine,
-        IReadOnlyDictionary<string, string> Values);
+        IReadOnlyDictionary<string, string> Values,
+        IReadOnlyDictionary<string, (int Start, int Length)>? Spans = null,
+        string? Line = null);
 
     private sealed record Detection(
         CustomLogFormat Format,

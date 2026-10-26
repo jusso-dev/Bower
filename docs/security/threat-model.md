@@ -76,7 +76,10 @@ evidence.
 Name-based redaction cannot prove arbitrary free-text values contain no secret.
 The custom-log sample reader re-checks for symbolic links after opening, but a
 swap and swap-back between checks remains possible; keep sample roots writable
-only by trusted operators. SQL Server incrementing cursors hold back rows newer
+only by trusted operators. Custom-log previews enforce a server-owned masking
+floor, but an operator-supplied regex still reveals whether sample lines match it,
+so an authorised operator can infer undetected text in a server sample by probing;
+keep sample roots to logs operators may already read. SQL Server incrementing cursors hold back rows newer
 than `CommitSettleDelay`; transactions open longer than that can still be skipped.
 Applications must use typed contracts and avoid unrestricted attributes. Local DB
 encryption is deployment responsibility. Current collector does not verify

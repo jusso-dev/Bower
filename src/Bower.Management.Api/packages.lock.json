@@ -146,6 +146,7 @@
       "bower.pipeline": {
         "type": "Project",
         "dependencies": {
+          "Bower.Redaction": "[1.0.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
