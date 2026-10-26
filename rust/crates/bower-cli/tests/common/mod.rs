@@ -122,8 +122,10 @@ pub fn one_shot_server(
 
 /// Sample events stamped now (the intake rejects times outside its window).
 pub fn policy_samples(dir: &Path) -> (String, String, String) {
-    use bower_contracts::time::Clock as _;
-    let now = bower_contracts::time::SystemClock.utc_now().to_rfc3339();
+    // System.Text.Json text (at most seven fraction digits), as producers send it.
+    // `to_rfc3339` writes nine digits on Linux, and a checksum-valid nine-digit run is
+    // masked as an Australian TFN, which breaks `timeGenerated` and quarantines the event.
+    let now = bower_contracts::time::format_json(&bower_contracts::time::now());
     let event = |id: &str, category: &str, kind: &str, extra: &str| {
         format!(
             "{{\"schemaVersion\":\"1.0.0\",\"eventId\":\"{id}\",\"timeGenerated\":\"{now}\",\"eventCategory\":\"{category}\",\"eventType\":\"{kind}\",\"eventAction\":\"authentication.attempt\",\"eventResult\":\"failure\",\"eventOutcomeReason\":\"InvalidPassword\",\"application\":{{\"name\":\"App\",\"environment\":\"test\"}},\"actor\":{{\"username\":\"u\"}},\"source\":{{\"ipAddress\":\"192.0.2.10\"}},\"request\":{{\"correlationId\":\"c-1\"}}{extra}}}"

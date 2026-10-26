@@ -73,6 +73,11 @@
       <Link>detection-vectors/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- Pipeline node kind vectors shared with the Rust port (rust/crates/bower-pipeline). -->
+    <Content Include="../../rust/crates/bower-pipeline/tests/fixtures/node-kinds.txt">
+      <Link>pipeline-vectors/node-kinds.txt</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="../../rules/**/*.yml">
       <Link>rules/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

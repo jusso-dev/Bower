@@ -469,6 +469,12 @@ reported as errors (exit 1), or as a `FAIL` check in `doctor`, never as a crash.
 `pipeline validate` reports cycles, unknown source and output types (Azure Monitor /
 Sentinel delivery is `azure-logs-ingestion`), secrets in node config and nodes with no
 edges. Its `estimate` is `null` when the graph has a cycle or duplicate node ids.
+A node `kind` is a declared name (`Source`, `Filter`, `Redact`, `Normalise`, `Detect`,
+`Enrich`, `Output`; any ASCII case) or its declared ordinal `0`–`6`. Anything else
+(`999`, `-1`, `+1`, `Source,Filter`) fails to load with exit 1 and names the node:
+`Node 'mid' has unknown kind '999'. Supported: ...`. A model built in code with an
+undefined kind fails validation with code `node-kind`. Exported documents always
+write names, so prefer names over ordinals.
 
 ## Native AOT binaries
 

@@ -23,6 +23,8 @@ public static class PipelineValidator
 
     private static readonly string SupportedOutputTypes = string.Join(", ", OutputTypes);
 
+    internal static readonly string SupportedKinds = string.Join(", ", Enum.GetNames<PipelineNodeKind>());
+
     private static readonly HashSet<string> SecretKeys = new(StringComparer.OrdinalIgnoreCase)
     {
         "password", "secret", "token", "apikey", "connectionstring", "privatekey"
@@ -238,6 +240,16 @@ public static class PipelineValidator
 
     private static void ValidateNode(PipelineNode node, List<PipelineValidationIssue> issues)
     {
+        // A model built in code can carry any integer cast to the enum; only declared kinds run.
+        if (!Enum.IsDefined(node.Kind))
+        {
+            issues.Add(
+                new PipelineValidationIssue(
+                    "node-kind",
+                    $"Node '{node.Id}' has undefined kind '{(int)node.Kind}'. Supported: {SupportedKinds}.",
+                    node.Id));
+        }
+
         if (string.IsNullOrWhiteSpace(node.Type))
         {
             issues.Add(new PipelineValidationIssue("node-type", "Node type is required.", node.Id));

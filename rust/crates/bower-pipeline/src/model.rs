@@ -38,8 +38,9 @@ impl PipelineNodeKind {
         }
     }
 
-    /// `Enum.TryParse(text, ignoreCase: true)` restricted to defined values: a name
-    /// (case-insensitive, surrounding whitespace ignored) or a defined ordinal.
+    /// C# `PipelineDocument` kind parsing: a declared name (ASCII case-insensitive,
+    /// surrounding whitespace ignored) or a declared ordinal written as ASCII digits.
+    /// Undefined numbers ("999", "-1"), signs and comma-joined names are rejected.
     pub fn parse(text: &str) -> Option<Self> {
         let text = text.trim();
         if let Some(kind) = Self::ALL
@@ -49,9 +50,17 @@ impl PipelineNodeKind {
         {
             return Some(kind);
         }
+        if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
         text.parse::<usize>()
             .ok()
             .and_then(|index| Self::ALL.get(index).copied())
+    }
+
+    /// The declared names, as C# `string.Join(", ", Enum.GetNames<PipelineNodeKind>())`.
+    pub fn supported() -> String {
+        Self::ALL.map(Self::as_str).join(", ")
     }
 }
 
