@@ -450,8 +450,38 @@ pub struct DeliveryResult {
     pub destination_acknowledgement: Option<String>,
 }
 
+/// C# `OutputConcurrencySnapshot`: adaptive request concurrency of one output stream,
+/// current limit and bounds, requests in flight, latency EWMA and counters since start.
+/// Metadata only. Process-local: it resets on restart. `process_local_paused_until` is
+/// this process's last Retry-After deadline; across restarts the queue's durable
+/// destination circuit holds the stream.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OutputConcurrencySnapshot {
+    pub output_id: String,
+    pub limit: i32,
+    pub minimum_limit: i32,
+    pub maximum_limit: i32,
+    pub in_flight: i32,
+    pub latency_ewma_milliseconds: Option<i64>,
+    pub requests: i64,
+    pub throttles: i64,
+    pub server_errors: i64,
+    pub timeouts: i64,
+    pub latency_spikes: i64,
+    pub decreases: i64,
+    pub increases: i64,
+    pub pauses: i64,
+    pub process_local_paused_until: Option<Timestamp>,
+}
+
 /// Bounded delivery adapter. Must honour cancellation by being drop-safe.
 pub trait OutputAdapter: Send + Sync {
     fn id(&self) -> &str;
     fn deliver(&self, events: &[QueuedEvent]) -> impl Future<Output = DeliveryResult> + Send;
+
+    /// C# `IOutputConcurrencyStatus`: outputs that adapt request concurrency report it
+    /// for status. `None` when there is no output-wide controller.
+    fn concurrency_snapshot(&self) -> Option<OutputConcurrencySnapshot> {
+        None
+    }
 }

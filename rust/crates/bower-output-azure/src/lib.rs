@@ -5,9 +5,11 @@
 //! Uses the supported Logs Ingestion REST API directly. Tokens are cached in memory
 //! only and never logged or persisted.
 
+pub mod concurrency;
 pub mod credential;
 mod output;
 
+pub use concurrency::{AdaptiveConcurrencyController, ConcurrencyPermit, ConcurrencySignal};
 pub use credential::{
     AccessToken, AzureCliCredential, AzureCredentialMode, CachedTokenProvider,
     EnvironmentCredential, ManagedIdentityCredential, ManagedIdentitySource, TokenError,
@@ -16,5 +18,6 @@ pub use credential::{
 };
 pub use output::{
     API_VERSION, AzureLogsIngestionOptions, AzureLogsIngestionOutput, AzureOutputError,
-    IngestionClientOptions, MONITOR_SCOPE, SINGLE_UPLOAD_THRESHOLD,
+    ConcurrencyScope, IngestionClientOptions, MONITOR_SCOPE, SINGLE_UPLOAD_THRESHOLD,
+    SystemTimeSource, TimeSource,
 };

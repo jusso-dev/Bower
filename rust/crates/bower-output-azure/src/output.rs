@@ -9,20 +9,24 @@
 
 use std::collections::HashSet;
 use std::io::Write;
-use std::sync::Arc;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicI32, Ordering};
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
-use bower_contracts::{DeliveryFailure, DeliveryResult, OutputAdapter, QueuedEvent};
+use bower_contracts::time::Timestamp;
+use bower_contracts::{
+    DeliveryFailure, DeliveryResult, OutputAdapter, OutputConcurrencySnapshot, QueuedEvent,
+};
 use bower_dcr::SentinelSchema;
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use reqwest::Url;
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde_json::{Map, Value};
-use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
+use crate::concurrency::{AdaptiveConcurrencyController, ConcurrencySignal};
 use crate::credential::{CachedTokenProvider, TokenProvider};
 
 /// Token scope used by `LogsIngestionClient` for the public cloud.
@@ -46,10 +50,45 @@ pub struct AzureLogsIngestionOptions {
     pub endpoint: Url,
     pub dcr_immutable_id: String,
     pub stream_name: String,
-    /// Parallel batch uploads (1..=32, default 4).
+    /// Parallel batch uploads (1..=32, default 4): the adaptive controller's ceiling.
     pub maximum_concurrency: usize,
+    /// What one adaptive controller bounds (C# `ConcurrencyScope`).
+    pub concurrency_scope: ConcurrencyScope,
     /// Stream schema used for preflight checks before upload.
     pub schema: SentinelSchema,
+}
+
+/// C# `ConcurrencyScope`: what one adaptive concurrency controller bounds.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ConcurrencyScope {
+    /// Every delivery of the output (one DCR stream): the collector's single delivery loop.
+    #[default]
+    Output,
+    /// Each delivery on its own, as the fixed setting did: hosts that deliver many caller
+    /// requests concurrently through one output.
+    Delivery,
+}
+
+/// C# `TimeProvider` for the output: wall time for Retry-After deadlines and pauses,
+/// monotonic time for request RTT.
+pub trait TimeSource: Send + Sync + std::fmt::Debug {
+    fn utc_now(&self) -> Timestamp;
+    /// Monotonic reading; only differences are meaningful.
+    fn monotonic(&self) -> Duration;
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SystemTimeSource;
+
+impl TimeSource for SystemTimeSource {
+    fn utc_now(&self) -> Timestamp {
+        bower_contracts::time::now()
+    }
+
+    fn monotonic(&self) -> Duration {
+        static ORIGIN: OnceLock<Instant> = OnceLock::new();
+        ORIGIN.get_or_init(Instant::now).elapsed()
+    }
 }
 
 impl AzureLogsIngestionOptions {
@@ -65,6 +104,7 @@ impl AzureLogsIngestionOptions {
             dcr_immutable_id: dcr_immutable_id.into(),
             stream_name: stream_name.into(),
             maximum_concurrency: 4,
+            concurrency_scope: ConcurrencyScope::Output,
             schema: SentinelSchema::default_schema().clone(),
         }
     }
@@ -110,6 +150,8 @@ pub struct IngestionClientOptions {
     /// (the equivalent of replacing the C# `HttpPipelineTransport`). Validation of
     /// the configured endpoint is unchanged.
     pub transport_base_url: Option<Url>,
+    /// Clock for Retry-After deadlines, pauses and RTT (default: system).
+    pub time: Arc<dyn TimeSource>,
 }
 
 impl Default for IngestionClientOptions {
@@ -121,6 +163,7 @@ impl Default for IngestionClientOptions {
             network_timeout: Duration::from_secs(100),
             scope: MONITOR_SCOPE.to_owned(),
             transport_base_url: None,
+            time: Arc::new(SystemTimeSource),
         }
     }
 }
@@ -131,6 +174,8 @@ pub struct AzureLogsIngestionOutput {
     upload_url: Url,
     http: reqwest::Client,
     credential: Arc<dyn TokenProvider>,
+    /// One controller per output: one DCR stream. `maximum_concurrency` is its ceiling.
+    concurrency: Arc<AdaptiveConcurrencyController>,
 }
 
 impl AzureLogsIngestionOutput {
@@ -158,11 +203,15 @@ impl AzureLogsIngestionOutput {
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|_| AzureOutputError::Invalid("HTTP client could not be built".to_owned()))?;
+        let concurrency = Arc::new(AdaptiveConcurrencyController::new(
+            options.maximum_concurrency,
+        )?);
         Ok(Self {
             options,
             client_options,
             upload_url,
             http,
+            concurrency,
             // BearerTokenAuthenticationPolicy caches the token in memory and refreshes
             // it five minutes before expiry.
             credential: Arc::new(CachedTokenProvider::new(credential)),
@@ -378,9 +427,35 @@ struct Uploader {
     url: Url,
     credential: Arc<dyn TokenProvider>,
     options: IngestionClientOptions,
+    concurrency: Arc<AdaptiveConcurrencyController>,
+    /// Retry-After deadline seen by any attempt of this delivery.
+    paused: Arc<Mutex<Option<Timestamp>>>,
 }
 
 impl Uploader {
+    /// C# `DeliveryScope.Pause`: every attempt's Retry-After, including ones the retry
+    /// loop sleeps through in memory, holds new batches of this delivery.
+    fn pause(&self, until: Timestamp, now: Timestamp) {
+        if until <= now {
+            return;
+        }
+        self.concurrency.pause(until, now);
+        let mut paused = self
+            .paused
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if paused.is_none_or(|current| current < until) {
+            *paused = Some(until);
+        }
+    }
+
+    fn paused_until(&self, now: Timestamp) -> Option<Timestamp> {
+        self.paused
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .filter(|until| *until > now)
+    }
+
     async fn upload(&self, body: Vec<u8>) -> BatchOutcome {
         let mut encoder =
             GzEncoder::new(Vec::with_capacity(body.len() / 4), Compression::default());
@@ -443,6 +518,10 @@ impl Uploader {
         };
         let mut authorization = authorization;
         authorization.set_sensitive(true);
+        // C# `ConcurrencyObserverPolicy` runs after the token policy: every attempt,
+        // including retries, feeds the controller. A dropped (cancelled) attempt does not.
+        let generation = self.concurrency.begin_attempt();
+        let started = self.options.time.monotonic();
         let request = self
             .http
             .post(self.url.clone())
@@ -453,7 +532,16 @@ impl Uploader {
             .header("x-ms-client-request-id", client_request_id)
             .header("x-ms-return-client-request-id", "true")
             .body(body.to_vec());
-        match request.send().await {
+        let sent = request.send().await;
+        self.concurrency.complete(
+            generation,
+            sent.as_ref()
+                .map_or(ConcurrencySignal::Timeout, |response| {
+                    ConcurrencySignal::classify(response.status().as_u16())
+                }),
+            self.options.time.monotonic().saturating_sub(started),
+        );
+        match sent {
             Err(_) => (
                 true,
                 None,
@@ -471,6 +559,14 @@ impl Uploader {
                     (false, None, BatchOutcome::Accepted)
                 } else {
                     let code = status.as_u16();
+                    let now = self.options.time.utc_now();
+                    let retry_after = server.map(|delay| {
+                        now + chrono::Duration::from_std(delay.min(Duration::from_secs(3600)))
+                            .expect("bounded retry delay")
+                    });
+                    if let Some(until) = retry_after {
+                        self.pause(until, now);
+                    }
                     (
                         is_retriable_status(code),
                         server,
@@ -478,13 +574,7 @@ impl Uploader {
                             status: code,
                             retry_capped: server
                                 .is_some_and(|delay| delay > Duration::from_secs(3600)),
-                            retry_after: server.map(|delay| {
-                                bower_contracts::time::now()
-                                    + chrono::Duration::from_std(
-                                        delay.min(Duration::from_secs(3600)),
-                                    )
-                                    .expect("bounded retry delay")
-                            }),
+                            retry_after,
                         },
                     )
                 }
@@ -555,23 +645,51 @@ impl AzureLogsIngestionOutput {
             url: self.upload_url.clone(),
             credential: Arc::clone(&self.credential),
             options: self.client_options.clone(),
+            concurrency: match self.options.concurrency_scope {
+                ConcurrencyScope::Output => Arc::clone(&self.concurrency),
+                ConcurrencyScope::Delivery => Arc::new(
+                    AdaptiveConcurrencyController::new(self.options.maximum_concurrency)
+                        .expect("validated maximum concurrency"),
+                ),
+            },
+            // Server-requested pause seen during this delivery. Across deliveries the
+            // durable destination circuit holds the stream instead.
+            paused: Arc::default(),
         };
-        let semaphore = Arc::new(Semaphore::new(self.options.maximum_concurrency));
+        let time = Arc::clone(&self.client_options.time);
         let budget = Arc::new(AtomicI32::new(16));
+        let mut failed: HashSet<String> = HashSet::new();
         // Each task retains its batch IDs through every completion and isolation split.
         // JoinSet aborts in-flight requests on caller cancellation.
         let mut uploads = JoinSet::new();
-        for batch in batch_records(records) {
+        let mut batches = batch_records(records).into_iter();
+        while let Some(batch) = batches.next() {
+            // Back-pressure: wait for a slot under the adaptive limit, in batch order.
+            let permit = uploader.concurrency.acquire().await;
+            if let Some(until) = uploader.paused_until(time.utc_now()) {
+                drop(permit);
+                // Never sent: keep the records retryable behind the destination circuit.
+                for event_id in std::iter::once(batch)
+                    .chain(batches.by_ref())
+                    .flat_map(|batch| batch.event_ids)
+                {
+                    let mut item = failure(&event_id, "destination-azure-paused", true);
+                    item.retry_after = Some(until);
+                    failures.push(item);
+                    failed.insert(event_id);
+                }
+                break;
+            }
             let uploader = uploader.clone();
-            let semaphore = Arc::clone(&semaphore);
             let budget = Arc::clone(&budget);
+            let time = Arc::clone(&time);
             uploads.spawn(async move {
-                let _permit = semaphore.acquire_owned().await.expect("semaphore stays open");
+                let _permit = permit;
                 let mut pending = vec![batch];
                 let mut results = Vec::new();
                 while let Some(batch) = pending.pop() {
                     let outcome = uploader.upload(batch.body.clone()).await;
-                    if matches!(outcome, BatchOutcome::Failed { status: 400, retry_after, .. } if retry_after.is_none_or(|deadline| deadline <= bower_contracts::time::now()))
+                    if matches!(outcome, BatchOutcome::Failed { status: 400, retry_after, .. } if retry_after.is_none_or(|deadline| deadline <= time.utc_now()))
                         && batch.event_ids.len() > 1
                         && budget.fetch_sub(2, Ordering::SeqCst) >= 2
                     {
@@ -594,7 +712,6 @@ impl AzureLogsIngestionOutput {
             });
         }
 
-        let mut failed: HashSet<String> = HashSet::new();
         let mut isolated = HashSet::new();
         while let Some(joined) = uploads.join_next().await {
             let Ok(results) = joined else {
@@ -619,7 +736,7 @@ impl AzureLogsIngestionOutput {
                     if status == 400
                         && event_ids.len() == 1
                         && retry_after
-                            .is_none_or(|deadline| deadline <= bower_contracts::time::now())
+                            .is_none_or(|deadline| deadline <= self.client_options.time.utc_now())
                     {
                         isolated.insert(event_ids[0].clone());
                     }
@@ -676,6 +793,13 @@ impl OutputAdapter for AzureLogsIngestionOutput {
 
     async fn deliver(&self, events: &[QueuedEvent]) -> DeliveryResult {
         self.deliver_events(events).await
+    }
+
+    fn concurrency_snapshot(&self) -> Option<OutputConcurrencySnapshot> {
+        (self.options.concurrency_scope == ConcurrencyScope::Output).then(|| {
+            self.concurrency
+                .snapshot(&self.options.id, self.client_options.time.utc_now())
+        })
     }
 }
 

@@ -13,25 +13,37 @@ using Bower.Dcr;
 
 namespace Bower.Output.AzureLogsIngestion;
 
-public sealed class AzureLogsIngestionOutput : IOutputAdapter
+public sealed class AzureLogsIngestionOutput : IOutputAdapter, IOutputConcurrencyStatus
 {
     private readonly AzureLogsIngestionOptions options;
     private readonly LogsIngestionClient client;
+    private readonly TimeProvider clock;
+    private readonly AdaptiveConcurrencyController concurrency;
 
     public AzureLogsIngestionOutput(
         AzureLogsIngestionOptions options,
         TokenCredential credential,
-        LogsIngestionClientOptions? clientOptions = null)
+        LogsIngestionClientOptions? clientOptions = null,
+        TimeProvider? timeProvider = null)
     {
         options.Validate();
         this.options = options;
+        clock = timeProvider ?? TimeProvider.System;
+        // One controller per output (one DCR stream), or one per delivery with
+        // ConcurrencyScope.Delivery. MaximumConcurrency is its ceiling.
+        concurrency = new AdaptiveConcurrencyController(options.MaximumConcurrency);
         clientOptions ??= new LogsIngestionClientOptions();
         // Long server delays belong in the durable queue, never an in-memory SDK sleep.
         clientOptions.RetryPolicy = new DurableRetryPolicy(clientOptions.Retry);
+        clientOptions.AddPolicy(new ConcurrencyObserverPolicy(clock), HttpPipelinePosition.PerRetry);
         client = new LogsIngestionClient(options.Endpoint, credential, clientOptions);
     }
 
     public string Id => options.Id;
+
+    public OutputConcurrencySnapshot? GetConcurrencySnapshot() => options.ConcurrencyScope == ConcurrencyScope.Output
+        ? concurrency.Snapshot(Id, clock.GetUtcNow())
+        : null;
 
     public async Task<DeliveryResult> DeliverAsync(
         IReadOnlyList<QueuedEvent> events,
@@ -102,11 +114,40 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
         ConcurrentBag<DeliveryFailure> uploadFailures = [];
         ConcurrentBag<string> isolatedBadRequests = [];
         int isolationBudget = 16;
-        await Parallel.ForEachAsync(batches, new ParallelOptions
+        // The observer policy reports every attempt of this delivery's uploads here.
+        DeliveryScope scope = new(options.ConcurrencyScope == ConcurrencyScope.Output
+            ? concurrency
+            : new AdaptiveConcurrencyController(options.MaximumConcurrency));
+        DeliveryScope.Current.Value = scope;
+        List<Task> uploads = new(batches.Count);
+        try
         {
-            MaxDegreeOfParallelism = options.MaximumConcurrency,
-            CancellationToken = cancellationToken
-        }, async (batch, token) => await UploadBatchAsync(batch, token));
+            for (int index = 0; index < batches.Count; index++)
+            {
+                // Back-pressure: wait for a slot under the adaptive limit, in batch order.
+                await scope.Controller.AcquireAsync(cancellationToken);
+                if (scope.PausedUntil(clock.GetUtcNow()) is { } until)
+                {
+                    scope.Controller.Release();
+                    // Never sent: keep the records retryable behind the destination circuit.
+                    foreach (PreparedRecord record in batches.Skip(index).SelectMany(batch => batch))
+                    {
+                        uploadFailures.Add(new DeliveryFailure(record.EventId, "destination-azure-paused", true, until));
+                    }
+
+                    break;
+                }
+
+                uploads.Add(UploadSlotAsync(batches[index], cancellationToken));
+            }
+        }
+        finally
+        {
+            // Observe every started upload, even when cancellation stopped the loop.
+            await Task.WhenAll(uploads).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        }
+
+        await Task.WhenAll(uploads);
         HashSet<string> accepted = new(acknowledged, StringComparer.Ordinal);
         HashSet<string> isolated = new(isolatedBadRequests, StringComparer.Ordinal);
         failures.AddRange(uploadFailures.Select(failure => accepted.Count > 0 && isolated.Contains(failure.EventId)
@@ -116,6 +157,18 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
             records.Where(record => accepted.Contains(record.EventId)).Select(record => record.EventId).ToArray(),
             failures,
             accepted.Count == 0 ? null : "azure-logs-ingestion:accepted:owned-batches");
+
+        async Task UploadSlotAsync(List<PreparedRecord> batch, CancellationToken token)
+        {
+            try
+            {
+                await UploadBatchAsync(batch, token);
+            }
+            finally
+            {
+                scope.Controller.Release();
+            }
+        }
 
         async Task UploadBatchAsync(List<PreparedRecord> batch, CancellationToken token)
         {
@@ -142,7 +195,7 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
                         ErrorOptions = ErrorOptions.NoThrow
                     });
                 status = response.Status;
-                DateTimeOffset now = DateTimeOffset.UtcNow;
+                DateTimeOffset now = clock.GetUtcNow();
                 retryAfter = ReadRetryAfter(response, now);
                 retryCapped = retryAfter > now.Add(MaximumDurableRetryDelay);
                 if (retryCapped) retryAfter = now.Add(MaximumDurableRetryDelay);
@@ -161,7 +214,7 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
 
             // An ambiguous 400 is not proof of record poison. Bounded bisection lets
             // valid siblings progress. Singletons are held unless another record succeeds.
-            if (status == 400 && batch.Count > 1 && (retryAfter is null || retryAfter <= DateTimeOffset.UtcNow)
+            if (status == 400 && batch.Count > 1 && (retryAfter is null || retryAfter <= clock.GetUtcNow())
                 && Interlocked.Add(ref isolationBudget, -2) >= 0)
             {
                 int middle = batch.Count / 2;
@@ -170,7 +223,7 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
                 return;
             }
 
-            if (status == 400 && batch.Count == 1 && (retryAfter is null || retryAfter <= DateTimeOffset.UtcNow))
+            if (status == 400 && batch.Count == 1 && (retryAfter is null || retryAfter <= clock.GetUtcNow()))
                 isolatedBadRequests.Add(batch[0].EventId);
             foreach (PreparedRecord record in batch)
             {
@@ -199,7 +252,7 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
             HasLongDelay(message) ? ValueTask.FromResult(false) : base.ShouldRetryAsync(message, exception);
     }
 
-    private static DateTimeOffset? ReadRetryAfter(Response response, DateTimeOffset now)
+    internal static DateTimeOffset? ReadRetryAfter(Response response, DateTimeOffset now)
     {
         foreach (string name in new[] { "retry-after-ms", "x-ms-retry-after-ms", "Retry-After" })
         {
@@ -229,6 +282,9 @@ public sealed record AzureLogsIngestionOptions
 
     public int MaximumConcurrency { get; init; } = 4;
 
+    /// <summary>What one adaptive controller bounds; see <see cref="AzureLogsIngestion.ConcurrencyScope"/>.</summary>
+    public ConcurrencyScope ConcurrencyScope { get; init; } = ConcurrencyScope.Output;
+
     /// <summary>Stream schema used for preflight checks before upload.</summary>
     public SentinelSchema Schema { get; init; } = SentinelSchema.Default;
 
@@ -248,6 +304,19 @@ public sealed record AzureLogsIngestionOptions
             throw new ArgumentOutOfRangeException(nameof(MaximumConcurrency));
         }
     }
+}
+
+/// <summary>What one adaptive concurrency controller bounds.</summary>
+public enum ConcurrencyScope
+{
+    /// <summary>Every delivery of the output (one DCR stream): the collector's single delivery loop.</summary>
+    Output,
+
+    /// <summary>
+    /// Each delivery on its own, as the fixed setting did: hosts that deliver many
+    /// caller requests concurrently through one output (Azure Functions).
+    /// </summary>
+    Delivery
 }
 
 /// <summary>One upload entry: the record exactly as it is sent, and its event id.</summary>

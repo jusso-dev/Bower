@@ -143,6 +143,64 @@ public sealed class CollectorHostTests
     }
 
     [Fact]
+    public async Task Status_ReportsAdaptiveDeliveryConcurrencyAsMetadataOnly()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        ConcurrencyReportingOutput output = new();
+        await using WebApplication app = CollectorApplication.Build(
+            BaseSettings(directory.Path) with { IngestToken = Token },
+            builder => builder.WebHost.UseTestServer(),
+            output);
+        await CollectorApplication.InitializeAsync(app, cancellationToken);
+        await app.StartAsync(cancellationToken);
+        HttpClient client = app.GetTestClient();
+
+        using HttpRequestMessage statusRequest = new(HttpMethod.Get, "/v1/status");
+        statusRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Token);
+        using HttpResponseMessage status = await client.SendAsync(statusRequest, cancellationToken);
+        string body = await status.Content.ReadAsStringAsync(cancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, status.StatusCode);
+        // Same text as the Rust collector (collector_host.rs).
+        Assert.Contains(
+            """
+            "delivery":{"outputId":"azure-logs-ingestion","limit":2,"minimumLimit":1,"maximumLimit":4,"inFlight":1,"latencyEwmaMilliseconds":163,"requests":9,"throttles":3,"serverErrors":1,"timeouts":0,"latencySpikes":1,"decreases":2,"increases":1,"pauses":1,"processLocalPausedUntil":"2026-07-26T02:16:19+00:00"}
+            """.Trim(),
+            body,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Status_OmitsDeliveryWhenTheOutputDoesNotAdaptConcurrency()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await StartAsync(directory, Token, cancellationToken);
+        HttpClient client = app.GetTestClient();
+
+        using HttpRequestMessage statusRequest = new(HttpMethod.Get, "/v1/status");
+        statusRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Token);
+        using HttpResponseMessage status = await client.SendAsync(statusRequest, cancellationToken);
+
+        Assert.DoesNotContain("\"delivery\"", await status.Content.ReadAsStringAsync(cancellationToken), StringComparison.Ordinal);
+    }
+
+    private sealed class ConcurrencyReportingOutput : Bower.Abstractions.IOutputAdapter, Bower.Abstractions.IOutputConcurrencyStatus
+    {
+        public string Id => "azure-logs-ingestion";
+
+        public Task<Bower.Abstractions.DeliveryResult> DeliverAsync(
+            IReadOnlyList<Bower.Abstractions.QueuedEvent> events,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new Bower.Abstractions.DeliveryResult(
+                [], [.. events.Select(item => new Bower.Abstractions.DeliveryFailure(item.EventId, "destination-test", true, null))], null));
+
+        public Bower.Abstractions.OutputConcurrencySnapshot? GetConcurrencySnapshot() =>
+            new(Id, 2, 1, 4, 1, 163, 9, 3, 1, 0, 1, 2, 1, 1, TestEvents.Now.AddMinutes(2));
+    }
+
+    [Fact]
     public async Task Ingest_RateLimitsBursts()
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;

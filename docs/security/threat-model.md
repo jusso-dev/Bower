@@ -67,6 +67,11 @@ evidence.
   loopback and refuses to start without one. Kubernetes manifests add a
   NetworkPolicy limiting ingress to labelled producer pods. `/health` exposes
   status only; queue and job metadata need the token.
+- Destination overload and throttling: the Logs Ingestion output adapts request
+  concurrency (bounded 1 to `MaximumConcurrency`) and stops starting batches after
+  a `Retry-After`. Back-pressure waits for a request slot over the already-leased
+  batch; queue byte caps and producer 503s still apply. The `delivery` status block
+  is counters, limits and a deadline only, behind the token. No new trust boundary.
 - Management API abuse: Entra-only endpoints, per-principal rate limiting, HSTS on
   HTTPS, restricted CORS headers and methods, and fixed error messages that never
   echo framework exception detail or server paths.

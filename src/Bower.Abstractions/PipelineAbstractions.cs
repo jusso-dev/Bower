@@ -288,6 +288,37 @@ public interface IOutputAdapter
         CancellationToken cancellationToken = default);
 }
 
+/// <summary>Implemented by outputs that adapt request concurrency; read by status.</summary>
+public interface IOutputConcurrencyStatus
+{
+    /// <summary>Null when the output keeps no output-wide controller.</summary>
+    OutputConcurrencySnapshot? GetConcurrencySnapshot();
+}
+
+/// <summary>
+/// Adaptive request concurrency of one output stream: current limit and bounds, requests
+/// in flight, latency EWMA and counters since start. Metadata only. Process-local: it
+/// resets on restart. <see cref="ProcessLocalPausedUntil"/> is this process's last
+/// Retry-After deadline; across restarts the queue's durable destination circuit holds
+/// the stream.
+/// </summary>
+public sealed record OutputConcurrencySnapshot(
+    string OutputId,
+    int Limit,
+    int MinimumLimit,
+    int MaximumLimit,
+    int InFlight,
+    long? LatencyEwmaMilliseconds,
+    long Requests,
+    long Throttles,
+    long ServerErrors,
+    long Timeouts,
+    long LatencySpikes,
+    long Decreases,
+    long Increases,
+    long Pauses,
+    DateTimeOffset? ProcessLocalPausedUntil);
+
 public sealed record DeliveryResult(
     IReadOnlyList<string> AcknowledgedEventIds,
     IReadOnlyList<DeliveryFailure> Failures,

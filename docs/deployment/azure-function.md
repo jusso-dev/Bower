@@ -196,6 +196,8 @@ BowerSecurity_CL
 
 Logs Ingestion limits are enforced by the existing output unchanged: 1 MiB per
 upload, schema preflight (lengths, types), owned batches and Retry-After handling.
+Adaptive request concurrency is per request (`ConcurrencyScope.Delivery`): one
+throttled request never lowers the bound of the other requests on the instance.
 SDK retries are bounded (2 retries, ≤ 4 s back-off, 20 s network timeout) and the
 whole delivery is bounded by `BOWER_DELIVERY_TIMEOUT_SECONDS`, so producers see a
 prompt 503 instead of a long hold. Permanent record failures (preflight, oversized

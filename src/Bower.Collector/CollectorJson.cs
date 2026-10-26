@@ -48,6 +48,10 @@ internal sealed record StatusResponse(
     /// <summary>Expected sources; omitted when BOWER_SOURCE_EXPECTATIONS is not set.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<Bower.Core.SourceSilenceStatus>? Sources { get; init; }
+
+    /// <summary>Adaptive request concurrency of the output; omitted when it has none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Bower.Abstractions.OutputConcurrencySnapshot? Delivery { get; init; }
 }
 
 internal sealed record StatusPolicyResponse(

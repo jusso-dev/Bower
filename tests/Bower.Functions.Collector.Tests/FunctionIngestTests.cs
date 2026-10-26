@@ -300,6 +300,58 @@ public sealed class FunctionIngestTests
         Assert.Equal(202, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Output_bounds_each_request_not_every_concurrent_request_on_the_instance()
+    {
+        // The host shares one output across up to httpPerInstanceConcurrency (16) requests.
+        // Each request keeps its own adaptive bound, as the fixed setting did.
+        ConcurrentHoldHandler handler = new(16);
+        AzureLogsIngestionOutput output = RealOutput(Harness.Settings(), handler);
+
+        DeliveryResult[] results = await Task.WhenAll(Enumerable.Range(0, 16).Select(index =>
+        {
+            string eventId = $"concurrent-{index}";
+            return output.DeliverAsync(
+                [new QueuedEvent(eventId, $"sha256:{eventId}",
+                    JsonSerializer.Serialize(new { eventId, timeGenerated = "2026-10-08T00:00:00Z" }), DateTimeOffset.UtcNow)],
+                TestContext.Current.CancellationToken);
+        }));
+
+        Assert.All(results, result => Assert.Single(result.AcknowledgedEventIds));
+        Assert.Equal(16, handler.Peak);
+        Assert.Null(output.GetConcurrencySnapshot());
+    }
+
+    private sealed class ConcurrentHoldHandler(int hold) : HttpMessageHandler
+    {
+        private readonly TaskCompletionSource all = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int inFlight;
+        private int peak;
+
+        public int Peak => Volatile.Read(ref peak);
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            int current = Interlocked.Increment(ref inFlight);
+            int seen;
+            while ((seen = Volatile.Read(ref peak)) < current && Interlocked.CompareExchange(ref peak, current, seen) != seen)
+            {
+            }
+
+            if (current >= hold) all.TrySetResult();
+            try
+            {
+                // Fails the request (and the test) if the requests cannot all be in flight.
+                await all.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+                return new HttpResponseMessage(HttpStatusCode.NoContent) { Content = new StringContent("{}") };
+            }
+            finally
+            {
+                Interlocked.Decrement(ref inFlight);
+            }
+        }
+    }
+
     private static AzureLogsIngestionOutput RealOutput(FunctionSettings settings, HttpMessageHandler handler) =>
         FunctionCollectorServices.CreateOutput(settings, new StaticCredential(), new LogsIngestionClientOptions
         {
