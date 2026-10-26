@@ -1004,3 +1004,172 @@ fn policy_test_matches_csharp() {
         utf16le.stdout
     );
 }
+
+#[test]
+fn policy_diff_bundles_match_csharp() {
+    let Some(cs) = csharp() else {
+        eprintln!("skipping: no runnable C# bower binary");
+        return;
+    };
+    let cwd = repo_root().join("rust/crates/bower-cli/tests/fixtures/bundle-diff");
+    let fixtures = repo_root().join("rust/crates/bower-packs/tests/fixtures");
+    let file = |name: &str| fixtures.join(name).to_string_lossy().into_owned();
+    let (old_pack, new_pack) = (
+        file("aws-security-1.0.0.bowerpack"),
+        file("aws-security-1.1.0.bowerpack"),
+    );
+    let (old_key, new_key) = (
+        file("csharp-signing.pub.pem"),
+        file("csharp-current-signing.pub.pem"),
+    );
+    let policies = repo_root()
+        .join("packs/aws-security/policies")
+        .to_string_lossy()
+        .into_owned();
+    let samples = [
+        "root-login.json",
+        "access-key.json",
+        "page-view.json",
+        "future.json",
+    ];
+    let at = "2026-10-17T01:02:03Z";
+    let cases: Vec<Vec<&str>> = vec![
+        vec![
+            "--baseline",
+            &policies,
+            "--candidate-pack",
+            &new_pack,
+            "--candidate-trusted-key",
+            &new_key,
+            "--at",
+            at,
+        ],
+        vec![
+            "--baseline-pack",
+            &old_pack,
+            "--baseline-trusted-key",
+            &old_key,
+            "--candidate-pack",
+            &new_pack,
+            "--candidate-trusted-key",
+            &new_key,
+            "--candidate-privacy-profile",
+            "mask-aws-keys.privacy.yaml",
+            "--at",
+            at,
+            "--fail-on-change",
+        ],
+        vec![
+            "--baseline",
+            &policies,
+            "--candidate",
+            &policies,
+            "--at",
+            "2026-10-17T11:02:03+10:00",
+        ],
+        // Untrusted signer, then no trusted key: both fail before any sample is evaluated.
+        vec![
+            "--baseline",
+            &policies,
+            "--candidate-pack",
+            &new_pack,
+            "--candidate-trusted-key",
+            &old_key,
+        ],
+        vec!["--baseline", &policies, "--candidate-pack", &new_pack],
+        vec![
+            "--baseline",
+            &policies,
+            "--candidate-privacy-profile",
+            "mask-aws-keys.privacy.yaml",
+        ],
+        vec![
+            "--baseline",
+            &policies,
+            "--candidate",
+            &policies,
+            "--at",
+            "soon",
+        ],
+        // Directory mode is unchanged.
+        vec![
+            "--baseline",
+            &policies,
+            "--candidate",
+            &policies,
+            "--fail-on-change",
+        ],
+        // Another field rule of the same detector, then a later finding's action.
+        vec![
+            "--baseline-pack",
+            &new_pack,
+            "--baseline-trusted-key",
+            &new_key,
+            "--baseline-privacy-profile",
+            "remove-username.privacy.yaml",
+            "--candidate-pack",
+            &new_pack,
+            "--candidate-trusted-key",
+            &new_key,
+            "--candidate-privacy-profile",
+            "remove-username-and-ip.privacy.yaml",
+            "--at",
+            at,
+            "--fail-on-change",
+        ],
+        vec![
+            "--baseline-pack",
+            &new_pack,
+            "--baseline-trusted-key",
+            &new_key,
+            "--baseline-privacy-profile",
+            "remove-username-and-ip.privacy.yaml",
+            "--candidate-pack",
+            &new_pack,
+            "--candidate-trusted-key",
+            &new_key,
+            "--candidate-privacy-profile",
+            "remove-username-mask-ip.privacy.yaml",
+            "--at",
+            at,
+        ],
+        // A named directory must exist even when the side has packs.
+        vec![
+            "--baseline",
+            &policies,
+            "--candidate",
+            "no-such-directory",
+            "--candidate-pack",
+            &new_pack,
+            "--candidate-trusted-key",
+            &new_key,
+        ],
+    ];
+    let mut cases = cases;
+    for value in [
+        "01:02",
+        "2026-10-17",
+        "2026-10-17T01:02:03",
+        "2026-10-17T01:02:03.123456789Z",
+        "10/17/2026",
+        "Oct 17 2026",
+        "2026-10-17T01:02:03.1234567Z",
+        "2026-10-17T01:02Z",
+    ] {
+        cases.push(vec![
+            "--baseline",
+            &policies,
+            "--candidate",
+            &policies,
+            "--at",
+            value,
+        ]);
+    }
+    for case in &cases {
+        let mut args = vec!["policy", "diff"];
+        args.extend_from_slice(case);
+        args.extend_from_slice(&samples);
+        let run = assert_same(&cs, &cwd, &args);
+        assert!(!run.stdout.contains("AKIA"));
+    }
+}

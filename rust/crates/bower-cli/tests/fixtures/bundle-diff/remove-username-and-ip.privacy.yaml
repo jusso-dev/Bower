@@ -1,0 +1,9 @@
+apiVersion: bower.security/v1
+kind: PrivacyProfile
+metadata: { id: bundle-diff-remove-username-and-ip, version: 1.0.0 }
+# Synthetic test profile: a second field rule shares the field-rule detector id.
+fields:
+  - path: actor.username
+    action: remove
+  - path: source.ipAddress
+    action: remove

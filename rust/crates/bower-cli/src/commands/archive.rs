@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use bower_contracts::time::{self, Timestamp};
+use bower_contracts::time;
 use bower_contracts::{DurableEventStore, JsonElement, LedgerHead};
 use bower_core::source_expectations;
 use bower_persistence::{ArchiveVerification, QueueArchive};
@@ -14,7 +14,7 @@ use crate::cli::{ArchiveCreateArgs, ArchiveReplayArgs, ArchiveVerifyArgs, Source
 use crate::commands::queue::{open_existing, store_error};
 use crate::commands::{block_on, timeout_message};
 use crate::output::Json;
-use crate::support::{CliError, CliResult, ensure_slash, required};
+use crate::support::{CliError, CliResult, ensure_slash, required, timestamp};
 
 const REPLAY_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -100,20 +100,6 @@ pub fn parse_anchor(value: Option<&str>) -> CliResult<Option<LedgerHead>> {
         .ok_or_else(|| CliError::new("--anchor must be SEQUENCE:HASH (64 lower-case hex digits)."))
 }
 
-/// `DateTimeOffset.Parse(value, InvariantCulture, AssumeUniversal | AdjustToUniversal)`
-/// for ISO 8601 text. Other .NET-accepted shapes are refused (fail closed).
-fn parse_time(value: Option<&str>) -> CliResult<Option<Timestamp>> {
-    value
-        .map(|text| {
-            time::parse(text.trim()).map(time::to_utc).ok_or_else(|| {
-                CliError(format!(
-                    "The string '{text}' was not recognized as a valid DateTime. There is an unknown word starting at index '0'."
-                ))
-            })
-        })
-        .transpose()
-}
-
 fn is_stop(outcome: &str) -> bool {
     matches!(outcome, "unreachable" | "401" | "403" | "429") || outcome.starts_with('5')
 }
@@ -137,8 +123,8 @@ pub fn replay(args: &ArchiveReplayArgs) -> CliResult {
         return Ok(3);
     }
 
-    let from = parse_time(args.from.as_deref())?;
-    let to = parse_time(args.to.as_deref())?;
+    let from = timestamp(args.from.as_deref(), "--from")?;
+    let to = timestamp(args.to.as_deref(), "--to")?;
     let dry_run = args.dry_run;
     let collector = required(args.collector_url.as_deref(), "--collector-url")?;
     let base = reqwest::Url::parse(&ensure_slash(collector)).map_err(|_| {

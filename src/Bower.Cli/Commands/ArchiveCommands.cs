@@ -51,8 +51,8 @@ internal static class ArchiveCommands
             return 3;
         }
 
-        DateTimeOffset? from = ParseTime(CliOptions.Get(args, "--from"));
-        DateTimeOffset? to = ParseTime(CliOptions.Get(args, "--to"));
+        DateTimeOffset? from = CliOptions.Timestamp(CliOptions.Get(args, "--from"), "--from");
+        DateTimeOffset? to = CliOptions.Timestamp(CliOptions.Get(args, "--to"), "--to");
         HashSet<string> eventTypes = CliOptions.All(args, "--event-type").ToHashSet(StringComparer.Ordinal);
         bool dryRun = CliOptions.Has(args, "--dry-run");
         string collector = CliOptions.Required(args, "--collector-url");
@@ -133,11 +133,6 @@ internal static class ArchiveCommands
                 ? new LedgerHead(sequence, parts[1])
                 : throw new ArgumentException("--anchor must be SEQUENCE:HASH (64 lower-case hex digits).");
     }
-
-    private static DateTimeOffset? ParseTime(string? value) =>
-        value is null
-            ? null
-            : DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
 }
 
 internal static class SourceCommands

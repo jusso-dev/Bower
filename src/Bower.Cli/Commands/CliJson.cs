@@ -110,6 +110,75 @@ internal sealed record PolicyDiffOutcome(
     [property: JsonPropertyName("decision")] string Decision,
     [property: JsonPropertyName("policyId")] string? PolicyId);
 
+/// <summary>
+/// <c>bower policy diff</c> bundle comparison: the directory-mode fields first (same names),
+/// then provenance and offline limits. Metadata only: no event content or matched values.
+/// </summary>
+internal sealed record PolicyBundleDiffOutput(
+    [property: JsonPropertyName("baselineBundleHash")] string BaselineBundleHash,
+    [property: JsonPropertyName("candidateBundleHash")] string CandidateBundleHash,
+    [property: JsonPropertyName("events")] int Events,
+    [property: JsonPropertyName("changed")] int Changed,
+    [property: JsonPropertyName("changes")] IReadOnlyList<PolicyBundleDiffChange> Changes,
+    [property: JsonPropertyName("evaluatedAt")] DateTimeOffset EvaluatedAt,
+    [property: JsonPropertyName("baselineBundle")] PolicyBundleProvenance BaselineBundle,
+    [property: JsonPropertyName("candidateBundle")] PolicyBundleProvenance CandidateBundle,
+    [property: JsonPropertyName("notExercisedOffline")] IReadOnlyList<string> NotExercisedOffline);
+
+internal sealed record PolicyBundleDiffChange(
+    [property: JsonPropertyName("file")] string File,
+    [property: JsonPropertyName("eventId")] string? EventId,
+    [property: JsonPropertyName("baseline")] PolicyBundleOutcome Baseline,
+    [property: JsonPropertyName("candidate")] PolicyBundleOutcome Candidate,
+    [property: JsonPropertyName("changedFields")] IReadOnlyList<string> ChangedFields);
+
+/// <summary>One fixture's intake outcome under one bundle. Detector and rule ids only.</summary>
+internal sealed record PolicyBundleOutcome(
+    [property: JsonPropertyName("decision")] string Decision,
+    [property: JsonPropertyName("policyId")] string? PolicyId,
+    [property: JsonPropertyName("accepted")] bool Accepted,
+    [property: JsonPropertyName("failureStage")] string? FailureStage,
+    [property: JsonPropertyName("failureReasons")] IReadOnlyList<string> FailureReasons,
+    [property: JsonPropertyName("privacyActions")] IReadOnlyList<PolicyBundlePrivacyAction> PrivacyActions,
+    [property: JsonPropertyName("privacyFindings")] IReadOnlyList<PolicyBundlePrivacyFinding> PrivacyFindings,
+    [property: JsonPropertyName("removedCount")] int RemovedCount,
+    [property: JsonPropertyName("maskedCount")] int MaskedCount,
+    [property: JsonPropertyName("privacyAlert")] bool PrivacyAlert,
+    [property: JsonPropertyName("detections")] IReadOnlyList<PolicyBundleDetection> Detections);
+
+/// <summary>First action per detector, as the privacy metadata on the event records it.</summary>
+internal sealed record PolicyBundlePrivacyAction(
+    [property: JsonPropertyName("detector")] string Detector,
+    [property: JsonPropertyName("action")] string Action);
+
+/// <summary>One privacy finding: detector (with sub-kind), field path and action label. Never the value.</summary>
+internal sealed record PolicyBundlePrivacyFinding(
+    [property: JsonPropertyName("detector")] string Detector,
+    [property: JsonPropertyName("path")] string Path,
+    [property: JsonPropertyName("action")] string Action);
+
+internal sealed record PolicyBundleDetection(
+    [property: JsonPropertyName("ruleId")] string RuleId,
+    [property: JsonPropertyName("ruleVersion")] string RuleVersion,
+    [property: JsonPropertyName("ruleHash")] string RuleHash);
+
+internal sealed record PolicyBundleProvenance(
+    [property: JsonPropertyName("bundleHash")] string BundleHash,
+    [property: JsonPropertyName("policyCount")] int PolicyCount,
+    [property: JsonPropertyName("packs")] IReadOnlyList<PolicyBundlePack> Packs,
+    [property: JsonPropertyName("privacyProfile")] PolicyBundlePrivacyProfile? PrivacyProfile,
+    [property: JsonPropertyName("detectionRules")] int DetectionRules);
+
+internal sealed record PolicyBundlePack(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("version")] string Version,
+    [property: JsonPropertyName("packHash")] string PackHash);
+
+internal sealed record PolicyBundlePrivacyProfile(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("version")] string? Version,
+    [property: JsonPropertyName("hash")] string? Hash);
+
 /// <summary><c>bower archive create</c> output.</summary>
 internal sealed record ArchiveCreateOutput(
     [property: JsonPropertyName("segments")] int Segments,
@@ -164,6 +233,7 @@ internal sealed record SourceCheckItem(
 [JsonSerializable(typeof(PrivacyValidationOutput))]
 [JsonSerializable(typeof(PolicyTestOutput))]
 [JsonSerializable(typeof(PolicyDiffOutput))]
+[JsonSerializable(typeof(PolicyBundleDiffOutput))]
 [JsonSerializable(typeof(ArchiveReplayOutput))]
 [JsonSerializable(typeof(SourcesCheckOutput))]
 [JsonSerializable(typeof(ArchiveCreateOutput))]

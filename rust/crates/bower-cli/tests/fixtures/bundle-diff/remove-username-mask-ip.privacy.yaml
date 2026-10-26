@@ -1,0 +1,9 @@
+apiVersion: bower.security/v1
+kind: PrivacyProfile
+metadata: { id: bundle-diff-remove-username-mask-ip, version: 1.0.0 }
+# Synthetic test profile: only the later field-rule finding changes action.
+fields:
+  - path: actor.username
+    action: remove
+  - path: source.ipAddress
+    action: mask
