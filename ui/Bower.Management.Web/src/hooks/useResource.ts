@@ -19,9 +19,19 @@ export function useResource<T>(path: string, refresh = 0) {
     }
   }, [api, path]);
 
+  /** Refetches without the loading state, so the current view stays in place (polling). */
+  const revalidate = useCallback(async () => {
+    try {
+      setData(await api<T>(path));
+      setError(null);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Unknown request failure.");
+    }
+  }, [api, path]);
+
   useEffect(() => {
     void load();
   }, [load, refresh]);
 
-  return { data, loading, error, reload: load };
+  return { data, loading, error, reload: load, revalidate };
 }

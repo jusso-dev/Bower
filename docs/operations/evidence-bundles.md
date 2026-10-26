@@ -126,8 +126,9 @@ Every parser bundle lists what it did not test: generic intake, other packs and 
 other event types and privacy rules of the pack, upstream agents and readers, and any
 event other than the probe. A probe row is a real `authentication_failure` row in the
 table; filter `EventId startswith "bower-probe-"` out of analytics if needed. Probes run
-only when someone runs the command: there is no automatic scheduling and no remote
-trigger. The C# and Rust CLIs implement the same profiles, fixture bytes and outcomes.
+only when someone runs the command, or when an administrator chooses **Send test event**
+in the console's setup wizard (audited, one at a time; see
+[console onboarding](console-onboarding.md)): there is no automatic scheduling. The C# and Rust CLIs implement the same profiles, fixture bytes and outcomes.
 
 ## Modes
 

@@ -16,6 +16,21 @@ test("capture polished desktop overview", async ({ page }, testInfo) => {
   });
 });
 
+test("capture onboarding wizard", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "readme-chromium");
+  await page.goto("/setup");
+  const steps = page.getByRole("navigation", { name: "Setup steps" });
+  await steps.getByRole("button", { name: /^Step 4: Approve the first collector/ }).click();
+  await expect(page.getByRole("heading", { name: "Approve the first collector" })).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: path.join(screenshotDirectory, "bower-management-setup.png"),
+    fullPage: true,
+    animations: "disabled"
+  });
+});
+
 test("capture collector inventory", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "readme-chromium");
   await page.goto("/collectors");

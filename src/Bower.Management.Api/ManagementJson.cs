@@ -67,7 +67,19 @@ public sealed record PipelineValidationResponse(
 [JsonSerializable(typeof(IReadOnlyList<PrivacyProfileAssignment>))]
 [JsonSerializable(typeof(List<PrivacyProfileAssignment>))]
 [JsonSerializable(typeof(ManagedPrivacyProfile))]
+[JsonSerializable(typeof(SetupStatus))]
+[JsonSerializable(typeof(SetupDestinationRequest))]
+[JsonSerializable(typeof(SetupDestination))]
+[JsonSerializable(typeof(SetupProbeRequest))]
+[JsonSerializable(typeof(SetupProbeChoice))]
+[JsonSerializable(typeof(SetupCanaryRun))]
+[JsonSerializable(typeof(SetupCheckResult))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(Microsoft.AspNetCore.Mvc.ProblemDetails))]
 [JsonSerializable(typeof(HttpValidationProblemDetails))]
 public sealed partial class ManagementJsonContext : JsonSerializerContext;
+
+/// <summary>Signed evidence bundles as <c>bower evidence run</c> writes them (default options, indented).</summary>
+[JsonSourceGenerationOptions(WriteIndented = true)]
+[JsonSerializable(typeof(Bower.Evidence.SignedEvidence))]
+internal sealed partial class SetupEvidenceJsonContext : JsonSerializerContext;

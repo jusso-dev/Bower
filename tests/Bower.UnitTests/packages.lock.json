@@ -580,6 +580,8 @@
       "bower.management.api": {
         "type": "Project",
         "dependencies": {
+          "Bower.Dcr": "[1.0.0, )",
+          "Bower.Evidence": "[1.0.0, )",
           "Bower.Integrity": "[1.0.0, )",
           "Bower.Jobs": "[1.0.0, )",
           "Bower.Pipeline": "[1.0.0, )",

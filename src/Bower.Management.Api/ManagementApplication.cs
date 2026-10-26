@@ -149,6 +149,15 @@ public static class ManagementApplication
             options.IncludeSubDomains = true;
         });
 
+        // Onboarding canary: opt-in server configuration; invalid values fail start-up.
+        builder.Services.AddSingleton(SetupCanaryOptions.FromConfiguration(builder.Configuration));
+        builder.Services.AddSingleton(new SetupEnvironment(
+            developmentAuthentication,
+            builder.Configuration["Bower:Entra:TenantId"],
+            builder.Configuration["Bower:Entra:Audience"]));
+        builder.Services.AddSingleton<ISetupEvidenceClientFactory, SetupEvidenceClientFactory>();
+        builder.Services.AddSingleton<SetupCanaryService>();
+
         builder.Services.AddBowerBackgroundJobs("bower-management", workerCount: 1);
         builder.Services.AddTransient<CollectorStalenessJob>();
         builder.Services.AddTransient<CollectorInactivityJob>();
@@ -231,7 +240,11 @@ public static class ManagementApplication
     /// <summary>Initialises storage and registers recurring jobs. Call before RunAsync.</summary>
     public static async Task InitializeAsync(WebApplication app, CancellationToken cancellationToken)
     {
-        await app.Services.GetRequiredService<ManagementStore>().InitializeAsync(cancellationToken);
+        ManagementStore store = app.Services.GetRequiredService<ManagementStore>();
+        await store.InitializeAsync(cancellationToken);
+        // A canary left running by a previous process can never complete.
+        await store.InterruptSetupCanaryRunsAsync(
+            app.Services.GetRequiredService<TimeProvider>().GetUtcNow(), cancellationToken);
         RecurringJobRegistry jobs = app.Services.GetRequiredService<RecurringJobRegistry>();
         jobs.AddOrUpdate<CollectorStalenessJob>(
             CollectorStalenessJob.Id,
@@ -556,6 +569,7 @@ public static class ManagementApplication
             .RequireAuthorization("Administer");
 
         PrivacyProfileEndpoints.Map(api);
+        SetupEndpoints.Map(api);
 
         api.MapGet(
                 "/audit",

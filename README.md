@@ -269,6 +269,15 @@ cd ui/Bower.Management.Web && npm run seed:preview
 The seed script refuses to run unless the API reports development
 authentication. Then walk through the console:
 
+0. **Setup** takes a new tenant from empty to a test event found in Microsoft
+   Sentinel without the CLI: sign-in and Entra role checks, workspace and DCR (with a
+   read-only drift check and a template download), first collector approval, the probe
+   to run, the test event and its query-verified proof. Progress is saved on the
+   server; only administrators change it. See
+   [console onboarding](docs/operations/console-onboarding.md).
+
+   ![Setup wizard: seven steps with plain-language status, the collector approval step with checks and suggested fixes](docs/images/bower-management-setup.png)
+
 1. **Overview** (shown at the top of this README) puts exceptions first: the
    pending `hr-app-02`, the degraded `claims-api-03` with 1,294 queued events,
    and the suspended `records-app-04`.

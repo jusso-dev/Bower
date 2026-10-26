@@ -101,6 +101,14 @@ evidence.
 - Management API abuse: Entra-only endpoints, per-principal rate limiting, HSTS on
   HTTPS, restricted CORS headers and methods, and fixed error messages that never
   echo framework exception detail or server paths.
+- Onboarding canary (`/setup`, optional): the management API can hold a canary
+  ingest token (a file read per run, at most 4 KiB, never returned, logged or stored)
+  and a read-only verifier identity. Only `Bower.Administrator` starts a run, one at a
+  time, each audited. The token should be a dedicated producer ID scoped to the canary
+  identity. Workspace, DCR and table identifiers are validated against strict patterns
+  before any Azure call (no `..` path segments). Results are metadata only; errors map
+  to fixed messages and only exception type names are logged. Proof is shown only for a
+  destination-query-verified run. See [console onboarding](../operations/console-onboarding.md).
 - Local management exposure: HTTP listener defaults to loopback and has body limit.
   Named pipe and Unix socket transports remain required.
 - Supply chain: central pinned packages, restore vulnerability audit, warnings as

@@ -131,6 +131,7 @@ public sealed partial class ManagementStore(string databasePath)
         await AddColumnIfMissingAsync(
             connection, "collectors", "reported_privacy_profile_hash", "TEXT NULL", cancellationToken);
         await InitializeHeartbeatV2Async(connection, cancellationToken);
+        await InitializeSetupAsync(connection, cancellationToken);
     }
 
     public async Task<CollectorRecord> RegisterAsync(
