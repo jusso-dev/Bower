@@ -130,6 +130,28 @@ public static partial class CustomLogParser
 
     private const int MaximumPreviewTokenLength = 64;
 
+    private const string ApachePattern =
+        "^(?<source_ip>\\S+)\\s+\\S+\\s+(?<identity>\\S+)\\s+\\[(?<timestamp>[^\\]]+)\\]\\s+\"(?<method>[A-Z]+)\\s+(?<path>\\S+)(?:\\s+[^\"]+)?\"\\s+(?<status>\\d{3})(?:\\s+(?<bytes>\\d+|-))?.*$";
+
+    private const string TimestampSeverityPattern =
+        "^(?<timestamp>\\d{4}-\\d{2}-\\d{2}[T ][^\\s]+)\\s+(?<severity>TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL|CRITICAL)\\s+(?<message>.*)$";
+
+    private const string SyslogPattern =
+        "^(?:<\\d+>)?(?<timestamp>\\w{3}\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2})\\s+(?<host>\\S+)\\s+(?<application>[\\w.-]+)(?:\\[(?<process_id>\\d+)\\])?:\\s*(?<message>.*)$";
+
+    // Closed vocabulary a regex text capture may preview: severities, HTTP methods and
+    // outcome words. Anything else a capture holds could be arbitrary line content.
+    private static readonly HashSet<string> PreviewVocabulary = new(
+        [
+            "trace", "debug", "info", "information", "notice", "warn", "warning", "error", "err",
+            "fatal", "critical", "crit", "alert", "emerg", "emergency",
+            "get", "head", "post", "put", "patch", "delete", "options", "connect",
+            "success", "succeeded", "successful", "failure", "failed", "fail", "allow", "allowed",
+            "deny", "denied", "accept", "accepted", "reject", "rejected", "block", "blocked",
+            "ok", "pass", "passed", "drop", "dropped"
+        ],
+        StringComparer.OrdinalIgnoreCase);
+
     // Server-owned preview floor: every built-in detector, opt-in ones included, whatever
     // the submitted configuration says. Public identifiers the default policy allows (ABN,
     // ACN, SWIFT BIC) are skipped so severities such as CRITICAL still preview. Detectors
@@ -260,6 +282,8 @@ public static partial class CustomLogParser
             StringComparer.Ordinal);
         List<CustomLogPreviewRow> rows = [];
         int rejected = 0;
+        bool operatorRegex = configuration.Format == CustomLogFormat.Regex
+            && configuration.Pattern is not (ApachePattern or TimestampSeverityPattern or SyslogPattern);
 
         foreach (SourceRecord record in records)
         {
@@ -271,6 +295,15 @@ public static partial class CustomLogParser
             {
                 if (!record.Values.TryGetValue(sourceName, out string? value))
                 {
+                    if (operatorRegex)
+                    {
+                        values[sourceName] = new CustomLogPreviewValue(
+                            field.Type,
+                            RedactionMarker(field.Type),
+                            field.OcsfPath,
+                            field.AsimField,
+                            true);
+                    }
                     continue;
                 }
 
@@ -281,7 +314,8 @@ public static partial class CustomLogParser
                     break;
                 }
 
-                bool redacted = field.Sensitive
+                bool redacted = operatorRegex
+                    || field.Sensitive
                     || IsFreeText(field)
                     || RequiresPreviewMasking(field, value, record, lineMatches);
                 values[sourceName] = new CustomLogPreviewValue(
@@ -426,7 +460,7 @@ public static partial class CustomLogParser
         }
 
         detection = requested ?? Detect(normalized, lines);
-        return detection.Format switch
+        IReadOnlyList<SourceRecord> records = detection.Format switch
         {
             CustomLogFormat.Json => ParseJson(normalized, lines),
             CustomLogFormat.Csv => ParseCsv(lines, detection.Delimiter!),
@@ -434,7 +468,70 @@ public static partial class CustomLogParser
             CustomLogFormat.Regex => ParseRegex(lines, detection.Pattern!),
             _ => throw new InvalidDataException("Unsupported custom log format.")
         };
+        return AliasValueLikeNames(records);
     }
+
+    /// <summary>
+    /// Field names come from the sample (JSON keys, key/value keys, CSV headers), so a
+    /// name can carry data. Names that look like data become neutral <c>field_N</c>
+    /// aliases, in order of first appearance, and are never echoed.
+    /// </summary>
+    private static IReadOnlyList<SourceRecord> AliasValueLikeNames(IReadOnlyList<SourceRecord> records)
+    {
+        HashSet<string> taken = records
+            .SelectMany(record => record.Values.Keys)
+            .ToHashSet(StringComparer.Ordinal);
+        Dictionary<string, string> aliases = new(StringComparer.Ordinal);
+        int next = 0;
+        foreach (string name in records.SelectMany(record => record.Values.Keys).Distinct(StringComparer.Ordinal))
+        {
+            if (!IsValueLikeName(name))
+            {
+                continue;
+            }
+            string alias;
+            do
+            {
+                alias = $"field_{++next}";
+            }
+            while (!taken.Add(alias));
+            aliases[name] = alias;
+        }
+        if (aliases.Count == 0)
+        {
+            return records;
+        }
+
+        return records
+            .Select(record => record with
+            {
+                Values = record.Values.ToDictionary(
+                    pair => aliases.GetValueOrDefault(pair.Key, pair.Key),
+                    pair => pair.Value,
+                    StringComparer.Ordinal),
+                Spans = record.Spans?.ToDictionary(
+                    pair => aliases.GetValueOrDefault(pair.Key, pair.Key),
+                    pair => pair.Value,
+                    StringComparer.Ordinal)
+            })
+            .ToArray();
+    }
+
+    private static bool IsValueLikeName(string name) =>
+        ContainsIpAddress(name)
+        || name.Split('.').Any(segment => segment.Length > 0 && segment.All(char.IsAsciiDigit))
+        || FindSensitiveSpans(name).Count > 0;
+
+    /// <summary>A header cell that parses as a typed value means the first row is data.</summary>
+    private static bool LooksLikeData(string cell) =>
+        long.TryParse(cell, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)
+        || bool.TryParse(cell, out _)
+        || (cell.Any(char.IsAsciiDigit) && DateTimeOffset.TryParse(
+            cell,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeUniversal,
+            out _))
+        || IsValueLikeName(cell);
 
     private static Detection Detect(string sample, string[] lines)
     {
@@ -620,7 +717,7 @@ public static partial class CustomLogParser
 
         List<string> headers = SplitDelimited(lines[0], delimiter[0]);
         if (headers.Count is < 2 or > MaximumFields
-            || headers.Any(header => !IsValidFieldName(header))
+            || headers.Any(header => !IsValidFieldName(header) || LooksLikeData(header))
             || headers.Distinct(StringComparer.Ordinal).Count() != headers.Count)
         {
             return false;
@@ -745,29 +842,23 @@ public static partial class CustomLogParser
         out string pattern,
         out string rationale)
     {
-        const string apachePattern =
-            "^(?<source_ip>\\S+)\\s+\\S+\\s+(?<identity>\\S+)\\s+\\[(?<timestamp>[^\\]]+)\\]\\s+\"(?<method>[A-Z]+)\\s+(?<path>\\S+)(?:\\s+[^\"]+)?\"\\s+(?<status>\\d{3})(?:\\s+(?<bytes>\\d+|-))?.*$";
-        if (AllMatch(lines, apachePattern))
+        if (AllMatch(lines, ApachePattern))
         {
-            pattern = apachePattern;
+            pattern = ApachePattern;
             rationale = "Records match a bounded common HTTP access-log expression.";
             return true;
         }
 
-        const string timestampSeverityPattern =
-            "^(?<timestamp>\\d{4}-\\d{2}-\\d{2}[T ][^\\s]+)\\s+(?<severity>TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL|CRITICAL)\\s+(?<message>.*)$";
-        if (AllMatch(lines, timestampSeverityPattern))
+        if (AllMatch(lines, TimestampSeverityPattern))
         {
-            pattern = timestampSeverityPattern;
+            pattern = TimestampSeverityPattern;
             rationale = "Records share timestamp, severity and message positions.";
             return true;
         }
 
-        const string syslogPattern =
-            "^(?:<\\d+>)?(?<timestamp>\\w{3}\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2})\\s+(?<host>\\S+)\\s+(?<application>[\\w.-]+)(?:\\[(?<process_id>\\d+)\\])?:\\s*(?<message>.*)$";
-        if (AllMatch(lines, syslogPattern))
+        if (AllMatch(lines, SyslogPattern))
         {
-            pattern = syslogPattern;
+            pattern = SyslogPattern;
             rationale = "Records match a bounded RFC 3164-style syslog expression.";
             return true;
         }
@@ -814,16 +905,14 @@ public static partial class CustomLogParser
             Dictionary<string, (int Start, int Length)> spans = new(StringComparer.Ordinal);
             foreach (string group in groups)
             {
-                if (!IsProhibited(group) && match.Groups[group].Success)
+                // A zero-length capture is indistinguishable from a group that did not take part.
+                if (!IsProhibited(group) && match.Groups[group].Success && match.Groups[group].Length > 0)
                 {
                     values[group] = match.Groups[group].Value;
                     spans[group] = (match.Groups[group].Index, match.Groups[group].Length);
                 }
             }
-            if (values.Count > 0)
-            {
-                parsed.Add(new SourceRecord(index + 1, values, spans, lines[index]));
-            }
+            parsed.Add(new SourceRecord(index + 1, values, spans, lines[index]));
         }
         return parsed;
     }
@@ -1086,9 +1175,10 @@ public static partial class CustomLogParser
 
     /// <summary>
     /// Minimum preview privacy owned by the server. Submitted sensitivity flags and
-    /// mappings can add masking but never remove it: IP values, sensitive field names,
-    /// text outside the known non-sensitive field names, text that is not a short token
-    /// and anything a built-in detector finds stay masked.
+    /// mappings can add masking but never remove it: IP types and values, any field
+    /// outside the known non-sensitive names, sensitive field names, text that is not a
+    /// short token, regex text outside the closed vocabulary and anything a built-in
+    /// detector finds stay masked.
     /// </summary>
     private static bool RequiresPreviewMasking(
         CustomLogField field,
@@ -1096,12 +1186,16 @@ public static partial class CustomLogParser
         SourceRecord record,
         List<DetectionMatch>? lineMatches)
     {
-        if (field.Type == CustomLogValueType.IpAddress || IsSensitiveFieldName(field.SourceName))
+        if (field.Type == CustomLogValueType.IpAddress
+            || MapField(field.SourceName).Sensitive
+            || IsSensitiveFieldName(field.SourceName)
+            || ContainsIpAddress(value))
         {
             return true;
         }
         if (field.Type == CustomLogValueType.Text
-            && (MapField(field.SourceName).Sensitive || !IsPreviewToken(value)))
+            && (!IsPreviewToken(value)
+                || (record.Spans is not null && !IsPreviewVocabulary(value))))
         {
             return true;
         }
@@ -1130,6 +1224,43 @@ public static partial class CustomLogParser
         value.Length <= MaximumPreviewTokenLength
         && value.All(character =>
             char.IsAsciiLetterOrDigit(character) || character is '.' or '_' or '-' or ':' or '+');
+
+    private static bool IsPreviewVocabulary(string value) =>
+        PreviewVocabulary.Contains(value)
+        || (value.Length == 3 && value.All(char.IsAsciiDigit));
+
+    /// <summary>
+    /// Strict IPv4 (dotted quad) or IPv6 anywhere in <paramref name="text"/>. Plain
+    /// integers, which <see cref="IPAddress.TryParse(string, out IPAddress)"/> also accepts,
+    /// do not count.
+    /// </summary>
+    private static bool ContainsIpAddress(string text)
+    {
+        foreach (Match token in AddressTokenRegex().Matches(text))
+        {
+            string value = token.Value;
+            foreach (string candidate in new[] { value, value.Trim('.', ':') })
+            {
+                if (!IPAddress.TryParse(candidate, out IPAddress? address))
+                {
+                    continue;
+                }
+                if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6
+                    && candidate.Count(character => character == ':') >= 2)
+                {
+                    return true;
+                }
+                string[] octets = candidate.Split('.');
+                if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
+                    && octets.Length == 4
+                    && octets.All(octet => octet.Length is > 0 and <= 3 && octet.All(char.IsAsciiDigit)))
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
 
     private static List<DetectionMatch> FindSensitiveSpans(string text)
     {
@@ -1176,10 +1307,17 @@ public static partial class CustomLogParser
         100)]
     private static partial Regex ColonPairRegex();
 
+    // Runs of characters an IPv4 or IPv6 literal can contain.
+    [GeneratedRegex(
+        "[0-9A-Fa-f.:]+",
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
+        100)]
+    private static partial Regex AddressTokenRegex();
+
     private sealed record SourceRecord(
         int SourceLine,
         IReadOnlyDictionary<string, string> Values,
-        IReadOnlyDictionary<string, (int Start, int Length)>? Spans = null,
+        Dictionary<string, (int Start, int Length)>? Spans = null,
         string? Line = null);
 
     private sealed record Detection(

@@ -71,8 +71,8 @@ public sealed class CustomLogPreviewPrivacyTests
         Assert.False(first["action"].Redacted);
         Assert.Equal("warning", first["severity"].Value);
         Assert.Equal("2026-07-29T10:00:00Z", first["timestamp"].Value);
-        Assert.Equal("42", first["count"].Value);
-        Assert.False(first["count"].Redacted);
+        // Typed values outside the known non-sensitive names stay masked.
+        Assert.True(first["count"].Redacted);
     }
 
     [Theory]
@@ -156,7 +156,8 @@ public sealed class CustomLogPreviewPrivacyTests
         Assert.True(fields["application"].Redacted);
         Assert.True(fields["pid"].Redacted);
         Assert.True(fields["severity"].Redacted);
-        Assert.Equal("denied", fields["status"].Value);
+        // Operator-authored regex: no capture previews, even a closed-vocabulary word.
+        Assert.True(fields["status"].Redacted);
         string serialized = JsonSerializer.Serialize(preview, ManagementApiTests.ApiJson);
         Assert.DoesNotContain("alex.marker", serialized, StringComparison.Ordinal);
         Assert.DoesNotContain("example.test", serialized, StringComparison.Ordinal);
@@ -315,6 +316,233 @@ public sealed class CustomLogPreviewPrivacyTests
                 PermissiveJsonConfiguration(),
                 cancellationToken);
             Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("BOWER_CUSTOM_LOG_ROOTS", previousRoots);
+        }
+    }
+
+    // Review bypass 1: a server JSON file re-read as regex, with captures named after
+    // allow-listed text fields so short undetected values were shown.
+    private const string Ipv6Marker = "2001:db8::77";
+    private const string HostMarker = "db01.prod.example.test";
+
+    private static readonly string RegexBypassSample =
+        $$"""
+        {"timestamp":"2026-07-29T10:00:00Z","user":"{{UserMarker}}","source_ip":"{{Ipv6Marker}}","host":"{{HostMarker}}"}
+        {"timestamp":"2026-07-29T10:01:00Z","user":"casey","source_ip":"{{Ipv6Marker}}","host":"{{HostMarker}}"}
+        """;
+
+    private static CustomLogParserConfiguration RegexBypassConfiguration() =>
+        new(
+            "1.0",
+            CustomLogFormat.Regex,
+            [
+                new CustomLogField("action", CustomLogValueType.Text, "activity_name", "EventType", false),
+                new CustomLogField("status", CustomLogValueType.Text, "status_detail", "EventResultDetails", false),
+                new CustomLogField("result", CustomLogValueType.Text, "status_detail", "EventResultDetails", false)
+            ],
+            Pattern: "\"user\":\"(?<action>[^\"]+)\".*\"source_ip\":\"(?<status>[^\"]+)\".*\"host\":\"(?<result>[^\"]+)\"");
+
+    private static void AssertNoRegexBypassMarkers(string text)
+    {
+        Assert.DoesNotContain(UserMarker, text, StringComparison.Ordinal);
+        Assert.DoesNotContain(Ipv6Marker, text, StringComparison.Ordinal);
+        Assert.DoesNotContain(HostMarker, text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Preview_RegexOverJsonFile_AllowListedCapturesCannotExposeMarkers()
+    {
+        CustomLogPreviewResult preview = CustomLogParser.Preview(
+            RegexBypassConfiguration(),
+            RegexBypassSample);
+
+        Assert.True(preview.IsValid);
+        Assert.All(preview.Rows, row => Assert.All(row.Fields.Values, value => Assert.True(value.Redacted)));
+        AssertNoRegexBypassMarkers(JsonSerializer.Serialize(preview, ManagementApiTests.ApiJson));
+    }
+
+    [Fact]
+    public void Preview_ApacheIdentityCapturedAsAction_IsMasked()
+    {
+        CustomLogParserConfiguration configuration = new(
+            "1.0",
+            CustomLogFormat.Regex,
+            [new CustomLogField("action", CustomLogValueType.Text, "activity_name", "EventType", false)],
+            Pattern: "^\\S+\\s+\\S+\\s+(?<action>\\S+)");
+
+        CustomLogPreviewResult preview = CustomLogParser.Preview(
+            configuration,
+            $"192.0.2.1 - {UserMarker} [29/Jul/2026:10:00:00 +1000] \"GET /admin HTTP/1.1\" 403 120");
+
+        Assert.True(preview.Rows[0].Fields["action"].Redacted);
+        Assert.DoesNotContain(
+            UserMarker,
+            JsonSerializer.Serialize(preview, ManagementApiTests.ApiJson),
+            StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(CustomLogFormat.Json, "{\"action\":\"2001:db8::77\",\"severity\":\"INFO\"}")]
+    [InlineData(CustomLogFormat.KeyValue, "action=2001:db8::77 severity=INFO")]
+    [InlineData(CustomLogFormat.Csv, "action,severity\n2001:db8::77,INFO")]
+    public void Preview_Ipv6ValuesAreMaskedInEveryFormat(CustomLogFormat format, string sample)
+    {
+        CustomLogParserConfiguration configuration = new(
+            "1.0",
+            format,
+            [
+                new CustomLogField("action", CustomLogValueType.Text, "activity_name", "EventType", false),
+                new CustomLogField("severity", CustomLogValueType.Text, "severity", "EventSeverity", false)
+            ],
+            Delimiter: format == CustomLogFormat.Csv ? "," : null,
+            KeyValueSeparator: format == CustomLogFormat.KeyValue ? "=" : null);
+
+        CustomLogPreviewResult preview = CustomLogParser.Preview(configuration, sample);
+
+        Assert.True(preview.Rows[0].Fields["action"].Redacted);
+        Assert.Equal("INFO", preview.Rows[0].Fields["severity"].Value);
+        Assert.DoesNotContain(
+            Ipv6Marker,
+            JsonSerializer.Serialize(preview, ManagementApiTests.ApiJson),
+            StringComparison.Ordinal);
+    }
+
+    // Review bypass 2: sample-derived field names were echoed by generation.
+    [Theory]
+    [InlineData("{\"counts.203.0.113.77\":1,\"counts.alex.marker@example.test\":2,\"severity\":\"INFO\"}", true)]
+    [InlineData("{\"counts\":{\"203.0.113.77\":1,\"alex.marker@example.test\":2},\"severity\":\"INFO\"}", true)]
+    // IPv6 keys contain ':', which is not a valid field name, so they are dropped outright.
+    [InlineData("{\"peers\":{\"2001:db8::77\":1},\"severity\":\"INFO\"}", false)]
+    [InlineData("severity=INFO 203.0.113.77=1 alex.marker@example.test=2", true)]
+    public void Generate_ValueLikeFieldNamesAreAliased(string sample, bool aliased)
+    {
+        CustomLogGenerationResult result = CustomLogParser.Generate(sample);
+
+        string serialized = JsonSerializer.Serialize(result, ManagementApiTests.ApiJson);
+        Assert.DoesNotContain("203.0.113.77", serialized, StringComparison.Ordinal);
+        Assert.DoesNotContain("alex.marker", serialized, StringComparison.Ordinal);
+        Assert.DoesNotContain("example.test", serialized, StringComparison.Ordinal);
+        Assert.DoesNotContain(Ipv6Marker, serialized, StringComparison.Ordinal);
+        Assert.Equal(aliased, result.Configuration.Fields.Any(field => field.SourceName == "field_1"));
+        Assert.Contains(result.Configuration.Fields, field => field.SourceName == "severity");
+    }
+
+    [Fact]
+    public void Generate_HeaderlessCsvDoesNotEchoFirstRowAsHeader()
+    {
+        const string sample =
+            """
+            203.0.113.77,marker_alex,login
+            198.51.100.4,casey,logout
+            """;
+
+        string text;
+        try
+        {
+            text = JsonSerializer.Serialize(CustomLogParser.Generate(sample), ManagementApiTests.ApiJson);
+        }
+        catch (InvalidDataException exception)
+        {
+            text = exception.Message;
+        }
+
+        Assert.DoesNotContain("203.0.113.77", text, StringComparison.Ordinal);
+        Assert.DoesNotContain(UserMarker, text, StringComparison.Ordinal);
+    }
+
+    // Review bypass 3: typed fields had no name allow-list.
+    [Fact]
+    public void Preview_TypedFieldsOutsideKnownNamesAreMasked()
+    {
+        CustomLogParserConfiguration configuration = new(
+            "1.0",
+            CustomLogFormat.Json,
+            [
+                new CustomLogField("uid", CustomLogValueType.WholeNumber, null, null, false),
+                new CustomLogField("enabled", CustomLogValueType.Boolean, null, null, false),
+                new CustomLogField("seen", CustomLogValueType.DateTime, null, null, false),
+                new CustomLogField("timestamp", CustomLogValueType.DateTime, "time", "TimeGenerated", false),
+                new CustomLogField("pid", CustomLogValueType.WholeNumber, "actor.process.pid", "ActorProcessId", false)
+            ]);
+
+        CustomLogPreviewResult preview = CustomLogParser.Preview(
+            configuration,
+            """{"uid":100234,"enabled":true,"seen":"1990-04-01","timestamp":"2026-07-29T10:00:00Z","pid":4242}""");
+
+        IReadOnlyDictionary<string, CustomLogPreviewValue> fields = preview.Rows[0].Fields;
+        Assert.True(fields["uid"].Redacted);
+        Assert.True(fields["enabled"].Redacted);
+        Assert.True(fields["seen"].Redacted);
+        Assert.Equal("2026-07-29T10:00:00Z", fields["timestamp"].Value);
+        Assert.Equal("4242", fields["pid"].Value);
+        Assert.DoesNotContain(
+            "100234",
+            JsonSerializer.Serialize(preview, ManagementApiTests.ApiJson),
+            StringComparison.Ordinal);
+    }
+
+    // Review bypass 4: optional captures leaked one match bit per group and line.
+    [Theory]
+    [InlineData("^(?:.*\"user\":\"m(?<action>))?")]
+    [InlineData("^(?:.*\"user\":\"m(?<action>.))?")]
+    [InlineData("^(?:.*\"user\":\"m(?<action>[^\"]*))?.*(?<severity>INFO)")]
+    public void Preview_OptionalCapturesDoNotRevealPerLineMatches(string pattern)
+    {
+        CustomLogField[] fields = pattern.Contains("severity", StringComparison.Ordinal)
+            ?
+            [
+                new CustomLogField("action", CustomLogValueType.Text, "activity_name", "EventType", false),
+                new CustomLogField("severity", CustomLogValueType.Text, "severity", "EventSeverity", false)
+            ]
+            : [new CustomLogField("action", CustomLogValueType.Text, "activity_name", "EventType", false)];
+        CustomLogParserConfiguration configuration = new(
+            "1.0",
+            CustomLogFormat.Regex,
+            fields,
+            Pattern: pattern);
+
+        CustomLogPreviewResult preview = CustomLogParser.Preview(
+            configuration,
+            $$"""
+            {"user":"{{UserMarker}}","severity":"INFO"}
+            {"user":"casey","severity":"INFO"}
+            """);
+
+        Assert.Equal(2, preview.Rows.Count);
+        Assert.Equal(Shape(preview.Rows[0]), Shape(preview.Rows[1]));
+    }
+
+    private static string Shape(CustomLogPreviewRow row) => string.Join(
+        "|",
+        row.Fields.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair => $"{pair.Key}={pair.Value.Value}:{pair.Value.Redacted}"));
+
+    [Fact]
+    public async Task PreviewEndpoint_RegexOverServerJsonFile_CannotExposeMarkers()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        using TemporaryDirectory root = new();
+        string path = Path.Combine(root.Path, "security.jsonl");
+        await File.WriteAllTextAsync(path, RegexBypassSample, cancellationToken);
+        string? previousRoots = Environment.GetEnvironmentVariable("BOWER_CUSTOM_LOG_ROOTS");
+        Environment.SetEnvironmentVariable("BOWER_CUSTOM_LOG_ROOTS", root.Path);
+        try
+        {
+            await using WebApplication app = await ManagementApiTests.StartAsync(directory, cancellationToken);
+            using HttpResponseMessage response = await PostPreviewAsync(
+                ManagementApiTests.Client(app, BowerRoles.Operator),
+                path,
+                RegexBypassConfiguration(),
+                cancellationToken);
+            string body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Contains("\"isValid\":true", body, StringComparison.Ordinal);
+            AssertNoRegexBypassMarkers(body);
         }
         finally
         {
