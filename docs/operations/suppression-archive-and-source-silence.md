@@ -136,6 +136,44 @@ queued, duplicated and suppressed since start, per stage (`redaction`, `schema`,
 `validation`, `policy`), policy id and decision. No payload content. Queued bytes
 include Bower's decision context.
 
+## Intake metrics
+
+`GET /v1/status` also includes `intake`, so a full queue is distinguishable from an
+idle collector. Same shape in the C# and Rust collectors:
+
+```json
+"intake": {"observedSince": "2026-10-26T01:00:00+00:00",
+  "attemptedRequests": 42, "attemptedBytes": 51234,
+  "capacityRefusals": 5, "capacityRefusedBytes": 6100,
+  "privacyAlertRefusals": 1, "privacyAlertRefusedBytes": 1300,
+  "lastRefusalAt": "2026-10-26T01:20:31.5+00:00", "lastRefusalReason": "queue-capacity"}
+```
+
+- Boundary: one attempt per candidate submitted to processing on `/v1/events` or a
+  signed pack parser endpoint, after authentication, producer authorisation and (for
+  packs) parsing. Rate-limited, unauthorised, oversized or unparseable requests are not
+  attempts. Bytes are the UTF-8 candidate JSON, as for `pipeline.bytesIn`.
+- Both refusal kinds return HTTP 503 (`Collector queue is at capacity; retry later.`).
+  They differ in what was committed:
+  - `capacityRefusals` (reason `queue-capacity`): the queue refused the event itself,
+    whichever admission branch refused it. Nothing was committed for the attempt: no
+    queue row, no `pipeline` count, no source activity, no evidence.
+  - `privacyAlertRefusals` (reason `privacy-alert-capacity`): the event was decided
+    first and its outcome is already in `pipeline` (and, if accepted, its row is queued
+    and its source marked seen). Only the privacy alert for a high-risk detection was
+    refused. This applies to accepted, quarantined (invalid) and rejected events.
+- A retry is a new attempt. After a `queue-capacity` refusal it counts in `pipeline`
+  once admitted. After a `privacy-alert-capacity` refusal of an accepted event, the
+  retry is reported as a duplicate (HTTP 200) and emits the alert; alert ids are stable,
+  so retries never create a second alert.
+- `lastRefusalReason` is one of the two bounded codes above, matching `lastRefusalAt`
+  (the latest refusal); both are `null` before any refusal.
+- Counters are process lifetime: they start at zero at `observedSince` (collector start)
+  and reset only on restart. There is no reset endpoint. Updates are lock free and
+  safe under concurrent intake: the time and reason are written before a refusal is
+  counted, so a snapshot never shows a refusal without them. Metadata only: no
+  payloads, event ids, credentials or request text.
+
 ## Source silence
 
 Set `BOWER_SOURCE_EXPECTATIONS` to a JSON file

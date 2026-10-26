@@ -215,6 +215,7 @@ pub fn parse(args: &[String]) -> Option<Command> {
             timeout_minutes: o.get("--timeout-minutes"),
             signing_key: o.get("--signing-key"),
             out: o.get("--out"),
+            probe_profile: o.get("--probe-profile"),
         })),
         ["evidence", "verify"] => Command::Evidence(EvidenceCommand::Verify(EvidenceVerifyArgs {
             file: o.positional(),

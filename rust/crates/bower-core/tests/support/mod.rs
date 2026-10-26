@@ -156,6 +156,8 @@ impl TelemetryPolicyEvaluator for TestPolicy {
 pub struct MemoryStore {
     pub items: Mutex<Vec<QueuedEvent>>,
     pub full: bool,
+    /// Refuses new rows (as `StoreError::Full`) once this many are held.
+    pub capacity: Option<usize>,
 }
 
 impl MemoryStore {
@@ -178,6 +180,12 @@ impl DurableEventStore for MemoryStore {
             item.fingerprint == candidate.fingerprint || item.event_id == candidate.event_id
         });
         if !duplicate {
+            if self
+                .capacity
+                .is_some_and(|capacity| items.len() >= capacity)
+            {
+                return Err(StoreError::Full("Queue capacity exceeded.".to_owned()));
+            }
             items.push(candidate.clone());
         }
         Ok(EnqueueResult {

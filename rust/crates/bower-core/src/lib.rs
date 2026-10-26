@@ -16,7 +16,9 @@ pub use processor::{
     CollectorIdentity, ProcessError, ProcessingResult, ProcessingStage, SecurityEventProcessor,
     SourceKey, SuppressionCloseError,
 };
-pub use telemetry::{PipelineMetricsRow, PipelineMetricsSnapshot, PipelineTelemetry};
+pub use telemetry::{
+    IntakeMetricsSnapshot, PipelineMetricsRow, PipelineMetricsSnapshot, PipelineTelemetry,
+};
 
 /// `Bower.Core.EventFingerprint.Create`.
 pub use fingerprint::create as event_fingerprint;

@@ -589,6 +589,8 @@ struct StatusBody<'a> {
     event_identity_conflicts: ConflictSnapshot,
     /// Selection counters since start. Metadata only.
     pipeline: PipelineBody,
+    /// Intake attempts and queue-capacity refusals since start. Metadata only.
+    intake: IntakeBody,
     /// Expected sources; omitted when BOWER_SOURCE_EXPECTATIONS is not set.
     #[serde(skip_serializing_if = "Option::is_none")]
     sources: Option<Vec<SourceStatusBody>>,
@@ -648,6 +650,39 @@ impl From<bower_core::PipelineMetricsSnapshot> for PipelineBody {
                     bytes_queued: row.bytes_queued,
                 })
                 .collect(),
+        }
+    }
+}
+
+/// `IntakeMetricsSnapshot` (Web defaults: null written).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IntakeBody {
+    #[serde(with = "bower_contracts::time::serde_offset")]
+    observed_since: Timestamp,
+    attempted_requests: i64,
+    attempted_bytes: i64,
+    capacity_refusals: i64,
+    capacity_refused_bytes: i64,
+    privacy_alert_refusals: i64,
+    privacy_alert_refused_bytes: i64,
+    #[serde(with = "serde_offset_option")]
+    last_refusal_at: Option<Timestamp>,
+    last_refusal_reason: Option<&'static str>,
+}
+
+impl From<bower_core::IntakeMetricsSnapshot> for IntakeBody {
+    fn from(value: bower_core::IntakeMetricsSnapshot) -> Self {
+        Self {
+            observed_since: value.observed_since,
+            attempted_requests: value.attempted_requests,
+            attempted_bytes: value.attempted_bytes,
+            capacity_refusals: value.capacity_refusals,
+            capacity_refused_bytes: value.capacity_refused_bytes,
+            privacy_alert_refusals: value.privacy_alert_refusals,
+            privacy_alert_refused_bytes: value.privacy_alert_refused_bytes,
+            last_refusal_at: value.last_refusal_at,
+            last_refusal_reason: value.last_refusal_reason,
         }
     }
 }
@@ -734,6 +769,7 @@ async fn status(
             jobs: state.catalog.list(),
             event_identity_conflicts: conflicts.snapshot(),
             pipeline: state.telemetry.snapshot().into(),
+            intake: state.telemetry.intake_snapshot().into(),
             sources: state
                 .source_health
                 .is_configured()
