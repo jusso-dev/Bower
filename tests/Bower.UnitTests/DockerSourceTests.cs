@@ -147,6 +147,214 @@ public sealed class DockerSourceTests
     }
 
     [Fact]
+    public void Reader_DiscardsOversizedLineAcrossByteBudgetsThenEmitsNextRecordOnce()
+    {
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, "seed\n");
+        DockerLogCursor cursor = DockerJsonLogReader.Read(container, null, new DockerLogReaderOptions()).Cursor;
+        DockerFixture.AppendOversizedLine(container, chunks: 12, chunkLength: 1_000);
+        DockerFixture.Append(container, "Failed password for root from 203.0.113.5 port 22 ssh2\n");
+        DockerLogReaderOptions options = new() { MaximumLineBytes = 1_024, MaximumBytesPerBatch = 3_000 };
+        long maximumEntryBytes = options.MaximumLineBytes * 2 + 4_096 + 1;
+
+        List<DockerLogRecord> records = [];
+        int oversized = 0, polls = 0;
+        while (polls++ < 50)
+        {
+            DockerLogBatch batch = DockerJsonLogReader.Read(container, cursor, options);
+            Assert.DoesNotContain("xxxx", batch.Cursor.Serialize(), StringComparison.Ordinal);
+            Assert.True(batch.Cursor.Offset - cursor.Offset <= options.MaximumBytesPerBatch + maximumEntryBytes);
+            records.AddRange(batch.Records);
+            oversized += batch.Oversized;
+            if (batch.Cursor == cursor)
+            {
+                break;
+            }
+
+            Assert.True(batch.Cursor.Offset > cursor.Offset);
+            cursor = batch.Cursor;
+        }
+
+        Assert.True(polls > 3);
+        Assert.Equal("Failed password for root from 203.0.113.5 port 22 ssh2", Assert.Single(records).Text);
+        Assert.Equal(1, oversized);
+        Assert.False(cursor.Discarding);
+        Assert.Equal(new FileInfo(container.LogPath).Length, cursor.Offset);
+    }
+
+    [Fact]
+    public void Reader_KeepsForwardProgressWhenRestartedMidDiscard()
+    {
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, "seed\n");
+        DockerLogCursor start = DockerJsonLogReader.Read(container, null, new DockerLogReaderOptions()).Cursor;
+        DockerFixture.AppendOversizedLine(container, chunks: 12, chunkLength: 1_000);
+        DockerFixture.Append(container, "kept\n");
+        DockerLogReaderOptions options = new() { MaximumLineBytes = 1_024, MaximumBytesPerBatch = 3_000 };
+
+        DockerLogBatch first = DockerJsonLogReader.Read(container, start, options);
+        string persisted = first.Cursor.Serialize();
+        DockerLogCursor restored = DockerLogCursor.Deserialize(persisted)!;
+
+        Assert.Empty(first.Records);
+        Assert.Equal(0, first.Oversized);
+        Assert.True(restored.Discarding);
+        Assert.True(restored.Offset > start.Offset);
+        Assert.DoesNotContain("xxxx", persisted, StringComparison.Ordinal);
+
+        List<DockerLogRecord> records = [];
+        int oversized = 0;
+        DockerLogCursor cursor = restored;
+        for (int poll = 0; poll < 50 && records.Count == 0; poll++)
+        {
+            // Every poll is a fresh process reading the persisted cursor.
+            DockerLogBatch batch = DockerJsonLogReader.Read(container, DockerLogCursor.Deserialize(cursor.Serialize()), options);
+            Assert.True(batch.Cursor.Offset > cursor.Offset);
+            records.AddRange(batch.Records);
+            oversized += batch.Oversized;
+            cursor = batch.Cursor;
+        }
+
+        Assert.Equal("kept", Assert.Single(records).Text);
+        Assert.Equal(1, oversized);
+        Assert.Empty(DockerJsonLogReader.Read(container, cursor, options).Records);
+    }
+
+    [Fact]
+    public void Reader_SkipsLineWhoseChunksExceedTheByteBudget()
+    {
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, "seed\n");
+        DockerLogCursor cursor = DockerJsonLogReader.Read(container, null, new DockerLogReaderOptions()).Cursor;
+        // Under the line limit, but its chunks span more than one byte budget.
+        DockerFixture.AppendOversizedLine(container, chunks: 6, chunkLength: 1_000);
+        DockerFixture.Append(container, "kept\n");
+        DockerLogReaderOptions options = new() { MaximumBytesPerBatch = 2_000 };
+
+        List<DockerLogRecord> records = [];
+        int oversized = 0;
+        for (int poll = 0; poll < 50 && records.Count == 0; poll++)
+        {
+            DockerLogBatch batch = DockerJsonLogReader.Read(container, cursor, options);
+            Assert.True(batch.Cursor.Offset > cursor.Offset);
+            records.AddRange(batch.Records);
+            oversized += batch.Oversized;
+            cursor = batch.Cursor;
+        }
+
+        Assert.Equal("kept", Assert.Single(records).Text);
+        Assert.Equal(1, oversized);
+    }
+
+    [Fact]
+    public void Reader_WaitsForUnfinishedEntryWhileDiscarding()
+    {
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, "seed\n");
+        DockerLogCursor start = DockerJsonLogReader.Read(container, null, new DockerLogReaderOptions()).Cursor;
+        DockerFixture.AppendOversizedLine(container, chunks: 3, chunkLength: 1_000, terminate: false);
+        long unfinishedStart = new FileInfo(container.LogPath).Length;
+        DockerFixture.AppendRaw(container, "{\"log\":\"tail of the oversized line");
+        DockerLogReaderOptions options = new() { MaximumLineBytes = 1_024 };
+
+        DockerLogBatch waiting = DockerJsonLogReader.Read(container, start, options);
+        DockerLogBatch again = DockerJsonLogReader.Read(container, waiting.Cursor, options);
+        DockerFixture.AppendRaw(container, "\\n\",\"stream\":\"stdout\"}\n");
+        DockerFixture.Append(container, "kept\n");
+        DockerLogBatch finished = DockerJsonLogReader.Read(container, again.Cursor, options);
+
+        Assert.Empty(waiting.Records);
+        Assert.Equal(0, waiting.Oversized);
+        Assert.True(waiting.Cursor.Discarding);
+        Assert.Equal(unfinishedStart, waiting.Cursor.Offset);
+        Assert.Equal(waiting.Cursor, again.Cursor);
+        Assert.Equal("kept", Assert.Single(finished.Records).Text);
+        Assert.Equal(1, finished.Oversized);
+        Assert.False(finished.Cursor.Discarding);
+    }
+
+    [Fact]
+    public void Reader_CountsMalformedEntriesWhileDiscarding()
+    {
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, "seed\n");
+        DockerLogCursor start = DockerJsonLogReader.Read(container, null, new DockerLogReaderOptions()).Cursor;
+        DockerFixture.AppendOversizedLine(container, chunks: 3, chunkLength: 1_000, terminate: false);
+        DockerFixture.AppendRaw(container, "{broken json\n");
+        DockerFixture.Append(container, "end\n", "kept\n");
+        DockerLogReaderOptions options = new() { MaximumLineBytes = 1_024, MaximumBytesPerBatch = 2_000 };
+
+        int malformed = 0, oversized = 0;
+        List<DockerLogRecord> records = [];
+        DockerLogCursor cursor = start;
+        for (int poll = 0; poll < 50 && records.Count == 0; poll++)
+        {
+            DockerLogBatch batch = DockerJsonLogReader.Read(container, cursor, options);
+            Assert.True(batch.Cursor.Offset > cursor.Offset);
+            malformed += batch.Malformed;
+            oversized += batch.Oversized;
+            records.AddRange(batch.Records);
+            cursor = batch.Cursor;
+        }
+
+        Assert.Equal("kept", Assert.Single(records).Text);
+        Assert.Equal(1, malformed);
+        Assert.Equal(1, oversized);
+    }
+
+    [Fact]
+    public void Reader_CarriesDiscardAcrossRotation()
+    {
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, "before rotation\n");
+        DockerLogCursor start = DockerJsonLogReader.Read(
+            container, null, new DockerLogReaderOptions { StartAtEnd = false }).Cursor;
+        DockerFixture.AppendOversizedLine(container, chunks: 3, chunkLength: 1_000, terminate: false);
+        File.Move(container.LogPath, container.LogPath + ".1");
+        DockerFixture.Append(container, "rest of the oversized line written after rotation\n", "kept\n");
+        DockerLogReaderOptions options = new() { MaximumLineBytes = 1_024 };
+
+        DockerLogBatch rotated = DockerJsonLogReader.Read(container, start, options);
+        DockerLogBatch current = DockerJsonLogReader.Read(container, rotated.Cursor, options);
+
+        Assert.Empty(rotated.Records);
+        Assert.False(rotated.RotationGap);
+        Assert.True(rotated.Cursor.Discarding);
+        Assert.Equal(0, rotated.Cursor.Offset);
+        Assert.Equal("kept", Assert.Single(current.Records).Text);
+        Assert.Equal(1, current.Oversized);
+        Assert.False(current.RotationGap);
+    }
+
+    [Fact]
+    public void Reader_ClearsDiscardAfterTruncation()
+    {
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, "a line long enough to fingerprint the file\n");
+        DockerLogCursor start = DockerJsonLogReader.Read(container, null, new DockerLogReaderOptions()).Cursor;
+        DockerFixture.AppendOversizedLine(container, chunks: 3, chunkLength: 1_000, terminate: false);
+        DockerLogBatch discarding = DockerJsonLogReader.Read(
+            container, start, new DockerLogReaderOptions { MaximumLineBytes = 1_024 });
+        byte[] firstEntry = File.ReadAllLines(container.LogPath)[0].Select(c => (byte)c).Append((byte)'\n').ToArray();
+        File.WriteAllBytes(container.LogPath, firstEntry);
+
+        DockerLogBatch batch = DockerJsonLogReader.Read(
+            container, discarding.Cursor, new DockerLogReaderOptions { MaximumLineBytes = 1_024 });
+
+        Assert.True(discarding.Cursor.Discarding);
+        Assert.True(batch.RotationGap);
+        Assert.False(batch.Cursor.Discarding);
+        Assert.Equal("a line long enough to fingerprint the file", Assert.Single(batch.Records).Text);
+    }
+
+    [Fact]
     public void Reader_RespectsRecordLimitAndResumes()
     {
         using TemporaryDirectory root = new();
@@ -224,6 +432,18 @@ public sealed class DockerSourceTests
         Assert.Null(DockerLogCursor.Deserialize("{not json"));
         Assert.Null(DockerLogCursor.Deserialize("""{"schemaVersion":9,"fingerprint":"a","offset":1}"""));
         Assert.Null(DockerLogCursor.Deserialize("""{"schemaVersion":1,"fingerprint":"a","offset":-1}"""));
+    }
+
+    [Fact]
+    public void Cursor_DiscardFlagIsAdditive()
+    {
+        const string legacy = """{"schemaVersion":1,"fingerprint":"abc","offset":42}""";
+        DockerLogCursor discarding = new(DockerLogCursor.CurrentSchemaVersion, "abc", 42, Discarding: true);
+
+        Assert.Equal(new DockerLogCursor(1, "abc", 42), DockerLogCursor.Deserialize(legacy));
+        Assert.Equal(legacy, new DockerLogCursor(1, "abc", 42).Serialize());
+        Assert.Equal(discarding, DockerLogCursor.Deserialize(discarding.Serialize()));
+        Assert.Contains("\"discarding\":true", discarding.Serialize(), StringComparison.Ordinal);
     }
 
     [Theory]
@@ -374,6 +594,13 @@ internal static class DockerFixture
         }
 
         File.AppendAllText(container.LogPath, text.ToString());
+    }
+
+    /// <summary>One logical line as Docker writes it: partial chunks, then a terminating chunk.</summary>
+    public static void AppendOversizedLine(DockerContainer container, int chunks, int chunkLength, bool terminate = true)
+    {
+        string[] logs = Enumerable.Repeat(new string('x', chunkLength), chunks).ToArray();
+        Append(container, terminate ? [.. logs, "end\n"] : logs);
     }
 
     public static void AppendRaw(DockerContainer container, string raw) =>

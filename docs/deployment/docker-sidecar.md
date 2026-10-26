@@ -100,6 +100,23 @@ docker compose -f deploy/docker/compose.sidecar-demo.yaml up --build
   new one. If a log rotates more than once between passes, the gap is logged.
 - **Bounds.** Lines over 64 KiB are counted and skipped; each pass reads at most
   1,000 lines or 4 MiB per container. Docker's 16 KiB partial chunks are reassembled.
+  A line that is over 64 KiB, or whose chunks fill a whole pass's byte budget without
+  ending, is never buffered: its chunks are consumed and committed as they are read,
+  across passes and restarts, and the line is counted as oversized once when its final
+  chunk arrives. Later lines are then read normally.
+
+## Cursor format
+
+Each container's cursor is JSON in the state database:
+`{"schemaVersion":1,"fingerprint":"<sha256 of first 64 bytes>","offset":<bytes>}`.
+While an oversized line is being skipped the cursor also carries
+`"discarding":true`, meaning `offset` is the next physical chunk of that line. The
+field is additive and omitted when false, so cursors written before it existed read
+unchanged and normal cursors serialise byte-for-byte as before. It holds no line
+content. Truncation or a missed rotation clears it; a rotation the sidecar drains
+carries it into the new file, so the rest of a line split by rotation is still
+skipped. Downgrading is not recommended while a line is being skipped: an older
+sidecar ignores the field and reads the rest of that line as if it were a new line.
 
 ## Security model
 
