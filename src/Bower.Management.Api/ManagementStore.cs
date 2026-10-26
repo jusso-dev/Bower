@@ -507,6 +507,11 @@ public sealed partial class ManagementStore(string databasePath)
         CancellationToken cancellationToken)
     {
         IReadOnlyList<CollectorRecord> collectors = await ListAsync(null, cancellationToken);
+        // Computed at query time, so the result does not depend on whether the staleness
+        // job has run: only an Active collector with a fresh heartbeat is evidence.
+        bool Eligible(CollectorRecord item) =>
+            item.Status == CollectorStatus.Active && item.LastSeenAt >= staleBefore;
+        bool PrivacyDrift(CollectorRecord item) => Eligible(item) && item.PrivacyProfileInSync == false;
         CollectorRecord[] exceptions = collectors
             .Where(item =>
                 item.Status is CollectorStatus.Pending
@@ -514,10 +519,29 @@ public sealed partial class ManagementStore(string databasePath)
                     or CollectorStatus.Revoked ||
                 item.LastSeenAt < staleBefore ||
                 item.PolicyInSync == false ||
+                PrivacyDrift(item) ||
                 item.DeadLettered > 0 ||
                 !DeliveryOperational(item.DeliveryStatus))
             .Take(12)
             .ToArray();
+        CollectorRecord[] privacyDrift = collectors.Where(PrivacyDrift).ToArray();
+        IReadOnlyDictionary<string, (long Revision, DateTimeOffset OccurredAt)> assignments = privacyDrift.Length == 0
+            ? new Dictionary<string, (long, DateTimeOffset)>()
+            : await LatestPrivacyProfileAssignmentsAsync(cancellationToken);
+        PrivacyProfileDriftRecord[] privacyExceptions = privacyDrift
+            .Take(12)
+            .Select(item =>
+            {
+                DesiredPrivacyProfile desired = item.DesiredPrivacyProfile!;
+                (long revision, DateTimeOffset assignedAt) = assignments.GetValueOrDefault(item.Id);
+                return new PrivacyProfileDriftRecord(
+                    item.Id, item.MachineName, revision, assignedAt, desired.VersionId, desired.ProfileId,
+                    desired.Version, desired.ContentHash, item.ReportedPrivacyProfileHash, item.LastSeenAt);
+            })
+            .ToArray();
+        int reporting = collectors.Where(Eligible).SelectMany(item => item.Sources)
+            .Count(item => string.Equals(item.Status, "healthy", StringComparison.OrdinalIgnoreCase));
+        int unknown = collectors.Where(item => !Eligible(item)).Sum(item => item.Sources.Count);
         return new OverviewRecord(
             collectors.Count,
             collectors.Count(item => item.Status == CollectorStatus.Pending),
@@ -526,13 +550,14 @@ public sealed partial class ManagementStore(string databasePath)
                 !DeliveryOperational(item.DeliveryStatus)),
             collectors.Count(item => item.LastSeenAt < staleBefore),
             SaturatingCount(collectors.Select(item => item.QueueDepth)),
-            collectors.SelectMany(item => item.Sources)
-                .Count(item => string.Equals(item.Status, "healthy", StringComparison.OrdinalIgnoreCase)),
-            collectors.SelectMany(item => item.Sources)
-                .Count(item => !string.Equals(item.Status, "healthy", StringComparison.OrdinalIgnoreCase)),
+            reporting,
+            collectors.Sum(item => item.Sources.Count) - reporting,
             exceptions,
             collectors.Count(item => item.PolicyInSync == false),
-            SaturatingCount(collectors.Select(item => item.DeadLettered)));
+            SaturatingCount(collectors.Select(item => item.DeadLettered)),
+            privacyDrift.Length,
+            privacyExceptions,
+            unknown);
     }
 
     // Operational progress is distinct from a Sentinel destination-query claim.

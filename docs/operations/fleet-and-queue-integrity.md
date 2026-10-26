@@ -34,6 +34,30 @@ POST /api/collectors/{id}/desired-policy
 The console shows each collector as *In sync*, *Drift* or *Unassigned*; drifted
 collectors appear in fleet exceptions. The action is audited.
 
+## Fleet overview: exceptions and source coverage
+
+`GET /api/overview` is computed at query time from the 15-minute heartbeat
+threshold the `collector-staleness` job uses, so its result does not depend on
+whether the job has run. A collector is *eligible* when it is `Active` and its
+last heartbeat is fresh.
+
+- **Source coverage.** `sourcesReporting` counts healthy sources of eligible
+  collectors only. `sourcesDegraded` counts every other source, so
+  `sourcesReporting + sourcesDegraded` is always every known source and a
+  collector that stops reporting cannot improve the score by disappearing.
+  `sourcesUnknown` is the part of `sourcesDegraded` that belongs to stale,
+  pending, suspended or revoked collectors; the console shows it as *Unknown*.
+  A fresh heartbeat from an authorised, active collector restores its sources.
+- **Privacy profile drift.** An eligible collector whose heartbeat reports a
+  privacy profile hash other than its assigned version's is a fleet exception and
+  counts in `privacyProfileDrift`. `privacyProfileExceptions` lists the desired
+  assignment (revision, time, version id, profile id, version and content hash)
+  against the observed hash and the heartbeat time that reported it, with
+  `observedAfterAssignment` false while that heartbeat predates the assignment.
+  It carries hashes and identifiers only, never profile content or key
+  material. Unassigned collectors are unaffected; a matching hash clears it. The
+  console links each row to the assigned version on the privacy profiles page.
+
 ## Inactive collectors
 
 The `collector-inactivity` job (daily, 02:00 UTC) suspends approved or active
