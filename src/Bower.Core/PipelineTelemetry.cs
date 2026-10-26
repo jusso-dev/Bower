@@ -9,16 +9,24 @@ namespace Bower.Core;
 /// suppressed. They reset on restart and never hold payload content. Source activity is
 /// loaded from and flushed to the queue so silence detection survives restarts.
 /// Intake counters (<see cref="IntakeSnapshot"/>) count every candidate submitted to
-/// processing, including those the queue refused for capacity, which never reach the
-/// selection counters. They also reset only on restart; there is no reset operation.
+/// processing and every queue-capacity refusal. A <see cref="QueueCapacityReason"/> refusal
+/// committed nothing and never reaches the selection counters; a
+/// <see cref="PrivacyAlertCapacityReason"/> refusal follows a selection outcome that is
+/// already recorded. They also reset only on restart; there is no reset operation.
 /// </summary>
 public sealed class PipelineTelemetry(TimeProvider clock)
 {
     public const string NoPolicy = "-";
     public const int MaximumSources = 10_000;
 
-    /// <summary>Bounded reason code: the durable queue refused the event for capacity.</summary>
+    /// <summary>Bounded reason code: the queue refused the event itself; nothing was committed.</summary>
     public const string QueueCapacityReason = "queue-capacity";
+
+    /// <summary>
+    /// Bounded reason code: the queue refused the privacy alert after the event was decided
+    /// (and, when accepted, committed).
+    /// </summary>
+    public const string PrivacyAlertCapacityReason = "privacy-alert-capacity";
 
     private readonly DateTimeOffset startedAt = clock.GetUtcNow();
     private readonly Lock gate = new();
@@ -29,7 +37,11 @@ public sealed class PipelineTelemetry(TimeProvider clock)
     private long attemptedBytes;
     private long capacityRefusals;
     private long capacityRefusedBytes;
-    private long lastRefusalTicks;
+    private long privacyAlertRefusals;
+    private long privacyAlertRefusedBytes;
+
+    // UtcTicks * 2 + reason bit (0 queue, 1 privacy alert); 0 before any refusal.
+    private long lastRefusal;
 
     public DateTimeOffset StartedAt => startedAt;
 
@@ -40,16 +52,52 @@ public sealed class PipelineTelemetry(TimeProvider clock)
         Interlocked.Add(ref attemptedBytes, bytesIn);
     }
 
-    /// <summary>Counts one attempt the durable queue refused for capacity (HTTP 503).</summary>
+    /// <summary>Counts one attempt whose event the queue refused for capacity (HTTP 503).</summary>
     public void RecordCapacityRefusal(long bytesIn)
     {
-        long ticks = clock.GetUtcNow().UtcTicks;
+        MarkRefusal(0);
         Interlocked.Add(ref capacityRefusedBytes, bytesIn);
         Interlocked.Increment(ref capacityRefusals);
-        long seen = Interlocked.Read(ref lastRefusalTicks);
-        while (ticks > seen)
+    }
+
+    /// <summary>Counts one attempt whose privacy alert the queue refused for capacity (HTTP 503).</summary>
+    public void RecordPrivacyAlertRefusal(long bytesIn)
+    {
+        MarkRefusal(1);
+        Interlocked.Add(ref privacyAlertRefusedBytes, bytesIn);
+        Interlocked.Increment(ref privacyAlertRefusals);
+    }
+
+    public IntakeMetricsSnapshot IntakeSnapshot()
+    {
+        // Read in the reverse of write order. Writers set the last refusal, then bytes, then
+        // the count, and count the attempt before any of these, so a snapshot never shows a
+        // refusal without its time and reason, or more refusals than attempts.
+        long refusals = Interlocked.Read(ref capacityRefusals);
+        long alertRefusals = Interlocked.Read(ref privacyAlertRefusals);
+        long refusedBytes = Interlocked.Read(ref capacityRefusedBytes);
+        long alertRefusedBytes = Interlocked.Read(ref privacyAlertRefusedBytes);
+        long last = Interlocked.Read(ref lastRefusal);
+        return new IntakeMetricsSnapshot(
+            startedAt,
+            Interlocked.Read(ref attemptedRequests),
+            Interlocked.Read(ref attemptedBytes),
+            refusals,
+            refusedBytes,
+            alertRefusals,
+            alertRefusedBytes,
+            last == 0 ? null : new DateTimeOffset(last >> 1, TimeSpan.Zero),
+            last == 0 ? null : (last & 1) == 0 ? QueueCapacityReason : PrivacyAlertCapacityReason);
+    }
+
+    // Forward only, so concurrent refusals keep the latest time and its reason.
+    private void MarkRefusal(long reasonBit)
+    {
+        long value = (clock.GetUtcNow().UtcTicks << 1) | reasonBit;
+        long seen = Interlocked.Read(ref lastRefusal);
+        while (value > seen)
         {
-            long previous = Interlocked.CompareExchange(ref lastRefusalTicks, ticks, seen);
+            long previous = Interlocked.CompareExchange(ref lastRefusal, value, seen);
             if (previous == seen)
             {
                 break;
@@ -57,23 +105,6 @@ public sealed class PipelineTelemetry(TimeProvider clock)
 
             seen = previous;
         }
-    }
-
-    public IntakeMetricsSnapshot IntakeSnapshot()
-    {
-        // Refusals first: each refusal's attempt was counted before it, so refusals never
-        // exceed attempts in a snapshot taken during concurrent intake.
-        long refusals = Interlocked.Read(ref capacityRefusals);
-        long refusedBytes = Interlocked.Read(ref capacityRefusedBytes);
-        long lastTicks = Interlocked.Read(ref lastRefusalTicks);
-        return new IntakeMetricsSnapshot(
-            startedAt,
-            Interlocked.Read(ref attemptedRequests),
-            Interlocked.Read(ref attemptedBytes),
-            refusals,
-            refusedBytes,
-            lastTicks == 0 ? null : new DateTimeOffset(lastTicks, TimeSpan.Zero),
-            lastTicks == 0 ? null : QueueCapacityReason);
     }
 
     public void Record(ProcessingResult result, long bytesIn)
@@ -258,8 +289,11 @@ public sealed record PipelineMetricsSnapshot(
 
 /// <summary>
 /// Intake counters since <see cref="ObservedSince"/> (process start). Attempts are candidates
-/// submitted to processing after authentication and authorisation; capacity refusals are the
-/// subset the durable queue refused. Metadata only: no payloads, event ids or credentials.
+/// submitted to processing after authentication and authorisation. Capacity refusals are
+/// attempts whose event the queue refused: nothing was committed. Privacy alert refusals are
+/// attempts whose privacy alert the queue refused after the event's outcome was recorded in
+/// the selection counters (an accepted event is then already queued). Metadata only: no
+/// payloads, event ids or credentials.
 /// </summary>
 public sealed record IntakeMetricsSnapshot(
     DateTimeOffset ObservedSince,
@@ -267,6 +301,8 @@ public sealed record IntakeMetricsSnapshot(
     long AttemptedBytes,
     long CapacityRefusals,
     long CapacityRefusedBytes,
+    long PrivacyAlertRefusals,
+    long PrivacyAlertRefusedBytes,
     DateTimeOffset? LastRefusalAt,
     string? LastRefusalReason);
 

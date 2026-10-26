@@ -664,6 +664,8 @@ struct IntakeBody {
     attempted_bytes: i64,
     capacity_refusals: i64,
     capacity_refused_bytes: i64,
+    privacy_alert_refusals: i64,
+    privacy_alert_refused_bytes: i64,
     #[serde(with = "serde_offset_option")]
     last_refusal_at: Option<Timestamp>,
     last_refusal_reason: Option<&'static str>,
@@ -677,6 +679,8 @@ impl From<bower_core::IntakeMetricsSnapshot> for IntakeBody {
             attempted_bytes: value.attempted_bytes,
             capacity_refusals: value.capacity_refusals,
             capacity_refused_bytes: value.capacity_refused_bytes,
+            privacy_alert_refusals: value.privacy_alert_refusals,
+            privacy_alert_refused_bytes: value.privacy_alert_refused_bytes,
             last_refusal_at: value.last_refusal_at,
             last_refusal_reason: value.last_refusal_reason,
         }

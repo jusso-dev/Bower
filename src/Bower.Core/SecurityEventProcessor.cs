@@ -23,18 +23,15 @@ public sealed class SecurityEventProcessor(
         ArgumentNullException.ThrowIfNull(candidateJson);
         long bytesIn = Encoding.UTF8.GetByteCount(candidateJson);
         telemetry?.RecordAttempt(bytesIn);
-        ProcessingResult result;
-        try
-        {
-            result = await ProcessCoreAsync(candidateJson, collector, cancellationToken);
-        }
-        catch (QueueCapacityExceededException)
-        {
-            // Not a selection decision: count the refusal apart from the selection counters.
-            telemetry?.RecordCapacityRefusal(bytesIn);
-            throw;
-        }
+        return await ProcessCoreAsync(candidateJson, collector, bytesIn, cancellationToken);
+    }
 
+    /// <summary>
+    /// Records the selection outcome once it is final: before any privacy alert enqueue, so
+    /// an alert refused for capacity never hides an event that was already decided or queued.
+    /// </summary>
+    private ProcessingResult Decided(ProcessingResult result, long bytesIn)
+    {
         telemetry?.Record(result, bytesIn);
         return result;
     }
@@ -85,6 +82,7 @@ public sealed class SecurityEventProcessor(
     private async Task<ProcessingResult> ProcessCoreAsync(
         string candidateJson,
         CollectorIdentity collector,
+        long bytesIn,
         CancellationToken cancellationToken)
     {
         RedactionResult redaction;
@@ -95,15 +93,19 @@ public sealed class SecurityEventProcessor(
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             // Redaction failure is a security failure: quarantine without persisting.
-            return ProcessingResult.Failed(DecisionAction.Quarantine, "redaction-failed", ProcessingStage.Redaction);
+            return Decided(
+                ProcessingResult.Failed(DecisionAction.Quarantine, "redaction-failed", ProcessingStage.Redaction),
+                bytesIn);
         }
 
         if (!redaction.Succeeded || redaction.RedactedJson is null)
         {
-            return ProcessingResult.Failed(
-                DecisionAction.Quarantine,
-                redaction.FailureCode ?? "redaction-failed",
-                ProcessingStage.Redaction);
+            return Decided(
+                ProcessingResult.Failed(
+                    DecisionAction.Quarantine,
+                    redaction.FailureCode ?? "redaction-failed",
+                    ProcessingStage.Redaction),
+                bytesIn);
         }
 
         SecurityEventEnvelope? candidate;
@@ -113,53 +115,64 @@ public sealed class SecurityEventProcessor(
         }
         catch (JsonException)
         {
-            return ProcessingResult.Failed(DecisionAction.Quarantine, "schema-invalid", ProcessingStage.Schema);
+            return Decided(
+                ProcessingResult.Failed(DecisionAction.Quarantine, "schema-invalid", ProcessingStage.Schema),
+                bytesIn);
         }
 
         if (candidate is null)
         {
-            return ProcessingResult.Failed(DecisionAction.Quarantine, "schema-invalid", ProcessingStage.Schema);
+            return Decided(
+                ProcessingResult.Failed(DecisionAction.Quarantine, "schema-invalid", ProcessingStage.Schema),
+                bytesIn);
         }
 
         DateTimeOffset now = clock.GetUtcNow();
         List<string> validationFailures = Validate(candidate, now);
         if (validationFailures.Count > 0)
         {
+            ProcessingResult quarantined = Decided(
+                new ProcessingResult(
+                    DecisionAction.Quarantine,
+                    candidate.EventId,
+                    false,
+                    false,
+                    validationFailures,
+                    null,
+                    null,
+                    ProcessingStage.Validation),
+                bytesIn);
             // Still notify SOC when high-risk secrets/PII were present in invalid payloads.
             string? alertId = await TryEnqueuePrivacyAlertAsync(
                 candidate,
                 redaction,
                 collector,
+                bytesIn,
                 cancellationToken);
 
-            return new ProcessingResult(
-                DecisionAction.Quarantine,
-                candidate.EventId,
-                false,
-                false,
-                validationFailures,
-                null,
-                alertId,
-                ProcessingStage.Validation);
+            return quarantined with { PrivacyAlertEventId = alertId };
         }
 
         PolicyDecision decision = policyEvaluator.Evaluate(candidate);
         if (decision.Action is not (DecisionAction.Accept or DecisionAction.RedactAndAccept))
         {
+            ProcessingResult rejected = Decided(
+                new ProcessingResult(
+                    decision.Action,
+                    candidate.EventId,
+                    false,
+                    false,
+                    decision.Reasons.Concat(decision.Warnings).ToArray(),
+                    decision),
+                bytesIn);
             string? rejectedAlertId = await TryEnqueuePrivacyAlertAsync(
                 candidate,
                 redaction,
                 collector,
+                bytesIn,
                 cancellationToken);
 
-            return new ProcessingResult(
-                decision.Action,
-                candidate.EventId,
-                false,
-                false,
-                decision.Reasons.Concat(decision.Warnings).ToArray(),
-                decision,
-                rejectedAlertId);
+            return rejected with { PrivacyAlertEventId = rejectedAlertId };
         }
 
         SecurityEventEnvelope arranged = candidate with
@@ -204,14 +217,38 @@ public sealed class SecurityEventProcessor(
         }
         catch (EventIdentityConflictException)
         {
-            return new ProcessingResult(DecisionAction.Quarantine, arranged.EventId, false, false,
-                ["event-identity-conflict"], decision);
+            return Decided(
+                new ProcessingResult(DecisionAction.Quarantine, arranged.EventId, false, false,
+                    ["event-identity-conflict"], decision),
+                bytesIn);
+        }
+        catch (QueueCapacityExceededException)
+        {
+            // Nothing was committed for this attempt.
+            telemetry?.RecordCapacityRefusal(bytesIn);
+            throw;
         }
 
+        // The event is committed (or deduplicated or suppressed): record it before the alert.
+        ProcessingResult committed = Decided(
+            new ProcessingResult(
+                arranged.Security.Decision,
+                arranged.EventId,
+                enqueue.Enqueued,
+                enqueue.Duplicate,
+                [],
+                decision,
+                null,
+                ProcessingStage.Policy,
+                enqueue.Suppressed,
+                enqueue.Enqueued ? Encoding.UTF8.GetByteCount(payload) : 0,
+                new SourceKey(arranged.Application.Name, arranged.Application.Environment)),
+            bytesIn);
         string? privacyAlertEventId = await TryEnqueuePrivacyAlertAsync(
             arranged,
             redaction,
             collector,
+            bytesIn,
             cancellationToken);
 
         List<string> reasons = [.. decision.Reasons, .. decision.Warnings];
@@ -240,24 +277,14 @@ public sealed class SecurityEventProcessor(
             reasons.Add("Suppressed: window allowance reached; counted in a summary event");
         }
 
-        return new ProcessingResult(
-            arranged.Security.Decision,
-            arranged.EventId,
-            enqueue.Enqueued,
-            enqueue.Duplicate,
-            reasons,
-            decision,
-            privacyAlertEventId,
-            ProcessingStage.Policy,
-            enqueue.Suppressed,
-            enqueue.Enqueued ? Encoding.UTF8.GetByteCount(payload) : 0,
-            new SourceKey(arranged.Application.Name, arranged.Application.Environment));
+        return committed with { Reasons = reasons, PrivacyAlertEventId = privacyAlertEventId };
     }
 
     private async Task<string?> TryEnqueuePrivacyAlertAsync(
         SecurityEventEnvelope source,
         RedactionResult redaction,
         CollectorIdentity collector,
+        long bytesIn,
         CancellationToken cancellationToken)
     {
         IReadOnlyList<string> detected = redaction.PrivacyDetected ?? [];
@@ -388,7 +415,18 @@ public sealed class SecurityEventProcessor(
             EventFingerprint.Create(arrangedAlert),
             payload,
             now);
-        EnqueueResult enqueue = await queue.EnqueueAsync(queued, cancellationToken);
+        EnqueueResult enqueue;
+        try
+        {
+            enqueue = await queue.EnqueueAsync(queued, cancellationToken);
+        }
+        catch (QueueCapacityExceededException)
+        {
+            // The source outcome is already recorded (and the source event may be queued).
+            telemetry?.RecordPrivacyAlertRefusal(bytesIn);
+            throw;
+        }
+
         return enqueue.Enqueued || enqueue.Duplicate ? arrangedAlert.EventId : null;
     }
 

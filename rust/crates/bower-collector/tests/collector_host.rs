@@ -612,6 +612,8 @@ async fn intake_capacity_refusals_on_both_paths_are_counted_apart_from_committed
             "attemptedBytes",
             "capacityRefusals",
             "capacityRefusedBytes",
+            "privacyAlertRefusals",
+            "privacyAlertRefusedBytes",
             "lastRefusalAt",
             "lastRefusalReason"
         ]

@@ -219,22 +219,17 @@ impl SecurityEventProcessor {
         if let Some(telemetry) = &self.telemetry {
             telemetry.record_attempt(bytes_in);
         }
-        let result = match self.process_core(candidate_json, collector) {
-            Ok(result) => result,
-            Err(error) => {
-                // Not a selection decision: count the refusal apart from the selection counters.
-                if let (Some(telemetry), ProcessError::Store(StoreError::Full(_))) =
-                    (&self.telemetry, &error)
-                {
-                    telemetry.record_capacity_refusal(bytes_in);
-                }
-                return Err(error);
-            }
-        };
+        self.process_core(candidate_json, collector, bytes_in)
+    }
+
+    /// Records the selection outcome once it is final: before any privacy alert enqueue,
+    /// so an alert refused for capacity never hides an event that was already decided or
+    /// queued.
+    fn decided(&self, result: ProcessingResult, bytes_in: i64) -> ProcessingResult {
         if let Some(telemetry) = &self.telemetry {
             telemetry.record(&result, bytes_in);
         }
-        Ok(result)
+        result
     }
 
     /// Closes ended suppression windows and queues one policy-approved summary for each
@@ -282,73 +277,99 @@ impl SecurityEventProcessor {
         &self,
         candidate_json: &str,
         collector: &CollectorIdentity,
+        bytes_in: i64,
     ) -> Result<ProcessingResult, ProcessError> {
         // Redaction failure (including a panic) is a security failure: quarantine
         // without persisting.
         let Ok(redaction) = catch_unwind(AssertUnwindSafe(|| self.redactor.redact(candidate_json)))
         else {
-            return Ok(ProcessingResult::failed_at(
-                DecisionAction::Quarantine,
-                "redaction-failed",
-                ProcessingStage::Redaction,
+            return Ok(self.decided(
+                ProcessingResult::failed_at(
+                    DecisionAction::Quarantine,
+                    "redaction-failed",
+                    ProcessingStage::Redaction,
+                ),
+                bytes_in,
             ));
         };
 
         let redacted_json = match (&redaction.succeeded, &redaction.redacted_json) {
             (true, Some(json)) => json,
             _ => {
-                return Ok(ProcessingResult::failed_at(
-                    DecisionAction::Quarantine,
-                    redaction
-                        .failure_code
-                        .clone()
-                        .unwrap_or_else(|| "redaction-failed".to_owned()),
-                    ProcessingStage::Redaction,
+                return Ok(self.decided(
+                    ProcessingResult::failed_at(
+                        DecisionAction::Quarantine,
+                        redaction
+                            .failure_code
+                            .clone()
+                            .unwrap_or_else(|| "redaction-failed".to_owned()),
+                        ProcessingStage::Redaction,
+                    ),
+                    bytes_in,
                 ));
             }
         };
 
         let Ok(candidate) = json::from_str::<SecurityEventEnvelope>(redacted_json) else {
-            return Ok(ProcessingResult::failed_at(
-                DecisionAction::Quarantine,
-                "schema-invalid",
-                ProcessingStage::Schema,
+            return Ok(self.decided(
+                ProcessingResult::failed_at(
+                    DecisionAction::Quarantine,
+                    "schema-invalid",
+                    ProcessingStage::Schema,
+                ),
+                bytes_in,
             ));
         };
 
         let now = self.clock.utc_now();
         let validation_failures = validate(&candidate, now);
         if !validation_failures.is_empty() {
+            let quarantined = self.decided(
+                ProcessingResult {
+                    stage: ProcessingStage::Validation,
+                    ..ProcessingResult::decided(
+                        DecisionAction::Quarantine,
+                        candidate.event_id.clone(),
+                        validation_failures,
+                        None,
+                        None,
+                    )
+                },
+                bytes_in,
+            );
             // Still notify SOC when high-risk secrets/PII were present in invalid payloads.
-            let alert_id = self.try_enqueue_privacy_alert(&candidate, &redaction, collector)?;
+            let alert_id =
+                self.try_enqueue_privacy_alert(&candidate, &redaction, collector, bytes_in)?;
             return Ok(ProcessingResult {
-                stage: ProcessingStage::Validation,
-                ..ProcessingResult::decided(
-                    DecisionAction::Quarantine,
-                    candidate.event_id,
-                    validation_failures,
-                    None,
-                    alert_id,
-                )
+                privacy_alert_event_id: alert_id,
+                ..quarantined
             });
         }
 
         let decision = self.policy_evaluator.evaluate(&candidate);
         if !accepts(decision.action) {
-            let alert_id = self.try_enqueue_privacy_alert(&candidate, &redaction, collector)?;
             let reasons = decision
                 .reasons
                 .iter()
                 .chain(&decision.warnings)
                 .cloned()
                 .collect();
-            return Ok(ProcessingResult::decided(
-                decision.action,
-                candidate.event_id,
-                reasons,
-                Some(decision),
-                alert_id,
-            ));
+            let rejected = self.decided(
+                ProcessingResult::decided(
+                    decision.action,
+                    candidate.event_id.clone(),
+                    reasons,
+                    Some(decision),
+                    None,
+                ),
+                bytes_in,
+            );
+            let alert_id =
+                self.try_enqueue_privacy_alert(&candidate, &redaction, collector, bytes_in)?;
+            return Ok(ProcessingResult {
+                privacy_alert_event_id: alert_id,
+                ..rejected
+            });
         }
 
         let redacted = !redaction.removed_paths.is_empty()
@@ -380,19 +401,53 @@ impl SecurityEventProcessor {
         let (queued, payload_bytes) = queued_event(&arranged, now, request)?;
         let enqueue = match self.queue.enqueue(&queued) {
             Err(StoreError::Invalid(code)) if code == "event-identity-conflict" => {
-                return Ok(ProcessingResult::decided(
-                    DecisionAction::Quarantine,
-                    arranged.event_id.clone(),
-                    vec![code],
-                    Some(decision),
-                    None,
+                return Ok(self.decided(
+                    ProcessingResult::decided(
+                        DecisionAction::Quarantine,
+                        arranged.event_id.clone(),
+                        vec![code],
+                        Some(decision),
+                        None,
+                    ),
+                    bytes_in,
                 ));
+            }
+            Err(error @ StoreError::Full(_)) => {
+                // Nothing was committed for this attempt.
+                if let Some(telemetry) = &self.telemetry {
+                    telemetry.record_capacity_refusal(bytes_in);
+                }
+                return Err(error.into());
             }
             other => other?,
         };
 
+        let action = arranged
+            .security
+            .as_ref()
+            .map_or(DecisionAction::Accept, |security| security.decision);
+        // The event is committed (or deduplicated or suppressed): record it before the alert.
+        let committed = self.decided(
+            ProcessingResult {
+                action,
+                event_id: Some(arranged.event_id.clone()),
+                queued: enqueue.enqueued,
+                duplicate: enqueue.duplicate,
+                reasons: Vec::new(),
+                policy_decision: Some(decision.clone()),
+                privacy_alert_event_id: None,
+                stage: ProcessingStage::Policy,
+                suppressed: enqueue.suppressed,
+                queued_bytes: if enqueue.enqueued { payload_bytes } else { 0 },
+                source: Some(SourceKey {
+                    application: arranged.application.name.clone(),
+                    environment: arranged.application.environment.clone(),
+                }),
+            },
+            bytes_in,
+        );
         let privacy_alert_event_id =
-            self.try_enqueue_privacy_alert(&arranged, &redaction, collector)?;
+            self.try_enqueue_privacy_alert(&arranged, &redaction, collector, bytes_in)?;
 
         let mut reasons: Vec<String> = decision
             .reasons
@@ -424,25 +479,10 @@ impl SecurityEventProcessor {
             );
         }
 
-        let action = arranged
-            .security
-            .as_ref()
-            .map_or(DecisionAction::Accept, |security| security.decision);
         Ok(ProcessingResult {
-            action,
-            event_id: Some(arranged.event_id),
-            queued: enqueue.enqueued,
-            duplicate: enqueue.duplicate,
             reasons,
-            policy_decision: Some(decision),
             privacy_alert_event_id,
-            stage: ProcessingStage::Policy,
-            suppressed: enqueue.suppressed,
-            queued_bytes: if enqueue.enqueued { payload_bytes } else { 0 },
-            source: Some(SourceKey {
-                application: arranged.application.name,
-                environment: arranged.application.environment,
-            }),
+            ..committed
         })
     }
 
@@ -451,6 +491,7 @@ impl SecurityEventProcessor {
         source: &SecurityEventEnvelope,
         redaction: &RedactionResult,
         collector: &CollectorIdentity,
+        bytes_in: i64,
     ) -> Result<Option<String>, ProcessError> {
         let detected: &[String] = redaction.privacy_detected.as_deref().unwrap_or(&[]);
         let empty = IndexMap::new();
@@ -571,9 +612,19 @@ impl SecurityEventProcessor {
             policy_hash: alert_decision.policy_hash,
         });
 
-        let enqueue = self
+        let enqueue = match self
             .queue
-            .enqueue(&queued_event(&arranged_alert, now, None)?.0)?;
+            .enqueue(&queued_event(&arranged_alert, now, None)?.0)
+        {
+            Err(error @ StoreError::Full(_)) => {
+                // The source outcome is already recorded (and the source event may be queued).
+                if let Some(telemetry) = &self.telemetry {
+                    telemetry.record_privacy_alert_refusal(bytes_in);
+                }
+                return Err(error.into());
+            }
+            other => other?,
+        };
         Ok((enqueue.enqueued || enqueue.duplicate).then_some(arranged_alert.event_id))
     }
 }

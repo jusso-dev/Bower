@@ -382,7 +382,8 @@ public sealed class PackActivationTests
             // Wire shape shared with the Rust collector.
             Assert.Equal(
                 ["observedSince", "attemptedRequests", "attemptedBytes", "capacityRefusals",
-                    "capacityRefusedBytes", "lastRefusalAt", "lastRefusalReason"],
+                    "capacityRefusedBytes", "privacyAlertRefusals", "privacyAlertRefusedBytes", "lastRefusalAt",
+                    "lastRefusalReason"],
                 intake.EnumerateObject().Select(property => property.Name));
             string text = intake.GetRawText();
             Assert.DoesNotContain("generic-1", text, StringComparison.Ordinal);
