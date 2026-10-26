@@ -48,6 +48,32 @@ public sealed record ControlRecord(
     [property: JsonPropertyName("status")] string Status,
     [property: JsonPropertyName("evidence")] string Evidence);
 
+/// <summary>
+/// What a non-generic probe tested: the path, the collector configuration it ran against
+/// (pack version and hash, parser state, policy hash), the exact event identity and the
+/// intended destination, the outcome, and the paths it did not test. Metadata only.
+/// </summary>
+public sealed record ProbeRecord(
+    [property: JsonPropertyName("profile")] string Profile,
+    [property: JsonPropertyName("testedPath")] string TestedPath,
+    [property: JsonPropertyName("fixture")] string Fixture,
+    [property: JsonPropertyName("packId")] string PackId,
+    [property: JsonPropertyName("parserIndex")] int ParserIndex,
+    [property: JsonPropertyName("packVersion")] string? PackVersion,
+    [property: JsonPropertyName("packHash")] string? PackHash,
+    [property: JsonPropertyName("parserStatus")] string? ParserStatus,
+    [property: JsonPropertyName("collectorPolicyHash")] string? CollectorPolicyHash,
+    [property: JsonPropertyName("eventId")] string EventId,
+    [property: JsonPropertyName("expectedEventType")] string ExpectedEventType,
+    [property: JsonPropertyName("eventPolicyId")] string? EventPolicyId,
+    [property: JsonPropertyName("eventPolicyVersion")] string? EventPolicyVersion,
+    [property: JsonPropertyName("eventPolicyHash")] string? EventPolicyHash,
+    [property: JsonPropertyName("destinationWorkspaceId")] string? DestinationWorkspaceId,
+    [property: JsonPropertyName("destinationTable")] string DestinationTable,
+    [property: JsonPropertyName("queriedAt")] DateTimeOffset? QueriedAt,
+    [property: JsonPropertyName("outcome")] string Outcome,
+    [property: JsonPropertyName("untestedPaths")] IReadOnlyList<string> UntestedPaths);
+
 /// <summary>A signed, metadata-only record that Bower delivery was proven (or not).</summary>
 public sealed record EvidenceBundle(
     [property: JsonPropertyName("schema")] string Schema,
@@ -59,7 +85,8 @@ public sealed record EvidenceBundle(
     [property: JsonPropertyName("retention")] RetentionRecord? Retention,
     [property: JsonPropertyName("ingestionErrorsLastHour")] long? IngestionErrorsLastHour,
     [property: JsonPropertyName("controls")] IReadOnlyList<ControlRecord> Controls,
-    [property: JsonPropertyName("limitations")] IReadOnlyList<string> Limitations)
+    [property: JsonPropertyName("limitations")] IReadOnlyList<string> Limitations,
+    [property: JsonPropertyName("probe"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ProbeRecord? Probe = null)
 {
     public const string CurrentSchema = "bower.evidence/v1";
 }

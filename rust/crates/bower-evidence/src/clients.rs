@@ -10,7 +10,8 @@ use serde_json::{Map, Value, json};
 
 use crate::EvidenceError;
 use crate::runner::{
-    ArmReader, BoxFuture, CanarySender, CollectorResponse, LogAnalyticsQuery, QueryRows,
+    ArmReader, BoxFuture, CanarySender, CollectorResponse, LogAnalyticsQuery, ParserProbeSender,
+    QueryRows,
 };
 
 const LOG_ANALYTICS_SCOPE: &str = "https://api.loganalytics.io/.default";
@@ -95,6 +96,45 @@ impl HttpCanarySender {
     }
 }
 
+impl HttpCanarySender {
+    async fn request(
+        &self,
+        method: reqwest::Method,
+        collector: &reqwest::Url,
+        path: &str,
+        token: Option<&str>,
+        json: Option<String>,
+    ) -> Result<CollectorResponse, EvidenceError> {
+        let url = collector
+            .join(path)
+            .map_err(|_| EvidenceError::InvalidArgument("Collector URL is invalid.".to_owned()))?;
+        let mut request = self.http.request(method, url);
+        if let Some(json) = json {
+            request = request
+                .header(
+                    reqwest::header::CONTENT_TYPE,
+                    "application/json; charset=utf-8",
+                )
+                .body(json);
+        }
+        if let Some(token) = token.filter(|token| !token.is_empty()) {
+            request = request.bearer_auth(token);
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|error| EvidenceError::Http(transport_error(&error)))?;
+        let status = response.status().as_u16();
+        let body = response.bytes().await.ok().and_then(|bytes| {
+            match serde_json::from_slice::<Value>(&bytes) {
+                Ok(Value::Object(body)) => Some(body),
+                _ => None,
+            }
+        });
+        Ok((status, body))
+    }
+}
+
 impl CanarySender for HttpCanarySender {
     fn send<'a>(
         &'a self,
@@ -102,33 +142,40 @@ impl CanarySender for HttpCanarySender {
         token: Option<&'a str>,
         json: String,
     ) -> BoxFuture<'a, Result<CollectorResponse, EvidenceError>> {
+        Box::pin(self.request(
+            reqwest::Method::POST,
+            collector,
+            "v1/events",
+            token,
+            Some(json),
+        ))
+    }
+}
+
+impl ParserProbeSender for HttpCanarySender {
+    fn get_status<'a>(
+        &'a self,
+        collector: &'a reqwest::Url,
+        token: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<CollectorResponse, EvidenceError>> {
+        Box::pin(self.request(reqwest::Method::GET, collector, "v1/status", token, None))
+    }
+
+    fn send_record<'a>(
+        &'a self,
+        collector: &'a reqwest::Url,
+        token: Option<&'a str>,
+        pack_id: &'a str,
+        parser_index: i32,
+        json: String,
+    ) -> BoxFuture<'a, Result<CollectorResponse, EvidenceError>> {
         Box::pin(async move {
-            let url = collector.join("v1/events").map_err(|_| {
-                EvidenceError::InvalidArgument("Collector URL is invalid.".to_owned())
-            })?;
-            let mut request = self
-                .http
-                .post(url)
-                .header(
-                    reqwest::header::CONTENT_TYPE,
-                    "application/json; charset=utf-8",
-                )
-                .body(json);
-            if let Some(token) = token.filter(|token| !token.is_empty()) {
-                request = request.bearer_auth(token);
-            }
-            let response = request
-                .send()
+            let path = format!(
+                "v1/packs/{}/parsers/{parser_index}/events",
+                escape_data_string(pack_id)
+            );
+            self.request(reqwest::Method::POST, collector, &path, token, Some(json))
                 .await
-                .map_err(|error| EvidenceError::Http(transport_error(&error)))?;
-            let status = response.status().as_u16();
-            let body = response.bytes().await.ok().and_then(|bytes| {
-                match serde_json::from_slice::<Value>(&bytes) {
-                    Ok(Value::Object(body)) => Some(body),
-                    _ => None,
-                }
-            });
-            Ok((status, body))
         })
     }
 }
@@ -348,13 +395,17 @@ pub fn escape_data_string(text: &str) -> String {
     escaped
 }
 
+/// .NET `HttpClient` timeout text; parser probes read it as a query timeout.
+pub(crate) const TIMEOUT_MESSAGE: &str =
+    "The request was canceled due to the configured HttpClient.Timeout of 30 seconds elapsing.";
+
 /// Transport failure text as .NET `HttpClient` reports it, for example
 /// `Connection refused (127.0.0.1:9)`. Only the host and port are included: never
 /// paths, queries, headers or bodies.
 pub(crate) fn transport_error(error: &reqwest::Error) -> String {
     if error.is_timeout() {
         // The verifier and canary clients use the CLI's 30 second timeout.
-        return "The request was canceled due to the configured HttpClient.Timeout of 30 seconds elapsing.".to_owned();
+        return TIMEOUT_MESSAGE.to_owned();
     }
     if error.is_body() || error.is_decode() {
         return "Error while copying content to a stream.".to_owned();

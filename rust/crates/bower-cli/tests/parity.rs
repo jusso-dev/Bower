@@ -802,6 +802,14 @@ fn argument_handling_matches_csharp() {
             "1441",
         ],
         &["evidence", "verify", "missing.json"],
+        &[
+            "evidence",
+            "run",
+            "--collector-url",
+            "http://127.0.0.1:9",
+            "--probe-profile",
+            "parser:linux-ssh-gateway:7",
+        ],
         &["developer", "init", "--path", "/nonexistent-bower-path"],
     ];
     for args in cases {

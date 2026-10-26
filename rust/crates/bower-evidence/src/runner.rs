@@ -22,10 +22,11 @@ use serde_json::{Map, Value};
 
 use crate::EvidenceError;
 use crate::bundle::{
-    ArrivalRecord, CURRENT_SCHEMA, CanaryRecord, EvidenceBundle, RetentionRecord, SignedEvidence,
-    modes,
+    ArrivalRecord, CURRENT_SCHEMA, CanaryRecord, EvidenceBundle, ProbeRecord, RetentionRecord,
+    SignedEvidence, modes,
 };
 use crate::controls;
+use crate::probe::{self, ParserProbeFixture, outcomes};
 
 /// Boxed `Send` future, so the client traits stay object safe.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -69,6 +70,26 @@ pub trait CanarySender: Send + Sync {
     ) -> BoxFuture<'a, Result<CollectorResponse, EvidenceError>>;
 }
 
+/// `IParserProbeSender`: the collector calls a parser probe makes besides the canary post.
+pub trait ParserProbeSender: Send + Sync {
+    /// GET `v1/status` (bearer authenticated): pack versions, hashes and parser states.
+    fn get_status<'a>(
+        &'a self,
+        collector: &'a reqwest::Url,
+        token: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<CollectorResponse, EvidenceError>>;
+
+    /// POST one raw record to `v1/packs/PACK/parsers/INDEX/events`.
+    fn send_record<'a>(
+        &'a self,
+        collector: &'a reqwest::Url,
+        token: Option<&'a str>,
+        pack_id: &'a str,
+        parser_index: i32,
+        json: String,
+    ) -> BoxFuture<'a, Result<CollectorResponse, EvidenceError>>;
+}
+
 /// `EvidenceOptions`. `workspace_id: None` runs in simulated mode.
 #[derive(Clone)]
 pub struct EvidenceOptions {
@@ -84,6 +105,8 @@ pub struct EvidenceOptions {
     pub environment: String,
     pub timeout: Duration,
     pub poll_interval: Duration,
+    /// `generic` (default) or an opt-in `parser:PACK:INDEX` profile with a trusted fixture.
+    pub probe_profile: String,
 }
 
 impl EvidenceOptions {
@@ -100,6 +123,7 @@ impl EvidenceOptions {
             environment: "production".to_owned(),
             timeout: Duration::from_secs(15 * 60),
             poll_interval: Duration::from_secs(30),
+            probe_profile: probe::GENERIC.to_owned(),
         }
     }
 }
@@ -120,6 +144,7 @@ impl fmt::Debug for EvidenceOptions {
             .field("environment", &self.environment)
             .field("timeout", &self.timeout)
             .field("poll_interval", &self.poll_interval)
+            .field("probe_profile", &self.probe_profile)
             .finish()
     }
 }
@@ -134,6 +159,7 @@ pub struct EvidenceRunner {
     query: Option<Arc<dyn LogAnalyticsQuery>>,
     arm: Option<Arc<dyn ArmReader>>,
     clock: Arc<dyn Clock>,
+    parser_sender: Option<Arc<dyn ParserProbeSender>>,
 }
 
 impl EvidenceRunner {
@@ -147,7 +173,14 @@ impl EvidenceRunner {
             query,
             arm,
             clock: Arc::new(SystemClock),
+            parser_sender: None,
         }
+    }
+
+    /// The collector client for parser probes (C# `parserSender`).
+    pub fn with_parser_sender(mut self, sender: Arc<dyn ParserProbeSender>) -> Self {
+        self.parser_sender = Some(sender);
+        self
     }
 
     pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
@@ -160,6 +193,11 @@ impl EvidenceRunner {
             return Err(EvidenceError::InvalidArgument(
                 "Table must be a Log Analytics table name such as BowerSecurity_CL.".to_owned(),
             ));
+        }
+
+        if options.probe_profile != probe::GENERIC {
+            let fixture = probe::resolve_parser(&options.probe_profile)?;
+            return self.run_parser_probe(options, fixture).await;
         }
 
         let query = match (&options.workspace_id, &self.query) {
@@ -246,7 +284,306 @@ impl EvidenceRunner {
             ingestion_errors_last_hour: errors,
             controls,
             limitations,
+            probe: None,
         })
+    }
+
+    /// Opt-in parser probe (C# `RunParserProbeAsync`): reads the collector's loaded pack
+    /// and policy configuration, posts the trusted fixture through the signed parser's
+    /// HTTP intake, then queries the destination for exactly that event identity.
+    /// Collector acceptance alone never verifies.
+    async fn run_parser_probe(
+        &self,
+        options: &EvidenceOptions,
+        fixture: ParserProbeFixture,
+    ) -> Result<EvidenceBundle, EvidenceError> {
+        let Some(sender) = &self.parser_sender else {
+            return Err(EvidenceError::InvalidArgument(
+                "The collector sender does not support parser probes.".to_owned(),
+            ));
+        };
+        let query = match (&options.workspace_id, &self.query) {
+            (Some(workspace), Some(query)) => Some((workspace.as_str(), query.as_ref())),
+            _ => None,
+        };
+        let simulated = query.is_none();
+        let sent_at = self.clock.utc_now();
+        let event_id = format!("bower-probe-{}", uuid::Uuid::now_v7().simple());
+        let token = options.ingest_token.as_deref();
+
+        let mut outcome: Option<String> = None;
+        let mut collector_policy_hash = None;
+        let mut pack_version = None;
+        let mut pack_hash = None;
+        let mut parser_status = None;
+        let (status_code, status) = sender.get_status(&options.collector_url, token).await?;
+        let policy = status
+            .as_ref()
+            .and_then(|status| status.get("policy"))
+            .and_then(Value::as_object);
+        match policy {
+            _ if matches!(status_code, 401 | 403) => {
+                outcome = Some(outcomes::COLLECTOR_PERMISSION_DENIED.to_owned());
+            }
+            Some(policy) if status_code == 200 => {
+                collector_policy_hash = probe::text(policy.get("hash"));
+                let pack = policy
+                    .get("packs")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_object)
+                    .find(|pack| probe::text(pack.get("id")).as_deref() == Some(fixture.pack_id));
+                pack_version = pack.and_then(|pack| probe::text(pack.get("version")));
+                pack_hash = pack.and_then(|pack| probe::text(pack.get("packHash")));
+                let statuses = pack
+                    .and_then(|pack| pack.get("parserStatuses"))
+                    .and_then(Value::as_array);
+                parser_status = match statuses.and_then(|statuses| {
+                    usize::try_from(fixture.parser_index)
+                        .ok()
+                        .and_then(|index| statuses.get(index))
+                }) {
+                    Some(value) => probe::text(Some(value)),
+                    None => Some("absent".to_owned()),
+                };
+                if parser_status.as_deref() != Some("active-local-json") {
+                    outcome = Some(outcomes::PARSER_INACTIVE.to_owned());
+                }
+            }
+            _ => outcome = Some(outcomes::COLLECTOR_STATUS_UNREADABLE.to_owned()),
+        }
+
+        let mut collector_status = 0;
+        let mut body = None;
+        if outcome.is_none() {
+            let (status, response) = sender
+                .send_record(
+                    &options.collector_url,
+                    token,
+                    fixture.pack_id,
+                    fixture.parser_index,
+                    fixture.render(&event_id, sent_at),
+                )
+                .await?;
+            collector_status = status;
+            outcome = probe::classify(status, response.as_ref(), &event_id).map(str::to_owned);
+            body = response;
+        }
+
+        let event_policy = body
+            .as_ref()
+            .and_then(|body| body.get("policy"))
+            .and_then(Value::as_object);
+        let policy_field =
+            |name: &str| event_policy.and_then(|policy| probe::text(policy.get(name)));
+        let canary_record = CanaryRecord {
+            event_id: event_id.clone(),
+            sent_at,
+            collector_host: options
+                .collector_url
+                .host_str()
+                .unwrap_or_default()
+                .to_owned(),
+            collector_status: i32::from(collector_status),
+            collector_decision: body
+                .as_ref()
+                .and_then(|body| string_at(body.get("decision"))),
+            policy_id: policy_field("policyId"),
+        };
+
+        let mut limitations = vec![
+            format!(
+                "Proves delivery for this probe through {} at this time; it does not prove the untested paths listed in the probe record or that every event was delivered.",
+                fixture.path()
+            ),
+            "Bundles hold metadata only: no event payloads or credentials.".to_owned(),
+        ];
+
+        let mut arrival =
+            ArrivalRecord::not_found(options.workspace_id.clone(), options.table.clone());
+        let mut queried_at = None;
+        if simulated {
+            limitations.push(
+                "SIMULATED: no Sentinel query was run, so this bundle is not delivery evidence."
+                    .to_owned(),
+            );
+            outcome.get_or_insert_with(|| outcomes::ACCEPTED_NOT_VERIFIED.to_owned());
+        }
+        let outcome = match (outcome, query) {
+            (Some(outcome), _) => {
+                arrival.query_error = Some(outcome.clone());
+                outcome
+            }
+            (None, Some((workspace, query))) => {
+                let (polled, outcome, at) = self
+                    .poll_probe(query, workspace, options, &event_id, fixture, sent_at)
+                    .await?;
+                arrival = polled;
+                queried_at = at;
+                outcome.to_owned()
+            }
+            (None, None) => unreachable!("simulated probes always have an outcome"),
+        };
+
+        let retention = self.read_retention(options).await?;
+        let errors = match query {
+            None => None,
+            Some((workspace, query)) => read_ingestion_errors(query, workspace).await?,
+        };
+        let mode = if simulated {
+            modes::SIMULATED
+        } else if outcome == outcomes::VERIFIED {
+            modes::VERIFIED
+        } else {
+            modes::FAILED
+        };
+        let controls = controls::map(mode, &arrival, retention.as_ref());
+        let record = ProbeRecord {
+            profile: fixture.profile(),
+            tested_path: format!(
+                "POST {} -> parser -> privacy -> policy -> queue -> output -> {}",
+                fixture.path(),
+                options.table
+            ),
+            fixture: fixture.id.to_owned(),
+            pack_id: fixture.pack_id.to_owned(),
+            parser_index: fixture.parser_index,
+            pack_version,
+            pack_hash,
+            parser_status,
+            collector_policy_hash,
+            event_id,
+            expected_event_type: fixture.expected_event_type.to_owned(),
+            event_policy_id: policy_field("policyId"),
+            event_policy_version: policy_field("policyVersion"),
+            event_policy_hash: policy_field("policyHash"),
+            destination_workspace_id: options.workspace_id.clone(),
+            destination_table: options.table.clone(),
+            queried_at,
+            outcome,
+            untested_paths: probe::UNTESTED_PATHS
+                .iter()
+                .map(|path| (*path).to_owned())
+                .collect(),
+        };
+        Ok(EvidenceBundle {
+            schema: CURRENT_SCHEMA.to_owned(),
+            mode: mode.to_owned(),
+            generated_at: self.clock.utc_now(),
+            tool: "bower".to_owned(),
+            canary: canary_record,
+            arrival,
+            retention,
+            ingestion_errors_last_hour: errors,
+            controls,
+            limitations,
+            probe: Some(record),
+        })
+    }
+
+    /// C# `PollProbeAsync`: only the exact probe id with the expected event type
+    /// verifies; permission errors stop at once; at the deadline an empty answer is a
+    /// missing row and a failed one a timeout or query failure.
+    async fn poll_probe(
+        &self,
+        query: &dyn LogAnalyticsQuery,
+        workspace: &str,
+        options: &EvidenceOptions,
+        event_id: &str,
+        fixture: ParserProbeFixture,
+        sent_at: Timestamp,
+    ) -> Result<(ArrivalRecord, &'static str, Option<Timestamp>), EvidenceError> {
+        let table = &options.table;
+        let kql = format!(
+            "{table}\n| where TimeGenerated > ago(1d)\n| where EventId == \"{event_id}\"\n\
+             | project TimeGenerated, IngestionTime = ingestion_time(), EventId, EventType, PolicyHash\n| take 1"
+        );
+        let missing = |attempts: i32, error: String| ArrivalRecord {
+            query: Some(kql.clone()),
+            attempts,
+            query_error: Some(error),
+            ..ArrivalRecord::not_found(options.workspace_id.clone(), table.clone())
+        };
+        let deadline = self.clock.utc_now() + chrono_duration(options.timeout);
+        let mut attempts = 0;
+        loop {
+            attempts += 1;
+            let queried_at = self.clock.utc_now();
+            let result = match query
+                .query(workspace, &kql, Duration::from_secs(86_400))
+                .await
+            {
+                Ok(result) => result,
+                Err(EvidenceError::Http(message)) => QueryRows {
+                    rows: Vec::new(),
+                    error: Some(
+                        if message.starts_with(crate::clients::TIMEOUT_MESSAGE) {
+                            outcomes::QUERY_TIMEOUT_CODE
+                        } else {
+                            outcomes::QUERY_TRANSPORT_CODE
+                        }
+                        .to_owned(),
+                    ),
+                },
+                Err(other) => return Err(other),
+            };
+            if let Some(error) = result
+                .error
+                .as_deref()
+                .filter(|error| probe::is_permission_error(error))
+            {
+                return Ok((
+                    missing(attempts, error.to_owned()),
+                    outcomes::DESTINATION_PERMISSION_DENIED,
+                    Some(queried_at),
+                ));
+            }
+            if let (None, Some(row)) = (&result.error, result.rows.first()) {
+                // Only the exact probe identity, with the event type the parser should map, verifies.
+                if string_at(row.get("EventId")).as_deref() != Some(event_id)
+                    || string_at(row.get("EventType")).as_deref()
+                        != Some(fixture.expected_event_type)
+                {
+                    return Ok((
+                        missing(attempts, outcomes::DESTINATION_WRONG_EVENT.to_owned()),
+                        outcomes::DESTINATION_WRONG_EVENT,
+                        Some(queried_at),
+                    ));
+                }
+                let generated = read_time(row, "TimeGenerated");
+                let ingested = read_time(row, "IngestionTime");
+                return Ok((
+                    ArrivalRecord {
+                        found: true,
+                        workspace_id: options.workspace_id.clone(),
+                        table: table.clone(),
+                        query: Some(kql),
+                        attempts,
+                        time_generated: generated,
+                        ingestion_time: ingested,
+                        latency_seconds: ingested
+                            .map(|ingested| latency_seconds(ingested, sent_at)),
+                        row_policy_hash: string_at(row.get("PolicyHash")),
+                        query_error: None,
+                    },
+                    outcomes::VERIFIED,
+                    Some(queried_at),
+                ));
+            }
+
+            if self.clock.utc_now() + chrono_duration(options.poll_interval) > deadline {
+                let outcome = match result.error.as_deref() {
+                    None => outcomes::DESTINATION_ROW_MISSING,
+                    Some(error) if probe::is_timeout_error(error) => outcomes::DESTINATION_TIMEOUT,
+                    Some(_) => outcomes::DESTINATION_QUERY_FAILED,
+                };
+                let error = result.error.unwrap_or_else(|| outcome.to_owned());
+                return Ok((missing(attempts, error), outcome, Some(queried_at)));
+            }
+
+            tokio::time::sleep(options.poll_interval).await;
+        }
     }
 
     /// Signs the bundle's canonical JSON when a private key is supplied.
