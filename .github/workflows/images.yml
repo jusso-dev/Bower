@@ -4,7 +4,10 @@ name: Images
 #   main (after CI passes)  -> :edge and :sha-<short>
 #   tag vX.Y.Z               -> :X.Y.Z, :X.Y and :latest
 on:
-  workflow_run:
+  # workflow_run is the only way to publish after CI passes without duplicating CI here.
+  # It is safe because the gate job below only accepts push runs of this repository's
+  # own main branch whose commit is reachable from main; fork PR runs are skipped.
+  workflow_run: # zizmor: ignore[dangerous-triggers] gated on event, head repository and reachability from main
     workflows: [CI]
     types: [completed]
     branches: [main]
@@ -20,9 +23,43 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  gate:
+    # Only publish commits that are on main or carry a release tag.
+    # The workflow_run `branches` filter matches the head branch *name*, so a fork PR
+    # from a branch called `main` also matches it. Require a successful CI run that was
+    # triggered by a push to this repository's own main branch.
+    if: >-
+      github.event_name != 'workflow_run' || (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Verify commit is on main or is a release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          if [[ "$EVENT" != workflow_run && "$REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "Release tag $REF at $SHA"
+            exit 0
+          fi
+          # "identical" or "behind" means SHA is main's head or one of its ancestors.
+          # A commit that only exists in a fork makes the API fail, which fails closed.
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$SHA" --jq .status)
+          case "$status" in
+            identical|behind) echo "$SHA is reachable from main" ;;
+            *) echo "::error::$SHA is not reachable from main (compare status: $status)"; exit 1 ;;
+          esac
+
   publish:
-    # Only publish main builds whose CI run succeeded.
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    needs: gate
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -52,8 +89,9 @@ jobs:
             dockerfile: rust/Dockerfile
             description: Bower collector (Rust) - same contract as bower-collector, static musl binary
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # workflow_run runs on the default branch; build exactly the commit CI tested.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
@@ -61,16 +99,16 @@ jobs:
         # Tag images with the commit actually built (workflow_run checks out a detached SHA).
         run: echo "short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - uses: docker/login-action@v4
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
           tags: |
@@ -88,7 +126,7 @@ jobs:
             org.opencontainers.image.description=${{ matrix.description }}
 
       - id: build
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -102,7 +140,7 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
-      - uses: actions/attest-build-provenance@v4
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
           subject-digest: ${{ steps.build.outputs.digest }}
