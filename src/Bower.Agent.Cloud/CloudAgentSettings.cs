@@ -50,7 +50,10 @@ public sealed partial record CloudAgentSettings
     /// <summary>How long a released message stays hidden before redelivery.</summary>
     public TimeSpan RetryDelay { get; init; } = TimeSpan.FromSeconds(60);
 
-    /// <summary>Visibility (SQS) or ack deadline (Pub/Sub) kept while a large message is forwarded.</summary>
+    /// <summary>
+    /// Visibility (SQS) or ack deadline (Pub/Sub) held on every received message until it is
+    /// settled. Taken on receive and renewed at half the lease.
+    /// </summary>
     public TimeSpan Lease { get; init; } = TimeSpan.FromMinutes(5);
 
     public bool IncludeRawRecords { get; init; }
@@ -158,6 +161,12 @@ public sealed partial record CloudAgentSettings
         if (RetryDelay < TimeSpan.FromSeconds(10) || RetryDelay > TimeSpan.FromMinutes(10))
         {
             throw new InvalidOperationException("BOWER_RETRY_SECONDS must be between 10 and 600.");
+        }
+
+        // Pub/Sub accepts ack deadlines of 10 to 600 seconds.
+        if (Lease < TimeSpan.FromSeconds(10) || Lease > TimeSpan.FromMinutes(10))
+        {
+            throw new InvalidOperationException("The source lease must be between 10 and 600 seconds.");
         }
 
         if (Aws is not null)

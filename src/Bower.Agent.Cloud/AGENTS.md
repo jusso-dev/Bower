@@ -8,6 +8,11 @@ candidate events to a Bower collector. Event selection stays in collector policy
   with a delay; never delete it. Malformed messages are released immediately so the
   queue's own dead-letter policy holds them. Unsupported messages are acknowledged
   and dropped (default deny).
+- Leases: every received message is leased on receive and renewed by elapsed time
+  (half the lease, `TimeProvider`-driven, bounded concurrency) until it is settled.
+  Ownership stays in the forwarding loop, never in scheduled jobs. A failed renewal or
+  passed deadline cancels that message's work; a lost lease is never acknowledged or
+  released. Renewal tasks end with the batch. Lease tests use a fake clock.
 - Probe the collector before receiving, so outages do not burn delivery attempts.
 - No stored cloud keys: AWS default credential chain (instance profile, ECS task
   role, IRSA) and Google Application Default Credentials (Workload Identity,

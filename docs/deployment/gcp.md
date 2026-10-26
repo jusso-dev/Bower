@@ -102,6 +102,13 @@ memory until five minutes before expiry and are never logged or written to disk.
 - A message is acknowledged only after its event was accepted or rejected by policy.
 - Backpressure sets the ack deadline to `BOWER_RETRY_SECONDS`; Pub/Sub redelivers
   afterwards. The agent does not pull while the collector is unreachable.
+- Every pulled message is leased by elapsed time: on pull the agent extends its ack
+  deadline from the subscription's 60 s to the 5-minute lease and renews it every
+  2.5 minutes until the message is acknowledged or released, including while earlier
+  messages in the batch, translation, forwarding or 429 retries are still running. If
+  a renewal fails or the deadline passes, work on that message stops and it is not
+  acknowledged; Pub/Sub redelivers it and the collector deduplicates its deterministic
+  event ids.
 - Malformed messages get a zero ack deadline, so Pub/Sub retries them and moves them
   to the dead-letter topic after `max_delivery_attempts`.
 - Unsupported payloads (other log types) are acknowledged and dropped: default deny.

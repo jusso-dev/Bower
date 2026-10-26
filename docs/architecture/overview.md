@@ -79,7 +79,9 @@ they map source records to candidate events and post them to a collector through
 policy there. Their upstream position (a file cursor, an SQS message, a Pub/Sub ack
 id) advances only when the collector accepted or definitively rejected every event
 derived from it. Cloud queues keep their own dead-letter policies; the cloud agent
-releases malformed messages to them and never deletes on backpressure. See
+releases malformed messages to them and never deletes on backpressure. It renews the
+lease of every received message by elapsed time until the message is settled; a message
+whose lease cannot be held is left for redelivery, never acknowledged. See
 [AWS](../deployment/aws.md) and [Google Cloud](../deployment/gcp.md).
 
 ## Background jobs
