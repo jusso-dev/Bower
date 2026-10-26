@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.Text;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -83,12 +84,39 @@ public static class PipelineDocument
 
         public PipelineNode ToModel()
         {
-            if (!Enum.TryParse(Kind, ignoreCase: true, out PipelineNodeKind kind))
+            if (!TryParseKind(Kind, out PipelineNodeKind kind))
             {
-                throw new InvalidDataException($"Unknown node kind '{Kind}'.");
+                throw new InvalidDataException(
+                    $"Node '{Id}' has unknown kind '{Kind}'. Supported: {PipelineValidator.SupportedKinds}.");
             }
 
             return new PipelineNode(Id ?? string.Empty, kind, Type ?? string.Empty, Config);
+        }
+
+        // A declared name (any case, surrounding whitespace ignored) or a declared ordinal
+        // written as ASCII digits. Enum.TryParse alone also accepts undefined numbers
+        // ("999", "-1"), signs and comma-joined names, which the Rust port rejects.
+        private static bool TryParseKind(string? text, out PipelineNodeKind kind)
+        {
+            string trimmed = text?.Trim() ?? string.Empty;
+            foreach (PipelineNodeKind candidate in Enum.GetValues<PipelineNodeKind>())
+            {
+                if (string.Equals(candidate.ToString(), trimmed, StringComparison.OrdinalIgnoreCase))
+                {
+                    kind = candidate;
+                    return true;
+                }
+            }
+
+            kind = default;
+            if (!int.TryParse(trimmed, NumberStyles.None, CultureInfo.InvariantCulture, out int ordinal)
+                || !Enum.IsDefined((PipelineNodeKind)ordinal))
+            {
+                return false;
+            }
+
+            kind = (PipelineNodeKind)ordinal;
+            return true;
         }
 
         public static NodeDto FromModel(PipelineNode node)

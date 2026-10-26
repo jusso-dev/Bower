@@ -442,6 +442,41 @@ public sealed partial class ManagementStore
 
     private const string VersionTargetType = "privacy-profile-version";
 
+    /// <summary>
+    /// Latest assignment history row per collector: revision, time, action and version.
+    /// SQLite takes the bare columns from the row holding <c>MAX(id)</c>.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, PrivacyProfileAssignmentHead>>
+        LatestPrivacyProfileAssignmentsAsync(CancellationToken cancellationToken)
+    {
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT collector_id, MAX(id), occurred_at, action, version_id
+            FROM privacy_profile_assignments
+            GROUP BY collector_id;
+            """;
+        Dictionary<string, PrivacyProfileAssignmentHead> latest = new(StringComparer.Ordinal);
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            latest[reader.GetString(0)] = new PrivacyProfileAssignmentHead(
+                reader.GetInt64(1),
+                Parse(reader.GetString(2)),
+                reader.GetString(3) == "assigned",
+                reader.IsDBNull(4) ? null : reader.GetString(4));
+        }
+
+        return latest;
+    }
+
+    private readonly record struct PrivacyProfileAssignmentHead(
+        long Revision,
+        DateTimeOffset OccurredAt,
+        bool Assigned,
+        string? VersionId);
+
     private static async Task<DesiredPrivacyProfile?> ReadDesiredPrivacyProfileAsync(
         SqliteConnection connection,
         string versionId,

@@ -11,7 +11,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use bower_contracts::time::Timestamp;
-use bower_contracts::{JsonElement, SourceActivity};
+use bower_contracts::{JsonElement, SourceActivity, SourceMonitoring};
 
 pub const MAXIMUM_SOURCES: usize = 1_000;
 pub const MAXIMUM_SILENCE_MINUTES_LIMIT: i32 = 10_080;
@@ -238,7 +238,9 @@ fn is_blank(value: &str) -> bool {
     value.chars().all(char::is_whitespace)
 }
 
-/// `active`, `silent` or `never-seen` for one expected source.
+/// `active` (seen within the allowance), `pending` (not yet seen, still within the
+/// allowance from its monitoring start), `silent` or `never-seen` (overdue) for one
+/// expected source.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SourceSilenceStatus {
     pub application: String,
@@ -250,17 +252,25 @@ pub struct SourceSilenceStatus {
 }
 
 impl SourceSilenceStatus {
+    /// Seen within its allowance. A `pending` source is not active: it has no evidence yet.
     pub fn is_active(&self) -> bool {
         self.state == "active"
+    }
+
+    /// Past its allowance: `silent` or `never-seen`.
+    pub fn is_overdue(&self) -> bool {
+        matches!(self.state.as_str(), "silent" | "never-seen")
     }
 }
 
 /// Compares expected sources with observed activity (C# `SourceSilenceEvaluator`). A
-/// source never seen is silent once its allowance has passed since
-/// `monitoring_since`, so a fresh start does not raise immediate false alarms.
+/// source never seen runs its allowance from its durable monitoring start in
+/// `monitoring`, or from `monitoring_since` when it has none: `pending` while inside
+/// the allowance, then `never-seen`. A restart therefore cannot extend the deadline.
 pub fn evaluate(
     expectations: &SourceExpectations,
     activity: &[SourceActivity],
+    monitoring: &[SourceMonitoring],
     monitoring_since: Timestamp,
     now: Timestamp,
 ) -> Vec<SourceSilenceStatus> {
@@ -268,15 +278,24 @@ pub fn evaluate(
     for item in activity {
         by_key.insert((&item.application, &item.environment), item);
     }
+    let mut started: HashMap<(&str, &str), Timestamp> = HashMap::new();
+    for item in monitoring {
+        started.insert(
+            (&item.application, &item.environment),
+            item.monitoring_since,
+        );
+    }
     expectations
         .sources
         .iter()
         .map(|expected| {
             let allowed = i64::from(expected.maximum_silence_minutes) * 60;
-            let seen = by_key
-                .get(&(expected.application.as_str(), expected.environment.as_str()))
-                .copied();
-            let reference = seen.map_or(monitoring_since, |seen| seen.last_seen_at);
+            let key = (expected.application.as_str(), expected.environment.as_str());
+            let seen = by_key.get(&key).copied();
+            let reference = seen.map_or_else(
+                || started.get(&key).copied().unwrap_or(monitoring_since),
+                |seen| seen.last_seen_at,
+            );
             // Math.Floor(TotalSeconds), clamped at zero.
             let elapsed = now.signed_duration_since(reference);
             let mut silent = elapsed.num_seconds();
@@ -284,12 +303,11 @@ pub fn evaluate(
                 silent -= 1;
             }
             let silent = silent.max(0);
-            let state = if silent <= allowed {
-                "active"
-            } else if seen.is_none() {
-                "never-seen"
-            } else {
-                "silent"
+            let state = match (silent <= allowed, seen.is_none()) {
+                (true, false) => "active",
+                (true, true) => "pending",
+                (false, true) => "never-seen",
+                (false, false) => "silent",
             };
             SourceSilenceStatus {
                 application: expected.application.clone(),

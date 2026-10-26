@@ -648,6 +648,32 @@ fn pipeline_validate_reports_cycles_without_an_estimate() {
 }
 
 #[test]
+fn pipeline_validate_rejects_undefined_numeric_kinds_by_node() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("kind.yaml");
+    for kind in ["999", "-1"] {
+        std::fs::write(
+            &file,
+            format!(
+                "id: k\nname: K\nversion: 1\ndescription: x\nnodes:\n- id: a\n  kind: Source\n  type: http-collector\n- id: mid\n  kind: '{kind}'\n  type: policy-engine\n- id: b\n  kind: Output\n  type: http\nedges:\n- from: a\n  to: mid\n- from: mid\n  to: b\n"
+            ),
+        )
+        .unwrap();
+        let run = bower(&["pipeline", "validate", file.to_str().unwrap()]);
+        assert_eq!(
+            (run.code, run.stderr),
+            (
+                1,
+                format!(
+                    "Node 'mid' has unknown kind '{kind}'. Supported: Source, Filter, Redact, Normalise, Detect, Enrich, Output.\n"
+                )
+            )
+        );
+        assert!(run.stdout.is_empty());
+    }
+}
+
+#[test]
 fn evidence_verify_reports_unreadable_bundles() {
     let dir = tempfile::tempdir().unwrap();
     for text in ["{}", "{\"bundle\":null}", "[]", "not json"] {

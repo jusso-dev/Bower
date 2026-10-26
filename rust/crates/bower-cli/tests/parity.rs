@@ -136,6 +136,24 @@ fn pipeline_validate_matches_csharp() {
         "id: o\nname: O\nversion: 1.0.0\ndescription: orphan\nnodes:\n- id: s\n  kind: Source\n  type: http-collector\n- id: lonely\n  kind: Enrich\n  type: geo\n- id: out\n  kind: Output\n  type: azure-monitor\n- id: out\n  kind: Output\n  type: http\nedges:\n- from: s\n  to: out\n",
     )
     .unwrap();
+    // Undefined numeric kinds fail to load (exit 1) with the node id in both runtimes.
+    let numeric = dir.path().join("numeric.yaml");
+    std::fs::write(
+        &numeric,
+        "id: n\nname: N\nversion: 1.0.0\ndescription: kinds\nnodes:\n- id: s\n  kind: Source\n  type: http-collector\n- id: mid\n  kind: '999'\n  type: policy-engine\n- id: out\n  kind: -1\n  type: http\nedges:\n- from: s\n  to: mid\n- from: mid\n  to: out\n",
+    )
+    .unwrap();
+    let run = assert_same(
+        &cs,
+        &repo_root(),
+        &["pipeline", "validate", numeric.to_str().unwrap()],
+    );
+    assert_eq!(run.code, 1);
+    assert!(
+        run.stderr.starts_with("Node 'mid' has unknown kind '999'."),
+        "{}",
+        run.stderr
+    );
     for file in [&valid, &invalid, &orphan] {
         let path = file.to_str().unwrap();
         assert_same(&cs, &repo_root(), &["pipeline", "validate", "--file", path]);

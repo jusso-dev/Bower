@@ -1,3 +1,4 @@
+using Bower.Abstractions;
 using Microsoft.Data.Sqlite;
 
 namespace Bower.Persistence;
@@ -73,6 +74,79 @@ public sealed partial class SqliteEventStore
             """;
         command.Parameters.AddWithValue("$sequence", sequence);
         return await command.ExecuteScalarAsync(cancellationToken) as string;
+    }
+
+    /// <summary>
+    /// Ledger sequences of the events the archive-bounded
+    /// <see cref="PurgeDeliveredAsync(DateTimeOffset, int, long, CancellationToken)"/> would
+    /// remove next with the same arguments (same filter, order and limit).
+    /// </summary>
+    public async Task<IReadOnlyList<long>> ReadPurgeCandidateSequencesAsync(
+        DateTimeOffset deliveredBefore,
+        int maximumCount,
+        long archivedThroughSequence,
+        CancellationToken cancellationToken = default)
+    {
+        if (maximumCount is < 1 or > 100_000)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumCount));
+        }
+
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT enqueue_sequence
+            FROM queue_events_v5
+            WHERE state = $delivered
+              AND acknowledgement IS NOT NULL
+              AND delivered_at IS NOT NULL
+              AND delivered_at < $delivered_before
+              AND enqueue_sequence <= $archived_through
+            ORDER BY delivered_at ASC
+            LIMIT $maximum_count;
+            """;
+        command.Parameters.AddWithValue("$archived_through", archivedThroughSequence);
+        command.Parameters.AddWithValue("$delivered", (int)QueueState.Delivered);
+        command.Parameters.AddWithValue(
+            "$delivered_before",
+            deliveredBefore.ToUniversalTime().ToString(TimestampFormat, System.Globalization.CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$maximum_count", maximumCount);
+        List<long> sequences = [];
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            sequences.Add(reader.GetInt64(0));
+        }
+
+        return sequences;
+    }
+
+    /// <summary>
+    /// Highest chain hash boundary the ledger records at or below
+    /// <paramref name="sequence"/> (entry, compacted segment end or anchor); null when none.
+    /// Every sequence above it and up to <paramref name="sequence"/> has been purged.
+    /// </summary>
+    public async Task<LedgerHead?> GetLedgerBoundaryAtOrBelowAsync(long sequence, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(sequence);
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT sequence, chain_hash FROM (
+                SELECT * FROM (SELECT sequence, chain_hash FROM queue_ledger
+                    WHERE sequence <= $sequence ORDER BY sequence DESC LIMIT 1)
+                UNION ALL SELECT * FROM (SELECT end_sequence, chain_hash FROM queue_ledger_segments
+                    WHERE end_sequence <= $sequence ORDER BY end_sequence DESC LIMIT 1)
+                UNION ALL SELECT sequence, chain_hash FROM queue_ledger_anchor WHERE sequence <= $sequence
+            ) ORDER BY sequence DESC LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$sequence", sequence);
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) && !reader.IsDBNull(1)
+            ? new LedgerHead(reader.GetInt64(0), reader.GetString(1))
+            : null;
     }
 }
 

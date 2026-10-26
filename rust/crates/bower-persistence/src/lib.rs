@@ -12,8 +12,9 @@ mod queue;
 mod suppression;
 
 pub use archive::{
-    ArchiveError, ArchiveManifest, ArchiveRunResult, ArchiveVerification, ArchivedEvent,
-    LedgerEvent, MANIFEST_KIND, MAXIMUM_EVENTS_PER_SEGMENT, QueueArchive,
+    ArchiveCoverage, ArchiveError, ArchiveManifest, ArchiveRunResult, ArchiveVerification,
+    ArchivedEvent, LedgerEvent, MANIFEST_KIND, MAXIMUM_EVENTS_PER_SEGMENT, QueueArchive,
+    WRITER_LOCK_FILE,
 };
 pub use bower_contracts::time::{Clock, SystemClock};
 pub use cursor::{SqliteSourceCursorStore, format_ef_date_time_offset};

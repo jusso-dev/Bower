@@ -1,0 +1,29 @@
+Source|Source
+Filter|Filter
+Redact|Redact
+Normalise|Normalise
+Detect|Detect
+Enrich|Enrich
+Output|Output
+source|Source
+NORMALISE|Normalise
+ output|Output
+0|Source
+3|Normalise
+6|Output
+01|Filter
+7|error
+999|error
+-1|error
+-0|error
++1|error
+1.0|error
+0x1|error
+99999999999999999999|error
+Source,Filter|error
+Filter, Redact|error
+Normalize|error
+teleport|error
+|error
+ſource|error
+fılter|error

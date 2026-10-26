@@ -22,7 +22,9 @@ suppression:
 - The first `allowPerWindow` events per key in each window are queued as usual.
   Later ones are counted in the queue database inside the same transaction as the
   duplicate check, and the collector answers `"suppressed": true` (HTTP 202).
-  Duplicates never consume allowance. Counts survive restarts.
+  Duplicates never consume allowance. Counts survive restarts. When the queue
+  database is at its physical storage limit a suppressible event is refused with
+  the same capacity backpressure as any other event and is not counted.
 - Within 5 seconds of a window ending, one `telemetry_aggregation_summary` event
   (action `telemetry.suppressed`) is queued with the suppressed and admitted counts,
   the key fields and their redacted values, the window bounds and the first and last
@@ -147,14 +149,31 @@ Set `BOWER_SOURCE_EXPECTATIONS` to a JSON file
 
 - A source is seen when an event from it is queued, deduplicated or suppressed.
   Rejected and quarantined events do not count: they never reach the SIEM.
-- `/health` becomes `degraded` while any expected source is quiet. `/v1/status` lists
-  each source as `active`, `silent` or `never-seen`. Heartbeats report each as an
-  `application` source, so silent ones appear in the console's fleet exceptions.
-- A source never seen gets its allowance from collector start-up before it is
-  reported. Last-seen times are saved every minute; after a crash up to a minute of
-  activity is lost, which can only make a source look quieter, never healthier.
+- `/health` becomes `degraded` while any expected source is overdue. `/v1/status`
+  lists each source as `active` (seen within its allowance), `pending` (not seen yet,
+  still inside its first allowance), `silent` or `never-seen` (overdue). Heartbeats
+  report `active` sources as `healthy` and every other state by name, so the console
+  counts pending and quiet sources as not healthy. A pending source is never reported
+  as healthy: there is no evidence from it yet.
+- A source never seen gets its allowance from when the collector first began
+  expecting it. That monitoring start is stored per source in the queue database
+  (`source_monitoring`), so restarting the collector, however often, cannot extend
+  the deadline. A source added to the expectations file gets its own allowance from
+  the next start; existing sources keep theirs. A source removed from the file is
+  forgotten at the next start, and listing it again later starts a fresh allowance.
+  Starting without `BOWER_SOURCE_EXPECTATIONS` forgets every monitoring start. Each
+  start that forgets sources logs a warning (`EventId 1321`) with the count and the
+  `application/environment` ids, so a reset is auditable.
+- A monitoring start recorded while the host clock ran ahead (for example before time
+  synchronisation) is replaced by the earlier time at the next start. A start only
+  ever moves earlier, which can shorten a deadline but never extend it.
+- Last-seen times are saved every minute; after a crash up to a minute of activity
+  is lost, which can only make a source look quieter, never healthier.
 - Offline: `bower sources check --expectations sources.json --database queue.db`
-  exits 3 when any source is quiet (no start-up grace).
+  exits 3 when any source is overdue. It reads, never writes, the collector's
+  monitoring starts, so a source the collector reports as `pending` is `pending` here
+  too. A source the collector has never monitored gets no grace and, never seen, is
+  reported as `never-seen` at once.
 
 ## Archive and replay
 
@@ -163,8 +182,23 @@ example for a records-authority period such as AFDA Express v2.
 
 - Every minute the collector writes `segment-<first sequence>.jsonl.gz` files of up to
   10,000 events, each with a manifest holding the file digest, sequence range and the
-  queue ledger chain hash at both ends. Files are flushed and renamed into place; a
-  segment left without a manifest by a crash is rewritten.
+  queue ledger chain hash at both ends. A segment is committed once its manifest is
+  published. Files are written under unique temporary names, flushed and moved into
+  place without replacing an existing file, and the directory is synced after each
+  move; a segment left without a manifest by a crash is an uncommitted orphan and is
+  rewritten.
+- A writer extends only its own queue's chain: if the queue ledger hash at the archive
+  head differs from the manifest (another collector's archive, a queue restored from an
+  older backup) or the queue has not reached that sequence, the run fails with
+  `lineage-mismatch` and writes nothing.
+- Every writer (the collector job and `bower archive create`, in either runtime) holds
+  an exclusive OS lock on `archive.lock` in the archive directory for its whole run,
+  taken before it reads the archive head. A second writer fails at once with an I/O
+  error and writes nothing. Orphan segments and abandoned `segment-*.tmp` files (up to
+  1,000 per run) are removed only by the lock owner. The lock is `flock` on Unix, so
+  keep the archive on a local or lock-capable file system. Where the lock is not
+  enforced (an unsupported file system, or `DOTNET_SYSTEM_IO_DISABLEFILELOCKING` set)
+  the writer refuses to run rather than write unlocked.
 - The archive continues the queue ledger chain, so it verifies without the queue:
 
   ```bash
@@ -174,10 +208,23 @@ example for a records-authority period such as AFDA Express v2.
   Use a ledger head witnessed by the management console as the anchor. Without one,
   verification proves the archive is internally consistent from its first segment;
   only an anchor proves nothing was cut from the start or rewritten wholesale.
-- While an archive is configured, retention purges only archived events. An archive
-  started on an existing queue begins at the oldest event still stored.
-- Bower never deletes or rewrites archive segments. Put the directory on write-once
-  storage and manage retention there.
+- While an archive is configured, retention purges acknowledged events only up to
+  verified archive coverage of this queue. Before each run it checks that every
+  segment exists and matches its manifest digest and ledger chain, that the archive
+  starts at or below the oldest event still stored, and that the archived chain hash
+  equals the queue ledger hash at the highest boundary both record (so an archive
+  written by another queue, even with overlapping sequence numbers, is refused).
+  Otherwise retention purges nothing and logs event 1202 with a reason code
+  (`segment-missing`, `segment-digest-mismatch`, `archive-starts-above-retained`,
+  `lineage-mismatch`, `manifest-invalid` and so on) and sequence numbers only.
+  Undelivered, retrying and dead-lettered events are never purged. Segments already
+  verified are not re-read while their manifest, size and write time are unchanged; any
+  change triggers full verification. Before each purge batch, the segments holding the
+  events about to be removed are re-hashed regardless, so silent corruption or a
+  timestamp-preserving restore stops the purge. An archive started on an existing queue begins at
+  the oldest event still stored.
+- Bower never deletes or rewrites committed archive segments. Put the directory on
+  write-once storage and manage retention there.
 - `bower archive replay --archive DIR --collector-url URL [--from ISO] [--to ISO]
   [--event-type TYPE]... [--dry-run]` verifies the archive, then posts each selected
   event through a collector's full intake, labelled `bowerReplay: archive`, with
@@ -186,5 +233,6 @@ example for a records-authority period such as AFDA Express v2.
   `timeGenerated` validation. `--from` and `--to` take the same strict format as
   `policy diff --at` (`YYYY-MM-DDTHH:MM[:SS[.FFFFFFF]]` with `Z` or an offset); other
   forms, including date-only values, exit 1.
-- `bower archive create --archive DIR --database queue.db` archives a stopped
-  collector's queue by hand. Never run it against an archive a collector is writing.
+- `bower archive create --archive DIR --database queue.db` archives a queue by hand.
+  While a collector is writing the same archive it fails on the writer lock instead
+  of racing it; rerun it later.

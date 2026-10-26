@@ -121,6 +121,17 @@ public sealed record AuditRecord(
     string ActorName,
     DateTimeOffset OccurredAt);
 
+/// <summary>
+/// Fleet posture at query time. A collector is eligible when it is Active and its last
+/// heartbeat is fresh. <see cref="SourcesReporting"/> counts healthy sources of eligible
+/// collectors; <see cref="SourcesDegraded"/> counts every other source, so reporting plus
+/// degraded stays the whole denominator. <see cref="SourcesUnknown"/> is the part of
+/// <see cref="SourcesDegraded"/> without evidence either way: every source of a collector
+/// that is stale or not Active, and <c>pending</c> sources (not yet seen, still inside
+/// their allowance) of eligible collectors. <see cref="PrivacyProfileDrift"/> counts every
+/// eligible drifting collector; <see cref="PrivacyProfileExceptions"/> holds at most 12 and
+/// omits any whose latest assignment history row does not assign the version held.
+/// </summary>
 public sealed record OverviewRecord(
     int TotalCollectors,
     int PendingApproval,
@@ -131,7 +142,42 @@ public sealed record OverviewRecord(
     int SourcesDegraded,
     IReadOnlyList<CollectorRecord> Exceptions,
     int PolicyDrift = 0,
-    long DeadLettered = 0);
+    long DeadLettered = 0,
+    int PrivacyProfileDrift = 0,
+    IReadOnlyList<PrivacyProfileDriftRecord>? PrivacyProfileExceptions = null,
+    int SourcesUnknown = 0);
+
+/// <summary>
+/// An assigned privacy profile version that a fresh heartbeat did not confirm: the desired
+/// assignment (revision, version and content hash) against the hash the collector reported
+/// and when. Metadata only: never profile content or key material.
+/// </summary>
+public sealed record PrivacyProfileDriftRecord(
+    string CollectorId,
+    string MachineName,
+    long AssignmentRevision,
+    DateTimeOffset AssignedAt,
+    string VersionId,
+    string ProfileId,
+    string Version,
+    string AssignedHash,
+    string? ObservedHash,
+    DateTimeOffset ObservedAt)
+{
+    /// <summary>
+    /// The collector's heartbeat and privacy-profile deployment jobs each run every minute,
+    /// independently: one poll interval plus margin before a reported hash counts as a
+    /// rejected rollout rather than one not yet fetched.
+    /// </summary>
+    public static readonly TimeSpan ConfirmationDelay = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// True when the observing heartbeat arrived at least <see cref="ConfirmationDelay"/>
+    /// after the assignment, so the collector had the chance to apply it; false while it is
+    /// still awaiting a heartbeat that could confirm the assignment.
+    /// </summary>
+    public bool MismatchConfirmed => ObservedAt >= AssignedAt + ConfirmationDelay;
+}
 
 public sealed record CurrentAccess(
     string ObjectId,

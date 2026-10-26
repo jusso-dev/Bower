@@ -175,7 +175,7 @@ public sealed class QueueArchiveTests
         Assert.Equal(4, report.FirstSequence);
     }
 
-    private static async Task DeliverAllAsync(SqliteEventStore store, CancellationToken cancellationToken)
+    internal static async Task DeliverAllAsync(SqliteEventStore store, CancellationToken cancellationToken)
     {
         IReadOnlyList<QueuedEvent> leased = await store.LeaseAsync(100, TimeSpan.FromMinutes(1), cancellationToken);
         await store.MarkDeliveredBatchAsync(
@@ -185,7 +185,7 @@ public sealed class QueueArchiveTests
             cancellationToken);
     }
 
-    private static string[] ReadSegment(string path)
+    internal static string[] ReadSegment(string path)
     {
         using FileStream file = File.OpenRead(path);
         using GZipStream gzip = new(file, CompressionMode.Decompress);
@@ -193,7 +193,7 @@ public sealed class QueueArchiveTests
         return reader.ReadToEnd().Split('\n', StringSplitOptions.RemoveEmptyEntries);
     }
 
-    private static void WriteSegment(string path, string[] lines)
+    internal static void WriteSegment(string path, string[] lines)
     {
         using FileStream file = File.Create(path);
         using GZipStream gzip = new(file, CompressionLevel.Optimal);
@@ -205,7 +205,7 @@ public sealed class QueueArchiveTests
         }
     }
 
-    private static async Task EnqueueAsync(
+    internal static async Task EnqueueAsync(
         SqliteEventStore store,
         int first,
         int last,
@@ -225,9 +225,9 @@ public sealed class QueueArchiveTests
         }
     }
 
-    private static string ArchivePath(TemporaryDirectory directory) => Path.Combine(directory.Path, "archive");
+    internal static string ArchivePath(TemporaryDirectory directory) => Path.Combine(directory.Path, "archive");
 
-    private static async Task<SqliteEventStore> CreateStoreAsync(
+    internal static async Task<SqliteEventStore> CreateStoreAsync(
         TemporaryDirectory directory,
         FakeClock clock,
         CancellationToken cancellationToken)

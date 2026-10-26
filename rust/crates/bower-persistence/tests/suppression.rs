@@ -1,11 +1,12 @@
-//! Suppression windows and source activity in the SQLite store (C#
+//! Suppression windows, source activity and monitoring starts in the SQLite store (C#
 //! `SqliteEventStore.Suppression.cs`): admission under the enqueue write lock,
 //! atomic close, crash safety and the additive auxiliary schema.
 
 mod common;
 
 use bower_contracts::{
-    DurableEventStore, QueuedEvent, SourceActivity, StoreError, SuppressionRequest,
+    DurableEventStore, QueuedEvent, SourceActivity, SourceMonitoring, StoreError,
+    SuppressionRequest,
 };
 use common::{FakeClock, ONE_MEBIBYTE, event, queue_path, store, test_now};
 
@@ -210,4 +211,57 @@ fn source_activity_keeps_latest_time_and_largest_count() {
 
     let stored = store.get_source_activity().unwrap();
     assert_eq!(stored, [activity(chrono::Duration::minutes(3), 5)]);
+}
+
+/// C# `SqliteEventStore.Suppression.cs` DDL as SQLite records it; the C# test pins the
+/// same text so either runtime opens the other's `source_monitoring` table.
+const SOURCE_MONITORING_DDL: &str = "CREATE TABLE source_monitoring (
+    application TEXT NOT NULL,
+    environment TEXT NOT NULL,
+    monitoring_since TEXT NOT NULL,
+    PRIMARY KEY (application, environment)
+)";
+
+#[test]
+fn source_monitoring_keeps_starts_across_restarts_and_forgets_removed_sources() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    let source = |application: &str, minutes: i64| SourceMonitoring {
+        application: application.into(),
+        environment: "prod".into(),
+        monitoring_since: test_now() + chrono::Duration::minutes(minutes),
+    };
+
+    let first = store(directory.path(), 10 * ONE_MEBIBYTE, &clock)
+        .start_source_monitoring(&[source("App", 0), source("Payroll", 0)])
+        .unwrap();
+    // Restarts propose later starts; stored starts win and an unlisted source is forgotten.
+    let restarted = store(directory.path(), 10 * ONE_MEBIBYTE, &clock)
+        .start_source_monitoring(&[source("App", 5)])
+        .unwrap();
+    let readded = store(directory.path(), 10 * ONE_MEBIBYTE, &clock)
+        .start_source_monitoring(&[source("App", 9), source("Payroll", 9)])
+        .unwrap();
+    // A start stored while the clock ran ahead is replaced by an earlier one, never a later one.
+    let earlier = store(directory.path(), 10 * ONE_MEBIBYTE, &clock)
+        .start_source_monitoring(&[source("App", -3), source("Payroll", 9)])
+        .unwrap();
+    let none = store(directory.path(), 10 * ONE_MEBIBYTE, &clock)
+        .start_source_monitoring(&[])
+        .unwrap();
+
+    assert_eq!(first, [source("App", 0), source("Payroll", 0)]);
+    assert_eq!(restarted, [source("App", 0)]);
+    assert_eq!(readded, [source("App", 0), source("Payroll", 9)]);
+    assert_eq!(earlier, [source("App", -3), source("Payroll", 9)]);
+    assert!(none.is_empty());
+    let connection = rusqlite::Connection::open(queue_path(directory.path())).unwrap();
+    let (rows, ddl): (i64, String) = connection
+        .query_row(
+            "SELECT (SELECT COUNT(*) FROM source_monitoring), (SELECT sql FROM sqlite_master WHERE name = 'source_monitoring');",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!((rows, ddl.as_str()), (0, SOURCE_MONITORING_DDL));
 }

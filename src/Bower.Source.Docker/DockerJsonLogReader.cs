@@ -10,8 +10,17 @@ namespace Bower.Source.Docker;
 /// Position in a container's json-file log. The fingerprint identifies the file by its
 /// first bytes (which never change once written), so rotation is detected even though
 /// Docker reuses the same file name.
+/// <para>
+/// <paramref name="Discarding"/> (additive, omitted when false) means <paramref name="Offset"/>
+/// is the next physical chunk of an oversized logical line: chunks up to and including its
+/// terminator are skipped. It carries no line content.
+/// </para>
 /// </summary>
-public sealed record DockerLogCursor(int SchemaVersion, string Fingerprint, long Offset)
+public sealed record DockerLogCursor(
+    int SchemaVersion,
+    string Fingerprint,
+    long Offset,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Discarding = false)
 {
     public const int CurrentSchemaVersion = 1;
 
@@ -109,7 +118,11 @@ public static class DockerJsonLogReader
         // Provisional cursor recorded before the file had enough bytes to fingerprint.
         if (cursor.Fingerprint.Length == 0)
         {
-            return ReadFile(currentPath, cursor with { Fingerprint = currentFingerprint, Offset = 0 }, options, false);
+            return ReadFile(
+                currentPath,
+                cursor with { Fingerprint = currentFingerprint, Offset = 0, Discarding = false },
+                options,
+                false);
         }
 
         if (string.Equals(cursor.Fingerprint, currentFingerprint, StringComparison.Ordinal))
@@ -118,7 +131,7 @@ public static class DockerJsonLogReader
             if (length < cursor.Offset)
             {
                 // Truncated in place: restart and flag the gap.
-                return ReadFile(currentPath, cursor with { Offset = 0 }, options, true);
+                return ReadFile(currentPath, cursor with { Offset = 0, Discarding = false }, options, true);
             }
 
             return ReadFile(currentPath, cursor, options, false);
@@ -131,9 +144,14 @@ public static class DockerJsonLogReader
             bool drained = rotated.Cursor.Offset >= new FileInfo(rotatedPath).Length;
             if (drained && rotated.Records.Count < options.MaximumRecordsPerBatch)
             {
+                // A line split across the rotation keeps being discarded in the new file.
                 return rotated with
                 {
-                    Cursor = new DockerLogCursor(DockerLogCursor.CurrentSchemaVersion, currentFingerprint, 0)
+                    Cursor = new DockerLogCursor(
+                        DockerLogCursor.CurrentSchemaVersion,
+                        currentFingerprint,
+                        0,
+                        rotated.Cursor.Discarding)
                 };
             }
 
@@ -178,15 +196,18 @@ public static class DockerJsonLogReader
         int malformed = 0;
         int oversized = 0;
         long committed = cursor.Offset;
+        bool committedDiscarding = cursor.Discarding;
 
         using FileStream stream = Open(path);
         stream.Seek(cursor.Offset, SeekOrigin.Begin);
         long budgetEnd = Math.Min(stream.Length, cursor.Offset + options.MaximumBytesPerBatch);
 
-        // Logical line being assembled from Docker's 16 KiB partial chunks.
+        // Logical line being assembled from Docker's 16 KiB partial chunks. An oversized line
+        // is never buffered: its chunks are consumed and committed as they are read, so a line
+        // larger than the byte budget cannot pin the cursor across polls or restarts.
         StringBuilder pending = new();
-        long pendingStart = -1;
-        bool pendingOversized = false;
+        long pendingStart = cursor.Discarding ? cursor.Offset : -1;
+        bool pendingOversized = cursor.Discarding;
         string pendingStream = "stdout";
         DateTimeOffset? pendingTime = null;
 
@@ -204,14 +225,18 @@ public static class DockerJsonLogReader
             if (tooLong || entry is null)
             {
                 malformed++;
-                committed = pendingStart < 0 ? position : committed;
+                if (pendingStart < 0 || pendingOversized)
+                {
+                    committed = position;
+                }
+
                 continue;
             }
 
             if (!TryParseEntry(entry, out string? log, out string? streamName, out DateTimeOffset? time))
             {
                 malformed++;
-                if (pendingStart < 0)
+                if (pendingStart < 0 || pendingOversized)
                 {
                     committed = position;
                 }
@@ -241,6 +266,12 @@ public static class DockerJsonLogReader
 
             if (!log!.EndsWith('\n'))
             {
+                if (pendingOversized)
+                {
+                    committed = position;
+                    committedDiscarding = true;
+                }
+
                 continue; // Partial chunk: the rest of the line follows.
             }
 
@@ -260,14 +291,25 @@ public static class DockerJsonLogReader
             }
 
             committed = position;
+            committedDiscarding = false;
             pending.Clear();
             pendingStart = -1;
             pendingOversized = false;
         }
 
+        // One logical line filled the whole byte budget without ending: it can never be read
+        // within bounds, so discard it rather than re-reading the same prefix every poll.
+        if (pendingStart == cursor.Offset
+            && !pendingOversized
+            && position - cursor.Offset >= options.MaximumBytesPerBatch)
+        {
+            committed = position;
+            committedDiscarding = true;
+        }
+
         return new DockerLogBatch(
             records,
-            cursor with { Offset = committed },
+            cursor with { Offset = committed, Discarding = committedDiscarding },
             malformed,
             oversized,
             rotationGap);

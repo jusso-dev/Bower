@@ -1,6 +1,6 @@
 import { Activity, CheckCircle2, CircleDashed, XCircle } from "lucide-react";
 import { type ReactNode } from "react";
-import { formatDate } from "../lib/format";
+import { formatDate, shortHash } from "../lib/format";
 import type { Collector, PrivacyProfileVersionStatus } from "../types";
 
 export function Brand() {
@@ -316,13 +316,6 @@ export function VersionStatusBadge({ status }: { status: PrivacyProfileVersionSt
       {versionStatusLabels[status] ?? status}
     </span>
   );
-}
-
-function shortHash(value: string | null | undefined): string {
-  if (!value) {
-    return "not reported";
-  }
-  return value === "default" ? "default" : value.replace("sha256:", "").slice(0, 8);
 }
 
 /** Whether a collector runs the privacy profile version an administrator assigned. */

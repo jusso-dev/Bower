@@ -37,6 +37,145 @@ internal sealed class FakeClock(DateTimeOffset value) : TimeProvider
     }
 }
 
+/// <summary>
+/// Fake clock with timers. <see cref="Advance"/> fires due timers in order on the calling
+/// thread, with the clock set to each timer's due time, so timer-driven code runs inline.
+/// </summary>
+internal sealed class ManualTimeProvider(DateTimeOffset start) : TimeProvider
+{
+    private readonly Lock gate = new();
+    private readonly List<ManualTimer> timers = [];
+    private DateTimeOffset now = start;
+
+    public int ActiveTimers
+    {
+        get
+        {
+            lock (gate)
+            {
+                return timers.Count(timer => timer.Due is not null);
+            }
+        }
+    }
+
+    public override DateTimeOffset GetUtcNow()
+    {
+        lock (gate)
+        {
+            return now;
+        }
+    }
+
+    public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+    {
+        ManualTimer timer = new(this, callback, state);
+        timer.Change(dueTime, period);
+        return timer;
+    }
+
+    public void Advance(TimeSpan duration)
+    {
+        DateTimeOffset target;
+        lock (gate)
+        {
+            target = now + duration;
+        }
+
+        while (true)
+        {
+            ManualTimer? next;
+            lock (gate)
+            {
+                next = timers.Where(timer => timer.Due <= target).MinBy(timer => timer.Due);
+                if (next is null)
+                {
+                    now = target;
+                    return;
+                }
+
+                // A timer that is overdue (after Jump) fires late, at the current time.
+                now = next.Due!.Value > now ? next.Due.Value : now;
+                next.Due = next.Period > TimeSpan.Zero ? now + next.Period : null;
+            }
+
+            next.Callback(next.State);
+        }
+    }
+
+    /// <summary>Moves time without firing timers, as if their callbacks were starved.</summary>
+    public void Jump(TimeSpan duration)
+    {
+        lock (gate)
+        {
+            now += duration;
+        }
+    }
+
+    /// <summary>
+    /// A fake-time wait whose completion and cancellation both run continuations inline
+    /// (a cancelled <c>Task.Delay</c> continuation may resume on the thread pool).
+    /// </summary>
+    public Task Delay(TimeSpan duration, CancellationToken cancellationToken)
+    {
+        TaskCompletionSource completion = new();
+        ITimer? timer = duration == Timeout.InfiniteTimeSpan
+            ? null
+            : CreateTimer(static state => ((TaskCompletionSource)state!).TrySetResult(), completion, duration, Timeout.InfiniteTimeSpan);
+        CancellationTokenRegistration registration = cancellationToken.Register(
+            () => completion.TrySetCanceled(cancellationToken));
+        completion.Task.ContinueWith(
+            _ =>
+            {
+                timer?.Dispose();
+                registration.Dispose();
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+        return completion.Task;
+    }
+
+    private sealed class ManualTimer(ManualTimeProvider owner, TimerCallback callback, object? state) : ITimer
+    {
+        public TimerCallback Callback { get; } = callback;
+
+        public object? State { get; } = state;
+
+        public DateTimeOffset? Due { get; set; }
+
+        public TimeSpan Period { get; private set; }
+
+        public bool Change(TimeSpan dueTime, TimeSpan period)
+        {
+            lock (owner.gate)
+            {
+                Due = dueTime == Timeout.InfiniteTimeSpan ? null : owner.now + dueTime;
+                Period = period == Timeout.InfiniteTimeSpan ? TimeSpan.Zero : period;
+                if (!owner.timers.Contains(this))
+                {
+                    owner.timers.Add(this);
+                }
+            }
+
+            return true;
+        }
+
+        public void Dispose()
+        {
+            lock (owner.gate)
+            {
+                owner.timers.Remove(this);
+            }
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            Dispose();
+            return ValueTask.CompletedTask;
+        }
+    }
+}
+
 internal static class TestEvents
 {
     public static DateTimeOffset Now { get; } =
