@@ -126,8 +126,13 @@ public sealed partial class ApiKeyDetector : ISensitiveDetector
     public string Id => DetectorIds.ApiKey;
     public string Category => DetectorCategories.Secrets;
 
-    // Source-generated (AOT-friendly, no Reflection.Emit at startup); same patterns,
-    // options, order and 50 ms timeout as before.
+    // Source-generated (AOT-friendly, no Reflection.Emit at startup). No match timeout:
+    // a wall-clock timeout makes the outcome depend on machine load (a valid value
+    // quarantines when the thread is descheduled), unlike the Rust engine. Each pattern
+    // is linear in the backtracking engine: it starts at a word boundary and every
+    // unbounded single-class loop is followed by a boundary or a character the loop
+    // cannot consume, so a failed attempt only rescans its own run. Input is bounded by
+    // PrivacyEngine.MaximumPayloadBytes.
     private static readonly (string Provider, Regex Regex)[] Compiled =
     [
         ("OpenAI", OpenAIRegex()),
@@ -179,46 +184,46 @@ public sealed partial class ApiKeyDetector : ISensitiveDetector
         }
     }
 
-    [GeneratedRegex(@"\bsk-[A-Za-z0-9]{20,}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    [GeneratedRegex(@"\bsk-[A-Za-z0-9]{20,}\b", RegexOptions.CultureInvariant)]
     private static partial Regex OpenAIRegex();
 
-    [GeneratedRegex(@"\bsk-ant-[A-Za-z0-9\-_]{20,}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    [GeneratedRegex(@"\bsk-ant-[A-Za-z0-9\-_]{20,}\b", RegexOptions.CultureInvariant)]
     private static partial Regex AnthropicRegex();
 
-    [GeneratedRegex(@"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    [GeneratedRegex(@"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}\b", RegexOptions.CultureInvariant)]
     private static partial Regex GitHubRegex();
 
-    [GeneratedRegex(@"\bglpat-[A-Za-z0-9\-_]{20,}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    [GeneratedRegex(@"\bglpat-[A-Za-z0-9\-_]{20,}\b", RegexOptions.CultureInvariant)]
     private static partial Regex GitLabRegex();
 
-    [GeneratedRegex(@"\bxox[baprs]-[A-Za-z0-9-]{10,}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    [GeneratedRegex(@"\bxox[baprs]-[A-Za-z0-9-]{10,}\b", RegexOptions.CultureInvariant)]
     private static partial Regex SlackRegex();
 
-    [GeneratedRegex(@"\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{20,}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    [GeneratedRegex(@"\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{20,}\b", RegexOptions.CultureInvariant)]
     private static partial Regex StripeRegex();
 
-    [GeneratedRegex(@"\bSK[0-9a-fA-F]{32}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    [GeneratedRegex(@"\bSK[0-9a-fA-F]{32}\b", RegexOptions.CultureInvariant)]
     private static partial Regex TwilioRegex();
 
-    [GeneratedRegex(@"\b(?:cfx|v1\.0-)[A-Za-z0-9_\-]{20,}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    [GeneratedRegex(@"\b(?:cfx|v1\.0-)[A-Za-z0-9_\-]{20,}\b", RegexOptions.CultureInvariant)]
     private static partial Regex CloudflareRegex();
 
-    [GeneratedRegex(@"\bATATT3[A-Za-z0-9=_\-]{20,}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    [GeneratedRegex(@"\bATATT3[A-Za-z0-9=_\-]{20,}\b", RegexOptions.CultureInvariant)]
     private static partial Regex AtlassianRegex();
 
-    [GeneratedRegex(@"\b(?:[a-f0-9]{32}|ddog_api_key)\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    [GeneratedRegex(@"\b(?:[a-f0-9]{32}|ddog_api_key)\b", RegexOptions.CultureInvariant)]
     private static partial Regex DatadogRegex();
 
-    [GeneratedRegex(@"\b[a-f0-9]{32}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    [GeneratedRegex(@"\b[a-f0-9]{32}\b", RegexOptions.CultureInvariant)]
     private static partial Regex PagerDutyRegex();
 
-    [GeneratedRegex(@"\b00[A-Za-z0-9_\-]{40,}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    [GeneratedRegex(@"\b00[A-Za-z0-9_\-]{40,}\b", RegexOptions.CultureInvariant)]
     private static partial Regex OktaRegex();
 
-    [GeneratedRegex(@"\bmongodb(?:\+srv)?:\/\/[^\s]+\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    [GeneratedRegex(@"\bmongodb(?:\+srv)?:\/\/[^\s]+\b", RegexOptions.CultureInvariant)]
     private static partial Regex MongoDBRegex();
 
-    [GeneratedRegex(@"\b[A-Za-z0-9]{8,}-[A-Za-z0-9]{4,}\.[A-Za-z0-9]+\.snowflakecomputing\.com\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+    [GeneratedRegex(@"\b[A-Za-z0-9]{8,}-[A-Za-z0-9]{4,}\.[A-Za-z0-9]+\.snowflakecomputing\.com\b", RegexOptions.CultureInvariant)]
     private static partial Regex SnowflakeRegex();
 }
 

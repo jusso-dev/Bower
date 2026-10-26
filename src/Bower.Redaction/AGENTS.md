@@ -26,6 +26,9 @@ arbitrary code from configuration.
 - Custom detector work is bounded deterministically (`CustomPatternDetector.MaximumScannedLength`,
   `MaximumMatchesPerEvent`; exceeding either quarantines). Never rely on regex timeouts for
   parity: they depend on machine load. Non-redacting custom detectors must never claim spans.
+- Built-in detector regexes have no match timeout (a wall-clock timeout quarantines valid
+  values under load). Keep new built-in patterns linear in the backtracking engine instead;
+  `BuiltInDetectorPatterns_HaveNoWallClockTimeout` enforces this.
 - Do not use capture groups or `\A`/`\z` with .NET NonBacktracking for new features: captures
   are lost next to anchors on input ending in a line feed (see the wholeWord sentinel).
 

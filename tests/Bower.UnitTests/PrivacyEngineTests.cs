@@ -1,4 +1,6 @@
+using System.Reflection;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Bower.Redaction;
 using Bower.Redaction.Privacy;
 using Bower.Redaction.Validation;
@@ -259,6 +261,31 @@ public sealed class PrivacyEngineTests
         Assert.Contains(result.Findings, f => f.DetectorId == DetectorIds.ApiKey && f.SubKind == "OpenAI");
         Assert.Contains(result.Findings, f => f.DetectorId == DetectorIds.ApiKey && f.SubKind == "GitHub");
         Assert.Contains(result.Findings, f => f.DetectorId == DetectorIds.ApiKey && f.SubKind == "Stripe");
+    }
+
+    [Fact]
+    public void BuiltInDetectorPatterns_HaveNoWallClockTimeout()
+    {
+        // A match timeout makes the redaction outcome depend on machine load: 50 ms
+        // timeouts on the API key patterns quarantined a valid 60,000-character value
+        // under CI load. Built-in patterns are linear and inputs are bounded by
+        // MaximumPayloadBytes instead, as in the Rust engine (which has no timeouts).
+        MethodInfo[] factories =
+        [
+            .. typeof(PrivacyEngine).Assembly.GetTypes()
+                .SelectMany(type => type.GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+                .Where(method => method.IsDefined(typeof(GeneratedRegexAttribute), inherit: false))
+        ];
+
+        string[] timed =
+        [
+            .. factories
+                .Where(method => ((Regex)method.Invoke(null, null)!).MatchTimeout != Regex.InfiniteMatchTimeout)
+                .Select(method => $"{method.DeclaringType!.Name}.{method.Name}")
+        ];
+
+        Assert.True(factories.Length > 40, $"Expected the built-in detector patterns, found {factories.Length}.");
+        Assert.Empty(timed);
     }
 
     [Fact]
