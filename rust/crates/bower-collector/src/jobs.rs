@@ -124,6 +124,28 @@ struct RegisteredJob {
     run: JobFn,
     /// Run once immediately instead of waiting for the first occurrence.
     triggered: bool,
+    /// Runtime trigger: wakes the job for one immediate run (a permit is kept while it runs).
+    wake: Arc<tokio::sync::Notify>,
+}
+
+/// Runtime `RecurringJobRegistry.Trigger` for jobs already spawned: requests one immediate
+/// run without overlapping a run in progress.
+#[derive(Clone, Default)]
+pub struct JobTriggers {
+    jobs: Arc<BTreeMap<&'static str, Arc<tokio::sync::Notify>>>,
+}
+
+impl JobTriggers {
+    /// False for an unknown job id.
+    pub fn trigger(&self, id: &str) -> bool {
+        match self.jobs.get(id) {
+            Some(wake) => {
+                wake.notify_one();
+                true
+            }
+            None => false,
+        }
+    }
 }
 
 /// Registers jobs and runs each on its own task (one execution at a time per job,
@@ -162,7 +184,20 @@ impl JobScheduler {
             retry_attempts,
             run,
             triggered: false,
+            wake: Arc::new(tokio::sync::Notify::new()),
         });
+    }
+
+    /// Runtime triggers for every job registered so far.
+    pub fn triggers(&self) -> JobTriggers {
+        JobTriggers {
+            jobs: Arc::new(
+                self.jobs
+                    .iter()
+                    .map(|job| (job.id, Arc::clone(&job.wake)))
+                    .collect(),
+            ),
+        }
     }
 
     /// `RecurringJobRegistry.Trigger`: requests an immediate run. Returns false for an
@@ -207,8 +242,13 @@ async fn run_recurring(
                 if remaining.is_zero() {
                     break;
                 }
-                if !shutdown.sleep(remaining.min(Duration::from_secs(60))).await {
-                    return;
+                tokio::select! {
+                    continued = shutdown.sleep(remaining.min(Duration::from_secs(60))) => {
+                        if !continued {
+                            return;
+                        }
+                    }
+                    () = job.wake.notified() => break,
                 }
             }
         }

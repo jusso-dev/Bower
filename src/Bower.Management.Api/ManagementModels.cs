@@ -58,7 +58,71 @@ public sealed record CollectorHeartbeat(
     IReadOnlyList<BackgroundJobStatus>? Jobs = null,
     LedgerReport? Ledger = null,
     long? DeadLettered = null,
-    string? PrivacyProfileHash = null);
+    string? PrivacyProfileHash = null,
+    int? SchemaVersion = null,
+    int? HeartbeatIntervalSeconds = null,
+    long? OldestUndeliveredAgeSeconds = null,
+    DateTimeOffset? LastSuccessfulDeliveryAt = null,
+    CanaryReport? LastCanary = null,
+    IReadOnlyList<string>? CommandCapabilities = null,
+    IReadOnlyList<CommandResultReport>? CommandResults = null)
+{
+    /// <summary>A body without schemaVersion is a v1 heartbeat.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsV2 => SchemaVersion >= 2;
+}
+
+/// <summary>The last management canary a collector ran. <c>queued</c> is local admission, never Sentinel proof.</summary>
+public sealed record CanaryReport(string CommandId, string? EventId, DateTimeOffset RanAt, string Outcome);
+
+/// <summary>A command result reported on a v2 heartbeat. Metadata only.</summary>
+public sealed record CommandResultReport(string? CommandId, string Status, string Code, DateTimeOffset CompletedAt);
+
+/// <summary>
+/// Heartbeat v2 response: signed commands for this collector and the result ids management
+/// recorded (the collector drops those). v1 heartbeats still receive the collector record.
+/// </summary>
+public sealed record HeartbeatResponse(
+    int SchemaVersion,
+    string CollectorId,
+    CollectorStatus Status,
+    IReadOnlyList<SignedCollectorCommand> Commands,
+    IReadOnlyList<string> AcknowledgedResults);
+
+/// <summary>A command signed by management, bound to one collector, a nonce and an expiry.</summary>
+public sealed record SignedCollectorCommand(
+    string Kind,
+    string CommandId,
+    string CollectorId,
+    string Command,
+    string Nonce,
+    string IssuedAt,
+    string ExpiresAt,
+    Bower.Integrity.DetachedSignature Signature);
+
+/// <summary>Issue one command from the closed set. Lifetime 1–60 minutes (default 15).</summary>
+public sealed record CollectorCommandRequest(string? Command, string Reason, int? ExpiresInMinutes = null);
+
+/// <summary>
+/// A command's lifecycle: <c>pending</c>, <c>delivered</c>, then <c>succeeded</c>,
+/// <c>failed</c>, <c>rejected</c> (by the collector) or <c>expired</c> (no result in time).
+/// </summary>
+public sealed record CollectorCommandRecord(
+    string Id,
+    string CollectorId,
+    string Command,
+    string Status,
+    string Reason,
+    string ActorObjectId,
+    string ActorName,
+    DateTimeOffset IssuedAt,
+    DateTimeOffset ExpiresAt,
+    DateTimeOffset? DeliveredAt,
+    DateTimeOffset? CompletedAt,
+    string? ResultCode);
+
+/// <summary>Per-collector source counts. <c>pending</c> sources are not yet due, so neither healthy nor degraded.</summary>
+public sealed record SourceHealthSummary(int Total, int Healthy, int Pending, int Degraded);
 
 /// <summary>Collector queue ledger head: management keeps the last one as a witness.</summary>
 public sealed record LedgerReport(long Sequence, string Hash);
@@ -85,8 +149,29 @@ public sealed record CollectorRecord(
     long? LedgerSequence = null,
     long DeadLettered = 0,
     DesiredPrivacyProfile? DesiredPrivacyProfile = null,
-    string? ReportedPrivacyProfileHash = null)
+    string? ReportedPrivacyProfileHash = null,
+    int HeartbeatSchemaVersion = 1,
+    int? HeartbeatIntervalSeconds = null,
+    long? OldestUndeliveredAgeSeconds = null,
+    DateTimeOffset? LastSuccessfulDeliveryAt = null,
+    CanaryReport? LastCanary = null,
+    IReadOnlyList<string>? CommandCapabilities = null,
+    DateTimeOffset? DeliveryFailingSince = null)
 {
+    /// <summary>
+    /// Query-time connectivity (see <see cref="CollectorConnectivity"/>); set by the read
+    /// endpoints, null when not evaluated.
+    /// </summary>
+    public string? Connectivity { get; init; }
+
+    /// <summary>Source counts from the per-source report of the last heartbeat.</summary>
+    public SourceHealthSummary SourceSummary => new(
+        Sources.Count,
+        Sources.Count(source => string.Equals(source.Status, "healthy", StringComparison.OrdinalIgnoreCase)),
+        Sources.Count(source => string.Equals(source.Status, "pending", StringComparison.OrdinalIgnoreCase)),
+        Sources.Count(source => !string.Equals(source.Status, "healthy", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(source.Status, "pending", StringComparison.OrdinalIgnoreCase)));
+
     /// <summary>Null when no policy is assigned; otherwise whether the collector runs it.</summary>
     public bool? PolicyInSync => DesiredPolicyHash is null
         ? null

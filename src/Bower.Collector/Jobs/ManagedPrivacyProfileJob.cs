@@ -181,8 +181,15 @@ public sealed partial class ManagedPrivacyProfileJob(
         state.MarkNeverAssigned();
     }
 
-    private void RequestRestart()
+    private void RequestRestart() => RequestSupervisorRestart(lifetime);
+
+    /// <summary>
+    /// Stops the host and makes it exit with <see cref="RestartExitCode"/> so the supervisor
+    /// restarts it (a staged privacy profile or a management <c>reload</c> command).
+    /// </summary>
+    public static void RequestSupervisorRestart(IHostApplicationLifetime lifetime)
     {
+        ArgumentNullException.ThrowIfNull(lifetime);
         Volatile.Write(ref restartRequested, 1);
         lifetime.StopApplication();
     }

@@ -5,7 +5,6 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
 
 use bower_contracts::time::{Timestamp, serde_offset_option};
 use bower_contracts::{DurableEventStore, LedgerHead, QueueSnapshot};
@@ -14,6 +13,7 @@ use serde::Serialize;
 use tracing::{info, warn};
 
 use crate::jobs::{BackgroundJobStatus, JobCatalog};
+use crate::management_commands::{CanaryReport, CommandProcessor, CommandResultReport};
 use crate::settings::CollectorSettings;
 use crate::worker::store_error_name;
 
@@ -127,7 +127,14 @@ pub struct ManagementHeartbeat {
     pub maximum_queue_bytes: i64,
     /// Expected applications report as sources so silent ones show in the console.
     pub source_health: Option<Arc<crate::source_health::SourceHealth>>,
+    /// Heartbeat v2 commands: verified, admitted and handed to the command worker.
+    pub commands: Option<Arc<CommandProcessor>>,
+    /// Last output acknowledgement for `lastSuccessfulDeliveryAt`.
+    pub delivery_activity: Option<Arc<crate::worker::DeliveryActivity>>,
 }
+
+/// The job runs every minute; management derives staleness from this interval.
+pub const INTERVAL_SECONDS: i32 = 60;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -186,6 +193,15 @@ struct Heartbeat<'a> {
     dead_lettered: i64,
     ledger: LedgerReport<'a>,
     privacy_profile_hash: &'a str,
+    // Heartbeat v2: additive. A body without schemaVersion is v1.
+    schema_version: i32,
+    heartbeat_interval_seconds: i32,
+    oldest_undelivered_age_seconds: Option<i64>,
+    #[serde(with = "serde_offset_option")]
+    last_successful_delivery_at: Option<Timestamp>,
+    last_canary: Option<CanaryReport>,
+    command_capabilities: Vec<&'static str>,
+    command_results: &'a [CommandResultReport],
 }
 
 impl ManagementHeartbeat {
@@ -198,10 +214,7 @@ impl ManagementHeartbeat {
         catalog: Arc<JobCatalog>,
     ) -> Option<Self> {
         let base = settings.management_endpoint.clone()?;
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(15))
-            .build()
-            .ok()?;
+        let client = crate::management_http::client(settings).ok()?;
         Some(Self {
             client,
             base,
@@ -219,6 +232,8 @@ impl ManagementHeartbeat {
             output_type: settings.output_type.clone(),
             maximum_queue_bytes: settings.maximum_queue_bytes,
             source_health: None,
+            commands: None,
+            delivery_activity: None,
         })
     }
 
@@ -245,12 +260,15 @@ impl ManagementHeartbeat {
             .map_err(|_| "JoinError")?
             .map_err(|error| store_error_name(&error))?;
 
-        let delivery_status = delivery_health(
-            &self.output_type,
-            &snapshot,
-            self.maximum_queue_bytes,
-            bower_contracts::time::now(),
-        );
+        let now = bower_contracts::time::now();
+        let delivery_status =
+            delivery_health(&self.output_type, &snapshot, self.maximum_queue_bytes, now);
+        // Finished command results stay pending until management acknowledges them.
+        let results = self
+            .commands
+            .as_ref()
+            .map(|commands| commands.ledger().pending_results())
+            .unwrap_or_default();
         // Expected applications report as sources so silent ones show in the console.
         let expected: Vec<(String, String, Option<i64>, Option<Timestamp>)> = self
             .source_health
@@ -331,12 +349,32 @@ impl ManagementHeartbeat {
                 hash: &ledger.hash,
             },
             privacy_profile_hash: &self.privacy_profile_hash,
+            schema_version: 2,
+            heartbeat_interval_seconds: INTERVAL_SECONDS,
+            oldest_undelivered_age_seconds: snapshot
+                .oldest_undelivered
+                .map(|oldest| (now - oldest).num_seconds().max(0)),
+            last_successful_delivery_at: self
+                .delivery_activity
+                .as_ref()
+                .and_then(|activity| activity.last_successful_delivery_at()),
+            last_canary: self
+                .commands
+                .as_ref()
+                .and_then(|commands| commands.ledger().last_canary()),
+            command_capabilities: self
+                .commands
+                .as_ref()
+                .map(|commands| commands.capabilities())
+                .unwrap_or_default(),
+            command_results: &results,
         };
         let path = format!(
             "api/collectors/{}/heartbeat",
             escape_data_string(&self.collector_id)
         );
-        let status = self.post(&path, &token, &heartbeat).await?;
+        let mut response = self.send(&path, &token, &heartbeat).await?;
+        let status = response.status();
         if status == StatusCode::CONFLICT {
             info!("Collector is awaiting approval or is not permitted to heartbeat.");
             return Ok(());
@@ -344,16 +382,30 @@ impl ManagementHeartbeat {
         if !status.is_success() {
             return Err("HttpRequestException");
         }
+        if let Some(commands) = &self.commands {
+            // Commands are verified and handed to the command worker; never executed here.
+            let body = read_bounded(&mut response).await?;
+            commands.handle_response(body.as_deref(), &results)?;
+        }
         Ok(())
     }
 
-    // The bearer token is attached per request, never to shared default headers.
     async fn post<T: Serialize>(
         &self,
         path: &str,
         token: &str,
         body: &T,
     ) -> Result<StatusCode, &'static str> {
+        Ok(self.send(path, token, body).await?.status())
+    }
+
+    // The bearer token is attached per request, never to shared default headers.
+    async fn send<T: Serialize>(
+        &self,
+        path: &str,
+        token: &str,
+        body: &T,
+    ) -> Result<reqwest::Response, &'static str> {
         let url = self.base.join(path).map_err(|_| "UriFormatException")?;
         let body = bower_contracts::json::to_vec(body).map_err(|_| "JsonException")?;
         let response = self
@@ -374,8 +426,33 @@ impl ManagementHeartbeat {
                     "HttpRequestException"
                 }
             })?;
-        Ok(response.status())
+        Ok(response)
     }
+}
+
+/// The response body, or `None` once it exceeds the command response bound.
+async fn read_bounded(response: &mut reqwest::Response) -> Result<Option<Vec<u8>>, &'static str> {
+    let limit = crate::management_commands::MAXIMUM_RESPONSE_BYTES;
+    if response
+        .content_length()
+        .is_some_and(|length| length > limit as u64)
+    {
+        return Ok(None);
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|error| {
+        if error.is_timeout() {
+            "TaskCanceledException"
+        } else {
+            "HttpRequestException"
+        }
+    })? {
+        if body.len() + chunk.len() > limit {
+            return Ok(None);
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(Some(body))
 }
 
 /// `Uri.EscapeDataString`: percent-encode everything except RFC 3986 unreserved.

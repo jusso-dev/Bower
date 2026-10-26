@@ -10,5 +10,9 @@ crate fixtures, then delete the file. Never commit it under `tests/`.
 (C#-signed managed privacy assignment envelopes with C#'s `Verify` verdict on each, and
 the real C# sync job's outcome for each cached-envelope/response scenario).
 
+`ZzManagementCommandVectors.cs` writes `crates/bower-collector/tests/fixtures/csharp-management-commands.json`
+(heartbeat v2 command documents, exact bytes, with C#'s `ManagementCommandVerifier.Verify`
+verdict on each: rejection code and readable command id, or the verified fields).
+
 Other generators live next to their fixtures, e.g.
 `crates/bower-redaction/tests/vectors/generate.fsx`.

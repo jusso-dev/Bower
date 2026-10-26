@@ -103,7 +103,32 @@ internal sealed record CollectorHeartbeat(
     IReadOnlyList<BackgroundJobStatus> Jobs,
     long DeadLettered,
     LedgerResponse Ledger,
-    string PrivacyProfileHash);
+    string PrivacyProfileHash)
+{
+    // Heartbeat v2: additive. A body without schemaVersion is v1.
+    public int SchemaVersion { get; init; } = 2;
+
+    public int HeartbeatIntervalSeconds { get; init; } = 60;
+
+    public long? OldestUndeliveredAgeSeconds { get; init; }
+
+    public DateTimeOffset? LastSuccessfulDeliveryAt { get; init; }
+
+    public CanaryReport? LastCanary { get; init; }
+
+    public IReadOnlyList<string> CommandCapabilities { get; init; } = [];
+
+    public IReadOnlyList<CommandResultReport> CommandResults { get; init; } = [];
+}
+
+/// <summary>
+/// Heartbeat v2 response. A v1 management API answers with its collector record instead,
+/// which has no schemaVersion: the collector then takes no commands and keeps its results.
+/// </summary>
+internal sealed record ManagementHeartbeatResponse(
+    int? SchemaVersion,
+    IReadOnlyList<JsonElement>? Commands,
+    IReadOnlyList<string>? AcknowledgedResults);
 
 internal sealed record SourceReport(string Id, string Type, string Status, long? LagSeconds, DateTimeOffset? LastEventAt);
 
@@ -124,4 +149,7 @@ internal sealed record OutputReport(
 [JsonSerializable(typeof(CollectorRegistration))]
 [JsonSerializable(typeof(CollectorHeartbeat))]
 [JsonSerializable(typeof(ManagedPrivacyProfileDocument))]
+[JsonSerializable(typeof(ManagementHeartbeatResponse))]
+[JsonSerializable(typeof(ManagementCommandDocument))]
+[JsonSerializable(typeof(CommandLedgerDocument))]
 internal sealed partial class CollectorJsonContext : JsonSerializerContext;

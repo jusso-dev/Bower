@@ -14,10 +14,10 @@ ids and UTC schedules are unchanged.
 |---|---|---|---|
 | Collector | `queue-retention` | Hourly | Deletes `delivered` rows older than `BOWER_QUEUE_RETENTION_HOURS` (default 168). Never touches queued, uploading, retrying or dead-lettered events. |
 | Collector | `queue-maintenance` | Daily 03:00 | `PRAGMA wal_checkpoint(TRUNCATE)` and `PRAGMA optimize` on the queue database. |
-| Collector | `management-heartbeat` | Every minute | Registers the collector and reports queue, output and job health. Only when `BOWER_MANAGEMENT_ENDPOINT` is set. |
+| Collector | `management-heartbeat` | Every minute | Registers the collector and reports queue, output and job health (heartbeat v2). Verifies signed commands in the response and hands them to the hosted command worker; never runs them itself. Only when `BOWER_MANAGEMENT_ENDPOINT` is set. |
 | Collector | `source-activity` | Every minute | Saves per-application last-seen times to the queue database so source silence detection survives restarts. Metadata only. |
 | Collector | `queue-archive` | Every minute | Copies newly stored events into the verifiable archive. Only when `BOWER_ARCHIVE_PATH` is set; reads the queue, never changes event state. |
-| Management API | `collector-staleness` | Every 5 minutes | Marks approved/active collectors that have not reported for 15 minutes as `stale` and writes one `collector.stale` audit row per transition. |
+| Management API | `collector-staleness` | Every 5 minutes | Marks approved/active collectors that have not reported for 15 minutes as `stale` and writes one `collector.stale` audit row per transition. Also expires overdue collector commands (`collector.command-expired`) for collectors that are offline, suspended or heartbeating v1. |
 | Management API | `collector-inactivity` | Daily 02:00 | Suspends collector identities that have not reported for `BOWER_COLLECTOR_INACTIVE_DAYS` (default 30). |
 
 Schedules are five-field cron expressions evaluated in UTC (`*`, values, ranges,
@@ -36,6 +36,10 @@ and logs a metadata-only warning (event 1202) with the reason, so a stalled or d
 archive delays purging rather than losing events. `queue-archive` holds the archive
 writer lock for each run; a run that finds the lock held fails and the next minute's run
 retries.
+
+Management commands are **not** run by a scheduled job either. A `run-canary` queues an
+event, so the hosted `ManagementCommandWorker` (a task beside the delivery worker in
+Rust) runs every admitted command.
 
 Closing suppression windows is **not** a scheduled job: it queues summary events,
 which is queue state, so it runs in the hosted `SuppressionWindowWorker` loop every

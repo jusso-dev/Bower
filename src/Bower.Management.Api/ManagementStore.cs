@@ -130,6 +130,7 @@ public sealed partial class ManagementStore(string databasePath)
             connection, "collectors", "desired_privacy_profile_version_id", "TEXT NULL", cancellationToken);
         await AddColumnIfMissingAsync(
             connection, "collectors", "reported_privacy_profile_hash", "TEXT NULL", cancellationToken);
+        await InitializeHeartbeatV2Async(connection, cancellationToken);
     }
 
     public async Task<CollectorRecord> RegisterAsync(
@@ -216,6 +217,18 @@ public sealed partial class ManagementStore(string databasePath)
     }
 
     public async Task<CollectorRecord?> HeartbeatAsync(
+        string collectorId,
+        CollectorHeartbeat heartbeat,
+        string principalObjectId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken) =>
+        (await ExchangeHeartbeatAsync(collectorId, heartbeat, principalObjectId, now, cancellationToken))?.Record;
+
+    /// <summary>
+    /// Records a heartbeat. For v2 it also records command results, expires overdue commands
+    /// and returns the signed commands to deliver (all in the heartbeat transaction).
+    /// </summary>
+    public async Task<HeartbeatExchange?> ExchangeHeartbeatAsync(
         string collectorId,
         CollectorHeartbeat heartbeat,
         string principalObjectId,
@@ -307,8 +320,15 @@ public sealed partial class ManagementStore(string databasePath)
             await ReplaceJobsAsync(connection, transaction, collectorId, heartbeat.Jobs, cancellationToken);
         }
 
+        await UpdateHeartbeatV2Async(
+            connection, transaction, collectorId, heartbeat, deliveryStatus, now, cancellationToken);
+        (IReadOnlyList<SignedCollectorCommand> commands, IReadOnlyList<string> acknowledged) = heartbeat.IsV2
+            ? await ExchangeCommandsAsync(
+                connection, transaction, collectorId, heartbeat, principalObjectId, now, cancellationToken)
+            : ([], []);
         await transaction.CommitAsync(cancellationToken);
-        return await GetAsync(collectorId, cancellationToken);
+        CollectorRecord record = (await GetAsync(collectorId, cancellationToken))!;
+        return new HeartbeatExchange(record, commands, acknowledged);
     }
 
     public async Task<ApprovalRecord?> DecideAsync(
@@ -622,6 +642,17 @@ public sealed partial class ManagementStore(string databasePath)
         long deadLettered = reader.GetInt64(reader.GetOrdinal("dead_lettered"));
         string? desiredPrivacyProfileId = ReadOptionalString(reader, "desired_privacy_profile_version_id");
         string? reportedPrivacyProfile = ReadOptionalString(reader, "reported_privacy_profile_hash");
+        int schemaVersion = reader.GetInt32(reader.GetOrdinal("heartbeat_schema_version"));
+        int? interval = reader.IsDBNull(reader.GetOrdinal("heartbeat_interval_seconds"))
+            ? null
+            : reader.GetInt32(reader.GetOrdinal("heartbeat_interval_seconds"));
+        long? oldestUndelivered = reader.IsDBNull(reader.GetOrdinal("oldest_undelivered_age_seconds"))
+            ? null
+            : reader.GetInt64(reader.GetOrdinal("oldest_undelivered_age_seconds"));
+        DateTimeOffset? lastDelivery = ParseOptional(reader, "last_successful_delivery_at");
+        CanaryReport? canary = ReadCanary(reader);
+        string? capabilities = ReadOptionalString(reader, "command_capabilities");
+        DateTimeOffset? failingSince = ParseOptional(reader, "delivery_failing_since");
         await using SqliteConnection detailConnection = await OpenAsync(cancellationToken);
         IReadOnlyList<SourceReport> sources =
             await ReadSourcesAsync(detailConnection, id, cancellationToken);
@@ -635,7 +666,9 @@ public sealed partial class ManagementStore(string databasePath)
         return new(
             id, machine, environment, version, status, principal, firstSeen, lastSeen,
             configuration, policy, queue, delivery, sources, outputs, jobs,
-            desiredPolicy, ledgerSequence, deadLettered, desiredPrivacyProfile, reportedPrivacyProfile);
+            desiredPolicy, ledgerSequence, deadLettered, desiredPrivacyProfile, reportedPrivacyProfile,
+            schemaVersion, interval, oldestUndelivered, lastDelivery, canary,
+            SplitCapabilities(capabilities), failingSince);
     }
 
     private static async Task<IReadOnlyList<SourceReport>> ReadSourcesAsync(
@@ -745,6 +778,7 @@ public sealed partial class ManagementStore(string databasePath)
             || heartbeat.Ledger is { } ledger && (ledger.Sequence < 0 || !ValidText(ledger.Hash, 128))
             || heartbeat.DeadLettered is < 0 or > MaximumReportedCount
             || heartbeat.PrivacyProfileHash is { } privacyProfileHash && !IsPrivacyProfileHash(privacyProfileHash)
+            || !ValidHeartbeatV2(heartbeat)
             || (heartbeat.Jobs?.Any(job =>
                 job is null
                 || !ValidText(job.Id, 128)
@@ -1222,6 +1256,12 @@ public sealed partial class ManagementStore(string databasePath)
     private static DateTimeOffset Parse(string value) =>
         DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
 }
+
+/// <summary>A recorded heartbeat: the collector record, commands to deliver and acknowledged result ids.</summary>
+public sealed record HeartbeatExchange(
+    CollectorRecord Record,
+    IReadOnlyList<SignedCollectorCommand> Commands,
+    IReadOnlyList<string> AcknowledgedResults);
 
 public sealed class CollectorIdentityConflictException(string collectorId)
     : InvalidOperationException($"Collector '{collectorId}' is bound to another identity.");

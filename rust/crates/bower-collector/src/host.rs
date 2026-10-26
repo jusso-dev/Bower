@@ -17,6 +17,7 @@ use bower_output_ama_spool::{AmaSpoolOptions, AmaSpoolOutput};
 use bower_output_azure::{AzureLogsIngestionOptions, AzureLogsIngestionOutput, TokenProvider};
 use bower_persistence::{QueueArchive, SqliteEventStore};
 use tokio::net::TcpListener;
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tracing::warn;
 
@@ -28,16 +29,18 @@ use crate::auth::IngestAuthentication;
 use crate::error::HostError;
 use crate::heartbeat::{AccessTokenSource, ManagementHeartbeat};
 use crate::jobs::{
-    JobCatalog, JobFn, JobScheduler, MANAGED_PRIVACY_PROFILE_JOB_ID, MANAGEMENT_HEARTBEAT_JOB_ID,
-    QUEUE_ARCHIVE_JOB_ID, QUEUE_MAINTENANCE_JOB_ID, QUEUE_RETENTION_JOB_ID, SOURCE_ACTIVITY_JOB_ID,
-    Schedule, run_queue_archive, run_queue_maintenance, run_queue_retention, run_source_activity,
+    JobCatalog, JobFn, JobScheduler, JobTriggers, MANAGED_PRIVACY_PROFILE_JOB_ID,
+    MANAGEMENT_HEARTBEAT_JOB_ID, QUEUE_ARCHIVE_JOB_ID, QUEUE_MAINTENANCE_JOB_ID,
+    QUEUE_RETENTION_JOB_ID, SOURCE_ACTIVITY_JOB_ID, Schedule, run_queue_archive,
+    run_queue_maintenance, run_queue_retention, run_source_activity,
 };
 use crate::managed_privacy::{ManagedPrivacyProfileJob, ManagedPrivacyState};
+use crate::management_commands::{CommandLedger, CommandProcessor, CommandWorker, VerifiedCommand};
 use crate::rate_limit::TokenBucket;
 use crate::settings::CollectorSettings;
 use crate::shutdown::{ApplicationLifetime, ShutdownToken};
 use crate::source_health::SourceHealth;
-use crate::worker::{QueueDeliveryOptions, QueueDeliveryWorker};
+use crate::worker::{DeliveryActivity, QueueDeliveryOptions, QueueDeliveryWorker};
 
 /// What the policy bundle contributes to the host: selection, redaction and the
 /// status view.
@@ -167,6 +170,14 @@ pub struct Collector {
     credential: Option<Arc<dyn AccessTokenSource>>,
     delivery: QueueDeliveryOptions,
     scheduler: Option<JobScheduler>,
+    /// Last output acknowledgement, reported on the heartbeat.
+    pub delivery_activity: Arc<DeliveryActivity>,
+    /// Management mode: the heartbeat v2 command processor and its durable ledger.
+    pub commands: Option<Arc<CommandProcessor>>,
+    command_inbox: Option<mpsc::Receiver<VerifiedCommand>>,
+    /// Management mode: one client (proxy, CA bundle) built at start-up.
+    management_client: Option<reqwest::Client>,
+    job_triggers: JobTriggers,
 }
 
 /// Wires settings, bundle, queue, processor, authentication and rate limiting.
@@ -280,6 +291,30 @@ pub fn build(
         maximum_delivery_attempts: settings.maximum_delivery_attempts,
         ..QueueDeliveryOptions::default()
     });
+    // Proxy password and CA bundle are read here, so a bad file stops start-up (C# Build).
+    let management_client = settings
+        .management_endpoint
+        .as_ref()
+        .map(|_| crate::management_http::client(&settings))
+        .transpose()?;
+    let (commands, command_inbox) = if settings.management_endpoint.is_some() {
+        let ledger = Arc::new(CommandLedger::new(
+            &settings.management_command_directory(),
+            Arc::clone(&clock),
+        ));
+        let (sender, receiver) = mpsc::channel(crate::management_commands::INBOX_CAPACITY);
+        (
+            Some(Arc::new(CommandProcessor::new(
+                &settings,
+                ledger,
+                sender,
+                Arc::clone(&clock),
+            ))),
+            Some(receiver),
+        )
+    } else {
+        (None, None)
+    };
     Ok(Collector {
         router: router(state),
         store,
@@ -301,6 +336,11 @@ pub fn build(
         credential: options.credential,
         delivery,
         scheduler: None,
+        delivery_activity: Arc::new(DeliveryActivity::default()),
+        commands,
+        command_inbox,
+        management_client,
+        job_triggers: JobTriggers::default(),
         settings,
     })
 }
@@ -423,6 +463,11 @@ impl Collector {
             )
             .map(|mut heartbeat| {
                 heartbeat.source_health = Some(Arc::clone(&self.source_health));
+                heartbeat.commands = self.commands.clone();
+                heartbeat.delivery_activity = Some(Arc::clone(&self.delivery_activity));
+                if let Some(client) = &self.management_client {
+                    heartbeat.client = client.clone();
+                }
                 Arc::new(heartbeat)
             })
             .ok_or_else(|| {
@@ -475,6 +520,7 @@ impl Collector {
                 scheduler.trigger(MANAGED_PRIVACY_PROFILE_JOB_ID);
             }
         }
+        self.job_triggers = scheduler.triggers();
         self.scheduler = Some(scheduler);
         Ok(())
     }
@@ -504,13 +550,27 @@ impl Collector {
         tasks.push(tokio::spawn(async move {
             crate::suppression_worker::run(processor, identity, token).await;
         }));
+        if let (Some(commands), Some(inbox)) = (&self.commands, self.command_inbox.take()) {
+            let worker = CommandWorker {
+                ledger: Arc::clone(commands.ledger()),
+                triggers: self.job_triggers.clone(),
+                processor: self.processor.clone(),
+                identity: self.identity.clone(),
+                environment: self.settings.environment.clone(),
+                clock: Arc::clone(&self.clock),
+                lifetime: self.lifetime.clone(),
+            };
+            let token = shutdown.clone();
+            tasks.push(tokio::spawn(async move { worker.run(inbox, token).await }));
+        }
         if let Some(output) = self.output.clone() {
             let worker = QueueDeliveryWorker::new(
                 Arc::clone(&self.store),
                 Arc::new(output),
                 Arc::clone(&self.clock),
                 self.delivery.clone(),
-            );
+            )
+            .with_activity(Arc::clone(&self.delivery_activity));
             let token = shutdown.clone();
             tasks.push(tokio::spawn(async move { worker.run(token).await }));
         }

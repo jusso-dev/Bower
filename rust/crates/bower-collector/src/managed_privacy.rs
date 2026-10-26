@@ -15,7 +15,6 @@ use std::fmt;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use bower_integrity::DetachedSignature;
 use bower_redaction::LoadedPrivacyProfile;
@@ -726,11 +725,8 @@ impl ManagedPrivacyProfileJob {
         lifetime: ApplicationLifetime,
     ) -> Option<Self> {
         let base = settings.management_endpoint.clone()?;
-        // The same client settings as the management heartbeat (15 s timeout).
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(15))
-            .build()
-            .ok()?;
+        // The same client as the management heartbeat (timeout, proxy and CA bundle).
+        let client = crate::management_http::client(settings).ok()?;
         Some(Self {
             client,
             base,

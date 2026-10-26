@@ -1716,12 +1716,15 @@ async fn heartbeat_reports_the_active_privacy_profile_hash() {
     let default_body = heartbeat_body(&fixture, local.info.privacy_profile_hash.as_deref()).await;
 
     let hash = managed.info.privacy_profile_hash.unwrap();
+    // Heartbeat v2 fields follow the privacy profile hash (C# declaration order).
     assert!(
-        managed_body.ends_with(&format!(",\"privacyProfileHash\":\"{hash}\"}}")),
+        managed_body.contains(&format!(
+            ",\"privacyProfileHash\":\"{hash}\",\"schemaVersion\":2,"
+        )),
         "{managed_body}"
     );
     assert!(
-        default_body.ends_with(",\"privacyProfileHash\":\"default\"}"),
+        default_body.contains(",\"privacyProfileHash\":\"default\",\"schemaVersion\":2,"),
         "{default_body}"
     );
 }

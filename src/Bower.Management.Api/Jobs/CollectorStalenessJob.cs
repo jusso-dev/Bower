@@ -21,7 +21,21 @@ public sealed partial class CollectorStalenessJob(
         {
             LogMarkedStale(logger, marked);
         }
+
+        // Collectors that stopped heartbeating, were suspended or downgraded to v1 never run
+        // the v2 exchange that expires their commands, so expire and audit them here.
+        int expired = await store.ExpireOverdueCommandsAsync(now, cancellationToken);
+        if (expired > 0)
+        {
+            LogCommandsExpired(logger, expired);
+        }
     }
+
+    [LoggerMessage(
+        EventId = 2102,
+        Level = LogLevel.Information,
+        Message = "{Count} collector command(s) expired without a result.")]
+    private static partial void LogCommandsExpired(ILogger logger, int count);
 
     [LoggerMessage(
         EventId = 2101,

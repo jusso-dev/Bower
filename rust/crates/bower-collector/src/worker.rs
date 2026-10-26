@@ -53,11 +53,35 @@ impl From<StoreError> for DeliveryError {
     }
 }
 
+/// When the output last acknowledged an event, for the heartbeat (C# `DeliveryActivity`).
+/// In memory, so `None` until the first acknowledgement after start-up.
+#[derive(Default)]
+pub struct DeliveryActivity {
+    last: std::sync::Mutex<Option<bower_contracts::time::Timestamp>>,
+}
+
+impl DeliveryActivity {
+    pub fn last_successful_delivery_at(&self) -> Option<bower_contracts::time::Timestamp> {
+        *self
+            .last
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    pub fn record_delivery(&self, at: bower_contracts::time::Timestamp) {
+        *self
+            .last
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(at);
+    }
+}
+
 pub struct QueueDeliveryWorker<O> {
     queue: Arc<dyn DurableEventStore>,
     output: Arc<O>,
     clock: Arc<dyn Clock>,
     options: QueueDeliveryOptions,
+    activity: Option<Arc<DeliveryActivity>>,
 }
 
 impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
@@ -72,7 +96,14 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
             output,
             clock,
             options,
+            activity: None,
         }
+    }
+
+    /// Records each acknowledged batch for the heartbeat's last successful delivery.
+    pub fn with_activity(mut self, activity: Arc<DeliveryActivity>) -> Self {
+        self.activity = Some(activity);
+        self
     }
 
     /// Runs until `shutdown` is cancelled (C# `ExecuteAsync`).
@@ -145,6 +176,7 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
         }
 
         if !delivered.is_empty() {
+            let count = delivered.len();
             // One queue transaction for every acknowledged event in the batch.
             let reclaimed = self
                 .blocking(
@@ -153,6 +185,11 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
                 )
                 .await?;
             self.log_stale_leases(reclaimed.len());
+            if reclaimed.len() < count
+                && let Some(activity) = &self.activity
+            {
+                activity.record_delivery(self.clock.utc_now());
+            }
         }
 
         let mut failed = Vec::new();
