@@ -135,6 +135,34 @@ pub struct AppState {
     pub telemetry: Arc<bower_core::PipelineTelemetry>,
     /// Expected sources (`SourceHealth`).
     pub source_health: Arc<crate::source_health::SourceHealth>,
+    /// The configured output, for its adaptive request concurrency.
+    pub delivery: Arc<DeliveryStatus>,
+}
+
+/// C# `IOutputConcurrencyStatus` lookup: the output the delivery worker drives.
+#[derive(Default)]
+pub struct DeliveryStatus(std::sync::RwLock<Option<crate::host::BoxedOutput>>);
+
+impl DeliveryStatus {
+    pub fn new(output: Option<crate::host::BoxedOutput>) -> Self {
+        Self(std::sync::RwLock::new(output))
+    }
+
+    pub fn set(&self, output: Option<crate::host::BoxedOutput>) {
+        *self
+            .0
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = output;
+    }
+
+    pub fn snapshot(&self) -> Option<bower_contracts::OutputConcurrencySnapshot> {
+        use bower_contracts::OutputAdapter;
+        self.0
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .and_then(OutputAdapter::concurrency_snapshot)
+    }
 }
 
 pub fn router(state: AppState) -> Router {
@@ -592,6 +620,53 @@ struct StatusBody<'a> {
     /// Expected sources; omitted when BOWER_SOURCE_EXPECTATIONS is not set.
     #[serde(skip_serializing_if = "Option::is_none")]
     sources: Option<Vec<SourceStatusBody>>,
+    /// Adaptive request concurrency of the output; omitted when it has none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    delivery: Option<DeliveryBody>,
+}
+
+/// `OutputConcurrencySnapshot` (Web defaults). Metadata only.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeliveryBody {
+    output_id: String,
+    limit: i32,
+    minimum_limit: i32,
+    maximum_limit: i32,
+    in_flight: i32,
+    latency_ewma_milliseconds: Option<i64>,
+    requests: i64,
+    throttles: i64,
+    server_errors: i64,
+    timeouts: i64,
+    latency_spikes: i64,
+    decreases: i64,
+    increases: i64,
+    pauses: i64,
+    #[serde(with = "serde_offset_option")]
+    paused_until: Option<Timestamp>,
+}
+
+impl From<bower_contracts::OutputConcurrencySnapshot> for DeliveryBody {
+    fn from(value: bower_contracts::OutputConcurrencySnapshot) -> Self {
+        Self {
+            output_id: value.output_id,
+            limit: value.limit,
+            minimum_limit: value.minimum_limit,
+            maximum_limit: value.maximum_limit,
+            in_flight: value.in_flight,
+            latency_ewma_milliseconds: value.latency_ewma_milliseconds,
+            requests: value.requests,
+            throttles: value.throttles,
+            server_errors: value.server_errors,
+            timeouts: value.timeouts,
+            latency_spikes: value.latency_spikes,
+            decreases: value.decreases,
+            increases: value.increases,
+            pauses: value.pauses,
+            paused_until: value.paused_until,
+        }
+    }
 }
 
 /// `PipelineMetricsSnapshot` (Web defaults).
@@ -738,6 +813,7 @@ async fn status(
                 .source_health
                 .is_configured()
                 .then(|| sources.into_iter().map(Into::into).collect()),
+            delivery: state.delivery.snapshot().map(Into::into),
         },
     )
 }

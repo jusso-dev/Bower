@@ -305,6 +305,7 @@ public static partial class CollectorApplication
                     CollectorSettings settings,
                     PipelineTelemetry telemetry,
                     SourceHealth sourceHealth,
+                    HttpContext context,
                     CancellationToken cancellationToken) =>
                 {
                     QueueSnapshot snapshot = await eventQueue.GetSnapshotAsync(cancellationToken);
@@ -342,7 +343,9 @@ public static partial class CollectorApplication
                     {
                         EventIdentityConflicts = conflicts.Snapshot(),
                         Pipeline = telemetry.Snapshot(),
-                        Sources = sourceHealth.IsConfigured ? sources : null
+                        Sources = sourceHealth.IsConfigured ? sources : null,
+                        Delivery = (context.RequestServices.GetService<IOutputAdapter>() as IOutputConcurrencyStatus)
+                            ?.GetConcurrencySnapshot()
                     };
                     return Results.Json(status, CollectorJsonContext.Default.StatusResponse);
                 })

@@ -8,8 +8,8 @@ use std::sync::Arc;
 use axum::Router;
 use bower_contracts::time::Clock;
 use bower_contracts::{
-    DeliveryResult, DurableEventStore, EventRedactor, OutputAdapter, QueuedEvent,
-    TelemetryPolicyEvaluator,
+    DeliveryResult, DurableEventStore, EventRedactor, OutputAdapter, OutputConcurrencySnapshot,
+    QueuedEvent, TelemetryPolicyEvaluator,
 };
 use bower_core::source_expectations::{self, SourceExpectationsError};
 use bower_core::{CollectorIdentity, PipelineTelemetry, ProcessError, SecurityEventProcessor};
@@ -21,8 +21,8 @@ use tokio::task::JoinHandle;
 use tracing::warn;
 
 use crate::app::{
-    AppState, BundleInfo, EventProcessor, PolicyReference, ProcessFailure, ProcessingOutcome,
-    router,
+    AppState, BundleInfo, DeliveryStatus, EventProcessor, PolicyReference, ProcessFailure,
+    ProcessingOutcome, router,
 };
 use crate::auth::IngestAuthentication;
 use crate::error::HostError;
@@ -56,6 +56,7 @@ type DeliverFuture<'a> = Pin<Box<dyn Future<Output = DeliveryResult> + Send + 'a
 pub trait DynOutputAdapter: Send + Sync {
     fn output_id(&self) -> &str;
     fn deliver_boxed<'a>(&'a self, events: &'a [QueuedEvent]) -> DeliverFuture<'a>;
+    fn concurrency_boxed(&self) -> Option<OutputConcurrencySnapshot>;
 }
 
 impl<T: OutputAdapter> DynOutputAdapter for T {
@@ -65,6 +66,10 @@ impl<T: OutputAdapter> DynOutputAdapter for T {
 
     fn deliver_boxed<'a>(&'a self, events: &'a [QueuedEvent]) -> DeliverFuture<'a> {
         Box::pin(self.deliver(events))
+    }
+
+    fn concurrency_boxed(&self) -> Option<OutputConcurrencySnapshot> {
+        self.concurrency_snapshot()
     }
 }
 
@@ -78,6 +83,10 @@ impl OutputAdapter for BoxedOutput {
 
     async fn deliver(&self, events: &[QueuedEvent]) -> DeliveryResult {
         self.0.deliver_boxed(events).await
+    }
+
+    fn concurrency_snapshot(&self) -> Option<OutputConcurrencySnapshot> {
+        self.0.concurrency_boxed()
     }
 }
 
@@ -150,6 +159,8 @@ pub struct Collector {
     identity: CollectorIdentity,
     lifetime: ApplicationLifetime,
     output: Option<BoxedOutput>,
+    /// Status view of `output` (adaptive request concurrency).
+    delivery_status: Arc<DeliveryStatus>,
     credential: Option<Arc<dyn AccessTokenSource>>,
     delivery: QueueDeliveryOptions,
     scheduler: Option<JobScheduler>,
@@ -239,7 +250,9 @@ pub fn build(
     } else {
         ManagedPrivacyState::local()
     });
+    let delivery_status = Arc::new(DeliveryStatus::new(options.output.clone()));
     let state = AppState {
+        delivery: Arc::clone(&delivery_status),
         processor: Arc::new(CoreProcessor {
             processor: processor.clone(),
             identity: identity.clone(),
@@ -281,6 +294,7 @@ pub fn build(
         identity,
         lifetime: ApplicationLifetime::new(),
         output: options.output,
+        delivery_status,
         credential: options.credential,
         delivery,
         scheduler: None,
@@ -291,6 +305,7 @@ pub fn build(
 impl Collector {
     /// Replaces the configured output (C# `Build(..., output: ...)`), before `run`.
     pub fn set_output(&mut self, output: Option<BoxedOutput>) {
+        self.delivery_status.set(output.clone());
         self.output = output;
     }
 

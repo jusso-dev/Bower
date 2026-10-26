@@ -13,25 +13,34 @@ using Bower.Dcr;
 
 namespace Bower.Output.AzureLogsIngestion;
 
-public sealed class AzureLogsIngestionOutput : IOutputAdapter
+public sealed class AzureLogsIngestionOutput : IOutputAdapter, IOutputConcurrencyStatus
 {
     private readonly AzureLogsIngestionOptions options;
     private readonly LogsIngestionClient client;
+    private readonly TimeProvider clock;
+    private readonly AdaptiveConcurrencyController concurrency;
 
     public AzureLogsIngestionOutput(
         AzureLogsIngestionOptions options,
         TokenCredential credential,
-        LogsIngestionClientOptions? clientOptions = null)
+        LogsIngestionClientOptions? clientOptions = null,
+        TimeProvider? timeProvider = null)
     {
         options.Validate();
         this.options = options;
+        clock = timeProvider ?? TimeProvider.System;
+        // One controller per output: one DCR stream. MaximumConcurrency is its ceiling.
+        concurrency = new AdaptiveConcurrencyController(options.MaximumConcurrency);
         clientOptions ??= new LogsIngestionClientOptions();
         // Long server delays belong in the durable queue, never an in-memory SDK sleep.
         clientOptions.RetryPolicy = new DurableRetryPolicy(clientOptions.Retry);
+        clientOptions.AddPolicy(new ConcurrencyObserverPolicy(concurrency, clock), HttpPipelinePosition.PerRetry);
         client = new LogsIngestionClient(options.Endpoint, credential, clientOptions);
     }
 
     public string Id => options.Id;
+
+    public OutputConcurrencySnapshot GetConcurrencySnapshot() => concurrency.Snapshot(Id, clock.GetUtcNow());
 
     public async Task<DeliveryResult> DeliverAsync(
         IReadOnlyList<QueuedEvent> events,
@@ -102,11 +111,40 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
         ConcurrentBag<DeliveryFailure> uploadFailures = [];
         ConcurrentBag<string> isolatedBadRequests = [];
         int isolationBudget = 16;
-        await Parallel.ForEachAsync(batches, new ParallelOptions
+        // Server-requested pause seen during this delivery (UTC ticks, 0 = none). Across
+        // deliveries the durable destination circuit holds the stream instead.
+        long pausedUntilTicks = 0;
+        List<Task> uploads = new(batches.Count);
+        try
         {
-            MaxDegreeOfParallelism = options.MaximumConcurrency,
-            CancellationToken = cancellationToken
-        }, async (batch, token) => await UploadBatchAsync(batch, token));
+            for (int index = 0; index < batches.Count; index++)
+            {
+                // Back-pressure: wait for a slot under the adaptive limit, in batch order.
+                await concurrency.AcquireAsync(cancellationToken);
+                long paused = Interlocked.Read(ref pausedUntilTicks);
+                if (paused > clock.GetUtcNow().UtcTicks)
+                {
+                    concurrency.Release();
+                    // Never sent: keep the records retryable behind the destination circuit.
+                    DateTimeOffset until = new(paused, TimeSpan.Zero);
+                    foreach (PreparedRecord record in batches.Skip(index).SelectMany(batch => batch))
+                    {
+                        uploadFailures.Add(new DeliveryFailure(record.EventId, "destination-azure-paused", true, until));
+                    }
+
+                    break;
+                }
+
+                uploads.Add(UploadSlotAsync(batches[index], cancellationToken));
+            }
+        }
+        finally
+        {
+            // Observe every started upload, even when cancellation stopped the loop.
+            await Task.WhenAll(uploads).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        }
+
+        await Task.WhenAll(uploads);
         HashSet<string> accepted = new(acknowledged, StringComparer.Ordinal);
         HashSet<string> isolated = new(isolatedBadRequests, StringComparer.Ordinal);
         failures.AddRange(uploadFailures.Select(failure => accepted.Count > 0 && isolated.Contains(failure.EventId)
@@ -116,6 +154,18 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
             records.Where(record => accepted.Contains(record.EventId)).Select(record => record.EventId).ToArray(),
             failures,
             accepted.Count == 0 ? null : "azure-logs-ingestion:accepted:owned-batches");
+
+        async Task UploadSlotAsync(List<PreparedRecord> batch, CancellationToken token)
+        {
+            try
+            {
+                await UploadBatchAsync(batch, token);
+            }
+            finally
+            {
+                concurrency.Release();
+            }
+        }
 
         async Task UploadBatchAsync(List<PreparedRecord> batch, CancellationToken token)
         {
@@ -142,10 +192,22 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
                         ErrorOptions = ErrorOptions.NoThrow
                     });
                 status = response.Status;
-                DateTimeOffset now = DateTimeOffset.UtcNow;
+                DateTimeOffset now = clock.GetUtcNow();
                 retryAfter = ReadRetryAfter(response, now);
                 retryCapped = retryAfter > now.Add(MaximumDurableRetryDelay);
                 if (retryCapped) retryAfter = now.Add(MaximumDurableRetryDelay);
+                if (status is < 200 or >= 300 && retryAfter > now)
+                {
+                    // Output-level Retry-After: no further batch of this stream starts in
+                    // this delivery before the deadline.
+                    concurrency.Pause(retryAfter.Value, now);
+                    long ticks = retryAfter.Value.UtcTicks;
+                    long seen;
+                    while ((seen = Interlocked.Read(ref pausedUntilTicks)) < ticks
+                        && Interlocked.CompareExchange(ref pausedUntilTicks, ticks, seen) != seen)
+                    {
+                    }
+                }
             }
             catch (Exception exception) when (exception is not OperationCanceledException || !token.IsCancellationRequested)
             {
@@ -161,7 +223,7 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
 
             // An ambiguous 400 is not proof of record poison. Bounded bisection lets
             // valid siblings progress. Singletons are held unless another record succeeds.
-            if (status == 400 && batch.Count > 1 && (retryAfter is null || retryAfter <= DateTimeOffset.UtcNow)
+            if (status == 400 && batch.Count > 1 && (retryAfter is null || retryAfter <= clock.GetUtcNow())
                 && Interlocked.Add(ref isolationBudget, -2) >= 0)
             {
                 int middle = batch.Count / 2;
@@ -170,7 +232,7 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter
                 return;
             }
 
-            if (status == 400 && batch.Count == 1 && (retryAfter is null || retryAfter <= DateTimeOffset.UtcNow))
+            if (status == 400 && batch.Count == 1 && (retryAfter is null || retryAfter <= clock.GetUtcNow()))
                 isolatedBadRequests.Add(batch[0].EventId);
             foreach (PreparedRecord record in batch)
             {

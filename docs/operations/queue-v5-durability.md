@@ -112,6 +112,19 @@ state; batch APIs return those IDs, single APIs reject the transition. Workers
 must use claims from their original batch, never read current claims at settlement
 time. Delivery worker changes in this patch only integrate this contract.
 
+## Throttling and pauses
+
+The Logs Ingestion output adapts request concurrency inside one delivery and never
+holds events outside the queue: a leased batch either settles or expires and is
+reclaimed. After a `Retry-After`, batches of that delivery that were not sent fail
+as `destination-azure-paused` with the server deadline (capped at one hour). Like
+every `destination-*` failure, they do not spend delivery attempts and open the
+durable destination circuit, so nothing is leased for the stream until the
+deadline, across restarts. Leases stay valid while a delivery waits for a slot
+(bounded by the batch and the lease duration). Acknowledgement, dead-letter and
+ledger semantics are unchanged. See
+[adaptive request concurrency](../deployment/logs-ingestion-api.md#adaptive-request-concurrency).
+
 ## Retention and physical storage
 
 Purging and checkpoint compaction commit together. Consecutive purged ledger rows

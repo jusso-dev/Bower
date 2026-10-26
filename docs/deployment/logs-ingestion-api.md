@@ -28,6 +28,49 @@ bounded isolation; unresolved singletons remain pending for operator investigati
 Queue/storage limits apply producer backpressure rather than deleting pending
 records. See [outage recovery and historical reconciliation](../operations/azure-sdk-recovery.md).
 
+## Adaptive request concurrency
+
+Each output (one DCR stream) runs an AIMD controller over its upload requests, in
+C# and Rust alike. `MaximumConcurrency` / `maximum_concurrency` (1 to 32, default
+4) is the ceiling and the starting limit, so the healthy case is never slower than
+the old fixed setting. The minimum is 1.
+
+- Decrease: halve the limit on 429, 5xx, 408, network timeout or transport failure;
+  cut it by a quarter on a latency spike (RTT above twice the EWMA and at least
+  250 ms above it, judged after four samples; EWMA weight 0.25). At most one
+  decrease per window: attempts started before the last decrease do not count.
+- Increase: one slot after `limit` consecutive healthy attempts in the current
+  window, up to the ceiling.
+- Every attempt, including Azure.Core / pipeline retries, is observed after the
+  token is obtained. Other 4xx responses and caller cancellation are neutral.
+- `Retry-After` (and `retry-after-ms`) on a failed response pauses the stream: no
+  further batch of that delivery starts before the deadline. Unsent batches fail as
+  retryable `destination-azure-paused` with that deadline, which opens the durable
+  destination circuit (see [queue v5 durability](../operations/queue-v5-durability.md#throttling-and-pauses)).
+- Back-pressure is a wait for a request slot over the already-leased batch, in batch
+  order. Nothing is buffered beyond it; queue byte caps still return 503 to
+  producers. No change to acknowledgement, dead-letter or ledger semantics.
+
+The controller is deterministic: it takes RTT and time from its caller (C#
+`TimeProvider`), with no randomness. `/v1/status` (bearer token) adds a `delivery`
+block, omitted for outputs without adaptive concurrency:
+
+```json
+"delivery": {"outputId": "azure-logs-ingestion", "limit": 2, "minimumLimit": 1,
+  "maximumLimit": 4, "inFlight": 1, "latencyEwmaMilliseconds": 163, "requests": 9,
+  "throttles": 3, "serverErrors": 1, "timeouts": 0, "latencySpikes": 1,
+  "decreases": 2, "increases": 1, "pauses": 1,
+  "pausedUntil": "2026-07-26T02:16:19+00:00"}
+```
+
+Counters are since start and metadata only: no payloads, event IDs or response
+bodies. `pausedUntil` is null once the deadline passes. Tests: shared controller
+trace (C# `AdaptiveConcurrencyTests`, Rust `adaptive_concurrency.rs`), and a fake
+ingestion endpoint injecting 429, 503, latency and `Retry-After`, through the real
+SQLite queue and delivery worker (no loss, no premature acknowledgement, no
+dead-lettering of retryable events, cancellation releases every slot). Not
+verified against a live Azure endpoint.
+
 Use the [Entra ingestion planner](entra-ingestion-plan.md) for exact-DCR sender
 RBAC and optional managed identity/federation. An existing Log Analytics workspace
 and permission to create the reviewed table/DCE/DCR are prerequisites. Keep ingest

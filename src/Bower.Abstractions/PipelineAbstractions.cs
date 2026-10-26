@@ -266,6 +266,33 @@ public interface IOutputAdapter
         CancellationToken cancellationToken = default);
 }
 
+/// <summary>Implemented by outputs that adapt request concurrency; read by status.</summary>
+public interface IOutputConcurrencyStatus
+{
+    OutputConcurrencySnapshot GetConcurrencySnapshot();
+}
+
+/// <summary>
+/// Adaptive request concurrency of one output stream: current limit and bounds, requests
+/// in flight, latency EWMA and counters since start. Metadata only.
+/// </summary>
+public sealed record OutputConcurrencySnapshot(
+    string OutputId,
+    int Limit,
+    int MinimumLimit,
+    int MaximumLimit,
+    int InFlight,
+    long? LatencyEwmaMilliseconds,
+    long Requests,
+    long Throttles,
+    long ServerErrors,
+    long Timeouts,
+    long LatencySpikes,
+    long Decreases,
+    long Increases,
+    long Pauses,
+    DateTimeOffset? PausedUntil);
+
 public sealed record DeliveryResult(
     IReadOnlyList<string> AcknowledgedEventIds,
     IReadOnlyList<DeliveryFailure> Failures,
