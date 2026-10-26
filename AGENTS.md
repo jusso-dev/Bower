@@ -32,14 +32,14 @@ control plane, or runtime AI filter.
 - `src/Bower.Agent.Cloud`: AWS SQS and Google Pub/Sub forwarder host.
 - `src/Bower.Ocsf`: OCSF normalisation engine and source mappers.
 - `src/Bower.Detection`: Sigma-compatible detection rules engine.
-- `src/Bower.Pipeline`: declarative telemetry pipeline model, templates and validation.
+- `src/Bower.Pipeline`: declarative telemetry pipeline model, templates and validation, and the bounded parser transform language (`Transforms/`).
 - `src/Bower.Analytics`: telemetry quality and coverage scoring.
 - `src/Bower.Source.Ama`: Azure Monitor Agent companion discovery and custom log mapping.
 - `src/Bower.Dcr`: Data Collection Rule optimiser and health assessment.
 - `src/Bower.Agent.Aws`: native EC2 host telemetry agent with IMDS enrichment.
 - `src/Bower.Source.Docker`: read-only Docker json-file discovery, tailing and event mapping.
 - `src/Bower.Agent.Docker`: Docker sidecar that forwards opted-in container security events.
-- `packs`: signed content packs (`linux-ssh-gateway`, `aws-security`, `gcp-security`).
+- `packs`: signed content packs (`linux-ssh-gateway`, `linux-journald-ssh`, `aws-security`, `gcp-security`).
 - `rust`: Rust port of the data plane (`bower-collector`, `bower` CLI and their libraries); C# is the specification. See `rust/AGENTS.md`.
 - `deploy/aws`, `deploy/gcp`: CloudFormation and Terraform for cloud signal (plan-only by default).
 - `deploy/azure-function`: Bicep for the Azure Functions collector (Flex Consumption, managed identity; plan-only by default).
