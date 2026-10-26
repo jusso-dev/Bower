@@ -190,7 +190,7 @@ See [`rust/AGENTS.md`](rust/AGENTS.md) for parity rules.
 
 ## Getting started
 
-Requires the .NET 10 SDK (`10.0.401`, pinned in `global.json`) and Node.js 26 for
+Requires the .NET 10 SDK (`10.0.403`, pinned in `global.json`) and Node.js 26 for
 the console. Everything below runs locally with synthetic data.
 
 ### 1. Build and test
@@ -478,7 +478,7 @@ write names, so prefer names over ordinals.
 
 ## Native AOT binaries
 
-Bower pins .NET SDK `10.0.401` and runs tests on Microsoft.Testing.Platform.
+Bower pins .NET SDK `10.0.403` and runs tests on Microsoft.Testing.Platform.
 `bower`, the collector, the management API, the Docker sidecar and the cloud agent
 (`bower-cloud`) publish as self-contained Native AOT binaries that need no .NET runtime
 on the target machine. `bower-cloud` implements Google Application Default Credentials
