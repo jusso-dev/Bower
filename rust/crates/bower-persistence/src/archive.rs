@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bower_contracts::time::{self, Clock, SystemClock, Timestamp};
-use bower_contracts::{LedgerHead, StoreError, StoreResult};
+use bower_contracts::{DurableEventStore, LedgerHead, StoreError, StoreResult};
 use flate2::Compression;
 use flate2::read::MultiGzDecoder;
 use flate2::write::GzEncoder;
@@ -411,10 +411,25 @@ impl QueueArchive {
         // Own the archive before reading the watermark, so no other writer can publish
         // between the read and this run's segments.
         let _ownership = self.acquire_writer_lock()?;
-        self.remove_abandoned_temporary_files()?;
         let manifests = self.read_manifests()?;
         let (mut last_sequence, mut last_hash) = match manifests.last() {
-            Some(manifest) => (manifest.last_sequence, manifest.last_chain_hash.clone()),
+            Some(manifest) => {
+                // Extend only this queue's chain. Another queue's archive, a diverged
+                // restore or an archive ahead of the queue is refused before anything is
+                // written.
+                // A boundary compacted away (the events after it were purged) is left to
+                // the purged-before-archived check below, which writes nothing either.
+                let queue_hash = store.ledger_hash_at(manifest.last_sequence)?;
+                let compacted =
+                    queue_hash.is_none() && store.ledger_head()?.sequence >= manifest.last_sequence;
+                if !compacted && queue_hash.as_deref() != Some(manifest.last_chain_hash.as_str()) {
+                    return Err(ArchiveError::InvalidData(format!(
+                        "Archive lineage-mismatch: the queue ledger does not match the archive head at sequence {}.",
+                        manifest.last_sequence
+                    )));
+                }
+                (manifest.last_sequence, manifest.last_chain_hash.clone())
+            }
             None => {
                 // A new archive starts at the oldest event still stored; its first manifest
                 // records the ledger hash before it, so the chain continues from the queue.
@@ -437,6 +452,7 @@ impl QueueArchive {
             }
         };
 
+        self.remove_abandoned_temporary_files()?;
         let mut segments = 0i32;
         let mut events = 0i64;
         loop {
@@ -583,6 +599,69 @@ impl QueueArchive {
         } else {
             ArchiveCoverage::refused("lineage-mismatch", first, through)
         })
+    }
+
+    /// Re-hashes, bypassing the verification cache, each segment holding one of
+    /// `sequences` (the events about to be purged), and checks its manifest is the one
+    /// [`QueueArchive::verify_coverage`] last verified (C# `VerifySegmentsForPurgeAsync`).
+    /// `None` when all match; otherwise a metadata-only reason, and the cache is dropped
+    /// so the next coverage check verifies everything again.
+    pub fn verify_segments_for_purge(&self, sequences: &[i64]) -> Option<String> {
+        let mut cache = self
+            .verified_prefix
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let reason = match cache.as_ref() {
+            Some(cached) => self.rehash(cached, sequences),
+            None => Some("archive-unverified"),
+        };
+        if reason.is_some() {
+            *cache = None;
+        }
+        reason.map(str::to_owned)
+    }
+
+    fn rehash(&self, cached: &VerifiedPrefix, sequences: &[i64]) -> Option<&'static str> {
+        let mut needed = std::collections::BTreeSet::new();
+        for &sequence in sequences {
+            let index = cached
+                .stamps
+                .binary_search_by(|stamp| {
+                    if sequence < stamp.manifest.first_sequence {
+                        std::cmp::Ordering::Greater
+                    } else if sequence > stamp.manifest.last_sequence {
+                        std::cmp::Ordering::Less
+                    } else {
+                        std::cmp::Ordering::Equal
+                    }
+                })
+                .ok()?;
+            needed.insert(index);
+        }
+        let current: std::collections::HashMap<i64, ArchiveManifest> = match self.read_manifests() {
+            Ok(manifests) => manifests
+                .into_iter()
+                .map(|manifest| (manifest.first_sequence, manifest))
+                .collect(),
+            Err(ArchiveError::InvalidData(_)) => return Some("manifest-invalid"),
+            Err(_) => return Some("segment-unreadable"),
+        };
+        for index in needed {
+            let manifest = &cached.stamps[index].manifest;
+            if current.get(&manifest.first_sequence) != Some(manifest) {
+                return Some("archive-changed");
+            }
+            let segment_path = self.directory.join(&manifest.segment_file);
+            if !segment_path.is_file() {
+                return Some("segment-missing");
+            }
+            match digest(&segment_path) {
+                Ok(value) if value == manifest.segment_sha256 => {}
+                Ok(_) => return Some("segment-digest-mismatch"),
+                Err(_) => return Some("segment-unreadable"),
+            }
+        }
+        None
     }
 
     fn verify_incrementally(
@@ -835,6 +914,8 @@ impl QueueArchive {
         }
         move_without_overwrite(&temporary, &segment_path)?;
         restrict_permissions(&segment_path)?;
+        // Make the published names durable before retention can rely on them.
+        sync_directory(&self.directory)?;
 
         let manifest = ArchiveManifest {
             api_version: API_VERSION.into(),
@@ -861,6 +942,7 @@ impl QueueArchive {
         // Never replace a completed manifest: a collision means two writers share the archive.
         move_without_overwrite(&manifest_temporary, &manifest_path)?;
         restrict_permissions(&manifest_path)?;
+        sync_directory(&self.directory)?;
         Ok(manifest)
     }
 
@@ -996,6 +1078,29 @@ fn is_file_name(value: &str) -> bool {
     } else {
         !value.contains('/')
     }
+}
+
+/// C# `DirectorySync.Flush`: fsync the directory so names moved into it survive a power
+/// loss. File systems that cannot sync a directory (EINVAL, ENOTSUP) have nothing more to
+/// make durable. No-op off Unix (Windows journals renames).
+#[cfg(unix)]
+fn sync_directory(directory: &Path) -> io::Result<()> {
+    match File::open(directory)?.sync_all() {
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::InvalidInput | io::ErrorKind::Unsupported
+            ) =>
+        {
+            Ok(())
+        }
+        result => result,
+    }
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_directory: &Path) -> io::Result<()> {
+    Ok(())
 }
 
 /// A temporary name no other run uses: `<path>.<process>-<time>-<counter>.tmp`.
@@ -1291,7 +1396,7 @@ fn segment_read_error(error: io::Error) -> ArchiveError {
 mod tests {
     use std::sync::mpsc;
 
-    use bower_contracts::{DurableEventStore, QueueState, QueuedEvent};
+    use bower_contracts::{QueueState, QueuedEvent};
 
     use super::*;
 

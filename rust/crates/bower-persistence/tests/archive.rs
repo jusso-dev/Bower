@@ -1071,3 +1071,45 @@ fn ledger_boundary_at_or_below_resolves_entries_segments_and_validates() {
         Err(StoreError::Invalid(_))
     ));
 }
+
+fn snapshot_files(root: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    std::fs::read_dir(root)
+        .unwrap()
+        .map(|entry| entry.unwrap())
+        .filter(|entry| entry.file_name() != "archive.lock")
+        .map(|entry| {
+            (
+                entry.file_name().to_string_lossy().into_owned(),
+                std::fs::read(entry.path()).unwrap(),
+            )
+        })
+        .collect()
+}
+
+/// C# `Archive_RefusesToExtendAForeignOrNewerArchiveWithoutWriting`: 8 queue events
+/// give sequence 6 a different hash (another queue or a diverged restore); 2 leave the
+/// archive ahead of the queue.
+#[test]
+fn archive_refuses_to_extend_a_foreign_or_newer_archive_without_writing() {
+    for queue_events in [8, 2] {
+        let directory = tempfile::tempdir().unwrap();
+        let foreign_directory = tempfile::tempdir().unwrap();
+        let clock = FakeClock::new(test_now());
+        let store = store(directory.path(), 10 * ONE_MEBIBYTE, &clock);
+        let foreign = common::store(foreign_directory.path(), 10 * ONE_MEBIBYTE, &clock);
+        enqueue_range(&foreign, 101, 106, &clock);
+        let archive = new_archive(directory.path(), &clock);
+        archive.archive(&foreign).unwrap();
+        enqueue_range(&store, 1, queue_events, &clock);
+        let root = archive_path(directory.path());
+        let before = snapshot_files(&root);
+
+        let error = archive.archive(&store).unwrap_err();
+
+        assert!(
+            matches!(&error, ArchiveError::InvalidData(message) if message.contains("lineage-mismatch") && !message.contains("eventId")),
+            "{error:?}"
+        );
+        assert_eq!(snapshot_files(&root), before, "{queue_events}");
+    }
+}

@@ -24,28 +24,48 @@ public sealed partial class QueueRetentionJob(
     {
         DateTimeOffset cutoff = clock.GetUtcNow() - settings.DeliveredRetention;
         // With an archive, purge only what verified archive coverage of this queue holds.
-        long? archivedThrough = null;
+        ArchiveCoverage? coverage = null;
+        SqliteEventStore? ledger = queue as SqliteEventStore;
         if (archive is not null)
         {
-            ArchiveCoverage coverage = queue is SqliteEventStore store
-                ? await archive.VerifyCoverageAsync(store, cancellationToken)
+            coverage = ledger is not null
+                ? await archive.VerifyCoverageAsync(ledger, cancellationToken)
                 : ArchiveCoverage.Refused("queue-unsupported");
             if (!coverage.Verified)
             {
                 LogCoverageRefused(logger, coverage.Reason, coverage.FirstSequence, coverage.ThroughSequence);
                 return;
             }
-
-            archivedThrough = coverage.ThroughSequence;
         }
 
         int total = 0;
         int purged;
         do
         {
-            purged = archivedThrough is { } through
-                ? await queue.PurgeDeliveredAsync(cutoff, BatchSize, through, cancellationToken)
-                : await queue.PurgeDeliveredAsync(cutoff, BatchSize, cancellationToken);
+            if (coverage is not null)
+            {
+                // The cache trusts size and write time; re-hash the segments holding this
+                // batch so silent corruption is caught before their last local copy goes.
+                long through = coverage.ThroughSequence;
+                IReadOnlyList<long> batch = await ledger!.ReadPurgeCandidateSequencesAsync(cutoff, BatchSize, through, cancellationToken);
+                if (batch.Count == 0)
+                {
+                    break;
+                }
+
+                if (await archive!.VerifySegmentsForPurgeAsync(batch, cancellationToken) is { } reason)
+                {
+                    LogCoverageRefused(logger, reason, coverage.FirstSequence, through);
+                    break;
+                }
+
+                purged = await queue.PurgeDeliveredAsync(cutoff, BatchSize, through, cancellationToken);
+            }
+            else
+            {
+                purged = await queue.PurgeDeliveredAsync(cutoff, BatchSize, cancellationToken);
+            }
+
             total += purged;
         }
         while (purged == BatchSize && !cancellationToken.IsCancellationRequested);
@@ -62,6 +82,6 @@ public sealed partial class QueueRetentionJob(
     [LoggerMessage(
         EventId = 1202,
         Level = LogLevel.Warning,
-        Message = "Queue retention purged nothing: archive coverage is not verified ({Reason}; first {FirstSequence}, through {ThroughSequence}).")]
+        Message = "Queue retention stopped before purging: archive coverage is not verified ({Reason}; first {FirstSequence}, through {ThroughSequence}).")]
     private static partial void LogCoverageRefused(ILogger logger, string? reason, long firstSequence, long throughSequence);
 }

@@ -277,6 +277,145 @@ public sealed class QueueArchiveRetentionTests
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => store.GetLedgerBoundaryAtOrBelowAsync(-1, cancellationToken));
     }
 
+    [Theory]
+    [InlineData(8)]
+    [InlineData(2)]
+    public async Task Archive_RefusesToExtendAForeignOrNewerArchiveWithoutWriting(int queueEvents)
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        using TemporaryDirectory foreignDirectory = new();
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = await CreateStoreAsync(directory, clock, cancellationToken);
+        SqliteEventStore foreign = await CreateStoreAsync(foreignDirectory, clock, cancellationToken);
+        await EnqueueAsync(foreign, 101, 106, clock, cancellationToken);
+        QueueArchive archive = new(ArchivePath(directory), "collector-1", clock);
+        await archive.ArchiveAsync(foreign, cancellationToken);
+        // 8 events: the queue holds sequence 6 with a different hash (another queue or a
+        // diverged restore). 2 events: the archive is ahead of the queue.
+        await EnqueueAsync(store, 1, queueEvents, clock, cancellationToken);
+        Dictionary<string, byte[]> before = Snapshot(ArchivePath(directory));
+
+        InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(
+            () => archive.ArchiveAsync(store, cancellationToken));
+
+        Assert.Contains("lineage-mismatch", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("eventId", error.Message, StringComparison.Ordinal);
+        Dictionary<string, byte[]> after = Snapshot(ArchivePath(directory));
+        Assert.Equal(before.Keys.Order(StringComparer.Ordinal), after.Keys.Order(StringComparer.Ordinal));
+        Assert.All(before, item => Assert.Equal(item.Value, after[item.Key]));
+    }
+
+    [Fact]
+    public async Task Archive_ReportsEventsPurgedBeforeArchivingWhenTheHeadBoundaryWasCompacted()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = await CreateStoreAsync(directory, clock, cancellationToken);
+        QueueArchive archive = new(ArchivePath(directory), "collector-1", clock);
+        await EnqueueAsync(store, 1, 2, clock, cancellationToken);
+        await archive.ArchiveAsync(store, cancellationToken);
+        await EnqueueAsync(store, 3, 4, clock, cancellationToken);
+        await DeliverAllAsync(store, cancellationToken);
+        clock.Advance(TimeSpan.FromDays(10));
+        // Plain retention ignores the archive and purges 1-4, compacting the archive head.
+        await store.PurgeDeliveredAsync(clock.UtcNow, 100, cancellationToken);
+        await EnqueueAsync(store, 5, 5, clock, cancellationToken);
+
+        InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(
+            () => archive.ArchiveAsync(store, cancellationToken));
+
+        Assert.Equal("Events after sequence 2 were purged before they were archived.", error.Message);
+    }
+
+    [Fact]
+    public async Task Retention_RehashesSegmentsAboutToBePurgedEvenWhenStampsAreUnchanged()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = await CreateStoreAsync(directory, clock, cancellationToken);
+        QueueArchive archive = new(ArchivePath(directory), "collector-1", clock);
+        await ArchiveDeliveredAsync(store, archive, 1, 4, clock, cancellationToken);
+        Assert.True((await archive.VerifyCoverageAsync(store, cancellationToken)).Verified);
+        // Silent corruption (or a cp -p restore) keeps the size and write time the cache trusts.
+        string segment = Path.Combine(ArchivePath(directory), "segment-000000000001.jsonl.gz");
+        DateTime written = File.GetLastWriteTimeUtc(segment);
+        byte[] bytes = await File.ReadAllBytesAsync(segment, cancellationToken);
+        bytes[^9] ^= 0xFF;
+        await File.WriteAllBytesAsync(segment, bytes, cancellationToken);
+        File.SetLastWriteTimeUtc(segment, written);
+        clock.Advance(TimeSpan.FromDays(10));
+        RecordingLogger<QueueRetentionJob> logger = new();
+
+        bool cachedVerified = (await archive.VerifyCoverageAsync(store, cancellationToken)).Verified;
+        await RetentionJob(store, clock, archive, logger).RunAsync(cancellationToken);
+
+        Assert.True(cachedVerified);
+        Assert.Equal(4, (await store.GetSnapshotAsync(cancellationToken)).Delivered);
+        Assert.Contains("segment-digest-mismatch", Assert.Single(logger.Messages), StringComparison.Ordinal);
+        Assert.Equal("segment-digest-mismatch", (await archive.VerifyCoverageAsync(store, cancellationToken)).Reason);
+    }
+
+    [Fact]
+    public void WriterLockProbe_RejectsALockTheFileSystemDoesNotEnforce()
+    {
+        using TemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, QueueArchive.WriterLockFile);
+        File.WriteAllBytes(path, []);
+
+        // Nothing holds the lock, as when the platform silently skipped it.
+        IOException unenforced = Assert.Throws<IOException>(() => QueueArchive.ProveExclusiveOwnership(path));
+        using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            QueueArchive.ProveExclusiveOwnership(path);
+        }
+
+        Assert.Contains("not enforced", unenforced.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Archive_RefusesWhenDotnetFileLockingIsDisabled()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "DOTNET_SYSTEM_IO_DISABLEFILELOCKING only affects Unix flock.");
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = await CreateStoreAsync(directory, clock, cancellationToken);
+        await EnqueueAsync(store, 1, 2, clock, cancellationToken);
+        Directory.CreateDirectory(ArchivePath(directory));
+        System.Diagnostics.ProcessStartInfo start = new(Path.Combine(AppContext.BaseDirectory, "bower"))
+        {
+            RedirectStandardError = true,
+            RedirectStandardOutput = true
+        };
+        foreach (string argument in new[]
+                 {
+                     "archive", "create", "--archive", ArchivePath(directory),
+                     "--database", Path.Combine(directory.Path, "queue.db")
+                 })
+        {
+            start.ArgumentList.Add(argument);
+        }
+
+        start.Environment["DOTNET_SYSTEM_IO_DISABLEFILELOCKING"] = "1";
+
+        using System.Diagnostics.Process process = System.Diagnostics.Process.Start(start)!;
+        string error = await process.StandardError.ReadToEndAsync(cancellationToken);
+        await process.StandardOutput.ReadToEndAsync(cancellationToken);
+        await process.WaitForExitAsync(cancellationToken);
+
+        Assert.NotEqual(0, process.ExitCode);
+        Assert.Contains("not enforced", error, StringComparison.Ordinal);
+        Assert.Empty(Directory.GetFiles(ArchivePath(directory), "segment-*"));
+    }
+
+    private static Dictionary<string, byte[]> Snapshot(string path) =>
+        Directory.EnumerateFiles(path)
+            .Where(file => !string.Equals(Path.GetFileName(file), "archive.lock", StringComparison.Ordinal))
+            .ToDictionary(file => Path.GetFileName(file), File.ReadAllBytes, StringComparer.Ordinal);
+
     private static async Task ArchiveDeliveredAsync(
         SqliteEventStore store,
         QueueArchive archive,

@@ -420,3 +420,78 @@ async fn retention_keeps_rows_when_an_archived_segment_is_missing() {
     assert_eq!(purged, 0);
     assert_eq!(store.snapshot().unwrap().delivered, 3);
 }
+
+/// C# `Retention_RehashesSegmentsAboutToBePurgedEvenWhenStampsAreUnchanged`: silent
+/// corruption (or a `cp -p` restore) keeps the size and write time the cache trusts, so
+/// the segments holding the batch are re-hashed before it is purged.
+#[tokio::test]
+async fn retention_rehashes_segments_about_to_be_purged_even_when_stamps_are_unchanged() {
+    let directory = tempfile::tempdir().unwrap();
+    let past = bower_contracts::time::now() - chrono::Duration::days(30);
+    let past_clock: Arc<dyn bower_contracts::time::Clock> = Arc::new(move || past);
+    let sqlite = Arc::new(
+        SqliteEventStore::new(
+            directory.path().join("queue.db"),
+            10 * 1024 * 1024,
+            Some(past_clock),
+        )
+        .unwrap(),
+    );
+    sqlite.initialize().unwrap();
+    for id in ["a", "b", "c"] {
+        sqlite.enqueue(&queued(id, past)).unwrap();
+    }
+    let leased = sqlite
+        .lease(10, std::time::Duration::from_secs(60))
+        .unwrap();
+    let tokens = leased
+        .iter()
+        .map(|item| (item.event_id.clone(), item.lease_token.clone().unwrap()))
+        .collect();
+    let ids: Vec<String> = leased.iter().map(|item| item.event_id.clone()).collect();
+    sqlite.mark_delivered_batch(&ids, "ack", &tokens).unwrap();
+    let archive = Arc::new(
+        QueueArchive::new(directory.path().join("archive"), "collector-test", None).unwrap(),
+    );
+    run_queue_archive(sqlite.clone(), archive.clone())
+        .await
+        .unwrap();
+    let store: Arc<dyn DurableEventStore> = sqlite.clone();
+    let clock: Arc<dyn bower_contracts::time::Clock> = Arc::new(bower_contracts::time::SystemClock);
+    // Prime the verification cache with a retention run whose window keeps every row.
+    let kept = run_queue_retention(
+        store.clone(),
+        clock.clone(),
+        std::time::Duration::from_secs(90 * 24 * 3600),
+        Some((archive.clone(), sqlite.clone())),
+    )
+    .await
+    .unwrap();
+    let segment = directory
+        .path()
+        .join("archive")
+        .join("segment-000000000001.jsonl.gz");
+    let written = std::fs::metadata(&segment).unwrap().modified().unwrap();
+    let mut bytes = std::fs::read(&segment).unwrap();
+    let index = bytes.len() - 9;
+    bytes[index] ^= 0xFF;
+    std::fs::write(&segment, bytes).unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&segment)
+        .unwrap()
+        .set_modified(written)
+        .unwrap();
+
+    let purged = run_queue_retention(
+        store.clone(),
+        clock,
+        std::time::Duration::from_secs(7 * 24 * 3600),
+        Some((archive.clone(), sqlite.clone())),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!((kept, purged), (0, 0));
+    assert_eq!(store.snapshot().unwrap().delivered, 3);
+}

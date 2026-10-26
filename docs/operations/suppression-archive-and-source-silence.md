@@ -92,15 +92,21 @@ example for a records-authority period such as AFDA Express v2.
   10,000 events, each with a manifest holding the file digest, sequence range and the
   queue ledger chain hash at both ends. A segment is committed once its manifest is
   published. Files are written under unique temporary names, flushed and moved into
-  place without replacing an existing file; a segment left without a manifest by a
-  crash is an uncommitted orphan and is rewritten.
+  place without replacing an existing file, and the directory is synced after each
+  move; a segment left without a manifest by a crash is an uncommitted orphan and is
+  rewritten.
+- A writer extends only its own queue's chain: if the queue ledger hash at the archive
+  head differs from the manifest (another collector's archive, a queue restored from an
+  older backup) or the queue has not reached that sequence, the run fails with
+  `lineage-mismatch` and writes nothing.
 - Every writer (the collector job and `bower archive create`, in either runtime) holds
   an exclusive OS lock on `archive.lock` in the archive directory for its whole run,
   taken before it reads the archive head. A second writer fails at once with an I/O
   error and writes nothing. Orphan segments and abandoned `segment-*.tmp` files (up to
   1,000 per run) are removed only by the lock owner. The lock is `flock` on Unix, so
-  keep the archive on a local or lock-capable file system and do not set
-  `DOTNET_SYSTEM_IO_DISABLEFILELOCKING`.
+  keep the archive on a local or lock-capable file system. Where the lock is not
+  enforced (an unsupported file system, or `DOTNET_SYSTEM_IO_DISABLEFILELOCKING` set)
+  the writer refuses to run rather than write unlocked.
 - The archive continues the queue ledger chain, so it verifies without the queue:
 
   ```bash
@@ -121,7 +127,9 @@ example for a records-authority period such as AFDA Express v2.
   `lineage-mismatch`, `manifest-invalid` and so on) and sequence numbers only.
   Undelivered, retrying and dead-lettered events are never purged. Segments already
   verified are not re-read while their manifest, size and write time are unchanged; any
-  change triggers full verification. An archive started on an existing queue begins at
+  change triggers full verification. Before each purge batch, the segments holding the
+  events about to be removed are re-hashed regardless, so silent corruption or a
+  timestamp-preserving restore stops the purge. An archive started on an existing queue begins at
   the oldest event still stored.
 - Bower never deletes or rewrites committed archive segments. Put the directory on
   write-once storage and manage retention there.

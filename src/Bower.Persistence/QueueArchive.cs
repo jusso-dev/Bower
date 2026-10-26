@@ -82,7 +82,6 @@ public sealed class QueueArchive
         // Own the archive before reading the watermark, so no other writer can publish
         // between the read and this run's segments.
         using FileStream ownership = AcquireWriterLock();
-        RemoveAbandonedTemporaryFiles();
         List<ArchiveManifest> manifests = ReadManifests();
         long lastSequence;
         string lastHash;
@@ -90,6 +89,18 @@ public sealed class QueueArchive
         {
             lastSequence = manifests[^1].LastSequence;
             lastHash = manifests[^1].LastChainHash;
+            // Extend only this queue's chain. Another queue's archive, a diverged restore or
+            // an archive ahead of the queue is refused before anything is written.
+            // A boundary compacted away (the events after it were purged) is left to the
+            // purged-before-archived check below, which writes nothing either.
+            string? queueHash = await store.GetLedgerHashAtAsync(lastSequence, cancellationToken);
+            bool compacted = queueHash is null
+                && (await store.GetLedgerHeadAsync(cancellationToken)).Sequence >= lastSequence;
+            if (!compacted && !string.Equals(queueHash, lastHash, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    $"Archive lineage-mismatch: the queue ledger does not match the archive head at sequence {lastSequence}.");
+            }
         }
         else
         {
@@ -107,6 +118,7 @@ public sealed class QueueArchive
                     $"Ledger no longer records the hash at sequence {lastSequence}; cannot start the archive.");
         }
 
+        RemoveAbandonedTemporaryFiles();
         int segments = 0;
         long events = 0;
         while (!cancellationToken.IsCancellationRequested)
@@ -245,6 +257,107 @@ public sealed class QueueArchive
             verifiedPrefix = null;
             return ArchiveCoverage.Refused("segment-unreadable", first);
         }
+    }
+
+    /// <summary>
+    /// Re-hashes, bypassing the verification cache, each segment holding one of
+    /// <paramref name="sequences"/> (the events about to be purged), and checks its
+    /// manifest is the one <see cref="VerifyCoverageAsync"/> last verified. Null when all
+    /// match; otherwise a metadata-only reason, and the cache is dropped so the next
+    /// coverage check verifies everything again.
+    /// </summary>
+    public async Task<string?> VerifySegmentsForPurgeAsync(
+        IReadOnlyCollection<long> sequences,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(sequences);
+        string? reason = verifiedPrefix is { } cached
+            ? await RehashAsync(cached, sequences, cancellationToken)
+            : "archive-unverified";
+        if (reason is not null)
+        {
+            verifiedPrefix = null;
+        }
+
+        return reason;
+    }
+
+    private async Task<string?> RehashAsync(
+        VerifiedPrefix cached,
+        IReadOnlyCollection<long> sequences,
+        CancellationToken cancellationToken)
+    {
+        SortedSet<int> needed = [];
+        foreach (long sequence in sequences)
+        {
+            int index = FindStamp(cached.Stamps, sequence);
+            if (index < 0)
+            {
+                return "segment-uncovered";
+            }
+
+            needed.Add(index);
+        }
+
+        try
+        {
+            Dictionary<long, ArchiveManifest> current = ReadManifests().ToDictionary(item => item.FirstSequence);
+            foreach (int index in needed)
+            {
+                ArchiveManifest manifest = cached.Stamps[index].Manifest;
+                if (!current.TryGetValue(manifest.FirstSequence, out ArchiveManifest? onDisk) || onDisk != manifest)
+                {
+                    return "archive-changed";
+                }
+
+                string segmentPath = Path.Combine(directory, manifest.SegmentFile);
+                if (!File.Exists(segmentPath))
+                {
+                    return "segment-missing";
+                }
+
+                if (!string.Equals(await DigestAsync(segmentPath, cancellationToken), manifest.SegmentSha256, StringComparison.Ordinal))
+                {
+                    return "segment-digest-mismatch";
+                }
+            }
+        }
+        catch (Exception exception) when (exception is InvalidDataException or JsonException)
+        {
+            return "manifest-invalid";
+        }
+        catch (IOException)
+        {
+            return "segment-unreadable";
+        }
+
+        return null;
+    }
+
+    /// <summary>Index of the stamp whose segment holds <paramref name="sequence"/>; -1 when none.</summary>
+    private static int FindStamp(SegmentStamp[] stamps, long sequence)
+    {
+        int low = 0;
+        int high = stamps.Length - 1;
+        while (low <= high)
+        {
+            int middle = low + ((high - low) / 2);
+            ArchiveManifest manifest = stamps[middle].Manifest;
+            if (sequence < manifest.FirstSequence)
+            {
+                high = middle - 1;
+            }
+            else if (sequence > manifest.LastSequence)
+            {
+                low = middle + 1;
+            }
+            else
+            {
+                return middle;
+            }
+        }
+
+        return -1;
     }
 
     private async Task<ArchiveVerification> VerifyIncrementallyAsync(
@@ -482,6 +595,8 @@ public sealed class QueueArchive
 
         File.Move(temporary, segmentPath, overwrite: false);
         RestrictPermissions(segmentPath);
+        // Make the published names durable before retention can rely on them.
+        DirectorySync.Flush(directory);
 
         ArchiveManifest manifest = new(
             "bower.security/v1",
@@ -504,23 +619,54 @@ public sealed class QueueArchive
         // Never replace a completed manifest: a collision means two writers share the archive.
         File.Move(manifestTemporary, manifestPath, overwrite: false);
         RestrictPermissions(manifestPath);
+        DirectorySync.Flush(directory);
         return manifest;
     }
 
     private FileStream AcquireWriterLock()
     {
+        string path = Path.Combine(directory, WriterLockFile);
+        FileStream ownership;
         try
         {
-            return new FileStream(
-                Path.Combine(directory, WriterLockFile),
-                FileMode.OpenOrCreate,
-                FileAccess.ReadWrite,
-                FileShare.None);
+            ownership = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         }
         catch (IOException exception)
         {
             throw new IOException("Another writer holds the archive writer lock.", exception);
         }
+
+        try
+        {
+            ProveExclusiveOwnership(path);
+            return ownership;
+        }
+        catch
+        {
+            ownership.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// .NET skips the lock silently where the file system does not support it, or when
+    /// <c>DOTNET_SYSTEM_IO_DISABLEFILELOCKING</c> is set. While the lock is held a second
+    /// exclusive open must fail; if it succeeds nothing excludes other writers.
+    /// </summary>
+    internal static void ProveExclusiveOwnership(string path)
+    {
+        FileStream second;
+        try
+        {
+            second = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        }
+        catch (IOException)
+        {
+            return;
+        }
+
+        second.Dispose();
+        throw new IOException("The archive writer lock is not enforced on this file system; refusing to write.");
     }
 
     /// <summary>Removes temporary files of crashed runs. Call only while owning the archive.</summary>

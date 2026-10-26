@@ -77,6 +77,52 @@ public sealed partial class SqliteEventStore
     }
 
     /// <summary>
+    /// Ledger sequences of the events the archive-bounded
+    /// <see cref="PurgeDeliveredAsync(DateTimeOffset, int, long, CancellationToken)"/> would
+    /// remove next with the same arguments (same filter, order and limit).
+    /// </summary>
+    public async Task<IReadOnlyList<long>> ReadPurgeCandidateSequencesAsync(
+        DateTimeOffset deliveredBefore,
+        int maximumCount,
+        long archivedThroughSequence,
+        CancellationToken cancellationToken = default)
+    {
+        if (maximumCount is < 1 or > 100_000)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumCount));
+        }
+
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT enqueue_sequence
+            FROM queue_events_v5
+            WHERE state = $delivered
+              AND acknowledgement IS NOT NULL
+              AND delivered_at IS NOT NULL
+              AND delivered_at < $delivered_before
+              AND enqueue_sequence <= $archived_through
+            ORDER BY delivered_at ASC
+            LIMIT $maximum_count;
+            """;
+        command.Parameters.AddWithValue("$archived_through", archivedThroughSequence);
+        command.Parameters.AddWithValue("$delivered", (int)QueueState.Delivered);
+        command.Parameters.AddWithValue(
+            "$delivered_before",
+            deliveredBefore.ToUniversalTime().ToString(TimestampFormat, System.Globalization.CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$maximum_count", maximumCount);
+        List<long> sequences = [];
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            sequences.Add(reader.GetInt64(0));
+        }
+
+        return sequences;
+    }
+
+    /// <summary>
     /// Highest chain hash boundary the ledger records at or below
     /// <paramref name="sequence"/> (entry, compacted segment end or anchor); null when none.
     /// Every sequence above it and up to <paramref name="sequence"/> has been purged.

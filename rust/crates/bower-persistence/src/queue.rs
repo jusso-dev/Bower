@@ -342,6 +342,49 @@ VALUES (
         self.check_storage()
     }
 
+    /// Ledger sequences of the events the archive-bounded purge would remove next with the
+    /// same arguments: same filter, order and limit (C# `ReadPurgeCandidateSequencesAsync`).
+    pub fn read_purge_candidate_sequences(
+        &self,
+        delivered_before: Timestamp,
+        maximum_count: usize,
+        archived_through_sequence: i64,
+    ) -> StoreResult<Vec<i64>> {
+        if !(1..=MAXIMUM_PURGE_COUNT).contains(&maximum_count) {
+            return Err(StoreError::Invalid(
+                "maximumCount must be between 1 and 100000.".into(),
+            ));
+        }
+        let before = stored(&delivered_before);
+        self.pool.with(|connection| {
+            let mut select = connection
+                .prepare(
+                    "SELECT enqueue_sequence
+FROM queue_events_v5
+WHERE state = ?1
+  AND acknowledgement IS NOT NULL
+  AND delivered_at IS NOT NULL
+  AND delivered_at < ?2
+  AND enqueue_sequence <= ?4
+ORDER BY delivered_at ASC
+LIMIT ?3;",
+                )
+                .map_err(storage)?;
+            let rows = select
+                .query_map(
+                    params![
+                        DELIVERED,
+                        before,
+                        sql_limit(maximum_count),
+                        archived_through_sequence
+                    ],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(storage)?;
+            rows.collect::<Result<Vec<_>, _>>().map_err(storage)
+        })
+    }
+
     fn purge_delivered_core(
         &self,
         delivered_before: Timestamp,
