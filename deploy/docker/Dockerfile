@@ -1,7 +1,7 @@
 # Bower collector, published as a Native AOT executable (no .NET runtime in the image).
 # Build on the runner's native platform and cross-compile for TARGETARCH (no QEMU): the
 # -aot SDK image carries the native toolchain; aot-cross-deps.sh adds the target one.
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.402-noble-aot AS build
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.403-noble-aot AS build
 ARG TARGETARCH
 ARG BUILDARCH
 # Cross-architecture builds (e.g. arm64 on an amd64 runner) need the target toolchain.
@@ -21,7 +21,7 @@ RUN RID="linux-$([ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64)" \
     && mkdir -p /state/lib /state/spool
 
 # Chiseled runtime-deps: no shell, no package manager, no ICU (InvariantGlobalization).
-FROM mcr.microsoft.com/dotnet/runtime-deps:10.0.13-noble-chiseled AS runtime
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0.14-noble-chiseled AS runtime
 WORKDIR /app
 COPY --from=build /app .
 COPY policies ./policies
