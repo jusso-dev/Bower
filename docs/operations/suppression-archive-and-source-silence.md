@@ -38,7 +38,8 @@ suppression:
   suppress. Choose key fields that keep distinct actors in distinct windows: a key
   of `eventType` alone lets one noisy client hide another.
 - `bower policy test` and `bower policy diff` report the policy decision only;
-  suppression is stateful and applies when an event is queued. The Azure Functions
+  suppression is stateful and applies when an event is queued (the bundle comparison
+  lists it under `notExercisedOffline`). The Azure Functions
   collector has no durable queue and never suppresses.
 
 ## Population diff
@@ -53,6 +54,70 @@ bower policy diff --baseline policies/current --candidate policies/proposed \
 Output lists each event whose decision or deciding policy changes, with both bundle
 hashes. Metadata only; exit 3 on any change when `--fail-on-change` is set. Attach the
 output to the policy change, as `AGENTS.md` requires for policy content changes.
+
+### Comparing complete bundles
+
+A directory comparison cannot see pack, privacy or detection changes. Describe each
+side as the full bundle the collector would load, with the same options as
+`bower policy test`, prefixed `--baseline-` or `--candidate-`:
+
+```bash
+bower policy diff \
+  --baseline policies/current \
+  --baseline-pack aws-security-1.0.0.bowerpack --baseline-trusted-key pack-signing.pub.pem \
+  --candidate policies/current \
+  --candidate-pack aws-security-1.1.0.bowerpack --candidate-trusted-key pack-signing.pub.pem \
+  --candidate-privacy-profile privacy/proposed.yaml \
+  --at 2026-10-17T01:00:00Z samples/*.json --fail-on-change
+```
+
+| Option (per side) | Meaning |
+|---|---|
+| `--baseline DIR` / `--candidate DIR` | Policy directory. Optional when the side has a pack. |
+| `--{side}-pack FILE` | Signed `.bowerpack` (repeatable). |
+| `--{side}-trusted-key PUB` | PEM public key trusted to sign that side's packs (repeatable). |
+| `--{side}-privacy-profile FILE` | Privacy profile (at most one per side, including pack profiles). |
+| `--{side}-hmac-key-file FILE`, `--{side}-hmac-key-id ID` | HMAC key for `hmac` actions (id defaults to `k1`). |
+| `--at ISO` | Evaluate every sample at this time, so results are reproducible. Defaults to now, taken once. |
+
+Any `--baseline-*` or `--candidate-*` bundle option, or `--at`, selects this mode.
+Without them the command is the directory comparison above, with unchanged output and
+exit codes.
+
+Both bundles load before any sample is evaluated. An unsigned pack, a pack signed by a
+key not given with `--{side}-trusted-key`, an invalid profile or a missing file stops
+the command with exit 1 and nothing on stdout. Each sample then runs alone through the
+offline intake (redaction, schema and validation, policy, privacy alerts, pack
+detections) at the fixed time. Nothing is queued, sent or deployed and no network call
+is made.
+
+The output keeps the directory-mode fields (`baselineBundleHash`, `candidateBundleHash`,
+`events`, `changed`, `changes[].file`, `eventId`, `baseline.decision`,
+`baseline.policyId`) and adds, per changed sample:
+
+| Field | Content |
+|---|---|
+| `accepted` | Decision is `accept` or `redactandaccept`. |
+| `failureStage`, `failureReasons` | `redaction`, `schema`, `validation` or `policy`, and the reasons, when not accepted. |
+| `privacyActions` | `{detector, action}` per privacy detector that fired (for example `secret.aws` / `Removed`). Never values. |
+| `privacyAlert` | Whether a privacy alert event would be raised. |
+| `detections` | Pack detection rule ids that match an accepted event. Never matched values. |
+| `changedFields` | Which of the fields above differ. |
+
+Top-level `evaluatedAt`, `baselineBundle` and `candidateBundle` (bundle hash, policy
+count, pack id, version and hash, privacy profile id, version and hash, detection rule
+count) record what was compared. `notExercisedOffline` lists stateful behaviour one
+offline request per sample cannot show: suppression windows, source silence,
+cross-event deduplication, queue capacity and backpressure, delivery and destination
+validation, pack parsers (samples are already semantic events) and management privacy
+assignments. A privacy-only change, such as masking instead of removing a detector's
+match, is reported even when acceptance stays the same.
+
+Exit codes: 0 when the comparison completes, 3 when `--fail-on-change` is set and any
+sample has a changed field, and 1 for invalid arguments (`--at` that is not an ISO 8601
+time, a side with neither a directory nor a pack), bundle load or trust failures, or an
+unreadable sample. The C# and Rust CLIs print the same JSON for the same inputs and
+`--at`; `rust/crates/bower-cli/tests/fixtures/bundle-diff` pins it.
 
 ## Selection metrics
 

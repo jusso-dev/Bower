@@ -75,8 +75,9 @@ pub enum PolicyCommand {
     /// Run sample events through the collector's intake offline and print each decision
     /// (metadata only; exit 3 when --expect does not match).
     Test(PolicyTestArgs),
-    /// Population diff: run sample events through two policy directories and list each
-    /// event whose decision or deciding policy changes (exit 3 with --fail-on-change).
+    /// Population diff: run sample events through two policy directories (or, with any
+    /// --baseline-*/--candidate-* bundle option or --at, two full trusted bundles at one
+    /// fixed time) and list each event whose outcome changes (exit 3 with --fail-on-change).
     Diff(PolicyDiffArgs),
 }
 
@@ -91,9 +92,49 @@ pub struct PolicyDiffArgs {
     /// Proposed policy directory.
     #[arg(long = "candidate", value_name = "DIR")]
     pub candidate: Option<String>,
-    /// Exit 3 when any event's decision or deciding policy changes.
+    /// Exit 3 when any event's decision or deciding policy changes (bundle comparison:
+    /// any reported field).
     #[arg(long = "fail-on-change")]
     pub fail_on_change: bool,
+    /// Bundle comparison: signed baseline pack (repeatable).
+    #[arg(long = "baseline-pack", value_name = "FILE")]
+    pub baseline_packs: Vec<String>,
+    /// Bundle comparison: PEM public key trusted to sign baseline packs (repeatable).
+    #[arg(long = "baseline-trusted-key", value_name = "PUB")]
+    pub baseline_trusted_keys: Vec<String>,
+    /// Bundle comparison: baseline privacy profile.
+    #[arg(long = "baseline-privacy-profile", value_name = "FILE")]
+    pub baseline_privacy_profile: Option<String>,
+    /// Bundle comparison: baseline privacy HMAC key file.
+    #[arg(long = "baseline-hmac-key-file", value_name = "FILE")]
+    pub baseline_hmac_key_file: Option<String>,
+    /// Bundle comparison: baseline privacy HMAC key id [default: k1].
+    #[arg(long = "baseline-hmac-key-id", value_name = "ID")]
+    pub baseline_hmac_key_id: Option<String>,
+    /// Bundle comparison: signed candidate pack (repeatable).
+    #[arg(long = "candidate-pack", value_name = "FILE")]
+    pub candidate_packs: Vec<String>,
+    /// Bundle comparison: PEM public key trusted to sign candidate packs (repeatable).
+    #[arg(long = "candidate-trusted-key", value_name = "PUB")]
+    pub candidate_trusted_keys: Vec<String>,
+    /// Bundle comparison: candidate privacy profile.
+    #[arg(long = "candidate-privacy-profile", value_name = "FILE")]
+    pub candidate_privacy_profile: Option<String>,
+    /// Bundle comparison: candidate privacy HMAC key file.
+    #[arg(long = "candidate-hmac-key-file", value_name = "FILE")]
+    pub candidate_hmac_key_file: Option<String>,
+    /// Bundle comparison: candidate privacy HMAC key id [default: k1].
+    #[arg(long = "candidate-hmac-key-id", value_name = "ID")]
+    pub candidate_hmac_key_id: Option<String>,
+    /// Bundle comparison: evaluate every sample at this ISO 8601 time [default: now].
+    #[arg(long = "at", value_name = "ISO")]
+    pub at: Option<String>,
+    /// `--at` was given (with or without a value).
+    #[arg(skip)]
+    pub at_given: bool,
+    /// Any bundle option (or `--at`) was given: compare full bundles.
+    #[arg(skip)]
+    pub bundle: bool,
 }
 
 #[derive(Debug, Subcommand)]

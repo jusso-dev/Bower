@@ -736,6 +736,9 @@ runs sample events through the collector's redaction, validation and selection a
 prints each decision with its reasons (metadata only; `--expect DECISION` exits 3 on
 a mismatch, for CI). `bower policy diff --baseline DIR --candidate DIR samples/*.json`
 lists every sample whose decision or deciding policy changes between two policy sets.
+Add `--baseline-pack`/`--candidate-pack` (with trusted keys), privacy profiles and
+`--at` to compare complete signed bundles, including privacy action and detection
+changes ([bundle comparison](docs/operations/suppression-archive-and-source-silence.md#comparing-complete-bundles)).
 
 A policy can cap a noisy event type per key with `suppression` (key fields, window
 seconds, allowance). Events over the allowance are counted durably and reported by

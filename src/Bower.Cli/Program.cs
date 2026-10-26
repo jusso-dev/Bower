@@ -283,6 +283,8 @@ static int WriteHelp()
           bower policy test EVENT.json... [--policy-directory DIR] [--pack FILE --trusted-key PUB]
                 [--privacy-profile FILE --hmac-key-file FILE] [--expect DECISION]
           bower policy diff --baseline DIR --candidate DIR EVENT.json... [--fail-on-change]
+                [--baseline-pack FILE --baseline-trusted-key PUB] [--baseline-privacy-profile FILE]
+                [--baseline-hmac-key-file FILE] [--baseline-hmac-key-id ID] (same for --candidate-*) [--at ISO]
           bower archive create --archive DIR [--database FILE] [--collector-id ID]
           bower archive verify --archive DIR [--anchor SEQUENCE:HASH]
           bower archive replay --archive DIR --collector-url URL [--from ISO] [--to ISO]
