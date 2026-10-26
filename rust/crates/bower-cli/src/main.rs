@@ -44,6 +44,7 @@ Commands:
 
   bower evidence run --collector-url URL [--workspace-id ID --workspace-resource-id ID]
                      [--table NAME] [--signing-key PRIVATE.pem] [--out FILE]
+                     [--probe-profile generic|parser:PACK:INDEX]
   bower evidence verify FILE --trusted-key PUBLIC.pem
 
   bower queue dead-letters --database FILE

@@ -30,6 +30,12 @@ public sealed record EvidenceOptions
     public TimeSpan Timeout { get; init; } = TimeSpan.FromMinutes(15);
 
     public TimeSpan PollInterval { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// <see cref="ProbeProfiles.Generic"/> (default) or an opt-in <c>parser:PACK:INDEX</c>
+    /// profile with a trusted fixture (<see cref="ParserProbeFixtures"/>).
+    /// </summary>
+    public string ProbeProfile { get; init; } = ProbeProfiles.Generic;
 }
 
 public interface ICanarySender
@@ -37,14 +43,32 @@ public interface ICanarySender
     Task<(int Status, JsonObject? Body)> SendAsync(Uri collector, string? token, string json, CancellationToken cancellationToken);
 }
 
-public sealed class HttpCanarySender(HttpClient http) : ICanarySender
+public sealed class HttpCanarySender(HttpClient http) : ICanarySender, IParserProbeSender
 {
-    public async Task<(int Status, JsonObject? Body)> SendAsync(Uri collector, string? token, string json, CancellationToken cancellationToken)
+    public Task<(int Status, JsonObject? Body)> SendAsync(Uri collector, string? token, string json, CancellationToken cancellationToken) =>
+        SendAsync(HttpMethod.Post, new Uri(collector, "v1/events"), token, json, cancellationToken);
+
+    public Task<(int Status, JsonObject? Body)> GetStatusAsync(Uri collector, string? token, CancellationToken cancellationToken) =>
+        SendAsync(HttpMethod.Get, new Uri(collector, "v1/status"), token, null, cancellationToken);
+
+    public Task<(int Status, JsonObject? Body)> SendRecordAsync(
+        Uri collector, string? token, string packId, int parserIndex, string json, CancellationToken cancellationToken) =>
+        SendAsync(
+            HttpMethod.Post,
+            new Uri(collector, $"v1/packs/{Uri.EscapeDataString(packId)}/parsers/{parserIndex.ToString(CultureInfo.InvariantCulture)}/events"),
+            token,
+            json,
+            cancellationToken);
+
+    private async Task<(int Status, JsonObject? Body)> SendAsync(
+        HttpMethod method, Uri uri, string? token, string? json, CancellationToken cancellationToken)
     {
-        using HttpRequestMessage request = new(HttpMethod.Post, new Uri(collector, "v1/events"))
+        using HttpRequestMessage request = new(method, uri);
+        if (json is not null)
         {
-            Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
-        };
+            request.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        }
+
         if (!string.IsNullOrEmpty(token))
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -73,7 +97,8 @@ public sealed partial class EvidenceRunner(
     ICanarySender sender,
     ILogAnalyticsQuery? query,
     IArmReader? arm,
-    TimeProvider? clock = null)
+    TimeProvider? clock = null,
+    IParserProbeSender? parserSender = null)
 {
     // Microsoft.OperationalInsights api-version; keep equal to Bower.Dcr.AzureApiVersions.LogAnalytics.
     private const string TableApiVersion = "2025-07-01";
@@ -85,6 +110,11 @@ public sealed partial class EvidenceRunner(
         if (!TableName().IsMatch(options.Table))
         {
             throw new ArgumentException("Table must be a Log Analytics table name such as BowerSecurity_CL.");
+        }
+
+        if (!string.Equals(options.ProbeProfile ?? ProbeProfiles.Generic, ProbeProfiles.Generic, StringComparison.Ordinal))
+        {
+            return await RunParserProbeAsync(options, ProbeProfiles.ResolveParser(options.ProbeProfile!), cancellationToken);
         }
 
         bool simulated = options.WorkspaceId is null || query is null;
@@ -156,6 +186,210 @@ public sealed partial class EvidenceRunner(
             errors,
             ControlMapping.Map(mode, arrival, retention),
             limitations);
+    }
+
+    /// <summary>
+    /// Opt-in parser probe: reads the collector's loaded pack and policy configuration, posts
+    /// the trusted fixture through the signed parser's HTTP intake (normal authentication,
+    /// privacy, policy, queue and delivery), then queries the destination for exactly that
+    /// event identity. Collector acceptance alone never verifies.
+    /// </summary>
+    private async Task<EvidenceBundle> RunParserProbeAsync(
+        EvidenceOptions options, ParserProbeFixture fixture, CancellationToken cancellationToken)
+    {
+        IParserProbeSender probe = parserSender ?? sender as IParserProbeSender
+            ?? throw new InvalidOperationException("The collector sender does not support parser probes.");
+        bool simulated = options.WorkspaceId is null || query is null;
+        DateTimeOffset sentAt = clock.GetUtcNow();
+        string eventId = $"bower-probe-{Guid.CreateVersion7():N}";
+
+        string? outcome = null;
+        string? collectorPolicyHash = null;
+        string? packVersion = null;
+        string? packHash = null;
+        string? parserStatus = null;
+        (int statusCode, JsonObject? status) = await probe.GetStatusAsync(options.CollectorUrl, options.IngestToken, cancellationToken);
+        if (statusCode is 401 or 403)
+        {
+            outcome = ProbeOutcomes.CollectorPermissionDenied;
+        }
+        else if (statusCode != 200 || status?["policy"] is not JsonObject policy)
+        {
+            outcome = ProbeOutcomes.CollectorStatusUnreadable;
+        }
+        else
+        {
+            collectorPolicyHash = ProbeOutcomes.Text(policy["hash"]);
+            JsonObject? pack = (policy["packs"] as JsonArray)?.OfType<JsonObject>()
+                .FirstOrDefault(item => ProbeOutcomes.Text(item["id"]) == fixture.PackId);
+            packVersion = ProbeOutcomes.Text(pack?["version"]);
+            packHash = ProbeOutcomes.Text(pack?["packHash"]);
+            parserStatus = pack?["parserStatuses"] is JsonArray statuses && fixture.ParserIndex < statuses.Count
+                ? ProbeOutcomes.Text(statuses[fixture.ParserIndex])
+                : "absent";
+            if (parserStatus != "active-local-json")
+            {
+                outcome = ProbeOutcomes.ParserInactive;
+            }
+        }
+
+        int collectorStatus = 0;
+        JsonObject? body = null;
+        if (outcome is null)
+        {
+            (collectorStatus, body) = await probe.SendRecordAsync(
+                options.CollectorUrl, options.IngestToken, fixture.PackId, fixture.ParserIndex,
+                fixture.Render(eventId, sentAt), cancellationToken);
+            outcome = ProbeOutcomes.Classify(collectorStatus, body, eventId);
+        }
+
+        JsonObject? eventPolicy = body?["policy"] as JsonObject;
+        CanaryRecord canaryRecord = new(
+            eventId,
+            sentAt,
+            options.CollectorUrl.Host,
+            collectorStatus,
+            ProbeOutcomes.Text(body?["decision"]),
+            ProbeOutcomes.Text(eventPolicy?["policyId"]));
+
+        List<string> limitations =
+        [
+            $"Proves delivery for this probe through {fixture.Path} at this time; it does not prove the untested paths listed in the probe record or that every event was delivered.",
+            "Bundles hold metadata only: no event payloads or credentials."
+        ];
+
+        ArrivalRecord arrival = new(false, options.WorkspaceId, options.Table, null, 0, null, null, null, null, null);
+        DateTimeOffset? queriedAt = null;
+        if (simulated)
+        {
+            limitations.Add("SIMULATED: no Sentinel query was run, so this bundle is not delivery evidence.");
+            outcome ??= ProbeOutcomes.AcceptedNotVerified;
+        }
+
+        if (outcome is null)
+        {
+            (arrival, outcome, queriedAt) = await PollProbeAsync(
+                options, eventId, fixture.ExpectedEventType, ProbeOutcomes.Text(eventPolicy?["policyHash"]), sentAt, cancellationToken);
+        }
+        else
+        {
+            arrival = arrival with { QueryError = outcome };
+        }
+
+        RetentionRecord? retention = await ReadRetentionAsync(options, cancellationToken);
+        long? errors = simulated ? null : await ReadIngestionErrorsAsync(options, cancellationToken);
+        string mode = simulated ? EvidenceModes.Simulated : outcome == ProbeOutcomes.Verified ? EvidenceModes.Verified : EvidenceModes.Failed;
+        ProbeRecord record = new(
+            fixture.Profile,
+            $"POST {fixture.Path} -> parser -> privacy -> policy -> queue -> output -> {options.Table}",
+            fixture.Id,
+            fixture.PackId,
+            fixture.ParserIndex,
+            packVersion,
+            packHash,
+            parserStatus,
+            collectorPolicyHash,
+            eventId,
+            fixture.ExpectedEventType,
+            ProbeOutcomes.Text(eventPolicy?["policyId"]),
+            ProbeOutcomes.Text(eventPolicy?["policyVersion"]),
+            ProbeOutcomes.Text(eventPolicy?["policyHash"]),
+            options.WorkspaceId,
+            options.Table,
+            queriedAt,
+            outcome,
+            ProbeOutcomes.UntestedPaths);
+        return new EvidenceBundle(
+            EvidenceBundle.CurrentSchema,
+            mode,
+            clock.GetUtcNow(),
+            "bower",
+            canaryRecord,
+            arrival,
+            retention,
+            errors,
+            ControlMapping.Map(mode, arrival, retention),
+            limitations,
+            record);
+    }
+
+    private async Task<(ArrivalRecord Arrival, string Outcome, DateTimeOffset? QueriedAt)> PollProbeAsync(
+        EvidenceOptions options, string eventId, string expectedEventType, string? expectedPolicyHash, DateTimeOffset sentAt,
+        CancellationToken cancellationToken)
+    {
+        string kql =
+            $"{options.Table}\n| where TimeGenerated > ago(1d)\n| where EventId == \"{eventId}\"\n" +
+            "| project TimeGenerated, IngestionTime = ingestion_time(), EventId, EventType, PolicyHash\n| take 1";
+        ArrivalRecord missing = new(false, options.WorkspaceId, options.Table, kql, 0, null, null, null, null, null);
+        DateTimeOffset deadline = clock.GetUtcNow() + options.Timeout;
+        int attempts = 0;
+        bool answered = false;
+        while (true)
+        {
+            attempts++;
+            DateTimeOffset queriedAt = clock.GetUtcNow();
+            QueryRows result;
+            try
+            {
+                result = await query!.QueryAsync(options.WorkspaceId!, kql, TimeSpan.FromDays(1), cancellationToken);
+            }
+            catch (Exception exception) when (exception is TaskCanceledException or TimeoutException && !cancellationToken.IsCancellationRequested)
+            {
+                result = new QueryRows([], ProbeOutcomes.QueryTimeoutCode);
+            }
+            catch (HttpRequestException)
+            {
+                result = new QueryRows([], ProbeOutcomes.QueryTransportCode);
+            }
+
+            string? error = result.Error;
+            if (error is not null && ProbeOutcomes.IsPermissionError(error))
+            {
+                return (missing with { Attempts = attempts, QueryError = error }, ProbeOutcomes.DestinationPermissionDenied, queriedAt);
+            }
+
+            if (error is null && result.Rows.Count > 0 && result.Rows[0] is { } row)
+            {
+                // Only the exact probe identity, with the event type the parser should map, verifies.
+                if (ProbeOutcomes.Text(row.GetValueOrDefault("EventId")) != eventId
+                    || ProbeOutcomes.Text(row.GetValueOrDefault("EventType")) != expectedEventType)
+                {
+                    return (missing with { Attempts = attempts, QueryError = ProbeOutcomes.DestinationWrongEvent },
+                        ProbeOutcomes.DestinationWrongEvent, queriedAt);
+                }
+
+                // The row must carry the policy hash the collector reported for this probe;
+                // otherwise the evidence would not identify the configuration it tested.
+                string? rowPolicyHash = ProbeOutcomes.Text(row.GetValueOrDefault("PolicyHash"));
+                if (rowPolicyHash != expectedPolicyHash)
+                {
+                    return (missing with { Attempts = attempts, RowPolicyHash = rowPolicyHash, QueryError = ProbeOutcomes.ConfigurationMismatch },
+                        ProbeOutcomes.ConfigurationMismatch, queriedAt);
+                }
+
+                DateTimeOffset? generated = ReadTime(row, "TimeGenerated");
+                DateTimeOffset? ingested = ReadTime(row, "IngestionTime");
+                return (new ArrivalRecord(
+                    true, options.WorkspaceId, options.Table, kql, attempts, generated, ingested,
+                    ingested is null ? null : Math.Round((ingested.Value - sentAt).TotalSeconds, 1),
+                    rowPolicyHash,
+                    null), ProbeOutcomes.Verified, queriedAt);
+            }
+
+            answered |= error is null;
+            if (clock.GetUtcNow() + options.PollInterval > deadline)
+            {
+                // Any answered query means the destination was reachable and the row absent;
+                // timeout or failure only when no query was ever answered.
+                string outcome = answered || error is null
+                    ? ProbeOutcomes.DestinationRowMissing
+                    : ProbeOutcomes.IsTimeoutError(error) ? ProbeOutcomes.DestinationTimeout : ProbeOutcomes.DestinationQueryFailed;
+                return (missing with { Attempts = attempts, QueryError = outcome == ProbeOutcomes.DestinationRowMissing ? outcome : error },
+                    outcome, queriedAt);
+            }
+
+            await Task.Delay(options.PollInterval, clock, cancellationToken);
+        }
     }
 
     public static SignedEvidence Sign(EvidenceBundle bundle, string? privateKeyPem)

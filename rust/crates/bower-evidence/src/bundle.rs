@@ -77,6 +77,32 @@ pub struct ControlRecord {
     pub evidence: String,
 }
 
+/// What a parser probe tested (C# `ProbeRecord`): path, collector configuration
+/// (pack version and hash, parser state, policy hash), exact event identity, intended
+/// destination, outcome and the paths it did not test. Metadata only.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProbeRecord {
+    pub profile: String,
+    pub tested_path: String,
+    pub fixture: String,
+    pub pack_id: String,
+    pub parser_index: i32,
+    pub pack_version: Option<String>,
+    pub pack_hash: Option<String>,
+    pub parser_status: Option<String>,
+    pub collector_policy_hash: Option<String>,
+    pub event_id: String,
+    pub expected_event_type: String,
+    pub event_policy_id: Option<String>,
+    pub event_policy_version: Option<String>,
+    pub event_policy_hash: Option<String>,
+    pub destination_workspace_id: Option<String>,
+    pub destination_table: String,
+    pub queried_at: Option<Timestamp>,
+    pub outcome: String,
+    pub untested_paths: Vec<String>,
+}
+
 /// A metadata-only record that Bower delivery was proven (or not).
 #[derive(Clone, Debug, PartialEq)]
 pub struct EvidenceBundle {
@@ -90,6 +116,8 @@ pub struct EvidenceBundle {
     pub ingestion_errors_last_hour: Option<i64>,
     pub controls: Vec<ControlRecord>,
     pub limitations: Vec<String>,
+    /// Parser probe record; `None` (and omitted from JSON) for the generic probe.
+    pub probe: Option<ProbeRecord>,
 }
 
 /// `double.ToString(CultureInfo.InvariantCulture)` / System.Text.Json number text:
@@ -136,7 +164,7 @@ impl EvidenceBundle {
     pub fn to_json(&self) -> Value {
         let canary = &self.canary;
         let arrival = &self.arrival;
-        json!({
+        let mut bundle = json!({
             "schema": self.schema,
             "mode": self.mode,
             "generatedAt": timestamp(&self.generated_at),
@@ -176,7 +204,35 @@ impl EvidenceBundle {
                 "evidence": control.evidence,
             })).collect::<Vec<_>>(),
             "limitations": self.limitations,
-        })
+        });
+        // Additive: written only for parser probes, so generic bundles are unchanged.
+        if let (Some(probe), Value::Object(bundle)) = (&self.probe, &mut bundle) {
+            bundle.insert(
+                "probe".to_owned(),
+                json!({
+                    "profile": probe.profile,
+                    "testedPath": probe.tested_path,
+                    "fixture": probe.fixture,
+                    "packId": probe.pack_id,
+                    "parserIndex": probe.parser_index,
+                    "packVersion": probe.pack_version,
+                    "packHash": probe.pack_hash,
+                    "parserStatus": probe.parser_status,
+                    "collectorPolicyHash": probe.collector_policy_hash,
+                    "eventId": probe.event_id,
+                    "expectedEventType": probe.expected_event_type,
+                    "eventPolicyId": probe.event_policy_id,
+                    "eventPolicyVersion": probe.event_policy_version,
+                    "eventPolicyHash": probe.event_policy_hash,
+                    "destinationWorkspaceId": probe.destination_workspace_id,
+                    "destinationTable": probe.destination_table,
+                    "queriedAt": optional(probe.queried_at.as_ref(), timestamp),
+                    "outcome": probe.outcome,
+                    "untestedPaths": probe.untested_paths,
+                }),
+            );
+        }
+        bundle
     }
 }
 

@@ -7,7 +7,7 @@ use bower_evidence::bundle::format_double;
 use bower_evidence::{
     ArmReader, EvidenceBundle, EvidenceError, EvidenceOptions, EvidenceRunner, HttpArmReader,
     HttpCanarySender, LogAnalyticsQuery, LogAnalyticsQueryClient, SignedEvidence,
-    default_http_client, modes, verifier_credential,
+    default_http_client, modes, probe, verifier_credential,
 };
 
 use crate::cli::{EvidenceRunArgs, EvidenceVerifyArgs};
@@ -27,9 +27,17 @@ fn run_error(error: EvidenceError) -> CliError {
 
 /// `bower evidence run --collector-url URL [--workspace-id ID] [--workspace-resource-id RID]
 /// [--table NAME] [--credential MODE] [--client-id ID] [--timeout-minutes N]
-/// [--signing-key FILE] [--out FILE]`. Exit 0 only for a query-verified bundle, else 2.
+/// [--signing-key FILE] [--out FILE] [--probe-profile generic|parser:PACK:INDEX]`.
+/// Exit 0 only for a query-verified bundle, else 2.
 pub fn run(args: &EvidenceRunArgs) -> CliResult {
     let minutes = timeout_minutes(args.timeout_minutes.as_deref())?;
+    let probe_profile = args
+        .probe_profile
+        .clone()
+        .unwrap_or_else(|| probe::GENERIC.to_owned());
+    if probe_profile != probe::GENERIC {
+        probe::resolve_parser(&probe_profile).map_err(evidence_error)?;
+    }
     let http = default_http_client();
     let credential = if args.workspace_id.is_none() && args.workspace_resource_id.is_none() {
         None
@@ -49,7 +57,8 @@ pub fn run(args: &EvidenceRunArgs) -> CliResult {
     let arm: Option<Arc<dyn ArmReader>> = credential.map(|credential| {
         Arc::new(HttpArmReader::new(http.clone(), credential)) as Arc<dyn ArmReader>
     });
-    let runner = EvidenceRunner::new(Arc::new(HttpCanarySender::new(http)), query, arm);
+    let sender = Arc::new(HttpCanarySender::new(http));
+    let runner = EvidenceRunner::new(sender.clone(), query, arm).with_parser_sender(sender);
 
     let collector = required(args.collector_url.as_deref(), "--collector-url")?;
     let collector_url = reqwest::Url::parse(&ensure_slash(collector)).map_err(|_| {
@@ -65,6 +74,7 @@ pub fn run(args: &EvidenceRunArgs) -> CliResult {
         table.clone_into(&mut options.table);
     }
     options.timeout = Duration::from_secs(u64::from(minutes) * 60);
+    options.probe_profile = probe_profile;
 
     let bundle = super::block_on(async { runner.run(&options).await.map_err(run_error) })?;
 
@@ -123,6 +133,15 @@ pub fn summary_lines(
                 .unwrap_or("no decision")
         ),
     ];
+    if let Some(probe) = &bundle.probe {
+        lines.push(format!(
+            "Probe:    {} pack {} ({}) -> {}",
+            probe.profile,
+            probe.pack_version.as_deref().unwrap_or("unknown"),
+            probe.parser_status.as_deref().unwrap_or("unknown"),
+            probe.outcome
+        ));
+    }
     lines.push(if arrival.found {
         format!(
             "Arrival:  found in {} after {} s ({} queries)",

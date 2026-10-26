@@ -61,12 +61,24 @@ public sealed class LogAnalyticsQueryClient(HttpClient http, TokenCredential cre
         string body = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            // Only the error code is kept; bodies can echo query text.
-            string code = JsonNode.Parse(body)?["error"]?["code"]?.GetValue<string>() ?? $"http-{(int)response.StatusCode}";
-            return new QueryRows([], code);
+            // Only the error code is kept; bodies can echo query text. Gateways can answer
+            // with an empty or HTML body: fall back to the status code, as the Rust port does.
+            return new QueryRows([], ErrorCode(body) ?? $"http-{(int)response.StatusCode}");
         }
 
         return Parse(body);
+    }
+
+    private static string? ErrorCode(string body)
+    {
+        try
+        {
+            return JsonNode.Parse(body)?["error"]?["code"] is JsonValue code && code.TryGetValue(out string? text) ? text : null;
+        }
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     internal static QueryRows Parse(string body)
