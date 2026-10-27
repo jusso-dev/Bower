@@ -59,7 +59,7 @@ describe("Bower management shell", () => {
       )
     );
 
-    renderApp("/");
+    renderApp("/overview");
 
     expect(await screen.findByText("Fleet posture")).toBeTruthy();
     expect(await screen.findByText("No fleet exceptions")).toBeTruthy();

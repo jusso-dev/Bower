@@ -235,7 +235,7 @@ describe("Overview page", () => {
 function renderApp() {
   render(
     <AuthenticationProvider>
-      <MemoryRouter initialEntries={["/"]}>
+      <MemoryRouter initialEntries={["/overview"]}>
         <App />
       </MemoryRouter>
     </AuthenticationProvider>

@@ -280,3 +280,76 @@ public sealed class IntakeMetricsTests
         return store;
     }
 }
+
+public sealed class RedactionMetricsTests
+{
+    private static readonly CollectorIdentity Identity =
+        new("collector-1", "0.1.0", "test", "sha256:configuration");
+
+    [Fact]
+    public void RecordRedactions_CountsEachTypeOncePerEventAndStripsSubKinds()
+    {
+        PipelineTelemetry telemetry = new(new FakeClock(TestEvents.Now));
+
+        telemetry.RecordRedactions(["secret.aws:access-key", "secret.aws:secret-key", "id.email"]);
+        telemetry.RecordRedactions(["id.email"]);
+        telemetry.RecordRedactions([]);
+        telemetry.RecordRedactions(null);
+
+        RedactionSnapshot snapshot = telemetry.RedactionSnapshot();
+        Assert.Equal(TestEvents.Now, snapshot.ObservedSince);
+        Assert.Equal(
+            [new RedactionCount("id.email", 2), new RedactionCount("secret.aws", 1)],
+            snapshot.Counts);
+    }
+
+    [Fact]
+    public void RecordRedactions_BoundsTypesAndCountsTheRestAsOther()
+    {
+        PipelineTelemetry telemetry = new(new FakeClock(TestEvents.Now));
+        for (int index = 0; index < PipelineTelemetry.MaximumRedactionTypes + 10; index++)
+        {
+            telemetry.RecordRedactions([$"custom.type-{index:D3}"]);
+        }
+
+        // Two new types in one event still count once as "other"; a known type keeps its name.
+        telemetry.RecordRedactions(["custom.new-a", "custom.new-b", "custom.type-000"]);
+
+        RedactionSnapshot snapshot = telemetry.RedactionSnapshot();
+        Assert.Equal(PipelineTelemetry.MaximumRedactionTypes, snapshot.Counts.Count);
+        Assert.Equal(12, snapshot.Counts.Single(count => count.Type == PipelineTelemetry.OtherRedactionType).Events);
+        Assert.Equal(2, snapshot.Counts.Single(count => count.Type == "custom.type-000").Events);
+    }
+
+    [Fact]
+    public async Task Process_CountsRedactionsOnceForAStoredEventAndNotForADuplicate()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = new(Path.Combine(directory.Path, "queue.db"), 1_048_576, clock);
+        await store.InitializeAsync(cancellationToken);
+        PipelineTelemetry telemetry = new(clock);
+        SecurityEventProcessor processor = new(
+            new JsonEventRedactor(),
+            new DeterministicPolicyEvaluator([TestEvents.AuthenticationPolicy()]),
+            store,
+            clock,
+            telemetry);
+        string candidate = JsonSerializer.Serialize(
+            TestEvents.AuthenticationFailure(clock.UtcNow) with
+            {
+                EventOutcomeReason = "Sign-in failed for jane.citizen@example.com"
+            },
+            BowerJson.Options);
+
+        ProcessingResult first = await processor.ProcessAsync(candidate, Identity, cancellationToken);
+        ProcessingResult repeated = await processor.ProcessAsync(candidate, Identity, cancellationToken);
+
+        Assert.True(first.Queued);
+        Assert.True(repeated.Duplicate);
+        IReadOnlyList<RedactionCount> counts = telemetry.RedactionSnapshot().Counts;
+        Assert.Contains(new RedactionCount("id.email", 1), counts);
+        Assert.All(counts, count => Assert.Equal(1, count.Events));
+    }
+}

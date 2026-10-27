@@ -278,7 +278,18 @@ authentication. Then walk through the console:
 
    ![Setup wizard, step 4: approved and waiting collectors with plain-language checks and a suggested fix](docs/images/bower-management-setup.png)
 
-1. **Overview** (shown at the top of this README) puts exceptions first: the
+1. **Home** answers three questions in plain English: is my data flowing, what was
+   protected this week (counts by kind of detail, never values) and what needs my
+   attention. Each collector group (environment) gets a traffic light with a
+   one-sentence reason and the page that fixes it. Sentinel delivery is shown as
+   proven only after a query-verified test event. See
+   [console home](docs/operations/console-home.md).
+
+   ![Home view: what was protected this week, with tax file numbers, email addresses and other sensitive details removed counted by kind](docs/images/bower-management-home-protected.png)
+
+   ![Home view: collector groups with traffic lights, one-sentence reasons and how to fix each](docs/images/bower-management-home-groups.png)
+
+   **Overview** (shown at the top of this README, one click from Home) puts exceptions first: the
    pending `hr-app-02`, the degraded `claims-api-03` with 1,294 queued events,
    and the suspended `records-app-04`.
 

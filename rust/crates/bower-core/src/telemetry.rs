@@ -27,6 +27,10 @@ pub const QUEUE_CAPACITY_REASON: &str = "queue-capacity";
 /// Bounded reason code: the queue refused the privacy alert after the event was decided
 /// (and, when accepted, committed).
 pub const PRIVACY_ALERT_CAPACITY_REASON: &str = "privacy-alert-capacity";
+/// Most detector types counted by name; later new types count as [`OTHER_REDACTION_TYPE`].
+pub const MAXIMUM_REDACTION_TYPES: usize = 64;
+/// The bucket for detector types beyond [`MAXIMUM_REDACTION_TYPES`].
+pub const OTHER_REDACTION_TYPE: &str = "other";
 /// `last_refusal` before any refusal.
 const NO_REFUSAL: i64 = i64::MIN;
 
@@ -45,6 +49,7 @@ struct State {
     counters: HashMap<(ProcessingStage, String, DecisionAction), Counter>,
     sources: HashMap<(String, String), SourceActivity>,
     dirty: HashSet<(String, String)>,
+    redactions: HashMap<String, i64>,
 }
 
 pub struct PipelineTelemetry {
@@ -101,6 +106,21 @@ pub struct IntakeMetricsSnapshot {
     pub privacy_alert_refused_bytes: i64,
     pub last_refusal_at: Option<Timestamp>,
     pub last_refusal_reason: Option<&'static str>,
+}
+
+/// Redaction counters since `observed_since` (process start): queued events per detector
+/// type whose values were removed or masked. A restart starts a new count.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RedactionSnapshot {
+    pub observed_since: Timestamp,
+    pub counts: Vec<RedactionCount>,
+}
+
+/// Queued events in which a detector type removed or masked at least one value.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RedactionCount {
+    pub kind: String,
+    pub events: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -249,6 +269,50 @@ impl PipelineTelemetry {
                 );
                 state.dirty.insert(key);
             }
+        }
+    }
+
+    /// Counts one queued event for each detector type (the id before any `:` sub-kind)
+    /// whose values were removed or masked before the event was stored. Type ids only:
+    /// never values, paths or event ids.
+    pub fn record_redactions(&self, detected: &[String]) {
+        if detected.is_empty() {
+            return;
+        }
+        let mut state = self.lock();
+        let mut counted: HashSet<String> = HashSet::new();
+        for id in detected {
+            let mut kind = match id.find(':') {
+                Some(colon) if colon > 0 => &id[..colon],
+                _ => id.as_str(),
+            };
+            // One slot stays free for the overflow bucket.
+            if !state.redactions.contains_key(kind)
+                && state.redactions.len() >= MAXIMUM_REDACTION_TYPES - 1
+            {
+                kind = OTHER_REDACTION_TYPE;
+            }
+            if counted.insert(kind.to_owned()) {
+                *state.redactions.entry(kind.to_owned()).or_insert(0) += 1;
+            }
+        }
+    }
+
+    /// Queued events per redacted detector type since `started_at`, ordinal by type.
+    pub fn redaction_snapshot(&self) -> RedactionSnapshot {
+        let mut counts: Vec<RedactionCount> = self
+            .lock()
+            .redactions
+            .iter()
+            .map(|(kind, events)| RedactionCount {
+                kind: kind.clone(),
+                events: *events,
+            })
+            .collect();
+        counts.sort_by(|left, right| ordinal(&left.kind, &right.kind));
+        RedactionSnapshot {
+            observed_since: self.started_at,
+            counts,
         }
     }
 

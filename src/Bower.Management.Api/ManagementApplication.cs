@@ -312,6 +312,13 @@ public static class ManagementApplication
                 })
             .RequireAuthorization("View");
 
+        // Plain-English home view: traffic lights, fixes and redaction counts, computed here.
+        api.MapGet(
+                "/home",
+                async (ManagementStore store, TimeProvider clock, CancellationToken cancellationToken) =>
+                    await store.HomeAsync(clock.GetUtcNow(), cancellationToken))
+            .RequireAuthorization("View");
+
         api.MapGet(
                 "/collectors",
                 async (

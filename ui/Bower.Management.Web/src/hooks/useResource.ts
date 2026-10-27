@@ -24,10 +24,12 @@ export function useResource<T>(path: string, refresh = 0) {
   /**
    * Refetches without the loading state, so the current view stays in place (polling). A
    * failure keeps the last good data and sets `refreshError`; resolves true on success.
+   * Success also clears an error left by the initial load.
    */
   const revalidate = useCallback(async () => {
     try {
       setData(await api<T>(path));
+      setError(null);
       setRefreshError(null);
       return true;
     } catch (loadError) {

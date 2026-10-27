@@ -44,6 +44,11 @@ Request (`POST /api/collectors/{id}/heartbeat`): v1 fields unchanged, plus
 `lastSuccessfulDeliveryAt`, `lastCanary`, `commandCapabilities` and `commandResults`.
 A body without `schemaVersion` is v1.
 
+Issue #98 adds an optional `redactions` field (`{observedSince, counts: [{type, events}]}`):
+queued events per redacted detector type since the collector process started, counts
+only. Management accepts it on v1 and v2 bodies and feeds the console home view; see
+[console home](../operations/console-home.md).
+
 Response: a v1 request still gets the collector record. A v2 request gets
 `{schemaVersion: 2, collectorId, status, commands: [...], acknowledgedResults: [...]}`.
 A v2 collector ignores any response without `schemaVersion: 2`, so an older management
@@ -126,6 +131,7 @@ Bounds:
 | Commands considered per response | 8 |
 | Results per heartbeat | 32 |
 | Ledger entries | 128 |
+| Redaction types per heartbeat | 64 (later new types count as `other`) |
 | Outstanding commands per collector (management) | 16 |
 | Command lifetime | 1 to 60 minutes, default 15 |
 

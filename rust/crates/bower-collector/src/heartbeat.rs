@@ -6,8 +6,9 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use bower_contracts::time::{Timestamp, serde_offset_option};
+use bower_contracts::time::{Timestamp, serde_offset, serde_offset_option};
 use bower_contracts::{DurableEventStore, LedgerHead, QueueSnapshot};
+use bower_core::PipelineTelemetry;
 use reqwest::{StatusCode, Url};
 use serde::Serialize;
 use tracing::{info, warn};
@@ -133,6 +134,8 @@ pub struct ManagementHeartbeat {
     pub delivery_activity: Option<Arc<crate::worker::DeliveryActivity>>,
     /// Token enrolment: enrol before reporting, rotate on schedule after.
     pub enrolment: Option<Arc<crate::enrolment::ManagementEnrolment>>,
+    /// Redaction counters for `redactions`; `null` when not wired.
+    pub telemetry: Option<Arc<PipelineTelemetry>>,
 }
 
 /// The job runs every minute; management derives staleness from this interval.
@@ -181,6 +184,22 @@ struct LedgerReport<'a> {
     hash: &'a str,
 }
 
+/// Queued events per redacted detector type since process start. Counts only.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RedactionReport {
+    #[serde(with = "serde_offset")]
+    observed_since: Timestamp,
+    counts: Vec<RedactionCountReport>,
+}
+
+#[derive(Serialize)]
+struct RedactionCountReport {
+    #[serde(rename = "type")]
+    kind: String,
+    events: i64,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Heartbeat<'a> {
@@ -204,6 +223,7 @@ struct Heartbeat<'a> {
     last_canary: Option<CanaryReport>,
     command_capabilities: Vec<&'static str>,
     command_results: &'a [CommandResultReport],
+    redactions: Option<RedactionReport>,
 }
 
 impl ManagementHeartbeat {
@@ -237,6 +257,7 @@ impl ManagementHeartbeat {
             commands: None,
             delivery_activity: None,
             enrolment: None,
+            telemetry: None,
         })
     }
 
@@ -387,6 +408,20 @@ impl ManagementHeartbeat {
                 .map(|commands| commands.capabilities())
                 .unwrap_or_default(),
             command_results: &results,
+            redactions: self.telemetry.as_ref().map(|telemetry| {
+                let snapshot = telemetry.redaction_snapshot();
+                RedactionReport {
+                    observed_since: snapshot.observed_since,
+                    counts: snapshot
+                        .counts
+                        .into_iter()
+                        .map(|count| RedactionCountReport {
+                            kind: count.kind,
+                            events: count.events,
+                        })
+                        .collect(),
+                }
+            }),
         };
         let path = format!(
             "api/collectors/{}/heartbeat",

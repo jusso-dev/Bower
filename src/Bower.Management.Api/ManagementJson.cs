@@ -29,6 +29,7 @@ public sealed record PipelineValidationResponse(
 [JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(CurrentAccess))]
 [JsonSerializable(typeof(OverviewRecord))]
+[JsonSerializable(typeof(HomeRecord))]
 [JsonSerializable(typeof(CollectorRecord))]
 [JsonSerializable(typeof(IReadOnlyList<CollectorRecord>))]
 [JsonSerializable(typeof(List<CollectorRecord>))]
