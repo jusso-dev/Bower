@@ -11,6 +11,9 @@ C#-only: the Rust collector refuses `BOWER_WINDOWS_EVENTLOG_CONFIG` (see `rust/A
   provider names and the bookmark, so the event log service returns only allow-listed
   events. Names never contain quotes, brackets or operators. Keep the expression count
   within the Windows limit (16 IDs, 4 providers).
+- Channel range discovery uses two fixed boundary queries and accesses only their
+  `RecordId` metadata. Never render their XML, messages or event properties. This is
+  not a configurable intake query; content intake still uses the generated allow-list.
 - Bookmarks live in the queue database's `source_cursors` table. Move the bookmark past
   an event only once it is durably enqueued or definitively dropped; a full queue stops
   reading. Event ids derive from channel, computer, record id and creation time so a

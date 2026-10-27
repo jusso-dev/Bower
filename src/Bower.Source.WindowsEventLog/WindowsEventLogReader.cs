@@ -28,15 +28,38 @@ internal sealed class WindowsEventLogChannel(string channel) : IWindowsEventChan
     {
         try
         {
-            EventLogInformation information = session.GetLogInformation(channel, PathType.LogName);
-            long count = information.RecordCount ?? 0;
-            long oldest = information.OldestRecordNumber ?? 0;
-            return count <= 0 || oldest <= 0 ? new WindowsChannelRange(0, 0) : new WindowsChannelRange(oldest, oldest + count - 1);
+            // GetLogInformation's oldest/count arithmetic can disagree with the
+            // EventRecordID used by XPath after a classic log is cleared. Probe only
+            // the boundary IDs; never render XML, messages or event properties here.
+            long oldest = BoundaryRecordId(reverse: false);
+            if (oldest == 0)
+            {
+                return new WindowsChannelRange(0, 0);
+            }
+
+            long newest = BoundaryRecordId(reverse: true);
+            return newest == 0
+                ? new WindowsChannelRange(0, 0)
+                : new WindowsChannelRange(Math.Min(oldest, newest), newest);
         }
         catch (Exception exception) when (exception is EventLogException or UnauthorizedAccessException)
         {
             throw Map(exception);
         }
+    }
+
+    private long BoundaryRecordId(bool reverse)
+    {
+        EventLogQuery query = new(channel, PathType.LogName, "*")
+        {
+            Session = session,
+            ReverseDirection = reverse,
+            TolerateQueryErrors = false
+        };
+        using EventLogReader reader = new(query) { BatchSize = 1 };
+        using EventRecord? record = reader.ReadEvent();
+        return record is null ? 0 : record.RecordId
+            ?? throw new WindowsEventChannelException(WindowsEventChannelFailures.ReadFailed);
     }
 
     public IReadOnlyList<WindowsRawEvent> Read(WindowsEventQuery query, int maximum, bool includeMessage, CancellationToken cancellationToken)

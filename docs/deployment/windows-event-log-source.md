@@ -27,9 +27,12 @@ when:
 3. the subscription's signed pack parser selects it (`match` filter); and
 4. redaction succeeds and the policy set accepts the resulting event.
 
-Events outside the allow-list are filtered out by the event log service and are never
-read into the collector. Everything else that is not queued is dropped and counted. No
-event XML, message, record or query result is logged, stored or shown; only the fields
+Event content outside the allow-list is filtered out by the event log service and is
+never rendered into the collector. Range discovery probes only the oldest and newest
+record IDs, without rendering XML, messages or event properties. This avoids unreliable
+oldest-record/count arithmetic after a Windows log clear. Everything else that is not
+queued is dropped and counted. No event XML, message, record or query result is logged,
+stored or shown; only the fields
 the pack parser maps reach the envelope, and they are redacted before persistence.
 
 ## Configure

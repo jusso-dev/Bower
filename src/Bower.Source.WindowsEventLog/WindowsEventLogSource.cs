@@ -44,7 +44,7 @@ public sealed record WindowsChannelRange(long OldestRecordId, long NewestRecordI
 /// <summary>One channel. Implementations return only events matching the query.</summary>
 public interface IWindowsEventChannel : IDisposable
 {
-    /// <summary>Channel metadata only; reads no events.</summary>
+    /// <summary>Channel boundary record IDs only; never renders event content.</summary>
     WindowsChannelRange GetRange();
 
     IReadOnlyList<WindowsRawEvent> Read(WindowsEventQuery query, int maximum, bool includeMessage, CancellationToken cancellationToken);

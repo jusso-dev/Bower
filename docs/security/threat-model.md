@@ -95,7 +95,9 @@ evidence.
   setting): the collector reads local channels as a least-privilege account in Event
   Log Readers. The query is generated from validated event ID and provider allow-lists
   (no free text, no collect-all form), so the event log service returns only
-  allow-listed events. Event XML is bounded (64 KiB, no DTD or resolver) and flattened
+  allow-listed event content. Separate fixed boundary probes read only the oldest and
+  newest record IDs, never XML, messages or event properties, to detect resets reliably.
+  Event XML is bounded (64 KiB, no DTD or resolver) and flattened
   into a bounded record; publisher-rendered message strings are opt-in and, like every
   field, reach the envelope only through a signed pack mapping and redaction. Bookmarks
   live in the queue database and move only after durable enqueue; event ids from

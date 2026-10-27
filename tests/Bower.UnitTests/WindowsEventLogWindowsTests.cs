@@ -95,6 +95,10 @@ public sealed class WindowsEventLogWindowsTests
                     System.Text.Json.Nodes.JsonNode.Parse(sink.Records.Last())!["recordId"]!.GetValue<string>(),
                     System.Globalization.CultureInfo.InvariantCulture);
                 Assert.Equal(recordId, restarted.Snapshot()[0].BookmarkRecordId);
+                using (IWindowsEventChannel boundary = channels.Open(LogName))
+                {
+                    Assert.Equal(recordId, boundary.GetRange().NewestRecordId);
+                }
                 Assert.Equal(0, (await restarted.PollOnceAsync("ci", cancellation)).Read);
                 Assert.Equal(1, restarted.Snapshot()[0].Resets);
             }
