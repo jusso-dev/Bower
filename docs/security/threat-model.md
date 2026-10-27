@@ -244,6 +244,9 @@ The installers delete files with `shred -u` (Linux, where available) or a plain 
 SSD storage; the token's single use and short expiry are the control that matters. A
 token that management never sees (the host never reaches it) stays on disk in the
 owner-only enrolment folder until it is used, the package is removed or an operator
-deletes it.
+deletes it. Any local user can create folders in `%ProgramData%`: `Install-BowerCollector.ps1`
+refuses a `%ProgramData%\Bower` not owned by SYSTEM or Administrators, but a plain
+`msiexec` install re-permissions an existing folder without changing its owner, so check
+the owner first when you install the MSI directly on a shared host.
 
 Treat pseudonymised identifiers as potentially personal information.

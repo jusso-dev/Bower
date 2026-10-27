@@ -110,7 +110,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install-BowerCollector
 ```
 
 `Install-BowerCollector.ps1` runs on Windows PowerShell 5.1 and PowerShell 7. It calls
-`msiexec /qn` with only public, non-secret properties, then writes the token into the
+`msiexec /qn` with only public, non-secret properties (after copying trusted keys and
+packs into a data folder it creates with the MSI's protected ACL; it refuses an existing
+`%ProgramData%\Bower` not owned by SYSTEM or Administrators), then writes the token into the
 enrolment folder (it inherits the folder ACL) and deletes the source file. Drop
 `-RequireSignature` only for unsigned CI builds.
 
