@@ -387,6 +387,64 @@ async fn lost_responses_reuse_the_key_and_refused_tokens_are_not_retried() {
     assert!(harness.enrolment.enrolled());
 }
 
+/// C# `Collector_RemovesAUsedTokenFileOnlyWhenAskedAndOnlyAfterADefinitiveOutcome`.
+#[tokio::test]
+async fn removes_a_used_token_file_only_when_asked_and_after_a_definitive_outcome() {
+    let directory = tempfile::tempdir().unwrap();
+    let management = Arc::new(Management::default());
+    let clock = FakeClock(Arc::new(Mutex::new(start())));
+    *management.now.lock().unwrap() = Some(clock.clone());
+    let base = serve(Arc::clone(&management)).await;
+    let kept = settings(directory.path(), &base, Some(TOKEN));
+    let mut removing = kept.clone();
+    removing.management_enrolment_token_remove_after_use = true;
+    let file = kept.management_enrolment_token_file.clone().unwrap();
+    let enrolment = |settings: &CollectorSettings| {
+        ManagementEnrolment::from_settings(
+            settings,
+            "sha256:policy".into(),
+            reqwest::Client::new(),
+            Arc::new(clock.clone()),
+        )
+        .unwrap()
+    };
+
+    // Without the option the token file stays, as before.
+    let first = enrolment(&kept);
+    first.ensure_enrolled().await.unwrap();
+    assert!(first.enrolled());
+    assert!(file.exists());
+
+    // An already consumed token still on disk is removed on the next attempt.
+    enrolment(&removing).ensure_enrolled().await.unwrap();
+    assert!(!file.exists());
+
+    // A transient failure keeps the token for the retry; a refusal removes it.
+    let second = "bwe1.fedcba9876543210.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+    std::fs::write(&file, second).unwrap();
+    management
+        .scripted
+        .lock()
+        .unwrap()
+        .push_back(StatusCode::INTERNAL_SERVER_ERROR);
+    let retrying = enrolment(&removing);
+    assert!(retrying.ensure_enrolled().await.is_err());
+    assert!(file.exists());
+    management
+        .scripted
+        .lock()
+        .unwrap()
+        .push_back(StatusCode::UNAUTHORIZED);
+    retrying.ensure_enrolled().await.unwrap();
+    assert!(!file.exists());
+    assert!(retrying.enrolled());
+
+    let mut invalid = removing.clone();
+    invalid.management_enrolment_token_file = None;
+    assert!(invalid.validate().is_err());
+    assert_eq!(kept.configuration_hash(), removing.configuration_hash());
+}
+
 /// C# `Rotation_KeepsTheOldCredentialValidUntilTheNewOneIsUsed` from the collector side.
 #[tokio::test]
 async fn rotation_switches_keys_under_the_current_credential_and_runs_on_schedule() {

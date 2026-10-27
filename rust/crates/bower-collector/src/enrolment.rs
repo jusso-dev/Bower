@@ -224,6 +224,7 @@ pub struct ManagementEnrolment {
     configuration_hash: String,
     policy_hash: String,
     token_file: Option<PathBuf>,
+    remove_token_after_use: bool,
     directory: PathBuf,
     clock: Arc<dyn Clock>,
     state: RwLock<Option<CredentialState>>,
@@ -252,6 +253,7 @@ impl ManagementEnrolment {
             configuration_hash: settings.configuration_hash(),
             policy_hash,
             token_file: settings.management_enrolment_token_file.clone(),
+            remove_token_after_use: settings.management_enrolment_token_remove_after_use,
             state: RwLock::new(load_state(&directory)),
             directory,
             clock,
@@ -296,6 +298,7 @@ impl ManagementEnrolment {
             && (current.consumed_token_sha256.as_deref() == Some(token_hash.as_str())
                 || current.refused_token_sha256.as_deref() == Some(token_hash.as_str()))
         {
+            self.remove_token_after_use(&token_hash);
             self.warn_if_not_enrolled();
             return Ok(());
         }
@@ -326,12 +329,13 @@ impl ManagementEnrolment {
         let status = response.status();
         if is_definitive_refusal(status) {
             prepared.pending_private_key_pem = None;
-            prepared.refused_token_sha256 = Some(token_hash);
+            prepared.refused_token_sha256 = Some(token_hash.clone());
             self.save(prepared)?;
             warn!(
                 status_code = status.as_u16(),
                 "Management refused the enrolment token; supply a new token to enrol."
             );
+            self.remove_token_after_use(&token_hash);
             return Ok(());
         }
         if !status.is_success() {
@@ -342,7 +346,7 @@ impl ManagementEnrolment {
         prepared.private_key_pem = Some(pending);
         prepared.expires_at = Some(expires_at);
         prepared.pending_private_key_pem = None;
-        prepared.consumed_token_sha256 = Some(token_hash);
+        prepared.consumed_token_sha256 = Some(token_hash.clone());
         prepared.refused_token_sha256 = None;
         self.save(prepared)?;
         info!(
@@ -350,6 +354,7 @@ impl ManagementEnrolment {
             status = record_status.as_str(),
             "Collector enrolled with a management credential."
         );
+        self.remove_token_after_use(&token_hash);
         Ok(())
     }
 
@@ -474,6 +479,28 @@ impl ManagementEnrolment {
             warn!(
                 "Collector has no usable management credential; set BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE to a new enrolment token."
             );
+        }
+    }
+
+    /// With `BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE`, deletes the token file once
+    /// its outcome is recorded (C# `RemoveTokenAfterUse`). Only the token whose hash was
+    /// recorded is deleted; a failure is logged (never the token) and retried next time.
+    fn remove_token_after_use(&self, token_hash: &str) {
+        if !self.remove_token_after_use {
+            return;
+        }
+        let (Some(path), Some(token)) = (self.token_file.as_ref(), self.read_token()) else {
+            return;
+        };
+        if bower_integrity::sha256_hex(token.as_bytes()) != token_hash {
+            return;
+        }
+        match std::fs::remove_file(path) {
+            Ok(()) => info!("Used enrolment token file removed."),
+            Err(error) => warn!(
+                error_kind = ?error.kind(),
+                "Could not remove the used enrolment token file; delete it by hand."
+            ),
         }
     }
 
