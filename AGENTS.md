@@ -44,6 +44,7 @@ control plane, or runtime AI filter.
 - `rust`: Rust port of the data plane (`bower-collector`, `bower` CLI and their libraries); C# is the specification. See `rust/AGENTS.md`.
 - `deploy/aws`, `deploy/gcp`: CloudFormation and Terraform for cloud signal (plan-only by default).
 - `deploy/azure-function`: Bicep for the Azure Functions collector (Flex Consumption, managed identity; plan-only by default).
+- `deploy/installers`, `deploy/ansible`: deb, rpm and MSI packages, offline installers with a pre-seeded enrolment token, and an example Ansible role. See `deploy/installers/AGENTS.md`.
 - `powershell`: PowerShell 7.4+ modules (events, management, plan-first deployment, privacy tooling). See `powershell/AGENTS.md`.
 - `schemas`, `policies`, `deploy`, `docs`, `tests`: versioned product assets.
 

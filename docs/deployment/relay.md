@@ -38,6 +38,9 @@ acknowledged event.
   names any other collector is refused.
 - Its delivery from its own queue is the normal `QueueDeliveryWorker`: leases, retries,
   dead letters and the destination circuit work as on any collector.
+- Each downstream batch request has a 60-second deadline covering response headers and
+  body. A timeout acknowledges nothing and holds the batch for retry behind the
+  destination circuit.
 - The management tunnel goes to the relay's own `BOWER_MANAGEMENT_ENDPOINT` and nowhere
   else. Downstreams cannot name a target. TLS to management runs inside the tunnel, so the
   relay sees only ciphertext: it cannot read or change heartbeats, enrolment tokens,

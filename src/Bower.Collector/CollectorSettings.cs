@@ -191,6 +191,13 @@ public sealed record CollectorSettings
 
     public bool IsRelay => RelayListenUrl is not null;
 
+    /// <summary>
+    /// Deletes the enrolment token file once management has consumed or refused the token
+    /// (BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE). The native installers set it so a
+    /// pre-seeded token never stays on disk. Not part of the configuration hash.
+    /// </summary>
+    public bool ManagementEnrolmentTokenRemoveAfterUse { get; init; }
+
     public bool UsesEnrolment =>
         string.Equals(ManagementAuthentication, ManagementAuthenticationModes.Enrolment, StringComparison.Ordinal);
 
@@ -283,6 +290,10 @@ public sealed record CollectorSettings
             RelayKeyFile = Blank(read("BOWER_RELAY_KEY_FILE")),
             RelayDownstreamsFile = Blank(read("BOWER_RELAY_DOWNSTREAMS_FILE")),
             RelayManagementTunnel = ReadBoolean(read, "BOWER_RELAY_MANAGEMENT_TUNNEL"),
+            ManagementEnrolmentTokenRemoveAfterUse = string.Equals(
+                read("BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE"),
+                "true",
+                StringComparison.OrdinalIgnoreCase),
             SourceExpectationsPath = Blank(read("BOWER_SOURCE_EXPECTATIONS")),
             ArchivePath = Blank(read("BOWER_ARCHIVE_PATH")),
             SyslogConfigPath = Blank(read("BOWER_SYSLOG_CONFIG"))
@@ -375,6 +386,12 @@ public sealed record CollectorSettings
         {
             throw new InvalidOperationException(
                 "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE requires BOWER_MANAGEMENT_AUTH=enrolment.");
+        }
+
+        if (ManagementEnrolmentTokenRemoveAfterUse && ManagementEnrolmentTokenFile is null)
+        {
+            throw new InvalidOperationException(
+                "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE requires BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE.");
         }
 
         if (ManagementEndpoint is not null)

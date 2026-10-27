@@ -169,11 +169,12 @@ See [`rust/AGENTS.md`](rust/AGENTS.md) for parity rules.
 | AMA companion spool | Implemented |
 | Logs Ingestion API | Real Azure SDK client implemented; tenant test required |
 | Docker, systemd, Kubernetes | Baseline deployment assets |
+| Native installers | deb, rpm and MSI (service as a least-privilege account) built in CI, Ansible role, offline bundles with a pre-seeded enrolment token; install-tested on Ubuntu, Rocky Linux 9 and Windows Server; unsigned until signing secrets are configured. [Installers](docs/deployment/installers.md) |
 | Console container | Standalone nginx image configured at runtime (`Dockerfile.web`) |
 | Docker sidecar | Read-only collection from opted-in containers' json-file logs (`Bower.Agent.Docker`) |
 | Management UI and API | Fleet inventory, approval, health, audit, custom-log parser generation, privacy profile versioning with two-person review and signed assignment, and Entra app-role RBAC implemented |
 | AI-assisted custom log parser generator | Deterministic local JSON, CSV, key/value and common-regex inference with OCSF/ASIM mappings and redacted preview |
-| Windows Service self-install | Not implemented |
+| Windows Service | MSI installs the collector as the `Bower` service (`NT SERVICE\Bower`) |
 | SQL Server source | EF Core adapter library with durable keyset/overlap cursors; collector polling orchestration not yet wired |
 | AWS security signal | GuardDuty, Security Hub and high-value CloudTrail via EventBridge → SQS, plus Bower events from CloudWatch Logs via Firehose → S3; CloudFormation, signed `aws-security` pack, `bower-cloud` agent with IAM-role credentials |
 | Google Cloud security signal | Security Command Center findings and Admin Activity audit logs via Pub/Sub with Australian storage policy; Terraform, signed `gcp-security` pack, ADC / Workload Identity Federation (key files refused) |
@@ -392,6 +393,22 @@ docker pull ghcr.io/jusso-dev/bower-cloud:edge
 Tags, verification and runtime configuration:
 [container images](docs/deployment/container-images.md).
 
+## Native packages
+
+CI builds deb and rpm packages, a Windows MSI, offline bundles and an Ansible role from
+the Native AOT release artefacts. A silent install with a pre-seeded one-time enrolment
+token joins management as `Pending`; the token is deleted once used, and uninstall
+removes every secret. Packages are unsigned until the signing secrets are configured.
+
+```bash
+sudo ./install.sh                                          # Linux offline bundle
+powershell -File .\Install-BowerCollector.ps1 -ManagementEndpoint https://bower-management.example.com/   # Windows
+```
+
+Layout, Intune, ConfigMgr and Group Policy guidance, uninstall and signing:
+[installers](docs/deployment/installers.md). Azure Arc:
+[evaluation](docs/deployment/azure-arc-extension.md).
+
 ## Serverless hosting
 
 Where a VM or container is not wanted, two native hosts run the same validation,
@@ -445,6 +462,7 @@ Neither has been exercised against a live tenant or account yet.
 | `BOWER_MANAGEMENT_ENDPOINT` / `BOWER_MANAGEMENT_SCOPE` | — | Enables the heartbeat job. HTTPS required unless loopback. |
 | `BOWER_MANAGEMENT_AUTH` | `entra` | `entra` (machine token for `BOWER_MANAGEMENT_SCOPE`) or `enrolment` (one-time token exchanged for a key-bound credential, for hosts without an Azure identity). [Details](docs/security/management-identity-and-rbac.md#token-enrolment-for-collectors-without-an-azure-identity) |
 | `BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE` | — | File holding a one-time enrolment token (`enrolment` mode). Never stored or logged; a new token re-enrols, back to Pending. |
+| `BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE` | `false` | `true` deletes the token file once management consumed or refused the token (set by the native installers). |
 | `BOWER_SOURCE_EXPECTATIONS` | — | JSON file of applications that must keep sending events; quiet ones degrade `/health`. [Details](docs/operations/suppression-archive-and-source-silence.md#source-silence) |
 | `BOWER_ARCHIVE_PATH` | — | Directory for the ledger-verified long-term archive; retention then purges only events a verified archive of this queue covers. [Details](docs/operations/suppression-archive-and-source-silence.md#archive-and-replay) |
 | `BOWER_SYSLOG_CONFIG` | — | JSON file of syslog listeners (RFC 5424/3164 over TCP, TLS or UDP), sender allow-lists and routes to signed pack parsers. Loopback unless TLS. [Details](docs/deployment/syslog-source.md) |

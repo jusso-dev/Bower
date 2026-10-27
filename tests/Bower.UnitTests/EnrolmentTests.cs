@@ -436,6 +436,70 @@ public sealed class EnrolmentTests
     }
 
     [Fact]
+    public async Task Collector_RemovesAUsedTokenFileOnlyWhenAskedAndOnlyAfterADefinitiveOutcome()
+    {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(Start);
+        await using WebApplication app = await StartAsync(directory, clock, ct);
+        CollectorSettings kept = EnrolmentSettings(directory, await CreateTokenAsync(app, ct));
+        CollectorSettings removing = kept with { ManagementEnrolmentTokenRemoveAfterUse = true };
+        Bower.Packs.PolicyBundle bundle = Bower.Packs.PolicyBundle.Load(kept.PolicySources());
+
+        // Without the option the token file stays, as before.
+        using (ManagementEnrolment enrolment = new(
+            new TestServerFactory(app), kept, bundle, clock, NullLogger<ManagementEnrolment>.Instance))
+        {
+            await enrolment.EnsureEnrolledAsync(ct);
+            Assert.True(enrolment.Enrolled);
+        }
+
+        bool keptAfterUse = File.Exists(kept.ManagementEnrolmentTokenFile!);
+
+        // An already consumed token still on disk is removed on the next attempt.
+        using (ManagementEnrolment enrolment = new(
+            new TestServerFactory(app), removing, bundle, clock, NullLogger<ManagementEnrolment>.Instance))
+        {
+            await enrolment.EnsureEnrolledAsync(ct);
+        }
+
+        bool removedAfterConsumed = !File.Exists(kept.ManagementEnrolmentTokenFile!);
+
+        // A transient failure keeps the token for the retry; a refusal removes it.
+        await File.WriteAllTextAsync(kept.ManagementEnrolmentTokenFile!, CollectorEnrolment.NewToken(out _), ct);
+        using (ManagementEnrolment offline = new(
+            new FailingFactory(), removing, bundle, clock, NullLogger<ManagementEnrolment>.Instance))
+        {
+            await Assert.ThrowsAsync<HttpRequestException>(() => offline.EnsureEnrolledAsync(ct));
+        }
+
+        bool keptAfterTransientFailure = File.Exists(kept.ManagementEnrolmentTokenFile!);
+        using (ManagementEnrolment enrolment = new(
+            new TestServerFactory(app), removing, bundle, clock, NullLogger<ManagementEnrolment>.Instance))
+        {
+            await enrolment.EnsureEnrolledAsync(ct);
+            Assert.True(enrolment.Enrolled);
+        }
+
+        Assert.True(keptAfterUse);
+        Assert.True(removedAfterConsumed);
+        Assert.True(keptAfterTransientFailure);
+        Assert.False(File.Exists(kept.ManagementEnrolmentTokenFile!));
+        Assert.Throws<InvalidOperationException>(
+            () => (removing with { ManagementEnrolmentTokenFile = null }).Validate());
+        Assert.Equal(kept.ConfigurationHash(), removing.ConfigurationHash());
+        Assert.True(CollectorSettings.FromEnvironment(name => name switch
+        {
+            "BOWER_QUEUE_PATH" => Path.Combine(directory.Path, "queue.db"),
+            "BOWER_MANAGEMENT_ENDPOINT" => "https://bower-api.example.test/",
+            "BOWER_MANAGEMENT_AUTH" => "enrolment",
+            "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE" => "/var/lib/bower/enrolment/enrolment-token",
+            "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE" => "true",
+            _ => null
+        }).ManagementEnrolmentTokenRemoveAfterUse);
+    }
+
+    [Fact]
     public void Settings_EnrolmentModeIsValidatedAndAdvertisesRotation()
     {
         using TemporaryDirectory directory = new();
@@ -677,6 +741,21 @@ public sealed class EnrolmentTests
         }
 
         return false;
+    }
+
+    /// <summary>A management API that cannot be reached.</summary>
+    private sealed class FailingFactory : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) =>
+            new(new FailingHandler()) { BaseAddress = new Uri("http://localhost/") };
+
+        private sealed class FailingHandler : HttpMessageHandler
+        {
+            protected override Task<HttpResponseMessage> SendAsync(
+                HttpRequestMessage request,
+                CancellationToken cancellationToken) =>
+                throw new HttpRequestException("unreachable");
+        }
     }
 
     /// <summary>Hands the collector the in-process management API.</summary>

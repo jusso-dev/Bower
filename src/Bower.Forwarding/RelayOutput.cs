@@ -20,6 +20,7 @@ public sealed class RelayOutput(HttpClient client, string collectorId, TimeProvi
 {
     public const string OutputId = "relay";
 
+    private static readonly TimeSpan MaximumRequestDuration = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan MaximumRetryAfter = TimeSpan.FromHours(1);
     private readonly TimeProvider time = clock ?? TimeProvider.System;
 
@@ -104,20 +105,26 @@ public sealed class RelayOutput(HttpClient client, string collectorId, TimeProvi
         HttpStatusCode status;
         DateTimeOffset? retryAfter;
         byte[]? body = null;
+        // ResponseHeadersRead ends HttpClient.Timeout at the headers. Keep a deadline
+        // through the bounded body read so a stalled relay cannot hold delivery forever.
+        using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(client.Timeout != Timeout.InfiniteTimeSpan && client.Timeout < MaximumRequestDuration
+            ? client.Timeout
+            : MaximumRequestDuration);
         try
         {
             using HttpResponseMessage response = await client.SendAsync(
-                request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
             status = response.StatusCode;
             retryAfter = ReadRetryAfter(response.Headers.RetryAfter);
             if (status == HttpStatusCode.OK)
             {
-                body = await ReadBoundedAsync(response.Content, cancellationToken);
+                body = await ReadBoundedAsync(response.Content, deadline.Token);
             }
         }
         catch (Exception exception) when (
             exception is HttpRequestException or IOException
-                || (exception is TaskCanceledException && !cancellationToken.IsCancellationRequested))
+                || (exception is OperationCanceledException && !cancellationToken.IsCancellationRequested))
         {
             // Transport and TLS failures. Exception text is never kept.
             return Fail(batch, new DeliveryFailure(string.Empty, "destination-relay-unavailable", true, null));

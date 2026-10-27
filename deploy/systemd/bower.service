@@ -1,6 +1,6 @@
 [Unit]
 Description=Bower Security Telemetry Collector
-Documentation=https://github.com/bower-security/bower
+Documentation=https://github.com/jusso-dev/Bower/blob/main/docs/deployment/installers.md
 After=network-online.target
 Wants=network-online.target
 
@@ -16,11 +16,15 @@ RestartSec=5s
 Environment=BOWER_LISTEN_URL=http://127.0.0.1:4319
 Environment=BOWER_QUEUE_PATH=/var/lib/bower/queue.db
 Environment=BOWER_POLICY_DIRECTORY=/etc/bower/policies
-# Put BOWER_INGEST_TOKEN_FILE, output and management settings here (mode 0600).
+# Output and management settings (root:bower 0640). Secrets go in files under
+# /etc/bower/secrets, never inline; see docs/deployment/installers.md.
 EnvironmentFile=-/etc/bower/bower.env
 StateDirectory=bower
+StateDirectoryMode=0700
 LogsDirectory=bower
 UMask=0077
+CapabilityBoundingSet=
+AmbientCapabilities=
 NoNewPrivileges=true
 PrivateTmp=true
 PrivateDevices=true

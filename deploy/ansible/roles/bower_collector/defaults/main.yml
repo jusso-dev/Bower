@@ -1,0 +1,29 @@
+---
+# present installs and configures the collector; absent uninstalls it (secrets removed).
+bower_state: present
+# absent only: also delete the queue, configuration and the bower account.
+bower_purge: false
+
+# deb or rpm built by CI (bower-collector_<version>-1_<arch>.deb or
+# bower-collector-<version>-1.<arch>.rpm), on the controller.
+bower_package: ""
+
+bower_collector_id: "{{ inventory_hostname_short }}"
+bower_environment: production
+# Management endpoint for token enrolment. Empty leaves management off.
+bower_management_endpoint: ""
+# One-time enrolment token (keep it in Ansible Vault). Written only while the collector
+# has not consumed it, never logged, and deleted by the collector once used.
+bower_enrolment_token: ""
+# Seconds to wait for the enrolment outcome; 0 skips the check.
+bower_enrolment_wait_seconds: 120
+
+# Controller paths of public keys trusted to sign packs and management commands, and of
+# signed packs to load.
+bower_pack_trusted_key: ""
+bower_command_trusted_key: ""
+bower_packs: []
+
+# Further BOWER_* settings for /etc/bower/bower.env. Never a secret value: point at a
+# file under /etc/bower/secrets instead.
+bower_settings: {}

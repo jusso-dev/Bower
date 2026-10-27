@@ -50,6 +50,10 @@ public static partial class CollectorApplication
         });
         // Per-request framework logs add volume without security value.
         builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
+        // Under the Windows service control manager (the MSI install) report start and stop
+        // to it and write warnings and errors to the Application event log (source
+        // Bower.Collector, registered by the MSI). A no-op everywhere else.
+        builder.Services.AddWindowsService(options => options.ServiceName = "Bower");
         builder.Services.Configure<HostOptions>(options =>
             // An unhandled worker fault is a delivery outage; stop so the supervisor restarts
             // the process instead of running a collector that silently stopped delivering.

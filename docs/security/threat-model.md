@@ -166,6 +166,34 @@ evidence.
   - Durability across the hop: the relay answers only after its queue commit, and the
     downstream marks an event delivered only on that answer, so a relay crash or lost
     response leads to a resend that deduplicates, never a loss or a second queue row.
+- Native installers (new trust boundaries: the package or MSI an administrator runs as
+  root or SYSTEM, and the offline bundle that carries a pre-seeded token to the host).
+  See [installers](../deployment/installers.md).
+  - Tampered package: packages are built in CI from the `publish` artefacts and signed
+    (rpm/deb GPG, Authenticode) only when the signing secrets are configured; until
+    then they are unsigned, the bundle says so (`UNSIGNED.txt`), and the Windows
+    installer warns or, with `-RequireSignature`, refuses. The bundle installers check
+    `SHA256SUMS` before installing; verify the archive itself out of band.
+  - Over-privileged service: Linux runs as the `bower` system account (no shell, no
+    capabilities, `ProtectSystem=strict`, writes only to `/var/lib/bower` and
+    `/var/spool/bower`). Windows runs as the virtual account `NT SERVICE\Bower`;
+    `%ProgramData%\Bower` does not inherit the ProgramData ACL, only SYSTEM and
+    Administrators control it, and the service can write only its state, enrolment
+    and spool folders. CI asserts both, including that no other principal has access.
+  - Pre-seeded token exposure: the token is never a package or MSI property (MSI logs
+    properties) or a command-line argument. The installer moves it into an owner-only
+    location and deletes the seed copy; the collector deletes its copy as soon as
+    management has consumed or refused it (`BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE`).
+    The token stays single use and expiring, so a copied bundle enrols at most one
+    collector, which still waits in `Pending`.
+  - Secrets left after uninstall: removal (not upgrade) deletes the management
+    credential, any unused token and the operator secrets folder (`/etc/bower/secrets`
+    and `bower.env` on Linux, `%ProgramData%\Bower\secrets` on Windows). CI proves it
+    on Ubuntu, Rocky Linux 9 and Windows. The queue is kept until purge because it may
+    hold events the destination has not acknowledged.
+  - Configuration tampering: settings files, trusted keys and packs are writable only by
+    root or Administrators. A trusted pack or command key planted by someone with that
+    access is outside Bower's control, as is any change such a user can make.
 - Management proxies: the management channel honours the standard proxy variables or
   an explicit proxy. A CA bundle adds roots for TLS-inspection proxies. Verification and
   host name checks are never disabled. Proxy URLs carrying credentials are refused, and
@@ -255,5 +283,15 @@ per-route `allowedSenders`, any allowed sender can reach any route. Syslog TLS
 certificates are read at start-up, so rotation needs a restart. Plain syslog has no
 application acknowledgement, so frames in flight when the collector stops are lost
 unless the sender retransmits.
+
+The installers delete files with `shred -u` (Linux, where available) or a plain delete
+(Windows). Neither guarantees the token bytes are gone from journaling, copy-on-write or
+SSD storage; the token's single use and short expiry are the control that matters. A
+token that management never sees (the host never reaches it) stays on disk in the
+owner-only enrolment folder until it is used, the package is removed or an operator
+deletes it. Any local user can create folders in `%ProgramData%`: `Install-BowerCollector.ps1`
+refuses a `%ProgramData%\Bower` not owned by SYSTEM or Administrators, but a plain
+`msiexec` install re-permissions an existing folder without changing its owner, so check
+the owner first when you install the MSI directly on a shared host.
 
 Treat pseudonymised identifiers as potentially personal information.

@@ -332,10 +332,7 @@ public sealed partial class ManagementStore(string databasePath)
 
         await UpdateHeartbeatV2Async(
             connection, transaction, collectorId, heartbeat, deliveryStatus, now, cancellationToken);
-        if (heartbeat.Redactions is { } redactions)
-        {
-            await RecordRedactionsAsync(connection, transaction, collectorId, redactions, now, cancellationToken);
-        }
+        await RecordRedactionsAsync(connection, transaction, collectorId, heartbeat.Redactions, now, cancellationToken);
 
         (IReadOnlyList<SignedCollectorCommand> commands, IReadOnlyList<string> acknowledged) = heartbeat.IsV2
             ? await ExchangeCommandsAsync(

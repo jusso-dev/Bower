@@ -231,6 +231,7 @@ public sealed partial class ManagementEnrolment(
         if (current is not null && string.Equals(current.CollectorId, settings.CollectorId, StringComparison.Ordinal)
             && (tokenHash == current.ConsumedTokenSha256 || tokenHash == current.RefusedTokenSha256))
         {
+            RemoveTokenAfterUse(tokenHash);
             if (!Enrolled)
             {
                 LogNotEnrolled(logger);
@@ -269,6 +270,7 @@ public sealed partial class ManagementEnrolment(
             {
                 Save(prepared with { PendingPrivateKeyPem = null, RefusedTokenSha256 = tokenHash });
                 LogEnrolmentRefused(logger, (int)response.StatusCode);
+                RemoveTokenAfterUse(tokenHash);
                 return;
             }
 
@@ -284,6 +286,7 @@ public sealed partial class ManagementEnrolment(
                 RefusedTokenSha256 = null
             });
             LogEnrolled(logger, issued.CredentialId, issued.Status);
+            RemoveTokenAfterUse(tokenHash);
         }
         finally
         {
@@ -469,6 +472,31 @@ public sealed partial class ManagementEnrolment(
         }
     }
 
+    /// <summary>
+    /// With <see cref="CollectorSettings.ManagementEnrolmentTokenRemoveAfterUse"/>, deletes the
+    /// token file once its outcome is recorded in the credential file. Only the token whose
+    /// hash was recorded is deleted, so a newer token written meanwhile is kept. A failure is
+    /// logged (never the token) and retried on the next enrolment attempt.
+    /// </summary>
+    private void RemoveTokenAfterUse(string tokenHash)
+    {
+        if (!settings.ManagementEnrolmentTokenRemoveAfterUse || settings.ManagementEnrolmentTokenFile is not { } file
+            || ReadToken() is not { } token || Sha256Hex.Of(token) != tokenHash)
+        {
+            return;
+        }
+
+        try
+        {
+            File.Delete(file);
+            LogTokenRemoved(logger);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            LogTokenNotRemoved(logger, exception.GetType().Name);
+        }
+    }
+
     private static string PublicKeyPem(string privateKeyPem)
     {
         using ECDsa key = ECDsa.Create();
@@ -536,6 +564,18 @@ public sealed partial class ManagementEnrolment(
         Level = LogLevel.Warning,
         Message = "Scheduled management credential rotation failed ({Code}); the current credential stays in use.")]
     private static partial void LogRotationFailed(ILogger logger, string code);
+
+    [LoggerMessage(
+        EventId = 1406,
+        Level = LogLevel.Information,
+        Message = "Used enrolment token file removed.")]
+    private static partial void LogTokenRemoved(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 1407,
+        Level = LogLevel.Warning,
+        Message = "Could not remove the used enrolment token file ({ErrorType}); delete it by hand.")]
+    private static partial void LogTokenNotRemoved(ILogger logger, string errorType);
 }
 
 /// <summary>

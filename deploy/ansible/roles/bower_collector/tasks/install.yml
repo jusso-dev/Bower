@@ -1,0 +1,179 @@
+---
+- name: Check the inputs
+  ansible.builtin.assert:
+    that:
+      - bower_package | length > 0
+      - bower_package is search('\.(deb|rpm)$')
+      - bower_enrolment_token | length == 0 or bower_management_endpoint | length > 0
+    fail_msg: Set bower_package to the deb or rpm; an enrolment token needs bower_management_endpoint.
+    quiet: true
+
+- name: Check the enrolment token is a bwe1 token
+  ansible.builtin.assert:
+    that:
+      - bower_enrolment_token | trim is match('^bwe1\.[A-Za-z0-9]+\.[A-Za-z0-9_-]+$')
+    quiet: true
+  no_log: true
+  when: bower_enrolment_token | length > 0
+
+- name: Compose the collector settings
+  ansible.builtin.set_fact:
+    _bower_token_sha256: "{{ (bower_enrolment_token | trim | hash('sha256')) if bower_enrolment_token else '' }}"
+    _bower_settings: >-
+      {{ {'BOWER_COLLECTOR_ID': bower_collector_id, 'BOWER_ENVIRONMENT': bower_environment}
+         | combine({'BOWER_MANAGEMENT_ENDPOINT': bower_management_endpoint,
+                    'BOWER_MANAGEMENT_AUTH': 'enrolment',
+                    'BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE': '/var/lib/bower/enrolment/enrolment-token',
+                    'BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE': 'true'}
+                   if bower_management_endpoint else {})
+         | combine({'BOWER_PACK_TRUSTED_KEYS': '/etc/bower/keys/pack-trusted.pem'} if bower_pack_trusted_key else {})
+         | combine({'BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS': '/etc/bower/keys/command-trusted.pem'}
+                   if bower_command_trusted_key else {})
+         | combine({'BOWER_PACKS': bower_packs | map('basename') | map('regex_replace', '^', '/etc/bower/packs/') | join(',')}
+                   if bower_packs else {})
+         | combine(bower_settings) }}
+
+- name: Check the settings are plain BOWER_ values with no inline secret
+  ansible.builtin.assert:
+    that:
+      - item.key is match('^BOWER_[A-Z0-9_]+$')
+      - item.key != 'BOWER_INGEST_TOKEN'
+      - (item.value | string) is match('^[A-Za-z0-9._:/@%+=,~-]*$')
+    fail_msg: "Unsupported setting {{ item.key }}: use BOWER_ keys, plain values and secret files."
+    quiet: true
+  loop: "{{ _bower_settings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Copy the package to the host
+  ansible.builtin.copy:
+    src: "{{ bower_package }}"
+    dest: "/var/tmp/{{ bower_package | basename }}"
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Install the deb
+  ansible.builtin.apt:
+    deb: "/var/tmp/{{ bower_package | basename }}"
+  when: bower_package is search('\.deb$')
+
+- name: Install the rpm
+  ansible.builtin.dnf:
+    name: "/var/tmp/{{ bower_package | basename }}"
+    state: present
+    disable_gpg_check: false
+  when: bower_package is search('\.rpm$')
+
+- name: Remove the copied package
+  ansible.builtin.file:
+    path: "/var/tmp/{{ bower_package | basename }}"
+    state: absent
+
+- name: Install the trusted pack key
+  ansible.builtin.copy:
+    src: "{{ bower_pack_trusted_key }}"
+    dest: /etc/bower/keys/pack-trusted.pem
+    owner: root
+    group: root
+    mode: "0644"
+  when: bower_pack_trusted_key | length > 0
+  notify: Restart bower
+
+- name: Install the trusted command key
+  ansible.builtin.copy:
+    src: "{{ bower_command_trusted_key }}"
+    dest: /etc/bower/keys/command-trusted.pem
+    owner: root
+    group: root
+    mode: "0644"
+  when: bower_command_trusted_key | length > 0
+  notify: Restart bower
+
+- name: Install signed packs
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/etc/bower/packs/{{ item | basename }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ bower_packs }}"
+  notify: Restart bower
+
+- name: Write the collector settings
+  ansible.builtin.lineinfile:
+    path: /etc/bower/bower.env
+    regexp: "^{{ item.key }}="
+    line: "{{ item.key }}={{ item.value }}"
+    owner: root
+    group: bower
+    mode: "0640"
+  loop: "{{ _bower_settings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  notify: Restart bower
+
+# Only the hash of a token the collector already exchanged or refused is on disk; the
+# private key never leaves the host.
+- name: Check whether the collector already used this token
+  ansible.builtin.command:
+    argv:
+      - grep
+      - -o
+      - -E
+      - '"(consumed|refused)TokenSha256":"{{ _bower_token_sha256 }}"'
+      - /var/lib/bower/management-credential/credential.json
+  register: _bower_token_used
+  changed_when: false
+  failed_when: false
+  when: _bower_token_sha256 | length > 0
+
+- name: Seed the one-time enrolment token
+  ansible.builtin.copy:
+    content: "{{ bower_enrolment_token | trim }}\n"
+    dest: /var/lib/bower/enrolment/enrolment-token
+    owner: bower
+    group: bower
+    mode: "0600"
+  no_log: true
+  when:
+    - _bower_token_sha256 | length > 0
+    - _bower_token_used.stdout | default('') | length == 0
+  notify: Restart bower
+
+- name: Start the collector
+  ansible.builtin.systemd_service:
+    name: bower.service
+    state: started
+    enabled: true
+
+- name: Apply changed settings
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for the enrolment outcome
+  ansible.builtin.command:
+    argv:
+      - grep
+      - -o
+      - -E
+      - '"(consumed|refused)TokenSha256":"{{ _bower_token_sha256 }}"'
+      - /var/lib/bower/management-credential/credential.json
+  register: _bower_enrolment
+  changed_when: false
+  failed_when: false
+  until: _bower_enrolment.stdout | length > 0
+  retries: "{{ (bower_enrolment_wait_seconds | int) // 2 }}"
+  delay: 2
+  when:
+    - _bower_token_sha256 | length > 0
+    - (bower_enrolment_wait_seconds | int) > 0
+
+- name: Check management accepted the token (the collector is now Pending approval)
+  ansible.builtin.assert:
+    that:
+      - _bower_enrolment.stdout is search('consumedTokenSha256')
+    fail_msg: Management refused the enrolment token, or enrolment was not confirmed in time.
+    success_msg: Enrolled; an approver approves the Pending collector in the console.
+  when:
+    - _bower_token_sha256 | length > 0
+    - (bower_enrolment_wait_seconds | int) > 0

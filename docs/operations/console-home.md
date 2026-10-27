@@ -98,8 +98,11 @@ counted, sent or shown.
   reports the running totals with `observedSince` (the process start).
 
 Management turns each report into the increase since the last one for the same
-`observedSince` (a new start, or a lower total, counts from zero) and adds it to a
-per-collector, per-day (UTC) bucket. Buckets are kept for 35 days. "This week" is
+`observedSince` (a later start counts from zero) and adds it to a per-collector,
+per-day (UTC) bucket. A report from an earlier start than one already accepted is
+ignored, and within one start a lower total adds nothing, so a late or replayed report
+is never counted twice. A heartbeat without `redactions` marks the collector as not
+reporting; its earlier counts stay. Buckets are kept for 35 days. "This week" is
 today (UTC) and the six days before it. Counts between a collector's last heartbeat and
 a crash are lost, so the totals are a floor.
 

@@ -1,0 +1,8 @@
+---
+- name: Install and configure the collector
+  ansible.builtin.include_tasks: install.yml
+  when: bower_state == "present"
+
+- name: Uninstall the collector
+  ansible.builtin.include_tasks: remove.yml
+  when: bower_state == "absent"

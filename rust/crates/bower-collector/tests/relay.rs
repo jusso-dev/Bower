@@ -913,6 +913,76 @@ fn plain_output(relay: &Url) -> RelayOutput {
     RelayOutput::new(reqwest::Client::new(), relay, "edge-01")
 }
 
+/// C# `StalledResponseBodyHoldsEveryBatchForRetryWithoutAcknowledgement`.
+#[tokio::test]
+async fn stalled_response_body_holds_every_batch_for_retry_without_acknowledgement() {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    struct StalledBody(Arc<AtomicBool>);
+    impl hyper::body::Body for StalledBody {
+        type Data = hyper::body::Bytes;
+        type Error = std::convert::Infallible;
+
+        fn poll_frame(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Option<Result<hyper::body::Frame<Self::Data>, Self::Error>>> {
+            self.0.store(true, Ordering::SeqCst);
+            std::task::Poll::Pending
+        }
+    }
+
+    let requests = Arc::new(AtomicUsize::new(0));
+    let reading = Arc::new(AtomicBool::new(false));
+    let (count, started) = (Arc::clone(&requests), Arc::clone(&reading));
+    let app = Router::new().route(
+        "/v1/relay/batches",
+        axum::routing::post(move |_body: String| {
+            count.fetch_add(1, Ordering::SeqCst);
+            let body = StalledBody(Arc::clone(&started));
+            async move { axum::response::Response::new(Body::new(body)) }
+        }),
+    );
+    let listeners = server::bind(&[SocketAddr::from(([127, 0, 0, 1], 0))])
+        .await
+        .unwrap();
+    let port = listeners[0].local_addr().unwrap().port();
+    let (stop, token) = shutdown::channel();
+    let host = tokio::spawn(server::serve(listeners, app, token));
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_millis(250))
+        .build()
+        .unwrap();
+    let output = RelayOutput::new(
+        client,
+        &Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap(),
+        "edge-01",
+    );
+    let events: Vec<_> = (0..=protocol::MAXIMUM_BATCH_EVENTS)
+        .map(|index| queued(&format!("e{index}"), &format!("f{index}"), "{}"))
+        .collect();
+
+    let result = tokio::time::timeout(Duration::from_secs(5), output.deliver(&events))
+        .await
+        .unwrap();
+
+    stop.cancel();
+    tokio::time::timeout(Duration::from_secs(5), host)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(requests.load(Ordering::SeqCst), 1);
+    assert!(reading.load(Ordering::SeqCst));
+    assert!(result.acknowledged_event_ids.is_empty());
+    assert_eq!(result.failures.len(), events.len());
+    assert!(result.failures.iter().all(|failure| {
+        failure.code == "destination-relay-unavailable"
+            && failure.is_retryable
+            && failure.is_destination_failure()
+    }));
+}
+
 /// C# `Output_AcknowledgesOnlyCommittedEventsAndSendsPayloadsUnchanged`.
 #[tokio::test]
 async fn output_acknowledges_only_committed_events_and_sends_payloads_unchanged() {

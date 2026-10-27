@@ -42,10 +42,36 @@ public sealed partial class ManagementStore
         SqliteConnection connection,
         SqliteTransaction transaction,
         string collectorId,
-        RedactionReport report,
+        RedactionReport? report,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
+        if (report is null)
+        {
+            // This heartbeat reports no counts (for example an older version): the collector
+            // no longer counts as reporting. Its earlier totals and buckets stay.
+            await CommandAsync(
+                connection,
+                transaction,
+                "UPDATE collectors SET redactions_observed_since = NULL WHERE id = $id;",
+                [("$id", collectorId)],
+                cancellationToken);
+            return;
+        }
+
+        string? accepted = await ScalarAsync(
+            connection,
+            transaction,
+            "SELECT redactions_observed_since FROM collectors WHERE id = $id;",
+            ("$id", collectorId),
+            cancellationToken);
+        if (accepted is not null && report.ObservedSince < Parse(accepted))
+        {
+            // A snapshot from an earlier process than the one already accepted: ignore it, so
+            // a late or replayed report is never counted again.
+            return;
+        }
+
         string since = Format(report.ObservedSince);
         string day = Day(now);
         await CommandAsync(
@@ -58,15 +84,22 @@ public sealed partial class ManagementStore
         {
             (string? previousSince, long previous) = await ReadRedactionTotalAsync(
                 connection, transaction, collectorId, count.Type, cancellationToken);
-            // Same process and not lower: the increase. A new process (or a lower total) restarted
-            // its count from zero, so everything it reports is new.
-            long increase = previousSince == since && count.Events >= previous
-                ? count.Events - previous
-                : count.Events;
-            if (increase == 0 && previousSince == since)
+            if (previousSince is not null && report.ObservedSince < Parse(previousSince))
             {
+                // This type's baseline belongs to a later process.
                 continue;
             }
+
+            bool sameProcess = previousSince == since;
+            if (sameProcess && count.Events <= previous)
+            {
+                // Same process: totals only grow. Nothing new, and a lower total never lowers
+                // the baseline (which would count the difference twice).
+                continue;
+            }
+
+            // Same process: the increase. A new process counts from zero, so all of it is new.
+            long increase = sameProcess ? count.Events - previous : count.Events;
 
             await CommandAsync(
                 connection,
