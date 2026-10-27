@@ -80,6 +80,7 @@ services:
       BOWER_COLLECTOR_ID: edge-cs
       BOWER_ENVIRONMENT: e2e
       BOWER_OUTPUT: relay
+      BOWER_PRODUCER_SCOPES_FILE: /run/bower/producer-scopes.json
       BOWER_RELAY_URL: https://bower-management:4453
       BOWER_RELAY_CLIENT_CERTIFICATE_FILE: /run/bower/client.crt
       BOWER_RELAY_CLIENT_KEY_FILE: /run/bower/client.key

@@ -106,6 +106,10 @@ for edge in edge-cs edge-rs; do
   openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 2 -subj "/CN=$edge" \
     -keyout "$work/$edge/client.key" -out "$work/$edge/client.crt" -addext extendedKeyUsage=clientAuth 2>/dev/null
   cp "$work/relay-ca.pem" "$work/$edge/"
+  # Local HTTP is loopback-only; authorize exactly the synthetic identity used by
+  # send(). Enrolment approval does not grant producer identity authorization.
+  jq -n '[{producer: "anonymous", application: {name: "RelayE2E", environment: "e2e"},
+    source: {ipAddress: "192.0.2.10"}}]' >"$work/$edge/producer-scopes.json"
 done
 pin() { openssl x509 -in "$work/$1/client.crt" -noout -fingerprint -sha256 | cut -d= -f2; }
 for relay in relay-cs relay-rs; do
