@@ -28,9 +28,10 @@ host name and other journal fields are never forwarded. A binary (array) `MESSAG
 quarantined with `transform-type-error`. Version 1.0.1 only adds `expectFields`
 assertions to its samples; parser, policy and privacy profile are unchanged.
 
-`windows-security-logon` 1.0.0 exposes one signed JSON parser (index 0) for records from
+`windows-security-logon` 1.0.1 exposes one signed JSON parser (index 0) for records from
 the [Windows Event Log source](../deployment/windows-event-log-source.md), subscribed
-to Security event 4625 only. Its transform program keeps only provider
+to Security event 4625 only. Its transform program explicitly requires the `Security`
+channel even if a subscription binds the pack to another channel, and keeps only provider
 `Microsoft-Windows-Security-Auditing` events with a source address (`data.IpAddress`
 must be an address; local console failures with `-` are not selected) and maps the
 NTSTATUS `data.SubStatus`, then `data.Status`, through a static table to the outcome

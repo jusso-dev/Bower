@@ -2,7 +2,7 @@ apiVersion: bower.security/v1
 kind: Pack
 metadata:
   id: windows-security-logon
-  version: 1.0.0
+  version: 1.0.1
   name: Windows failed network logons
   description: >-
     Failed network logons (Security event 4625) from the Bower Windows Event Log

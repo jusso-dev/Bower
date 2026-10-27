@@ -100,7 +100,8 @@ evidence.
   Event XML is bounded (64 KiB, no DTD or resolver) and flattened
   into a bounded record; publisher-rendered message strings are opt-in and, like every
   field, reach the envelope only through a signed pack mapping and redaction. Bookmarks
-  live in the queue database and move only after durable enqueue; event ids from
+  live in the queue database and move only after durable enqueue or a definitive drop
+  (including not-selected, rejected, invalid and oversized records); event ids from
   channel, computer, record id and creation time deduplicate re-reads. Counters and
   failure codes only. See [Windows Event Log source](../deployment/windows-event-log-source.md).
 - Event injection: the collector requires a shared bearer token
