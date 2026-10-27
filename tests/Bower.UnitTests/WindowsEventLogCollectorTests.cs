@@ -88,6 +88,10 @@ public sealed class WindowsEventLogCollectorTests
             Assert.Equal("""{"schemaVersion":1,"channel":"Security","recordId":184469}""", await command.ExecuteScalarAsync(cancellation));
         }
 
+        // Disposing the host returns SQLite handles to the pool. Release them before
+        // reading the database bytes: Windows rejects File.ReadAllBytes's share mode
+        // while a pooled connection still holds the database open.
+        SqliteConnection.ClearAllPools();
         foreach (string path in Directory.EnumerateFiles(directory.Path, "queue.db*"))
         {
             string bytes = Encoding.UTF8.GetString(await File.ReadAllBytesAsync(path, cancellation));

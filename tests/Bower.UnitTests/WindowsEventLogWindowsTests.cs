@@ -83,15 +83,20 @@ public sealed class WindowsEventLogWindowsTests
                 await PollUntil(restarted, sink, 3, cancellation);
                 Assert.Equal((1L, 0L), (restarted.Snapshot()[0].EventsRead, restarted.Snapshot()[0].Duplicates));
 
-                // Cleared log: whether or not record ids restart, the next event is collected.
-                long bookmark = restarted.Snapshot()[0].BookmarkRecordId!.Value;
+                // Observe the empty log before writing again. Windows can retain record
+                // IDs after a clear; the reset is determined by the range at poll time,
+                // not by the ID of an event written after that observation.
                 log.Clear();
+                Assert.Equal(0, (await restarted.PollOnceAsync("ci", cancellation)).Read);
+                Assert.Equal(1, restarted.Snapshot()[0].Resets);
                 log.WriteEntry("order=4 result=failure", EventLogEntryType.Warning, 1000);
                 await PollUntil(restarted, sink, 4, cancellation);
                 long recordId = long.Parse(
                     System.Text.Json.Nodes.JsonNode.Parse(sink.Records.Last())!["recordId"]!.GetValue<string>(),
                     System.Globalization.CultureInfo.InvariantCulture);
-                Assert.Equal(recordId <= bookmark ? 1 : 0, restarted.Snapshot()[0].Resets);
+                Assert.Equal(recordId, restarted.Snapshot()[0].BookmarkRecordId);
+                Assert.Equal(0, (await restarted.PollOnceAsync("ci", cancellation)).Read);
+                Assert.Equal(1, restarted.Snapshot()[0].Resets);
             }
 
             Assert.Equal(4, sink.Records.Count);
