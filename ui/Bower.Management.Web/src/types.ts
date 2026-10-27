@@ -426,3 +426,75 @@ export interface CollectorCredential {
   lastUsedAt: string | null;
   endedAt: string | null;
 }
+
+/** Traffic-light state. Always shown with words and an icon shape, never colour alone. */
+export type HomeState = "green" | "amber" | "red";
+
+/** What to do and the console page (a fixed route) where it is done. */
+export interface HomeFix {
+  action: string;
+  page: string;
+}
+
+export interface HomeAttention {
+  id: string;
+  state: HomeState;
+  message: string;
+  fix: HomeFix;
+  count: number;
+}
+
+/** One collector group (environment); the worst condition gives the state and the reason. */
+export interface HomeGroup {
+  name: string;
+  state: HomeState;
+  collectors: number;
+  healthy: number;
+  reason: string;
+  fix: HomeFix | null;
+  otherIssues: number;
+}
+
+/** Only "verified" is Sentinel query proof; "simulated" always says so. */
+export interface HomeSentinelProof {
+  state: "verified" | "simulated" | "in-progress" | "not-proven";
+  message: string;
+  at: string | null;
+  fix: HomeFix | null;
+}
+
+export interface HomeFlow {
+  state: HomeState;
+  summary: string;
+  sending: number;
+  enrolled: number;
+  /** Latest output acceptance a collector reported: not Sentinel proof. */
+  lastAcceptedAt: string | null;
+  proof: HomeSentinelProof;
+}
+
+/** Events this week in which Bower removed one kind of sensitive detail. Counts only. */
+export interface HomeRedaction {
+  type: string;
+  label: string;
+  events: number;
+}
+
+export interface HomeProtection {
+  since: string;
+  summary: string;
+  byType: HomeRedaction[];
+  collectorsReporting: number;
+  collectorsNotReporting: number;
+}
+
+/** GET /api/home: computed server side at query time. */
+export interface Home {
+  generatedAt: string;
+  state: HomeState;
+  flow: HomeFlow;
+  protection: HomeProtection;
+  attention: HomeAttention[];
+  groups: HomeGroup[];
+  groupsTotal: number;
+}

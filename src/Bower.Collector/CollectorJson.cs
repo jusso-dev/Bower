@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Bower.Core;
 using Bower.Jobs;
 
 namespace Bower.Collector;
@@ -119,6 +120,9 @@ internal sealed record CollectorHeartbeat(
     public IReadOnlyList<string> CommandCapabilities { get; init; } = [];
 
     public IReadOnlyList<CommandResultReport> CommandResults { get; init; } = [];
+
+    /// <summary>Queued events per redacted detector type since process start. Counts only.</summary>
+    public RedactionSnapshot? Redactions { get; init; }
 }
 
 /// <summary>

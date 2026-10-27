@@ -484,6 +484,7 @@ impl Collector {
                 heartbeat.commands = self.commands.clone();
                 heartbeat.delivery_activity = Some(Arc::clone(&self.delivery_activity));
                 heartbeat.enrolment = self.enrolment.clone();
+                heartbeat.telemetry = Some(Arc::clone(&self.telemetry));
                 if let Some(client) = &self.management_client {
                     heartbeat.client = client.clone();
                 }

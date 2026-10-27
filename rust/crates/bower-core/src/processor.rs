@@ -448,6 +448,12 @@ impl SecurityEventProcessor {
             },
             bytes_in,
         );
+        if enqueue.enqueued
+            && let Some(telemetry) = &self.telemetry
+        {
+            // Counted once per stored event: a duplicate or suppressed retry adds nothing.
+            telemetry.record_redactions(redaction.privacy_detected.as_deref().unwrap_or(&[]));
+        }
         let privacy_alert_event_id =
             self.try_enqueue_privacy_alert(&arranged, &redaction, collector, bytes_in)?;
 

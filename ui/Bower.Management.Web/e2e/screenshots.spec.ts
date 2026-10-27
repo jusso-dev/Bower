@@ -3,9 +3,28 @@ import path from "node:path";
 
 const screenshotDirectory = path.resolve(process.cwd(), "../../docs/images");
 
-test("capture polished desktop overview", async ({ page }, testInfo) => {
+test("capture plain-English home", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "readme-chromium");
   await page.goto("/");
+  await expect(page.getByRole("heading", { name: "What needs my attention?" })).toBeVisible();
+  await expect(page.getByText("Tax file numbers removed")).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => document.fonts.ready);
+  // The three answers and the groups only: the proof line depends on canary runs left by
+  // other tests, so it is not part of the image.
+  await page.getByRole("region", { name: "What was protected this week?" }).screenshot({
+    path: path.join(screenshotDirectory, "bower-management-home-protected.png"),
+    animations: "disabled"
+  });
+  await page.getByRole("region", { name: "Collector groups" }).screenshot({
+    path: path.join(screenshotDirectory, "bower-management-home-groups.png"),
+    animations: "disabled"
+  });
+});
+
+test("capture polished desktop overview", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "readme-chromium");
+  await page.goto("/overview");
   await expect(page.getByRole("heading", { name: "Fleet posture" })).toBeVisible();
   await expect(page.getByText("claims-api-03")).toBeVisible();
   await page.waitForLoadState("networkidle");
@@ -134,7 +153,7 @@ test("capture custom log parser workbench", async ({ page }, testInfo) => {
 
 test("capture polished mobile fleet view", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile-chromium");
-  await page.goto("/");
+  await page.goto("/overview");
   await expect(page.getByRole("heading", { name: "Fleet posture" })).toBeVisible();
   await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();

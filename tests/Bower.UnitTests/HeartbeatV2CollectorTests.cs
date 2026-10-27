@@ -312,6 +312,9 @@ public sealed class HeartbeatV2CollectorTests
         Assert.Equal(60, first["heartbeatIntervalSeconds"]!.GetValue<int>());
         Assert.Equal(["run-canary", "reload"], first["commandCapabilities"]!.AsArray().Select(item => item!.GetValue<string>()));
         Assert.Empty(first["commandResults"]!.AsArray());
+        // Redaction counts by type since process start: counts only, never values.
+        Assert.NotNull(first["redactions"]!["observedSince"]);
+        Assert.NotNull(first["redactions"]!["counts"]!.AsArray());
 
         JsonObject second = JsonNode.Parse(bodies[1])!.AsObject();
         JsonArray results = second["commandResults"]!.AsArray();

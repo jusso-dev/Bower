@@ -138,6 +138,9 @@ public sealed partial class ManagementStore(string databasePath)
             connection, "management_audit", "initiated_by_name", "TEXT NULL", cancellationToken);
         await InitializeSetupAsync(connection, cancellationToken);
         await InitializeEnrolmentAsync(connection, cancellationToken);
+        await AddColumnIfMissingAsync(
+            connection, "collectors", "redactions_observed_since", "TEXT NULL", cancellationToken);
+        await InitializeHomeAsync(connection, cancellationToken);
     }
 
     public async Task<CollectorRecord> RegisterAsync(
@@ -329,6 +332,11 @@ public sealed partial class ManagementStore(string databasePath)
 
         await UpdateHeartbeatV2Async(
             connection, transaction, collectorId, heartbeat, deliveryStatus, now, cancellationToken);
+        if (heartbeat.Redactions is { } redactions)
+        {
+            await RecordRedactionsAsync(connection, transaction, collectorId, redactions, now, cancellationToken);
+        }
+
         (IReadOnlyList<SignedCollectorCommand> commands, IReadOnlyList<string> acknowledged) = heartbeat.IsV2
             ? await ExchangeCommandsAsync(
                 connection, transaction, collectorId, heartbeat, principalObjectId, now, cancellationToken)
@@ -788,6 +796,7 @@ public sealed partial class ManagementStore(string databasePath)
             || heartbeat.DeadLettered is < 0 or > MaximumReportedCount
             || heartbeat.PrivacyProfileHash is { } privacyProfileHash && !IsPrivacyProfileHash(privacyProfileHash)
             || !ValidHeartbeatV2(heartbeat)
+            || !ValidRedactions(heartbeat.Redactions)
             || (heartbeat.Jobs?.Any(job =>
                 job is null
                 || !ValidText(job.Id, 128)

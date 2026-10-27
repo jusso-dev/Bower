@@ -1,8 +1,44 @@
 import { expect, test, type Page } from "@playwright/test";
 
-test("fleet overview reports real management state", async ({ page }, testInfo) => {
+test("home answers the three questions in plain English with fixes", async ({ page }) => {
   const consoleErrors = collectConsoleErrors(page);
   await page.goto("/");
+
+  await expect(page.getByRole("heading", { name: "Home", level: 1 })).toBeVisible();
+  const flow = page.getByRole("region", { name: "Is my data flowing?" });
+  await expect(flow.getByText(/sending events/)).toBeVisible();
+  // The stub collector never verifies, so the home view must never claim Sentinel proof.
+  await expect(flow.getByText(/^Proven:/)).toHaveCount(0);
+
+  const protectedRegion = page.getByRole("region", { name: "What was protected this week?" });
+  const removed = protectedRegion.getByRole("list", { name: "Sensitive details removed this week" });
+  await expect(removed.getByText("Tax file numbers removed")).toBeVisible();
+  await expect(removed.getByText("Email addresses removed")).toBeVisible();
+  await expect(removed.getByText("40", { exact: true })).toBeVisible();
+
+  const attention = page.getByRole("region", { name: "What needs my attention?" });
+  await expect(attention.getByText("1 collector has asked to join.")).toBeVisible();
+  await expect(attention.getByRole("link", { name: /^Go to Approvals for: 1 collector has asked to join/ }))
+    .toHaveAttribute("href", "/approvals");
+
+  const groups = page.getByRole("region", { name: "Collector groups" });
+  await expect(groups.getByRole("heading", { name: "production" })).toBeVisible();
+  await expect(groups.getByRole("heading", { name: "hr" })).toBeVisible();
+
+  await flow.getByRole("link", { name: "collectors" }).first().click();
+  await expect(page.getByRole("heading", { name: "Glossary" })).toBeVisible();
+  await expect(page.locator("#collector")).toBeFocused();
+
+  await page.goto("/");
+  await page.getByRole("link", { name: "See the detailed overview" }).click();
+  await expect(page.getByRole("heading", { name: "Fleet posture" })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  expect(consoleErrors).toEqual([]);
+});
+
+test("fleet overview reports real management state", async ({ page }, testInfo) => {
+  const consoleErrors = collectConsoleErrors(page);
+  await page.goto("/overview");
 
   await expect(page.getByRole("heading", { name: "Fleet posture" })).toBeVisible();
   if (testInfo.project.name === "readme-chromium") {
@@ -202,8 +238,10 @@ test("mobile navigation remains usable without horizontal overflow", async ({
   await page.goto("/");
 
   await page.getByRole("button", { name: "Open navigation" }).click();
-  await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
-  await page.getByRole("link", { name: "Collectors" }).click();
+  const navigation = page.getByRole("navigation", { name: "Primary navigation" });
+  await expect(navigation).toBeVisible();
+  // The home page links to Collectors too; use the navigation's link.
+  await navigation.getByRole("link", { name: "Collectors" }).click();
   await expect(page.getByRole("heading", { name: "Collectors" })).toBeVisible();
   await expect(page.getByText("finance-app-01")).toBeVisible();
   await expectNoHorizontalOverflow(page);

@@ -7,7 +7,7 @@ import {
   XCircle
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
-import type { GuidedCheck, GuidedState } from "../types";
+import type { GuidedCheck, GuidedState, HomeState } from "../types";
 
 /*
  * Guided-flow primitives shared by the setup wizard and later plain-language views.
@@ -150,6 +150,29 @@ export function WhyItMatters({ children }: { children: ReactNode }) {
     <p className="why-it-matters">
       <strong>Why this matters:</strong> {children}
     </p>
+  );
+}
+
+const lightLabels: Record<HomeState, string> = {
+  green: "All good",
+  amber: "Needs a look",
+  red: "Needs action now"
+};
+
+const lightIcons: Record<HomeState, typeof CheckCircle2> = {
+  green: CheckCircle2,
+  amber: TriangleAlert,
+  red: XCircle
+};
+
+/** A traffic light: "All good", "Needs a look" or "Needs action now", always words plus an icon shape. */
+export function TrafficLight({ state }: { state: HomeState }) {
+  const Icon = lightIcons[state];
+  return (
+    <span className={`traffic-light traffic-light--${state}`}>
+      <Icon aria-hidden="true" />
+      {lightLabels[state]}
+    </span>
   );
 }
 

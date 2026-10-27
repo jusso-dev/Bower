@@ -1,9 +1,11 @@
 import {
   Activity,
   Boxes,
+  CircleHelp,
   ClipboardCheck,
   FileLock,
   GitBranch,
+  House,
   KeyRound,
   ListChecks,
   Menu,
@@ -18,6 +20,8 @@ import { useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth";
 import { Brand } from "./components/ui";
+import { HomePage } from "./pages/HomePage";
+import { HelpPage } from "./pages/HelpPage";
 import { OverviewPage } from "./pages/OverviewPage";
 import { CollectorsPage } from "./pages/CollectorsPage";
 import { PipelinesPage } from "./pages/PipelinesPage";
@@ -30,7 +34,8 @@ import { SetupPage } from "./pages/SetupPage";
 import { EnrolmentPage } from "./pages/EnrolmentPage";
 
 const navItems = [
-  { to: "/", label: "Overview", icon: Activity },
+  { to: "/", label: "Home", icon: House },
+  { to: "/overview", label: "Overview", icon: Activity },
   { to: "/setup", label: "Setup", icon: ListChecks },
   { to: "/collectors", label: "Collectors", icon: Boxes },
   { to: "/pipelines", label: "Pipelines", icon: GitBranch },
@@ -39,7 +44,8 @@ const navItems = [
   { to: "/privacy-profiles", label: "Privacy profiles", icon: FileLock },
   { to: "/jobs", label: "Jobs", icon: Timer },
   { to: "/access", label: "Access", icon: KeyRound },
-  { to: "/audit", label: "Audit", icon: ScrollText }
+  { to: "/audit", label: "Audit", icon: ScrollText },
+  { to: "/help", label: "Help", icon: CircleHelp }
 ];
 
 export function App() {
@@ -139,7 +145,8 @@ export function App() {
           </div>
         )}
         <Routes>
-          <Route path="/" element={<OverviewPage />} />
+          <Route path="/" element={<HomePage />} />
+          <Route path="/overview" element={<OverviewPage />} />
           <Route path="/setup" element={<SetupPage />} />
           <Route path="/collectors" element={<CollectorsPage />} />
           <Route path="/pipelines" element={<PipelinesPage />} />
@@ -149,6 +156,7 @@ export function App() {
           <Route path="/jobs" element={<JobsPage />} />
           <Route path="/access" element={<AccessPage />} />
           <Route path="/audit" element={<AuditPage />} />
+          <Route path="/help" element={<HelpPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

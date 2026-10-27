@@ -17,7 +17,8 @@ pub use processor::{
     SourceKey, SuppressionCloseError,
 };
 pub use telemetry::{
-    IntakeMetricsSnapshot, PipelineMetricsRow, PipelineMetricsSnapshot, PipelineTelemetry,
+    IntakeMetricsSnapshot, MAXIMUM_REDACTION_TYPES, OTHER_REDACTION_TYPE, PipelineMetricsRow,
+    PipelineMetricsSnapshot, PipelineTelemetry, RedactionCount, RedactionSnapshot,
 };
 
 /// `Bower.Core.EventFingerprint.Create`.

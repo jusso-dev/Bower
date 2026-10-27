@@ -299,15 +299,24 @@ public sealed partial class ManagementStore
         return running.Count;
     }
 
-    public async Task<SetupCanaryRun?> LatestSetupCanaryRunAsync(CancellationToken cancellationToken)
+    public Task<SetupCanaryRun?> LatestSetupCanaryRunAsync(CancellationToken cancellationToken) =>
+        ReadSetupCanaryRunAsync(string.Empty, cancellationToken);
+
+    /// <summary>The latest run Bower verified by querying the destination: the only delivery proof.</summary>
+    public Task<SetupCanaryRun?> LatestVerifiedSetupCanaryRunAsync(CancellationToken cancellationToken) =>
+        ReadSetupCanaryRunAsync(
+            $"WHERE state = '{SetupCanaryRunStates.Completed}' AND mode = '{Bower.Evidence.EvidenceModes.Verified}'",
+            cancellationToken);
+
+    private async Task<SetupCanaryRun?> ReadSetupCanaryRunAsync(string filter, CancellationToken cancellationToken)
     {
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
         await using SqliteCommand command = connection.CreateCommand();
         command.CommandText =
-            """
+            $"""
             SELECT id, profile, workspace_id, table_name, state, mode, outcome, collector_accepted, event_id,
                    latency_seconds, signed, bundle IS NOT NULL AS has_bundle, requested_by_name, requested_at, completed_at
-            FROM setup_canary_runs ORDER BY rowid DESC LIMIT 1;
+            FROM setup_canary_runs {filter} ORDER BY rowid DESC LIMIT 1;
             """;
         await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))

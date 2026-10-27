@@ -39,6 +39,16 @@ home view, guided source setup and help) share the primitives in
   example "Verified in Sentinel") but never the tone.
 - `CheckList`: validation results; every result that does not pass shows "How to fix".
 - `WhyItMatters`: the one-line reason for a step.
+- `TrafficLight`: "All good", "Needs a look" or "Needs action now" (green, amber, red),
+  always words plus an icon shape. The home view uses it for the flow answer, each
+  attention item and each collector group.
+- `GlossaryText` (`components/glossary.tsx`): links the first mention of each glossary
+  term in a sentence to its entry on the Help page (`/help#<term>`). Server sentences
+  stay plain text; nothing is parsed as markup.
+
+The home view (`/`) answers "Is my data flowing?", "What was protected this week?" and
+"What needs my attention?" from `/api/home`. Every amber or red reason ends in "How to
+fix:" with a link to the page that does it; the detailed Overview is at `/overview`.
 
 Copy is plain English, leads with the point and names the role or page that acts. The
 API authors check messages and fixes, so the console never shows raw Azure or framework

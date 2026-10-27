@@ -22,7 +22,7 @@ use bower_collector::management_commands::{
 use bower_collector::shutdown::ApplicationLifetime;
 use bower_contracts::DurableEventStore;
 use bower_contracts::time::{Clock, Timestamp};
-use bower_core::{CollectorIdentity, SecurityEventProcessor};
+use bower_core::{CollectorIdentity, PipelineTelemetry, SecurityEventProcessor};
 use serde_json::{Value, json};
 
 const COLLECTOR_ID: &str = "edge-01";
@@ -603,6 +603,11 @@ async fn heartbeat_runs_verified_commands_and_reports_results_next_time() {
     }))
     .await;
     let mut exchange = exchange(&settings(directory.path(), &base, &keys.public_key_pem));
+    let telemetry = Arc::new(PipelineTelemetry::new(Arc::new(
+        bower_contracts::time::SystemClock,
+    )));
+    telemetry.record_redactions(&["au.tfn".into(), "secret.aws:access-key".into()]);
+    exchange.heartbeat.telemetry = Some(Arc::clone(&telemetry));
 
     exchange.heartbeat.run().await.unwrap();
     let admitted = tokio::time::timeout(Duration::from_secs(5), exchange.inbox.recv())
@@ -629,6 +634,12 @@ async fn heartbeat_runs_verified_commands_and_reports_results_next_time() {
         json!(["run-canary", "reload"])
     );
     assert_eq!(first["commandResults"], json!([]));
+    // Redaction counts by detector type only: never values.
+    assert_eq!(
+        first["redactions"]["counts"],
+        json!([{"type": "au.tfn", "events": 1}, {"type": "secret.aws", "events": 1}])
+    );
+    assert!(first["redactions"]["observedSince"].is_string());
     // #81 compatibility: the per-source report keeps its existing shape.
     assert_eq!(first["sources"][0]["status"], "healthy");
 

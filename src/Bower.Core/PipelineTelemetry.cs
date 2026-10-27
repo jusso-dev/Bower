@@ -28,11 +28,18 @@ public sealed class PipelineTelemetry(TimeProvider clock)
     /// </summary>
     public const string PrivacyAlertCapacityReason = "privacy-alert-capacity";
 
+    /// <summary>Most detector types counted by name; later new types count as <see cref="OtherRedactionType"/>.</summary>
+    public const int MaximumRedactionTypes = 64;
+
+    /// <summary>The bucket for detector types beyond <see cref="MaximumRedactionTypes"/>.</summary>
+    public const string OtherRedactionType = "other";
+
     private readonly DateTimeOffset startedAt = clock.GetUtcNow();
     private readonly Lock gate = new();
     private readonly Dictionary<(ProcessingStage, string, DecisionAction), Counter> counters = [];
     private readonly Dictionary<(string, string), SourceActivity> sources = [];
     private readonly HashSet<(string, string)> dirty = [];
+    private readonly Dictionary<string, long> redactions = new(StringComparer.Ordinal);
     private long attemptedRequests;
     private long attemptedBytes;
     private long capacityRefusals;
@@ -149,6 +156,53 @@ public sealed class PipelineTelemetry(TimeProvider clock)
                     dirty.Add(sourceKey);
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Counts one queued event for each detector type (the id before any <c>:</c> sub-kind)
+    /// whose values were removed or masked before the event was stored. Type ids only: never
+    /// values, paths or event ids.
+    /// </summary>
+    public void RecordRedactions(IReadOnlyList<string>? detected)
+    {
+        if (detected is not { Count: > 0 })
+        {
+            return;
+        }
+
+        lock (gate)
+        {
+            HashSet<string> counted = new(StringComparer.Ordinal);
+            foreach (string id in detected)
+            {
+                int colon = id.IndexOf(':', StringComparison.Ordinal);
+                string type = colon > 0 ? id[..colon] : id;
+                // One slot stays free for the overflow bucket.
+                if (!redactions.ContainsKey(type) && redactions.Count >= MaximumRedactionTypes - 1)
+                {
+                    type = OtherRedactionType;
+                }
+
+                if (counted.Add(type))
+                {
+                    redactions[type] = redactions.GetValueOrDefault(type) + 1;
+                }
+            }
+        }
+    }
+
+    /// <summary>Queued events per redacted detector type since <see cref="StartedAt"/>, ordinal by type.</summary>
+    public RedactionSnapshot RedactionSnapshot()
+    {
+        lock (gate)
+        {
+            return new RedactionSnapshot(
+                startedAt,
+                redactions
+                    .OrderBy(item => item.Key, StringComparer.Ordinal)
+                    .Select(item => new RedactionCount(item.Key, item.Value))
+                    .ToArray());
         }
     }
 
@@ -306,6 +360,15 @@ public sealed record IntakeMetricsSnapshot(
     long PrivacyAlertRefusedBytes,
     DateTimeOffset? LastRefusalAt,
     string? LastRefusalReason);
+
+/// <summary>
+/// Redaction counters since <see cref="ObservedSince"/> (process start): queued events per
+/// detector type whose values were removed or masked. A restart starts a new count.
+/// </summary>
+public sealed record RedactionSnapshot(DateTimeOffset ObservedSince, IReadOnlyList<RedactionCount> Counts);
+
+/// <summary>Queued events in which a detector type removed or masked at least one value.</summary>
+public sealed record RedactionCount(string Type, long Events);
 
 public sealed record PipelineMetricsRow(
     string Stage,

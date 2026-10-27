@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Azure.Core;
 using Bower.Abstractions;
+using Bower.Core;
 using Bower.Jobs;
 using Bower.Packs;
 
@@ -24,7 +25,8 @@ public sealed partial class ManagementHeartbeatJob(
     ManagementCommandProcessor? commands = null,
     DeliveryActivity? deliveryActivity = null,
     TimeSpan? exchangeTimeout = null,
-    ManagementEnrolment? enrolment = null)
+    ManagementEnrolment? enrolment = null,
+    PipelineTelemetry? telemetry = null)
 {
     public const string Id = "management-heartbeat";
     public const string HttpClientName = "bower-management";
@@ -148,7 +150,8 @@ public sealed partial class ManagementHeartbeatJob(
                     LastSuccessfulDeliveryAt = deliveryActivity?.LastSuccessfulDeliveryAt,
                     LastCanary = commands?.Ledger.LastCanary,
                     CommandCapabilities = commands?.Capabilities ?? [],
-                    CommandResults = results
+                    CommandResults = results,
+                    Redactions = telemetry?.RedactionSnapshot()
                 },
                 CollectorJsonContext.Default.CollectorHeartbeat));
         // One budget for the whole exchange, body included: a stalled body cannot hold the

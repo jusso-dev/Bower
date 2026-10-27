@@ -244,6 +244,12 @@ public sealed class SecurityEventProcessor(
                 enqueue.Enqueued ? Encoding.UTF8.GetByteCount(payload) : 0,
                 new SourceKey(arranged.Application.Name, arranged.Application.Environment)),
             bytesIn);
+        if (enqueue.Enqueued)
+        {
+            // Counted once per stored event: a duplicate or suppressed retry adds nothing.
+            telemetry?.RecordRedactions(redaction.PrivacyDetected);
+        }
+
         string? privacyAlertEventId = await TryEnqueuePrivacyAlertAsync(
             arranged,
             redaction,

@@ -29,7 +29,7 @@ const collectors = [
   { id: "finance-prod-01", machine: "finance-app-01", queue: 3, delivery: "healthy", retention: "Succeeded", deadLettered: 0, ledger: 48211 },
   { id: "claims-prod-03", machine: "claims-api-03", queue: 1294, delivery: "degraded", retention: "Failed", deadLettered: 3, ledger: 902114 },
   { id: "records-prod-04", machine: "records-app-04", queue: 0, delivery: "healthy", retention: "Succeeded", deadLettered: 0, ledger: 7310 },
-  { id: "hr-legacy-02", machine: "hr-app-02" }
+  { id: "hr-legacy-02", machine: "hr-app-02", environment: "hr" }
 ];
 
 function reports(collector) {
@@ -53,7 +53,7 @@ for (const collector of collectors) {
   await call("POST", "/api/collectors/register", {
     collectorId: collector.id,
     machineName: collector.machine,
-    environment: "production",
+    environment: collector.environment ?? "production",
     version: "0.1.0",
     configurationHash: "sha256:c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4",
     policyHash: "sha256:4f2a9c1e7b3d58a6c0e2f91b4d7a8c3e5f6b1a2d9c0e7f84b3a5d6c1e2f9a7b8",
@@ -70,6 +70,26 @@ for (const [id, reason] of approvals) {
   await call("POST", `/api/approvals/${id}/approve`, { reason });
 }
 
+// Counts by detector type only, never values: the home view's "what was protected this week".
+const redactions = {
+  "finance-prod-01": {
+    observedSince: minutesAgo(600),
+    counts: [
+      { type: "au.tfn", events: 12 },
+      { type: "fin.credit-card", events: 4 },
+      { type: "id.email", events: 31 },
+      { type: "secret.api-key", events: 2 }
+    ]
+  },
+  "claims-prod-03": {
+    observedSince: minutesAgo(300),
+    counts: [
+      { type: "au.medicare", events: 7 },
+      { type: "id.email", events: 9 }
+    ]
+  }
+};
+
 for (const collector of collectors.filter((item) => item.delivery)) {
   await call("POST", `/api/collectors/${collector.id}/heartbeat`, {
     version: "0.1.0",
@@ -79,6 +99,7 @@ for (const collector of collectors.filter((item) => item.delivery)) {
     deliveryStatus: collector.delivery,
     deadLettered: collector.deadLettered,
     ledger: { sequence: collector.ledger, hash: `preview-ledger-${collector.ledger}` },
+    redactions: redactions[collector.id] ?? null,
     ...reports(collector),
     jobs: [
       { id: "management-heartbeat", schedule: "* * * * *", lastRunAt: minutesAgo(0.5), lastState: "Succeeded", nextRunAt: minutesAhead(0.5) },
