@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Reflection;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Bower.Management.Api;
 using Bower.Pipeline;
 using Microsoft.AspNetCore.Builder;
@@ -548,6 +550,27 @@ public sealed class CustomLogPreviewPrivacyTests
         {
             Environment.SetEnvironmentVariable("BOWER_CUSTOM_LOG_ROOTS", previousRoots);
         }
+    }
+
+    [Fact]
+    public void ParserPatterns_HaveNoWallClockTimeout()
+    {
+        // A 100 ms match timeout made the preview depend on machine load: the lazily built
+        // non-backtracking automaton timed out on a cold first match under CPU pressure and
+        // valid samples previewed as invalid. Patterns are linear and input is bounded.
+        Regex[] patterns =
+        [
+            .. typeof(CustomLogParser).Assembly.GetTypes()
+                .SelectMany(type => type.GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+                .Where(method => method.IsDefined(typeof(GeneratedRegexAttribute), inherit: false))
+                .Select(method => (Regex)method.Invoke(null, null)!),
+            (Regex)typeof(CustomLogParser)
+                .GetMethod("CreateSafeRegex", BindingFlags.Static | BindingFlags.NonPublic)!
+                .Invoke(null, ["^(?<action>\\S+)$"])!
+        ];
+
+        Assert.True(patterns.Length >= 4, $"Expected the parser patterns, found {patterns.Length}.");
+        Assert.All(patterns, regex => Assert.Equal(Regex.InfiniteMatchTimeout, regex.MatchTimeout));
     }
 
     private static Task<HttpResponseMessage> PostPreviewAsync(
