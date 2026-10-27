@@ -2,7 +2,7 @@
 <!--
   Bower collector MSI (#112). Built in CI with WiX v5 from the `publish` job artefact:
 
-    wix build -arch x64 -d Version=0.1.0 -d Dist=<artefact> -d Policies=policies\default
+    wix build -ext WixToolset.Util.wixext -arch x64 -d Version=0.1.0 -d Dist=<artefact> -d Policies=policies\default
               -o bower-collector-0.1.0-x64.msi deploy\installers\windows\Bower.wxs
 
   Installs the Native AOT collector as the auto-start service "Bower" running as the
@@ -23,7 +23,7 @@
   deletes the management credential, any unused token and %ProgramData%\Bower\secrets;
   the queue in %ProgramData%\Bower\state stays, as it may hold unacknowledged events.
 -->
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Package Name="Bower Collector" Manufacturer="Bower" Version="$(var.Version)"
            UpgradeCode="1B809EE5-8A1D-4B96-805F-21D66C1CF58E" Scope="perMachine"
            InstallerVersion="500" Compressed="yes">
@@ -104,11 +104,12 @@
                         Account="NT SERVICE\Bower">
           <ServiceConfig DelayedAutoStart="yes" ServiceSid="unrestricted"
                          FailureActionsWhen="failedToStopOrReturnedError" OnInstall="yes" OnReinstall="yes" />
-          <ServiceConfigFailureActions ResetPeriod="86400" OnInstall="yes" OnReinstall="yes">
-            <Failure Action="restartService" Delay="5000" />
-            <Failure Action="restartService" Delay="5000" />
-            <Failure Action="restartService" Delay="30000" />
-          </ServiceConfigFailureActions>
+          <!-- The native MSI failure-actions table fails with access denied when
+               configuring restart actions. WiX opens the service with the required
+               rights and supports rollback of the recovery configuration. -->
+          <util:ServiceConfig FirstFailureActionType="restart" SecondFailureActionType="restart"
+                              ThirdFailureActionType="restart" ResetPeriodInDays="1"
+                              RestartServiceDelayInSeconds="5" />
         </ServiceInstall>
         <ServiceControl Id="BowerServiceControl" Name="Bower" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
         <RegistryValue Root="HKLM" Key="SYSTEM\CurrentControlSet\Services\Bower" Name="Environment" Type="multiString">

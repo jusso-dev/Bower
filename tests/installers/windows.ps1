@@ -112,6 +112,10 @@ try {
     Assert-That ($service.StartName -eq 'NT SERVICE\Bower') "service runs as $($service.StartName)"
     Assert-That ($service.StartMode -eq 'Auto') "service start mode is $($service.StartMode)"
     Assert-That ($service.State -eq 'Running') "service is $($service.State)"
+    $recovery = & sc.exe qfailure Bower | Out-String
+    Assert-That ($LASTEXITCODE -eq 0) 'cannot read service recovery settings'
+    Assert-That ($recovery -match 'RESET_PERIOD\s+:\s+86400') 'service recovery does not reset after one day'
+    Assert-That ([regex]::Matches($recovery, 'RESTART\s+--\s+Delay = 5000').Count -eq 3) 'service recovery must restart after five seconds for all three actions'
     Assert-That ((& sc.exe showsid Bower | Out-String).Contains($serviceSid)) 'service SID differs from the one in Bower.wxs'
     $process = Get-CimInstance Win32_Process -Filter "ProcessId=$($service.ProcessId)"
     $owner = Invoke-CimMethod -InputObject $process -MethodName GetOwner

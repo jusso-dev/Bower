@@ -3,7 +3,8 @@
 Builds the Bower collector MSI and the Windows offline bundle from a `publish` job artefact.
 
 .DESCRIPTION
-Runs in CI on windows-latest with WiX v5 (`wix` .NET tool) on PATH. When
+Runs in CI on windows-latest with WiX v5 (`wix` .NET tool) on PATH and its matching
+WixToolset.Util.wixext extension installed. When
 BOWER_SIGN_PFX_FILE and BOWER_SIGN_PFX_PASSWORD are set, the executables and the MSI
 are Authenticode-signed (certificate imported into the CurrentUser store, so the
 password never reaches a command line) and timestamped; otherwise the bundle carries
@@ -79,7 +80,7 @@ if ($signing) {
 }
 
 $msi = Join-Path $out "bower-collector-$Version-$Architecture.msi"
-& wix build -arch $Architecture -d "Version=$msiVersion" -d "Dist=$dist" `
+& wix build -ext WixToolset.Util.wixext -arch $Architecture -d "Version=$msiVersion" -d "Dist=$dist" `
     -d "Policies=$(Join-Path $repo 'policies\default')" -o $msi (Join-Path $here 'Bower.wxs')
 if ($LASTEXITCODE -ne 0) { throw "wix build failed with $LASTEXITCODE." }
 if ($signing) {

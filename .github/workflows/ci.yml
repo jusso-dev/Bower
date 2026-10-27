@@ -404,7 +404,11 @@ jobs:
           pattern: bower-win-*
           path: artefacts
       - name: Install WiX
-        run: dotnet tool install --global wix --version "$env:WIX_VERSION"
+        run: |
+          dotnet tool install --global wix --version "$env:WIX_VERSION"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          wix extension add --global "WixToolset.Util.wixext/$env:WIX_VERSION"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Load the code-signing certificate (skipped when the secret is not configured)
         env:
           SIGNING_PFX: ${{ secrets.BOWER_WINDOWS_SIGNING_PFX }}

@@ -39,13 +39,15 @@ C#) and `Timestamp`.
 
 ### Build and test tools for the native installers (#112)
 
-None of these ship in a package or run on a collector host.
+The build tools do not run on collector hosts. The WiX Util extension embeds a native
+custom action in the MSI that runs only during installation, repair or upgrade.
 
 | Tool | Used by | Why | Alternatives considered |
 |---|---|---|---|
 | [nfpm](https://github.com/goreleaser/nfpm) 2.48.0 (MIT), static binary downloaded in CI and checked against a pinned SHA-256 | `package-linux` job | Builds the deb and the rpm from one manifest (`deploy/installers/linux/nfpm.yaml`) with the same files, modes and maintainer scripts, and signs both with one GPG key when configured. | `dpkg-deb` plus `rpmbuild` (preinstalled and installable on the runner, but two manifests to keep in step, and an rpm spec that rebuilds nothing); fpm (Ruby gem tree). |
 | WiX Toolset 5.0.2 (`wix` .NET tool from nuget.org, MS-RL) | `package-windows` job | Authors the MSI declaratively: service install as a virtual account, folder ACLs from SDDL, remembered properties, upgrade rules. Pinned to v5 deliberately: WiX v6 and later are under the Open Source Maintenance Fee EULA, which v7 enforces and which a person, not CI, must accept for the organisation. Upgrading needs that decision first. | WiX v3 (.NET Framework, end of life); msitools `wixl` (subset of WiX, no service ACLs); MSIX (no Windows service support for this model). |
 | `ansible-core` 2.21.5 (via `uvx`, GPL-3.0) | `install-linux` job | Runs the example role (`deploy/ansible`) against the runner to prove it installs, enrols, is idempotent and uninstalls cleanly. The role uses `ansible.builtin` modules only, so no collection is installed. | Testing the role only with `--syntax-check` (does not prove it works). |
+| `WixToolset.Util.wixext` 5.0.2 (MS-RL) | Windows MSI service recovery | Configures restart actions with the required service access rights and rollback support. Pinned to the same version as WiX; adds no collector runtime dependency. | The native MSI failure-actions table fails with error 5 on the Windows install runner; a shell custom action would require our own upgrade and rollback implementation. |
 | `rockylinux/rockylinux:9-ubi-init` (container image, pinned by digest) | `install-linux` job | A RHEL 9 family host with systemd as PID 1, so the rpm install test exercises the real unit, account and maintainer scripts on a GitHub runner. | AlmaLinux init images (equivalent; one is enough); a RHEL VM (not available on GitHub runners). |
 | `actions/download-artifact` v8.0.2 (pinned SHA) | packaging and install jobs | Consumes the existing `publish` artefacts so packages contain exactly the binaries CI built and tested, and passes packages to the install tests. | Rebuilding the binaries in each packaging job (slower, and no longer the same artefacts). |
 

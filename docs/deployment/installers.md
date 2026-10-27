@@ -134,6 +134,10 @@ yet; the MSI rewrites the service `Environment` value on repair and upgrade, so 
 there do not persist. Warnings and errors go to the Application event log (source
 `Bower.Collector`).
 
+Service recovery restarts the collector five seconds after each failure and resets
+the failure count after one day. The MSI uses the WiX Util service configuration
+action; the Windows install test verifies the installed recovery settings.
+
 #### Intune, ConfigMgr and Group Policy
 
 - **Intune (Win32 app).** Package the bundle folder with the Win32 Content Prep Tool.
