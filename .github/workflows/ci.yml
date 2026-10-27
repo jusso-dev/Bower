@@ -499,8 +499,17 @@ jobs:
       - name: Service and installer diagnostics
         if: failure()
         run: |
-          Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Service Control Manager' } -MaxEvents 20 -ErrorAction SilentlyContinue |
-            Format-List TimeCreated, Id, Message
-          Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = 'Bower.Collector' } -MaxEvents 20 -ErrorAction SilentlyContinue |
-            Format-List TimeCreated, Id, Message
-          Get-ChildItem -LiteralPath $env:RUNNER_TEMP -Filter '*install*.log' | ForEach-Object { Get-Content -LiteralPath $_.FullName -Tail 80 }
+          $ErrorActionPreference = 'Continue'
+          foreach ($provider in 'Service Control Manager', 'MsiInstaller', 'Bower.Collector', 'Application Error', '.NET Runtime') {
+            Write-Output "== $provider"
+            $log = if ($provider -eq 'Service Control Manager') { 'System' } else { 'Application' }
+            try {
+              Get-WinEvent -FilterHashtable @{ LogName = $log; ProviderName = $provider } -MaxEvents 10 -ErrorAction Stop |
+                Format-List TimeCreated, Id, Message
+            } catch { Write-Output "(none: $($_.Exception.Message))" }
+          }
+          # msiexec logs hold no secret values; show the failing action.
+          Get-ChildItem -LiteralPath $env:RUNNER_TEMP -Filter '*install*.log' | ForEach-Object {
+            Write-Output "== $($_.Name)"
+            Select-String -LiteralPath $_.FullName -Pattern 'Return value 3' -Context 30, 2 | Select-Object -First 1 | Out-String -Width 300
+          }

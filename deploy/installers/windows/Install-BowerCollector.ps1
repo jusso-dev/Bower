@@ -77,7 +77,9 @@ $ErrorActionPreference = 'Stop'
 $script:MaximumTokenBytes = 1024
 $script:TokenPattern = '^bwe1\.[A-Za-z0-9]+\.[A-Za-z0-9_-]+$'
 # Property values go on the msiexec command line: no quotes, spaces or MSI brackets.
-$script:SafeValuePattern = '^[A-Za-z0-9._:/\\@%+=,~-]*\z'
+# Must match the ReadOnly SDDL in Bower.wxs (the last SID is NT SERVICE\Bower).
+$script:DataFolderSddl = 'D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;S-1-5-80-3437565569-4244630927-521338199-147183979-3886342086)'
+$script:SafeValuePattern ='^[A-Za-z0-9._:/\\@%+=,~-]*\z'
 
 function Test-BowerSafeValue {
     [CmdletBinding()]
@@ -153,6 +155,31 @@ function Get-BowerMsiArgument {
         }
     }
     return $arguments
+}
+
+function Initialize-BowerDataFolder {
+    <#
+    Creates %ProgramData%\Bower with the same protected ACL the MSI applies (SYSTEM and
+    Administrators full control, NT SERVICE\Bower read). An existing folder must be owned by
+    SYSTEM or Administrators: one created by another user could be re-permissioned by them.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string] $Path)
+    if (Test-Path -LiteralPath $Path) {
+        $owner = (Get-Acl -LiteralPath $Path).GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+        if ($owner -notin 'S-1-5-18', 'S-1-5-32-544') {
+            throw "$Path is owned by $owner, not SYSTEM or Administrators; remove it and run again."
+        }
+        return
+    }
+    $security = New-Object System.Security.AccessControl.DirectorySecurity
+    $security.SetSecurityDescriptorSddlForm($script:DataFolderSddl)
+    if ($PSVersionTable.PSEdition -eq 'Core') {
+        [System.IO.FileSystemAclExtensions]::Create((New-Object System.IO.DirectoryInfo($Path)), $security)
+    }
+    else {
+        [System.IO.Directory]::CreateDirectory($Path, $security) | Out-Null
+    }
 }
 
 function Install-BowerCollector {
@@ -248,21 +275,37 @@ function Install-BowerCollector {
         Write-Error $_.Exception.Message -ErrorAction Continue
         return 2
     }
+    # The service loads keys and packs when the MSI starts it, so they go in first. The
+    # data folder gets the MSI's protected ACL now; one created by someone else is refused.
+    if ($properties.Contains('PACKTRUSTEDKEYS') -or $properties.Contains('COMMANDTRUSTEDKEYS') -or $seedPacks.Count -gt 0) {
+        try {
+            Initialize-BowerDataFolder -Path $data
+        }
+        catch {
+            Write-Error $_.Exception.Message -ErrorAction Continue
+            return 2
+        }
+        foreach ($folder in $keys, $packs) {
+            if (-not (Test-Path -LiteralPath $folder -PathType Container)) {
+                New-Item -ItemType Directory -Path $folder | Out-Null
+            }
+        }
+        # New files inherit the folder ACL: Administrators change them, the service reads.
+        if ($properties.Contains('PACKTRUSTEDKEYS')) {
+            Copy-Item -LiteralPath $PackTrustedKeyFile -Destination $properties.PACKTRUSTEDKEYS -Force
+        }
+        if ($properties.Contains('COMMANDTRUSTEDKEYS')) {
+            Copy-Item -LiteralPath $CommandTrustedKeyFile -Destination $properties.COMMANDTRUSTEDKEYS -Force
+        }
+        foreach ($pack in $seedPacks) {
+            Copy-Item -LiteralPath $pack.FullName -Destination (Join-Path $packs $pack.Name) -Force
+        }
+    }
+
     $process = Start-Process -FilePath 'msiexec.exe' -ArgumentList $arguments -Wait -PassThru
     if ($process.ExitCode -notin 0, 3010) {
         Write-Error "msiexec failed with exit code $($process.ExitCode); see $LogPath." -ErrorAction Continue
         return $process.ExitCode
-    }
-
-    # Keys and packs inherit the folder ACL: Administrators change them, the service reads.
-    if ($properties.Contains('PACKTRUSTEDKEYS')) {
-        Copy-Item -LiteralPath $PackTrustedKeyFile -Destination $properties.PACKTRUSTEDKEYS -Force
-    }
-    if ($properties.Contains('COMMANDTRUSTEDKEYS')) {
-        Copy-Item -LiteralPath $CommandTrustedKeyFile -Destination $properties.COMMANDTRUSTEDKEYS -Force
-    }
-    foreach ($pack in $seedPacks) {
-        Copy-Item -LiteralPath $pack.FullName -Destination (Join-Path $packs $pack.Name) -Force
     }
 
     $tokenHash = $null

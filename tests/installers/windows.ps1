@@ -117,6 +117,8 @@ try {
     $owner = Invoke-CimMethod -InputObject $process -MethodName GetOwner
     Assert-That ("$($owner.Domain)\$($owner.User)" -eq 'NT SERVICE\Bower') "collector process runs as $($owner.Domain)\$($owner.User)"
 
+    $owner = (Get-Acl -LiteralPath $data).GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+    Assert-That (@('S-1-5-18', 'S-1-5-32-544') -contains $owner) "%ProgramData%\Bower is owned by $owner"
     Assert-Folder $data 'Read'
     Assert-Folder (Join-Path $data 'secrets') 'Read'
     Assert-Folder (Join-Path $data 'keys') 'Read'
