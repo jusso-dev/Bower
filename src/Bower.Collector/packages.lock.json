@@ -195,6 +195,9 @@
           "YamlDotNet": "[18.1.0, )"
         }
       },
+      "bower.source.syslog": {
+        "type": "Project"
+      },
       "Azure.Identity": {
         "type": "CentralTransitive",
         "requested": "[1.21.0, )",

@@ -535,7 +535,8 @@
           "Bower.Jobs": "[1.0.0, )",
           "Bower.Output.AmaSpool": "[1.0.0, )",
           "Bower.Output.AzureLogsIngestion": "[1.0.0, )",
-          "Bower.Packs": "[1.0.0, )"
+          "Bower.Packs": "[1.0.0, )",
+          "Bower.Source.Syslog": "[1.0.0, )"
         }
       },
       "bower.contracts": {
@@ -702,6 +703,9 @@
           "Microsoft.Data.SqlClient": "[7.1.1, )",
           "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.13, )"
         }
+      },
+      "bower.source.syslog": {
+        "type": "Project"
       },
       "AWSSDK.S3": {
         "type": "CentralTransitive",

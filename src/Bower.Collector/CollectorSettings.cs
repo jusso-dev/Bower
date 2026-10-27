@@ -107,6 +107,9 @@ public sealed record CollectorSettings
     /// <summary>Directory for the verifiable long-term archive (BOWER_ARCHIVE_PATH).</summary>
     public string? ArchivePath { get; init; }
 
+    /// <summary>JSON file of syslog listeners and pack routes (BOWER_SYSLOG_CONFIG).</summary>
+    public string? SyslogConfigPath { get; init; }
+
     public string? ManagementScope { get; init; }
 
     /// <summary>
@@ -227,7 +230,8 @@ public sealed record CollectorSettings
                 ?? ManagementAuthenticationModes.Entra,
             ManagementEnrolmentTokenFile = Blank(read("BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE")),
             SourceExpectationsPath = Blank(read("BOWER_SOURCE_EXPECTATIONS")),
-            ArchivePath = Blank(read("BOWER_ARCHIVE_PATH"))
+            ArchivePath = Blank(read("BOWER_ARCHIVE_PATH")),
+            SyslogConfigPath = Blank(read("BOWER_SYSLOG_CONFIG"))
         };
         settings.Validate();
         return settings;
@@ -445,6 +449,11 @@ public sealed record CollectorSettings
         if (ArchivePath is not null)
         {
             material += '\u001f' + "archive:" + ArchivePath;
+        }
+
+        if (SyslogConfigPath is not null)
+        {
+            material += '\u001f' + "syslog:" + SyslogConfigPath;
         }
 
         if (UsesManagedPrivacyProfile)

@@ -73,6 +73,15 @@ evidence.
   access tokens are never logged or stored by Bower.
 - Destination redirection: endpoint/DCR values are explicit and endpoint requires
   HTTPS. Signed configuration and Azure resource validation remain required.
+- Syslog listeners (new network trust boundary, `BOWER_SYSLOG_CONFIG`): bind loopback
+  by default and refuse a non-loopback address unless the protocol is TLS (optionally
+  with client certificates) or `allowInsecureNonLoopback` is set; a per-listener
+  sender allow-list; strict UTF-8 RFC 5424/3164 parsing with stable failure codes;
+  64 KiB frames, connection caps, a per-frame idle timeout against slow loris, bounded
+  submissions and a bounded UDP buffer. Accepting a sender never accepts its events:
+  only a route to an active signed pack parser that selects the record, then
+  redaction and policy, can queue one. Counters only; no frame content is logged or
+  exposed. See [syslog source](../deployment/syslog-source.md).
 - Event injection: the collector requires a shared bearer token
   (`BOWER_INGEST_TOKEN`, compared in constant time) whenever it listens beyond
   loopback and refuses to start without one. Kubernetes manifests add a
@@ -186,5 +195,12 @@ is bound to one collector and grants only that collector's heartbeat role. The
 credential file is protected by file permissions only (owner-only on Unix, the
 directory ACL on Windows); there is no hardware-backed key storage yet. A collector
 offline past its credential's 30 days needs a new token and a new approval.
+
+UDP syslog senders can be spoofed (the allow-list checks only the source address) and
+UDP is best effort. Syslog hostname and app-name are sender-claimed: without a
+per-route `allowedSenders`, any allowed sender can reach any route. Syslog TLS
+certificates are read at start-up, so rotation needs a restart. Plain syslog has no
+application acknowledgement, so frames in flight when the collector stops are lost
+unless the sender retransmits.
 
 Treat pseudonymised identifiers as potentially personal information.

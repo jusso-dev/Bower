@@ -52,6 +52,10 @@ internal sealed record StatusResponse(
     /// <summary>Adaptive request concurrency of the output; omitted when it has none.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Bower.Abstractions.OutputConcurrencySnapshot? Delivery { get; init; }
+
+    /// <summary>Syslog listener counters; omitted when BOWER_SYSLOG_CONFIG is not set. Metadata only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<Bower.Source.Syslog.SyslogListenerStatus>? Syslog { get; init; }
 }
 
 internal sealed record StatusPolicyResponse(

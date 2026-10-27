@@ -1,0 +1,675 @@
+using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Security;
+using System.Net.Sockets;
+using System.Security.Authentication;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using System.Threading.Channels;
+
+namespace Bower.Source.Syslog;
+
+/// <summary>What happened to one record handed to the collector.</summary>
+public enum SyslogSubmitOutcome
+{
+    /// <summary>Durably enqueued. This is the acknowledgement point.</summary>
+    Queued,
+    Duplicate,
+    Suppressed,
+
+    /// <summary>The pack parser's filter did not select the record.</summary>
+    NotSelected,
+
+    /// <summary>Policy rejected or quarantined the event.</summary>
+    Rejected,
+
+    /// <summary>The record does not satisfy the pack parser's field types.</summary>
+    Invalid,
+    TooLarge,
+
+    /// <summary>Queue at capacity or ingest gated: TCP waits and retries, UDP drops.</summary>
+    Unavailable
+}
+
+/// <summary>Collector side of the source: pack parser, redaction, policy and durable enqueue.</summary>
+public interface ISyslogSink
+{
+    ValueTask<SyslogSubmitOutcome> SubmitAsync(
+        SyslogListenerOptions listener,
+        SyslogRoute route,
+        string record,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>Per-listener counters since start. Metadata only: no frame content, ever.</summary>
+public sealed record SyslogListenerStatus(
+    string Id,
+    string Protocol,
+    string Endpoint,
+    long ActiveConnections,
+    long ConnectionsAccepted,
+    long ConnectionsRejected,
+    long SendersDenied,
+    long TlsHandshakeFailures,
+    long FramesReceived,
+    long BytesReceived,
+    long Queued,
+    long Duplicates,
+    long Suppressed,
+    long NotRouted,
+    long NotSelected,
+    long Rejected,
+    long ParserErrors,
+    long Malformed,
+    long Oversized,
+    long FramingErrors,
+    long Timeouts,
+    long Dropped,
+    long Retries,
+    long SubmitFailures,
+    long ReceiveErrors,
+    DateTimeOffset? LastFrameAt);
+
+/// <summary>
+/// TCP (RFC 6587 octet counting and LF framing), TLS and UDP syslog listeners.
+/// <para>
+/// TCP and TLS: each connection handles one frame at a time and reads the next frame only
+/// after the sink has durably enqueued (or definitively dropped) the current one, so a full
+/// queue stops reading and TCP flow control pushes back on the sender. Plain syslog has no
+/// application acknowledgement: frames buffered here or in the kernel when the process
+/// stops are lost unless the sender retransmits. UDP is best effort: datagrams are queued
+/// in a bounded buffer and dropped (and counted) when it is full or the queue is at capacity.
+/// </para>
+/// </summary>
+public sealed class SyslogSource : IAsyncDisposable
+{
+    /// <summary>Datagrams buffered per UDP listener before new ones are dropped.</summary>
+    public const int UdpQueueCapacity = 256;
+
+    /// <summary>Submissions in flight across all listeners; others wait (and stop reading).</summary>
+    public const int MaximumConcurrentSubmissions = 16;
+
+    private readonly ISyslogSink sink;
+    private readonly TimeProvider clock;
+    private readonly List<Listener> listeners;
+    private readonly SemaphoreSlim gate = new(MaximumConcurrentSubmissions);
+    private readonly CancellationTokenSource stopping = new();
+    private readonly ConcurrentDictionary<Task, byte> running = new();
+    private Dictionary<string, IPEndPoint> endpoints = [];
+    private int started;
+    private int disposed;
+
+    public SyslogSource(SyslogSourceConfiguration configuration, ISyslogSink sink, TimeProvider? clock = null)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(sink);
+        this.sink = sink;
+        this.clock = clock ?? TimeProvider.System;
+        listeners = [.. configuration.Listeners.Select(options => new Listener(options))];
+    }
+
+    /// <summary>Wait before retrying a frame the queue could not take yet.</summary>
+    public TimeSpan RetryDelay { get; init; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>Bound endpoints by listener id (after <see cref="StartAsync"/>).</summary>
+    public IReadOnlyDictionary<string, IPEndPoint> Endpoints => endpoints;
+
+    /// <summary>Binds every listener (failing start-up on any error), then starts serving.</summary>
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+        if (Interlocked.Exchange(ref started, 1) != 0)
+        {
+            throw new InvalidOperationException("Syslog source is already started.");
+        }
+
+        Dictionary<string, IPEndPoint> bound = new(StringComparer.Ordinal);
+        try
+        {
+            foreach (Listener listener in listeners)
+            {
+                SyslogListenerOptions options = listener.Options;
+                listener.Tls = options.Protocol == "tls" ? LoadTls(options) : null;
+                IPAddress address = IPAddress.Parse(options.Address);
+                bool datagram = options.Protocol == "udp";
+                Socket socket = datagram
+                    ? new Socket(address.AddressFamily, SocketType.Dgram, ProtocolType.Udp)
+                    : new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+                listener.Socket = socket;
+                socket.Bind(new IPEndPoint(address, options.Port));
+                if (!datagram)
+                {
+                    socket.Listen(Math.Min(options.MaximumConnections, 512));
+                }
+
+                IPEndPoint local = (IPEndPoint)socket.LocalEndPoint!;
+                listener.Endpoint = local.ToString();
+                bound[options.Id] = local;
+            }
+        }
+        catch
+        {
+            foreach (Listener listener in listeners)
+            {
+                listener.Socket?.Dispose();
+            }
+
+            throw;
+        }
+
+        endpoints = bound;
+        CancellationToken token = stopping.Token;
+        foreach (Listener listener in listeners)
+        {
+            Track(listener.Options.Protocol == "udp"
+                ? Task.Run(() => ServeUdpAsync(listener, token), CancellationToken.None)
+                : Task.Run(() => AcceptAsync(listener, token), CancellationToken.None));
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public IReadOnlyList<SyslogListenerStatus> Snapshot() => [.. listeners.Select(listener => listener.Snapshot())];
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref disposed, 1) != 0)
+        {
+            return;
+        }
+
+        await stopping.CancelAsync();
+        foreach (Listener listener in listeners)
+        {
+            listener.Socket?.Dispose();
+        }
+
+        try
+        {
+            await Task.WhenAll(running.Keys);
+        }
+        catch (Exception exception) when (exception is OperationCanceledException or SocketException or ObjectDisposedException or IOException)
+        {
+            // Stopping: connections and loops end by cancellation or a closed socket.
+        }
+
+        stopping.Dispose();
+        gate.Dispose();
+    }
+
+    private void Track(Task task)
+    {
+        running.TryAdd(task, 0);
+        _ = task.ContinueWith(
+            completed => running.TryRemove(completed, out _),
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+    }
+
+    /// <summary>Wait after a failed accept or UDP receive: 100 ms, doubling to 1 s, reset by a success.</summary>
+    internal static TimeSpan NextAcceptBackoff(TimeSpan current) =>
+        current <= TimeSpan.Zero
+            ? TimeSpan.FromMilliseconds(100)
+            : TimeSpan.FromTicks(Math.Min(current.Ticks * 2, TimeSpan.FromSeconds(1).Ticks));
+
+    private async Task AcceptAsync(Listener listener, CancellationToken cancellationToken)
+    {
+        TimeSpan backoff = TimeSpan.Zero;
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            Socket socket;
+            try
+            {
+                socket = await listener.Socket!.AcceptAsync(cancellationToken);
+                backoff = TimeSpan.Zero;
+            }
+            catch (Exception exception) when (exception is OperationCanceledException or ObjectDisposedException)
+            {
+                return;
+            }
+            catch (SocketException)
+            {
+                // A reset before accept completed, or descriptor exhaustion: back off instead
+                // of spinning, then keep listening.
+                backoff = NextAcceptBackoff(backoff);
+                try
+                {
+                    await Task.Delay(backoff, clock, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+
+                continue;
+            }
+
+            IPAddress sender = NormaliseSender(((IPEndPoint)socket.RemoteEndPoint!).Address);
+            if (!listener.Options.Allows(sender))
+            {
+                Interlocked.Increment(ref listener.Counters.SendersDenied);
+                socket.Dispose();
+                continue;
+            }
+
+            if (Interlocked.Increment(ref listener.Counters.ActiveConnections) > listener.Options.MaximumConnections)
+            {
+                Interlocked.Decrement(ref listener.Counters.ActiveConnections);
+                Interlocked.Increment(ref listener.Counters.ConnectionsRejected);
+                socket.Dispose();
+                continue;
+            }
+
+            Interlocked.Increment(ref listener.Counters.ConnectionsAccepted);
+            Track(Task.Run(() => ServeConnectionAsync(listener, socket, sender, cancellationToken), CancellationToken.None));
+        }
+    }
+
+    private async Task ServeConnectionAsync(Listener listener, Socket socket, IPAddress sender, CancellationToken cancellationToken)
+    {
+        TimeSpan idle = TimeSpan.FromSeconds(listener.Options.IdleTimeoutSeconds);
+        NetworkStream network = new(socket, ownsSocket: true);
+        Stream stream = network;
+        try
+        {
+            if (listener.Tls is { } tls)
+            {
+                SslStream secure = new(network, leaveInnerStreamOpen: false);
+                stream = secure;
+                using CancellationTokenSource handshake = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                handshake.CancelAfter(idle);
+                try
+                {
+                    await secure.AuthenticateAsServerAsync(tls, handshake.Token);
+                }
+                catch (Exception exception) when (!cancellationToken.IsCancellationRequested
+                    && exception is AuthenticationException or IOException or OperationCanceledException or System.ComponentModel.Win32Exception)
+                {
+                    Interlocked.Increment(ref listener.Counters.TlsHandshakeFailures);
+                    return;
+                }
+            }
+
+            SyslogFrameReader reader = new(stream, listener.Options.MaximumMessageBytes);
+            string senderText = sender.ToString();
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                SyslogFrameResult result;
+                using (CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+                {
+                    // The whole next frame must arrive within the idle timeout: a sender that
+                    // trickles bytes (slow loris) is closed as surely as an idle one.
+                    deadline.CancelAfter(idle);
+                    try
+                    {
+                        result = await reader.ReadFrameAsync(deadline.Token);
+                    }
+                    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                    {
+                        Interlocked.Increment(ref listener.Counters.Timeouts);
+                        return;
+                    }
+                }
+
+                if (result.IsEnd)
+                {
+                    return;
+                }
+
+                if (result.Failure is { } failure)
+                {
+                    Interlocked.Increment(ref failure == SyslogFailures.FrameTooLarge
+                        ? ref listener.Counters.Oversized
+                        : ref listener.Counters.FramingErrors);
+                    return;
+                }
+
+                listener.Received(result.Frame.Length, clock.GetUtcNow());
+                if (!await HandleFrameAsync(listener, senderText, result.Frame, waitWhenUnavailable: true, cancellationToken))
+                {
+                    return;
+                }
+            }
+        }
+        catch (Exception exception) when (exception is OperationCanceledException or IOException or SocketException or ObjectDisposedException)
+        {
+            // Peer reset, shutdown or a closed socket: the connection simply ends.
+        }
+        finally
+        {
+            await stream.DisposeAsync();
+            Interlocked.Decrement(ref listener.Counters.ActiveConnections);
+        }
+    }
+
+    private async Task ServeUdpAsync(Listener listener, CancellationToken cancellationToken)
+    {
+        Channel<(string Sender, byte[] Frame)> queue = Channel.CreateBounded<(string, byte[])>(
+            new BoundedChannelOptions(UdpQueueCapacity) { SingleReader = true, SingleWriter = true, FullMode = BoundedChannelFullMode.Wait });
+        Task worker = Task.Run(async () =>
+        {
+            try
+            {
+                await foreach ((string sender, byte[] frame) in queue.Reader.ReadAllAsync(cancellationToken))
+                {
+                    await HandleFrameAsync(listener, sender, frame, waitWhenUnavailable: false, cancellationToken);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Stopping.
+            }
+        }, CancellationToken.None);
+
+        Socket socket = listener.Socket!;
+        byte[] buffer = new byte[65_536];
+        EndPoint any = new IPEndPoint(socket.AddressFamily == AddressFamily.InterNetwork ? IPAddress.Any : IPAddress.IPv6Any, 0);
+        TimeSpan backoff = TimeSpan.Zero;
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                SocketReceiveFromResult received;
+                try
+                {
+                    received = await socket.ReceiveFromAsync(buffer, SocketFlags.None, any, cancellationToken);
+                    backoff = TimeSpan.Zero;
+                }
+                catch (SocketException exception) when (exception.SocketErrorCode == SocketError.MessageSize)
+                {
+                    Interlocked.Increment(ref listener.Counters.Oversized);
+                    continue;
+                }
+                catch (SocketException exception) when (exception.SocketErrorCode == SocketError.ConnectionReset)
+                {
+                    // ICMP port unreachable reported on Windows; not a datagram.
+                    continue;
+                }
+                catch (SocketException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    // Any other receive error (NetworkReset, NoBufferSpaceAvailable): count it,
+                    // back off as accept does so a persistent error cannot spin, keep listening.
+                    Interlocked.Increment(ref listener.Counters.ReceiveErrors);
+                    backoff = NextAcceptBackoff(backoff);
+                    await Task.Delay(backoff, clock, cancellationToken);
+                    continue;
+                }
+
+                IPAddress sender = NormaliseSender(((IPEndPoint)received.RemoteEndPoint).Address);
+                if (!listener.Options.Allows(sender))
+                {
+                    Interlocked.Increment(ref listener.Counters.SendersDenied);
+                    continue;
+                }
+
+                int length = received.ReceivedBytes;
+                if (length > 0 && buffer[length - 1] == (byte)'\n')
+                {
+                    length--;
+                    if (length > 0 && buffer[length - 1] == (byte)'\r')
+                    {
+                        length--;
+                    }
+                }
+
+                listener.Received(length, clock.GetUtcNow());
+                if (length > listener.Options.MaximumMessageBytes)
+                {
+                    Interlocked.Increment(ref listener.Counters.Oversized);
+                    continue;
+                }
+
+                if (!queue.Writer.TryWrite((sender.ToString(), buffer.AsSpan(0, length).ToArray())))
+                {
+                    Interlocked.Increment(ref listener.Counters.Dropped);
+                }
+            }
+        }
+        catch (Exception exception) when (exception is OperationCanceledException or ObjectDisposedException or SocketException)
+        {
+            // Stopping: cancellation, disposal, or a socket error raised while stopping.
+        }
+        finally
+        {
+            queue.Writer.TryComplete();
+            await worker;
+        }
+    }
+
+    /// <summary>
+    /// Parse, route, build the record and submit. Returns false when the connection should
+    /// close (the sink failed, so the frame was not durably accepted).
+    /// </summary>
+    private async Task<bool> HandleFrameAsync(
+        Listener listener,
+        string sender,
+        ReadOnlyMemory<byte> frame,
+        bool waitWhenUnavailable,
+        CancellationToken cancellationToken)
+    {
+        SyslogListenerOptions options = listener.Options;
+        DateTimeOffset receivedAt = clock.GetUtcNow();
+        if (!SyslogParser.TryParse(frame.Span, receivedAt, out SyslogMessage? message, out _))
+        {
+            Interlocked.Increment(ref listener.Counters.Malformed);
+            return true;
+        }
+
+        if (options.Route(message, IPAddress.Parse(sender)) is not { } route)
+        {
+            Interlocked.Increment(ref listener.Counters.NotRouted);
+            return true;
+        }
+
+        string record;
+        try
+        {
+            record = SyslogRecord.Build(message, frame.Span, options.Id, options.Protocol, sender, receivedAt);
+        }
+        catch (SyslogFormatException)
+        {
+            Interlocked.Increment(ref listener.Counters.Oversized);
+            return true;
+        }
+
+        while (true)
+        {
+            SyslogSubmitOutcome outcome;
+            await gate.WaitAsync(cancellationToken);
+            try
+            {
+                outcome = await sink.SubmitAsync(options, route, record, cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                Interlocked.Increment(ref listener.Counters.SubmitFailures);
+                return false;
+            }
+            finally
+            {
+                gate.Release();
+            }
+
+            switch (outcome)
+            {
+                case SyslogSubmitOutcome.Unavailable when waitWhenUnavailable:
+                    Interlocked.Increment(ref listener.Counters.Retries);
+                    await Task.Delay(RetryDelay, clock, cancellationToken);
+                    continue;
+                case SyslogSubmitOutcome.Unavailable:
+                    Interlocked.Increment(ref listener.Counters.Dropped);
+                    break;
+                case SyslogSubmitOutcome.Queued:
+                    Interlocked.Increment(ref listener.Counters.Queued);
+                    break;
+                case SyslogSubmitOutcome.Duplicate:
+                    Interlocked.Increment(ref listener.Counters.Duplicates);
+                    break;
+                case SyslogSubmitOutcome.Suppressed:
+                    Interlocked.Increment(ref listener.Counters.Suppressed);
+                    break;
+                case SyslogSubmitOutcome.NotSelected:
+                    Interlocked.Increment(ref listener.Counters.NotSelected);
+                    break;
+                case SyslogSubmitOutcome.Invalid:
+                    Interlocked.Increment(ref listener.Counters.ParserErrors);
+                    break;
+                case SyslogSubmitOutcome.TooLarge:
+                    Interlocked.Increment(ref listener.Counters.Oversized);
+                    break;
+                default:
+                    Interlocked.Increment(ref listener.Counters.Rejected);
+                    break;
+            }
+
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Sender identity for allow-lists, routes, <c>senderAddress</c> and event ids: IPv4-mapped
+    /// IPv6 becomes IPv4, and an IPv6 interface scope (<c>fe80::1%2</c>) is dropped because it
+    /// is host-local and the Rust port never includes it.
+    /// </summary>
+    internal static IPAddress NormaliseSender(IPAddress address) =>
+        address.IsIPv4MappedToIPv6 ? address.MapToIPv4()
+        : address.AddressFamily == AddressFamily.InterNetworkV6 && address.ScopeId != 0 ? new IPAddress(address.GetAddressBytes())
+        : address;
+
+    private static SslServerAuthenticationOptions LoadTls(SyslogListenerOptions options)
+    {
+        SyslogTlsOptions tls = options.Tls!;
+        try
+        {
+            X509Certificate2Collection chain = [];
+            chain.ImportFromPemFile(tls.CertificateFile);
+            using X509Certificate2 pem = X509Certificate2.CreateFromPemFile(tls.CertificateFile, tls.PrivateKeyFile);
+            // Re-import so the key is usable by SslStream on every platform (PEM keys are ephemeral).
+            X509Certificate2 server = X509CertificateLoader.LoadPkcs12(pem.Export(X509ContentType.Pkcs12), null);
+            X509Certificate2Collection intermediates = [.. chain.Skip(1)];
+            X509Certificate2Collection? authorities = null;
+            if (tls.ClientCertificateAuthorityFile is { } authorityFile)
+            {
+                authorities = [];
+                authorities.ImportFromPemFile(authorityFile);
+                if (authorities.Count == 0)
+                {
+                    throw new CryptographicException("No client certificate authority.");
+                }
+            }
+
+            // Client chains are built by SslStream with this policy, which adds the
+            // intermediates the sender supplies; only the configured CAs are trusted.
+            X509ChainPolicy? clientPolicy = null;
+            if (authorities is not null)
+            {
+                clientPolicy = new X509ChainPolicy
+                {
+                    TrustMode = X509ChainTrustMode.CustomRootTrust,
+                    RevocationMode = X509RevocationMode.NoCheck
+                };
+                clientPolicy.CustomTrustStore.AddRange(authorities);
+                clientPolicy.ApplicationPolicy.Add(new Oid("1.3.6.1.5.5.7.3.2"));
+            }
+
+            return new SslServerAuthenticationOptions
+            {
+                ServerCertificateContext = SslStreamCertificateContext.Create(server, intermediates, offline: true),
+                // Same protocol floor as the Rust port (rustls: TLS 1.2 and 1.3).
+                EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
+                ClientCertificateRequired = authorities is not null,
+                CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
+                CertificateChainPolicy = clientPolicy,
+                RemoteCertificateValidationCallback = authorities is null
+                    ? null
+                    : (_, certificate, _, errors) => certificate is not null && errors == SslPolicyErrors.None
+            };
+        }
+        catch (Exception exception) when (exception is CryptographicException or IOException or ArgumentException or UnauthorizedAccessException)
+        {
+            // Never echo key material, file contents or the underlying parser message.
+            throw new InvalidOperationException($"Syslog listener {options.Id}: TLS certificate or key could not be loaded.");
+        }
+    }
+
+    private sealed class Listener(SyslogListenerOptions options)
+    {
+        public SyslogListenerOptions Options { get; } = options;
+
+        public Socket? Socket { get; set; }
+
+        public SslServerAuthenticationOptions? Tls { get; set; }
+
+        public string Endpoint { get; set; } = string.Empty;
+
+        public Counters Counters { get; } = new();
+
+        public void Received(int bytes, DateTimeOffset now)
+        {
+            Interlocked.Increment(ref Counters.FramesReceived);
+            Interlocked.Add(ref Counters.BytesReceived, bytes);
+            Interlocked.Exchange(ref Counters.LastFrameTicks, now.UtcTicks);
+        }
+
+        public SyslogListenerStatus Snapshot()
+        {
+            long last = Interlocked.Read(ref Counters.LastFrameTicks);
+            return new SyslogListenerStatus(
+                Options.Id,
+                Options.Protocol,
+                Endpoint,
+                Interlocked.Read(ref Counters.ActiveConnections),
+                Interlocked.Read(ref Counters.ConnectionsAccepted),
+                Interlocked.Read(ref Counters.ConnectionsRejected),
+                Interlocked.Read(ref Counters.SendersDenied),
+                Interlocked.Read(ref Counters.TlsHandshakeFailures),
+                Interlocked.Read(ref Counters.FramesReceived),
+                Interlocked.Read(ref Counters.BytesReceived),
+                Interlocked.Read(ref Counters.Queued),
+                Interlocked.Read(ref Counters.Duplicates),
+                Interlocked.Read(ref Counters.Suppressed),
+                Interlocked.Read(ref Counters.NotRouted),
+                Interlocked.Read(ref Counters.NotSelected),
+                Interlocked.Read(ref Counters.Rejected),
+                Interlocked.Read(ref Counters.ParserErrors),
+                Interlocked.Read(ref Counters.Malformed),
+                Interlocked.Read(ref Counters.Oversized),
+                Interlocked.Read(ref Counters.FramingErrors),
+                Interlocked.Read(ref Counters.Timeouts),
+                Interlocked.Read(ref Counters.Dropped),
+                Interlocked.Read(ref Counters.Retries),
+                Interlocked.Read(ref Counters.SubmitFailures),
+                Interlocked.Read(ref Counters.ReceiveErrors),
+                last == 0 ? null : new DateTimeOffset(last, TimeSpan.Zero));
+        }
+    }
+
+    private sealed class Counters
+    {
+        public long ActiveConnections;
+        public long ConnectionsAccepted;
+        public long ConnectionsRejected;
+        public long SendersDenied;
+        public long TlsHandshakeFailures;
+        public long FramesReceived;
+        public long BytesReceived;
+        public long Queued;
+        public long Duplicates;
+        public long Suppressed;
+        public long NotRouted;
+        public long NotSelected;
+        public long Rejected;
+        public long ParserErrors;
+        public long Malformed;
+        public long Oversized;
+        public long FramingErrors;
+        public long Timeouts;
+        public long Dropped;
+        public long Retries;
+        public long SubmitFailures;
+        public long ReceiveErrors;
+        public long LastFrameTicks;
+    }
+}

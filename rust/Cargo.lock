@@ -769,8 +769,10 @@ dependencies = [
  "bower-output-azure",
  "bower-packs",
  "bower-persistence",
+ "bower-pipeline",
  "bower-policy",
  "bower-redaction",
+ "bower-source-syslog",
  "chrono",
  "flate2",
  "hex",
@@ -1040,6 +1042,24 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "bower-source-syslog"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "bower-contracts",
+ "chrono",
+ "hex",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
 ]
 
 [[package]]
