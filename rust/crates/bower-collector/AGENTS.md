@@ -13,3 +13,9 @@ Rust port of `src/Bower.Collector` (the specification). Composition lives in
 - `jobs.rs` runs only idempotent maintenance/reporting jobs.
 - Store calls are synchronous: run them with `spawn_blocking`.
 - Port `CollectorHostTests` / `QueueDeliveryWorkerTests` changes into `tests/`.
+- Relay mode lives in `relay/` (C# `Bower.Collector.Relay`, `Bower.Forwarding.RelayOutput`).
+  The relay stores downstream payload bytes unchanged, never redacts or parses raw data
+  again, and answers `accepted`/`duplicate` only after the queue commit. Pins are checked
+  at the TLS handshake. The management tunnel goes only to the relay's own management
+  endpoint, and TLS to management must stay layered inside it (end to end); keep the
+  HTTPS-only tunnel test. Port `RelayTests` changes into `tests/relay.rs`.

@@ -22,6 +22,19 @@ const CA_BUNDLE_MESSAGE: &str =
 /// The client shared by the heartbeat, command and managed privacy profile requests.
 pub fn client(settings: &CollectorSettings) -> Result<reqwest::Client, HostError> {
     let mut builder = reqwest::Client::builder().timeout(TIMEOUT);
+    if settings.management_via_relay {
+        // Every management request through the relay tunnel forwarder; TLS to management
+        // is still layered by reqwest, so it runs end to end inside the tunnel.
+        #[cfg(unix)]
+        {
+            builder = builder.unix_socket(crate::relay::client::tunnel::socket_path(settings));
+        }
+        #[cfg(not(unix))]
+        return Err(HostError::new(
+            "InvalidOperationException",
+            "BOWER_MANAGEMENT_VIA_RELAY needs a Unix domain socket and is not supported by the Rust collector on this platform.",
+        ));
+    }
     if let Some(url) = &settings.management_proxy {
         let mut proxy = Proxy::all(url.as_str()).map_err(|_| {
             HostError::new(

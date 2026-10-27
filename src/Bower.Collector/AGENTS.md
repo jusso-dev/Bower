@@ -12,3 +12,8 @@ stays a thin entry point so integration tests can host the app in-process.
 - The delivery loop must never exit on storage or adapter errors. Every leased event
   is settled exactly once: delivered, retrying or dead-lettered.
 - Azure credentials come from one explicit source (`BOWER_AZURE_CREDENTIAL`).
+- Relay role (`Relay/`): a second Kestrel listener, always mutual TLS with pinned client
+  certificates. Intake stores downstream payloads byte for byte after default-deny
+  envelope checks and answers only after the queue commit. The management tunnel reaches
+  only this collector's own management endpoint and never terminates the inner TLS. Never
+  log batch bodies, certificate material or tunnel bytes.

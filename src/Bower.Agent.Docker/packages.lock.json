@@ -58,7 +58,10 @@
         "type": "Project"
       },
       "bower.forwarding": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[1.0.0, )"
+        }
       },
       "bower.persistence": {
         "type": "Project",

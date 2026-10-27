@@ -42,6 +42,14 @@ function Deploy-BowerSentinelResource {
     .PARAMETER PublicNetworkAccess
     Enabled (default) or Disabled for the data collection endpoint.
 
+    .PARAMETER PrivateLinkScopeName
+    Optional new Azure Monitor Private Link Scope (1-80 letters, digits, hyphens, periods or
+    underscores). The data collection endpoint and workspace join it, so relays reach the
+    Logs Ingestion API over Private Link. Pair with -PublicNetworkAccess Disabled.
+
+    .PARAMETER PrivateEndpointSubnetId
+    Optional subnet resource ID for the scope's private endpoint (requires -PrivateLinkScopeName).
+
     .PARAMETER SubscriptionId
     Subscription to target. Defaults to the az CLI's current subscription.
 
@@ -67,6 +75,13 @@ function Deploy-BowerSentinelResource {
         -IngestPrincipalObjectId 4c1f3a2e-9b7d-4e6f-8a5c-1d2e3f4a5b6c -Apply
 
     Deploys after confirmation, granting an existing principal ingestion on the DCR only.
+
+    .EXAMPLE
+    Deploy-BowerSentinelResource -ResourceGroupName rg-sentinel -WorkspaceName law-sentinel -CreateIngestIdentity `
+        -PublicNetworkAccess Disabled -PrivateLinkScopeName ampls-bower `
+        -PrivateEndpointSubnetId /subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-net/providers/Microsoft.Network/virtualNetworks/vnet-dmz/subnets/relay
+
+    Plans a private-only data collection endpoint behind a new Private Link scope with an endpoint in the relay subnet.
 
     .OUTPUTS
     Bower.DeploymentPlan
@@ -106,6 +121,12 @@ function Deploy-BowerSentinelResource {
         [ValidateSet('Enabled', 'Disabled')]
         [string] $PublicNetworkAccess = 'Enabled',
 
+        [ValidateScript({ $_ -cmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$' }, ErrorMessage = 'Private Link scope name must contain 1-80 letters, digits, periods, hyphens or underscores.')]
+        [string] $PrivateLinkScopeName,
+
+        [ValidateScript({ $_ -cmatch '^/subscriptions/[0-9a-fA-F-]{36}/resourceGroups/[-\w\._\(\)]{1,90}/providers/Microsoft\.Network/virtualNetworks/[A-Za-z0-9][A-Za-z0-9._-]{0,63}/subnets/[A-Za-z0-9][A-Za-z0-9._-]{0,79}$' }, ErrorMessage = 'Private endpoint subnet must be a full subnet resource ID.')]
+        [string] $PrivateEndpointSubnetId,
+
         [guid] $SubscriptionId,
 
         [ValidatePattern('^[-\w\.\(\)]{1,64}$')]
@@ -130,6 +151,10 @@ function Deploy-BowerSentinelResource {
             }
         }
 
+        if ($PrivateEndpointSubnetId -and -not $PrivateLinkScopeName) {
+            throw [System.ArgumentException]::new('A private endpoint subnet requires -PrivateLinkScopeName.')
+        }
+
         $template = Resolve-BowerTemplatePath -Path $TemplatePath -Default 'deploy/bicep/main.bicep'
         $parameters = [ordered]@{ workspaceName = $WorkspaceName; namePrefix = $NamePrefix }
         if ($Location) { $parameters.location = $Location }
@@ -144,6 +169,10 @@ function Deploy-BowerSentinelResource {
             $parameters.ingestPrincipalObjectId = $IngestPrincipalObjectId.ToString()
         }
         $parameters.publicNetworkAccess = $PublicNetworkAccess
+        if ($PrivateLinkScopeName) {
+            $parameters.privateLinkScopeName = $PrivateLinkScopeName
+            if ($PrivateEndpointSubnetId) { $parameters.privateEndpointSubnetId = $PrivateEndpointSubnetId }
+        }
 
         $target = "resource group '$ResourceGroupName' (workspace '$WorkspaceName')"
         $mode = if ($Apply) {

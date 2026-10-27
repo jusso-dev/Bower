@@ -17,6 +17,7 @@ pub mod managed_privacy;
 pub mod management_commands;
 pub mod management_http;
 pub mod rate_limit;
+pub mod relay;
 pub mod server;
 pub mod settings;
 pub mod shutdown;

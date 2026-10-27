@@ -1,0 +1,118 @@
+# CI only: relay mode end to end (#110), driven by tests/e2e/relay.sh.
+# Development authentication on loopback inside one network namespace: never expose it.
+#
+# Topology: the management API listens on loopback only. Each relay shares its network
+# namespace, so only the relays can reach it. The downstream collectors run on the compose
+# network with no route to management at all: their events and their management traffic
+# (enrolment, heartbeats) go through a relay over mutual TLS. The runtimes cross: the C#
+# downstream uses the Rust relay and the Rust downstream uses the C# relay.
+services:
+  bower-management:
+    image: ${BOWER_MANAGEMENT_IMAGE:-bower-management:ci}
+    container_name: bower-relay-e2e-management
+    read_only: true
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      BOWER_AUTH_MODE: development
+      BOWER_MANAGEMENT_LISTEN_URL: http://127.0.0.1:4320
+      AllowedHosts: localhost;127.0.0.1
+    tmpfs:
+      - /tmp:size=16m,mode=1770
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  relay-cs:
+    image: ${BOWER_COLLECTOR_IMAGE:-bower-collector:ci}
+    profiles: [relays]
+    network_mode: service:bower-management
+    read_only: true
+    environment: &relay
+      BOWER_LISTEN_URL: http://127.0.0.1:4319
+      BOWER_COLLECTOR_ID: relay-cs
+      BOWER_ENVIRONMENT: e2e
+      BOWER_OUTPUT: ama-spool
+      BOWER_AMA_SPOOL_PATH: /var/spool/bower
+      BOWER_MANAGEMENT_ENDPOINT: http://127.0.0.1:4320/
+      BOWER_MANAGEMENT_AUTH: enrolment
+      BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE: /run/bower/enrolment-token
+      BOWER_RELAY_LISTEN_URL: https://0.0.0.0:4443
+      BOWER_RELAY_CERTIFICATE_FILE: /run/bower/relay.crt
+      BOWER_RELAY_KEY_FILE: /run/bower/relay.key
+      BOWER_RELAY_DOWNSTREAMS_FILE: /run/bower/downstreams.json
+      BOWER_RELAY_MANAGEMENT_TUNNEL: "true"
+    volumes:
+      - ${BOWER_E2E_DIR:?set BOWER_E2E_DIR}/relay-cs:/run/bower:ro
+    tmpfs:
+      - /tmp:size=16m,mode=1770
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  relay-rs:
+    image: ${BOWER_RUST_COLLECTOR_IMAGE:-bower-collector-rs:ci}
+    profiles: [relays]
+    network_mode: service:bower-management
+    read_only: true
+    environment:
+      <<: *relay
+      BOWER_LISTEN_URL: http://127.0.0.1:4329
+      BOWER_COLLECTOR_ID: relay-rs
+      BOWER_RELAY_LISTEN_URL: https://0.0.0.0:4453
+    volumes:
+      - ${BOWER_E2E_DIR:?set BOWER_E2E_DIR}/relay-rs:/run/bower:ro
+    tmpfs:
+      - /tmp:size=16m,mode=1770
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  edge-cs:
+    image: ${BOWER_COLLECTOR_IMAGE:-bower-collector:ci}
+    profiles: [edges]
+    container_name: bower-relay-e2e-edge-cs
+    read_only: true
+    environment: &edge
+      BOWER_LISTEN_URL: http://127.0.0.1:4319
+      BOWER_COLLECTOR_ID: edge-cs
+      BOWER_ENVIRONMENT: e2e
+      BOWER_OUTPUT: relay
+      BOWER_RELAY_URL: https://bower-management:4453
+      BOWER_RELAY_CLIENT_CERTIFICATE_FILE: /run/bower/client.crt
+      BOWER_RELAY_CLIENT_KEY_FILE: /run/bower/client.key
+      BOWER_RELAY_CA_BUNDLE: /run/bower/relay-ca.pem
+      # Loopback inside the downstream, but never dialled: the tunnel carries it to the
+      # relay's own management endpoint.
+      BOWER_MANAGEMENT_ENDPOINT: http://127.0.0.1:4320/
+      BOWER_MANAGEMENT_AUTH: enrolment
+      BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE: /run/bower/enrolment-token
+      BOWER_MANAGEMENT_VIA_RELAY: "true"
+    volumes:
+      - ${BOWER_E2E_DIR:?set BOWER_E2E_DIR}/edge-cs:/run/bower:ro
+    tmpfs:
+      - /tmp:size=16m,mode=1770
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  edge-rs:
+    image: ${BOWER_RUST_COLLECTOR_IMAGE:-bower-collector-rs:ci}
+    profiles: [edges]
+    container_name: bower-relay-e2e-edge-rs
+    read_only: true
+    environment:
+      <<: *edge
+      BOWER_COLLECTOR_ID: edge-rs
+      BOWER_RELAY_URL: https://bower-management:4443
+    volumes:
+      - ${BOWER_E2E_DIR:?set BOWER_E2E_DIR}/edge-rs:/run/bower:ro
+    tmpfs:
+      - /tmp:size=16m,mode=1770
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

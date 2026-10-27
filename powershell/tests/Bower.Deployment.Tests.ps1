@@ -75,6 +75,24 @@ Describe 'Deploy-BowerSentinelResource' {
         Should -Invoke -ModuleName Bower.Deployment Invoke-BowerCli -Times 0
     }
 
+    It 'passes the Private Link scope and endpoint subnet only when given' {
+        $subnet = '/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-net/providers/Microsoft.Network/virtualNetworks/vnet-dmz/subnets/relay'
+        $plan = Deploy-BowerSentinelResource -ResourceGroupName rg -WorkspaceName law-1 -CreateIngestIdentity `
+            -PublicNetworkAccess Disabled -PrivateLinkScopeName ampls-bower -PrivateEndpointSubnetId $subnet
+        $plan.Parameters.privateLinkScopeName | Should -Be 'ampls-bower'
+        $plan.Parameters.privateEndpointSubnetId | Should -Be $subnet
+        Should -Invoke -ModuleName Bower.Deployment Invoke-BowerCli -Times 1 -Exactly -ParameterFilter {
+            $ArgumentList -contains 'publicNetworkAccess=Disabled' -and $ArgumentList -contains 'privateLinkScopeName=ampls-bower' -and
+            $ArgumentList -contains "privateEndpointSubnetId=$subnet" -and $ArgumentList -notcontains 'create'
+        }
+
+        $plain = Deploy-BowerSentinelResource -ResourceGroupName rg -WorkspaceName law-1 -CreateIngestIdentity
+        $plain.Parameters.Contains('privateLinkScopeName') | Should -BeFalse
+        { Deploy-BowerSentinelResource -ResourceGroupName rg -WorkspaceName law-1 -CreateIngestIdentity -PrivateEndpointSubnetId $subnet } | Should -Throw '*requires -PrivateLinkScopeName*'
+        { Deploy-BowerSentinelResource -ResourceGroupName rg -WorkspaceName law-1 -CreateIngestIdentity -PrivateLinkScopeName 'bad name' } | Should -Throw '*Private Link scope name*'
+        { Deploy-BowerSentinelResource -ResourceGroupName rg -WorkspaceName law-1 -CreateIngestIdentity -PrivateLinkScopeName ampls -PrivateEndpointSubnetId 'subnet-1' } | Should -Throw '*full subnet resource ID*'
+    }
+
     It 'requires exactly one ingestion identity choice' {
         { Deploy-BowerSentinelResource -ResourceGroupName rg -WorkspaceName law-1 -CreateIngestIdentity -IngestPrincipalObjectId 4c1f3a2e-9b7d-4e6f-8a5c-1d2e3f4a5b6c } | Should -Throw
     }

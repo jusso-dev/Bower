@@ -139,6 +139,8 @@ pub struct AppState {
     pub delivery: Arc<DeliveryStatus>,
     /// Syslog listener counters when `BOWER_SYSLOG_CONFIG` is set.
     pub syslog: Option<bower_source_syslog::SyslogMetrics>,
+    /// Relay role: counters per pinned downstream (`RelayTelemetry`).
+    pub relay: Option<Arc<crate::relay::telemetry::RelayTelemetry>>,
 }
 
 /// C# `IOutputConcurrencyStatus` lookup: the output the delivery worker drives.
@@ -654,6 +656,9 @@ struct StatusBody<'a> {
     /// Syslog listener counters; omitted when BOWER_SYSLOG_CONFIG is not set. Metadata only.
     #[serde(skip_serializing_if = "Option::is_none")]
     syslog: Option<Vec<bower_source_syslog::ListenerStatus>>,
+    /// Relay counters since start; omitted unless BOWER_RELAY_LISTEN_URL is set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    relay: Option<crate::relay::telemetry::RelayStatusSnapshot>,
 }
 
 /// `OutputConcurrencySnapshot` (Web defaults). Metadata only.
@@ -883,6 +888,7 @@ async fn status(
                 .syslog
                 .as_ref()
                 .map(bower_source_syslog::SyslogMetrics::snapshot),
+            relay: state.relay.as_ref().map(|relay| relay.snapshot()),
         },
     )
 }

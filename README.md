@@ -435,7 +435,11 @@ Neither has been exercised against a live tenant or account yet.
 | `BOWER_QUEUE_RETENTION_HOURS` | `168` | How long acknowledged events stay for duplicate detection. |
 | `BOWER_MAX_DELIVERY_ATTEMPTS` | `20` | Retryable failures dead-letter after this many leases. |
 | `BOWER_POLICY_DIRECTORY` | `./policies/default` | Versioned policy YAML. |
-| `BOWER_OUTPUT` | `none` | `none`, `ama-spool` or `azure-logs-ingestion`. |
+| `BOWER_OUTPUT` | `none` | `none`, `ama-spool`, `azure-logs-ingestion` or `relay` (deliver through a relay collector). |
+| `BOWER_RELAY_URL` / `BOWER_RELAY_CLIENT_CERTIFICATE_FILE` / `BOWER_RELAY_CLIENT_KEY_FILE` / `BOWER_RELAY_CA_BUNDLE` | — | Downstream of a relay (`BOWER_OUTPUT=relay`): the relay's https URL and the mutual TLS client certificate. [Relay mode](docs/deployment/relay.md) |
+| `BOWER_MANAGEMENT_VIA_RELAY` | `false` | Send management traffic through the relay's tunnel; TLS to management stays end to end. Needs `BOWER_MANAGEMENT_AUTH=enrolment`. |
+| `BOWER_RELAY_LISTEN_URL` / `BOWER_RELAY_CERTIFICATE_FILE` / `BOWER_RELAY_KEY_FILE` / `BOWER_RELAY_DOWNSTREAMS_FILE` | — | Relay role: a mutual TLS listener for downstream collectors pinned in the downstreams file. [Relay mode](docs/deployment/relay.md) |
+| `BOWER_RELAY_MANAGEMENT_TUNNEL` | `false` | Relay role: let pinned downstreams tunnel to this relay's `BOWER_MANAGEMENT_ENDPOINT` (and nowhere else). |
 | `BOWER_AZURE_CREDENTIAL` | `managed-identity` | `managed-identity`, `workload-identity`, `environment` or `azure-cli`. |
 | `BOWER_AZURE_CLIENT_ID` | — | User-assigned managed identity client id. |
 | `BOWER_MANAGEMENT_ENDPOINT` / `BOWER_MANAGEMENT_SCOPE` | — | Enables the heartbeat job. HTTPS required unless loopback. |
@@ -484,6 +488,7 @@ Design, observability and how to add a job:
 | Verify or replay the archive | `bower archive verify --archive DIR --anchor SEQ:HASH` · `bower archive replay --archive DIR --collector-url URL` | [Archive and replay](docs/operations/suppression-archive-and-source-silence.md#archive-and-replay) |
 | Review and roll out a privacy profile | Management console → **Privacy profiles** | [Managed privacy profiles](docs/privacy/managed-privacy-profiles.md) |
 | Pseudonymise identifiers | privacy profile `action: hmac` (detector, custom detector or field rule) + `BOWER_PRIVACY_HMAC_KEY_FILE` | [Privacy & Secret Protection Engine](docs/privacy/privacy-secret-engine.md) |
+| Relay a segmented or DMZ network | `BOWER_RELAY_LISTEN_URL` on the relay, `BOWER_OUTPUT=relay` on each downstream | [Relay mode](docs/deployment/relay.md) · [Private Link](docs/operations/doctor-and-dcr.md#private-link-and-expressroute) |
 | Forward AWS / GCP security signal | `deploy/aws` CloudFormation, `deploy/gcp` Terraform, `bower-cloud` agent | [AWS](docs/deployment/aws.md) · [Google Cloud](docs/deployment/gcp.md) |
 | Validate a pipeline document | `bower pipeline validate --file pipeline.yaml` · `bower pipeline template aws-security` | Exit 2 when invalid |
 
@@ -873,6 +878,11 @@ BOWER_DCE_ENDPOINT=https://<dce>.<region>.ingest.monitor.azure.com
 BOWER_DCR_ID=dcr-<immutable-id>
 BOWER_STREAM_NAME=Custom-BowerSecurity
 ```
+
+Relay mode (`BOWER_OUTPUT=relay`) sends the queue's stored envelopes, unchanged, to a
+relay collector over mutual TLS; the relay queues them durably and delivers them as
+above. An event counts as delivered only after the relay committed it. See
+[relay mode](docs/deployment/relay.md).
 
 Failed uploads map back to their exact events; unattributable failures retry the
 whole batch, never count as delivered. Azure upload acknowledgement

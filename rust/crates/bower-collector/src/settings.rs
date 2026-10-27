@@ -112,6 +112,30 @@ pub struct CollectorSettings {
     pub archive_path: Option<PathBuf>,
     /// JSON file of syslog listeners and pack routes (BOWER_SYSLOG_CONFIG).
     pub syslog_config_path: Option<PathBuf>,
+    /// Relay this collector delivers to (BOWER_RELAY_URL, BOWER_OUTPUT=relay): an https
+    /// URL with no path, credentials or query. The connection uses mutual TLS.
+    pub relay_url: Option<Url>,
+    /// PEM client certificate presented to the relay (BOWER_RELAY_CLIENT_CERTIFICATE_FILE).
+    pub relay_client_certificate_file: Option<PathBuf>,
+    /// PEM private key of the client certificate (BOWER_RELAY_CLIENT_KEY_FILE). Never logged.
+    pub relay_client_key_file: Option<PathBuf>,
+    /// PEM roots trusted for the relay's server certificate (BOWER_RELAY_CA_BUNDLE).
+    pub relay_ca_bundle: Option<PathBuf>,
+    /// BOWER_MANAGEMENT_VIA_RELAY=true: management traffic goes through the relay's
+    /// management tunnel; TLS to management stays end to end.
+    pub management_via_relay: bool,
+    /// Relay role (BOWER_RELAY_LISTEN_URL): an https listener for downstream collectors,
+    /// always mutual TLS.
+    pub relay_listen_url: Option<Url>,
+    /// PEM server certificate of the relay listener (BOWER_RELAY_CERTIFICATE_FILE).
+    pub relay_certificate_file: Option<PathBuf>,
+    /// PEM private key of the relay listener certificate (BOWER_RELAY_KEY_FILE). Never logged.
+    pub relay_key_file: Option<PathBuf>,
+    /// Downstream collector ids and pinned client certificates (BOWER_RELAY_DOWNSTREAMS_FILE).
+    pub relay_downstreams_file: Option<PathBuf>,
+    /// BOWER_RELAY_MANAGEMENT_TUNNEL=true: downstreams may tunnel to this relay's own
+    /// BOWER_MANAGEMENT_ENDPOINT, and nowhere else.
+    pub relay_management_tunnel: bool,
 }
 
 // Never print the ingest token.
@@ -182,6 +206,16 @@ impl CollectorSettings {
             source_expectations_path: None,
             archive_path: None,
             syslog_config_path: None,
+            relay_url: None,
+            relay_client_certificate_file: None,
+            relay_client_key_file: None,
+            relay_ca_bundle: None,
+            management_via_relay: false,
+            relay_listen_url: None,
+            relay_certificate_file: None,
+            relay_key_file: None,
+            relay_downstreams_file: None,
+            relay_management_tunnel: false,
         }
     }
 
@@ -273,6 +307,20 @@ impl CollectorSettings {
                 .unwrap_or_else(|| MANAGEMENT_AUTH_ENTRA.to_string()),
             management_enrolment_token_file: blank(read("BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE"))
                 .map(PathBuf::from),
+            relay_url: read_url(blank(read("BOWER_RELAY_URL")), "BOWER_RELAY_URL")?,
+            relay_client_certificate_file: blank(read("BOWER_RELAY_CLIENT_CERTIFICATE_FILE"))
+                .map(PathBuf::from),
+            relay_client_key_file: blank(read("BOWER_RELAY_CLIENT_KEY_FILE")).map(PathBuf::from),
+            relay_ca_bundle: blank(read("BOWER_RELAY_CA_BUNDLE")).map(PathBuf::from),
+            management_via_relay: read_boolean(&read, "BOWER_MANAGEMENT_VIA_RELAY")?,
+            relay_listen_url: read_url(
+                blank(read("BOWER_RELAY_LISTEN_URL")),
+                "BOWER_RELAY_LISTEN_URL",
+            )?,
+            relay_certificate_file: blank(read("BOWER_RELAY_CERTIFICATE_FILE")).map(PathBuf::from),
+            relay_key_file: blank(read("BOWER_RELAY_KEY_FILE")).map(PathBuf::from),
+            relay_downstreams_file: blank(read("BOWER_RELAY_DOWNSTREAMS_FILE")).map(PathBuf::from),
+            relay_management_tunnel: read_boolean(&read, "BOWER_RELAY_MANAGEMENT_TUNNEL")?,
             source_expectations_path: blank(read("BOWER_SOURCE_EXPECTATIONS")).map(PathBuf::from),
             archive_path: blank(read("BOWER_ARCHIVE_PATH")).map(PathBuf::from),
             syslog_config_path: blank(read("BOWER_SYSLOG_CONFIG")).map(PathBuf::from),
@@ -319,6 +367,11 @@ impl CollectorSettings {
             .parent()
             .map_or_else(|| PathBuf::from("."), PathBuf::from)
             .join("management-commands")
+    }
+
+    /// Relay role: `BOWER_RELAY_LISTEN_URL` is set (C# `IsRelay`).
+    pub fn is_relay(&self) -> bool {
+        self.relay_listen_url.is_some()
     }
 
     /// Parsed listen URL host is loopback (`localhost` or a loopback IP).
@@ -399,7 +452,7 @@ impl CollectorSettings {
 
         if !matches!(
             self.output_type.as_str(),
-            "none" | "ama-spool" | "azure-logs-ingestion"
+            "none" | "ama-spool" | "azure-logs-ingestion" | "relay"
         ) {
             return Err(invalid(format!(
                 "Unsupported BOWER_OUTPUT value: {}",
@@ -446,7 +499,113 @@ impl CollectorSettings {
         }
 
         self.validate_management_connection()?;
-        self.validate_privacy_profile_source()
+        self.validate_privacy_profile_source()?;
+        self.validate_relay()
+    }
+
+    /// Downstream (`BOWER_OUTPUT=relay`) and relay (`BOWER_RELAY_LISTEN_URL`) settings
+    /// (C# `ValidateRelay`). One hop only: a relay never delivers to another relay.
+    fn validate_relay(&self) -> Result<(), HostError> {
+        let relay_output = self.output_type == "relay";
+        let client_settings = self.relay_url.is_some()
+            || self.relay_client_certificate_file.is_some()
+            || self.relay_client_key_file.is_some()
+            || self.relay_ca_bundle.is_some();
+        if client_settings && !relay_output {
+            return Err(invalid(
+                "BOWER_RELAY_URL, BOWER_RELAY_CLIENT_CERTIFICATE_FILE, BOWER_RELAY_CLIENT_KEY_FILE and \
+                 BOWER_RELAY_CA_BUNDLE require BOWER_OUTPUT=relay.",
+            ));
+        }
+
+        if relay_output {
+            if !self.relay_url.as_ref().is_some_and(is_valid_https_origin) {
+                return Err(invalid(
+                    "BOWER_OUTPUT=relay requires BOWER_RELAY_URL: an absolute https:// URL with a host and no \
+                     credentials, path or query.",
+                ));
+            }
+            if self.relay_client_certificate_file.is_none() || self.relay_client_key_file.is_none()
+            {
+                return Err(invalid(
+                    "BOWER_OUTPUT=relay requires BOWER_RELAY_CLIENT_CERTIFICATE_FILE and BOWER_RELAY_CLIENT_KEY_FILE: \
+                     the relay accepts only pinned client certificates.",
+                ));
+            }
+        }
+
+        if self.management_via_relay {
+            if !relay_output || self.management_endpoint.is_none() {
+                return Err(invalid(
+                    "BOWER_MANAGEMENT_VIA_RELAY requires BOWER_OUTPUT=relay and BOWER_MANAGEMENT_ENDPOINT.",
+                ));
+            }
+            // An Entra token needs a route to Entra ID, which a collector behind a relay lacks.
+            if !self.uses_enrolment() {
+                return Err(invalid(
+                    "BOWER_MANAGEMENT_VIA_RELAY requires BOWER_MANAGEMENT_AUTH=enrolment.",
+                ));
+            }
+            if self.management_proxy.is_some() {
+                return Err(invalid(
+                    "BOWER_MANAGEMENT_VIA_RELAY cannot be combined with BOWER_MANAGEMENT_PROXY.",
+                ));
+            }
+        }
+
+        let server_settings = self.relay_certificate_file.is_some()
+            || self.relay_key_file.is_some()
+            || self.relay_downstreams_file.is_some()
+            || self.relay_management_tunnel;
+        if server_settings && self.relay_listen_url.is_none() {
+            return Err(invalid(
+                "BOWER_RELAY_CERTIFICATE_FILE, BOWER_RELAY_KEY_FILE, BOWER_RELAY_DOWNSTREAMS_FILE and \
+                 BOWER_RELAY_MANAGEMENT_TUNNEL require BOWER_RELAY_LISTEN_URL.",
+            ));
+        }
+
+        let Some(listen) = &self.relay_listen_url else {
+            return Ok(());
+        };
+
+        // `Uri.IsDefaultPort`: no port, or the scheme's default written explicitly.
+        if !is_valid_https_origin(listen) || listen.port().is_none() {
+            return Err(invalid(
+                "BOWER_RELAY_LISTEN_URL must be an absolute https:// URL with an explicit port and no \
+                 credentials, path or query.",
+            ));
+        }
+
+        if self.relay_certificate_file.is_none()
+            || self.relay_key_file.is_none()
+            || self.relay_downstreams_file.is_none()
+        {
+            return Err(invalid(
+                "BOWER_RELAY_LISTEN_URL requires BOWER_RELAY_CERTIFICATE_FILE, BOWER_RELAY_KEY_FILE and \
+                 BOWER_RELAY_DOWNSTREAMS_FILE.",
+            ));
+        }
+
+        if relay_output {
+            return Err(invalid(
+                "A relay cannot use BOWER_OUTPUT=relay: relays deliver to the destination, one hop only.",
+            ));
+        }
+
+        if self.relay_management_tunnel && self.management_endpoint.is_none() {
+            return Err(invalid(
+                "BOWER_RELAY_MANAGEMENT_TUNNEL requires BOWER_MANAGEMENT_ENDPOINT.",
+            ));
+        }
+
+        // The tunnel opens a direct TCP connection to the management host.
+        if self.relay_management_tunnel && self.management_proxy.is_some() {
+            return Err(invalid(
+                "BOWER_RELAY_MANAGEMENT_TUNNEL connects directly and cannot be combined with BOWER_MANAGEMENT_PROXY.",
+            ));
+        }
+
+        Ok(())
     }
 
     /// Proxy, CA bundle and command keys apply to the management channel only (C#
@@ -607,6 +766,34 @@ impl CollectorSettings {
             material.push('\u{1f}');
             material.push_str("management-auth:enrolment");
         }
+        // Relay settings, appended only when set. Hosts, ports and paths only, never file
+        // contents.
+        if let Some(url) = &self.relay_url {
+            material.push_str(&format!(
+                "\u{1f}relay-url:{}:{}\u{1f}relay-ca:{}",
+                url.host_str().unwrap_or_default(),
+                url.port_or_known_default().unwrap_or_default(),
+                self.relay_ca_bundle
+                    .as_ref()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            ));
+        }
+        if self.management_via_relay {
+            material.push_str("\u{1f}management-via-relay:True");
+        }
+        if let Some(url) = &self.relay_listen_url {
+            material.push_str(&format!(
+                "\u{1f}relay-listen:{}:{}\u{1f}relay-downstreams:{}\u{1f}relay-tunnel:{}",
+                url.host_str().unwrap_or_default(),
+                url.port_or_known_default().unwrap_or_default(),
+                self.relay_downstreams_file
+                    .as_ref()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                dotnet_bool(self.relay_management_tunnel)
+            ));
+        }
         format!(
             "sha256:{}",
             hex::encode(Sha256::digest(material.as_bytes()))
@@ -701,6 +888,39 @@ fn read_proxy(value: Option<String>) -> Result<Option<Url>, HostError> {
         }),
         None => Ok(None),
     }
+}
+
+/// C# `ReadUrl`: an absolute URI or a start-up error naming the variable.
+fn read_url(value: Option<String>, name: &str) -> Result<Option<Url>, HostError> {
+    match value {
+        Some(value) => Url::parse(value.trim())
+            .map(Some)
+            .map_err(|_| invalid(format!("{name} must be an absolute https:// URL."))),
+        None => Ok(None),
+    }
+}
+
+/// C# `ReadBoolean`: unset or blank is false; otherwise exactly true or false (any case).
+fn read_boolean(read: &impl Fn(&str) -> Option<String>, name: &str) -> Result<bool, HostError> {
+    match blank(read(name))
+        .map(|value| value.trim().to_lowercase())
+        .as_deref()
+    {
+        None | Some("false") => Ok(false),
+        Some("true") => Ok(true),
+        Some(_) => Err(invalid(format!("{name} must be true or false."))),
+    }
+}
+
+/// C# `IsValidHttpsOrigin`: https, a host, no credentials, no path, query or fragment.
+pub fn is_valid_https_origin(url: &Url) -> bool {
+    url.scheme() == "https"
+        && url.host_str().is_some_and(|host| !host.is_empty())
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.path() == "/"
+        && url.query().is_none()
+        && url.fragment().is_none()
 }
 
 /// C# `IsValidProxy`: http(s), a host, no credentials, no path, query or fragment.

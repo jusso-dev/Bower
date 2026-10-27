@@ -147,6 +147,50 @@ public sealed record CollectorSettings
     /// </summary>
     public string? ManagementEnrolmentTokenFile { get; init; }
 
+    /// <summary>
+    /// Relay this collector delivers to (BOWER_RELAY_URL, BOWER_OUTPUT=relay): an https URL
+    /// with no path, credentials or query. The connection uses mutual TLS.
+    /// </summary>
+    public Uri? RelayUrl { get; init; }
+
+    /// <summary>PEM client certificate presented to the relay (BOWER_RELAY_CLIENT_CERTIFICATE_FILE).</summary>
+    public string? RelayClientCertificateFile { get; init; }
+
+    /// <summary>PEM private key of the client certificate (BOWER_RELAY_CLIENT_KEY_FILE). Never logged.</summary>
+    public string? RelayClientKeyFile { get; init; }
+
+    /// <summary>PEM roots trusted for the relay's server certificate (BOWER_RELAY_CA_BUNDLE), merged with the system roots.</summary>
+    public string? RelayCaBundle { get; init; }
+
+    /// <summary>
+    /// BOWER_MANAGEMENT_VIA_RELAY=true: management traffic goes through the relay's management
+    /// tunnel. TLS to management stays end to end, so the relay sees only ciphertext.
+    /// </summary>
+    public bool ManagementViaRelay { get; init; }
+
+    /// <summary>
+    /// Relay role (BOWER_RELAY_LISTEN_URL): an https listener for downstream collectors,
+    /// separate from BOWER_LISTEN_URL and always mutual TLS.
+    /// </summary>
+    public Uri? RelayListenUrl { get; init; }
+
+    /// <summary>PEM server certificate of the relay listener (BOWER_RELAY_CERTIFICATE_FILE).</summary>
+    public string? RelayCertificateFile { get; init; }
+
+    /// <summary>PEM private key of the relay listener certificate (BOWER_RELAY_KEY_FILE). Never logged.</summary>
+    public string? RelayKeyFile { get; init; }
+
+    /// <summary>JSON file of downstream collector ids and pinned client certificates (BOWER_RELAY_DOWNSTREAMS_FILE).</summary>
+    public string? RelayDownstreamsFile { get; init; }
+
+    /// <summary>
+    /// BOWER_RELAY_MANAGEMENT_TUNNEL=true: downstream collectors may open a byte tunnel to this
+    /// relay's own BOWER_MANAGEMENT_ENDPOINT, and nowhere else.
+    /// </summary>
+    public bool RelayManagementTunnel { get; init; }
+
+    public bool IsRelay => RelayListenUrl is not null;
+
     public bool UsesEnrolment =>
         string.Equals(ManagementAuthentication, ManagementAuthenticationModes.Enrolment, StringComparison.Ordinal);
 
@@ -229,6 +273,16 @@ public sealed record CollectorSettings
             ManagementAuthentication = Blank(read("BOWER_MANAGEMENT_AUTH"))?.Trim().ToLowerInvariant()
                 ?? ManagementAuthenticationModes.Entra,
             ManagementEnrolmentTokenFile = Blank(read("BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE")),
+            RelayUrl = ReadUrl(Blank(read("BOWER_RELAY_URL")), "BOWER_RELAY_URL"),
+            RelayClientCertificateFile = Blank(read("BOWER_RELAY_CLIENT_CERTIFICATE_FILE")),
+            RelayClientKeyFile = Blank(read("BOWER_RELAY_CLIENT_KEY_FILE")),
+            RelayCaBundle = Blank(read("BOWER_RELAY_CA_BUNDLE")),
+            ManagementViaRelay = ReadBoolean(read, "BOWER_MANAGEMENT_VIA_RELAY"),
+            RelayListenUrl = ReadUrl(Blank(read("BOWER_RELAY_LISTEN_URL")), "BOWER_RELAY_LISTEN_URL"),
+            RelayCertificateFile = Blank(read("BOWER_RELAY_CERTIFICATE_FILE")),
+            RelayKeyFile = Blank(read("BOWER_RELAY_KEY_FILE")),
+            RelayDownstreamsFile = Blank(read("BOWER_RELAY_DOWNSTREAMS_FILE")),
+            RelayManagementTunnel = ReadBoolean(read, "BOWER_RELAY_MANAGEMENT_TUNNEL"),
             SourceExpectationsPath = Blank(read("BOWER_SOURCE_EXPECTATIONS")),
             ArchivePath = Blank(read("BOWER_ARCHIVE_PATH")),
             SyslogConfigPath = Blank(read("BOWER_SYSLOG_CONFIG"))
@@ -295,7 +349,7 @@ public sealed record CollectorSettings
                 "BOWER_MAX_DELIVERY_ATTEMPTS must be between 1 and 1000.");
         }
 
-        if (OutputType is not ("none" or "ama-spool" or "azure-logs-ingestion"))
+        if (OutputType is not ("none" or "ama-spool" or "azure-logs-ingestion" or "relay"))
         {
             throw new InvalidOperationException($"Unsupported BOWER_OUTPUT value: {OutputType}");
         }
@@ -341,7 +395,117 @@ public sealed record CollectorSettings
 
         ValidateManagementConnection();
         ValidatePrivacyProfileSource();
+        ValidateRelay();
     }
+
+    /// <summary>
+    /// Downstream (BOWER_OUTPUT=relay) and relay (BOWER_RELAY_LISTEN_URL) settings. One hop
+    /// only: a relay never delivers to another relay.
+    /// </summary>
+    private void ValidateRelay()
+    {
+        bool relayOutput = string.Equals(OutputType, "relay", StringComparison.Ordinal);
+        bool clientSettings = RelayUrl is not null || RelayClientCertificateFile is not null
+            || RelayClientKeyFile is not null || RelayCaBundle is not null;
+        if (clientSettings && !relayOutput)
+        {
+            throw new InvalidOperationException(
+                "BOWER_RELAY_URL, BOWER_RELAY_CLIENT_CERTIFICATE_FILE, BOWER_RELAY_CLIENT_KEY_FILE and " +
+                "BOWER_RELAY_CA_BUNDLE require BOWER_OUTPUT=relay.");
+        }
+
+        if (relayOutput)
+        {
+            if (RelayUrl is null || !IsValidHttpsOrigin(RelayUrl))
+            {
+                throw new InvalidOperationException(
+                    "BOWER_OUTPUT=relay requires BOWER_RELAY_URL: an absolute https:// URL with a host and no " +
+                    "credentials, path or query.");
+            }
+
+            if (RelayClientCertificateFile is null || RelayClientKeyFile is null)
+            {
+                throw new InvalidOperationException(
+                    "BOWER_OUTPUT=relay requires BOWER_RELAY_CLIENT_CERTIFICATE_FILE and BOWER_RELAY_CLIENT_KEY_FILE: " +
+                    "the relay accepts only pinned client certificates.");
+            }
+        }
+
+        if (ManagementViaRelay)
+        {
+            if (!relayOutput || ManagementEndpoint is null)
+            {
+                throw new InvalidOperationException(
+                    "BOWER_MANAGEMENT_VIA_RELAY requires BOWER_OUTPUT=relay and BOWER_MANAGEMENT_ENDPOINT.");
+            }
+
+            // An Entra token needs a route to Entra ID, which a collector behind a relay lacks.
+            if (!UsesEnrolment)
+            {
+                throw new InvalidOperationException("BOWER_MANAGEMENT_VIA_RELAY requires BOWER_MANAGEMENT_AUTH=enrolment.");
+            }
+
+            if (ManagementProxy is not null)
+            {
+                throw new InvalidOperationException("BOWER_MANAGEMENT_VIA_RELAY cannot be combined with BOWER_MANAGEMENT_PROXY.");
+            }
+        }
+
+        bool serverSettings = RelayCertificateFile is not null || RelayKeyFile is not null
+            || RelayDownstreamsFile is not null || RelayManagementTunnel;
+        if (serverSettings && RelayListenUrl is null)
+        {
+            throw new InvalidOperationException(
+                "BOWER_RELAY_CERTIFICATE_FILE, BOWER_RELAY_KEY_FILE, BOWER_RELAY_DOWNSTREAMS_FILE and " +
+                "BOWER_RELAY_MANAGEMENT_TUNNEL require BOWER_RELAY_LISTEN_URL.");
+        }
+
+        if (RelayListenUrl is null)
+        {
+            return;
+        }
+
+        if (!IsValidHttpsOrigin(RelayListenUrl) || RelayListenUrl.IsDefaultPort)
+        {
+            throw new InvalidOperationException(
+                "BOWER_RELAY_LISTEN_URL must be an absolute https:// URL with an explicit port and no " +
+                "credentials, path or query.");
+        }
+
+        if (RelayCertificateFile is null || RelayKeyFile is null || RelayDownstreamsFile is null)
+        {
+            throw new InvalidOperationException(
+                "BOWER_RELAY_LISTEN_URL requires BOWER_RELAY_CERTIFICATE_FILE, BOWER_RELAY_KEY_FILE and " +
+                "BOWER_RELAY_DOWNSTREAMS_FILE.");
+        }
+
+        if (relayOutput)
+        {
+            throw new InvalidOperationException(
+                "A relay cannot use BOWER_OUTPUT=relay: relays deliver to the destination, one hop only.");
+        }
+
+        if (RelayManagementTunnel && ManagementEndpoint is null)
+        {
+            throw new InvalidOperationException("BOWER_RELAY_MANAGEMENT_TUNNEL requires BOWER_MANAGEMENT_ENDPOINT.");
+        }
+
+        // The tunnel opens a direct TCP connection to the management host.
+        if (RelayManagementTunnel && ManagementProxy is not null)
+        {
+            throw new InvalidOperationException(
+                "BOWER_RELAY_MANAGEMENT_TUNNEL connects directly and cannot be combined with BOWER_MANAGEMENT_PROXY.");
+        }
+    }
+
+    internal static bool IsValidHttpsOrigin(Uri url) =>
+        url.IsAbsoluteUri
+        && url.Scheme == Uri.UriSchemeHttps
+        && !string.IsNullOrEmpty(url.Host)
+        && string.IsNullOrEmpty(url.UserInfo)
+        && url.AbsolutePath == "/"
+        && string.IsNullOrEmpty(url.Query)
+        && string.IsNullOrEmpty(url.Fragment);
 
     /// <summary>Proxy, CA bundle and command keys apply to the management channel only.</summary>
     private void ValidateManagementConnection()
@@ -487,6 +651,25 @@ public sealed record CollectorSettings
             material += '\u001f' + "management-auth:enrolment";
         }
 
+        // Relay settings, appended only when set. Hosts, ports and paths only, never file contents.
+        if (RelayUrl is not null)
+        {
+            material += '\u001f' + "relay-url:" + RelayUrl.Host + ":" + RelayUrl.Port.ToString(CultureInfo.InvariantCulture)
+                + '\u001f' + "relay-ca:" + (RelayCaBundle ?? string.Empty);
+        }
+
+        if (ManagementViaRelay)
+        {
+            material += '\u001f' + "management-via-relay:True";
+        }
+
+        if (RelayListenUrl is not null)
+        {
+            material += '\u001f' + "relay-listen:" + RelayListenUrl.Host + ":" + RelayListenUrl.Port.ToString(CultureInfo.InvariantCulture)
+                + '\u001f' + "relay-downstreams:" + RelayDownstreamsFile
+                + '\u001f' + "relay-tunnel:" + RelayManagementTunnel.ToString();
+        }
+
         return "sha256:" + Convert.ToHexStringLower(
             System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(material)));
     }
@@ -528,6 +711,26 @@ public sealed record CollectorSettings
             ? proxy
             : throw new InvalidOperationException("BOWER_MANAGEMENT_PROXY must be an absolute http:// or https:// URL.");
     }
+
+    private static Uri? ReadUrl(string? value, string name)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        return Uri.TryCreate(value.Trim(), UriKind.Absolute, out Uri? url)
+            ? url
+            : throw new InvalidOperationException($"{name} must be an absolute https:// URL.");
+    }
+
+    private static bool ReadBoolean(Func<string, string?> read, string name) =>
+        Blank(read(name))?.Trim().ToLowerInvariant() switch
+        {
+            null or "false" => false,
+            "true" => true,
+            _ => throw new InvalidOperationException($"{name} must be true or false.")
+        };
 
     private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 

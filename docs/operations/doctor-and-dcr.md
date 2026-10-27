@@ -93,3 +93,52 @@ uploaded (not one JSON object, deeper than 64 levels, a repeated top-level prope
 invalid escapes) is dead-lettered alone as `payload-invalid-json`; a payload whose
 `eventId` differs from the queued id as `payload-event-id-mismatch`. The rest of the
 batch is still delivered.
+
+## Private Link and ExpressRoute
+
+Collectors and [relays](../deployment/relay.md) in a private network can reach the Logs
+Ingestion API without the public internet. Only the host that delivers to Azure needs this
+path: in a relay topology that is the relay.
+
+**Private Link.** `deploy/bicep/main.bicep` can put the data collection endpoint (DCE) and
+the workspace in a new Azure Monitor Private Link Scope (AMPLS), with a private endpoint in
+the relay's subnet. Nothing is created unless you ask, and the PowerShell wrapper plans
+first:
+
+```powershell
+Deploy-BowerSentinelResource -ResourceGroupName rg-sentinel -WorkspaceName law-sentinel -CreateIngestIdentity `
+    -PublicNetworkAccess Disabled -PrivateLinkScopeName ampls-bower `
+    -PrivateEndpointSubnetId /subscriptions/<id>/resourceGroups/rg-net/providers/Microsoft.Network/virtualNetworks/vnet-dmz/subnets/relay
+# Review the what-if, then add -Apply.
+```
+
+| Parameter | Default | Effect |
+|---|---|---|
+| `publicNetworkAccess` | `Enabled` | `Disabled` makes the DCE accept private traffic only. |
+| `privateLinkScopeName` | empty | Creates the AMPLS and links the DCE and workspace to it. |
+| `privateLinkIngestionAccessMode` | `PrivateOnly` | Networks linked to the scope can ingest only into resources in it. |
+| `privateEndpointSubnetId` | empty | Creates the AMPLS private endpoint (`azuremonitor` group) in that subnet. |
+
+Things the template leaves to the network owner, on purpose:
+
+- **DNS.** Link the private DNS zones the endpoint needs (`privatelink.monitor.azure.com`,
+  `privatelink.oms.opinsights.azure.com`, `privatelink.ods.opinsights.azure.com`,
+  `privatelink.agentsvc.azure-automation.net` and `privatelink.blob.core.windows.net`) to
+  the relay's virtual network, or add the records to your hub DNS. An AMPLS changes name
+  resolution for every Azure Monitor resource seen from that network, so use one AMPLS per
+  network ([Azure Monitor Private Link design](https://learn.microsoft.com/azure/azure-monitor/logs/private-link-design)).
+- **Region.** Keep the DCE, DCR and workspace in an Australian region; `bower doctor`'s
+  `region` check still applies.
+- **The ingestion identity** is unchanged: a managed identity or workload identity with
+  Monitoring Metrics Publisher on the DCR only.
+
+**ExpressRoute.** With private peering, the relay reaches the AMPLS private endpoint over
+your circuit exactly as above. With Microsoft peering and route filters for Azure Monitor,
+the DCE stays public (`publicNetworkAccess: Enabled`) and traffic crosses the circuit
+instead of the internet; restrict the relay's egress to the DCE and Entra ID host names.
+
+**Check it from the relay host.** The DCE's logs ingestion host name should resolve to a
+private address (`nslookup <dce>.<region>-1.ingest.monitor.azure.com`). Then run
+`bower doctor --ingestion-endpoint https://<dce>.<region>-1.ingest.monitor.azure.com …`
+and an evidence run: a canary queried back out of Sentinel is the only proof the private
+path works end to end.

@@ -532,6 +532,7 @@
         "type": "Project",
         "dependencies": {
           "Bower.Core": "[1.0.0, )",
+          "Bower.Forwarding": "[1.0.0, )",
           "Bower.Jobs": "[1.0.0, )",
           "Bower.Output.AmaSpool": "[1.0.0, )",
           "Bower.Output.AzureLogsIngestion": "[1.0.0, )",
@@ -570,7 +571,10 @@
         }
       },
       "bower.forwarding": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[1.0.0, )"
+        }
       },
       "bower.integrity": {
         "type": "Project"

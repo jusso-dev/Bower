@@ -202,9 +202,74 @@ resource ingestionGrant 'Microsoft.Authorization/roleAssignments@2022-04-01' = i
   }
 }
 
+// Optional Private Link for relays and collectors in a private network (docs/deployment/relay.md).
+// Empty privateLinkScopeName (the default) deploys nothing here. The private DNS zones for the
+// endpoint stay with the network owner (docs/operations/doctor-and-dcr.md#private-link-and-expressroute).
+@description('Optional new Azure Monitor Private Link Scope. When set, the DCE and workspace join it so the Logs Ingestion API is reachable over Private Link. Empty changes nothing.')
+param privateLinkScopeName string = ''
+
+@description('Ingestion access mode of the new scope. PrivateOnly: networks linked to the scope can ingest only into resources in it.')
+@allowed([
+  'PrivateOnly'
+  'Open'
+])
+param privateLinkIngestionAccessMode string = 'PrivateOnly'
+
+@description('Optional subnet resource ID for the scope\'s private endpoint, in the network where the relay runs. Empty creates the scope without an endpoint.')
+param privateEndpointSubnetId string = ''
+
+resource privateLinkScope 'Microsoft.Insights/privateLinkScopes@2021-07-01-preview' = if (!empty(privateLinkScopeName)) {
+  name: empty(privateLinkScopeName) ? 'unused' : privateLinkScopeName
+  location: 'global'
+  properties: {
+    accessModeSettings: {
+      ingestionAccessMode: privateLinkIngestionAccessMode
+      queryAccessMode: 'Open'
+    }
+  }
+}
+
+resource scopedEndpoint 'Microsoft.Insights/privateLinkScopes/scopedResources@2021-07-01-preview' = if (!empty(privateLinkScopeName)) {
+  parent: privateLinkScope
+  name: '${namePrefix}-dce'
+  properties: {
+    linkedResourceId: endpoint.id
+  }
+}
+
+resource scopedWorkspace 'Microsoft.Insights/privateLinkScopes/scopedResources@2021-07-01-preview' = if (!empty(privateLinkScopeName)) {
+  parent: privateLinkScope
+  name: workspaceName
+  properties: {
+    linkedResourceId: workspace.id
+  }
+}
+
+resource privateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (!empty(privateLinkScopeName) && !empty(privateEndpointSubnetId)) {
+  name: '${namePrefix}-ampls-pe'
+  location: location
+  properties: {
+    subnet: {
+      id: privateEndpointSubnetId
+    }
+    privateLinkServiceConnections: [
+      {
+        name: '${namePrefix}-ampls'
+        properties: {
+          privateLinkServiceId: privateLinkScope.id
+          groupIds: ['azuremonitor']
+        }
+      }
+    ]
+  }
+  dependsOn: [scopedEndpoint, scopedWorkspace]
+}
+
 output ingestManagedIdentityClientId string = createIngestIdentity ? ingestIdentity!.properties.clientId : ''
 output ingestPrincipalId string = selectedIngestPrincipal
 output dataCollectionEndpoint string = endpoint.properties.logsIngestion.endpoint
 output dataCollectionRuleImmutableId string = rule.properties.immutableId
 output streamName string = 'Custom-BowerSecurity'
 output tableName string = table.name
+output privateLinkScopeId string = empty(privateLinkScopeName) ? '' : privateLinkScope.id
+output privateEndpointId string = !empty(privateLinkScopeName) && !empty(privateEndpointSubnetId) ? privateEndpoint.id : ''

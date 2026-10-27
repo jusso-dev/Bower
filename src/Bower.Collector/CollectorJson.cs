@@ -57,6 +57,9 @@ internal sealed record StatusResponse(
     /// <summary>Syslog listener counters; omitted when BOWER_SYSLOG_CONFIG is not set. Metadata only.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<Bower.Source.Syslog.SyslogListenerStatus>? Syslog { get; init; }
+    /// <summary>Relay counters since start; omitted unless BOWER_RELAY_LISTEN_URL is set.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Relay.RelayStatusSnapshot? Relay { get; init; }
 }
 
 internal sealed record StatusPolicyResponse(
