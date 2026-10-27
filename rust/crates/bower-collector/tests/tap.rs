@@ -22,6 +22,10 @@ use tower::ServiceExt;
 
 const TOKEN: &str = "test-ingest-token-0123456789abcdef0123456789";
 
+/// Host tests run one at a time: tracing caches callsite interest process-wide, so a
+/// thread-local log capture can miss lines another test's thread registered first.
+static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// Known secrets in field names the privacy engine removes and values its detectors mask.
 const SECRETS: [&str; 5] = [
     "tap-canary-password-value",
@@ -452,6 +456,7 @@ fn capture_logs() -> (Captured, tracing::subscriber::DefaultGuard) {
 
 #[tokio::test]
 async fn tap_never_returns_pre_redaction_values_and_audits_the_session() {
+    let _serial = SERIAL.lock().await;
     let (logs, _guard) = capture_logs();
     let directory = tempfile::tempdir().unwrap();
     let collector = start(directory.path(), |_| {}).await;
@@ -521,6 +526,7 @@ async fn tap_never_returns_pre_redaction_values_and_audits_the_session() {
 
 #[tokio::test]
 async fn tap_is_refused_without_the_operator_credential() {
+    let _serial = SERIAL.lock().await;
     const PRODUCER_TOKEN: &str = "producer-token-0123456789abcdef0123456789";
     const OPERATOR_TOKEN: &str = "operator-token-0123456789abcdef0123456789";
     let (logs, _guard) = capture_logs();
@@ -572,6 +578,7 @@ async fn tap_is_refused_without_the_operator_credential() {
 
 #[tokio::test]
 async fn tap_without_ingest_authentication_needs_a_loopback_listener() {
+    let _serial = SERIAL.lock().await;
     let directory = tempfile::tempdir().unwrap();
     let collector = start(directory.path(), |settings| {
         settings.ingest_token = None;
@@ -589,6 +596,7 @@ async fn tap_without_ingest_authentication_needs_a_loopback_listener() {
 
 #[tokio::test]
 async fn tap_enforces_session_cap_parameters_and_disablement() {
+    let _serial = SERIAL.lock().await;
     let directory = tempfile::tempdir().unwrap();
     let collector = start(directory.path(), |settings| {
         settings.tap_maximum_sessions = 1
@@ -626,6 +634,7 @@ async fn tap_enforces_session_cap_parameters_and_disablement() {
 
 #[tokio::test]
 async fn tap_duration_cap_ends_the_session() {
+    let _serial = SERIAL.lock().await;
     let directory = tempfile::tempdir().unwrap();
     let collector = start(directory.path(), |settings| {
         settings.tap_maximum_duration_seconds = 1;
@@ -649,6 +658,7 @@ async fn tap_duration_cap_ends_the_session() {
 
 #[tokio::test]
 async fn tap_ends_with_shutdown_when_the_host_stops() {
+    let _serial = SERIAL.lock().await;
     let directory = tempfile::tempdir().unwrap();
     let collector = start(directory.path(), |_| {}).await;
     let mut tap =
@@ -662,6 +672,7 @@ async fn tap_ends_with_shutdown_when_the_host_stops() {
 
 #[tokio::test]
 async fn status_lists_activity_and_tap_counters() {
+    let _serial = SERIAL.lock().await;
     let directory = tempfile::tempdir().unwrap();
     let collector = start(directory.path(), |_| {}).await;
     for _ in 0..3 {
