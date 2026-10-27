@@ -9,8 +9,11 @@ FROM rust:1.97-alpine AS build
 RUN apk add --no-cache build-base musl-dev cmake perl
 WORKDIR /src/rust
 COPY rust/ ./
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/src/rust/target \
+# Multi-arch builds run both platforms at once: lock the shared registry cache and
+# keep one target cache per platform, or parallel unpacks fail with "File exists".
+ARG TARGETPLATFORM
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/src/rust/target,id=bower-rust-target-${TARGETPLATFORM},sharing=locked \
     cargo build --release --locked -p bower-collector \
     && install -D -m 0755 target/release/bower-collector /out/app/bower-collector \
     && mkdir -p /out/var/lib/bower /out/var/spool/bower
