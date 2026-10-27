@@ -123,6 +123,12 @@ each other's file:
 The file holds the private key and the hashes of tokens already exchanged or refused,
 never a token. A collector never uses a credential issued to another collector id.
 
+With `BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE=true` the collector deletes the
+token file once that outcome is recorded (consumed or refused, never after a transient
+failure), and only if the file still holds the token whose hash it recorded. The
+[native installers](../deployment/installers.md) set it, so a pre-seeded token does not
+stay on disk. It is not part of the configuration hash.
+
 ## Test plan
 
 - Management: token lifecycle and authorisation, Pending and approval, every refusal

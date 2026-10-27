@@ -1,0 +1,31 @@
+---
+# The package scripts delete the secrets; the role checks it rather than trusting it.
+- name: Remove the deb
+  ansible.builtin.apt:
+    name: bower-collector
+    state: absent
+    purge: "{{ bower_purge | bool }}"
+  when: ansible_facts.pkg_mgr == 'apt'
+
+- name: Remove the rpm
+  ansible.builtin.dnf:
+    name: bower-collector
+    state: absent
+  when: ansible_facts.pkg_mgr in ['dnf', 'dnf5', 'yum']
+
+- name: Delete any remaining secrets
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /var/lib/bower/management-credential
+    - /var/lib/bower/enrolment
+    - /etc/bower/secrets
+    - /etc/bower/bower.env
+
+- name: Purge the queue and configuration
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: [/var/lib/bower, /var/spool/bower, /var/log/bower, /etc/bower]
+  when: bower_purge | bool

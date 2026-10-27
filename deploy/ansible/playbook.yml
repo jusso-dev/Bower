@@ -1,0 +1,14 @@
+---
+# Example: install and enrol collectors. Keep bower_enrolment_token in Ansible Vault,
+# one token per host (tokens are single use), for example in host_vars/<host>/vault.yml.
+#
+#   ansible-playbook -i inventory.ini deploy/ansible/playbook.yml \
+#     -e bower_package=dist/bower-collector_0.1.0-1_amd64.deb \
+#     -e bower_management_endpoint=https://bower-management.example.com/
+#
+# Uninstall: -e bower_state=absent (add -e bower_purge=true to delete the queue too).
+- name: Bower collectors
+  hosts: bower_collectors
+  become: true
+  roles:
+    - role: bower_collector
