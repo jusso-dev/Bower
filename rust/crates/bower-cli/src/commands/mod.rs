@@ -14,7 +14,9 @@ pub mod pipeline;
 pub mod policy;
 pub mod privacy;
 pub mod queue;
+pub mod tap;
 pub mod token;
+pub mod top;
 
 use std::future::Future;
 use std::time::Duration;
@@ -60,6 +62,8 @@ pub fn dispatch(command: Command) -> CliResult {
         Command::Archive(ArchiveCommand::Verify(args)) => archive::verify(&args),
         Command::Archive(ArchiveCommand::Replay(args)) => archive::replay(&args),
         Command::Sources(SourcesCommand::Check(args)) => archive::sources_check(&args),
+        Command::Tap(args) => tap::run(&args),
+        Command::Top(args) => top::run(&args),
     }
 }
 

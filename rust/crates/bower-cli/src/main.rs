@@ -63,6 +63,9 @@ Commands:
   bower archive replay --archive DIR --collector-url URL [--from ISO] [--to ISO]
                        [--event-type TYPE]... [--dry-run]
   bower sources check --expectations FILE [--database FILE]
+  bower tap [--collector URL] [--stage redacted|decided|queued] [--source APP] [--event-type TYPE]
+            [--limit N] [--duration SECONDS] [--sample N]   (post-redaction JSON lines on stdout)
+  bower top [--collector URL] [--interval SECONDS] [--once] [--iterations N]
   bower version";
 
 const UNKNOWN_COMMAND: &str = "Unknown command. Run 'bower --help'.";

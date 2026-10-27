@@ -34,7 +34,8 @@ internal sealed class PackRecordIntake(
     CollectorIdentity identity,
     ManagedPrivacyProfileState managedPrivacy,
     PipelineTelemetry telemetry,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    EventTap? tap = null)
 {
     /// <summary>The active parser of a loaded signed pack, or null.</summary>
     public static CustomLogParserConfiguration? Parser(PolicyBundle bundle, string pack, int parser)
@@ -75,9 +76,10 @@ internal sealed class PackRecordIntake(
         {
             // Quarantine without persisting, as /v1/packs/.../events does: the record never
             // reaches redaction, policy or the queue, and only the stable code is counted.
-            telemetry.Record(
-                ProcessingResult.Failed(DecisionAction.Quarantine, exception.Code, ProcessingStage.Transform),
-                Encoding.UTF8.GetByteCount(record));
+            ProcessingResult quarantined =
+                ProcessingResult.Failed(DecisionAction.Quarantine, exception.Code, ProcessingStage.Transform);
+            telemetry.Record(quarantined, Encoding.UTF8.GetByteCount(record));
+            tap?.Publish(quarantined);
             return PackRecordOutcome.Rejected;
         }
 

@@ -24,6 +24,8 @@ pub mod shutdown;
 pub mod source_health;
 pub mod suppression_worker;
 pub mod syslog;
+pub mod tap;
+pub mod tap_http;
 pub mod worker;
 
 pub use error::HostError;

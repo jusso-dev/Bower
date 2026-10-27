@@ -8,6 +8,8 @@ Rust port of `src/Bower.Collector` (the specification). Composition lives in
 - Ingest is authenticated whenever the listener is not loopback. Every ingest request
   passes the rate limiter, authentication and the 1 MiB body limit before parsing.
 - `/health` returns status only; queue, ledger and job metadata stay behind the token.
+- `/v1/tap` (`tap.rs`, `tap_http.rs`) mirrors C# `EventTap` and `TapEndpoints`:
+  post-redaction outcomes only, caps, operator-only access, audit lines, never blocking.
 - Delivery stays in `worker.rs` (lease based, never a scheduled job). The loop never
   exits on storage or adapter errors and settles every leased event exactly once.
 - `jobs.rs` runs only idempotent maintenance/reporting jobs.

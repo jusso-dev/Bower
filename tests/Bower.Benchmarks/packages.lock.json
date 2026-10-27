@@ -45,6 +45,15 @@
       "bower.contracts": {
         "type": "Project"
       },
+      "bower.core": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Persistence": "[1.0.0, )",
+          "Bower.PolicyEngine": "[1.0.0, )",
+          "Bower.Redaction": "[1.0.0, )"
+        }
+      },
       "bower.output.amaspool": {
         "type": "Project",
         "dependencies": {
@@ -57,6 +66,13 @@
           "Bower.Abstractions": "[1.0.0, )",
           "Microsoft.Data.Sqlite": "[10.0.13, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.5, )"
+        }
+      },
+      "bower.policyengine": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[1.0.0, )",
+          "YamlDotNet": "[18.1.0, )"
         }
       },
       "bower.redaction": {

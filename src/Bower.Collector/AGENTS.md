@@ -7,6 +7,9 @@ stays a thin entry point so integration tests can host the app in-process.
   loopback. Never weaken `CollectorSettings.Validate` or log the token.
 - Every request passes the rate limiter and the 1 MiB body limit before parsing.
 - `/health` returns status only. Queue and job metadata stay behind the token.
+- `/v1/tap` (`TapEndpoints`) shows final outcomes after redaction only: content for
+  accepted events (the queued payload), metadata for everything else. Keep its caps,
+  operator-only access and session audit; `EventTap.Publish` must never block ingest.
 - Event delivery stays in `QueueDeliveryWorker` (low latency, lease based). The `Bower.Jobs`
   scheduler runs only idempotent maintenance and reporting jobs (`Jobs/`).
 - The delivery loop must never exit on storage or adapter errors. Every leased event

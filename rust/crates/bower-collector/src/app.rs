@@ -141,6 +141,10 @@ pub struct AppState {
     pub syslog: Option<bower_source_syslog::SyslogMetrics>,
     /// Relay role: counters per pinned downstream (`RelayTelemetry`).
     pub relay: Option<Arc<crate::relay::telemetry::RelayTelemetry>>,
+    /// Live post-redaction tap (`bower tap`). In memory only; never persisted.
+    pub tap: Arc<crate::tap::EventTap>,
+    /// Who may open a tap session.
+    pub tap_access: Arc<crate::tap_http::TapAccess>,
 }
 
 /// C# `IOutputConcurrencyStatus` lookup: the output the delivery worker drives.
@@ -184,6 +188,7 @@ pub fn router(state: AppState) -> Router {
         .merge(ingest)
         .route("/health", get(health))
         .route("/v1/status", get(status))
+        .route("/v1/tap", get(crate::tap_http::tap))
         .layer(Extension(Arc::new(EventIdentityConflicts::default())))
         .with_state(state)
 }
@@ -253,7 +258,10 @@ fn managed_privacy_gate(state: &crate::managed_privacy::ManagedPrivacyState) -> 
 }
 
 /// `IngestAuthenticationFilter`: the producer id, or the 401 response.
-fn authenticate(auth: &IngestAuthentication, headers: &HeaderMap) -> Result<String, Box<Response>> {
+pub(crate) fn authenticate(
+    auth: &IngestAuthentication,
+    headers: &HeaderMap,
+) -> Result<String, Box<Response>> {
     // Kestrel rejects non-ASCII header bytes; treat them as no credential.
     let values: Vec<&str> = headers
         .get_all(header::AUTHORIZATION)
@@ -450,6 +458,8 @@ async fn ingest_candidate(
                     bower_core::ProcessingStage::Transform,
                 );
                 state.telemetry.record(&result, candidate.len() as i64);
+                // Metadata only: stage, action and code. The raw record is never tapped.
+                bower_core::TapSink::publish(state.tap.as_ref(), &result, None, None);
                 return json_response(
                     StatusCode::BAD_REQUEST,
                     &IngestResponse {
@@ -659,6 +669,21 @@ struct StatusBody<'a> {
     /// Relay counters since start; omitted unless BOWER_RELAY_LISTEN_URL is set.
     #[serde(skip_serializing_if = "Option::is_none")]
     relay: Option<crate::relay::telemetry::RelayStatusSnapshot>,
+    /// Busiest sources by accepted event count (at most 50), for bower top. Metadata only.
+    activity: Vec<ActivityBody>,
+    /// Tap sessions and frame counters since start. Metadata only.
+    tap: crate::tap::EventTapSnapshot,
+}
+
+/// `SourceActivity` (Web defaults).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ActivityBody {
+    application: String,
+    environment: String,
+    #[serde(with = "bower_contracts::time::serde_offset")]
+    last_seen_at: Timestamp,
+    event_count: i64,
 }
 
 /// `OutputConcurrencySnapshot` (Web defaults). Metadata only.
@@ -889,6 +914,18 @@ async fn status(
                 .as_ref()
                 .map(bower_source_syslog::SyslogMetrics::snapshot),
             relay: state.relay.as_ref().map(|relay| relay.snapshot()),
+            activity: state
+                .telemetry
+                .busiest_sources(bower_core::telemetry::MAXIMUM_STATUS_SOURCES)
+                .into_iter()
+                .map(|item| ActivityBody {
+                    application: item.application,
+                    environment: item.environment,
+                    last_seen_at: item.last_seen_at,
+                    event_count: item.event_count,
+                })
+                .collect(),
+            tap: state.tap.snapshot(),
         },
     )
 }

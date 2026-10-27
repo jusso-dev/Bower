@@ -13,7 +13,8 @@ public sealed class SecurityEventProcessor(
     ITelemetryPolicyEvaluator policyEvaluator,
     IDurableEventStore queue,
     TimeProvider clock,
-    PipelineTelemetry? telemetry = null)
+    PipelineTelemetry? telemetry = null,
+    EventTap? tap = null)
 {
     public async Task<ProcessingResult> ProcessAsync(
         string candidateJson,
@@ -29,10 +30,17 @@ public sealed class SecurityEventProcessor(
     /// <summary>
     /// Records the selection outcome once it is final: before any privacy alert enqueue, so
     /// an alert refused for capacity never hides an event that was already decided or queued.
+    /// The tap sees the same outcome, after redaction only: <paramref name="subject"/> is the
+    /// redacted candidate and <paramref name="acceptedPayload"/> the redacted queued payload.
     /// </summary>
-    private ProcessingResult Decided(ProcessingResult result, long bytesIn)
+    private ProcessingResult Decided(
+        ProcessingResult result,
+        long bytesIn,
+        SecurityEventEnvelope? subject = null,
+        string? acceptedPayload = null)
     {
         telemetry?.Record(result, bytesIn);
+        tap?.Publish(result, subject, acceptedPayload);
         return result;
     }
 
@@ -141,7 +149,8 @@ public sealed class SecurityEventProcessor(
                     null,
                     null,
                     ProcessingStage.Validation),
-                bytesIn);
+                bytesIn,
+                candidate);
             // Still notify SOC when high-risk secrets/PII were present in invalid payloads.
             string? alertId = await TryEnqueuePrivacyAlertAsync(
                 candidate,
@@ -164,7 +173,8 @@ public sealed class SecurityEventProcessor(
                     false,
                     decision.Reasons.Concat(decision.Warnings).ToArray(),
                     decision),
-                bytesIn);
+                bytesIn,
+                candidate);
             string? rejectedAlertId = await TryEnqueuePrivacyAlertAsync(
                 candidate,
                 redaction,
@@ -220,7 +230,8 @@ public sealed class SecurityEventProcessor(
             return Decided(
                 new ProcessingResult(DecisionAction.Quarantine, arranged.EventId, false, false,
                     ["event-identity-conflict"], decision),
-                bytesIn);
+                bytesIn,
+                arranged);
         }
         catch (QueueCapacityExceededException)
         {
@@ -243,7 +254,9 @@ public sealed class SecurityEventProcessor(
                 enqueue.Suppressed,
                 enqueue.Enqueued ? Encoding.UTF8.GetByteCount(payload) : 0,
                 new SourceKey(arranged.Application.Name, arranged.Application.Environment)),
-            bytesIn);
+            bytesIn,
+            arranged,
+            payload);
         if (enqueue.Enqueued)
         {
             // Counted once per stored event: a duplicate or suppressed retry adds nothing.

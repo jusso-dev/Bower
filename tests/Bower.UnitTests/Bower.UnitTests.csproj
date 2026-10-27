@@ -84,6 +84,11 @@
       <Link>bundle-diff/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- bower top render fixtures shared with the Rust port (rust/crates/bower-cli). -->
+    <Content Include="../../rust/crates/bower-cli/tests/fixtures/top/*">
+      <Link>top-fixtures/%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <!-- Pipeline node kind vectors shared with the Rust port (rust/crates/bower-pipeline). -->
     <Content Include="../../rust/crates/bower-pipeline/tests/fixtures/node-kinds.txt">
       <Link>pipeline-vectors/node-kinds.txt</Link>

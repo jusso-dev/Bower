@@ -1,0 +1,24 @@
+{
+  "status": "healthy",
+  "policy": { "hash": "sha256:policy" },
+  "ledger": { "sequence": 40, "hash": "sha256:ledger" },
+  "queue": { "queued": 2, "retrying": 0, "uploading": 0, "delivered": 30, "deadLettered": 0, "totalBytes": 40960, "undeliveredBytes": 2048, "oldestUndelivered": "2026-07-26T02:14:00+00:00" },
+  "jobs": [],
+  "pipeline": {
+    "startedAt": "2026-07-26T02:00:00+00:00", "eventsIn": 40, "eventsQueued": 30, "duplicates": 2, "suppressed": 1, "bytesIn": 40000, "bytesQueued": 36000,
+    "rows": [
+      { "stage": "policy", "policyId": "BWR-POL-AUTH-FAILURE", "action": "accept", "events": 20, "queued": 18, "duplicates": 2, "suppressed": 0, "bytesIn": 20000, "bytesQueued": 18000 },
+      { "stage": "policy", "policyId": "BWR-POL-AUTH-FAILURE", "action": "redact-and-accept", "events": 13, "queued": 12, "duplicates": 0, "suppressed": 1, "bytesIn": 13000, "bytesQueued": 18000 },
+      { "stage": "policy", "policyId": "BWR-POL-DEFAULT-DENY", "action": "reject", "events": 5, "queued": 0, "duplicates": 0, "suppressed": 0, "bytesIn": 5000, "bytesQueued": 0 },
+      { "stage": "validation", "policyId": "-", "action": "quarantine", "events": 2, "queued": 0, "duplicates": 0, "suppressed": 0, "bytesIn": 2000, "bytesQueued": 0 }
+    ]
+  },
+  "intake": { "observedSince": "2026-07-26T02:00:00+00:00", "attemptedRequests": 41, "attemptedBytes": 41000, "capacityRefusals": 1, "capacityRefusedBytes": 1000, "privacyAlertRefusals": 0, "privacyAlertRefusedBytes": 0, "lastRefusalAt": "2026-07-26T02:10:00+00:00", "lastRefusalReason": "queue-capacity" },
+  "syslog": [
+    { "id": "edge-firewall", "protocol": "udp", "endpoint": "0.0.0.0:5514", "activeConnections": 0, "connectionsAccepted": 0, "connectionsRejected": 0, "sendersDenied": 1, "tlsHandshakeFailures": 0, "framesReceived": 100, "bytesReceived": 20000, "queued": 20, "duplicates": 0, "suppressed": 0, "notRouted": 3, "notSelected": 70, "rejected": 4, "parserErrors": 0, "malformed": 2, "oversized": 1, "framingErrors": 0, "timeouts": 0, "dropped": 0, "retries": 0, "submitFailures": 0, "receiveErrors": 0, "lastFrameAt": "2026-07-26T02:14:18+00:00" }
+  ],
+  "activity": [
+    { "application": "TestApplication", "environment": "test", "lastSeenAt": "2026-07-26T02:14:18+00:00", "eventCount": 33 }
+  ],
+  "tap": { "enabled": true, "activeSessions": 0, "maximumSessions": 2, "sessionsOpened": 0, "sessionsRefused": 0, "framesSent": 0, "framesDropped": 0, "framesRateLimited": 0 }
+}

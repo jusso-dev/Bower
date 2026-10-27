@@ -27,7 +27,7 @@ bower-redaction.workspace = true
 bower-source-syslog.workspace = true
 chrono.workspace = true
 hex.workspace = true
-http-body-util.workspace = true
+http-body-util = { workspace = true, features = ["channel"] }
 hyper.workspace = true
 hyper-util.workspace = true
 reqwest.workspace = true

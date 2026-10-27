@@ -137,6 +137,11 @@ queued, duplicated and suppressed since start, per stage (`transform`, `redactio
 pack transform failures, quarantined before redaction. No payload content. Queued bytes
 include Bower's decision context.
 
+`bower top` renders these rows as per-stage rates (its `total` row equals `eventsIn`),
+with the `activity` field (busiest 50 sources by accepted event count) for per-source
+rates. `bower tap` shows sampled, post-redaction outcomes whose `stage` and `action`
+match these rows. See [tap and top](tap-and-top.md).
+
 ## Intake metrics
 
 `GET /v1/status` also includes `intake`, so a full queue is distinguishable from an
