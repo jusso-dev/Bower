@@ -12,8 +12,10 @@ signed:
 | `samples/*.jsonl` | Expected decisions and values that must never survive redaction |
 | `dcr/bower-dcr.json` | Generated table and DCR template (`dcr: true`) |
 
-Examples: [`packs/linux-ssh-gateway`](../../packs/linux-ssh-gateway) and
-[`packs/linux-journald-ssh`](../../packs/linux-journald-ssh) (uses transforms).
+Examples: [`packs/linux-ssh-gateway`](../../packs/linux-ssh-gateway),
+[`packs/linux-journald-ssh`](../../packs/linux-journald-ssh) (uses transforms) and
+[`packs/windows-security-logon`](../../packs/windows-security-logon) (Security event 4625
+from the [Windows Event Log source](windows-event-log-source.md), uses transforms).
 
 ## Build, sign, verify
 

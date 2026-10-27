@@ -129,6 +129,9 @@ pub struct CollectorSettings {
     pub tap_maximum_event_bytes: i32,
     /// BOWER_TAP_PRODUCERS: tokens-file producer ids allowed to tap besides the shared token.
     pub tap_producers: Vec<String>,
+    /// BOWER_WINDOWS_EVENTLOG_CONFIG. Read only to refuse it: the Windows Event Log source
+    /// is C#-only (the Rust collector does not run on Windows).
+    pub windows_event_log_config_path: Option<PathBuf>,
 }
 
 // Never print the ingest token.
@@ -207,6 +210,7 @@ impl CollectorSettings {
             tap_maximum_events: 1000,
             tap_maximum_event_bytes: 16_384,
             tap_producers: Vec::new(),
+            windows_event_log_config_path: None,
         }
     }
 
@@ -314,6 +318,8 @@ impl CollectorSettings {
             tap_maximum_events: read_i64(&read, "BOWER_TAP_MAX_EVENTS", 1000)? as i32,
             tap_maximum_event_bytes: read_i64(&read, "BOWER_TAP_MAX_EVENT_BYTES", 16_384)? as i32,
             tap_producers: split_list(read("BOWER_TAP_PRODUCERS").as_deref()),
+            windows_event_log_config_path: blank(read("BOWER_WINDOWS_EVENTLOG_CONFIG"))
+                .map(PathBuf::from),
         };
         settings.validate()?;
         Ok(settings)
@@ -488,6 +494,14 @@ impl CollectorSettings {
                     "BOWER_MANAGEMENT_ENDPOINT must use HTTPS unless it targets loopback.",
                 ));
             }
+        }
+
+        // Fail closed rather than run without a source the operator configured.
+        if self.windows_event_log_config_path.is_some() {
+            return Err(invalid(
+                "BOWER_WINDOWS_EVENTLOG_CONFIG is supported only by the C# collector on Windows; \
+                 the Rust collector does not read the Windows Event Log.",
+            ));
         }
 
         self.validate_management_connection()?;

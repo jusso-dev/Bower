@@ -19,6 +19,7 @@
     <ProjectReference Include="../../src/Bower.Collector/Bower.Collector.csproj" />
     <ProjectReference Include="../../src/Bower.Source.Docker/Bower.Source.Docker.csproj" />
     <ProjectReference Include="../../src/Bower.Source.Syslog/Bower.Source.Syslog.csproj" />
+    <ProjectReference Include="../../src/Bower.Source.WindowsEventLog/Bower.Source.WindowsEventLog.csproj" />
     <ProjectReference Include="../../src/Bower.Core/Bower.Core.csproj" />
     <ProjectReference Include="../../src/Bower.Evidence/Bower.Evidence.csproj" />
     <ProjectReference Include="../../src/Bower.Integrity/Bower.Integrity.csproj" />
@@ -105,6 +106,11 @@
     <!-- Syslog parser vectors and TEST-ONLY TLS keys shared with the Rust port (rust/crates/bower-source-syslog). -->
     <Content Include="../../rust/crates/bower-source-syslog/tests/fixtures/**/*">
       <Link>syslog-vectors/%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- Recorded Windows event XML (EvtRender output), synthetic values. -->
+    <Content Include="Fixtures/windows-eventlog/*.xml">
+      <Link>windows-eventlog/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="../../rules/**/*.yml">

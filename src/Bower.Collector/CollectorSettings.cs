@@ -111,6 +111,9 @@ public sealed record CollectorSettings
     /// <summary>JSON file of syslog listeners and pack routes (BOWER_SYSLOG_CONFIG).</summary>
     public string? SyslogConfigPath { get; init; }
 
+    /// <summary>JSON file of Windows Event Log subscriptions and pack parsers (BOWER_WINDOWS_EVENTLOG_CONFIG). Windows only.</summary>
+    public string? WindowsEventLogConfigPath { get; init; }
+
     public string? ManagementScope { get; init; }
 
     /// <summary>
@@ -284,7 +287,8 @@ public sealed record CollectorSettings
             TapMaximumDurationSeconds = (int)ReadInt64(read, "BOWER_TAP_MAX_DURATION_SECONDS", 300),
             TapMaximumEvents = (int)ReadInt64(read, "BOWER_TAP_MAX_EVENTS", 1000),
             TapMaximumEventBytes = (int)ReadInt64(read, "BOWER_TAP_MAX_EVENT_BYTES", 16_384),
-            TapProducers = SplitList(read("BOWER_TAP_PRODUCERS"))
+            TapProducers = SplitList(read("BOWER_TAP_PRODUCERS")),
+            WindowsEventLogConfigPath = Blank(read("BOWER_WINDOWS_EVENTLOG_CONFIG"))
         };
         settings.Validate();
         return settings;
@@ -536,6 +540,11 @@ public sealed record CollectorSettings
         if (SyslogConfigPath is not null)
         {
             material += '\u001f' + "syslog:" + SyslogConfigPath;
+        }
+
+        if (WindowsEventLogConfigPath is not null)
+        {
+            material += '\u001f' + "windows-eventlog:" + WindowsEventLogConfigPath;
         }
 
         if (UsesManagedPrivacyProfile)

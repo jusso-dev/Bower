@@ -63,6 +63,9 @@ internal sealed record StatusResponse(
 
     /// <summary>Tap sessions and frame counters since start. Metadata only.</summary>
     public Bower.Core.EventTapSnapshot? Tap { get; init; }
+    /// <summary>Windows Event Log subscription counters; omitted when BOWER_WINDOWS_EVENTLOG_CONFIG is not set. Metadata only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<Bower.Source.WindowsEventLog.WindowsEventSubscriptionStatus>? WindowsEventLog { get; init; }
 }
 
 /// <summary>First server-sent event of a tap session: its effective filters and caps.</summary>
