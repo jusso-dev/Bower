@@ -218,6 +218,12 @@
       "bower.source.syslog": {
         "type": "Project"
       },
+      "bower.source.windowseventlog": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[1.0.0, )"
+        }
+      },
       "Azure.Identity": {
         "type": "CentralTransitive",
         "requested": "[1.21.0, )",

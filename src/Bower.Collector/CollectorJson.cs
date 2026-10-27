@@ -60,6 +60,10 @@ internal sealed record StatusResponse(
     /// <summary>Relay counters since start; omitted unless BOWER_RELAY_LISTEN_URL is set.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Relay.RelayStatusSnapshot? Relay { get; init; }
+
+    /// <summary>Windows Event Log subscription counters; omitted when BOWER_WINDOWS_EVENTLOG_CONFIG is not set. Metadata only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<Bower.Source.WindowsEventLog.WindowsEventSubscriptionStatus>? WindowsEventLog { get; init; }
 }
 
 internal sealed record StatusPolicyResponse(

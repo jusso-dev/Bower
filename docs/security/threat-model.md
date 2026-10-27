@@ -90,6 +90,20 @@ evidence.
   only a route to an active signed pack parser that selects the record, then
   redaction and policy, can queue one. Counters only; no frame content is logged or
   exposed. See [syslog source](../deployment/syslog-source.md).
+- Windows Event Log (new local trust boundary, `BOWER_WINDOWS_EVENTLOG_CONFIG`, C#
+  collector on Windows only; the Rust collector and non-Windows hosts refuse the
+  setting): the collector reads local channels as a least-privilege account in Event
+  Log Readers. The query is generated from validated event ID and provider allow-lists
+  (no free text, no collect-all form), so the event log service returns only
+  allow-listed event content. Separate fixed boundary probes read only the oldest and
+  newest record IDs, never XML, messages or event properties, to detect resets reliably.
+  Event XML is bounded (64 KiB, no DTD or resolver) and flattened
+  into a bounded record; publisher-rendered message strings are opt-in and, like every
+  field, reach the envelope only through a signed pack mapping and redaction. Bookmarks
+  live in the queue database and move only after durable enqueue or a definitive drop
+  (including not-selected, rejected, invalid and oversized records); event ids from
+  channel, computer, record id and creation time deduplicate re-reads. Counters and
+  failure codes only. See [Windows Event Log source](../deployment/windows-event-log-source.md).
 - Event injection: the collector requires a shared bearer token
   (`BOWER_INGEST_TOKEN`, compared in constant time) whenever it listens beyond
   loopback and refuses to start without one. Kubernetes manifests add a
@@ -283,6 +297,13 @@ per-route `allowedSenders`, any allowed sender can reach any route. Syslog TLS
 certificates are read at start-up, so rotation needs a restart. Plain syslog has no
 application acknowledgement, so frames in flight when the collector stops are lost
 unless the sender retransmits.
+
+Windows event log writers are only as trustworthy as the channel's write access: any
+program allowed to write to a channel such as `Application` can forge an allow-listed
+event ID under a provider name it registers, so prefer restricted channels, list
+`providers` and match on `provider` in the pack. Events overwritten before they are
+read are lost and counted (`gaps`); a log cleared and refilled past the bookmark while
+the collector is stopped is not detected as a reset.
 
 The installers delete files with `shred -u` (Linux, where available) or a plain delete
 (Windows). Neither guarantees the token bytes are gone from journaling, copy-on-write or

@@ -139,6 +139,9 @@ pub struct CollectorSettings {
     /// BOWER_RELAY_MANAGEMENT_TUNNEL=true: downstreams may tunnel to this relay's own
     /// BOWER_MANAGEMENT_ENDPOINT, and nowhere else.
     pub relay_management_tunnel: bool,
+    /// BOWER_WINDOWS_EVENTLOG_CONFIG. Read only to refuse it: the Windows Event Log source
+    /// is C#-only (the Rust collector does not run on Windows).
+    pub windows_event_log_config_path: Option<PathBuf>,
 }
 
 // Never print the ingest token.
@@ -220,6 +223,7 @@ impl CollectorSettings {
             relay_key_file: None,
             relay_downstreams_file: None,
             relay_management_tunnel: false,
+            windows_event_log_config_path: None,
         }
     }
 
@@ -332,6 +336,8 @@ impl CollectorSettings {
             source_expectations_path: blank(read("BOWER_SOURCE_EXPECTATIONS")).map(PathBuf::from),
             archive_path: blank(read("BOWER_ARCHIVE_PATH")).map(PathBuf::from),
             syslog_config_path: blank(read("BOWER_SYSLOG_CONFIG")).map(PathBuf::from),
+            windows_event_log_config_path: blank(read("BOWER_WINDOWS_EVENTLOG_CONFIG"))
+                .map(PathBuf::from),
         };
         settings.validate()?;
         Ok(settings)
@@ -511,6 +517,14 @@ impl CollectorSettings {
                     "BOWER_MANAGEMENT_ENDPOINT must use HTTPS unless it targets loopback.",
                 ));
             }
+        }
+
+        // Fail closed rather than run without a source the operator configured.
+        if self.windows_event_log_config_path.is_some() {
+            return Err(invalid(
+                "BOWER_WINDOWS_EVENTLOG_CONFIG is supported only by the C# collector on Windows; \
+                 the Rust collector does not read the Windows Event Log.",
+            ));
         }
 
         self.validate_management_connection()?;

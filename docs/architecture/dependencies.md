@@ -56,6 +56,12 @@ for the generic host, logging and `IHttpClientFactory`, so it adds no NuGet pack
 `Bower.Agent.Cloud` does the same; its only packages are the AWS SDKs above. Google
 credentials are handled in-house (see "Removed for Native AOT" below), so no Google
 package is referenced.
+`Bower.Source.WindowsEventLog` uses the same shared framework for
+`System.Diagnostics.Eventing.Reader` (`EvtQuery`, `EvtNext`, `EvtRender` over the local
+event log service), which the collector already ships; it adds no NuGet packages. The
+reader is Windows only (`[SupportedOSPlatform("windows")]`); event XML parsing uses
+`System.Xml` with DTDs prohibited and no resolver. The Rust port adds no crate: the
+source is C#-only and the Rust collector refuses `BOWER_WINDOWS_EVENTLOG_CONFIG`.
 `Bower.Source.Gcp` and the AWS queue parser in `Bower.Source.Aws` have no dependencies:
 parsing stays pure and testable without cloud access.
 
