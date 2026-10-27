@@ -130,8 +130,21 @@ jobs:
         shell: pwsh
         run: |
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          Install-Module -Name Pester -RequiredVersion 5.9.1 -Scope CurrentUser -Force -SkipPublisherCheck
-          Install-Module -Name PSScriptAnalyzer -RequiredVersion 1.25.0 -Scope CurrentUser -Force
+          foreach ($module in @(
+            @{ Name = 'Pester'; RequiredVersion = '5.9.1'; SkipPublisherCheck = $true },
+            @{ Name = 'PSScriptAnalyzer'; RequiredVersion = '1.25.0' }
+          )) {
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              try {
+                Install-Module @module -Scope CurrentUser -Force -ErrorAction Stop
+                break
+              } catch {
+                if ($attempt -eq 3) { throw }
+                Write-Warning "Download of $($module.Name) failed; retrying (attempt $attempt of 3)."
+                Start-Sleep -Seconds (5 * $attempt)
+              }
+            }
+          }
       - name: Analyze and test PowerShell modules
         shell: pwsh
         run: pwsh -NoProfile -File powershell/build.ps1
