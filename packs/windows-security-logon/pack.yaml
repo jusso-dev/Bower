@@ -2,11 +2,11 @@ apiVersion: bower.security/v1
 kind: Pack
 metadata:
   id: windows-security-logon
-  version: 1.0.1
+  version: 1.0.2
   name: Windows failed network logons
   description: >-
     Failed network logons (Security event 4625) from the Bower Windows Event Log
-    source. Only events with a source address are selected; a signed transform maps
+    source. Only logon type 3 events with a source address are selected; a signed transform maps
     the NTSTATUS failure code to an outcome reason inside the collector. Workstation,
     domain, process and the rest of EventData are never forwarded. Pseudonymises
     usernames with HMAC.

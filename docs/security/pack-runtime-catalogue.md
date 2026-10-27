@@ -28,11 +28,12 @@ host name and other journal fields are never forwarded. A binary (array) `MESSAG
 quarantined with `transform-type-error`. Version 1.0.1 only adds `expectFields`
 assertions to its samples; parser, policy and privacy profile are unchanged.
 
-`windows-security-logon` 1.0.1 exposes one signed JSON parser (index 0) for records from
+`windows-security-logon` 1.0.2 exposes one signed JSON parser (index 0) for records from
 the [Windows Event Log source](../deployment/windows-event-log-source.md), subscribed
 to Security event 4625 only. Its transform program explicitly requires the `Security`
 channel even if a subscription binds the pack to another channel, and keeps only provider
-`Microsoft-Windows-Security-Auditing` events with a source address (`data.IpAddress`
+`Microsoft-Windows-Security-Auditing` events with `data.LogonType` equal to `3` (network)
+and a source address (`data.IpAddress`
 must be an address; local console failures with `-` are not selected) and maps the
 NTSTATUS `data.SubStatus`, then `data.Status`, through a static table to the outcome
 reason (`InvalidCredentials`, `UnknownAccount`, `AccountLockedOut`, `AccountDisabled`,
@@ -44,6 +45,11 @@ otherwise `OtherFailure`). It produces only `authentication_failure`, action
 `BWR-PACK-WIN-LOGON-FAILURE` 1.0.0 selects; usernames (`data.TargetUserName`) are
 pseudonymised. Workstation, domain, logon process, computer and the rest of
 `EventData` are never forwarded.
+
+Version 1.0.2 narrows selection from 1.0.1: interactive logons and other logon types,
+including a missing type, are no longer selected even if they carry a valid source
+address. The failure policy and privacy profile are unchanged. Rejection samples cover
+interactive loopback logons and missing logon types.
 
 Other parser configurations without a signed runtime mapping are preview-only.
 Cloud packs use their existing semantic agent paths and local detections; no new

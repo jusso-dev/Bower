@@ -54,15 +54,6 @@ loaded signed pack stop start-up.
       "providers": ["Microsoft-Windows-Security-Auditing"],
       "pack": "windows-security-logon",
       "parser": 0
-    },
-    {
-      "id": "payments-app",
-      "channel": "Application",
-      "eventIds": [1000, 1001],
-      "providers": ["Contoso.Payments"],
-      "pack": "contoso-payments",
-      "parser": 0,
-      "readExisting": true
     }
   ]
 }
@@ -104,12 +95,12 @@ limit.
 ## Run with least privilege
 
 Run the collector as a dedicated low-privilege identity (a virtual service account such
-as `NT SERVICE\BowerCollector`, or a gMSA), never as an administrator or `LocalSystem`.
+as `NT SERVICE\Bower`, used by the MSI, or a gMSA), never as an administrator or `LocalSystem`.
 Add it to the local **Event Log Readers** group, which can read the Security,
 Application, System and most operational channels on Windows Server 2019 and later:
 
 ```powershell
-Add-LocalGroupMember -Group 'Event Log Readers' -Member 'NT SERVICE\BowerCollector'
+Add-LocalGroupMember -Group 'Event Log Readers' -Member 'NT SERVICE\Bower'
 ```
 
 Some channels have their own access list (`wevtutil gl <channel>` shows
@@ -147,11 +138,13 @@ the pack parser's `transforms`
 ### Shipped pack: `windows-security-logon`
 
 Failed network logons (Security event 4625). The parser selects only events from
-`Microsoft-Windows-Security-Auditing` with a source address, maps the NTSTATUS
+`Microsoft-Windows-Security-Auditing` with logon type `3` (network) and a source address,
+maps the NTSTATUS
 `SubStatus` (then `Status`) to an outcome reason (`InvalidCredentials`,
 `UnknownAccount`, `AccountLockedOut`, ... or `OtherFailure`) and pseudonymises the
 account with HMAC. Workstation, domain, process and the rest of `EventData` are never
-forwarded. Use it with the first subscription in the example above, and enable
+forwarded. Interactive logons, other logon types and records without a logon type are
+not selected, even when they carry a valid address. Use the configuration example above and enable
 **Audit Logon** failure auditing on the host. See the
 [pack runtime catalogue](../security/pack-runtime-catalogue.md).
 

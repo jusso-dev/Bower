@@ -7,6 +7,7 @@
     { "sourceName": "provider", "type": "Text", "ocsfPath": "metadata.product.name", "asimField": "EventProduct", "sensitive": false },
     { "sourceName": "channel", "type": "Text", "ocsfPath": "metadata.log_name", "asimField": "EventOriginalSubType", "sensitive": false },
     { "sourceName": "eventId", "type": "WholeNumber", "ocsfPath": "metadata.event_code", "asimField": "EventOriginalType", "sensitive": false },
+    { "sourceName": "data.LogonType", "type": "WholeNumber", "ocsfPath": "logon_type_id", "asimField": "LogonMethod", "sensitive": false },
     { "sourceName": "data.TargetUserName", "type": "Text", "ocsfPath": "user.name", "asimField": "TargetUsername", "sensitive": true },
     { "sourceName": "data.IpAddress", "type": "Text", "ocsfPath": "src_endpoint.ip", "asimField": "SrcIpAddr", "sensitive": true },
     { "sourceName": "data.Status", "type": "Text", "ocsfPath": "status_code", "asimField": "EventResultDetails", "sensitive": false },
@@ -25,7 +26,7 @@
     "eventResult": "failure",
     "transforms": [
       ".m = regex_extract(.\"data.IpAddress\", '^(?<ip>[0-9A-Fa-f.:]{2,45})$')",
-      "if .channel == \"Security\" && .provider == \"Microsoft-Windows-Security-Auditing\" && .eventId == \"4625\" && .m.ip != null { .result = \"failure\" } else { .result = \"ignored\" }",
+      "if .channel == \"Security\" && .provider == \"Microsoft-Windows-Security-Auditing\" && .eventId == \"4625\" && .\"data.LogonType\" == \"3\" && .m.ip != null { .result = \"failure\" } else { .result = \"ignored\" }",
       ".user = .\"data.TargetUserName\"",
       ".source_ip = .m.ip",
       ".reason = coalesce(lookup(\"statuses\", lower(.\"data.SubStatus\")), lookup(\"statuses\", lower(.\"data.Status\")), \"OtherFailure\")",
