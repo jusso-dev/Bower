@@ -13,17 +13,33 @@ public sealed class DevelopmentAuthenticationHandler(
 {
     public const string AuthenticationScheme = "BowerDevelopment";
 
+    /// <summary>
+    /// Development only: a comma-separated subset of roles for this request, so local and
+    /// end-to-end tests can act as a viewer. It can only remove roles, never add one.
+    /// </summary>
+    public const string RolesHeader = "X-Bower-Development-Roles";
+
+    private static readonly string[] AllRoles =
+        [BowerRoles.Viewer, BowerRoles.Operator, BowerRoles.Approver, BowerRoles.Administrator, BowerRoles.Collector];
+
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        Claim[] claims =
+        string[] roles = AllRoles;
+        if (Request.Headers.TryGetValue(RolesHeader, out Microsoft.Extensions.Primitives.StringValues requested))
+        {
+            HashSet<string> subset = requested.ToString()
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToHashSet(StringComparer.Ordinal);
+            roles = AllRoles.Where(subset.Contains).ToArray();
+        }
+
+        List<Claim> claims =
         [
             new("oid", "development-user"),
-            new("name", "Local development administrator"),
-            new("roles", BowerRoles.Viewer),
-            new("roles", BowerRoles.Operator),
-            new("roles", BowerRoles.Approver),
-            new("roles", BowerRoles.Administrator),
-            new("roles", BowerRoles.Collector),
+            new("name", roles.Contains(BowerRoles.Administrator)
+                ? "Local development administrator"
+                : "Local development user"),
+            .. roles.Select(role => new Claim("roles", role)),
             new(ClaimTypes.NameIdentifier, "development-user")
         ];
         ClaimsIdentity identity = new(claims, AuthenticationScheme, "name", "roles");

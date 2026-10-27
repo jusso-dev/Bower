@@ -5,6 +5,7 @@ import {
   FileLock,
   GitBranch,
   KeyRound,
+  ListChecks,
   Menu,
   Moon,
   ScrollText,
@@ -24,9 +25,11 @@ import { AccessPage } from "./pages/AccessPage";
 import { AuditPage } from "./pages/AuditPage";
 import { JobsPage } from "./pages/JobsPage";
 import { PrivacyProfilesPage } from "./pages/PrivacyProfilesPage";
+import { SetupPage } from "./pages/SetupPage";
 
 const navItems = [
   { to: "/", label: "Overview", icon: Activity },
+  { to: "/setup", label: "Setup", icon: ListChecks },
   { to: "/collectors", label: "Collectors", icon: Boxes },
   { to: "/pipelines", label: "Pipelines", icon: GitBranch },
   { to: "/approvals", label: "Approvals", icon: ClipboardCheck },
@@ -134,6 +137,7 @@ export function App() {
         )}
         <Routes>
           <Route path="/" element={<OverviewPage />} />
+          <Route path="/setup" element={<SetupPage />} />
           <Route path="/collectors" element={<CollectorsPage />} />
           <Route path="/pipelines" element={<PipelinesPage />} />
           <Route path="/approvals" element={<ApprovalsPage />} />

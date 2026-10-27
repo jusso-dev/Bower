@@ -297,8 +297,16 @@ public sealed class ManagementApiTests
         params string[] extraArgs) =>
         StartAsync(directory, null, cancellationToken, extraArgs);
 
+    internal static Task<WebApplication> StartAsync(
+        TemporaryDirectory directory,
+        TimeProvider? clock,
+        CancellationToken cancellationToken,
+        params string[] extraArgs) =>
+        StartAsync(directory, null, clock, cancellationToken, extraArgs);
+
     internal static async Task<WebApplication> StartAsync(
         TemporaryDirectory directory,
+        Action<IServiceCollection>? services,
         TimeProvider? clock,
         CancellationToken cancellationToken,
         params string[] extraArgs)
@@ -322,6 +330,8 @@ public sealed class ManagementApiTests
                 {
                     builder.Services.AddSingleton(clock);
                 }
+
+                services?.Invoke(builder.Services);
             },
             environmentName: "Production");
         await ManagementApplication.InitializeAsync(app, cancellationToken);

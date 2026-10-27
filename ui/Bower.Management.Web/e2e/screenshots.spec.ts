@@ -16,6 +16,23 @@ test("capture polished desktop overview", async ({ page }, testInfo) => {
   });
 });
 
+test("capture onboarding wizard", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "readme-chromium");
+  await page.goto("/setup");
+  const steps = page.getByRole("navigation", { name: "Setup steps" });
+  await steps.getByRole("button", { name: /^Step 4: Approve the first collector/ }).click();
+  // Only the collector step is captured: it depends on seeded collectors alone, so the image
+  // does not change with destination, probe or canary state left by other runs.
+  const step = page.getByRole("region", { name: "Approve the first collector" });
+  await expect(step.getByText(/2 collectors approved/)).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => document.fonts.ready);
+  await step.screenshot({
+    path: path.join(screenshotDirectory, "bower-management-setup.png"),
+    animations: "disabled"
+  });
+});
+
 test("capture collector inventory", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "readme-chromium");
   await page.goto("/collectors");

@@ -60,3 +60,33 @@ function validationMessages(errors: Record<string, unknown> | undefined): string
     .filter((value): value is string => typeof value === "string" && value.length > 0);
   return messages.length ? messages.join(" ") : undefined;
 }
+
+/**
+ * Saves an authenticated response as a file, byte for byte (signed evidence must not be
+ * re-serialized). Nothing is kept in browser storage.
+ */
+export function useApiDownload() {
+  const { getAccessToken } = useAuth();
+
+  return useCallback(
+    async (path: string, fileName: string) => {
+      const token = await getAccessToken();
+      const response = await fetch(`${baseUrl}${path}`, {
+        headers: {
+          Accept: "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        }
+      });
+      if (!response.ok) {
+        throw new ApiError(`Download failed with status ${response.status}.`, response.status);
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      URL.revokeObjectURL(url);
+    },
+    [getAccessToken]
+  );
+}

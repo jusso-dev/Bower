@@ -127,6 +127,9 @@ export interface Audit {
   actorObjectId: string;
   actorName: string;
   occurredAt: string;
+  /** Set when Bower acted for a person, for example a setup canary result. */
+  initiatedByObjectId?: string | null;
+  initiatedByName?: string | null;
 }
 
 export interface Access {
@@ -298,4 +301,94 @@ export interface PrivacyProfileAssignment {
   reason: string;
   actorName?: string | null;
   occurredAt: string;
+}
+
+/** Plain-language progress state of a guided step. Rendered with text and icon, never colour alone. */
+export type GuidedState = "complete" | "attention" | "blocked" | "in-progress" | "not-started";
+
+/** One validation result. `fix` is set for every state except "pass". */
+export interface GuidedCheck {
+  id: string;
+  state: "pass" | "warn" | "fail" | "pending";
+  message: string;
+  fix?: string | null;
+}
+
+export type SetupStepId =
+  | "sign-in"
+  | "entra"
+  | "destination"
+  | "collector"
+  | "probe"
+  | "canary"
+  | "proof";
+
+export interface SetupStep {
+  id: SetupStepId;
+  state: GuidedState;
+  checks: GuidedCheck[];
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+
+export interface SetupDestination {
+  workspaceId: string;
+  workspaceResourceId: string | null;
+  dcrResourceId: string | null;
+  table: string;
+  updatedBy: string;
+  updatedAt: string;
+}
+
+export interface SetupProbeOption {
+  profile: string;
+  title: string;
+  description: string;
+  packId: string | null;
+  expectedEventType: string | null;
+}
+
+/**
+ * One onboarding canary run. `collectorAccepted` is collector acceptance only: delivery is
+ * proven only when `mode` is "verified". "simulated" never counts as proof.
+ */
+export interface SetupCanaryRun {
+  id: string;
+  profile: string;
+  state: "running" | "completed" | "interrupted";
+  mode: "verified" | "failed" | "simulated" | null;
+  outcome: string | null;
+  message: string | null;
+  fix: string | null;
+  collectorAccepted: boolean;
+  eventId: string | null;
+  workspaceId: string;
+  table: string;
+  latencySeconds: number | null;
+  hasSignature: boolean;
+  hasBundle: boolean;
+  requestedBy: string;
+  requestedAt: string;
+  completedAt: string | null;
+}
+
+export interface SetupStatus {
+  canChange: boolean;
+  steps: SetupStep[];
+  destination: SetupDestination | null;
+  probe: { profile: string; updatedBy: string; updatedAt: string } | null;
+  probeOptions: SetupProbeOption[];
+  canary: {
+    configured: boolean;
+    verifierConfigured: boolean;
+    signingConfigured: boolean;
+    collectorHost: string | null;
+    timeoutMinutes: number;
+  };
+  latestRun: SetupCanaryRun | null;
+}
+
+export interface SetupCheckResult {
+  checks: GuidedCheck[];
+  checkedAt: string;
 }
