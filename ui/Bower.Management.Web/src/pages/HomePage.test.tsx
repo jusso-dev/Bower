@@ -165,6 +165,11 @@ describe("Home page", () => {
       "/help#sentinel"
     );
 
+    const groups = screen.getByRole("region", { name: "Collector groups" });
+    expect(within(groups).getByRole("link", { name: "Collector groups" }).getAttribute("href")).toBe(
+      "/help#group"
+    );
+
     fireEvent.click(collector);
     expect(await screen.findByRole("heading", { name: "Glossary" })).toBeTruthy();
     expect(document.activeElement?.id).toBe("collector");
@@ -238,6 +243,21 @@ describe("Home page", () => {
     expect(screen.getByLabelText("Loading")).toBeTruthy();
     expect(await screen.findByText("Could not load this view.")).toBeTruthy();
     expect(screen.getByText("Forbidden.")).toBeTruthy();
+  });
+
+  it("recovers from a failed first load when a later refresh succeeds", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    let calls = 0;
+    stubHome(() => (calls++ === 0 ? json({ error: "Unavailable." }, 503) : json(home)));
+    renderApp("/");
+
+    expect(await screen.findByText("Could not load this view.")).toBeTruthy();
+    await act(async () => {
+      vi.advanceTimersByTime(60_000);
+    });
+
+    expect(await screen.findByRole("region", { name: "Is my data flowing?" })).toBeTruthy();
+    expect(screen.queryByText("Could not load this view.")).toBeNull();
   });
 
   it("keeps the last status with a notice when a refresh fails", async () => {

@@ -156,9 +156,14 @@ evidence.
   destination-query-verified run. See [console onboarding](../operations/console-onboarding.md).
 - Console home view (`/api/home`, any interactive role): computed on the server from
   management state; it changes nothing and links to the pages that do. Collectors now
-  report redaction counts by detector type on the heartbeat (at most 64 validated type
-  ids and counts, never values, paths or event ids). A compromised collector can only
-  inflate or hide its own counts; the home view shows them as counts, not proof. Sentinel
+  report redaction counts by detector type on the heartbeat (at most 64 type ids and
+  counts; an honest collector never sends values, paths or event ids). Type ids are
+  untrusted metadata: management checks only their characters and length, so a
+  compromised collector could encode data in one. Management stores the ids as sent in
+  its own database (to compute increases) but `/api/home` returns only allowlisted group
+  names and labels; any id it does not recognise shows as "Other sensitive details". A
+  compromised collector can also inflate or hide its own counts; the home view shows them
+  as counts, not proof. Sentinel
   delivery is shown as proven only for a destination-query-verified setup run. See
   [console home](../operations/console-home.md).
 - Local management exposure: HTTP listener defaults to loopback and has body limit.

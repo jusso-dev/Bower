@@ -63,7 +63,7 @@ export const glossary: GlossaryEntry[] = [
     term: "Group",
     definition:
       "Collectors that share an environment name, such as production or staging. Each group gets one traffic light.",
-    matches: []
+    matches: ["collector groups"]
   }
 ];
 
