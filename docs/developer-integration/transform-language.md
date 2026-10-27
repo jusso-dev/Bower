@@ -43,7 +43,9 @@ other results with `to_string`.
 The parser file is listed in the signed pack manifest, so its transforms are covered by
 the signature. Packs are validated at `bower pack build` (an invalid program cannot be
 signed) and again at load. `bower pack test` and build run raw samples through the
-transforms; a transform failure is decision `quarantine`. Management custom-log preview
+transforms; a transform failure is decision `quarantine`, and `expectFields` asserts the
+redacted output of a successful run ([field assertions](../deployment/packs.md#field-assertions-expectfields)).
+Management custom-log preview
 validates transforms but never runs them: previews show source fields under the
 unchanged privacy floor.
 

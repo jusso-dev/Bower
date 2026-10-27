@@ -8,6 +8,9 @@ samples and a DCR template for one application type.
 - Every archive file must be listed in the signed manifest with its SHA-256; unlisted
   files, path traversal and oversized entries fail verification.
 - Content is parsed and validated at build time, so a broken pack cannot be signed.
+- Sample field assertions (`expectFields`) check the redacted event only. Test output
+  and reports show post-redaction values; never print a pre-redaction or expected
+  value that does not survive redaction.
 - Privacy profiles never contain keys; hosts supply HMAC keys at load.
 - Policy changes in a new pack version need a population diff (`PackDiff`) and a
   version bump for every changed policy.

@@ -47,6 +47,27 @@ jobs:
       - run: dotnet restore Bower.sln --locked-mode
       - run: dotnet build Bower.sln --configuration Release --no-restore
       - run: dotnet test --solution Bower.sln --configuration Release --no-build
+      # Every pack builds (samples and field assertions gate signing) and passes `pack test`.
+      # The key is ephemeral: CI proves the packs, it never publishes a signed pack.
+      - name: Test every pack
+        run: |
+          bower=src/Bower.Cli/bin/Release/net10.0/bower
+          "$bower" keys generate --out-dir "$RUNNER_TEMP/pack-keys" --name ci-ephemeral
+          mkdir -p "$RUNNER_TEMP/pack-reports"
+          for source in packs/*/; do
+            source=${source%/}
+            id=$(basename "$source")
+            "$bower" pack build "$source" --key "$RUNNER_TEMP/pack-keys/ci-ephemeral.key.pem" --out "$RUNNER_TEMP/packs/$id"
+            "$bower" pack test "$RUNNER_TEMP/packs/$id/$id-"*.bowerpack --trusted-key "$RUNNER_TEMP/pack-keys/ci-ephemeral.pub.pem" \
+              --report "$RUNNER_TEMP/pack-reports/$id.xml" --report-format junit
+          done
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pack-test-reports
+          path: ${{ runner.temp }}/pack-reports
+          if-no-files-found: ignore
+          retention-days: 7
       - run: dotnet format Bower.sln --verify-no-changes --no-restore
 
   rust:
@@ -67,6 +88,16 @@ jobs:
       # C#-vs-Rust parity tests that need a built C# binary skip when it is absent.
       - run: cargo test --workspace --locked
       - run: cargo build --release --locked -p bower-collector -p bower-cli
+      - name: Test every pack with the Rust CLI
+        run: |
+          bower=target/release/bower
+          "$bower" keys generate --out-dir "$RUNNER_TEMP/pack-keys" --name ci-ephemeral
+          for source in ../packs/*/; do
+            source=${source%/}
+            id=$(basename "$source")
+            "$bower" pack build "$source" --key "$RUNNER_TEMP/pack-keys/ci-ephemeral.key.pem" --out "$RUNNER_TEMP/packs/$id"
+            "$bower" pack test "$RUNNER_TEMP/packs/$id/$id-"*.bowerpack --trusted-key "$RUNNER_TEMP/pack-keys/ci-ephemeral.pub.pem"
+          done
 
   infrastructure:
     runs-on: ubuntu-latest

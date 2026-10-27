@@ -50,6 +50,22 @@ internal sealed record PackInspectOutput(
 
 internal sealed record PackInspectFile(string Path, string Role, long Bytes);
 
+internal sealed record PackTestReportOutput(
+    [property: JsonPropertyName("pack")] string Pack,
+    [property: JsonPropertyName("version")] string Version,
+    [property: JsonPropertyName("parser")] string? Parser,
+    [property: JsonPropertyName("total")] int Total,
+    [property: JsonPropertyName("passed")] int Passed,
+    [property: JsonPropertyName("failed")] int Failed,
+    [property: JsonPropertyName("samples")] IReadOnlyList<PackTestReportSample> Samples);
+
+internal sealed record PackTestReportSample(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("passed")] bool Passed,
+    [property: JsonPropertyName("expected")] string Expected,
+    [property: JsonPropertyName("actual")] string Actual,
+    [property: JsonPropertyName("problems")] IReadOnlyList<string> Problems);
+
 /// <summary><c>bower privacy validate</c> output: metadata only, never patterns or samples.</summary>
 internal sealed record PrivacyValidationOutput(
     [property: JsonPropertyName("valid")] bool Valid,
@@ -230,6 +246,7 @@ internal sealed record SourceCheckItem(
 [JsonSerializable(typeof(PipelineValidationOutput))]
 [JsonSerializable(typeof(InitOutput))]
 [JsonSerializable(typeof(PackInspectOutput))]
+[JsonSerializable(typeof(PackTestReportOutput))]
 [JsonSerializable(typeof(PrivacyValidationOutput))]
 [JsonSerializable(typeof(PolicyTestOutput))]
 [JsonSerializable(typeof(PolicyDiffOutput))]

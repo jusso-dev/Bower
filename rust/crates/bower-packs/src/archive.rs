@@ -72,6 +72,8 @@ pub struct LoadedPack {
     pub privacy_profile_yaml: Option<String>,
     pub detections: Vec<DetectionRule>,
     pub parsers: Vec<CustomLogParserConfiguration>,
+    /// Pack path of each parser, parallel to `parsers` (manifest order).
+    pub parser_paths: Vec<String>,
     pub sample_lines: Vec<String>,
     pub dcr_template_json: Option<String>,
 }
@@ -156,12 +158,20 @@ pub fn build(
         ));
     }
 
-    // Parse everything and run the samples so a broken pack cannot be signed.
-    let parsed = parse_content(
+    // Parse everything and run the samples so a broken pack cannot be signed. Parsers
+    // take manifest (ordinal path) order, as at load, so a sample's parser index means
+    // the same parser at build and at test time.
+    let mut parsed = parse_content(
         files
             .iter()
             .map(|(path, role, content)| (path.as_str(), role.as_str(), content.as_slice())),
     )?;
+    let mut parsers: Vec<_> = std::mem::take(&mut parsed.parser_paths)
+        .into_iter()
+        .zip(std::mem::take(&mut parsed.parsers))
+        .collect();
+    parsers.sort_by(|left, right| canonical_json::compare_ordinal(&left.0, &right.0));
+    (parsed.parser_paths, parsed.parsers) = parsers.into_iter().unzip();
     let candidate = parsed.into_pack(None, "unsigned".to_owned());
     let privacy = test_privacy_policy(candidate.privacy_profile_yaml.as_deref())?;
     let failures: Vec<_> = tester::run(&candidate, privacy, Some(clock))?
@@ -405,6 +415,7 @@ struct ParsedContent {
     privacy_profile: Option<String>,
     detections: Vec<DetectionRule>,
     parsers: Vec<CustomLogParserConfiguration>,
+    parser_paths: Vec<String>,
     samples: Vec<String>,
     dcr: Option<String>,
 }
@@ -418,6 +429,7 @@ impl ParsedContent {
             privacy_profile_yaml: self.privacy_profile,
             detections: self.detections,
             parsers: self.parsers,
+            parser_paths: self.parser_paths,
             sample_lines: self.samples,
             dcr_template_json: self.dcr,
         }
@@ -432,6 +444,7 @@ fn parse_content<'a>(
         privacy_profile: None,
         detections: Vec::new(),
         parsers: Vec::new(),
+        parser_paths: Vec::new(),
         samples: Vec::new(),
         dcr: None,
     };
@@ -464,6 +477,7 @@ fn parse_content<'a>(
                     )));
                 }
                 parsed.parsers.push(configuration);
+                parsed.parser_paths.push(path.to_owned());
             }
             roles::SAMPLE => parsed.samples.extend(
                 text.split('\n')

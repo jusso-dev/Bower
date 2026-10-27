@@ -132,9 +132,17 @@ pub fn inspect_json(pack: &LoadedPack) -> CliResult<Json> {
     ]))
 }
 
-/// `bower pack test FILE --trusted-key PUBLIC.pem [--hmac-key-file FILE]`.
-/// Exit 1 when any sample fails.
+/// `bower pack test FILE --trusted-key PUBLIC.pem [--hmac-key-file FILE] [--parser NAME]
+/// [--report FILE [--report-format json|junit]]`. Exit 1 when any sample fails, or when
+/// `--parser` selects no samples. Reports carry only post-redaction values.
 pub fn test(args: &PackTestArgs) -> CliResult {
+    let format = args.report_format.as_deref();
+    if !matches!(format, None | Some("json" | "junit")) {
+        return Err(CliError::new("--report-format must be json or junit."));
+    }
+    if format.is_some() && args.report.is_none() {
+        return Err(CliError::new("--report-format requires --report FILE."));
+    }
     let pack = load(&args.pack)?;
     let privacy = match (&args.hmac_key_file, &pack.privacy_profile_yaml) {
         (Some(key_file), Some(yaml)) => {
@@ -143,15 +151,134 @@ pub fn test(args: &PackTestArgs) -> CliResult {
         _ => bower_packs::test_privacy_policy(pack.privacy_profile_yaml.as_deref())
             .map_err(pack_error)?,
     };
-    let results = bower_packs::run_samples(&pack, privacy, None).map_err(pack_error)?;
+    let parser = args.parser.as_deref();
+    let results =
+        bower_packs::run_parser_samples(&pack, privacy, None, parser).map_err(pack_error)?;
     for line in test_lines(&results) {
         println!("{line}");
+    }
+    if let Some(report) = &args.report {
+        let manifest = manifest(&pack)?;
+        let text = if format == Some("junit") {
+            junit_report(manifest, parser, &results)
+        } else {
+            format!(
+                "{}\n",
+                json_report(manifest, parser, &results).to_indented()
+            )
+        };
+        std::fs::write(report, text)
+            .map_err(|error| CliError::new(format!("Cannot write the report: {}", error.kind())))?;
+    }
+    if parser.is_some() && results.is_empty() {
+        println!("No samples for parser '{}'.", parser.unwrap_or_default());
+        return Ok(1);
     }
     Ok(if results.iter().all(|result| result.passed) {
         0
     } else {
         1
     })
+}
+
+/// C# `PackTestReport.Json`.
+pub fn json_report(
+    manifest: &PackManifest,
+    parser: Option<&str>,
+    results: &[PackSampleResult],
+) -> Json {
+    let passed = results.iter().filter(|result| result.passed).count();
+    let samples = results
+        .iter()
+        .map(|result| {
+            Json::object([
+                ("name", Json::str(result.name.clone())),
+                ("passed", Json::Bool(result.passed)),
+                ("expected", Json::str(result.expected_decision.clone())),
+                ("actual", Json::str(result.actual_decision.clone())),
+                (
+                    "problems",
+                    Json::Array(result.problems.iter().cloned().map(Json::Str).collect()),
+                ),
+            ])
+        })
+        .collect();
+    Json::object([
+        ("pack", Json::str(manifest.id.clone())),
+        ("version", Json::str(manifest.version.clone())),
+        ("parser", Json::opt_str(parser)),
+        ("total", count(results.len())),
+        ("passed", count(passed)),
+        ("failed", count(results.len() - passed)),
+        ("samples", Json::Array(samples)),
+    ])
+}
+
+/// XML 1.0 text and attribute escaping; characters XML cannot carry become U+FFFD.
+fn xml(value: &str) -> String {
+    let mut text = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '&' => text.push_str("&amp;"),
+            '<' => text.push_str("&lt;"),
+            '>' => text.push_str("&gt;"),
+            '"' => text.push_str("&quot;"),
+            '\'' => text.push_str("&apos;"),
+            '\n' => text.push_str("&#10;"),
+            '\r' => text.push_str("&#13;"),
+            '\t' => text.push_str("&#9;"),
+            '\u{0}'..='\u{1f}' | '\u{fffe}' | '\u{ffff}' => text.push('\u{fffd}'),
+            other => text.push(other),
+        }
+    }
+    text
+}
+
+/// C# `PackTestReport.JUnit`.
+pub fn junit_report(
+    manifest: &PackManifest,
+    parser: Option<&str>,
+    results: &[PackSampleResult],
+) -> String {
+    let failures = results.iter().filter(|result| !result.passed).count();
+    let suite = xml(&format!(
+        "{}@{}{}",
+        manifest.id,
+        manifest.version,
+        parser
+            .map(|parser| format!(":{parser}"))
+            .unwrap_or_default()
+    ));
+    let total = results.len();
+    let mut text = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    text.push_str(&format!(
+        "<testsuites name=\"bower pack test\" tests=\"{total}\" failures=\"{failures}\">\n"
+    ));
+    text.push_str(&format!(
+        "  <testsuite name=\"{suite}\" tests=\"{total}\" failures=\"{failures}\">\n"
+    ));
+    for result in results {
+        text.push_str(&format!(
+            "    <testcase classname=\"{}\" name=\"{}\"",
+            xml(&manifest.id),
+            xml(&result.name)
+        ));
+        if result.passed {
+            text.push_str(" />\n");
+            continue;
+        }
+        let message = result
+            .problems
+            .first()
+            .map_or("Sample failed.", String::as_str);
+        text.push_str(&format!(
+            ">\n      <failure message=\"{}\">{}</failure>\n    </testcase>\n",
+            xml(message),
+            xml(&result.problems.join("\n"))
+        ));
+    }
+    text.push_str("  </testsuite>\n</testsuites>\n");
+    text
 }
 
 pub fn test_lines(results: &[PackSampleResult]) -> Vec<String> {

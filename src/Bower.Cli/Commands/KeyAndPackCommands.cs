@@ -78,14 +78,31 @@ internal static class PackCommands
         return 0;
     }
 
-    /// <summary>bower pack test FILE --trusted-key PUBLIC.pem [--hmac-key-file FILE]</summary>
+    /// <summary>
+    /// bower pack test FILE --trusted-key PUBLIC.pem [--hmac-key-file FILE] [--parser NAME]
+    /// [--report FILE [--report-format json|junit]]. Exit 1 when any sample fails, or when
+    /// <c>--parser</c> selects no samples. Reports carry only post-redaction values.
+    /// </summary>
     public static int Test(string[] args)
     {
+        string? format = CliOptions.Get(args, "--report-format");
+        string? report = CliOptions.Get(args, "--report");
+        if (format is not (null or "json" or "junit"))
+        {
+            throw new ArgumentException("--report-format must be json or junit.");
+        }
+
+        if (format is not null && report is null)
+        {
+            throw new ArgumentException("--report-format requires --report FILE.");
+        }
+
         LoadedPack pack = Load(args);
         PrivacyPolicy privacy = CliOptions.Get(args, "--hmac-key-file") is { } keyFile && pack.PrivacyProfileYaml is not null
             ? PrivacyProfileLoader.Load(pack.PrivacyProfileYaml, PrivacyProfileLoader.ReadKeyFile(keyFile)).Policy
             : PackArchive.TestPrivacyPolicy(pack.PrivacyProfileYaml);
-        IReadOnlyList<PackSampleResult> results = PackTester.Run(pack, privacy);
+        string? parser = CliOptions.Get(args, "--parser");
+        IReadOnlyList<PackSampleResult> results = PackTester.Run(pack, privacy, parser: parser);
         foreach (PackSampleResult result in results)
         {
             Console.WriteLine($"{(result.Passed ? "PASS" : "FAIL"),-5} {result.Name} (expected {result.ExpectedDecision}, got {result.ActualDecision})");
@@ -93,6 +110,19 @@ internal static class PackCommands
             {
                 Console.WriteLine($"      {problem}");
             }
+        }
+
+        if (report is not null)
+        {
+            File.WriteAllText(report, format == "junit"
+                ? PackTestReport.JUnit(pack.Manifest, parser, results)
+                : JsonSerializer.Serialize(PackTestReport.Json(pack.Manifest, parser, results), CliJsonContext.Default.PackTestReportOutput) + "\n");
+        }
+
+        if (parser is not null && results.Count == 0)
+        {
+            Console.WriteLine($"No samples for parser '{parser}'.");
+            return 1;
         }
 
         return results.All(result => result.Passed) ? 0 : 1;
@@ -135,5 +165,69 @@ internal static class PackCommands
     {
         string[] keys = CliOptions.All(args, "--trusted-key").Select(File.ReadAllText).ToArray();
         return keys.Length > 0 ? keys : throw new ArgumentException("Provide at least one --trusted-key PUBLIC.pem.");
+    }
+}
+
+/// <summary>Machine-readable <c>bower pack test</c> reports for CI (JSON or JUnit XML).</summary>
+internal static class PackTestReport
+{
+    public static PackTestReportOutput Json(PackManifest manifest, string? parser, IReadOnlyList<PackSampleResult> results) =>
+        new(
+            manifest.Id,
+            manifest.Version,
+            parser,
+            results.Count,
+            results.Count(result => result.Passed),
+            results.Count(result => !result.Passed),
+            [.. results.Select(result => new PackTestReportSample(
+                result.Name, result.Passed, result.ExpectedDecision, result.ActualDecision, result.Problems))]);
+
+    public static string JUnit(PackManifest manifest, string? parser, IReadOnlyList<PackSampleResult> results)
+    {
+        int failures = results.Count(result => !result.Passed);
+        string suite = Xml($"{manifest.Id}@{manifest.Version}" + (parser is null ? string.Empty : $":{parser}"));
+        System.Text.StringBuilder text = new();
+        text.Append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+        text.Append($"<testsuites name=\"bower pack test\" tests=\"{results.Count}\" failures=\"{failures}\">\n");
+        text.Append($"  <testsuite name=\"{suite}\" tests=\"{results.Count}\" failures=\"{failures}\">\n");
+        foreach (PackSampleResult result in results)
+        {
+            text.Append($"    <testcase classname=\"{Xml(manifest.Id)}\" name=\"{Xml(result.Name)}\"");
+            if (result.Passed)
+            {
+                text.Append(" />\n");
+                continue;
+            }
+
+            string message = result.Problems.Count > 0 ? result.Problems[0] : "Sample failed.";
+            text.Append($">\n      <failure message=\"{Xml(message)}\">{Xml(string.Join("\n", result.Problems))}</failure>\n    </testcase>\n");
+        }
+
+        text.Append("  </testsuite>\n</testsuites>\n");
+        return text.ToString();
+    }
+
+    /// <summary>XML 1.0 text and attribute escaping; characters XML cannot carry become U+FFFD.</summary>
+    private static string Xml(string value)
+    {
+        System.Text.StringBuilder text = new(value.Length);
+        foreach (char character in value)
+        {
+            text.Append(character switch
+            {
+                '&' => "&amp;",
+                '<' => "&lt;",
+                '>' => "&gt;",
+                '"' => "&quot;",
+                '\'' => "&apos;",
+                '\n' => "&#10;",
+                '\r' => "&#13;",
+                '\t' => "&#9;",
+                < ' ' or '\uFFFE' or '\uFFFF' => "\uFFFD",
+                _ => character.ToString()
+            });
+        }
+
+        return text.ToString();
     }
 }

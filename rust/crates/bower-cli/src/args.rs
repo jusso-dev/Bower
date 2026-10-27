@@ -200,6 +200,9 @@ pub fn parse(args: &[String]) -> Option<Command> {
         ["pack", "test"] => Command::Pack(PackCommand::Test(PackTestArgs {
             pack: pack_file(),
             hmac_key_file: o.get("--hmac-key-file"),
+            parser: o.get("--parser"),
+            report: o.get("--report"),
+            report_format: o.get("--report-format"),
         })),
         ["pack", "diff"] => Command::Pack(PackCommand::Diff(PackDiffArgs {
             files: o.bowerpacks(),
