@@ -24,6 +24,7 @@ bower-persistence = { path = "crates/bower-persistence" }
 bower-pipeline = { path = "crates/bower-pipeline" }
 bower-policy = { path = "crates/bower-policy" }
 bower-redaction = { path = "crates/bower-redaction" }
+bower-source-syslog = { path = "crates/bower-source-syslog" }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 indexmap = { version = "2", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }

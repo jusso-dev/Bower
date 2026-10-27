@@ -1,0 +1,13 @@
+{
+  "listener": "edge",
+  "protocol": "udp",
+  "receivedAt": "2026-10-26T08:30:00Z",
+  "frame": "<13>1 2026-10-26T08:00:00Z h a - - - msg",
+  "vectors": [
+    { "name": "ipv4", "peer": "192.0.2.10:514", "senderAddress": "192.0.2.10", "id": "syslog-467134815bb22454d2e87140932bc565" },
+    { "name": "ipv4-mapped-ipv6", "peer": "[::ffff:192.0.2.10]:514", "senderAddress": "192.0.2.10", "id": "syslog-467134815bb22454d2e87140932bc565" },
+    { "name": "ipv6-global", "peer": "[2001:db8::10]:514", "senderAddress": "2001:db8::10", "id": "syslog-dadf0c7ddd8be650b57977425230fa45" },
+    { "name": "ipv6-link-local-unscoped", "peer": "[fe80::1]:514", "senderAddress": "fe80::1", "id": "syslog-b3e00c4170f2aeafbcbda0b6c72c0f2b" },
+    { "name": "ipv6-link-local-scoped", "peer": "[fe80::1%2]:514", "senderAddress": "fe80::1", "id": "syslog-b3e00c4170f2aeafbcbda0b6c72c0f2b" }
+  ]
+}

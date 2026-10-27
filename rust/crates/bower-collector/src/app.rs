@@ -137,6 +137,8 @@ pub struct AppState {
     pub source_health: Arc<crate::source_health::SourceHealth>,
     /// The configured output, for its adaptive request concurrency.
     pub delivery: Arc<DeliveryStatus>,
+    /// Syslog listener counters when `BOWER_SYSLOG_CONFIG` is set.
+    pub syslog: Option<bower_source_syslog::SyslogMetrics>,
 }
 
 /// C# `IOutputConcurrencyStatus` lookup: the output the delivery worker drives.
@@ -649,6 +651,9 @@ struct StatusBody<'a> {
     /// Adaptive request concurrency of the output; omitted when it has none.
     #[serde(skip_serializing_if = "Option::is_none")]
     delivery: Option<DeliveryBody>,
+    /// Syslog listener counters; omitted when BOWER_SYSLOG_CONFIG is not set. Metadata only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    syslog: Option<Vec<bower_source_syslog::ListenerStatus>>,
 }
 
 /// `OutputConcurrencySnapshot` (Web defaults). Metadata only.
@@ -874,6 +879,10 @@ async fn status(
                 .is_configured()
                 .then(|| sources.into_iter().map(Into::into).collect()),
             delivery: state.delivery.snapshot().map(Into::into),
+            syslog: state
+                .syslog
+                .as_ref()
+                .map(bower_source_syslog::SyslogMetrics::snapshot),
         },
     )
 }

@@ -35,6 +35,11 @@ impl ShutdownToken {
         *self.0.borrow()
     }
 
+    /// The underlying signal, for components that take a plain watch receiver.
+    pub fn receiver(&self) -> watch::Receiver<bool> {
+        self.0.clone()
+    }
+
     /// Resolves once cancellation is requested (or the trigger is dropped).
     pub async fn cancelled(&self) {
         let mut receiver = self.0.clone();

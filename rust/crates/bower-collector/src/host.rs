@@ -19,7 +19,7 @@ use bower_persistence::{QueueArchive, SqliteEventStore};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::app::{
     AppState, BundleInfo, DeliveryStatus, EventProcessor, PolicyReference, ProcessFailure,
@@ -180,6 +180,8 @@ pub struct Collector {
     /// Token enrolment (`BOWER_MANAGEMENT_AUTH=enrolment`): the key-bound credential.
     pub enrolment: Option<Arc<crate::enrolment::ManagementEnrolment>>,
     job_triggers: JobTriggers,
+    /// Syslog listeners when `BOWER_SYSLOG_CONFIG` is set; bound by `initialize`.
+    syslog: Option<bower_source_syslog::SyslogSource>,
 }
 
 /// Wires settings, bundle, queue, processor, authentication and rate limiting.
@@ -223,6 +225,7 @@ pub fn build(
         Arc::clone(&clock),
     )
     .with_telemetry(Arc::clone(&telemetry));
+    let packs = Arc::new(bundle.packs);
     // Loaded at build so a malformed expectations file stops start-up.
     let expectations = settings
         .source_expectations_path
@@ -267,6 +270,26 @@ pub fn build(
         ManagedPrivacyState::local()
     });
     let delivery_status = Arc::new(DeliveryStatus::new(options.output.clone()));
+    // Loaded and checked against the loaded packs at build so a bad file stops start-up.
+    let syslog = settings
+        .syslog_config_path
+        .as_ref()
+        .map(|path| crate::syslog::load(path, &packs))
+        .transpose()?
+        .map(|configuration| {
+            bower_source_syslog::SyslogSource::new(
+                configuration,
+                Arc::new(crate::syslog::CollectorSyslogSink {
+                    processor: processor.clone(),
+                    identity: identity.clone(),
+                    packs: Arc::clone(&packs),
+                    managed_privacy: Arc::clone(&managed_privacy),
+                    clock: Arc::clone(&clock),
+                    telemetry: Arc::clone(&telemetry),
+                }),
+                Some(Arc::clone(&clock)),
+            )
+        });
     let state = AppState {
         delivery: Arc::clone(&delivery_status),
         processor: Arc::new(CoreProcessor {
@@ -285,8 +308,11 @@ pub fn build(
             u32::try_from(settings.ingest_requests_per_second).unwrap_or(1),
         )),
         bundle: Arc::new(bundle.info),
-        packs: Arc::new(bundle.packs),
+        packs,
         catalog: Arc::clone(&catalog),
+        syslog: syslog
+            .as_ref()
+            .map(bower_source_syslog::SyslogSource::metrics),
         managed_privacy: Arc::clone(&managed_privacy),
     };
     let delivery = options.delivery.unwrap_or(QueueDeliveryOptions {
@@ -359,6 +385,7 @@ pub fn build(
         management_client,
         enrolment,
         job_triggers: JobTriggers::default(),
+        syslog,
         settings,
     })
 }
@@ -374,6 +401,22 @@ impl Collector {
     /// whether a restart was requested (exit code 75).
     pub fn lifetime(&self) -> ApplicationLifetime {
         self.lifetime.clone()
+    }
+
+    /// Bound syslog endpoints by listener id (after `initialize`).
+    pub fn syslog_endpoints(&self) -> std::collections::HashMap<String, std::net::SocketAddr> {
+        self.syslog
+            .as_ref()
+            .map(|source| source.endpoints().clone())
+            .unwrap_or_default()
+    }
+
+    /// Replaces the syslog retry delay (tests), before `initialize`.
+    pub fn set_syslog_retry_delay(&mut self, delay: std::time::Duration) {
+        self.syslog = self
+            .syslog
+            .take()
+            .map(|source| source.with_retry_delay(delay));
     }
 
     /// Initialises storage and registers recurring jobs (C# `InitializeAsync`).
@@ -545,6 +588,25 @@ impl Collector {
         }
         self.job_triggers = scheduler.triggers();
         self.scheduler = Some(scheduler);
+        if let Some(source) = self.syslog.as_mut() {
+            // A bind or TLS failure stops start-up (C# `SyslogIntakeService.StartAsync`).
+            source.bind().await.map_err(|error| match error {
+                bower_source_syslog::SourceError::Tls(_) => {
+                    HostError::new("InvalidOperationException", error.to_string())
+                }
+                bower_source_syslog::SourceError::Bind(inner) => {
+                    HostError::new("SocketException", inner.kind().to_string())
+                }
+            })?;
+            for status in source.snapshot() {
+                info!(
+                    listener = status.id,
+                    protocol = status.protocol,
+                    endpoint = status.endpoint,
+                    "Syslog listener listening."
+                );
+            }
+        }
         Ok(())
     }
 
@@ -586,6 +648,10 @@ impl Collector {
             };
             let token = shutdown.clone();
             tasks.push(tokio::spawn(async move { worker.run(inbox, token).await }));
+        }
+        if let Some(source) = self.syslog.take() {
+            let stop = shutdown.receiver();
+            tasks.push(tokio::spawn(source.run(stop)));
         }
         if let Some(output) = self.output.clone() {
             let worker = QueueDeliveryWorker::new(

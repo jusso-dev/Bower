@@ -12,6 +12,7 @@ using Bower.Packs;
 using Bower.Persistence;
 using Bower.PolicyEngine;
 using Bower.Redaction;
+using Bower.Source.Syslog;
 using Microsoft.AspNetCore.RateLimiting;
 
 namespace Bower.Collector;
@@ -86,6 +87,23 @@ public static partial class CollectorApplication
             services.GetRequiredService<TimeProvider>(),
             services.GetRequiredService<ILogger<SourceHealth>>()));
         builder.Services.AddHostedService<SuppressionWindowWorker>();
+        if (settings.SyslogConfigPath is not null)
+        {
+            // Loaded and checked against the loaded packs at build so a bad file stops start-up.
+            SyslogSourceConfiguration syslog = SyslogSourceConfigurationLoader.LoadFile(settings.SyslogConfigPath);
+            SyslogRoutes.Validate(syslog, bundle);
+            builder.Services.AddSingleton(services => new SyslogSource(
+                syslog,
+                new CollectorSyslogSink(
+                    bundle,
+                    services.GetRequiredService<SecurityEventProcessor>(),
+                    services.GetRequiredService<CollectorIdentity>(),
+                    services.GetRequiredService<ManagedPrivacyProfileState>(),
+                    services.GetRequiredService<PipelineTelemetry>(),
+                    services.GetRequiredService<TimeProvider>()),
+                services.GetRequiredService<TimeProvider>()));
+            builder.Services.AddHostedService<SyslogIntakeService>();
+        }
         builder.Services.AddSingleton<EventIdentityConflicts>();
         builder.Services.AddSingleton(
             new CollectorIdentity(settings.CollectorId, settings.Version, "local-http", settings.ConfigurationHash()));
@@ -379,7 +397,8 @@ public static partial class CollectorApplication
                         Intake = telemetry.IntakeSnapshot(),
                         Sources = sourceHealth.IsConfigured ? sources : null,
                         Delivery = (context.RequestServices.GetService<IOutputAdapter>() as IOutputConcurrencyStatus)
-                            ?.GetConcurrencySnapshot()
+                            ?.GetConcurrencySnapshot(),
+                        Syslog = context.RequestServices.GetService<SyslogSource>()?.Snapshot()
                     };
                     return Results.Json(status, CollectorJsonContext.Default.StatusResponse);
                 })

@@ -1,0 +1,27 @@
+[package]
+name = "bower-source-syslog"
+description = "Bower syslog source: RFC 5424 and RFC 3164 over TCP, TLS and UDP with bounded framing."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bower-contracts.workspace = true
+chrono.workspace = true
+hex.workspace = true
+rustls.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["io-util"] }
+tokio-rustls.workspace = true
+
+[dev-dependencies]
+base64.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

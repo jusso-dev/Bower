@@ -1,0 +1,989 @@
+{
+ "listener": "edge",
+ "protocol": "tcp",
+ "sender": "192.0.2.10",
+ "vectors": [
+  {
+   "name": "rfc5424-example-1",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<34>1 2003-10-11T22:14:15.003Z mymachine.example.com su - ID47 - \ufeff'su root' failed for lonvick on /dev/pts/8",
+   "record": {
+    "id": "syslog-c5308481c1176a846ceeda30f5e66360",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc5424",
+    "facility": "4",
+    "severity": "2",
+    "timestamp": "2003-10-11T22:14:15.003000Z",
+    "hostname": "mymachine.example.com",
+    "appName": "su",
+    "msgId": "ID47",
+    "message": "'su root' failed for lonvick on /dev/pts/8"
+   }
+  },
+  {
+   "name": "rfc5424-example-2",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<165>1 2003-08-24T05:14:15.000003-07:00 192.0.2.1 myproc 8710 - - %% It's time to make the do-nuts.",
+   "record": {
+    "id": "syslog-f6e645de3c896e09b96ab8f88c901dc5",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc5424",
+    "facility": "20",
+    "severity": "5",
+    "timestamp": "2003-08-24T12:14:15.000003Z",
+    "hostname": "192.0.2.1",
+    "appName": "myproc",
+    "procId": "8710",
+    "message": "%% It's time to make the do-nuts."
+   }
+  },
+  {
+   "name": "rfc5424-example-3",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<165>1 2003-10-11T22:14:15.003Z mymachine.example.com evntslog - ID47 [exampleSDID@32473 iut=\"3\" eventSource=\"Application\" eventID=\"1011\"] \ufeffAn application event log entry...",
+   "record": {
+    "id": "syslog-7d7daebafdaf6437c9ed03034b850c77",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc5424",
+    "facility": "20",
+    "severity": "5",
+    "timestamp": "2003-10-11T22:14:15.003000Z",
+    "hostname": "mymachine.example.com",
+    "appName": "evntslog",
+    "msgId": "ID47",
+    "message": "An application event log entry...",
+    "sd.exampleSDID@32473.iut": "3",
+    "sd.exampleSDID@32473.eventSource": "Application",
+    "sd.exampleSDID@32473.eventID": "1011"
+   }
+  },
+  {
+   "name": "rfc5424-example-4",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<165>1 2003-10-11T22:14:15.003Z mymachine.example.com evntslog - ID47 [exampleSDID@32473 iut=\"3\" eventSource=\"Application\" eventID=\"1011\"][examplePriority@32473 class=\"high\"]",
+   "record": {
+    "id": "syslog-44e623b0751527367ee84aa7aad7e7a4",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc5424",
+    "facility": "20",
+    "severity": "5",
+    "timestamp": "2003-10-11T22:14:15.003000Z",
+    "hostname": "mymachine.example.com",
+    "appName": "evntslog",
+    "msgId": "ID47",
+    "sd.exampleSDID@32473.iut": "3",
+    "sd.exampleSDID@32473.eventSource": "Application",
+    "sd.exampleSDID@32473.eventID": "1011",
+    "sd.examplePriority@32473.class": "high"
+   }
+  },
+  {
+   "name": "rfc5424-nil-everything",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - - - - - -",
+   "record": {
+    "id": "syslog-cdbf0799fa8a124aa64e38717b57a647",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc5424",
+    "facility": "1",
+    "severity": "5",
+    "timestamp": "2026-10-26T08:30:00.123456Z"
+   }
+  },
+  {
+   "name": "rfc5424-nil-received-at-varies-id",
+   "receivedAt": "2026-10-26T08:30:01Z",
+   "frame": "<13>1 - - - - - -",
+   "record": {
+    "id": "syslog-ceaf0278902e23b44e75555c13c093d9",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:01.000000Z",
+    "format": "rfc5424",
+    "facility": "1",
+    "severity": "5",
+    "timestamp": "2026-10-26T08:30:01.000000Z"
+   }
+  },
+  {
+   "name": "rfc5424-empty-message-after-sd",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h a - - - ",
+   "record": {
+    "id": "syslog-df1bd79faa1e349e80ba032402c91b90",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc5424",
+    "facility": "1",
+    "severity": "5",
+    "timestamp": "2026-10-26T08:30:00.123456Z",
+    "hostname": "h",
+    "appName": "a"
+   }
+  },
+  {
+   "name": "rfc5424-bom-only-message",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h a - - - \ufeff",
+   "record": {
+    "id": "syslog-945c2d947029ce66707cc27a9232a50e",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc5424",
+    "facility": "1",
+    "severity": "5",
+    "timestamp": "2026-10-26T08:30:00.123456Z",
+    "hostname": "h",
+    "appName": "a"
+   }
+  },
+  {
+   "name": "rfc5424-sd-escapes",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<14>1 2026-10-26T08:00:00+10:00 host app 1 m [x@1 a=\"q\\\"uote\" b=\"back\\\\slash\" c=\"br\\]acket\" d=\"keep\\n\" e=\"\" f=\"un]escaped\"] msg",
+   "record": {
+    "id": "syslog-5e7e35c7fabc4642a61b0753caf87525",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc5424",
+    "facility": "1",
+    "severity": "6",
+    "timestamp": "2026-10-25T22:00:00.000000Z",
+    "hostname": "host",
+    "appName": "app",
+    "procId": "1",
+    "msgId": "m",
+    "message": "msg",
+    "sd.x@1.a": "q\"uote",
+    "sd.x@1.b": "back\\slash",
+    "sd.x@1.c": "br]acket",
+    "sd.x@1.d": "keep\\n",
+    "sd.x@1.e": "",
+    "sd.x@1.f": "un]escaped"
+   }
+  },
+  {
+   "name": "rfc5424-sd-unicode-and-controls",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<14>1 2026-10-26T08:00:00.5-00:30 host app - - [auth@32473 user=\"Jos\u00e9\"] tab\there nul\u0000end",
+   "record": {
+    "id": "syslog-63b36a595cb55bf7391383f448c68451",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc5424",
+    "facility": "1",
+    "severity": "6",
+    "timestamp": "2026-10-26T08:30:00.500000Z",
+    "hostname": "host",
+    "appName": "app",
+    "message": "tab\there nul\u0000end",
+    "sd.auth@32473.user": "Jos\u00e9"
+   }
+  },
+  {
+   "name": "rfc5424-sshd-structured",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<38>1 2026-10-26T08:15:00.123456Z gw01 sshd 4242 auth [auth@32473 user=\"deploy-admin\" src=\"203.0.113.5\" result=\"failure\"] Failed password",
+   "record": {
+    "id": "syslog-9f5897e21c291c6cec4160671b61f63d",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc5424",
+    "facility": "4",
+    "severity": "6",
+    "timestamp": "2026-10-26T08:15:00.123456Z",
+    "hostname": "gw01",
+    "appName": "sshd",
+    "procId": "4242",
+    "msgId": "auth",
+    "message": "Failed password",
+    "sd.auth@32473.user": "deploy-admin",
+    "sd.auth@32473.src": "203.0.113.5",
+    "sd.auth@32473.result": "failure"
+   }
+  },
+  {
+   "name": "priority-zero",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<0>1 - - - - - -",
+   "record": {
+    "id": "syslog-af92f785d49dc3c5c72fc5430b22c817",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc5424",
+    "facility": "0",
+    "severity": "0",
+    "timestamp": "2026-10-26T08:30:00.123456Z"
+   }
+  },
+  {
+   "name": "priority-191",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<191>1 - h a - - -",
+   "record": {
+    "id": "syslog-02f31aeced91c737d6391a90a11edf55",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc5424",
+    "facility": "23",
+    "severity": "7",
+    "timestamp": "2026-10-26T08:30:00.123456Z",
+    "hostname": "h",
+    "appName": "a"
+   }
+  },
+  {
+   "name": "value-over-2048-characters-is-omitted",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h a - - - xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "record": {
+    "id": "syslog-e66e02be2b30916f378c83c0c0f2433c",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc5424",
+    "facility": "1",
+    "severity": "5",
+    "timestamp": "2026-10-26T08:30:00.123456Z",
+    "hostname": "h",
+    "appName": "a"
+   }
+  },
+  {
+   "name": "value-of-2048-characters-is-kept",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h a - - - yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+   "record": {
+    "id": "syslog-03d59524f433ed87405884d318a7fa04",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc5424",
+    "facility": "1",
+    "severity": "5",
+    "timestamp": "2026-10-26T08:30:00.123456Z",
+    "hostname": "h",
+    "appName": "a",
+    "message": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+   }
+  },
+  {
+   "name": "record-at-64-fields",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h a - - [x@1 p0=\"v\" p1=\"v\" p2=\"v\" p3=\"v\" p4=\"v\" p5=\"v\" p6=\"v\" p7=\"v\" p8=\"v\" p9=\"v\" p10=\"v\" p11=\"v\" p12=\"v\" p13=\"v\" p14=\"v\" p15=\"v\" p16=\"v\" p17=\"v\" p18=\"v\" p19=\"v\" p20=\"v\" p21=\"v\" p22=\"v\" p23=\"v\" p24=\"v\" p25=\"v\" p26=\"v\" p27=\"v\" p28=\"v\" p29=\"v\" p30=\"v\" p31=\"v\" p32=\"v\" p33=\"v\" p34=\"v\" p35=\"v\" p36=\"v\" p37=\"v\" p38=\"v\" p39=\"v\" p40=\"v\" p41=\"v\" p42=\"v\" p43=\"v\" p44=\"v\" p45=\"v\" p46=\"v\" p47=\"v\" p48=\"v\" p49=\"v\" p50=\"v\" p51=\"v\" p52=\"v\"]",
+   "record": {
+    "id": "syslog-8fc9450934d91ca025ab4dcc3ef07e15",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc5424",
+    "facility": "1",
+    "severity": "5",
+    "timestamp": "2026-10-26T08:30:00.123456Z",
+    "hostname": "h",
+    "appName": "a",
+    "sd.x@1.p0": "v",
+    "sd.x@1.p1": "v",
+    "sd.x@1.p2": "v",
+    "sd.x@1.p3": "v",
+    "sd.x@1.p4": "v",
+    "sd.x@1.p5": "v",
+    "sd.x@1.p6": "v",
+    "sd.x@1.p7": "v",
+    "sd.x@1.p8": "v",
+    "sd.x@1.p9": "v",
+    "sd.x@1.p10": "v",
+    "sd.x@1.p11": "v",
+    "sd.x@1.p12": "v",
+    "sd.x@1.p13": "v",
+    "sd.x@1.p14": "v",
+    "sd.x@1.p15": "v",
+    "sd.x@1.p16": "v",
+    "sd.x@1.p17": "v",
+    "sd.x@1.p18": "v",
+    "sd.x@1.p19": "v",
+    "sd.x@1.p20": "v",
+    "sd.x@1.p21": "v",
+    "sd.x@1.p22": "v",
+    "sd.x@1.p23": "v",
+    "sd.x@1.p24": "v",
+    "sd.x@1.p25": "v",
+    "sd.x@1.p26": "v",
+    "sd.x@1.p27": "v",
+    "sd.x@1.p28": "v",
+    "sd.x@1.p29": "v",
+    "sd.x@1.p30": "v",
+    "sd.x@1.p31": "v",
+    "sd.x@1.p32": "v",
+    "sd.x@1.p33": "v",
+    "sd.x@1.p34": "v",
+    "sd.x@1.p35": "v",
+    "sd.x@1.p36": "v",
+    "sd.x@1.p37": "v",
+    "sd.x@1.p38": "v",
+    "sd.x@1.p39": "v",
+    "sd.x@1.p40": "v",
+    "sd.x@1.p41": "v",
+    "sd.x@1.p42": "v",
+    "sd.x@1.p43": "v",
+    "sd.x@1.p44": "v",
+    "sd.x@1.p45": "v",
+    "sd.x@1.p46": "v",
+    "sd.x@1.p47": "v",
+    "sd.x@1.p48": "v",
+    "sd.x@1.p49": "v",
+    "sd.x@1.p50": "v",
+    "sd.x@1.p51": "v",
+    "sd.x@1.p52": "v"
+   }
+  },
+  {
+   "name": "record-over-64-fields",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h a - - [x@1 p0=\"v\" p1=\"v\" p2=\"v\" p3=\"v\" p4=\"v\" p5=\"v\" p6=\"v\" p7=\"v\" p8=\"v\" p9=\"v\" p10=\"v\" p11=\"v\" p12=\"v\" p13=\"v\" p14=\"v\" p15=\"v\" p16=\"v\" p17=\"v\" p18=\"v\" p19=\"v\" p20=\"v\" p21=\"v\" p22=\"v\" p23=\"v\" p24=\"v\" p25=\"v\" p26=\"v\" p27=\"v\" p28=\"v\" p29=\"v\" p30=\"v\" p31=\"v\" p32=\"v\" p33=\"v\" p34=\"v\" p35=\"v\" p36=\"v\" p37=\"v\" p38=\"v\" p39=\"v\" p40=\"v\" p41=\"v\" p42=\"v\" p43=\"v\" p44=\"v\" p45=\"v\" p46=\"v\" p47=\"v\" p48=\"v\" p49=\"v\" p50=\"v\" p51=\"v\" p52=\"v\" p53=\"v\"]",
+   "failure": "syslog-record-too-large"
+  },
+  {
+   "name": "rfc3164-example-1",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<34>Oct 11 22:14:15 mymachine su: 'su root' failed for lonvick on /dev/pts/8",
+   "record": {
+    "id": "syslog-5c1b4e3e8d66f444f9d2f46773810c66",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc3164",
+    "facility": "4",
+    "severity": "2",
+    "timestamp": "2026-10-11T22:14:15.000000Z",
+    "hostname": "mymachine",
+    "appName": "su",
+    "message": "'su root' failed for lonvick on /dev/pts/8"
+   }
+  },
+  {
+   "name": "rfc3164-example-2",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>Feb  5 17:32:18 10.0.0.99 Use the BFG!",
+   "record": {
+    "id": "syslog-c1b9754348deb8e39a3c91049ad3ec9f",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc3164",
+    "facility": "1",
+    "severity": "5",
+    "timestamp": "2026-02-05T17:32:18.000000Z",
+    "hostname": "10.0.0.99",
+    "message": "Use the BFG!"
+   }
+  },
+  {
+   "name": "rfc3164-pid",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<38>Oct  5 07:01:02 gw01 sshd[4242]: Failed password for root from 203.0.113.5 port 22 ssh2",
+   "record": {
+    "id": "syslog-0095e247db00fa0a8e56cbc78a451291",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc3164",
+    "facility": "4",
+    "severity": "6",
+    "timestamp": "2026-10-05T07:01:02.000000Z",
+    "hostname": "gw01",
+    "appName": "sshd",
+    "procId": "4242",
+    "message": "Failed password for root from 203.0.113.5 port 22 ssh2"
+   }
+  },
+  {
+   "name": "rfc3164-zero-padded-day",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<38>Oct 05 07:01:02 gw01 cron: run",
+   "record": {
+    "id": "syslog-7f8de4186fe2b92db23990370f7331bd",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc3164",
+    "facility": "4",
+    "severity": "6",
+    "timestamp": "2026-10-05T07:01:02.000000Z",
+    "hostname": "gw01",
+    "appName": "cron",
+    "message": "run"
+   }
+  },
+  {
+   "name": "rfc3164-year-rollover",
+   "receivedAt": "2027-01-01T00:00:05Z",
+   "frame": "<13>Dec 31 23:59:59 host app: x",
+   "record": {
+    "id": "syslog-6475383160e1fc9ead66a3df29aa8944",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2027-01-01T00:00:05.000000Z",
+    "format": "rfc3164",
+    "facility": "1",
+    "severity": "5",
+    "timestamp": "2026-12-31T23:59:59.000000Z",
+    "hostname": "host",
+    "appName": "app",
+    "message": "x"
+   }
+  },
+  {
+   "name": "rfc3164-future-within-a-day-keeps-year",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>Oct 27 01:00:00 host app: x",
+   "record": {
+    "id": "syslog-975c4cf38e4dd86850d8922f5865f3af",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc3164",
+    "facility": "1",
+    "severity": "5",
+    "timestamp": "2026-10-27T01:00:00.000000Z",
+    "hostname": "host",
+    "appName": "app",
+    "message": "x"
+   }
+  },
+  {
+   "name": "rfc3164-feb-29-previous-leap-year",
+   "receivedAt": "2029-01-01T00:00:00Z",
+   "frame": "<13>Feb 29 12:00:00 host app: x",
+   "record": {
+    "id": "syslog-16395509b4007cfde403132335d3cf28",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2029-01-01T00:00:00.000000Z",
+    "format": "rfc3164",
+    "facility": "1",
+    "severity": "5",
+    "timestamp": "2028-02-29T12:00:00.000000Z",
+    "hostname": "host",
+    "appName": "app",
+    "message": "x"
+   }
+  },
+  {
+   "name": "rfc3164-feb-29-no-leap-year",
+   "receivedAt": "2027-03-01T00:00:00Z",
+   "frame": "<13>Feb 29 12:00:00 host app: x",
+   "failure": "syslog-timestamp-invalid"
+  },
+  {
+   "name": "rfc3164-no-hostname",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>Oct 11 22:14:15 su: hello",
+   "record": {
+    "id": "syslog-c022223e1b10042e4401a0bef8ef58ec",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc3164",
+    "facility": "1",
+    "severity": "5",
+    "timestamp": "2026-10-11T22:14:15.000000Z",
+    "appName": "su",
+    "message": "hello"
+   }
+  },
+  {
+   "name": "rfc3164-no-hostname-with-pid",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>Oct 11 22:14:15 sshd[1]: hello",
+   "record": {
+    "id": "syslog-a96132fcb66734236206fabad2c91ae4",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc3164",
+    "facility": "1",
+    "severity": "5",
+    "timestamp": "2026-10-11T22:14:15.000000Z",
+    "appName": "sshd",
+    "procId": "1",
+    "message": "hello"
+   }
+  },
+  {
+   "name": "rfc3164-rfc3339-timestamp",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<86>2026-10-26T08:15:00.123456+00:00 web01 sudo: pam_unix(sudo:auth): authentication failure",
+   "record": {
+    "id": "syslog-0e6c79d5d73eb233ec5c5638af369f76",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc3164",
+    "facility": "10",
+    "severity": "6",
+    "timestamp": "2026-10-26T08:15:00.123456Z",
+    "hostname": "web01",
+    "appName": "sudo",
+    "message": "pam_unix(sudo:auth): authentication failure"
+   }
+  },
+  {
+   "name": "rfc3164-no-tag",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>Oct 11 22:14:15 host just a message",
+   "record": {
+    "id": "syslog-39cf7b11f1b568b638eacf4f42beec3d",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc3164",
+    "facility": "1",
+    "severity": "5",
+    "timestamp": "2026-10-11T22:14:15.000000Z",
+    "hostname": "host",
+    "message": "just a message"
+   }
+  },
+  {
+   "name": "rfc3164-tag-without-space",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>Oct 11 22:14:15 host app:message",
+   "record": {
+    "id": "syslog-3932b3867ddb31cf852e0f896f5fce08",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc3164",
+    "facility": "1",
+    "severity": "5",
+    "timestamp": "2026-10-11T22:14:15.000000Z",
+    "hostname": "host",
+    "appName": "app",
+    "message": "message"
+   }
+  },
+  {
+   "name": "rfc3164-unterminated-pid-is-content",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>Oct 11 22:14:15 host app[12 oops",
+   "record": {
+    "id": "syslog-5efc7c239b0bc771233690964d77be51",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc3164",
+    "facility": "1",
+    "severity": "5",
+    "timestamp": "2026-10-11T22:14:15.000000Z",
+    "hostname": "host",
+    "message": "app[12 oops"
+   }
+  },
+  {
+   "name": "rfc3164-header-only",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>Oct 11 22:14:15 host ",
+   "record": {
+    "id": "syslog-e3166fd5f46bba5d2d486b35e544658d",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc3164",
+    "facility": "1",
+    "severity": "5",
+    "timestamp": "2026-10-11T22:14:15.000000Z",
+    "hostname": "host"
+   }
+  },
+  {
+   "name": "rfc3164-bad-month",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>Foo 11 22:14:15 host app: x",
+   "failure": "syslog-timestamp-invalid"
+  },
+  {
+   "name": "rfc3164-hour-24",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>Oct 11 24:00:00 host app: x",
+   "failure": "syslog-timestamp-invalid"
+  },
+  {
+   "name": "rfc3164-day-32",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>Oct 32 22:14:15 host app: x",
+   "failure": "syslog-timestamp-invalid"
+  },
+  {
+   "name": "rfc3164-missing-timestamp",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>host app: x",
+   "failure": "syslog-timestamp-invalid"
+  },
+  {
+   "name": "rfc3164-double-space-hostname",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>Oct 11 22:14:15  host app: x",
+   "failure": "syslog-header-invalid"
+  },
+  {
+   "name": "rfc3164-non-ascii-hostname",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>Oct 11 22:14:15 h\u00f3st app: x",
+   "failure": "syslog-header-invalid"
+  },
+  {
+   "name": "priority-192",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<192>1 - - - - - -",
+   "failure": "syslog-priority-invalid"
+  },
+  {
+   "name": "priority-999",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<999>1 - - - - - -",
+   "failure": "syslog-priority-invalid"
+  },
+  {
+   "name": "priority-leading-zero",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<01>1 - - - - - -",
+   "failure": "syslog-priority-invalid"
+  },
+  {
+   "name": "priority-four-digits",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<1000>1 - - - - - -",
+   "failure": "syslog-priority-invalid"
+  },
+  {
+   "name": "priority-missing",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "1 - - - - - -",
+   "failure": "syslog-priority-invalid"
+  },
+  {
+   "name": "priority-empty",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<>1 - - - - - -",
+   "failure": "syslog-priority-invalid"
+  },
+  {
+   "name": "priority-unterminated",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13",
+   "failure": "syslog-priority-invalid"
+  },
+  {
+   "name": "priority-negative",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<-1>1 - - - - - -",
+   "failure": "syslog-priority-invalid"
+  },
+  {
+   "name": "priority-only",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>",
+   "failure": "syslog-timestamp-invalid"
+  },
+  {
+   "name": "empty-frame",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "",
+   "failure": "syslog-empty"
+  },
+  {
+   "name": "invalid-utf8",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frameBase64": "PDEzPjEgLSAtIC0gLSAtIC0g//4=",
+   "failure": "syslog-invalid-utf8"
+  },
+  {
+   "name": "invalid-utf8-overlong",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frameBase64": "PDEzPjEgLSAtIC0gLSAtIC0gwK8=",
+   "failure": "syslog-invalid-utf8"
+  },
+  {
+   "name": "invalid-utf8-surrogate",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frameBase64": "PDEzPjEgLSAtIC0gLSAtIC0g7aCA",
+   "failure": "syslog-invalid-utf8"
+  },
+  {
+   "name": "invalid-utf8-truncated",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frameBase64": "PDEzPjEgLSAtIC0gLSAtIC0g4oI=",
+   "failure": "syslog-invalid-utf8"
+  },
+  {
+   "name": "version-2",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>2 - - - - - -",
+   "failure": "syslog-version-unsupported"
+  },
+  {
+   "name": "version-0",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>0 - - - - - -",
+   "failure": "syslog-version-unsupported"
+  },
+  {
+   "name": "version-10",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>10 - - - - - -",
+   "failure": "syslog-version-unsupported"
+  },
+  {
+   "name": "timestamp-month-13",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 2026-13-01T00:00:00Z h a - - -",
+   "failure": "syslog-timestamp-invalid"
+  },
+  {
+   "name": "timestamp-day-31-in-april",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 2026-04-31T00:00:00Z h a - - -",
+   "failure": "syslog-timestamp-invalid"
+  },
+  {
+   "name": "timestamp-leap-second",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 2026-12-31T23:59:60Z h a - - -",
+   "failure": "syslog-timestamp-invalid"
+  },
+  {
+   "name": "timestamp-lowercase-t",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 2026-10-26t08:00:00Z h a - - -",
+   "failure": "syslog-timestamp-invalid"
+  },
+  {
+   "name": "timestamp-lowercase-z",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 2026-10-26T08:00:00z h a - - -",
+   "failure": "syslog-timestamp-invalid"
+  },
+  {
+   "name": "timestamp-seven-fraction-digits",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 2026-10-26T08:00:00.1234567Z h a - - -",
+   "failure": "syslog-timestamp-invalid"
+  },
+  {
+   "name": "timestamp-empty-fraction",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 2026-10-26T08:00:00.Z h a - - -",
+   "failure": "syslog-timestamp-invalid"
+  },
+  {
+   "name": "timestamp-offset-15h",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 2026-10-26T08:00:00+15:00 h a - - -",
+   "failure": "syslog-timestamp-invalid"
+  },
+  {
+   "name": "timestamp-offset-minutes-60",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 2026-10-26T08:00:00+10:60 h a - - -",
+   "failure": "syslog-timestamp-invalid"
+  },
+  {
+   "name": "timestamp-no-offset",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 2026-10-26T08:00:00 h a - - -",
+   "failure": "syslog-timestamp-invalid"
+  },
+  {
+   "name": "timestamp-year-0",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 0000-01-01T00:00:00Z h a - - -",
+   "failure": "syslog-timestamp-invalid"
+  },
+  {
+   "name": "timestamp-before-year-1-in-utc",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 0001-01-01T00:00:00+01:00 h a - - -",
+   "failure": "syslog-timestamp-invalid"
+  },
+  {
+   "name": "header-appname-too-long",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa - - -",
+   "failure": "syslog-header-invalid"
+  },
+  {
+   "name": "header-msgid-too-long",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h a - mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm -",
+   "failure": "syslog-header-invalid"
+  },
+  {
+   "name": "header-missing-fields",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - host",
+   "failure": "syslog-header-invalid"
+  },
+  {
+   "name": "header-double-space",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 -  host app - - -",
+   "failure": "syslog-header-invalid"
+  },
+  {
+   "name": "header-non-ascii-hostname",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h\u00f3st a - - -",
+   "failure": "syslog-header-invalid"
+  },
+  {
+   "name": "header-tab-in-hostname",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h\tx a - - -",
+   "failure": "syslog-header-invalid"
+  },
+  {
+   "name": "header-appname-48",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa - - -",
+   "record": {
+    "id": "syslog-f22635d828e6469869c8c7d6fba86dc3",
+    "listener": "edge",
+    "protocol": "tcp",
+    "senderAddress": "192.0.2.10",
+    "receivedAt": "2026-10-26T08:30:00.123456Z",
+    "format": "rfc5424",
+    "facility": "1",
+    "severity": "5",
+    "timestamp": "2026-10-26T08:30:00.123456Z",
+    "hostname": "h",
+    "appName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+   }
+  },
+  {
+   "name": "sd-duplicate-id",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h a - - [a@1 x=\"1\"][a@1 y=\"2\"]",
+   "failure": "syslog-structured-data-duplicate"
+  },
+  {
+   "name": "sd-duplicate-param",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h a - - [a@1 x=\"1\" x=\"2\"]",
+   "failure": "syslog-structured-data-duplicate"
+  },
+  {
+   "name": "sd-unterminated-element",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h a - - [a@1 x=\"1\"",
+   "failure": "syslog-structured-data-invalid"
+  },
+  {
+   "name": "sd-unterminated-value",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h a - - [a@1 x=\"1]",
+   "failure": "syslog-structured-data-invalid"
+  },
+  {
+   "name": "sd-unquoted-value",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h a - - [a@1 x=1]",
+   "failure": "syslog-structured-data-invalid"
+  },
+  {
+   "name": "sd-equals-in-id",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h a - - [a=b x=\"1\"]",
+   "failure": "syslog-structured-data-invalid"
+  },
+  {
+   "name": "sd-id-too-long",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h a - - [iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii x=\"1\"]",
+   "failure": "syslog-structured-data-invalid"
+  },
+  {
+   "name": "sd-name-too-long",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h a - - [a@1 nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn=\"1\"]",
+   "failure": "syslog-structured-data-invalid"
+  },
+  {
+   "name": "sd-empty-element",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h a - - []",
+   "failure": "syslog-structured-data-invalid"
+  },
+  {
+   "name": "sd-no-space-before-message",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h a - - [a@1 x=\"1\"]msg",
+   "failure": "syslog-structured-data-invalid"
+  },
+  {
+   "name": "sd-not-bracket",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h a - - x",
+   "failure": "syslog-structured-data-invalid"
+  },
+  {
+   "name": "sd-nil-then-text",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h a - - -x",
+   "failure": "syslog-structured-data-invalid"
+  },
+  {
+   "name": "sd-missing",
+   "receivedAt": "2026-10-26T08:30:00.1234567Z",
+   "frame": "<13>1 - h a - -",
+   "failure": "syslog-header-invalid"
+  }
+ ]
+}

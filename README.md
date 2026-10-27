@@ -432,6 +432,7 @@ Neither has been exercised against a live tenant or account yet.
 | `BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE` | — | File holding a one-time enrolment token (`enrolment` mode). Never stored or logged; a new token re-enrols, back to Pending. |
 | `BOWER_SOURCE_EXPECTATIONS` | — | JSON file of applications that must keep sending events; quiet ones degrade `/health`. [Details](docs/operations/suppression-archive-and-source-silence.md#source-silence) |
 | `BOWER_ARCHIVE_PATH` | — | Directory for the ledger-verified long-term archive; retention then purges only events a verified archive of this queue covers. [Details](docs/operations/suppression-archive-and-source-silence.md#archive-and-replay) |
+| `BOWER_SYSLOG_CONFIG` | — | JSON file of syslog listeners (RFC 5424/3164 over TCP, TLS or UDP), sender allow-lists and routes to signed pack parsers. Loopback unless TLS. [Details](docs/deployment/syslog-source.md) |
 
 ## Background jobs
 

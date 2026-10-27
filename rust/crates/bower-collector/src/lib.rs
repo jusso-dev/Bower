@@ -22,6 +22,7 @@ pub mod settings;
 pub mod shutdown;
 pub mod source_health;
 pub mod suppression_worker;
+pub mod syslog;
 pub mod worker;
 
 pub use error::HostError;

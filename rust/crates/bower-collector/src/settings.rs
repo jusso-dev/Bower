@@ -110,6 +110,8 @@ pub struct CollectorSettings {
     pub source_expectations_path: Option<PathBuf>,
     /// Directory for the verifiable long-term archive (BOWER_ARCHIVE_PATH).
     pub archive_path: Option<PathBuf>,
+    /// JSON file of syslog listeners and pack routes (BOWER_SYSLOG_CONFIG).
+    pub syslog_config_path: Option<PathBuf>,
 }
 
 // Never print the ingest token.
@@ -179,6 +181,7 @@ impl CollectorSettings {
             management_enrolment_token_file: None,
             source_expectations_path: None,
             archive_path: None,
+            syslog_config_path: None,
         }
     }
 
@@ -272,6 +275,7 @@ impl CollectorSettings {
                 .map(PathBuf::from),
             source_expectations_path: blank(read("BOWER_SOURCE_EXPECTATIONS")).map(PathBuf::from),
             archive_path: blank(read("BOWER_ARCHIVE_PATH")).map(PathBuf::from),
+            syslog_config_path: blank(read("BOWER_SYSLOG_CONFIG")).map(PathBuf::from),
         };
         settings.validate()?;
         Ok(settings)
@@ -559,6 +563,11 @@ impl CollectorSettings {
         if let Some(path) = &self.archive_path {
             material.push('\u{1f}');
             material.push_str("archive:");
+            material.push_str(&path.to_string_lossy());
+        }
+        if let Some(path) = &self.syslog_config_path {
+            material.push('\u{1f}');
+            material.push_str("syslog:");
             material.push_str(&path.to_string_lossy());
         }
         if self.uses_managed_privacy_profile() {
