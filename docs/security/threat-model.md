@@ -85,8 +85,8 @@ evidence.
   is counters, limits and a deadline only, behind the token. No new trust boundary.
 - Management command channel (heartbeat v2): commands travel outbound only, in the
   heartbeat response, and come from a closed set. That set is `fetch-bundle`,
-  `run-canary`, `reload` and `rotate-credential` (always refused for now). No command
-  carries code, paths or arguments.
+  `run-canary`, `reload` and `rotate-credential` (token-enrolled collectors only). No
+  command carries code, paths or arguments.
   - Signing: each command is signed with a dedicated P-256 key and bound to one
     collector id, a 128-bit nonce and an expiry of at most 1 hour. The signed `kind`
     keeps a command signature from verifying as any other Bower document.
@@ -103,13 +103,39 @@ evidence.
     lifetime, 8 per heartbeat and 16 outstanding), and restarting the collector at most
     once every 10 minutes. It cannot read events, change policy or privacy content,
     approve anything or run code.
+- Token enrolment (new trust boundary: an anonymous endpoint, and a credential the
+  collector holds on disk). See [collector enrolment](../architecture/collector-enrolment.md).
+  - Token theft or guessing: tokens carry 256 random bits, are single use, expire (24
+    hours by default, 7 days at most), are bound to an environment and optionally a
+    collector id, and are stored only as SHA-256 hashes. They are shown once, never
+    logged and never returned again. A stolen unused token enrols at most one collector,
+    which still waits in `Pending` for a reasoned approver decision, so it buys no
+    access to events, policy or commands. Every refusal is audited with its reason.
+  - Anonymous endpoint abuse: `POST /api/collectors/enrol` is the only anonymous write.
+    It has a 16 KiB body limit, 10 requests per minute per address, one generic refusal
+    message (the reason is only in the audit) and a constant-time hash comparison.
+  - Take-over: a token cannot enrol over a collector id bound to an Entra principal, and
+    cannot re-enrol a suspended or revoked collector. An enrolled principal
+    (`enrolled:<collectorId>`, never a GUID) has only `Bower.Collector` and can act only
+    for its own collector id.
+  - Credential theft: the credential is the collector's own P-256 key; management holds
+    only the public key, so a management database leak yields nothing that can
+    authenticate. The private key sits in an owner-only file next to the queue; anyone
+    who can read it can already read the queue. Each request carries a 5-minute signed
+    assertion whose exact canonical bytes, signed `kind`, lifetime and clock skew are
+    checked, so an assertion cannot be reused as any other Bower signature or kept for
+    long. TLS-inspection proxies see assertions as they see Entra tokens.
+  - Revocation and rotation: every request re-reads the credential, so revocation takes
+    effect on the next heartbeat. Credentials expire after 30 days; collectors rotate
+    when 10 days remain, and the old key is retired on the first use of the new one.
 - Management proxies: the management channel honours the standard proxy variables or
   an explicit proxy. A CA bundle adds roots for TLS-inspection proxies. Verification and
   host name checks are never disabled. Proxy URLs carrying credentials are refused, and
   the password comes from a file that is never logged, hashed or reported. An inspecting
   proxy can read heartbeat metadata and the bearer token in transit, so trust it as you
   would the management host. It cannot forge commands.
-- Management API abuse: Entra-only endpoints, per-principal rate limiting, HSTS on
+- Management API abuse: Entra-only endpoints (except token enrolment and the
+  enrolled-collector credential, above), per-principal rate limiting, HSTS on
   HTTPS, restricted CORS headers and methods, and fixed error messages that never
   echo framework exception detail or server paths.
 - Onboarding canary (`/setup`, optional): the management API can hold a canary
@@ -152,5 +178,13 @@ ingest.
 A signed transform can still select the wrong substring of a free-text field into an
 allowlisted target (for example a password typed as a username); the privacy engine
 redacts the mapped envelope, but review transform programs like policy changes.
+
+Enrolment tokens are bearer secrets until used: deliver them over a channel you trust
+and prefer short lifetimes and a collector id scope. An assertion captured in transit
+(for example by a trusted TLS-inspection proxy) can be replayed for up to 5 minutes; it
+is bound to one collector and grants only that collector's heartbeat role. The
+credential file is protected by file permissions only (owner-only on Unix, the
+directory ACL on Windows); there is no hardware-backed key storage yet. A collector
+offline past its credential's 30 days needs a new token and a new approval.
 
 Treat pseudonymised identifiers as potentially personal information.

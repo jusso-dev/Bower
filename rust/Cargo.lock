@@ -760,6 +760,7 @@ name = "bower-collector"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.23.1",
  "bower-contracts",
  "bower-core",
  "bower-evidence",

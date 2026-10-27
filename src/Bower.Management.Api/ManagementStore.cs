@@ -137,6 +137,7 @@ public sealed partial class ManagementStore(string databasePath)
         await AddColumnIfMissingAsync(
             connection, "management_audit", "initiated_by_name", "TEXT NULL", cancellationToken);
         await InitializeSetupAsync(connection, cancellationToken);
+        await InitializeEnrolmentAsync(connection, cancellationToken);
     }
 
     public async Task<CollectorRecord> RegisterAsync(

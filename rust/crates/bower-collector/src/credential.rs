@@ -14,8 +14,9 @@ use crate::settings::{AzureCredentialMode, CollectorSettings};
 /// The configured credential, created only when an Azure output or the management
 /// heartbeat needs one.
 pub fn create(settings: &CollectorSettings) -> Option<Arc<dyn TokenProvider>> {
-    let needed =
-        settings.output_type == "azure-logs-ingestion" || settings.management_endpoint.is_some();
+    // Token enrolment authenticates management with its own key-bound credential.
+    let needed = settings.output_type == "azure-logs-ingestion"
+        || (settings.management_endpoint.is_some() && !settings.uses_enrolment());
     needed.then(|| from_settings(settings))
 }
 

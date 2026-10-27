@@ -15,6 +15,9 @@ namespace Bower.Management.Api;
 /// <summary>Composes the management API host. Kept separate from Program for integration tests.</summary>
 public static class ManagementApplication
 {
+    /// <summary>Default scheme: forwards to the collector credential or the interactive scheme.</summary>
+    public const string SelectorScheme = "Bower";
+
     public static WebApplication Build(
         string[] args,
         Action<WebApplicationBuilder>? configure = null,
@@ -55,35 +58,45 @@ public static class ManagementApplication
                 "BOWER_AUTH_MODE=development is allowed only in the Development environment.");
         }
 
+        // A policy scheme picks the handler per request: enrolled-collector assertions go to
+        // the credential handler, everything else to Entra (or development) authentication.
+        string interactiveScheme = developmentAuthentication
+            ? DevelopmentAuthenticationHandler.AuthenticationScheme
+            : JwtBearerDefaults.AuthenticationScheme;
+        AuthenticationBuilder authentication = builder.Services
+            .AddAuthentication(SelectorScheme)
+            .AddPolicyScheme(SelectorScheme, SelectorScheme, options =>
+                options.ForwardDefaultSelector = context => CollectorEnrolment.HasAssertion(context.Request)
+                    ? CollectorCredentialAuthenticationHandler.SchemeName
+                    : interactiveScheme)
+            .AddScheme<AuthenticationSchemeOptions, CollectorCredentialAuthenticationHandler>(
+                CollectorCredentialAuthenticationHandler.SchemeName,
+                _ => { });
         if (developmentAuthentication)
         {
-            builder.Services
-                .AddAuthentication(DevelopmentAuthenticationHandler.AuthenticationScheme)
-                .AddScheme<AuthenticationSchemeOptions, DevelopmentAuthenticationHandler>(
-                    DevelopmentAuthenticationHandler.AuthenticationScheme,
-                    _ => { });
+            authentication.AddScheme<AuthenticationSchemeOptions, DevelopmentAuthenticationHandler>(
+                DevelopmentAuthenticationHandler.AuthenticationScheme,
+                _ => { });
         }
         else
         {
             string tenantId = RequiredConfiguration(builder.Configuration, "Bower:Entra:TenantId");
             string audience = RequiredConfiguration(builder.Configuration, "Bower:Entra:Audience");
-            builder.Services
-                .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-                .AddJwtBearer(options =>
+            authentication.AddJwtBearer(options =>
+            {
+                options.Authority = $"https://login.microsoftonline.com/{tenantId}/v2.0";
+                options.Audience = audience;
+                options.MapInboundClaims = false;
+                options.TokenValidationParameters = new TokenValidationParameters
                 {
-                    options.Authority = $"https://login.microsoftonline.com/{tenantId}/v2.0";
-                    options.Audience = audience;
-                    options.MapInboundClaims = false;
-                    options.TokenValidationParameters = new TokenValidationParameters
-                    {
-                        NameClaimType = "name",
-                        RoleClaimType = "roles",
-                        ValidateAudience = true,
-                        ValidateIssuer = true,
-                        ValidateIssuerSigningKey = true,
-                        ValidateLifetime = true
-                    };
-                });
+                    NameClaimType = "name",
+                    RoleClaimType = "roles",
+                    ValidateAudience = true,
+                    ValidateIssuer = true,
+                    ValidateIssuerSigningKey = true,
+                    ValidateLifetime = true
+                };
+            });
         }
 
         builder.Services.AddAuthorization(options =>
@@ -103,6 +116,10 @@ public static class ManagementApplication
                 policy => policy.RequireRole(BowerRoles.Approver, BowerRoles.Administrator));
             options.AddPolicy("Administer", policy => policy.RequireRole(BowerRoles.Administrator));
             options.AddPolicy("Collector", policy => policy.RequireRole(BowerRoles.Collector));
+            // Only a key-bound credential can rotate itself; Entra collectors have none.
+            options.AddPolicy(
+                "EnrolledCollector",
+                policy => policy.RequireRole(BowerRoles.Collector).RequireClaim(CollectorEnrolment.CredentialIdClaim));
         });
 
         string databasePath = builder.Configuration["BOWER_MANAGEMENT_DB_PATH"]
@@ -139,6 +156,17 @@ public static class ManagementApplication
                     _ => new FixedWindowRateLimiterOptions
                     {
                         PermitLimit = requestsPerMinute,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0
+                    }));
+            // Enrolment is anonymous (the token is the credential), so it gets a far tighter
+            // per-address budget: every refused token writes an audit row.
+            options.AddPolicy(EnrolmentEndpoints.RateLimitPolicy, context =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+                    _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = builder.Configuration.GetValue("BOWER_MANAGEMENT_ENROLMENT_RATE_PER_MINUTE", 10),
                         Window = TimeSpan.FromMinutes(1),
                         QueueLimit = 0
                     }));
@@ -341,6 +369,11 @@ public static class ManagementApplication
                     TimeProvider clock,
                     CancellationToken cancellationToken) =>
                 {
+                    if (!CollectorEnrolment.MayActFor(user, registration.CollectorId))
+                    {
+                        return Results.Forbid();
+                    }
+
                     try
                     {
                         CollectorRecord record = await store.RegisterAsync(
@@ -380,6 +413,11 @@ public static class ManagementApplication
                     TimeProvider clock,
                     CancellationToken cancellationToken) =>
                 {
+                    if (!CollectorEnrolment.MayActFor(user, id))
+                    {
+                        return Results.Forbid();
+                    }
+
                     try
                     {
                         HeartbeatExchange? exchange = await store.ExchangeHeartbeatAsync(
@@ -570,6 +608,7 @@ public static class ManagementApplication
 
         PrivacyProfileEndpoints.Map(api);
         SetupEndpoints.Map(api);
+        EnrolmentEndpoints.Map(api);
 
         api.MapGet(
                 "/audit",

@@ -130,6 +130,27 @@ public sealed record CollectorSettings
     /// <summary>PEM public keys trusted to sign management commands (BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS).</summary>
     public IReadOnlyList<string> ManagementCommandTrustedKeyFiles { get; init; } = [];
 
+    /// <summary>
+    /// How the collector authenticates to management (BOWER_MANAGEMENT_AUTH): <c>entra</c>
+    /// (default, a machine token for BOWER_MANAGEMENT_SCOPE) or <c>enrolment</c> (a one-time
+    /// token exchanged for a key-bound credential, for hosts without an Azure identity).
+    /// </summary>
+    public string ManagementAuthentication { get; init; } = ManagementAuthenticationModes.Entra;
+
+    /// <summary>
+    /// File holding a one-time enrolment token (BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE). Read
+    /// only to enrol; the token is never stored, logged or reported. A new token in the file
+    /// re-enrols the collector, which returns it to Pending.
+    /// </summary>
+    public string? ManagementEnrolmentTokenFile { get; init; }
+
+    public bool UsesEnrolment =>
+        string.Equals(ManagementAuthentication, ManagementAuthenticationModes.Enrolment, StringComparison.Ordinal);
+
+    /// <summary>Key-bound credential directory: <c>management-credential</c> next to the queue database.</summary>
+    public string ManagementCredentialDirectory =>
+        Path.Combine(Path.GetDirectoryName(Path.GetFullPath(QueuePath)) ?? ".", "management-credential");
+
     /// <summary>Durable command ledger directory: <c>management-commands</c> next to the queue database.</summary>
     public string ManagementCommandDirectory =>
         Path.Combine(Path.GetDirectoryName(Path.GetFullPath(QueuePath)) ?? ".", "management-commands");
@@ -202,6 +223,9 @@ public sealed record CollectorSettings
             ManagementProxyPasswordFile = Blank(read("BOWER_MANAGEMENT_PROXY_PASSWORD_FILE")),
             ManagementCaBundle = Blank(read("BOWER_MANAGEMENT_CA_BUNDLE")),
             ManagementCommandTrustedKeyFiles = SplitList(read("BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS")),
+            ManagementAuthentication = Blank(read("BOWER_MANAGEMENT_AUTH"))?.Trim().ToLowerInvariant()
+                ?? ManagementAuthenticationModes.Entra,
+            ManagementEnrolmentTokenFile = Blank(read("BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE")),
             SourceExpectationsPath = Blank(read("BOWER_SOURCE_EXPECTATIONS")),
             ArchivePath = Blank(read("BOWER_ARCHIVE_PATH"))
         };
@@ -279,15 +303,31 @@ public sealed record CollectorSettings
                 "BOWER_DCE_ENDPOINT and BOWER_DCR_ID are required for azure-logs-ingestion.");
         }
 
+        if (ManagementAuthentication is not (ManagementAuthenticationModes.Entra or ManagementAuthenticationModes.Enrolment))
+        {
+            throw new InvalidOperationException("BOWER_MANAGEMENT_AUTH must be entra or enrolment.");
+        }
+
+        if (UsesEnrolment && ManagementEndpoint is null)
+        {
+            throw new InvalidOperationException("BOWER_MANAGEMENT_AUTH=enrolment requires BOWER_MANAGEMENT_ENDPOINT.");
+        }
+
+        if (ManagementEnrolmentTokenFile is not null && !UsesEnrolment)
+        {
+            throw new InvalidOperationException(
+                "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE requires BOWER_MANAGEMENT_AUTH=enrolment.");
+        }
+
         if (ManagementEndpoint is not null)
         {
-            if (string.IsNullOrWhiteSpace(ManagementScope))
+            if (!UsesEnrolment && string.IsNullOrWhiteSpace(ManagementScope))
             {
                 throw new InvalidOperationException(
                     "BOWER_MANAGEMENT_SCOPE is required when BOWER_MANAGEMENT_ENDPOINT is set.");
             }
 
-            // The heartbeat carries an Entra bearer token; never send it in cleartext.
+            // The heartbeat carries a bearer token or assertion; never send it in cleartext.
             if (ManagementEndpoint.Scheme != Uri.UriSchemeHttps && !IsLoopback(ManagementEndpoint.Host))
             {
                 throw new InvalidOperationException(
@@ -433,6 +473,11 @@ public sealed record CollectorSettings
             material += '\u001f' + "management-commands:True";
         }
 
+        if (UsesEnrolment)
+        {
+            material += '\u001f' + "management-auth:enrolment";
+        }
+
         return "sha256:" + Convert.ToHexStringLower(
             System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(material)));
     }
@@ -519,6 +564,13 @@ public sealed record CollectorSettings
 }
 
 /// <summary>Values of BOWER_PRIVACY_PROFILE_SOURCE.</summary>
+/// <summary>BOWER_MANAGEMENT_AUTH values.</summary>
+public static class ManagementAuthenticationModes
+{
+    public const string Entra = "entra";
+    public const string Enrolment = "enrolment";
+}
+
 public static class PrivacyProfileSources
 {
     public const string Local = "local";

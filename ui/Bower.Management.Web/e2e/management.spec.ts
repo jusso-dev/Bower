@@ -174,6 +174,27 @@ test.describe("setup wizard", () => {
   });
 });
 
+test("enrolment shows a new token once and then lists only its metadata", async ({ page }) => {
+  const consoleErrors = collectConsoleErrors(page);
+  await page.goto("/enrolment");
+
+  await expect(page.getByRole("heading", { name: "Token enrolment" })).toBeVisible();
+  await page.getByLabel("Environment").fill("production");
+  await page.getByLabel("Reason").fill("Playwright enrolment check");
+  await page.getByRole("button", { name: "Create token" }).click();
+  const shown = page.getByLabel("Enrolment token", { exact: true });
+  await expect(shown).toContainText("bwe1.");
+  await expectNoHorizontalOverflow(page);
+  const token = ((await shown.textContent()) ?? "").trim();
+  const id = token.split(".")[1] ?? "";
+
+  await page.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByText(token)).toHaveCount(0);
+  await expect(page.getByText(id, { exact: true })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  expect(consoleErrors).toEqual([]);
+});
+
 test("mobile navigation remains usable without horizontal overflow", async ({
   page
 }, testInfo) => {

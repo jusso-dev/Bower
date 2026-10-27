@@ -152,4 +152,8 @@ internal sealed record OutputReport(
 [JsonSerializable(typeof(ManagementHeartbeatResponse))]
 [JsonSerializable(typeof(ManagementCommandDocument))]
 [JsonSerializable(typeof(CommandLedgerDocument))]
+[JsonSerializable(typeof(ManagementCredentialState))]
+[JsonSerializable(typeof(CollectorEnrolmentRequest))]
+[JsonSerializable(typeof(CollectorCredentialRotationRequest))]
+[JsonSerializable(typeof(IssuedCollectorCredential))]
 internal sealed partial class CollectorJsonContext : JsonSerializerContext;

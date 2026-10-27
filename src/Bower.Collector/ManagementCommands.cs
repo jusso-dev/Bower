@@ -16,15 +16,16 @@ public static class ManagementCommandTypes
     public const string RunCanary = "run-canary";
     public const string Reload = "reload";
 
-    /// <summary>Recognised but refused until credential rotation exists (#109).</summary>
+    /// <summary>Rotates the key-bound credential of a token-enrolled collector (#109).</summary>
     public const string RotateCredential = "rotate-credential";
 
     public static readonly IReadOnlyList<string> All = [FetchBundle, RunCanary, Reload, RotateCredential];
 
     /// <summary>
     /// Commands this collector executes, in wire order. <c>fetch-bundle</c> needs managed
-    /// privacy profiles (the only bundle management serves); <c>rotate-credential</c> is never
-    /// supported yet. Empty without trusted command keys.
+    /// privacy profiles (the only bundle management serves); <c>rotate-credential</c> needs a
+    /// key-bound credential (token enrolment; an Entra identity has nothing to rotate). Empty
+    /// without trusted command keys.
     /// </summary>
     public static IReadOnlyList<string> Supported(CollectorSettings settings)
     {
@@ -34,7 +35,13 @@ public static class ManagementCommandTypes
             return [];
         }
 
-        return settings.UsesManagedPrivacyProfile ? [FetchBundle, RunCanary, Reload] : [RunCanary, Reload];
+        List<string> supported = settings.UsesManagedPrivacyProfile ? [FetchBundle, RunCanary, Reload] : [RunCanary, Reload];
+        if (settings.UsesEnrolment)
+        {
+            supported.Add(RotateCredential);
+        }
+
+        return supported;
     }
 }
 

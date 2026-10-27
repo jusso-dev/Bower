@@ -871,6 +871,7 @@ tbody tr:last-child td {
 }
 
 .parser-form input[type="text"],
+.parser-form input[type="number"],
 .parser-form input[type="file"],
 .parser-form textarea {
   width: 100%;
@@ -1679,6 +1680,12 @@ input[type="checkbox"]:focus-visible {
   line-height: 1.6;
   tab-size: 2;
   white-space: pre;
+}
+
+/* A one-time token wraps rather than widening the page at 320px. */
+.token-value {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .code-block--tall {

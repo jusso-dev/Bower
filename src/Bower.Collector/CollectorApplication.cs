@@ -130,7 +130,20 @@ public static partial class CollectorApplication
         }
         if (settings.ManagementEndpoint is not null)
         {
-            builder.Services.AddSingleton(credential ?? AzureCredentialFactory.Create(settings));
+            if (settings.UsesEnrolment)
+            {
+                // No Azure identity: a key-bound credential from a one-time enrolment token.
+                builder.Services.AddSingleton<ManagementEnrolment>();
+                builder.Services.AddSingleton<TokenCredential>(services => credential
+                    ?? new EnrolledManagementCredential(
+                        services.GetRequiredService<ManagementEnrolment>(),
+                        services.GetRequiredService<TimeProvider>()));
+            }
+            else
+            {
+                builder.Services.AddSingleton(credential ?? AzureCredentialFactory.Create(settings));
+            }
+
             // Proxy and CA bundle are read here, so a bad proxy password file or CA bundle stops start-up.
             SocketsHttpHandler managementHandler = ManagementHttp.CreateHandler(settings);
             builder.Services.AddHttpClient(ManagementHeartbeatJob.HttpClientName, client =>
@@ -208,6 +221,12 @@ public static partial class CollectorApplication
                 ManagementHeartbeatJob.Id,
                 (job, token) => job.RunAsync(token),
                 Cron.Minutely());
+            if (settings.UsesEnrolment)
+            {
+                // Enrol (or report) straight away rather than at the next minute.
+                jobs.Trigger(ManagementHeartbeatJob.Id);
+            }
+
             if (settings.UsesManagedPrivacyProfile)
             {
                 // Idempotent: an unchanged assignment is a no-op; a failed run is retried

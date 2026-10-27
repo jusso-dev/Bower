@@ -17,6 +17,10 @@ pub const PRIVACY_PROFILE_SOURCE_LOCAL: &str = "local";
 /// `BOWER_PRIVACY_PROFILE_SOURCE=management` (C# `PrivacyProfileSources.Management`).
 pub const PRIVACY_PROFILE_SOURCE_MANAGEMENT: &str = "management";
 
+/// `BOWER_MANAGEMENT_AUTH` values (C# `ManagementAuthenticationModes`).
+pub const MANAGEMENT_AUTH_ENTRA: &str = "entra";
+pub const MANAGEMENT_AUTH_ENROLMENT: &str = "enrolment";
+
 /// Explicit Azure credential source (C# `AzureCredentialMode`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AzureCredentialMode {
@@ -97,6 +101,11 @@ pub struct CollectorSettings {
     pub management_ca_bundle: Option<PathBuf>,
     /// PEM public keys trusted to sign management commands (BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS).
     pub management_command_trusted_key_files: Vec<String>,
+    /// How the collector authenticates to management (BOWER_MANAGEMENT_AUTH): `entra`
+    /// (default) or `enrolment` (a one-time token exchanged for a key-bound credential).
+    pub management_authentication: String,
+    /// One-time enrolment token file (BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE). Never logged.
+    pub management_enrolment_token_file: Option<PathBuf>,
     /// JSON file of applications that must keep sending events (BOWER_SOURCE_EXPECTATIONS).
     pub source_expectations_path: Option<PathBuf>,
     /// Directory for the verifiable long-term archive (BOWER_ARCHIVE_PATH).
@@ -166,6 +175,8 @@ impl CollectorSettings {
             management_proxy_password_file: None,
             management_ca_bundle: None,
             management_command_trusted_key_files: Vec::new(),
+            management_authentication: MANAGEMENT_AUTH_ENTRA.to_string(),
+            management_enrolment_token_file: None,
             source_expectations_path: None,
             archive_path: None,
         }
@@ -254,6 +265,11 @@ impl CollectorSettings {
             management_command_trusted_key_files: split_list(
                 read("BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS").as_deref(),
             ),
+            management_authentication: blank(read("BOWER_MANAGEMENT_AUTH"))
+                .map(|value| value.trim().to_lowercase())
+                .unwrap_or_else(|| MANAGEMENT_AUTH_ENTRA.to_string()),
+            management_enrolment_token_file: blank(read("BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE"))
+                .map(PathBuf::from),
             source_expectations_path: blank(read("BOWER_SOURCE_EXPECTATIONS")).map(PathBuf::from),
             archive_path: blank(read("BOWER_ARCHIVE_PATH")).map(PathBuf::from),
         };
@@ -276,6 +292,20 @@ impl CollectorSettings {
             .parent()
             .map_or_else(|| PathBuf::from("."), PathBuf::from)
             .join("managed-privacy")
+    }
+
+    /// `BOWER_MANAGEMENT_AUTH=enrolment` (C# `UsesEnrolment`).
+    pub fn uses_enrolment(&self) -> bool {
+        self.management_authentication == MANAGEMENT_AUTH_ENROLMENT
+    }
+
+    /// Key-bound credential directory (C# `ManagementCredentialDirectory`):
+    /// `management-credential` next to the queue database.
+    pub fn management_credential_directory(&self) -> PathBuf {
+        full_path(&self.queue_path)
+            .parent()
+            .map_or_else(|| PathBuf::from("."), PathBuf::from)
+            .join("management-credential")
     }
 
     /// Durable command ledger directory (C# `ManagementCommandDirectory`):
@@ -382,14 +412,28 @@ impl CollectorSettings {
             ));
         }
 
+        if self.management_authentication != MANAGEMENT_AUTH_ENTRA && !self.uses_enrolment() {
+            return Err(invalid("BOWER_MANAGEMENT_AUTH must be entra or enrolment."));
+        }
+        if self.uses_enrolment() && self.management_endpoint.is_none() {
+            return Err(invalid(
+                "BOWER_MANAGEMENT_AUTH=enrolment requires BOWER_MANAGEMENT_ENDPOINT.",
+            ));
+        }
+        if self.management_enrolment_token_file.is_some() && !self.uses_enrolment() {
+            return Err(invalid(
+                "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE requires BOWER_MANAGEMENT_AUTH=enrolment.",
+            ));
+        }
+
         if let Some(endpoint) = &self.management_endpoint {
-            if self.management_scope.as_deref().is_none_or(is_blank) {
+            if !self.uses_enrolment() && self.management_scope.as_deref().is_none_or(is_blank) {
                 return Err(invalid(
                     "BOWER_MANAGEMENT_SCOPE is required when BOWER_MANAGEMENT_ENDPOINT is set.",
                 ));
             }
 
-            // The heartbeat carries an Entra bearer token; never send it in cleartext.
+            // The heartbeat carries a bearer token or assertion; never send it in cleartext.
             if endpoint.scheme() != "https" && !url_is_loopback(endpoint) {
                 return Err(invalid(
                     "BOWER_MANAGEMENT_ENDPOINT must use HTTPS unless it targets loopback.",
@@ -549,6 +593,10 @@ impl CollectorSettings {
         if !self.management_command_trusted_key_files.is_empty() {
             material.push('\u{1f}');
             material.push_str("management-commands:True");
+        }
+        if self.uses_enrolment() {
+            material.push('\u{1f}');
+            material.push_str("management-auth:enrolment");
         }
         format!(
             "sha256:{}",
