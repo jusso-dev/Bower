@@ -12,5 +12,7 @@ Relay output (`RelayOutput`, `RelayProtocol`), downstream side of the relay hop 
   relay ledger hashes the same bytes.
 - Acknowledge only `accepted` or `duplicate`. `rejected` is permanent; anything missing,
   malformed or unreachable stays queued. Relay-wide failures use `destination-relay-*`
-  codes so the destination circuit holds them without spending attempt budgets.
+  codes so the destination circuit holds them without spending attempt budgets. Malformed
+  responses, unknown result statuses and missing results are destination failures in both
+  runtimes; stop subsequent batches after one and keep unacknowledged events retryable.
 - Bound everything: 500 events and 4 MiB of payload per request, 1 MiB responses.

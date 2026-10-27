@@ -155,6 +155,12 @@ long as a downstream outage you plan for. Delivery from the relay to Azure is
 at-least-once exactly as on any collector: a relay that crashes mid-upload can upload a
 batch again after the lease expires.
 
+Malformed relay responses, unknown result statuses and missing per-event results hold
+unacknowledged events behind the destination circuit (`destination-relay-response-invalid`
+or `destination-relay-result-missing`). They do not spend the event retry budget. Only an
+explicit `rejected` result is permanent. Valid accepted/duplicate results in an incomplete
+response can still be acknowledged; later batches wait for the destination to recover.
+
 ## Evidence across the hop
 
 - The relay stores the downstream's payload unchanged, so both queue ledgers commit to the

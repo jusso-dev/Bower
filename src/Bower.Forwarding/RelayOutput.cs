@@ -146,16 +146,17 @@ public sealed class RelayOutput(HttpClient client, string collectorId, TimeProvi
         RelayBatchResponse? parsed = Parse(body);
         if (parsed is null)
         {
-            return Fail(batch, new DeliveryFailure(string.Empty, "relay-response-invalid", true, null));
+            return Fail(batch, new DeliveryFailure(string.Empty, "destination-relay-response-invalid", true, null));
         }
 
         Dictionary<string, RelayEventResult> results = new(StringComparer.Ordinal);
         HashSet<string> sent = batch.Select(item => item.Event.EventId).ToHashSet(StringComparer.Ordinal);
         foreach (RelayEventResult result in parsed.Results)
         {
-            if (!sent.Contains(result.EventId) || !results.TryAdd(result.EventId, result))
+            if (!sent.Contains(result.EventId) || !results.TryAdd(result.EventId, result)
+                || result.Status is not (RelayEventStatuses.Accepted or RelayEventStatuses.Duplicate or RelayEventStatuses.Rejected))
             {
-                return Fail(batch, new DeliveryFailure(string.Empty, "relay-response-invalid", true, null));
+                return Fail(batch, new DeliveryFailure(string.Empty, "destination-relay-response-invalid", true, null));
             }
         }
 
@@ -165,7 +166,7 @@ public sealed class RelayOutput(HttpClient client, string collectorId, TimeProvi
         {
             if (!results.TryGetValue(item.EventId, out RelayEventResult? result))
             {
-                failures.Add(new DeliveryFailure(item.EventId, "relay-result-missing", true, null));
+                failures.Add(new DeliveryFailure(item.EventId, "destination-relay-result-missing", true, null));
             }
             else if (result.Status is RelayEventStatuses.Accepted or RelayEventStatuses.Duplicate)
             {
@@ -173,7 +174,7 @@ public sealed class RelayOutput(HttpClient client, string collectorId, TimeProvi
             }
             else
             {
-                // Rejected (or an unknown status): permanent, so it is dead-lettered here,
+                // An explicit rejection is permanent, so it is dead-lettered here,
                 // where the operator who owns the source can see it.
                 string code = result.Status == RelayEventStatuses.Rejected && RelayProtocol.IsValidCode(result.Code)
                     ? result.Code!
@@ -188,7 +189,7 @@ public sealed class RelayOutput(HttpClient client, string collectorId, TimeProvi
             acknowledged.Count == 0
                 ? null
                 : string.Create(CultureInfo.InvariantCulture, $"relay:{parsed.RelayId}:ledger:{parsed.Ledger.Sequence}"),
-            null);
+            failures.FirstOrDefault(failure => failure.IsDestinationFailure));
     }
 
     private static BatchOutcome Fail(

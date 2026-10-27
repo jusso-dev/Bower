@@ -123,26 +123,37 @@ function New-BowerDeploymentPlan {
         [AllowNull()]
         [object] $Result,
 
+        [string[]] $TemplateDependencies = @(),
+
         [string[]] $RemainingChecks = @()
     )
 
     $templateHash = Get-BowerSha256 -Path $Template
     $parametersHash = Get-BowerSha256 -Text (ConvertTo-BowerCanonicalJson -Parameters $Parameters)
+    $dependencyHashes = [ordered]@{}
+    foreach ($dependency in @($TemplateDependencies | Sort-Object -CaseSensitive -Unique)) {
+        $dependencyHashes[(ConvertTo-BowerRepositoryRelativePath -Path $dependency)] = Get-BowerSha256 -Path $dependency
+    }
+    $planMaterial = "${templateHash}:${parametersHash}"
+    if ($dependencyHashes.Count -gt 0) {
+        $planMaterial += ':' + (ConvertTo-BowerCanonicalJson -Parameters $dependencyHashes)
+    }
     [pscustomobject]@{
-        PSTypeName       = 'Bower.DeploymentPlan'
-        Name             = $Name
-        Mode             = $Mode
-        Tool             = $Tool
-        Template         = ConvertTo-BowerRepositoryRelativePath -Path $Template
-        TemplateSha256   = $templateHash
-        Parameters       = $Parameters
-        ParametersSha256 = $parametersHash
-        PlanSha256       = Get-BowerSha256 -Text "${templateHash}:${parametersHash}"
-        Commands         = $Commands
-        Executed         = $Executed
-        MutationsApplied = $Executed -and $Mode -eq 'Apply'
-        Result           = $Result
-        RemainingChecks  = $RemainingChecks
+        PSTypeName           = 'Bower.DeploymentPlan'
+        Name                 = $Name
+        Mode                 = $Mode
+        Tool                 = $Tool
+        Template             = ConvertTo-BowerRepositoryRelativePath -Path $Template
+        TemplateSha256       = $templateHash
+        TemplateDependencies = $dependencyHashes
+        Parameters           = $Parameters
+        ParametersSha256     = $parametersHash
+        PlanSha256           = Get-BowerSha256 -Text $planMaterial
+        Commands             = $Commands
+        Executed             = $Executed
+        MutationsApplied     = $Executed -and $Mode -eq 'Apply'
+        Result               = $Result
+        RemainingChecks      = $RemainingChecks
     }
 }
 
@@ -207,6 +218,8 @@ function Invoke-BowerAzDeployment {
 
         [string] $AzPath,
 
+        [string[]] $TemplateDependencies = @(),
+
         [string[]] $RemainingChecks = @()
     )
 
@@ -237,7 +250,7 @@ function Invoke-BowerAzDeployment {
         $executed = $true
     }
 
-    New-BowerDeploymentPlan -Name $Name -Mode $Mode -Tool 'az' -Template $TemplatePath -Parameters $Parameters `
+    New-BowerDeploymentPlan -Name $Name -Mode $Mode -Tool 'az' -Template $TemplatePath -Parameters $Parameters -TemplateDependencies $TemplateDependencies `
         -Commands @("az $($arguments -join ' ')") -Executed $executed -Result $result -RemainingChecks $RemainingChecks
 }
 

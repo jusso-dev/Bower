@@ -1028,8 +1028,9 @@ async fn output_acknowledges_only_committed_events_and_sends_payloads_unchanged(
     assert_eq!(failure("e3").code, "relay-rejected:collector-mismatch");
     assert!(!failure("e3").is_retryable);
     assert_eq!(failure("e4").code, "relay-rejected:unknown");
-    assert_eq!(failure("e5").code, "relay-result-missing");
+    assert_eq!(failure("e5").code, "destination-relay-result-missing");
     assert!(failure("e5").is_retryable);
+    assert!(failure("e5").is_destination_failure());
     assert_eq!(failure("e6").code, "payload-invalid-json");
     assert!(!failure("e6").is_retryable);
     let sent = seen.lock().unwrap().clone();
@@ -1040,6 +1041,63 @@ async fn output_acknowledges_only_committed_events_and_sends_payloads_unchanged(
     assert_eq!(request["events"].as_array().unwrap().len(), 5);
     // The stored bytes are sent unchanged, never re-serialized.
     assert!(sent[0].contains(&format!(r#""payload":{payload}}}"#)));
+}
+
+/// C# `Output_MalformedResponsesHoldAllBatchesWithoutSpendingAttempts`.
+#[tokio::test]
+async fn output_malformed_responses_hold_all_batches_without_spending_attempts() {
+    for (body, code) in [
+        ("not-json", "destination-relay-response-invalid"),
+        (
+            r#"{"schemaVersion":1,"relayId":"r","ledger":{"sequence":1,"hash":"h"},"results":[]}"#,
+            "destination-relay-result-missing",
+        ),
+        (
+            r#"{"schemaVersion":1,"relayId":"r","ledger":{"sequence":1,"hash":"h"},"results":[{"eventId":"e0","status":"pending"}]}"#,
+            "destination-relay-response-invalid",
+        ),
+    ] {
+        let (relay, seen) = fake_relay(Arc::new(move |_| (200, body.into(), None))).await;
+        let events: Vec<_> = (0..protocol::MAXIMUM_BATCH_EVENTS + 1)
+            .map(|index| queued(&format!("e{index}"), &format!("f{index}"), "{}"))
+            .collect();
+        let result = plain_output(&relay).deliver(&events).await;
+        assert_eq!(seen.lock().unwrap().len(), 1);
+        assert!(result.acknowledged_event_ids.is_empty());
+        assert_eq!(result.failures.len(), events.len());
+        assert!(result.failures.iter().all(|failure| failure.code == code
+            && failure.is_retryable
+            && failure.is_destination_failure()));
+    }
+}
+
+/// C# `Output_RetryAfterIsBoundedOrIgnored`: malformed/out-of-range deltas are ignored.
+#[tokio::test]
+async fn output_retry_after_is_bounded_or_ignored() {
+    for (seconds, has_retry) in [
+        (3601, true),
+        (i32::MAX as u64, true),
+        (100000000000000, false),
+        (i64::MAX as u64, false),
+        (0, false),
+    ] {
+        let (relay, _) = fake_relay(Arc::new(move |_| (503, "{}".into(), Some(seconds)))).await;
+        let before = chrono::Utc::now();
+        let result = plain_output(&relay)
+            .deliver(&[queued("e0", "f0", "{}")])
+            .await;
+        assert!(result.acknowledged_event_ids.is_empty());
+        let failure = &result.failures[0];
+        assert_eq!(failure.code, "destination-relay-http-503");
+        assert!(failure.is_destination_failure());
+        if has_retry {
+            let retry = failure.retry_after.unwrap();
+            assert!(retry >= before + chrono::Duration::hours(1));
+            assert!(retry <= chrono::Utc::now() + chrono::Duration::hours(1));
+        } else {
+            assert!(failure.retry_after.is_none());
+        }
+    }
 }
 
 /// C# `Output_RelayOutageHoldsEveryEventBehindTheDestinationCircuit`.
@@ -1088,7 +1146,7 @@ async fn output_relay_outage_holds_every_event_behind_the_destination_circuit() 
     .await;
     assert_eq!(
         plain_output(&garbage).deliver(&events[..1]).await.failures[0].code,
-        "relay-response-invalid"
+        "destination-relay-response-invalid"
     );
 
     let closed = Url::parse(&format!("http://127.0.0.1:{}/", free_port())).unwrap();

@@ -116,8 +116,18 @@ Deploy-BowerSentinelResource -ResourceGroupName rg-sentinel -WorkspaceName law-s
 |---|---|---|
 | `publicNetworkAccess` | `Enabled` | `Disabled` makes the DCE accept private traffic only. |
 | `privateLinkScopeName` | empty | Creates the AMPLS and links the DCE and workspace to it. |
-| `privateLinkIngestionAccessMode` | `PrivateOnly` | Networks linked to the scope can ingest only into resources in it. |
+| `privateLinkIngestionAccessMode` (direct Bicep only) | `PrivateOnly` | Networks linked to the scope can ingest only into resources in it. |
 | `privateEndpointSubnetId` | empty | Creates the AMPLS private endpoint (`azuremonitor` group) in that subnet. |
+
+The endpoint module deploys into the subscription and resource group named by the
+subnet ID. It reads the existing virtual network's location and uses that region for
+the endpoint, independently of the DCE region. The deploying identity needs deployment
+and private-endpoint write permissions in that network resource group, virtual-network
+read and subnet join permissions, and permission to connect to the AMPLS. Review both
+resource groups in the what-if output, especially for cross-subscription networks.
+For the shipped template, PowerShell records the endpoint module in `TemplateDependencies`
+and includes its hash in `PlanSha256`; `TemplateSha256` remains the root file's hash.
+Custom templates supplied with `-TemplatePath` require their own dependency review.
 
 Things the template leaves to the network owner, on purpose:
 

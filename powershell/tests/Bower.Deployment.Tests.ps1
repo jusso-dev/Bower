@@ -38,6 +38,34 @@ Describe 'Deploy-BowerSentinelResource' {
         $first.Parameters.ingestPrincipalObjectId | Should -Be '4c1f3a2e-9b7d-4e6f-8a5c-1d2e3f4a5b6c'
     }
 
+    It 'records the shipped local module hash and includes dependency changes in plan hashes' {
+        $plan = Deploy-BowerSentinelResource -ResourceGroupName rg -WorkspaceName law-1 -CreateIngestIdentity -WhatIf
+        $plan.TemplateDependencies['deploy/bicep/private-endpoint.bicep'] | Should -Match '^[0-9a-f]{64}$'
+        $explicit = Deploy-BowerSentinelResource -ResourceGroupName rg -WorkspaceName law-1 -CreateIngestIdentity -WhatIf `
+            -TemplatePath (Join-Path $PSScriptRoot '../../deploy/bicep/main.bicep')
+        $explicit.PlanSha256 | Should -Be $plan.PlanSha256
+        $rootTemplate = Join-Path $TestDrive 'main.bicep'
+        $dependency = Join-Path $TestDrive 'endpoint.bicep'
+        Set-Content -LiteralPath $rootTemplate -Value "param name string"
+        Set-Content -LiteralPath $dependency -Value "param location string"
+        InModuleScope Bower.Deployment -Parameters @{ RootTemplate = $rootTemplate; Dependency = $dependency } {
+            param($RootTemplate, $Dependency)
+            $arguments = @{
+                Name = 'test'; Mode = 'Preview'; Tool = 'az'; Template = $RootTemplate
+                Parameters = @{ name = 'test' }; Commands = @('az deployment group what-if')
+                TemplateDependencies = @($Dependency)
+            }
+            $first = New-BowerDeploymentPlan @arguments
+            $same = New-BowerDeploymentPlan @arguments
+            Set-Content -LiteralPath $Dependency -Value "param location string = 'australiaeast'"
+            $changed = New-BowerDeploymentPlan @arguments
+            $first.PlanSha256 | Should -Be $same.PlanSha256
+            $first.TemplateSha256 | Should -Be $changed.TemplateSha256
+            $first.PlanSha256 | Should -Not -Be $changed.PlanSha256
+        }
+        Should -Invoke -ModuleName Bower.Deployment Invoke-BowerCli -Times 0
+    }
+
     It 'runs nothing with -WhatIf' {
         $plan = Deploy-BowerSentinelResource -ResourceGroupName rg -WorkspaceName law-1 -CreateIngestIdentity -WhatIf
         $plan.Mode | Should -Be 'Preview'

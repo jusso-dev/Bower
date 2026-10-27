@@ -87,7 +87,12 @@ impl RelayOutput {
             Ok(body) => body,
             Err(()) => return unavailable(),
         };
-        let invalid = || failed(batch, failure("relay-response-invalid", true, None));
+        let invalid = || {
+            failed(
+                batch,
+                failure("destination-relay-response-invalid", true, None),
+            )
+        };
         let Some(parsed) = body.as_deref().and_then(parse) else {
             return invalid();
         };
@@ -96,6 +101,12 @@ impl RelayOutput {
         for result in &parsed.results {
             if !sent.contains(result.event_id.as_str())
                 || results.insert(result.event_id.as_str(), result).is_some()
+                || !matches!(
+                    result.status.as_str(),
+                    protocol::STATUS_ACCEPTED
+                        | protocol::STATUS_DUPLICATE
+                        | protocol::STATUS_REJECTED
+                )
             {
                 return invalid();
             }
@@ -106,7 +117,7 @@ impl RelayOutput {
             match results.get(item.event_id.as_str()) {
                 None => failures.push(DeliveryFailure {
                     event_id: item.event_id.clone(),
-                    ..failure("relay-result-missing", true, None)
+                    ..failure("destination-relay-result-missing", true, None)
                 }),
                 Some(result)
                     if result.status == protocol::STATUS_ACCEPTED
@@ -115,7 +126,7 @@ impl RelayOutput {
                     acknowledged.push(item.event_id.clone());
                 }
                 Some(result) => {
-                    // Rejected (or an unknown status): permanent, so it is dead-lettered
+                    // An explicit rejection is permanent, so it is dead-lettered
                     // here, where the operator who owns the source can see it.
                     let code = result
                         .code
@@ -138,11 +149,15 @@ impl RelayOutput {
                 parsed.relay_id, parsed.ledger.sequence
             )
         });
+        let destination_failure = failures
+            .iter()
+            .find(|failure| failure.is_destination_failure())
+            .cloned();
         BatchOutcome {
             acknowledged,
             failures,
             acknowledgement,
-            destination_failure: None,
+            destination_failure,
         }
     }
 
@@ -172,19 +187,26 @@ impl RelayOutput {
     }
 
     /// `RetryConditionHeaderValue`: delta seconds or an HTTP date; past values are
-    /// ignored and future ones capped at one hour.
+    /// ignored and future ones capped at one hour. Like .NET, delta seconds must fit i32.
     fn retry_after(&self, header: Option<&reqwest::header::HeaderValue>) -> Option<Timestamp> {
         let now = self.clock.utc_now();
         let text = header?.to_str().ok()?.trim();
-        let at = if let Ok(seconds) = text.parse::<i64>() {
-            now + chrono::Duration::seconds(seconds)
+        let at = if let Ok(seconds) = text.parse::<i32>() {
+            if seconds <= 0 {
+                return None;
+            }
+            now.checked_add_signed(chrono::Duration::seconds(
+                i64::from(seconds).min(MAXIMUM_RETRY_AFTER_SECONDS),
+            ))?
         } else {
             chrono::DateTime::parse_from_rfc2822(text).ok()?
         };
         if at <= now {
             None
         } else {
-            Some(at.min(now + chrono::Duration::seconds(MAXIMUM_RETRY_AFTER_SECONDS)))
+            Some(at.min(
+                now.checked_add_signed(chrono::Duration::seconds(MAXIMUM_RETRY_AFTER_SECONDS))?,
+            ))
         }
     }
 }

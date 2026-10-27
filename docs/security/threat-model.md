@@ -167,11 +167,11 @@ evidence.
     `clientAuth` usage when restricted. A downstream can only submit batches and envelopes
     naming the collector id its pin maps to (`403` or `collector-mismatch` otherwise), so a
     compromised downstream cannot inject events as another collector.
-  - Data on the relay: payloads are stored byte for byte and never re-parsed or re-redacted,
-    so the relay holds only post-redaction data. Default deny at intake: a payload must be a
-    valid envelope with an accepting policy decision and a fingerprint that matches its
-    content. The relay's queue, ledger, retention and capacity limits are those of any
-    collector; batches are bounded (500 events, 8 MiB, 8 concurrent).
+  - Data on the relay: payloads are stored byte for byte without re-redaction. The relay
+    does not parse raw source data; it deserializes the post-redaction envelope to validate
+    its identity, accepting policy decision and content fingerprint before enqueueing.
+    The relay therefore holds only post-redaction data. Its queue, ledger, retention and
+    capacity limits are those of any collector; batches are bounded (500 events, 8 MiB, 8 concurrent).
   - Relay identity cannot be forged downstream: the management tunnel only reaches the
     relay's own configured management endpoint (no target from the client, so no open
     proxy), and TLS to management runs inside it. The relay sees ciphertext only, so it

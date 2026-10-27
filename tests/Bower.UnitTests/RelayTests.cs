@@ -366,13 +366,68 @@ public sealed class RelayUnitTests
         Assert.Equal("relay:relay-01:ledger:41", result.DestinationAcknowledgement);
         Assert.Contains(result.Failures, failure => failure is { EventId: "e3", Code: "relay-rejected:collector-mismatch", IsRetryable: false });
         Assert.Contains(result.Failures, failure => failure is { EventId: "e4", Code: "relay-rejected:unknown", IsRetryable: false });
-        Assert.Contains(result.Failures, failure => failure is { EventId: "e5", Code: "relay-result-missing", IsRetryable: true });
+        Assert.Contains(result.Failures, failure => failure is { EventId: "e5", Code: "destination-relay-result-missing", IsRetryable: true, IsDestinationFailure: true });
         Assert.Contains(result.Failures, failure => failure is { EventId: "e6", Code: "payload-invalid-json", IsRetryable: false });
         JsonElement sent = Assert.Single(requests).RootElement;
         Assert.Equal("edge-01", sent.GetProperty("collectorId").GetString());
         Assert.Equal(1, sent.GetProperty("schemaVersion").GetInt32());
         Assert.Equal(payload, sent.GetProperty("events")[0].GetProperty("payload").GetRawText());
         Assert.Equal(5, sent.GetProperty("events").GetArrayLength());
+    }
+
+    [Theory]
+    [InlineData("not-json", "destination-relay-response-invalid")]
+    [InlineData("{\"schemaVersion\":1,\"relayId\":\"r\",\"ledger\":{\"sequence\":1,\"hash\":\"h\"},\"results\":[]}", "destination-relay-result-missing")]
+    [InlineData("{\"schemaVersion\":1,\"relayId\":\"r\",\"ledger\":{\"sequence\":1,\"hash\":\"h\"},\"results\":[{\"eventId\":\"e0\",\"status\":\"pending\"}]}", "destination-relay-response-invalid")]
+    public async Task Output_MalformedResponsesHoldAllBatchesWithoutSpendingAttempts(string body, string code)
+    {
+        int calls = 0;
+        using FakeRelay relay = new(_ =>
+        {
+            calls++;
+            return (HttpStatusCode.OK, body, null);
+        });
+        QueuedEvent[] events = [.. Enumerable.Range(0, RelayProtocol.MaximumBatchEvents + 1)
+            .Select(index => new QueuedEvent($"e{index}", $"f{index}", $$"""{"eventId":"e{{index}}"}""", DateTimeOffset.UtcNow))];
+
+        DeliveryResult result = await relay.Output("edge-01").DeliverAsync(events, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, calls);
+        Assert.Empty(result.AcknowledgedEventIds);
+        Assert.Equal(events.Length, result.Failures.Count);
+        Assert.All(result.Failures, failure =>
+        {
+            Assert.Equal(code, failure.Code);
+            Assert.True(failure.IsRetryable);
+            Assert.True(failure.IsDestinationFailure);
+        });
+    }
+
+    [Theory]
+    [InlineData("3601", true)]
+    [InlineData("2147483647", true)]
+    [InlineData("100000000000000", false)]
+    [InlineData("9223372036854775807", false)]
+    [InlineData("0", false)]
+    [InlineData("-1", false)]
+    public async Task Output_RetryAfterIsBoundedOrIgnored(string header, bool hasRetry)
+    {
+        using FakeRelay relay = new(_ => (HttpStatusCode.ServiceUnavailable, "{}", null), header);
+        DateTimeOffset before = DateTimeOffset.UtcNow;
+        DeliveryResult result = await relay.Output("edge-01").DeliverAsync(
+            [new QueuedEvent("e0", "f0", "{}", before)], TestContext.Current.CancellationToken);
+        DeliveryFailure failure = Assert.Single(result.Failures);
+        Assert.Equal("destination-relay-http-503", failure.Code);
+        Assert.True(failure.IsDestinationFailure);
+        if (hasRetry)
+        {
+            Assert.NotNull(failure.RetryAfter);
+            Assert.InRange(failure.RetryAfter.Value, before.AddHours(1), DateTimeOffset.UtcNow.AddHours(1));
+        }
+        else
+        {
+            Assert.Null(failure.RetryAfter);
+        }
     }
 
     [Fact]
@@ -408,7 +463,7 @@ public sealed class RelayUnitTests
         Assert.False(bad.IsDestinationFailure);
 
         using FakeRelay garbage = new(_ => (HttpStatusCode.OK, """{"schemaVersion":1,"relayId":"r","ledger":{"sequence":1,"hash":"h"},"results":[{"eventId":"other","status":"accepted"}]}""", null));
-        Assert.Equal("relay-response-invalid", Assert.Single((await garbage.Output("edge-01").DeliverAsync(events[..1], ct)).Failures).Code);
+        Assert.Equal("destination-relay-response-invalid", Assert.Single((await garbage.Output("edge-01").DeliverAsync(events[..1], ct)).Failures).Code);
 
         using FakeRelay broken = new(_ => throw new HttpRequestException("connection refused"));
         Assert.Equal("destination-relay-unavailable", Assert.Single((await broken.Output("edge-01").DeliverAsync(events[..1], ct)).Failures).Code);
@@ -473,7 +528,7 @@ public sealed class RelayUnitTests
         return Encoding.UTF8.GetBytes(json.Append("]}").ToString());
     }
 
-    private sealed class FakeRelay(Func<string, (HttpStatusCode Status, string Body, TimeSpan? RetryAfter)> respond)
+    private sealed class FakeRelay(Func<string, (HttpStatusCode Status, string Body, TimeSpan? RetryAfter)> respond, string? rawRetryAfter = null)
         : HttpMessageHandler
     {
         public RelayOutput Output(string collectorId) =>
@@ -485,7 +540,11 @@ public sealed class RelayUnitTests
             Assert.Equal("/v1/relay/batches", request.RequestUri!.AbsolutePath);
             (HttpStatusCode status, string body, TimeSpan? retryAfter) = respond(await request.Content!.ReadAsStringAsync(cancellationToken));
             HttpResponseMessage response = new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
-            if (retryAfter is { } delay)
+            if (rawRetryAfter is not null)
+            {
+                response.Headers.TryAddWithoutValidation("Retry-After", rawRetryAfter);
+            }
+            else if (retryAfter is { } delay)
             {
                 response.Headers.RetryAfter = new RetryConditionHeaderValue(delay);
             }

@@ -49,6 +49,7 @@ function Deploy-BowerSentinelResource {
 
     .PARAMETER PrivateEndpointSubnetId
     Optional subnet resource ID for the scope's private endpoint (requires -PrivateLinkScopeName).
+    The endpoint deploys in that subnet's subscription, resource group and virtual-network region.
 
     .PARAMETER SubscriptionId
     Subscription to target. Defaults to the az CLI's current subscription.
@@ -156,6 +157,12 @@ function Deploy-BowerSentinelResource {
         }
 
         $template = Resolve-BowerTemplatePath -Path $TemplatePath -Default 'deploy/bicep/main.bicep'
+        # The shipped main template references this local module, even when its resource
+        # condition is false. Include its content in plan evidence; custom templates own
+        # their dependency tracking.
+        $templateDependencies = if ($template -eq (Join-Path $script:BowerRepositoryRoot 'deploy/bicep/main.bicep')) {
+            @(Resolve-BowerTemplatePath -Default 'deploy/bicep/private-endpoint.bicep')
+        } else { @() }
         $parameters = [ordered]@{ workspaceName = $WorkspaceName; namePrefix = $NamePrefix }
         if ($Location) { $parameters.location = $Location }
         if ($CreateIngestIdentity) {
@@ -188,7 +195,7 @@ function Deploy-BowerSentinelResource {
 
         Invoke-BowerAzDeployment -Name 'sentinel' -TemplatePath $template -ResourceGroupName $ResourceGroupName `
             -SubscriptionId $(if ($PSBoundParameters.ContainsKey('SubscriptionId')) { $SubscriptionId.ToString() }) `
-            -DeploymentName $DeploymentName -Parameters $parameters -Mode $mode -AzPath $AzPath -RemainingChecks @(
+            -DeploymentName $DeploymentName -Parameters $parameters -Mode $mode -AzPath $AzPath -TemplateDependencies $templateDependencies -RemainingChecks @(
             'Review the what-if output in the intended tenant and subscription before -Apply.',
             'Attach the ingestion identity to collector compute; never use client secrets.',
             'Query a canary in the workspace with a separate reader identity; upload acceptance is not destination proof.'

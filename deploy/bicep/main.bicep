@@ -245,22 +245,29 @@ resource scopedWorkspace 'Microsoft.Insights/privateLinkScopes/scopedResources@2
   }
 }
 
-resource privateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (!empty(privateLinkScopeName) && !empty(privateEndpointSubnetId)) {
+// The endpoint belongs to the network's subscription/resource group, independently
+// of the Sentinel resources. Its region is read from the existing virtual network.
+var privateEndpointSubnetParts = split(privateEndpointSubnetId, '/')
+resource privateEndpointNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' existing = if (!empty(privateEndpointSubnetId)) {
+  name: empty(privateEndpointSubnetId) ? 'unused' : privateEndpointSubnetParts[8]
+  scope: resourceGroup(
+    empty(privateEndpointSubnetId) ? subscription().subscriptionId : privateEndpointSubnetParts[2],
+    empty(privateEndpointSubnetId) ? resourceGroup().name : privateEndpointSubnetParts[4]
+  )
+}
+
+module privateEndpoint './private-endpoint.bicep' = if (!empty(privateLinkScopeName) && !empty(privateEndpointSubnetId)) {
   name: '${namePrefix}-ampls-pe'
-  location: location
-  properties: {
-    subnet: {
-      id: privateEndpointSubnetId
-    }
-    privateLinkServiceConnections: [
-      {
-        name: '${namePrefix}-ampls'
-        properties: {
-          privateLinkServiceId: privateLinkScope.id
-          groupIds: ['azuremonitor']
-        }
-      }
-    ]
+  scope: resourceGroup(
+    empty(privateEndpointSubnetId) ? subscription().subscriptionId : privateEndpointSubnetParts[2],
+    empty(privateEndpointSubnetId) ? resourceGroup().name : privateEndpointSubnetParts[4]
+  )
+  params: {
+    name: '${namePrefix}-ampls-pe'
+    connectionName: '${namePrefix}-ampls'
+    subnetId: privateEndpointSubnetId
+    location: !empty(privateLinkScopeName) && !empty(privateEndpointSubnetId) ? privateEndpointNetwork!.location : location
+    privateLinkScopeId: privateLinkScope.id
   }
   dependsOn: [scopedEndpoint, scopedWorkspace]
 }
@@ -272,4 +279,4 @@ output dataCollectionRuleImmutableId string = rule.properties.immutableId
 output streamName string = 'Custom-BowerSecurity'
 output tableName string = table.name
 output privateLinkScopeId string = empty(privateLinkScopeName) ? '' : privateLinkScope.id
-output privateEndpointId string = !empty(privateLinkScopeName) && !empty(privateEndpointSubnetId) ? privateEndpoint.id : ''
+output privateEndpointId string = !empty(privateLinkScopeName) && !empty(privateEndpointSubnetId) ? privateEndpoint!.outputs.privateEndpointId : ''
