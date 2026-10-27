@@ -13,6 +13,7 @@ using Bower.Persistence;
 using Bower.PolicyEngine;
 using Bower.Redaction;
 using Bower.Source.Syslog;
+using Bower.Source.WindowsEventLog;
 using Microsoft.AspNetCore.RateLimiting;
 
 namespace Bower.Collector;
@@ -107,6 +108,29 @@ public static partial class CollectorApplication
                     services.GetRequiredService<TimeProvider>()),
                 services.GetRequiredService<TimeProvider>()));
             builder.Services.AddHostedService<SyslogIntakeService>();
+        }
+        if (settings.WindowsEventLogConfigPath is not null)
+        {
+            // Loaded and checked against the loaded packs at build so a bad file stops start-up.
+            WindowsEventLogSourceConfiguration windowsEventLog =
+                WindowsEventLogSourceConfigurationLoader.LoadFile(settings.WindowsEventLogConfigPath);
+            WindowsEventLogRoutes.Validate(windowsEventLog, bundle);
+            // Bookmarks live with the queue, so a restart resumes where the queue left off.
+            builder.Services.AddSingleton(new WindowsEventLogBookmarks(settings.QueuePath));
+            builder.Services.AddSingleton(services => new WindowsEventLogSource(
+                windowsEventLog,
+                new CollectorWindowsEventSink(new PackRecordIntake(
+                    bundle,
+                    services.GetRequiredService<SecurityEventProcessor>(),
+                    services.GetRequiredService<CollectorIdentity>(),
+                    services.GetRequiredService<ManagedPrivacyProfileState>(),
+                    services.GetRequiredService<PipelineTelemetry>(),
+                    services.GetRequiredService<TimeProvider>())),
+                services.GetRequiredService<WindowsEventLogBookmarks>().Store,
+                // Tests supply an in-memory channel; otherwise the Windows reader (Windows only).
+                services.GetService<IWindowsEventChannelFactory>() ?? WindowsEventLogRoutes.PlatformChannels(),
+                services.GetRequiredService<TimeProvider>()));
+            builder.Services.AddHostedService<WindowsEventLogIntakeService>();
         }
         builder.Services.AddSingleton<EventIdentityConflicts>();
         builder.Services.AddSingleton(
@@ -402,7 +426,8 @@ public static partial class CollectorApplication
                         Sources = sourceHealth.IsConfigured ? sources : null,
                         Delivery = (context.RequestServices.GetService<IOutputAdapter>() as IOutputConcurrencyStatus)
                             ?.GetConcurrencySnapshot(),
-                        Syslog = context.RequestServices.GetService<SyslogSource>()?.Snapshot()
+                        Syslog = context.RequestServices.GetService<SyslogSource>()?.Snapshot(),
+                        WindowsEventLog = context.RequestServices.GetService<WindowsEventLogSource>()?.Snapshot()
                     };
                     return Results.Json(status, CollectorJsonContext.Default.StatusResponse);
                 })

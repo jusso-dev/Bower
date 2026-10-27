@@ -110,6 +110,9 @@ public sealed record CollectorSettings
     /// <summary>JSON file of syslog listeners and pack routes (BOWER_SYSLOG_CONFIG).</summary>
     public string? SyslogConfigPath { get; init; }
 
+    /// <summary>JSON file of Windows Event Log subscriptions and pack parsers (BOWER_WINDOWS_EVENTLOG_CONFIG). Windows only.</summary>
+    public string? WindowsEventLogConfigPath { get; init; }
+
     public string? ManagementScope { get; init; }
 
     /// <summary>
@@ -242,7 +245,8 @@ public sealed record CollectorSettings
                 StringComparison.OrdinalIgnoreCase),
             SourceExpectationsPath = Blank(read("BOWER_SOURCE_EXPECTATIONS")),
             ArchivePath = Blank(read("BOWER_ARCHIVE_PATH")),
-            SyslogConfigPath = Blank(read("BOWER_SYSLOG_CONFIG"))
+            SyslogConfigPath = Blank(read("BOWER_SYSLOG_CONFIG")),
+            WindowsEventLogConfigPath = Blank(read("BOWER_WINDOWS_EVENTLOG_CONFIG"))
         };
         settings.Validate();
         return settings;
@@ -471,6 +475,11 @@ public sealed record CollectorSettings
         if (SyslogConfigPath is not null)
         {
             material += '\u001f' + "syslog:" + SyslogConfigPath;
+        }
+
+        if (WindowsEventLogConfigPath is not null)
+        {
+            material += '\u001f' + "windows-eventlog:" + WindowsEventLogConfigPath;
         }
 
         if (UsesManagedPrivacyProfile)

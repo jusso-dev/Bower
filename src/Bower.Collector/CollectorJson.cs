@@ -57,6 +57,10 @@ internal sealed record StatusResponse(
     /// <summary>Syslog listener counters; omitted when BOWER_SYSLOG_CONFIG is not set. Metadata only.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<Bower.Source.Syslog.SyslogListenerStatus>? Syslog { get; init; }
+
+    /// <summary>Windows Event Log subscription counters; omitted when BOWER_WINDOWS_EVENTLOG_CONFIG is not set. Metadata only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<Bower.Source.WindowsEventLog.WindowsEventSubscriptionStatus>? WindowsEventLog { get; init; }
 }
 
 internal sealed record StatusPolicyResponse(

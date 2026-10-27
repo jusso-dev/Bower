@@ -108,7 +108,7 @@ ledger, per-key suppression with summary events, selection metrics, source silen
 detection, policy population diff, a ledger-verified long-term archive with replay,
 CLI tooling, schemas and deployment examples.
 
-Runtime file, REST and Windows Event Log source adapters, complete catalogue commands,
+Runtime file and REST source adapters, complete catalogue commands,
 Roslyn packages, Azure plan/apply, release-signing automation, a tenant-tested
 evidence run and broad resilience testing remain before v1. No mocked upload is
 represented as Sentinel delivery.
@@ -178,7 +178,8 @@ See [`rust/AGENTS.md`](rust/AGENTS.md) for parity rules.
 | SQL Server source | EF Core adapter library with durable keyset/overlap cursors; collector polling orchestration not yet wired |
 | AWS security signal | GuardDuty, Security Hub and high-value CloudTrail via EventBridge → SQS, plus Bower events from CloudWatch Logs via Firehose → S3; CloudFormation, signed `aws-security` pack, `bower-cloud` agent with IAM-role credentials |
 | Google Cloud security signal | Security Command Center findings and Admin Activity audit logs via Pub/Sub with Australian storage policy; Terraform, signed `gcp-security` pack, ADC / Workload Identity Federation (key files refused) |
-| File, REST, Event Log sources | Not implemented |
+| Windows Event Log source | Channel and event ID allow-list per signed pack parser, generated query, durable bookmarks in the queue database (C# collector on Windows; [details](docs/deployment/windows-event-log-source.md)) |
+| File, REST sources | Not implemented |
 | Sentinel query proof/evidence bundle | Implemented: canary + KQL arrival + retention + ISM/E8 mapping, signed (`bower evidence`); tenant test required |
 | Signed Bower Packs | Implemented: policy, privacy profile, parsers (with an optional bounded, deterministic transform program that runs before redaction), detections, samples, DCR template; tested before signing |
 | DCR generator, drift and doctor | Implemented: schema-driven ARM template, live/offline drift, ingestion preflight, region checks |
@@ -462,6 +463,7 @@ Neither has been exercised against a live tenant or account yet.
 | `BOWER_SOURCE_EXPECTATIONS` | — | JSON file of applications that must keep sending events; quiet ones degrade `/health`. [Details](docs/operations/suppression-archive-and-source-silence.md#source-silence) |
 | `BOWER_ARCHIVE_PATH` | — | Directory for the ledger-verified long-term archive; retention then purges only events a verified archive of this queue covers. [Details](docs/operations/suppression-archive-and-source-silence.md#archive-and-replay) |
 | `BOWER_SYSLOG_CONFIG` | — | JSON file of syslog listeners (RFC 5424/3164 over TCP, TLS or UDP), sender allow-lists and routes to signed pack parsers. Loopback unless TLS. [Details](docs/deployment/syslog-source.md) |
+| `BOWER_WINDOWS_EVENTLOG_CONFIG` | — | JSON file of Windows Event Log subscriptions: channel, event ID allow-list and signed pack parser each. C# collector on Windows only; elsewhere, and in the Rust collector, start-up fails. [Details](docs/deployment/windows-event-log-source.md) |
 
 ## Background jobs
 
