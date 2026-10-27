@@ -256,7 +256,7 @@ public sealed class WindowsEventLogSourceTests
     public async Task FirstStart_BeginsAtTheNewestEventUnlessReadExistingIsSet()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
-        using TemporaryDirectory directory = new();
+        using SqliteTemporaryDirectory directory = new();
         EfSourceCursorStore cursors = await Cursors(directory);
         FakeWindowsEventChannelFactory channels = new();
         channels["Application"].Add(WindowsEventFixtures.Event(1, 1000));
@@ -285,7 +285,7 @@ public sealed class WindowsEventLogSourceTests
     public async Task OnlyAllowListedEventsAreEverReadAndEachIsQueuedOnce()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
-        using TemporaryDirectory directory = new();
+        using SqliteTemporaryDirectory directory = new();
         EfSourceCursorStore cursors = await Cursors(directory);
         FakeWindowsEventChannelFactory channels = new();
         FakeWindowsEventChannel channel = channels["Application"];
@@ -313,7 +313,7 @@ public sealed class WindowsEventLogSourceTests
     public async Task Restart_ResumesFromTheDurableBookmarkWithoutLossOrDuplicates()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
-        using TemporaryDirectory directory = new();
+        using SqliteTemporaryDirectory directory = new();
         FakeWindowsEventChannelFactory channels = new();
         FakeWindowsEventChannel channel = channels["Application"];
         RecordingWindowsEventSink sink = new();
@@ -348,7 +348,7 @@ public sealed class WindowsEventLogSourceTests
     public async Task CrashBeforeTheBookmarkCommit_ReplaysIntoQueueDeduplication()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
-        using TemporaryDirectory directory = new();
+        using SqliteTemporaryDirectory directory = new();
         FakeWindowsEventChannelFactory channels = new();
         FakeWindowsEventChannel channel = channels["Application"];
         RecordingWindowsEventSink sink = new();
@@ -382,7 +382,7 @@ public sealed class WindowsEventLogSourceTests
     public async Task FullQueue_StopsReadingAndRetriesTheSameEvent()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
-        using TemporaryDirectory directory = new();
+        using SqliteTemporaryDirectory directory = new();
         EfSourceCursorStore cursors = await Cursors(directory);
         FakeWindowsEventChannelFactory channels = new();
         for (int record = 1; record <= 4; record++)
@@ -414,7 +414,7 @@ public sealed class WindowsEventLogSourceTests
     public async Task SinkFailure_KeepsTheBookmarkBeforeTheFailedEvent()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
-        using TemporaryDirectory directory = new();
+        using SqliteTemporaryDirectory directory = new();
         EfSourceCursorStore cursors = await Cursors(directory);
         FakeWindowsEventChannelFactory channels = new();
         channels["Application"].Add(WindowsEventFixtures.Event(1, 1000));
@@ -438,7 +438,7 @@ public sealed class WindowsEventLogSourceTests
     public async Task MalformedAndOversizedEvents_AreCountedAndSkipped()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
-        using TemporaryDirectory directory = new();
+        using SqliteTemporaryDirectory directory = new();
         EfSourceCursorStore cursors = await Cursors(directory);
         FakeWindowsEventChannelFactory channels = new();
         FakeWindowsEventChannel channel = channels["Application"];
@@ -460,7 +460,7 @@ public sealed class WindowsEventLogSourceTests
     public async Task ClearedLogIsReadFromTheStartAndOverwrittenEventsAreAGap()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
-        using TemporaryDirectory directory = new();
+        using SqliteTemporaryDirectory directory = new();
         EfSourceCursorStore cursors = await Cursors(directory);
         FakeWindowsEventChannelFactory channels = new();
         FakeWindowsEventChannel channel = channels["Application"];
@@ -496,7 +496,7 @@ public sealed class WindowsEventLogSourceTests
     public async Task InvalidStoredBookmark_FailsClosedWithoutReading()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
-        using TemporaryDirectory directory = new();
+        using SqliteTemporaryDirectory directory = new();
         EfSourceCursorStore cursors = await Cursors(directory);
         Assert.True(await cursors.TryAdvanceAsync("windows-eventlog:app", 0, WindowsEventBookmark.At("System", 5).Serialize(), DateTimeOffset.UtcNow, cancellation));
         FakeWindowsEventChannelFactory channels = new();
@@ -514,7 +514,7 @@ public sealed class WindowsEventLogSourceTests
     public async Task ChannelFailure_IsReportedAndRetriedUntilTheChannelRecovers()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
-        using TemporaryDirectory directory = new();
+        using SqliteTemporaryDirectory directory = new();
         EfSourceCursorStore cursors = await Cursors(directory);
         FakeWindowsEventChannelFactory channels = new();
         FakeWindowsEventChannel channel = channels["Application"];
@@ -540,7 +540,7 @@ public sealed class WindowsEventLogSourceTests
     public async Task Dispose_StopsTheLoopsAndReleasesTheChannels()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
-        using TemporaryDirectory directory = new();
+        using SqliteTemporaryDirectory directory = new();
         EfSourceCursorStore cursors = await Cursors(directory);
         FakeWindowsEventChannelFactory channels = new();
         WindowsEventLogSource source = Source(new RecordingWindowsEventSink(), cursors, channels, pollIntervalSeconds: 300);
@@ -564,7 +564,7 @@ public sealed class WindowsEventLogSourceTests
             JsonSerializer.Serialize<IReadOnlyList<WindowsEventSubscriptionStatus>>([status], WindowsEventLogJsonContext.Default.IReadOnlyListWindowsEventSubscriptionStatus)[1..^1]);
     }
 
-    internal static async Task<EfSourceCursorStore> Cursors(TemporaryDirectory directory)
+    internal static async Task<EfSourceCursorStore> Cursors(SqliteTemporaryDirectory directory)
     {
         EfSourceCursorStore store = new(Path.Combine(directory.Path, "queue.db"));
         await store.InitializeAsync(TestContext.Current.CancellationToken);

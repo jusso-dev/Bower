@@ -31,7 +31,7 @@ public sealed class WindowsEventLogCollectorTests
     public async Task SelectedEvent_IsRedactedQueuedAndBookmarkedInTheQueueDatabaseAcrossRestarts()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
-        using TemporaryDirectory directory = new();
+        using SqliteTemporaryDirectory directory = new();
         FakeWindowsEventChannelFactory channels = new();
         FakeWindowsEventChannel security = channels["Security"];
         string selected = WindowsEventFixtures.Read("security-4625.xml");
@@ -116,7 +116,7 @@ public sealed class WindowsEventLogCollectorTests
     [Fact]
     public async Task UnknownParser_StopsStartUp()
     {
-        using TemporaryDirectory directory = new();
+        using SqliteTemporaryDirectory directory = new();
         InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(
             () => Start(directory, new FakeWindowsEventChannelFactory(), TestContext.Current.CancellationToken, parser: 3));
         Assert.Contains("pack windows-security-logon parser 3 is not an active parser", failure.Message, StringComparison.Ordinal);
@@ -130,7 +130,7 @@ public sealed class WindowsEventLogCollectorTests
             Assert.Skip("Windows has the event log service; WindowsEventLogWindowsTests covers the real reader.");
         }
 
-        using TemporaryDirectory directory = new();
+        using SqliteTemporaryDirectory directory = new();
         PlatformNotSupportedException failure = await Assert.ThrowsAsync<PlatformNotSupportedException>(
             () => Start(directory, channels: null, TestContext.Current.CancellationToken));
         Assert.Contains("BOWER_WINDOWS_EVENTLOG_CONFIG needs Windows", failure.Message, StringComparison.Ordinal);
@@ -154,7 +154,7 @@ public sealed class WindowsEventLogCollectorTests
     }
 
     private static async Task<WebApplication> Start(
-        TemporaryDirectory directory,
+        SqliteTemporaryDirectory directory,
         FakeWindowsEventChannelFactory? channels,
         CancellationToken cancellation,
         int parser = 0)

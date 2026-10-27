@@ -48,7 +48,7 @@ public sealed class WindowsEventLogWindowsTests
             log.Clear();
             log.WriteEntry("before the first start", EventLogEntryType.Information, 1000);
 
-            using TemporaryDirectory directory = new();
+            using SqliteTemporaryDirectory directory = new();
             WindowsEventLogSourceConfiguration configuration = WindowsEventLogSourceConfigurationLoader.Parse($$"""
                 {"apiVersion": "bower.security/v1", "kind": "WindowsEventLogSource", "subscriptions": [
                   {"id": "ci", "channel": "{{LogName}}", "eventIds": [1000], "providers": ["{{SourceName}}"],

@@ -4,6 +4,7 @@ using System.Security;
 using System.Text.Json;
 using Bower.Abstractions;
 using Bower.Source.WindowsEventLog;
+using Microsoft.Data.Sqlite;
 
 namespace Bower.UnitTests;
 
@@ -171,5 +172,22 @@ internal sealed class CrashingCursorStore(ISourceCursorStore inner) : ISourceCur
         }
 
         return inner.TryAdvanceAsync(sourceId, expectedVersion, value, updatedAt, cancellationToken);
+    }
+}
+
+/// <summary>
+/// Temporary directory holding a SQLite database. Pooled connections keep the file open,
+/// which on Windows blocks deleting it, so the pools are cleared first.
+/// </summary>
+internal sealed class SqliteTemporaryDirectory : IDisposable
+{
+    private readonly TemporaryDirectory inner = new();
+
+    public string Path => inner.Path;
+
+    public void Dispose()
+    {
+        SqliteConnection.ClearAllPools();
+        inner.Dispose();
     }
 }
