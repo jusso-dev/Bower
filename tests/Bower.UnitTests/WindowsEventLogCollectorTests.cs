@@ -28,6 +28,50 @@ public sealed class WindowsEventLogCollectorTests
     private static string PackSource => Path.Combine(AppContext.BaseDirectory, "packs", "windows-security-logon");
 
     [Fact]
+    public async Task ShutdownDeadlineBoundsAStalledChannelReadAndCleanupFinishesAfterRelease()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using SqliteTemporaryDirectory directory = new();
+        BlockingWindowsEventChannel channels = new();
+        await using WebApplication app = await Start(directory, channels, cancellation);
+        try
+        {
+            await channels.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellation);
+            using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+            deadline.CancelAfter(TimeSpan.FromMilliseconds(100));
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => app.StopAsync(deadline.Token).WaitAsync(TimeSpan.FromSeconds(5), cancellation));
+            Assert.False(channels.Disposed.Task.IsCompleted);
+        }
+        finally
+        {
+            channels.Release.TrySetResult();
+            await channels.Disposed.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellation);
+        }
+    }
+
+    private sealed class BlockingWindowsEventChannel : IWindowsEventChannelFactory, IWindowsEventChannel
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Disposed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public IWindowsEventChannel Open(string channel) => this;
+
+        public WindowsChannelRange GetRange()
+        {
+            Entered.TrySetResult();
+            Release.Task.GetAwaiter().GetResult();
+            return new WindowsChannelRange(0, 0);
+        }
+
+        public IReadOnlyList<WindowsRawEvent> Read(WindowsEventQuery query, int maximum, bool includeMessage, CancellationToken cancellationToken) => [];
+
+        public void Dispose() => Disposed.TrySetResult();
+    }
+
+    [Fact]
     public async Task SelectedEvent_IsRedactedQueuedAndBookmarkedInTheQueueDatabaseAcrossRestarts()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
@@ -159,7 +203,7 @@ public sealed class WindowsEventLogCollectorTests
 
     private static async Task<WebApplication> Start(
         SqliteTemporaryDirectory directory,
-        FakeWindowsEventChannelFactory? channels,
+        IWindowsEventChannelFactory? channels,
         CancellationToken cancellation,
         int parser = 0)
     {

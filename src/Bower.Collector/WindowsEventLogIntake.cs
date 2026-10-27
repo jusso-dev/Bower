@@ -79,7 +79,8 @@ internal sealed partial class WindowsEventLogIntakeService(
         }
     }
 
-    public async Task StopAsync(CancellationToken cancellationToken) => await source.DisposeAsync();
+    public async Task StopAsync(CancellationToken cancellationToken) =>
+        await source.DisposeAsync().AsTask().WaitAsync(cancellationToken);
 
     [LoggerMessage(EventId = 1110, Level = LogLevel.Information, Message = "Windows Event Log subscription {Subscription} reading channel {Channel}.")]
     private static partial void LogSubscribed(ILogger logger, string subscription, string channel);

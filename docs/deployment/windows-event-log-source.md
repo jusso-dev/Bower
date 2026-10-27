@@ -167,6 +167,9 @@ forwarded. Use it with the first subscription in the example above, and enable
   nor duplicates events.
 - **First start.** Without a bookmark the subscription starts at the newest event in
   the channel unless `readExisting` is set.
+- **Shutdown.** The host requests cancellation and waits for subscription loops until its
+  shutdown deadline. If a Windows channel call stalls, the host stops waiting when that deadline
+  expires; source cleanup finishes after the call returns if the process is still running.
 - **Backpressure.** When the queue is full (or a management-mode collector is waiting
   for its privacy profile), the subscription stops reading and retries the same event
   every second. Events wait in the channel, not in memory. Make sure the channel's
