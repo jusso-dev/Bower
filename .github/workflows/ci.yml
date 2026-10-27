@@ -70,6 +70,29 @@ jobs:
           retention-days: 7
       - run: dotnet format Bower.sln --verify-no-changes --no-restore
 
+  windows-event-log:
+    # The Windows Event Log reader only runs on Windows. Against the real event log
+    # service: a dedicated test log and event source, allow-list filtering by the
+    # service, restart from the bookmark and a cleared log. The platform-neutral
+    # source and collector tests run here too. The variable makes a skip a failure.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - run: dotnet restore tests/Bower.UnitTests/Bower.UnitTests.csproj --locked-mode
+      - run: dotnet build tests/Bower.UnitTests/Bower.UnitTests.csproj --configuration Release --no-restore
+      - name: Windows Event Log tests
+        env:
+          BOWER_REQUIRE_WINDOWS_EVENTLOG_TESTS: "1"
+        run: >
+          dotnet test --project tests/Bower.UnitTests/Bower.UnitTests.csproj
+          --configuration Release --no-build
+          --filter-class "Bower.UnitTests.WindowsEventLog*"
+
   rust:
     runs-on: ubuntu-latest
     defaults:

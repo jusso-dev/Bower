@@ -39,8 +39,9 @@ control plane, or runtime AI filter.
 - `src/Bower.Agent.Aws`: native EC2 host telemetry agent with IMDS enrichment.
 - `src/Bower.Source.Docker`: read-only Docker json-file discovery, tailing and event mapping.
 - `src/Bower.Source.Syslog`: RFC 5424/3164 syslog over TCP, TLS and UDP, routed to signed pack parsers (collector `BOWER_SYSLOG_CONFIG`).
+- `src/Bower.Source.WindowsEventLog`: channel and event ID allow-listed Windows Event Log subscriptions with durable bookmarks, mapped by signed pack parsers (C# collector on Windows, `BOWER_WINDOWS_EVENTLOG_CONFIG`).
 - `src/Bower.Agent.Docker`: Docker sidecar that forwards opted-in container security events.
-- `packs`: signed content packs (`linux-ssh-gateway`, `linux-journald-ssh`, `aws-security`, `gcp-security`).
+- `packs`: signed content packs (`linux-ssh-gateway`, `linux-journald-ssh`, `windows-security-logon`, `aws-security`, `gcp-security`).
 - `rust`: Rust port of the data plane (`bower-collector`, `bower` CLI and their libraries); C# is the specification. See `rust/AGENTS.md`.
 - `deploy/aws`, `deploy/gcp`: CloudFormation and Terraform for cloud signal (plan-only by default).
 - `deploy/azure-function`: Bicep for the Azure Functions collector (Flex Consumption, managed identity; plan-only by default).

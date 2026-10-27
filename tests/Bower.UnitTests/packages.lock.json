@@ -536,7 +536,8 @@
           "Bower.Output.AmaSpool": "[1.0.0, )",
           "Bower.Output.AzureLogsIngestion": "[1.0.0, )",
           "Bower.Packs": "[1.0.0, )",
-          "Bower.Source.Syslog": "[1.0.0, )"
+          "Bower.Source.Syslog": "[1.0.0, )",
+          "Bower.Source.WindowsEventLog": "[1.0.0, )"
         }
       },
       "bower.contracts": {
@@ -706,6 +707,12 @@
       },
       "bower.source.syslog": {
         "type": "Project"
+      },
+      "bower.source.windowseventlog": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[1.0.0, )"
+        }
       },
       "AWSSDK.S3": {
         "type": "CentralTransitive",

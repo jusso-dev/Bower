@@ -28,6 +28,22 @@ host name and other journal fields are never forwarded. A binary (array) `MESSAG
 quarantined with `transform-type-error`. Version 1.0.1 only adds `expectFields`
 assertions to its samples; parser, policy and privacy profile are unchanged.
 
+`windows-security-logon` 1.0.0 exposes one signed JSON parser (index 0) for records from
+the [Windows Event Log source](../deployment/windows-event-log-source.md), subscribed
+to Security event 4625 only. Its transform program keeps only provider
+`Microsoft-Windows-Security-Auditing` events with a source address (`data.IpAddress`
+must be an address; local console failures with `-` are not selected) and maps the
+NTSTATUS `data.SubStatus`, then `data.Status`, through a static table to the outcome
+reason (`InvalidCredentials`, `UnknownAccount`, `AccountLockedOut`, `AccountDisabled`,
+`AccountExpired`, `PasswordExpired`, `PasswordChangeRequired`, `OutsideLogonHours`,
+`WorkstationRestricted`, `LogonTypeNotGranted`, `ClockSkew`, `AuthenticationFirewall`,
+otherwise `OtherFailure`). It produces only `authentication_failure`, action
+`authentication.attempt`, result `failure`, application `windows-security`, environment
+`production`, original ID the source's `winevt-` id. Policy
+`BWR-PACK-WIN-LOGON-FAILURE` 1.0.0 selects; usernames (`data.TargetUserName`) are
+pseudonymised. Workstation, domain, logon process, computer and the rest of
+`EventData` are never forwarded.
+
 Other parser configurations without a signed runtime mapping are preview-only.
 Cloud packs use their existing semantic agent paths and local detections; no new
 cloud raw parser is activated here. DCR templates remain packaged-only.
