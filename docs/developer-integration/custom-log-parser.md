@@ -106,7 +106,9 @@ links within the selected path.
 - Credential-like fields such as passwords, tokens, cookies, authorization
   values, payloads and unrestricted bodies are excluded.
 - Generated and edited regular expressions run through .NET's non-backtracking
-  engine with a 100 ms timeout. Unsupported constructs fail validation.
+  engine, which runs in time linear in the bounded sample, so there is no match
+  timeout and machine load cannot change a preview result. Unsupported constructs
+  fail validation.
 - Configuration stays declarative and cannot execute scripts.
 - Both generation and preview endpoints require the API `Operate` policy.
 

@@ -111,7 +111,6 @@ public static partial class CustomLogParser
     private const int MaximumFields = 64;
     private const int MaximumPreviewRows = 20;
     private const string ConfigurationVersion = "1.0";
-    private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(100);
 
     private static readonly HashSet<string> ProhibitedFieldNames = new(
         [
@@ -271,8 +270,7 @@ public static partial class CustomLogParser
         catch (Exception exception) when (
             exception is ArgumentException
             or InvalidDataException
-            or JsonException
-            or RegexMatchTimeoutException)
+            or JsonException)
         {
             return new CustomLogPreviewResult(false, 0, 0, [exception.Message], []);
         }
@@ -917,11 +915,19 @@ public static partial class CustomLogParser
         return parsed;
     }
 
+    /// <summary>
+    /// The non-backtracking engine is linear in input length, and input is bounded
+    /// (<see cref="MaximumSampleBytes"/>, <see cref="MaximumLineBytes"/>, 2048-character
+    /// patterns), so no match timeout is used. A wall-clock timeout made the result depend
+    /// on machine load: the engine builds its automaton lazily, so a cold first match on a
+    /// busy host timed out and valid input failed preview. The Rust engine has no timeout
+    /// either. The timeout is explicit so a host-wide default cannot reintroduce one.
+    /// </summary>
     private static Regex CreateSafeRegex(string pattern) =>
         new(
             pattern,
             RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
-            RegexTimeout);
+            Regex.InfiniteMatchTimeout);
 
     private static void ValidateRegex(
         CustomLogParserConfiguration configuration,
@@ -1298,20 +1304,20 @@ public static partial class CustomLogParser
     [GeneratedRegex(
         """(?<key>[A-Za-z_][\w.@-]*)=(?<value>"[^"]*"|'[^']*'|[^\s]+)""",
         RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
-        100)]
+        Timeout.Infinite)]
     private static partial Regex EqualsPairRegex();
 
     [GeneratedRegex(
         """(?<key>[A-Za-z_][\w.@-]*):(?<value>"[^"]*"|'[^']*'|[^\s]+)""",
         RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
-        100)]
+        Timeout.Infinite)]
     private static partial Regex ColonPairRegex();
 
     // Runs of characters an IPv4 or IPv6 literal can contain.
     [GeneratedRegex(
         "[0-9A-Fa-f.:]+",
         RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
-        100)]
+        Timeout.Infinite)]
     private static partial Regex AddressTokenRegex();
 
     private sealed record SourceRecord(
