@@ -517,6 +517,8 @@ jobs:
         if: failure()
         run: |
           $ErrorActionPreference = 'Continue'
+          # Recovery configuration is metadata only (the MSI sets no command).
+          sc.exe qfailure Bower
           foreach ($provider in 'Service Control Manager', 'MsiInstaller', 'Bower.Collector', 'Application Error', '.NET Runtime') {
             Write-Output "== $provider"
             $log = if ($provider -eq 'Service Control Manager') { 'System' } else { 'Application' }
