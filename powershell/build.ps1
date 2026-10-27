@@ -39,6 +39,11 @@ $settings = Join-Path $root 'PSScriptAnalyzerSettings.psd1'
 $findings = @(
     Invoke-ScriptAnalyzer -Path (Join-Path $root 'modules') -Recurse -Settings $settings
     Invoke-ScriptAnalyzer -Path $PSCommandPath -Settings $settings
+    # The Windows installer also runs on Windows PowerShell 5.1 (Intune, ConfigMgr, GPO).
+    Invoke-ScriptAnalyzer -Path (Join-Path $root '../deploy/installers/windows') -Recurse -Settings @{
+        Severity = @('Error', 'Warning')
+        Rules    = @{ PSUseCompatibleSyntax = @{ Enable = $true; TargetVersions = @('5.1', '7.4') } }
+    }
 )
 if ($findings.Count -gt 0) {
     $findings | Format-Table -AutoSize RuleName, Severity, ScriptName, Line, Message | Out-String -Width 200 | Write-Information -InformationAction Continue

@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  role_name: bower_collector
+  author: Bower
+  description: Installs the Bower collector deb or rpm and enrols it with a one-time token.
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions: [jammy, noble]
+    - name: Debian
+      versions: [bookworm]
+    - name: EL
+      versions: ["9"]
+dependencies: []

@@ -164,7 +164,9 @@ Set on the collector:
 ```text
 BOWER_MANAGEMENT_ENDPOINT=https://bower-api.example.gov.au/
 BOWER_MANAGEMENT_AUTH=enrolment
-BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE=/etc/bower/enrolment-token
+BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE=/var/lib/bower/enrolment/enrolment-token
+# Delete the token file once management consumed or refused it (the installers set this).
+BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE=true
 BOWER_ENVIRONMENT=production
 # Optional: accept signed commands, including rotate-credential.
 BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS=/etc/bower/command-signing.pub.pem

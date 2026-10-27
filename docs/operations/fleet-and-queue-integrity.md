@@ -167,7 +167,9 @@ with a one-time token from the console's **Enrolment** page
 [design](../architecture/collector-enrolment.md)). The `management-heartbeat` job:
 
 1. Exchanges a token it has not used or seen refused (`BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE`),
-   once. A refused token is not retried; supply a new one.
+   once. A refused token is not retried; supply a new one. With
+   `BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE=true` (set by the
+   [native installers](../deployment/installers.md)) it then deletes the token file.
 2. Reports nothing until it holds an unexpired credential.
 3. Registers and heartbeats with a 5-minute assertion signed by its key.
 4. Rotates the credential when 10 of its 30 days remain. A failed rotation keeps the
