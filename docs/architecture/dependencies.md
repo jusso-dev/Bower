@@ -18,6 +18,13 @@ proof semantics. This brings `Azure.Identity` (already pinned and AOT clean for 
 into the management API for the optional read-only verifier identity; no new package is
 added to the repository.
 
+The parser transform language (`Bower.Pipeline.Transforms`, `bower_pipeline::transform`)
+adds no packages or crates. Its regex engine is Bower's own in both runtimes, because
+captures and step counts must be identical across .NET and Rust; see the
+[decision record](transform-language.md). `bower-pipeline` now depends on the workspace
+crate `bower-contracts` for `JsonElement` (number text and duplicate keys kept, as in
+C#) and `Timestamp`.
+
 | Package | Used by | Why | Alternatives considered |
 |---|---|---|---|
 | `AWSSDK.SQS`, `AWSSDK.S3` 4.0 | `Bower.Agent.Cloud` | SigV4-signed SQS receive/delete/visibility and bounded S3 `GetObject` with `ExpectedBucketOwner`, using the AWS default credential chain (EC2 instance profile with IMDSv2, ECS task role, EKS IRSA). Apache-2.0, first-party. Only these two service clients are referenced. | Hand-written SigV4 over `HttpClient` (security-sensitive code to own and audit); AWS CLI sidecar (shell, extra image surface). |

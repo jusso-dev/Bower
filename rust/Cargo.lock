@@ -996,6 +996,7 @@ dependencies = [
 name = "bower-pipeline"
 version = "0.1.0"
 dependencies = [
+ "bower-contracts",
  "indexmap",
  "regex",
  "serde",

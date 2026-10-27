@@ -3,7 +3,9 @@
 //! strings never survive redaction.
 //!
 //! Sample lines: `{"name": "...", "expect": "accept", "mustNotContain": ["..."], "event": {...}}`.
-//! `{{now}}` in the event is replaced with the current UTC time (`"O"` format).
+//! `{{now}}` in the event is replaced with the current UTC time (`"O"` format). Raw
+//! samples run the parser's transform program with that same time as its evaluation
+//! time; a transform failure is decision `quarantine` (never redacted, selected or kept).
 //!
 //! Expectations: `accept` passes for accept and for redact-and-accept, because the
 //! event is delivered either way (prove the redaction with `mustNotContain`);
@@ -98,6 +100,7 @@ pub fn run(
             }
         };
         let mut mapping_decision = None;
+        let mut transform_failure = None;
         let event_json = if sample.contains_key("raw") {
             let parser = sample
                 .get("parser")
@@ -111,11 +114,17 @@ pub fn run(
             let raw = bower_contracts::json::to_string(source.get("raw").unwrap())
                 .map_err(|_| invalid(format!("Sample '{name}' raw cannot be serialized.")))?
                 .replace("{{now}}", &now_text);
-            match map_raw(parser, &raw) {
+            match map_raw(parser, &raw, &now) {
                 Ok(envelope) => bower_contracts::json::to_string(&envelope)
                     .map_err(|_| invalid(format!("Sample '{name}' event cannot be serialized.")))?,
                 Err(MappingError::NoMatch) => {
                     mapping_decision = Some("reject");
+                    String::new()
+                }
+                Err(MappingError::Transform(code)) => {
+                    // Quarantined before redaction, as a collector does; only the code is kept.
+                    mapping_decision = Some("quarantine");
+                    transform_failure = Some(code);
                     String::new()
                 }
                 Err(_) => return Err(invalid(format!("Sample '{name}' raw event is invalid."))),
@@ -197,6 +206,9 @@ pub fn run(
             || (expected.eq_ignore_ascii_case("accept") && actual == "redactandaccept");
         if !decision_matches {
             problems.push(format!("Expected {expected}, got {actual}."));
+            if let Some(code) = transform_failure {
+                problems.push(format!("Transform failed: {code}."));
+            }
         }
 
         results.push(PackSampleResult {

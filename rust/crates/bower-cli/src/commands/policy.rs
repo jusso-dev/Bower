@@ -507,6 +507,7 @@ fn stage_name(stage: ProcessingStage) -> &'static str {
         ProcessingStage::Schema => "schema",
         ProcessingStage::Validation => "validation",
         ProcessingStage::Policy => "policy",
+        ProcessingStage::Transform => "transform",
     }
 }
 

@@ -179,7 +179,7 @@ See [`rust/AGENTS.md`](rust/AGENTS.md) for parity rules.
 | Google Cloud security signal | Security Command Center findings and Admin Activity audit logs via Pub/Sub with Australian storage policy; Terraform, signed `gcp-security` pack, ADC / Workload Identity Federation (key files refused) |
 | File, REST, Event Log sources | Not implemented |
 | Sentinel query proof/evidence bundle | Implemented: canary + KQL arrival + retention + ISM/E8 mapping, signed (`bower evidence`); tenant test required |
-| Signed Bower Packs | Implemented: policy, privacy profile, parsers, detections, samples, DCR template; tested before signing |
+| Signed Bower Packs | Implemented: policy, privacy profile, parsers (with an optional bounded, deterministic transform program that runs before redaction), detections, samples, DCR template; tested before signing |
 | DCR generator, drift and doctor | Implemented: schema-driven ARM template, live/offline drift, ingestion preflight, region checks |
 | Fleet controls | Per-producer revocable ingest tokens, desired-policy acknowledgement, inactivity suspension and reinstate |
 | Queue integrity | Hash-chained ledger witnessed by management; dead-letter holding area with replay |
@@ -659,6 +659,8 @@ Production Entra setup and collector identity flow:
 [management identity and RBAC](docs/security/management-identity-and-rbac.md).
 Custom parser limits and API:
 [custom log parser generator](docs/developer-integration/custom-log-parser.md).
+Signed pack parser transforms (grammar, functions, limits):
+[transform language](docs/developer-integration/transform-language.md).
 The UI shell is original Bower code informed by the MIT-licensed
 [Shadcn Dashboard](https://github.com/shadcndashboard/shadcndashboard) layout
 patterns.

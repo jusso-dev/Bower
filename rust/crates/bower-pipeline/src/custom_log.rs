@@ -88,6 +88,27 @@ pub struct CustomLogRuntimeMapping {
     pub event_result: String,
     pub match_fields: IndexMap<String, String>,
     pub fields: IndexMap<String, String>,
+    /// Optional transform program (`runtime.transforms`); `None` element is a JSON null.
+    pub transforms: Option<Vec<Option<String>>>,
+    /// Static lookup tables for `lookup` (`runtime.tables`).
+    pub tables: Option<IndexMap<String, IndexMap<String, String>>>,
+}
+
+impl CustomLogRuntimeMapping {
+    /// The transform program this mapping carries, or `None` when it has none.
+    pub fn transform_definition<'a>(
+        &'a self,
+        fields: &'a [CustomLogField],
+    ) -> Option<crate::transform::TransformDefinition<'a>> {
+        if self.transforms.is_none() && self.tables.is_none() {
+            return None;
+        }
+        Some(crate::transform::TransformDefinition {
+            statements: self.transforms.as_deref(),
+            tables: self.tables.as_ref(),
+            fields,
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -233,6 +254,8 @@ fn read_runtime(object: &Map<String, Value>) -> Result<CustomLogRuntimeMapping, 
         "eventResult",
         "match",
         "fields",
+        "transforms",
+        "tables",
     ];
     if object
         .keys()
@@ -267,6 +290,54 @@ fn read_runtime(object: &Map<String, Value>) -> Result<CustomLogRuntimeMapping, 
         event_result: optional_string(object, "eventResult")?.unwrap_or_default(),
         match_fields: dictionary("match")?,
         fields: dictionary("fields")?,
+        transforms: match property(object, "transforms") {
+            None | Some(Value::Null) => None,
+            Some(Value::Array(items)) => Some(
+                items
+                    .iter()
+                    .map(|item| match item {
+                        Value::Null => Ok(None),
+                        Value::String(text) => Ok(Some(text.clone())),
+                        _ => Err(PipelineError::InvalidData(
+                            "Runtime transforms must be strings.".into(),
+                        )),
+                    })
+                    .collect::<Result<_, _>>()?,
+            ),
+            Some(_) => {
+                return Err(PipelineError::InvalidData(
+                    "Runtime transforms must be an array.".into(),
+                ));
+            }
+        },
+        tables: match property(object, "tables") {
+            None | Some(Value::Null) => None,
+            Some(Value::Object(tables)) => Some(
+                tables
+                    .iter()
+                    .map(|(name, table)| match table {
+                        Value::Object(entries) => entries
+                            .iter()
+                            .map(|(key, value)| match value {
+                                Value::String(value) => Ok((key.clone(), value.clone())),
+                                _ => Err(PipelineError::InvalidData(
+                                    "Runtime tables must map keys to strings.".into(),
+                                )),
+                            })
+                            .collect::<Result<IndexMap<_, _>, _>>()
+                            .map(|entries| (name.clone(), entries)),
+                        _ => Err(PipelineError::InvalidData(
+                            "Runtime tables must map names to string dictionaries.".into(),
+                        )),
+                    })
+                    .collect::<Result<_, _>>()?,
+            ),
+            Some(_) => {
+                return Err(PipelineError::InvalidData(
+                    "Runtime tables must be an object.".into(),
+                ));
+            }
+        },
     })
 }
 
@@ -368,6 +439,13 @@ pub fn validate_configuration(configuration: &CustomLogParserConfiguration) -> V
             })
         {
             issues.push("Invalid runtime semantic mapping; only bounded, filtered JSON mappings are supported.".into());
+        }
+        if let Some(definition) = runtime.transform_definition(&configuration.fields) {
+            issues.extend(
+                crate::transform::TransformProgram::validate(&definition)
+                    .iter()
+                    .map(ToString::to_string),
+            );
         }
     }
     issues

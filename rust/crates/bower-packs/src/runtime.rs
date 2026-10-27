@@ -1,9 +1,12 @@
 //! Signed, bounded JSON-to-semantic mappings and local detection enrichment.
 //! Raw source fields never pass through to arbitrary envelope attributes.
+//! Order: parse, signed transform program (optional), match and semantic mapping; the
+//! caller then redacts, selects and queues the mapped envelope.
 
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use bower_contracts::time::Timestamp;
 use bower_contracts::{
     DecisionAction, EventRedactor, JsonElement, RedactionResult, SecurityEventEnvelope,
     TelemetryPolicyEvaluator, json,
@@ -12,6 +15,7 @@ use bower_detection::{DetectionEngine, DetectionRule};
 use bower_pipeline::custom_log::{
     CustomLogParserConfiguration, CustomLogValueType, validate_configuration,
 };
+use bower_pipeline::transform::{TransformProgram, codes};
 
 pub const MAXIMUM_RAW_BYTES: usize = 32_768;
 
@@ -21,6 +25,9 @@ pub enum MappingError {
     Invalid,
     TooLarge,
     NoMatch,
+    /// The signed transform program failed with this metadata-only code; callers
+    /// quarantine without persisting (C# `TransformException`).
+    Transform(&'static str),
 }
 
 pub fn parser_status(parser: &CustomLogParserConfiguration) -> &'static str {
@@ -65,9 +72,11 @@ fn valid_type(value: &str, kind: CustomLogValueType) -> bool {
     }
 }
 
+/// `evaluation_time` is the only time a transform can read (`now()` and the RFC 3164 year).
 pub fn map_raw(
     parser: &CustomLogParserConfiguration,
     raw: &str,
+    evaluation_time: &Timestamp,
 ) -> Result<SecurityEventEnvelope, MappingError> {
     let runtime = parser.runtime.as_ref().ok_or(MappingError::Inactive)?;
     if !validate_configuration(parser).is_empty() {
@@ -83,6 +92,22 @@ pub fn map_raw(
     if fields.len() > 64 || !bounded_tree(&value, 1) {
         return Err(MappingError::Invalid);
     }
+    let value = match runtime.transform_definition(&parser.fields) {
+        None => value,
+        Some(definition) => {
+            let program =
+                TransformProgram::compile(&definition).map_err(|_| MappingError::Invalid)?;
+            // Input the transform cannot represent is a malformed record, as in C#.
+            let output =
+                program
+                    .execute(&value, evaluation_time)
+                    .map_err(|error| match error.code() {
+                        codes::INPUT_INVALID => MappingError::Invalid,
+                        code => MappingError::Transform(code),
+                    })?;
+            JsonElement::parse(&output.record_json).map_err(|_| MappingError::Invalid)?
+        }
+    };
     let read = |source: &str| -> Result<&str, MappingError> {
         let text = value
             .get(source)

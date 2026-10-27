@@ -7,6 +7,7 @@
 pub mod custom_log;
 pub mod document;
 pub mod model;
+pub mod transform;
 pub mod validator;
 mod yaml_emit;
 

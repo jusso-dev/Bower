@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Bower.Abstractions;
 using Bower.Contracts;
+using Bower.Pipeline.Transforms;
 using Bower.PolicyEngine;
 using Bower.Redaction;
 using Bower.Redaction.Privacy;
@@ -14,7 +15,9 @@ public sealed record PackSampleResult(string Name, bool Passed, string ExpectedD
 /// Runs a pack's samples through redaction and policy exactly as a collector would, and
 /// checks the expected decision and that listed sensitive strings never survive.
 /// Sample lines: {"name": "...", "expect": "accept", "mustNotContain": ["..."], "event": {...}}.
-/// "{{now}}" in the event is replaced with the current UTC time.
+/// "{{now}}" in the event is replaced with the current UTC time. Raw samples run the
+/// parser's transform program with that same time as its evaluation time; a transform
+/// failure is decision "quarantine" (the record is never redacted, selected or kept).
 /// Expectations: "accept" passes for accept and for redact-and-accept, because the event
 /// is delivered either way (prove the redaction with "mustNotContain"); "redact-and-accept"
 /// requires that redaction happened; every other expectation must match exactly.
@@ -41,6 +44,7 @@ public static class PackTester
             string expected = (sample["expect"]?.GetValue<string>() ?? "accept").Replace("-", string.Empty, StringComparison.Ordinal);
             List<string> problems = [];
             string? eventJson;
+            string? transformFailure = null;
             if (sample["raw"] is { } raw)
             {
                 int parser = sample["parser"]?.GetValue<int>() ?? throw new InvalidDataException("Raw samples require a parser index.");
@@ -49,8 +53,18 @@ public static class PackTester
                     throw new InvalidDataException("Raw sample parser index is invalid.");
                 }
 
-                SecurityEventEnvelope? mapped = PackRuntime.Parse(pack.Parsers[parser],
-                    raw.ToJsonString().Replace("{{now}}", now.ToString("O"), StringComparison.Ordinal));
+                SecurityEventEnvelope? mapped = null;
+                try
+                {
+                    mapped = PackRuntime.Parse(pack.Parsers[parser],
+                        raw.ToJsonString().Replace("{{now}}", now.ToString("O"), StringComparison.Ordinal), now);
+                }
+                catch (TransformException exception)
+                {
+                    // Quarantined before redaction, as a collector does; only the code is kept.
+                    transformFailure = exception.Code;
+                }
+
                 eventJson = mapped is null ? null : JsonSerializer.Serialize(mapped, BowerJson.Envelope);
             }
             else
@@ -63,7 +77,11 @@ public static class PackTester
                 ? new RedactionResult(false, null, [], [], "not-selected") : engine.Redact(eventJson);
             string actual;
             string[] detected = [];
-            if (eventJson is null)
+            if (transformFailure is not null)
+            {
+                actual = "quarantine";
+            }
+            else if (eventJson is null)
             {
                 actual = "reject";
             }
@@ -109,6 +127,10 @@ public static class PackTester
             if (!decisionMatches)
             {
                 problems.Add($"Expected {expected}, got {actual}.");
+                if (transformFailure is not null)
+                {
+                    problems.Add($"Transform failed: {transformFailure}.");
+                }
             }
 
             results.Add(new PackSampleResult(name, problems.Count == 0, expected, actual, problems));

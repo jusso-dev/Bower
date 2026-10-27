@@ -247,6 +247,7 @@ public sealed class PipelineTelemetry(TimeProvider clock)
         ProcessingStage.Redaction => "redaction",
         ProcessingStage.Schema => "schema",
         ProcessingStage.Validation => "validation",
+        ProcessingStage.Transform => "transform",
         _ => "policy"
     };
 

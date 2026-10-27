@@ -1544,3 +1544,99 @@ async fn semantic_canaries_absent_from_queue_wal_spool_and_captured_outbound() {
     server.abort();
     reader.execute_batch("ROLLBACK;").unwrap();
 }
+
+/// Port of `TransformPackTests.Collector_QuarantinesBudgetOverrunWithoutPersisting_AndCountsTheTransformStage`.
+#[tokio::test]
+async fn pack_transform_budget_overrun_is_quarantined_without_persisting() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("source");
+    copy_tree(&repo_root().join("packs/linux-journald-ssh"), &source);
+    let parser_path = source.join("parsers/sshd-journald.json");
+    let mut parser: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&parser_path).unwrap()).unwrap();
+    parser["runtime"]["transforms"]
+        .as_array_mut()
+        .unwrap()
+        .insert(
+            0,
+            serde_json::json!(".slow = regex_match(.MESSAGE, '(?:a?){100}a{100}$')"),
+        );
+    std::fs::write(&parser_path, parser.to_string()).unwrap();
+    let keys = bower_integrity::generate_key_pair();
+    let archive =
+        bower_packs::build(&source, &keys.private_key_pem, directory.path(), None).unwrap();
+    let public_key = directory.path().join("trusted.pem");
+    std::fs::write(&public_key, keys.public_key_pem).unwrap();
+    let privacy_key = directory.path().join("privacy.key");
+    std::fs::write(&privacy_key, [0xabu8; 32]).unwrap();
+    let collector = start(directory.path(), Some(TOKEN), |settings| {
+        settings.policy_directory = directory.path().join("no-directory-policies");
+        settings.packs = vec![archive.to_string_lossy().into_owned()];
+        settings.pack_trusted_key_files = vec![public_key.to_string_lossy().into_owned()];
+        settings.privacy_hmac_key_file = Some(privacy_key);
+        settings.ingest_requests_per_second = 1000;
+    })
+    .await;
+    let now = bower_contracts::time::now();
+    let micros = now.timestamp() * 1_000_000 + i64::from(now.timestamp_subsec_micros());
+    let record = |message: &str| {
+        serde_json::json!({
+            "__CURSOR": "s=7a1c;i=1f01;b=55aa;m=91;t=63e2;x=c3",
+            "__REALTIME_TIMESTAMP": micros.to_string(),
+            "SYSLOG_IDENTIFIER": "sshd",
+            "_HOSTNAME": "bastion-1",
+            "MESSAGE": message
+        })
+        .to_string()
+    };
+    const PATH: &str = "/v1/packs/linux-journald-ssh/parsers/0/events";
+    let pathological = format!("{}b deploy-admin", "a".repeat(5000));
+    let (status, _, body) = send(
+        &collector.router,
+        post_raw(PATH, record(&pathological), Some(TOKEN)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        body,
+        r#"{"eventId":null,"decision":"quarantine","queued":false,"duplicate":false,"reasons":["transform-budget-exceeded"],"policy":null}"#
+    );
+
+    let message = "Failed password for invalid user deploy-admin from 203.0.113.5 port 52144 ssh2";
+    let (status, _, body) = send(
+        &collector.router,
+        post_raw(PATH, record(message), Some(TOKEN)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+    let rows = collector.store.lease(10, Duration::from_secs(60)).unwrap();
+    assert_eq!(rows.len(), 1);
+    for forbidden in ["deploy-admin", "Failed password", "bastion-1", "aaaaaaaaaa"] {
+        assert!(!rows[0].payload.contains(forbidden), "{forbidden}");
+    }
+
+    let status = status_body(&collector.router).await;
+    let transform: Vec<&serde_json::Value> = status["pipeline"]["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["stage"] == "transform")
+        .collect();
+    assert_eq!(transform.len(), 1);
+    assert_eq!(transform[0]["action"], "quarantine");
+    assert_eq!(transform[0]["events"], 1);
+    assert_eq!(transform[0]["queued"], 0);
+}
+
+fn copy_tree(source: &Path, destination: &Path) {
+    std::fs::create_dir_all(destination).unwrap();
+    for entry in std::fs::read_dir(source).unwrap() {
+        let entry = entry.unwrap();
+        let target = destination.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}

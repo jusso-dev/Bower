@@ -86,6 +86,15 @@ IDs, severities, HTTP methods and status codes under the known names still
 preview. Preview issues and errors are Bower-authored and never echo sample
 values.
 
+### Transforms
+
+A configuration can carry a signed transform program in `runtime.transforms` (see the
+[transform language reference](transform-language.md)). Preview validates it and
+reports metadata-only issues (statement, column and code), but never runs it: preview
+rows always show the source fields under the floor above, so a transform cannot derive
+or reveal a value preview would otherwise mask. Transforms run only at collector intake,
+before redaction, and only in signed packs.
+
 ## Point Bower at a server file
 
 Server-path input is disabled unless one or more roots are configured:

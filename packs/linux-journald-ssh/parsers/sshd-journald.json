@@ -1,0 +1,49 @@
+{
+  "version": "1.0",
+  "format": "Json",
+  "fields": [
+    { "sourceName": "__CURSOR", "type": "Text", "ocsfPath": "metadata.uid", "asimField": "EventOriginalUid", "sensitive": false },
+    { "sourceName": "__REALTIME_TIMESTAMP", "type": "Text", "ocsfPath": null, "asimField": null, "sensitive": false },
+    { "sourceName": "SYSLOG_IDENTIFIER", "type": "Text", "ocsfPath": "metadata.product.name", "asimField": "EventProduct", "sensitive": false },
+    { "sourceName": "MESSAGE", "type": "Text", "ocsfPath": "message", "asimField": "EventMessage", "sensitive": true },
+    { "sourceName": "timestamp", "type": "DateTime", "ocsfPath": "time", "asimField": "TimeGenerated", "sensitive": false },
+    { "sourceName": "user", "type": "Text", "ocsfPath": "actor.user.name", "asimField": "TargetUsername", "sensitive": true },
+    { "sourceName": "source_ip", "type": "IpAddress", "ocsfPath": "src_endpoint.ip", "asimField": "SrcIpAddr", "sensitive": true },
+    { "sourceName": "result", "type": "Text", "ocsfPath": "status", "asimField": "EventResult", "sensitive": true },
+    { "sourceName": "reason", "type": "Text", "ocsfPath": "status_detail", "asimField": "EventResultDetails", "sensitive": true }
+  ],
+  "runtime": {
+    "applicationName": "linux-sshd",
+    "environment": "production",
+    "eventCategory": "authentication",
+    "eventType": "authentication_failure",
+    "eventAction": "authentication.attempt",
+    "eventResult": "failure",
+    "transforms": [
+      ".m = regex_extract(.MESSAGE, '^Failed (?<method>password|publickey|keyboard-interactive/pam) for (?:invalid user )?(?<user>[^ ]+) from (?<ip>[0-9A-Fa-f.:]+) port [0-9]+')",
+      "if .SYSLOG_IDENTIFIER == \"sshd\" && .m.user != null { .result = \"failure\" } else { .result = \"ignored\" }",
+      ".user = .m.user",
+      ".source_ip = .m.ip",
+      ".reason = lookup(\"methods\", .m.method)",
+      "del(.m)",
+      ".timestamp = parse_timestamp(.__REALTIME_TIMESTAMP, \"unix_microseconds\")"
+    ],
+    "tables": {
+      "methods": {
+        "password": "InvalidCredentials",
+        "publickey": "PublicKeyRejected",
+        "keyboard-interactive/pam": "PamAuthenticationFailed"
+      }
+    },
+    "match": {
+      "result": "failure"
+    },
+    "fields": {
+      "eventId": "__CURSOR",
+      "timeGenerated": "timestamp",
+      "actor.username": "user",
+      "source.ipAddress": "source_ip",
+      "eventOutcomeReason": "reason"
+    }
+  }
+}

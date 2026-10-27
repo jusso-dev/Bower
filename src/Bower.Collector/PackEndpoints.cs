@@ -4,6 +4,7 @@ using Bower.Contracts;
 using Bower.Core;
 using Bower.Packs;
 using Bower.Persistence;
+using Bower.Pipeline.Transforms;
 
 namespace Bower.Collector;
 
@@ -15,7 +16,7 @@ public static partial class CollectorApplication
             async (string packId, int parserIndex, HttpContext context,
                 PolicyBundle bundle, SecurityEventProcessor processor, ProducerAuthorization authorization,
                 CollectorIdentity identity, EventIdentityConflicts conflicts, IngestAuthentication authentication,
-                CancellationToken cancellationToken) =>
+                PipelineTelemetry telemetry, TimeProvider clock, CancellationToken cancellationToken) =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 LoadedPack? pack = bundle.LoadedPacks.SingleOrDefault(pack => pack.Manifest.Id == packId);
@@ -57,11 +58,23 @@ public static partial class CollectorApplication
                 SecurityEventEnvelope? envelope;
                 try
                 {
-                    envelope = PackRuntime.Parse(pack.Parsers[parserIndex], rawJson);
+                    envelope = PackRuntime.Parse(pack.Parsers[parserIndex], rawJson, clock.GetUtcNow());
                 }
                 catch (Exception exception) when (exception is JsonException or InvalidDataException or ArgumentException)
                 {
                     return PackError(400, "pack-record-invalid");
+                }
+                catch (TransformException exception)
+                {
+                    // Quarantine without persisting: the raw record never reaches redaction,
+                    // policy or the queue, and only the stable code is reported.
+                    ProcessingResult quarantined = ProcessingResult.Failed(
+                        DecisionAction.Quarantine, exception.Code, ProcessingStage.Transform);
+                    telemetry.Record(quarantined, length);
+                    return Results.Json(
+                        new IngestResponse(null, "quarantine", false, false, quarantined.Reasons, null),
+                        CollectorJsonContext.Default.IngestResponse,
+                        statusCode: StatusCodes.Status400BadRequest);
                 }
 
                 if (envelope is null)

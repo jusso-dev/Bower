@@ -543,7 +543,10 @@ public enum ProcessingStage
     Redaction,
     Schema,
     Validation,
-    Policy
+    Policy,
+
+    /// <summary>A signed pack transform failed before redaction; nothing was persisted.</summary>
+    Transform
 }
 
 public sealed record SourceKey(string Application, string Environment);
