@@ -1,0 +1,80 @@
+# deb and rpm for the Native AOT collector and CLI (#112). Built in CI from the
+# `publish` job artefacts by deploy/installers/linux/build.sh, which renders the
+# BOWER_ placeholders below. Paths are relative to the repository root.
+name: bower-collector
+arch: ${BOWER_ARCH}
+platform: linux
+version: ${BOWER_VERSION}
+version_schema: semver
+release: "1"
+section: admin
+priority: optional
+maintainer: Bower maintainers <security@bower.invalid>
+vendor: Bower
+homepage: https://github.com/jusso-dev/Bower
+license: MIT
+description: |
+  Bower security telemetry collector (Native AOT) and the bower CLI.
+  Runs as the unprivileged bower system account under a hardened systemd unit.
+  Configuration lives in /etc/bower; durable state in /var/lib/bower.
+
+# The AOT binaries load OpenSSL at run time and need glibc 2.34 or later; the
+# maintainer scripts create the bower account with useradd.
+overrides:
+  deb:
+    depends:
+      - ca-certificates
+      - libc6 (>= 2.34)
+      - libssl3 | libssl3t64
+      - passwd
+  rpm:
+    depends:
+      - ca-certificates
+      - glibc >= 2.34
+      - openssl-libs
+      - shadow-utils
+
+contents:
+  - src: ${BOWER_DIST}/collector/Bower.Collector
+    dst: /opt/bower/Bower.Collector
+    file_info: { mode: 0755, owner: root, group: root }
+  - src: ${BOWER_DIST}/collector/libe_sqlite3.so
+    dst: /opt/bower/libe_sqlite3.so
+    file_info: { mode: 0644, owner: root, group: root }
+  - src: ${BOWER_DIST}/cli/bower
+    dst: /opt/bower/bower
+    file_info: { mode: 0755, owner: root, group: root }
+  - src: /opt/bower/bower
+    dst: /usr/bin/bower
+    type: symlink
+  - src: deploy/systemd/bower.service
+    dst: /usr/lib/systemd/system/bower.service
+    file_info: { mode: 0644, owner: root, group: root }
+  - src: deploy/installers/linux/bower.env
+    dst: /usr/share/bower/bower.env.example
+    file_info: { mode: 0644, owner: root, group: root }
+  - dst: /etc/bower
+    type: dir
+    file_info: { mode: 0755, owner: root, group: root }
+  - dst: /etc/bower/policies
+    type: dir
+    file_info: { mode: 0755, owner: root, group: root }
+  - src: policies/default/*.yaml
+    dst: /etc/bower/policies/
+    type: config|noreplace
+    file_info: { mode: 0644, owner: root, group: root }
+
+scripts:
+  preinstall: deploy/installers/linux/scripts/preinstall.sh
+  postinstall: deploy/installers/linux/scripts/postinstall.sh
+  preremove: deploy/installers/linux/scripts/preremove.sh
+  postremove: deploy/installers/linux/scripts/postremove.sh
+
+# Signing runs only when CI has the GPG key (BOWER_GPG_KEY_FILE set); otherwise the
+# packages are unsigned. nfpm reads the passphrase from NFPM_PASSPHRASE.
+deb:
+  signature:
+    key_file: ${BOWER_GPG_KEY_FILE}
+rpm:
+  signature:
+    key_file: ${BOWER_GPG_KEY_FILE}

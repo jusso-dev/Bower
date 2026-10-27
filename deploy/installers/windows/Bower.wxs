@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Bower collector MSI (#112). Built in CI with WiX v5 from the `publish` job artefact:
+
+    wix build -ext WixToolset.Util.wixext -arch x64 -d Version=0.1.0 -d Dist=<artefact> -d Policies=policies\default
+              -o bower-collector-0.1.0-x64.msi deploy\installers\windows\Bower.wxs
+
+  Installs the Native AOT collector as the auto-start service "Bower" running as the
+  virtual account NT SERVICE\Bower (no password, no interactive logon, no rights beyond
+  its own service SID). %ProgramData%\Bower does not inherit the ProgramData ACL (which
+  lets every user create files): only SYSTEM and Administrators control it, the service
+  reads it and can write only state, enrolment and spool. Configuration comes from
+  public properties (no secrets) and lands in the service's Environment value:
+
+    MANAGEMENTENDPOINT   management URL; enables token enrolment
+    COLLECTORID          collector id (default: computer name)
+    BOWERENVIRONMENT     environment name (default: unknown)
+    PACKS, PACKTRUSTEDKEYS, COMMANDTRUSTEDKEYS   comma-separated file paths
+
+  The values are remembered for repair and upgrade. The enrolment token is never a
+  property (MSI logs properties): Install-BowerCollector.ps1 writes it into
+  %ProgramData%\Bower\enrolment, and the collector deletes it once used. Uninstall
+  deletes the management credential, any unused token and %ProgramData%\Bower\secrets;
+  the queue in %ProgramData%\Bower\state stays, as it may hold unacknowledged events.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="Bower Collector" Manufacturer="Bower" Version="$(var.Version)"
+           UpgradeCode="1B809EE5-8A1D-4B96-805F-21D66C1CF58E" Scope="perMachine"
+           InstallerVersion="500" Compressed="yes">
+    <SummaryInformation Description="Bower security telemetry collector" />
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer Bower Collector is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Remembered properties: the command line wins, otherwise the last install's value. -->
+    <Property Id="MANAGEMENTENDPOINT" Secure="yes">
+      <RegistrySearch Id="FindManagementEndpoint" Root="HKLM" Key="SOFTWARE\Bower\Collector" Name="ManagementEndpoint" Type="raw" />
+    </Property>
+    <Property Id="COLLECTORID" Secure="yes">
+      <RegistrySearch Id="FindCollectorId" Root="HKLM" Key="SOFTWARE\Bower\Collector" Name="CollectorId" Type="raw" />
+    </Property>
+    <Property Id="BOWERENVIRONMENT" Secure="yes">
+      <RegistrySearch Id="FindEnvironment" Root="HKLM" Key="SOFTWARE\Bower\Collector" Name="Environment" Type="raw" />
+    </Property>
+    <Property Id="PACKS" Secure="yes">
+      <RegistrySearch Id="FindPacks" Root="HKLM" Key="SOFTWARE\Bower\Collector" Name="Packs" Type="raw" />
+    </Property>
+    <Property Id="PACKTRUSTEDKEYS" Secure="yes">
+      <RegistrySearch Id="FindPackTrustedKeys" Root="HKLM" Key="SOFTWARE\Bower\Collector" Name="PackTrustedKeys" Type="raw" />
+    </Property>
+    <Property Id="COMMANDTRUSTEDKEYS" Secure="yes">
+      <RegistrySearch Id="FindCommandTrustedKeys" Root="HKLM" Key="SOFTWARE\Bower\Collector" Name="CommandTrustedKeys" Type="raw" />
+    </Property>
+
+    <SetProperty Action="SaveManagementEndpoint" Id="CMDLINE_MANAGEMENTENDPOINT" Value="[MANAGEMENTENDPOINT]" Before="AppSearch" Sequence="both" Condition="MANAGEMENTENDPOINT" />
+    <SetProperty Action="SaveCollectorId" Id="CMDLINE_COLLECTORID" Value="[COLLECTORID]" Before="AppSearch" Sequence="both" Condition="COLLECTORID" />
+    <SetProperty Action="SaveEnvironment" Id="CMDLINE_BOWERENVIRONMENT" Value="[BOWERENVIRONMENT]" Before="AppSearch" Sequence="both" Condition="BOWERENVIRONMENT" />
+    <SetProperty Action="SavePacks" Id="CMDLINE_PACKS" Value="[PACKS]" Before="AppSearch" Sequence="both" Condition="PACKS" />
+    <SetProperty Action="SavePackTrustedKeys" Id="CMDLINE_PACKTRUSTEDKEYS" Value="[PACKTRUSTEDKEYS]" Before="AppSearch" Sequence="both" Condition="PACKTRUSTEDKEYS" />
+    <SetProperty Action="SaveCommandTrustedKeys" Id="CMDLINE_COMMANDTRUSTEDKEYS" Value="[COMMANDTRUSTEDKEYS]" Before="AppSearch" Sequence="both" Condition="COMMANDTRUSTEDKEYS" />
+
+    <SetProperty Action="RestoreManagementEndpoint" Id="MANAGEMENTENDPOINT" Value="[CMDLINE_MANAGEMENTENDPOINT]" After="AppSearch" Sequence="both" Condition="CMDLINE_MANAGEMENTENDPOINT" />
+    <SetProperty Action="RestoreCollectorId" Id="COLLECTORID" Value="[CMDLINE_COLLECTORID]" After="RestoreManagementEndpoint" Sequence="both" Condition="CMDLINE_COLLECTORID" />
+    <SetProperty Action="RestoreEnvironment" Id="BOWERENVIRONMENT" Value="[CMDLINE_BOWERENVIRONMENT]" After="RestoreCollectorId" Sequence="both" Condition="CMDLINE_BOWERENVIRONMENT" />
+    <SetProperty Action="RestorePacks" Id="PACKS" Value="[CMDLINE_PACKS]" After="RestoreEnvironment" Sequence="both" Condition="CMDLINE_PACKS" />
+    <SetProperty Action="RestorePackTrustedKeys" Id="PACKTRUSTEDKEYS" Value="[CMDLINE_PACKTRUSTEDKEYS]" After="RestorePacks" Sequence="both" Condition="CMDLINE_PACKTRUSTEDKEYS" />
+    <SetProperty Action="RestoreCommandTrustedKeys" Id="COMMANDTRUSTEDKEYS" Value="[CMDLINE_COMMANDTRUSTEDKEYS]" After="RestorePackTrustedKeys" Sequence="both" Condition="CMDLINE_COMMANDTRUSTEDKEYS" />
+
+    <!-- Defaults, then the settings that follow from a management endpoint. -->
+    <SetProperty Action="DefaultCollectorId" Id="COLLECTORID" Value="[ComputerName]" After="RestoreCommandTrustedKeys" Sequence="both" Condition="NOT COLLECTORID" />
+    <SetProperty Action="DefaultEnvironment" Id="BOWERENVIRONMENT" Value="unknown" After="DefaultCollectorId" Sequence="both" Condition="NOT BOWERENVIRONMENT" />
+    <SetProperty Action="SetManagementAuth" Id="BOWERMANAGEMENTAUTH" Value="enrolment" After="DefaultEnvironment" Sequence="both" Condition="MANAGEMENTENDPOINT" />
+    <SetProperty Action="SetTokenFile" Id="BOWERTOKENFILE" Value="[ENROLMENTFOLDER]enrolment-token" After="CostFinalize" Sequence="both" Condition="MANAGEMENTENDPOINT" />
+    <SetProperty Action="SetTokenRemove" Id="BOWERTOKENREMOVE" Value="true" After="SetManagementAuth" Sequence="both" Condition="MANAGEMENTENDPOINT" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="Bower" />
+    </StandardDirectory>
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="DATAFOLDER" Name="Bower">
+        <Directory Id="POLICYFOLDER" Name="policies" />
+        <Directory Id="STATEFOLDER" Name="state" />
+        <Directory Id="ENROLMENTFOLDER" Name="enrolment" />
+        <Directory Id="SPOOLFOLDER" Name="spool" />
+        <Directory Id="SECRETSFOLDER" Name="secrets" />
+        <Directory Id="KEYSFOLDER" Name="keys" />
+        <Directory Id="PACKSFOLDER" Name="packs" />
+      </Directory>
+    </StandardDirectory>
+
+    <!-- S-1-5-80-3437565569-4244630927-521338199-147183979-3886342086 is the service SID
+         of NT SERVICE\Bower (SHA-1 of the upper-case service name); CI checks it against
+         `sc showsid Bower`. 0x1200a9 = read and execute, 0x1301bf = modify. -->
+    <?define ServiceSid = "S-1-5-80-3437565569-4244630927-521338199-147183979-3886342086" ?>
+    <?define ReadOnly = "D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;$(var.ServiceSid))" ?>
+    <?define Writable = "D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1301bf;;;$(var.ServiceSid))" ?>
+
+    <ComponentGroup Id="Binaries" Directory="INSTALLFOLDER">
+      <Component Id="CollectorService">
+        <File Id="CollectorExe" Source="$(var.Dist)\collector\Bower.Collector.exe" KeyPath="yes" />
+        <ServiceInstall Id="BowerService" Name="Bower" DisplayName="Bower Security Telemetry Collector"
+                        Description="Collects, redacts and delivers Bower security telemetry."
+                        Type="ownProcess" Start="auto" ErrorControl="normal" Vital="yes"
+                        Account="NT SERVICE\Bower">
+          <ServiceConfig DelayedAutoStart="yes" ServiceSid="unrestricted"
+                         FailureActionsWhen="failedToStopOrReturnedError" OnInstall="yes" OnReinstall="yes" />
+          <!-- The native MSI failure-actions table fails with access denied when
+               configuring restart actions. WiX opens the service with the required
+               rights and supports rollback of the recovery configuration. -->
+          <util:ServiceConfig FirstFailureActionType="restart" SecondFailureActionType="restart"
+                              ThirdFailureActionType="restart" ResetPeriodInDays="1"
+                              RestartServiceDelayInSeconds="5" />
+        </ServiceInstall>
+        <ServiceControl Id="BowerServiceControl" Name="Bower" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+        <RegistryValue Root="HKLM" Key="SYSTEM\CurrentControlSet\Services\Bower" Name="Environment" Type="multiString">
+          <MultiStringValue Value="BOWER_LISTEN_URL=http://127.0.0.1:4319" />
+          <MultiStringValue Value="BOWER_QUEUE_PATH=[STATEFOLDER]queue.db" />
+          <MultiStringValue Value="BOWER_POLICY_DIRECTORY=[POLICYFOLDER]" />
+          <MultiStringValue Value="BOWER_AMA_SPOOL_PATH=[SPOOLFOLDER]" />
+          <MultiStringValue Value="BOWER_COLLECTOR_ID=[COLLECTORID]" />
+          <MultiStringValue Value="BOWER_ENVIRONMENT=[BOWERENVIRONMENT]" />
+          <MultiStringValue Value="BOWER_MANAGEMENT_ENDPOINT=[MANAGEMENTENDPOINT]" />
+          <MultiStringValue Value="BOWER_MANAGEMENT_AUTH=[BOWERMANAGEMENTAUTH]" />
+          <MultiStringValue Value="BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE=[BOWERTOKENFILE]" />
+          <MultiStringValue Value="BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE=[BOWERTOKENREMOVE]" />
+          <MultiStringValue Value="BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS=[COMMANDTRUSTEDKEYS]" />
+          <MultiStringValue Value="BOWER_PACKS=[PACKS]" />
+          <MultiStringValue Value="BOWER_PACK_TRUSTED_KEYS=[PACKTRUSTEDKEYS]" />
+        </RegistryValue>
+        <!-- Event source for the collector's warnings and errors (the service cannot create it). -->
+        <RegistryValue Root="HKLM" Key="SYSTEM\CurrentControlSet\Services\EventLog\Application\Bower.Collector"
+                       Name="EventMessageFile" Type="expandable"
+                       Value="%SystemRoot%\Microsoft.NET\Framework64\v4.0.30319\EventLogMessages.dll" />
+      </Component>
+      <Component Id="Sqlite">
+        <File Id="SqliteDll" Source="$(var.Dist)\collector\e_sqlite3.dll" KeyPath="yes" />
+      </Component>
+      <Component Id="Cli">
+        <File Id="CliExe" Source="$(var.Dist)\cli\bower.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="RememberedSettings">
+        <RegistryKey Root="HKLM" Key="SOFTWARE\Bower\Collector">
+          <RegistryValue Name="ManagementEndpoint" Type="string" Value="[MANAGEMENTENDPOINT]" KeyPath="yes" />
+          <RegistryValue Name="CollectorId" Type="string" Value="[COLLECTORID]" />
+          <RegistryValue Name="Environment" Type="string" Value="[BOWERENVIRONMENT]" />
+          <RegistryValue Name="Packs" Type="string" Value="[PACKS]" />
+          <RegistryValue Name="PackTrustedKeys" Type="string" Value="[PACKTRUSTEDKEYS]" />
+          <RegistryValue Name="CommandTrustedKeys" Type="string" Value="[COMMANDTRUSTEDKEYS]" />
+        </RegistryKey>
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="DataFolders">
+      <Component Id="DataFolder" Directory="DATAFOLDER" Guid="6E0B7F55-4C55-4B0B-9C38-6F3E0E1F4B01">
+        <CreateFolder><PermissionEx Sddl="$(var.ReadOnly)" /></CreateFolder>
+      </Component>
+      <Component Id="StateFolder" Directory="STATEFOLDER" Guid="6E0B7F55-4C55-4B0B-9C38-6F3E0E1F4B02">
+        <CreateFolder><PermissionEx Sddl="$(var.Writable)" /></CreateFolder>
+      </Component>
+      <Component Id="EnrolmentFolder" Directory="ENROLMENTFOLDER" Guid="6E0B7F55-4C55-4B0B-9C38-6F3E0E1F4B03">
+        <CreateFolder><PermissionEx Sddl="$(var.Writable)" /></CreateFolder>
+      </Component>
+      <Component Id="SpoolFolder" Directory="SPOOLFOLDER" Guid="6E0B7F55-4C55-4B0B-9C38-6F3E0E1F4B04">
+        <CreateFolder><PermissionEx Sddl="$(var.Writable)" /></CreateFolder>
+      </Component>
+      <Component Id="SecretsFolder" Directory="SECRETSFOLDER" Guid="6E0B7F55-4C55-4B0B-9C38-6F3E0E1F4B05">
+        <CreateFolder><PermissionEx Sddl="$(var.ReadOnly)" /></CreateFolder>
+      </Component>
+      <Component Id="KeysFolder" Directory="KEYSFOLDER" Guid="6E0B7F55-4C55-4B0B-9C38-6F3E0E1F4B06">
+        <CreateFolder><PermissionEx Sddl="$(var.ReadOnly)" /></CreateFolder>
+      </Component>
+      <Component Id="PacksFolder" Directory="PACKSFOLDER" Guid="6E0B7F55-4C55-4B0B-9C38-6F3E0E1F4B07">
+        <CreateFolder><PermissionEx Sddl="$(var.ReadOnly)" /></CreateFolder>
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="Policies" Directory="POLICYFOLDER">
+      <Files Include="$(var.Policies)\*.yaml" />
+    </ComponentGroup>
+
+    <!-- Uninstall (not upgrade) deletes every secret the collector or installer leaves:
+         the key-bound credential, an unused enrolment token and the secrets folder.
+         Formatted when scheduled, so the folder paths are resolved; runs as SYSTEM. -->
+    <CustomAction Id="RemoveSecrets" Directory="DATAFOLDER" Execute="deferred" Impersonate="no" Return="check"
+                  ExeCommand="&quot;[System64Folder]cmd.exe&quot; /d /q /c for %d in (&quot;[STATEFOLDER]management-credential&quot; &quot;[DATAFOLDER]enrolment&quot; &quot;[DATAFOLDER]secrets&quot;) do if exist %d rmdir /s /q %d" />
+    <InstallExecuteSequence>
+      <Custom Action="RemoveSecrets" After="DeleteServices" Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+
+    <Feature Id="Collector" Title="Bower Collector" Level="1">
+      <ComponentGroupRef Id="Binaries" />
+      <ComponentGroupRef Id="DataFolders" />
+      <ComponentGroupRef Id="Policies" />
+    </Feature>
+  </Package>
+</Wix>

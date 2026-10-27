@@ -106,6 +106,9 @@ pub struct CollectorSettings {
     pub management_authentication: String,
     /// One-time enrolment token file (BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE). Never logged.
     pub management_enrolment_token_file: Option<PathBuf>,
+    /// Delete the token file once management consumed or refused the token
+    /// (BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE). Not part of the configuration hash.
+    pub management_enrolment_token_remove_after_use: bool,
     /// JSON file of applications that must keep sending events (BOWER_SOURCE_EXPECTATIONS).
     pub source_expectations_path: Option<PathBuf>,
     /// Directory for the verifiable long-term archive (BOWER_ARCHIVE_PATH).
@@ -182,6 +185,7 @@ impl CollectorSettings {
             management_command_trusted_key_files: Vec::new(),
             management_authentication: MANAGEMENT_AUTH_ENTRA.to_string(),
             management_enrolment_token_file: None,
+            management_enrolment_token_remove_after_use: false,
             source_expectations_path: None,
             archive_path: None,
             syslog_config_path: None,
@@ -277,6 +281,10 @@ impl CollectorSettings {
                 .unwrap_or_else(|| MANAGEMENT_AUTH_ENTRA.to_string()),
             management_enrolment_token_file: blank(read("BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE"))
                 .map(PathBuf::from),
+            management_enrolment_token_remove_after_use: read(
+                "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+            )
+            .is_some_and(|value| value.eq_ignore_ascii_case("true")),
             source_expectations_path: blank(read("BOWER_SOURCE_EXPECTATIONS")).map(PathBuf::from),
             archive_path: blank(read("BOWER_ARCHIVE_PATH")).map(PathBuf::from),
             syslog_config_path: blank(read("BOWER_SYSLOG_CONFIG")).map(PathBuf::from),
@@ -433,6 +441,13 @@ impl CollectorSettings {
         if self.management_enrolment_token_file.is_some() && !self.uses_enrolment() {
             return Err(invalid(
                 "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE requires BOWER_MANAGEMENT_AUTH=enrolment.",
+            ));
+        }
+        if self.management_enrolment_token_remove_after_use
+            && self.management_enrolment_token_file.is_none()
+        {
+            return Err(invalid(
+                "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE requires BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE.",
             ));
         }
 

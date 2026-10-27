@@ -153,8 +153,21 @@ jobs:
         shell: pwsh
         run: |
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          Install-Module -Name Pester -RequiredVersion 5.9.1 -Scope CurrentUser -Force -SkipPublisherCheck
-          Install-Module -Name PSScriptAnalyzer -RequiredVersion 1.25.0 -Scope CurrentUser -Force
+          foreach ($module in @(
+            @{ Name = 'Pester'; RequiredVersion = '5.9.1'; SkipPublisherCheck = $true },
+            @{ Name = 'PSScriptAnalyzer'; RequiredVersion = '1.25.0' }
+          )) {
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              try {
+                Install-Module @module -Scope CurrentUser -Force -ErrorAction Stop
+                break
+              } catch {
+                if ($attempt -eq 3) { throw }
+                Write-Warning "Download of $($module.Name) failed; retrying (attempt $attempt of 3)."
+                Start-Sleep -Seconds (5 * $attempt)
+              }
+            }
+          }
       - name: Analyze and test PowerShell modules
         shell: pwsh
         run: pwsh -NoProfile -File powershell/build.ps1
@@ -327,3 +340,218 @@ jobs:
         with:
           name: bower-${{ matrix.rid }}
           path: artifacts/${{ matrix.rid }}
+
+  # Native packages and installers (#112). They need the publish artefacts and take a
+  # few minutes, so they run on pushes to main and on pull requests that touch
+  # packaging, the systemd unit, the default policies or the collector.
+  packaging-changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ "$EVENT" != pull_request ]; then
+            echo "run=true" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files="$(gh api --paginate "repos/$REPOSITORY/pulls/$PR/files" --jq '.[].filename')"
+          pattern='^(deploy/installers/|deploy/ansible/|deploy/systemd/|tests/installers/|src/Bower\.Collector/|policies/default/|\.github/workflows/ci\.yml$)'
+          if grep -qE "$pattern" <<<"$files"; then run=true; else run=false; fi
+          echo "run=$run" >>"$GITHUB_OUTPUT"
+
+  package-linux:
+    needs: [publish, packaging-changes]
+    if: needs.packaging-changes.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    env:
+      NFPM_VERSION: 2.48.0
+      NFPM_SHA256: 6d7f9a28b2f397934403950fcbba83f598b08d02edbe79a0815b3b4897341750
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: bower-linux-*
+          path: artefacts
+      - name: Install nfpm
+        run: |
+          archive="nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+          curl -fsSLo "$RUNNER_TEMP/$archive" \
+            "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/$archive"
+          echo "$NFPM_SHA256  $RUNNER_TEMP/$archive" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" nfpm
+          echo "$RUNNER_TEMP" >>"$GITHUB_PATH"
+      - name: Load the package signing key (skipped when the secret is not configured)
+        env:
+          GPG_KEY: ${{ secrets.BOWER_PACKAGE_GPG_KEY }}
+        run: |
+          if [ -z "$GPG_KEY" ]; then
+            echo "::notice::BOWER_PACKAGE_GPG_KEY is not configured: the deb and rpm packages are unsigned."
+            exit 0
+          fi
+          umask 077
+          printf '%s\n' "$GPG_KEY" >"$RUNNER_TEMP/package-signing.asc"
+          echo "BOWER_GPG_KEY_FILE=$RUNNER_TEMP/package-signing.asc" >>"$GITHUB_ENV"
+      - name: Build deb, rpm and offline bundles
+        env:
+          NFPM_PASSPHRASE: ${{ secrets.BOWER_PACKAGE_GPG_PASSPHRASE }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          if [ "$REF_TYPE" = tag ]; then version="${REF_NAME#v}"; else version="0.1.0-dev.${RUN_NUMBER}"; fi
+          deploy/installers/linux/build.sh artefacts/bower-linux-x64 amd64 "$version" dist
+          deploy/installers/linux/build.sh artefacts/bower-linux-arm64 arm64 "$version" dist
+      - name: Remove the signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/package-signing.asc"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bower-packages-linux
+          path: dist
+
+  package-windows:
+    needs: [publish, packaging-changes]
+    if: needs.packaging-changes.outputs.run == 'true'
+    runs-on: windows-latest
+    env:
+      # WiX v5 (MS-RL). v6 and later need the Open Source Maintenance Fee EULA accepted
+      # by a person; see docs/architecture/dependencies.md.
+      WIX_VERSION: 5.0.2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: bower-win-*
+          path: artefacts
+      - name: Install WiX
+        run: |
+          dotnet tool install --global wix --version "$env:WIX_VERSION"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          wix extension add --global "WixToolset.Util.wixext/$env:WIX_VERSION"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Load the code-signing certificate (skipped when the secret is not configured)
+        env:
+          SIGNING_PFX: ${{ secrets.BOWER_WINDOWS_SIGNING_PFX }}
+        run: |
+          if (-not $env:SIGNING_PFX) {
+            Write-Output '::notice::BOWER_WINDOWS_SIGNING_PFX is not configured: the MSI and executables are unsigned.'
+            exit 0
+          }
+          $path = Join-Path $env:RUNNER_TEMP 'signing.pfx'
+          [System.IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:SIGNING_PFX))
+          "BOWER_SIGN_PFX_FILE=$path" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Build MSI and offline bundles
+        env:
+          BOWER_SIGN_PFX_PASSWORD: ${{ secrets.BOWER_WINDOWS_SIGNING_PFX_PASSWORD }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          $version = if ($env:REF_TYPE -eq 'tag') { $env:REF_NAME.TrimStart('v') } else { "0.1.0-dev.$env:RUN_NUMBER" }
+          foreach ($arch in 'x64', 'arm64') {
+            ./deploy/installers/windows/build.ps1 -ArtefactDirectory "artefacts/bower-win-$arch" `
+              -Architecture $arch -Version $version -OutputDirectory dist
+          }
+      - name: Remove the signing certificate
+        if: always()
+        run: Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'signing.pfx') -Force -ErrorAction SilentlyContinue
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bower-packages-windows
+          path: dist
+
+  install-linux:
+    # Ubuntu (offline bundle and Ansible role, deb) on the runner and Rocky Linux 9
+    # (offline bundle, rpm) in a systemd container, against a loopback management API.
+    needs: [package-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bower-packages-linux
+          path: dist
+      - name: Start the management API (development auth, loopback only)
+        run: |
+          dotnet restore src/Bower.Management.Api/Bower.Management.Api.csproj --locked-mode
+          dotnet build src/Bower.Management.Api/Bower.Management.Api.csproj -c Release --no-restore -o "$RUNNER_TEMP/management"
+          cd "$RUNNER_TEMP/management"
+          ASPNETCORE_ENVIRONMENT=Development BOWER_AUTH_MODE=development \
+            BOWER_MANAGEMENT_DB_PATH="$RUNNER_TEMP/management.db" \
+            nohup dotnet Bower.Management.Api.dll >"$RUNNER_TEMP/management.log" 2>&1 &
+          for _ in $(seq 1 60); do curl -sf http://127.0.0.1:4320/health && break; sleep 1; done
+          curl -sf http://127.0.0.1:4320/health
+      - run: bash tests/installers/linux.sh dist
+
+  install-windows:
+    # Windows Server (windows-latest): the MSI through the offline installer under
+    # Windows PowerShell 5.1, against a loopback management API.
+    needs: [package-windows]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bower-packages-windows
+          path: dist
+      - name: Start the management API (development auth, loopback only) and run the install test
+        run: |
+          dotnet restore src/Bower.Management.Api/Bower.Management.Api.csproj --locked-mode
+          dotnet build src/Bower.Management.Api/Bower.Management.Api.csproj -c Release --no-restore -o "$env:RUNNER_TEMP/management"
+          $env:ASPNETCORE_ENVIRONMENT = 'Development'
+          $env:BOWER_AUTH_MODE = 'development'
+          $env:BOWER_MANAGEMENT_DB_PATH = Join-Path $env:RUNNER_TEMP 'management.db'
+          Start-Process -FilePath dotnet -ArgumentList 'Bower.Management.Api.dll' -WorkingDirectory "$env:RUNNER_TEMP/management" `
+            -RedirectStandardOutput "$env:RUNNER_TEMP/management.log" -RedirectStandardError "$env:RUNNER_TEMP/management.err"
+          foreach ($i in 1..60) {
+            try { Invoke-RestMethod http://127.0.0.1:4320/health | Out-Null; break } catch { Start-Sleep -Seconds 1 }
+          }
+          Invoke-RestMethod http://127.0.0.1:4320/health | Out-Null
+          # Same step: Windows runners stop a step's child processes when the step ends.
+          ./tests/installers/windows.ps1 -PackagesDirectory dist
+      - name: Service and installer diagnostics
+        if: failure()
+        run: |
+          $ErrorActionPreference = 'Continue'
+          # Recovery configuration is metadata only (the MSI sets no command).
+          sc.exe qfailure Bower
+          foreach ($provider in 'Service Control Manager', 'MsiInstaller', 'Bower.Collector', 'Application Error', '.NET Runtime') {
+            Write-Output "== $provider"
+            $log = if ($provider -eq 'Service Control Manager') { 'System' } else { 'Application' }
+            try {
+              Get-WinEvent -FilterHashtable @{ LogName = $log; ProviderName = $provider } -MaxEvents 10 -ErrorAction Stop |
+                Format-List TimeCreated, Id, Message
+            } catch { Write-Output "(none: $($_.Exception.Message))" }
+          }
+          # msiexec logs hold no secret values; show the failing action.
+          Get-ChildItem -LiteralPath $env:RUNNER_TEMP -Filter '*install*.log' | ForEach-Object {
+            Write-Output "== $($_.Name)"
+            Select-String -LiteralPath $_.FullName -Pattern 'Return value 3' -Context 30, 2 | Select-Object -First 1 | Out-String -Width 300
+          }
