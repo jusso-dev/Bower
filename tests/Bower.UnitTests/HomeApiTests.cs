@@ -208,6 +208,36 @@ public sealed class HomeApiTests
         Assert.Equal("No sensitive details were found in events this week.", nextWeek.Protection.Summary);
     }
 
+    [Fact]
+    public async Task Home_IgnoresStaleOrLowerRedactionSnapshotsAndTracksWhoReports()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await ManagementApiTests.StartAsync(directory, new FakeClock(Now), cancellationToken);
+        ManagementStore store = app.Services.GetRequiredService<ManagementStore>();
+        DateTimeOffset processA = Now.AddHours(-3);
+        DateTimeOffset processB = Now.AddHours(-1);
+        await ActiveAsync(store, "edge-01", "production", Now, Redacting(processA, ("au.tfn", 5)), cancellationToken);
+        await HeartbeatAsync(store, "edge-01", Now, Redacting(processB, ("au.tfn", 3)), cancellationToken);
+        // A late copy of process A's report, and a lower total from process B, add nothing.
+        await HeartbeatAsync(store, "edge-01", Now, Redacting(processA, ("au.tfn", 5)), cancellationToken);
+        await HeartbeatAsync(store, "edge-01", Now, Redacting(processB, ("au.tfn", 2)), cancellationToken);
+        await HeartbeatAsync(store, "edge-01", Now, Redacting(processB, ("au.tfn", 4)), cancellationToken);
+
+        HomeRecord counted = await HomeAsync(app, cancellationToken);
+
+        Assert.Equal(9L, counted.Protection.ByType.Single().Events);
+        Assert.Equal(1, counted.Protection.CollectorsReporting);
+
+        // A heartbeat without counts (an older version) is no longer reporting; history stays.
+        await HeartbeatAsync(store, "edge-01", Now, Heartbeat(), cancellationToken);
+        HomeRecord downgraded = await HomeAsync(app, cancellationToken);
+
+        Assert.Equal(0, downgraded.Protection.CollectorsReporting);
+        Assert.Equal(1, downgraded.Protection.CollectorsNotReporting);
+        Assert.Equal(9L, downgraded.Protection.ByType.Single().Events);
+    }
+
     [Theory]
     [InlineData("AU TFN", 1L)]
     [InlineData("au.tfn:sub", 1L)]
