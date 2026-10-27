@@ -90,6 +90,33 @@ evidence.
   only a route to an active signed pack parser that selects the record, then
   redaction and policy, can queue one. Counters only; no frame content is logged or
   exposed. See [syslog source](../deployment/syslog-source.md).
+- Live tap (`GET /v1/tap`, `bower tap`; new trust boundary: an operator-facing stream
+  of accepted event content). See [tap and top](../operations/tap-and-top.md).
+  - Pre-redaction exposure: there is no raw or `parsed` tap point. Frames are built only
+    from final selection outcomes, after the privacy engine. Accepted events carry the
+    exact redacted payload handed to the queue. Rejected, quarantined, conflicting and
+    transform-failed records are metadata only: stage, action, event type, application,
+    environment, policy id and bounded reason codes. Tests inject known secrets
+    (password field, AWS key, card number, JWT, API token) into accepted, rejected and
+    invalid events and assert that none appears in the stream or the logs, in both
+    runtimes.
+  - Unauthorised reading: tap needs the shared ingest token or a producer listed in
+    `BOWER_TAP_PRODUCERS`. Per-producer tokens are refused (403), so a producer cannot
+    read other producers' events. Without ingest authentication, only a loopback
+    listener may tap. `BOWER_TAP_ENABLED=false` removes the endpoint.
+  - Bulk export: caps on concurrent sessions, frames per second, frames per session,
+    session duration and event size. There is no file output and nothing is persisted.
+    Filter values are restricted to a safe character set.
+  - Accountability: every session (opened, refused, closed) is logged with the producer
+    id, filters, caps, duration and counts, never the token or content.
+  - Ingest impact: publishing never blocks. Each session has a 64-frame buffer; frames
+    over the rate allowance or the buffer are dropped and counted (`framesRateLimited`,
+    `framesDropped`). Delivery is not involved. Streams end on host shutdown so drain
+    never waits.
+  - Residual risk: anyone holding the shared token sees post-redaction content, the
+    same content Sentinel receives. Protect the token as an operator credential and
+    prefer per-producer tokens for producers. Status `activity` lists application and
+    environment names (metadata) behind the same token.
 - Windows Event Log (new local trust boundary, `BOWER_WINDOWS_EVENTLOG_CONFIG`, C#
   collector on Windows only; the Rust collector and non-Windows hosts refuse the
   setting): the collector reads local channels as a least-privilege account in Event

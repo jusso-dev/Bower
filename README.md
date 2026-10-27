@@ -463,6 +463,8 @@ Neither has been exercised against a live tenant or account yet.
 | `BOWER_SOURCE_EXPECTATIONS` | — | JSON file of applications that must keep sending events; quiet ones degrade `/health`. [Details](docs/operations/suppression-archive-and-source-silence.md#source-silence) |
 | `BOWER_ARCHIVE_PATH` | — | Directory for the ledger-verified long-term archive; retention then purges only events a verified archive of this queue covers. [Details](docs/operations/suppression-archive-and-source-silence.md#archive-and-replay) |
 | `BOWER_SYSLOG_CONFIG` | — | JSON file of syslog listeners (RFC 5424/3164 over TCP, TLS or UDP), sender allow-lists and routes to signed pack parsers. Loopback unless TLS. [Details](docs/deployment/syslog-source.md) |
+| `BOWER_TAP_ENABLED` / `BOWER_TAP_PRODUCERS` | `true` / — | Serve the post-redaction `bower tap` stream; tokens-file producers allowed to tap besides the shared token. [Details](docs/operations/tap-and-top.md) |
+| `BOWER_TAP_MAX_SESSIONS` / `_EVENTS_PER_SECOND` / `_DURATION_SECONDS` / `_EVENTS` / `_EVENT_BYTES` | `2` / `20` / `300` / `1000` / `16384` | Tap caps: concurrent sessions, frames per second per session, longest session, frames per session, largest event shown. [Details](docs/operations/tap-and-top.md#limits) |
 | `BOWER_WINDOWS_EVENTLOG_CONFIG` | — | JSON file of Windows Event Log subscriptions: channel, event ID allow-list and signed pack parser each. C# collector on Windows only; elsewhere, and in the Rust collector, start-up fails. [Details](docs/deployment/windows-event-log-source.md) |
 
 ## Background jobs
@@ -490,6 +492,8 @@ Design, observability and how to add a job:
 | Task | Command | Details |
 |---|---|---|
 | Prove delivery to Sentinel | `bower evidence run --collector-url … --workspace-id … --signing-key …` | [Evidence bundles](docs/operations/evidence-bundles.md) |
+| Watch what Bower decides and would send (post-redaction only) | `bower tap --collector URL --stage decided --event-type authentication_failure --limit 20` | [Tap and top](docs/operations/tap-and-top.md); bounded, audited, never persisted |
+| Watch per-stage throughput, queue, delivery and syslog counters | `bower top --collector URL` | [Tap and top](docs/operations/tap-and-top.md#bower-top) |
 | Check a deployment | `bower doctor --collector-url … --dcr-resource-id … --workspace-resource-id …` | [Doctor and DCRs](docs/operations/doctor-and-dcr.md) |
 | Generate / diff the DCR | `bower dcr generate --out bower-dcr.json` · `bower dcr diff --rule rule.json` | [Doctor and DCRs](docs/operations/doctor-and-dcr.md) |
 | Build and sign a pack | `bower pack build packs/linux-ssh-gateway --key bower-signing.key.pem` | [Packs](docs/deployment/packs.md) |

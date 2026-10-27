@@ -58,10 +58,37 @@ internal sealed record StatusResponse(
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<Bower.Source.Syslog.SyslogListenerStatus>? Syslog { get; init; }
 
+    /// <summary>Busiest sources by accepted event count (at most 50), for bower top. Metadata only.</summary>
+    public IReadOnlyList<Bower.Abstractions.SourceActivity>? Activity { get; init; }
+
+    /// <summary>Tap sessions and frame counters since start. Metadata only.</summary>
+    public Bower.Core.EventTapSnapshot? Tap { get; init; }
     /// <summary>Windows Event Log subscription counters; omitted when BOWER_WINDOWS_EVENTLOG_CONFIG is not set. Metadata only.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<Bower.Source.WindowsEventLog.WindowsEventSubscriptionStatus>? WindowsEventLog { get; init; }
 }
+
+/// <summary>First server-sent event of a tap session: its effective filters and caps.</summary>
+internal sealed record TapStartFrame(
+    string SchemaVersion,
+    string SessionId,
+    string TapPoint,
+    string? Source,
+    string? EventType,
+    int Limit,
+    int DurationSeconds,
+    int Sample,
+    int MaximumEventsPerSecond,
+    int MaximumEventBytes);
+
+/// <summary>Last server-sent event of a tap session. Metadata only.</summary>
+internal sealed record TapEndFrame(
+    string SchemaVersion,
+    string SessionId,
+    string Reason,
+    long FramesSent,
+    long FramesDropped,
+    long FramesRateLimited);
 
 internal sealed record StatusPolicyResponse(
     string Hash,
@@ -158,6 +185,8 @@ internal sealed record OutputReport(
 [JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(IngestResponse))]
 [JsonSerializable(typeof(StatusResponse))]
+[JsonSerializable(typeof(TapStartFrame))]
+[JsonSerializable(typeof(TapEndFrame))]
 [JsonSerializable(typeof(CollectorRegistration))]
 [JsonSerializable(typeof(CollectorHeartbeat))]
 [JsonSerializable(typeof(ManagedPrivacyProfileDocument))]

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bower.security/schemas/tap/tap-frame-v1.json",
+  "title": "Bower Tap Frame",
+  "description": "The data of one 'frame' server-sent event from GET /v1/tap (bower tap). Post-redaction only: 'event' is the exact redacted queued payload of an accepted event; every other outcome is metadata only and carries 'eventOmitted'.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "sequence", "observedAt", "stage", "action", "queued", "duplicate",
+    "suppressed", "eventType", "application", "environment", "policyId", "reasons"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "bower.tap/v1"},
+    "sequence": {"type": "integer", "minimum": 1},
+    "observedAt": {"type": "string", "format": "date-time"},
+    "stage": {"enum": ["transform", "redaction", "schema", "validation", "policy"]},
+    "action": {"enum": ["accept", "redact-and-accept", "reject", "sample", "aggregate", "quarantine", "dead-letter"]},
+    "queued": {"type": "boolean"},
+    "duplicate": {"type": "boolean"},
+    "suppressed": {"type": "boolean"},
+    "eventType": {"type": ["string", "null"], "maxLength": 128},
+    "application": {"type": ["string", "null"], "maxLength": 128},
+    "environment": {"type": ["string", "null"], "maxLength": 128},
+    "policyId": {"type": ["string", "null"]},
+    "reasons": {"type": "array", "items": {"type": "string"}},
+    "event": {"$ref": "../envelope/security-event.schema.json"},
+    "eventOmitted": {"enum": ["not-accepted", "size-cap"]}
+  },
+  "oneOf": [
+    {"required": ["event"], "not": {"required": ["eventOmitted"]}},
+    {"required": ["eventOmitted"], "not": {"required": ["event"]}}
+  ]
+}

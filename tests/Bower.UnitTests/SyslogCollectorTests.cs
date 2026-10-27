@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using Bower.Abstractions;
 using Bower.Collector;
 using Bower.Contracts;
+using Bower.Core;
 using Bower.Integrity;
 using Bower.Packs;
 using Bower.Source.Syslog;
@@ -118,6 +119,8 @@ public sealed class SyslogCollectorTests
         using TemporaryDirectory directory = new();
         // A string condition is a run-time type error for every sshd frame.
         await using WebApplication app = await Start(directory, cancellation, transforms: ["if .appName { .appName = \"sshd\" }"]);
+        using EventTapSession tap = app.Services.GetRequiredService<EventTap>().TryOpen(
+            new EventTapRequest("test", TapPoint.Redacted, null, null, 2, TimeSpan.FromSeconds(30), 1))!;
         SyslogSource source = app.Services.GetRequiredService<SyslogSource>();
         IDurableEventStore store = app.Services.GetRequiredService<IDurableEventStore>();
 
@@ -129,6 +132,14 @@ public sealed class SyslogCollectorTests
         // The connection stays open: a deterministic per-record failure is not a sink failure.
         SyslogListenerStatus counted = await WaitFor(source, status => status.Rejected == 2, cancellation);
         Assert.Equal(0, counted.SubmitFailures);
+        Assert.Equal(2, tap.Reader.Count);
+        while (tap.Reader.TryRead(out EventTapRecord? frame))
+        {
+            Assert.Equal("transform", frame.Stage);
+            Assert.Equal("quarantine", frame.Action);
+            Assert.Null(frame.Event);
+            Assert.Contains("transform-type-error", frame.Reasons);
+        }
         Assert.Equal(0, counted.Queued);
         Assert.Equal(0, (await store.GetSnapshotAsync(cancellation)).Queued);
 

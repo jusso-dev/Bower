@@ -115,6 +115,20 @@ pub struct CollectorSettings {
     pub archive_path: Option<PathBuf>,
     /// JSON file of syslog listeners and pack routes (BOWER_SYSLOG_CONFIG).
     pub syslog_config_path: Option<PathBuf>,
+    /// BOWER_TAP_ENABLED (default true): serve `GET /v1/tap` for `bower tap`.
+    pub tap_enabled: bool,
+    /// BOWER_TAP_MAX_SESSIONS: concurrent tap sessions (1-16, default 2).
+    pub tap_maximum_sessions: i32,
+    /// BOWER_TAP_MAX_EVENTS_PER_SECOND: frames per second per session (1-1000, default 20).
+    pub tap_maximum_events_per_second: i32,
+    /// BOWER_TAP_MAX_DURATION_SECONDS: longest session (1-3600, default 300).
+    pub tap_maximum_duration_seconds: i32,
+    /// BOWER_TAP_MAX_EVENTS: most frames per session (1-10000, default 1000).
+    pub tap_maximum_events: i32,
+    /// BOWER_TAP_MAX_EVENT_BYTES: larger accepted events show metadata only (default 16384).
+    pub tap_maximum_event_bytes: i32,
+    /// BOWER_TAP_PRODUCERS: tokens-file producer ids allowed to tap besides the shared token.
+    pub tap_producers: Vec<String>,
     /// BOWER_WINDOWS_EVENTLOG_CONFIG. Read only to refuse it: the Windows Event Log source
     /// is C#-only (the Rust collector does not run on Windows).
     pub windows_event_log_config_path: Option<PathBuf>,
@@ -189,6 +203,13 @@ impl CollectorSettings {
             source_expectations_path: None,
             archive_path: None,
             syslog_config_path: None,
+            tap_enabled: true,
+            tap_maximum_sessions: 2,
+            tap_maximum_events_per_second: 20,
+            tap_maximum_duration_seconds: 300,
+            tap_maximum_events: 1000,
+            tap_maximum_event_bytes: 16_384,
+            tap_producers: Vec::new(),
             windows_event_log_config_path: None,
         }
     }
@@ -288,6 +309,15 @@ impl CollectorSettings {
             source_expectations_path: blank(read("BOWER_SOURCE_EXPECTATIONS")).map(PathBuf::from),
             archive_path: blank(read("BOWER_ARCHIVE_PATH")).map(PathBuf::from),
             syslog_config_path: blank(read("BOWER_SYSLOG_CONFIG")).map(PathBuf::from),
+            tap_enabled: read_bool(&read, "BOWER_TAP_ENABLED", true)?,
+            tap_maximum_sessions: read_i64(&read, "BOWER_TAP_MAX_SESSIONS", 2)? as i32,
+            tap_maximum_events_per_second: read_i64(&read, "BOWER_TAP_MAX_EVENTS_PER_SECOND", 20)?
+                as i32,
+            tap_maximum_duration_seconds: read_i64(&read, "BOWER_TAP_MAX_DURATION_SECONDS", 300)?
+                as i32,
+            tap_maximum_events: read_i64(&read, "BOWER_TAP_MAX_EVENTS", 1000)? as i32,
+            tap_maximum_event_bytes: read_i64(&read, "BOWER_TAP_MAX_EVENT_BYTES", 16_384)? as i32,
+            tap_producers: split_list(read("BOWER_TAP_PRODUCERS").as_deref()),
             windows_event_log_config_path: blank(read("BOWER_WINDOWS_EVENTLOG_CONFIG"))
                 .map(PathBuf::from),
         };
@@ -475,7 +505,63 @@ impl CollectorSettings {
         }
 
         self.validate_management_connection()?;
-        self.validate_privacy_profile_source()
+        self.validate_privacy_profile_source()?;
+        self.validate_tap()
+    }
+
+    /// C# `ValidateTap`.
+    fn validate_tap(&self) -> Result<(), HostError> {
+        let range = |value: i32, minimum: i32, maximum: i32, name: &str| {
+            if (minimum..=maximum).contains(&value) {
+                Ok(())
+            } else {
+                Err(invalid(format!(
+                    "{name} must be between {minimum} and {maximum}."
+                )))
+            }
+        };
+        range(self.tap_maximum_sessions, 1, 16, "BOWER_TAP_MAX_SESSIONS")?;
+        range(
+            self.tap_maximum_events_per_second,
+            1,
+            1_000,
+            "BOWER_TAP_MAX_EVENTS_PER_SECOND",
+        )?;
+        range(
+            self.tap_maximum_duration_seconds,
+            1,
+            3_600,
+            "BOWER_TAP_MAX_DURATION_SECONDS",
+        )?;
+        range(self.tap_maximum_events, 1, 10_000, "BOWER_TAP_MAX_EVENTS")?;
+        range(
+            self.tap_maximum_event_bytes,
+            1_024,
+            1_048_576,
+            "BOWER_TAP_MAX_EVENT_BYTES",
+        )?;
+        if self.tap_producers.iter().any(|producer| {
+            !(1..=64).contains(&producer.encode_utf16().count()) || producer.contains(' ')
+        }) {
+            return Err(invalid(
+                "BOWER_TAP_PRODUCERS must list producer ids of 1 to 64 characters.",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Tap limits for [`crate::tap::EventTap`] (C# `TapOptions`).
+    pub fn tap_options(&self) -> crate::tap::EventTapOptions {
+        crate::tap::EventTapOptions {
+            enabled: self.tap_enabled,
+            maximum_sessions: usize::try_from(self.tap_maximum_sessions).unwrap_or(1),
+            maximum_events_per_second: f64::from(self.tap_maximum_events_per_second),
+            maximum_duration: Duration::from_secs(
+                u64::try_from(self.tap_maximum_duration_seconds).unwrap_or(1),
+            ),
+            maximum_events: i64::from(self.tap_maximum_events),
+            maximum_event_bytes: usize::try_from(self.tap_maximum_event_bytes).unwrap_or(1_024),
+        }
     }
 
     /// Proxy, CA bundle and command keys apply to the management channel only (C#
@@ -686,6 +772,22 @@ fn split_list(value: Option<&str>) -> Vec<String> {
             .map(str::to_string)
             .collect(),
         _ => Vec::new(),
+    }
+}
+
+/// C# `ReadBoolean`: blank is `fallback`; otherwise `true` or `false` in any case.
+fn read_bool(
+    read: &impl Fn(&str) -> Option<String>,
+    name: &str,
+    fallback: bool,
+) -> Result<bool, HostError> {
+    let Some(value) = read(name).filter(|value| !is_blank(value)) else {
+        return Ok(fallback);
+    };
+    match value.trim().to_lowercase().as_str() {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => Err(invalid(format!("{name} must be true or false."))),
     }
 }
 

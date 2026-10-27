@@ -30,6 +30,8 @@ pub struct CollectorSyslogSink {
     /// Evaluation time for pack transforms (C# `TimeProvider`).
     pub clock: Arc<dyn Clock>,
     pub telemetry: Arc<PipelineTelemetry>,
+    /// Transform quarantines are shown to the tap as metadata only.
+    pub tap: Option<Arc<crate::tap::EventTap>>,
 }
 
 impl SyslogSink for CollectorSyslogSink {
@@ -60,6 +62,9 @@ impl SyslogSink for CollectorSyslogSink {
                 );
                 self.telemetry
                     .record(&result, i64::try_from(record.len()).unwrap_or(i64::MAX));
+                if let Some(tap) = &self.tap {
+                    bower_core::TapSink::publish(tap.as_ref(), &result, None, None);
+                }
                 return Ok(SubmitOutcome::Rejected);
             }
             Err(MappingError::Invalid | MappingError::Inactive) => {

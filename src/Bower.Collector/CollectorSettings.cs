@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using Bower.Core;
 using Bower.Packs;
 using Bower.Redaction.Privacy;
 
@@ -150,6 +151,40 @@ public sealed record CollectorSettings
     /// </summary>
     public string? ManagementEnrolmentTokenFile { get; init; }
 
+    /// <summary>BOWER_TAP_ENABLED (default true): serve <c>GET /v1/tap</c> for <c>bower tap</c>.</summary>
+    public bool TapEnabled { get; init; } = true;
+
+    /// <summary>BOWER_TAP_MAX_SESSIONS: concurrent tap sessions (1-16, default 2).</summary>
+    public int TapMaximumSessions { get; init; } = 2;
+
+    /// <summary>BOWER_TAP_MAX_EVENTS_PER_SECOND: frames per second per session (1-1000, default 20).</summary>
+    public int TapMaximumEventsPerSecond { get; init; } = 20;
+
+    /// <summary>BOWER_TAP_MAX_DURATION_SECONDS: longest session (1-3600, default 300).</summary>
+    public int TapMaximumDurationSeconds { get; init; } = 300;
+
+    /// <summary>BOWER_TAP_MAX_EVENTS: most frames per session (1-10000, default 1000).</summary>
+    public int TapMaximumEvents { get; init; } = 1000;
+
+    /// <summary>BOWER_TAP_MAX_EVENT_BYTES: larger accepted events show metadata only (1024-1048576, default 16384).</summary>
+    public int TapMaximumEventBytes { get; init; } = 16_384;
+
+    /// <summary>
+    /// BOWER_TAP_PRODUCERS: tokens-file producer ids allowed to tap besides the shared
+    /// BOWER_INGEST_TOKEN ("default"). Producer credentials cannot tap unless listed.
+    /// </summary>
+    public IReadOnlyList<string> TapProducers { get; init; } = [];
+
+    public EventTapOptions TapOptions() => new()
+    {
+        Enabled = TapEnabled,
+        MaximumSessions = TapMaximumSessions,
+        MaximumEventsPerSecond = TapMaximumEventsPerSecond,
+        MaximumDuration = TimeSpan.FromSeconds(TapMaximumDurationSeconds),
+        MaximumEvents = TapMaximumEvents,
+        MaximumEventBytes = TapMaximumEventBytes
+    };
+
     /// <summary>
     /// Deletes the enrolment token file once management has consumed or refused the token
     /// (BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE). The native installers set it so a
@@ -246,6 +281,13 @@ public sealed record CollectorSettings
             SourceExpectationsPath = Blank(read("BOWER_SOURCE_EXPECTATIONS")),
             ArchivePath = Blank(read("BOWER_ARCHIVE_PATH")),
             SyslogConfigPath = Blank(read("BOWER_SYSLOG_CONFIG")),
+            TapEnabled = ReadBoolean(read, "BOWER_TAP_ENABLED", true),
+            TapMaximumSessions = (int)ReadInt64(read, "BOWER_TAP_MAX_SESSIONS", 2),
+            TapMaximumEventsPerSecond = (int)ReadInt64(read, "BOWER_TAP_MAX_EVENTS_PER_SECOND", 20),
+            TapMaximumDurationSeconds = (int)ReadInt64(read, "BOWER_TAP_MAX_DURATION_SECONDS", 300),
+            TapMaximumEvents = (int)ReadInt64(read, "BOWER_TAP_MAX_EVENTS", 1000),
+            TapMaximumEventBytes = (int)ReadInt64(read, "BOWER_TAP_MAX_EVENT_BYTES", 16_384),
+            TapProducers = SplitList(read("BOWER_TAP_PRODUCERS")),
             WindowsEventLogConfigPath = Blank(read("BOWER_WINDOWS_EVENTLOG_CONFIG"))
         };
         settings.Validate();
@@ -362,6 +404,29 @@ public sealed record CollectorSettings
 
         ValidateManagementConnection();
         ValidatePrivacyProfileSource();
+        ValidateTap();
+    }
+
+    private void ValidateTap()
+    {
+        static void Range(long value, long minimum, long maximum, string name)
+        {
+            if (value < minimum || value > maximum)
+            {
+                throw new InvalidOperationException(
+                    string.Create(CultureInfo.InvariantCulture, $"{name} must be between {minimum} and {maximum}."));
+            }
+        }
+
+        Range(TapMaximumSessions, 1, 16, "BOWER_TAP_MAX_SESSIONS");
+        Range(TapMaximumEventsPerSecond, 1, 1_000, "BOWER_TAP_MAX_EVENTS_PER_SECOND");
+        Range(TapMaximumDurationSeconds, 1, 3_600, "BOWER_TAP_MAX_DURATION_SECONDS");
+        Range(TapMaximumEvents, 1, 10_000, "BOWER_TAP_MAX_EVENTS");
+        Range(TapMaximumEventBytes, 1_024, 1_048_576, "BOWER_TAP_MAX_EVENT_BYTES");
+        if (TapProducers.Any(producer => producer.Length is < 1 or > 64 || producer.Contains(' ', StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("BOWER_TAP_PRODUCERS must list producer ids of 1 to 64 characters.");
+        }
     }
 
     /// <summary>Proxy, CA bundle and command keys apply to the management channel only.</summary>
@@ -584,6 +649,22 @@ public sealed record CollectorSettings
         return long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsed)
             ? parsed
             : throw new InvalidOperationException($"{name} must be an integer.");
+    }
+
+    private static bool ReadBoolean(Func<string, string?> read, string name, bool fallback)
+    {
+        string? value = read(name);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return fallback;
+        }
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "true" => true,
+            "false" => false,
+            _ => throw new InvalidOperationException($"{name} must be true or false.")
+        };
     }
 
     private static AzureCredentialMode ParseCredentialMode(string? value) =>

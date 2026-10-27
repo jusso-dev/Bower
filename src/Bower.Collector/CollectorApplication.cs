@@ -81,6 +81,9 @@ public static partial class CollectorApplication
                 services.GetRequiredService<TimeProvider>()));
         builder.Services.AddSingleton<ITelemetryPolicyEvaluator>(new DeterministicPolicyEvaluator(bundle.Policies));
         builder.Services.AddSingleton<PipelineTelemetry>();
+        // Live post-redaction tap (bower tap). In memory only; never persisted.
+        builder.Services.AddSingleton(services =>
+            new EventTap(settings.TapOptions(), services.GetRequiredService<TimeProvider>()));
         builder.Services.AddSingleton<SecurityEventProcessor>();
         // Loaded at build so a malformed expectations file stops start-up.
         SourceExpectations? expectations = settings.SourceExpectationsPath is null
@@ -105,7 +108,8 @@ public static partial class CollectorApplication
                     services.GetRequiredService<CollectorIdentity>(),
                     services.GetRequiredService<ManagedPrivacyProfileState>(),
                     services.GetRequiredService<PipelineTelemetry>(),
-                    services.GetRequiredService<TimeProvider>()),
+                    services.GetRequiredService<TimeProvider>(),
+                    services.GetRequiredService<EventTap>()),
                 services.GetRequiredService<TimeProvider>()));
             builder.Services.AddHostedService<SyslogIntakeService>();
         }
@@ -125,7 +129,8 @@ public static partial class CollectorApplication
                     services.GetRequiredService<CollectorIdentity>(),
                     services.GetRequiredService<ManagedPrivacyProfileState>(),
                     services.GetRequiredService<PipelineTelemetry>(),
-                    services.GetRequiredService<TimeProvider>())),
+                    services.GetRequiredService<TimeProvider>(),
+                    services.GetRequiredService<EventTap>())),
                 services.GetRequiredService<WindowsEventLogBookmarks>().Store,
                 // Tests supply an in-memory channel; otherwise the Windows reader (Windows only).
                 services.GetService<IWindowsEventChannelFactory>() ?? WindowsEventLogRoutes.PlatformChannels(),
@@ -292,6 +297,7 @@ public static partial class CollectorApplication
     private static void MapEndpoints(WebApplication app)
     {
         MapPackEndpoints(app);
+        MapTapEndpoints(app);
         app.MapPost(
                 "/v1/events",
                 async (
@@ -427,6 +433,8 @@ public static partial class CollectorApplication
                         Delivery = (context.RequestServices.GetService<IOutputAdapter>() as IOutputConcurrencyStatus)
                             ?.GetConcurrencySnapshot(),
                         Syslog = context.RequestServices.GetService<SyslogSource>()?.Snapshot(),
+                        Activity = telemetry.BusiestSources(),
+                        Tap = context.RequestServices.GetRequiredService<EventTap>().Snapshot(),
                         WindowsEventLog = context.RequestServices.GetService<WindowsEventLogSource>()?.Snapshot()
                     };
                     return Results.Json(status, CollectorJsonContext.Default.StatusResponse);

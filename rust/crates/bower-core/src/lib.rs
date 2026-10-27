@@ -14,7 +14,7 @@ pub mod telemetry;
 
 pub use processor::{
     CollectorIdentity, ProcessError, ProcessingResult, ProcessingStage, SecurityEventProcessor,
-    SourceKey, SuppressionCloseError,
+    SourceKey, SuppressionCloseError, TapSink,
 };
 pub use telemetry::{
     IntakeMetricsSnapshot, MAXIMUM_REDACTION_TYPES, OTHER_REDACTION_TYPE, PipelineMetricsRow,

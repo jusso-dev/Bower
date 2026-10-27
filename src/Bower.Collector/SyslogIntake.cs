@@ -16,9 +16,10 @@ internal sealed class CollectorSyslogSink(
     CollectorIdentity identity,
     ManagedPrivacyProfileState managedPrivacy,
     PipelineTelemetry telemetry,
-    TimeProvider timeProvider) : ISyslogSink
+    TimeProvider timeProvider,
+    EventTap? tap = null) : ISyslogSink
 {
-    private readonly PackRecordIntake intake = new(bundle, processor, identity, managedPrivacy, telemetry, timeProvider);
+    private readonly PackRecordIntake intake = new(bundle, processor, identity, managedPrivacy, telemetry, timeProvider, tap);
 
     public async ValueTask<SyslogSubmitOutcome> SubmitAsync(
         SyslogListenerOptions listener,

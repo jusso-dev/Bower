@@ -22,6 +22,8 @@ use crate::processor::{ProcessingResult, ProcessingStage};
 
 pub const NO_POLICY: &str = "-";
 pub const MAXIMUM_SOURCES: usize = 10_000;
+/// Sources listed in `/v1/status` `activity` (C# `MaximumStatusSources`).
+pub const MAXIMUM_STATUS_SOURCES: usize = 50;
 /// Bounded reason code: the queue refused the event itself; nothing was committed.
 pub const QUEUE_CAPACITY_REASON: &str = "queue-capacity";
 /// Bounded reason code: the queue refused the privacy alert after the event was decided
@@ -358,6 +360,21 @@ impl PipelineTelemetry {
             ordinal(&left.application, &right.application)
                 .then_with(|| ordinal(&left.environment, &right.environment))
         });
+        sources
+    }
+
+    /// The busiest sources by accepted event count (then application and environment),
+    /// for `bower top` per-source rates (C# `BusiestSources`).
+    pub fn busiest_sources(&self, maximum: usize) -> Vec<SourceActivity> {
+        let mut sources: Vec<SourceActivity> = self.lock().sources.values().cloned().collect();
+        sources.sort_by(|left, right| {
+            right
+                .event_count
+                .cmp(&left.event_count)
+                .then_with(|| ordinal(&left.application, &right.application))
+                .then_with(|| ordinal(&left.environment, &right.environment))
+        });
+        sources.truncate(maximum);
         sources
     }
 
