@@ -288,6 +288,10 @@ authentication. Then walk through the console:
 
    ![Enrollment approvals in dark mode: pending hr-app-02 with a required decision reason, Approve and Reject buttons, and decision history](docs/images/bower-management-approvals-dark.png)
 
+   Hosts without an Azure identity enrol with a one-time token from **Enrolment**
+   (administrators only, shown once, stored hashed). They still land here in
+   Pending.
+
 3. **Jobs** shows recurring job schedules: the management `collector-staleness` job
    (administrators can *Run now*) and each collector's retention, maintenance and
    heartbeat jobs. `claims-api-03` reports a failed retention run.
@@ -424,6 +428,8 @@ Neither has been exercised against a live tenant or account yet.
 | `BOWER_AZURE_CREDENTIAL` | `managed-identity` | `managed-identity`, `workload-identity`, `environment` or `azure-cli`. |
 | `BOWER_AZURE_CLIENT_ID` | — | User-assigned managed identity client id. |
 | `BOWER_MANAGEMENT_ENDPOINT` / `BOWER_MANAGEMENT_SCOPE` | — | Enables the heartbeat job. HTTPS required unless loopback. |
+| `BOWER_MANAGEMENT_AUTH` | `entra` | `entra` (machine token for `BOWER_MANAGEMENT_SCOPE`) or `enrolment` (one-time token exchanged for a key-bound credential, for hosts without an Azure identity). [Details](docs/security/management-identity-and-rbac.md#token-enrolment-for-collectors-without-an-azure-identity) |
+| `BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE` | — | File holding a one-time enrolment token (`enrolment` mode). Never stored or logged; a new token re-enrols, back to Pending. |
 | `BOWER_SOURCE_EXPECTATIONS` | — | JSON file of applications that must keep sending events; quiet ones degrade `/health`. [Details](docs/operations/suppression-archive-and-source-silence.md#source-silence) |
 | `BOWER_ARCHIVE_PATH` | — | Directory for the ledger-verified long-term archive; retention then purges only events a verified archive of this queue covers. [Details](docs/operations/suppression-archive-and-source-silence.md#archive-and-replay) |
 

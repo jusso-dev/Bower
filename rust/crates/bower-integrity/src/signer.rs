@@ -140,6 +140,17 @@ pub fn key_id_from_public_key_pem(public_key_pem: &str) -> Result<String, Integr
     Ok(key_id(&import_pem(public_key_pem)?.verifying_key()))
 }
 
+/// SPKI public key PEM of any PEM accepted by `ImportFromPem` (C#
+/// `ExportSubjectPublicKeyInfoPem`: LF line endings, no trailing newline).
+pub fn public_key_pem(pem: &str) -> Result<String, IntegrityError> {
+    Ok(import_pem(pem)?
+        .verifying_key()
+        .to_public_key_pem(LineEnding::LF)
+        .expect("P-256 SPKI encodes")
+        .trim_end()
+        .to_owned())
+}
+
 /// Signs `content` with a P-256 private key PEM (PKCS#8 or SEC1).
 pub fn sign(content: &[u8], private_key_pem: &str) -> Result<DetachedSignature, IntegrityError> {
     if private_key_pem.trim().is_empty() {

@@ -53,13 +53,17 @@ async fn run() -> Result<bool, HostError> {
     let bundle = bundle::load(&settings)?;
     let credential = credential::create(&settings);
     let output = host::create_output(&settings, credential.clone())?;
+    // Token enrolment: the host builds the key-bound management credential itself.
+    let management_credential = credential
+        .filter(|_| !settings.uses_enrolment())
+        .map(credential::management_source);
     let listen_url = settings.listen_url.clone();
     let mut collector = host::build(
         settings,
         bundle,
         BuildOptions {
             output,
-            credential: credential.map(credential::management_source),
+            credential: management_credential,
             ..BuildOptions::default()
         },
     )?;

@@ -238,7 +238,8 @@ public sealed partial class ManagementCommandWorker(
     CollectorSettings settings,
     TimeProvider clock,
     IHostApplicationLifetime lifetime,
-    ILogger<ManagementCommandWorker> logger) : BackgroundService
+    ILogger<ManagementCommandWorker> logger,
+    ManagementEnrolment? enrolment = null) : BackgroundService
 {
     public const string CanarySourceAdapter = "management-canary";
     public const string ExecutionFailed = "execution-failed";
@@ -270,6 +271,8 @@ public sealed partial class ManagementCommandWorker(
                     : (ManagementCommandResults.Failed, ManagementCommandResults.FetchUnavailable),
                 ManagementCommandTypes.RunCanary => await RunCanaryAsync(command, cancellationToken),
                 ManagementCommandTypes.Reload => Reload(command),
+                ManagementCommandTypes.RotateCredential when enrolment is not null =>
+                    await enrolment.RotateAsync(cancellationToken),
                 _ => (ManagementCommandResults.Failed, ManagementCommandResults.UnsupportedCommand)
             };
             if (command.Command != ManagementCommandTypes.Reload || status != ManagementCommandResults.Succeeded)

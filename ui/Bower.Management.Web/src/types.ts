@@ -392,3 +392,37 @@ export interface SetupCheckResult {
   checks: GuidedCheck[];
   checkedAt: string;
 }
+
+/** Enrolment token metadata. The token itself is only in the create response. */
+export interface EnrolmentToken {
+  id: string;
+  environment: string;
+  collectorId: string | null;
+  status: "active" | "used" | "expired" | "revoked";
+  reason: string;
+  createdByObjectId: string;
+  createdByName: string;
+  createdAt: string;
+  expiresAt: string;
+  usedAt: string | null;
+  usedByCollectorId: string | null;
+  revokedAt: string | null;
+}
+
+/** Create response: shown once, never stored in the browser. */
+export interface IssuedEnrolmentToken {
+  token: string;
+  record: EnrolmentToken;
+}
+
+/** A key-bound collector credential. Management holds only the public key. */
+export interface CollectorCredential {
+  id: string;
+  collectorId: string;
+  status: "active" | "retired" | "revoked" | "expired";
+  origin: "enrolment" | "rotation";
+  issuedAt: string;
+  expiresAt: string;
+  lastUsedAt: string | null;
+  endedAt: string | null;
+}

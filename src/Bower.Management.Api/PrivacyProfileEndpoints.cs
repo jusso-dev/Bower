@@ -134,6 +134,11 @@ internal static class PrivacyProfileEndpoints
                     ManagedPrivacyProfileSigner signer,
                     CancellationToken cancellationToken) =>
                 {
+                    if (!CollectorEnrolment.MayActFor(user, id))
+                    {
+                        return Results.Forbid();
+                    }
+
                     PrivacyProfileDeployment deployment = await store.GetPrivacyProfileDeploymentAsync(
                         id,
                         ManagementApplication.ObjectId(user),

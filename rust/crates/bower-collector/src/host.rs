@@ -177,6 +177,8 @@ pub struct Collector {
     command_inbox: Option<mpsc::Receiver<VerifiedCommand>>,
     /// Management mode: one client (proxy, CA bundle) built at start-up.
     management_client: Option<reqwest::Client>,
+    /// Token enrolment (`BOWER_MANAGEMENT_AUTH=enrolment`): the key-bound credential.
+    pub enrolment: Option<Arc<crate::enrolment::ManagementEnrolment>>,
     job_triggers: JobTriggers,
 }
 
@@ -315,6 +317,21 @@ pub fn build(
     } else {
         (None, None)
     };
+    let enrolment = management_client.as_ref().and_then(|client| {
+        crate::enrolment::ManagementEnrolment::from_settings(
+            &settings,
+            policy_hash.clone(),
+            client.clone(),
+            Arc::clone(&clock),
+        )
+        .map(Arc::new)
+    });
+    // No Azure identity: management requests carry the enrolled credential's assertion.
+    let credential = options.credential.or_else(|| {
+        enrolment
+            .as_ref()
+            .map(|enrolment| crate::enrolment::token_source(Arc::clone(enrolment)))
+    });
     Ok(Collector {
         router: router(state),
         store,
@@ -333,13 +350,14 @@ pub fn build(
         lifetime: ApplicationLifetime::new(),
         output: options.output,
         delivery_status,
-        credential: options.credential,
+        credential,
         delivery,
         scheduler: None,
         delivery_activity: Arc::new(DeliveryActivity::default()),
         commands,
         command_inbox,
         management_client,
+        enrolment,
         job_triggers: JobTriggers::default(),
         settings,
     })
@@ -465,6 +483,7 @@ impl Collector {
                 heartbeat.source_health = Some(Arc::clone(&self.source_health));
                 heartbeat.commands = self.commands.clone();
                 heartbeat.delivery_activity = Some(Arc::clone(&self.delivery_activity));
+                heartbeat.enrolment = self.enrolment.clone();
                 if let Some(client) = &self.management_client {
                     heartbeat.client = client.clone();
                 }
@@ -486,6 +505,10 @@ impl Collector {
                 0,
                 heartbeat_job,
             );
+            if self.settings.uses_enrolment() {
+                // Enrol (or report) straight away rather than at the next minute.
+                scheduler.trigger(MANAGEMENT_HEARTBEAT_JOB_ID);
+            }
 
             if self.settings.uses_managed_privacy_profile() {
                 let sync = ManagedPrivacyProfileJob::from_settings(
@@ -559,6 +582,7 @@ impl Collector {
                 environment: self.settings.environment.clone(),
                 clock: Arc::clone(&self.clock),
                 lifetime: self.lifetime.clone(),
+                enrolment: self.enrolment.clone(),
             };
             let token = shutdown.clone();
             tasks.push(tokio::spawn(async move { worker.run(inbox, token).await }));

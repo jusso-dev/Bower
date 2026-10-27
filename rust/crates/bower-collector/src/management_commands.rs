@@ -36,7 +36,7 @@ pub const KIND: &str = "bower.collector-command/v1";
 pub const FETCH_BUNDLE: &str = "fetch-bundle";
 pub const RUN_CANARY: &str = "run-canary";
 pub const RELOAD: &str = "reload";
-/// Recognised but refused until credential rotation exists (#109).
+/// Rotates the key-bound credential of a token-enrolled collector (#109).
 pub const ROTATE_CREDENTIAL: &str = "rotate-credential";
 pub const ALL: [&str; 4] = [FETCH_BUNDLE, RUN_CANARY, RELOAD, ROTATE_CREDENTIAL];
 
@@ -101,11 +101,16 @@ pub fn supported(settings: &CollectorSettings) -> Vec<&'static str> {
     if settings.management_command_trusted_key_files.is_empty() {
         return Vec::new();
     }
-    if settings.uses_managed_privacy_profile() {
+    let mut supported = if settings.uses_managed_privacy_profile() {
         vec![FETCH_BUNDLE, RUN_CANARY, RELOAD]
     } else {
         vec![RUN_CANARY, RELOAD]
+    };
+    // An Entra identity has nothing to rotate; only a key-bound credential does.
+    if settings.uses_enrolment() {
+        supported.push(ROTATE_CREDENTIAL);
     }
+    supported
 }
 
 // ------------------------------------------------------------------ verification
@@ -974,6 +979,8 @@ pub struct CommandWorker {
     pub environment: String,
     pub clock: Arc<dyn Clock>,
     pub lifetime: ApplicationLifetime,
+    /// Token enrolment: performs `rotate-credential`.
+    pub enrolment: Option<Arc<crate::enrolment::ManagementEnrolment>>,
 }
 
 impl CommandWorker {
@@ -999,6 +1006,13 @@ impl CommandWorker {
             }),
             RUN_CANARY => self.run_canary(command).await,
             RELOAD => self.reload(command),
+            ROTATE_CREDENTIAL if self.enrolment.is_some() => {
+                let (status, code) = match &self.enrolment {
+                    Some(enrolment) => enrolment.rotate().await,
+                    None => (results::FAILED, results::UNSUPPORTED_COMMAND),
+                };
+                Ok((status, code.to_string()))
+            }
             _ => Ok((results::FAILED, results::UNSUPPORTED_COMMAND.to_string())),
         };
         match outcome {

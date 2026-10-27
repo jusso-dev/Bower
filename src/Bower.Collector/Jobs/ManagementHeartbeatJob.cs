@@ -23,7 +23,8 @@ public sealed partial class ManagementHeartbeatJob(
     SourceHealth? sourceHealth = null,
     ManagementCommandProcessor? commands = null,
     DeliveryActivity? deliveryActivity = null,
-    TimeSpan? exchangeTimeout = null)
+    TimeSpan? exchangeTimeout = null,
+    ManagementEnrolment? enrolment = null)
 {
     public const string Id = "management-heartbeat";
     public const string HttpClientName = "bower-management";
@@ -44,7 +45,23 @@ public sealed partial class ManagementHeartbeatJob(
     {
         try
         {
+            if (enrolment is not null)
+            {
+                // Token enrolment (no Azure identity): exchange a new token first, and
+                // report nothing until a credential is held.
+                await enrolment.EnsureEnrolledAsync(cancellationToken);
+                if (!enrolment.Enrolled)
+                {
+                    return;
+                }
+            }
+
             await ReportAsync(cancellationToken);
+            if (enrolment is not null)
+            {
+                // Scheduled rotation; the current credential keeps working until the new one is used.
+                await enrolment.RotateIfDueAsync(cancellationToken);
+            }
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {

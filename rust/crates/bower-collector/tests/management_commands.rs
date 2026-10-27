@@ -552,6 +552,7 @@ fn exchange(settings: &CollectorSettings) -> Exchange {
         environment: "test".into(),
         clock,
         lifetime: ApplicationLifetime::new(),
+        enrolment: None,
     };
     Exchange {
         heartbeat,

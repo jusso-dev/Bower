@@ -6,7 +6,9 @@ Bower Management is optional and self-hosted. A collector keeps selecting,
 queueing and delivering events when the management API is unavailable.
 Management stores metadata only: machine identity, collector configuration and
 policy hashes, source/output health, queue depth, approvals and management audit.
-It does not store raw security-event payloads or Azure access tokens.
+It does not store raw security-event payloads or Azure access tokens. For token
+enrolment it stores token hashes and collector public keys, never a token or a
+private key.
 
 ## Entra registrations
 
@@ -47,6 +49,11 @@ and `run-canary`. Only `Bower.Administrator` may issue `reload` and `rotate-cred
 Viewers may list commands. No command changes approval state or privacy content, so the
 two-person rule below is unaffected. `fetch-bundle` only fetches the version already
 approved and assigned. See [fleet controls](../operations/fleet-and-queue-integrity.md#commands).
+
+Token enrolment: only `Bower.Administrator` may create or revoke enrolment tokens and
+revoke collector credentials. Viewers and above may list token and credential metadata.
+A token never approves anything: the collector still waits in `Pending` for a
+`Bower.Approver`. See [token enrolment](#token-enrolment-for-collectors-without-an-azure-identity).
 
 Privacy profile versions follow a two-person rule enforced by the API: the reviewer's
 object id must differ from the author's, whatever roles either holds. See [managed
@@ -134,6 +141,68 @@ never persisted or logged. Remote endpoints must use HTTPS; the collector refuse
 to start otherwise. The heartbeat runs as the `management-heartbeat` recurring job
 every minute and also reports the collector's background job states. A failed heartbeat is a management health condition; it
 does not interrupt the collector's local ingestion or destination delivery.
+
+## Token enrolment for collectors without an Azure identity
+
+On-prem servers without a managed identity or Arc enrol with a one-time token instead
+of `Bower.Collector`. The approval flow is unchanged. Design:
+[collector enrolment](../architecture/collector-enrolment.md).
+
+```text
+Bower.Administrator creates a token in the console (Enrolment)
+  environment, optional collector id, lifetime 1-168 hours (default 24), reason
+→ console shows the token once; management stores only its SHA-256 hash
+→ operator writes it to the collector's token file
+→ collector generates a P-256 key and exchanges token + public key
+→ token consumed; record Pending; credential active (30 days)
+→ Bower.Approver approves as usual → next heartbeat makes it Active
+→ collector rotates its key when 10 days remain; Bower.Administrator may revoke
+```
+
+Set on the collector:
+
+```text
+BOWER_MANAGEMENT_ENDPOINT=https://bower-api.example.gov.au/
+BOWER_MANAGEMENT_AUTH=enrolment
+BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE=/etc/bower/enrolment-token
+BOWER_ENVIRONMENT=production
+# Optional: accept signed commands, including rotate-credential.
+BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS=/etc/bower/command-signing.pub.pem
+```
+
+`BOWER_MANAGEMENT_SCOPE` is not needed and no Azure credential is created for
+management. The collector keeps its key in
+`<queue directory>/management-credential/credential.json` (owner-only), with the
+hash of the token it used, never the token. Remove the token file after enrolment if
+you like; a new token in the file re-enrols the collector, which returns it to
+`Pending`.
+
+Controls:
+
+- **Tokens.** 256 random bits, single use (consumed in the enrolment transaction),
+  expiring, bound to an environment and optionally a collector id, hashed at rest,
+  never logged and never returned after creation. Used, expired, revoked, forged and
+  mis-scoped tokens are refused with one generic message and audited as
+  `enrolment-token.refused:<code>`. A refusal never consumes the token. The anonymous
+  enrolment endpoint allows 10 requests per minute per address
+  (`BOWER_MANAGEMENT_ENROLMENT_RATE_PER_MINUTE`).
+- **Credentials.** The collector's own P-256 key. Management stores the public key.
+  Every request carries a 5-minute assertion signed with the private key; management
+  checks it against the stored key on every request, so revocation takes effect on the
+  next heartbeat. The principal is `enrolled:<collectorId>` with only `Bower.Collector`,
+  and it can act only for its own collector id.
+- **No take-over.** A token cannot enrol over a collector id bound to an Entra
+  principal, or re-enrol a suspended or revoked collector.
+- **Rotation without downtime.** The collector registers a new key under its current
+  credential. Management keeps the old one valid until the new one is first used, then
+  retires it. Administrators can also send `rotate-credential`
+  ([commands](../operations/fleet-and-queue-integrity.md#commands)); Entra collectors
+  never advertise it.
+
+Audit actions: `enrolment-token.created`, `enrolment-token.revoked`,
+`enrolment-token.used`, `enrolment-token.refused:<code>`, `collector.enrolled`,
+`collector.re-enrolled`, `collector.credential-rotated`, `collector.credential-retired`
+and `collector.credential-revoked`.
 
 ## Approval assurance
 

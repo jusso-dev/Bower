@@ -372,7 +372,10 @@ public sealed class ManagementApiTests
         {
             if (!Request.Headers.TryGetValue(RolesHeader, out Microsoft.Extensions.Primitives.StringValues roles))
             {
-                return Task.FromResult(AuthenticateResult.NoResult());
+                // As the production selector: enrolled-collector assertions use the real credential scheme.
+                return CollectorEnrolment.HasAssertion(Request)
+                    ? Context.AuthenticateAsync(CollectorCredentialAuthenticationHandler.SchemeName)
+                    : Task.FromResult(AuthenticateResult.NoResult());
             }
 
             List<Claim> claims =

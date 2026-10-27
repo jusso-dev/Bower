@@ -1,0 +1,60 @@
+# CI only: token enrolment end to end (#109), driven by tests/e2e/enrolment.sh.
+# Development authentication on loopback inside one network namespace: never expose it.
+# The collectors share the management container's network so they reach it on loopback
+# (plain HTTP is accepted only for loopback management endpoints).
+services:
+  bower-management:
+    image: ${BOWER_MANAGEMENT_IMAGE:-bower-management:ci}
+    container_name: bower-e2e-management
+    read_only: true
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      BOWER_AUTH_MODE: development
+      BOWER_MANAGEMENT_LISTEN_URL: http://127.0.0.1:4320
+      AllowedHosts: localhost;127.0.0.1
+    tmpfs:
+      - /tmp:size=16m,mode=1770
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  collector-cs:
+    image: ${BOWER_COLLECTOR_IMAGE:-bower-collector:ci}
+    profiles: [collectors]
+    network_mode: service:bower-management
+    read_only: true
+    environment: &collector
+      BOWER_LISTEN_URL: http://127.0.0.1:4319
+      BOWER_COLLECTOR_ID: edge-cs
+      BOWER_ENVIRONMENT: e2e
+      BOWER_OUTPUT: none
+      BOWER_MANAGEMENT_ENDPOINT: http://127.0.0.1:4320/
+      BOWER_MANAGEMENT_AUTH: enrolment
+      BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE: /run/bower/enrolment-token
+    volumes:
+      - ${BOWER_E2E_DIR:?set BOWER_E2E_DIR}/edge-cs:/run/bower:ro
+    tmpfs:
+      - /tmp:size=16m,mode=1770
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  collector-rs:
+    image: ${BOWER_RUST_COLLECTOR_IMAGE:-bower-collector-rs:ci}
+    profiles: [collectors]
+    network_mode: service:bower-management
+    read_only: true
+    environment:
+      <<: *collector
+      BOWER_LISTEN_URL: http://127.0.0.1:4321
+      BOWER_COLLECTOR_ID: edge-rs
+    volumes:
+      - ${BOWER_E2E_DIR:?set BOWER_E2E_DIR}/edge-rs:/run/bower:ro
+    tmpfs:
+      - /tmp:size=16m,mode=1770
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

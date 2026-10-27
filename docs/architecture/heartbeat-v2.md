@@ -29,8 +29,10 @@ Issue #108 (epic #116). Later fleet work (#109 enrolment, #110 relay, #111 air-g
   command channel (the issue marks long-poll optional; commands wait for the next
   minute's heartbeat).
 - Credential rotation. `rotate-credential` is part of the closed set so the wire
-  contract stays stable, but until #109 lands collectors refuse it with
-  `unsupported-command` and never advertise it.
+  contract stays stable. #109 gave it an action: a token-enrolled collector advertises
+  it and rotates its key-bound credential ([collector enrolment](collector-enrolment.md)).
+  Entra collectors have nothing to rotate, never advertise it and refuse it with
+  `unsupported-command`.
 - Hot reload (#96). `reload` is a supervised graceful restart (exit code 75), the same
   mechanism that applies a managed privacy profile.
 - Console views. #113 builds the fleet view on the new fields.

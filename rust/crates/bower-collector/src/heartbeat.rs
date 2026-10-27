@@ -131,6 +131,8 @@ pub struct ManagementHeartbeat {
     pub commands: Option<Arc<CommandProcessor>>,
     /// Last output acknowledgement for `lastSuccessfulDeliveryAt`.
     pub delivery_activity: Option<Arc<crate::worker::DeliveryActivity>>,
+    /// Token enrolment: enrol before reporting, rotate on schedule after.
+    pub enrolment: Option<Arc<crate::enrolment::ManagementEnrolment>>,
 }
 
 /// The job runs every minute; management derives staleness from this interval.
@@ -234,18 +236,35 @@ impl ManagementHeartbeat {
             source_health: None,
             commands: None,
             delivery_activity: None,
+            enrolment: None,
         })
     }
 
     /// One run. Collection and delivery continue when management is unreachable, so
     /// failures are logged and swallowed (`[AutomaticRetry(Attempts = 0)]`).
     pub async fn run(&self) -> Result<(), &'static str> {
-        if let Err(failure) = self.report().await {
+        if let Err(failure) = self.enrol_and_report().await {
             warn!(
                 exception_type = failure,
                 "Management heartbeat failed; collection and delivery continue."
             );
         }
+        Ok(())
+    }
+
+    async fn enrol_and_report(&self) -> Result<(), &'static str> {
+        let Some(enrolment) = &self.enrolment else {
+            return self.report().await;
+        };
+        // Token enrolment (no Azure identity): exchange a new token first, and report
+        // nothing until a credential is held.
+        enrolment.ensure_enrolled().await?;
+        if !enrolment.enrolled() {
+            return Ok(());
+        }
+        self.report().await?;
+        // Scheduled rotation; the current credential keeps working until the new one is used.
+        enrolment.rotate_if_due().await;
         Ok(())
     }
 

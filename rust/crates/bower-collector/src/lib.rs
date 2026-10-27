@@ -7,6 +7,7 @@ pub mod authorization;
 pub mod bundle;
 mod conflicts;
 pub mod credential;
+pub mod enrolment;
 pub mod error;
 pub mod heartbeat;
 pub mod host;

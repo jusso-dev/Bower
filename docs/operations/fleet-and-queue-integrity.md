@@ -116,7 +116,7 @@ collector. The set is closed:
 | `fetch-bundle` | Fetches the signed privacy profile assignment now (`managed-privacy-profile` job). Management privacy mode only. | `Bower.Operator` |
 | `run-canary` | Queues one synthetic `collector_canary` event through redaction and policy. `queued` means local admission, not Sentinel arrival. Use an evidence bundle for delivery proof. | `Bower.Operator` |
 | `reload` | Graceful supervised restart (exit code 75), at most once every 10 minutes. | `Bower.Administrator` |
-| `rotate-credential` | Not supported yet (#109). Collectors never advertise it, so it cannot be issued. | `Bower.Administrator` |
+| `rotate-credential` | Registers a new key-bound credential and switches to it; the old one stays valid until the new one is used. Token-enrolled collectors only: Entra collectors never advertise it, so it cannot be issued to them. Result `credential-rotated`, or `failed` with `rotation-refused`, `rotation-failed` or `not-enrolled`. | `Bower.Administrator` |
 
 ```http
 POST /api/collectors/{id}/commands
@@ -158,6 +158,27 @@ Management audits every step:
 - `collector.command-succeeded`, `-failed` and `-rejected`
 - `collector.command-expired`
 - `collector.command-result-unknown` (a result for a command management never issued)
+
+### Token enrolment and credential rotation
+
+Collectors without an Azure identity set `BOWER_MANAGEMENT_AUTH=enrolment` and enrol
+with a one-time token from the console's **Enrolment** page
+([identity and RBAC](../security/management-identity-and-rbac.md#token-enrolment-for-collectors-without-an-azure-identity),
+[design](../architecture/collector-enrolment.md)). The `management-heartbeat` job:
+
+1. Exchanges a token it has not used or seen refused (`BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE`),
+   once. A refused token is not retried; supply a new one.
+2. Reports nothing until it holds an unexpired credential.
+3. Registers and heartbeats with a 5-minute assertion signed by its key.
+4. Rotates the credential when 10 of its 30 days remain. A failed rotation keeps the
+   current credential and is retried on the next run.
+
+An administrator revokes a token or credential on the Enrolment page, or with
+`POST /api/enrolment-tokens/{id}/revoke` and
+`POST /api/collectors/{id}/credentials/{credentialId}/revoke`. A revoked credential is
+refused on the next heartbeat. To recover a collector whose credential expired (offline
+for 30 days) or was revoked, give it a new token; it returns to `Pending`. A suspended
+collector must be reinstated first.
 
 ### Proxies and TLS inspection
 

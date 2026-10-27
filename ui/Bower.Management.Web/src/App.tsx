@@ -10,6 +10,7 @@ import {
   Moon,
   ScrollText,
   Sun,
+  Ticket,
   Timer,
   X
 } from "lucide-react";
@@ -26,6 +27,7 @@ import { AuditPage } from "./pages/AuditPage";
 import { JobsPage } from "./pages/JobsPage";
 import { PrivacyProfilesPage } from "./pages/PrivacyProfilesPage";
 import { SetupPage } from "./pages/SetupPage";
+import { EnrolmentPage } from "./pages/EnrolmentPage";
 
 const navItems = [
   { to: "/", label: "Overview", icon: Activity },
@@ -33,6 +35,7 @@ const navItems = [
   { to: "/collectors", label: "Collectors", icon: Boxes },
   { to: "/pipelines", label: "Pipelines", icon: GitBranch },
   { to: "/approvals", label: "Approvals", icon: ClipboardCheck },
+  { to: "/enrolment", label: "Enrolment", icon: Ticket },
   { to: "/privacy-profiles", label: "Privacy profiles", icon: FileLock },
   { to: "/jobs", label: "Jobs", icon: Timer },
   { to: "/access", label: "Access", icon: KeyRound },
@@ -141,6 +144,7 @@ export function App() {
           <Route path="/collectors" element={<CollectorsPage />} />
           <Route path="/pipelines" element={<PipelinesPage />} />
           <Route path="/approvals" element={<ApprovalsPage />} />
+          <Route path="/enrolment" element={<EnrolmentPage />} />
           <Route path="/privacy-profiles" element={<PrivacyProfilesPage />} />
           <Route path="/jobs" element={<JobsPage />} />
           <Route path="/access" element={<AccessPage />} />
