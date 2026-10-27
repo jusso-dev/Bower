@@ -204,7 +204,9 @@ async fn ingest_reports_suppression_and_status_shows_pipeline_and_expected_sourc
             "eventIdentityConflicts",
             "pipeline",
             "intake",
-            "sources"
+            "sources",
+            "activity",
+            "tap"
         ]
     );
     let jobs = status["jobs"].to_string();

@@ -22,7 +22,8 @@ internal sealed class CollectorSyslogSink(
     CollectorIdentity identity,
     ManagedPrivacyProfileState managedPrivacy,
     PipelineTelemetry telemetry,
-    TimeProvider timeProvider) : ISyslogSink
+    TimeProvider timeProvider,
+    EventTap? tap = null) : ISyslogSink
 {
     public async ValueTask<SyslogSubmitOutcome> SubmitAsync(
         SyslogListenerOptions listener,
@@ -55,9 +56,10 @@ internal sealed class CollectorSyslogSink(
         {
             // Quarantine without persisting, as /v1/packs/.../events does: the record never
             // reaches redaction, policy or the queue, and only the stable code is counted.
-            telemetry.Record(
-                ProcessingResult.Failed(DecisionAction.Quarantine, exception.Code, ProcessingStage.Transform),
-                Encoding.UTF8.GetByteCount(record));
+            ProcessingResult quarantined =
+                ProcessingResult.Failed(DecisionAction.Quarantine, exception.Code, ProcessingStage.Transform);
+            telemetry.Record(quarantined, Encoding.UTF8.GetByteCount(record));
+            tap?.Publish(quarantined);
             return SyslogSubmitOutcome.Rejected;
         }
 

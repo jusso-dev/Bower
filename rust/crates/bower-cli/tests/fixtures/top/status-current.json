@@ -1,0 +1,28 @@
+{
+  "status": "healthy",
+  "policy": { "hash": "sha256:policy" },
+  "ledger": { "sequence": 52, "hash": "sha256:ledger" },
+  "queue": { "queued": 3, "retrying": 1, "uploading": 2, "delivered": 38, "deadLettered": 0, "totalBytes": 53248, "undeliveredBytes": 6144, "oldestUndelivered": "2026-07-26T02:14:07.5+00:00" },
+  "jobs": [],
+  "pipeline": {
+    "startedAt": "2026-07-26T02:00:00+00:00", "eventsIn": 55, "eventsQueued": 40, "duplicates": 3, "suppressed": 1, "bytesIn": 55000, "bytesQueued": 48000,
+    "rows": [
+      { "stage": "policy", "policyId": "BWR-POL-AUTH-FAILURE", "action": "accept", "events": 28, "queued": 25, "duplicates": 3, "suppressed": 0, "bytesIn": 28000, "bytesQueued": 25000 },
+      { "stage": "policy", "policyId": "BWR-POL-AUTH-FAILURE", "action": "redact-and-accept", "events": 16, "queued": 15, "duplicates": 0, "suppressed": 1, "bytesIn": 16000, "bytesQueued": 23000 },
+      { "stage": "policy", "policyId": "BWR-POL-DEFAULT-DENY", "action": "reject", "events": 7, "queued": 0, "duplicates": 0, "suppressed": 0, "bytesIn": 7000, "bytesQueued": 0 },
+      { "stage": "transform", "policyId": "-", "action": "quarantine", "events": 1, "queued": 0, "duplicates": 0, "suppressed": 0, "bytesIn": 1000, "bytesQueued": 0 },
+      { "stage": "validation", "policyId": "-", "action": "quarantine", "events": 3, "queued": 0, "duplicates": 0, "suppressed": 0, "bytesIn": 3000, "bytesQueued": 0 }
+    ]
+  },
+  "intake": { "observedSince": "2026-07-26T02:00:00+00:00", "attemptedRequests": 57, "attemptedBytes": 57000, "capacityRefusals": 2, "capacityRefusedBytes": 2000, "privacyAlertRefusals": 0, "privacyAlertRefusedBytes": 0, "lastRefusalAt": "2026-07-26T02:14:10+00:00", "lastRefusalReason": "queue-capacity" },
+  "delivery": { "outputId": "azure-logs-ingestion", "limit": 4, "minimumLimit": 1, "maximumLimit": 16, "inFlight": 1, "latencyEwmaMilliseconds": 85, "requests": 12, "throttles": 1, "serverErrors": 0, "timeouts": 0, "latencySpikes": 0, "decreases": 1, "increases": 3, "pauses": 0, "processLocalPausedUntil": null },
+  "syslog": [
+    { "id": "edge-firewall", "protocol": "udp", "endpoint": "0.0.0.0:5514", "activeConnections": 0, "connectionsAccepted": 0, "connectionsRejected": 0, "sendersDenied": 1, "tlsHandshakeFailures": 0, "framesReceived": 130, "bytesReceived": 26000, "queued": 27, "duplicates": 0, "suppressed": 0, "notRouted": 3, "notSelected": 91, "rejected": 5, "parserErrors": 0, "malformed": 2, "oversized": 1, "framingErrors": 0, "timeouts": 0, "dropped": 4, "retries": 0, "submitFailures": 0, "receiveErrors": 1, "lastFrameAt": "2026-07-26T02:14:19+00:00" },
+    { "id": "core-switch", "protocol": "tls", "endpoint": "0.0.0.0:6514", "activeConnections": 2, "connectionsAccepted": 2, "connectionsRejected": 0, "sendersDenied": 0, "tlsHandshakeFailures": 0, "framesReceived": 9, "bytesReceived": 1800, "queued": 9, "duplicates": 0, "suppressed": 0, "notRouted": 0, "notSelected": 0, "rejected": 0, "parserErrors": 0, "malformed": 0, "oversized": 0, "framingErrors": 0, "timeouts": 0, "dropped": 0, "retries": 0, "submitFailures": 0, "receiveErrors": 0, "lastFrameAt": "2026-07-26T02:14:19+00:00" }
+  ],
+  "activity": [
+    { "application": "TestApplication", "environment": "test", "lastSeenAt": "2026-07-26T02:14:19+00:00", "eventCount": 44 },
+    { "application": "EdgeFirewall", "environment": "production", "lastSeenAt": "2026-07-26T02:14:19+00:00", "eventCount": 7 }
+  ],
+  "tap": { "enabled": true, "activeSessions": 1, "maximumSessions": 2, "sessionsOpened": 3, "sessionsRefused": 1, "framesSent": 120, "framesDropped": 4, "framesRateLimited": 9 }
+}

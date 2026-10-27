@@ -9,7 +9,7 @@
 
 use crate::cli::{
     ArchiveCommand, ArchiveCreateArgs, ArchiveReplayArgs, ArchiveVerifyArgs, PolicyDiffArgs,
-    SourcesCheckArgs, SourcesCommand,
+    SourcesCheckArgs, SourcesCommand, TapArgs, TopArgs,
 };
 use crate::cli::{
     Command, DatabaseArgs, DcrCommand, DcrDiffArgs, DcrGenerateArgs, DeadLettersArgs,
@@ -109,7 +109,9 @@ pub fn parse(args: &[String]) -> Option<Command> {
         {
             (&words[..2], &args[2..])
         }
-        [first, ..] if matches!(*first, "validate" | "doctor") => (&words[..1], &args[1..]),
+        [first, ..] if matches!(*first, "validate" | "doctor" | "tap" | "top") => {
+            (&words[..1], &args[1..])
+        }
         _ => return None,
     };
     let o = Options(rest);
@@ -287,6 +289,21 @@ pub fn parse(args: &[String]) -> Option<Command> {
             event_types: o.all("--event-type"),
             dry_run: o.has("--dry-run"),
         })),
+        ["tap"] => Command::Tap(TapArgs {
+            collector: o.get("--collector").or_else(|| o.get("--collector-url")),
+            stage: o.get("--stage"),
+            source: o.get("--source"),
+            event_type: o.get("--event-type"),
+            limit: o.get("--limit"),
+            duration: o.get("--duration"),
+            sample: o.get("--sample"),
+        }),
+        ["top"] => Command::Top(TopArgs {
+            collector: o.get("--collector").or_else(|| o.get("--collector-url")),
+            interval: o.get("--interval"),
+            once: o.has("--once"),
+            iterations: o.get("--iterations"),
+        }),
         ["sources", "check"] => Command::Sources(SourcesCommand::Check(SourcesCheckArgs {
             expectations: o.get("--expectations"),
             database: database(),

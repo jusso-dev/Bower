@@ -1,7 +1,10 @@
 using System.Diagnostics;
 using Bower.Abstractions;
+using Bower.Core;
 using Bower.Output.AmaSpool;
 using Bower.Persistence;
+using Bower.PolicyEngine;
+using Bower.Redaction;
 using Bower.Redaction.Privacy;
 using Microsoft.Data.Sqlite;
 
@@ -298,4 +301,49 @@ try
 finally
 {
     Directory.Delete(spoolRoot, recursive: true);
+}
+
+// Tap impact on ingest: the same accepted event through redaction, policy and an in-memory
+// queue, with no tap, with an idle tap and with two stalled sessions (buffers full).
+{
+    DeterministicPolicyEvaluator policies = new(PolicyLoader.LoadDirectory(Path.Combine("policies", "default")));
+    JsonEventRedactor redactor = new();
+    CollectorIdentity identity = new("bench", "0.1.0", "bench", "sha256:bench");
+    string candidate = $$$"""
+        {"schemaVersion":"1.0.0","eventId":"tap-bench","eventOriginalId":"tap-bench","timeGenerated":"{{{DateTimeOffset.UtcNow:O}}}",
+         "eventCategory":"authentication","eventType":"authentication_failure","eventAction":"authentication.attempt",
+         "eventResult":"failure","application":{"name":"bench","environment":"test"},"actor":{"username":"bench.user"},
+         "source":{"ipAddress":"192.0.2.10"},"attributes":{"dbPassword":"never-tapped"}}
+        """;
+
+    async Task<double> MeasureIngestUsAsync(EventTap? tap)
+    {
+        const int count = 5_000;
+        Stopwatch watch = Stopwatch.StartNew();
+        for (int i = 0; i < count; i++)
+        {
+            SecurityEventProcessor processor = new(redactor, policies, new RequestEventBuffer(), TimeProvider.System, tap: tap);
+            ProcessingResult result = await processor.ProcessAsync(candidate, identity);
+            if (!result.Queued)
+            {
+                throw new InvalidOperationException("benchmark event was not accepted");
+            }
+        }
+
+        return watch.Elapsed.TotalMicroseconds / count;
+    }
+
+    _ = await MeasureIngestUsAsync(null);
+    double withoutTap = await MeasureIngestUsAsync(null);
+    EventTap idle = new(new EventTapOptions(), TimeProvider.System);
+    double idleTap = await MeasureIngestUsAsync(idle);
+    EventTap busy = new(new EventTapOptions { MaximumEventsPerSecond = 1000, MaximumEvents = 10_000 }, TimeProvider.System);
+    using EventTapSession first = busy.TryOpen(new EventTapRequest("bench", TapPoint.Redacted, null, null, 10_000, TimeSpan.FromMinutes(5), 1))!;
+    using EventTapSession second = busy.TryOpen(new EventTapRequest("bench", TapPoint.Redacted, null, null, 10_000, TimeSpan.FromMinutes(5), 1))!;
+    double stalledTap = await MeasureIngestUsAsync(busy);
+    EventTapSnapshot snapshot = busy.Snapshot();
+    Console.WriteLine("Bower tap impact on ingest (5,000 accepted events)");
+    Console.WriteLine($"  no tap:                    {withoutTap:F1} µs/event");
+    Console.WriteLine($"  tap, no session:           {idleTap:F1} µs/event");
+    Console.WriteLine($"  tap, 2 stalled sessions:   {stalledTap:F1} µs/event  (buffered {first.Reader.Count}+{second.Reader.Count}, dropped {snapshot.FramesDropped}, rate limited {snapshot.FramesRateLimited})");
 }

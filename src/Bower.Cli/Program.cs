@@ -43,6 +43,8 @@ static async Task<int> RunAsync(string[] args)
             ["archive", "verify", .. string[] rest] => await ArchiveCommands.VerifyAsync(rest),
             ["archive", "replay", .. string[] rest] => await ArchiveCommands.ReplayAsync(rest),
             ["sources", "check", .. string[] rest] => await SourceCommands.CheckAsync(rest),
+            ["tap", .. string[] rest] => await TapAndTopCommands.TapAsync(rest),
+            ["top", .. string[] rest] => await TapAndTopCommands.TopAsync(rest),
             [] or ["--help"] or ["help"] => WriteHelp(),
             _ => Fail("Unknown command. Run 'bower --help'.")
         };
@@ -292,6 +294,9 @@ static int WriteHelp()
           bower archive replay --archive DIR --collector-url URL [--from ISO] [--to ISO]
                                [--event-type TYPE]... [--dry-run]
           bower sources check --expectations FILE [--database FILE]
+          bower tap [--collector URL] [--stage redacted|decided|queued] [--source APP] [--event-type TYPE]
+                    [--limit N] [--duration SECONDS] [--sample N]   (post-redaction JSON lines on stdout)
+          bower top [--collector URL] [--interval SECONDS] [--once] [--iterations N]
           bower version
         """);
     return 0;

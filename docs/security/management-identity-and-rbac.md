@@ -50,6 +50,14 @@ Viewers may list commands. No command changes approval state or privacy content,
 two-person rule below is unaffected. `fetch-bundle` only fetches the version already
 approved and assigned. See [fleet controls](../operations/fleet-and-queue-integrity.md#commands).
 
+Live tap (`bower tap`, see [tap and top](../operations/tap-and-top.md)): today tap is
+reachable only on the collector's own listener, with the shared ingest token or a
+`BOWER_TAP_PRODUCERS` producer, and is audited in the collector log. When the console
+pipeline view relays it, sampled post-redaction frames will be gated to `Bower.Operator`
+and above, every session will be audited in management audit history, and `Bower.Viewer`
+will see counts only (`/v1/status` `pipeline`, `activity` and `tap`). The same collector
+caps apply.
+
 Token enrolment: only `Bower.Administrator` may create or revoke enrolment tokens and
 revoke collector credentials. Viewers and above may list token and credential metadata.
 A token never approves anything: the collector still waits in `Pending` for a

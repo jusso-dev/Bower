@@ -261,6 +261,26 @@ public sealed class PipelineTelemetry(TimeProvider clock)
         }
     }
 
+    /// <summary>
+    /// The busiest sources by accepted event count (then application and environment), for
+    /// <c>bower top</c> per-source rates. Counts include activity loaded from storage.
+    /// </summary>
+    public IReadOnlyList<SourceActivity> BusiestSources(int maximum = MaximumStatusSources)
+    {
+        lock (gate)
+        {
+            return sources.Values
+                .OrderByDescending(item => item.EventCount)
+                .ThenBy(item => item.Application, StringComparer.Ordinal)
+                .ThenBy(item => item.Environment, StringComparer.Ordinal)
+                .Take(maximum)
+                .ToArray();
+        }
+    }
+
+    /// <summary>Sources listed in <c>/v1/status</c> <c>activity</c>.</summary>
+    public const int MaximumStatusSources = 50;
+
     public PipelineMetricsSnapshot Snapshot()
     {
         PipelineMetricsRow[] rows;

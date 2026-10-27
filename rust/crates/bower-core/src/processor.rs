@@ -180,6 +180,19 @@ pub struct SecurityEventProcessor {
     queue: Arc<dyn DurableEventStore>,
     clock: Arc<dyn Clock>,
     telemetry: Option<Arc<PipelineTelemetry>>,
+    tap: Option<Arc<dyn TapSink>>,
+}
+
+/// Receives every final selection outcome after redaction (C# `EventTap.Publish`).
+/// `subject` is the redacted candidate (metadata only); `accepted_payload` is the redacted
+/// queued payload of an accepted event. Implementations must never block.
+pub trait TapSink: Send + Sync {
+    fn publish(
+        &self,
+        result: &ProcessingResult,
+        subject: Option<&SecurityEventEnvelope>,
+        accepted_payload: Option<&str>,
+    );
 }
 
 fn accepts(action: DecisionAction) -> bool {
@@ -202,7 +215,15 @@ impl SecurityEventProcessor {
             queue,
             clock,
             telemetry: None,
+            tap: None,
         }
+    }
+
+    /// Offers every final outcome to `tap` after redaction (C# optional `EventTap` argument).
+    #[must_use]
+    pub fn with_tap(mut self, tap: Arc<dyn TapSink>) -> Self {
+        self.tap = Some(tap);
+        self
     }
 
     /// Records every processed candidate in `telemetry` (C# optional constructor argument).
@@ -228,8 +249,23 @@ impl SecurityEventProcessor {
     /// so an alert refused for capacity never hides an event that was already decided or
     /// queued.
     fn decided(&self, result: ProcessingResult, bytes_in: i64) -> ProcessingResult {
+        self.decided_with(result, bytes_in, None, None)
+    }
+
+    /// [`Self::decided`] that also shows the tap the redacted `subject` and, for an accepted
+    /// event, its redacted queued payload.
+    fn decided_with(
+        &self,
+        result: ProcessingResult,
+        bytes_in: i64,
+        subject: Option<&SecurityEventEnvelope>,
+        accepted_payload: Option<&str>,
+    ) -> ProcessingResult {
         if let Some(telemetry) = &self.telemetry {
             telemetry.record(&result, bytes_in);
+        }
+        if let Some(tap) = &self.tap {
+            tap.publish(&result, subject, accepted_payload);
         }
         result
     }
@@ -326,7 +362,7 @@ impl SecurityEventProcessor {
         let now = self.clock.utc_now();
         let validation_failures = validate(&candidate, now);
         if !validation_failures.is_empty() {
-            let quarantined = self.decided(
+            let quarantined = self.decided_with(
                 ProcessingResult {
                     stage: ProcessingStage::Validation,
                     ..ProcessingResult::decided(
@@ -338,6 +374,8 @@ impl SecurityEventProcessor {
                     )
                 },
                 bytes_in,
+                Some(&candidate),
+                None,
             );
             // Still notify SOC when high-risk secrets/PII were present in invalid payloads.
             let alert_id =
@@ -356,7 +394,7 @@ impl SecurityEventProcessor {
                 .chain(&decision.warnings)
                 .cloned()
                 .collect();
-            let rejected = self.decided(
+            let rejected = self.decided_with(
                 ProcessingResult::decided(
                     decision.action,
                     candidate.event_id.clone(),
@@ -365,6 +403,8 @@ impl SecurityEventProcessor {
                     None,
                 ),
                 bytes_in,
+                Some(&candidate),
+                None,
             );
             let alert_id =
                 self.try_enqueue_privacy_alert(&candidate, &redaction, collector, bytes_in)?;
@@ -403,7 +443,7 @@ impl SecurityEventProcessor {
         let (queued, payload_bytes) = queued_event(&arranged, now, request)?;
         let enqueue = match self.queue.enqueue(&queued) {
             Err(StoreError::Invalid(code)) if code == "event-identity-conflict" => {
-                return Ok(self.decided(
+                return Ok(self.decided_with(
                     ProcessingResult::decided(
                         DecisionAction::Quarantine,
                         arranged.event_id.clone(),
@@ -412,6 +452,8 @@ impl SecurityEventProcessor {
                         None,
                     ),
                     bytes_in,
+                    Some(&arranged),
+                    None,
                 ));
             }
             Err(error @ StoreError::Full(_)) => {
@@ -429,7 +471,7 @@ impl SecurityEventProcessor {
             .as_ref()
             .map_or(DecisionAction::Accept, |security| security.decision);
         // The event is committed (or deduplicated or suppressed): record it before the alert.
-        let committed = self.decided(
+        let committed = self.decided_with(
             ProcessingResult {
                 action,
                 event_id: Some(arranged.event_id.clone()),
@@ -447,6 +489,8 @@ impl SecurityEventProcessor {
                 }),
             },
             bytes_in,
+            Some(&arranged),
+            Some(&queued.payload),
         );
         if enqueue.enqueued
             && let Some(telemetry) = &self.telemetry

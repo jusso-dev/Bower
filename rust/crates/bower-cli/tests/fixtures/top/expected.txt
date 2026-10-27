@@ -1,0 +1,28 @@
+bower top  http://127.0.0.1:4319  status healthy  interval 2.0 s
+
+Intake  attempts 57 (8.0/s)  capacity refusals 2  privacy alert refusals 0
+
+STAGE          EVENTS      /S  ACCEPTED  REJECTED QUARANTINED   OTHER SUPPRESSED    QUEUED DUPLICATES
+transform           1     0.5         0         0           1       0          0         0          0
+validation          3     0.5         0         0           3       0          0         0          0
+policy             51     6.5        44         7           0       0          1        40          3
+total              55     7.5        44         7           4       0          1        40          3
+
+STAGE       POLICY                           ACTION                EVENTS      /S
+policy      BWR-POL-AUTH-FAILURE             accept                    28     4.0
+policy      BWR-POL-AUTH-FAILURE             redact-and-accept         16     1.5
+policy      BWR-POL-DEFAULT-DENY             reject                     7     1.0
+transform   -                                quarantine                 1     0.5
+validation  -                                quarantine                 3     0.5
+
+SOURCE                           ENVIRONMENT           EVENTS      /S
+TestApplication                  test                      44     5.5
+EdgeFirewall                     production                 7     3.5
+
+SYSLOG             PROTOCOL    FRAMES      /S    QUEUED  REJECTED  DROPPED MALFORMED OVERSIZED  DENIED RECV ERRORS  CONNS
+edge-firewall      udp            130    15.0        27         5        4         2         1       1           1      0
+core-switch        tls              9     4.5         9         0        0         0         0       0           0      2
+
+Queue     queued 3  retrying 1  uploading 2  dead letters 0  undelivered bytes 6144  oldest undelivered 11 s
+Delivery  output azure-logs-ingestion  limit 4 (1-16)  in flight 1  latency 85 ms  throttles 1  server errors 0  timeouts 0
+Tap       enabled  sessions 1/2  opened 3  refused 1  frames sent 120  dropped 4  rate limited 9

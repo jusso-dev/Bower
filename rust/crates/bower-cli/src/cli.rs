@@ -68,6 +68,51 @@ pub enum Command {
     /// Check expected sources for silence from the activity the collector persisted.
     #[command(subcommand)]
     Sources(SourcesCommand),
+    /// Stream post-redaction outcomes from a collector as JSON lines (bounded, audited).
+    Tap(TapArgs),
+    /// Live per-stage throughput, queue, delivery, syslog and tap counters from /v1/status.
+    Top(TopArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct TapArgs {
+    /// Collector base URL [default: http://127.0.0.1:4319] (alias --collector-url).
+    #[arg(long = "collector", value_name = "URL")]
+    pub collector: Option<String>,
+    /// Tap point: redacted (every outcome), decided or queued. There is no pre-redaction point.
+    #[arg(long = "stage", value_name = "redacted|decided|queued")]
+    pub stage: Option<String>,
+    /// Only events from this application.
+    #[arg(long = "source", value_name = "APP")]
+    pub source: Option<String>,
+    /// Only events of this type.
+    #[arg(long = "event-type", value_name = "TYPE")]
+    pub event_type: Option<String>,
+    /// Most frames [default: 100, capped by BOWER_TAP_MAX_EVENTS].
+    #[arg(long = "limit", value_name = "N")]
+    pub limit: Option<String>,
+    /// Session length [default: 60, capped by BOWER_TAP_MAX_DURATION_SECONDS].
+    #[arg(long = "duration", value_name = "SECONDS")]
+    pub duration: Option<String>,
+    /// Keep 1 in N matching outcomes [default: 1].
+    #[arg(long = "sample", value_name = "N")]
+    pub sample: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct TopArgs {
+    /// Collector base URL [default: http://127.0.0.1:4319] (alias --collector-url).
+    #[arg(long = "collector", value_name = "URL")]
+    pub collector: Option<String>,
+    /// Seconds between samples, 1 to 60 [default: 2].
+    #[arg(long = "interval", value_name = "SECONDS")]
+    pub interval: Option<String>,
+    /// Print one view (two samples an interval apart) and exit.
+    #[arg(long = "once")]
+    pub once: bool,
+    /// Stop after N views.
+    #[arg(long = "iterations", value_name = "N")]
+    pub iterations: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]

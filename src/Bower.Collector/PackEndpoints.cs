@@ -16,7 +16,7 @@ public static partial class CollectorApplication
             async (string packId, int parserIndex, HttpContext context,
                 PolicyBundle bundle, SecurityEventProcessor processor, ProducerAuthorization authorization,
                 CollectorIdentity identity, EventIdentityConflicts conflicts, IngestAuthentication authentication,
-                PipelineTelemetry telemetry, TimeProvider clock, CancellationToken cancellationToken) =>
+                PipelineTelemetry telemetry, EventTap tap, TimeProvider clock, CancellationToken cancellationToken) =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 LoadedPack? pack = bundle.LoadedPacks.SingleOrDefault(pack => pack.Manifest.Id == packId);
@@ -71,6 +71,8 @@ public static partial class CollectorApplication
                     ProcessingResult quarantined = ProcessingResult.Failed(
                         DecisionAction.Quarantine, exception.Code, ProcessingStage.Transform);
                     telemetry.Record(quarantined, length);
+                    // Metadata only: stage, action and code. The raw record is never tapped.
+                    tap.Publish(quarantined);
                     return Results.Json(
                         new IngestResponse(null, "quarantine", false, false, quarantined.Reasons, null),
                         CollectorJsonContext.Default.IngestResponse,

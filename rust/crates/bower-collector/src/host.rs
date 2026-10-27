@@ -182,6 +182,8 @@ pub struct Collector {
     job_triggers: JobTriggers,
     /// Syslog listeners when `BOWER_SYSLOG_CONFIG` is set; bound by `initialize`.
     syslog: Option<bower_source_syslog::SyslogSource>,
+    /// Live post-redaction tap; open streams end when the host stops.
+    pub tap: Arc<crate::tap::EventTap>,
 }
 
 /// Wires settings, bundle, queue, processor, authentication and rate limiting.
@@ -204,6 +206,11 @@ pub fn build(
     );
     let store: Arc<dyn DurableEventStore> = sqlite.clone();
     let telemetry = Arc::new(PipelineTelemetry::new(Arc::clone(&clock)));
+    // Live post-redaction tap (bower tap). In memory only; never persisted.
+    let tap = Arc::new(crate::tap::EventTap::new(
+        settings.tap_options(),
+        Arc::clone(&clock),
+    ));
     let identity = CollectorIdentity::new(
         settings.collector_id.clone(),
         settings.version.clone(),
@@ -224,7 +231,8 @@ pub fn build(
         Arc::clone(&store),
         Arc::clone(&clock),
     )
-    .with_telemetry(Arc::clone(&telemetry));
+    .with_telemetry(Arc::clone(&telemetry))
+    .with_tap(Arc::clone(&tap) as Arc<dyn bower_core::TapSink>);
     let packs = Arc::new(bundle.packs);
     // Loaded at build so a malformed expectations file stops start-up.
     let expectations = settings
@@ -286,6 +294,7 @@ pub fn build(
                     managed_privacy: Arc::clone(&managed_privacy),
                     clock: Arc::clone(&clock),
                     telemetry: Arc::clone(&telemetry),
+                    tap: Some(Arc::clone(&tap)),
                 }),
                 Some(Arc::clone(&clock)),
             )
@@ -314,6 +323,11 @@ pub fn build(
             .as_ref()
             .map(bower_source_syslog::SyslogSource::metrics),
         managed_privacy: Arc::clone(&managed_privacy),
+        tap: Arc::clone(&tap),
+        tap_access: Arc::new(crate::tap_http::TapAccess {
+            loopback_listener: settings.is_loopback_listener(),
+            producers: settings.tap_producers.clone(),
+        }),
     };
     let delivery = options.delivery.unwrap_or(QueueDeliveryOptions {
         maximum_delivery_attempts: settings.maximum_delivery_attempts,
@@ -386,6 +400,7 @@ pub fn build(
         enrolment,
         job_triggers: JobTriggers::default(),
         syslog,
+        tap,
         settings,
     })
 }
@@ -624,6 +639,12 @@ impl Collector {
             trigger.cancel();
         });
         let shutdown = merged;
+        // ApplicationStopping for tap streams, so graceful drain never waits on a tap.
+        let (tap, tap_shutdown) = (Arc::clone(&self.tap), shutdown.clone());
+        tokio::spawn(async move {
+            tap_shutdown.cancelled().await;
+            tap.stop();
+        });
         let mut tasks: Vec<JoinHandle<()>> = Vec::new();
         if let Some(scheduler) = self.scheduler.take() {
             tasks.extend(scheduler.spawn(&shutdown));
