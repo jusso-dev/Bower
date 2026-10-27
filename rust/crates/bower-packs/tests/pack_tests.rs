@@ -833,6 +833,7 @@ fn pack_diff_reports_added_removed_and_action_changes() {
         privacy_profile_yaml: None,
         detections: Vec::new(),
         parsers: Vec::new(),
+        parser_paths: Vec::new(),
         sample_lines: Vec::new(),
         dcr_template_json: None,
     };

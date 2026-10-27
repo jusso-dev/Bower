@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bower.security/schemas/packs/pack-sample-v2.json",
+  "title": "Bower Pack Sample Line",
+  "description": "One line of a pack samples/*.jsonl file, version 2. Version 2 adds expectFields and parser names; every version 1 line (event or raw samples with decision, mustNotContain and expectedDetections) is a valid version 2 line. Editor support only: PackTester is authoritative and also rejects unknown or duplicated members, duplicate expectFields paths and expectations that name a pre-redaction value.",
+  "type": "object",
+  "additionalProperties": false,
+  "oneOf": [
+    {"required": ["event"], "not": {"required": ["raw"]}},
+    {"required": ["raw", "parser"], "not": {"required": ["event"]}}
+  ],
+  "$defs": {
+    "path": {
+      "description": "Dotted path into the redacted event: object member names, or zero-based array indexes. Segments are 1-128 of A-Z a-z 0-9 _ $ @ -.",
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9_$@-]{1,128}(\\.[A-Za-z0-9_$@-]{1,128}){0,15}$"
+    }
+  },
+  "properties": {
+    "name": {
+      "description": "Shown in test output and reports. Defaults to sample-N.",
+      "type": "string"
+    },
+    "expect": {
+      "description": "Expected decision. accept also passes for redact-and-accept; redact-and-accept requires redaction.",
+      "enum": ["accept", "reject", "sample", "aggregate", "redact-and-accept", "redactandaccept", "quarantine", "dead-letter", "deadletter"],
+      "default": "accept"
+    },
+    "event": {
+      "description": "A semantic security event envelope. {{now}} is replaced with the current UTC time.",
+      "type": "object"
+    },
+    "raw": {
+      "description": "A raw record for a pack parser (parse, transform, map, redact, select). {{now}} is replaced with the current UTC time, which is also the transform evaluation time.",
+      "type": "object"
+    },
+    "parser": {
+      "description": "Parser for a raw sample: zero-based index in manifest (ordinal path) order, or a parser name (file name without extension, or its pack path).",
+      "oneOf": [
+        {"type": "integer", "minimum": 0, "maximum": 63},
+        {"type": "string", "minLength": 1}
+      ]
+    },
+    "mustNotContain": {
+      "description": "Strings that must not appear anywhere in the redacted event.",
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "expectedDetections": {
+      "description": "Exact set of local detection rule ids expected on the redacted event.",
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "expectFields": {
+      "description": "Post-redaction field assertions: path to \"present\", \"absent\" (missing or null) or an exact string, finite number or boolean. A string that equals a pre-redaction value missing from the redacted event, or contains a mustNotContain entry, fails without being printed.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 64,
+      "propertyNames": {"$ref": "#/$defs/path"},
+      "additionalProperties": {"type": ["string", "number", "boolean"]}
+    }
+  }
+}

@@ -66,6 +66,14 @@ evidence.
   number, column and code, never statement text or values. Transform output reaches
   persistence only through the allowlisted semantic mapping and the privacy engine.
   Management preview validates but never runs transforms.
+- Pack test output leaking raw values: `bower pack build` error text, `bower pack test`
+  output and its JSON/JUnit CI reports (new output: report files and CI artifacts)
+  carry sample names, decisions and `expectFields` diffs only. Field assertions are
+  checked against the redacted event; an expected string that equals a pre-redaction
+  value missing from the redacted event, or that contains a `mustNotContain` entry,
+  fails the sample without being printed, so a pack cannot be signed with, or report,
+  a raw sensitive expectation. Unknown sample members fail, so a mistyped assertion
+  cannot pass silently. CI signs with an ephemeral key and never publishes the packs.
 - Credential theft and overprivilege: one explicit Azure credential source
   (`BOWER_AZURE_CREDENTIAL`: managed identity by default, workload identity,
   environment or Azure CLI) instead of `DefaultAzureCredential` probing.

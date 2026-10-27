@@ -555,6 +555,43 @@ fn keys_and_packs_interoperate_with_csharp() {
                 &["pack", sub, pack, "--trusted-key", &trusted],
             );
         }
+        // Parser-scoped runs and CI reports are byte-identical.
+        for format in ["json", "junit"] {
+            let report = |name: &str| {
+                dir.path()
+                    .join(format!("{signer}-{name}.{format}"))
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            let args = |file: &str| {
+                vec![
+                    "pack".to_owned(),
+                    "test".to_owned(),
+                    pack.clone(),
+                    "--trusted-key".to_owned(),
+                    trusted.clone(),
+                    "--parser".to_owned(),
+                    "sshd-json".to_owned(),
+                    "--report".to_owned(),
+                    file.to_owned(),
+                    "--report-format".to_owned(),
+                    format.to_owned(),
+                ]
+            };
+            let (cs_file, rs_file) = (report("cs"), report("rs"));
+            let cs_args = args(&cs_file);
+            let rs_args = args(&rs_file);
+            let cs_run = run(&cs, &cs_args.iter().map(String::as_str).collect::<Vec<_>>());
+            let rs_run = run(
+                &bower_binary(),
+                &rs_args.iter().map(String::as_str).collect::<Vec<_>>(),
+            );
+            assert_eq!((rs_run.code, &rs_run.stdout), (cs_run.code, &cs_run.stdout));
+            assert_eq!(
+                std::fs::read_to_string(&rs_file).unwrap(),
+                std::fs::read_to_string(&cs_file).unwrap()
+            );
+        }
         // Untrusted key must fail identically.
         let other = key(if signer == "rust" { "csharp" } else { "rust" }, "pub");
         assert_same(
@@ -563,6 +600,67 @@ fn keys_and_packs_interoperate_with_csharp() {
             &["pack", "verify", pack, "--trusted-key", &other],
         );
     }
+    // A failing field assertion stops both builds with identical path-level diffs.
+    let failing = dir.path().join("failing");
+    for relative in [
+        "pack.yaml",
+        "privacy.yaml",
+        "parsers/sshd-journald.json",
+        "policies/journald-ssh-authentication.yaml",
+        "samples/journald.jsonl",
+    ] {
+        let target = failing.join(relative);
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        std::fs::copy(
+            repo_root().join("packs/linux-journald-ssh").join(relative),
+            &target,
+        )
+        .unwrap();
+    }
+    let samples = failing.join("samples/journald.jsonl");
+    let text = [
+        (
+            "\"eventOutcomeReason\":\"InvalidCredentials\"",
+            "\"eventOutcomeReason\":\"Nope\"",
+        ),
+        (
+            "\"source.ipAddress\":\"203.0.113.5\"",
+            "\"source.ipAddress\":5",
+        ),
+        (
+            "\"actor.username\":\"present\"",
+            "\"actor.username\":\"deploy-admin\"",
+        ),
+    ]
+    .iter()
+    .fold(
+        std::fs::read_to_string(&samples).unwrap(),
+        |text, (from, to)| text.replacen(from, to, 1),
+    );
+    std::fs::write(&samples, text).unwrap();
+    let failed = assert_same(
+        &cs,
+        &repo_root(),
+        &[
+            "pack",
+            "build",
+            failing.to_str().unwrap(),
+            "--key",
+            &key("rust", "key"),
+            "--out",
+            &format!("{out_dir}/failing"),
+        ],
+    );
+    assert_eq!(failed.code, 1);
+    assert!(
+        failed
+            .stderr
+            .contains("Field 'eventOutcomeReason': expected \"Nope\""),
+        "{}",
+        failed.stderr
+    );
+    assert!(!failed.stderr.contains("deploy-admin"));
+
     let both_keys = [key("rust", "pub"), key("csharp", "pub")];
     assert_same(
         &cs,

@@ -517,6 +517,15 @@ pub struct PackTestArgs {
     /// HMAC key file for the pack's privacy profile.
     #[arg(long = "hmac-key-file", value_name = "FILE")]
     pub hmac_key_file: Option<String>,
+    /// Run only this parser's raw samples (name or pack path).
+    #[arg(long = "parser", value_name = "NAME")]
+    pub parser: Option<String>,
+    /// Write a machine-readable report for CI.
+    #[arg(long = "report", value_name = "FILE")]
+    pub report: Option<String>,
+    /// Report format: json (default) or junit.
+    #[arg(long = "report-format", value_name = "FORMAT")]
+    pub report_format: Option<String>,
 }
 
 #[derive(Debug, Args)]

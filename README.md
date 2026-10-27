@@ -455,6 +455,7 @@ Design, observability and how to add a job:
 | Check a deployment | `bower doctor --collector-url … --dcr-resource-id … --workspace-resource-id …` | [Doctor and DCRs](docs/operations/doctor-and-dcr.md) |
 | Generate / diff the DCR | `bower dcr generate --out bower-dcr.json` · `bower dcr diff --rule rule.json` | [Doctor and DCRs](docs/operations/doctor-and-dcr.md) |
 | Build and sign a pack | `bower pack build packs/linux-ssh-gateway --key bower-signing.key.pem` | [Packs](docs/deployment/packs.md) |
+| Test one parser's samples with a CI report | `bower pack test pack.bowerpack --trusted-key pub.pem --parser sshd-json --report out.xml --report-format junit` | [Field assertions](docs/deployment/packs.md#field-assertions-expectfields); post-redaction values only |
 | Issue / revoke a producer token | `bower token generate --id sidecar-01` | [Fleet and queue integrity](docs/operations/fleet-and-queue-integrity.md) |
 | Replay dead letters | `bower queue dead-letters` · `bower queue replay --code preflight-` | [Fleet and queue integrity](docs/operations/fleet-and-queue-integrity.md) |
 | Verify queue integrity | `bower queue verify --database queue.db` | [Fleet and queue integrity](docs/operations/fleet-and-queue-integrity.md) |

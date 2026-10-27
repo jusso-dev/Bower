@@ -39,6 +39,64 @@ samples fail cannot be signed. Sample lines:
 `redact-and-accept` to require that redaction happened; it fails for an event that
 was accepted unchanged. Every other expectation must match exactly.
 
+Sample lines follow [`schemas/packs/pack-sample.schema.json`](../../schemas/packs/pack-sample.schema.json)
+(version 2: adds `expectFields` and parser names; every version 1 line is still valid).
+Members other than `name`, `expect`, `event`, `raw`, `parser`, `mustNotContain`,
+`expectedDetections` and `expectFields`, and repeated members, fail the build, so a
+mistyped assertion cannot pass silently.
+
+### Field assertions (`expectFields`)
+
+`expectFields` asserts the shape of the event **after redaction**, the value that would
+leave the host. Keys are dotted paths into the redacted event (`source.ipAddress`,
+`attributes.bowerDetections.0.ruleId`); values are `"present"`, `"absent"` (missing or
+null) or an exact string, number or boolean:
+
+```json
+{"name":"failed password","parser":"sshd-journald","raw":{ … },"expect":"accept",
+ "expectFields":{"eventOutcomeReason":"InvalidCredentials","source.ipAddress":"203.0.113.5","actor.username":"present","labels":"absent"}}
+```
+
+- Path segments are 1–128 of `A-Z a-z 0-9 _ $ @ -`; a numeric segment indexes an array.
+  At most 64 paths per sample, 16 segments and 256 characters per path.
+- Types are strict: `5` does not match `"5"`. Numbers compare by value.
+- An expectation can only hold a post-redaction value. A string that equals a
+  pre-redaction value missing from the redacted event (a pseudonymised username, a raw
+  field the mapping never forwards) or that contains a `mustNotContain` entry fails the
+  sample, and the value is not printed. Use `"present"` for pseudonymised fields: test
+  HMAC keys are random.
+- Assertions need a redacted event: on a sample that is rejected before redaction (no
+  mapping match) or quarantined they fail with `Field assertions need a redacted event`.
+- There is no snapshot mode: expectations are only ever written by the pack author.
+
+Failures name the path and show only redacted values:
+
+```text
+FAIL  failed password (expected accept, got redactandaccept)
+      Field 'eventOutcomeReason': expected "PublicKeyRejected", got "InvalidCredentials".
+      Field 'source.ipAddress': type mismatch, expected number 5, got string "203.0.113.5".
+      Field 'request.correlationId': expected present, but it is absent.
+      Field 'actor.username': the expected value does not survive redaction; expect only post-redaction values.
+```
+
+`bower pack build` refuses to sign on any failure and prints the same lines.
+
+### Parser tests and CI reports
+
+```bash
+bower pack test ./artifacts/packs/linux-journald-ssh-1.0.1.bowerpack --trusted-key ./keys/bower-signing.pub.pem \
+  --parser sshd-journald --report ./pack-test.xml --report-format junit
+```
+
+`--parser` runs only the raw samples of one parser, named by file name without
+extension (`sshd-journald`) or pack path (`parsers/sshd-journald.json`); it exits 1 if
+that parser has no samples. A raw sample's `parser` may also be that name instead of a
+zero-based index. Indexes count parsers in manifest (ordinal path) order, at build and at
+load. `--report FILE` writes a JSON report (`--report-format json`, the default) or JUnit
+XML (`junit`) with each sample's name, decisions and problems; it never contains raw
+values. CI builds every pack under `packs/` with an ephemeral key, runs `pack test` with a
+JUnit report in both the C# and Rust CLIs, and uploads the reports.
+
 `diff` is the policy population diff: event types added or removed, required fields,
 actions and score thresholds, and policies changed without a version bump (exit 1).
 

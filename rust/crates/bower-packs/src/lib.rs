@@ -11,6 +11,7 @@
 //!   side verifies the other's packs.
 
 pub mod archive;
+pub mod assertions;
 pub mod diff;
 pub mod model;
 pub mod runtime;
@@ -23,4 +24,6 @@ pub use archive::{
 };
 pub use diff::{PolicyChange, compare};
 pub use model::{PackFile, PackManifest, PackPolicyEntry, PackSource, PackSourceMetadata, roles};
-pub use tester::{PackSampleResult, run as run_samples};
+pub use tester::{
+    PackSampleResult, parser_index, run as run_samples, run_parser as run_parser_samples,
+};

@@ -40,6 +40,7 @@ Commands:
   bower keys generate --out-dir DIR [--name NAME]
   bower pack build DIR --key PRIVATE.pem [--out DIR]
   bower pack verify|inspect|test FILE --trusted-key PUBLIC.pem
+        [--hmac-key-file FILE] [--parser NAME] [--report FILE [--report-format json|junit]] (test)
   bower pack diff OLD.bowerpack NEW.bowerpack --trusted-key PUBLIC.pem
 
   bower evidence run --collector-url URL [--workspace-id ID --workspace-resource-id ID]

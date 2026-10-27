@@ -95,6 +95,23 @@ rows always show the source fields under the floor above, so a transform cannot 
 or reveal a value preview would otherwise mask. Transforms run only at collector intake,
 before redaction, and only in signed packs.
 
+### Test a parser before signing
+
+Once a configuration has a `runtime` mapping and ships in a pack, pin its behaviour
+with raw samples. `expectFields` asserts paths of the mapped event after redaction,
+so parser and transform regressions fail `bower pack build` before the pack is signed:
+
+```json
+{"name":"failed password","parser":"sshd-journald","raw":{"MESSAGE":"…","SYSLOG_IDENTIFIER":"sshd"},"expect":"accept",
+ "expectFields":{"eventOutcomeReason":"InvalidCredentials","source.ipAddress":"203.0.113.5","actor.username":"present"}}
+```
+
+Expectations may only hold values that survive redaction; a raw value (for example an
+account name that is pseudonymised) fails the sample and is never printed. Run one
+parser's samples with `bower pack test PACK --trusted-key PUB --parser NAME`, optionally
+with `--report FILE --report-format json|junit` for CI. See
+[field assertions](../deployment/packs.md#field-assertions-expectfields).
+
 ## Point Bower at a server file
 
 Server-path input is disabled unless one or more roots are configured:

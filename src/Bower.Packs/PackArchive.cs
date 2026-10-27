@@ -24,7 +24,11 @@ public sealed record LoadedPack(
     IReadOnlyList<DetectionRule> Detections,
     IReadOnlyList<CustomLogParserConfiguration> Parsers,
     IReadOnlyList<string> SampleLines,
-    string? DcrTemplateJson);
+    string? DcrTemplateJson)
+{
+    /// <summary>Pack path of each parser, parallel to <see cref="Parsers"/> (manifest order).</summary>
+    public IReadOnlyList<string> ParserPaths { get; init; } = [];
+}
 
 /// <summary>Builds, signs, verifies and loads <c>.bowerpack</c> archives.</summary>
 public static partial class PackArchive
@@ -82,10 +86,17 @@ public static partial class PackArchive
                     new JsonSerializerOptions { WriteIndented = true }))));
         }
 
-        // Parse everything and run the samples so a broken pack cannot be signed.
+        // Parse everything and run the samples so a broken pack cannot be signed. Parsers
+        // take manifest (ordinal path) order, as at load, so a sample's parser index means
+        // the same parser at build and at test time.
         ParsedContent parsed = ParseContent(files.Select(item => (item.Path, item.Role, item.Content)).ToArray());
+        int[] parserOrder = [.. Enumerable.Range(0, parsed.Parsers.Count).OrderBy(index => parsed.ParserPaths[index], StringComparer.Ordinal)];
         LoadedPack candidate = new(
-            null!, "unsigned", parsed.Policies, parsed.PrivacyProfile, parsed.Detections, parsed.Parsers, parsed.Samples, parsed.Dcr);
+            null!, "unsigned", parsed.Policies, parsed.PrivacyProfile, parsed.Detections,
+            [.. parserOrder.Select(index => parsed.Parsers[index])], parsed.Samples, parsed.Dcr)
+        {
+            ParserPaths = [.. parserOrder.Select(index => parsed.ParserPaths[index])]
+        };
         PackSampleResult[] failures = PackTester
             .Run(candidate, TestPrivacyPolicy(parsed.PrivacyProfile), clock)
             .Where(result => !result.Passed)
@@ -232,7 +243,10 @@ public static partial class PackArchive
             parsed.Detections,
             parsed.Parsers,
             parsed.Samples,
-            parsed.Dcr);
+            parsed.Dcr)
+        {
+            ParserPaths = parsed.ParserPaths
+        };
     }
 
     internal static string PackHash(IReadOnlyList<PackFile> files) =>
@@ -246,13 +260,15 @@ public static partial class PackArchive
         IReadOnlyList<DetectionRule> Detections,
         IReadOnlyList<CustomLogParserConfiguration> Parsers,
         IReadOnlyList<string> Samples,
-        string? Dcr);
+        string? Dcr,
+        IReadOnlyList<string> ParserPaths);
 
     private static ParsedContent ParseContent(IReadOnlyList<(string Path, string Role, byte[] Content)> files)
     {
         List<LoadedPolicy> policies = [];
         List<DetectionRule> detections = [];
         List<CustomLogParserConfiguration> parsers = [];
+        List<string> parserPaths = [];
         List<string> samples = [];
         string? privacy = null;
         string? dcr = null;
@@ -283,6 +299,7 @@ public static partial class PackArchive
                     }
 
                     parsers.Add(configuration);
+                    parserPaths.Add(path);
                     break;
                 case PackRoles.Sample:
                     samples.AddRange(text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
@@ -307,7 +324,7 @@ public static partial class PackArchive
             throw new InvalidDataException("Pack has duplicate detection identities or exceeds 64 parsers/detections.");
         }
 
-        return new ParsedContent(policies, privacy, detections, parsers, samples, dcr);
+        return new ParsedContent(policies, privacy, detections, parsers, samples, dcr, parserPaths);
     }
 
     /// <summary>Privacy policy for sample tests: the pack's profile with a throwaway HMAC key.</summary>

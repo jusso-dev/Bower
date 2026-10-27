@@ -10,7 +10,11 @@
 //! Expectations: `accept` passes for accept and for redact-and-accept, because the
 //! event is delivered either way (prove the redaction with `mustNotContain`);
 //! `redact-and-accept` requires that redaction happened; every other expectation
-//! must match exactly.
+//! must match exactly. `expectFields` asserts paths of the redacted event
+//! ([`crate::assertions`]). `parser` is a zero-based index or a parser name (file name
+//! without extension, or its pack path). Unknown or duplicated sample members fail, so
+//! a mistyped assertion cannot silently pass. Line format:
+//! `schemas/packs/pack-sample.schema.json` (v2).
 
 use bower_contracts::time::{Clock, SystemClock, format_round_trip};
 use std::sync::Arc;
@@ -21,6 +25,7 @@ use bower_contracts::{
 use bower_policy::DeterministicPolicyEvaluator;
 use bower_redaction::{JsonEventRedactor, PrivacyPolicy};
 
+use crate::assertions;
 use crate::runtime::{MappingError, PackDetectionRedactor, map_raw};
 use serde_json::Value;
 
@@ -55,11 +60,76 @@ fn optional_string<'a>(
     }
 }
 
+const MEMBERS: [&str; 8] = [
+    "name",
+    "expect",
+    "event",
+    "raw",
+    "parser",
+    "mustNotContain",
+    "expectedDetections",
+    "expectFields",
+];
+
+/// Index of a parser by name (file name without extension) or pack path; `None` when
+/// no parser or more than one parser has that name.
+pub fn parser_index(pack: &LoadedPack, name: &str) -> Option<usize> {
+    let mut matches = pack
+        .parser_paths
+        .iter()
+        .enumerate()
+        .filter(|(_, path)| {
+            path.as_str() == name
+                || std::path::Path::new(path.as_str())
+                    .file_stem()
+                    .is_some_and(|stem| stem == name)
+        })
+        .map(|(index, _)| index);
+    match (matches.next(), matches.next()) {
+        (Some(index), None) => Some(index),
+        _ => None,
+    }
+}
+
+/// The parser a raw sample names: a string is a parser name, otherwise an index.
+fn sample_parser(
+    pack: &LoadedPack,
+    parser: Option<&Value>,
+    name: &str,
+) -> Result<usize, PackError> {
+    match parser {
+        Some(Value::String(parser)) => parser_index(pack, parser)
+            .ok_or_else(|| invalid(format!("Sample '{name}' parser is invalid."))),
+        other => other
+            .and_then(Value::as_u64)
+            .and_then(|index| usize::try_from(index).ok())
+            .filter(|index| *index < pack.parsers.len())
+            .ok_or_else(|| invalid(format!("Sample '{name}' parser is invalid."))),
+    }
+}
+
 pub fn run(
     pack: &LoadedPack,
     privacy: PrivacyPolicy,
     clock: Option<&dyn Clock>,
 ) -> Result<Vec<PackSampleResult>, PackError> {
+    run_parser(pack, privacy, clock, None)
+}
+
+/// [`run`] limited to one parser's raw samples (`parser` is a name or pack path).
+pub fn run_parser(
+    pack: &LoadedPack,
+    privacy: PrivacyPolicy,
+    clock: Option<&dyn Clock>,
+    parser: Option<&str>,
+) -> Result<Vec<PackSampleResult>, PackError> {
+    let only = match parser {
+        None => None,
+        Some(parser) => Some(
+            parser_index(pack, parser)
+                .ok_or_else(|| invalid(format!("Pack has no parser '{parser}'.")))?,
+        ),
+    };
     let now = clock.unwrap_or(&SystemClock).utc_now();
     let now_text = format_round_trip(&now);
     let evaluator: Arc<dyn TelemetryPolicyEvaluator> = Arc::new(DeterministicPolicyEvaluator::new(
@@ -79,9 +149,32 @@ pub fn run(
             Ok(Value::Object(sample)) => sample,
             _ => return Err(invalid(format!("Sample {index} is not a JSON object."))),
         };
+        // Keeps duplicate members, which `serde_json` would collapse.
+        let document = JsonElement::parse(line)
+            .map_err(|_| invalid(format!("Sample {index} is not a JSON object.")))?;
+        if let JsonElement::Object(members) = &document {
+            let mut seen = std::collections::HashSet::new();
+            if let Some((member, _)) = members
+                .iter()
+                .find(|(member, _)| !MEMBERS.contains(&member.as_str()) || !seen.insert(member))
+            {
+                return Err(invalid(format!(
+                    "Sample {index} member '{member}' is unknown or duplicated."
+                )));
+            }
+        }
         let fallback = format!("sample-{index}");
         let name =
             optional_string(&sample, "name", &fallback)?.map_or(fallback.clone(), str::to_owned);
+        let parser_position = if sample.contains_key("raw") {
+            Some(sample_parser(pack, sample.get("parser"), &name)?)
+        } else {
+            None
+        };
+        if only.is_some() && parser_position != only {
+            continue;
+        }
+        let expectations = assertions::parse(&document, &name)?;
         let expected = optional_string(&sample, "expect", &name)?
             .unwrap_or("accept")
             .replace('-', "");
@@ -101,20 +194,16 @@ pub fn run(
         };
         let mut mapping_decision = None;
         let mut transform_failure = None;
-        let event_json = if sample.contains_key("raw") {
-            let parser = sample
-                .get("parser")
-                .and_then(Value::as_u64)
-                .and_then(|index| usize::try_from(index).ok())
-                .and_then(|index| pack.parsers.get(index))
-                .ok_or_else(|| invalid(format!("Sample '{name}' parser is invalid.")))?;
+        let mut raw_json = None;
+        let event_json = if let Some(parser) = parser_position {
+            let parser = &pack.parsers[parser];
             // Preserve duplicate raw keys so the same runtime rejects them here and at HTTP ingest.
-            let source = JsonElement::parse(line)
-                .map_err(|_| invalid(format!("Sample '{name}' is invalid.")))?;
-            let raw = bower_contracts::json::to_string(source.get("raw").unwrap())
+            let raw = bower_contracts::json::to_string(document.get("raw").unwrap())
                 .map_err(|_| invalid(format!("Sample '{name}' raw cannot be serialized.")))?
                 .replace("{{now}}", &now_text);
-            match map_raw(parser, &raw, &now) {
+            let mapped = map_raw(parser, &raw, &now);
+            raw_json = Some(raw);
+            match mapped {
                 Ok(envelope) => bower_contracts::json::to_string(&envelope)
                     .map_err(|_| invalid(format!("Sample '{name}' event cannot be serialized.")))?,
                 Err(MappingError::NoMatch) => {
@@ -172,6 +261,7 @@ pub fn run(
                     action => action.pascal_name().to_lowercase(),
                 };
 
+                let mut forbidden_values = Vec::new();
                 if let Some(Value::Array(forbidden)) = sample.get("mustNotContain") {
                     for item in forbidden {
                         let Value::String(forbidden) = item else {
@@ -185,7 +275,20 @@ pub fn run(
                                 forbidden.encode_utf16().count()
                             ));
                         }
+                        forbidden_values.push(forbidden.as_str());
                     }
+                }
+                if let Some(expectations) = &expectations {
+                    // Pre-redaction inputs only identify withheld values; they are never echoed.
+                    let mut inputs = Vec::new();
+                    inputs.extend(raw_json.as_deref());
+                    inputs.push(event_json.as_str());
+                    problems.extend(assertions::check(
+                        expectations,
+                        redacted,
+                        &inputs,
+                        &forbidden_values,
+                    )?);
                 }
                 actual
             }
@@ -193,6 +296,13 @@ pub fn run(
         };
 
         let actual = mapping_decision.map(str::to_owned).unwrap_or(actual);
+        let redacted_event =
+            mapping_decision.is_none() && redaction.succeeded && redaction.redacted_json.is_some();
+        if expectations.is_some() && !redacted_event {
+            problems.push(format!(
+                "Field assertions need a redacted event; got {actual}."
+            ));
+        }
         if expected_detections.is_some_and(|mut expected| {
             expected.sort();
             detected.sort();

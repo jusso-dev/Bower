@@ -2,7 +2,7 @@ apiVersion: bower.security/v1
 kind: Pack
 metadata:
   id: linux-journald-ssh
-  version: 1.0.0
+  version: 1.0.1
   name: Linux SSH failures from journald
   description: >-
     sshd authentication failures from systemd journal JSON export records

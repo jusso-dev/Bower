@@ -21,15 +21,28 @@ public sealed record PackSampleResult(string Name, bool Passed, string ExpectedD
 /// Expectations: "accept" passes for accept and for redact-and-accept, because the event
 /// is delivered either way (prove the redaction with "mustNotContain"); "redact-and-accept"
 /// requires that redaction happened; every other expectation must match exactly.
+/// "expectFields" asserts paths of the redacted event (<see cref="PackFieldAssertions"/>).
+/// "parser" is a zero-based index or a parser name (file name without extension, or its
+/// pack path). Unknown or duplicated sample members fail, so a mistyped assertion cannot
+/// silently pass. Line format: <c>schemas/packs/pack-sample.schema.json</c> (v2).
 /// </summary>
 public static class PackTester
 {
+    private static readonly HashSet<string> Members = new(StringComparer.Ordinal)
+    {
+        "name", "expect", "event", "raw", "parser", "mustNotContain", "expectedDetections", "expectFields"
+    };
+
+    /// <param name="parser">Run only the raw samples of this parser (name or path); null runs every sample.</param>
     public static IReadOnlyList<PackSampleResult> Run(
         LoadedPack pack,
         PrivacyPolicy privacy,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        string? parser = null)
     {
         ArgumentNullException.ThrowIfNull(pack);
+        int? only = parser is null ? null
+            : ParserIndex(pack, parser) ?? throw new InvalidDataException($"Pack has no parser '{parser}'.");
         DateTimeOffset now = (clock ?? TimeProvider.System).GetUtcNow();
         DeterministicPolicyEvaluator evaluator = new(pack.Policies);
         PackDetectionRedactor engine = new(new JsonEventRedactor(privacy), evaluator, pack.Detections);
@@ -38,26 +51,42 @@ public static class PackTester
         foreach (string line in pack.SampleLines)
         {
             index++;
-            JsonObject sample = JsonNode.Parse(line) as JsonObject
-                ?? throw new InvalidDataException($"Sample {index} is not a JSON object.");
+            using JsonDocument document = JsonDocument.Parse(line);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                throw new InvalidDataException($"Sample {index} is not a JSON object.");
+            }
+
+            HashSet<string> seen = new(StringComparer.Ordinal);
+            foreach (JsonProperty member in document.RootElement.EnumerateObject())
+            {
+                if (!Members.Contains(member.Name) || !seen.Add(member.Name))
+                {
+                    throw new InvalidDataException($"Sample {index} member '{member.Name}' is unknown or duplicated.");
+                }
+            }
+
+            JsonObject sample = JsonNode.Parse(line)!.AsObject();
+            int? sampleParser = sample["raw"] is null ? null : SampleParser(pack, sample["parser"]);
+            if (only is not null && sampleParser != only)
+            {
+                continue;
+            }
+
             string name = sample["name"]?.GetValue<string>() ?? $"sample-{index}";
+            IReadOnlyList<PackFieldExpectation>? expectations = PackFieldAssertions.Parse(document.RootElement, name);
             string expected = (sample["expect"]?.GetValue<string>() ?? "accept").Replace("-", string.Empty, StringComparison.Ordinal);
             List<string> problems = [];
             string? eventJson;
+            string? rawJson = null;
             string? transformFailure = null;
             if (sample["raw"] is { } raw)
             {
-                int parser = sample["parser"]?.GetValue<int>() ?? throw new InvalidDataException("Raw samples require a parser index.");
-                if (parser < 0 || parser >= pack.Parsers.Count)
-                {
-                    throw new InvalidDataException("Raw sample parser index is invalid.");
-                }
-
                 SecurityEventEnvelope? mapped = null;
+                rawJson = raw.ToJsonString().Replace("{{now}}", now.ToString("O"), StringComparison.Ordinal);
                 try
                 {
-                    mapped = PackRuntime.Parse(pack.Parsers[parser],
-                        raw.ToJsonString().Replace("{{now}}", now.ToString("O"), StringComparison.Ordinal), now);
+                    mapped = PackRuntime.Parse(pack.Parsers[sampleParser!.Value], rawJson, now);
                 }
                 catch (TransformException exception)
                 {
@@ -105,13 +134,26 @@ public static class PackTester
                     detected = evidence.EnumerateArray().Select(item => item.GetProperty("ruleId").GetString()!).ToArray();
                 }
 
-                foreach (string forbidden in (sample["mustNotContain"] as JsonArray)?.Select(item => item!.GetValue<string>()) ?? [])
+                string[] forbiddenValues = (sample["mustNotContain"] as JsonArray)?.Select(item => item!.GetValue<string>()).ToArray() ?? [];
+                foreach (string forbidden in forbiddenValues)
                 {
                     if (redaction.RedactedJson!.Contains(forbidden, StringComparison.Ordinal))
                     {
                         problems.Add($"Redacted event still contains a forbidden value ({forbidden.Length} characters).");
                     }
                 }
+
+                if (expectations is not null)
+                {
+                    // Pre-redaction inputs only identify withheld values; they are never echoed.
+                    string[] inputs = rawJson is null ? [eventJson] : [rawJson, eventJson];
+                    problems.AddRange(PackFieldAssertions.Check(expectations, redaction.RedactedJson!, inputs, forbiddenValues));
+                }
+            }
+
+            if (expectations is not null && (transformFailure is not null || eventJson is null || !redaction.Succeeded))
+            {
+                problems.Add($"Field assertions need a redacted event; got {actual}.");
             }
 
             if (sample["expectedDetections"] is JsonArray expectedDetections
@@ -137,5 +179,30 @@ public static class PackTester
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// Index of a parser by name (file name without extension) or pack path; null when no
+    /// parser or more than one parser has that name.
+    /// </summary>
+    public static int? ParserIndex(LoadedPack pack, string name)
+    {
+        ArgumentNullException.ThrowIfNull(pack);
+        int[] matches = Enumerable.Range(0, pack.ParserPaths.Count)
+            .Where(index => pack.ParserPaths[index] == name || Path.GetFileNameWithoutExtension(pack.ParserPaths[index]) == name)
+            .ToArray();
+        return matches.Length == 1 ? matches[0] : null;
+    }
+
+    private static int SampleParser(LoadedPack pack, JsonNode? parser)
+    {
+        if (parser is JsonValue value && value.GetValueKind() == JsonValueKind.String)
+        {
+            return ParserIndex(pack, value.GetValue<string>())
+                ?? throw new InvalidDataException("Raw sample parser name is unknown or ambiguous.");
+        }
+
+        int index = parser?.GetValue<int>() ?? throw new InvalidDataException("Raw samples require a parser index.");
+        return index >= 0 && index < pack.Parsers.Count ? index : throw new InvalidDataException("Raw sample parser index is invalid.");
     }
 }

@@ -553,6 +553,79 @@ fn packs_build_verify_inspect_test_and_diff() {
     assert_eq!(run.code, 0, "{}", run.stdout);
     assert!(run.stdout.lines().all(|line| line.starts_with("PASS  ")));
 
+    // One parser's samples, with CI reports.
+    let run = bower_in(
+        root,
+        &[
+            "pack",
+            "test",
+            pack,
+            "--trusted-key",
+            public,
+            "--parser",
+            "sshd-json",
+            "--report",
+            "report.xml",
+            "--report-format",
+            "junit",
+        ],
+    );
+    assert_eq!(run.code, 0, "{}", run.stdout);
+    assert_eq!(run.stdout.lines().count(), 2);
+    let junit = std::fs::read_to_string(root.join("report.xml")).unwrap();
+    assert!(junit.contains(
+        "<testsuite name=\"linux-ssh-gateway@1.1.0:sshd-json\" tests=\"2\" failures=\"0\">"
+    ));
+    let run = bower_in(
+        root,
+        &[
+            "pack",
+            "test",
+            pack,
+            "--trusted-key",
+            public,
+            "--report",
+            "report.json",
+        ],
+    );
+    assert_eq!(run.code, 0, "{}", run.stdout);
+    let json = std::fs::read_to_string(root.join("report.json")).unwrap();
+    assert!(json.starts_with(
+        "{\n  \"pack\": \"linux-ssh-gateway\",\n  \"version\": \"1.1.0\",\n  \"parser\": null,\n  \"total\": 7,\n  \"passed\": 7,\n  \"failed\": 0,"
+    ));
+    let run = bower_in(
+        root,
+        &[
+            "pack",
+            "test",
+            pack,
+            "--trusted-key",
+            public,
+            "--parser",
+            "nope",
+        ],
+    );
+    assert_eq!(
+        (run.code, run.stderr.as_str()),
+        (1, "Pack has no parser 'nope'.\n")
+    );
+    let run = bower_in(
+        root,
+        &[
+            "pack",
+            "test",
+            pack,
+            "--trusted-key",
+            public,
+            "--report-format",
+            "xml",
+        ],
+    );
+    assert_eq!(
+        (run.code, run.stderr.as_str()),
+        (1, "--report-format must be json or junit.\n")
+    );
+
     let run = bower_in(root, &["pack", "diff", pack, pack, "--trusted-key", public]);
     assert_eq!(
         (run.code, run.stdout.as_str()),
