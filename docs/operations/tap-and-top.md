@@ -107,6 +107,10 @@ parameters get 400 `tap-stage-invalid`, `tap-filter-invalid` or
 `tap-parameter-invalid`. Tap settings are operational only, so they do not change the
 configuration hash.
 
+The duration cap and host shutdown also cancel blocked response writes. The final
+`end` frame has a one-second best-effort write timeout; a client that stops reading
+cannot keep its session slot indefinitely and may receive no final frame.
+
 ### Effect on ingest
 
 Publishing to the tap never blocks or slows ingest, the queue or delivery:

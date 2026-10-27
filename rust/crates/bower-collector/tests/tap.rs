@@ -671,6 +671,36 @@ async fn tap_ends_with_shutdown_when_the_host_stops() {
 }
 
 #[tokio::test]
+async fn stalled_response_releases_session_at_deadline_or_shutdown() {
+    let _serial = SERIAL.lock().await;
+    for shutdown in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let collector = start(directory.path(), |settings| {
+            settings.tap_maximum_duration_seconds = if shutdown { 60 } else { 1 };
+        })
+        .await;
+        // Retain the body without polling it, so the four-frame HTTP channel fills.
+        let response = TapStream::open(&collector.router, "/v1/tap", Some(TOKEN)).await;
+        assert_eq!(response.status, StatusCode::OK);
+        for _ in 0..20 {
+            collector.tap.publish(&queued(), None, Some("{}"));
+        }
+        tokio::task::yield_now().await;
+        if shutdown {
+            collector.tap.stop();
+        }
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while collector.tap.is_active() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("a stalled response held the tap session past its deadline");
+        drop(response);
+    }
+}
+
+#[tokio::test]
 async fn status_lists_activity_and_tap_counters() {
     let _serial = SERIAL.lock().await;
     let directory = tempfile::tempdir().unwrap();

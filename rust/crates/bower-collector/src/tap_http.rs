@@ -270,8 +270,8 @@ async fn stream(
     let deadline = tokio::time::Instant::now() + session.request().duration;
     let mut reason = "limit";
     let mut sequence = 0;
-    if sender.send_data(event("start", &start)).await.is_err() {
-        reason = "client-closed";
+    if let Err(ended) = send_until(&mut sender, event("start", &start), deadline, &tap).await {
+        reason = ended;
     }
     while reason == "limit" && session.sent() < limit {
         let next = tokio::select! {
@@ -283,12 +283,15 @@ async fn stream(
             Ok(Some(record)) => record,
             Ok(None) => break,
             Err(_) => {
-                if sender
-                    .send_data(Bytes::from_static(b": keep-alive\n\n"))
-                    .await
-                    .is_err()
+                if let Err(ended) = send_until(
+                    &mut sender,
+                    Bytes::from_static(b": keep-alive\n\n"),
+                    deadline,
+                    &tap,
+                )
+                .await
                 {
-                    reason = "client-closed";
+                    reason = ended;
                 }
                 continue;
             }
@@ -297,8 +300,8 @@ async fn stream(
         let Some(json) = frame_json(&record, sequence) else {
             continue;
         };
-        if sender.send_data(event("frame", &json)).await.is_err() {
-            reason = "client-closed";
+        if let Err(ended) = send_until(&mut sender, event("frame", &json), deadline, &tap).await {
+            reason = ended;
             break;
         }
         session.mark_sent();
@@ -313,7 +316,12 @@ async fn stream(
             frames_rate_limited: session.rate_limited(),
         })
         .unwrap_or_default();
-        if sender.send_data(event("end", &end)).await.is_err() {
+        // Closing the session must stay bounded even when the body channel is full.
+        if !matches!(
+            tokio::time::timeout(Duration::from_secs(1), sender.send_data(event("end", &end)))
+                .await,
+            Ok(Ok(()))
+        ) {
             reason = "client-closed";
         }
     }
@@ -327,4 +335,18 @@ async fn stream(
         session.dropped(),
         session.rate_limited()
     );
+}
+
+async fn send_until(
+    sender: &mut Sender<Bytes>,
+    data: Bytes,
+    deadline: tokio::time::Instant,
+    tap: &crate::tap::EventTap,
+) -> Result<(), &'static str> {
+    tokio::select! {
+        biased;
+        () = tokio::time::sleep_until(deadline) => Err("duration"),
+        () = tap.stopped() => Err("shutdown"),
+        result = sender.send_data(data) => result.map_err(|_| "client-closed"),
+    }
 }

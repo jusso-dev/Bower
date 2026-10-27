@@ -99,6 +99,9 @@ public static partial class CollectorApplication
         context.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
 
         CancellationToken aborted = context.RequestAborted;
+        using CancellationTokenSource deadline = new(effective.Duration, clock);
+        using CancellationTokenSource end = CancellationTokenSource.CreateLinkedTokenSource(
+            deadline.Token, aborted, lifetime.ApplicationStopping);
         string reason = "limit";
         try
         {
@@ -108,11 +111,7 @@ public static partial class CollectorApplication
                     effective.Application, effective.EventType, effective.Limit,
                     durationSeconds, effective.Sample,
                     tap.Options.MaximumEventsPerSecond, tap.Options.MaximumEventBytes),
-                CollectorJsonContext.Default.TapStartFrame), aborted);
-
-            using CancellationTokenSource deadline = new(effective.Duration, clock);
-            using CancellationTokenSource end = CancellationTokenSource.CreateLinkedTokenSource(
-                deadline.Token, aborted, lifetime.ApplicationStopping);
+                CollectorJsonContext.Default.TapStartFrame), end.Token);
             long sequence = 0;
             while (session.Sent < effective.Limit)
             {
@@ -127,13 +126,13 @@ public static partial class CollectorApplication
                 }
                 catch (OperationCanceledException) when (!end.IsCancellationRequested)
                 {
-                    await WriteCommentAsync(response, aborted);
+                    await WriteCommentAsync(response, end.Token);
                     continue;
                 }
 
                 while (session.Sent < effective.Limit && session.Reader.TryRead(out EventTapRecord? record))
                 {
-                    await WriteEventAsync(response, "frame", Frame(record, ++sequence), aborted);
+                    await WriteEventAsync(response, "frame", Frame(record, ++sequence), end.Token);
                     session.MarkSent();
                 }
             }
@@ -153,9 +152,13 @@ public static partial class CollectorApplication
         {
             try
             {
+                // A stalled client must not hold a session slot while its final frame
+                // is flushed. Allow a brief best-effort write after the deadline.
+                using CancellationTokenSource finish = CancellationTokenSource.CreateLinkedTokenSource(aborted);
+                finish.CancelAfter(TimeSpan.FromSeconds(1));
                 await WriteEventAsync(response, "end", JsonSerializer.SerializeToUtf8Bytes(
                     new TapEndFrame(EventTap.SchemaVersion, session.Id, reason, session.Sent, session.Dropped, session.RateLimited),
-                    CollectorJsonContext.Default.TapEndFrame), aborted);
+                    CollectorJsonContext.Default.TapEndFrame), finish.Token);
             }
             catch (Exception exception) when (exception is OperationCanceledException or IOException)
             {
