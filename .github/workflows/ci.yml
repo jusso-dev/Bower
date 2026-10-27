@@ -481,7 +481,7 @@ jobs:
         with:
           name: bower-packages-windows
           path: dist
-      - name: Start the management API (development auth, loopback only)
+      - name: Start the management API (development auth, loopback only) and run the install test
         run: |
           dotnet restore src/Bower.Management.Api/Bower.Management.Api.csproj --locked-mode
           dotnet build src/Bower.Management.Api/Bower.Management.Api.csproj -c Release --no-restore -o "$env:RUNNER_TEMP/management"
@@ -494,7 +494,8 @@ jobs:
             try { Invoke-RestMethod http://127.0.0.1:4320/health | Out-Null; break } catch { Start-Sleep -Seconds 1 }
           }
           Invoke-RestMethod http://127.0.0.1:4320/health | Out-Null
-      - run: ./tests/installers/windows.ps1 -PackagesDirectory dist
+          # Same step: Windows runners stop a step's child processes when the step ends.
+          ./tests/installers/windows.ps1 -PackagesDirectory dist
       - name: Service and installer diagnostics
         if: failure()
         run: |
