@@ -158,7 +158,18 @@ function Get-BowerMsiArgument {
 function Install-BowerCollector {
     [CmdletBinding()]
     [OutputType([int])]
-    param()
+    param(
+        [string] $MsiPath,
+        [string] $ManagementEndpoint,
+        [string] $CollectorId,
+        [string] $Environment,
+        [string] $EnrolmentTokenFile,
+        [string] $PackTrustedKeyFile,
+        [string] $CommandTrustedKeyFile,
+        [int] $WaitSeconds = 120,
+        [switch] $RequireSignature,
+        [string] $LogPath = (Join-Path ([System.IO.Path]::GetTempPath()) 'bower-collector-install.log')
+    )
     $here = $PSScriptRoot
     $seed = Join-Path $here 'seed'
     $data = Join-Path $env:ProgramData 'Bower'
@@ -292,5 +303,5 @@ function Install-BowerCollector {
 
 # Dot-sourcing (tests) loads the functions only.
 if ($MyInvocation.InvocationName -ne '.') {
-    exit (Install-BowerCollector)
+    exit (Install-BowerCollector @PSBoundParameters)
 }
