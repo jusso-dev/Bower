@@ -1,2 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <!-- IOutputAdapter and QueuedEvent for the relay output (no package dependencies). -->
+    <ProjectReference Include="../Bower.Abstractions/Bower.Abstractions.csproj" />
+  </ItemGroup>
 </Project>

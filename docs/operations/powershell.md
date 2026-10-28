@@ -265,7 +265,9 @@ Notes:
   `deploy/entra/plan_ingestion.py`: exactly one of `-IngestPrincipalObjectId` or
   `-CreateIngestIdentity`, Azure region identifiers, exact HTTPS federation issuer and
   subject without wildcards. Use `plan_ingestion.py` when you need the offline
-  parameter and plan files.
+  parameter and plan files. `-PrivateLinkScopeName` (with `-PublicNetworkAccess Disabled`
+  and optionally `-PrivateEndpointSubnetId`) plans a Private Link path for relays; see
+  [Private Link and ExpressRoute](doctor-and-dcr.md#private-link-and-expressroute).
 - `New-BowerEntraApplication -Apply` refuses a Graph connection in a different tenant
   than `-TenantId`, refuses manifests containing credentials, and leaves admin consent,
   group-to-role assignment and `Bower.Collector` assignment as manual steps (see

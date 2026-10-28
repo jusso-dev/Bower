@@ -202,9 +202,81 @@ resource ingestionGrant 'Microsoft.Authorization/roleAssignments@2022-04-01' = i
   }
 }
 
+// Optional Private Link for relays and collectors in a private network (docs/deployment/relay.md).
+// Empty privateLinkScopeName (the default) deploys nothing here. The private DNS zones for the
+// endpoint stay with the network owner (docs/operations/doctor-and-dcr.md#private-link-and-expressroute).
+@description('Optional new Azure Monitor Private Link Scope. When set, the DCE and workspace join it so the Logs Ingestion API is reachable over Private Link. Empty changes nothing.')
+param privateLinkScopeName string = ''
+
+@description('Ingestion access mode of the new scope. PrivateOnly: networks linked to the scope can ingest only into resources in it.')
+@allowed([
+  'PrivateOnly'
+  'Open'
+])
+param privateLinkIngestionAccessMode string = 'PrivateOnly'
+
+@description('Optional subnet resource ID for the scope\'s private endpoint, in the network where the relay runs. Empty creates the scope without an endpoint.')
+param privateEndpointSubnetId string = ''
+
+resource privateLinkScope 'Microsoft.Insights/privateLinkScopes@2021-07-01-preview' = if (!empty(privateLinkScopeName)) {
+  name: empty(privateLinkScopeName) ? 'unused' : privateLinkScopeName
+  location: 'global'
+  properties: {
+    accessModeSettings: {
+      ingestionAccessMode: privateLinkIngestionAccessMode
+      queryAccessMode: 'Open'
+    }
+  }
+}
+
+resource scopedEndpoint 'Microsoft.Insights/privateLinkScopes/scopedResources@2021-07-01-preview' = if (!empty(privateLinkScopeName)) {
+  parent: privateLinkScope
+  name: '${namePrefix}-dce'
+  properties: {
+    linkedResourceId: endpoint.id
+  }
+}
+
+resource scopedWorkspace 'Microsoft.Insights/privateLinkScopes/scopedResources@2021-07-01-preview' = if (!empty(privateLinkScopeName)) {
+  parent: privateLinkScope
+  name: workspaceName
+  properties: {
+    linkedResourceId: workspace.id
+  }
+}
+
+// The endpoint belongs to the network's subscription/resource group, independently
+// of the Sentinel resources. Its region is read from the existing virtual network.
+var privateEndpointSubnetParts = split(privateEndpointSubnetId, '/')
+resource privateEndpointNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' existing = if (!empty(privateEndpointSubnetId)) {
+  name: empty(privateEndpointSubnetId) ? 'unused' : privateEndpointSubnetParts[8]
+  scope: resourceGroup(
+    empty(privateEndpointSubnetId) ? subscription().subscriptionId : privateEndpointSubnetParts[2],
+    empty(privateEndpointSubnetId) ? resourceGroup().name : privateEndpointSubnetParts[4]
+  )
+}
+
+module privateEndpoint './private-endpoint.bicep' = if (!empty(privateLinkScopeName) && !empty(privateEndpointSubnetId)) {
+  name: '${namePrefix}-ampls-pe'
+  scope: resourceGroup(
+    empty(privateEndpointSubnetId) ? subscription().subscriptionId : privateEndpointSubnetParts[2],
+    empty(privateEndpointSubnetId) ? resourceGroup().name : privateEndpointSubnetParts[4]
+  )
+  params: {
+    name: '${namePrefix}-ampls-pe'
+    connectionName: '${namePrefix}-ampls'
+    subnetId: privateEndpointSubnetId
+    location: !empty(privateLinkScopeName) && !empty(privateEndpointSubnetId) ? privateEndpointNetwork!.location : location
+    privateLinkScopeId: privateLinkScope.id
+  }
+  dependsOn: [scopedEndpoint, scopedWorkspace]
+}
+
 output ingestManagedIdentityClientId string = createIngestIdentity ? ingestIdentity!.properties.clientId : ''
 output ingestPrincipalId string = selectedIngestPrincipal
 output dataCollectionEndpoint string = endpoint.properties.logsIngestion.endpoint
 output dataCollectionRuleImmutableId string = rule.properties.immutableId
 output streamName string = 'Custom-BowerSecurity'
 output tableName string = table.name
+output privateLinkScopeId string = empty(privateLinkScopeName) ? '' : privateLinkScope.id
+output privateEndpointId string = !empty(privateLinkScopeName) && !empty(privateEndpointSubnetId) ? privateEndpoint!.outputs.privateEndpointId : ''

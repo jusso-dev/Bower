@@ -3,8 +3,10 @@ using System.Threading.RateLimiting;
 using Azure.Core;
 using Bower.Abstractions;
 using Bower.Collector.Jobs;
+using Bower.Collector.Relay;
 using Bower.Contracts;
 using Bower.Core;
+using Bower.Forwarding;
 using Bower.Jobs;
 using Bower.Output.AmaSpool;
 using Bower.Output.AzureLogsIngestion;
@@ -156,7 +158,17 @@ public static partial class CollectorApplication
         });
 
         builder.Services.AddSingleton<DeliveryActivity>();
-        output ??= CreateOutput(settings, credential);
+        // Downstream of a relay: the client certificate and CA bundle are read here, so a bad
+        // file stops start-up.
+        RelayHttp? relayHttp = string.Equals(settings.OutputType, "relay", StringComparison.Ordinal)
+            ? new RelayHttp(settings)
+            : null;
+        if (relayHttp is not null)
+        {
+            builder.Services.AddSingleton(relayHttp);
+        }
+
+        output ??= CreateOutput(settings, credential, relayHttp);
         if (output is not null)
         {
             builder.Services.AddSingleton(output);
@@ -165,6 +177,25 @@ public static partial class CollectorApplication
                 MaximumDeliveryAttempts = settings.MaximumDeliveryAttempts
             });
             builder.Services.AddHostedService<QueueDeliveryWorker>();
+        }
+
+        if (settings.IsRelay)
+        {
+            // Relay role. The pins and the server certificate are read here, so a bad file
+            // stops start-up; the listener starts with the host, after queue initialisation.
+            RelayDownstreams downstreams = RelayDownstreams.Load(settings.RelayDownstreamsFile!);
+            using (RelayCertificates.Load(
+                settings.RelayCertificateFile!,
+                settings.RelayKeyFile!,
+                "BOWER_RELAY_CERTIFICATE_FILE and BOWER_RELAY_KEY_FILE"))
+            {
+            }
+
+            builder.Services.AddSingleton(downstreams);
+            builder.Services.AddSingleton(new RelayTelemetry(downstreams.CollectorIds));
+            builder.Services.AddSingleton<RelayIntake>();
+            builder.Services.AddSingleton<RelayListener>();
+            builder.Services.AddHostedService(services => services.GetRequiredService<RelayListener>());
         }
 
         builder.Services.AddBowerBackgroundJobs($"bower-collector:{settings.CollectorId}");
@@ -197,6 +228,13 @@ public static partial class CollectorApplication
 
             // Proxy and CA bundle are read here, so a bad proxy password file or CA bundle stops start-up.
             SocketsHttpHandler managementHandler = ManagementHttp.CreateHandler(settings);
+            if (settings.ManagementViaRelay)
+            {
+                // Every management request (enrolment, heartbeat, profile) through the relay's
+                // tunnel; TLS to management stays end to end.
+                relayHttp!.UseTunnel(managementHandler);
+            }
+
             builder.Services.AddHttpClient(ManagementHeartbeatJob.HttpClientName, client =>
             {
                 client.BaseAddress = settings.ManagementEndpoint;
@@ -433,6 +471,7 @@ public static partial class CollectorApplication
                         Delivery = (context.RequestServices.GetService<IOutputAdapter>() as IOutputConcurrencyStatus)
                             ?.GetConcurrencySnapshot(),
                         Syslog = context.RequestServices.GetService<SyslogSource>()?.Snapshot(),
+                        Relay = context.RequestServices.GetService<RelayTelemetry>()?.Snapshot(),
                         Activity = telemetry.BusiestSources(),
                         Tap = context.RequestServices.GetRequiredService<EventTap>().Snapshot(),
                         WindowsEventLog = context.RequestServices.GetService<WindowsEventLogSource>()?.Snapshot()
@@ -445,7 +484,7 @@ public static partial class CollectorApplication
     private static string Status(QueueSnapshot snapshot, IReadOnlyList<SourceSilenceStatus> sources) =>
         snapshot.DeadLettered > 0 || sources.Any(source => source.IsOverdue) ? "degraded" : "healthy";
 
-    private static IOutputAdapter? CreateOutput(CollectorSettings settings, TokenCredential? credential)
+    private static IOutputAdapter? CreateOutput(CollectorSettings settings, TokenCredential? credential, RelayHttp? relay)
     {
         return settings.OutputType switch
         {
@@ -467,6 +506,14 @@ public static partial class CollectorApplication
                     StreamName = settings.StreamName
                 },
                 credential ?? AzureCredentialFactory.Create(settings)),
+            "relay" => new RelayOutput(
+                new HttpClient(relay!.CreateBatchHandler())
+                {
+                    BaseAddress = relay.RelayUrl,
+                    // The relay commits every event (fsync) before it answers.
+                    Timeout = TimeSpan.FromSeconds(60)
+                },
+                settings.CollectorId),
             _ => throw new InvalidOperationException($"Unsupported BOWER_OUTPUT value: {settings.OutputType}")
         };
     }

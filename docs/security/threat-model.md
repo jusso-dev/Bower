@@ -186,6 +186,27 @@ evidence.
   - Revocation and rotation: every request re-reads the credential, so revocation takes
     effect on the next heartbeat. Credentials expire after 30 days; collectors rotate
     when 10 days remain, and the old key is retired on the first use of the new one.
+- Relays (new trust boundary, [relay mode](../deployment/relay.md)): a relay collector
+  accepts already redacted, decided events from downstream collectors over mutual TLS and
+  carries their management traffic in a tunnel.
+  - Downstream identity: the relay listener requires a client certificate whose SHA-256
+    pin is in the relay's downstreams file, inside its validity period and with
+    `clientAuth` usage when restricted. A downstream can only submit batches and envelopes
+    naming the collector id its pin maps to (`403` or `collector-mismatch` otherwise), so a
+    compromised downstream cannot inject events as another collector.
+  - Data on the relay: payloads are stored byte for byte without re-redaction. The relay
+    does not parse raw source data; it deserializes the post-redaction envelope to validate
+    its identity, accepting policy decision and content fingerprint before enqueueing.
+    The relay therefore holds only post-redaction data. Its queue, ledger, retention and
+    capacity limits are those of any collector; batches are bounded (500 events, 8 MiB, 8 concurrent).
+  - Relay identity cannot be forged downstream: the management tunnel only reaches the
+    relay's own configured management endpoint (no target from the client, so no open
+    proxy), and TLS to management runs inside it. The relay sees ciphertext only, so it
+    cannot read or alter heartbeats, enrolment tokens, assertions or commands, and holds no
+    downstream key. Commands stay signed by management and bound to the downstream's id.
+  - Durability across the hop: the relay answers only after its queue commit, and the
+    downstream marks an event delivered only on that answer, so a relay crash or lost
+    response leads to a resend that deduplicates, never a loss or a second queue row.
 - Native installers (new trust boundaries: the package or MSI an administrator runs as
   root or SYSTEM, and the offline bundle that carries a pre-seeded token to the host).
   See [installers](../deployment/installers.md).
@@ -276,6 +297,18 @@ ingest.
 A signed transform can still select the wrong substring of a free-text field into an
 allowlisted target (for example a password typed as a username); the privacy engine
 redacts the mapped envelope, but review transform programs like policy changes.
+
+Relay compromise: an attacker who controls a relay can read, delay, drop or replay the
+post-redaction events it holds (as with any collector's queue), can inject events into
+Sentinel that claim a downstream's collector id (the relay is trusted to deliver, and
+Sentinel rows carry no downstream signature), and can deny downstreams their management
+tunnel. It cannot read raw source data, change what the downstream's ledger recorded, read
+or forge management traffic, or authenticate to management as a downstream. Comparing the
+downstream's ledger payload hashes with the relay's ledger (`bower queue verify` on each)
+detects altered or injected events after the fact. A compromised downstream can submit
+only its own collector id's events. Pins are revoked by removing them and restarting the
+relay; there is no online revocation. Relay client certificate keys are protected by file
+permissions only.
 
 Enrolment tokens are bearer secrets until used: deliver them over a channel you trust
 and prefer short lifetimes and a collector id scope. An assertion captured in transit

@@ -139,6 +139,8 @@ pub struct AppState {
     pub delivery: Arc<DeliveryStatus>,
     /// Syslog listener counters when `BOWER_SYSLOG_CONFIG` is set.
     pub syslog: Option<bower_source_syslog::SyslogMetrics>,
+    /// Relay role: counters per pinned downstream (`RelayTelemetry`).
+    pub relay: Option<Arc<crate::relay::telemetry::RelayTelemetry>>,
     /// Live post-redaction tap (`bower tap`). In memory only; never persisted.
     pub tap: Arc<crate::tap::EventTap>,
     /// Who may open a tap session.
@@ -664,6 +666,9 @@ struct StatusBody<'a> {
     /// Syslog listener counters; omitted when BOWER_SYSLOG_CONFIG is not set. Metadata only.
     #[serde(skip_serializing_if = "Option::is_none")]
     syslog: Option<Vec<bower_source_syslog::ListenerStatus>>,
+    /// Relay counters since start; omitted unless BOWER_RELAY_LISTEN_URL is set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    relay: Option<crate::relay::telemetry::RelayStatusSnapshot>,
     /// Busiest sources by accepted event count (at most 50), for bower top. Metadata only.
     activity: Vec<ActivityBody>,
     /// Tap sessions and frame counters since start. Metadata only.
@@ -908,6 +913,7 @@ async fn status(
                 .syslog
                 .as_ref()
                 .map(bower_source_syslog::SyslogMetrics::snapshot),
+            relay: state.relay.as_ref().map(|relay| relay.snapshot()),
             activity: state
                 .telemetry
                 .busiest_sources(bower_core::telemetry::MAXIMUM_STATUS_SOURCES)

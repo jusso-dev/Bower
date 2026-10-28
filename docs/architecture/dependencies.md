@@ -137,6 +137,13 @@ trusts `BOWER_MANAGEMENT_CA_BUNDLE` and still refuses a host name mismatch or an
 unrelated CA. They add no production dependency and no lock-file packages. The proxy and
 CA bundle themselves use reqwest's `Proxy` and `tls_certs_merge`; no new crate is linked.
 
+### Collector relay mode (issue #110)
+
+| Crate | Used by | Why | Alternatives considered |
+|---|---|---|---|
+| `rustls` 0.23, `tokio-rustls` 0.26, `rustls-platform-verifier` 0.7, `x509-cert` 0.3 (now production dependencies of `bower-collector`) | `bower-collector` relay listener and relay client | The relay listener is HTTP/1.1 over TLS with a required client certificate, checked by a custom `ClientCertVerifier` against SHA-256 pins (handshake signatures still verified); `x509-cert` reads the presented certificate's validity and extended key usage, as Kestrel's validation callback does. The relay client offers its PEM certificate and verifies the relay with the platform verifier plus `BOWER_RELAY_CA_BUNDLE`; the same rustls config serves reqwest (`tls_backend_preconfigured`) and the management tunnel. All four crates were already in the lock file (`bower-output-azure`, reqwest), so no new code is linked. | Terminating TLS in a sidecar (loses the pinned identity in the process); `native-tls` (system library, no custom client verifier). |
+| `rcgen` 0.14 (`aws_lc_rs`, `pem`; tests only) | `bower-collector` relay tests | Generates a CA, a relay server certificate and expired, unpinned and wrong-usage client certificates per run, short-lived so Apple's platform verifier accepts them on macOS. No private key is committed. Uses the workspace's existing aws-lc-rs backend; adds `rcgen`, `yasna`, `pem`, `bit-vec` and `untrusted` to the lock file for tests only. | Committed long-lived PEM fixtures (keys in the repository, and Apple's verifier refuses leaves valid for over 825 days); `openssl` at test time (system dependency, LibreSSL on macOS lacks the needed options). |
+
 ## Queue v5 identity and regression tests (2026-10-23)
 
 `bower-core` now references the existing workspace `bower-persistence` crate,

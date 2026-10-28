@@ -16,6 +16,10 @@ validation or policy decision.
    crashes and acknowledged rows remain auditable until retention.
 5. Output adapters receive only arranged, redacted envelopes.
 6. Azure acknowledgement proves API acceptance, not Sentinel queryability.
+7. A relay ([relay mode](../deployment/relay.md)) accepts arranged envelopes only from
+   downstream collectors with pinned mutual TLS certificates, stores them byte for byte
+   and delivers them like its own events. It never sees raw source data, and its
+   management tunnel carries end-to-end TLS it cannot read.
 
 Version 2 fingerprints identify a stable source fact: collector/source adapter,
 application/environment/tenant/instance, source hostname and original source ID

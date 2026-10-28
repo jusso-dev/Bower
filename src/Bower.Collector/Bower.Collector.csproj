@@ -12,6 +12,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Bower.Core/Bower.Core.csproj" />
+    <ProjectReference Include="../Bower.Forwarding/Bower.Forwarding.csproj" />
     <ProjectReference Include="../Bower.Jobs/Bower.Jobs.csproj" />
     <ProjectReference Include="../Bower.Output.AmaSpool/Bower.Output.AmaSpool.csproj" />
     <ProjectReference Include="../Bower.Output.AzureLogsIngestion/Bower.Output.AzureLogsIngestion.csproj" />

@@ -182,6 +182,11 @@ pub struct Collector {
     job_triggers: JobTriggers,
     /// Syslog listeners when `BOWER_SYSLOG_CONFIG` is set; bound by `initialize`.
     syslog: Option<bower_source_syslog::SyslogSource>,
+    /// Relay role: the mutual TLS listener for downstream collectors (bound in `initialize`).
+    relay_server: Option<crate::relay::listener::RelayServer>,
+    /// `BOWER_MANAGEMENT_VIA_RELAY`: the management tunnel forwarder, served while alive.
+    #[cfg(unix)]
+    _relay_tunnel: Option<crate::relay::client::tunnel::TunnelForwarder>,
     /// Live post-redaction tap; open streams end when the host stops.
     pub tap: Arc<crate::tap::EventTap>,
 }
@@ -299,7 +304,37 @@ pub fn build(
                 Some(Arc::clone(&clock)),
             )
         });
+    // Relay role. The pins and the server certificate are read here, so a bad file stops
+    // start-up; the listener binds in `initialize`, after queue initialisation.
+    let (relay_server, relay_telemetry) = if settings.is_relay() {
+        let downstreams = Arc::new(crate::relay::downstreams::RelayDownstreams::load(
+            settings
+                .relay_downstreams_file
+                .as_deref()
+                .unwrap_or(std::path::Path::new("")),
+        )?);
+        let telemetry = Arc::new(crate::relay::telemetry::RelayTelemetry::new(
+            downstreams.collector_ids(),
+        ));
+        let intake = Arc::new(crate::relay::intake::RelayIntake::new(
+            Arc::clone(&store),
+            settings.collector_id.clone(),
+            Arc::clone(&telemetry),
+            Arc::clone(&clock),
+        ));
+        let server = crate::relay::listener::RelayServer::new(
+            &settings,
+            downstreams,
+            intake,
+            Arc::clone(&telemetry),
+            Arc::clone(&clock),
+        )?;
+        (Some(server), Some(telemetry))
+    } else {
+        (None, None)
+    };
     let state = AppState {
+        relay: relay_telemetry,
         delivery: Arc::clone(&delivery_status),
         processor: Arc::new(CoreProcessor {
             processor: processor.clone(),
@@ -333,6 +368,17 @@ pub fn build(
         maximum_delivery_attempts: settings.maximum_delivery_attempts,
         ..QueueDeliveryOptions::default()
     });
+    // Management through the relay: the tunnel forwarder is bound now (client certificate
+    // and CA bundle read here) and serves while the collector lives.
+    #[cfg(unix)]
+    let relay_tunnel = if settings.management_via_relay {
+        let tls = crate::relay::client::RelayTls::from_settings(&settings)?;
+        Some(crate::relay::client::tunnel::TunnelForwarder::start(
+            &settings, tls,
+        )?)
+    } else {
+        None
+    };
     // Proxy password and CA bundle are read here, so a bad file stops start-up (C# Build).
     let management_client = settings
         .management_endpoint
@@ -400,6 +446,9 @@ pub fn build(
         enrolment,
         job_triggers: JobTriggers::default(),
         syslog,
+        relay_server,
+        #[cfg(unix)]
+        _relay_tunnel: relay_tunnel,
         tap,
         settings,
     })
@@ -410,6 +459,14 @@ impl Collector {
     pub fn set_output(&mut self, output: Option<BoxedOutput>) {
         self.delivery_status.set(output.clone());
         self.output = output;
+    }
+
+    /// Relay role: the bound relay listener addresses (after `initialize`).
+    pub fn relay_addresses(&self) -> Vec<std::net::SocketAddr> {
+        self.relay_server
+            .as_ref()
+            .map(crate::relay::listener::RelayServer::addresses)
+            .unwrap_or_default()
     }
 
     /// Host lifetime (C# `IHostApplicationLifetime`): stops `run` gracefully and records
@@ -623,6 +680,9 @@ impl Collector {
                 );
             }
         }
+        if let Some(relay) = &mut self.relay_server {
+            relay.bind().await?;
+        }
         Ok(())
     }
 
@@ -687,6 +747,11 @@ impl Collector {
             tasks.push(tokio::spawn(async move { worker.run(token).await }));
         }
 
+        if let Some(relay) = self.relay_server.take() {
+            let token = shutdown.clone();
+            tasks.push(tokio::spawn(async move { relay.serve(token).await }));
+        }
+
         crate::server::serve(listeners, self.router.clone(), shutdown).await;
 
         let stop = async {
@@ -725,6 +790,15 @@ pub fn create_output(
             let credential =
                 credential.unwrap_or_else(|| crate::credential::from_settings(settings));
             azure_output(settings, credential)?
+        }
+        "relay" => {
+            // The client certificate and CA bundle are read here, so a bad file stops start-up.
+            let tls = crate::relay::client::RelayTls::from_settings(settings)?;
+            Arc::new(crate::relay::output::RelayOutput::new(
+                tls.batch_client()?,
+                tls.relay_url(),
+                settings.collector_id.clone(),
+            ))
         }
         other => {
             return Err(HostError::new(

@@ -210,6 +210,15 @@ Entra token and Logs Ingestion clients follow the standard proxy variables.
 Note for macOS hosts: Apple's verifier refuses TLS leaf certificates valid for more than
 825 days, including ones issued by a CA in the bundle.
 
+### Collectors behind a relay
+
+A collector with no route to Azure can send its events and its management traffic through
+a [relay](../deployment/relay.md). Set `BOWER_MANAGEMENT_VIA_RELAY=true` with token
+enrolment: enrolment, heartbeats, commands, credential rotation and managed privacy
+profiles go through the relay's tunnel with TLS to management end to end, so the
+collector record, approvals and connectivity states work exactly as for a directly
+connected collector. The relay is its own collector record.
+
 ## Inactive collectors
 
 The `collector-inactivity` job (daily, 02:00 UTC) suspends approved or active

@@ -21,14 +21,14 @@ control plane, or runtime AI filter.
 - `src/Bower.Packs`: signed, versioned packs (policy, privacy, parsers, detections, samples, DCR).
 - `src/Bower.Evidence`: Sentinel query-verified, signed evidence bundles.
 - `src/Bower.Sdk`: semantic developer API and transports.
-- `src/Bower.Collector`: local HTTP collector host.
+- `src/Bower.Collector`: local HTTP collector host, including the relay role (`Relay/`, mutual TLS listener and management tunnel).
 - `src/Bower.Functions.Collector`: serverless Azure Functions collector (Entra-authenticated, no durable queue).
 - `src/Bower.Management.Api`: Entra-protected fleet, approval and audit API.
 - `ui/Bower.Management.Web`: tenant-controlled operational console.
 - `src/Bower.Output.*`: bounded delivery adapters.
 - `src/Bower.Source.Aws`: AWS security telemetry parsers (CloudTrail, GuardDuty, Security Hub, CloudWatch), EventBridge/SNS/S3 queue message parser and Firehose log object reader.
 - `src/Bower.Source.Gcp`: Cloud Audit Logs and Security Command Center mapper for Pub/Sub messages.
-- `src/Bower.Forwarding`: shared collector client for agents (at-least-once acknowledgement rule).
+- `src/Bower.Forwarding`: shared collector client for agents (at-least-once acknowledgement rule) and the relay output and wire contract.
 - `src/Bower.Agent.Cloud`: AWS SQS and Google Pub/Sub forwarder host.
 - `src/Bower.Ocsf`: OCSF normalisation engine and source mappers.
 - `src/Bower.Detection`: Sigma-compatible detection rules engine.

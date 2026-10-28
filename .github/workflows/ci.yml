@@ -258,6 +258,8 @@ jobs:
       - run: docker build -f rust/Dockerfile -t bower-collector-rs:ci .
       - name: Enrol the C# and Rust collectors with one-time tokens (compose e2e)
         run: bash tests/e2e/enrolment.sh
+      - name: Relay mode across C# and Rust relays and downstreams (compose e2e)
+        run: bash tests/e2e/relay.sh
       - name: Smoke-test cloud agent fails closed without a source
         run: |
           set +e
