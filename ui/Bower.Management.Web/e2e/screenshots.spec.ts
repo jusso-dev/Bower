@@ -52,6 +52,74 @@ test("capture onboarding wizard", async ({ page }, testInfo) => {
   });
 });
 
+test("capture guided source setup", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "readme-chromium");
+  await page.goto("/sources");
+  await page.getByRole("radio", { name: /^Syslog/ }).check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  const settings = page.getByRole("region", { name: "Fill in the settings" });
+  await settings.getByLabel("Collector", { exact: true }).selectOption("finance-prod-01");
+  await settings.getByLabel("Allowed senders").fill("10.20.0.0/24");
+  await settings.getByLabel("Server certificate file").fill("/etc/bower/syslog/server.pem");
+  await settings.getByLabel("Server private key file").fill("/etc/bower/syslog/server-key.pem");
+  await settings.getByLabel("Collector name senders use").fill("collector.example.org");
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => document.fonts.ready);
+  await settings.screenshot({
+    path: path.join(screenshotDirectory, "bower-management-sources.png"),
+    animations: "disabled"
+  });
+  await settings.getByRole("button", { name: "Check settings" }).click();
+  const review = page.getByRole("region", { name: "Review and preview" });
+  await expect(review.getByLabel("Example event after redaction")).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  await review.screenshot({
+    path: path.join(screenshotDirectory, "bower-management-source-review.png"),
+    animations: "disabled"
+  });
+
+  // The seeded, approved syslog request after the collector reports the source.
+  const now = new Date().toISOString();
+  const heartbeat = await page.request.post("/api/collectors/finance-prod-01/heartbeat", {
+    data: {
+      version: "0.1.0",
+      configurationHash: "sha256:c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4",
+      policyHash: "sha256:4f2a9c1e7b3d58a6c0e2f91b4d7a8c3e5f6b1a2d9c0e7f84b3a5d6c1e2f9a7b8",
+      queueDepth: 3,
+      deliveryStatus: "healthy",
+      ledger: { sequence: 48211, hash: "preview-ledger-48211" },
+      sources: [
+        { id: "local-http", type: "local-http", status: "healthy", lagSeconds: null, lastEventAt: now },
+        { id: "ssh-gateway/production", type: "application", status: "healthy", lagSeconds: 0, lastEventAt: now }
+      ],
+      outputs: [{ id: "azure-logs-ingestion", type: "azure-logs-ingestion", status: "healthy", lastAcknowledgedAt: now, lastErrorCode: null }]
+    }
+  });
+  expect(heartbeat.ok()).toBeTruthy();
+  const requests = (await (await page.request.get("/api/sources/requests")).json()) as {
+    id: string;
+    type: string;
+    status: string;
+    collectorId: string;
+    check: { label: string };
+  }[];
+  const approved = requests.find(
+    (item) => item.type === "syslog" && item.status === "approved" && item.collectorId === "finance-prod-01"
+      && item.check.label === "Receiving events"
+  );
+  expect(approved, "Seed data must include an approved syslog request matching the reported source.").toBeDefined();
+  await page.goto(`/sources?request=${approved!.id}`);
+  await page.getByRole("navigation", { name: "Source request steps" })
+    .getByRole("button", { name: /^Step 3: Check it works/ }).click();
+  const check = page.getByRole("region", { name: "Check it works" });
+  await expect(check.getByText(/The collector reports events from/)).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  await check.screenshot({
+    path: path.join(screenshotDirectory, "bower-management-source-check.png"),
+    animations: "disabled"
+  });
+});
+
 test("capture collector inventory", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "readme-chromium");
   await page.goto("/collectors");

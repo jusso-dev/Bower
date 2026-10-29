@@ -3,10 +3,10 @@
 // development authentication, so it can never write demo rows into a real tenant.
 const baseUrl = (process.argv[2] ?? process.env.BOWER_UI_BASE_URL ?? "http://127.0.0.1:4320").replace(/\/$/, "");
 
-async function call(method, path, body) {
+async function call(method, path, body, headers = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
+    headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...headers },
     body: body ? JSON.stringify(body) : undefined
   });
   if (!response.ok && response.status !== 409) {
@@ -35,7 +35,11 @@ const collectors = [
 function reports(collector) {
   return {
     sources: [
-      { id: "local-http", type: "local-http", status: "healthy", lagSeconds: null, lastEventAt: minutesAgo(1) }
+      { id: "local-http", type: "local-http", status: "healthy", lagSeconds: null, lastEventAt: minutesAgo(1) },
+      // The syslog source set up (and approved) below reports as an expected application.
+      ...(collector.id === "finance-prod-01"
+        ? [{ id: "ssh-gateway/production", type: "application", status: "healthy", lagSeconds: 0, lastEventAt: minutesAgo(1) }]
+        : [])
     ],
     outputs: [
       {
@@ -123,5 +127,40 @@ await call("POST", "/api/collectors/records-prod-04/suspend", {
   reason: "Synthetic preview: host maintenance window."
 });
 await call("POST", "/api/jobs/collector-staleness/trigger");
+
+// Guided source setup: one approved by a second (development) person, one still waiting.
+// The development user asks; X-Bower-Development-Person selects the fixed reviewer.
+const syslog = await call("POST", "/api/sources/requests", {
+  type: "syslog",
+  collectorId: "finance-prod-01",
+  values: {
+    protocol: "tls",
+    address: "0.0.0.0",
+    port: "6514",
+    allowedSenders: "10.20.0.0/24",
+    certificateFile: "/etc/bower/syslog/server.pem",
+    privateKeyFile: "/etc/bower/syslog/server-key.pem",
+    appName: "sshd",
+    collectorHost: "collector.example.org"
+  },
+  reason: "Synthetic preview: SSH sign-in failures from the edge gateway, BWR-DEMO-210."
+});
+await call(
+  "POST",
+  `/api/sources/requests/${syslog.id}/approve`,
+  { reason: "Synthetic preview: matches change BWR-DEMO-210." },
+  { "X-Bower-Development-Person": "reviewer" }
+);
+await call("POST", "/api/sources/requests", {
+  type: "docker",
+  collectorId: "claims-prod-03",
+  values: {
+    service: "claims-legacy",
+    application: "claims-legacy",
+    collectorUrl: "http://bower-collector:4319",
+    ingestTokenFile: "/run/secrets/bower-ingest-token"
+  },
+  reason: "Synthetic preview: sign-in failures from the legacy claims container, BWR-DEMO-211."
+});
 
 console.log(`Seeded ${collectors.length} synthetic preview collectors at ${baseUrl}.`);

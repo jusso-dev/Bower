@@ -9,6 +9,7 @@ import {
   KeyRound,
   ListChecks,
   Menu,
+  Plug,
   Moon,
   ScrollText,
   Sun,
@@ -32,12 +33,14 @@ import { JobsPage } from "./pages/JobsPage";
 import { PrivacyProfilesPage } from "./pages/PrivacyProfilesPage";
 import { SetupPage } from "./pages/SetupPage";
 import { EnrolmentPage } from "./pages/EnrolmentPage";
+import { SourcesPage } from "./pages/SourcesPage";
 
 const navItems = [
   { to: "/", label: "Home", icon: House },
   { to: "/overview", label: "Overview", icon: Activity },
   { to: "/setup", label: "Setup", icon: ListChecks },
   { to: "/collectors", label: "Collectors", icon: Boxes },
+  { to: "/sources", label: "Sources", icon: Plug },
   { to: "/pipelines", label: "Pipelines", icon: GitBranch },
   { to: "/approvals", label: "Approvals", icon: ClipboardCheck },
   { to: "/enrolment", label: "Enrolment", icon: Ticket },
@@ -150,6 +153,7 @@ export function App() {
           <Route path="/setup" element={<SetupPage />} />
           <Route path="/collectors" element={<CollectorsPage />} />
           <Route path="/collectors/:id" element={<CollectorDetailPage />} />
+          <Route path="/sources" element={<SourcesPage />} />
           <Route path="/pipelines" element={<PipelinesPage />} />
           <Route path="/approvals" element={<ApprovalsPage />} />
           <Route path="/enrolment" element={<EnrolmentPage />} />
