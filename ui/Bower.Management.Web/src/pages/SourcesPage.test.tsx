@@ -222,6 +222,8 @@ function json(value: unknown, status = 200): Response {
 
 describe("Sources page", () => {
   beforeEach(() => {
+    // These tests exercise technical-page permissions after the viewer opts in.
+    localStorage.setItem("bower-console-view:development:me", "detailed");
     vi.stubGlobal("matchMedia", () => ({
       matches: false,
       addEventListener: vi.fn(),

@@ -50,6 +50,8 @@ function access(roles: string[]) {
 
 describe("Background jobs page", () => {
   beforeEach(() => {
+    // These tests exercise technical-page permissions after the viewer opts in.
+    localStorage.setItem("bower-console-view:development:object-1", "detailed");
     vi.stubGlobal("matchMedia", () => ({
       matches: false,
       addEventListener: vi.fn(),

@@ -160,3 +160,6 @@ installation, signed downloads and the heartbeat check.
 Use **Privacy profiles → Edit with forms** to change how fields are protected,
 review the generated configuration and request approval. See
 [Change privacy actions with forms](console-privacy-editor.md).
+
+Viewers start with Home, Alerts and Reports. [A simpler view of Bower](console-simple-view.md)
+explains the per-user technical-page toggle and read-only access.

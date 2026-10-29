@@ -34,6 +34,8 @@ const secret = "bwe1.0123456789abcdef.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 
 describe("Token enrolment page", () => {
   beforeEach(() => {
+    // These tests exercise technical-page permissions after the viewer opts in.
+    localStorage.setItem("bower-console-view:development:object-1", "detailed");
     vi.stubGlobal("matchMedia", () => ({
       matches: false,
       addEventListener: vi.fn(),
