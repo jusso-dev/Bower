@@ -71,6 +71,14 @@ public static class HomeStatus
 
     private static readonly HomeFix SetupFix = new("Send a test event from the Setup page.", "/setup");
 
+    /// <summary>
+    /// The ids of the conditions that apply to one collector, worst first. The fleet view
+    /// (<see cref="FleetStatus"/>) maps these to one plain state per collector, so the home
+    /// view and the fleet view always agree on what is wrong.
+    /// </summary>
+    internal static IReadOnlyList<string> ConditionIds(CollectorRecord item, DateTimeOffset now) =>
+        [.. Conditions.Where(condition => condition.Applies(item, now)).Select(condition => condition.Id)];
+
     public static HomeRecord Evaluate(
         IReadOnlyList<CollectorRecord> collectors,
         SetupCanaryRun? latestRun,
@@ -270,11 +278,11 @@ public static class HomeStatus
     };
 
     /// <summary>Approved to collect and not paused.</summary>
-    private static bool Running(CollectorRecord item) =>
+    internal static bool Running(CollectorRecord item) =>
         item.Status is CollectorStatus.Active or CollectorStatus.Approved;
 
     /// <summary>Running with a heartbeat inside the offline threshold: its report is current evidence.</summary>
-    private static bool Fresh(CollectorRecord item, DateTimeOffset now) =>
+    internal static bool Fresh(CollectorRecord item, DateTimeOffset now) =>
         Running(item) && now - item.LastSeenAt <= CollectorStalenessJob.StaleAfter;
 
     private static bool Is(string? value, string expected) =>

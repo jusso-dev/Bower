@@ -51,13 +51,27 @@ test("fleet overview reports real management state", async ({ page }, testInfo) 
   expect(consoleErrors).toEqual([]);
 });
 
-test("collector inventory exposes machine and delivery state", async ({ page }) => {
+test("fleet filters by site and state and opens read-only machine details", async ({ page }) => {
+  await page.setExtraHTTPHeaders({ "X-Bower-Development-Roles": "Bower.Viewer" });
   await page.goto("/collectors");
-
-  await expect(page.getByRole("heading", { name: "Collectors" })).toBeVisible();
-  await expect(page.getByText("finance-app-01")).toBeVisible();
-  await expect(page.getByText("claims-api-03")).toBeVisible();
-  await expect(page.getByText("records-app-04")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Collectors", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "View details for finance-app-01" })).toBeVisible();
+  await page.getByLabel("Site", { exact: true }).selectOption("hr");
+  await expect(page.getByRole("link", { name: "View details for hr-app-02" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "View details for finance-app-01" })).toHaveCount(0);
+  await page.getByLabel("State", { exact: true }).selectOption("waiting-for-approval");
+  await expect(page.getByText("Showing 1 of 4 collectors")).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Site", { exact: true })).toHaveValue("hr");
+  await expect(page.getByText("Waiting for approval", { exact: true })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await page.getByRole("button", { name: "Clear filters" }).click();
+  await page.getByLabel("Find a machine").fill("finance-app-01");
+  await page.getByRole("link", { name: "View details for finance-app-01" }).click();
+  await expect(page.getByRole("heading", { name: "Collector details" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Configured sources" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Check arrival in Microsoft Sentinel" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Approve|Suspend|Revoke/ })).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
 });
 
@@ -266,3 +280,22 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
     )
     .toBe(true);
 }
+
+test("fleet supports keyboard filters, dark mode and a 320px viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.addInitScript(() => localStorage.setItem("bower-theme", "dark"));
+  await page.goto("/collectors");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  const state = page.getByRole("combobox", { name: "State", exact: true });
+  await state.focus();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("combobox", { name: "Site", exact: true })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("searchbox", { name: "Find a machine" })).toBeFocused();
+  await page.keyboard.type("claims-api-03");
+  await expect(page.getByText("Showing 1 of 4 collectors")).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await page.getByRole("link", { name: "View details for claims-api-03" }).click();
+  await expect(page.getByRole("heading", { name: "Machine details" })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+});
