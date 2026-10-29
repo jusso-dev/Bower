@@ -16,6 +16,9 @@ artwork. The homepage reuses that artwork directly; amber details and the header
 mark follow the management console. The same colors apply to navigation, search,
 code blocks and guide pages. Readers can select light mode from the header; their
 choice persists across pages. Geist is self-hosted.
+The template reconciles Material's saved palette index with its saved scheme
+before initialization, so changing the palette order preserves returning readers'
+appearance choices.
 The actual console screenshot uses the existing synthetic preview dataset.
 
 Material currently announces end of life on 5 May 2027. The pinned dependency is

@@ -2,6 +2,27 @@ import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
 const pages = ['', 'getting-started/', 'getting-started/first-event/', 'getting-started/concepts/', 'getting-started/deployment/', 'guides/', 'operations/', 'security/', 'reference/', 'deployment/installers/', 'deployment/relay/', 'operations/console-fleet/', 'privacy/privacy-secret-engine/', 'architecture/overview/'];
+for (const [scheme, oldIndex, newIndex] of [['default', 0, 1], ['slate', 1, 0]]) {
+  test(`preserves the saved ${scheme} theme from before the palette reorder`, async ({ page }) => {
+    await page.goto('./');
+    await page.evaluate(({ scheme, oldIndex }) => {
+      // The previous published site stored the palette under this project scope.
+      localStorage.setItem('/Bower/.__palette', JSON.stringify({
+        index: oldIndex, color: { scheme, primary: 'indigo', accent: 'indigo' }
+      }));
+    }, { scheme, oldIndex });
+    await page.goto('getting-started/first-event/');
+    await expect(page.locator('body')).toHaveAttribute('data-md-color-scheme', scheme);
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('/Bower/.__palette')).index)).toBe(newIndex);
+    await page.reload();
+    await expect(page.locator('body')).toHaveAttribute('data-md-color-scheme', scheme);
+    const nextTheme = scheme === 'default' ? 'dark' : 'light';
+    await page.locator(`label[title="Switch to ${nextTheme} mode"]`).click();
+    await page.reload();
+    await expect(page.locator('body')).toHaveAttribute('data-md-color-scheme', scheme === 'default' ? 'slate' : 'default');
+  });
+}
+
 for (const theme of ['light', 'dark']) {
   test(`accessible documentation in ${theme} mode`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
