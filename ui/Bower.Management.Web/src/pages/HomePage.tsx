@@ -116,7 +116,8 @@ export function HomePage({ view = "home" }: { view?: "home" | "alerts" | "report
                 <EmptyState
                   icon={<ShieldCheck aria-hidden="true" />}
                   title="Nothing needs your attention"
-                  detail="Bower will list anything that needs a person here, with what to do about it."
+                  detail="Bower will list anything that needs a person here, with what to do about it. Check Reports for the latest delivery test."
+                  action={{ to: "/reports", label: "Check delivery reports" }}
                 />
               )}
             </section>}
@@ -157,7 +158,8 @@ export function HomePage({ view = "home" }: { view?: "home" | "alerts" | "report
                 <EmptyState
                   icon={<CircleDashed aria-hidden="true" />}
                   title="No collectors yet"
-                  detail="Groups appear here once a collector asks to join."
+                  detail="Groups appear here once a collector asks to join. Ask your administrator to connect the first machine using Setup."
+                  action={{ to: "/help#setup-checklist", label: "View setup checklist" }}
                 />
               )}
             </section>}

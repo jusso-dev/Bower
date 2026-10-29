@@ -55,7 +55,8 @@ export function PipelinesPage() {
             <EmptyState
               icon={<GitBranch aria-hidden="true" />}
               title="No pipeline templates"
-              detail="Publish a template through the management API to design telemetry paths."
+              detail="Ask an administrator to check that pipeline templates are available in the management service. To connect a supported source, start in Sources."
+              action={{ to: "/sources", label: "Set up a source" }}
             />
           )
         }

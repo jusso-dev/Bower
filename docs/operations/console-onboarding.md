@@ -6,6 +6,9 @@ without the CLI. It is part of the existing console: same sign-in, same roles, s
 audit trail. Progress is computed from server state, so the wizard can be left and
 resumed by anyone, and every step can be run again.
 
+The [Help checklist](console-help.md) shows the same server progress and links to
+each step, including in the simplified view.
+
 ## Steps
 
 | # | Step | Done when | What Bower checks |

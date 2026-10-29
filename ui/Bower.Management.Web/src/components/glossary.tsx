@@ -1,5 +1,6 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment, type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import entries from "./glossary.json";
 
 /*
  * Plain-English glossary for guided views. Terms in page text link to /help#<id>, so a
@@ -15,57 +16,7 @@ export interface GlossaryEntry {
   matches: string[];
 }
 
-export const glossary: GlossaryEntry[] = [
-  {
-    id: "collector",
-    term: "Collector",
-    definition:
-      "The small Bower program on one of your machines. It gathers security events, removes sensitive details and sends the events on.",
-    matches: ["collectors", "collector"]
-  },
-  {
-    id: "sentinel",
-    term: "Microsoft Sentinel",
-    definition:
-      "Microsoft's security monitoring service. Your security team searches the events Bower sends there.",
-    matches: ["Microsoft Sentinel", "Sentinel"]
-  },
-  {
-    id: "test-event",
-    term: "Test event",
-    definition:
-      "A harmless event Bower sends on purpose and then looks for in Microsoft Sentinel. Finding it proves the whole path works. A simulated test skips that check, so it is not proof.",
-    matches: ["test event"]
-  },
-  {
-    id: "privacy-profile",
-    term: "Privacy profile",
-    definition:
-      "Your rules for which sensitive details Bower removes or masks before anything is stored or sent.",
-    matches: ["privacy profile"]
-  },
-  {
-    id: "event-rules",
-    term: "Event rules",
-    definition:
-      "The approved rules that decide which security events Bower keeps and sends. Everything else is dropped.",
-    matches: ["event rules"]
-  },
-  {
-    id: "set-aside",
-    term: "Set aside",
-    definition:
-      "Events Bower could not send after many tries. They are kept, not deleted, so someone can review them.",
-    matches: ["set aside"]
-  },
-  {
-    id: "group",
-    term: "Group",
-    definition:
-      "Collectors that share an environment name, such as production or staging. Each group gets one traffic light.",
-    matches: ["collector groups"]
-  }
-];
+export const glossary: GlossaryEntry[] = entries;
 
 const phrases = glossary
   .flatMap((entry) => entry.matches.map((phrase) => ({ phrase, entry })))
@@ -92,9 +43,7 @@ export function GlossaryText({ text }: { text: string }) {
     linked.add(entry.id);
     parts.push(text.slice(last, match.index));
     parts.push(
-      <Link key={match.index} className="glossary-term" to={`/help#${entry.id}`}>
-        {match[0]}
-      </Link>
+      <GlossaryTerm key={match.index} entry={entry}>{match[0]}</GlossaryTerm>
     );
     last = match.index + match[0].length;
   }
@@ -106,4 +55,55 @@ export function GlossaryText({ text }: { text: string }) {
       ))}
     </>
   );
+}
+
+/** Keyboard and pointer help; following the link also works on touch screens. */
+function GlossaryTerm({ entry, children }: { entry: GlossaryEntry; children: ReactNode }) {
+  const id = useId();
+  const link = useRef<HTMLAnchorElement>(null);
+  const hovered = useRef(false);
+  const [position, setPosition] = useState<{ left: number; top?: number; bottom?: number; maxHeight: number } | null>(null);
+  const show = useCallback(() => {
+    const bounds = link.current?.getBoundingClientRect();
+    if (!bounds || bounds.bottom < 0 || bounds.top > window.innerHeight) {
+      setPosition(null);
+      return;
+    }
+    const width = Math.min(18.5 * parseFloat(getComputedStyle(document.documentElement).fontSize || "16"), window.innerWidth - 16);
+    setPosition({
+      left: Math.max(8, Math.min(bounds.left, window.innerWidth - width - 8)),
+      maxHeight: Math.max(0, (bounds.bottom < window.innerHeight / 2 ? window.innerHeight - bounds.bottom : bounds.top) - 8),
+      ...(bounds.bottom < window.innerHeight / 2 ? { top: bounds.bottom } : { bottom: window.innerHeight - bounds.top })
+    });
+  }, []);
+  const visible = position !== null;
+  useEffect(() => {
+    if (!visible) return;
+    const hide = () => setPosition(null);
+    const key = (event: KeyboardEvent) => { if (event.key === "Escape") hide(); };
+    window.addEventListener("keydown", key);
+    window.addEventListener("resize", show);
+    window.addEventListener("scroll", show, true);
+    return () => {
+      window.removeEventListener("keydown", key);
+      window.removeEventListener("resize", show);
+      window.removeEventListener("scroll", show, true);
+    };
+  }, [visible, show]);
+  return <span
+    className="glossary-anchor"
+    onMouseEnter={() => { hovered.current = true; show(); }}
+    onMouseLeave={() => { hovered.current = false; if (document.activeElement !== link.current) setPosition(null); }}
+    onKeyDown={(event) => { if (event.key === "Escape") { setPosition(null); event.stopPropagation(); } }}
+  >
+    <Link ref={link} className="glossary-term" to={`/help#${entry.id}`}
+      aria-describedby={position ? id : undefined}
+      onFocus={show} onBlur={() => { if (!hovered.current) setPosition(null); }}
+      onClick={() => setPosition(null)}>
+      {children}
+    </Link>
+    {position && <span id={id} role="tooltip" className="glossary-tooltip" style={position}>
+      {entry.definition}
+    </span>}
+  </span>;
 }

@@ -266,7 +266,7 @@ export function EnrolmentPage() {
               <EmptyState
                 icon={<Ticket aria-hidden="true" />}
                 title="No enrolment tokens"
-                detail="Collectors with an Azure identity enrol with Entra and need no token."
+                detail="Collectors with an Azure identity enrol with Entra and need no token. For other machines, ask an administrator to create a one-time token using the form above."
               />
             )
           }
@@ -340,7 +340,7 @@ export function EnrolmentPage() {
               <EmptyState
                 icon={<KeyRound aria-hidden="true" />}
                 title="No collector credentials"
-                detail="A credential appears when a collector exchanges an enrolment token."
+                detail="A credential appears when a collector exchanges an enrolment token. Follow the installation instructions supplied with the token, then approve the machine in Approvals."
               />
             )
           }

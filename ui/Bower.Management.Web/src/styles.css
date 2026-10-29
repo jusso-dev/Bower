@@ -2284,3 +2284,46 @@ input[type="checkbox"]:focus-visible {
   font-weight: 650;
   cursor: pointer;
 }
+
+.page-help,
+.help-guides a,
+.setup-checklist a,
+.empty-state a {
+  color: var(--color-accent);
+  text-underline-offset: 0.15em;
+}
+
+.page-help { font-size: var(--text-sm); }
+
+.help-guides {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+}
+
+.help-guides article {
+  padding: var(--space-4);
+  border-block-start: 1px solid var(--color-rule);
+}
+
+.help-guides h3 { margin-block: 0 var(--space-2); }
+.help-guides p { color: var(--color-ink-secondary); }
+
+.setup-checklist { padding-inline-start: var(--space-5); }
+.setup-checklist li { padding-block: var(--space-2); }
+.setup-checklist .plain-status { margin-inline-start: var(--space-3); }
+
+.glossary-tooltip {
+  position: fixed;
+  z-index: 100;
+  width: min(18.5rem, calc(100vw - 1rem));
+  max-height: calc(100vh - 1rem);
+  overflow: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  line-height: 1.5;
+}

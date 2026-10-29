@@ -130,6 +130,23 @@ describe("Setup page", () => {
     expect(screen.getByRole("link", { name: "Setup" })).toBeTruthy();
   });
 
+  it("opens a linked checklist step and falls back for an unknown step", async () => {
+    stubSetup([baseStatus]);
+    renderSetup("/setup?step=proof");
+    expect(await screen.findByRole("region", { name: "See proof it arrived" })).toBeTruthy();
+    cleanup();
+    renderSetup("/setup?step=unknown");
+    expect(await screen.findByRole("region", { name: "Choose where events go" })).toBeTruthy();
+  });
+
+  it("offers recovery when the server returns no setup steps", async () => {
+    stubSetup([{ ...baseStatus, steps: [] }, baseStatus]);
+    renderSetup();
+    expect(await screen.findByRole("heading", { name: "No setup steps available" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh setup progress" }));
+    expect(await screen.findByRole("region", { name: "Sign in" })).toBeTruthy();
+  });
+
   it("shows read-only progress to people who cannot change setup", async () => {
     stubSetup([{ ...baseStatus, canChange: false }], ["Bower.Viewer"]);
     renderSetup();
@@ -317,10 +334,10 @@ function liveRegion(): HTMLElement {
   return screen.getByTestId("setup-announcer");
 }
 
-function renderSetup() {
+function renderSetup(path = "/setup") {
   render(
     <AuthenticationProvider>
-      <MemoryRouter initialEntries={["/setup"]}>
+      <MemoryRouter initialEntries={[path]}>
         <App />
       </MemoryRouter>
     </AuthenticationProvider>

@@ -1,4 +1,6 @@
 import { Activity, CheckCircle2, CircleDashed, XCircle } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
+import { guideForPath } from "./helpGuides";
 import { type ReactNode } from "react";
 import { formatDate, shortHash } from "../lib/format";
 import type { Collector, PrivacyProfileVersionStatus } from "../types";
@@ -28,12 +30,14 @@ export function Page({
   description: string;
   children: ReactNode;
 }) {
+  const guide = guideForPath(useLocation().pathname);
   return (
     <section className="page">
       <header className="page-heading">
         <div>
           <h1>{title}</h1>
           <p>{description}</p>
+          {guide && <Link className="page-help" to={`/help#${guide.id}`}>Help with this page</Link>}
         </div>
         <span className="live-indicator">
           <span aria-hidden="true" />
@@ -194,17 +198,20 @@ export function CoverageRow({
 export function EmptyState({
   icon,
   title,
-  detail
+  detail,
+  action
 }: {
   icon?: ReactNode;
   title: string;
   detail: string;
+  action?: { to: string; label: string };
 }) {
   return (
     <div className="empty-state">
       {icon}
       <h2>{title}</h2>
       <p>{detail}</p>
+      {action && <Link to={action.to}>{action.label}</Link>}
     </div>
   );
 }
