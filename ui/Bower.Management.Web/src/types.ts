@@ -498,3 +498,28 @@ export interface Home {
   groups: HomeGroup[];
   groupsTotal: number;
 }
+
+/** Fleet states and suggested actions are computed from server-side heartbeat metadata. */
+export interface FleetCollector {
+  id: string;
+  machineName: string;
+  site: string;
+  version: string;
+  state: string;
+  label: string;
+  light: HomeState | "none";
+  reason: string;
+  fix: { action: string; page: string | null } | null;
+  otherIssues: number;
+  connectivity: string;
+  path: "direct" | "relay" | null;
+  lastSeenAt: string;
+}
+
+export interface Fleet {
+  generatedAt: string;
+  collectors: FleetCollector[];
+  states: { state: string; label: string; light: HomeState | "none"; collectors: number }[];
+  sites: { name: string; collectors: number }[];
+  newestVersion: string | null;
+}

@@ -146,3 +146,9 @@ detail, parser probe outcomes, DCR checks, interrupted runs. Console (vitest): g
 primitives (stepper semantics, focus, non-colour status) and the setup page (read-only
 viewers, saving, simulated versus verified). Playwright journey in
 `e2e/management.spec.ts`.
+
+## After setup: keep an eye on your machines
+
+Open **Collectors** for each machine's plain-language state, suggested fix, site
+filter and reported source and destination details. See [Check your collectors](console-fleet.md).
+A healthy check-in is separate from the destination proof in step 7.

@@ -319,6 +319,22 @@ public static class ManagementApplication
                     await store.HomeAsync(clock.GetUtcNow(), cancellationToken))
             .RequireAuthorization("View");
 
+        // Plain-English fleet view: one state, reason and fix per collector, computed here.
+        api.MapGet(
+                "/fleet",
+                async (ManagementStore store, TimeProvider clock, CancellationToken cancellationToken) =>
+                    await store.FleetAsync(clock.GetUtcNow(), cancellationToken))
+            .RequireAuthorization("View");
+
+        api.MapGet(
+                "/fleet/{id}",
+                async (string id, ManagementStore store, TimeProvider clock, CancellationToken cancellationToken) =>
+                    (await store.FleetAsync(clock.GetUtcNow(), cancellationToken)).Collectors
+                        .FirstOrDefault(item => string.Equals(item.Id, id, StringComparison.Ordinal)) is { } collector
+                        ? Results.Ok(collector)
+                        : Results.NotFound())
+            .RequireAuthorization("View");
+
         api.MapGet(
                 "/collectors",
                 async (

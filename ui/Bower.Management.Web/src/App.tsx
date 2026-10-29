@@ -23,7 +23,7 @@ import { Brand } from "./components/ui";
 import { HomePage } from "./pages/HomePage";
 import { HelpPage } from "./pages/HelpPage";
 import { OverviewPage } from "./pages/OverviewPage";
-import { CollectorsPage } from "./pages/CollectorsPage";
+import { CollectorsPage, CollectorDetailPage } from "./pages/CollectorsPage";
 import { PipelinesPage } from "./pages/PipelinesPage";
 import { ApprovalsPage } from "./pages/ApprovalsPage";
 import { AccessPage } from "./pages/AccessPage";
@@ -149,6 +149,7 @@ export function App() {
           <Route path="/overview" element={<OverviewPage />} />
           <Route path="/setup" element={<SetupPage />} />
           <Route path="/collectors" element={<CollectorsPage />} />
+          <Route path="/collectors/:id" element={<CollectorDetailPage />} />
           <Route path="/pipelines" element={<PipelinesPage />} />
           <Route path="/approvals" element={<ApprovalsPage />} />
           <Route path="/enrolment" element={<EnrolmentPage />} />

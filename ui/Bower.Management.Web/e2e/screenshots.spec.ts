@@ -163,3 +163,18 @@ test("capture polished mobile fleet view", async ({ page }, testInfo) => {
     fullPage: false
   });
 });
+
+test("capture fleet detail and narrow dark fleet", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "readme-chromium");
+  await page.goto("/collectors/claims-prod-03");
+  await expect(page.getByRole("heading", { name: "Machine details" })).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({ path: path.join(screenshotDirectory, "bower-management-collector-detail.png"), fullPage: true, animations: "disabled" });
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.evaluate(() => localStorage.setItem("bower-theme", "dark"));
+  await page.goto("/collectors");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.getByRole("link", { name: "View details for claims-api-03" })).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({ path: path.join(screenshotDirectory, "bower-management-fleet-mobile-dark.png"), fullPage: true, animations: "disabled" });
+});
