@@ -11,8 +11,11 @@ MkDocs fits the existing content and requires less maintenance than a separate
 React/MDX application. Docusaurus was considered; its interactive component model
 is unnecessary for this site's small, dependency-free illustration.
 
-The homepage uses Bower's blue identity and self-hosted Geist font. Layout variation
-is moderate (5/10), motion is explanatory (4/10), and density is restrained (4/10).
+The site opens in Bower's dark navy and signal-blue palette, matching the README
+artwork. The homepage reuses that artwork directly; amber details and the header
+mark follow the management console. The same colors apply to navigation, search,
+code blocks and guide pages. Readers can select light mode from the header; their
+choice persists across pages. Geist is self-hosted.
 The actual console screenshot uses the existing synthetic preview dataset.
 
 Material currently announces end of life on 5 May 2027. The pinned dependency is

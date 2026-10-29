@@ -7,6 +7,10 @@ for (const theme of ['light', 'dark']) {
     await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
     for (const path of pages) {
       await page.goto(path || './');
+      if (theme === 'light' && await page.locator('body').getAttribute('data-md-color-scheme') !== 'default') {
+        await page.locator('label[title="Switch to light mode"]').click();
+      }
+      await expect(page.locator('body')).toHaveAttribute('data-md-color-scheme', theme === 'light' ? 'default' : 'slate');
       await page.evaluate(() => document.fonts.ready);
       const result = await new AxeBuilder({ page }).analyze();
       expect(result.violations, `${theme} ${path}: ${JSON.stringify(result.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })))}`).toEqual([]);
@@ -76,6 +80,11 @@ test('screenshots of the homepage and guide', async ({ page }, testInfo) => {
   await page.screenshot({ path: testInfo.outputPath('guide-desktop.png'), fullPage: true });
   await page.setViewportSize({ width: 320, height: 800 });
   await page.goto('./');
+  await expect(page.locator('body')).toHaveAttribute('data-md-color-scheme', 'slate');
+  await page.locator('label[title="Switch to light mode"]').click();
+  await expect(page.locator('body')).toHaveAttribute('data-md-color-scheme', 'default');
+  await page.reload();
+  await expect(page.locator('body')).toHaveAttribute('data-md-color-scheme', 'default');
   await page.locator('label[title="Switch to dark mode"]').click();
   await expect(page.locator('body')).toHaveAttribute('data-md-color-scheme', 'slate');
   await page.screenshot({ path: testInfo.outputPath('home-mobile-dark.png'), fullPage: true });
