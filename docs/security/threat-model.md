@@ -343,3 +343,20 @@ refuses a `%ProgramData%\Bower` not owned by SYSTEM or Administrators, but a pla
 the owner first when you install the MSI directly on a shared host.
 
 Treat pseudonymised identifiers as potentially personal information.
+
+## Guided source setup
+
+The management API stores validated configuration plans and credential locations,
+not credential values or event bodies. Planning never reads a referenced secret
+file, resolves a Key Vault secret, or opens a user-supplied network address. Checks
+use existing authenticated heartbeat metadata. Preview samples are synthetic and
+redacted server-side; failed redaction prevents submission. A healthy check-in is
+not Sentinel evidence, and an old source event cannot complete a new request.
+
+An operator requests a plan and a different approver decides it; the API enforces
+this independently of UI controls and audits both decisions and self-review
+refusals. Approved plans can be signed by an opt-in server-side P-256 key. The
+signature binds files, environment settings, sender snippets, verification and
+target identity. Downloads do not push changes or replace collector pack trust.
+Protect that signing key like the existing management command key and verify
+against a separately trusted public key. See [guided source setup](../operations/console-sources.md).

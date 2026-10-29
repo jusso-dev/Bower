@@ -132,6 +132,9 @@ public static class ManagementApplication
         // Optional: without a key commands cannot be issued (503) and all else works.
         builder.Services.AddSingleton(ManagementCommandSigner.FromFile(
             builder.Configuration[ManagementCommandSigner.KeyFileSetting]));
+        // Optional: without a key approved source setups cannot be downloaded signed (503).
+        builder.Services.AddSingleton(SourceSetupSigner.FromFile(
+            builder.Configuration[SourceSetupSigner.KeyFileSetting]));
 
         string[] allowedOrigins = builder.Configuration
             .GetSection("Bower:AllowedOrigins")
@@ -632,6 +635,7 @@ public static class ManagementApplication
         PrivacyProfileEndpoints.Map(api);
         SetupEndpoints.Map(api);
         EnrolmentEndpoints.Map(api);
+        SourceSetupEndpoints.Map(api);
 
         api.MapGet(
                 "/audit",

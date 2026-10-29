@@ -74,7 +74,7 @@ describe("Bower management shell", () => {
         if (path.includes("/api/collectors?status=Pending")) {
           return json([collector]);
         }
-        if (path.includes("/api/approvals")) {
+        if (path.includes("/api/approvals") || path.includes("/api/sources/requests")) {
           return json([]);
         }
         return json({

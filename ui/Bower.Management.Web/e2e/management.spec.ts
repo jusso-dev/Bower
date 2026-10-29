@@ -245,6 +245,98 @@ test("enrolment shows a new token once and then lists only its metadata", async 
   expect(consoleErrors).toEqual([]);
 });
 
+test.describe("guided source setup", () => {
+  test.describe.configure({ mode: "serial" });
+
+  test("an operator sets up syslog, a second person approves it and the server proves events arrive", async ({
+    page
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== "readme-chromium", "Source requests are created by one project only.");
+    const consoleErrors = collectConsoleErrors(page);
+    await page.goto("/sources");
+
+    await expect(page.getByRole("heading", { name: "Sources", level: 1 })).toBeVisible();
+    await page.getByRole("radio", { name: /^Syslog/ }).check();
+    await page.getByRole("button", { name: "Continue" }).click();
+    const settings = page.getByRole("region", { name: "Fill in the settings" });
+    await expect(settings.getByText("What you need")).toBeVisible();
+    await settings.getByLabel("Collector", { exact: true }).selectOption("finance-prod-01");
+    await settings.getByLabel("Allowed senders").fill("10.40.0.0/24");
+    await settings.getByLabel("Server certificate file").fill("/etc/bower/syslog/server.pem");
+    // A secret is refused: only where it is stored may be entered.
+    await settings.getByLabel("Server private key file").fill("-----BEGIN PRIVATE KEY-----");
+    await settings.getByLabel("Application name").fill("edge-firewall");
+    await settings.getByLabel("Collector name senders use").fill("collector.example.org");
+    await settings.getByRole("button", { name: "Check settings" }).click();
+    await expect(settings.getByText(/must say where the secret is stored/)).toBeVisible();
+    await expect(settings.getByText("-----BEGIN PRIVATE KEY-----")).toHaveCount(0);
+    await settings.getByLabel("Server private key file").fill("/etc/bower/syslog/server-key.pem");
+    await settings.getByRole("button", { name: "Check settings" }).click();
+
+    const review = page.getByRole("region", { name: "Review and preview" });
+    const preview = review.getByLabel("Example event after redaction");
+    await expect(preview).toBeVisible();
+    // The synthetic sample's raw values never reach the browser.
+    await expect(preview).not.toContainText("alex.citizen@example.com");
+    await expect(review.getByLabel("Contents of syslog.json")).toContainText("\"kind\": \"SyslogSource\"");
+    await expect(review.getByLabel("Sender: rsyslog")).toContainText("StreamDriver=\"gtls\"");
+    await expectNoHorizontalOverflow(page);
+    await review.getByRole("button", { name: "Continue" }).click();
+
+    const approval = page.getByRole("region", { name: "Ask for approval" });
+    await approval.getByLabel("Why this source is needed").fill("Playwright: edge firewall SSH failures");
+    await approval.getByRole("button", { name: "Ask for approval" }).click();
+    await expect(page.getByRole("heading", { name: "Syslog on finance-prod-01" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Approval" }).getByText("Waiting for an approver other than the person who asked.")).toBeVisible();
+    const id = new URL(page.url()).searchParams.get("request") ?? "";
+    expect(id).toMatch(/^[0-9a-f]{32}$/);
+
+    // Four-eyes: the person who asked cannot approve, in the console or through the API.
+    await page.goto("/approvals");
+    await expect(page.getByRole("region", { name: "Source setup requests" })
+      .getByText("You asked for this source, so another approver must decide it.").first()).toBeVisible();
+    const self = await page.request.post(`/api/sources/requests/${id}/approve`, { data: { reason: "Self approval" } });
+    expect(self.status()).toBe(409);
+    const approved = await page.request.post(`/api/sources/requests/${id}/approve`, {
+      headers: { "X-Bower-Development-Person": "reviewer" },
+      data: { reason: "Playwright: matches the firewall change" }
+    });
+    expect(approved.status()).toBe(200);
+
+    // Only the collector's own heartbeat can make the check pass.
+    await heartbeatFinance(page);
+    await page.goto(`/sources?request=${id}`);
+    await expect(page.getByRole("heading", { name: "Syslog on finance-prod-01" })).toBeVisible();
+    await page.getByRole("navigation", { name: "Source request steps" })
+      .getByRole("button", { name: /^Step 3: Check it works/ }).click();
+    const check = page.getByRole("region", { name: "Check it works" });
+    await expect(check.getByText("The collector reports events from edge-firewall/production.")).toBeVisible();
+
+    await page.goto("/audit");
+    await expect(page.getByText("source-setup.approved").first()).toBeVisible();
+    await expect(page.getByText("source-setup.self-review-refused").first()).toBeVisible();
+    expect(consoleErrors).toEqual([]);
+  });
+
+  test("a viewer reads source needs and requests without write controls", async ({ page }) => {
+    await page.setExtraHTTPHeaders({ "X-Bower-Development-Roles": "Bower.Viewer" });
+    await page.goto("/sources");
+
+    await expect(page.getByText(/Viewing only/)).toBeVisible();
+    await page.getByRole("radio", { name: /^Docker containers/ }).check();
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByRole("button", { name: "Check settings" })).toBeDisabled();
+    await expect(page.getByRole("region", { name: "Source setup requests" }).getByText("Docker containers").first())
+      .toBeVisible();
+    const refused = await page.request.post("/api/sources/plan", {
+      headers: { "X-Bower-Development-Roles": "Bower.Viewer" },
+      data: { type: "ama", collectorId: "finance-prod-01", values: {} }
+    });
+    expect(refused.status()).toBe(403);
+    await expectNoHorizontalOverflow(page);
+  });
+});
+
 test("mobile navigation remains usable without horizontal overflow", async ({
   page
 }, testInfo) => {
@@ -260,6 +352,41 @@ test("mobile navigation remains usable without horizontal overflow", async ({
   await expect(page.getByText("finance-app-01")).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
+
+/**
+ * Reports finance-prod-01's expected sources as healthy, as its collector would. Development
+ * sign-in holds the collector role and seeded the collector, so it may act for it. Every
+ * other field matches the seed, so only the source report changes.
+ */
+async function heartbeatFinance(page: Page): Promise<void> {
+  const now = new Date().toISOString();
+  const response = await page.request.post("/api/collectors/finance-prod-01/heartbeat", {
+    data: {
+      version: "0.1.0",
+      configurationHash: "sha256:c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4",
+      policyHash: "sha256:4f2a9c1e7b3d58a6c0e2f91b4d7a8c3e5f6b1a2d9c0e7f84b3a5d6c1e2f9a7b8",
+      queueDepth: 3,
+      deliveryStatus: "healthy",
+      deadLettered: 0,
+      ledger: { sequence: 48211, hash: "preview-ledger-48211" },
+      sources: [
+        { id: "local-http", type: "local-http", status: "healthy", lagSeconds: null, lastEventAt: now },
+        { id: "ssh-gateway/production", type: "application", status: "healthy", lagSeconds: 0, lastEventAt: now },
+        { id: "edge-firewall/production", type: "application", status: "healthy", lagSeconds: 0, lastEventAt: now }
+      ],
+      outputs: [
+        {
+          id: "azure-logs-ingestion",
+          type: "azure-logs-ingestion",
+          status: "healthy",
+          lastAcknowledgedAt: now,
+          lastErrorCode: null
+        }
+      ]
+    }
+  });
+  expect(response.status()).toBe(200);
+}
 
 function collectConsoleErrors(page: Page): string[] {
   const errors: string[] = [];

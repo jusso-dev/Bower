@@ -11,6 +11,7 @@ import {
 import { useResource } from "../hooks/useResource";
 import { formatDate } from "../lib/format";
 import type { Access, Approval, Collector } from "../types";
+import { SourceSetupApprovals } from "./SourceSetupApprovals";
 
 export function ApprovalsPage() {
   const api = useApi();
@@ -54,7 +55,7 @@ export function ApprovalsPage() {
   return (
     <Page
       title="Enrollment approvals"
-      description="A collector cannot heartbeat as active until an authorized approver records a decision."
+      description="A collector cannot heartbeat as active, and a new source cannot be installed, until an authorized approver records a decision."
     >
       {actionError && <div className="alert alert--danger">{actionError}</div>}
       <ResourceState loading={pending.loading} error={pending.error} data={pending.data}>
@@ -149,6 +150,8 @@ export function ApprovalsPage() {
           )
         }
       </ResourceState>
+
+      <SourceSetupApprovals access={access.data} canApprove={canApprove} />
 
       <section className="sheet section-gap">
         <div className="section-heading">

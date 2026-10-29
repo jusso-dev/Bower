@@ -141,6 +141,7 @@ public sealed partial class ManagementStore(string databasePath)
         await AddColumnIfMissingAsync(
             connection, "collectors", "redactions_observed_since", "TEXT NULL", cancellationToken);
         await InitializeHomeAsync(connection, cancellationToken);
+        await InitializeSourceSetupAsync(connection, cancellationToken);
     }
 
     public async Task<CollectorRecord> RegisterAsync(

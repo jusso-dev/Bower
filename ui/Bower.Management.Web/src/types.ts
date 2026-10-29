@@ -523,3 +523,122 @@ export interface Fleet {
   sites: { name: string; collectors: number }[];
   newestVersion: string | null;
 }
+
+/** Input kinds of the one generic source form. The server re-checks every value. */
+export type SourceFieldKind =
+  | "text"
+  | "number"
+  | "choice"
+  | "boolean"
+  | "address-list"
+  | "name-list"
+  | "file-path"
+  | "secret-reference"
+  | "url";
+
+export interface SourceFieldDefinition {
+  id: string;
+  label: string;
+  kind: SourceFieldKind;
+  required: boolean;
+  help: string;
+  defaultValue?: string | null;
+  placeholder?: string | null;
+  options?: { value: string; label: string }[] | null;
+  minimum?: number | null;
+  maximum?: number | null;
+  maximumLength: number;
+  keyVaultAllowed: boolean;
+  /** Shown only when this other field has one of `shownWhenValues`. */
+  shownWhenField?: string | null;
+  shownWhenValues?: string[] | null;
+}
+
+/** A guided source type from `/api/sources/types`. */
+export interface SourceTypeDefinition {
+  id: string;
+  title: string;
+  summary: string;
+  why: string;
+  needs: string[];
+  fields: SourceFieldDefinition[];
+  checkDescription: string;
+  guide: string;
+}
+
+export interface SourceSetupFile {
+  name: string;
+  installPath: string;
+  description: string;
+  content: string;
+}
+
+export interface SourceSetupVariable {
+  component: string;
+  name: string;
+  value: string;
+}
+
+export interface SourceSetupSnippet {
+  title: string;
+  description: string;
+  language: string;
+  content: string;
+}
+
+export interface SourceSetupPlan {
+  files: SourceSetupFile[];
+  variables: SourceSetupVariable[];
+  snippets: SourceSetupSnippet[];
+  verification: { kind: "source" | "output"; reportId: string; description: string };
+  contentHash: string;
+}
+
+/** A synthetic sample after redaction. Only the redacted form ever reaches the browser. */
+export interface SourceSetupPreview {
+  valid: boolean;
+  redacted: string | null;
+  findings: { detectorId: string; action: string; path: string }[];
+  rules: string;
+}
+
+export interface SourceSetupPlanResult {
+  valid: boolean;
+  checks: GuidedCheck[];
+  plan: SourceSetupPlan | null;
+  preview: SourceSetupPreview | null;
+}
+
+/** The server's answer to "is this source working?", from the collector's heartbeat only. */
+export interface SourceSetupStatusCheck {
+  state: GuidedState;
+  label: string;
+  checks: GuidedCheck[];
+  lastEventAt: string | null;
+  collectorSeenAt: string | null;
+  checkedAt: string;
+}
+
+export type SourceSetupRequestStatus = "pending-review" | "approved" | "rejected";
+
+export interface SourceSetupRequestSummary {
+  id: string;
+  type: string;
+  typeTitle: string;
+  collectorId: string;
+  status: SourceSetupRequestStatus;
+  contentHash: string;
+  reason: string;
+  requestedByName: string;
+  requestedAt: string;
+  reviewerName: string | null;
+  reviewedAt: string | null;
+  reviewReason: string | null;
+  check: SourceSetupStatusCheck;
+}
+
+export interface SourceSetupRequestDetail extends SourceSetupRequestSummary {
+  requestedByObjectId: string;
+  values: Record<string, string>;
+  plan: SourceSetupPlan;
+}

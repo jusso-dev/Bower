@@ -19,6 +19,12 @@ public sealed class DevelopmentAuthenticationHandler(
     /// </summary>
     public const string RolesHeader = "X-Bower-Development-Roles";
 
+    /// <summary>
+    /// Development only: <c>reviewer</c> signs in as a second, fixed development person, so
+    /// local and end-to-end tests can exercise four-eyes approval. No other value is accepted.
+    /// </summary>
+    public const string PersonHeader = "X-Bower-Development-Person";
+
     private static readonly string[] AllRoles =
         [BowerRoles.Viewer, BowerRoles.Operator, BowerRoles.Approver, BowerRoles.Administrator, BowerRoles.Collector];
 
@@ -33,14 +39,19 @@ public sealed class DevelopmentAuthenticationHandler(
             roles = AllRoles.Where(subset.Contains).ToArray();
         }
 
+        bool reviewer = Request.Headers.TryGetValue(PersonHeader, out Microsoft.Extensions.Primitives.StringValues person)
+            && person.ToString() == "reviewer";
+        string objectId = reviewer ? "development-reviewer" : "development-user";
         List<Claim> claims =
         [
-            new("oid", "development-user"),
-            new("name", roles.Contains(BowerRoles.Administrator)
-                ? "Local development administrator"
-                : "Local development user"),
+            new("oid", objectId),
+            new("name", reviewer
+                ? "Local development reviewer"
+                : roles.Contains(BowerRoles.Administrator)
+                    ? "Local development administrator"
+                    : "Local development user"),
             .. roles.Select(role => new Claim("roles", role)),
-            new(ClaimTypes.NameIdentifier, "development-user")
+            new(ClaimTypes.NameIdentifier, objectId)
         ];
         ClaimsIdentity identity = new(claims, AuthenticationScheme, "name", "roles");
         return Task.FromResult(

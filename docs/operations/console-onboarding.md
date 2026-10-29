@@ -152,3 +152,7 @@ viewers, saving, simulated versus verified). Playwright journey in
 Open **Collectors** for each machine's plain-language state, suggested fix, site
 filter and reported source and destination details. See [Check your collectors](console-fleet.md).
 A healthy check-in is separate from the destination proof in step 7.
+
+After the collector is connected, use **Sources** to generate settings and request
+another person's approval. [Add a security source](console-sources.md) explains
+installation, signed downloads and the heartbeat check.
