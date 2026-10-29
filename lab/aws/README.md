@@ -47,8 +47,13 @@ python3 lab/aws/scripts/lab.py apply --state /tmp/bower-run/state.json
 python3 lab/aws/scripts/lab.py status --state /tmp/bower-run/state.json
 ```
 
-`status` refreshes instance IDs/IPs and SSM status. Continue only after the stack
-is complete and all seven hosts are Online. `ssm.py` verifies account, exact host
+`status` refreshes instance IDs/IPs, actual instance types, per-host CPU credit
+modes and SSM status. It records `windowsFallback` and `cpuCredits` in the state
+file used by the scorer. After a Windows resize, run it with
+`--windows-fallback-reason "Measured memory exceeded 90%"` only if that reason
+was actually observed; otherwise it records the resize with an unknown reason.
+Continue only after the stack is complete and all seven hosts are Online.
+`ssm.py` verifies account, exact host
 ID, Project/RunId tags, running state and OS before sending any command.
 
 ## Stage and install
@@ -92,7 +97,9 @@ key for a production trust root.
 Read command outcomes with `aws ssm get-command-invocation` using IDs recorded in
 `commands.jsonl`; command submission alone is not success. Control setup is
 one-time: do not remove its completion marker to overwrite a running executable.
-`refresh-pack.sh` updates pack content without resetting management or credentials.
+`refresh-pack.sh` builds and tests exactly one new pack in an isolated directory,
+then distributes it without resetting management or credentials. It supports pack
+version changes and never selects an old build from the shared output directory.
 
 ## Run phases
 
@@ -102,7 +109,8 @@ this is currently an operator-sequenced campaign, not a single unattended runner
 
 1. Run `approve-and-check.sh` on Control, then `create-corpus.sh`. P0 requires all
    six collectors Active plus negative remote admin/assertion tests. The corpus
-   contains four synthetic detector families and stays in the lab.
+   contains four synthetic detector families and stays in the lab. The TFN value
+   is the published detector test fixture, not a randomly generated identifier.
 2. Run `load-smoke.sh` on all three Linux collectors; run `windows-events.ps1`
    once on each Windows host. The latter writes real Application events, not HTTP
    substitutes. Reusing a producer phase ID with new timestamps causes identity
@@ -120,16 +128,29 @@ this is currently an operator-sequenced campaign, not a single unattended runner
    `verify-outage.sh`; it measures last output publication relative to service start.
 7. Run `crash-load.sh` on each Linux collector. It kills the service during load,
    records transport failures, and measures service recovery separately from
-   acknowledged-event recovery. Run `disk-pressure.sh` only on Collector; it
-   verifies the isolated mount, uses a bounded fill, and removes it in `finally`
-   with an independent cleanup timer as a backstop.
+   acknowledged-event recovery. Immediately stage receipts and run `final` on
+   Collector **before disk-pressure or reboot tests**:
+
+   ```bash
+   python3 lab/aws/scripts/stage-receipts.py --state /tmp/bower-run/state.json
+   python3 lab/aws/scripts/ssm.py Collector lab/aws/scripts/verify-smoke.sh \
+     --state /tmp/bower-run/state.json --phase final
+   ```
+
+   Wait for that command to finish and preserve its result even if it fails. The
+   verifier compares spool publication timestamps against each host's recorded
+   crash time plus 120 seconds. Starting verification late cannot turn a late
+   arrival into an on-time result. Missing crash timing metadata fails closed.
+   Then run `disk-pressure.sh` only on Collector; it verifies the isolated mount,
+   uses a bounded fill, and removes it in `finally` with an independent cleanup
+   timer as a backstop.
 8. Run `reboot.py Linux2 Wec Windows1 Windows2` with the state file. Collect
    `health-linux.sh`/`health-windows.ps1`, then `queue-integrity.sh` and
    `queue-integrity-windows.ps1` on the respective hosts. Windows delayed automatic
    startup must not be mistaken for instant recovery.
-9. Stage receipts again. Preserve `final` verification at the recovery deadline,
-   then run `final-drained` separately if needed. Never replace a failed deadline
-   result with an eventual-success result.
+9. Stage receipts again and run `final-drained` for eventual delivery after the
+   fault campaign. Keep the earlier `final` deadline result; never replace a
+   failed deadline result with an eventual-success result.
 
 ```bash
 python3 lab/aws/scripts/stage-receipts.py --state /tmp/bower-run/state.json
@@ -156,6 +177,8 @@ manifests). `report.py` expects the phase layout above plus `ssm-metadata.json`
 `cleanup.json`. Keep original diagnostics alongside the corrected reports.
 
 ```bash
+python3 lab/aws/scripts/lab.py status --state /tmp/bower-run/state.json
+# Save final observed sizes and credit modes before resources are deleted.
 python3 lab/aws/scripts/cleanup.py --state /tmp/bower-run/state.json
 # Review the exact inventory; --apply deletes only this stack and tagged lab secrets.
 python3 lab/aws/scripts/cleanup.py --state /tmp/bower-run/state.json --apply

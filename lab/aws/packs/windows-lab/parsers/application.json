@@ -34,7 +34,6 @@
       "sourceName": "data.1",
       "type": "Text",
       "ocsfPath": "metadata.correlation_uid",
-      "asimField": "EventOriginalType",
       "sensitive": false
     },
     {

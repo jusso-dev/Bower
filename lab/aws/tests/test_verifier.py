@@ -20,7 +20,7 @@ class VerifierTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path=Path(folder);(path/'events.jsonl').write_text('\n'.join(json.dumps(e) for e in (source,alert)))
             with patch.object(verify,'Path',return_value=path),patch.object(verify,'aws',return_value={'SecretString':json.dumps(corpus)}):
-                events,correlations,_,_,_,latencies,leaks,_=verify.snapshot()
+                events,correlations,_,_,_,latencies,leaks,_,_=verify.snapshot()
         self.assertEqual(2,len(events));self.assertEqual(1,correlations['source-1'])
         self.assertEqual(1,leaks['test']);self.assertEqual(2,len(latencies))
 
@@ -29,6 +29,21 @@ class VerifierTests(unittest.TestCase):
         verify.validate_receipts(receipts)
         for bad in ([],receipts[:-1],receipts[:-1]+[('Windows2','phase',{'acknowledged':[]})],receipts[:-1]+[('Windows2','native',{'correlations':['x'],'written':2})]):
             with self.assertRaises(ValueError):verify.validate_receipts(bad)
+
+    def test_late_verification_cannot_turn_late_delivery_into_a_pass(self):
+        receipts=[(host,'crash.acks.json',{'acknowledged':[host],'recoveryDeadlineUnix':1120,'recoveryDeadlineSeconds':120}) for host in ('Collector','Linux1','Linux2')]
+        with patch.object(verify.time,'time',return_value=2000):
+            self.assertEqual(1120,verify.crash_deadline(receipts))
+        events=Counter({'Collector':1,'Linux1':1,'Linux2':1})
+        times={'Collector':1121,'Linux1':1119,'Linux2':1120}
+        rows=verify.receipt_summary(receipts,events,Counter(),times,enforce_deadline=True)
+        self.assertEqual(1,rows[0]['missing'])
+        self.assertEqual(1,rows[0]['arrivedAfterDeadline'])
+        self.assertFalse(verify.consistency_passed(rows,events,True,{}))
+        eventual=verify.receipt_summary(receipts,events,Counter(),times)
+        self.assertTrue(verify.consistency_passed(eventual,events,True,{}))
+        receipts[0][2].pop('recoveryDeadlineUnix')
+        with self.assertRaises(ValueError):verify.crash_deadline(receipts)
 
     def test_missing_duplicate_and_denied_receipts_fail(self):
         receipts=[('host','phase',{'acknowledged':['a','b'],'denied':['denied']})]

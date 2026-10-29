@@ -26,6 +26,28 @@ def verify_stack(stack, run_id):
         raise ValueError("Stack does not belong to this lab run; refusing operation")
 
 
+def record_observations(state, instances, credits, fallback_reason=None):
+    """Persist observed sizes and credit modes, without inferring why a resize occurred."""
+    hosts=('Control','Collector','Linux1','Linux2','Wec','Windows1','Windows2')
+    by_id={instance['InstanceId']:instance for instance in instances}
+    credit_by_id={entry['InstanceId']:entry['CpuCredits'] for entry in credits}
+    ids={host:state['outputs'][host+'Id'] for host in hosts}
+    if not set(ids.values())<=by_id.keys() or not set(ids.values())<=credit_by_id.keys():
+        raise ValueError('Incomplete observed instance or CPU-credit inventory')
+    types={host:by_id[identity]['InstanceType'] for host,identity in ids.items()}
+    modes={host:credit_by_id[identity] for host,identity in ids.items()}
+    windows={host:types[host] for host in ('Wec','Windows1','Windows2')}
+    resized=[host for host,kind in windows.items() if kind!='t3.micro']
+    previous=state.get('windowsFallback') or {}
+    previous_reason=previous.get('reason') if previous.get('observed') and previous.get('finalTypes')==windows else None
+    state['observedInstanceTypes']=types
+    state['observedCpuCredits']=modes
+    state['cpuCredits']=next(iter(set(modes.values()))) if len(set(modes.values()))==1 else 'mixed'
+    state['windowsFallback']={**previous,'observed':True,'initialType':'t3.micro','hosts':resized,'finalTypes':windows,
+        'finalType':next(iter(set(windows.values()))) if len(set(windows.values()))==1 else 'mixed',
+        'reason':(fallback_reason or previous_reason or 'Resize observed; reason not recorded') if resized else 'No Windows resize observed'}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("plan", "apply", "status", "destroy"))
@@ -34,6 +56,7 @@ def main():
     parser.add_argument("--region", default="ap-southeast-2", choices=("ap-southeast-2",))
     parser.add_argument("--account", default="959038055523")
     parser.add_argument("--hours", type=int, default=8, choices=range(1, 13))
+    parser.add_argument("--windows-fallback-reason", help="Observed reason for an actual resize, recorded by status")
     args = parser.parse_args()
     verify_account(args.profile, args.region, args.account)
     call = lambda *params: aws(args.profile, args.region, *params)
@@ -57,7 +80,8 @@ def main():
         params = [{"ParameterKey": key, "ParameterValue": value} for key, value in values.items()]
         stack = "bower-lab-" + run_id
         state = {"runId": run_id, "stack": stack, "account": args.account, "region": args.region,
-                 "expiry": expiry, "parameters": values, "sentinel": "deferred-by-user"}
+                 "expiry": expiry, "parameters": values, "sentinel": "deferred-by-user",
+                 "windowsFallback": {"observed": False, "reason": "Not yet observed"}, "cpuCredits": "not-observed"}
         args.state.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
         response = call("cloudformation", "create-change-set", "--stack-name", stack,
             "--change-set-name", "reviewed-lab", "--change-set-type", "CREATE", "--capabilities", "CAPABILITY_IAM",
@@ -95,10 +119,17 @@ def main():
     else:
         state["stackStatus"] = stack["StackStatus"]
         state["outputs"] = {entry["OutputKey"]: entry["OutputValue"] for entry in stack.get("Outputs", [])}
-        args.state.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
         reservations = call("ec2", "describe-instances", "--filters", "Name=tag:Project,Values=bower-lab",
             "Name=tag:RunId,Values=" + state["runId"])["Reservations"]
-        ids = [i["InstanceId"] for r in reservations for i in r["Instances"]]
+        instances = [i for r in reservations for i in r["Instances"]]
+        ids = [i["InstanceId"] for i in instances]
+        if all(host+'Id' in state['outputs'] for host in ('Control','Collector','Linux1','Linux2','Wec','Windows1','Windows2')):
+            expected_ids=[state['outputs'][host+'Id'] for host in ('Control','Collector','Linux1','Linux2','Wec','Windows1','Windows2')]
+            if not set(expected_ids)<=set(ids):
+                raise ValueError('Stack instances missing from the tagged run inventory')
+            credits=call('ec2','describe-instance-credit-specifications','--instance-ids',*expected_ids)['InstanceCreditSpecifications']
+            record_observations(state,instances,credits,args.windows_fallback_reason)
+        args.state.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
         managed = call("ssm", "describe-instance-information", "--filters", json.dumps([{"Key": "InstanceIds", "Values": ids}])) if ids else {}
         print(json.dumps({"stack": state["stack"], "status": stack["StackStatus"], "hosts": ids,
             "ssm": [{"id": i["InstanceId"], "status": i["PingStatus"], "platform": i["PlatformName"]}
