@@ -142,6 +142,7 @@ nav:
       - Azure ingestion API: deployment/logs-ingestion-api.md
       - Entra ingestion plan: deployment/entra-ingestion-plan.md
       - Cloud permissions: deployment/cloud-permission-context.md
+      - Continuous integration: architecture/ci.md
       - Dependencies: architecture/dependencies.md
       - Site architecture: architecture/documentation-site.md
       - Accessibility: reference/accessibility.md

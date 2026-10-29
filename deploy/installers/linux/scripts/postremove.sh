@@ -21,10 +21,21 @@ case "${1:-}" in
     remove_secrets
     rm -rf /var/lib/bower /var/spool/bower /var/log/bower /etc/bower
     if getent passwd bower >/dev/null 2>&1; then
-      userdel bower >/dev/null 2>&1 || true
+      # A stopped service can still have a short-lived process during core-dump
+      # collection. Never force-delete an account that owns a process, and never
+      # report a successful purge while silently leaving the account behind.
+      attempts=0
+      until userdel bower >/dev/null 2>&1; do
+        attempts=$((attempts + 1))
+        if [ "$attempts" -ge 30 ]; then
+          echo "Bower purge could not remove the service account; retry after its processes exit." >&2
+          exit 1
+        fi
+        sleep 1
+      done
     fi
     if getent group bower >/dev/null 2>&1; then
-      groupdel bower >/dev/null 2>&1 || true
+      groupdel bower
     fi
     ;;
 esac

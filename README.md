@@ -381,9 +381,11 @@ the collector is down. Details: [AWS](docs/deployment/aws.md),
 
 ## Container images
 
-Every `main` commit that passes CI publishes multi-arch (`amd64`, `arm64`) images to
-GitHub Container Registry with SBOMs and signed build provenance; `vX.Y.Z` tags
-publish versioned and `latest` tags.
+Release tags and manual Images workflow runs publish multi-arch (`amd64`, `arm64`)
+images to GitHub Container Registry with SBOMs and signed build provenance.
+`vX.Y.Z` tags publish versioned and `latest` tags; dispatching Images on `main`
+refreshes `edge`. Ordinary merges run [change-based CI](docs/architecture/ci.md)
+without rebuilding and publishing every image.
 
 ```bash
 docker pull ghcr.io/jusso-dev/bower-collector:edge
