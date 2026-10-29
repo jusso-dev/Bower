@@ -101,7 +101,7 @@ jobs:
           bower=src/Bower.Cli/bin/Release/net10.0/bower
           "$bower" keys generate --out-dir "$RUNNER_TEMP/pack-keys" --name ci-ephemeral
           mkdir -p "$RUNNER_TEMP/pack-reports"
-          for source in packs/*/; do
+          for source in packs/*/ lab/aws/packs/*/; do
             source=${source%/}
             id=$(basename "$source")
             "$bower" pack build "$source" --key "$RUNNER_TEMP/pack-keys/ci-ephemeral.key.pem" --out "$RUNNER_TEMP/packs/$id"
@@ -193,8 +193,23 @@ jobs:
           # cfn-lint and Terraform providers are third-party code; keep the token out of .git/config.
           persist-credentials: false
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Validate AWS lab harness
+        run: |
+          python3 -m unittest discover -s lab/aws/tests -v
+          python3 -m compileall -q lab/aws/scripts
+          for script in lab/aws/scripts/*.sh; do bash -n "$script"; done
+          python3 lab/aws/scripts/template.py "$RUNNER_TEMP/bower-lab.json"
+      - name: Check Windows lab script syntax
+        shell: pwsh
+        run: |
+          foreach ($file in Get-ChildItem lab/aws/scripts/*.ps1) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count) { $errors | Write-Error; exit 1 }
+          }
       - name: Lint CloudFormation
-        run: uvx cfn-lint==1.57.2 deploy/aws/*.yaml
+        run: uvx cfn-lint==1.57.2 deploy/aws/*.yaml "$RUNNER_TEMP/bower-lab.json"
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: 1.15.8

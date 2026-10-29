@@ -23,6 +23,10 @@ def select(paths, full=False):
             continue
         if path.startswith((".github/workflows/", "tools/ci/")):
             selected.update(JOBS)
+        elif path.startswith("lab/aws/packs/"):
+            selected.update(("infrastructure", "dotnet"))
+        elif path.startswith(("lab/aws/", "tests/scorecard/")):
+            selected.add("infrastructure")
         elif path.startswith("ui/"):
             selected.update(("ui", "e2e"))
         elif path.startswith("powershell/"):

@@ -1,0 +1,88 @@
+{
+  "version": "1.0",
+  "format": "Json",
+  "fields": [
+    {
+      "sourceName": "id",
+      "type": "Text",
+      "ocsfPath": "metadata.uid",
+      "asimField": "EventOriginalUid",
+      "sensitive": false
+    },
+    {
+      "sourceName": "timeCreated",
+      "type": "DateTime",
+      "ocsfPath": "time",
+      "asimField": "TimeGenerated",
+      "sensitive": false
+    },
+    {
+      "sourceName": "computer",
+      "type": "Text",
+      "ocsfPath": "device.hostname",
+      "asimField": "DvcHostname",
+      "sensitive": false
+    },
+    {
+      "sourceName": "data.0",
+      "type": "Text",
+      "ocsfPath": "actor.user.name",
+      "asimField": "TargetUsername",
+      "sensitive": true
+    },
+    {
+      "sourceName": "data.1",
+      "type": "Text",
+      "ocsfPath": "metadata.correlation_uid",
+      "sensitive": false
+    },
+    {
+      "sourceName": "data.2",
+      "type": "Text",
+      "ocsfPath": "status_detail",
+      "asimField": "EventResultDetails",
+      "sensitive": true
+    },
+    {
+      "sourceName": "channel",
+      "type": "Text",
+      "ocsfPath": "metadata.log_name",
+      "asimField": "EventOriginalSubType",
+      "sensitive": false
+    },
+    {
+      "sourceName": "provider",
+      "type": "Text",
+      "ocsfPath": "metadata.product.name",
+      "asimField": "EventProduct",
+      "sensitive": false
+    },
+    {
+      "sourceName": "eventId",
+      "type": "WholeNumber",
+      "ocsfPath": "metadata.event_code",
+      "asimField": "EventOriginalType",
+      "sensitive": false
+    }
+  ],
+  "runtime": {
+    "applicationName": "BowerLabWindows",
+    "environment": "lab",
+    "eventCategory": "authentication",
+    "eventType": "authentication_failure",
+    "eventAction": "authentication.attempt",
+    "eventResult": "failure",
+    "match": {
+      "channel": "Application",
+      "provider": "BowerLab",
+      "eventId": "9010"
+    },
+    "fields": {
+      "eventId": "id",
+      "timeGenerated": "timeCreated",
+      "actor.username": "data.0",
+      "request.correlationId": "data.1",
+      "eventOutcomeReason": "data.2"
+    }
+  }
+}

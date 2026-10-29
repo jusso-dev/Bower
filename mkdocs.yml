@@ -117,6 +117,7 @@ nav:
       - Diagnose DCR issues: operations/doctor-and-dcr.md
       - Queue and fleet integrity: operations/fleet-and-queue-integrity.md
       - Queue durability: operations/queue-v5-durability.md
+      - AWS lab and stress testing: operations/lab-and-stress-testing.md
       - Event identity conflicts: operations/event-identity-conflicts.md
       - Source silence: operations/suppression-archive-and-source-silence.md
       - Azure SDK recovery: operations/azure-sdk-recovery.md

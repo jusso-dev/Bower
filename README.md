@@ -996,6 +996,13 @@ Without a workspace the bundle is labelled `simulated`; a 2xx from the ingestion
 is never treated as proof. See [evidence bundles](docs/operations/evidence-bundles.md)
 and how Bower supports the ISM [security monitoring controls](docs/security/ism-alignment.md).
 
+## AWS validation lab
+
+The [AWS lab and stress-testing guide](docs/operations/lab-and-stress-testing.md)
+records real Linux/Windows delivery, redaction and recovery checks, including
+failed latency/recovery thresholds and the work still required. Local spool
+results are not Sentinel delivery proof.
+
 ## Contributing
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md), root `AGENTS.md`, nearest scoped

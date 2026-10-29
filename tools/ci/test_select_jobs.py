@@ -51,6 +51,10 @@ class SelectionTests(unittest.TestCase):
         for path in ("deploy/docker/Dockerfile", "rust/Dockerfile", ".dockerignore", "docker-compose.yml"):
             self.assertIn("containers", self.enabled([path]))
 
+    def test_aws_lab_checks_do_not_build_platforms(self):
+        self.assertEqual({"infrastructure"}, self.enabled(["lab/aws/scripts/load.py", "tests/scorecard/aws-thresholds.json"]))
+        self.assertEqual({"infrastructure", "dotnet"}, self.enabled(["lab/aws/packs/windows-lab/pack.yaml"]))
+
     def test_independent_languages_stay_independent(self):
         self.assertEqual({"rust"}, self.enabled(["rust/crates/bower-policy/src/lib.rs"]))
         self.assertEqual({"infrastructure"}, self.enabled(["deploy/aws/main.yaml"]))

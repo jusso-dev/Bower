@@ -2,6 +2,18 @@
 
 `AGENTS.md` requires written justification for new dependencies.
 
+The disposable `lab/aws` harness uses Python 3.9+ standard library, AWS CLI v2,
+OpenSSL and nginx on the Amazon Linux control host, and the AWS-provided
+AWSPowerShell module on Windows Server 2022. These are lab-only tools: AWS CLI and
+AWSPowerShell use instance roles to fetch ephemeral secrets without embedding
+credentials in command text; OpenSSL creates the isolated TLS/signing material;
+nginx restricts development administration to loopback while collectors use TLS.
+The resolved AMI IDs and artifact hashes are recorded for each run. No product
+runtime or Python package dependency is added. CI reuses its existing pinned
+`cfn-lint` for generated infrastructure. Alternatives are custom SigV4 clients,
+hand-written TLS provisioning or exposing development admin remotely, each with
+more security-sensitive code or weaker isolation.
+
 The offline `tools/queue-migration-check` project references `Bower.Persistence`
 to reuse canonical `EventIdentity` and the existing SQLite/contract dependencies;
 it adds no NuGet packages. Unit tests reference the tool to exercise the exact
