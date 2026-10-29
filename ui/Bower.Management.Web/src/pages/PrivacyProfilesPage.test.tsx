@@ -190,6 +190,8 @@ function postsTo(fetchMock: ReturnType<typeof stubApi>, path: string) {
 
 describe("Privacy profiles page", () => {
   beforeEach(() => {
+    // These tests exercise technical-page permissions after the viewer opts in.
+    localStorage.setItem("bower-console-view:development:viewer-oid", "detailed");
     vi.stubGlobal("matchMedia", () => ({
       matches: false,
       addEventListener: vi.fn(),

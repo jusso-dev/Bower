@@ -24,7 +24,7 @@ const pageNames: Record<string, string> = {
  * Plain-English home: is data flowing, what was protected this week and what needs
  * attention. Every state and sentence is computed by the API from real management state.
  */
-export function HomePage() {
+export function HomePage({ view = "home" }: { view?: "home" | "alerts" | "reports" }) {
   const { data, loading, error, refreshError, revalidate } = useResource<Home>("/api/home");
 
   useEffect(() => {
@@ -34,8 +34,10 @@ export function HomePage() {
 
   return (
     <Page
-      title="Home"
-      description="Is your data flowing, what was protected this week, and what needs your attention."
+      title={view === "home" ? "Home" : view === "alerts" ? "Alerts" : "Reports"}
+      description={view === "alerts" ? "What needs attention and what to do next, from the latest collector reports."
+        : view === "reports" ? "Reported privacy protection this week and the latest destination proof."
+        : "Is your data flowing, what was protected this week, and what needs your attention."}
     >
       <ResourceState loading={loading} error={error} data={data}>
         {(home) => (
@@ -46,7 +48,7 @@ export function HomePage() {
                 <span>Showing the status from {formatDate(home.generatedAt)}.</span>
               </div>
             )}
-            <div className="home-grid">
+            {view !== "alerts" && <div className="home-grid">
               <section className="sheet home-card" aria-labelledby="home-flow">
                 <header className="home-card__header">
                   <h2 id="home-flow">Is my data flowing?</h2>
@@ -89,9 +91,9 @@ export function HomePage() {
                     ` ${count(home.protection.collectorsNotReporting, "working collector runs", "working collectors run")} an older version that does not report these counts yet.`}
                 </p>
               </section>
-            </div>
+            </div>}
 
-            <section className="sheet section-gap home-card" aria-labelledby="home-attention">
+            {view !== "reports" && <section className="sheet section-gap home-card" aria-labelledby="home-attention">
               <header className="home-card__header">
                 <h2 id="home-attention">What needs my attention?</h2>
                 <TrafficLight state={home.state} />
@@ -117,9 +119,9 @@ export function HomePage() {
                   detail="Bower will list anything that needs a person here, with what to do about it."
                 />
               )}
-            </section>
+            </section>}
 
-            <section className="sheet section-gap home-card" aria-labelledby="home-groups">
+            {view === "home" && <section className="sheet section-gap home-card" aria-labelledby="home-groups">
               <header className="home-card__header">
                 <h2 id="home-groups">
                   <GlossaryText text="Collector groups" />
@@ -158,12 +160,12 @@ export function HomePage() {
                   detail="Groups appear here once a collector asks to join."
                 />
               )}
-            </section>
+            </section>}
 
-            <p className="home-footer">
+            {view === "home" && <p className="home-footer">
               <Link to="/overview">See the detailed overview</Link> for machine names, queues and
               policy versions.
-            </p>
+            </p>}
           </>
         )}
       </ResourceState>

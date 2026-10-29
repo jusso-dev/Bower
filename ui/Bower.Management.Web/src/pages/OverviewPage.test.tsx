@@ -71,6 +71,8 @@ function stubOverview(overview: Overview) {
 
 describe("Overview page", () => {
   beforeEach(() => {
+    // These tests exercise technical-page permissions after the viewer opts in.
+    localStorage.setItem("bower-console-view:development:viewer-oid", "detailed");
     vi.stubGlobal("matchMedia", () => ({
       matches: false,
       addEventListener: vi.fn(),

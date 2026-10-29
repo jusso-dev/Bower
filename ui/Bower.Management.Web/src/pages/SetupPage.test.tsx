@@ -102,6 +102,8 @@ function stubSetup(sequence: (SetupStatus | "error")[], roles = ["Bower.Administ
 
 describe("Setup page", () => {
   beforeEach(() => {
+    // These tests exercise technical-page permissions after the viewer opts in.
+    localStorage.setItem("bower-console-view:development:oid", "detailed");
     vi.stubGlobal("matchMedia", () => ({
       matches: false,
       addEventListener: vi.fn(),

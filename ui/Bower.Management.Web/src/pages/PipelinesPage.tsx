@@ -1,10 +1,12 @@
 import { GitBranch } from "lucide-react";
 import { Page, EmptyState, ResourceState } from "../components/ui";
 import { useResource } from "../hooks/useResource";
-import type { PipelineTemplate } from "../types";
+import type { Access, PipelineTemplate } from "../types";
 import { CustomLogWorkbench } from "./CustomLogWorkbench";
 
 export function PipelinesPage() {
+  const access = useResource<Access>("/api/access/me");
+  const canEdit = access.data?.roles.some(role => ["Bower.Operator", "Bower.Approver", "Bower.Administrator"].includes(role)) ?? false;
   const { data, loading, error } = useResource<PipelineTemplate[]>(
     "/api/pipelines/templates"
   );
@@ -13,7 +15,9 @@ export function PipelinesPage() {
       title="Pipeline builder"
       description="Infer custom log parsers, validate transformed fields and use reusable pipeline templates."
     >
-      <CustomLogWorkbench />
+      {canEdit ? <CustomLogWorkbench /> : <p className="permission-note">
+        Viewing only. An operator can generate and preview parser configuration. You can read the available templates below.
+      </p>}
       <ResourceState loading={loading} error={error} data={data}>
         {(templates) =>
           templates.length ? (

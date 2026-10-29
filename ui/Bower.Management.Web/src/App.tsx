@@ -15,10 +15,13 @@ import {
   Sun,
   Ticket,
   Timer,
+  Bell,
+  FileChartColumn,
+  SlidersHorizontal,
   X
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./auth";
 import { Brand } from "./components/ui";
 import { HomePage } from "./pages/HomePage";
@@ -34,9 +37,12 @@ import { PrivacyProfilesPage } from "./pages/PrivacyProfilesPage";
 import { SetupPage } from "./pages/SetupPage";
 import { EnrolmentPage } from "./pages/EnrolmentPage";
 import { SourcesPage } from "./pages/SourcesPage";
+import { useConsoleView } from "./hooks/useConsoleView";
 
 const navItems = [
   { to: "/", label: "Home", icon: House },
+  { to: "/alerts", label: "Alerts", icon: Bell },
+  { to: "/reports", label: "Reports", icon: FileChartColumn },
   { to: "/overview", label: "Overview", icon: Activity },
   { to: "/setup", label: "Setup", icon: ListChecks },
   { to: "/collectors", label: "Collectors", icon: Boxes },
@@ -60,6 +66,10 @@ export function App() {
         window.matchMedia("(prefers-color-scheme: dark)").matches)
   );
   const { accountName, authenticated, development, signIn, signOut } = useAuth();
+  const view = useConsoleView(authenticated);
+  const location = useLocation();
+  const simplePaths = ["/", "/alerts", "/reports", "/help"];
+  const technical = !simplePaths.includes(location.pathname.replace(/\/+$/, "") || "/");
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
@@ -106,7 +116,7 @@ export function App() {
       <aside className={`side-rail${menuOpen ? " side-rail--open" : ""}`}>
         <Brand />
         <nav aria-label="Primary navigation">
-          {navItems.map(({ to, label, icon: Icon }) => (
+          {navItems.filter(item => view.detailed || simplePaths.includes(item.to)).map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
               to={to}
@@ -119,6 +129,10 @@ export function App() {
           ))}
         </nav>
         <div className="rail-footer">
+          {view.access && <button className="rail-action" type="button" aria-pressed={view.detailed} onClick={view.toggle}>
+            <SlidersHorizontal aria-hidden="true" />
+            <span>{view.detailed ? "Use simple view" : "Show technical pages"}</span>
+          </button>}
           <button
             className="rail-action"
             type="button"
@@ -128,7 +142,7 @@ export function App() {
             <span>{dark ? "Light mode" : "Dark mode"}</span>
           </button>
           <div className="identity-block">
-            <span className="identity-name">{accountName || "Not signed in"}</span>
+            <span className="identity-name">{view.access?.displayName || accountName || "Not signed in"}</span>
             <span className="identity-mode">{development ? "Development auth" : "Entra ID"}</span>
           </div>
           <button
@@ -147,8 +161,21 @@ export function App() {
             Development authentication active. Never enable this mode in production.
           </div>
         )}
+        {view.error && <div className="alert alert--danger" role="alert">
+          Your access could not be checked. Technical pages are unavailable.
+          <button className="button button--secondary" type="button" onClick={view.retry}>Retry access check</button>
+        </div>}
+        {view.loading && technical ? <p role="status" aria-label="Loading">Checking your access…</p> : !view.detailed && technical ? (
+          <section className="sheet section-gap sheet-body" aria-labelledby="technical-pages-title">
+            <h1 id="technical-pages-title">Technical details are hidden</h1>
+            <p>Simple view shows Home, Alerts and Reports. You can show the technical pages to read more detail. Your permissions stay the same.</p>
+            <button className="button button--primary" type="button" disabled={!view.access} onClick={view.toggle}>Show this technical page</button>
+          </section>
+        ) : (
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/alerts" element={<HomePage view="alerts" />} />
+          <Route path="/reports" element={<HomePage view="reports" />} />
           <Route path="/overview" element={<OverviewPage />} />
           <Route path="/setup" element={<SetupPage />} />
           <Route path="/collectors" element={<CollectorsPage />} />
@@ -164,6 +191,7 @@ export function App() {
           <Route path="/help" element={<HelpPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        )}
       </main>
     </div>
   );

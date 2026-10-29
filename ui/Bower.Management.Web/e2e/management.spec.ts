@@ -54,6 +54,7 @@ test("fleet overview reports real management state", async ({ page }, testInfo) 
 test("fleet filters by site and state and opens read-only machine details", async ({ page }) => {
   await page.setExtraHTTPHeaders({ "X-Bower-Development-Roles": "Bower.Viewer" });
   await page.goto("/collectors");
+  await page.getByRole("button", { name: "Show this technical page" }).click();
   await expect(page.getByRole("heading", { name: "Collectors", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "View details for finance-app-01" })).toBeVisible();
   await page.getByLabel("Site", { exact: true }).selectOption("hr");
@@ -205,6 +206,7 @@ test.describe("setup wizard", () => {
     // Development sign-in grants every role; this header narrows it to Bower.Viewer.
     await page.setExtraHTTPHeaders({ "X-Bower-Development-Roles": "Bower.Viewer" });
     await page.goto("/setup");
+    await page.getByRole("button", { name: "Show this technical page" }).click();
 
     await expect(page.getByText(/Viewing only/)).toBeVisible();
     const steps = page.getByRole("navigation", { name: "Setup steps" });
@@ -323,6 +325,7 @@ test.describe("guided source setup", () => {
   test("a viewer reads source needs and requests without write controls", async ({ page }) => {
     await page.setExtraHTTPHeaders({ "X-Bower-Development-Roles": "Bower.Viewer" });
     await page.goto("/sources");
+    await page.getByRole("button", { name: "Show this technical page" }).click();
 
     await expect(page.getByText(/Viewing only/)).toBeVisible();
     await page.getByRole("radio", { name: /^Docker containers/ }).check();
@@ -415,6 +418,27 @@ test("privacy actions can be edited with forms and need a different approver", a
   expect(self.status()).toBe(409);
   const approval = await page.request.post(`/api/privacy-profiles/versions/${id}/approve`, { headers: { "X-Bower-Development-Person": "reviewer" }, data: { reason: "Synthetic second-person review" } });
   expect(approval.ok()).toBeTruthy();
+});
+
+test("a viewer gets simple navigation and technical opt-in keeps writes forbidden", async ({ page }, testInfo) => {
+  await page.setExtraHTTPHeaders({ "X-Bower-Development-Roles": "Bower.Viewer" });
+  await page.goto("/reports");
+  await expect(page.getByRole("heading", { name: "Reports", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What was protected this week?" })).toBeVisible();
+  if (testInfo.project.name === "mobile-chromium") await page.getByRole("button", { name: "Open navigation" }).click();
+  const nav = page.getByRole("navigation", { name: "Primary navigation" });
+  await expect(nav.getByRole("link")).toHaveText(["Home", "Alerts", "Reports", "Help"]);
+  await page.getByRole("button", { name: "Show technical pages" }).click();
+  await nav.getByRole("link", { name: "Pipelines" }).click();
+  await expect(page.getByText(/Viewing only. An operator/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Infer parser and schema" })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Pipeline builder" })).toBeVisible();
+  for (const path of ["/api/privacy-profiles", "/api/sources/requests", "/api/custom-logs/generate"]) {
+    const denied = await page.request.post(path, { headers: { "X-Bower-Development-Roles": "Bower.Viewer" }, data: {} });
+    expect(denied.status()).toBe(403);
+  }
+  await expectNoHorizontalOverflow(page);
 });
 
 function collectConsoleErrors(page: Page): string[] {

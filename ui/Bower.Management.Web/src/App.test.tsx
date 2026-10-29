@@ -45,8 +45,8 @@ describe("Bower management shell", () => {
   it("renders a real empty fleet state from the API", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        json({
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input).includes("/api/access/me") ? json({ objectId: "operator", roles: ["Bower.Operator"] }) : json({
           totalCollectors: 0,
           pendingApproval: 0,
           unhealthyCollectors: 0,
@@ -67,6 +67,7 @@ describe("Bower management shell", () => {
   });
 
   it("keeps approval controls unavailable for a viewer", async () => {
+    localStorage.setItem("bower-console-view:development:viewer-object", "detailed");
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
@@ -97,6 +98,7 @@ describe("Bower management shell", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const path = String(input);
+        if (path.includes("/api/access/me")) return json({ objectId: "operator", roles: ["Bower.Operator"] });
         if (path.includes("/api/custom-logs/generate")) {
           return json({
             format: "Json",

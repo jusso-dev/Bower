@@ -140,6 +140,20 @@ test("capture guided privacy editing", async ({ page }, testInfo) => {
   });
 });
 
+test("capture simplified viewer reports", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "readme-chromium");
+  await page.setExtraHTTPHeaders({ "X-Bower-Development-Roles": "Bower.Viewer" });
+  await page.goto("/reports");
+  await expect(page.getByRole("heading", { name: "Reports", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show technical pages" })).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({ path: path.join(screenshotDirectory, "bower-management-viewer-reports.png"), fullPage: true, animations: "disabled" });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.getByRole("button", { name: "Dark mode" }).click();
+  await page.setViewportSize({ width: 320, height: 780 });
+  await page.screenshot({ path: path.join(screenshotDirectory, "bower-management-viewer-mobile.png"), fullPage: true, animations: "disabled" });
+});
+
 test("capture collector inventory", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "readme-chromium");
   await page.goto("/collectors");
