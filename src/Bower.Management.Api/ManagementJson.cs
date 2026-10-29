@@ -89,6 +89,8 @@ public sealed record PipelineValidationResponse(
 [JsonSerializable(typeof(IReadOnlyList<CollectorCredentialRecord>))]
 [JsonSerializable(typeof(List<CollectorCredentialRecord>))]
 [JsonSerializable(typeof(SourceTypeDefinition[]))]
+[JsonSerializable(typeof(PrivacyFormRequest))]
+[JsonSerializable(typeof(PrivacyFormResult))]
 [JsonSerializable(typeof(SourceSetupDraft))]
 [JsonSerializable(typeof(SourceSetupSubmission))]
 [JsonSerializable(typeof(SourceSetupPlanResult))]

@@ -148,7 +148,9 @@ test.describe("setup wizard", () => {
     // The seeded approvals complete the collector step; setup itself approves nothing.
     await steps.getByRole("button", { name: "Step 4: Approve the first collector, Done" }).click();
     await expect(page.getByRole("heading", { name: "Approve the first collector" })).toBeFocused();
-    await expect(page.getByText(/2 collectors approved: claims-api-03, finance-app-01/)).toBeVisible();
+    const approvedCollectors = page.getByText(/2 collectors approved:/);
+    await expect(approvedCollectors).toContainText("claims-api-03");
+    await expect(approvedCollectors).toContainText("finance-app-01");
     await expect(page.getByText(/1 collector waiting for approval: hr-app-02/)).toBeVisible();
 
     await steps.getByRole("button", { name: /^Step 3: Choose where events go/ }).click();
@@ -387,6 +389,33 @@ async function heartbeatFinance(page: Page): Promise<void> {
   });
   expect(response.status()).toBe(200);
 }
+
+test("privacy actions can be edited with forms and need a different approver", async ({ page }, testInfo) => {
+  const profile = `guided-${testInfo.project.name}-${Date.now()}`;
+  const initial = `apiVersion: bower.security/v1\nkind: PrivacyProfile\nmetadata:\n  id: ${profile}\n  version: 1.0.0\n`;
+  const baseline = await page.request.post("/api/privacy-profiles", { data: { content: initial, changeSummary: "Synthetic browser-test baseline" } });
+  expect(baseline.ok()).toBeTruthy();
+  const baselineId = (await baseline.json()).id as string;
+  await page.goto(`/privacy-profiles?version=${baselineId}`);
+  await page.getByRole("button", { name: "Edit with forms" }).click();
+  await page.getByLabel("New version", { exact: true }).fill("1.0.1");
+  await page.getByRole("button", { name: "Add a field" }).click();
+  await page.getByLabel("Field path", { exact: true }).fill("actor.username");
+  await page.getByLabel("How to protect it").selectOption("hmac");
+  await page.getByRole("button", { name: "Review changes" }).click();
+  const review = page.getByRole("region", { name: "Review privacy changes" });
+  await expect(review.getByLabel("Protected privacy example")).not.toContainText("alex.example@example.com");
+  await expect(review.getByRole("region", { name: "Line diff" })).toContainText("hmac");
+  await expectNoHorizontalOverflow(page);
+  await page.getByLabel("Why this change is needed").fill("Synthetic browser test: protect usernames");
+  await page.getByRole("button", { name: "Ask another person to approve" }).click();
+  await expect(page.getByText(`Submitted ${profile}@1.0.1 for review. Another approver must approve it.`)).toBeVisible();
+  const id = new URL(page.url()).searchParams.get("version");
+  const self = await page.request.post(`/api/privacy-profiles/versions/${id}/approve`, { data: { reason: "Self review" } });
+  expect(self.status()).toBe(409);
+  const approval = await page.request.post(`/api/privacy-profiles/versions/${id}/approve`, { headers: { "X-Bower-Development-Person": "reviewer" }, data: { reason: "Synthetic second-person review" } });
+  expect(approval.ok()).toBeTruthy();
+});
 
 function collectConsoleErrors(page: Page): string[] {
   const errors: string[] = [];

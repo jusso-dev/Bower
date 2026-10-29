@@ -633,6 +633,7 @@ public static class ManagementApplication
             .RequireAuthorization("Administer");
 
         PrivacyProfileEndpoints.Map(api);
+        PrivacyProfileForm.Map(api);
         SetupEndpoints.Map(api);
         EnrolmentEndpoints.Map(api);
         SourceSetupEndpoints.Map(api);

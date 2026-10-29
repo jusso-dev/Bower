@@ -22,6 +22,7 @@ import type {
 } from "../types";
 import { PrivacyProfileEditor, starterProfile } from "./PrivacyProfileEditor";
 import { PrivacyProfileVersionPanel, versionDetailHeadingId } from "./PrivacyProfileVersionPanel";
+import { GuidedPrivacyEditor } from "./GuidedPrivacyEditor";
 
 const authorRoles = ["Bower.Operator", "Bower.Approver", "Bower.Administrator"];
 
@@ -58,6 +59,8 @@ export function PrivacyProfilesPage() {
     null
   );
   const [opening, setOpening] = useState(false);
+  const [guided, setGuided] = useState(false);
+  const Editor = guided ? GuidedPrivacyEditor : PrivacyProfileEditor;
   const [message, setMessage] = useState<{ tone: "positive" | "danger"; text: string } | null>(
     null
   );
@@ -68,7 +71,8 @@ export function PrivacyProfilesPage() {
     focusDetailHeading();
   }
 
-  async function openEditor() {
+  async function openEditor(useForms = false) {
+    setGuided(useForms);
     const sourceId = selectedId ?? versions.data?.[0]?.id ?? null;
     setMessage(null);
     if (!sourceId) {
@@ -111,8 +115,11 @@ export function PrivacyProfilesPage() {
         (canAuthor ? (
           !editor && (
             <div className="button-row">
+              <button className="button button--primary" type="button" disabled={opening || versions.loading} onClick={() => void openEditor(true)}>
+                Edit with forms
+              </button>
               <button
-                className="button button--primary"
+                className="button button--secondary"
                 type="button"
                 disabled={opening || versions.loading}
                 onClick={() => void openEditor()}
@@ -134,7 +141,7 @@ export function PrivacyProfilesPage() {
         ))}
 
       {editor && (
-        <PrivacyProfileEditor
+        <Editor
           initialContent={editor.content}
           basedOn={editor.basedOn}
           onCancel={() => setEditor(null)}
