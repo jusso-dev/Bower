@@ -156,3 +156,7 @@ A healthy check-in is separate from the destination proof in step 7.
 After the collector is connected, use **Sources** to generate settings and request
 another person's approval. [Add a security source](console-sources.md) explains
 installation, signed downloads and the heartbeat check.
+
+Use **Privacy profiles → Edit with forms** to change how fields are protected,
+review the generated configuration and request approval. See
+[Change privacy actions with forms](console-privacy-editor.md).

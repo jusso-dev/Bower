@@ -120,6 +120,26 @@ test("capture guided source setup", async ({ page }, testInfo) => {
   });
 });
 
+test("capture guided privacy editing", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "readme-chromium");
+  const content = `apiVersion: bower.security/v1\nkind: PrivacyProfile\nmetadata:\n  id: privacy-preview-${Date.now()}\n  version: 1.0.0\n  description: Protect usernames in authentication events.\n`;
+  const baseline = await page.request.post("/api/privacy-profiles", { data: { content, changeSummary: "Synthetic screenshot example" } });
+  expect(baseline.ok()).toBeTruthy();
+  await page.goto(`/privacy-profiles?version=${(await baseline.json()).id}`);
+  await page.getByRole("button", { name: "Edit with forms" }).click();
+  await page.getByLabel("Profile name", { exact: true }).fill("sign-in-privacy");
+  await page.getByLabel("New version", { exact: true }).fill("1.0.1");
+  await page.getByRole("button", { name: "Add a field" }).click();
+  await page.getByLabel("Field path", { exact: true }).fill("actor.username");
+  await page.getByLabel("How to protect it").selectOption("hmac");
+  await page.getByRole("button", { name: "Review changes" }).click();
+  await expect(page.getByLabel("Protected privacy example")).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  await page.getByRole("region", { name: "Choose what to protect" }).screenshot({
+    path: path.join(screenshotDirectory, "bower-management-privacy-editor.png"), animations: "disabled"
+  });
+});
+
 test("capture collector inventory", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "readme-chromium");
   await page.goto("/collectors");

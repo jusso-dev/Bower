@@ -344,6 +344,16 @@ the owner first when you install the MSI directly on a shared host.
 
 Treat pseudonymised identifiers as potentially personal information.
 
+## Guided privacy editing
+
+Guided privacy editing validates both the original and generated YAML with the
+collector's strict loader. It preserves advanced configuration outside the form,
+requires operator authorization and uses the existing two-person version review
+and audited assignment flow. Its preview accepts only a server-owned synthetic
+event and applies built-in protection after the candidate profile, so form choices
+cannot expose an unprotected preview. No user-supplied sample paths are read.
+See [privacy editing](../operations/console-privacy-editor.md).
+
 ## Guided source setup
 
 The management API stores validated configuration plans and credential locations,
