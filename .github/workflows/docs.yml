@@ -1,0 +1,85 @@
+name: Documentation
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'docs-site/**'
+      - 'tools/docs/**'
+      - 'mkdocs.yml'
+      - 'ui/Bower.Management.Web/src/components/glossary.json'
+      - '.github/workflows/docs.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'docs-site/**'
+      - 'tools/docs/**'
+      - 'mkdocs.yml'
+      - 'ui/Bower.Management.Web/src/components/glossary.json'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          python-version: '3.12'
+      - name: Install documentation build tools
+        run: |
+          uv venv .venv-docs
+          uv pip install --python .venv-docs/bin/python --require-hashes -r tools/docs/requirements.txt
+      - name: Validate and build
+        run: |
+          .venv-docs/bin/python tools/docs/generate_glossary.py --check
+          .venv-docs/bin/python -m unittest discover -s tools/docs/tests -p 'test_*.py'
+          .venv-docs/bin/mkdocs build --strict
+          .venv-docs/bin/python tools/docs/check_links.py site
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: tools/docs/package-lock.json
+      - name: Browser and accessibility checks
+        working-directory: tools/docs
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm test
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docs-browser-evidence
+          path: tools/docs/test-results/
+          if-no-files-found: ignore
+      - name: Upload Pages site
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: site
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy documentation
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

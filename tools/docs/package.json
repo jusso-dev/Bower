@@ -1,0 +1,14 @@
+{
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.64.1",
+    "lighthouse": "13.6.0"
+  },
+  "name": "bower-docs-checks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "screenshots": "playwright test --grep screenshots"
+  }
+}

@@ -18,3 +18,11 @@ evidence/
 # C#-written SQLite fixtures for the Rust compatibility tests (compat.rs).
 !rust/crates/bower-persistence/tests/fixtures/*.db
 spool/
+
+# Static documentation build and browser reports
+/site/
+/tools/docs/node_modules/
+/tools/docs/test-results/
+/tools/docs/playwright-report/
+/.venv-docs/
+/tools/docs/**/__pycache__/

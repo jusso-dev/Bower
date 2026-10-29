@@ -1,0 +1,93 @@
+{% extends "main.html" %}
+{% block content %}
+<div class="bower-home">
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="hero-copy">
+      <p class="eyebrow">Self-hosted security telemetry</p>
+      <h1 id="hero-title">Security signal.<br><span>A path to proof.</span></h1>
+      <p class="hero-summary">Collect the events that matter. Protect sensitive details. Verify their arrival in Microsoft Sentinel.</p>
+      <div class="hero-actions">
+        <a class="bower-button" href="{{ 'getting-started/' | url }}">Get started <span aria-hidden="true">↗</span></a>
+        <a class="text-link" href="#follow-an-event">See how it works <span aria-hidden="true">↓</span></a>
+      </div>
+    </div>
+    <figure class="hero-flow" aria-label="Illustrated Bower dataflow">
+      <svg class="flow-map" viewBox="0 0 600 380" role="img" aria-labelledby="flow-title flow-description">
+        <title id="flow-title">Your systems, through Bower, to Microsoft Sentinel</title>
+        <desc id="flow-description">Applications, machines and cloud security sources send events to Bower. Bower selects, redacts and queues them before delivery. A separate query checks arrival in Sentinel. Moving dots illustrate the path, not live telemetry.</desc>
+        <g class="flow-wires" fill="none" stroke-width="1.5">
+          <path d="M128 70H166Q186 70 186 90V170H236"/>
+          <path d="M128 170H236"/>
+          <path d="M128 270H166Q186 270 186 250V170"/>
+          <path d="M376 170H452"/>
+          <path class="proof-wire" d="M524 216V316H306V226"/>
+        </g>
+        <g class="flow-packets" aria-hidden="true">
+          <circle r="4"><animateMotion dur="5s" repeatCount="indefinite" path="M128 70H166Q186 70 186 90V170H236"/></circle>
+          <circle r="4"><animateMotion dur="5s" begin="-1.5s" repeatCount="indefinite" path="M128 170H236"/></circle>
+          <circle r="4"><animateMotion dur="5s" begin="-3s" repeatCount="indefinite" path="M128 270H166Q186 270 186 250V170H236"/></circle>
+          <circle r="4"><animateMotion dur="4s" repeatCount="indefinite" path="M376 170H452"/></circle>
+          <circle r="3"><animateMotion dur="6s" repeatCount="indefinite" path="M524 216V316H306V226"/></circle>
+        </g>
+        <g class="source-node">
+          <rect x="8" y="42" width="120" height="56" rx="10"/><text x="68" y="75">Applications</text>
+          <rect x="8" y="142" width="120" height="56" rx="10"/><text x="68" y="175">Machines</text>
+          <rect x="8" y="242" width="120" height="56" rx="10"/><text x="68" y="275">Cloud</text>
+        </g>
+        <g class="bower-node">
+          <rect x="236" y="114" width="140" height="112" rx="16"/>
+          <text class="node-brand" x="306" y="162">Bower</text>
+          <text class="node-detail" x="306" y="187">Select · redact · queue</text>
+        </g>
+        <g class="destination-node">
+          <rect x="452" y="124" width="140" height="92" rx="12"/>
+          <text class="node-detail" x="522" y="160">Microsoft</text>
+          <text class="node-name" x="522" y="184">Sentinel</text>
+        </g>
+        <text class="wire-label" x="306" y="88">Your infrastructure</text>
+        <text class="wire-label" x="420" y="346">Query-verified evidence</text>
+      </svg>
+      <ol class="mobile-flow" aria-label="Illustrated data path">
+        <li><strong>Your systems</strong><span>Applications · machines · cloud</span></li>
+        <li><strong>Bower</strong><span>Select · redact · queue</span></li>
+        <li><strong>Microsoft Sentinel</strong><span>Query the test event to prove arrival</span></li>
+      </ol>
+      <figcaption><span>Illustrated flow · no live data</span><button class="motion-control" type="button" data-motion-toggle aria-pressed="false" hidden>Pause animation</button></figcaption>
+    </figure>
+  </section>
+
+  <section class="flow-section" id="follow-an-event" aria-labelledby="flow-heading">
+    <div class="section-intro"><h2 id="flow-heading">Follow one event.</h2><p>Five deliberate steps. Protection before storage. Proof after delivery.</p></div>
+    <div class="flow-selector" role="group" aria-label="Explore the event path">
+      <button type="button" class="flow-step is-active" data-step="collect" aria-pressed="true" aria-controls="event-detail"><span>01</span> Collect</button>
+      <button type="button" class="flow-step" data-step="select" aria-pressed="false" aria-controls="event-detail"><span>02</span> Select</button>
+      <button type="button" class="flow-step" data-step="arrange" aria-pressed="false" aria-controls="event-detail"><span>03</span> Arrange</button>
+      <button type="button" class="flow-step" data-step="deliver" aria-pressed="false" aria-controls="event-detail"><span>04</span> Deliver</button>
+      <button type="button" class="flow-step" data-step="prove" aria-pressed="false" aria-controls="event-detail"><span>05</span> Prove</button>
+    </div>
+    <div class="event-detail" id="event-detail" aria-live="polite" aria-atomic="true">
+      <div><p class="detail-label" data-detail-label>Start with a security event</p><h3 data-detail-title>A sign-in failed. That matters.</h3><p data-detail-copy>A collector receives a security event from an application, machine or cloud source. Bower is for meaningful security telemetry, not every log line.</p><a class="text-link" data-detail-link href="{{ 'getting-started/concepts/' | url }}">Understand the concepts <span aria-hidden="true">↗</span></a></div>
+      <div class="event-specimen" aria-label="Illustrative event metadata"><span class="specimen-caption">Synthetic example</span><dl><div><dt>Event</dt><dd data-event>Authentication failure</dd></div><div><dt>Stage</dt><dd data-stage>Received by collector</dd></div><div><dt>Protection</dt><dd data-protection>Redaction before storage</dd></div><div><dt>Evidence</dt><dd data-evidence>Not yet verified</dd></div></dl></div>
+    </div>
+    <noscript><p>The path is Collect → Select → Arrange → Deliver → Prove. <a href="{{ 'getting-started/concepts/' | url }}">Read about every stage</a>.</p></noscript>
+  </section>
+
+  <section class="start-section" aria-labelledby="start-title">
+    <div class="section-intro"><h2 id="start-title">A good place to start.</h2><p>Take the guided route, or go straight to the detail you need.</p></div>
+    <div class="guide-grid">
+      <a class="guide-feature" href="{{ 'getting-started/first-event/' | url }}"><span class="guide-kicker">The guided route</span><h3>Your first verified event</h3><p>From an empty tenant to a test event found in Sentinel. Know what to do, and what each step proves.</p><span class="guide-arrow" aria-hidden="true">↗</span></a>
+      <a class="guide-small" href="{{ 'getting-started/deployment/' | url }}"><h3>Choose a deployment</h3><p>Find the right home for your collector and console.</p><span aria-hidden="true">↗</span></a>
+      <a class="guide-small" href="{{ 'guides/' | url }}"><h3>Use the dashboard</h3><p>Connect machines, protect fields and understand fleet health.</p><span aria-hidden="true">↗</span></a>
+      <a class="guide-small" href="{{ 'operations/' | url }}"><h3>Keep things healthy</h3><p>Investigate queues, missing events and delivery problems.</p><span aria-hidden="true">↗</span></a>
+      <a class="guide-small" href="{{ 'reference/' | url }}"><h3>Go deeper</h3><p>Architecture, schemas, commands and the code behind them.</p><span aria-hidden="true">↗</span></a>
+    </div>
+  </section>
+
+  <section class="console-section" aria-labelledby="console-title">
+    <div class="section-intro"><h2 id="console-title">Know what needs your attention.</h2><p>A plain-language console for the people looking after your security signal.</p><a class="text-link" href="{{ 'operations/console-fleet/' | url }}">Explore the fleet guide <span aria-hidden="true">↗</span></a></div>
+    <figure class="console-preview"><img src="{{ 'images/bower-management-collectors.png' | url }}" alt="Bower's fleet view showing synthetic collectors, their health and suggested next actions" loading="lazy" width="1440" height="1551"><figcaption>The Bower console, shown with synthetic preview data.</figcaption></figure>
+  </section>
+
+  <section class="principles-section" aria-labelledby="principles-title"><h2 id="principles-title">Built around clear boundaries.</h2><dl><div><dt>Your infrastructure</dt><dd>Self-hosted collectors and a tenant-controlled console. You choose where Bower runs.</dd></div><div><dt>Privacy first</dt><dd>Sensitive details are protected before persistence. Unknown events are denied by default.</dd></div><div><dt>Evidence, not assumptions</dt><dd>Collector acceptance is not delivery proof. Only a destination query can confirm arrival.</dd></div></dl><a class="text-link" href="{{ 'security/' | url }}">Read the security model <span aria-hidden="true">↗</span></a></section>
+</div>
+{% endblock %}

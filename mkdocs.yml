@@ -1,0 +1,147 @@
+site_name: Bower
+site_description: Security telemetry, from source to proof. Self-hosted collection, privacy and verified Microsoft Sentinel delivery.
+site_url: https://jusso-dev.github.io/Bower/
+repo_url: https://github.com/jusso-dev/Bower
+repo_name: jusso-dev/Bower
+edit_uri: edit/main/docs/
+copyright: Bower · Self-hosted security telemetry
+strict: true
+docs_dir: docs
+site_dir: site
+use_directory_urls: true
+exclude_docs: |
+  research/
+theme:
+  name: material
+  custom_dir: docs-site/overrides
+  language: en
+  font: false
+  logo: assets/bower-mark.svg
+  favicon: assets/bower-mark.svg
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - media: '(prefers-color-scheme: light)'
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: '(prefers-color-scheme: dark)'
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+plugins:
+  - search
+hooks:
+  - tools/docs/hooks.py
+extra:
+  generator: false
+extra_css:
+  - assets/styles/bower.css
+extra_javascript:
+  - assets/scripts/flow.js
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+validation:
+  nav:
+    omitted_files: info
+  links:
+    not_found: warn
+    anchors: warn
+    unrecognized_links: warn
+nav:
+  - Home: index.md
+  - Start here:
+      - getting-started/index.md
+      - Your first verified event: getting-started/first-event.md
+      - Concepts: getting-started/concepts.md
+      - Choose a deployment: getting-started/deployment.md
+      - FAQ: getting-started/faq.md
+  - Guides:
+      - guides/index.md
+      - Dashboard:
+          - Set up Bower: operations/console-onboarding.md
+          - Home: operations/console-home.md
+          - Fleet: operations/console-fleet.md
+          - Sources: operations/console-sources.md
+          - Privacy editor: operations/console-privacy-editor.md
+          - Simple view: operations/console-simple-view.md
+          - Help and checklist: operations/console-help.md
+      - Installation:
+          - Linux and Windows packages: deployment/installers.md
+          - Management console: deployment/console-image.md
+          - Container images: deployment/container-images.md
+          - Docker sidecar: deployment/docker-sidecar.md
+          - Azure Functions: deployment/azure-function.md
+          - AWS: deployment/aws.md
+          - AWS Lambda: deployment/aws-lambda.md
+          - Google Cloud: deployment/gcp.md
+          - Relay networks: deployment/relay.md
+          - Azure Arc extension: deployment/azure-arc-extension.md
+      - Connect a source:
+          - Syslog: deployment/syslog-source.md
+          - Windows Event Log: deployment/windows-event-log-source.md
+          - Azure Monitor Agent companion: deployment/ama-companion.md
+          - ASP.NET Core: developer-integration/aspnetcore.md
+          - Custom parsers: developer-integration/custom-log-parser.md
+          - Transform language: developer-integration/transform-language.md
+      - Privacy and packs:
+          - Privacy engine: privacy/privacy-secret-engine.md
+          - Custom redaction: privacy/custom-redaction-rules.md
+          - Managed profiles: privacy/managed-privacy-profiles.md
+          - Signed packs: deployment/packs.md
+  - Operations:
+      - operations/index.md
+      - Live pipeline inspection: operations/tap-and-top.md
+      - Prove delivery: operations/evidence-bundles.md
+      - Diagnose DCR issues: operations/doctor-and-dcr.md
+      - Queue and fleet integrity: operations/fleet-and-queue-integrity.md
+      - Queue durability: operations/queue-v5-durability.md
+      - Event identity conflicts: operations/event-identity-conflicts.md
+      - Source silence: operations/suppression-archive-and-source-silence.md
+      - Azure SDK recovery: operations/azure-sdk-recovery.md
+      - Background jobs: operations/background-jobs.md
+      - PowerShell: operations/powershell.md
+  - Security:
+      - security/index.md
+      - Threat model: security/threat-model.md
+      - Roles and identity: security/management-identity-and-rbac.md
+      - Producer scopes: security/producer-scopes.md
+      - ISM alignment: security/ism-alignment.md
+      - Event catalogue: security/default-event-catalogue.md
+      - Pack catalogue: security/pack-runtime-catalogue.md
+      - Engineering reviews:
+          - Adversarial remediation: security/adversarial-remediation-2026-10-23.md
+          - Policy population review: operations/policy-population-2026-10-23.md
+  - Reference:
+      - reference/index.md
+      - Architecture: architecture/overview.md
+      - Collector enrolment: architecture/collector-enrolment.md
+      - Heartbeats: architecture/heartbeat-v2.md
+      - Transform design: architecture/transform-language.md
+      - Azure ingestion API: deployment/logs-ingestion-api.md
+      - Entra ingestion plan: deployment/entra-ingestion-plan.md
+      - Cloud permissions: deployment/cloud-permission-context.md
+      - Dependencies: architecture/dependencies.md
+      - Site architecture: architecture/documentation-site.md
+      - Accessibility: reference/accessibility.md

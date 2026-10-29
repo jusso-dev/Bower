@@ -27,7 +27,7 @@ Rocky and AlmaLinux 9+. Windows needs a version .NET 10 supports (x64 or arm64).
 
 ## What the packages install
 
-| | Linux (deb, rpm) | Windows (MSI) |
+| Item | Linux (deb, rpm) | Windows (MSI) |
 |---|---|---|
 | Binaries | `/opt/bower/` (`Bower.Collector`, `bower`, SQLite), `/usr/bin/bower` | `%ProgramFiles%\Bower\` |
 | Service | `bower.service` ([unit](../../deploy/systemd/bower.service)), enabled and started | `Bower`, automatic (delayed) start, restart on failure |
@@ -158,7 +158,7 @@ action; the Windows install test verifies the installed recovery settings.
 
 ## Uninstall
 
-| | Removed | Kept |
+| Action | Removed | Kept |
 |---|---|---|
 | `apt remove`, `dnf remove`, `rpm -e` | Service, binaries, management credential, any unused token, `/etc/bower/secrets`, `/etc/bower/bower.env` | The queue in `/var/lib/bower` (it may hold events the destination has not acknowledged), policies, keys |
 | `apt purge` | Everything above plus `/var/lib/bower`, `/var/spool/bower`, `/etc/bower` and the `bower` account | Nothing |
