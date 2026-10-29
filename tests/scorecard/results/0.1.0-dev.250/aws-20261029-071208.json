@@ -1,0 +1,515 @@
+{
+  "schemaVersion": "1.0",
+  "runId": "20261029-071208",
+  "generatedAt": "2026-10-29T08:19:24.670733+00:00",
+  "status": "failed",
+  "scope": "Short AWS multi-node validation to local AMA spool; incomplete issue 136 suite",
+  "sentinel": "deferred-by-user",
+  "azureResourcesCreated": false,
+  "version": "0.1.0-dev.250",
+  "sourceCommit": "13d839678789a31b0b5800065c945b7b39da4c48",
+  "artifactCommit": "e398ac6ffc0dab2d7fbcf14a3f4aabbb8631a88c",
+  "artifactRun": 40832675666,
+  "artifactHashes": {
+    "collector.msi": "ad965709ac43d311b1d6da1f715a7e5a5cfb19302c83dea29555c86858bb991e",
+    "control.py": "99c7278896497a2365d36dd2e7b3703e4c3bedfd58f0f0183621e6f3c2b98775",
+    "management.tar.gz": "1968f2a7180d4d8f6adf8bbe2c28a95e02343f364c87547a669c47b3cb38d784",
+    "lab-pack.tar.gz": "f6b0f147516d74c3aa216ec56665a527ec61cb202329f51b2c57f2039e6497ee",
+    "node.py": "991fe6e2a43082bf8c734e5aa962854131aa4e1562d97e6caed3cf08f3221b82",
+    "collector.rpm": "635a467947789f6c625794a9ab347cee7bded054a618b5d9a0fe1b93491449a9",
+    "cli.tar.gz": "ee44e6a63a10d719ad35c6f05a14c0f4865feda218880a643700c3835698add3",
+    "load.py": "56b4c795a3f564e20d31bc08764819072083ab9d3793b80d18d01b7f5df8d663"
+  },
+  "region": "ap-southeast-2",
+  "linuxCollectors": 3,
+  "windowsCollectors": 3,
+  "controlHosts": 1,
+  "linuxType": "t3.micro",
+  "windowsFallback": {
+    "reason": "Wec bootstrap memory exceeded 90%",
+    "peakMemoryPercent": 93.1,
+    "finalType": "t3.small",
+    "hosts": [
+      "Wec",
+      "Windows1",
+      "Windows2"
+    ]
+  },
+  "cpuCredits": "unlimited",
+  "expectedSourceEvents": 45220,
+  "outputRowsIncludingPrivacyAlerts": 49809,
+  "uniqueOutputEvents": 49809,
+  "unacknowledgedSourceEventsAlsoObserved": 2,
+  "claims": [
+    {
+      "claim": "Acknowledged/source-event loss after eventual drain",
+      "measured": 0,
+      "threshold": 0,
+      "status": "passed",
+      "scope": "HTTP acknowledgements and native Windows correlations in this run"
+    },
+    {
+      "claim": "Duplicate output event IDs",
+      "measured": 0,
+      "threshold": 0,
+      "status": "passed",
+      "scope": "All local AMA spool rows, including derived privacy alerts"
+    },
+    {
+      "claim": "Denied events in output",
+      "measured": 0,
+      "threshold": 0,
+      "status": "passed",
+      "scope": "42 unapproved HTTP source events"
+    },
+    {
+      "claim": "Raw synthetic seed leaks",
+      "measured": 0,
+      "threshold": 0,
+      "status": "passed",
+      "scope": "Central ready spool, non-spool persisted state and service journal only; original source logs and seed manifest excluded"
+    },
+    {
+      "claim": "Queue ledgers intact",
+      "measured": 6,
+      "threshold": 6,
+      "status": "passed",
+      "scope": "All six collectors after faults/reboots"
+    },
+    {
+      "claim": "Remote administration and invalid assertion denied",
+      "measured": {
+        "anonymous-admin": 401,
+        "invalid-assertion": 401,
+        "remote-dashboard": 403
+      },
+      "threshold": {
+        "anonymous-admin": 401,
+        "invalid-assertion": 401,
+        "remote-dashboard": 403
+      },
+      "status": "passed",
+      "scope": "Ephemeral TLS proxy; isolated development administration, not production Entra login"
+    },
+    {
+      "claim": "Load output p95 latency seconds",
+      "measured": 249.87485194206238,
+      "threshold": 60,
+      "status": "failed",
+      "scope": "Event timestamp to local spool file publication; not Sentinel ingestion"
+    },
+    {
+      "claim": "Relay outage drain seconds",
+      "measured": 23.218852758407593,
+      "threshold": 120,
+      "status": "passed",
+      "scope": "45-second stop, 1000 accepted source events buffered by two Linux edges"
+    },
+    {
+      "claim": "SIGKILL process health recovery seconds",
+      "measured": 6.0353557410003305,
+      "threshold": 120,
+      "status": "passed",
+      "scope": "Three Linux collectors under HTTP load; transport errors during downtime are recorded separately"
+    },
+    {
+      "claim": "Acknowledged events still pending after crash drain deadline",
+      "measured": 2,
+      "threshold": 0,
+      "status": "failed",
+      "scope": "Two central events recovered only after their five-minute lease expired; no eventual loss"
+    },
+    {
+      "claim": "Windows boot-to-process seconds",
+      "measured": 131.8615146,
+      "threshold": 120,
+      "status": "failed",
+      "scope": "Delayed automatic startup; health was verified after startup, so this is a lower bound on recovery"
+    },
+    {
+      "claim": "Disk-full returns back-pressure",
+      "measured": {
+        "202": 1,
+        "503": 99
+      },
+      "threshold": "503 with no unexpected errors",
+      "status": "passed",
+      "scope": "Only the isolated 4GiB queue volume; fill removed in finally and by an independent timer"
+    },
+    {
+      "claim": "Replay semantics",
+      "measured": [
+        202,
+        200,
+        409
+      ],
+      "threshold": [
+        202,
+        200,
+        409
+      ],
+      "status": "passed",
+      "scope": "One byte-identical replay and one conflicting identity"
+    }
+  ],
+  "load": [
+    {
+      "phase": "load1k",
+      "aggregateTargetEps": 1000,
+      "accepted": 20648,
+      "sumPerSourceAcceptedEps": 340.7933794437376,
+      "sourceReports": [
+        {
+          "phase": "load1k",
+          "host": "Linux1",
+          "targetEps": 500,
+          "durationSeconds": 60.885242904999814,
+          "issued": 10367,
+          "acknowledged": 10367,
+          "acknowledgedEps": 170.27114462162515,
+          "httpStatuses": {
+            "202": 10367
+          },
+          "producerP95Seconds": 0.4906976819997908,
+          "unexpectedStatusCount": 0,
+          "deniedInputCount": 0,
+          "unexpectedAccepted": 0,
+          "sentinel": "deferred"
+        },
+        {
+          "phase": "load1k",
+          "host": "Linux2",
+          "targetEps": 500,
+          "durationSeconds": 60.29125768100016,
+          "issued": 10281,
+          "acknowledged": 10281,
+          "acknowledgedEps": 170.52223482211244,
+          "httpStatuses": {
+            "202": 10281
+          },
+          "producerP95Seconds": 0.4703729430000294,
+          "unexpectedStatusCount": 0,
+          "deniedInputCount": 0,
+          "unexpectedAccepted": 0,
+          "sentinel": "deferred"
+        }
+      ],
+      "status": "exploratory-below-target",
+      "note": "Bounded generator slowed with request latency; target rate was not actually offered. This does not isolate collector-only capacity."
+    },
+    {
+      "phase": "load5k",
+      "aggregateTargetEps": 5000,
+      "accepted": 19315,
+      "sumPerSourceAcceptedEps": 319.40636668537786,
+      "sourceReports": [
+        {
+          "phase": "load5k",
+          "host": "Linux1",
+          "targetEps": 2500,
+          "durationSeconds": 60.43870015600032,
+          "issued": 9763,
+          "acknowledged": 9763,
+          "acknowledgedEps": 161.53557198947692,
+          "httpStatuses": {
+            "202": 9763
+          },
+          "producerP95Seconds": 0.6500604200000453,
+          "unexpectedStatusCount": 0,
+          "deniedInputCount": 0,
+          "unexpectedAccepted": 0,
+          "sentinel": "deferred"
+        },
+        {
+          "phase": "load5k",
+          "host": "Linux2",
+          "targetEps": 2500,
+          "durationSeconds": 60.50517461699974,
+          "issued": 9552,
+          "acknowledged": 9552,
+          "acknowledgedEps": 157.8707946959009,
+          "httpStatuses": {
+            "202": 9552
+          },
+          "producerP95Seconds": 0.6412158260000069,
+          "unexpectedStatusCount": 0,
+          "deniedInputCount": 0,
+          "unexpectedAccepted": 0,
+          "sentinel": "deferred"
+        }
+      ],
+      "status": "exploratory-below-target",
+      "note": "Bounded generator slowed with request latency; target rate was not actually offered. This does not isolate collector-only capacity."
+    }
+  ],
+  "resources": [
+    {
+      "host": "Collector",
+      "sampleCount": 24,
+      "peakMemoryUsedPercent": 47.45731532541315,
+      "peakOneMinuteLoad": 2.13,
+      "minimumDiskAvailableBytes": 3832221696
+    },
+    {
+      "host": "Linux1",
+      "sampleCount": 24,
+      "peakMemoryUsedPercent": 50.991666238855515,
+      "peakOneMinuteLoad": 2.51,
+      "minimumDiskAvailableBytes": 10734329856
+    },
+    {
+      "host": "Linux2",
+      "sampleCount": 24,
+      "peakMemoryUsedPercent": 48.56320240942207,
+      "peakOneMinuteLoad": 1.77,
+      "minimumDiskAvailableBytes": 10735353856
+    }
+  ],
+  "processCrash": {
+    "Collector": {
+      "phase": "crash",
+      "host": "Collector",
+      "healthy": true,
+      "recoverySeconds": 6.0353557410003305,
+      "producerExitCode": 1
+    },
+    "Linux1": {
+      "phase": "crash",
+      "host": "Linux1",
+      "healthy": true,
+      "recoverySeconds": 6.027462937000109,
+      "producerExitCode": 1
+    },
+    "Linux2": {
+      "phase": "crash",
+      "host": "Linux2",
+      "healthy": true,
+      "recoverySeconds": 6.029410566000024,
+      "producerExitCode": 1
+    }
+  },
+  "windowsReboot": {
+    "Linux2": {
+      "phase": "post-reboot",
+      "host": "Linux2",
+      "bootTime": 1793260792.2173815,
+      "health": "healthy"
+    },
+    "Wec": {
+      "phase": "post-reboot",
+      "host": "Wec",
+      "bootTime": 1793260796,
+      "health": "healthy",
+      "service": "Running",
+      "bootToProcessSeconds": 131.8615146,
+      "usedMemoryPercent": 41.6
+    },
+    "Windows1": {
+      "phase": "post-reboot",
+      "host": "Windows1",
+      "bootTime": 1793260795,
+      "health": "healthy",
+      "service": "Running",
+      "bootToProcessSeconds": 130.61704749999998,
+      "usedMemoryPercent": 41.5
+    },
+    "Windows2": {
+      "phase": "post-reboot",
+      "host": "Windows2",
+      "bootTime": 1793260794,
+      "health": "healthy",
+      "service": "Running",
+      "bootToProcessSeconds": 130.734391,
+      "usedMemoryPercent": 41.4
+    }
+  },
+  "receiptSummary": [
+    {
+      "host": "Collector",
+      "phase": "correctness.acks.json",
+      "expected": 86,
+      "missing": 0,
+      "duplicates": 0,
+      "deniedInOutput": 0
+    },
+    {
+      "host": "Collector",
+      "phase": "crash.acks.json",
+      "expected": 1234,
+      "missing": 0,
+      "duplicates": 0,
+      "deniedInOutput": 0
+    },
+    {
+      "host": "Collector",
+      "phase": "disk.acks.json",
+      "expected": 1,
+      "missing": 0,
+      "duplicates": 0,
+      "deniedInOutput": 0
+    },
+    {
+      "host": "Collector",
+      "phase": "replay.acks.json",
+      "expected": 1,
+      "missing": 0,
+      "duplicates": 0,
+      "deniedInOutput": 0
+    },
+    {
+      "host": "Linux1",
+      "phase": "correctness.acks.json",
+      "expected": 86,
+      "missing": 0,
+      "duplicates": 0,
+      "deniedInOutput": 0
+    },
+    {
+      "host": "Linux1",
+      "phase": "crash.acks.json",
+      "expected": 1233,
+      "missing": 0,
+      "duplicates": 0,
+      "deniedInOutput": 0
+    },
+    {
+      "host": "Linux1",
+      "phase": "load1k.acks.json",
+      "expected": 10367,
+      "missing": 0,
+      "duplicates": 0,
+      "deniedInOutput": 0
+    },
+    {
+      "host": "Linux1",
+      "phase": "load5k.acks.json",
+      "expected": 9763,
+      "missing": 0,
+      "duplicates": 0,
+      "deniedInOutput": 0
+    },
+    {
+      "host": "Linux1",
+      "phase": "outage.acks.json",
+      "expected": 500,
+      "missing": 0,
+      "duplicates": 0,
+      "deniedInOutput": 0
+    },
+    {
+      "host": "Linux2",
+      "phase": "correctness.acks.json",
+      "expected": 86,
+      "missing": 0,
+      "duplicates": 0,
+      "deniedInOutput": 0
+    },
+    {
+      "host": "Linux2",
+      "phase": "crash.acks.json",
+      "expected": 1230,
+      "missing": 0,
+      "duplicates": 0,
+      "deniedInOutput": 0
+    },
+    {
+      "host": "Linux2",
+      "phase": "load1k.acks.json",
+      "expected": 10281,
+      "missing": 0,
+      "duplicates": 0,
+      "deniedInOutput": 0
+    },
+    {
+      "host": "Linux2",
+      "phase": "load5k.acks.json",
+      "expected": 9552,
+      "missing": 0,
+      "duplicates": 0,
+      "deniedInOutput": 0
+    },
+    {
+      "host": "Linux2",
+      "phase": "outage.acks.json",
+      "expected": 500,
+      "missing": 0,
+      "duplicates": 0,
+      "deniedInOutput": 0
+    },
+    {
+      "host": "Wec",
+      "phase": "native.json",
+      "expected": 100,
+      "missing": 0,
+      "duplicates": 0,
+      "deniedInOutput": 0
+    },
+    {
+      "host": "Windows1",
+      "phase": "native.json",
+      "expected": 100,
+      "missing": 0,
+      "duplicates": 0,
+      "deniedInOutput": 0
+    },
+    {
+      "host": "Windows2",
+      "phase": "native.json",
+      "expected": 100,
+      "missing": 0,
+      "duplicates": 0,
+      "deniedInOutput": 0
+    }
+  ],
+  "detectedLabels": {
+    "au.tfn": 9168,
+    "fin.credit-card:Visa": 9168,
+    "id.email": 4581,
+    "id.phone.au": 4581
+  },
+  "dashboard": {
+    "phase": "dashboard-browser",
+    "authMode": "isolated-development-loopback",
+    "access": "SSM port forward",
+    "home": "passed: six collectors and redaction counters rendered; Sentinel explicitly unproven",
+    "fleet": "passed: six collectors, five behind relay and central healthy",
+    "detail": "passed: Windows collector detail and heartbeat rendered",
+    "configJs": "initial transient 400; reload and direct request returned 200",
+    "sessionId": "homelab-agent-cli-bb846u4hc4s4r7jvr66ol32ski",
+    "productionEntraSignIn": "not tested"
+  },
+  "cleanup": {
+    "phase": "cleanup",
+    "runId": "20261029-071208",
+    "checkedAt": 1793261656.61568,
+    "stackDeleted": true,
+    "remainingInstances": 0,
+    "remainingVolumes": 0,
+    "remainingEndpoints": 0,
+    "remainingNatGateways": 0,
+    "remainingElasticIps": 0,
+    "remainingSecrets": 0,
+    "retainedBucket": "bower-lab-20261029-071208-results-2mrem6bqe62v",
+    "bucketExpiryDays": 90,
+    "status": "passed"
+  },
+  "reports": "s3://bower-lab-20261029-071208-results-2mrem6bqe62v/runs/20261029-071208/",
+  "findings": [
+    "https://github.com/jusso-dev/Bower/issues/153",
+    "https://github.com/jusso-dev/Bower/issues/154"
+  ],
+  "limits": [
+    "Sentinel destination/query verification deferred; no Azure resources touched",
+    "Wec is a role name: local Windows Application subscriptions tested, not real WEF/WEC or original Computer preservation",
+    "Linux inputs were semantic HTTP events, not native journald/auditd/syslog",
+    "Only four synthetic detector families and one benign control; no complete adversarial privacy corpus",
+    "Central persisted-state/log scan only; edge state/log redaction scans not performed",
+    "60-second load steps; no 30-minute steps, burst campaign or long soak",
+    "Development loopback administration tested, not production Entra interactive authentication",
+    "Unsigned checksum-verified packages; final CI purge-only fix was not installed in this run",
+    "No upgrade, uninstall, full power-loss, tamper, packet-loss, credential-rotation or bad-policy-push campaign",
+    "No AWS Budget alarm; independent expiry guard and explicit audited teardown used",
+    "Initial verifier needed Python 3.9 timestamp normalization and filtering derived privacy alerts from source correlation counts; original diagnostics retained"
+  ],
+  "thresholdsSha256": "ef1bcb25309284c9c24d94e5646e5ad16d6dca63224bed64afeceabd6a643a70"
+}

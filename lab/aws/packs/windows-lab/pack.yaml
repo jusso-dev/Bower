@@ -1,0 +1,15 @@
+apiVersion: bower.security/v1
+kind: Pack
+metadata:
+  id: windows-lab
+  version: 1.0.0
+  name: Synthetic Windows lab events
+  description: Only BowerLab event 9010 from the disposable lab Application log.
+  owner: Bower lab
+policies:
+  - policies/authentication-failure.yaml
+parsers:
+  - parsers/application.json
+samples:
+  - samples/events.jsonl
+dcr: false

@@ -370,3 +370,11 @@ signature binds files, environment settings, sender snippets, verification and
 target identity. Downloads do not push changes or replace collector pack trust.
 Protect that signing key like the existing management command key and verify
 against a separately trusted public key. See [guided source setup](../operations/console-sources.md).
+
+## AWS fault-validation evidence
+
+The [AWS lab report](../operations/lab-and-stress-testing.md) records the tested
+redaction, durable-output and failure-recovery paths with their limits. Its
+central-state scan and local spool counts do not establish Sentinel arrival or
+coverage of every source/detector. Failed latency and recovery deadlines remain
+visible alongside successful eventual-delivery checks.
