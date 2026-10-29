@@ -2,7 +2,8 @@
 
 The documentation is designed for keyboard use, narrow screens and light or dark
 appearance. Text remains available without animation. The search and navigation
-come from Material for MkDocs.
+come from Material for MkDocs. The default appearance is dark navy; use the header
+appearance control to select light mode. Your choice is remembered across pages.
 
 ## Motion and keyboard controls
 

@@ -2,11 +2,36 @@ import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
 const pages = ['', 'getting-started/', 'getting-started/first-event/', 'getting-started/concepts/', 'getting-started/deployment/', 'guides/', 'operations/', 'security/', 'reference/', 'deployment/installers/', 'deployment/relay/', 'operations/console-fleet/', 'privacy/privacy-secret-engine/', 'architecture/overview/'];
+for (const [scheme, oldIndex, newIndex] of [['default', 0, 1], ['slate', 1, 0]]) {
+  test(`preserves the saved ${scheme} theme from before the palette reorder`, async ({ page }) => {
+    await page.goto('./');
+    await page.evaluate(({ scheme, oldIndex }) => {
+      // The previous published site stored the palette under this project scope.
+      localStorage.setItem('/Bower/.__palette', JSON.stringify({
+        index: oldIndex, color: { scheme, primary: 'indigo', accent: 'indigo' }
+      }));
+    }, { scheme, oldIndex });
+    await page.goto('getting-started/first-event/');
+    await expect(page.locator('body')).toHaveAttribute('data-md-color-scheme', scheme);
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('/Bower/.__palette')).index)).toBe(newIndex);
+    await page.reload();
+    await expect(page.locator('body')).toHaveAttribute('data-md-color-scheme', scheme);
+    const nextTheme = scheme === 'default' ? 'dark' : 'light';
+    await page.locator(`label[title="Switch to ${nextTheme} mode"]`).click();
+    await page.reload();
+    await expect(page.locator('body')).toHaveAttribute('data-md-color-scheme', scheme === 'default' ? 'slate' : 'default');
+  });
+}
+
 for (const theme of ['light', 'dark']) {
   test(`accessible documentation in ${theme} mode`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
     for (const path of pages) {
       await page.goto(path || './');
+      if (theme === 'light' && await page.locator('body').getAttribute('data-md-color-scheme') !== 'default') {
+        await page.locator('label[title="Switch to light mode"]').click();
+      }
+      await expect(page.locator('body')).toHaveAttribute('data-md-color-scheme', theme === 'light' ? 'default' : 'slate');
       await page.evaluate(() => document.fonts.ready);
       const result = await new AxeBuilder({ page }).analyze();
       expect(result.violations, `${theme} ${path}: ${JSON.stringify(result.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })))}`).toEqual([]);
@@ -76,6 +101,11 @@ test('screenshots of the homepage and guide', async ({ page }, testInfo) => {
   await page.screenshot({ path: testInfo.outputPath('guide-desktop.png'), fullPage: true });
   await page.setViewportSize({ width: 320, height: 800 });
   await page.goto('./');
+  await expect(page.locator('body')).toHaveAttribute('data-md-color-scheme', 'slate');
+  await page.locator('label[title="Switch to light mode"]').click();
+  await expect(page.locator('body')).toHaveAttribute('data-md-color-scheme', 'default');
+  await page.reload();
+  await expect(page.locator('body')).toHaveAttribute('data-md-color-scheme', 'default');
   await page.locator('label[title="Switch to dark mode"]').click();
   await expect(page.locator('body')).toHaveAttribute('data-md-color-scheme', 'slate');
   await page.screenshot({ path: testInfo.outputPath('home-mobile-dark.png'), fullPage: true });

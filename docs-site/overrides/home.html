@@ -1,15 +1,27 @@
 {% extends "main.html" %}
 {% block content %}
 <div class="bower-home">
-  <section class="hero" aria-labelledby="hero-title">
-    <div class="hero-copy">
-      <p class="eyebrow">Self-hosted security telemetry</p>
-      <h1 id="hero-title">Security signal.<br><span>A path to proof.</span></h1>
-      <p class="hero-summary">Collect the events that matter. Protect sensitive details. Verify their arrival in Microsoft Sentinel.</p>
+  <section class="brand-hero" aria-labelledby="hero-title">
+    <img class="brand-art" src="{{ 'images/bower-readme-hero.png' | url }}" alt="Bower: scattered application events pass through a bowerbird-shaped network into selected blue security signals. Collect, Select, Arrange, Deliver, Prove." width="1774" height="887" fetchpriority="high">
+    <div class="brand-intro">
+      <div>
+        <p class="eyebrow">Bower documentation</p>
+        <h1 id="hero-title">From application noise<br>to <span>trusted security signal.</span></h1>
+        <p class="hero-summary">Collect the events that matter. Protect sensitive details. Verify their arrival in Microsoft Sentinel.</p>
+      </div>
       <div class="hero-actions">
         <a class="bower-button" href="{{ 'getting-started/' | url }}">Get started <span aria-hidden="true">↗</span></a>
-        <a class="text-link" href="#follow-an-event">See how it works <span aria-hidden="true">↓</span></a>
+        <a class="text-link" href="#follow-an-event">Explore the dataflow <span aria-hidden="true">↓</span></a>
       </div>
+    </div>
+  </section>
+
+  <section class="hero" aria-labelledby="flow-overview-title">
+    <div class="hero-copy">
+      <p class="eyebrow">Collect → Select → Arrange → Deliver → Prove</p>
+      <h2 id="flow-overview-title">A deliberate path.<br>At every step.</h2>
+      <p class="hero-summary">Your applications, machines and cloud sources. One path through selection, privacy controls and durable delivery. A separate query to prove arrival.</p>
+      <a class="text-link" href="{{ 'getting-started/concepts/' | url }}">Understand the five stages <span aria-hidden="true">↗</span></a>
     </div>
     <figure class="hero-flow" aria-label="Illustrated Bower dataflow">
       <svg class="flow-map" viewBox="0 0 600 380" role="img" aria-labelledby="flow-title flow-description">

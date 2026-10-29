@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block extrahead %}
+  {{ super() }}
+  <script>
+    // Material restores a palette by index. Keep the saved scheme when our
+    // palette order changes, before either its early paint or bundle runs.
+    (() => {
+      try {
+        const saved = __md_get("__palette");
+        const schemes = {{ config.theme.palette | map(attribute='scheme') | list | tojson }};
+        const index = schemes.indexOf(saved?.color?.scheme);
+        if (index !== -1 && saved.index !== index) {
+          __md_set("__palette", { ...saved, index });
+        }
+      } catch {
+        // Storage can be unavailable; leave the theme's default intact.
+      }
+    })();
+  </script>
+{% endblock %}
