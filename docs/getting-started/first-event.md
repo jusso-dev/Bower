@@ -51,7 +51,9 @@ and delivery path used for normal events.
 | In progress | The test is still running. | Keep the page open or return later; the result is stored on the server. |
 
 Do not use a green collector heartbeat as evidence of Sentinel delivery.
-See [evidence bundles](../operations/evidence-bundles.md) for verification details.
+An evidence bundle is signed only when your administrator has configured a signing
+key; otherwise, it is unsigned. See [evidence bundles](../operations/evidence-bundles.md)
+for verification details.
 
 ## Next: connect a real source
 

@@ -12,7 +12,7 @@ You run Bower in your own infrastructure. The console belongs to your tenant.
 2. **Select.** Your approved policy decides whether to keep it. Unknown events are denied by default.
 3. **Arrange.** Bower structures the event and protects sensitive fields before persistence.
 4. **Deliver.** A durable queue and bounded output handle sending and acknowledgement.
-5. **Prove.** For a canary, a Sentinel query looks for the exact test event. A signed evidence bundle records the result.
+5. **Prove.** For a canary, a Sentinel query looks for the exact test event. An evidence bundle records the result. It is signed only when a signing key is configured; otherwise, it is unsigned.
 
 !!! important "Acceptance is not proof"
     A collector accepting an event is one step along the path. Only finding the

@@ -9,7 +9,7 @@ TARGET = ROOT / "docs/getting-started/concepts.md"
 
 
 def render():
-    entries = json.loads(SOURCE.read_text())
+    entries = json.loads(SOURCE.read_text(encoding="utf-8"))
     lines = ["# Concepts and glossary", "", "The same plain-English definitions appear in the Bower console's Help page.", "",
              "## The event path", "", "**Collect → Select → Arrange → Deliver → Prove.** Collect security events, select",
              "what policy allows, structure and redact before persistence, deliver with",
@@ -29,7 +29,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     expected = render()
     if args.check:
-        if not TARGET.exists() or TARGET.read_text() != expected:
+        if not TARGET.exists() or TARGET.read_text(encoding="utf-8") != expected:
             raise SystemExit("Glossary is stale. Run python tools/docs/generate_glossary.py and commit the result.")
     else:
-        TARGET.write_text(expected)
+        TARGET.write_text(expected, encoding="utf-8")

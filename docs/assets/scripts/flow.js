@@ -38,7 +38,7 @@
     select: ['Keep the signal', 'Keep what your policy allows.', 'Deterministic rules select approved event types. Unknown events are denied by default. Every selection follows explicit policy, not a runtime AI decision.', 'Allowed by event policy', 'Redaction before storage', 'Not yet verified'],
     arrange: ['Protect before persistence', 'Useful fields. Sensitive details removed.', 'A trusted parser structures the event. Privacy rules remove or mask sensitive details before the event enters the durable queue.', 'Structured and queued', 'Protected before persistence', 'Not yet verified'],
     deliver: ['Send with acknowledgement', 'A queue that waits for acceptance.', 'The collector sends approved, protected events through the configured output. Retries and acknowledgement preserve delivery state. An accepted request is still not proof of arrival.', 'Sent through configured output', 'Protected event only', 'Acceptance is not proof'],
-    prove: ['Check the destination', 'Find the event. Keep the evidence.', 'For a canary, Bower queries Sentinel for the exact test event and can produce a signed evidence bundle. A simulated run skips that query and must be labelled simulated.', 'Destination query', 'Protected event only', 'Verified only when found']
+    prove: ['Check the destination', 'Find the event. Keep the evidence.', 'For a canary, Bower queries Sentinel for the exact test event and records the result in an evidence bundle. The bundle is signed only when a signing key is configured; otherwise it is unsigned. A simulated run skips the query and is not proof.', 'Destination query', 'Protected event only', 'Verified only when found']
   };
   root.querySelectorAll('[data-step]').forEach(button => {
     button.addEventListener('click', () => {
