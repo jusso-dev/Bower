@@ -13,8 +13,9 @@ Containers, Kubernetes and the plain systemd unit stay supported.
 
 ## Artefacts
 
-Each CI run on `main` (and each pull request that touches packaging, the systemd unit,
-the default policies or the collector) uploads two workflow artefacts:
+Full CI runs (release tags, weekly or manual) and changes to packaging, Ansible,
+systemd or default policies upload two workflow artefacts. Ordinary source and
+documentation changes skip packaging; see [CI](../architecture/ci.md).
 
 | Artefact | Contents |
 |---|---|

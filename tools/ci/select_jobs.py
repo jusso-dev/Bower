@@ -61,7 +61,7 @@ def changed_paths(base, head, pull_request=False):
     # --no-renames includes both old and new paths, and -z handles odd filenames.
     result = subprocess.run(
         ["git", "diff", "--name-only", "--no-renames", "-z", comparison],
-        check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        check=True, stdout=subprocess.PIPE,
     )
     return [p for p in os.fsdecode(result.stdout).split("\0") if p]
 
