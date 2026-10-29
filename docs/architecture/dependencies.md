@@ -204,3 +204,14 @@ with a clear error when absent:
 | `Microsoft.Graph.Applications` (optional) | `New-BowerEntraApplication -Apply` | First-party Graph cmdlets for app registrations and service principals. | Raw Graph REST calls (token handling and paging to own). |
 | `az`, `aws`, `terraform`, `bower` CLIs (optional) | `Bower.Deployment`, `Test-BowerPrivacyProfile`, `Bower.Policy` | The deployment commands wrap the existing templates with the tools those templates already require. Invoked with argument arrays through one mockable function. | Re-implementing what-if, change sets or plans. |
 | `Pester` 5.9, `PSScriptAnalyzer` 1.25 (development only) | `powershell/build.ps1`, CI | Standard PowerShell test framework and linter, both Microsoft/PowerShell-community maintained. Pinned in CI. | None comparable. |
+
+## Documentation website
+
+| Dependency | Scope | Reason and alternatives |
+|---|---|---|
+| MkDocs 1.6.1 and Material 9.x | Build time only, pinned with hashes in `tools/docs/requirements.txt` | Publish the existing Markdown as searchable, responsive static HTML on GitHub Pages. Material supplies navigation, local search and light/dark themes. A small local template adds Bower's animated dataflow. Docusaurus would introduce a second React application and more tooling without improving the existing Markdown workflow. No third-party analytics, remote fonts or runtime service is added. |
+
+The site self-hosts the existing console's OFL-licensed Geist variable font. The
+license accompanies the font in `docs/assets/fonts/`. Browser checks reuse the
+console's Playwright version in a separate locked test package. `@axe-core/playwright` is a development-only
+accessibility check for the documentation; it is never included in the published site. Lighthouse is a development-only performance/accessibility audit, also excluded from the site.

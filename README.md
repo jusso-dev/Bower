@@ -1,5 +1,7 @@
 # Bower
 
+[Documentation](https://jusso-dev.github.io/Bower/) · [Get started](https://jusso-dev.github.io/Bower/getting-started/) · [Explore the dataflow](https://jusso-dev.github.io/Bower/#follow-an-event)
+
 ![Bower turns scattered application noise into trusted security signal through Collect, Select, Arrange, Deliver and Prove](docs/images/bower-readme-hero.png)
 
 > Bower helps security teams collect meaningful security events from custom

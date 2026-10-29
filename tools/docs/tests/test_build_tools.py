@@ -1,0 +1,48 @@
+import importlib.util
+from pathlib import Path
+import tempfile
+import unittest
+
+TOOLS = Path(__file__).resolve().parents[1]
+
+def load(name):
+    spec = importlib.util.spec_from_file_location(name, TOOLS / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+class LinkCheckTests(unittest.TestCase):
+    def test_project_prefix_and_anchor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "index.html").write_text('<a href="/Bower/guide/#target">Guide</a>')
+            (root / "guide").mkdir()
+            (root / "guide/index.html").write_text('<h1 id="target">Guide</h1>')
+            load("check_links").check(root)
+
+    def test_bad_links_and_anchors_fail(self):
+        for target in ('missing/', '#missing', '/wrong-base/', '../../escape'):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "index.html").write_text(f'<a href="{target}">Broken</a>')
+                with self.assertRaises(SystemExit):
+                    load("check_links").check(root)
+
+    def test_search_dialog_has_a_static_name(self):
+        output = load("hooks").on_post_page('<div data-md-component="search" role="dialog"></div>')
+        self.assertIn('aria-label="Search documentation"', output)
+
+    def test_source_links_rewrite_but_missing_docs_and_code_do_not(self):
+        hooks = load("hooks")
+        class File:
+            abs_src_path = str(hooks.DOCS / "reference/index.md")
+        class Page:
+            file = File()
+        source = '[Source](../../README.md)\n[Missing](missing.md)\n```md\n[Example](../../README.md)\n```'
+        output = hooks.on_page_markdown(source, Page())
+        self.assertIn('[Source](https://github.com/jusso-dev/Bower/blob/main/README.md)', output)
+        self.assertIn('[Missing](missing.md)', output)
+        self.assertIn('```md\n[Example](../../README.md)\n```', output)
+
+if __name__ == "__main__":
+    unittest.main()
