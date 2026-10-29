@@ -1,16 +1,8 @@
 name: Images
 
-# Publishes multi-architecture container images to GitHub Container Registry.
-#   main (after CI passes)  -> :edge and :sha-<short>
-#   tag vX.Y.Z               -> :X.Y.Z, :X.Y and :latest
+# Build/push multi-architecture images only for releases or explicit dispatch.
+# Ordinary merges validate source; they do not rebuild all six images again.
 on:
-  # workflow_run is the only way to publish after CI passes without duplicating CI here.
-  # It is safe because the gate job below only accepts push runs of this repository's
-  # own main branch whose commit is reachable from main; fork PR runs are skipped.
-  workflow_run: # zizmor: ignore[dangerous-triggers] gated on event, head repository and reachability from main
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
   push:
     tags: ["v*.*.*"]
   workflow_dispatch:
@@ -19,22 +11,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: images-${{ github.event.workflow_run.head_sha || github.ref }}
+  group: images-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   gate:
-    # Only publish commits that are on main or carry a release tag.
-    # The workflow_run `branches` filter matches the head branch *name*, so a fork PR
-    # from a branch called `main` also matches it. Require a successful CI run that was
-    # triggered by a push to this repository's own main branch.
-    if: >-
-      github.event_name != 'workflow_run' || (
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.event == 'push' &&
-        github.event.workflow_run.head_branch == 'main' &&
-        github.event.workflow_run.head_repository.full_name == github.repository
-      )
+    # Manual publication must be reachable from main; release tags are explicit.
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -42,11 +24,10 @@ jobs:
       - name: Verify commit is on main or is a release tag
         env:
           GH_TOKEN: ${{ github.token }}
-          EVENT: ${{ github.event_name }}
           REF: ${{ github.ref }}
-          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          SHA: ${{ github.sha }}
         run: |
-          if [[ "$EVENT" != workflow_run && "$REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+          if [[ "$REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
             echo "Release tag $REF at $SHA"
             exit 0
           fi
@@ -92,11 +73,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # workflow_run runs on the default branch; build exactly the commit CI tested.
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # Build the exact requested revision.
+          ref: ${{ github.sha }}
 
       - id: commit
-        # Tag images with the commit actually built (workflow_run checks out a detached SHA).
+        # Tag images with the commit actually built.
         run: echo "short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -112,7 +93,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
           tags: |
-            type=raw,value=edge,enable=${{ github.event_name == 'workflow_run' || github.ref == 'refs/heads/main' }}
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=sha-${{ steps.commit.outputs.short }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}

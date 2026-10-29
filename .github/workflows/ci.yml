@@ -3,12 +3,53 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*.*.*']
+  workflow_dispatch:
+  schedule:
+    - cron: '23 3 * * 1'
   pull_request:
 
 permissions:
   contents: read
 
+# Only obsolete PR runs are cancelled; main/release validation finishes normally.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      dotnet: ${{ steps.select.outputs.dotnet }}
+      rust: ${{ steps.select.outputs.rust }}
+      infrastructure: ${{ steps.select.outputs.infrastructure }}
+      powershell: ${{ steps.select.outputs.powershell }}
+      ui: ${{ steps.select.outputs.ui }}
+      e2e: ${{ steps.select.outputs.e2e }}
+      windows: ${{ steps.select.outputs.windows }}
+      containers: ${{ steps.select.outputs.containers }}
+      platforms: ${{ steps.select.outputs.platforms }}
+      packaging: ${{ steps.select.outputs.packaging }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          args=(--base "$BASE" --head "$HEAD")
+          if [[ "$EVENT" == pull_request ]]; then args+=(--pull-request); fi
+          if [[ "$EVENT" == workflow_dispatch || "$EVENT" == schedule || "$REF_TYPE" == tag ]]; then
+            args+=(--full)
+          fi
+          python3 tools/ci/select_jobs.py "${args[@]}"
+
   workflow-lint:
     # Static analysis of the workflows themselves (unpinned actions, injection,
     # dangerous triggers). Fails on high-severity zizmor findings.
@@ -18,6 +59,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Test CI change selection
+        run: python3 -m unittest discover -s tools/ci -p 'test_*.py'
       - name: Lint workflows with actionlint
         env:
           ACTIONLINT_VERSION: 1.7.12
@@ -36,14 +79,18 @@ jobs:
         run: uvx zizmor==1.31.1 --format github --min-severity high .github/workflows
 
   build-test:
+    needs: changes
+    if: needs.changes.outputs.dotnet == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # zizmor: ignore[cache-poisoning] test-only dependencies; no release artifacts leave this job
         with:
           global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
       - run: dotnet restore Bower.sln --locked-mode
       - run: dotnet build Bower.sln --configuration Release --no-restore
       - run: dotnet test --solution Bower.sln --configuration Release --no-build
@@ -71,6 +118,8 @@ jobs:
       - run: dotnet format Bower.sln --verify-no-changes --no-restore
 
   windows-event-log:
+    needs: changes
+    if: needs.changes.outputs.windows == 'true'
     # The Windows Event Log reader only runs on Windows. Against the real event log
     # service: a dedicated test log and event source, allow-list filtering by the
     # service, restart from the bookmark and a cleared log. The platform-neutral
@@ -80,9 +129,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # zizmor: ignore[cache-poisoning] test-only dependencies; no release artifacts leave this job
         with:
           global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
       - run: dotnet restore tests/Bower.UnitTests/Bower.UnitTests.csproj --locked-mode
       - run: dotnet build tests/Bower.UnitTests/Bower.UnitTests.csproj --configuration Release --no-restore
       - name: Windows Event Log tests
@@ -94,6 +145,8 @@ jobs:
           --filter-class "Bower.UnitTests.WindowsEventLog*"
 
   rust:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -106,14 +159,22 @@ jobs:
           persist-credentials: false
       # rustup is preinstalled on the runner; Cargo.toml rust-version sets the floor.
       - run: rustup toolchain install stable --profile minimal -c clippy,rustfmt && rustup default stable
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # zizmor: ignore[cache-poisoning] test-only dependencies; no release artifacts leave this job
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-downloads-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: cargo-downloads-${{ runner.os }}-
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       # C#-vs-Rust parity tests that need a built C# binary skip when it is absent.
       - run: cargo test --workspace --locked
-      - run: cargo build --release --locked -p bower-collector -p bower-cli
+      - run: cargo build --locked -p bower-collector -p bower-cli
       - name: Test every pack with the Rust CLI
         run: |
-          bower=target/release/bower
+          bower=target/debug/bower
           "$bower" keys generate --out-dir "$RUNNER_TEMP/pack-keys" --name ci-ephemeral
           for source in ../packs/*/; do
             source=${source%/}
@@ -123,6 +184,8 @@ jobs:
           done
 
   infrastructure:
+    needs: changes
+    if: needs.changes.outputs.infrastructure == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -143,6 +206,8 @@ jobs:
           terraform validate
 
   powershell:
+    needs: changes
+    if: needs.changes.outputs.powershell == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -173,6 +238,8 @@ jobs:
         run: pwsh -NoProfile -File powershell/build.ps1
 
   ui:
+    needs: changes
+    if: needs.changes.outputs.ui == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -181,7 +248,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # zizmor: ignore[cache-poisoning] test-only dependencies; no release artifacts leave this job
         with:
           node-version: 26
           cache: npm
@@ -195,16 +262,19 @@ jobs:
           VITE_BOWER_AUTH_MODE: development
 
   e2e:
-    needs: [build-test, ui]
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # zizmor: ignore[cache-poisoning] test-only dependencies; no release artifacts leave this job
         with:
           global-json-file: global.json
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # zizmor: ignore[cache-poisoning] test-only dependencies; no release artifacts leave this job
         with:
           node-version: 26
           cache: npm
@@ -213,8 +283,9 @@ jobs:
         run: |
           npm ci --ignore-scripts --prefix ui/Bower.Management.Web
           VITE_BOWER_AUTH_MODE=development npm run build --prefix ui/Bower.Management.Web
-          # Native AOT publish (clang and zlib are preinstalled on ubuntu-latest).
-          dotnet publish src/Bower.Management.Api/Bower.Management.Api.csproj -c Release -r linux-x64 -o out/management
+          # Browser checks use the managed host; full container validation checks AOT.
+          dotnet restore src/Bower.Management.Api/Bower.Management.Api.csproj --locked-mode
+          dotnet publish src/Bower.Management.Api/Bower.Management.Api.csproj -c Release --no-restore -p:PublishAot=false -p:EnableRequestDelegateGenerator=true -p:EnableConfigurationBindingGenerator=true -o out/management
           cp -R ui/Bower.Management.Web/dist out/management/wwwroot
       - name: Start management API with synthetic preview data
         run: |
@@ -226,7 +297,7 @@ jobs:
             BOWER_MANAGEMENT_DB_PATH="$RUNNER_TEMP/management.db" \
             Bower__Setup__Canary__CollectorUrl=http://127.0.0.1:4399/ \
             Bower__Setup__Canary__IngestTokenFile="$RUNNER_TEMP/canary.token" \
-            ./Bower.Management.Api > "$RUNNER_TEMP/management.log" 2>&1 &
+            dotnet Bower.Management.Api.dll > "$RUNNER_TEMP/management.log" 2>&1 &
           cd "$GITHUB_WORKSPACE"
           for _ in $(seq 1 30); do curl -sf http://127.0.0.1:4320/health && break; sleep 1; done
           curl -sf http://127.0.0.1:4320/ | grep -q '<div id="root">'
@@ -244,7 +315,8 @@ jobs:
           retention-days: 7
 
   docker:
-    needs: [build-test, rust]
+    needs: changes
+    if: needs.changes.outputs.containers == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -278,8 +350,9 @@ jobs:
   docker-arm64:
     # Images publishes linux/amd64 and linux/arm64 from an amd64 runner, so the AOT
     # build stage cross-compiles. Build every AOT image for arm64 here so a broken
-    # cross toolchain fails the pull request instead of the post-merge publish.
-    needs: [build-test]
+    # cross toolchain fails full validation or a container-change pull request.
+    needs: changes
+    if: needs.changes.outputs.containers == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -301,7 +374,8 @@ jobs:
           --output type=cacheonly .
 
   publish:
-    needs: build-test
+    needs: changes
+    if: needs.changes.outputs.platforms == 'true'
     # Native AOT cannot cross-compile to another OS, and cross-architecture links need
     # a target sysroot, so every RID builds on a native runner.
     runs-on: ${{ matrix.os }}
@@ -343,36 +417,10 @@ jobs:
           name: bower-${{ matrix.rid }}
           path: artifacts/${{ matrix.rid }}
 
-  # Native packages and installers (#112). They need the publish artefacts and take a
-  # few minutes, so they run on pushes to main and on pull requests that touch
-  # packaging, the systemd unit, the default policies or the collector.
-  packaging-changes:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-    outputs:
-      run: ${{ steps.decide.outputs.run }}
-    steps:
-      - id: decide
-        env:
-          EVENT: ${{ github.event_name }}
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          if [ "$EVENT" != pull_request ]; then
-            echo "run=true" >>"$GITHUB_OUTPUT"
-            exit 0
-          fi
-          files="$(gh api --paginate "repos/$REPOSITORY/pulls/$PR/files" --jq '.[].filename')"
-          pattern='^(deploy/installers/|deploy/ansible/|deploy/systemd/|tests/installers/|src/Bower\.Collector/|policies/default/|\.github/workflows/ci\.yml$)'
-          if grep -qE "$pattern" <<<"$files"; then run=true; else run=false; fi
-          echo "run=$run" >>"$GITHUB_OUTPUT"
-
+  # Installer validation runs for packaging changes and full validation.
   package-linux:
-    needs: [publish, packaging-changes]
-    if: needs.packaging-changes.outputs.run == 'true'
+    needs: [publish, changes]
+    if: needs.changes.outputs.packaging == 'true'
     runs-on: ubuntu-latest
     env:
       NFPM_VERSION: 2.48.0
@@ -423,8 +471,8 @@ jobs:
           path: dist
 
   package-windows:
-    needs: [publish, packaging-changes]
-    if: needs.packaging-changes.outputs.run == 'true'
+    needs: [publish, changes]
+    if: needs.changes.outputs.packaging == 'true'
     runs-on: windows-latest
     env:
       # WiX v5 (MS-RL). v6 and later need the Open Source Maintenance Fee EULA accepted
@@ -557,3 +605,42 @@ jobs:
             Write-Output "== $($_.Name)"
             Select-String -LiteralPath $_.FullName -Pattern 'Return value 3' -Context 30, 2 | Select-Object -First 1 | Out-String -Width 300
           }
+
+  ci-success:
+    name: ci-success
+    if: always()
+    needs: [changes, workflow-lint, build-test, windows-event-log, rust, infrastructure, powershell, ui, e2e, docker, docker-arm64, publish, package-linux, package-windows, install-linux, install-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every selected check to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os, sys
+          results = json.loads(os.environ['RESULTS'])
+          failed = {name: job['result'] for name, job in results.items()
+                    if job['result'] not in ('success', 'skipped')}
+          for required in ('changes', 'workflow-lint'):
+              if results[required]['result'] != 'success':
+                  failed[required] = results[required]['result']
+          selected = results['changes'].get('outputs', {})
+          groups = {
+              'dotnet': ['build-test'], 'rust': ['rust'],
+              'infrastructure': ['infrastructure'], 'powershell': ['powershell'],
+              'ui': ['ui'], 'e2e': ['e2e'], 'windows': ['windows-event-log'],
+              'containers': ['docker', 'docker-arm64'], 'platforms': ['publish'],
+              'packaging': ['package-linux', 'package-windows', 'install-linux', 'install-windows'],
+          }
+          for flag, jobs in groups.items():
+              if selected.get(flag) not in ('true', 'false'):
+                  failed[flag] = 'missing selection output'
+              elif selected[flag] == 'true':
+                  for job in jobs:
+                      if results[job]['result'] != 'success':
+                          failed[job] = results[job]['result']
+          if failed:
+              print(f'CI failed: {failed}')
+              sys.exit(1)
+          print('All selected checks passed.')
+          PYTHON
