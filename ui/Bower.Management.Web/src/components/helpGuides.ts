@@ -1,0 +1,15 @@
+/** Local help only: no external widgets, telemetry or remote content. */
+export const helpGuides = [
+  { id: "getting-started", title: "Getting started", paths: ["/", "/setup"], text: "Start with the setup checklist on this page. An administrator connects your Entra apps, destination and DCR, approves a collector and sends a canary. A simulated run is not delivery proof.", to: "/setup", action: "Open Setup" },
+  { id: "fleet-health", title: "Checking your machines", paths: ["/overview", "/collectors", "/jobs"], text: "Open Collectors to find a machine that needs attention. Read its suggested fix and last-seen time before acting. If no machines appear, ask your administrator to enrol and approve the first collector in Setup.", to: "/collectors", action: "Open Collectors" },
+  { id: "sources-and-pipelines", title: "Connecting a source", paths: ["/sources", "/pipelines"], text: "In Sources, choose a source and target collector, then review the synthetic preview. A different approver reviews the request. Download the signed configuration and have an operator apply it on the machine. Use a trusted signed pack and an approved policy to select security events. Receiving events does not prove Sentinel delivery.", to: "/sources", action: "Open Sources" },
+  { id: "privacy-and-approvals", title: "Protecting sensitive details", paths: ["/privacy-profiles", "/approvals"], text: "A privacy profile controls redaction before storage. Select a profile version to edit its fields with forms, review the protected example and submit a new version for approval. Ask an operator to submit your first profile if none exist. Review pending collector identities in Approvals.", to: "/privacy-profiles", action: "Open Privacy profiles" },
+  { id: "access-and-enrolment", title: "Giving people and machines access", paths: ["/access", "/enrolment"], text: "Ask your Entra administrator to assign the appropriate Bower app role. Machines with an Azure identity use Entra; other machines use an administrator-issued one-time enrolment token. Each collector still needs approval before it can report.", to: "/access", action: "Check your access" },
+  { id: "alerts-and-proof", title: "Understanding alerts and reports", paths: ["/alerts", "/reports"], text: "Alerts describe conditions that need attention and suggest a fix. If there are none, check Reports for the latest test result. Only a Sentinel query finding the exact canary proves delivery. A collector accepting an event, or a simulated test, is not that proof.", to: "/reports", action: "Open Reports" },
+  { id: "audit-history", title: "Reviewing changes", paths: ["/audit"], text: "Audit records show who performed management actions and when. An empty history means no actions have been recorded yet. Start with Setup to connect and approve a collector; do not make unnecessary changes just to create a record.", to: "/setup", action: "Open Setup" }
+];
+
+export function guideForPath(path: string) {
+  const base = path.startsWith("/collectors/") ? "/collectors" : path.replace(/\/+$/, "") || "/";
+  return helpGuides.find(guide => guide.paths.includes(base));
+}

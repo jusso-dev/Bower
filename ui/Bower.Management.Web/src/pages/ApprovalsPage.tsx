@@ -145,7 +145,8 @@ export function ApprovalsPage() {
             <EmptyState
               icon={<CheckCircle2 aria-hidden="true" />}
               title="Approval queue clear"
-              detail="New collector identities will remain pending here until an approver records a reasoned decision."
+              detail="No collectors are waiting for a decision. To connect a new machine, follow Setup; return here to review its identity and record a reason."
+              action={{ to: "/help#setup-checklist", label: "View setup checklist" }}
             />
           )
         }
@@ -174,7 +175,7 @@ export function ApprovalsPage() {
             ) : (
               <EmptyState
                 title="No decisions recorded"
-                detail="Approval and rejection decisions will appear here with actor and reason."
+                detail="Review pending identities above if any are waiting. Your approval or rejection will appear here with who decided and why."
               />
             )
           }

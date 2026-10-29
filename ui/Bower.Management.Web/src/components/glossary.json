@@ -1,0 +1,103 @@
+[
+  {
+    "id": "collector",
+    "term": "Collector",
+    "definition": "The small Bower program on one of your machines. It gathers security events, removes sensitive details and sends the events on.",
+    "matches": [
+      "collectors",
+      "collector"
+    ]
+  },
+  {
+    "id": "sentinel",
+    "term": "Microsoft Sentinel",
+    "definition": "Microsoft's security monitoring service. Your security team searches the events Bower sends there.",
+    "matches": [
+      "Microsoft Sentinel",
+      "Sentinel"
+    ]
+  },
+  {
+    "id": "test-event",
+    "term": "Test event",
+    "definition": "A harmless event Bower sends on purpose and then looks for in Microsoft Sentinel. Finding it proves the whole path works. A simulated test skips that check, so it is not proof.",
+    "matches": [
+      "test event"
+    ]
+  },
+  {
+    "id": "privacy-profile",
+    "term": "Privacy profile",
+    "definition": "Your rules for which sensitive details Bower removes or masks before anything is stored or sent.",
+    "matches": [
+      "privacy profile"
+    ]
+  },
+  {
+    "id": "event-rules",
+    "term": "Event rules",
+    "definition": "The approved rules that decide which security events Bower keeps and sends. Everything else is dropped.",
+    "matches": [
+      "event rules"
+    ]
+  },
+  {
+    "id": "set-aside",
+    "term": "Set aside",
+    "definition": "Events Bower could not send after many tries. They are kept, not deleted, so someone can review them.",
+    "matches": [
+      "set aside"
+    ]
+  },
+  {
+    "id": "group",
+    "term": "Group",
+    "definition": "Collectors that share an environment name, such as production or staging. Each group gets one traffic light.",
+    "matches": [
+      "collector groups"
+    ]
+  },
+  {
+    "id": "dcr",
+    "term": "DCR (data collection rule)",
+    "definition": "The Azure rule that maps incoming event fields to columns in your Log Analytics table. Choosing a DCR does not prove events have arrived.",
+    "matches": [
+      "data collection rule",
+      "DCR"
+    ]
+  },
+  {
+    "id": "pack",
+    "term": "Pack",
+    "definition": "A signed bundle of parsers, event rules and related security content for a particular source. Bower only loads packs signed by a trusted key.",
+    "matches": [
+      "packs",
+      "pack"
+    ]
+  },
+  {
+    "id": "policy",
+    "term": "Policy",
+    "definition": "The approved rules that decide which security events Bower keeps or drops. Unknown events are dropped by default.",
+    "matches": [
+      "policies",
+      "policy"
+    ]
+  },
+  {
+    "id": "redaction",
+    "term": "Redaction",
+    "definition": "Removing or replacing sensitive details before an event is stored or sent. A privacy profile controls these protections.",
+    "matches": [
+      "redaction"
+    ]
+  },
+  {
+    "id": "canary",
+    "term": "Canary",
+    "definition": "A harmless test event used to check the whole path. Only a query that finds that event in Microsoft Sentinel proves delivery; a simulated run does not.",
+    "matches": [
+      "canary"
+    ]
+  }
+]

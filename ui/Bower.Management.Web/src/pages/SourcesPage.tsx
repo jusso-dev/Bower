@@ -114,7 +114,7 @@ export function SourcesPage() {
             ) : (
               <EmptyState
                 title="No sources set up here yet"
-                detail="Requests appear here once someone asks for approval. Each one shows whether the collector is receiving events."
+                detail="Choose a source above and ask for approval. If you can only view this page, ask an operator to submit the request. Each request shows whether the collector is receiving events."
               />
             )
           }

@@ -162,9 +162,9 @@ function CollectorDetail({ id }: { id: string }) {
         <h2>Machine details</h2>
         <CollectorTable collectors={[item]} />
         <h3>Configured sources</h3>
-        {item.sources.length ? <ul>{item.sources.map((source) => <li key={source.id}>{source.id} · {source.type} · {source.status}{source.lastEventAt && ` · Last event: ${formatDate(source.lastEventAt)}`}</li>)}</ul> : <p>No sources reported yet.</p>}
+        {item.sources.length ? <ul>{item.sources.map((source) => <li key={source.id}>{source.id} · {source.type} · {source.status}{source.lastEventAt && ` · Last event: ${formatDate(source.lastEventAt)}`}</li>)}</ul> : <p>No sources reported yet. Ask an operator to <Link to="/sources">set up a source</Link>, then check the next heartbeat.</p>}
         <h3>Destinations</h3>
-        {item.outputs.length ? <ul>{item.outputs.map((output) => <li key={output.id}>{output.id} · {output.type} · {output.status}{output.lastAcknowledgedAt ? ` · Last accepted for sending: ${formatDate(output.lastAcknowledgedAt)}` : " · No acceptance reported yet"}</li>)}</ul> : <p>No destinations reported yet.</p>}
+        {item.outputs.length ? <ul>{item.outputs.map((output) => <li key={output.id}>{output.id} · {output.type} · {output.status}{output.lastAcknowledgedAt ? ` · Last accepted for sending: ${formatDate(output.lastAcknowledgedAt)}` : " · No acceptance reported yet"}</li>)}</ul> : <p>No destinations reported yet. Ask an administrator to check the destination in <Link to="/setup?step=destination">Setup</Link> and the collector configuration.</p>}
       </section>}
     </ResourceState>
   </Page>;

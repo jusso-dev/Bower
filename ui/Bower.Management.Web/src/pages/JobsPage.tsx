@@ -193,7 +193,8 @@ export function JobsPage() {
               <EmptyState
                 icon={<Timer aria-hidden="true" />}
                 title="No collector job reports yet"
-                detail="Approved collectors report queue retention, maintenance and heartbeat jobs with every heartbeat."
+                detail="Approved collectors report maintenance jobs with each heartbeat. Check Collectors to see whether a machine is approved and reporting."
+                action={{ to: "/collectors", label: "Check collectors" }}
               />
             );
           }}

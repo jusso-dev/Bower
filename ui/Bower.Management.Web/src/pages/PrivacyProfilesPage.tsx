@@ -183,7 +183,7 @@ export function PrivacyProfilesPage() {
               <EmptyState
                 icon={<ShieldCheck aria-hidden="true" />}
                 title="No privacy profile versions"
-                detail="Collectors keep their local or built-in default privacy profile until an approved privacy profile version is assigned."
+                detail="Ask an operator to choose Edit with forms or Submit new version above, then have it approved and assigned. Collectors keep their existing local or built-in protections until then."
               />
             )
           }
@@ -245,7 +245,8 @@ export function PrivacyProfilesPage() {
             ) : (
               <EmptyState
                 title="No collectors enrolled"
-                detail="Assigned privacy profile versions and their sync status appear here once collectors register."
+                detail="Connect and approve your first collector in Setup, then assign an approved privacy profile version here."
+                action={{ to: "/help#setup-checklist", label: "View setup checklist" }}
               />
             )
           }
@@ -281,7 +282,7 @@ export function PrivacyProfilesPage() {
             ) : (
               <EmptyState
                 title="No assignments recorded"
-                detail="Assigning or clearing a privacy profile version on a collector is recorded here with actor and reason."
+                detail="Select an approved version and assign it to a collector above. Assignments are recorded here with who made the change and why."
               />
             )
           }

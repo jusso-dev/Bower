@@ -37,7 +37,8 @@ export function AuditPage() {
             <EmptyState
               icon={<ScrollText aria-hidden="true" />}
               title="No management actions recorded"
-              detail="Collector registrations and approval lifecycle actions will create immutable audit rows."
+              detail="Collector registrations and approval decisions appear here. Start with Setup to connect your first collector."
+              action={{ to: "/help#setup-checklist", label: "View setup checklist" }}
             />
           )
         }

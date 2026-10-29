@@ -1,10 +1,11 @@
 import { Download, KeyRound, Send } from "lucide-react";
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useApi, useApiDownload } from "../api";
 import { CheckList, GuidedStep, Stepper } from "../components/guided";
-import { Page, ResourceState } from "../components/ui";
+import { EmptyState, Page, ResourceState } from "../components/ui";
 import { useResource } from "../hooks/useResource";
+import { stepCopy } from "../lib/setupSteps";
 import { formatDate } from "../lib/format";
 import type {
   SetupCanaryRun,
@@ -14,37 +15,6 @@ import type {
   SetupStepId
 } from "../types";
 
-const stepCopy: Record<SetupStepId, { title: string; why: string }> = {
-  "sign-in": {
-    title: "Sign in",
-    why: "Bower uses your organisation's Entra ID account and app roles, so every change is tied to a person and kept in the audit log."
-  },
-  entra: {
-    title: "Connect Entra apps",
-    why: "People and collectors sign in with separate Bower app roles. Without them, collectors cannot enrol and nobody can approve them."
-  },
-  destination: {
-    title: "Choose where events go",
-    why: "Bower sends security events to one Log Analytics workspace that Microsoft Sentinel reads. The data collection rule decides which columns arrive."
-  },
-  collector: {
-    title: "Approve the first collector",
-    why: "A collector cannot report until a person approves it, so an unknown machine cannot join your fleet."
-  },
-  probe: {
-    title: "Choose what the test proves",
-    why: "The test event can prove Bower's general event path, or that a specific pack parser works end to end."
-  },
-  canary: {
-    title: "Send a test event",
-    why: "A synthetic test event goes through privacy rules, policy, the queue and delivery exactly like real events. It holds no real data."
-  },
-  proof: {
-    title: "See proof it arrived",
-    why: "A collector accepting an event does not prove it reached Sentinel. Only a Sentinel query that finds the exact test event does."
-  }
-};
-
 const POLL_MILLISECONDS = 5000;
 /** Failed polls back off (10 s, 20 s, 40 s) up to this ceiling. */
 const MAX_POLL_MILLISECONDS = 60000;
@@ -52,6 +22,9 @@ const MAX_POLL_MILLISECONDS = 60000;
 export function SetupPage() {
   const setup = useResource<SetupStatus>("/api/setup");
   const { revalidate } = setup;
+  const [search] = useSearchParams();
+  const requestedStep = search.get("step");
+  const previousRequest = useRef<string | null>(null);
   const [selected, setSelected] = useState<SetupStepId | null>(null);
   const [failures, setFailures] = useState(0);
   const [polls, setPolls] = useState(0);
@@ -62,10 +35,11 @@ export function SetupPage() {
   // Open the first unfinished step once, then stay on the step the person chose, so saving
   // shows that step's new state instead of jumping ahead.
   useEffect(() => {
-    if (selected === null && setup.data) {
-      setSelected(firstUnfinished(setup.data.steps));
+    if (setup.data && (selected === null || previousRequest.current !== requestedStep)) {
+      previousRequest.current = requestedStep;
+      setSelected(setup.data.steps.find(step => step.id === requestedStep)?.id ?? firstUnfinished(setup.data.steps));
     }
-  }, [selected, setup.data]);
+  }, [selected, setup.data, requestedStep]);
 
   // Every attempt re-arms the timer (polls changes), so one failed request never stops polling.
   useEffect(() => {
@@ -103,7 +77,10 @@ export function SetupPage() {
           const previous = status.steps[index - 1];
           const next = status.steps[index + 1];
           if (!step) {
-            return null;
+            return <>
+              <EmptyState title="No setup steps available" detail="Refresh setup progress. If this stays empty, ask your administrator to check the management service." />
+              <button className="button button--secondary" type="button" onClick={() => void setup.reload()}>Refresh setup progress</button>
+            </>;
           }
           return (
             <>

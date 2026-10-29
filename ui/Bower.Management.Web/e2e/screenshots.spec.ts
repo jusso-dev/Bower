@@ -280,3 +280,15 @@ test("capture fleet detail and narrow dark fleet", async ({ page }, testInfo) =>
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({ path: path.join(screenshotDirectory, "bower-management-fleet-mobile-dark.png"), fullPage: true, animations: "disabled" });
 });
+
+test("capture local help and persistent checklist", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "readme-chromium");
+  await page.goto("/help");
+  const checklist = page.getByRole("region", { name: "Setup checklist" });
+  await expect(checklist.getByRole("link", { name: "Choose where events go" })).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({ path: path.join(screenshotDirectory, "bower-management-help.png"), fullPage: true, animations: "disabled" });
+  await page.setViewportSize({ width: 320, height: 780 });
+  await page.evaluate(() => document.documentElement.dataset.theme = "dark");
+  await checklist.screenshot({ path: path.join(screenshotDirectory, "bower-management-help-mobile-dark.png"), animations: "disabled" });
+});

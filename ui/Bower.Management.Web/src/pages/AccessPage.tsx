@@ -35,6 +35,7 @@ export function AccessPage() {
                 </div>
               </dl>
               <div className="role-list" aria-label="Current roles">
+                {!access.roles.length && <p>No Bower roles were returned. Ask your Entra administrator to assign the appropriate app role, then sign in again.</p>}
                 {access.roles.map((role) => (
                   <span key={role}>{role}</span>
                 ))}

@@ -17,6 +17,7 @@ function stub(user = "reader-a", roles = ["Bower.Viewer"]) {
   const fetch = vi.fn(async (input: RequestInfo | URL) => {
     const path = String(input);
     if (path.includes("/api/access/me")) return response({ objectId: user, roles, displayName: "Reader", developmentAuthentication: true });
+    if (path.includes("/api/setup")) return response({ canChange: false, steps: [], latestRun: null });
     if (path.includes("/api/home")) return response(home);
     return response([]);
   });

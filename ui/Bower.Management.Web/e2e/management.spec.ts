@@ -479,3 +479,40 @@ test("fleet supports keyboard filters, dark mode and a 320px viewport", async ({
   await expect(page.getByRole("heading", { name: "Machine details" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
+
+test("local help follows real setup progress and links back to a selected step", async ({ page }) => {
+  const errors = collectConsoleErrors(page);
+  await page.goto("/setup");
+  await page.getByRole("link", { name: "Help with this page" }).click();
+  await expect(page.locator("#getting-started")).toBeFocused();
+  const checklist = page.getByRole("region", { name: "Setup checklist" });
+  await expect(checklist.getByRole("link", { name: "Choose where events go" })).toBeVisible();
+  const status = await (await page.request.get("/api/setup")).json();
+  await expect(checklist.locator("li")).toHaveCount(status.steps.length);
+  const done = status.steps.filter((step: { id: string; state: string }) =>
+    step.state === "complete" && (step.id !== "proof" || status.latestRun?.mode === "verified")).length;
+  await expect(checklist.getByText("Done", { exact: true })).toHaveCount(done);
+  await page.reload();
+  await expect(checklist.getByText("Done", { exact: true })).toHaveCount(done);
+  await checklist.getByRole("link", { name: "Choose where events go" }).click();
+  await expect(page.getByRole("region", { name: "Choose where events go" })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("glossary supports keyboard dismissal and narrow dark screens", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 780 });
+  await page.goto("/help");
+  await page.evaluate(() => document.documentElement.dataset.theme = "dark");
+  const term = page.locator(".help-guides").getByRole("link", { name: "canary", exact: true }).first();
+  await term.focus();
+  await expect(page.getByRole("tooltip")).toBeVisible();
+  const box = await page.getByRole("tooltip").boundingBox();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(320);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
+  await expect(term).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#canary")).toBeFocused();
+  await expectNoHorizontalOverflow(page);
+});

@@ -54,7 +54,12 @@ export function OverviewPage() {
                     <EmptyState
                       icon={<ShieldCheck aria-hidden="true" />}
                       title="No fleet exceptions"
-                      detail="All enrolled collectors are reporting without a detected approval, delivery or privacy profile exception."
+                      detail={overview.totalCollectors
+                        ? "No approval, delivery or privacy profile exceptions were detected. Check Reports for the latest delivery test."
+                        : "No collectors have joined yet. Ask an administrator to connect the first machine using Setup."}
+                      action={overview.totalCollectors
+                        ? { to: "/reports", label: "Check delivery reports" }
+                        : { to: "/help#setup-checklist", label: "View setup checklist" }}
                     />
                   )}
                 </section>
