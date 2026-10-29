@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "1.0",
+  "scope": "Disposable AWS lab: native collectors, authenticated relay, local AMA spool; Sentinel deferred",
+  "minimumLinuxCollectors": 3,
+  "minimumWindowsCollectors": 3,
+  "acknowledgedLoss": 0,
+  "duplicateOutputEvents": 0,
+  "redactionLeaks": 0,
+  "deniedEventsInOutput": 0,
+  "invalidCredentialsAccepted": 0,
+  "recoveryDeadlineSeconds": 120,
+  "normalOutputP95LatencySeconds": 60,
+  "load": {
+    "aggregateTargetEventsPerSecond": [1000, 5000],
+    "secondsPerStep": 60,
+    "maximumHttpConcurrencyPerSource": 64,
+    "throughputIsExploratory": true,
+    "note": "Report actual offered and acknowledged rates and saturation; target rate alone is not a throughput result. This short run is not the 30-minute-per-step or 24-hour soak from issue 136."
+  },
+  "windowsMemoryFallbackPercent": 90,
+  "sentinelVerification": "deferred-by-user"
+}
