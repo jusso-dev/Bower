@@ -102,7 +102,7 @@
                         Description="Collects, redacts and delivers Bower security telemetry."
                         Type="ownProcess" Start="auto" ErrorControl="normal" Vital="yes"
                         Account="NT SERVICE\Bower">
-          <ServiceConfig DelayedAutoStart="yes" ServiceSid="unrestricted"
+          <ServiceConfig DelayedAutoStart="no" ServiceSid="unrestricted"
                          FailureActionsWhen="failedToStopOrReturnedError" OnInstall="yes" OnReinstall="yes" />
           <!-- The native MSI failure-actions table fails with access denied when
                configuring restart actions. WiX opens the service with the required

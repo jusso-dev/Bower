@@ -409,6 +409,49 @@ public sealed class AdaptiveConcurrencyTests
     }
 
     [Fact]
+    public async Task Worker_DeadlineCancelsSdkRequestAndRetainsWholeBatchForRetry()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        ManualTimeProvider clock = new(TestEvents.Now);
+        SqliteEventStore store = new(Path.Combine(directory.Path, "queue.db"), 64 * 1024 * 1024, clock);
+        await store.InitializeAsync(token);
+        foreach (QueuedEvent item in Events("deadline", 3))
+        {
+            await store.EnqueueAsync(item, token);
+        }
+
+        TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        using ScriptedEndpoint endpoint = new((_, _) => (HttpStatusCode.NoContent, null))
+        {
+            BeforeRespond = async cancellation =>
+            {
+                entered.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellation);
+            }
+        };
+        AzureLogsIngestionOutput output = CreateOutput(endpoint, maximumConcurrency: 1, clock: clock);
+        using QueueDeliveryWorker worker = new(store, output, clock, new QueueDeliveryOptions
+        {
+            MaximumDeliveryAttempts = 1,
+            LeaseDuration = TimeSpan.FromSeconds(90),
+            DeliveryTimeout = TimeSpan.FromSeconds(60)
+        }, NullLogger<QueueDeliveryWorker>.Instance);
+
+        Task<int> delivery = worker.DeliverOnceAsync(token);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10), token);
+        clock.Advance(TimeSpan.FromSeconds(60));
+        Assert.Equal(3, await delivery.WaitAsync(TimeSpan.FromSeconds(10), token));
+
+        QueueSnapshot snapshot = await store.GetSnapshotAsync(token);
+        Assert.Equal((3L, 0L, 0L, 0L),
+            (snapshot.Retrying, snapshot.Uploading, snapshot.Delivered, snapshot.DeadLettered));
+        Assert.Equal(0, output.GetConcurrencySnapshot()!.InFlight);
+        Assert.Equal(1, endpoint.Count);
+        Assert.True((await store.VerifyLedgerAsync(token)).Intact);
+    }
+
+    [Fact]
     public async Task Worker_ThrottledEventsStayDurableAndDeliverOnceWithoutPrematureAck()
     {
         CancellationToken token = TestContext.Current.CancellationToken;

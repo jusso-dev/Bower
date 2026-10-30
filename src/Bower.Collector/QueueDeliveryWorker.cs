@@ -29,12 +29,32 @@ public sealed record QueueDeliveryOptions
 
     public TimeSpan LeaseDuration { get; init; } = TimeSpan.FromMinutes(5);
 
+    /// <summary>Cancellation deadline for one output call, leaving time to settle its lease.</summary>
+    public TimeSpan DeliveryTimeout { get; init; } = TimeSpan.FromMinutes(4);
+
     public TimeSpan IdleDelay { get; init; } = TimeSpan.FromSeconds(1);
 
     public TimeSpan ErrorDelay { get; init; } = TimeSpan.FromSeconds(5);
 
     /// <summary>Retryable failures dead-letter once an event has been leased this many times.</summary>
     public int MaximumDeliveryAttempts { get; init; } = 20;
+
+    public QueueDeliveryOptions Validate()
+    {
+        if (LeaseDuration < TimeSpan.FromSeconds(31) || LeaseDuration > TimeSpan.FromHours(1))
+        {
+            throw new InvalidOperationException("BOWER_DELIVERY_LEASE_SECONDS must be between 31 and 3600.");
+        }
+
+        if (DeliveryTimeout < TimeSpan.FromSeconds(1)
+            || DeliveryTimeout > LeaseDuration - TimeSpan.FromSeconds(30))
+        {
+            throw new InvalidOperationException(
+                "BOWER_DELIVERY_TIMEOUT_SECONDS must be at least 1 and leave at least 30 seconds before lease expiry.");
+        }
+
+        return this;
+    }
 }
 
 /// <summary>
@@ -50,6 +70,8 @@ public sealed partial class QueueDeliveryWorker(
     ILogger<QueueDeliveryWorker> logger,
     DeliveryActivity? activity = null) : BackgroundService
 {
+    private readonly QueueDeliveryOptions deliveryOptions = options.Validate();
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
@@ -59,7 +81,7 @@ public sealed partial class QueueDeliveryWorker(
                 int leased = await DeliverOnceAsync(stoppingToken);
                 if (leased == 0)
                 {
-                    await Task.Delay(options.IdleDelay, clock, stoppingToken);
+                    await Task.Delay(deliveryOptions.IdleDelay, clock, stoppingToken);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -71,7 +93,7 @@ public sealed partial class QueueDeliveryWorker(
                 // Storage errors (for example SQLITE_BUSY) must not stop collection. Leased
                 // events stay leased and are reclaimed when the lease expires.
                 LogLoopFailure(logger, exception.GetType().Name);
-                await Task.Delay(options.ErrorDelay, clock, stoppingToken);
+                await Task.Delay(deliveryOptions.ErrorDelay, clock, stoppingToken);
             }
         }
     }
@@ -80,8 +102,8 @@ public sealed partial class QueueDeliveryWorker(
     public async Task<int> DeliverOnceAsync(CancellationToken cancellationToken)
     {
         IReadOnlyList<QueuedEvent> events = await queue.LeaseAsync(
-            options.BatchSize,
-            options.LeaseDuration,
+            deliveryOptions.BatchSize,
+            deliveryOptions.LeaseDuration,
             cancellationToken);
         if (events.Count == 0)
         {
@@ -94,9 +116,21 @@ public sealed partial class QueueDeliveryWorker(
         HashSet<string> settled = new(StringComparer.Ordinal);
 
         DeliveryResult result;
+        using CancellationTokenSource deadline = new(deliveryOptions.DeliveryTimeout, clock);
+        using CancellationTokenSource attempt = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, deadline.Token);
         try
         {
-            result = await output.DeliverAsync(events, cancellationToken);
+            // Await cancellation cooperatively: never abandon a still-running adapter and
+            // start a second upload from this worker. Settlement uses the host token, not
+            // the expired attempt token, so a timed-out batch can be durably retried.
+            result = await output.DeliverAsync(events, attempt.Token);
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            LogOutputTimeout(logger, output.Id);
+            result = new DeliveryResult([], events.Select(item => new DeliveryFailure(
+                item.EventId, "destination-output-timeout", IsRetryable: true, RetryAfter: null)).ToArray(), null);
         }
         catch (Exception exception) when (
             exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -190,7 +224,7 @@ public sealed partial class QueueDeliveryWorker(
             return new FailureSettlement(item.EventId, failure.Code, null, item.LeaseToken);
         }
 
-        if (!failure.IsDestinationFailure && item.DeliveryAttempts >= options.MaximumDeliveryAttempts)
+        if (!failure.IsDestinationFailure && item.DeliveryAttempts >= deliveryOptions.MaximumDeliveryAttempts)
         {
             LogAttemptsExhausted(logger, output.Id, item.DeliveryAttempts);
             return new FailureSettlement(item.EventId, $"max-attempts-exceeded:{failure.Code}", null, item.LeaseToken);
@@ -214,6 +248,10 @@ public sealed partial class QueueDeliveryWorker(
     [LoggerMessage(EventId = 1006, Level = LogLevel.Warning,
         Message = "Output adapter {OutputId} retry deadline exceeded one hour and was capped.")]
     private static partial void LogRetryAfterCapped(ILogger logger, string outputId);
+
+    [LoggerMessage(EventId = 1007, Level = LogLevel.Warning,
+        Message = "Output adapter {OutputId} exceeded its delivery timeout; batch will retry.")]
+    private static partial void LogOutputTimeout(ILogger logger, string outputId);
 
     internal static TimeSpan CalculateRetryDelay(int attempt)
     {

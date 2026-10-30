@@ -110,7 +110,48 @@ Single-record settlement now requires a token before the C# cancellation argumen
 settlements carry the token themselves. Missing or stale claims cannot mutate
 state; batch APIs return those IDs, single APIs reject the transition. Workers
 must use claims from their original batch, never read current claims at settlement
-time. Delivery worker changes in this patch only integrate this contract.
+time.
+
+### C# delivery deadlines and restart recovery
+
+`BOWER_DELIVERY_LEASE_SECONDS` defaults to 300 and accepts 31–3600 seconds.
+`BOWER_DELIVERY_TIMEOUT_SECONDS` defaults to 240 and must leave at least 30 seconds
+between the output cancellation deadline and lease expiry for queue settlement.
+Invalid combinations fail collector startup, including when delivery is disabled.
+Nondefault delivery profiles append both values to the reported configuration hash;
+the default profile preserves existing configuration hashes shared with Rust.
+Configuration identity does not identify software behavior: record the binary
+version and artifact hash separately. No database migration or lease-token change
+is involved. These options apply to the C# collector only.
+
+The output receives a token linked to the deadline and host shutdown. A deadline
+cancellation becomes `destination-output-timeout`: the batch stays durable, the
+destination circuit pauses delivery for 30 seconds, and the poison-record attempt
+budget is preserved. Settlement uses the host token, so an expired output deadline
+does not prevent committing the retry. Host shutdown still leaves outstanding
+leases intact for recovery. Metadata-only warnings never include the batch body.
+
+Cancellation is cooperative. The worker awaits the adapter rather than abandoning
+an upload task and launching overlapping attempts. Adapters must honor cancellation;
+a blocked filesystem or an adapter that ignores the token cannot be made responsive
+by this setting. A request may reach the destination before its response is lost or
+cancelled: replay remains at least once, not exactly once. Reconcile by event identity
+and measure duplicates at the destination; lease fencing protects queue state, not
+external side effects.
+
+For qualification of the 120-second crash-recovery target, the candidate profile is
+a 90-second lease and 60-second output timeout. Set **both** environment variables.
+Existing leases keep their original expiry after a configuration change. Shorter
+deadlines can interrupt valid large uploads on slow links, so benchmark batch sizes
+and destination latency before selecting this profile. No startup path resets all
+leases or steals another worker's live claim.
+
+`DeliveryDeadlineTests` covers timed cancellation, retained retry state across
+restarts, destination-circuit delay, preserved poison budget, successful slow
+acknowledgement, host cancellation and live-lease exclusion. Its clock-driven
+restart checks are not a process-kill, Windows reboot or real Azure delivery test.
+The failed AWS recovery scorecard remains unresolved until the exact candidate
+artifact passes those external checks; see [production readiness](production-readiness.md).
 
 ## Throttling and pauses
 

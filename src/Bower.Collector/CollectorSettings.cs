@@ -86,6 +86,17 @@ public sealed record CollectorSettings
 
     public int MaximumDeliveryAttempts { get; init; } = 20;
 
+    public TimeSpan DeliveryLeaseDuration { get; init; } = TimeSpan.FromMinutes(5);
+
+    public TimeSpan DeliveryTimeout { get; init; } = TimeSpan.FromMinutes(4);
+
+    public QueueDeliveryOptions DeliveryOptions() => new()
+    {
+        MaximumDeliveryAttempts = MaximumDeliveryAttempts,
+        LeaseDuration = DeliveryLeaseDuration,
+        DeliveryTimeout = DeliveryTimeout
+    };
+
     public string OutputType { get; init; } = "none";
 
     public string AmaSpoolPath { get; init; } = Path.Combine(AppContext.BaseDirectory, "spool");
@@ -296,6 +307,8 @@ public sealed record CollectorSettings
                 StringComparison.OrdinalIgnoreCase),
             IngestRequestsPerSecond = (int)ReadInt64(read, "BOWER_INGEST_RATE_PER_SECOND", 500),
             MaximumDeliveryAttempts = (int)ReadInt64(read, "BOWER_MAX_DELIVERY_ATTEMPTS", 20),
+            DeliveryLeaseDuration = TimeSpan.FromSeconds(ReadInt64(read, "BOWER_DELIVERY_LEASE_SECONDS", 300)),
+            DeliveryTimeout = TimeSpan.FromSeconds(ReadInt64(read, "BOWER_DELIVERY_TIMEOUT_SECONDS", 240)),
             OutputType = (read("BOWER_OUTPUT") ?? "none").ToLowerInvariant(),
             AmaSpoolPath = read("BOWER_AMA_SPOOL_PATH")
                 ?? Path.Combine(AppContext.BaseDirectory, "spool"),
@@ -405,6 +418,8 @@ public sealed record CollectorSettings
             throw new InvalidOperationException(
                 "BOWER_MAX_DELIVERY_ATTEMPTS must be between 1 and 1000.");
         }
+
+        DeliveryOptions().Validate();
 
         if (OutputType is not ("none" or "ama-spool" or "azure-logs-ingestion" or "relay"))
         {
@@ -691,6 +706,12 @@ public sealed record CollectorSettings
             SingleTrustDomain.ToString(),
             ProducerScopesFile ?? string.Empty);
         // Appended only when set so existing configuration hashes are unchanged.
+        if (DeliveryLeaseDuration != TimeSpan.FromMinutes(5) || DeliveryTimeout != TimeSpan.FromMinutes(4))
+        {
+            material += '\u001f' + "delivery-lease-seconds:" + DeliveryLeaseDuration.TotalSeconds.ToString(CultureInfo.InvariantCulture)
+                + '\u001f' + "delivery-timeout-seconds:" + DeliveryTimeout.TotalSeconds.ToString(CultureInfo.InvariantCulture);
+        }
+
         if (SourceExpectationsPath is not null)
         {
             material += '\u001f' + "source-expectations:" + SourceExpectationsPath;
