@@ -1,0 +1,18 @@
+{
+  "linux.tar.gz": {
+    "sha256": "10cd12480f8f38fbca1323b22c1907ca8c189f75c3906418b945d5a5d08fe9cd",
+    "bytes": 50879327
+  },
+  "windows.zip": {
+    "sha256": "91c96ed466e120e83522d750dbde9c4403375340b48b75e35a78253464832380",
+    "bytes": 51917391
+  },
+  "tests.zip": {
+    "sha256": "6deece35b7e9148ef46075cf00f63b9a04273e59c2ec25ec5e10a3cc4beb0224",
+    "bytes": 74492399
+  },
+  "probe.zip": {
+    "sha256": "18492a8fc89f6e95b160d8571a23879a90d31a2ac0741be89a238ad52cb3ee9f",
+    "bytes": 49925716
+  }
+}

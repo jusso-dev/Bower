@@ -1,0 +1,24 @@
+{
+  "checkedAt": "2026-10-30T03:09:19.926112+00:00",
+  "region": "ap-southeast-2",
+  "stack": "bower-wec-20261030-023813",
+  "checks": {
+    "stackDeleted": true,
+    "allFourInstancesTerminated": true,
+    "allFourVolumesDeleted": true,
+    "securityGroupDeleted": true,
+    "artifactBucketDeleted": true,
+    "threeRolesDeleted": true,
+    "twoInstanceProfilesDeleted": true,
+    "expiryScheduleDeleted": true,
+    "temporaryDomainSecretDeleted": true
+  },
+  "instances": {
+    "i-032b3cf95c9879b08": "terminated",
+    "i-06b156f83b5bbb0dc": "terminated",
+    "i-0364cee49e110ead5": "terminated",
+    "i-0b9625a263d6ccd05": "terminated"
+  },
+  "remainingVolumeIds": [],
+  "allPassed": true
+}

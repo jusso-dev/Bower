@@ -1,0 +1,59 @@
+{
+  "CommandId": "84650392-7da9-4adf-bd99-a2c52b3b40e9",
+  "InstanceId": "i-06b156f83b5bbb0dc",
+  "DocumentName": "AWS-RunShellScript",
+  "Status": "Success",
+  "ResponseCode": 0,
+  "ExecutionStartDateTime": "2026-10-30T02:48:31.149Z",
+  "ExecutionEndDateTime": "2026-10-30T02:48:32.149Z",
+  "StandardOutputContent": "Generated 10 real UDP packets toward the nftables deny rule.\n{\"phase\": \"real-firewall\", \"checks\": {\"tenRealDeniesQueued\": true, \"semanticMapping\": true, \"rawKernelMessageExcluded\": true, \"sqliteIntegrity\": true}, \"queueRows\": 10, \"nftCounters\": [{\"packets\": 10, \"bytes\": 400}], \"syslog\": [{\"id\": \"firewall\", \"protocol\": \"tls\", \"endpoint\": \"127.0.0.1:6514\", \"activeConnections\": 1, \"connectionsAccepted\": 1, \"connectionsRejected\": 0, \"sendersDenied\": 0, \"tlsHandshakeFailures\": 0, \"framesReceived\": 10, \"bytesReceived\": 2470, \"queued\": 10, \"duplicates\": 0, \"suppressed\": 0, \"notRouted\": 0, \"notSelected\": 0, \"rejected\": 0, \"parserErrors\": 0, \"malformed\": 0, \"oversized\": 0, \"framingErrors\": 0, \"timeouts\": 0, \"dropped\": 0, \"retries\": 0, \"submitFailures\": 0, \"receiveErrors\": 0, \"lastFrameAt\": \"2026-10-30T02:48:32.8897583+00:00\"}]}\n",
+  "StandardErrorContent": "",
+  "records": [
+    {
+      "phase": "real-firewall",
+      "checks": {
+        "tenRealDeniesQueued": true,
+        "semanticMapping": true,
+        "rawKernelMessageExcluded": true,
+        "sqliteIntegrity": true
+      },
+      "queueRows": 10,
+      "nftCounters": [
+        {
+          "packets": 10,
+          "bytes": 400
+        }
+      ],
+      "syslog": [
+        {
+          "id": "firewall",
+          "protocol": "tls",
+          "endpoint": "127.0.0.1:6514",
+          "activeConnections": 1,
+          "connectionsAccepted": 1,
+          "connectionsRejected": 0,
+          "sendersDenied": 0,
+          "tlsHandshakeFailures": 0,
+          "framesReceived": 10,
+          "bytesReceived": 2470,
+          "queued": 10,
+          "duplicates": 0,
+          "suppressed": 0,
+          "notRouted": 0,
+          "notSelected": 0,
+          "rejected": 0,
+          "parserErrors": 0,
+          "malformed": 0,
+          "oversized": 0,
+          "framingErrors": 0,
+          "timeouts": 0,
+          "dropped": 0,
+          "retries": 0,
+          "submitFailures": 0,
+          "receiveErrors": 0,
+          "lastFrameAt": "2026-10-30T02:48:32.8897583+00:00"
+        }
+      ]
+    }
+  ]
+}

@@ -27,7 +27,8 @@ public sealed record WindowsEventQuery(
     /// <c>*[System[(EventID=4624 or EventID=4625) and (Provider[@Name='Microsoft-Windows-Security-Auditing']) and (EventRecordID&gt;42)]]</c>.
     /// At most 21 expressions (16 IDs, 4 providers and the bookmark).
     /// </summary>
-    public string ToXPath()
+    /// <param name="includeRecordPosition">The native reader uses false and seeks with a receiving-log bookmark separately.</param>
+    public string ToXPath(bool includeRecordPosition = true)
     {
         StringBuilder builder = new("*[System[(");
         builder.AppendJoin(" or ", EventIds.Select(id => "EventID=" + id.ToString(CultureInfo.InvariantCulture)));
@@ -40,9 +41,13 @@ public sealed record WindowsEventQuery(
             builder.Append("])");
         }
 
-        builder.Append(" and (EventRecordID>")
-            .Append(AfterRecordId.ToString(CultureInfo.InvariantCulture))
-            .Append(")]]");
+        if (includeRecordPosition)
+        {
+            builder.Append(" and (EventRecordID>")
+                .Append(AfterRecordId.ToString(CultureInfo.InvariantCulture))
+                .Append(')');
+        }
+        builder.Append("]]");
         return builder.ToString();
     }
 

@@ -85,12 +85,13 @@ The collector builds the subscription filter from the validated values only, for
 example:
 
 ```
-*[System[(EventID=4625) and (Provider[@Name='Microsoft-Windows-Security-Auditing']) and (EventRecordID>184467)]]
+*[System[(EventID=4625) and (Provider[@Name='Microsoft-Windows-Security-Auditing'])]]
 ```
 
-The last clause is the bookmark. Names are restricted so they cannot change the
-query, and 16 event IDs plus 4 providers keep it within the Windows query expression
-limit.
+The native reader resumes from a Windows bookmark separately from this filter.
+WEF retains the originating EventRecordID, which cannot safely identify a position
+in the receiving log. Names are restricted so they cannot change the query, and
+16 event IDs plus 4 providers keep it within the Windows query expression limit.
 
 ## Run with least privilege
 
@@ -149,6 +150,16 @@ not selected, even when they carry a valid address. Use the configuration exampl
 [pack runtime catalogue](../security/pack-runtime-catalogue.md).
 
 ## Bookmarks, restart and backpressure
+
+Version 2 checkpoints store the receiving channel's native bookmark position.
+On upgrade, a recognized version 1 checkpoint triggers one replay of all retained
+events, even with `readExisting: false`. Old origin IDs are never interpreted as
+receiving positions. Existing durable event IDs suppress duplicates; keep the
+queue database during upgrade. Backpressure preserves the last handled receiving
+position, and the migrated checkpoint is saved atomically. Unknown versions and
+channel mismatches still fail closed. Older collector versions cannot read version
+2 checkpoints, so do not downgrade against a migrated queue database. Events
+already overwritten by Windows cannot be recovered by this migration.
 
 - **Bookmark.** Each subscription's position (channel and last record id) is a row in
   the `source_cursors` table of the queue database. The bookmark moves past an event

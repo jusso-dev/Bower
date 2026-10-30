@@ -1,0 +1,194 @@
+{
+  "CommandId": "684ba9e2-7d5c-42db-a7b9-9a6559c08f7e",
+  "InstanceId": "i-0b9625a263d6ccd05",
+  "DocumentName": "AWS-RunPowerShellScript",
+  "Status": "Success",
+  "ResponseCode": 0,
+  "ExecutionStartDateTime": "2026-10-30T03:00:53.814Z",
+  "ExecutionEndDateTime": "2026-10-30T03:00:54.814Z",
+  "StandardOutputContent": "{\"phase\":\"wec-queue-proof\",\"utc\":\"2026-10-30T03:00:54.8690253+00:00\",\"queueRows\":14,\"authenticationEvents\":14,\"deliveredRows\":0,\"forwardedEvents\":14,\"allForwardedIdentitiesQueued\":true,\"noRawUsername\":true,\"usernamePseudonymized\":true,\"databaseAndWalExcludeUsername\":true,\"sqliteIntegrity\":true,\"identitySetSha256\":\"923c0305fb5e7e0737860b0dd0cead1c3b8eefb8cae076aafeb609673a89fa22\",\"forwarded\":[{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371749,\"receivingRecordId\":4,\"eventId\":4625,\"queueIdentity\":\"winevt-e33609aa1b8a0bdde81ea9ae5d35d97a\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371750,\"receivingRecordId\":5,\"eventId\":4625,\"queueIdentity\":\"winevt-5d3c3d6b86627245d54673dbdde30d92\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371751,\"receivingRecordId\":6,\"eventId\":4625,\"queueIdentity\":\"winevt-24670ded918176188ae46fe39f4269bd\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371752,\"receivingRecordId\":7,\"eventId\":4625,\"queueIdentity\":\"winevt-bc30e8e0322930e2ec1b9b59150e7666\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370368,\"receivingRecordId\":8,\"eventId\":4625,\"queueIdentity\":\"winevt-4e971246afe30ec5b34cb78ae628f4d1\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371799,\"receivingRecordId\":9,\"eventId\":4625,\"queueIdentity\":\"winevt-38ab9de2ec0451908e917215e8b01b42\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370375,\"receivingRecordId\":10,\"eventId\":4625,\"queueIdentity\":\"winevt-f9d56fadbe3717b02719d05624a7cbe5\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370376,\"receivingRecordId\":11,\"eventId\":4625,\"queueIdentity\":\"winevt-696e08d6bc27297ad65e4fbd2d41a280\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370377,\"receivingRecordId\":12,\"eventId\":4625,\"queueIdentity\":\"winevt-d51501a81aa353e5583b1046303ad7c0\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370378,\"receivingRecordId\":13,\"eventId\":4625,\"queueIdentity\":\"winevt-0970d0554f441376858ca8c847f2e872\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371822,\"receivingRecordId\":14,\"eventId\":4625,\"queueIdentity\":\"winevt-d56f4e19a29369f2aeea9ab0d2e80d22\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371823,\"receivingRecordId\":15,\"eventId\":4625,\"queueIdentity\":\"winevt-e64b76d1b72b9c1f19c84175e5a20b0f\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371824,\"receivingRecordId\":16,\"eventId\":4625,\"queueIdentity\":\"winevt-9d2b93ab26dc68633c27e3aa45849471\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371825,\"receivingRecordId\":17,\"eventId\":4625,\"queueIdentity\":\"winevt-331f051b4d142377ccfa986b9508d079\",\"queued\":true}]}\r\n{\"phase\":\"wec-collector-status\",\"queue\":{\"queued\":14,\"retrying\":0,\"uploading\":0,\"delivered\":0,\"deadLettered\":0,\"totalBytes\":19151,\"undeliveredBytes\":19151,\"oldestUndelivered\":\"2026-10-30T02:57:33.4726346+00:00\"},\"windowsEventLog\":[{\"id\":\"wec-security\",\"channel\":\"ForwardedEvents\",\"state\":\"running\",\"bookmarkRecordId\":17,\"eventsRead\":14,\"bytesRead\":19853,\"queued\":14,\"duplicates\":0,\"suppressed\":0,\"notSelected\":0,\"rejected\":0,\"parserErrors\":0,\"malformed\":0,\"oversized\":0,\"retries\":0,\"submitFailures\":0,\"readErrors\":0,\"gaps\":0,\"resets\":0,\"cursorConflicts\":0,\"lastEventAt\":\"2026-10-30T03:00:19.3894166+00:00\",\"lastPollAt\":\"2026-10-30T03:00:54.5349148+00:00\"}]}\r\n\ufeff\r\nSubscription: Bower-Security-4625\r\n\tRunTimeStatus: Active\r\n\tLastError: 0\n\tEventSources:\r\n\t\tBOWERDC.bower.test\r\n\t\t\tRunTimeStatus: Active\r\n\t\t\tLastError: 0\n\t\t\tLastHeartbeatTime: 2026-10-30T03:00:53.630\r\n\t\tBOWERSOURCE.bower.test\r\n\t\t\tRunTimeStatus: Active\r\n\t\t\tLastError: 0\n\t\t\tLastHeartbeatTime: 2026-10-30T03:00:52.549\r\n",
+  "StandardErrorContent": "",
+  "records": [
+    {
+      "phase": "wec-queue-proof",
+      "utc": "2026-10-30T03:00:54.8690253+00:00",
+      "queueRows": 14,
+      "authenticationEvents": 14,
+      "deliveredRows": 0,
+      "forwardedEvents": 14,
+      "allForwardedIdentitiesQueued": true,
+      "noRawUsername": true,
+      "usernamePseudonymized": true,
+      "databaseAndWalExcludeUsername": true,
+      "sqliteIntegrity": true,
+      "identitySetSha256": "923c0305fb5e7e0737860b0dd0cead1c3b8eefb8cae076aafeb609673a89fa22",
+      "forwarded": [
+        {
+          "originComputer": "BOWERDC.bower.test",
+          "originalChannel": "Security",
+          "originalRecordId": 371749,
+          "receivingRecordId": 4,
+          "eventId": 4625,
+          "queueIdentity": "winevt-e33609aa1b8a0bdde81ea9ae5d35d97a",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERDC.bower.test",
+          "originalChannel": "Security",
+          "originalRecordId": 371750,
+          "receivingRecordId": 5,
+          "eventId": 4625,
+          "queueIdentity": "winevt-5d3c3d6b86627245d54673dbdde30d92",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERDC.bower.test",
+          "originalChannel": "Security",
+          "originalRecordId": 371751,
+          "receivingRecordId": 6,
+          "eventId": 4625,
+          "queueIdentity": "winevt-24670ded918176188ae46fe39f4269bd",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERDC.bower.test",
+          "originalChannel": "Security",
+          "originalRecordId": 371752,
+          "receivingRecordId": 7,
+          "eventId": 4625,
+          "queueIdentity": "winevt-bc30e8e0322930e2ec1b9b59150e7666",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalChannel": "Security",
+          "originalRecordId": 370368,
+          "receivingRecordId": 8,
+          "eventId": 4625,
+          "queueIdentity": "winevt-4e971246afe30ec5b34cb78ae628f4d1",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERDC.bower.test",
+          "originalChannel": "Security",
+          "originalRecordId": 371799,
+          "receivingRecordId": 9,
+          "eventId": 4625,
+          "queueIdentity": "winevt-38ab9de2ec0451908e917215e8b01b42",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalChannel": "Security",
+          "originalRecordId": 370375,
+          "receivingRecordId": 10,
+          "eventId": 4625,
+          "queueIdentity": "winevt-f9d56fadbe3717b02719d05624a7cbe5",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalChannel": "Security",
+          "originalRecordId": 370376,
+          "receivingRecordId": 11,
+          "eventId": 4625,
+          "queueIdentity": "winevt-696e08d6bc27297ad65e4fbd2d41a280",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalChannel": "Security",
+          "originalRecordId": 370377,
+          "receivingRecordId": 12,
+          "eventId": 4625,
+          "queueIdentity": "winevt-d51501a81aa353e5583b1046303ad7c0",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalChannel": "Security",
+          "originalRecordId": 370378,
+          "receivingRecordId": 13,
+          "eventId": 4625,
+          "queueIdentity": "winevt-0970d0554f441376858ca8c847f2e872",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERDC.bower.test",
+          "originalChannel": "Security",
+          "originalRecordId": 371822,
+          "receivingRecordId": 14,
+          "eventId": 4625,
+          "queueIdentity": "winevt-d56f4e19a29369f2aeea9ab0d2e80d22",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERDC.bower.test",
+          "originalChannel": "Security",
+          "originalRecordId": 371823,
+          "receivingRecordId": 15,
+          "eventId": 4625,
+          "queueIdentity": "winevt-e64b76d1b72b9c1f19c84175e5a20b0f",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERDC.bower.test",
+          "originalChannel": "Security",
+          "originalRecordId": 371824,
+          "receivingRecordId": 16,
+          "eventId": 4625,
+          "queueIdentity": "winevt-9d2b93ab26dc68633c27e3aa45849471",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERDC.bower.test",
+          "originalChannel": "Security",
+          "originalRecordId": 371825,
+          "receivingRecordId": 17,
+          "eventId": 4625,
+          "queueIdentity": "winevt-331f051b4d142377ccfa986b9508d079",
+          "queued": true
+        }
+      ]
+    },
+    {
+      "phase": "wec-collector-status",
+      "queue": {
+        "queued": 14,
+        "retrying": 0,
+        "uploading": 0,
+        "delivered": 0,
+        "deadLettered": 0,
+        "totalBytes": 19151,
+        "undeliveredBytes": 19151,
+        "oldestUndelivered": "2026-10-30T02:57:33.4726346+00:00"
+      },
+      "windowsEventLog": [
+        {
+          "id": "wec-security",
+          "channel": "ForwardedEvents",
+          "state": "running",
+          "bookmarkRecordId": 17,
+          "eventsRead": 14,
+          "bytesRead": 19853,
+          "queued": 14,
+          "duplicates": 0,
+          "suppressed": 0,
+          "notSelected": 0,
+          "rejected": 0,
+          "parserErrors": 0,
+          "malformed": 0,
+          "oversized": 0,
+          "retries": 0,
+          "submitFailures": 0,
+          "readErrors": 0,
+          "gaps": 0,
+          "resets": 0,
+          "cursorConflicts": 0,
+          "lastEventAt": "2026-10-30T03:00:19.3894166+00:00",
+          "lastPollAt": "2026-10-30T03:00:54.5349148+00:00"
+        }
+      ]
+    }
+  ]
+}

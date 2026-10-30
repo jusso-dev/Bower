@@ -1,0 +1,12 @@
+{
+  "CommandId": "a09e2181-9632-49a9-89a2-1e10ff7fc528",
+  "InstanceId": "i-0b9625a263d6ccd05",
+  "DocumentName": "AWS-RunPowerShellScript",
+  "Status": "Success",
+  "ResponseCode": 0,
+  "ExecutionStartDateTime": "2026-10-30T02:49:18.752Z",
+  "ExecutionEndDateTime": "2026-10-30T02:50:29.752Z",
+  "StandardOutputContent": "xUnit.net v3 In-Process Runner v4.0.2+0c7aa4991f (64-bit .NET 10.0.13)\r\n  Discovering: Bower.UnitTests\r\n  Discovered:  Bower.UnitTests\r\n  Starting:    Bower.UnitTests\r\n  Finished:    Bower.UnitTests (ID = '679d8c15edde24124a8ffe926c63f8367ce91a17a12d3905978cc21e2a3c02a6')\r\n=== TEST EXECUTION SUMMARY ===\r\n   Bower.UnitTests  Total: 1, Errors: 0, Failed: 0, Skipped: 0, Not Run: 0, Time: 4.405s\r\n",
+  "StandardErrorContent": "",
+  "records": []
+}

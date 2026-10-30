@@ -312,6 +312,14 @@ public sealed class WindowsEventLogSource : IAsyncDisposable
                 return new WindowsEventPollResult(0, false, false);
             }
         }
+        else if (bookmark.SchemaVersion == 1)
+        {
+            // Version 1 used the origin EventRecordID, which is not the receiving
+            // position for WEF. Replay retained events through durable deduplication;
+            // never reinterpret a plausible old origin ID as a receiving position.
+            position = 0;
+            Interlocked.Increment(ref subscription.Counters.Resets);
+        }
         else
         {
             position = bookmark.RecordId;
@@ -367,7 +375,7 @@ public sealed class WindowsEventLogSource : IAsyncDisposable
         }
         finally
         {
-            if (position != start)
+            if (position != start || bookmark?.SchemaVersion == 1)
             {
                 // Committed even when stopping or failing mid-batch (and after a reset or gap
                 // even if the read failed), so handled events are not re-read.

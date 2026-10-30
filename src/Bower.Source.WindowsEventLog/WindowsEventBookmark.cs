@@ -5,17 +5,17 @@ namespace Bower.Source.WindowsEventLog;
 /// <summary>
 /// Durable position in one channel, stored in the queue database's source cursor table.
 /// Every event up to and including <see cref="RecordId"/> is durably queued or
-/// definitively dropped. The Windows query asks only for later records.
+/// definitively dropped. The native reader resumes after this receiving-log position.
 /// </summary>
 public sealed record WindowsEventBookmark(int SchemaVersion, string Channel, long RecordId)
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     public static WindowsEventBookmark At(string channel, long recordId) => new(CurrentSchemaVersion, channel, recordId);
 
     public string Serialize() => JsonSerializer.Serialize(this, WindowsEventLogJsonContext.Default.WindowsEventBookmark);
 
-    /// <summary>Fails closed: a bookmark that is not ours, or for another channel, is never reinterpreted.</summary>
+    /// <summary>Recognizes legacy v1 for explicit replay migration; unknown versions and channels fail closed.</summary>
     public static WindowsEventBookmark Deserialize(string value, string channel)
     {
         WindowsEventBookmark? bookmark;
@@ -28,7 +28,7 @@ public sealed record WindowsEventBookmark(int SchemaVersion, string Channel, lon
             throw new InvalidDataException("Windows Event Log bookmark is invalid.", exception);
         }
 
-        if (bookmark is null || bookmark.SchemaVersion != CurrentSchemaVersion || bookmark.RecordId < 0
+        if (bookmark is null || bookmark.SchemaVersion is not (1 or CurrentSchemaVersion) || bookmark.RecordId < 0
             || !string.Equals(bookmark.Channel, channel, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidDataException("Windows Event Log bookmark version or channel does not match the subscription.");
