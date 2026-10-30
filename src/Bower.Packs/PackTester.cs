@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Bower.Abstractions;
 using Bower.Contracts;
+using Bower.Pipeline.Transforms;
 using Bower.PolicyEngine;
 using Bower.Redaction.Privacy;
 
@@ -38,14 +39,46 @@ public static class PackTester
                 ?? throw new InvalidDataException($"Sample {index} is not a JSON object.");
             string name = sample["name"]?.GetValue<string>() ?? $"sample-{index}";
             string expected = (sample["expect"]?.GetValue<string>() ?? "accept").Replace("-", string.Empty, StringComparison.Ordinal);
-            string eventJson = (sample["event"] ?? throw new InvalidDataException($"Sample '{name}' has no event."))
-                .ToJsonString()
-                .Replace("{{now}}", now.ToString("O"), StringComparison.Ordinal);
+            string? eventJson;
+            bool transformFailed = false;
+            if (sample["raw"] is JsonNode raw)
+            {
+                int parser = sample["parser"]?.GetValue<int>()
+                    ?? throw new InvalidDataException("Raw sample has no parser index.");
+                if (parser < 0 || parser >= pack.Parsers.Count || pack.Parsers[parser].Runtime is null)
+                {
+                    throw new InvalidDataException("Raw sample requires an active runtime parser.");
+                }
+                SecurityEventEnvelope? mapped = null;
+                try
+                {
+                    mapped = PackRuntime.Parse(pack.Parsers[parser],
+                        raw.ToJsonString().Replace("{{now}}", now.ToString("O"), StringComparison.Ordinal), now);
+                }
+                catch (TransformException)
+                {
+                    transformFailed = true;
+                }
+                eventJson = mapped is null ? null : JsonSerializer.Serialize(mapped, BowerJson.Envelope);
+            }
+            else
+            {
+                eventJson = (sample["event"] ?? throw new InvalidDataException($"Sample '{name}' has no event."))
+                    .ToJsonString().Replace("{{now}}", now.ToString("O"), StringComparison.Ordinal);
+            }
             List<string> problems = [];
 
-            PrivacyScanResult redaction = engine.RedactJson(eventJson);
+            PrivacyScanResult redaction = engine.RedactJson(eventJson ?? "null");
             string actual;
-            if (!redaction.Succeeded)
+            if (transformFailed)
+            {
+                actual = "quarantine";
+            }
+            else if (eventJson is null)
+            {
+                actual = "reject";
+            }
+            else if (!redaction.Succeeded)
             {
                 actual = "quarantine";
             }
@@ -64,6 +97,31 @@ public static class PackTester
                     if (redaction.RedactedJson!.Contains(forbidden, StringComparison.Ordinal))
                     {
                         problems.Add($"Redacted event still contains a forbidden value ({forbidden.Length} characters).");
+                    }
+                }
+                if (sample["expectFields"] is JsonObject fields)
+                {
+                    JsonNode? redacted = JsonNode.Parse(redaction.RedactedJson!);
+                    foreach ((string path, JsonNode? expectation) in fields)
+                    {
+                        JsonNode? value = redacted;
+                        foreach (string segment in path.Split('.'))
+                        {
+                            value = (value as JsonObject)?[segment];
+                        }
+                        string expectedValue = expectation?.GetValue<string>()
+                            ?? throw new InvalidDataException("Expected field value must be a string.");
+                        bool matches = expectedValue switch
+                        {
+                            "present" => value is not null,
+                            "absent" => value is null,
+                            _ => value is JsonValue scalar && scalar.TryGetValue<string>(out string? text)
+                                && string.Equals(text, expectedValue, StringComparison.Ordinal)
+                        };
+                        if (!matches)
+                        {
+                            problems.Add($"Expected field '{path}' did not match.");
+                        }
                     }
                 }
             }

@@ -1,5 +1,15 @@
 # Dependency decisions
 
+## Native sources backported onto 473c6ec
+
+The Windows Event Log source uses `System.Diagnostics.Eventing.Reader` from the
+existing Microsoft.AspNetCore.App shared framework. Syslog uses .NET sockets and
+TLS. Neither adds a NuGet package. Collector project references to the two source
+libraries and Pipeline's bounded transform runtime are necessary to interpret
+signed source parsers. The runtime has no external dependencies or I/O capability.
+Windows is required only for the native event reader; configuration, XML parsing,
+bookmark logic and deterministic transform tests also run on other platforms.
+
 `AGENTS.md` requires written justification for new dependencies.
 
 | Package | Used by | Why | Alternatives considered |

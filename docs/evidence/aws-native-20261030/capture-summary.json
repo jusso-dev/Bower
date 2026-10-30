@@ -1,0 +1,42 @@
+{
+  "native-windows-test": {
+    "commandId": "a09e2181-9632-49a9-89a2-1e10ff7fc528",
+    "status": "Success",
+    "recordCount": 0
+  },
+  "firewall-ingestion": {
+    "commandId": "84650392-7da9-4adf-bd99-a2c52b3b40e9",
+    "status": "Success",
+    "recordCount": 1
+  },
+  "firewall-recovery": {
+    "commandId": "f079e337-4b70-48ca-91ac-9831d688e04c",
+    "status": "Success",
+    "recordCount": 2
+  },
+  "wec-baseline": {
+    "commandId": "684ba9e2-7d5c-42db-a7b9-9a6559c08f7e",
+    "status": "Success",
+    "recordCount": 2
+  },
+  "wec-recovery": {
+    "commandId": "d26efc1d-59e7-4000-abb2-888631a2923c",
+    "status": "Success",
+    "recordCount": 2
+  },
+  "wec-export": {
+    "commandId": "52d71e22-1900-48b8-8e18-af03dad78f42",
+    "status": "Success",
+    "recordCount": 4
+  },
+  "windows-artifact": {
+    "commandId": "102b3837-2fdf-4e06-82f9-f09c72a46559",
+    "status": "Success",
+    "recordCount": 1
+  },
+  "linux-artifact": {
+    "commandId": "4448133f-1453-4db3-9b6d-09145404d519",
+    "status": "Success",
+    "recordCount": 1
+  }
+}

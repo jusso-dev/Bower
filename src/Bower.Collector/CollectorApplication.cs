@@ -11,6 +11,8 @@ using Bower.Output.AzureLogsIngestion;
 using Bower.Persistence;
 using Bower.PolicyEngine;
 using Bower.Redaction;
+using Bower.Source.Syslog;
+using Bower.Source.WindowsEventLog;
 using Microsoft.AspNetCore.RateLimiting;
 
 namespace Bower.Collector;
@@ -70,6 +72,38 @@ public static partial class CollectorApplication
         builder.Services.AddSingleton(
             new CollectorIdentity(settings.CollectorId, settings.Version, "local-http", settings.ConfigurationHash()));
         builder.Services.AddSingleton(new IngestAuthentication(settings.IngestToken, settings.IngestTokensFile));
+        if (settings.SyslogConfigPath is not null)
+        {
+            SyslogSourceConfiguration syslog = SyslogSourceConfigurationLoader.LoadFile(settings.SyslogConfigPath);
+            SyslogRoutes.Validate(syslog, bundle);
+            builder.Services.AddSingleton(services => new SyslogSource(
+                syslog,
+                new CollectorSyslogSink(
+                    bundle,
+                    services.GetRequiredService<SecurityEventProcessor>(),
+                    services.GetRequiredService<CollectorIdentity>(),
+                    services.GetRequiredService<TimeProvider>()),
+                services.GetRequiredService<TimeProvider>()));
+            builder.Services.AddHostedService<SyslogIntakeService>();
+        }
+        if (settings.WindowsEventLogConfigPath is not null)
+        {
+            WindowsEventLogSourceConfiguration configuration =
+                WindowsEventLogSourceConfigurationLoader.LoadFile(settings.WindowsEventLogConfigPath);
+            WindowsEventLogRoutes.Validate(configuration, bundle);
+            builder.Services.AddSingleton(new WindowsEventLogBookmarks(settings.QueuePath));
+            builder.Services.AddSingleton(services => new WindowsEventLogSource(
+                configuration,
+                new CollectorWindowsEventSink(new PackRecordIntake(
+                    bundle,
+                    services.GetRequiredService<SecurityEventProcessor>(),
+                    services.GetRequiredService<CollectorIdentity>(),
+                    services.GetRequiredService<TimeProvider>())),
+                services.GetRequiredService<WindowsEventLogBookmarks>().Store,
+                services.GetService<IWindowsEventChannelFactory>() ?? WindowsEventLogRoutes.PlatformChannels(),
+                services.GetRequiredService<TimeProvider>()));
+            builder.Services.AddHostedService<WindowsEventLogIntakeService>();
+        }
         builder.Services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -241,7 +275,9 @@ public static partial class CollectorApplication
                             snapshot.TotalBytes,
                             snapshot.UndeliveredBytes,
                             snapshot.OldestUndelivered),
-                        jobs.List());
+                        jobs.List(),
+                        app.Services.GetService<SyslogSource>()?.Snapshot(),
+                        app.Services.GetService<WindowsEventLogSource>()?.Snapshot());
                     return Results.Json(status, CollectorJsonContext.Default.StatusResponse);
                 })
             .AddEndpointFilter<IngestAuthenticationFilter>();

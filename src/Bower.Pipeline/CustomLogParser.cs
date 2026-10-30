@@ -3,7 +3,9 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using Bower.Pipeline.Transforms;
 
 namespace Bower.Pipeline;
 
@@ -33,13 +35,33 @@ public sealed record CustomLogField(
     string? AsimField,
     bool Sensitive);
 
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record CustomLogParserConfiguration(
     string Version,
     CustomLogFormat Format,
     IReadOnlyList<CustomLogField> Fields,
     string? Delimiter = null,
     string? KeyValueSeparator = null,
-    string? Pattern = null);
+    string? Pattern = null,
+    CustomLogRuntimeMapping? Runtime = null);
+
+/// <summary>Explicit signed semantic mapping; absent means preview-only, never active ingest.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record CustomLogRuntimeMapping(
+    string ApplicationName,
+    string Environment,
+    string EventCategory,
+    string EventType,
+    string EventAction,
+    string EventResult,
+    IReadOnlyDictionary<string, string> Match,
+    IReadOnlyDictionary<string, string> Fields,
+    IReadOnlyList<string?>? Transforms = null,
+    IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>? Tables = null)
+{
+    public TransformDefinition? ToTransformDefinition(IReadOnlyList<CustomLogField> fields) =>
+        Transforms is null && Tables is null ? null : new TransformDefinition(Transforms, Tables, fields);
+}
 
 public sealed record CustomLogSchemaField(
     string Name,
@@ -281,6 +303,10 @@ public static partial class CustomLogParser
         {
             issues.Add($"Unsupported parser configuration version '{configuration.Version}'.");
         }
+        if (configuration.Fields is null)
+        {
+            return ["Parser fields are required."];
+        }
         if (configuration.Fields.Count is < 1 or > MaximumFields)
         {
             issues.Add($"Parser configuration needs 1 to {MaximumFields} fields.");
@@ -289,6 +315,11 @@ public static partial class CustomLogParser
         HashSet<string> names = new(StringComparer.Ordinal);
         foreach (CustomLogField field in configuration.Fields)
         {
+            if (field is null || !Enum.IsDefined(field.Type))
+            {
+                issues.Add("Parser field type is unsupported.");
+                continue;
+            }
             if (!IsValidFieldName(field.SourceName))
             {
                 issues.Add($"Invalid source field name '{field.SourceName}'.");
@@ -315,6 +346,37 @@ public static partial class CustomLogParser
             case CustomLogFormat.Regex:
                 ValidateRegex(configuration, issues);
                 break;
+            default:
+                if (!Enum.IsDefined(configuration.Format))
+                {
+                    issues.Add("Parser format is unsupported.");
+                }
+                break;
+        }
+
+        if (configuration.Runtime is { } runtime)
+        {
+            string[] metadata = [runtime.ApplicationName, runtime.Environment, runtime.EventCategory,
+                runtime.EventType, runtime.EventAction];
+            string[] targets = ["eventId", "timeGenerated", "actor.username", "actor.userId",
+                "source.ipAddress", "request.correlationId", "eventOutcomeReason"];
+            if (configuration.Format != CustomLogFormat.Json
+                || metadata.Any(value => string.IsNullOrWhiteSpace(value) || value.Length > 128)
+                || runtime.EventResult is not ("success" or "failure" or "denied" or "unknown")
+                || runtime.Match is null || runtime.Match.Count is < 1 or > 16
+                || runtime.Fields is null || runtime.Fields.Count is < 2 or > 7
+                || !runtime.Fields.ContainsKey("eventId") || !runtime.Fields.ContainsKey("timeGenerated")
+                || runtime.Fields.Keys.Any(target => !targets.Contains(target, StringComparer.Ordinal))
+                || runtime.Fields.Values.Any(source => !names.Contains(source))
+                || runtime.Match.Any(pair => !names.Contains(pair.Key) || string.IsNullOrEmpty(pair.Value) || pair.Value.Length > 2048))
+            {
+                issues.Add("Invalid runtime semantic mapping; only bounded, filtered JSON mappings are supported.");
+            }
+
+            if (runtime.ToTransformDefinition(configuration.Fields) is { } transforms)
+            {
+                issues.AddRange(TransformProgram.Validate(transforms).Select(issue => issue.ToString()));
+            }
         }
 
         return issues;
@@ -984,13 +1046,13 @@ public static partial class CustomLogParser
         }
     }
 
-    private static bool IsValidFieldName(string value) =>
+    internal static bool IsValidFieldName(string value) =>
         value.Length is > 0 and <= 128
         && value.All(character =>
             char.IsAsciiLetterOrDigit(character)
             || character is '_' or '-' or '.' or '@');
 
-    private static bool IsProhibited(string name) =>
+    internal static bool IsProhibited(string name) =>
         ProhibitedFieldNames.Contains(Canonical(name))
         || Canonical(name).Contains("password", StringComparison.Ordinal)
         || Canonical(name).Contains("secret", StringComparison.Ordinal)

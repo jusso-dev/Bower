@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bower.local/schemas/configuration/syslog-source.schema.json",
+  "title": "Bower syslog source configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "listeners"],
+  "properties": {
+    "apiVersion": {"const": "bower.security/v1"},
+    "kind": {"const": "SyslogSource"},
+    "listeners": {
+      "type": "array", "minItems": 1, "maxItems": 16,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "protocol", "port", "allowedSenders", "routes"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1, "maxLength": 64},
+          "protocol": {"enum": ["tcp", "tls", "udp"]},
+          "address": {"type": "string", "default": "127.0.0.1"},
+          "port": {"type": "integer", "minimum": 0, "maximum": 65535},
+          "allowedSenders": {"$ref": "#/$defs/senders"},
+          "maximumMessageBytes": {"type": "integer", "minimum": 480, "maximum": 65536},
+          "maximumConnections": {"type": "integer", "minimum": 1, "maximum": 1024},
+          "idleTimeoutSeconds": {"type": "integer", "minimum": 1, "maximum": 3600},
+          "allowInsecureNonLoopback": {"type": "boolean", "default": false},
+          "tls": {
+            "type": "object", "additionalProperties": false,
+            "required": ["certificateFile", "privateKeyFile"],
+            "properties": {
+              "certificateFile": {"type": "string", "minLength": 1},
+              "privateKeyFile": {"type": "string", "minLength": 1},
+              "clientCertificateAuthorityFile": {"type": ["string", "null"]}
+            }
+          },
+          "routes": {
+            "type": "array", "minItems": 1, "maxItems": 64,
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["pack", "parser"],
+              "properties": {
+                "pack": {"type": "string", "minLength": 1},
+                "parser": {"type": "integer", "minimum": 0},
+                "hostname": {"type": ["string", "null"]},
+                "appName": {"type": ["string", "null"]},
+                "allowedSenders": {"$ref": "#/$defs/senders"}
+              }
+            }
+          }
+        },
+        "allOf": [{"if": {"properties": {"protocol": {"const": "tls"}}}, "then": {"required": ["tls"]}, "else": {"not": {"required": ["tls"]}}}]
+      }
+    }
+  },
+  "$defs": {
+    "senders": {"type": "array", "minItems": 1, "maxItems": 64, "items": {"type": "string", "minLength": 1}}
+  }
+}

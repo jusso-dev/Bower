@@ -1,0 +1,40 @@
+{
+  "baseCommit": "473c6ec6ffb9c195d49c54caae1267bd069c548f",
+  "sdk": "10.0.402",
+  "releaseBuild": {
+    "command": "dotnet build --configuration Release --no-restore",
+    "exitCode": 0,
+    "warnings": 0,
+    "errors": 0
+  },
+  "localTests": {
+    "command": "dotnet test --configuration Release",
+    "exitCode": 0,
+    "total": 759,
+    "passed": 758,
+    "failed": 0,
+    "skipped": 1,
+    "skipReason": "Native Windows event log service test requires Windows and administrator rights."
+  },
+  "awsNativeWindowsTest": {
+    "command": "Bower.UnitTests.exe -class Bower.UnitTests.WindowsEventLogWindowsTests",
+    "exitCode": 0,
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0,
+    "proof": "native-windows-test.json"
+  },
+  "format": {
+    "command": "dotnet format --verify-no-changes --no-restore",
+    "exitCode": 0
+  },
+  "diffCheck": {"command": "git diff --check", "exitCode": 0},
+  "readmeLocalLinks": {"brokenLinks": 0},
+  "screenshots": {
+    "type": "Browser screenshots of recorded SSM evidence reports; not native Windows desktop captures",
+    "viewport": {"width": 1280, "height": 1060},
+    "files": ["../../images/aws-wec-validation-20261030.png", "../../images/aws-syslog-validation-20261030.png"]
+  },
+  "limits": ["Microsoft Sentinel not tested", "Native AOT not tested", "Rust adapters not backported", "UI checks from the unchanged-base run"]
+}

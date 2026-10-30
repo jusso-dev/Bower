@@ -1,6 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Bower.Jobs;
+using Bower.Source.Syslog;
+using Bower.Source.WindowsEventLog;
 
 namespace Bower.Collector;
 
@@ -27,7 +29,9 @@ internal sealed record StatusResponse(
     StatusPolicyResponse Policy,
     LedgerResponse Ledger,
     StatusQueueResponse Queue,
-    IReadOnlyList<BackgroundJobStatus> Jobs);
+    IReadOnlyList<BackgroundJobStatus> Jobs,
+    IReadOnlyList<SyslogListenerStatus>? Syslog = null,
+    IReadOnlyList<WindowsEventSubscriptionStatus>? WindowsEventLog = null);
 
 internal sealed record StatusPolicyResponse(
     string Hash,

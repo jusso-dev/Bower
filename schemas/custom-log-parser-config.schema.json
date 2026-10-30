@@ -98,6 +98,129 @@
         "null"
       ],
       "maxLength": 2048
+    },
+    "runtime": {
+      "description": "Explicit signed semantic mapping; absent means preview-only.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "applicationName",
+        "environment",
+        "eventCategory",
+        "eventType",
+        "eventAction",
+        "eventResult",
+        "match",
+        "fields"
+      ],
+      "properties": {
+        "applicationName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "environment": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "eventCategory": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "eventType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "eventAction": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "eventResult": {
+          "enum": [
+            "success",
+            "failure",
+            "denied",
+            "unknown"
+          ]
+        },
+        "match": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 16,
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "fields": {
+          "type": "object",
+          "minProperties": 2,
+          "maxProperties": 7,
+          "required": [
+            "eventId",
+            "timeGenerated"
+          ],
+          "propertyNames": {
+            "enum": [
+              "eventId",
+              "timeGenerated",
+              "actor.username",
+              "actor.userId",
+              "source.ipAddress",
+              "request.correlationId",
+              "eventOutcomeReason"
+            ]
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "transforms": {
+          "description": "Transform program statements; see docs/developer-integration/transform-language.md.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "tables": {
+          "description": "Static lookup tables for lookup().",
+          "type": [
+            "object",
+            "null"
+          ],
+          "maxProperties": 16,
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_-]{0,63}$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "maxProperties": 1024,
+            "propertyNames": {
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 1024
+            }
+          }
+        }
+      }
     }
   }
 }

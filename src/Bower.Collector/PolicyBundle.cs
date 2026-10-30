@@ -18,6 +18,9 @@ public sealed record PolicyBundle(
     string? PrivacyProfile,
     string Hash)
 {
+    /// <summary>Verified pack contents available to explicitly configured source adapters.</summary>
+    public IReadOnlyList<LoadedPack> LoadedPacks { get; init; } = [];
+
     public static PolicyBundle Load(CollectorSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -64,6 +67,9 @@ public sealed record PolicyBundle(
                 .Concat(packs.Select(pack => $"pack:{pack.Manifest.Id}@{pack.Manifest.Version}:{pack.Manifest.PackHash}"))
                 .Append($"privacy:{profile?.Hash ?? "default"}"));
         string hash = "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(material)));
-        return new PolicyBundle(policies, packs.Select(pack => pack.Manifest).ToArray(), privacy, profile?.Id, hash);
+        return new PolicyBundle(policies, packs.Select(pack => pack.Manifest).ToArray(), privacy, profile?.Id, hash)
+        {
+            LoadedPacks = packs
+        };
     }
 }

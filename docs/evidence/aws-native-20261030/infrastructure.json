@@ -1,0 +1,216 @@
+{
+  "stack": "bower-wec-20261030-023813",
+  "region": "ap-southeast-2",
+  "account": "959038055523",
+  "instances": [
+    {
+      "InstanceId": "i-032b3cf95c9879b08",
+      "ImageId": "ami-086db0bc6076e24da",
+      "InstanceType": "t3.medium",
+      "PrivateIpAddress": "172.31.7.78",
+      "State": {
+        "Code": 16,
+        "Name": "running"
+      },
+      "MetadataOptions": {
+        "State": "applied",
+        "HttpTokens": "required",
+        "HttpPutResponseHopLimit": 1,
+        "HttpEndpoint": "enabled",
+        "HttpProtocolIpv6": "disabled",
+        "InstanceMetadataTags": "disabled"
+      },
+      "BlockDeviceMappings": [
+        {
+          "DeviceName": "/dev/sda1",
+          "Ebs": {
+            "AttachTime": "2026-10-30T02:41:08+00:00",
+            "DeleteOnTermination": true,
+            "Status": "attached",
+            "VolumeId": "vol-04567c8d916ba2481",
+            "EbsCardIndex": 0
+          }
+        }
+      ]
+    },
+    {
+      "InstanceId": "i-06b156f83b5bbb0dc",
+      "ImageId": "ami-0681de9392a62b7c6",
+      "InstanceType": "t3.small",
+      "PrivateIpAddress": "172.31.14.236",
+      "State": {
+        "Code": 16,
+        "Name": "running"
+      },
+      "MetadataOptions": {
+        "State": "applied",
+        "HttpTokens": "required",
+        "HttpPutResponseHopLimit": 1,
+        "HttpEndpoint": "enabled",
+        "HttpProtocolIpv6": "disabled",
+        "InstanceMetadataTags": "disabled"
+      },
+      "BlockDeviceMappings": [
+        {
+          "DeviceName": "/dev/xvda",
+          "Ebs": {
+            "AttachTime": "2026-10-30T02:41:08+00:00",
+            "DeleteOnTermination": true,
+            "Status": "attached",
+            "VolumeId": "vol-0d264136fd104cb74",
+            "EbsCardIndex": 0
+          }
+        }
+      ]
+    },
+    {
+      "InstanceId": "i-0364cee49e110ead5",
+      "ImageId": "ami-086db0bc6076e24da",
+      "InstanceType": "t3.medium",
+      "PrivateIpAddress": "172.31.7.253",
+      "State": {
+        "Code": 16,
+        "Name": "running"
+      },
+      "MetadataOptions": {
+        "State": "applied",
+        "HttpTokens": "required",
+        "HttpPutResponseHopLimit": 1,
+        "HttpEndpoint": "enabled",
+        "HttpProtocolIpv6": "disabled",
+        "InstanceMetadataTags": "disabled"
+      },
+      "BlockDeviceMappings": [
+        {
+          "DeviceName": "/dev/sda1",
+          "Ebs": {
+            "AttachTime": "2026-10-30T02:41:09+00:00",
+            "DeleteOnTermination": true,
+            "Status": "attached",
+            "VolumeId": "vol-017f40d06c36a8578",
+            "EbsCardIndex": 0
+          }
+        }
+      ]
+    },
+    {
+      "InstanceId": "i-0b9625a263d6ccd05",
+      "ImageId": "ami-086db0bc6076e24da",
+      "InstanceType": "t3.medium",
+      "PrivateIpAddress": "172.31.8.24",
+      "State": {
+        "Code": 16,
+        "Name": "running"
+      },
+      "MetadataOptions": {
+        "State": "applied",
+        "HttpTokens": "required",
+        "HttpPutResponseHopLimit": 1,
+        "HttpEndpoint": "enabled",
+        "HttpProtocolIpv6": "disabled",
+        "InstanceMetadataTags": "disabled"
+      },
+      "BlockDeviceMappings": [
+        {
+          "DeviceName": "/dev/sda1",
+          "Ebs": {
+            "AttachTime": "2026-10-30T02:41:08+00:00",
+            "DeleteOnTermination": true,
+            "Status": "attached",
+            "VolumeId": "vol-04e8b5169def665e1",
+            "EbsCardIndex": 0
+          }
+        }
+      ]
+    }
+  ],
+  "securityGroup": {
+    "GroupId": "sg-056e4c512dca486b0",
+    "IpPermissionsEgress": [
+      {
+        "IpProtocol": "-1",
+        "UserIdGroupPairs": [],
+        "IpRanges": [
+          {
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "Ipv6Ranges": [],
+        "PrefixListIds": []
+      }
+    ],
+    "Tags": [
+      {
+        "Key": "Project",
+        "Value": "bower-wec-validation"
+      },
+      {
+        "Key": "aws:cloudformation:logical-id",
+        "Value": "Group"
+      },
+      {
+        "Key": "aws:cloudformation:stack-id",
+        "Value": "arn:aws:cloudformation:ap-southeast-2:959038055523:stack/bower-wec-20261030-023813/f4f144d0-d40a-11f1-ae99-0affc729cfe7"
+      },
+      {
+        "Key": "aws:cloudformation:stack-name",
+        "Value": "bower-wec-20261030-023813"
+      },
+      {
+        "Key": "RunId",
+        "Value": "bower-wec-20261030-023813"
+      }
+    ],
+    "VpcId": "vpc-0386855f644985706",
+    "SecurityGroupArn": "arn:aws:ec2:ap-southeast-2:959038055523:security-group/sg-056e4c512dca486b0",
+    "OwnerId": "959038055523",
+    "GroupName": "bower-wec-20261030-023813-Group-Jjt760E95LYa",
+    "Description": "Temporary Bower WEF lab; SSM administration only",
+    "IpPermissions": [
+      {
+        "IpProtocol": "-1",
+        "UserIdGroupPairs": [
+          {
+            "UserId": "959038055523",
+            "GroupId": "sg-056e4c512dca486b0"
+          }
+        ],
+        "IpRanges": [],
+        "Ipv6Ranges": [],
+        "PrefixListIds": []
+      }
+    ]
+  },
+  "volumes": [
+    {
+      "VolumeId": "vol-04e8b5169def665e1",
+      "Encrypted": true,
+      "Size": 40,
+      "State": "in-use"
+    },
+    {
+      "VolumeId": "vol-0d264136fd104cb74",
+      "Encrypted": true,
+      "Size": 20,
+      "State": "in-use"
+    },
+    {
+      "VolumeId": "vol-04567c8d916ba2481",
+      "Encrypted": true,
+      "Size": 40,
+      "State": "in-use"
+    },
+    {
+      "VolumeId": "vol-017f40d06c36a8578",
+      "Encrypted": true,
+      "Size": 40,
+      "State": "in-use"
+    }
+  ],
+  "checks": {
+    "fourIsolatedHosts": true,
+    "noPublicIngress": true,
+    "encryptedDisks": true,
+    "imdsV2Required": true
+  }
+}

@@ -37,6 +37,8 @@ control plane, or runtime AI filter.
 - `src/Bower.Dcr`: Data Collection Rule optimiser and health assessment.
 - `src/Bower.Agent.Aws`: native EC2 host telemetry agent with IMDS enrichment.
 - `src/Bower.Source.Docker`: read-only Docker json-file discovery, tailing and event mapping.
+- `src/Bower.Source.Syslog`: bounded RFC 3164/5424 TCP/TLS/UDP source with signed pack routing (C# backport).
+- `src/Bower.Source.WindowsEventLog`: allow-listed Windows channel/WEC intake with durable receiving-log bookmarks (C# backport).
 - `src/Bower.Agent.Docker`: Docker sidecar that forwards opted-in container security events.
 - `packs`: signed content packs (`linux-ssh-gateway`, `aws-security`, `gcp-security`).
 - `rust`: Rust port of the data plane (`bower-collector`, `bower` CLI and their libraries); C# is the specification. See `rust/AGENTS.md`.

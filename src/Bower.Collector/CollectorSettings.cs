@@ -41,6 +41,10 @@ public sealed record CollectorSettings
 
     public string? PrivacyProfilePath { get; init; }
 
+    public string? SyslogConfigPath { get; init; }
+
+    public string? WindowsEventLogConfigPath { get; init; }
+
     public string? PrivacyHmacKeyFile { get; init; }
 
     public string PrivacyHmacKeyId { get; init; } = "k1";
@@ -100,6 +104,8 @@ public sealed record CollectorSettings
             Packs = SplitList(read("BOWER_PACKS")),
             PackTrustedKeyFiles = SplitList(read("BOWER_PACK_TRUSTED_KEYS")),
             PrivacyProfilePath = Blank(read("BOWER_PRIVACY_PROFILE")),
+            SyslogConfigPath = Blank(read("BOWER_SYSLOG_CONFIG")),
+            WindowsEventLogConfigPath = Blank(read("BOWER_WINDOWS_EVENTLOG_CONFIG")),
             PrivacyHmacKeyFile = Blank(read("BOWER_PRIVACY_HMAC_KEY_FILE")),
             PrivacyHmacKeyId = Blank(read("BOWER_PRIVACY_HMAC_KEY_ID")) ?? "k1",
             AllowUnauthenticatedIngest = string.Equals(
@@ -229,6 +235,14 @@ public sealed record CollectorSettings
             MaximumDeliveryAttempts.ToString(CultureInfo.InvariantCulture),
             (IngestToken is not null || IngestTokensFile is not null).ToString(),
             PrivacyHmacKeyId);
+        if (SyslogConfigPath is not null)
+        {
+            material += $"\u001fsyslog:{SyslogConfigPath}";
+        }
+        if (WindowsEventLogConfigPath is not null)
+        {
+            material += $"\u001fwindows-eventlog:{WindowsEventLogConfigPath}";
+        }
         return "sha256:" + Convert.ToHexStringLower(
             System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(material)));
     }

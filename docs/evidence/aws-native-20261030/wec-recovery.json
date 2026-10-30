@@ -1,0 +1,38 @@
+{
+  "CommandId": "d26efc1d-59e7-4000-abb2-888631a2923c",
+  "InstanceId": "i-0b9625a263d6ccd05",
+  "DocumentName": "AWS-RunPowerShellScript",
+  "Status": "Success",
+  "ResponseCode": 0,
+  "ExecutionStartDateTime": "2026-10-30T03:01:24.301Z",
+  "ExecutionEndDateTime": "2026-10-30T03:01:45.301Z",
+  "StandardOutputContent": "{\"beforeEvents\":14,\"receivingBookmark\":25,\"checks\":{\"usernamePseudonymized\":true,\"restartReadZeroOldEvents\":true,\"restartPreservedIdentitySet\":true,\"eightEventsArrivedWhileCollectorStopped\":true,\"allForwardedIdentitiesQueued\":true,\"databaseAndWalExcludeUsername\":true},\"afterEvents\":22,\"phase\":\"wec-recovery\",\"originComputers\":[\"BOWERDC.bower.test\",\"BOWERSOURCE.bower.test\"]}\r\n{\"phase\":\"wec-local-spool\",\"allForwardedEventIdsPresent\":true,\"deliveredRows\":22,\"spoolRecords\":22,\"sentinelValidated\":false}\r\n",
+  "StandardErrorContent": "",
+  "records": [
+    {
+      "beforeEvents": 14,
+      "receivingBookmark": 25,
+      "checks": {
+        "usernamePseudonymized": true,
+        "restartReadZeroOldEvents": true,
+        "restartPreservedIdentitySet": true,
+        "eightEventsArrivedWhileCollectorStopped": true,
+        "allForwardedIdentitiesQueued": true,
+        "databaseAndWalExcludeUsername": true
+      },
+      "afterEvents": 22,
+      "phase": "wec-recovery",
+      "originComputers": [
+        "BOWERDC.bower.test",
+        "BOWERSOURCE.bower.test"
+      ]
+    },
+    {
+      "phase": "wec-local-spool",
+      "allForwardedEventIdsPresent": true,
+      "deliveredRows": 22,
+      "spoolRecords": 22,
+      "sentinelValidated": false
+    }
+  ]
+}
