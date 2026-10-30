@@ -270,8 +270,13 @@ public sealed partial class IntegrityAndDcrTests
         string[] streamColumns = BicepColumns(bicep, "'Custom-BowerSecurity': {", "]");
         string transform = Regex.Match(bicep, "transformKql: '''(?<kql>.*?)'''", RegexOptions.Singleline).Groups["kql"].Value;
 
-        Assert.Equal(schema.TableColumns.Select(c => $"{c.Name}:{c.Type}".ToLowerInvariant()), tableColumns);
-        Assert.Equal(schema.StreamColumns.Select(c => $"{c.Name}:{c.Type}".ToLowerInvariant()), streamColumns);
+        // The resource providers use different, case-sensitive timestamp type names:
+        // Log Analytics tables use dateTime, while DCR streams require datetime.
+        JsonObject generated = DcrTemplateGenerator.Generate(new DcrTemplateOptions());
+        JsonArray generatedColumns = Resource(generated, "Microsoft.OperationalInsights/workspaces/tables")
+            ["properties"]!["schema"]!["columns"]!.AsArray();
+        Assert.Equal(generatedColumns.Select(column => $"{column!["name"]!.GetValue<string>()}:{column["type"]!.GetValue<string>()}"), tableColumns);
+        Assert.Equal(schema.StreamColumns.Select(c => $"{c.Name}:{c.Type}"), streamColumns);
         Assert.Equal(Normalise(schema.TransformKql()), Normalise(transform));
     }
 
@@ -280,7 +285,7 @@ public sealed partial class IntegrityAndDcrTests
         int start = bicep.IndexOf(startMarker, StringComparison.Ordinal);
         int end = bicep.IndexOf(endMarker, start, StringComparison.Ordinal);
         return ColumnPattern().Matches(bicep[start..end])
-            .Select(match => $"{match.Groups["name"].Value}:{match.Groups["type"].Value}".ToLowerInvariant())
+            .Select(match => $"{match.Groups["name"].Value}:{match.Groups["type"].Value}")
             .ToArray();
     }
 

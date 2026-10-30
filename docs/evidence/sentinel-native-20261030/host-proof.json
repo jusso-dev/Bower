@@ -1,0 +1,904 @@
+[
+  {
+    "commandId": "3492cac7-7fbb-4a95-9906-ab6e5981fb53",
+    "status": "Success",
+    "record": {
+      "phase": "firewall-recovery",
+      "faultAt": "2026-10-30T07:34:07.014339+00:00",
+      "queuedDuringOutage": 10,
+      "eventIds": [
+        "syslog-0261762ae844a49027170b5a806138cf",
+        "syslog-07b16046b1873378fd1394c83a7fa5a7",
+        "syslog-0e37dad7971a4d7da53cb1604d1b0f94",
+        "syslog-10c070b3d5d0e3d6ba26fff74c8f2dbf",
+        "syslog-1617aea9f3b9b6d6caa9ac9e154df09a",
+        "syslog-16be9821f9e6b6efbc45eb0b5f29dce6",
+        "syslog-2831451d51a118159da48c209dc3283e",
+        "syslog-3a545facd5bbaee675a46f17f3405eb7",
+        "syslog-3cb2bc122816cf0c6c3d756574dc723c",
+        "syslog-3cc6ed5513096397fb8372e03e3e0782",
+        "syslog-456f23d898c031e92e184ec7e10a0682",
+        "syslog-46a89ae6675afa1ee56a98ee51ed546e",
+        "syslog-495bf1a0a4f6331a7f40741f7c66704c",
+        "syslog-563e83111a4769ef563e3457aca888ab",
+        "syslog-6eac4d69b4af9d51f07991ece0bab4f9",
+        "syslog-715135b31cc88c1501c09fed3eb21c7d",
+        "syslog-78a15a8c7019b44b75d0139d1dc6814c",
+        "syslog-83a44e5a044de86e19d5d502df8af560",
+        "syslog-8524c9395a8b66b5e62c623d10bbdfa0",
+        "syslog-9c793afee644d55ab4ae95f20aba5f59",
+        "syslog-9e2484e0aa098d7b6e317c191e9b79aa",
+        "syslog-a6308dee40137b69e0c5e32a47b1ee5d",
+        "syslog-b8c2cd5db0da7ed9cc7789b385d0a5ff",
+        "syslog-d16a8441e90c357ddd30bfb727d6480e",
+        "syslog-e0e8bfcb639647a4b04a7d3e308d5056",
+        "syslog-e26c8c6ebbc155285965151dce4c7e8f",
+        "syslog-ebbed9718a3e9e6642ead888753182ad",
+        "syslog-fa62dbd1eb01d1c752f9e4596140aeae"
+      ],
+      "faultEventIds": [
+        "syslog-07b16046b1873378fd1394c83a7fa5a7",
+        "syslog-10c070b3d5d0e3d6ba26fff74c8f2dbf",
+        "syslog-1617aea9f3b9b6d6caa9ac9e154df09a",
+        "syslog-3a545facd5bbaee675a46f17f3405eb7",
+        "syslog-3cc6ed5513096397fb8372e03e3e0782",
+        "syslog-715135b31cc88c1501c09fed3eb21c7d",
+        "syslog-9c793afee644d55ab4ae95f20aba5f59",
+        "syslog-a6308dee40137b69e0c5e32a47b1ee5d",
+        "syslog-b8c2cd5db0da7ed9cc7789b385d0a5ff",
+        "syslog-d16a8441e90c357ddd30bfb727d6480e"
+      ],
+      "acknowledgedWithin120Seconds": true,
+      "acknowledgementRecoverySeconds": 90.16,
+      "undeliveredAfterRecovery": 0,
+      "sqliteIntegrity": true
+    }
+  },
+  {
+    "commandId": "ed63d567-6dd8-4d54-ba1e-c8ed4eec9110",
+    "status": "Success",
+    "record": {
+      "phase": "firewall-negative",
+      "checks": {
+        "unauthenticatedClientRejected": true,
+        "malformedRejected": true,
+        "invalidFramingRejected": true,
+        "noUnexpectedQueuedEvents": true
+      },
+      "before": {
+        "id": "firewall",
+        "protocol": "tls",
+        "endpoint": "127.0.0.1:6514",
+        "activeConnections": 0,
+        "connectionsAccepted": 4,
+        "connectionsRejected": 0,
+        "sendersDenied": 0,
+        "tlsHandshakeFailures": 1,
+        "framesReceived": 18,
+        "bytesReceived": 4438,
+        "queued": 18,
+        "duplicates": 0,
+        "suppressed": 0,
+        "notRouted": 0,
+        "notSelected": 0,
+        "rejected": 0,
+        "parserErrors": 0,
+        "malformed": 0,
+        "oversized": 0,
+        "framingErrors": 1,
+        "timeouts": 2,
+        "dropped": 0,
+        "retries": 0,
+        "submitFailures": 0,
+        "receiveErrors": 0,
+        "lastFrameAt": "2026-10-30T07:28:52.8145835+00:00"
+      },
+      "after": {
+        "id": "firewall",
+        "protocol": "tls",
+        "endpoint": "127.0.0.1:6514",
+        "activeConnections": 0,
+        "connectionsAccepted": 7,
+        "connectionsRejected": 0,
+        "sendersDenied": 0,
+        "tlsHandshakeFailures": 2,
+        "framesReceived": 19,
+        "bytesReceived": 4466,
+        "queued": 18,
+        "duplicates": 0,
+        "suppressed": 0,
+        "notRouted": 0,
+        "notSelected": 0,
+        "rejected": 0,
+        "parserErrors": 0,
+        "malformed": 1,
+        "oversized": 0,
+        "framingErrors": 2,
+        "timeouts": 2,
+        "dropped": 0,
+        "retries": 0,
+        "submitFailures": 0,
+        "receiveErrors": 0,
+        "lastFrameAt": "2026-10-30T07:32:01.8135641+00:00"
+      }
+    }
+  },
+  {
+    "commandId": "0648eefb-d25c-4011-b6d1-5e167b853524",
+    "status": "Success",
+    "record": {
+      "phase": "wec-queue-proof",
+      "selectionProfile": "network-4625-with-source-ip",
+      "utc": "2026-10-30T07:38:11.1220597+00:00",
+      "queueRows": 10,
+      "authenticationEvents": 10,
+      "deliveredRows": 10,
+      "forwardedEvents": 10,
+      "allForwardedIdentitiesQueued": true,
+      "noRawUsername": true,
+      "usernamePseudonymized": true,
+      "databaseAndWalExcludeUsername": true,
+      "sqliteIntegrity": true,
+      "forwarded": [
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370377,
+          "receivingRecordId": 22,
+          "queueIdentity": "winevt-dceb2b1585eda7ceaf451bd6f8acd7b8",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370378,
+          "receivingRecordId": 23,
+          "queueIdentity": "winevt-672d6bf8ff448210ad88f5a72ee68fdf",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370379,
+          "receivingRecordId": 24,
+          "queueIdentity": "winevt-561a8ac8b72beda91f87aeac22fdd67d",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370380,
+          "receivingRecordId": 25,
+          "queueIdentity": "winevt-a5d9a3e62c04f0642f5c181efcea188f",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370381,
+          "receivingRecordId": 26,
+          "queueIdentity": "winevt-021a6f435523ad1c501ab4370d782d7a",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370382,
+          "receivingRecordId": 27,
+          "queueIdentity": "winevt-91ba886c3c49bdb322072ed0d334f411",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370383,
+          "receivingRecordId": 28,
+          "queueIdentity": "winevt-a97d7da57e07786e9ebc35f4d89ac93c",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370384,
+          "receivingRecordId": 29,
+          "queueIdentity": "winevt-70b0bb39118c26533ee357a73eaaddc5",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370385,
+          "receivingRecordId": 30,
+          "queueIdentity": "winevt-1dc65169b910053b86aa091164defc23",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370386,
+          "receivingRecordId": 31,
+          "queueIdentity": "winevt-abff26b948ea335e983b2e663ae38b81",
+          "queued": true
+        }
+      ]
+    }
+  },
+  {
+    "commandId": "0648eefb-d25c-4011-b6d1-5e167b853524",
+    "status": "Success",
+    "record": {
+      "phase": "wec-collector-status",
+      "queue": {
+        "queued": 0,
+        "retrying": 0,
+        "uploading": 0,
+        "delivered": 10,
+        "deadLettered": 0,
+        "totalBytes": 13844,
+        "undeliveredBytes": 0,
+        "oldestUndelivered": null
+      },
+      "windowsEventLog": [
+        {
+          "id": "wec-security",
+          "channel": "ForwardedEvents",
+          "state": "running",
+          "bookmarkRecordId": 31,
+          "eventsRead": 30,
+          "bytesRead": 45170,
+          "queued": 10,
+          "duplicates": 0,
+          "suppressed": 0,
+          "notSelected": 20,
+          "rejected": 0,
+          "parserErrors": 0,
+          "malformed": 0,
+          "oversized": 0,
+          "retries": 0,
+          "submitFailures": 0,
+          "readErrors": 0,
+          "gaps": 0,
+          "resets": 0,
+          "cursorConflicts": 0,
+          "lastEventAt": "2026-10-30T07:36:43.4286877+00:00",
+          "lastPollAt": "2026-10-30T07:38:10.8262831+00:00"
+        }
+      ]
+    }
+  },
+  {
+    "commandId": "2f58c471-525e-4691-a9f8-dd3f5eacd612",
+    "status": "Success",
+    "record": {
+      "phase": "firewall-final",
+      "nftCounters": [
+        {
+          "packets": 3030,
+          "bytes": 129130
+        }
+      ],
+      "queueRows": 3028,
+      "deliveredRows": 3028,
+      "rawKernelMessageExcluded": true,
+      "identitySetSha256": "1c10781e4ffc4c8b5a25a2e8b4533e7af6e892ac5314f2e3c483c68201ae488a",
+      "syslog": [
+        {
+          "id": "firewall",
+          "protocol": "tls",
+          "endpoint": "127.0.0.1:6514",
+          "activeConnections": 1,
+          "connectionsAccepted": 3000,
+          "connectionsRejected": 0,
+          "sendersDenied": 0,
+          "tlsHandshakeFailures": 0,
+          "framesReceived": 3000,
+          "bytesReceived": 738940,
+          "queued": 3000,
+          "duplicates": 0,
+          "suppressed": 0,
+          "notRouted": 0,
+          "notSelected": 0,
+          "rejected": 0,
+          "parserErrors": 0,
+          "malformed": 0,
+          "oversized": 0,
+          "framingErrors": 0,
+          "timeouts": 0,
+          "dropped": 0,
+          "retries": 0,
+          "submitFailures": 0,
+          "receiveErrors": 0,
+          "lastFrameAt": "2026-10-30T07:45:04.5851963+00:00"
+        }
+      ],
+      "delivery": {
+        "outputId": "azure-logs-ingestion",
+        "limit": 4,
+        "minimumLimit": 1,
+        "maximumLimit": 4,
+        "inFlight": 0,
+        "latencyEwmaMilliseconds": 101,
+        "requests": 492,
+        "throttles": 0,
+        "serverErrors": 0,
+        "timeouts": 0,
+        "latencySpikes": 1,
+        "decreases": 1,
+        "increases": 1,
+        "pauses": 0,
+        "processLocalPausedUntil": null
+      }
+    }
+  },
+  {
+    "commandId": "8ef5be36-95a9-4828-814f-5d435d136689",
+    "status": "Success",
+    "record": {
+      "delayedAutoStart": 0,
+      "queue": {
+        "queued": 0,
+        "retrying": 0,
+        "uploading": 5,
+        "delivered": 15,
+        "deadLettered": 0,
+        "totalBytes": 27688,
+        "undeliveredBytes": 6923,
+        "oldestUndelivered": "2026-10-30T07:39:06.9964149+00:00"
+      },
+      "windowsEventLog": [
+        {
+          "id": "wec-security",
+          "channel": "ForwardedEvents",
+          "state": "running",
+          "bookmarkRecordId": 41,
+          "eventsRead": 0,
+          "bytesRead": 0,
+          "queued": 0,
+          "duplicates": 0,
+          "suppressed": 0,
+          "notSelected": 0,
+          "rejected": 0,
+          "parserErrors": 0,
+          "malformed": 0,
+          "oversized": 0,
+          "retries": 0,
+          "submitFailures": 0,
+          "readErrors": 0,
+          "gaps": 0,
+          "resets": 0,
+          "cursorConflicts": 0,
+          "lastEventAt": null,
+          "lastPollAt": "2026-10-30T07:40:31.0867986+00:00"
+        }
+      ],
+      "pendingBeforeReboot": 10,
+      "phase": "wec-reboot-result",
+      "serviceAccount": "NT SERVICE\\Bower",
+      "deliveredBeforeReboot": 10,
+      "faultAt": "2026-10-30T07:39:08.2899178+00:00",
+      "serviceStartedAt": "2026-10-30T07:39:30.3285623Z"
+    }
+  },
+  {
+    "commandId": "79580bbe-4d53-4378-bc72-3f180f6c4d25",
+    "status": "Success",
+    "record": {
+      "delayedAutoStart": 0,
+      "queue": {
+        "queued": 0,
+        "retrying": 0,
+        "uploading": 0,
+        "delivered": 20,
+        "deadLettered": 0,
+        "totalBytes": 27688,
+        "undeliveredBytes": 0,
+        "oldestUndelivered": null
+      },
+      "windowsEventLog": [
+        {
+          "id": "wec-security",
+          "channel": "ForwardedEvents",
+          "state": "running",
+          "bookmarkRecordId": 41,
+          "eventsRead": 0,
+          "bytesRead": 0,
+          "queued": 0,
+          "duplicates": 0,
+          "suppressed": 0,
+          "notSelected": 0,
+          "rejected": 0,
+          "parserErrors": 0,
+          "malformed": 0,
+          "oversized": 0,
+          "retries": 0,
+          "submitFailures": 0,
+          "readErrors": 0,
+          "gaps": 0,
+          "resets": 0,
+          "cursorConflicts": 0,
+          "lastEventAt": null,
+          "lastPollAt": "2026-10-30T07:43:13.7288089+00:00"
+        }
+      ],
+      "pendingBeforeReboot": 10,
+      "phase": "wec-reboot-result",
+      "serviceAccount": "NT SERVICE\\Bower",
+      "deliveredBeforeReboot": 10,
+      "faultAt": "2026-10-30T07:39:08.2899178+00:00",
+      "serviceStartedAt": "2026-10-30T07:39:30.3285623Z"
+    }
+  },
+  {
+    "commandId": "e2a592bd-df31-4fdd-b8f0-faf0b868ec61",
+    "status": "Failed",
+    "record": {
+      "phase": "firewall-negative",
+      "checks": {
+        "unauthenticatedClientRejected": true,
+        "malformedRejected": false,
+        "noUnexpectedQueuedEvents": true
+      },
+      "before": {
+        "id": "firewall",
+        "protocol": "tls",
+        "endpoint": "127.0.0.1:6514",
+        "activeConnections": 0,
+        "connectionsAccepted": 2,
+        "connectionsRejected": 0,
+        "sendersDenied": 0,
+        "tlsHandshakeFailures": 0,
+        "framesReceived": 18,
+        "bytesReceived": 4438,
+        "queued": 18,
+        "duplicates": 0,
+        "suppressed": 0,
+        "notRouted": 0,
+        "notSelected": 0,
+        "rejected": 0,
+        "parserErrors": 0,
+        "malformed": 0,
+        "oversized": 0,
+        "framingErrors": 0,
+        "timeouts": 2,
+        "dropped": 0,
+        "retries": 0,
+        "submitFailures": 0,
+        "receiveErrors": 0,
+        "lastFrameAt": "2026-10-30T07:28:52.8145835+00:00"
+      },
+      "after": {
+        "id": "firewall",
+        "protocol": "tls",
+        "endpoint": "127.0.0.1:6514",
+        "activeConnections": 0,
+        "connectionsAccepted": 4,
+        "connectionsRejected": 0,
+        "sendersDenied": 0,
+        "tlsHandshakeFailures": 1,
+        "framesReceived": 18,
+        "bytesReceived": 4438,
+        "queued": 18,
+        "duplicates": 0,
+        "suppressed": 0,
+        "notRouted": 0,
+        "notSelected": 0,
+        "rejected": 0,
+        "parserErrors": 0,
+        "malformed": 0,
+        "oversized": 0,
+        "framingErrors": 1,
+        "timeouts": 2,
+        "dropped": 0,
+        "retries": 0,
+        "submitFailures": 0,
+        "receiveErrors": 0,
+        "lastFrameAt": "2026-10-30T07:28:52.8145835+00:00"
+      }
+    }
+  },
+  {
+    "commandId": "1f9cfb4e-a7b2-4cac-8989-d4b72c34de04",
+    "status": "Success",
+    "record": {
+      "phase": "wec-collector-status",
+      "queue": {
+        "queued": 0,
+        "retrying": 0,
+        "uploading": 0,
+        "delivered": 10,
+        "deadLettered": 0,
+        "totalBytes": 13844,
+        "undeliveredBytes": 0,
+        "oldestUndelivered": null
+      },
+      "windowsEventLog": [
+        {
+          "id": "wec-security",
+          "channel": "ForwardedEvents",
+          "state": "running",
+          "bookmarkRecordId": 31,
+          "eventsRead": 30,
+          "bytesRead": 45170,
+          "queued": 10,
+          "duplicates": 0,
+          "suppressed": 0,
+          "notSelected": 20,
+          "rejected": 0,
+          "parserErrors": 0,
+          "malformed": 0,
+          "oversized": 0,
+          "retries": 0,
+          "submitFailures": 0,
+          "readErrors": 0,
+          "gaps": 0,
+          "resets": 0,
+          "cursorConflicts": 0,
+          "lastEventAt": "2026-10-30T07:36:43.4286877+00:00",
+          "lastPollAt": "2026-10-30T07:37:21.5765106+00:00"
+        }
+      ],
+      "delivery": {
+        "outputId": "azure-logs-ingestion",
+        "limit": 4,
+        "minimumLimit": 1,
+        "maximumLimit": 4,
+        "inFlight": 0,
+        "latencyEwmaMilliseconds": 142,
+        "requests": 2,
+        "throttles": 0,
+        "serverErrors": 0,
+        "timeouts": 0,
+        "latencySpikes": 0,
+        "decreases": 0,
+        "increases": 0,
+        "pauses": 0,
+        "processLocalPausedUntil": null
+      }
+    }
+  },
+  {
+    "commandId": "431be54d-397d-4fac-a195-245dfae1a42f",
+    "status": "Success",
+    "record": {
+      "phase": "wec-collector-status",
+      "queue": {
+        "queued": 0,
+        "retrying": 0,
+        "uploading": 0,
+        "delivered": 0,
+        "deadLettered": 0,
+        "totalBytes": 0,
+        "undeliveredBytes": 0,
+        "oldestUndelivered": null
+      },
+      "windowsEventLog": [
+        {
+          "id": "wec-security",
+          "channel": "ForwardedEvents",
+          "state": "running",
+          "bookmarkRecordId": 11,
+          "eventsRead": 10,
+          "bytesRead": 15280,
+          "queued": 0,
+          "duplicates": 0,
+          "suppressed": 0,
+          "notSelected": 10,
+          "rejected": 0,
+          "parserErrors": 0,
+          "malformed": 0,
+          "oversized": 0,
+          "retries": 0,
+          "submitFailures": 0,
+          "readErrors": 0,
+          "gaps": 0,
+          "resets": 0,
+          "cursorConflicts": 0,
+          "lastEventAt": "2026-10-30T07:34:38.6494244+00:00",
+          "lastPollAt": "2026-10-30T07:35:03.835127+00:00"
+        }
+      ]
+    }
+  },
+  {
+    "commandId": "68ff3dfd-5d6d-4bfa-af70-06b040b85e77",
+    "status": "Success",
+    "record": {
+      "phase": "linux-artifact",
+      "kernel": "6.18.56-125.164.amzn2023.x86_64",
+      "packageVersion": "bower-collector-0.1.0~dev.264-1.x86_64",
+      "serviceAccount": "bower",
+      "packageSha256": "13b462c2b04582a0b7908b7a185d1b83a6719ac784b3168f93f102244253ab1b",
+      "collectorSha256": "d6229ee2b106ee9cd1fe615f4c9f15e3f5036bc26b0cad0aa04b62cf8424e977",
+      "packSha256": "5fa7a7d00b8cad062496088c65f8d74d5f9824f00263e96cbb04907619de24aa"
+    }
+  },
+  {
+    "commandId": "4ef47691-1c44-4811-a54b-93d345e2f32c",
+    "status": "Success",
+    "record": {
+      "phase": "wec-queue-proof",
+      "selectionProfile": "network-4625-with-source-ip",
+      "utc": "2026-10-30T07:40:45.1430183+00:00",
+      "queueRows": 20,
+      "authenticationEvents": 20,
+      "deliveredRows": 20,
+      "forwardedEvents": 20,
+      "allForwardedIdentitiesQueued": true,
+      "noRawUsername": true,
+      "usernamePseudonymized": true,
+      "databaseAndWalExcludeUsername": true,
+      "sqliteIntegrity": true,
+      "forwarded": [
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370377,
+          "receivingRecordId": 22,
+          "queueIdentity": "winevt-dceb2b1585eda7ceaf451bd6f8acd7b8",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370378,
+          "receivingRecordId": 23,
+          "queueIdentity": "winevt-672d6bf8ff448210ad88f5a72ee68fdf",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370379,
+          "receivingRecordId": 24,
+          "queueIdentity": "winevt-561a8ac8b72beda91f87aeac22fdd67d",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370380,
+          "receivingRecordId": 25,
+          "queueIdentity": "winevt-a5d9a3e62c04f0642f5c181efcea188f",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370381,
+          "receivingRecordId": 26,
+          "queueIdentity": "winevt-021a6f435523ad1c501ab4370d782d7a",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370382,
+          "receivingRecordId": 27,
+          "queueIdentity": "winevt-91ba886c3c49bdb322072ed0d334f411",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370383,
+          "receivingRecordId": 28,
+          "queueIdentity": "winevt-a97d7da57e07786e9ebc35f4d89ac93c",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370384,
+          "receivingRecordId": 29,
+          "queueIdentity": "winevt-70b0bb39118c26533ee357a73eaaddc5",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370385,
+          "receivingRecordId": 30,
+          "queueIdentity": "winevt-1dc65169b910053b86aa091164defc23",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370386,
+          "receivingRecordId": 31,
+          "queueIdentity": "winevt-abff26b948ea335e983b2e663ae38b81",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370387,
+          "receivingRecordId": 32,
+          "queueIdentity": "winevt-d6f34d7827bd15d6d1bc37ecfaf5aa09",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370388,
+          "receivingRecordId": 33,
+          "queueIdentity": "winevt-8ca218459bbc55ddd50e1425f266f321",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370389,
+          "receivingRecordId": 34,
+          "queueIdentity": "winevt-948e267db5d1915980d76c98d7b236db",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370390,
+          "receivingRecordId": 35,
+          "queueIdentity": "winevt-3660d59b7871769d1f735ae747a65bb3",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370391,
+          "receivingRecordId": 36,
+          "queueIdentity": "winevt-c28ef7e428eee418d2eeb5b6d63902fb",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370392,
+          "receivingRecordId": 37,
+          "queueIdentity": "winevt-cb6b776640f098ad6b763a1674a45bd7",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370393,
+          "receivingRecordId": 38,
+          "queueIdentity": "winevt-d66d89ecbdf43100f4db07d7ce675e50",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370394,
+          "receivingRecordId": 39,
+          "queueIdentity": "winevt-49014b0efb754e0db8cfb766f6ff7734",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370395,
+          "receivingRecordId": 40,
+          "queueIdentity": "winevt-2ec324a1034038a606b1ad8706f4a1ea",
+          "queued": true
+        },
+        {
+          "originComputer": "BOWERSOURCE.bower.test",
+          "originalRecordId": 370396,
+          "receivingRecordId": 41,
+          "queueIdentity": "winevt-430410f6497bd88147b1ad82b5c4a293",
+          "queued": true
+        }
+      ]
+    }
+  },
+  {
+    "commandId": "4ef47691-1c44-4811-a54b-93d345e2f32c",
+    "status": "Success",
+    "record": {
+      "phase": "wec-collector-status",
+      "queue": {
+        "queued": 0,
+        "retrying": 0,
+        "uploading": 0,
+        "delivered": 20,
+        "deadLettered": 0,
+        "totalBytes": 27688,
+        "undeliveredBytes": 0,
+        "oldestUndelivered": null
+      },
+      "windowsEventLog": [
+        {
+          "id": "wec-security",
+          "channel": "ForwardedEvents",
+          "state": "running",
+          "bookmarkRecordId": 41,
+          "eventsRead": 0,
+          "bytesRead": 0,
+          "queued": 0,
+          "duplicates": 0,
+          "suppressed": 0,
+          "notSelected": 0,
+          "rejected": 0,
+          "parserErrors": 0,
+          "malformed": 0,
+          "oversized": 0,
+          "retries": 0,
+          "submitFailures": 0,
+          "readErrors": 0,
+          "gaps": 0,
+          "resets": 0,
+          "cursorConflicts": 0,
+          "lastEventAt": null,
+          "lastPollAt": "2026-10-30T07:40:45.1169262+00:00"
+        }
+      ]
+    }
+  },
+  {
+    "commandId": "d8b52c65-1139-4c16-b5ed-6df5966caea7",
+    "status": "Success",
+    "record": {
+      "packSha256": "cdbfd8916f288c0386fa0483c557d9528c45ee08d8024f368cd7e8c57b8dd19b",
+      "serviceAccount": "NT SERVICE\\Bower",
+      "osVersion": "10.0.20348",
+      "os": "Microsoft Windows Server 2022 Datacenter",
+      "packageSha256": "dfa4b4350d6000d838aa5b28be466a4d0a2383e4018f6f088fb1f9f9d01eea9d",
+      "phase": "windows-artifact",
+      "collectorSha256": "b206caa79afd1b08086edaf6cbfa586b5d3fc5f1e2c78792291ef3bf3b43f6a7",
+      "packageSignature": "NotSigned"
+    }
+  },
+  {
+    "commandId": "f97fa069-8eb9-4a81-9d0b-4828df14c095",
+    "status": "Success",
+    "record": {
+      "phase": "real-firewall",
+      "checks": {
+        "tenRealDeniesQueued": true,
+        "semanticMapping": true,
+        "rawKernelMessageExcluded": true,
+        "sqliteIntegrity": true
+      },
+      "queueRows": 10,
+      "deliveredRows": 0,
+      "eventIds": [
+        "syslog-e26c8c6ebbc155285965151dce4c7e8f",
+        "syslog-3cb2bc122816cf0c6c3d756574dc723c",
+        "syslog-16be9821f9e6b6efbc45eb0b5f29dce6",
+        "syslog-495bf1a0a4f6331a7f40741f7c66704c",
+        "syslog-6eac4d69b4af9d51f07991ece0bab4f9",
+        "syslog-8524c9395a8b66b5e62c623d10bbdfa0",
+        "syslog-fa62dbd1eb01d1c752f9e4596140aeae",
+        "syslog-9e2484e0aa098d7b6e317c191e9b79aa",
+        "syslog-563e83111a4769ef563e3457aca888ab",
+        "syslog-46a89ae6675afa1ee56a98ee51ed546e"
+      ],
+      "nftCounters": [
+        {
+          "packets": 10,
+          "bytes": 400
+        }
+      ],
+      "syslog": [
+        {
+          "id": "firewall",
+          "protocol": "tls",
+          "endpoint": "127.0.0.1:6514",
+          "activeConnections": 1,
+          "connectionsAccepted": 1,
+          "connectionsRejected": 0,
+          "sendersDenied": 0,
+          "tlsHandshakeFailures": 0,
+          "framesReceived": 10,
+          "bytesReceived": 2470,
+          "queued": 10,
+          "duplicates": 0,
+          "suppressed": 0,
+          "notRouted": 0,
+          "notSelected": 0,
+          "rejected": 0,
+          "parserErrors": 0,
+          "malformed": 0,
+          "oversized": 0,
+          "framingErrors": 0,
+          "timeouts": 0,
+          "dropped": 0,
+          "retries": 0,
+          "submitFailures": 0,
+          "receiveErrors": 0,
+          "lastFrameAt": "2026-10-30T07:24:39.0652755+00:00"
+        }
+      ]
+    }
+  },
+  {
+    "commandId": "90b52fab-2c29-45ac-a55b-285d2fed8937",
+    "status": "Success",
+    "record": {
+      "phase": "firewall-load",
+      "startedAt": "2026-10-30T07:40:04.392199+00:00",
+      "generatedPackets": 3000,
+      "targetEventsPerSecond": 10,
+      "generationSeconds": 300.033,
+      "rowsBefore": 28,
+      "rowsAfter": 3028,
+      "newRows": 3000,
+      "undelivered": 0,
+      "identitySetSha256": "1c10781e4ffc4c8b5a25a2e8b4533e7af6e892ac5314f2e3c483c68201ae488a",
+      "sqliteIntegrity": true,
+      "dbAndWalBytes": 8135096,
+      "passed": true
+    }
+  }
+]

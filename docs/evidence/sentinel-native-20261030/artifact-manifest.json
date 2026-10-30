@@ -1,0 +1,31 @@
+{
+  "sourceCommit": "26446690fae7d123e2dfaf117d63467f1f55d37d",
+  "ciRun": 41016990194,
+  "artifacts": [
+    {
+      "key": "artifacts/bower.msi",
+      "sha256": "dfa4b4350d6000d838aa5b28be466a4d0a2383e4018f6f088fb1f9f9d01eea9d",
+      "bytes": 17330176
+    },
+    {
+      "key": "artifacts/bower.rpm",
+      "sha256": "13b462c2b04582a0b7908b7a185d1b83a6719ac784b3168f93f102244253ab1b",
+      "bytes": 22757083
+    },
+    {
+      "key": "artifacts/bower-signing.pub.pem",
+      "sha256": "3ee524c978f5911bf9a7359e52703f301b3e762854cbc6559d7cfe57b6c5a249",
+      "bytes": 177
+    },
+    {
+      "key": "artifacts/windows-security-logon-1.0.2.bowerpack",
+      "sha256": "cdbfd8916f288c0386fa0483c557d9528c45ee08d8024f368cd7e8c57b8dd19b",
+      "bytes": 6373
+    },
+    {
+      "key": "artifacts/nftables-validation-1.0.0.bowerpack",
+      "sha256": "5fa7a7d00b8cad062496088c65f8d74d5f9824f00263e96cbb04907619de24aa",
+      "bytes": 4585
+    }
+  ]
+}

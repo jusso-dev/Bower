@@ -119,7 +119,7 @@ resource rule 'Microsoft.Insights/dataCollectionRules@2024-03-11' = {
           { name: 'schemaVersion', type: 'string' }
           { name: 'eventId', type: 'string' }
           { name: 'eventOriginalId', type: 'string' }
-          { name: 'timeGenerated', type: 'dateTime' }
+          { name: 'timeGenerated', type: 'datetime' }
           { name: 'eventCategory', type: 'string' }
           { name: 'eventType', type: 'string' }
           { name: 'eventAction', type: 'string' }
@@ -133,7 +133,7 @@ resource rule 'Microsoft.Insights/dataCollectionRules@2024-03-11' = {
           { name: 'collector', type: 'dynamic' }
           { name: 'labels', type: 'dynamic' }
           { name: 'privacy', type: 'dynamic' }
-          { name: 'timeObserved', type: 'dateTime' }
+          { name: 'timeObserved', type: 'datetime' }
           { name: 'eventOutcomeReason', type: 'string' }
           { name: 'target', type: 'dynamic' }
           { name: 'change', type: 'dynamic' }

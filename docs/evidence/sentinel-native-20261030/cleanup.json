@@ -1,0 +1,167 @@
+{
+  "checkedAt": "2026-10-30T07:52:04.622097+00:00",
+  "awsRun": "bower-prod-20261030-071434",
+  "azureGroup": "rg-bower-val-20261030-065244",
+  "checks": {
+    "stackDeleted": true,
+    "stackResourcesDeleted": true,
+    "instancesTerminated": true,
+    "noRunVolumes": true,
+    "noSubnetInterfaces": true,
+    "azureGroupAbsent": true,
+    "azureIdentitiesAbsent": true,
+    "sharedNatPreserved": true,
+    "localAzureCredentialsRemoved": true,
+    "isolatedAzureCachesRemoved": true,
+    "localSigningKeyRemoved": true
+  },
+  "instances": {
+    "i-06da7e954b9b754ce": "terminated",
+    "i-0cd16c75779917839": "terminated",
+    "i-042a26e35db7a25ae": "terminated",
+    "i-02f26b6725bf68918": "terminated"
+  },
+  "identities": [
+    {
+      "role": "ingest",
+      "appId": "1f1b8a97-e346-4972-8b12-f5fce637c639",
+      "activeApps": 0,
+      "activeServicePrincipals": 0
+    },
+    {
+      "role": "verifier",
+      "appId": "3a421774-a778-4475-83ce-c5f4d1157d20",
+      "activeApps": 0,
+      "activeServicePrincipals": 0
+    }
+  ],
+  "resources": [
+    {
+      "logicalId": "Artifacts",
+      "type": "AWS::S3::Bucket",
+      "id": "bower-prod-20261030-071434-artifacts-pdx9h8cwihb7",
+      "status": "DELETE_COMPLETE"
+    },
+    {
+      "logicalId": "BucketPolicy",
+      "type": "AWS::S3::BucketPolicy",
+      "id": "bower-prod-20261030-071434-artifacts-pdx9h8cwihb7",
+      "status": "DELETE_COMPLETE"
+    },
+    {
+      "logicalId": "Dc",
+      "type": "AWS::EC2::Instance",
+      "id": "i-02f26b6725bf68918",
+      "status": "DELETE_COMPLETE"
+    },
+    {
+      "logicalId": "Expiry",
+      "type": "AWS::Scheduler::Schedule",
+      "id": "bower-prod-20261030-071434-expiry",
+      "status": "DELETE_COMPLETE"
+    },
+    {
+      "logicalId": "ExpiryRole",
+      "type": "AWS::IAM::Role",
+      "id": "bower-prod-20261030-071434-ExpiryRole-Tm8STjxca9cC",
+      "status": "DELETE_COMPLETE"
+    },
+    {
+      "logicalId": "Firewall",
+      "type": "AWS::EC2::Instance",
+      "id": "i-0cd16c75779917839",
+      "status": "DELETE_COMPLETE"
+    },
+    {
+      "logicalId": "Group",
+      "type": "AWS::EC2::SecurityGroup",
+      "id": "sg-0b37955bdae072cf7",
+      "status": "DELETE_COMPLETE"
+    },
+    {
+      "logicalId": "Internal",
+      "type": "AWS::EC2::SecurityGroupIngress",
+      "id": "sgr-025978da76463e646",
+      "status": "DELETE_COMPLETE"
+    },
+    {
+      "logicalId": "LinuxProfile",
+      "type": "AWS::IAM::InstanceProfile",
+      "id": "bower-prod-20261030-071434-LinuxProfile-YgmzC8Tr2aph",
+      "status": "DELETE_COMPLETE"
+    },
+    {
+      "logicalId": "LinuxRole",
+      "type": "AWS::IAM::Role",
+      "id": "bower-prod-20261030-071434-LinuxRole-TFTzoNK5OVbU",
+      "status": "DELETE_COMPLETE"
+    },
+    {
+      "logicalId": "PrivateDefaultRoute",
+      "type": "AWS::EC2::Route",
+      "id": "rtb-03ad3bc39fe45e900|0.0.0.0/0",
+      "status": "DELETE_COMPLETE"
+    },
+    {
+      "logicalId": "PrivateRouteAssociation",
+      "type": "AWS::EC2::SubnetRouteTableAssociation",
+      "id": "rtbassoc-0120f4957d78c84fb",
+      "status": "DELETE_COMPLETE"
+    },
+    {
+      "logicalId": "PrivateRoutes",
+      "type": "AWS::EC2::RouteTable",
+      "id": "rtb-03ad3bc39fe45e900",
+      "status": "DELETE_COMPLETE"
+    },
+    {
+      "logicalId": "PrivateSubnet",
+      "type": "AWS::EC2::Subnet",
+      "id": "subnet-0b1db92cbae264738",
+      "status": "DELETE_COMPLETE"
+    },
+    {
+      "logicalId": "Secret",
+      "type": "AWS::SecretsManager::Secret",
+      "id": "arn:aws:secretsmanager:ap-southeast-2:959038055523:secret:Secret-IfGgiyuA2bVR-r3RQfX",
+      "status": "DELETE_COMPLETE"
+    },
+    {
+      "logicalId": "Source",
+      "type": "AWS::EC2::Instance",
+      "id": "i-042a26e35db7a25ae",
+      "status": "DELETE_COMPLETE"
+    },
+    {
+      "logicalId": "Wec",
+      "type": "AWS::EC2::Instance",
+      "id": "i-06da7e954b9b754ce",
+      "status": "DELETE_COMPLETE"
+    },
+    {
+      "logicalId": "WecProfile",
+      "type": "AWS::IAM::InstanceProfile",
+      "id": "bower-prod-20261030-071434-WecProfile-GH6eXTvGzTQt",
+      "status": "DELETE_COMPLETE"
+    },
+    {
+      "logicalId": "WecRole",
+      "type": "AWS::IAM::Role",
+      "id": "bower-prod-20261030-071434-WecRole-rVPcMIsP8GAy",
+      "status": "DELETE_COMPLETE"
+    },
+    {
+      "logicalId": "WindowsProfile",
+      "type": "AWS::IAM::InstanceProfile",
+      "id": "bower-prod-20261030-071434-WindowsProfile-CjIjlP5AMSfn",
+      "status": "DELETE_COMPLETE"
+    },
+    {
+      "logicalId": "WindowsRole",
+      "type": "AWS::IAM::Role",
+      "id": "bower-prod-20261030-071434-WindowsRole-1xXFmS16XnHA",
+      "status": "DELETE_COMPLETE"
+    }
+  ],
+  "passed": true
+}

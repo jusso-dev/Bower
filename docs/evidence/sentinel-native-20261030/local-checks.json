@@ -1,0 +1,13 @@
+{
+  "build": { "configuration": "Release", "passed": true, "warnings": 0, "errors": 0 },
+  "formatVerifyNoChanges": { "passed": true },
+  "fullTests": { "passed": true, "total": 1869, "succeeded": 1868, "failed": 0, "skipped": 1, "skipReason": "Native Windows Event Log test requires Windows and administrator rights; local runner was macOS." },
+  "dcrRegression": { "failedBeforeFix": true, "passedAfterFix": true, "testsAfterFix": 22 },
+  "azureDeployment": { "whatIfPassed": true, "applyPassed": true, "originalFailure": "InvalidStreamDeclaration: DCR stream timestamp fields require datetime rather than table-schema dateTime." },
+  "cloudFormation": { "validateTemplatePassed": true, "lintErrors": 0, "lintWarning": "W3010: temporary subnet availability zone pinned to the existing NAT gateway zone." },
+  "candidateCiRun": "https://github.com/jusso-dev/Bower/actions/runs/41016990194",
+  "candidateCiCommit": "26446690fae7d123e2dfaf117d63467f1f55d37d",
+  "candidateRequiredChecksPassed": true,
+  "hostPackageHashesMatchCiArtifacts": true,
+  "deliberateReview": "Reviewed Bicep/schema-test diff, documentation limits, metadata-only evidence schemas and counts, native/destination identity reconciliation, host/package hashes, screenshot, and isolated cleanup. No unresolved issue in the two-field DCR fix; remaining production qualification gaps are explicitly retained."
+}

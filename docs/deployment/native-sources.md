@@ -71,6 +71,17 @@ end-to-end acknowledgement or durable receiver cursor. Sender queues, TLS and
 appropriate source retention reduce loss; UDP is best effort and drops on
 pressure. Do not claim exactly-once delivery or lossless replay.
 
+The [live Sentinel campaign](../evidence/sentinel-native-20261030/README.md) observed
+two missing messages when rsyslog reused a TLS connection after Bower's default
+60-second frame/idle timeout closed it. No collector drop counter increased because
+those frames never reached intake. The tested rsyslog `omfwd` action used
+`RebindInterval="1"` for subsequent runs, alongside mutual TLS, a sender queue and
+`action.resumeRetryCount="-1"`. Validate the configuration with `rsyslogd -N1` and
+test idle/reconnect behavior on the deployed sender version. This reconnect setting
+adds connection overhead and does not guarantee delivery across every failure.
+Monitor source counts separately from Bower acceptance and destination counts;
+zero missing accepted events does not imply zero source loss.
+
 ## Signed runtime mappings
 
 Parser configuration gains optional `runtime` metadata and field mappings.
