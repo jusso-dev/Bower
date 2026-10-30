@@ -452,6 +452,66 @@ public sealed class AdaptiveConcurrencyTests
     }
 
     [Fact]
+    public async Task Worker_DeadlineAfterSuccessfulUpload_DoesNotReplayAcknowledgedBatch()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        ManualTimeProvider clock = new(TestEvents.Now);
+        string database = Path.Combine(directory.Path, "queue.db");
+        SqliteEventStore store = new(database, 64 * 1024 * 1024, clock);
+        await store.InitializeAsync(token);
+        foreach (QueuedEvent item in Events("partial", 3)) await store.EnqueueAsync(item, token);
+
+        TaskCompletionSource stalled = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        List<string> confirmed = [];
+        int requests = 0;
+        using ScriptedEndpoint endpoint = new((ids, _) =>
+        {
+            confirmed.AddRange(ids);
+            return (HttpStatusCode.NoContent, null);
+        })
+        {
+            BeforeRespond = async cancellation =>
+            {
+                if (Interlocked.Increment(ref requests) == 1) return;
+                stalled.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellation);
+            }
+        };
+        QueueDeliveryOptions options = new()
+        {
+            MaximumDeliveryAttempts = 1,
+            LeaseDuration = TimeSpan.FromSeconds(90),
+            DeliveryTimeout = TimeSpan.FromSeconds(60)
+        };
+        using QueueDeliveryWorker worker = new(store, CreateOutput(endpoint, 1, clock), clock,
+            options, NullLogger<QueueDeliveryWorker>.Instance);
+        Task<int> delivery = worker.DeliverOnceAsync(token);
+        await stalled.Task.WaitAsync(TimeSpan.FromSeconds(10), token);
+        clock.Advance(TimeSpan.FromSeconds(60));
+        Assert.Equal(3, await delivery.WaitAsync(TimeSpan.FromSeconds(10), token));
+        QueueSnapshot partial = await store.GetSnapshotAsync(token);
+        Assert.Equal((1L, 2L, 0L, 0L),
+            (partial.Delivered, partial.Retrying, partial.Uploading, partial.DeadLettered));
+        Assert.Single(confirmed);
+
+        SqliteEventStore reopened = new(database, 64 * 1024 * 1024, clock);
+        await reopened.InitializeAsync(token);
+        using ScriptedEndpoint healthy = new((ids, _) =>
+        {
+            confirmed.AddRange(ids);
+            return (HttpStatusCode.NoContent, null);
+        });
+        clock.Advance(TimeSpan.FromSeconds(30));
+        using QueueDeliveryWorker restarted = new(reopened, CreateOutput(healthy, 1, clock), clock,
+            options, NullLogger<QueueDeliveryWorker>.Instance);
+        Assert.Equal(2, await restarted.DeliverOnceAsync(token));
+        Assert.Equal(3, (await reopened.GetSnapshotAsync(token)).Delivered);
+        Assert.Equal(["partial-0", "partial-1", "partial-2"], confirmed.Order(StringComparer.Ordinal));
+        Assert.True((await reopened.VerifyLedgerAsync(token)).Intact);
+    }
+
+    [Fact]
     public async Task Worker_ThrottledEventsStayDurableAndDeliverOnceWithoutPrematureAck()
     {
         CancellationToken token = TestContext.Current.CancellationToken;

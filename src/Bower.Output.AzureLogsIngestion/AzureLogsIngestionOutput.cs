@@ -122,32 +122,46 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter, IOutputConcurrenc
         List<Task> uploads = new(batches.Count);
         try
         {
-            for (int index = 0; index < batches.Count; index++)
+            try
             {
-                // Back-pressure: wait for a slot under the adaptive limit, in batch order.
-                await scope.Controller.AcquireAsync(cancellationToken);
-                if (scope.PausedUntil(clock.GetUtcNow()) is { } until)
+                for (int index = 0; index < batches.Count; index++)
                 {
-                    scope.Controller.Release();
-                    // Never sent: keep the records retryable behind the destination circuit.
-                    foreach (PreparedRecord record in batches.Skip(index).SelectMany(batch => batch))
+                    // Back-pressure: wait for a slot under the adaptive limit, in batch order.
+                    await scope.Controller.AcquireAsync(cancellationToken);
+                    if (scope.PausedUntil(clock.GetUtcNow()) is { } until)
                     {
-                        uploadFailures.Add(new DeliveryFailure(record.EventId, "destination-azure-paused", true, until));
+                        scope.Controller.Release();
+                        // Never sent: keep the records retryable behind the destination circuit.
+                        foreach (PreparedRecord record in batches.Skip(index).SelectMany(batch => batch))
+                        {
+                            uploadFailures.Add(new DeliveryFailure(record.EventId, "destination-azure-paused", true, until));
+                        }
+
+                        break;
                     }
 
-                    break;
+                    uploads.Add(UploadSlotAsync(batches[index], cancellationToken));
                 }
+            }
+            finally
+            {
+                // Observe every started upload, even when cancellation stopped the loop.
+                await Task.WhenAll(uploads).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            }
 
-                uploads.Add(UploadSlotAsync(batches[index], cancellationToken));
+            await Task.WhenAll(uploads);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested && !acknowledged.IsEmpty)
+        {
+            // Every upload has stopped. Preserve successful owned batches when a later
+            // request or slot wait was cancelled; do not replay known acknowledgements.
+            HashSet<string> settled = new(acknowledged.Concat(uploadFailures.Select(item => item.EventId)), StringComparer.Ordinal);
+            foreach (PreparedRecord record in records.Where(item => !settled.Contains(item.EventId)))
+            {
+                uploadFailures.Add(new DeliveryFailure(record.EventId, "destination-azure-cancelled", true, null));
             }
         }
-        finally
-        {
-            // Observe every started upload, even when cancellation stopped the loop.
-            await Task.WhenAll(uploads).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-        }
 
-        await Task.WhenAll(uploads);
         HashSet<string> accepted = new(acknowledged, StringComparer.Ordinal);
         HashSet<string> isolated = new(isolatedBadRequests, StringComparer.Ordinal);
         failures.AddRange(uploadFailures.Select(failure => accepted.Count > 0 && isolated.Contains(failure.EventId)

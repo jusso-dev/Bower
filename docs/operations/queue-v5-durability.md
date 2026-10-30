@@ -131,6 +131,13 @@ budget is preserved. Settlement uses the host token, so an expired output deadli
 does not prevent committing the retry. Host shutdown still leaves outstanding
 leases intact for recovery. Metadata-only warnings never include the batch body.
 
+If an AMA file or an owned Azure request completed before a later operation was
+cancelled, the adapter returns those known acknowledgements and marks only the
+unfinished events with `destination-ama-cancelled` or `destination-azure-cancelled`.
+The worker commits those acknowledgements instead of replaying confirmed output.
+Restart regressions cover both partial-output paths. With no acknowledged output,
+the adapter still propagates cancellation to the worker's deadline handling.
+
 Cancellation is cooperative. The worker awaits the adapter rather than abandoning
 an upload task and launching overlapping attempts. Adapters must honor cancellation;
 a blocked filesystem or an adapter that ignores the token cannot be made responsive
