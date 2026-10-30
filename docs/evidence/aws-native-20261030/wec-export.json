@@ -1,0 +1,845 @@
+{
+  "CommandId": "52d71e22-1900-48b8-8e18-af03dad78f42",
+  "InstanceId": "i-0b9625a263d6ccd05",
+  "DocumentName": "AWS-RunPowerShellScript",
+  "Status": "Success",
+  "ResponseCode": 0,
+  "ExecutionStartDateTime": "2026-10-30T03:02:22.666Z",
+  "ExecutionEndDateTime": "2026-10-30T03:02:22.666Z",
+  "StandardOutputContent": "{\"document\":\"wec-before-recovery\",\"data\":{\"phase\":\"wec-queue-proof\",\"utc\":\"2026-10-30T03:01:24.8284565+00:00\",\"queueRows\":14,\"authenticationEvents\":14,\"deliveredRows\":0,\"forwardedEvents\":14,\"allForwardedIdentitiesQueued\":true,\"noRawUsername\":true,\"usernamePseudonymized\":true,\"databaseAndWalExcludeUsername\":true,\"sqliteIntegrity\":true,\"identitySetSha256\":\"923c0305fb5e7e0737860b0dd0cead1c3b8eefb8cae076aafeb609673a89fa22\",\"forwarded\":[{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371749,\"receivingRecordId\":4,\"eventId\":4625,\"queueIdentity\":\"winevt-e33609aa1b8a0bdde81ea9ae5d35d97a\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371750,\"receivingRecordId\":5,\"eventId\":4625,\"queueIdentity\":\"winevt-5d3c3d6b86627245d54673dbdde30d92\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371751,\"receivingRecordId\":6,\"eventId\":4625,\"queueIdentity\":\"winevt-24670ded918176188ae46fe39f4269bd\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371752,\"receivingRecordId\":7,\"eventId\":4625,\"queueIdentity\":\"winevt-bc30e8e0322930e2ec1b9b59150e7666\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370368,\"receivingRecordId\":8,\"eventId\":4625,\"queueIdentity\":\"winevt-4e971246afe30ec5b34cb78ae628f4d1\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371799,\"receivingRecordId\":9,\"eventId\":4625,\"queueIdentity\":\"winevt-38ab9de2ec0451908e917215e8b01b42\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370375,\"receivingRecordId\":10,\"eventId\":4625,\"queueIdentity\":\"winevt-f9d56fadbe3717b02719d05624a7cbe5\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370376,\"receivingRecordId\":11,\"eventId\":4625,\"queueIdentity\":\"winevt-696e08d6bc27297ad65e4fbd2d41a280\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370377,\"receivingRecordId\":12,\"eventId\":4625,\"queueIdentity\":\"winevt-d51501a81aa353e5583b1046303ad7c0\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370378,\"receivingRecordId\":13,\"eventId\":4625,\"queueIdentity\":\"winevt-0970d0554f441376858ca8c847f2e872\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371822,\"receivingRecordId\":14,\"eventId\":4625,\"queueIdentity\":\"winevt-d56f4e19a29369f2aeea9ab0d2e80d22\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371823,\"receivingRecordId\":15,\"eventId\":4625,\"queueIdentity\":\"winevt-e64b76d1b72b9c1f19c84175e5a20b0f\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371824,\"receivingRecordId\":16,\"eventId\":4625,\"queueIdentity\":\"winevt-9d2b93ab26dc68633c27e3aa45849471\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371825,\"receivingRecordId\":17,\"eventId\":4625,\"queueIdentity\":\"winevt-331f051b4d142377ccfa986b9508d079\",\"queued\":true}]}}\r\n{\"document\":\"wec-recovery\",\"data\":{\"restart\":{\"phase\":\"wec-queue-proof\",\"utc\":\"2026-10-30T03:01:42.1945495+00:00\",\"queueRows\":22,\"authenticationEvents\":22,\"deliveredRows\":0,\"forwardedEvents\":22,\"allForwardedIdentitiesQueued\":true,\"noRawUsername\":true,\"usernamePseudonymized\":true,\"databaseAndWalExcludeUsername\":true,\"sqliteIntegrity\":true,\"identitySetSha256\":\"cee0949d03108c136e43a205d92ab2e3059edbbfae3bc598626c2fdbd16eb4d7\",\"forwarded\":[{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371749,\"receivingRecordId\":4,\"eventId\":4625,\"queueIdentity\":\"winevt-e33609aa1b8a0bdde81ea9ae5d35d97a\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371750,\"receivingRecordId\":5,\"eventId\":4625,\"queueIdentity\":\"winevt-5d3c3d6b86627245d54673dbdde30d92\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371751,\"receivingRecordId\":6,\"eventId\":4625,\"queueIdentity\":\"winevt-24670ded918176188ae46fe39f4269bd\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371752,\"receivingRecordId\":7,\"eventId\":4625,\"queueIdentity\":\"winevt-bc30e8e0322930e2ec1b9b59150e7666\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370368,\"receivingRecordId\":8,\"eventId\":4625,\"queueIdentity\":\"winevt-4e971246afe30ec5b34cb78ae628f4d1\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371799,\"receivingRecordId\":9,\"eventId\":4625,\"queueIdentity\":\"winevt-38ab9de2ec0451908e917215e8b01b42\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370375,\"receivingRecordId\":10,\"eventId\":4625,\"queueIdentity\":\"winevt-f9d56fadbe3717b02719d05624a7cbe5\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370376,\"receivingRecordId\":11,\"eventId\":4625,\"queueIdentity\":\"winevt-696e08d6bc27297ad65e4fbd2d41a280\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370377,\"receivingRecordId\":12,\"eventId\":4625,\"queueIdentity\":\"winevt-d51501a81aa353e5583b1046303ad7c0\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370378,\"receivingRecordId\":13,\"eventId\":4625,\"queueIdentity\":\"winevt-0970d0554f441376858ca8c847f2e872\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371822,\"receivingRecordId\":14,\"eventId\":4625,\"queueIdentity\":\"winevt-d56f4e19a29369f2aeea9ab0d2e80d22\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371823,\"receivingRecordId\":15,\"eventId\":4625,\"queueIdentity\":\"winevt-e64b76d1b72b9c1f19c84175e5a20b0f\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371824,\"receivingRecordId\":16,\"eventId\":4625,\"queueIdentity\":\"winevt-9d2b93ab26dc68633c27e3aa45849471\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371825,\"receivingRecordId\":17,\"eventId\":4625,\"queueIdentity\":\"winevt-331f051b4d142377ccfa986b9508d079\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370379,\"receivingRecordId\":18,\"eventId\":4625,\"queueIdentity\":\"winevt-9e058318ab289a456119d57b22d0ba85\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370380,\"receivingRecordId\":19,\"eventId\":4625,\"queueIdentity\":\"winevt-3e434a19e32a64c7b36d07b37af5cdbd\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370381,\"receivingRecordId\":20,\"eventId\":4625,\"queueIdentity\":\"winevt-66eeafbc2d4193919008e99b84ca091c\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370382,\"receivingRecordId\":21,\"eventId\":4625,\"queueIdentity\":\"winevt-1769224f8e1033c97ed83117dfeb5fc1\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371831,\"receivingRecordId\":22,\"eventId\":4625,\"queueIdentity\":\"winevt-d949558cfe175aadc1897e96b2359c6e\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371832,\"receivingRecordId\":23,\"eventId\":4625,\"queueIdentity\":\"winevt-88ccf432ca5f604bae83c9ee825cb320\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371833,\"receivingRecordId\":24,\"eventId\":4625,\"queueIdentity\":\"winevt-5cb631bf8bdeda4aa5eb0a6b97effc0f\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371834,\"receivingRecordId\":25,\"eventId\":4625,\"queueIdentity\":\"winevt-08a21926ad34b2759c1fc6a5d70fa3d4\",\"queued\":true}]},\"checks\":{\"usernamePseudonymized\":true,\"restartReadZeroOldEvents\":true,\"restartPreservedIdentitySet\":true,\"eightEventsArrivedWhileCollectorStopped\":true,\"allForwardedIdentitiesQueued\":true,\"databaseAndWalExcludeUsername\":true},\"after\":{\"phase\":\"wec-queue-proof\",\"utc\":\"2026-10-30T03:01:37.0861263+00:00\",\"queueRows\":22,\"authenticationEvents\":22,\"deliveredRows\":0,\"forwardedEvents\":22,\"allForwardedIdentitiesQueued\":true,\"noRawUsername\":true,\"usernamePseudonymized\":true,\"databaseAndWalExcludeUsername\":true,\"sqliteIntegrity\":true,\"identitySetSha256\":\"cee0949d03108c136e43a205d92ab2e3059edbbfae3bc598626c2fdbd16eb4d7\",\"forwarded\":[{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371749,\"receivingRecordId\":4,\"eventId\":4625,\"queueIdentity\":\"winevt-e33609aa1b8a0bdde81ea9ae5d35d97a\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371750,\"receivingRecordId\":5,\"eventId\":4625,\"queueIdentity\":\"winevt-5d3c3d6b86627245d54673dbdde30d92\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371751,\"receivingRecordId\":6,\"eventId\":4625,\"queueIdentity\":\"winevt-24670ded918176188ae46fe39f4269bd\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371752,\"receivingRecordId\":7,\"eventId\":4625,\"queueIdentity\":\"winevt-bc30e8e0322930e2ec1b9b59150e7666\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370368,\"receivingRecordId\":8,\"eventId\":4625,\"queueIdentity\":\"winevt-4e971246afe30ec5b34cb78ae628f4d1\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371799,\"receivingRecordId\":9,\"eventId\":4625,\"queueIdentity\":\"winevt-38ab9de2ec0451908e917215e8b01b42\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370375,\"receivingRecordId\":10,\"eventId\":4625,\"queueIdentity\":\"winevt-f9d56fadbe3717b02719d05624a7cbe5\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370376,\"receivingRecordId\":11,\"eventId\":4625,\"queueIdentity\":\"winevt-696e08d6bc27297ad65e4fbd2d41a280\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370377,\"receivingRecordId\":12,\"eventId\":4625,\"queueIdentity\":\"winevt-d51501a81aa353e5583b1046303ad7c0\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370378,\"receivingRecordId\":13,\"eventId\":4625,\"queueIdentity\":\"winevt-0970d0554f441376858ca8c847f2e872\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371822,\"receivingRecordId\":14,\"eventId\":4625,\"queueIdentity\":\"winevt-d56f4e19a29369f2aeea9ab0d2e80d22\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371823,\"receivingRecordId\":15,\"eventId\":4625,\"queueIdentity\":\"winevt-e64b76d1b72b9c1f19c84175e5a20b0f\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371824,\"receivingRecordId\":16,\"eventId\":4625,\"queueIdentity\":\"winevt-9d2b93ab26dc68633c27e3aa45849471\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371825,\"receivingRecordId\":17,\"eventId\":4625,\"queueIdentity\":\"winevt-331f051b4d142377ccfa986b9508d079\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370379,\"receivingRecordId\":18,\"eventId\":4625,\"queueIdentity\":\"winevt-9e058318ab289a456119d57b22d0ba85\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370380,\"receivingRecordId\":19,\"eventId\":4625,\"queueIdentity\":\"winevt-3e434a19e32a64c7b36d07b37af5cdbd\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370381,\"receivingRecordId\":20,\"eventId\":4625,\"queueIdentity\":\"winevt-66eeafbc2d4193919008e99b84ca091c\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370382,\"receivingRecordId\":21,\"eventId\":4625,\"queueIdentity\":\"winevt-1769224f8e1033c97ed83117dfeb5fc1\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371831,\"receivingRecordId\":22,\"eventId\":4625,\"queueIdentity\":\"winevt-d949558cfe175aadc1897e96b2359c6e\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371832,\"receivingRecordId\":23,\"eventId\":4625,\"queueIdentity\":\"winevt-88ccf432ca5f604bae83c9ee825cb320\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371833,\"receivingRecordId\":24,\"eventId\":4625,\"queueIdentity\":\"winevt-5cb631bf8bdeda4aa5eb0a6b97effc0f\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371834,\"receivingRecordId\":25,\"eventId\":4625,\"queueIdentity\":\"winevt-08a21926ad34b2759c1fc6a5d70fa3d4\",\"queued\":true}]},\"before\":{\"phase\":\"wec-queue-proof\",\"utc\":\"2026-10-30T03:01:24.8284565+00:00\",\"queueRows\":14,\"authenticationEvents\":14,\"deliveredRows\":0,\"forwardedEvents\":14,\"allForwardedIdentitiesQueued\":true,\"noRawUsername\":true,\"usernamePseudonymized\":true,\"databaseAndWalExcludeUsername\":true,\"sqliteIntegrity\":true,\"identitySetSha256\":\"923c0305fb5e7e0737860b0dd0cead1c3b8eefb8cae076aafeb609673a89fa22\",\"forwarded\":[{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371749,\"receivingRecordId\":4,\"eventId\":4625,\"queueIdentity\":\"winevt-e33609aa1b8a0bdde81ea9ae5d35d97a\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371750,\"receivingRecordId\":5,\"eventId\":4625,\"queueIdentity\":\"winevt-5d3c3d6b86627245d54673dbdde30d92\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371751,\"receivingRecordId\":6,\"eventId\":4625,\"queueIdentity\":\"winevt-24670ded918176188ae46fe39f4269bd\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371752,\"receivingRecordId\":7,\"eventId\":4625,\"queueIdentity\":\"winevt-bc30e8e0322930e2ec1b9b59150e7666\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370368,\"receivingRecordId\":8,\"eventId\":4625,\"queueIdentity\":\"winevt-4e971246afe30ec5b34cb78ae628f4d1\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371799,\"receivingRecordId\":9,\"eventId\":4625,\"queueIdentity\":\"winevt-38ab9de2ec0451908e917215e8b01b42\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370375,\"receivingRecordId\":10,\"eventId\":4625,\"queueIdentity\":\"winevt-f9d56fadbe3717b02719d05624a7cbe5\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370376,\"receivingRecordId\":11,\"eventId\":4625,\"queueIdentity\":\"winevt-696e08d6bc27297ad65e4fbd2d41a280\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370377,\"receivingRecordId\":12,\"eventId\":4625,\"queueIdentity\":\"winevt-d51501a81aa353e5583b1046303ad7c0\",\"queued\":true},{\"originComputer\":\"BOWERSOURCE.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":370378,\"receivingRecordId\":13,\"eventId\":4625,\"queueIdentity\":\"winevt-0970d0554f441376858ca8c847f2e872\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371822,\"receivingRecordId\":14,\"eventId\":4625,\"queueIdentity\":\"winevt-d56f4e19a29369f2aeea9ab0d2e80d22\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371823,\"receivingRecordId\":15,\"eventId\":4625,\"queueIdentity\":\"winevt-e64b76d1b72b9c1f19c84175e5a20b0f\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371824,\"receivingRecordId\":16,\"eventId\":4625,\"queueIdentity\":\"winevt-9d2b93ab26dc68633c27e3aa45849471\",\"queued\":true},{\"originComputer\":\"BOWERDC.bower.test\",\"originalChannel\":\"Security\",\"originalRecordId\":371825,\"receivingRecordId\":17,\"eventId\":4625,\"queueIdentity\":\"winevt-331f051b4d142377ccfa986b9508d079\",\"queued\":true}]},\"phase\":\"wec-recovery\",\"restartStatus\":[{\"id\":\"wec-security\",\"channel\":\"ForwardedEvents\",\"state\":\"running\",\"bookmarkRecordId\":25,\"eventsRead\":0,\"bytesRead\":0,\"queued\":0,\"duplicates\":0,\"suppressed\":0,\"notSelected\":0,\"rejected\":0,\"parserErrors\":0,\"malformed\":0,\"oversized\":0,\"retries\":0,\"submitFailures\":0,\"readErrors\":0,\"gaps\":0,\"resets\":0,\"cursorConflicts\":0,\"lastEventAt\":null,\"lastPollAt\":\"2026-10-30T03:01:41.4756771+00:00\"}],\"afterStatus\":[{\"id\":\"wec-security\",\"channel\":\"ForwardedEvents\",\"state\":\"running\",\"bookmarkRecordId\":25,\"eventsRead\":8,\"bytesRead\":11424,\"queued\":8,\"duplicates\":0,\"suppressed\":0,\"notSelected\":0,\"rejected\":0,\"parserErrors\":0,\"malformed\":0,\"oversized\":0,\"retries\":0,\"submitFailures\":0,\"readErrors\":0,\"gaps\":0,\"resets\":0,\"cursorConflicts\":0,\"lastEventAt\":\"2026-10-30T03:01:36.9170685+00:00\",\"lastPollAt\":\"2026-10-30T03:01:36.9379936+00:00\"}]}}\r\n{\"document\":\"wec-delivery\",\"data\":{\"phase\":\"wec-local-spool\",\"allForwardedEventIdsPresent\":true,\"deliveredRows\":22,\"spoolRecords\":22,\"sentinelValidated\":false}}\r\n{\"document\":\"wec-final-status\",\"data\":{\"queue\":{\"queued\":0,\"retrying\":0,\"uploading\":0,\"delivered\":22,\"deadLettered\":0,\"totalBytes\":30100,\"undeliveredBytes\":0,\"oldestUndelivered\":null},\"windowsEventLog\":[{\"id\":\"wec-security\",\"channel\":\"ForwardedEvents\",\"state\":\"running\",\"bookmarkRecordId\":25,\"eventsRead\":0,\"bytesRead\":0,\"queued\":0,\"duplicates\":0,\"suppressed\":0,\"notSelected\":0,\"rejected\":0,\"parserErrors\":0,\"malformed\":0,\"oversized\":0,\"retries\":0,\"submitFailures\":0,\"readErrors\":0,\"gaps\":0,\"resets\":0,\"cursorConflicts\":0,\"lastEventAt\":null,\"lastPollAt\":\"2026-10-30T03:02:22.4156669+00:00\"}]}}\r\n",
+  "StandardErrorContent": "",
+  "records": [
+    {
+      "document": "wec-before-recovery",
+      "data": {
+        "phase": "wec-queue-proof",
+        "utc": "2026-10-30T03:01:24.8284565+00:00",
+        "queueRows": 14,
+        "authenticationEvents": 14,
+        "deliveredRows": 0,
+        "forwardedEvents": 14,
+        "allForwardedIdentitiesQueued": true,
+        "noRawUsername": true,
+        "usernamePseudonymized": true,
+        "databaseAndWalExcludeUsername": true,
+        "sqliteIntegrity": true,
+        "identitySetSha256": "923c0305fb5e7e0737860b0dd0cead1c3b8eefb8cae076aafeb609673a89fa22",
+        "forwarded": [
+          {
+            "originComputer": "BOWERDC.bower.test",
+            "originalChannel": "Security",
+            "originalRecordId": 371749,
+            "receivingRecordId": 4,
+            "eventId": 4625,
+            "queueIdentity": "winevt-e33609aa1b8a0bdde81ea9ae5d35d97a",
+            "queued": true
+          },
+          {
+            "originComputer": "BOWERDC.bower.test",
+            "originalChannel": "Security",
+            "originalRecordId": 371750,
+            "receivingRecordId": 5,
+            "eventId": 4625,
+            "queueIdentity": "winevt-5d3c3d6b86627245d54673dbdde30d92",
+            "queued": true
+          },
+          {
+            "originComputer": "BOWERDC.bower.test",
+            "originalChannel": "Security",
+            "originalRecordId": 371751,
+            "receivingRecordId": 6,
+            "eventId": 4625,
+            "queueIdentity": "winevt-24670ded918176188ae46fe39f4269bd",
+            "queued": true
+          },
+          {
+            "originComputer": "BOWERDC.bower.test",
+            "originalChannel": "Security",
+            "originalRecordId": 371752,
+            "receivingRecordId": 7,
+            "eventId": 4625,
+            "queueIdentity": "winevt-bc30e8e0322930e2ec1b9b59150e7666",
+            "queued": true
+          },
+          {
+            "originComputer": "BOWERSOURCE.bower.test",
+            "originalChannel": "Security",
+            "originalRecordId": 370368,
+            "receivingRecordId": 8,
+            "eventId": 4625,
+            "queueIdentity": "winevt-4e971246afe30ec5b34cb78ae628f4d1",
+            "queued": true
+          },
+          {
+            "originComputer": "BOWERDC.bower.test",
+            "originalChannel": "Security",
+            "originalRecordId": 371799,
+            "receivingRecordId": 9,
+            "eventId": 4625,
+            "queueIdentity": "winevt-38ab9de2ec0451908e917215e8b01b42",
+            "queued": true
+          },
+          {
+            "originComputer": "BOWERSOURCE.bower.test",
+            "originalChannel": "Security",
+            "originalRecordId": 370375,
+            "receivingRecordId": 10,
+            "eventId": 4625,
+            "queueIdentity": "winevt-f9d56fadbe3717b02719d05624a7cbe5",
+            "queued": true
+          },
+          {
+            "originComputer": "BOWERSOURCE.bower.test",
+            "originalChannel": "Security",
+            "originalRecordId": 370376,
+            "receivingRecordId": 11,
+            "eventId": 4625,
+            "queueIdentity": "winevt-696e08d6bc27297ad65e4fbd2d41a280",
+            "queued": true
+          },
+          {
+            "originComputer": "BOWERSOURCE.bower.test",
+            "originalChannel": "Security",
+            "originalRecordId": 370377,
+            "receivingRecordId": 12,
+            "eventId": 4625,
+            "queueIdentity": "winevt-d51501a81aa353e5583b1046303ad7c0",
+            "queued": true
+          },
+          {
+            "originComputer": "BOWERSOURCE.bower.test",
+            "originalChannel": "Security",
+            "originalRecordId": 370378,
+            "receivingRecordId": 13,
+            "eventId": 4625,
+            "queueIdentity": "winevt-0970d0554f441376858ca8c847f2e872",
+            "queued": true
+          },
+          {
+            "originComputer": "BOWERDC.bower.test",
+            "originalChannel": "Security",
+            "originalRecordId": 371822,
+            "receivingRecordId": 14,
+            "eventId": 4625,
+            "queueIdentity": "winevt-d56f4e19a29369f2aeea9ab0d2e80d22",
+            "queued": true
+          },
+          {
+            "originComputer": "BOWERDC.bower.test",
+            "originalChannel": "Security",
+            "originalRecordId": 371823,
+            "receivingRecordId": 15,
+            "eventId": 4625,
+            "queueIdentity": "winevt-e64b76d1b72b9c1f19c84175e5a20b0f",
+            "queued": true
+          },
+          {
+            "originComputer": "BOWERDC.bower.test",
+            "originalChannel": "Security",
+            "originalRecordId": 371824,
+            "receivingRecordId": 16,
+            "eventId": 4625,
+            "queueIdentity": "winevt-9d2b93ab26dc68633c27e3aa45849471",
+            "queued": true
+          },
+          {
+            "originComputer": "BOWERDC.bower.test",
+            "originalChannel": "Security",
+            "originalRecordId": 371825,
+            "receivingRecordId": 17,
+            "eventId": 4625,
+            "queueIdentity": "winevt-331f051b4d142377ccfa986b9508d079",
+            "queued": true
+          }
+        ]
+      }
+    },
+    {
+      "document": "wec-recovery",
+      "data": {
+        "restart": {
+          "phase": "wec-queue-proof",
+          "utc": "2026-10-30T03:01:42.1945495+00:00",
+          "queueRows": 22,
+          "authenticationEvents": 22,
+          "deliveredRows": 0,
+          "forwardedEvents": 22,
+          "allForwardedIdentitiesQueued": true,
+          "noRawUsername": true,
+          "usernamePseudonymized": true,
+          "databaseAndWalExcludeUsername": true,
+          "sqliteIntegrity": true,
+          "identitySetSha256": "cee0949d03108c136e43a205d92ab2e3059edbbfae3bc598626c2fdbd16eb4d7",
+          "forwarded": [
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371749,
+              "receivingRecordId": 4,
+              "eventId": 4625,
+              "queueIdentity": "winevt-e33609aa1b8a0bdde81ea9ae5d35d97a",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371750,
+              "receivingRecordId": 5,
+              "eventId": 4625,
+              "queueIdentity": "winevt-5d3c3d6b86627245d54673dbdde30d92",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371751,
+              "receivingRecordId": 6,
+              "eventId": 4625,
+              "queueIdentity": "winevt-24670ded918176188ae46fe39f4269bd",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371752,
+              "receivingRecordId": 7,
+              "eventId": 4625,
+              "queueIdentity": "winevt-bc30e8e0322930e2ec1b9b59150e7666",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370368,
+              "receivingRecordId": 8,
+              "eventId": 4625,
+              "queueIdentity": "winevt-4e971246afe30ec5b34cb78ae628f4d1",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371799,
+              "receivingRecordId": 9,
+              "eventId": 4625,
+              "queueIdentity": "winevt-38ab9de2ec0451908e917215e8b01b42",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370375,
+              "receivingRecordId": 10,
+              "eventId": 4625,
+              "queueIdentity": "winevt-f9d56fadbe3717b02719d05624a7cbe5",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370376,
+              "receivingRecordId": 11,
+              "eventId": 4625,
+              "queueIdentity": "winevt-696e08d6bc27297ad65e4fbd2d41a280",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370377,
+              "receivingRecordId": 12,
+              "eventId": 4625,
+              "queueIdentity": "winevt-d51501a81aa353e5583b1046303ad7c0",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370378,
+              "receivingRecordId": 13,
+              "eventId": 4625,
+              "queueIdentity": "winevt-0970d0554f441376858ca8c847f2e872",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371822,
+              "receivingRecordId": 14,
+              "eventId": 4625,
+              "queueIdentity": "winevt-d56f4e19a29369f2aeea9ab0d2e80d22",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371823,
+              "receivingRecordId": 15,
+              "eventId": 4625,
+              "queueIdentity": "winevt-e64b76d1b72b9c1f19c84175e5a20b0f",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371824,
+              "receivingRecordId": 16,
+              "eventId": 4625,
+              "queueIdentity": "winevt-9d2b93ab26dc68633c27e3aa45849471",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371825,
+              "receivingRecordId": 17,
+              "eventId": 4625,
+              "queueIdentity": "winevt-331f051b4d142377ccfa986b9508d079",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370379,
+              "receivingRecordId": 18,
+              "eventId": 4625,
+              "queueIdentity": "winevt-9e058318ab289a456119d57b22d0ba85",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370380,
+              "receivingRecordId": 19,
+              "eventId": 4625,
+              "queueIdentity": "winevt-3e434a19e32a64c7b36d07b37af5cdbd",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370381,
+              "receivingRecordId": 20,
+              "eventId": 4625,
+              "queueIdentity": "winevt-66eeafbc2d4193919008e99b84ca091c",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370382,
+              "receivingRecordId": 21,
+              "eventId": 4625,
+              "queueIdentity": "winevt-1769224f8e1033c97ed83117dfeb5fc1",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371831,
+              "receivingRecordId": 22,
+              "eventId": 4625,
+              "queueIdentity": "winevt-d949558cfe175aadc1897e96b2359c6e",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371832,
+              "receivingRecordId": 23,
+              "eventId": 4625,
+              "queueIdentity": "winevt-88ccf432ca5f604bae83c9ee825cb320",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371833,
+              "receivingRecordId": 24,
+              "eventId": 4625,
+              "queueIdentity": "winevt-5cb631bf8bdeda4aa5eb0a6b97effc0f",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371834,
+              "receivingRecordId": 25,
+              "eventId": 4625,
+              "queueIdentity": "winevt-08a21926ad34b2759c1fc6a5d70fa3d4",
+              "queued": true
+            }
+          ]
+        },
+        "checks": {
+          "usernamePseudonymized": true,
+          "restartReadZeroOldEvents": true,
+          "restartPreservedIdentitySet": true,
+          "eightEventsArrivedWhileCollectorStopped": true,
+          "allForwardedIdentitiesQueued": true,
+          "databaseAndWalExcludeUsername": true
+        },
+        "after": {
+          "phase": "wec-queue-proof",
+          "utc": "2026-10-30T03:01:37.0861263+00:00",
+          "queueRows": 22,
+          "authenticationEvents": 22,
+          "deliveredRows": 0,
+          "forwardedEvents": 22,
+          "allForwardedIdentitiesQueued": true,
+          "noRawUsername": true,
+          "usernamePseudonymized": true,
+          "databaseAndWalExcludeUsername": true,
+          "sqliteIntegrity": true,
+          "identitySetSha256": "cee0949d03108c136e43a205d92ab2e3059edbbfae3bc598626c2fdbd16eb4d7",
+          "forwarded": [
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371749,
+              "receivingRecordId": 4,
+              "eventId": 4625,
+              "queueIdentity": "winevt-e33609aa1b8a0bdde81ea9ae5d35d97a",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371750,
+              "receivingRecordId": 5,
+              "eventId": 4625,
+              "queueIdentity": "winevt-5d3c3d6b86627245d54673dbdde30d92",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371751,
+              "receivingRecordId": 6,
+              "eventId": 4625,
+              "queueIdentity": "winevt-24670ded918176188ae46fe39f4269bd",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371752,
+              "receivingRecordId": 7,
+              "eventId": 4625,
+              "queueIdentity": "winevt-bc30e8e0322930e2ec1b9b59150e7666",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370368,
+              "receivingRecordId": 8,
+              "eventId": 4625,
+              "queueIdentity": "winevt-4e971246afe30ec5b34cb78ae628f4d1",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371799,
+              "receivingRecordId": 9,
+              "eventId": 4625,
+              "queueIdentity": "winevt-38ab9de2ec0451908e917215e8b01b42",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370375,
+              "receivingRecordId": 10,
+              "eventId": 4625,
+              "queueIdentity": "winevt-f9d56fadbe3717b02719d05624a7cbe5",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370376,
+              "receivingRecordId": 11,
+              "eventId": 4625,
+              "queueIdentity": "winevt-696e08d6bc27297ad65e4fbd2d41a280",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370377,
+              "receivingRecordId": 12,
+              "eventId": 4625,
+              "queueIdentity": "winevt-d51501a81aa353e5583b1046303ad7c0",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370378,
+              "receivingRecordId": 13,
+              "eventId": 4625,
+              "queueIdentity": "winevt-0970d0554f441376858ca8c847f2e872",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371822,
+              "receivingRecordId": 14,
+              "eventId": 4625,
+              "queueIdentity": "winevt-d56f4e19a29369f2aeea9ab0d2e80d22",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371823,
+              "receivingRecordId": 15,
+              "eventId": 4625,
+              "queueIdentity": "winevt-e64b76d1b72b9c1f19c84175e5a20b0f",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371824,
+              "receivingRecordId": 16,
+              "eventId": 4625,
+              "queueIdentity": "winevt-9d2b93ab26dc68633c27e3aa45849471",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371825,
+              "receivingRecordId": 17,
+              "eventId": 4625,
+              "queueIdentity": "winevt-331f051b4d142377ccfa986b9508d079",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370379,
+              "receivingRecordId": 18,
+              "eventId": 4625,
+              "queueIdentity": "winevt-9e058318ab289a456119d57b22d0ba85",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370380,
+              "receivingRecordId": 19,
+              "eventId": 4625,
+              "queueIdentity": "winevt-3e434a19e32a64c7b36d07b37af5cdbd",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370381,
+              "receivingRecordId": 20,
+              "eventId": 4625,
+              "queueIdentity": "winevt-66eeafbc2d4193919008e99b84ca091c",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370382,
+              "receivingRecordId": 21,
+              "eventId": 4625,
+              "queueIdentity": "winevt-1769224f8e1033c97ed83117dfeb5fc1",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371831,
+              "receivingRecordId": 22,
+              "eventId": 4625,
+              "queueIdentity": "winevt-d949558cfe175aadc1897e96b2359c6e",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371832,
+              "receivingRecordId": 23,
+              "eventId": 4625,
+              "queueIdentity": "winevt-88ccf432ca5f604bae83c9ee825cb320",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371833,
+              "receivingRecordId": 24,
+              "eventId": 4625,
+              "queueIdentity": "winevt-5cb631bf8bdeda4aa5eb0a6b97effc0f",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371834,
+              "receivingRecordId": 25,
+              "eventId": 4625,
+              "queueIdentity": "winevt-08a21926ad34b2759c1fc6a5d70fa3d4",
+              "queued": true
+            }
+          ]
+        },
+        "before": {
+          "phase": "wec-queue-proof",
+          "utc": "2026-10-30T03:01:24.8284565+00:00",
+          "queueRows": 14,
+          "authenticationEvents": 14,
+          "deliveredRows": 0,
+          "forwardedEvents": 14,
+          "allForwardedIdentitiesQueued": true,
+          "noRawUsername": true,
+          "usernamePseudonymized": true,
+          "databaseAndWalExcludeUsername": true,
+          "sqliteIntegrity": true,
+          "identitySetSha256": "923c0305fb5e7e0737860b0dd0cead1c3b8eefb8cae076aafeb609673a89fa22",
+          "forwarded": [
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371749,
+              "receivingRecordId": 4,
+              "eventId": 4625,
+              "queueIdentity": "winevt-e33609aa1b8a0bdde81ea9ae5d35d97a",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371750,
+              "receivingRecordId": 5,
+              "eventId": 4625,
+              "queueIdentity": "winevt-5d3c3d6b86627245d54673dbdde30d92",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371751,
+              "receivingRecordId": 6,
+              "eventId": 4625,
+              "queueIdentity": "winevt-24670ded918176188ae46fe39f4269bd",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371752,
+              "receivingRecordId": 7,
+              "eventId": 4625,
+              "queueIdentity": "winevt-bc30e8e0322930e2ec1b9b59150e7666",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370368,
+              "receivingRecordId": 8,
+              "eventId": 4625,
+              "queueIdentity": "winevt-4e971246afe30ec5b34cb78ae628f4d1",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371799,
+              "receivingRecordId": 9,
+              "eventId": 4625,
+              "queueIdentity": "winevt-38ab9de2ec0451908e917215e8b01b42",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370375,
+              "receivingRecordId": 10,
+              "eventId": 4625,
+              "queueIdentity": "winevt-f9d56fadbe3717b02719d05624a7cbe5",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370376,
+              "receivingRecordId": 11,
+              "eventId": 4625,
+              "queueIdentity": "winevt-696e08d6bc27297ad65e4fbd2d41a280",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370377,
+              "receivingRecordId": 12,
+              "eventId": 4625,
+              "queueIdentity": "winevt-d51501a81aa353e5583b1046303ad7c0",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERSOURCE.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 370378,
+              "receivingRecordId": 13,
+              "eventId": 4625,
+              "queueIdentity": "winevt-0970d0554f441376858ca8c847f2e872",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371822,
+              "receivingRecordId": 14,
+              "eventId": 4625,
+              "queueIdentity": "winevt-d56f4e19a29369f2aeea9ab0d2e80d22",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371823,
+              "receivingRecordId": 15,
+              "eventId": 4625,
+              "queueIdentity": "winevt-e64b76d1b72b9c1f19c84175e5a20b0f",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371824,
+              "receivingRecordId": 16,
+              "eventId": 4625,
+              "queueIdentity": "winevt-9d2b93ab26dc68633c27e3aa45849471",
+              "queued": true
+            },
+            {
+              "originComputer": "BOWERDC.bower.test",
+              "originalChannel": "Security",
+              "originalRecordId": 371825,
+              "receivingRecordId": 17,
+              "eventId": 4625,
+              "queueIdentity": "winevt-331f051b4d142377ccfa986b9508d079",
+              "queued": true
+            }
+          ]
+        },
+        "phase": "wec-recovery",
+        "restartStatus": [
+          {
+            "id": "wec-security",
+            "channel": "ForwardedEvents",
+            "state": "running",
+            "bookmarkRecordId": 25,
+            "eventsRead": 0,
+            "bytesRead": 0,
+            "queued": 0,
+            "duplicates": 0,
+            "suppressed": 0,
+            "notSelected": 0,
+            "rejected": 0,
+            "parserErrors": 0,
+            "malformed": 0,
+            "oversized": 0,
+            "retries": 0,
+            "submitFailures": 0,
+            "readErrors": 0,
+            "gaps": 0,
+            "resets": 0,
+            "cursorConflicts": 0,
+            "lastEventAt": null,
+            "lastPollAt": "2026-10-30T03:01:41.4756771+00:00"
+          }
+        ],
+        "afterStatus": [
+          {
+            "id": "wec-security",
+            "channel": "ForwardedEvents",
+            "state": "running",
+            "bookmarkRecordId": 25,
+            "eventsRead": 8,
+            "bytesRead": 11424,
+            "queued": 8,
+            "duplicates": 0,
+            "suppressed": 0,
+            "notSelected": 0,
+            "rejected": 0,
+            "parserErrors": 0,
+            "malformed": 0,
+            "oversized": 0,
+            "retries": 0,
+            "submitFailures": 0,
+            "readErrors": 0,
+            "gaps": 0,
+            "resets": 0,
+            "cursorConflicts": 0,
+            "lastEventAt": "2026-10-30T03:01:36.9170685+00:00",
+            "lastPollAt": "2026-10-30T03:01:36.9379936+00:00"
+          }
+        ]
+      }
+    },
+    {
+      "document": "wec-delivery",
+      "data": {
+        "phase": "wec-local-spool",
+        "allForwardedEventIdsPresent": true,
+        "deliveredRows": 22,
+        "spoolRecords": 22,
+        "sentinelValidated": false
+      }
+    },
+    {
+      "document": "wec-final-status",
+      "data": {
+        "queue": {
+          "queued": 0,
+          "retrying": 0,
+          "uploading": 0,
+          "delivered": 22,
+          "deadLettered": 0,
+          "totalBytes": 30100,
+          "undeliveredBytes": 0,
+          "oldestUndelivered": null
+        },
+        "windowsEventLog": [
+          {
+            "id": "wec-security",
+            "channel": "ForwardedEvents",
+            "state": "running",
+            "bookmarkRecordId": 25,
+            "eventsRead": 0,
+            "bytesRead": 0,
+            "queued": 0,
+            "duplicates": 0,
+            "suppressed": 0,
+            "notSelected": 0,
+            "rejected": 0,
+            "parserErrors": 0,
+            "malformed": 0,
+            "oversized": 0,
+            "retries": 0,
+            "submitFailures": 0,
+            "readErrors": 0,
+            "gaps": 0,
+            "resets": 0,
+            "cursorConflicts": 0,
+            "lastEventAt": null,
+            "lastPollAt": "2026-10-30T03:02:22.4156669+00:00"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -129,7 +129,7 @@ public sealed class WindowsEventLogCollectorTests
             await connection.OpenAsync(cancellation);
             await using SqliteCommand command = connection.CreateCommand();
             command.CommandText = """SELECT "Value" FROM "source_cursors" WHERE "SourceId" = 'windows-eventlog:security-logon';""";
-            Assert.Equal("""{"schemaVersion":1,"channel":"Security","recordId":184469}""", await command.ExecuteScalarAsync(cancellation));
+            Assert.Equal("""{"schemaVersion":2,"channel":"Security","recordId":184469}""", await command.ExecuteScalarAsync(cancellation));
         }
 
         // Disposing the host returns SQLite handles to the pool. Release them before

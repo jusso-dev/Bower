@@ -8,11 +8,11 @@ C#-only: the Rust collector refuses `BOWER_WINDOWS_EVENTLOG_CONFIG` (see `rust/A
   whose match filter selects it, then redaction and policy. Never add a collect-all or
   "all Security events" form, free-text XPath, wildcards or level-only filters.
 - The Windows query is generated (`WindowsEventQuery.ToXPath`) from validated event IDs,
-  provider names and the bookmark, so the event log service returns only allow-listed
+  provider names; native bookmarks enforce receiving-log position separately. The event log service returns only allow-listed
   events. Names never contain quotes, brackets or operators. Keep the expression count
   within the Windows limit (16 IDs, 4 providers).
 - Channel range discovery uses two fixed boundary queries and accesses only their
-  `RecordId` metadata. Never render their XML, messages or event properties. This is
+  native bookmark metadata. Never render event XML, messages or event properties. This is
   not a configurable intake query; content intake still uses the generated allow-list.
 - Bookmarks live in the queue database's `source_cursors` table. Move the bookmark past
   an event only once it is durably enqueued or definitively dropped; a full queue stops

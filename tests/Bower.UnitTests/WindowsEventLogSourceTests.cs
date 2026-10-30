@@ -16,6 +16,27 @@ public sealed class WindowsEventLogSourceTests
     private const string Subscription = "app";
 
     [Fact]
+    public void NativeBookmark_UsesReceivingChannelPositionAndEscapesChannel()
+    {
+        string xml = WindowsNativeBookmark.Create("ForwardedEvents", 17);
+        Assert.Equal(17, WindowsNativeBookmark.Position(xml, "ForwardedEvents"));
+        Assert.Equal(17, WindowsNativeBookmark.Position(xml, "forwardedevents"));
+        Assert.Throws<WindowsEventChannelException>(() => WindowsNativeBookmark.Position(xml, "Security"));
+        Assert.Equal(42, WindowsNativeBookmark.Position(WindowsNativeBookmark.Create("a&b", 42), "a&b"));
+        WindowsEventQuery query = new("ForwardedEvents", [4625], null, 17);
+        Assert.Equal("*[System[(EventID=4625)]]", query.ToXPath(includeRecordPosition: false));
+        Assert.Contains("EventRecordID>17", query.ToXPath(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("<BookmarkList><Bookmark Channel='ForwardedEvents' RecordId='-1'/></BookmarkList>")]
+    [InlineData("<BookmarkList><Bookmark Channel='ForwardedEvents' RecordId='9223372036854775808'/></BookmarkList>")]
+    [InlineData("<BookmarkList/>")]
+    [InlineData("<BookmarkList><Bookmark Channel='ForwardedEvents' RecordId='1'/><Bookmark Channel='ForwardedEvents' RecordId='2'/></BookmarkList>")]
+    public void NativeBookmark_RejectsInvalidPositions(string xml) =>
+        Assert.Throws<WindowsEventChannelException>(() => WindowsNativeBookmark.Position(xml, "ForwardedEvents"));
+
+    [Fact]
     public void Parse_SecurityEvent_ReadsTheSystemHeaderAndNamedEventData()
     {
         WindowsEvent parsed = WindowsEventXml.Parse(WindowsEventFixtures.Read("security-4625.xml"));
@@ -243,10 +264,10 @@ public sealed class WindowsEventLogSourceTests
     public void Bookmark_RoundTripsAndRefusesAnotherChannelOrVersion()
     {
         string text = WindowsEventBookmark.At("Security", 42).Serialize();
-        Assert.Equal("""{"schemaVersion":1,"channel":"Security","recordId":42}""", text);
+        Assert.Equal("""{"schemaVersion":2,"channel":"Security","recordId":42}""", text);
         Assert.Equal(42, WindowsEventBookmark.Deserialize(text, "security").RecordId);
         Assert.Throws<InvalidDataException>(() => WindowsEventBookmark.Deserialize(text, "System"));
-        Assert.Throws<InvalidDataException>(() => WindowsEventBookmark.Deserialize("""{"schemaVersion":2,"channel":"Security","recordId":42}""", "Security"));
+        Assert.Throws<InvalidDataException>(() => WindowsEventBookmark.Deserialize("""{"schemaVersion":3,"channel":"Security","recordId":42}""", "Security"));
         Assert.Throws<InvalidDataException>(() => WindowsEventBookmark.Deserialize("""{"schemaVersion":1,"channel":"Security","recordId":-1}""", "Security"));
         Assert.Throws<InvalidDataException>(() => WindowsEventBookmark.Deserialize("""{"schemaVersion":1,"channel":"Security"}""", "Security"));
         Assert.Throws<InvalidDataException>(() => WindowsEventBookmark.Deserialize("{", "Security"));
@@ -307,6 +328,63 @@ public sealed class WindowsEventLogSourceTests
         // Caught up, so the bookmark moves to the newest record scanned (6, never read).
         Assert.Equal((2, 2, 6L), (status.EventsRead, status.Queued, status.BookmarkRecordId!.Value));
         Assert.Equal("*[System[(EventID=1000) and (Provider[@Name='BowerTest']) and (EventRecordID>0)]]", channel.Queries[0].ToXPath());
+    }
+
+    [Fact]
+    public async Task LegacyBookmark_ReplaysRetainedEventsThroughDeduplication()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using SqliteTemporaryDirectory directory = new();
+        FakeWindowsEventChannelFactory channels = new();
+        FakeWindowsEventChannel channel = channels["Application"];
+        channel.Add(WindowsEventFixtures.Event(1, 1000));
+        channel.Add(WindowsEventFixtures.Event(2, 1000));
+        RecordingWindowsEventSink sink = new();
+        EfSourceCursorStore store = await Cursors(directory);
+        await using (WindowsEventLogSource initial = Source(sink, store, channels, readExisting: true))
+        {
+            await initial.PollOnceAsync(Subscription, cancellation);
+        }
+        var saved = (await store.ReadAsync("windows-eventlog:app", cancellation))!;
+        // An origin ID inside the receiving range must not be accepted as a cursor.
+        Assert.True(await store.TryAdvanceAsync("windows-eventlog:app", saved.Version,
+            new WindowsEventBookmark(1, "Application", 2).Serialize(), DateTimeOffset.UtcNow, cancellation));
+        channel.Add(WindowsEventFixtures.Event(3, 1000));
+        await using WindowsEventLogSource upgraded = Source(sink, store, channels, readExisting: false);
+        sink.Override = _ => WindowsEventSubmitOutcome.Unavailable;
+        await upgraded.PollOnceAsync(Subscription, cancellation);
+        WindowsEventBookmark blocked = WindowsEventBookmark.Deserialize(
+            (await store.ReadAsync("windows-eventlog:app", cancellation))!.Value, "Application");
+        Assert.Equal((2, 0L), (blocked.SchemaVersion, blocked.RecordId));
+        Assert.Equal(2, sink.Queued.Count);
+        sink.Override = null;
+        await upgraded.PollOnceAsync(Subscription, cancellation);
+        Assert.Equal(3, sink.Queued.Count);
+        Assert.Equal(2, upgraded.Snapshot()[0].Duplicates);
+        WindowsEventBookmark migrated = WindowsEventBookmark.Deserialize(
+            (await store.ReadAsync("windows-eventlog:app", cancellation))!.Value, "Application");
+        Assert.Equal((2, 3L), (migrated.SchemaVersion, migrated.RecordId));
+        int submissions = sink.Records.Count;
+        await upgraded.PollOnceAsync(Subscription, cancellation);
+        Assert.Equal(submissions, sink.Records.Count);
+    }
+
+    [Fact]
+    public async Task LegacyEmptyChannel_UpgradesZeroPositionOnlyOnce()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using SqliteTemporaryDirectory directory = new();
+        EfSourceCursorStore store = await Cursors(directory);
+        Assert.True(await store.TryAdvanceAsync("windows-eventlog:app", 0,
+            new WindowsEventBookmark(1, "Application", 0).Serialize(), DateTimeOffset.UtcNow, cancellation));
+        await using WindowsEventLogSource source = Source(new RecordingWindowsEventSink(), store,
+            new FakeWindowsEventChannelFactory(), readExisting: false);
+        await source.PollOnceAsync(Subscription, cancellation);
+        var migrated = (await store.ReadAsync("windows-eventlog:app", cancellation))!;
+        Assert.Equal(2, WindowsEventBookmark.Deserialize(migrated.Value, "Application").SchemaVersion);
+        await source.PollOnceAsync(Subscription, cancellation);
+        Assert.Equal(migrated.Version, (await store.ReadAsync("windows-eventlog:app", cancellation))!.Version);
+        Assert.Equal(1, source.Snapshot()[0].Resets);
     }
 
     [Fact]

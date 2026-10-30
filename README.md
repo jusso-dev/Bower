@@ -537,6 +537,50 @@ A node `kind` is a declared name (`Source`, `Filter`, `Redact`, `Normalise`, `De
 undefined kind fails validation with code `node-kind`. Exported documents always
 write names, so prefer names over ordinals.
 
+## AWS validation evidence — 30 October 2026
+
+Tested in Sydney (`ap-southeast-2`) using **commit `473c6ec` as the base**, with
+the Windows Event Log/WEC and syslog adapters backported in C#. The initial run
+tested the unchanged commit; the additional native-source run used these backports,
+including signed parser transforms and receiving-log bookmarks for WEC.
+
+| Validation | Observed result |
+| --- | --- |
+| Unchanged `473c6ec` baseline | 618 .NET tests and 10 UI tests passed; 201 events delivered to a local AMA spool; crash recovery and SQS replay verified |
+| Backport checks | 758 local tests passed; the Windows-only test skipped on macOS and passed separately on AWS Windows Server 2022 |
+| Real WEC ingestion | 22 Security 4625 events forwarded from two Windows hosts into WEC `ForwardedEvents`; all identities matched the durable queue and local spool |
+| WEC recovery and privacy | 8 events arrived while Bower was stopped; restart recovered them, then re-read zero acknowledged events; usernames were HMAC-pseudonymized before persistence |
+| Real firewall syslog | nftables dropped 10 actual UDP packets; rsyslog forwarded all 10 deny events over mutual TLS; one separate synthetic replay event tested deduplication |
+| Syslog failure handling | SIGKILL recovery, required client certificates, malformed-input rejection, unknown-route rejection and 11-record local spool delivery passed |
+
+**Windows WEC:** controlled failed network logons produced native Windows events
+on an isolated domain controller and member server. This tested actual Windows
+Event Forwarding to a separate WEC host. Source record IDs differed from WEC's
+receiving-log bookmarks; the adapter preserved correct positions across both
+sources and restarts.
+
+![Recorded Windows WEC validation evidence](docs/images/aws-wec-validation-20261030.png)
+
+**Firewall syslog:** an Amazon Linux 2023 host ran a client network namespace,
+nftables and rsyslog. Kernel drop counters matched the ten ingested deny events.
+The raw kernel message was excluded from persistence. The source and collector
+shared the Linux host and used loopback mutual TLS; no proprietary appliance was
+tested. The extra replay event is explicitly synthetic.
+
+![Recorded firewall syslog validation evidence](docs/images/aws-syslog-validation-20261030.png)
+
+These screenshots show **recorded evidence reports rendered from AWS Systems
+Manager results**, rather than Windows desktop screenshots. The underlying
+command IDs, per-event identity matches, counters, artifact hashes and test output
+are retained in the [validation write-up](docs/evidence/aws-native-20261030/README.md)
+and [machine-readable proof](docs/evidence/aws-native-20261030/capture-summary.json).
+Delivery was verified to the **local AMA spool**; Microsoft Sentinel delivery was
+not tested. **All temporary AWS resources were removed**, with an independent
+[cleanup audit](docs/evidence/aws-native-20261030/cleanup.json) confirming deletion.
+
+See [native source configuration](docs/deployment/native-sources.md) for setup,
+trust requirements and delivery limits.
+
 ## Native AOT binaries
 
 Bower pins .NET SDK `10.0.403` and runs tests on Microsoft.Testing.Platform.
