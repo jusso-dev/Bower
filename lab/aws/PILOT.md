@@ -76,6 +76,16 @@ hour of destination isolation, retention of the 41,400-event outage population,
 and draining the retained backlog within ten minutes while new traffic continues.
 Do not shorten the hour, reset the queue, or discard failed attempts to pass.
 
+Before **each** Linux, Windows source, WEC or probe command, verify the expected
+AWS account with `aws sts get-caller-identity` using the intended profile and
+region. Describe each explicit target instance ID from the current run's recorded
+stack outputs and require both `Project=bower-lab` and `RunId=RUN_ID` tags, plus
+the expected instance state. Refuse execution on any missing or mismatched tag,
+account, ID or state. Issue SSM commands to those verified instance IDs; never
+select targets by a broad Role tag alone. Repeat ownership checks before apply
+and teardown. The host scripts' service-account, namespace and nftables checks
+are additional checks, not proof of AWS ownership.
+
 Run `scripts/pilot-native-linux.py --run-id RUN_ID` as root on the disposable
 firewall. It checks the service identity and owned source fixtures, records its
 initial counters, installs/removes a dedicated outage table, and writes bounded
@@ -102,6 +112,15 @@ reconstructs source identities, scans queue payloads and DB/WAL for the syntheti
 username, and reports only counts/digests and privacy booleans. It does not export
 raw payloads. Run the final probe after the generator and backlog drain finish;
 its database and native-log reads are not an atomic live snapshot.
+
+The probe deliberately caps **all examined records**, including records before
+`UTC_START`, at 150,000 per native-log or queue scan; each database/WAL file scan
+is capped at 1 GiB. The date filter limits the reported campaign population, not
+the work budget. A large retained history can therefore block a probe even when
+the current campaign has fewer records. Use a fresh disposable lab for another
+campaign and preserve the earlier evidence. Do not clear history or move the cap
+after the filter to make a run pass: that would remove the bound on parsing old
+records. A limit failure is unavailable evidence, never successful qualification.
 
 This probe is specific to the tested signed profile: default privacy detectors
 plus `actor.username` HMAC. It applies those default detectors to reconstructed
@@ -133,8 +152,16 @@ For final qualification also pass `--linux-since` from the Linux report's
 Connected-steady latency covers the first 600 seconds of each campaign's source
 timestamps; whole-campaign latency intentionally includes the destination outage.
 
-Use `scripts/assess-pilot.py` with the six metadata reports (`--linux`,
-`--generator`, `--monitor`, `--source`, `--wec`, `--destination`). It rejects
+Use `scripts/assess-pilot.py` with the six measurement reports (`--linux`,
+`--generator`, `--monitor`, `--source`, `--wec`, `--destination`) and a required
+`--policies` JSON file containing nonempty `linux` and `windows` arrays of expected
+`sha256:...` policy hashes. Pin these from the manifests of the installed packs
+after `bower pack verify FILE --trusted-key PUBLIC.pem` succeeds. Record the
+archive and trusted-key hashes; do not derive the expected values from the queue
+or destination being checked. See the recorded
+[policy pins](../../docs/evidence/pilot-native-20261030/expected-policies.json).
+The assessor requires exact policy sets in both Linux destination scopes and in
+the Windows queue and destination. It rejects
 missing evidence, incomplete phases, mismatched windows, loss, collisions,
 duplicates, privacy failures and missing resource measurements. Supplemental
 `destinationObservations` compare distinct identities under at-least-once delivery

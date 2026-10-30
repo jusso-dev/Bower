@@ -12,6 +12,7 @@ spec.loader.exec_module(assessment)
 class PilotAssessmentTests(unittest.TestCase):
     def reports(self):
         digest = 'a' * 64
+        policy_hash = 'sha256:' + 'c' * 64
         since = '2026-10-30T09:28:00+00:00'
         phases = [{'name':name, 'rate':rate, 'targetRate':rate, 'seconds':seconds,
                    'actualRate':rate, 'sent':rate*seconds, 'attempted':rate*seconds,
@@ -27,19 +28,20 @@ class PilotAssessmentTests(unittest.TestCase):
                   'rawNativeIdentitySetSha256':digest, 'nativeIdentitySetSha256':digest,
                   'noIdentityCollisions':True, 'since':since}
         group = {'rows':59400, 'distinctIds':59400, 'identitySetSha256':digest,
-                 'duplicateRows':0, 'rawPrivacyMatches':0}
+                 'duplicateRows':0, 'rawPrivacyMatches':0, 'policyHashes':[policy_hash]}
         return dict(linux={**host, 'phases':phases, 'generated':59400, 'nativePackets':59400, 'runId':'run', 'startedAt':since,
                            'finalAccepted':59400, 'finalDelivered':59400, 'initialAccepted':0, 'identitySetSha256':digest},
                     generator={'phases':phases, 'runId':'run', 'startedAt':since},
                     monitor={**host, 'runId':'run', 'startedAt':since}, source=native,
-                    wec={**native, 'nativeAndQueueMatch':True, 'queueRows':59400,
+                    wec={**native, 'nativeAndQueueMatch':True, 'queueRows':59400, 'policyHashes':[policy_hash],
                          'deliveredRows':59400, 'queueIdentitySetSha256':digest,
                          'sqliteIntegrity':True, 'noRawUsername':True,
                          'usernamePseudonymized':True, 'databaseAndWalExcludeUsername':True},
                     destination={'groups':{'network_connection_denied':group},
                                  'linuxSince':since, 'linuxCampaign':copy.deepcopy(group),
                                  'windowsCampaign':copy.deepcopy(group), 'queryStatus':200, 'queryRole':'verifier',
-                                 'partialError':False, 'windowsSince':since})
+                                 'partialError':False, 'windowsSince':since},
+                    policies={'linux':[policy_hash], 'windows':[policy_hash]})
 
     def test_complete_reconciled_campaign_passes(self):
         self.assertTrue(assessment.assess(**self.reports())['passed'])
@@ -108,3 +110,28 @@ class PilotAssessmentTests(unittest.TestCase):
         data = copy.deepcopy(self.reports())
         del data['linux']['checks']['noSourceLoss']
         self.assertFalse(assessment.assess(**data)['passed'])
+
+    def test_identical_ids_cannot_hide_different_or_missing_policies(self):
+        for target in ['windowsCampaign', 'linuxCampaign', 'linuxTotal', 'wec']:
+            for hashes in [None, [], ['sha256:'+'d'*64], ['sha256:'+'c'*64, 'sha256:'+'d'*64]]:
+                with self.subTest(target=target, hashes=hashes):
+                    data = copy.deepcopy(self.reports())
+                    group = (data['wec'] if target == 'wec' else
+                             data['destination']['groups']['network_connection_denied'] if target == 'linuxTotal' else
+                             data['destination'][target])
+                    group['policyHashes'] = hashes
+                    self.assertFalse(assessment.assess(**data)['passed'])
+
+    def test_matching_queue_and_destination_cannot_replace_the_pinned_profile(self):
+        data = copy.deepcopy(self.reports())
+        wrong = ['sha256:'+'d'*64]
+        data['wec']['policyHashes'] = wrong
+        data['destination']['windowsCampaign']['policyHashes'] = wrong
+        self.assertFalse(assessment.assess(**data)['checks']['windowsPolicyProvenance'])
+
+    def test_invalid_or_duplicate_policy_pins_fail_closed(self):
+        for hashes in [None, [], 'sha256:'+'c'*64, [{}], ['not-a-hash'], ['sha256:'+'c'*64]*2]:
+            with self.subTest(hashes=hashes):
+                data = copy.deepcopy(self.reports())
+                data['policies']['linux'] = hashes
+                self.assertFalse(assessment.assess(**data)['passed'])

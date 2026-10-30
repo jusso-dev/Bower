@@ -57,8 +57,8 @@
     },
     {
       "path": "lab/aws/scripts/assess-pilot.py",
-      "sha256": "6da968bf03d2a08cfddac0286e0fbccf1058968b284924bd06a4afcb243ad8ac",
-      "bytes": 8176
+      "sha256": "0975edec5ac3a1079c4bde31939989b329762e25daffec820f2864a4fbdb7a95",
+      "bytes": 9081
     },
     {
       "path": "lab/aws/scripts/query-pilot.py",
@@ -134,5 +134,11 @@
       "sha256": "935c8c26837d7c82e647d9ae16fb062403ec9a9e7257e671834d405d6bf91d2b"
     }
   ],
-  "provenanceNote": "Executed script hashes come from host output except the first Linux attempt, whose hash is available only in the original upload manifest. Current source hashes are separate; the final Linux harness adds full-population settlement. All collectors use the original CI package hashes. Sender configuration changed between attempts; see sender-configuration.json and retained failures."
+  "provenanceNote": "Executed script hashes come from host output except the first Linux attempt, whose hash is available only in the original upload manifest. Current source hashes are separate; the final Linux harness adds full-population settlement. All collectors use the original CI package hashes. Sender configuration changed between attempts; see sender-configuration.json and retained failures.",
+  "postReviewAssessment": {
+    "originalAssessorSha256": "6da968bf03d2a08cfddac0286e0fbccf1058968b284924bd06a4afcb243ad8ac",
+    "assessorSha256": "0975edec5ac3a1079c4bde31939989b329762e25daffec820f2864a4fbdb7a95",
+    "expectedPoliciesSha256": "5c984a0b899a6f330f7e1139f6f835c64339b7b2623988e9f267942b48e30ba7",
+    "scope": "Offline reassessment of retained reports with independently verified signed-pack policy pins; no cloud rerun. Original assessment is preserved in assessment-original.json."
+  }
 }

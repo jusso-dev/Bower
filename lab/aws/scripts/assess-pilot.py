@@ -74,7 +74,18 @@ def host_checks(report, required, drain_seconds):
             and isinstance(drain_seconds, (int, float)) and 0 <= drain_seconds <= 600)
 
 
-def assess(linux, generator, monitor, source, wec, destination):
+def policy_hashes_match(expected, *observed):
+    """Compare every observed policy set with an independently pinned signed profile."""
+    def valid(values):
+        return (isinstance(values, list) and bool(values)
+                and all(isinstance(value, str) and re.fullmatch(r'sha256:[0-9a-f]{64}', value)
+                        for value in values)
+                and len(set(values)) == len(values))
+    return (valid(expected) and bool(observed)
+            and all(valid(values) and set(values) == set(expected) for values in observed))
+
+
+def assess(linux, generator, monitor, source, wec, destination, policies):
     """Require the whole declared envelope and independent destination identities."""
     linux_total = linux.get('finalAccepted', 0)
     windows_group = destination.get('windowsCampaign', {})
@@ -87,6 +98,8 @@ def assess(linux, generator, monitor, source, wec, destination):
             (linux.get('drain') or {}).get('secondsAfterRestore'))
             and linux.get('finalDelivered') == linux_total,
         'linuxDestination': destination_matches(linux_group, linux_total, linux.get('identitySetSha256')),
+        'linuxPolicyProvenance': policy_hashes_match(policies.get('linux'),
+            linux_group.get('policyHashes'), destination.get('linuxCampaign', {}).get('policyHashes')),
         'linuxCampaignWindow': same_window(destination.get('linuxSince'), linux.get('startedAt'))
             and destination.get('linuxCampaign', {}).get('rows') == EXPECTED
             and destination.get('linuxCampaign', {}).get('distinctIds') == EXPECTED
@@ -107,6 +120,8 @@ def assess(linux, generator, monitor, source, wec, destination):
         'windowsPrivacy': all(wec.get(key) is True for key in
             ['noRawUsername', 'usernamePseudonymized', 'databaseAndWalExcludeUsername']),
         'windowsDestination': destination_matches(windows_group, EXPECTED, wec.get('queueIdentitySetSha256')),
+        'windowsPolicyProvenance': policy_hashes_match(policies.get('windows'),
+            wec.get('policyHashes'), windows_group.get('policyHashes')),
         'independentQuery': destination.get('queryStatus') == 200
             and destination.get('queryRole') == 'verifier'
             and destination.get('partialError') is False,
@@ -135,7 +150,7 @@ def assess(linux, generator, monitor, source, wec, destination):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ['linux', 'generator', 'monitor', 'source', 'wec', 'destination']:
+    for name in ['linux', 'generator', 'monitor', 'source', 'wec', 'destination', 'policies']:
         parser.add_argument('--' + name, required=True, type=Path)
     args = parser.parse_args()
     report = assess(**{name: json.loads(path.read_text()) for name, path in vars(args).items()})

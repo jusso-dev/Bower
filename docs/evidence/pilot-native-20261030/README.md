@@ -173,12 +173,20 @@ window; its exact mechanism is not proven by that comparison. Peak queue files
 
 The final review covers harness failure handling, source and destination identity
 reconciliation, replay visibility, secret exclusion, executable provenance and
-documentation limits. The 43 Python lab tests and 21 CI-selection tests passed;
+documentation limits. The 46 Python lab tests and 21 CI-selection tests passed;
 the native proof probe passed locked restore, Release build and formatting checks;
 workflow lint passed; both firewall pack samples passed. The earlier solution
 build/tests/format and PowerShell syntax/analyzer checks also passed during this
 campaign. Live qualification is reported separately: its strict verdict is failed
 because Windows has four duplicate rows, despite complete distinct-event coverage.
+
+Post-review assessment also compares queue/destination policy hashes with
+[expected policy pins](expected-policies.json) extracted from the original signed
+packs after signature verification against the recorded public trust key. Both
+policy-provenance checks pass. This is an offline reassessment of retained evidence
+after cleanup, not another cloud run. The [original assessment](assessment-original.json)
+and its assessor hash are preserved in the artifact manifest; the strict verdict
+remains failed on the same four Windows replayed rows.
 
 ## Limits
 
