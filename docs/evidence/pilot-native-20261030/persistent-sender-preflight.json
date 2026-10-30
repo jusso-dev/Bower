@@ -1,0 +1,23 @@
+{
+  "phase": "persistent-sender-preflight",
+  "startedAt": "2026-10-30T10:47:29.051405+00:00",
+  "endedAt": "2026-10-30T10:49:06.447003+00:00",
+  "generated": 1100,
+  "nativePackets": 1100,
+  "accepted": 1100,
+  "settled": true,
+  "idleGapSeconds": 75,
+  "phases": [
+    {
+      "sent": 1000,
+      "seconds": 10.000107130000288,
+      "actualRate": 99.99892871147384
+    },
+    {
+      "sent": 100,
+      "seconds": 10.00016984100057,
+      "actualRate": 9.999830161883978
+    }
+  ],
+  "passed": true
+}

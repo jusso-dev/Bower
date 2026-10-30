@@ -1,0 +1,27 @@
+{
+  "windows": {
+    "packSha256": "cdbfd8916f288c0386fa0483c557d9528c45ee08d8024f368cd7e8c57b8dd19b",
+    "serviceAccount": "NT SERVICE\\Bower",
+    "osVersion": "10.0.20348",
+    "os": "Microsoft Windows Server 2022 Datacenter",
+    "packageSha256": "dfa4b4350d6000d838aa5b28be466a4d0a2383e4018f6f088fb1f9f9d01eea9d",
+    "phase": "windows-artifact",
+    "collectorSha256": "b206caa79afd1b08086edaf6cbfa586b5d3fc5f1e2c78792291ef3bf3b43f6a7",
+    "packageSignature": "NotSigned"
+  },
+  "linux": {
+    "phase": "linux-artifact",
+    "kernel": "6.18.56-125.164.amzn2023.x86_64",
+    "packageVersion": "bower-collector-0.1.0~dev.264-1.x86_64",
+    "serviceAccount": "bower",
+    "packageSha256": "13b462c2b04582a0b7908b7a185d1b83a6719ac784b3168f93f102244253ab1b",
+    "collectorSha256": "d6229ee2b106ee9cd1fe615f4c9f15e3f5036bc26b0cad0aa04b62cf8424e977",
+    "packSha256": "5fa7a7d00b8cad062496088c65f8d74d5f9824f00263e96cbb04907619de24aa"
+  },
+  "instanceTypes": {
+    "Dc": "t3.medium",
+    "Wec": "t3.medium",
+    "Source": "t3.medium",
+    "Firewall": "t3.small"
+  }
+}

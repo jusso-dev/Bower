@@ -1,0 +1,206 @@
+{
+  "runId": "bower-pilot-20261030-084844",
+  "phase": "native-linux-pilot",
+  "startedAt": "2026-10-30T08:58:40.118938+00:00",
+  "initialAccepted": 0,
+  "initialPackets": 0,
+  "endedAt": "2026-10-30T09:09:40.358383+00:00",
+  "phases": [
+    {
+      "name": "steady",
+      "rate": 10,
+      "sent": 6000,
+      "seconds": 600.000191667,
+      "actualRate": 9.99999680555102
+    },
+    {
+      "name": "burst",
+      "rate": 100,
+      "sent": 6000,
+      "seconds": 60.00010353899995,
+      "actualRate": 99.99982743529787
+    }
+  ],
+  "checks": {
+    "completed": false,
+    "generatedAtTargetRate": true,
+    "nativePacketCount": true,
+    "noSourceLoss": false,
+    "outageAtLeastOneHour": false,
+    "backlogRetained": false,
+    "backlogDrainedWithinTenMinutes": false,
+    "noDeadLetters": true,
+    "allAcceptedAcknowledged": true,
+    "sqliteIntegrity": true,
+    "samplingSucceeded": true
+  },
+  "passed": false,
+  "failureType": "CalledProcessError",
+  "samplingErrors": [],
+  "generated": 12000,
+  "nativePackets": 12000,
+  "finalAccepted": 8420,
+  "finalDelivered": 8420,
+  "drain": null,
+  "identitySetSha256": "6568975f71ff7861251f36b2192d90d05c7df02641da6046af4608607e83d402",
+  "peakCollectorCpuPercentOfOneCore": 34.35,
+  "peakCollectorResidentBytes": 82767872,
+  "minimumFreeDiskBytes": 19301289984,
+  "maximumDbWalBytes": 22380840,
+  "sampleColumns": [
+    "elapsedSeconds",
+    "phase",
+    "accepted",
+    "pending",
+    "deadLetters",
+    "cpuPercentOfOneCore",
+    "rssBytes",
+    "freeDiskBytes",
+    "dbWalBytes"
+  ],
+  "samples": [
+    [
+      0.04,
+      "steady",
+      0,
+      0,
+      0,
+      0,
+      50819072,
+      19344605184,
+      122880
+    ],
+    [
+      60.2,
+      "steady",
+      601,
+      7,
+      0,
+      5.38,
+      73371648,
+      19342680064,
+      1765768
+    ],
+    [
+      120.42,
+      "steady",
+      1204,
+      10,
+      0,
+      5.78,
+      65466368,
+      19340640256,
+      3334464
+    ],
+    [
+      180.65,
+      "steady",
+      1804,
+      6,
+      0,
+      4.98,
+      65589248,
+      19338993664,
+      4899088
+    ],
+    [
+      240.87,
+      "steady",
+      2407,
+      9,
+      0,
+      5.39,
+      66187264,
+      19327967232,
+      6508888
+    ],
+    [
+      301.11,
+      "steady",
+      3009,
+      1,
+      0,
+      5.59,
+      68853760,
+      19326406656,
+      8073344
+    ],
+    [
+      361.33,
+      "steady",
+      3613,
+      12,
+      0,
+      5.39,
+      66842624,
+      19324690432,
+      9654616
+    ],
+    [
+      421.58,
+      "steady",
+      4213,
+      4,
+      0,
+      5.38,
+      67072000,
+      19321036800,
+      11260224
+    ],
+    [
+      481.93,
+      "steady",
+      4576,
+      0,
+      0,
+      0.4,
+      66789376,
+      19320119296,
+      12202328
+    ],
+    [
+      542.16,
+      "steady",
+      4669,
+      3,
+      0,
+      5.38,
+      68534272,
+      19319820288,
+      12452112
+    ],
+    [
+      602.37,
+      "burst",
+      5348,
+      18,
+      0,
+      17.91,
+      70402048,
+      19318038528,
+      14279048
+    ],
+    [
+      660.13,
+      "complete",
+      8420,
+      0,
+      0,
+      33.34,
+      69492736,
+      19301289984,
+      22380840
+    ],
+    [
+      660.13,
+      "complete",
+      8420,
+      0,
+      0,
+      33.34,
+      69492736,
+      19301289984,
+      22380840
+    ]
+  ]
+}

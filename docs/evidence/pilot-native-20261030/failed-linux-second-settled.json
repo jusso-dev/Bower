@@ -1,0 +1,18 @@
+{
+  "phase": "linux-settled-proof",
+  "runId": "bower-pilot-20261030-084844",
+  "queriedAt": "2026-10-30T10:37:27.908847+00:00",
+  "initialAccepted": 11232,
+  "nativePackets": 59400,
+  "accepted": 70589,
+  "delivered": 70589,
+  "campaignAccepted": 59357,
+  "lastAcceptedAt": "2026-10-30T10:35:20.4467194+00:00",
+  "lastDeliveredAt": "2026-10-30T10:35:21.3926902+00:00",
+  "states": {
+    "3": 70589
+  },
+  "sqliteIntegrity": true,
+  "identitySetSha256": "f16235422160f542ef5754d6082893a12353a80879b0899ee8177b07556ff904",
+  "dbWalBytes": 187113528
+}

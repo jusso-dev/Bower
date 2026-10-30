@@ -1,0 +1,117 @@
+{
+  "queriedAt": "2026-10-30T12:11:05.818888+00:00",
+  "queryStatus": 200,
+  "queryRole": "verifier",
+  "partialError": false,
+  "groups": {
+    "authentication_failure": {
+      "rows": 61404,
+      "distinctIds": 61400,
+      "duplicateRows": 4,
+      "identitySetSha256": "99adf7fa5845b2932052bf0a3a85bd95b84206b1f63aa612c9c5347f10f699f1",
+      "rawPrivacyMatches": 0,
+      "policyHashes": [
+        "sha256:45f0c12b4cabb92dde75d4718569bdc7330987ecf0fe86c883ea36ff32b0bbd9"
+      ],
+      "negativeLatencyRows": 0,
+      "ingestionLatencySeconds": {
+        "p50": 1486.558227,
+        "p95": 3634.661027,
+        "p99": 3655.654104,
+        "maximum": 3661.360975
+      }
+    },
+    "network_connection_denied": {
+      "rows": 131089,
+      "distinctIds": 131089,
+      "duplicateRows": 0,
+      "identitySetSha256": "2e4437892c3bc4e09a23032c6999c366933c7f6ac4ad9e0028a29aca89303ffd",
+      "rawPrivacyMatches": 0,
+      "policyHashes": [
+        "sha256:94947eac3646200e45c70c45cd171edfc1c1f6c6974094192fdd1e88bf70211f"
+      ],
+      "negativeLatencyRows": 0,
+      "ingestionLatencySeconds": {
+        "p50": 1036.617194,
+        "p95": 3602.940383,
+        "p99": 3626.22923,
+        "maximum": 3636.372804
+      }
+    }
+  },
+  "windowsSince": "2026-10-30T09:28:00+00:00",
+  "windowsCampaign": {
+    "rows": 59404,
+    "distinctIds": 59400,
+    "duplicateRows": 4,
+    "identitySetSha256": "39f03f8b76011275f129dde03089a2448d97b01c83809c1291d1fdede033ab0f",
+    "rawPrivacyMatches": 0,
+    "policyHashes": [
+      "sha256:45f0c12b4cabb92dde75d4718569bdc7330987ecf0fe86c883ea36ff32b0bbd9"
+    ],
+    "negativeLatencyRows": 0,
+    "ingestionLatencySeconds": {
+      "p50": 1582.970304,
+      "p95": 3635.228106,
+      "p99": 3655.841731,
+      "maximum": 3661.360975
+    }
+  },
+  "connectedSteady": {
+    "windows": {
+      "rows": 5998,
+      "distinctIds": 5998,
+      "duplicateRows": 0,
+      "identitySetSha256": "64f41ccafff8d2203629d7cf5a7db161b37b549d4f3f8a1bcb6d1a71de6f59a1",
+      "rawPrivacyMatches": 0,
+      "policyHashes": [
+        "sha256:45f0c12b4cabb92dde75d4718569bdc7330987ecf0fe86c883ea36ff32b0bbd9"
+      ],
+      "negativeLatencyRows": 0,
+      "ingestionLatencySeconds": {
+        "p50": 5.707138,
+        "p95": 8.232237,
+        "p99": 9.079143,
+        "maximum": 10.452295
+      }
+    },
+    "linux": {
+      "rows": 6000,
+      "distinctIds": 6000,
+      "duplicateRows": 0,
+      "identitySetSha256": "a4505af5ed9836ce5a9270ae24d2c615906b48562f22d76300b69a9f9d8f4bc0",
+      "rawPrivacyMatches": 0,
+      "policyHashes": [
+        "sha256:94947eac3646200e45c70c45cd171edfc1c1f6c6974094192fdd1e88bf70211f"
+      ],
+      "negativeLatencyRows": 0,
+      "ingestionLatencySeconds": {
+        "p50": 3.700035,
+        "p95": 5.788493,
+        "p99": 6.651044,
+        "maximum": 8.877901
+      }
+    }
+  },
+  "linuxSince": "2026-10-30T10:49:33.936631+00:00",
+  "linuxCampaign": {
+    "rows": 59400,
+    "distinctIds": 59400,
+    "duplicateRows": 0,
+    "identitySetSha256": "9e111aaafeaa6437e576d296f0ef8e6e85e6b705ba0a227c3d0149f31dddd741",
+    "rawPrivacyMatches": 0,
+    "policyHashes": [
+      "sha256:94947eac3646200e45c70c45cd171edfc1c1f6c6974094192fdd1e88bf70211f"
+    ],
+    "negativeLatencyRows": 0,
+    "ingestionLatencySeconds": {
+      "p50": 1241.234973,
+      "p95": 3607.718582,
+      "p99": 3628.042172,
+      "maximum": 3636.372804
+    }
+  },
+  "workspaceId": "a5ba4598-1f56-4b1d-a320-77bb7c28a48c",
+  "tenantId": "f4f33fb1-b681-40d1-a854-6f888d45b891",
+  "verifierClientId": "f1403aff-3860-47f7-8218-38f1fc707fa6"
+}

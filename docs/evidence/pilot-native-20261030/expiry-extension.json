@@ -1,0 +1,13 @@
+{
+  "runId": "bower-pilot-20261030-084844",
+  "previousExpiry": "at(2026-10-30T11:48:45)",
+  "expiry": "at(2026-10-30T14:00:00)",
+  "verifiedAt": "2026-10-30T10:47:00.051070+00:00",
+  "ownedInstances": [
+    "i-0884a8809018bf89d",
+    "i-0a66dd72b9f98414c",
+    "i-0a7c4bd9bf18f6fbd",
+    "i-0e582971f2f93d4d4"
+  ],
+  "reason": "One bounded full-envelope Linux rerun after genuine upstream source loss."
+}

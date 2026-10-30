@@ -1,0 +1,55 @@
+{
+  "phase": "windows-replayed-identities",
+  "queryRole": "verifier",
+  "query": "2026-10-30T10:51:26.857313+00:00",
+  "distinctReplayedIds": 4,
+  "extraRows": 4,
+  "replayedIdentitySetSha256": "9017e4901cf99ddac036211eb773e2ada4c6f834d25709cbb6070e3ffd131d2c",
+  "observations": [
+    {
+      "copies": 2,
+      "sourceTimes": [
+        "2026-10-30T09:38:23.896047Z"
+      ],
+      "ingestionTimes": [
+        "2026-10-30T09:39:02.9586336Z",
+        "2026-10-30T10:39:25.2419981Z"
+      ],
+      "rawPrivacyMatches": 0
+    },
+    {
+      "copies": 2,
+      "sourceTimes": [
+        "2026-10-30T09:38:23.912184Z"
+      ],
+      "ingestionTimes": [
+        "2026-10-30T09:39:02.9586336Z",
+        "2026-10-30T10:39:25.2419981Z"
+      ],
+      "rawPrivacyMatches": 0
+    },
+    {
+      "copies": 2,
+      "sourceTimes": [
+        "2026-10-30T09:38:23.881023Z"
+      ],
+      "ingestionTimes": [
+        "2026-10-30T09:39:02.9586336Z",
+        "2026-10-30T10:39:25.2419981Z"
+      ],
+      "rawPrivacyMatches": 0
+    },
+    {
+      "copies": 2,
+      "sourceTimes": [
+        "2026-10-30T09:38:23.881023Z"
+      ],
+      "ingestionTimes": [
+        "2026-10-30T09:39:02.9586336Z",
+        "2026-10-30T10:39:25.2419981Z"
+      ],
+      "rawPrivacyMatches": 0
+    }
+  ],
+  "interpretation": "Four identities were ingested at the outage boundary and again after restoration. This is consistent with replay after an ambiguous acknowledgement; the query alone does not expose transport acknowledgements."
+}

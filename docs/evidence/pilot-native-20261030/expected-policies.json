@@ -1,0 +1,30 @@
+{
+  "provenance": {
+    "verification": "bower pack verify succeeded for both original signed archives against the recorded public trust key after cloud cleanup.",
+    "trustedPublicKeySha256": "3ee524c978f5911bf9a7359e52703f301b3e762854cbc6559d7cfe57b6c5a249",
+    "archives": [
+      {
+        "collector": "linux",
+        "artifact": "nftables-validation-1.0.0.bowerpack",
+        "sha256": "5fa7a7d00b8cad062496088c65f8d74d5f9824f00263e96cbb04907619de24aa",
+        "packId": "nftables-validation",
+        "packVersion": "1.0.0",
+        "packHash": "sha256:71db79f8a6a334eb39b2a96e819d3ce8f51b12f50acfff6268e45745824455b4"
+      },
+      {
+        "collector": "windows",
+        "artifact": "windows-security-logon-1.0.2.bowerpack",
+        "sha256": "cdbfd8916f288c0386fa0483c557d9528c45ee08d8024f368cd7e8c57b8dd19b",
+        "packId": "windows-security-logon",
+        "packVersion": "1.0.2",
+        "packHash": "sha256:cdb2df2ceb3ebdff163d10b91b617e38d26928fc3cc99ae04c1f98a9179308dc"
+      }
+    ]
+  },
+  "linux": [
+    "sha256:94947eac3646200e45c70c45cd171edfc1c1f6c6974094192fdd1e88bf70211f"
+  ],
+  "windows": [
+    "sha256:45f0c12b4cabb92dde75d4718569bdc7330987ecf0fe86c883ea36ff32b0bbd9"
+  ]
+}

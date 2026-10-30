@@ -1,0 +1,144 @@
+{
+  "sourceCommit": "26446690fae7d123e2dfaf117d63467f1f55d37d",
+  "ciRun": 41016990194,
+  "artifacts": [
+    {
+      "key": "artifacts/bower.msi",
+      "sha256": "dfa4b4350d6000d838aa5b28be466a4d0a2383e4018f6f088fb1f9f9d01eea9d",
+      "bytes": 17330176
+    },
+    {
+      "key": "artifacts/bower.rpm",
+      "sha256": "13b462c2b04582a0b7908b7a185d1b83a6719ac784b3168f93f102244253ab1b",
+      "bytes": 22757083
+    },
+    {
+      "key": "artifacts/bower-signing.pub.pem",
+      "sha256": "3ee524c978f5911bf9a7359e52703f301b3e762854cbc6559d7cfe57b6c5a249",
+      "bytes": 177
+    },
+    {
+      "key": "artifacts/pilot-native-linux.py",
+      "sha256": "67eeadff59ba6c9446acc550e88a2d362ae8dd7b276dfcd931b747c70f81bd92",
+      "bytes": 9142
+    },
+    {
+      "key": "artifacts/windows-security-logon-1.0.2.bowerpack",
+      "sha256": "cdbfd8916f288c0386fa0483c557d9528c45ee08d8024f368cd7e8c57b8dd19b",
+      "bytes": 6373
+    },
+    {
+      "key": "artifacts/nftables-validation-1.0.0.bowerpack",
+      "sha256": "5fa7a7d00b8cad062496088c65f8d74d5f9824f00263e96cbb04907619de24aa",
+      "bytes": 4585
+    }
+  ],
+  "qualificationBaseline": "d9a29efbfc77d824494be7119515a5579e010476",
+  "additionalArtifacts": [
+    {
+      "path": "lab/aws/pilot-envelope.json",
+      "sha256": "0757e93ea4ce780ebcff9d99247958d2d304968eeb3de93bbdaa65c046f4252a",
+      "bytes": 1214
+    },
+    {
+      "path": "lab/aws/scripts/pilot-native-linux.py",
+      "sha256": "935c8c26837d7c82e647d9ae16fb062403ec9a9e7257e671834d405d6bf91d2b",
+      "bytes": 10281
+    },
+    {
+      "path": "lab/aws/scripts/pilot-native-windows.ps1",
+      "sha256": "264fb32b7c368b66797f29d3c87301cfcc8af2956213fbf3d9aa1269134bf416",
+      "bytes": 5921
+    },
+    {
+      "path": "lab/aws/scripts/pilot-wec-monitor.ps1",
+      "sha256": "a5334f2992cd41c0af75919af5b71536adba4434e0535572427547acaa3f2f14",
+      "bytes": 5040
+    },
+    {
+      "path": "lab/aws/scripts/assess-pilot.py",
+      "sha256": "0975edec5ac3a1079c4bde31939989b329762e25daffec820f2864a4fbdb7a95",
+      "bytes": 9081
+    },
+    {
+      "path": "lab/aws/scripts/query-pilot.py",
+      "sha256": "d89ef867443eb6cbf0319700c7f196bc60eeb124e233e3a029030d3731187725",
+      "bytes": 7135
+    },
+    {
+      "path": "lab/aws/probes/Bower.PilotProbe/Program.cs",
+      "sha256": "c4eb2b6107f3e119fd5699c5a81af9ee180163fbeed6d781771ea34ef46fcf6b",
+      "bytes": 7083
+    },
+    {
+      "path": "lab/aws/probes/Bower.PilotProbe/Bower.PilotProbe.csproj",
+      "sha256": "0c7a545b11bcc42561243523b3ddadea8407c2c1b8b73784e3c89cee5adcdcc0",
+      "bytes": 629
+    },
+    {
+      "path": "lab/aws/probes/Bower.PilotProbe/packages.lock.json",
+      "sha256": "a88693060eb2f51bd75d72903dd02850e665df38a65dddf6301e3116e4b915c4",
+      "bytes": 3253
+    },
+    {
+      "path": "lab/aws/packs/nftables-validation/pack.yaml",
+      "sha256": "79436983112be766865d5287e29da75d79aa777cf0422e65d28f45e63e05cba7",
+      "bytes": 354
+    },
+    {
+      "path": "lab/aws/packs/nftables-validation/parser.json",
+      "sha256": "b10521d16a2cc84967a97311457ec072e89fa81cb9ca9751d5eeb9be069be278",
+      "bytes": 1507
+    },
+    {
+      "path": "lab/aws/packs/nftables-validation/policy.yaml",
+      "sha256": "ebb6909735bca0795c784020527ed3dc320bf33eac753ae6c9243d856af71034",
+      "bytes": 526
+    },
+    {
+      "path": "lab/aws/packs/nftables-validation/privacy.yaml",
+      "sha256": "189f3f6c817b94d6905ad0740f2f91554e4bf22103a56ee561313f155b8b8be2",
+      "bytes": 200
+    },
+    {
+      "path": "lab/aws/packs/nftables-validation/samples.jsonl",
+      "sha256": "9357ef126b841a2847820c1619f8cf4883cb232b25d113323d9246f804da99dc",
+      "bytes": 634
+    }
+  ],
+  "finalNativeProbeArchiveSha256": "c67699d4b129002bcc074200268e8391d72c23dc9778401f09e43ae23cae79bf",
+  "executedHarnesses": [
+    {
+      "ssmCommand": "1baedd16-e385-40a9-8e92-a2e74cfac3f1",
+      "phase": "failed-second-linux",
+      "sha256": "e21baf1805bbe86fb2a11d91c3773ddcc099e17fc3b739c4317e4339ff6a704f"
+    },
+    {
+      "ssmCommand": "2a79104d-4305-402b-80f2-c89e8650d8f4",
+      "phase": "persistent-sender-preflight",
+      "sha256": "935c8c26837d7c82e647d9ae16fb062403ec9a9e7257e671834d405d6bf91d2b"
+    },
+    {
+      "ssmCommand": "f650e31e-5043-430b-a8be-ec7b5f5a6489",
+      "phase": "windows-generator",
+      "sha256": "264fb32b7c368b66797f29d3c87301cfcc8af2956213fbf3d9aa1269134bf416"
+    },
+    {
+      "ssmCommand": "1c49eb1f-aaec-40f1-a26c-b39c982efb65",
+      "phase": "windows-monitor",
+      "sha256": "a5334f2992cd41c0af75919af5b71536adba4434e0535572427547acaa3f2f14"
+    },
+    {
+      "ssmCommand": "57938894-073c-42a4-b59e-1ed8533c8f15",
+      "phase": "final-linux",
+      "sha256": "935c8c26837d7c82e647d9ae16fb062403ec9a9e7257e671834d405d6bf91d2b"
+    }
+  ],
+  "provenanceNote": "Executed script hashes come from host output except the first Linux attempt, whose hash is available only in the original upload manifest. Current source hashes are separate; the final Linux harness adds full-population settlement. All collectors use the original CI package hashes. Sender configuration changed between attempts; see sender-configuration.json and retained failures.",
+  "postReviewAssessment": {
+    "originalAssessorSha256": "6da968bf03d2a08cfddac0286e0fbccf1058968b284924bd06a4afcb243ad8ac",
+    "assessorSha256": "0975edec5ac3a1079c4bde31939989b329762e25daffec820f2864a4fbdb7a95",
+    "expectedPoliciesSha256": "5c984a0b899a6f330f7e1139f6f835c64339b7b2623988e9f267942b48e30ba7",
+    "scope": "Offline reassessment of retained reports with independently verified signed-pack policy pins; no cloud rerun. Original assessment is preserved in assessment-original.json."
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "profile": "wec-firewall-sentinel-pilot-v1",
+  "expectedEventsPerCollector": 59400,
+  "checks": {
+    "linuxPhases": true,
+    "linuxNativePopulation": true,
+    "linuxHostChecks": true,
+    "linuxDestination": true,
+    "linuxCampaignWindow": true,
+    "windowsPhases": true,
+    "windowsHostChecks": true,
+    "windowsNativePopulation": true,
+    "windowsSourceToWec": true,
+    "windowsQueue": true,
+    "windowsPrivacy": true,
+    "windowsDestination": false,
+    "independentQuery": true,
+    "sameWindowsWindow": true,
+    "sameRun": true,
+    "resourceMeasurements": true
+  },
+  "passed": false,
+  "destinationObservations": {
+    "linuxDistinctIdentitiesMatch": true,
+    "windowsDistinctIdentitiesMatch": true,
+    "linuxDuplicateRows": 0,
+    "windowsDuplicateRows": 4,
+    "semantics": "At-least-once delivery can replay ambiguous acknowledgements. These observations do not override the strict zero-duplicate checks."
+  },
+  "scope": "Measured native pilot envelope only; not a signed production-release approval."
+}

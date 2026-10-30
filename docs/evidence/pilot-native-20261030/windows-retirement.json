@@ -1,0 +1,40 @@
+{
+  "runId": "bower-pilot-20261030-084844",
+  "requestedAt": "2026-10-30T11:38:00.639383+00:00",
+  "reason": "Windows campaign and independent native/queue/Sentinel proof complete; Linux campaign remains running.",
+  "instances": [
+    {
+      "InstanceId": "i-0884a8809018bf89d",
+      "CurrentState": {
+        "Code": 32,
+        "Name": "shutting-down"
+      },
+      "PreviousState": {
+        "Code": 16,
+        "Name": "running"
+      }
+    },
+    {
+      "InstanceId": "i-0a66dd72b9f98414c",
+      "CurrentState": {
+        "Code": 32,
+        "Name": "shutting-down"
+      },
+      "PreviousState": {
+        "Code": 16,
+        "Name": "running"
+      }
+    },
+    {
+      "InstanceId": "i-0a7c4bd9bf18f6fbd",
+      "CurrentState": {
+        "Code": 32,
+        "Name": "shutting-down"
+      },
+      "PreviousState": {
+        "Code": 16,
+        "Name": "running"
+      }
+    }
+  ]
+}

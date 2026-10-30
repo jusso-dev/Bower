@@ -1,0 +1,14 @@
+{
+  "attempted": 1000,
+  "completed": 1000,
+  "allCallsCompleted": true,
+  "seconds": 10.000905,
+  "actualRate": 99.99094082076165,
+  "maximumConcurrentCalls": 4,
+  "unexpectedSuccessfulLogons": 0,
+  "ldapResultCodes": {
+    "49": 1000
+  },
+  "phase": "native-windows-generator-preflight",
+  "runId": "bower-pilot-20261030-084844"
+}

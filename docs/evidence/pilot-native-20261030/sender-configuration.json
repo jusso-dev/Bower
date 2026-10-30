@@ -1,0 +1,18 @@
+{
+  "phase": "sender-configuration",
+  "queriedAt": "2026-10-30T10:51:28.861735+00:00",
+  "sha256": {
+    "/etc/rsyslog.conf": "053c793a03583b631af58f30601fa18f071a0dbe61062be64a673d04af7710e1",
+    "/etc/rsyslog.d/20-bower-validation.conf": "2a8dcd52d3ae764397f2a81738df2b32b552a17eb79a58ceabd74690ab34c7df",
+    "/etc/bower/syslog.json": "c62ac6e01389befc4d57348dca682e7b5b787c03a0afcde69316f444a75cd818"
+  },
+  "persistentConnection": true,
+  "certificateNameValidation": true,
+  "tlsRequired": true,
+  "clientCertificateRequired": true,
+  "listenerIdleTimeoutSeconds": 3600,
+  "imjournalBoundedRateLimit": true,
+  "diskAssistedActionQueue": true,
+  "saveOnShutdown": true,
+  "unlimitedActionRetries": true
+}

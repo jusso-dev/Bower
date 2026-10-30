@@ -1,0 +1,82 @@
+{
+  "queriedAt": "2026-10-30T10:41:45.866485+00:00",
+  "queryStatus": 200,
+  "queryRole": "verifier",
+  "partialError": false,
+  "groups": {
+    "authentication_failure": {
+      "rows": 56962,
+      "distinctIds": 56958,
+      "duplicateRows": 4,
+      "identitySetSha256": "bb7ab15073b12899bba7b3d1df3e81b1ac92d02068ab2f4167912c32e4bd3d3b",
+      "rawPrivacyMatches": 0,
+      "policyHashes": [
+        "sha256:45f0c12b4cabb92dde75d4718569bdc7330987ecf0fe86c883ea36ff32b0bbd9"
+      ],
+      "negativeLatencyRows": 0,
+      "ingestionLatencySeconds": {
+        "p50": 1706.026697,
+        "p95": 3636.316849,
+        "p99": 3656.093068,
+        "maximum": 3661.360975
+      }
+    },
+    "network_connection_denied": {
+      "rows": 70589,
+      "distinctIds": 70589,
+      "duplicateRows": 0,
+      "identitySetSha256": "f16235422160f542ef5754d6082893a12353a80879b0899ee8177b07556ff904",
+      "rawPrivacyMatches": 0,
+      "policyHashes": [
+        "sha256:94947eac3646200e45c70c45cd171edfc1c1f6c6974094192fdd1e88bf70211f"
+      ],
+      "negativeLatencyRows": 0,
+      "ingestionLatencySeconds": {
+        "p50": 887.293707,
+        "p95": 3597.416149,
+        "p99": 3625.304597,
+        "maximum": 3629.78413
+      }
+    }
+  },
+  "windowsSince": "2026-10-30T09:28:00+00:00",
+  "windowsCampaign": {
+    "rows": 54962,
+    "distinctIds": 54958,
+    "duplicateRows": 4,
+    "identitySetSha256": "4cf4e39dd0939519721f7ddce156f2f82410280c9f48c82084bacbb497073945",
+    "rawPrivacyMatches": 0,
+    "policyHashes": [
+      "sha256:45f0c12b4cabb92dde75d4718569bdc7330987ecf0fe86c883ea36ff32b0bbd9"
+    ],
+    "negativeLatencyRows": 0,
+    "ingestionLatencySeconds": {
+      "p50": 1804.492277,
+      "p95": 3637.317318,
+      "p99": 3656.296487,
+      "maximum": 3661.360975
+    }
+  },
+  "connectedSteady": {
+    "windows": {
+      "rows": 5998,
+      "distinctIds": 5998,
+      "duplicateRows": 0,
+      "identitySetSha256": "64f41ccafff8d2203629d7cf5a7db161b37b549d4f3f8a1bcb6d1a71de6f59a1",
+      "rawPrivacyMatches": 0,
+      "policyHashes": [
+        "sha256:45f0c12b4cabb92dde75d4718569bdc7330987ecf0fe86c883ea36ff32b0bbd9"
+      ],
+      "negativeLatencyRows": 0,
+      "ingestionLatencySeconds": {
+        "p50": 5.707138,
+        "p95": 8.232237,
+        "p99": 9.079143,
+        "maximum": 10.452295
+      }
+    }
+  },
+  "workspaceId": "a5ba4598-1f56-4b1d-a320-77bb7c28a48c",
+  "tenantId": "f4f33fb1-b681-40d1-a854-6f888d45b891",
+  "verifierClientId": "f1403aff-3860-47f7-8218-38f1fc707fa6"
+}

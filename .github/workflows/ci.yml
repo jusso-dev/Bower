@@ -193,6 +193,15 @@ jobs:
           # cfn-lint and Terraform providers are third-party code; keep the token out of .git/config.
           persist-credentials: false
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          global-json-file: global.json
+      - name: Build and format native pilot proof probe
+        run: |
+          probe=lab/aws/probes/Bower.PilotProbe/Bower.PilotProbe.csproj
+          dotnet restore "$probe" --locked-mode
+          dotnet build "$probe" --configuration Release --no-restore
+          dotnet format "$probe" --verify-no-changes --no-restore
       - name: Validate AWS lab harness
         run: |
           python3 -m unittest discover -s lab/aws/tests -v

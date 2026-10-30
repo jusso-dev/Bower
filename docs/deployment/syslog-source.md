@@ -194,8 +194,10 @@ Strict and fail closed, with stable codes:
 - **On crash or stop.** Plain syslog has no application acknowledgement. Frames
   already in the kernel socket buffer or Bower's read buffer, and a frame waiting for
   queue space, are lost unless the sender retransmits; everything enqueued before the
-  stop is durable. Use TCP/TLS with a sender-side disk queue for anything that must
-  not be lost.
+  stop is durable. TCP/TLS with a sender-side disk queue reduces exposure but does
+  not prove end-to-end lossless delivery: the sender can consider bytes sent before
+  Bower durably accepts them. Qualify source retention and replay, idle/reconnect
+  behavior, crashes and queue pressure for the actual sender.
 
 ## Monitoring
 
@@ -235,3 +237,9 @@ sender degrades `/health` once its allowance passes.
 Interoperability tests against a real sender daemon in a container are not part of
 the automated suite; the RFC example vectors, framing and TLS tests run against
 in-process clients.
+
+The manual [native AWS pilot](../evidence/pilot-native-20261030/README.md) uses
+nftables and rsyslog over mutual TLS. It retains source-loss findings from both
+idle connection closure and per-event reconnect configurations. A passing measured
+traffic window does not establish durable application acknowledgements or qualify
+another appliance's buffering and replay behavior.
