@@ -115,9 +115,14 @@ not feature count. The first candidate is the C# Windows WEC and TLS firewall
 syslog path to Microsoft Sentinel. See the
 [production readiness gates](docs/operations/production-readiness.md) for current
 evidence, unresolved blockers and the validation required before this status changes.
-The AWS source tests proved local AMA spool output; a real tenant destination query,
-recovery and capacity qualification, signed installation and upgrade validation remain
-release gates. No mocked upload or local spool is represented as Sentinel delivery.
+The [live Sentinel qualification](docs/evidence/sentinel-native-20261030/README.md)
+adds destination-query evidence from packaged Windows WEC and firewall collectors,
+including process-crash and Windows reboot recovery. It also records a real syslog
+loss before durable acceptance and a tested sender reconnect mitigation. Sustained
+capacity, outage budgets, signed release installation and upgrade validation remain
+release gates. The evidence does not certify the whole platform for production.
+
+![Recorded live Windows WEC and firewall Sentinel qualification](docs/evidence/sentinel-native-20261030/report.png)
 
 ## Architecture
 

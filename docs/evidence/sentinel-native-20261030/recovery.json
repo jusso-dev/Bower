@@ -1,0 +1,21 @@
+[
+  {
+    "scenario": "firewall-process-crash",
+    "faultAt": "2026-10-30T07:34:07.014339+00:00",
+    "expectedRecoveryEvents": 10,
+    "destinationRows": 10,
+    "maximumDestinationIngestionAfterFaultSeconds": 94.370491,
+    "ingestionWithin120Seconds": true,
+    "queryObservedAt": "2026-10-30T07:45:30.654418+00:00"
+  },
+  {
+    "scenario": "windows-reboot",
+    "faultAt": "2026-10-30T07:39:08.2899178+00:00",
+    "expectedRecoveryEvents": 10,
+    "destinationRows": 10,
+    "maximumDestinationIngestionAfterFaultSeconds": 91.778415,
+    "ingestionWithin120Seconds": true,
+    "queryObservedAt": "2026-10-30T07:45:30.654418+00:00",
+    "serviceStartAfterFaultSeconds": 22.038645
+  }
+]

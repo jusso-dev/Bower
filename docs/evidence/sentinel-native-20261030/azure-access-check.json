@@ -1,0 +1,13 @@
+{
+  "generatedAt": "2026-10-30T07:09:42.086374+00:00",
+  "workspaceId": "c609a7de-e838-4563-8d45-57800ca2a9a7",
+  "negativeWriteEventId": "bower-access-negative-e54ac1d7-859b-4b9d-9473-a88b9c0787e3",
+  "publisherQueryStatus": 403,
+  "publisherQueryCode": "InsufficientAccessError",
+  "verifierQueryStatus": 200,
+  "verifierQueryCode": null,
+  "verifierIngestStatus": 403,
+  "verifierIngestCode": "OperationFailed",
+  "passed": true,
+  "initialRecordCount": 0
+}

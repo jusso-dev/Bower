@@ -1,0 +1,58 @@
+{
+  "queriedAt": "2026-10-30T07:45:30.654418+00:00",
+  "workspaceId": "c609a7de-e838-4563-8d45-57800ca2a9a7",
+  "queryStatus": 200,
+  "expectedCount": 3048,
+  "destinationRows": 3048,
+  "missing": [],
+  "unexpected": [],
+  "duplicates": {},
+  "semanticErrors": [],
+  "rawPrivacyMatches": 0,
+  "sourceChecks": {
+    "firewallRecovery": {
+      "acknowledgedWithin120Seconds": true,
+      "sqliteIntegrity": true
+    },
+    "wec": {
+      "allForwardedIdentitiesQueued": true,
+      "noRawUsername": true,
+      "usernamePseudonymized": true,
+      "databaseAndWalExcludeUsername": true,
+      "sqliteIntegrity": true
+    },
+    "firewall": {
+      "tenRealDeniesQueued": true,
+      "semanticMapping": true,
+      "rawKernelMessageExcluded": true,
+      "sqliteIntegrity": true
+    },
+    "firewallLoad": {
+      "passed": true
+    }
+  },
+  "passed": true,
+  "firewallIdentityReconciliation": {
+    "expectedCount": 3028,
+    "destinationDistinctCount": 3028,
+    "expectedIdentitySha256": "1c10781e4ffc4c8b5a25a2e8b4533e7af6e892ac5314f2e3c483c68201ae488a",
+    "destinationIdentitySha256": "1c10781e4ffc4c8b5a25a2e8b4533e7af6e892ac5314f2e3c483c68201ae488a",
+    "passed": true
+  },
+  "ingestionLatencies": {
+    "authentication_failure": {
+      "count": 20,
+      "p50Seconds": 5.74818,
+      "p95Seconds": 95.831478,
+      "p99Seconds": 96.0603,
+      "maximumSeconds": 96.0603
+    },
+    "network_connection_denied": {
+      "count": 3028,
+      "p50Seconds": 3.925301,
+      "p95Seconds": 6.015975,
+      "p99Seconds": 10.02364,
+      "maximumSeconds": 386.555241
+    }
+  }
+}

@@ -11,7 +11,10 @@ for allow-listed WEF → WEC events, and a Linux collector receiving signed-pack
 firewall syslog over mutual TLS. Delivery uses Azure Monitor Logs Ingestion into a
 tenant-owned Microsoft Sentinel / Log Analytics workspace, with independent query
 verification. The deployment owner has selected this path for the first production
-rollout. The tenant target and supported workload envelope still need confirmation.
+rollout. The owner confirmed subscription `945092a0-2500-4b25-85a4-99f1c3135906`
+in tenant `f4f33fb1-b681-40d1-a854-6f888d45b891` for isolated validation.
+A short 10-events/second firewall qualification is not a supported workload envelope
+or a sustained production soak.
 
 The Rust runtime, the queue-less Azure Functions endpoint, management UI deployment,
 additional sources and optional developer tooling need their own qualification.
@@ -26,10 +29,10 @@ of every subsequent main change. Re-run against the release candidate hashes.
 
 | Gate | Existing evidence | Required before release |
 | --- | --- | --- |
-| Native source ingestion | [AWS native report](../evidence/aws-native-20261030/README.md): 22 real Windows 4625 events from two origins, 8 recovered after outage; 10 actual nftables drops through mutual TLS syslog. | Repeat on the exact signed candidate with the production allow-list and parser packs; test source log rollover, source outage and malformed input. |
-| Sentinel delivery and privacy | Prior AWS evidence ends at a local AMA spool. Query-verification code exists, but this deployment has no tenant-verified run. | Confirm subscription/workspace, DCR and least-privilege identities. Query for every expected event ID and privacy sentinel; record missing, unexpected and duplicate counts independently of upload responses. |
-| Crash and restart recovery | [#154](https://github.com/jusso-dev/Bower/issues/154): process health recovered in 6.04 seconds but delivery waited for five-minute leases. Configurable C# deadlines and restart regressions now provide a candidate recovery profile. | Kill a process with in-flight accepted events, restart and measure arrival, not only health. Keep the 120-second lab recovery target and its original failed result. Prove no accepted loss; report any at-least-once duplicates. |
-| Windows service reboot | #154 measured 130.6–131.9 seconds with delayed automatic startup. The candidate MSI now disables that delay; installer CI checks the installed setting. | Build/install the candidate package and repeat the Windows reboot and destination-arrival measurement. Removing a startup delay alone is not evidence that the recovery target passed. |
+| Native source ingestion | [Prior AWS report](../evidence/aws-native-20261030/README.md) plus [packaged Sentinel campaign](../evidence/sentinel-native-20261030/README.md): real WEF and nftables traffic, with the syslog idle-loss finding retained. | Test the final production sender profile, source log rollover and source outages; establish source retention/replay. |
+| Sentinel delivery and privacy | [Live campaign](../evidence/sentinel-native-20261030/README.md) queries the confirmed tenant using a separate reader, reconciles native/queue identities, checks privacy sentinels and rejects cross-role access. | Repeat for the signed release and intended workspace/configuration. Broaden adversarial privacy coverage beyond the synthetic sentinels used here. |
+| Crash and restart recovery | [#154](https://github.com/jusso-dev/Bower/issues/154) remains the failed five-minute-lease baseline. The live campaign records accepted-event crash recovery with the 90/60-second profile and independently queried ingestion timestamps. | Repeat under sustained load, throttling and the declared outage budget; preserve at-least-once duplicate accounting. |
+| Windows service reboot | #154 measured 130.6–131.9 seconds with delayed startup. The candidate MSI disables that delay; live campaign evidence records service startup and accepted-event arrival after reboot. | Repeat with the signed production package and populated upgrade state. |
 | Queue and disk pressure | WAL, explicit `synchronous=FULL`, transactional acknowledgements, lease fencing, a DB/WAL cap and acknowledged-row retention exist. Parts of [#138](https://github.com/jusso-dev/Bower/issues/138) predate these fixes. | Verify source backpressure under a full queue and low free space on queue/spool/archive volumes. Add early alerts and safe recovery before the hard cap. Never discard unacknowledged data to pass a capacity test. Power-loss certification remains unproven. |
 | Sustained capacity and outage budget | [#153](https://github.com/jusso-dev/Bower/issues/153) records local-output throughput/latency limits on small AWS instances; short synthetic runs are not a soak. | Declare event rate, burst size, payload distribution, host size, retention and outage budget. Run sustained WEC/syslog traffic, destination outage and backlog drain; report p95/p99 latency, loss, duplicate counts, CPU, memory and disk growth. |
 | Authentication, keys and privacy | Default-deny routing, redaction before persistence, signed packs and client-certificate rejection have local/AWS evidence. | Test expired/revoked credentials, certificate and HMAC-key rotation, malicious payloads, unsigned/untrusted packs and incorrect policy on the release deployment. Check durable files and reports for raw privacy sentinels. |
@@ -40,8 +43,9 @@ of every subsequent main change. Re-run against the release candidate hashes.
 
 The C# delivery worker now requests output cancellation before lease expiry. Defaults keep
 the five-minute lease and use a four-minute output deadline. Qualification can set
-`BOWER_DELIVERY_LEASE_SECONDS=90` and `BOWER_DELIVERY_TIMEOUT_SECONDS=60`; this is a
-test profile, not a claim that AWS or Windows has passed a new recovery campaign.
+`BOWER_DELIVERY_LEASE_SECONDS=90` and `BOWER_DELIVERY_TIMEOUT_SECONDS=60`.
+The live campaign below measures this profile; changing the settings alone is not
+recovery evidence for another deployment.
 Timeouts preserve events and their retry budget. Live leases are never reset at
 startup. See [deadline semantics and regression coverage](queue-v5-durability.md#c-delivery-deadlines-and-restart-recovery).
 
@@ -70,6 +74,22 @@ startup. See [deadline semantics and regression coverage](queue-v5-durability.md
    verify cleanup. Only then change the readiness statement to name the supported
    deployment and limits. Expand support through additional qualification runs.
 
-No Azure infrastructure has been provisioned by this readiness audit. The existing
-AWS validation resources were removed. Destination qualification remains blocked
-on selecting the intended tenant target; no production-readiness approval is implied.
+## Live Sentinel qualification
+
+The [30 October campaign](../evidence/sentinel-native-20261030/README.md) deployed
+the packages from commit `26446690fae7d123e2dfaf117d63467f1f55d37d` (PR #158,
+merged as `2250bd190e326db99bb5333cbbdfde04ff9f8801`). It used the MSI virtual service
+account and RPM `bower` user, signed parser packs, and a separate query-only identity.
+The report records native-event identity reconciliation, pre-persistence privacy,
+destination ingestion timestamps, recovery, failed attempts and cleanup.
+
+Live Azure deployment exposed a case-sensitive schema mismatch: DCR stream timestamp
+types must be `datetime`, while Log Analytics table columns use `dateTime`.
+The Bicep correction and an exact-case regression now cover this difference.
+
+The syslog campaign also found two events lost before collector acceptance after an
+idle TLS connection closed. A sender reconnect profile passed subsequent tests, but
+this does not add durable application acknowledgements to syslog. Preserve the loss
+finding and qualify each actual appliance/sender and its replay behavior. The
+short campaign does not close the capacity, disk-pressure, key-rotation, upgrade,
+release-signing, restore or operational-alert gates in the table above.
