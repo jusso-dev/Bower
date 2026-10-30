@@ -172,10 +172,7 @@ public static partial class CollectorApplication
         if (output is not null)
         {
             builder.Services.AddSingleton(output);
-            builder.Services.AddSingleton(new QueueDeliveryOptions
-            {
-                MaximumDeliveryAttempts = settings.MaximumDeliveryAttempts
-            });
+            builder.Services.AddSingleton(settings.DeliveryOptions());
             builder.Services.AddHostedService<QueueDeliveryWorker>();
         }
 

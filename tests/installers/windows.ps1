@@ -111,6 +111,9 @@ try {
     $service = Get-CimInstance Win32_Service -Filter "Name='Bower'"
     Assert-That ($service.StartName -eq 'NT SERVICE\Bower') "service runs as $($service.StartName)"
     Assert-That ($service.StartMode -eq 'Auto') "service start mode is $($service.StartMode)"
+    $serviceConfiguration = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\Bower'
+    $delayedStart = $serviceConfiguration.PSObject.Properties['DelayedAutoStart']
+    Assert-That ($null -eq $delayedStart -or $delayedStart.Value -eq 0) 'service must start automatically without the delayed-start interval'
     Assert-That ($service.State -eq 'Running') "service is $($service.State)"
     $recovery = & sc.exe qfailure Bower | Out-String
     Assert-That ($LASTEXITCODE -eq 0) 'cannot read service recovery settings'

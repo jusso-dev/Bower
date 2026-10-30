@@ -47,35 +47,47 @@ public sealed class AmaSpoolOutput : IOutputAdapter
         List<QueuedEvent> currentFile = [];
         long currentBytes = 0;
 
-        foreach (QueuedEvent item in events)
+        try
         {
-            int recordBytes = Encoding.UTF8.GetByteCount(item.Payload) + 1;
-            if (recordBytes > options.MaximumFileBytes)
+            foreach (QueuedEvent item in events)
             {
-                failures.Add(new DeliveryFailure(
-                    item.EventId,
-                    "record-exceeds-ama-file-limit",
-                    false,
-                    null));
-                continue;
+                int recordBytes = Encoding.UTF8.GetByteCount(item.Payload) + 1;
+                if (recordBytes > options.MaximumFileBytes)
+                {
+                    failures.Add(new DeliveryFailure(
+                        item.EventId,
+                        "record-exceeds-ama-file-limit",
+                        false,
+                        null));
+                    continue;
+                }
+
+                if (currentFile.Count > 0 && currentBytes + recordBytes > options.MaximumFileBytes)
+                {
+                    await WriteFileAsync(currentFile, cancellationToken);
+                    acknowledged.AddRange(currentFile.Select(value => value.EventId));
+                    currentFile.Clear();
+                    currentBytes = 0;
+                }
+
+                currentFile.Add(item);
+                currentBytes += recordBytes;
             }
 
-            if (currentFile.Count > 0 && currentBytes + recordBytes > options.MaximumFileBytes)
+            if (currentFile.Count > 0)
             {
                 await WriteFileAsync(currentFile, cancellationToken);
                 acknowledged.AddRange(currentFile.Select(value => value.EventId));
-                currentFile.Clear();
-                currentBytes = 0;
             }
-
-            currentFile.Add(item);
-            currentBytes += recordBytes;
         }
-
-        if (currentFile.Count > 0)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested && acknowledged.Count > 0)
         {
-            await WriteFileAsync(currentFile, cancellationToken);
-            acknowledged.AddRange(currentFile.Select(value => value.EventId));
+            // A deadline can interrupt a later file after earlier files were durably
+            // published. Return those known acknowledgements so the worker does not
+            // re-spool them under fresh sequence numbers. Only unfinished events retry.
+            HashSet<string> settled = new(acknowledged.Concat(failures.Select(item => item.EventId)), StringComparer.Ordinal);
+            failures.AddRange(events.Where(item => !settled.Contains(item.EventId)).Select(item =>
+                new DeliveryFailure(item.EventId, "destination-ama-cancelled", true, null)));
         }
 
         string? acknowledgement = acknowledged.Count == 0

@@ -31,7 +31,7 @@ Rocky and AlmaLinux 9+. Windows needs a version .NET 10 supports (x64 or arm64).
 | Item | Linux (deb, rpm) | Windows (MSI) |
 |---|---|---|
 | Binaries | `/opt/bower/` (`Bower.Collector`, `bower`, SQLite), `/usr/bin/bower` | `%ProgramFiles%\Bower\` |
-| Service | `bower.service` ([unit](../../deploy/systemd/bower.service)), enabled and started | `Bower`, automatic (delayed) start, restart on failure |
+| Service | `bower.service` ([unit](../../deploy/systemd/bower.service)), enabled and started | `Bower`, automatic start without delay, restart on failure |
 | Account | `bower` system account and group, no shell, no home contents | Virtual account `NT SERVICE\Bower` |
 | Settings | `/etc/bower/bower.env` (root:bower 0640) | Service `Environment` value, from MSI properties |
 | Policies | `/etc/bower/policies` (config files) | `%ProgramData%\Bower\policies` |
@@ -54,6 +54,15 @@ Least privilege:
   secrets folder and point the `*_FILE` settings at them. Never put a value inline.
 
 ## Silent install with a pre-seeded token
+
+The Windows MSI clears delayed automatic startup on install and reinstall. Earlier
+packages deliberately delayed startup and exceeded the AWS lab's 120-second reboot
+recovery target. The collector now starts in the normal automatic-service phase;
+existing restart-on-failure actions remain in place for transient startup failures.
+Installer CI checks the actual service registry setting. This removes the deliberate
+delay but does not establish a boot-time guarantee: the exact signed package still
+needs a Windows reboot test with destination-arrival measurements. See the
+[production readiness gates](../operations/production-readiness.md).
 
 1. An administrator creates a one-time token on the console's Enrolment page, bound to
    the environment and, ideally, the collector id. Tokens are single use and expire (24

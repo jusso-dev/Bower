@@ -110,10 +110,14 @@ ledger, per-key suppression with summary events, selection metrics, source silen
 detection, policy population diff, a ledger-verified long-term archive with replay,
 CLI tooling, schemas and deployment examples.
 
-Runtime file and REST source adapters, complete catalogue commands,
-Roslyn packages, Azure plan/apply, release-signing automation, a tenant-tested
-evidence run and broad resilience testing remain before v1. No mocked upload is
-represented as Sentinel delivery.
+Production readiness is tracked against a specific deployment and release artifact,
+not feature count. The first candidate is the C# Windows WEC and TLS firewall
+syslog path to Microsoft Sentinel. See the
+[production readiness gates](docs/operations/production-readiness.md) for current
+evidence, unresolved blockers and the validation required before this status changes.
+The AWS source tests proved local AMA spool output; a real tenant destination query,
+recovery and capacity qualification, signed installation and upgrade validation remain
+release gates. No mocked upload or local spool is represented as Sentinel delivery.
 
 ## Architecture
 
@@ -456,6 +460,8 @@ Neither has been exercised against a live tenant or account yet.
 | `BOWER_QUEUE_MAX_BYTES` | 10 GiB | Cap on **undelivered** bytes; excess returns HTTP 503. |
 | `BOWER_QUEUE_RETENTION_HOURS` | `168` | How long acknowledged events stay for duplicate detection. |
 | `BOWER_MAX_DELIVERY_ATTEMPTS` | `20` | Retryable failures dead-letter after this many leases. |
+| `BOWER_DELIVERY_LEASE_SECONDS` | `300` | C# delivery lease (31–3600 seconds); live leases are never reset on restart. |
+| `BOWER_DELIVERY_TIMEOUT_SECONDS` | `240` | C# output cancellation deadline; at least 1 second and at least 30 seconds below the lease. Destination timeouts retain events for retry. |
 | `BOWER_POLICY_DIRECTORY` | `./policies/default` | Versioned policy YAML. |
 | `BOWER_OUTPUT` | `none` | `none`, `ama-spool`, `azure-logs-ingestion` or `relay` (deliver through a relay collector). |
 | `BOWER_RELAY_URL` / `BOWER_RELAY_CLIENT_CERTIFICATE_FILE` / `BOWER_RELAY_CLIENT_KEY_FILE` / `BOWER_RELAY_CA_BUNDLE` | — | Downstream of a relay (`BOWER_OUTPUT=relay`): the relay's https URL and the mutual TLS client certificate. [Relay mode](docs/deployment/relay.md) |

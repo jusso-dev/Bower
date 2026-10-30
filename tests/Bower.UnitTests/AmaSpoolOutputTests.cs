@@ -1,5 +1,9 @@
+using System.Text.Json;
 using Bower.Abstractions;
+using Bower.Collector;
 using Bower.Output.AmaSpool;
+using Bower.Persistence;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Bower.UnitTests;
 
@@ -114,6 +118,86 @@ public sealed class AmaSpoolOutputTests
             ActiveDirectory = ready + suffix.Replace('/', Path.DirectorySeparatorChar),
             ReadyDirectory = ready
         }));
+    }
+
+    [Fact]
+    public async Task Deadline_AfterCommittedFile_RetriesOnlyUnfinishedEventsAcrossRestart()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        ManualTimeProvider clock = new(TestEvents.Now);
+        string database = Path.Combine(directory.Path, "queue.db");
+        SqliteEventStore store = new(database, 10 * 1024 * 1024, clock);
+        await store.InitializeAsync(token);
+        foreach (string id in new[] { "first", "second", "third" })
+        {
+            await store.EnqueueAsync(new QueuedEvent(id, $"sha256:{id}",
+                $$"""{"eventId":"{{id}}","padding":"{{new string('x', 700)}}"}""", clock.GetUtcNow()), token);
+        }
+
+        AmaSpoolOptions options = Options(directory) with { MaximumFileBytes = 1024 };
+        AmaSpoolOutput output = new(options);
+        DeadlineBetweenFiles controlled = new(output, () =>
+        {
+            Assert.Single(Directory.EnumerateFiles(options.ReadyDirectory));
+            clock.Advance(TimeSpan.FromSeconds(60));
+        });
+        QueueDeliveryOptions delivery = new()
+        {
+            LeaseDuration = TimeSpan.FromSeconds(90),
+            DeliveryTimeout = TimeSpan.FromSeconds(60),
+            MaximumDeliveryAttempts = 1
+        };
+        using QueueDeliveryWorker worker = new(store, controlled, clock, delivery, NullLogger<QueueDeliveryWorker>.Instance);
+        Assert.Equal(3, await worker.DeliverOnceAsync(token));
+        QueueSnapshot partial = await store.GetSnapshotAsync(token);
+        Assert.Equal((1L, 2L, 0L, 0L),
+            (partial.Delivered, partial.Retrying, partial.Uploading, partial.DeadLettered));
+        Assert.Empty(Directory.EnumerateFiles(options.ActiveDirectory));
+
+        SqliteEventStore reopened = new(database, 10 * 1024 * 1024, clock);
+        await reopened.InitializeAsync(token);
+        clock.Advance(TimeSpan.FromSeconds(30));
+        using QueueDeliveryWorker restarted = new(reopened, new AmaSpoolOutput(options), clock, delivery,
+            NullLogger<QueueDeliveryWorker>.Instance);
+        Assert.Equal(2, await restarted.DeliverOnceAsync(token));
+        Assert.Equal(3, (await reopened.GetSnapshotAsync(token)).Delivered);
+        string[] lines = Directory.EnumerateFiles(options.ReadyDirectory).SelectMany(File.ReadAllLines).ToArray();
+        Assert.Equal(["first", "second", "third"], lines.Select(line =>
+        {
+            using JsonDocument document = JsonDocument.Parse(line);
+            return document.RootElement.GetProperty("eventId").GetString();
+        }).Order(StringComparer.Ordinal));
+        Assert.True((await reopened.VerifyLedgerAsync(token)).Intact);
+    }
+
+    private sealed class DeadlineBetweenFiles(AmaSpoolOutput inner, Action cancel) : IOutputAdapter
+    {
+        public string Id => inner.Id;
+        public Task<DeliveryResult> DeliverAsync(IReadOnlyList<QueuedEvent> events, CancellationToken cancellationToken = default) =>
+            inner.DeliverAsync(new InterruptedEnumeration(events, cancel), cancellationToken);
+    }
+
+    private sealed class InterruptedEnumeration(IReadOnlyList<QueuedEvent> events, Action cancel) : IReadOnlyList<QueuedEvent>
+    {
+        private bool interrupted;
+        public int Count => events.Count;
+        public QueuedEvent this[int index] => events[index];
+        public IEnumerator<QueuedEvent> GetEnumerator()
+        {
+            for (int index = 0; index < events.Count; index++)
+            {
+                // Three bounded records form separate files. Reading record three occurs
+                // after file one committed and before file two is written.
+                if (index == 2 && !interrupted)
+                {
+                    interrupted = true;
+                    cancel();
+                }
+                yield return events[index];
+            }
+        }
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     private const string Prefix = "collector-1-Custom-BowerSecurity-";
