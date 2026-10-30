@@ -1,0 +1,10 @@
+{
+  "queryRole": "verifier",
+  "queryStatus": 200,
+  "partialError": false,
+  "query": "BowerSecurity_CL\n| where TimeGenerated >= datetime(2026-10-30T09:28:00Z)\n| where EventType == \"authentication_failure\"\n| extend BowerIngested = ingestion_time()\n| summarize arg_max(BowerIngested, *) by CollectorId, EventId\n| count",
+  "rowsAfterQueryDeduplication": 59400,
+  "expectedDistinctEvents": 59400,
+  "passed": true,
+  "limit": "One query window only; does not establish exactly-once alerts across scheduled runs."
+}

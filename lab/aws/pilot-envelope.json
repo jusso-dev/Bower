@@ -1,0 +1,26 @@
+{
+  "profile": "wec-firewall-sentinel-pilot-v1",
+  "scope": "Each native collector independently; Windows WEF/WEC and nftables via mutual TLS syslog.",
+  "sustainedEventsPerSecond": 10,
+  "burstEventsPerSecond": 100,
+  "burstSeconds": 60,
+  "destinationOutageSeconds": 3600,
+  "minimumOutageEventsPerCollector": 36000,
+  "burstSecondsInsideOutage": 60,
+  "plannedOutageEventsPerCollector": 41400,
+  "connectedSteadySeconds": 600,
+  "maximumBacklogDrainSeconds": 600,
+  "continueSustainedTrafficDuringDrain": true,
+  "maximumMissingAcceptedEvents": 0,
+  "maximumSourceToAcceptanceLoss": 0,
+  "maximumPrivacySentinelMatches": 0,
+  "reportDuplicatesSeparately": true,
+  "measurements": [
+    "actual source generation rate and native event counters",
+    "queue acceptance, retries, dead letters, age and bytes",
+    "CPU, resident memory, free disk and queue database/WAL growth",
+    "independently queried destination identities and ingestion latency",
+    "time from destination restoration to complete backlog delivery"
+  ],
+  "limits": "A short burst and an hour of outage traffic do not qualify arbitrary payloads, a proprietary appliance, power loss or a signed production release. Preserve failed phases."
+}

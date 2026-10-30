@@ -1,0 +1,43 @@
+{
+  "phase": "linux-source-status",
+  "queue": {
+    "queued": 0,
+    "retrying": 0,
+    "uploading": 0,
+    "delivered": 131089,
+    "deadLettered": 0,
+    "totalBytes": 153075030,
+    "undeliveredBytes": 0,
+    "oldestUndelivered": null
+  },
+  "syslog": [
+    {
+      "id": "firewall",
+      "protocol": "tls",
+      "endpoint": "127.0.0.1:6514",
+      "activeConnections": 1,
+      "connectionsAccepted": 1,
+      "connectionsRejected": 0,
+      "sendersDenied": 0,
+      "tlsHandshakeFailures": 0,
+      "framesReceived": 60500,
+      "bytesReceived": 14934170,
+      "queued": 60500,
+      "duplicates": 0,
+      "suppressed": 0,
+      "notRouted": 0,
+      "notSelected": 0,
+      "rejected": 0,
+      "parserErrors": 0,
+      "malformed": 0,
+      "oversized": 0,
+      "framingErrors": 0,
+      "timeouts": 0,
+      "dropped": 0,
+      "retries": 0,
+      "submitFailures": 0,
+      "receiveErrors": 0,
+      "lastFrameAt": "2026-10-30T12:10:34.3798229+00:00"
+    }
+  ]
+}

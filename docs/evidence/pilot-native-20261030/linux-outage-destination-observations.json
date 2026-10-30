@@ -1,0 +1,48 @@
+[
+  {
+    "queriedAt": "2026-10-30T11:06:30.007166+00:00",
+    "group": {
+      "rows": 83407,
+      "distinctIds": 83407,
+      "duplicateRows": 0,
+      "identitySetSha256": "9c0680dd935feaf44e2582210c1693288a164e57f9292cd3b2feab4445a28071",
+      "rawPrivacyMatches": 0,
+      "policyHashes": [
+        "sha256:94947eac3646200e45c70c45cd171edfc1c1f6c6974094192fdd1e88bf70211f"
+      ],
+      "negativeLatencyRows": 0,
+      "ingestionLatencySeconds": {
+        "p50": 304.620054,
+        "p95": 3590.508526,
+        "p99": 3624.564636,
+        "maximum": 3629.78413
+      }
+    },
+    "queryRole": "verifier",
+    "queryStatus": 200,
+    "partialError": false
+  },
+  {
+    "queriedAt": "2026-10-30T11:19:59.034294+00:00",
+    "group": {
+      "rows": 83407,
+      "distinctIds": 83407,
+      "duplicateRows": 0,
+      "identitySetSha256": "9c0680dd935feaf44e2582210c1693288a164e57f9292cd3b2feab4445a28071",
+      "rawPrivacyMatches": 0,
+      "policyHashes": [
+        "sha256:94947eac3646200e45c70c45cd171edfc1c1f6c6974094192fdd1e88bf70211f"
+      ],
+      "negativeLatencyRows": 0,
+      "ingestionLatencySeconds": {
+        "p50": 304.620054,
+        "p95": 3590.508526,
+        "p99": 3624.564636,
+        "maximum": 3629.78413
+      }
+    },
+    "queryRole": "verifier",
+    "queryStatus": 200,
+    "partialError": false
+  }
+]

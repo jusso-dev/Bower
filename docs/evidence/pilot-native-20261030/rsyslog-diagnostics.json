@@ -1,0 +1,53 @@
+{
+  "phase": "rsyslog-diagnostics",
+  "messages": [
+    [
+      "nsd_ossl:TLS session terminated with remote syslog server '127.0.0.1': End Session [v8.2204.0-3.amzn2023.0.8]",
+      52339
+    ],
+    [
+      "nsd_ossl: Information, no shared curve between syslog client and server [v8.2204.0-3.amzn2023.0.8]",
+      52322
+    ],
+    [
+      "nsd_ossl: TLS Connection initiated with remote syslog server. [v8.2204.0-3.amzn2023.0.8]",
+      52315
+    ],
+    [
+      "rsyslogd[internal_messages]: 471 messages lost due to rate-limiting (500 allowed within 5 seconds)",
+      4
+    ],
+    [
+      "rsyslogd[internal_messages]: 654 messages lost due to rate-limiting (500 allowed within 5 seconds)",
+      4
+    ],
+    [
+      "rsyslogd[internal_messages]: 837 messages lost due to rate-limiting (500 allowed within 5 seconds)",
+      3
+    ],
+    [
+      "imjournal: journal files changed, reloading...  [v8.2204.0-3.amzn2023.0.8 try https://www.rsyslog.com/e/0 ]",
+      3
+    ],
+    [
+      "rsyslogd[internal_messages]: 453 messages lost due to rate-limiting (500 allowed within 5 seconds)",
+      2
+    ],
+    [
+      "imjournal: fclose() failed for path: '/var/lib/rsyslog/imjournal.state.tmp': Bad file descriptor [v8.2204.0-3.amzn2023.0.8 try https://www.rsyslog.com/e/2027 ]",
+      2
+    ],
+    [
+      "rsyslogd[internal_messages]: 581 messages lost due to rate-limiting (500 allowed within 5 seconds)",
+      1
+    ],
+    [
+      "rsyslogd[internal_messages]: 596 messages lost due to rate-limiting (500 allowed within 5 seconds)",
+      1
+    ],
+    [
+      "rsyslogd[internal_messages]: 529 messages lost due to rate-limiting (500 allowed within 5 seconds)",
+      1
+    ]
+  ]
+}

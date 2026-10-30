@@ -1,0 +1,34 @@
+{
+  "pack": "nftables-validation",
+  "version": "1.0.0",
+  "files": [
+    {
+      "path": "lab/aws/packs/nftables-validation/parser.json",
+      "sha256": "b10521d16a2cc84967a97311457ec072e89fa81cb9ca9751d5eeb9be069be278",
+      "matchesDeployedContent": true
+    },
+    {
+      "path": "lab/aws/packs/nftables-validation/policy.yaml",
+      "sha256": "ebb6909735bca0795c784020527ed3dc320bf33eac753ae6c9243d856af71034",
+      "matchesDeployedContent": true
+    },
+    {
+      "path": "lab/aws/packs/nftables-validation/privacy.yaml",
+      "sha256": "189f3f6c817b94d6905ad0740f2f91554e4bf22103a56ee561313f155b8b8be2",
+      "matchesDeployedContent": true
+    },
+    {
+      "path": "lab/aws/packs/nftables-validation/samples.jsonl",
+      "sha256": "9357ef126b841a2847820c1619f8cf4883cb232b25d113323d9246f804da99dc",
+      "matchesDeployedContent": true
+    }
+  ],
+  "policyHashesMatch": true,
+  "generatedDcrMatches": true,
+  "sampleTests": {
+    "selectedKernelDeny": "passed",
+    "unapprovedApp": "passed"
+  },
+  "reviewSigningKeyRemoved": true,
+  "scope": "Rebuilt and sample-tested locally with an ephemeral key; live hosts retain their original signed pack."
+}

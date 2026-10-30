@@ -13,8 +13,11 @@ tenant-owned Microsoft Sentinel / Log Analytics workspace, with independent quer
 verification. The deployment owner has selected this path for the first production
 rollout. The owner confirmed subscription `945092a0-2500-4b25-85a4-99f1c3135906`
 in tenant `f4f33fb1-b681-40d1-a854-6f888d45b891` for isolated validation.
-A short 10-events/second firewall qualification is not a supported workload envelope
-or a sustained production soak.
+The selected pilot envelope is **10 events/sec per collector, 100/sec bursts of
+60 seconds, and a real one-hour destination outage**. The
+[native pilot report](../evidence/pilot-native-20261030/README.md) measures this
+synthetic workload on the recorded hosts; it is not a sustained production soak
+or approval of arbitrary payloads and appliance implementations.
 
 The Rust runtime, the queue-less Azure Functions endpoint, management UI deployment,
 additional sources and optional developer tooling need their own qualification.
@@ -23,7 +26,7 @@ Do not generalize an approval of this path to the whole platform.
 
 ## Evidence and blockers
 
-Audit baseline: main `9eb7af047702dbde60e4e49773784e0db4704f59`, including PR #157.
+Initial audit baseline: main `9eb7af047702dbde60e4e49773784e0db4704f59`, including PR #157.
 Existing AWS results are from the documented `473c6ec` backport artifact, not a test
 of every subsequent main change. Re-run against the release candidate hashes.
 
@@ -34,7 +37,7 @@ of every subsequent main change. Re-run against the release candidate hashes.
 | Crash and restart recovery | [#154](https://github.com/jusso-dev/Bower/issues/154) remains the failed five-minute-lease baseline. The live campaign records accepted-event crash recovery with the 90/60-second profile and independently queried ingestion timestamps. | Repeat under sustained load, throttling and the declared outage budget; preserve at-least-once duplicate accounting. |
 | Windows service reboot | #154 measured 130.6–131.9 seconds with delayed startup. The candidate MSI disables that delay; live campaign evidence records service startup and accepted-event arrival after reboot. | Repeat with the signed production package and populated upgrade state. |
 | Queue and disk pressure | WAL, explicit `synchronous=FULL`, transactional acknowledgements, lease fencing, a DB/WAL cap and acknowledged-row retention exist. Parts of [#138](https://github.com/jusso-dev/Bower/issues/138) predate these fixes. | Verify source backpressure under a full queue and low free space on queue/spool/archive volumes. Add early alerts and safe recovery before the hard cap. Never discard unacknowledged data to pass a capacity test. Power-loss certification remains unproven. |
-| Sustained capacity and outage budget | [#153](https://github.com/jusso-dev/Bower/issues/153) records local-output throughput/latency limits on small AWS instances; short synthetic runs are not a soak. | Declare event rate, burst size, payload distribution, host size, retention and outage budget. Run sustained WEC/syslog traffic, destination outage and backlog drain; report p95/p99 latency, loss, duplicate counts, CPU, memory and disk growth. |
+| Sustained capacity and outage budget | [Native pilot](../evidence/pilot-native-20261030/README.md): 10/sec, 100/sec bursts for 60 sec, one-hour outage on each collector; 59,400 distinct source events reconciled per final campaign, 48.5/55.8-sec firewall/WEC drain. Four Windows replayed rows fail the retained strict zero-duplicate check. Two earlier firewall source-loss attempts remain recorded. | Repeat the measured envelope with the signed release and actual sender/payload distribution. Qualify longer operation, production retention and query/alert replay handling. The 81-minute campaigns do not establish multi-day soak or exactly-once delivery. |
 | Authentication, keys and privacy | Default-deny routing, redaction before persistence, signed packs and client-certificate rejection have local/AWS evidence. | Test expired/revoked credentials, certificate and HMAC-key rotation, malicious payloads, unsigned/untrusted packs and incorrect policy on the release deployment. Check durable files and reports for raw privacy sentinels. |
 | Signed distribution and upgrades | Installer and optional signing machinery exist. WEC v1 → v2 bookmark migration has local/CI coverage; fresh AWS databases did not test that migration. | Verify actual signed release artifacts and trusted pack provenance; install, upgrade a populated queue/bookmark store, restart and uninstall without losing accepted data. Document the supported recovery path and incompatible downgrades. |
 | Operations and reproducible evidence | Source/queue reports, screenshots and [AWS cleanup proof](../evidence/aws-native-20261030/cleanup.json) are committed. | Validate actionable alerts for source silence, destination failure, queue age/capacity and disk pressure. Exercise restore and audited replay. Publish the release manifest, configuration hashes, query results, measurements and final resource cleanup. |
@@ -93,3 +96,30 @@ this does not add durable application acknowledgements to syslog. Preserve the l
 finding and qualify each actual appliance/sender and its replay behavior. The
 short campaign does not close the capacity, disk-pressure, key-rotation, upgrade,
 release-signing, restore or operational-alert gates in the table above.
+
+## Native pilot envelope
+
+The [pilot profile and reproduction guide](../../lab/aws/PILOT.md) add complete
+native-source, one-hour outage, resource and destination measurements. Windows
+retained 45,090 pending events for a 3,606.15-second outage; the final firewall
+attempt retained 41,681 for 3,600.34 seconds. Both recovered while new traffic
+continued at 10/sec. Connected steady ingestion p95/p99 were 8.23/9.08 seconds for
+Windows and 5.79/6.65 seconds for the firewall.
+
+Two firewall attempts lost 768 and 43 native events before durable acceptance.
+Increasing the bounded journal input allowance alone did not remove the loss.
+The final persistent mutual-TLS connection, with a 3,600-second listener idle
+timeout, accepted and delivered all 59,400 campaign events. This comparison does
+not establish the exact mechanism of the earlier loss or qualify long idle gaps,
+transport resets, power loss or another appliance's retention/replay behavior.
+
+Windows delivered all 59,400 distinct campaign identities, with four extra rows
+at the outage boundary and after recovery. The strict assessment remains failed;
+separate at-least-once identity observations do not override it. A tested
+query-time deduplication example is included, but scheduled-alert suppression and
+outage-aware lookback still need qualification.
+
+The packages remain unsigned development artifacts. Release-signing identities
+are not configured. Populated upgrades, key rotation, storage pressure, restore,
+operational alerts and a sustained soak remain open; this pilot does not authorize
+changing the production-readiness status.

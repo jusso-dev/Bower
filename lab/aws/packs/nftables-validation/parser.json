@@ -1,0 +1,24 @@
+{
+  "version": "1.0", "format": "Json",
+  "fields": [
+    {"sourceName":"id","type":"Text","ocsfPath":"metadata.uid","asimField":"EventUid","sensitive":false},
+    {"sourceName":"timestamp","type":"DateTime","ocsfPath":"time","asimField":"TimeGenerated","sensitive":false},
+    {"sourceName":"appName","type":"Text","ocsfPath":"app.name","asimField":"DvcAppName","sensitive":false},
+    {"sourceName":"message","type":"Text","ocsfPath":"message","asimField":"EventMessage","sensitive":true},
+    {"sourceName":"result","type":"Text","ocsfPath":"status","asimField":"EventResult","sensitive":true},
+    {"sourceName":"source_ip","type":"IpAddress","ocsfPath":"src_endpoint.ip","asimField":"SrcIpAddr","sensitive":true},
+    {"sourceName":"reason","type":"Text","ocsfPath":"status_detail","asimField":"EventResultDetails","sensitive":false}
+  ],
+  "runtime": {
+    "applicationName":"nftables-firewall","environment":"validation",
+    "eventCategory":"network-security","eventType":"network_connection_denied",
+    "eventAction":"network.connect","eventResult":"denied",
+    "transforms":[
+      ".m = regex_extract(.message, 'BOWER_DENY .*SRC=(?<ip>[0-9.]+) ')",
+      "if .appName == \"nftables\" && .m.ip != null { .result = \"deny\" } else { .result = \"ignored\" }",
+      ".source_ip = .m.ip", ".reason = \"FirewallPolicyDeny\"", "del(.m)"
+    ],
+    "match":{"result":"deny"},
+    "fields":{"eventId":"id","timeGenerated":"timestamp","source.ipAddress":"source_ip","eventOutcomeReason":"reason"}
+  }
+}

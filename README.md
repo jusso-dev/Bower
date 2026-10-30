@@ -118,11 +118,18 @@ evidence, unresolved blockers and the validation required before this status cha
 The [live Sentinel qualification](docs/evidence/sentinel-native-20261030/README.md)
 adds destination-query evidence from packaged Windows WEC and firewall collectors,
 including process-crash and Windows reboot recovery. It also records a real syslog
-loss before durable acceptance and a tested sender reconnect mitigation. Sustained
-capacity, outage budgets, signed release installation and upgrade validation remain
-release gates. The evidence does not certify the whole platform for production.
+loss before durable acceptance and a tested sender reconnect mitigation.
+The [native pilot campaign](docs/evidence/pilot-native-20261030/README.md) now measures
+10 events/sec per collector, 100/sec bursts for 60 seconds and a real one-hour
+destination outage. Both final campaigns reconcile all 59,400 distinct native
+events in Sentinel; firewall/WEC backlog drain took 48.5/55.8 seconds. Four Windows
+replayed rows fail the retained strict zero-duplicate check. Two failed firewall
+attempts remain documented; the final persistent-connection profile had no measured
+source loss. Signed release installation, populated upgrades and remaining
+operational gates are still open. This evidence does not certify the whole platform
+for production.
 
-![Recorded live Windows WEC and firewall Sentinel qualification](docs/evidence/sentinel-native-20261030/report.png)
+![Recorded native WEC and firewall pilot qualification](docs/evidence/pilot-native-20261030/report.png)
 
 ## Architecture
 

@@ -1,0 +1,78 @@
+{
+  "phase": "native-windows-generator",
+  "startedAt": "2026-10-30T09:28:00.0000000+00:00",
+  "phases": [
+    {
+      "attempted": 6000,
+      "completed": 6000,
+      "allCallsCompleted": true,
+      "seconds": 600.0060459,
+      "actualRate": 9.999899211015853,
+      "maximumConcurrentCalls": 2,
+      "unexpectedSuccessfulLogons": 0,
+      "ldapResultCodes": {
+        "49": 6000
+      },
+      "name": "steady",
+      "targetRate": 10
+    },
+    {
+      "attempted": 6000,
+      "completed": 6000,
+      "allCallsCompleted": true,
+      "seconds": 60.004169,
+      "actualRate": 99.99305048299144,
+      "maximumConcurrentCalls": 7,
+      "unexpectedSuccessfulLogons": 0,
+      "ldapResultCodes": {
+        "49": 6000
+      },
+      "name": "burst",
+      "targetRate": 100
+    },
+    {
+      "attempted": 6000,
+      "completed": 6000,
+      "allCallsCompleted": true,
+      "seconds": 60.0117306,
+      "actualRate": 99.98045115565371,
+      "maximumConcurrentCalls": 11,
+      "unexpectedSuccessfulLogons": 0,
+      "ldapResultCodes": {
+        "49": 6000
+      },
+      "name": "outage-burst",
+      "targetRate": 100
+    },
+    {
+      "attempted": 35400,
+      "completed": 35400,
+      "allCallsCompleted": true,
+      "seconds": 3540.0153553,
+      "actualRate": 9.999956620244678,
+      "maximumConcurrentCalls": 2,
+      "unexpectedSuccessfulLogons": 0,
+      "ldapResultCodes": {
+        "49": 35400
+      },
+      "name": "outage-steady",
+      "targetRate": 10
+    },
+    {
+      "attempted": 6000,
+      "completed": 6000,
+      "allCallsCompleted": true,
+      "seconds": 600.0110447999999,
+      "actualRate": 9.999815905055824,
+      "maximumConcurrentCalls": 2,
+      "unexpectedSuccessfulLogons": 0,
+      "ldapResultCodes": {
+        "49": 6000
+      },
+      "name": "drain-with-live-traffic",
+      "targetRate": 10
+    }
+  ],
+  "runId": "bower-pilot-20261030-084844",
+  "endedAt": "2026-10-30T10:49:00.2248549+00:00"
+}

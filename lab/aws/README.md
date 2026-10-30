@@ -1,5 +1,9 @@
 # Disposable AWS validation lab
 
+For the separate four-host native WEF/WEC and nftables → Sentinel pilot, see
+[`PILOT.md`](PILOT.md) and its [10/sec, 100/sec burst, one-hour outage profile](pilot-envelope.json).
+The relay/local-spool topology below does not establish Sentinel delivery.
+
 Seven private EC2 hosts exercise three Linux and three Windows collectors against
 an authenticated relay and local AMA spool. The seventh host serves the management
 API and console. This is the first executable slice of [#136](https://github.com/jusso-dev/Bower/issues/136),

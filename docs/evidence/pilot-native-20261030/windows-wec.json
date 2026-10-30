@@ -1,0 +1,29 @@
+{
+  "phase": "native-windows-identities",
+  "channel": "ForwardedEvents",
+  "queriedAt": "2026-10-30T10:49:56.3684919+00:00",
+  "selectedNativeRecords": 59400,
+  "since": "2026-10-30T09:28:00+00:00",
+  "rawNativeIdentitySetSha256": "9c01efc351574253a502b92a6d130cf7453e02f8f7f60e1905c369dbe796b880",
+  "redactedNativeIdentities": 31,
+  "noIdentityCollisions": true,
+  "distinctNativeIds": 59400,
+  "unselectedNativeRecords": 0,
+  "nativeIdentitySetSha256": "39f03f8b76011275f129dde03089a2448d97b01c83809c1291d1fdede033ab0f",
+  "missingNativeCount": 0,
+  "unexpectedQueueCount": 0,
+  "queueRows": 59400,
+  "deliveredRows": 59400,
+  "queueIdentitySetSha256": "39f03f8b76011275f129dde03089a2448d97b01c83809c1291d1fdede033ab0f",
+  "nativeAndQueueMatch": true,
+  "noRawUsername": true,
+  "usernamePseudonymized": true,
+  "databaseAndWalExcludeUsername": true,
+  "sqliteIntegrity": true,
+  "policyHashes": [
+    "sha256:45f0c12b4cabb92dde75d4718569bdc7330987ecf0fe86c883ea36ff32b0bbd9"
+  ],
+  "activeSeconds": 4861,
+  "maximumEventsInOneSecond": 103,
+  "medianEventsPerActiveSecond": 10
+}

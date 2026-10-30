@@ -1,0 +1,20 @@
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+metadata:
+  id: BWR-VALIDATE-NFT-DENY
+  name: Isolated firewall deny
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-06-30
+match:
+  eventCategories: [network-security]
+  eventTypes: [network_connection_denied]
+requirements:
+  requiredFields: [timeGenerated, eventType, eventResult, application.name, source.ipAddress]
+decision:
+  action: accept
+  minimumValueScore: 75
+  neverSample: true
+routing:
+  profile: network-security
+  destination: security-events
