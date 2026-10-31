@@ -242,6 +242,52 @@ public sealed class AzureLogsIngestionOutputTests
         Assert.Equal(["valid"], (await output.DeliverAsync([Event("valid")], TestContext.Current.CancellationToken)).AcknowledgedEventIds);
     }
 
+    public static TheoryData<string> CredentialFailures => ["authentication-failed", "credential-unavailable"];
+
+    [Theory]
+    [MemberData(nameof(CredentialFailures))]
+    public async Task Deliver_CredentialFailureKeepsRecordsWithMetadataOnlyCode(string kind)
+    {
+        // Expired, revoked or disabled credentials and wrong tenants surface as Azure.Identity
+        // exceptions whose text can quote request details. Only a fixed code is retained,
+        // distinct from a network outage, and nothing is sent without a token.
+        const string Secret = "client-secret-value-that-must-never-leak";
+        RecordingHandler handler = new(_ => HttpStatusCode.NoContent);
+        ThrowingCredential credential = new(kind == "authentication-failed"
+            ? new Azure.Identity.AuthenticationFailedException($"AADSTS7000222 expired {Secret}")
+            : new Azure.Identity.CredentialUnavailableException($"missing {Secret}"));
+        AzureLogsIngestionOutput output = CreateOutput(handler, credential: credential);
+
+        DeliveryResult result = await output.DeliverAsync([Event("a"), Event("b")], TestContext.Current.CancellationToken);
+
+        Assert.Empty(result.AcknowledgedEventIds);
+        Assert.Empty(handler.Requests);
+        Assert.Equal(2, result.Failures.Count);
+        Assert.All(result.Failures, failure =>
+        {
+            Assert.Equal(AzureLogsIngestionOutput.CredentialFailedCode, failure.Code);
+            Assert.True(failure.IsRetryable);
+            Assert.True(failure.IsDestinationFailure);
+            Assert.DoesNotContain(Secret, failure.Code, StringComparison.Ordinal);
+        });
+
+        // Fixing the credential delivers the same records; nothing was dropped.
+        credential.Failure = null;
+        Assert.Equal(["a", "b"], (await output.DeliverAsync([Event("a"), Event("b")], TestContext.Current.CancellationToken))
+            .AcknowledgedEventIds.Order());
+    }
+
+    [Fact]
+    public async Task Deliver_TransportFailureIsNotReportedAsCredentialFailure()
+    {
+        ThrowingHandler handler = new();
+        AzureLogsIngestionOutput output = CreateOutput(handler);
+
+        DeliveryResult result = await output.DeliverAsync([Event("a")], TestContext.Current.CancellationToken);
+
+        Assert.Equal("destination-azure-unavailable", Assert.Single(result.Failures).Code);
+    }
+
     [Fact]
     public async Task Deliver_PreservesHttpDateRetryAfter()
     {
@@ -360,7 +406,8 @@ public sealed class AzureLogsIngestionOutputTests
         }
     }
 
-    private static AzureLogsIngestionOutput CreateOutput(HttpMessageHandler handler, Uri? endpoint = null, int retries = 0)
+    private static AzureLogsIngestionOutput CreateOutput(HttpMessageHandler handler, Uri? endpoint = null, int retries = 0,
+        TokenCredential? credential = null)
     {
         LogsIngestionClientOptions clientOptions = new()
         {
@@ -375,7 +422,7 @@ public sealed class AzureLogsIngestionOutputTests
                 DcrImmutableId = "dcr-00000000000000000000000000000000",
                 StreamName = "Custom-BowerSecurity"
             },
-            new StaticCredential(),
+            credential ?? new StaticCredential(),
             clientOptions);
     }
 
@@ -423,6 +470,25 @@ public sealed class AzureLogsIngestionOutputTests
     }
 
     private sealed record RecordedRequest(string[] EventIds, string Body);
+
+    private sealed class ThrowingCredential(Exception? failure) : TokenCredential
+    {
+        public Exception? Failure { get; set; } = failure;
+
+        public override AccessToken GetToken(TokenRequestContext requestContext, CancellationToken cancellationToken) =>
+            Failure is { } failure ? throw failure : new AccessToken("test-token", DateTimeOffset.UtcNow.AddHours(1));
+
+        public override ValueTask<AccessToken> GetTokenAsync(
+            TokenRequestContext requestContext,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(GetToken(requestContext, cancellationToken));
+    }
+
+    private sealed class ThrowingHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            throw new HttpRequestException("connection refused");
+    }
 
     private sealed class StaticCredential : TokenCredential
     {

@@ -202,6 +202,17 @@ public sealed partial class QueueDeliveryWorker(
                 new DeliveryFailure(item.EventId, "output-result-missing", true, null)));
         }
 
+        // One metadata-only line per outcome: without it an expired credential or a removed
+        // role is visible only as a growing retry count. Codes are fixed strings, never
+        // response bodies, exception text or event content.
+        foreach (IGrouping<(string Code, bool Retrying), FailureSettlement> group in failed
+            .GroupBy(item => (item.FailureCode, item.RetryAfter is not null))
+            .OrderBy(group => group.Key.FailureCode, StringComparer.Ordinal))
+        {
+            LogDeliveryFailures(logger, output.Id, group.Count(), group.Key.Code,
+                group.Key.Retrying ? "retrying" : "dead-lettered");
+        }
+
         if (failed.Count > 0)
         {
             // One queue transaction for every retrying and dead-lettered event in the batch.
@@ -248,6 +259,10 @@ public sealed partial class QueueDeliveryWorker(
     [LoggerMessage(EventId = 1006, Level = LogLevel.Warning,
         Message = "Output adapter {OutputId} retry deadline exceeded one hour and was capped.")]
     private static partial void LogRetryAfterCapped(ILogger logger, string outputId);
+
+    [LoggerMessage(EventId = 1008, Level = LogLevel.Warning,
+        Message = "Output adapter {OutputId} did not deliver {Count} events ({FailureCode}); {Disposition}.")]
+    private static partial void LogDeliveryFailures(ILogger logger, string outputId, int count, string failureCode, string disposition);
 
     [LoggerMessage(EventId = 1007, Level = LogLevel.Warning,
         Message = "Output adapter {OutputId} exceeded its delivery timeout; batch will retry.")]

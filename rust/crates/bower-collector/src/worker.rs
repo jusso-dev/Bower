@@ -230,6 +230,25 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
         for failure in &mut failed {
             failure.lease_token = failure_claims.get(&failure.event_id).cloned();
         }
+        // C# `LogDeliveryFailures`: one metadata-only line per outcome, so an expired
+        // credential or removed role is visible beyond a growing retry count. Codes are
+        // fixed strings, never response bodies, error text or event content.
+        let mut outcomes: std::collections::BTreeMap<(&str, bool), usize> =
+            std::collections::BTreeMap::new();
+        for failure in &failed {
+            *outcomes
+                .entry((failure.failure_code.as_str(), failure.retry_after.is_some()))
+                .or_default() += 1;
+        }
+        for ((failure_code, retrying), count) in outcomes {
+            warn!(
+                output_id,
+                count,
+                failure_code,
+                disposition = if retrying { "retrying" } else { "dead-lettered" },
+                "Output adapter did not deliver events."
+            );
+        }
         if !failed.is_empty() {
             // One queue transaction for every retrying and dead-lettered event in the
             // batch. On error nothing is settled and the events are redelivered after

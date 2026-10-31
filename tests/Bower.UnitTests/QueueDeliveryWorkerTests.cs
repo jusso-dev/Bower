@@ -1,6 +1,7 @@
 using Bower.Abstractions;
 using Bower.Collector;
 using Bower.Persistence;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Bower.UnitTests;
@@ -253,6 +254,51 @@ public sealed class QueueDeliveryWorkerTests
     }
 
     [Fact]
+    public async Task CredentialFailure_KeepsEventsQueuedAndLogsOnlyMetadata()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore store, FakeClock clock) = await CreateStoreAsync(directory, cancellationToken);
+        await EnqueueAsync(store, clock, ["a", "b", "poison"], cancellationToken);
+        bool repaired = false;
+        FakeOutput output = new(events => repaired
+            ? new DeliveryResult(events.Select(item => item.EventId).ToArray(), [], "accepted")
+            : new DeliveryResult([], events.Select(item => item.EventId == "poison"
+                ? new DeliveryFailure(item.EventId, "payload-invalid-json", false, null)
+                : new DeliveryFailure(item.EventId, "destination-azure-credential-failed", true, null)).ToArray(), null));
+        RecordingLogger logger = new();
+        QueueDeliveryWorker worker = new(store, output, clock,
+            new QueueDeliveryOptions { MaximumDeliveryAttempts = 1 }, logger);
+
+        await worker.DeliverOnceAsync(cancellationToken);
+
+        Assert.Equal(
+            [
+                "Output adapter fake did not deliver 2 events (destination-azure-credential-failed); retrying.",
+                "Output adapter fake did not deliver 1 events (payload-invalid-json); dead-lettered."
+            ],
+            logger.Messages);
+        QueueSnapshot outage = await store.GetSnapshotAsync(cancellationToken);
+        Assert.Equal(2, outage.Retrying);
+        Assert.Equal(0, outage.Delivered);
+
+        // A credential outage never spends the poison budget: after the fix it drains.
+        for (int attempt = 0; attempt < 5; attempt++)
+        {
+            clock.Advance(TimeSpan.FromSeconds(30));
+            await worker.DeliverOnceAsync(cancellationToken);
+        }
+
+        Assert.Equal(2, (await store.GetSnapshotAsync(cancellationToken)).Retrying);
+        repaired = true;
+        clock.Advance(TimeSpan.FromSeconds(30));
+        await worker.DeliverOnceAsync(cancellationToken);
+        QueueSnapshot recovered = await store.GetSnapshotAsync(cancellationToken);
+        Assert.Equal(2, recovered.Delivered);
+        Assert.Equal(1, recovered.DeadLettered);
+    }
+
+    [Fact]
     public async Task ExcessiveDestinationDeadline_IsCappedAndRecoversAfterRestart()
     {
         CancellationToken token = TestContext.Current.CancellationToken;
@@ -432,5 +478,24 @@ public sealed class QueueDeliveryWorkerTests
 
         public Task<LedgerVerification> VerifyLedgerAsync(CancellationToken cancellationToken = default) =>
             inner.VerifyLedgerAsync(cancellationToken);
+    }
+
+    private sealed class RecordingLogger : ILogger<QueueDeliveryWorker>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (IsEnabled(logLevel))
+            {
+                Messages.Add(formatter(state, exception));
+            }
+        }
     }
 }

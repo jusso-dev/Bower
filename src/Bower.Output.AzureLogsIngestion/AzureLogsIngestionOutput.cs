@@ -7,6 +7,7 @@ using System.Text.Json;
 using Azure;
 using Azure.Core;
 using Azure.Core.Pipeline;
+using Azure.Identity;
 using Azure.Monitor.Ingestion;
 using Bower.Abstractions;
 using Bower.Dcr;
@@ -198,6 +199,7 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter, IOutputConcurrenc
             int status;
             DateTimeOffset? retryAfter = null;
             bool retryCapped = false;
+            bool credentialFailed = false;
             try
             {
                 // Protocol overload sends exactly one owned request (AOT safe). NoThrow
@@ -216,8 +218,11 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter, IOutputConcurrenc
             }
             catch (Exception exception) when (exception is not OperationCanceledException || !token.IsCancellationRequested)
             {
-                // Credential/transport exceptions may contain secrets. Never retain text.
+                // Credential/transport exceptions may contain secrets. Never retain text, only
+                // whether the token could not be acquired (expired, revoked or disabled
+                // credential, wrong tenant): operators must tell that from a network outage.
                 status = 0;
+                credentialFailed = exception is AuthenticationFailedException or CredentialUnavailableException;
             }
 
             if (status is >= 200 and < 300)
@@ -242,13 +247,21 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter, IOutputConcurrenc
             foreach (PreparedRecord record in batch)
             {
                 uploadFailures.Add(new DeliveryFailure(record.EventId,
-                    status == 0 ? "destination-azure-unavailable" : $"destination-azure-http-{status}{(retryCapped ? ":retry-after-capped" : "")}",
+                    credentialFailed ? CredentialFailedCode
+                        : status == 0 ? "destination-azure-unavailable"
+                        : $"destination-azure-http-{status}{(retryCapped ? ":retry-after-capped" : "")}",
                     true, retryAfter));
             }
         }
     }
 
     public const int MaximumBatchBytes = 1024 * 1024;
+
+    /// <summary>
+    /// The configured credential could not obtain a token. Retryable behind the durable
+    /// destination circuit like any outage: queued records wait for the credential fix.
+    /// </summary>
+    public const string CredentialFailedCode = "destination-azure-credential-failed";
     public static readonly TimeSpan MaximumDurableRetryDelay = TimeSpan.FromHours(1);
 
     private sealed class DurableRetryPolicy(RetryOptions retry) : RetryPolicy(retry.MaxRetries,

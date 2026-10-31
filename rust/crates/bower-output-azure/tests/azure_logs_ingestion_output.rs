@@ -418,8 +418,14 @@ async fn token_failure_fails_batch_as_retryable_without_sending() {
         .await;
 
     assert!(result.acknowledged_event_ids.is_empty());
-    assert_eq!(result.failures[0].code, "destination-azure-unavailable");
+    // Distinct from a network outage (C# `CredentialFailedCode`), still a retryable
+    // destination failure that holds the queue behind the durable circuit.
+    assert_eq!(
+        result.failures[0].code,
+        "destination-azure-credential-failed"
+    );
     assert!(result.failures[0].is_retryable);
+    assert!(result.failures[0].is_destination_failure());
     assert!(mock.requests.lock().unwrap().is_empty());
 }
 
