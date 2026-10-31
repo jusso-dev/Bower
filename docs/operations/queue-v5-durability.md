@@ -36,7 +36,10 @@ Unacknowledged, retrying and dead-lettered rows are never removed by retention.
 ## Upgrade, rollback and mixed writers
 
 Stop old writers and take a consistent SQLite backup, including committed WAL
-state, before upgrading. Startup transactionally renames the writable table to
+state, before upgrading (`bower queue backup`; see
+[Upgrades, backup and recovery](../production-readiness/04-upgrade-backup-recovery.md#backup-and-restore)).
+Builds from this release check `schema_history` before any DDL and refuse a newer
+schema without changing the file; earlier builds did not. Startup transactionally renames the writable table to
 `queue_events_v5`, adds `enqueue_sequence` and `lease_generation`, creates retention
 checkpoint storage and records schema version 5. The legacy `queue_events` name
 becomes a read-only view. Old binaries cannot insert, lease, settle, replay or purge

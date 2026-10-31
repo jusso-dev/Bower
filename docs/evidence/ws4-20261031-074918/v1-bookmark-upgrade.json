@@ -1,0 +1,992 @@
+{
+ "legacy-on-v2": {
+  "phase": "legacy-on-v2",
+  "exe": "C:\\BowerLab\\v1test\\msi270\\PFiles64\\Bower\\Bower.Collector.exe",
+  "exeSha256": "20490ec6a3ca50bf65ac2b77a68d6e9ac1c48e874b3c37fc33fc0745c21010ff",
+  "startedAt": "2026-10-31T09:15:22.9175125+00:00",
+  "stoppedAt": "2026-10-31T09:16:00.3779086+00:00",
+  "samples": [
+   {
+    "at": "2026-10-31T09:15:28.0105867+00:00",
+    "state": "starting",
+    "eventsRead": 249,
+    "queued": 248,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 379011,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T09:15:33.0265373+00:00",
+    "state": "running",
+    "eventsRead": 502,
+    "queued": 501,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 379526,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T09:15:38.0270423+00:00",
+    "state": "running",
+    "eventsRead": 764,
+    "queued": 763,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 380077,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T09:15:43.0283775+00:00",
+    "state": "running",
+    "eventsRead": 1018,
+    "queued": 1017,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 380606,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T09:15:48.0295496+00:00",
+    "state": "running",
+    "eventsRead": 1264,
+    "queued": 1263,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 381122,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T09:15:53.0315139+00:00",
+    "state": "running",
+    "eventsRead": 1516,
+    "queued": 1515,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 381637,
+    "readErrors": 0
+   }
+  ],
+  "queue": {
+   "kind": "queue",
+   "capturedAt": "2026-10-31T09:15:55.2287023+00:00",
+   "integrity": "ok",
+   "journal": "wal",
+   "schemaVersion": 5,
+   "queued": 4946,
+   "uploading": 0,
+   "retrying": 0,
+   "delivered": 0,
+   "deadLettered": 0,
+   "total": 4946,
+   "attemptsAboveOne": 0,
+   "identitySetSha256": "0e59ed41af5f601f262fb61df69bbeaf6dd9f3e6661ffe1326b54cd7a3196efd",
+   "ledgerHeadSequence": 4946,
+   "ledgerHeadHash": "0557ad94b46b6188a8878459f6439ababdddd1da10b38b9cbb378161213b4d5e",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "value": "{\"schemaVersion\":2,\"channel\":\"Security\",\"recordId\":381637}",
+     "version": 223,
+     "updatedAt": "2026-10-31 09:15:48.3539997+00:00"
+    }
+   ],
+   "files": [
+    {
+     "name": "queue.db",
+     "bytes": 12918784
+    },
+    {
+     "name": "queue.db-shm",
+     "bytes": 32768
+    },
+    {
+     "name": "queue.db-wal",
+     "bytes": 65952
+    }
+   ]
+  },
+  "native": {
+   "kind": "native",
+   "channel": "Security",
+   "since": "2026-10-31T08:35:00+00:00",
+   "capturedAt": "2026-10-31T09:16:00.0034129+00:00",
+   "examined": 12133,
+   "selected": 12133,
+   "unselected": 0,
+   "distinct": 12133,
+   "duplicateIdentities": 0,
+   "redactionChangedIds": 5,
+   "minRecordId": 372016,
+   "maxRecordId": 396773,
+   "identitySetSha256": "918278d9f85b67085e9074bb51d5ee0cb614adc4ff5b39ec5b0c23996dec58e8"
+  },
+  "securityLog": {
+   "records": 27187
+  }
+ },
+ "legacy-on-v2b": {
+  "phase": "legacy-on-v2b",
+  "exe": "C:\\BowerLab\\v1test\\legacy\\Bower.Collector.exe",
+  "exeSha256": "baf238ef86217d5b6fc4da14e37eb35737245b3e56613a3da47e1e5542a621bb",
+  "startedAt": "2026-10-31T09:17:01.6213483+00:00",
+  "stoppedAt": "2026-10-31T09:17:39.1454479+00:00",
+  "samples": [
+   {
+    "at": "2026-10-31T09:17:06.8729741+00:00",
+    "state": "winevt-bookmark-invalid",
+    "eventsRead": 0,
+    "queued": 0,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": null,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T09:17:11.8904518+00:00",
+    "state": "winevt-bookmark-invalid",
+    "eventsRead": 0,
+    "queued": 0,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": null,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T09:17:16.8910647+00:00",
+    "state": "winevt-bookmark-invalid",
+    "eventsRead": 0,
+    "queued": 0,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": null,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T09:17:21.8927336+00:00",
+    "state": "winevt-bookmark-invalid",
+    "eventsRead": 0,
+    "queued": 0,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": null,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T09:17:26.8933974+00:00",
+    "state": "winevt-bookmark-invalid",
+    "eventsRead": 0,
+    "queued": 0,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": null,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T09:17:31.8940468+00:00",
+    "state": "winevt-bookmark-invalid",
+    "eventsRead": 0,
+    "queued": 0,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": null,
+    "readErrors": 0
+   }
+  ],
+  "queue": {
+   "kind": "queue",
+   "capturedAt": "2026-10-31T09:17:34.1036552+00:00",
+   "integrity": "ok",
+   "journal": "wal",
+   "schemaVersion": 5,
+   "queued": 4946,
+   "uploading": 0,
+   "retrying": 0,
+   "delivered": 0,
+   "deadLettered": 0,
+   "total": 4946,
+   "attemptsAboveOne": 0,
+   "identitySetSha256": "0e59ed41af5f601f262fb61df69bbeaf6dd9f3e6661ffe1326b54cd7a3196efd",
+   "ledgerHeadSequence": 4946,
+   "ledgerHeadHash": "0557ad94b46b6188a8878459f6439ababdddd1da10b38b9cbb378161213b4d5e",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "value": "{\"schemaVersion\":2,\"channel\":\"Security\",\"recordId\":381637}",
+     "version": 223,
+     "updatedAt": "2026-10-31 09:15:48.3539997+00:00"
+    }
+   ],
+   "files": [
+    {
+     "name": "queue.db",
+     "bytes": 12918784
+    },
+    {
+     "name": "queue.db-shm",
+     "bytes": 32768
+    },
+    {
+     "name": "queue.db-wal",
+     "bytes": 65952
+    }
+   ]
+  },
+  "native": {
+   "kind": "native",
+   "channel": "Security",
+   "since": "2026-10-31T08:35:00+00:00",
+   "capturedAt": "2026-10-31T09:17:39.0257023+00:00",
+   "examined": 12626,
+   "selected": 12626,
+   "unselected": 0,
+   "distinct": 12626,
+   "duplicateIdentities": 0,
+   "redactionChangedIds": 5,
+   "minRecordId": 372016,
+   "maxRecordId": 397784,
+   "identitySetSha256": "c769ca67966d376612708615e8f57482344d9867c3ac5b2b1adfb6ad92a1f6d7"
+  },
+  "securityLog": {
+   "records": 28199
+  }
+ },
+ "legacy": {
+  "phase": "legacy",
+  "exe": "C:\\BowerLab\\v1test\\legacy\\Bower.Collector.exe",
+  "exeSha256": "baf238ef86217d5b6fc4da14e37eb35737245b3e56613a3da47e1e5542a621bb",
+  "startedAt": "2026-10-31T08:41:55.9464115+00:00",
+  "stoppedAt": "2026-10-31T08:44:31.2201376+00:00",
+  "samples": [
+   {
+    "at": "2026-10-31T08:42:01.9374244+00:00",
+    "state": "running",
+    "eventsRead": 258,
+    "queued": 257,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 372536,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:42:07.0496527+00:00",
+    "state": "running",
+    "eventsRead": 520,
+    "queued": 519,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 373074,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:42:12.0509999+00:00",
+    "state": "running",
+    "eventsRead": 810,
+    "queued": 809,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 373589,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:42:17.0516671+00:00",
+    "state": "running",
+    "eventsRead": 1081,
+    "queued": 1080,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 374109,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:42:22.0528274+00:00",
+    "state": "running",
+    "eventsRead": 1344,
+    "queued": 1343,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 374625,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:42:27.0540857+00:00",
+    "state": "running",
+    "eventsRead": 1606,
+    "queued": 1605,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 375137,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:42:32.0555152+00:00",
+    "state": "running",
+    "eventsRead": 1865,
+    "queued": 1864,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 375652,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:42:37.0568242+00:00",
+    "state": "running",
+    "eventsRead": 2127,
+    "queued": 2126,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 376207,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:42:42.0587178+00:00",
+    "state": "running",
+    "eventsRead": 2166,
+    "queued": 2166,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 376446,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:42:47.0598405+00:00",
+    "state": "running",
+    "eventsRead": 2186,
+    "queued": 2186,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 376486,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:42:52.0616915+00:00",
+    "state": "running",
+    "eventsRead": 2215,
+    "queued": 2215,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 376544,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:42:57.0641000+00:00",
+    "state": "running",
+    "eventsRead": 2241,
+    "queued": 2241,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 376596,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:43:02.0669869+00:00",
+    "state": "running",
+    "eventsRead": 2262,
+    "queued": 2262,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 376638,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:43:07.0681589+00:00",
+    "state": "running",
+    "eventsRead": 2285,
+    "queued": 2284,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 376682,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:43:12.0694149+00:00",
+    "state": "running",
+    "eventsRead": 2316,
+    "queued": 2316,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 376746,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:43:17.0702035+00:00",
+    "state": "running",
+    "eventsRead": 2337,
+    "queued": 2337,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 376789,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:43:22.0722300+00:00",
+    "state": "running",
+    "eventsRead": 2363,
+    "queued": 2363,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 376841,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:43:27.0735149+00:00",
+    "state": "running",
+    "eventsRead": 2391,
+    "queued": 2391,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 376897,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:43:32.0749538+00:00",
+    "state": "running",
+    "eventsRead": 2411,
+    "queued": 2411,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 376937,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:43:37.0761784+00:00",
+    "state": "running",
+    "eventsRead": 2440,
+    "queued": 2439,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 376987,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:43:42.0777839+00:00",
+    "state": "running",
+    "eventsRead": 2466,
+    "queued": 2466,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 377050,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:43:47.0784857+00:00",
+    "state": "running",
+    "eventsRead": 2487,
+    "queued": 2487,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 377092,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:43:52.0801826+00:00",
+    "state": "running",
+    "eventsRead": 2515,
+    "queued": 2515,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 377148,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:43:57.0816628+00:00",
+    "state": "running",
+    "eventsRead": 2537,
+    "queued": 2537,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 377192,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:44:02.0878827+00:00",
+    "state": "running",
+    "eventsRead": 2563,
+    "queued": 2563,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 377244,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:44:07.0897359+00:00",
+    "state": "running",
+    "eventsRead": 2589,
+    "queued": 2588,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 377286,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:44:12.0910329+00:00",
+    "state": "running",
+    "eventsRead": 2615,
+    "queued": 2615,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 377348,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:44:17.0918276+00:00",
+    "state": "running",
+    "eventsRead": 2637,
+    "queued": 2637,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 377392,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:44:22.0935547+00:00",
+    "state": "running",
+    "eventsRead": 2666,
+    "queued": 2666,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 377450,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:44:27.0942931+00:00",
+    "state": "running",
+    "eventsRead": 2688,
+    "queued": 2688,
+    "duplicates": 0,
+    "resets": 0,
+    "gaps": 0,
+    "bookmark": 377494,
+    "readErrors": 0
+   }
+  ],
+  "queue": {
+   "kind": "queue",
+   "capturedAt": "2026-10-31T08:44:29.5191048+00:00",
+   "integrity": "ok",
+   "journal": "wal",
+   "schemaVersion": 5,
+   "queued": 2688,
+   "uploading": 0,
+   "retrying": 0,
+   "delivered": 0,
+   "deadLettered": 0,
+   "total": 2688,
+   "attemptsAboveOne": 0,
+   "identitySetSha256": "570d06c84095de17c04d86bfdc7b535f73b124d725b8403c2e6ff065f3522564",
+   "ledgerHeadSequence": 2688,
+   "ledgerHeadHash": "187b453a8df29087f83ced935864c2c446fdfcc9a86e3302aaf14e85c75fbb17",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "value": "{\"schemaVersion\":1,\"channel\":\"Security\",\"recordId\":377494}",
+     "version": 105,
+     "updatedAt": "2026-10-31 08:44:26.6489696+00:00"
+    }
+   ],
+   "files": [
+    {
+     "name": "queue.db",
+     "bytes": 7061504
+    },
+    {
+     "name": "queue.db-shm",
+     "bytes": 32768
+    },
+    {
+     "name": "queue.db-wal",
+     "bytes": 41232
+    }
+   ]
+  },
+  "native": {
+   "kind": "native",
+   "channel": "Security",
+   "since": "2026-10-31T08:35:00+00:00",
+   "capturedAt": "2026-10-31T08:44:31.0318995+00:00",
+   "examined": 2705,
+   "selected": 2705,
+   "unselected": 0,
+   "distinct": 2705,
+   "duplicateIdentities": 0,
+   "redactionChangedIds": 1,
+   "minRecordId": 372016,
+   "maxRecordId": 377528,
+   "identitySetSha256": "45745407536cc907462e8095865f2250c27f72752ca8f64180521a770be16811"
+  },
+  "securityLog": {
+   "records": 7910
+  }
+ },
+ "new": {
+  "phase": "new",
+  "exe": "C:\\BowerLab\\v1test\\msi270\\PFiles64\\Bower\\Bower.Collector.exe",
+  "exeSha256": "20490ec6a3ca50bf65ac2b77a68d6e9ac1c48e874b3c37fc33fc0745c21010ff",
+  "startedAt": "2026-10-31T08:44:54.6019065+00:00",
+  "stoppedAt": "2026-10-31T08:46:58.7868256+00:00",
+  "samples": [
+   {
+    "at": "2026-10-31T08:44:59.7495987+00:00",
+    "state": "running",
+    "eventsRead": 2809,
+    "queued": 120,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 377238,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:45:04.7686892+00:00",
+    "state": "running",
+    "eventsRead": 2875,
+    "queued": 187,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 377871,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:45:09.7703824+00:00",
+    "state": "running",
+    "eventsRead": 2904,
+    "queued": 216,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 377929,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:45:14.7718293+00:00",
+    "state": "running",
+    "eventsRead": 2926,
+    "queued": 238,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 377973,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:45:19.7725005+00:00",
+    "state": "running",
+    "eventsRead": 2953,
+    "queued": 265,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 378027,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:45:24.7749527+00:00",
+    "state": "running",
+    "eventsRead": 2975,
+    "queued": 287,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 378071,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:45:29.7755166+00:00",
+    "state": "running",
+    "eventsRead": 3007,
+    "queued": 318,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 378125,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:45:34.7771148+00:00",
+    "state": "running",
+    "eventsRead": 3030,
+    "queued": 342,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 378181,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:45:39.7780016+00:00",
+    "state": "running",
+    "eventsRead": 3057,
+    "queued": 368,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 378228,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:45:44.7805614+00:00",
+    "state": "running",
+    "eventsRead": 3075,
+    "queued": 387,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 378274,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:45:49.7811787+00:00",
+    "state": "running",
+    "eventsRead": 3106,
+    "queued": 418,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 378336,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:45:54.7822913+00:00",
+    "state": "running",
+    "eventsRead": 3129,
+    "queued": 441,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 378384,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:45:59.7835708+00:00",
+    "state": "running",
+    "eventsRead": 3156,
+    "queued": 468,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 378438,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:46:04.7848887+00:00",
+    "state": "running",
+    "eventsRead": 3178,
+    "queued": 490,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 378483,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:46:09.8023485+00:00",
+    "state": "running",
+    "eventsRead": 3204,
+    "queued": 515,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 378527,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:46:14.8032774+00:00",
+    "state": "running",
+    "eventsRead": 3228,
+    "queued": 540,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 378583,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:46:19.8044718+00:00",
+    "state": "running",
+    "eventsRead": 3254,
+    "queued": 565,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 378627,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:46:24.8059693+00:00",
+    "state": "running",
+    "eventsRead": 3276,
+    "queued": 588,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 378679,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:46:29.8070016+00:00",
+    "state": "running",
+    "eventsRead": 3304,
+    "queued": 615,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 378723,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:46:34.8081291+00:00",
+    "state": "running",
+    "eventsRead": 3330,
+    "queued": 642,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 378787,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:46:39.8094449+00:00",
+    "state": "running",
+    "eventsRead": 3356,
+    "queued": 667,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 378840,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:46:44.8133965+00:00",
+    "state": "running",
+    "eventsRead": 3378,
+    "queued": 690,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 378906,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:46:49.8142740+00:00",
+    "state": "running",
+    "eventsRead": 3403,
+    "queued": 715,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 378956,
+    "readErrors": 0
+   },
+   {
+    "at": "2026-10-31T08:46:54.8162983+00:00",
+    "state": "running",
+    "eventsRead": 3430,
+    "queued": 742,
+    "duplicates": 2688,
+    "resets": 1,
+    "gaps": 0,
+    "bookmark": 379011,
+    "readErrors": 0
+   }
+  ],
+  "queue": {
+   "kind": "queue",
+   "capturedAt": "2026-10-31T08:46:56.9911953+00:00",
+   "integrity": "ok",
+   "journal": "wal",
+   "schemaVersion": 5,
+   "queued": 3430,
+   "uploading": 0,
+   "retrying": 0,
+   "delivered": 0,
+   "deadLettered": 0,
+   "total": 3430,
+   "attemptsAboveOne": 0,
+   "identitySetSha256": "f6c29abbecd9efc2c82f93449e61eb30d4408aa40a579a4be1e5b08bf9fd8f93",
+   "ledgerHeadSequence": 3430,
+   "ledgerHeadHash": "30ac4561a5d90ff180f26e65fbd8761a4643893e0aaad4ed1a07d3d387b860f8",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "value": "{\"schemaVersion\":2,\"channel\":\"Security\",\"recordId\":379011}",
+     "version": 218,
+     "updatedAt": "2026-10-31 08:46:54.3679966+00:00"
+    }
+   ],
+   "files": [
+    {
+     "name": "queue.db",
+     "bytes": 8990720
+    },
+    {
+     "name": "queue.db-shm",
+     "bytes": 32768
+    },
+    {
+     "name": "queue.db-wal",
+     "bytes": 78312
+    }
+   ]
+  },
+  "native": {
+   "kind": "native",
+   "channel": "Security",
+   "since": "2026-10-31T08:35:00+00:00",
+   "capturedAt": "2026-10-31T08:46:58.4796321+00:00",
+   "examined": 3446,
+   "selected": 3446,
+   "unselected": 0,
+   "distinct": 3446,
+   "duplicateIdentities": 0,
+   "redactionChangedIds": 1,
+   "minRecordId": 372016,
+   "maxRecordId": 379043,
+   "identitySetSha256": "a33dc2763e00d8ba777cfe90b918662fa45e8542210d1bd539d09a81240e16ce"
+  },
+  "securityLog": {
+   "records": 9413
+  }
+ }
+}

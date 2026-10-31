@@ -2,8 +2,14 @@ using Bower.Collector;
 
 try
 {
+    // Operator overrides that survive package upgrades (the MSI rewrites the service environment).
+    SettingsFileResult settingsFile = CollectorSettingsFile.Apply();
+    // A stable default id persisted beside the queue when BOWER_COLLECTOR_ID is unset.
+    CollectorIdSource collectorIdSource = CollectorIdentityFile.Apply();
     CollectorSettings settings = CollectorSettings.FromEnvironment();
     WebApplication app = CollectorApplication.Build(settings);
+    StartupLog.SettingsFile(app.Logger, settingsFile.State, settingsFile.Path ?? "-", settingsFile.Count);
+    StartupLog.CollectorId(app.Logger, settings.CollectorId, collectorIdSource);
     await CollectorApplication.InitializeAsync(app, app.Lifetime.ApplicationStopping);
     await app.RunAsync();
     // Non-zero when the host asked the supervisor for a restart (managed privacy profile

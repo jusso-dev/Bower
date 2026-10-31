@@ -248,8 +248,26 @@ impl CollectorSettings {
         }
     }
 
+    /// Also resolves the persisted default collector id (`collector_identity`) when
+    /// `BOWER_COLLECTOR_ID` is unset; `from_environment` stays free of file writes.
     pub fn from_process_environment() -> Result<Self, HostError> {
-        Self::from_environment(|name| std::env::var(name).ok())
+        let queue_path = std::env::var("BOWER_QUEUE_PATH")
+            .ok()
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| base_directory().join("data").join("bower.db"));
+        let (collector_id, _) = crate::collector_identity::resolve(
+            std::env::var("BOWER_COLLECTOR_ID").ok(),
+            &queue_path,
+            machine_name,
+        )?;
+        Self::from_environment(|name| {
+            if name == "BOWER_COLLECTOR_ID" {
+                Some(collector_id.clone())
+            } else {
+                std::env::var(name).ok()
+            }
+        })
     }
 
     /// C# `FromEnvironment`. `read` returns `None` for unset variables; an empty value

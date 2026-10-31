@@ -126,6 +126,9 @@
           <MultiStringValue Value="BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS=[COMMANDTRUSTEDKEYS]" />
           <MultiStringValue Value="BOWER_PACKS=[PACKS]" />
           <MultiStringValue Value="BOWER_PACK_TRUSTED_KEYS=[PACKTRUSTEDKEYS]" />
+          <!-- Operator settings (output, sources, privacy key file) live here: not an MSI
+               file, so upgrade and repair keep it while they rewrite this value. -->
+          <MultiStringValue Value="BOWER_SETTINGS_FILE=[DATAFOLDER]bower.env" />
         </RegistryValue>
         <!-- Event source for the collector's warnings and errors (the service cannot create it). -->
         <RegistryValue Root="HKLM" Key="SYSTEM\CurrentControlSet\Services\EventLog\Application\Bower.Collector"
@@ -179,10 +182,11 @@
     </ComponentGroup>
 
     <!-- Uninstall (not upgrade) deletes every secret the collector or installer leaves:
-         the key-bound credential, an unused enrolment token and the secrets folder.
+         the key-bound credential, an unused enrolment token, the secrets folder and the
+         operator settings file (like /etc/bower/bower.env on Linux remove).
          Formatted when scheduled, so the folder paths are resolved; runs as SYSTEM. -->
     <CustomAction Id="RemoveSecrets" Directory="DATAFOLDER" Execute="deferred" Impersonate="no" Return="check"
-                  ExeCommand="&quot;[System64Folder]cmd.exe&quot; /d /q /c for %d in (&quot;[STATEFOLDER]management-credential&quot; &quot;[DATAFOLDER]enrolment&quot; &quot;[DATAFOLDER]secrets&quot;) do if exist %d rmdir /s /q %d" />
+                  ExeCommand="&quot;[System64Folder]cmd.exe&quot; /d /q /c (for %d in (&quot;[STATEFOLDER]management-credential&quot; &quot;[DATAFOLDER]enrolment&quot; &quot;[DATAFOLDER]secrets&quot;) do if exist %d rmdir /s /q %d) &amp; if exist &quot;[DATAFOLDER]bower.env&quot; del /f /q &quot;[DATAFOLDER]bower.env&quot;" />
     <InstallExecuteSequence>
       <Custom Action="RemoveSecrets" After="DeleteServices" Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
     </InstallExecuteSequence>

@@ -1,0 +1,604 @@
+[
+ {
+  "commandId": "252abedd-5ad6-4ebd-8e25-a62a85a4eecc",
+  "host": "Wec",
+  "script": "wec.ps1",
+  "scriptSha256": "4c2f2cc12cf37efc8ed8bd9732e3869c5548f3cdb9332dc83026d86365d4a7ea",
+  "parameters": {
+   "READ_EXISTING": "true"
+  },
+  "sentAt": "2026-10-31T08:12:32.204670+00:00",
+  "status": "Success",
+  "output": "\ufeffWEC subscription created on BOWERWEC (readExisting=true); ForwardedEvents 1 GiB."
+ },
+ {
+  "commandId": "886efa96-b9ad-43dd-aff2-63498df0c4af",
+  "host": "Dc",
+  "script": "forwarder.ps1",
+  "scriptSha256": "cce80d02ef43b876a6604fa945bcedab0a15e5ce3530c72d875da11637f5a592",
+  "parameters": {
+   "TARGET": "BOWERWEC"
+  },
+  "sentAt": "2026-10-31T08:12:41.876998+00:00",
+  "status": "Success",
+  "output": "Security forwarding to BOWERWEC configured with Network Service read access."
+ },
+ {
+  "commandId": "5ac06bd0-47bd-45f4-a25a-650ffde88b45",
+  "host": "Dc",
+  "script": "start-generator.ps1",
+  "scriptSha256": "c5b4659762b5e02f22eb9044272d2f1b3a15fd9f0ae3ac02edbcecf354e8700c",
+  "parameters": {
+   "LABEL": "w-main",
+   "RATE": "5",
+   "SECONDS": "16200"
+  },
+  "sentAt": "2026-10-31T08:33:11.105422+00:00",
+  "status": "Success",
+  "output": "{\r\n    \"label\":  \"w-main\",\r\n    \"startedAt\":  \"2026-10-31T08:33:20.4732298+00:00\",\r\n    \"state\":  \"running\"\r\n}\r\nstarted BowerGen-w-main rate=5 seconds=16200"
+ },
+ {
+  "commandId": "9982c5a8-bcea-4435-a9eb-6f887b03f370",
+  "host": "Wec",
+  "script": "wec-binpath.ps1",
+  "scriptSha256": "89a55aa9513892908e7c6e43d90a8e369be2f8436677ad688cb5b74ec193defe",
+  "parameters": {
+   "TARGET": "legacy"
+  },
+  "sentAt": "2026-10-31T08:33:54.953328+00:00",
+  "status": "Success",
+  "output": "{\"target\":\"legacy\",\"state\":\"Running\",\"path\":\"C:\\\\BowerLab\\\\legacy\\\\Bower.Collector.exe\",\"sha256\":\"baf238ef86217d5b6fc4da14e37eb35737245b3e56613a3da47e1e5542a621bb\",\"at\":\"2026-10-31T08:34:14.9884208+00:00\"}"
+ },
+ {
+  "commandId": "13f7eda2-29f7-4a78-9cb3-984ef33c7d49",
+  "host": "Dc",
+  "script": "start-generator.ps1",
+  "scriptSha256": "6326fe26797c38efa0d1a1cdd639fa204eebcd3b34a39294d3b2a47c4ac16078",
+  "parameters": {
+   "LABEL": "w-main2",
+   "RATE": "5",
+   "SECONDS": "14400"
+  },
+  "sentAt": "2026-10-31T08:35:24.769439+00:00",
+  "status": "Success",
+  "output": "{\r\n    \"label\":  \"w-main2\",\r\n    \"startedAt\":  \"2026-10-31T08:35:28.0921754+00:00\",\r\n    \"state\":  \"running\"\r\n}\r\nstarted BowerGen-w-main2 rate=5 seconds=14400"
+ },
+ {
+  "commandId": "2844c4f4-2244-4264-a97b-4a9cfc04b0a2",
+  "host": "Wec",
+  "script": "wec-binpath.ps1",
+  "scriptSha256": "3e61fc0feea8c192ca0b67bcd20efe3cf638b850a588a3e6f8676fa51d7bf616",
+  "parameters": {
+   "TARGET": "msi"
+  },
+  "sentAt": "2026-10-31T08:37:48.226389+00:00",
+  "status": "Success",
+  "output": "{\"target\":\"msi\",\"state\":\"Running\",\"path\":\"C:\\\\Program Files\\\\Bower\\\\Bower.Collector.exe\",\"sha256\":\"b206caa79afd1b08086edaf6cbfa586b5d3fc5f1e2c78792291ef3bf3b43f6a7\",\"at\":\"2026-10-31T08:37:57.9441677+00:00\"}"
+ },
+ {
+  "commandId": "f1a5f0b7-dc77-4e5f-b009-4999409a0a1c",
+  "host": "Linux2",
+  "script": "start-sender.sh",
+  "scriptSha256": "ed6bc27b620071681100e24dca975ddd8206cda3c8c6e83ec9b1e4040a59c573",
+  "parameters": {
+   "STREAM": "s1",
+   "TARGET": "172.31.244.199",
+   "RATE": "10",
+   "START": "0",
+   "COUNT": "144000",
+   "BASE": "2026-10-31T08:38:54Z"
+  },
+  "sentAt": "2026-10-31T08:38:51.087190+00:00",
+  "status": "Success",
+  "output": "active\n{\"stream\": \"s1\", \"target\": \"172.31.244.199\", \"base\": \"2026-10-31T08:38:54Z\", \"rate\": 10, \"start\": 0, \"count\": 144000, \"nextSequence\": 22, \"final\": false, \"resendWindow\": 1200, \"updatedAt\": \"2026-10-31T08:38:53.422055+00:00\", \"connections\": 1, \"sent\": 22}"
+ },
+ {
+  "commandId": "5c4ee2df-d045-4aa6-b933-381aaf690156",
+  "host": "Linux",
+  "script": "linux-block.sh",
+  "scriptSha256": "e638b749b4ce9aaa136980a8b30ffd7c6a75b72c5cb2363a93f4f0e7e1d3c4a3",
+  "parameters": {
+   "MODE": "on"
+  },
+  "sentAt": "2026-10-31T08:40:42.385372+00:00",
+  "status": "Failed",
+  "output": ""
+ },
+ {
+  "commandId": "5bc4ad1d-54de-4aa4-a908-9afb1c9ebb9c",
+  "host": "Wec",
+  "script": "wec-block.ps1",
+  "scriptSha256": "cd04e55fcc8385057e4c60386c317f00e476201af5a5b203bda78bb7b35c58ad",
+  "parameters": {
+   "MODE": "on"
+  },
+  "sentAt": "2026-10-31T08:40:44.097484+00:00",
+  "status": "Success",
+  "output": "{\"mode\":\"on\",\"at\":\"2026-10-31T08:40:45.6477435+00:00\",\"rulePresent\":true}"
+ },
+ {
+  "commandId": "b7d1ca0a-7a72-48d2-9055-771b96a2f6f9",
+  "host": "Linux",
+  "script": "linux-block.sh",
+  "scriptSha256": "4364a7a54c44b876615a969c818721b2464d8abcc98d1ba2ae17bc968d15e29f",
+  "parameters": {
+   "MODE": "on"
+  },
+  "sentAt": "2026-10-31T08:40:55.806335+00:00",
+  "status": "Success",
+  "output": "{\"mode\":\"on\",\"at\":\"2026-10-31T08:40:55.938974611Z\",\"present\":true}"
+ },
+ {
+  "commandId": "7a679b59-91ec-4aa7-827c-bb879fbd1e94",
+  "host": "Linux",
+  "script": "linux-upgrade.sh",
+  "scriptSha256": "e83c7c34ab74e8f9c1bb656cb97f71914e5d8a0b79fe44b47986230a6264364f",
+  "parameters": {
+   "LABEL": "l03-upgrade-270",
+   "VERB": "upgrade",
+   "PACKAGE": "/opt/bower-lab/new.rpm"
+  },
+  "sentAt": "2026-10-31T08:41:58.334463+00:00",
+  "status": "Success",
+  "output": "{\"label\": \"l03-upgrade-270\", \"before\": \"bower-collector-0.1.0~dev.264-1.x86_64\", \"after\": \"bower-collector-0.1.0~dev.270-1.x86_64\", \"dnfExit\": 0, \"beforePid\": \"31819\", \"afterPid\": \"32546\", \"packageSeconds\": 5.16, \"healthySecondsAfterPackage\": 0.02, \"active\": \"active\", \"envFileUntouched\": \"\", \"startedAt\": \"1793436118.491660798\", \"finishedAt\": \"1793436123.674561240\"}"
+ },
+ {
+  "commandId": "241c4ff4-ee07-4dac-a733-71371f62ddcd",
+  "host": "Wec",
+  "script": "wec-msi.ps1",
+  "scriptSha256": "4cfa77636fece8dea2d4a9dc9681ad28f255eb437531d8ace684b93bb8702793",
+  "parameters": {
+   "LABEL": "w05-upgrade-270",
+   "MSI": "new.msi",
+   "PROPS": " "
+  },
+  "sentAt": "2026-10-31T08:42:45.605944+00:00",
+  "status": "Success",
+  "output": "{\r\n    \"label\":  \"w05-upgrade-270\",\r\n    \"msi\":  \"new.msi\",\r\n    \"exitCode\":  0,\r\n    \"before\":  \"0.1.0.264\",\r\n    \"after\":  \"0.1.0.270\",\r\n    \"startedAt\":  \"2026-10-31T08:42:46.4159477+00:00\",\r\n    \"finishedAt\":  \"2026-10-31T08:42:50.5034887+00:00\",\r\n    \"msiSeconds\":  4.09,\r\n    \"healthyAfterSeconds\":  0.03,\r\n    \"pidBefore\":  4912,\r\n    \"pidAfter\":  3724,\r\n    \"state\":  \"Running\",\r\n    \"account\":  \"NT SERVICE\\\\Bower\",\r\n    \"envNamesBefore\":  25,\r\n    \"envNamesAfter\":  13,\r\n    \"envNamesLost\":  [\r\n                         \"BOWER_INGEST_TOKEN_FILE\",\r\n                         \"BOWER_OUTPUT\",\r\n                         \"BOWER_AZURE_CREDENTIAL\",\r\n                         \"BOWER_DCE_ENDPOINT\",\r\n                         \"BOWER_DCR_ID\",\r\n                         \"AZURE_TENANT_ID\",\r\n                         \"AZURE_CLIENT_ID\",\r\n                         \"AZURE_CLIENT_CERTIFICATE_PATH\",\r\n                         \"BOWER_PRIVACY_HMAC_KEY_FILE\",\r\n                         \"BOWER_WINDOWS_EVENTLOG_CONFIG\",\r\n                         \"BOWER_DELIVERY_LEASE_SECONDS\",\r\n                         \"BOWER_DELIVERY_TIMEOUT_SECONDS\"\r\n                     ],\r\n    \"envNamesAdded\":  [\r\n\r\n                      ],\r\n    \"downgradeMessageLogged\":  false\r\n}"
+ },
+ {
+  "commandId": "473df9d1-593a-43fb-bc0b-fb191921267c",
+  "host": "Wec",
+  "script": "wec-reapply.ps1",
+  "scriptSha256": "07f7dafba5672784e12a1c8172406c31ed356b037234bb419c6a56c4bd4a9461",
+  "parameters": {},
+  "sentAt": "2026-10-31T08:43:20.347470+00:00",
+  "status": "Success",
+  "output": "{\"at\":\"2026-10-31T08:43:29.7295182+00:00\",\"state\":\"Running\",\"envNames\":25}"
+ },
+ {
+  "commandId": "1a03d137-ad36-4b5e-b0da-bc24f00a871c",
+  "host": "Linux",
+  "script": "linux-kill.sh",
+  "scriptSha256": "16cc7a75fe9c176cd2951700d10450b1729c988330078706fa4df614ef2ee13e",
+  "parameters": {
+   "LABEL": "l06-sigkill",
+   "UNBLOCK": "yes",
+   "DELAY": "4"
+  },
+  "sentAt": "2026-10-31T08:45:19.369108+00:00",
+  "status": "Success",
+  "output": "{\"label\":\"l06-sigkill\",\"killedPid\":32546,\"newPid\":32906,\"killedAt\":1793436323.717301152,\"healthyAt\":1793436329.383858141,\"recoverySeconds\":5.67,\"unblocked\":\"yes\"}"
+ },
+ {
+  "commandId": "e84db54b-dd98-470f-bf00-755f9202cfbf",
+  "host": "Wec",
+  "script": "wec-kill.ps1",
+  "scriptSha256": "f460dd51b2f7a8d83457fc9d54513e48f520c66f1779bfb86a96777a8a8237b5",
+  "parameters": {
+   "LABEL": "w09-taskkill",
+   "UNBLOCK": "yes",
+   "DELAY": "4"
+  },
+  "sentAt": "2026-10-31T08:46:19.531460+00:00",
+  "status": "Success",
+  "output": "{\"label\":\"w09-taskkill\",\"killedPid\":2076,\"newPid\":1340,\"killedAt\":\"2026-10-31T08:46:25.4374403+00:00\",\"healthyAt\":\"2026-10-31T08:46:31.2392582+00:00\",\"recoverySeconds\":5.8,\"unblocked\":\"yes\"}"
+ },
+ {
+  "commandId": "a58389f9-5d64-40ee-8856-a3c52beb9ac6",
+  "host": "Linux",
+  "script": "linux-block.sh",
+  "scriptSha256": "4364a7a54c44b876615a969c818721b2464d8abcc98d1ba2ae17bc968d15e29f",
+  "parameters": {
+   "MODE": "on"
+  },
+  "sentAt": "2026-10-31T08:51:16.956764+00:00",
+  "status": "Success",
+  "output": "{\"mode\":\"on\",\"at\":\"2026-10-31T08:51:17.210185699Z\",\"present\":true}"
+ },
+ {
+  "commandId": "deccec6e-c867-4668-8fd6-6655a85cadc0",
+  "host": "Wec",
+  "script": "wec-block.ps1",
+  "scriptSha256": "cd04e55fcc8385057e4c60386c317f00e476201af5a5b203bda78bb7b35c58ad",
+  "parameters": {
+   "MODE": "on"
+  },
+  "sentAt": "2026-10-31T08:51:24.883572+00:00",
+  "status": "Success",
+  "output": "{\"mode\":\"on\",\"at\":\"2026-10-31T08:51:27.3512028+00:00\",\"rulePresent\":true}"
+ },
+ {
+  "commandId": "5f5ee1cf-ccb8-482f-bf0d-b6e1098c168e",
+  "host": "Linux",
+  "script": "linux-block.sh",
+  "scriptSha256": "4364a7a54c44b876615a969c818721b2464d8abcc98d1ba2ae17bc968d15e29f",
+  "parameters": {
+   "MODE": "on"
+  },
+  "sentAt": "2026-10-31T08:56:58.888846+00:00",
+  "status": "Success",
+  "output": "{\"mode\":\"on\",\"at\":\"2026-10-31T08:56:59.206882176Z\",\"present\":true}"
+ },
+ {
+  "commandId": "540db5b6-bbd5-4c88-98ab-0f40026e9e0d",
+  "host": "Wec",
+  "script": "wec-settings-file.ps1",
+  "scriptSha256": "f196705cd92c5448584304a0007f127c11c713abc882d81baba2bebe60ec7af1",
+  "parameters": {},
+  "sentAt": "2026-10-31T08:57:00.413741+00:00",
+  "status": "Success",
+  "output": "{\"written\":true,\"sha256\":\"82ca515c3420a5d8ce7d12f4051c83523a5a8a18e75f49eb62c12c097baed770\",\"owner\":\"BUILTIN\\\\Administrators\",\"rules\":[\"NT AUTHORITY\\\\SYSTEM:FullControl\",\"BUILTIN\\\\Administrators:FullControl\",\"NT SERVICE\\\\Bower:ReadAndExecute, Synchronize\"]}"
+ },
+ {
+  "commandId": "2f105183-8d1d-4eb4-b3be-85d49252f06a",
+  "host": "Linux",
+  "script": "linux-upgrade.sh",
+  "scriptSha256": "9f9ed37dc0b4c4994cd0c7804902fa56cc3394c0a5657356479f3ab74e8ca2ef",
+  "parameters": {
+   "LABEL": "l13-upgrade-pr",
+   "VERB": "upgrade",
+   "PACKAGE": "/opt/bower-lab/pr.rpm"
+  },
+  "sentAt": "2026-10-31T08:58:33.905281+00:00",
+  "status": "Success",
+  "output": "{\"label\": \"l13-upgrade-pr\", \"before\": \"bower-collector-0.1.0~dev.270-1.x86_64\", \"after\": \"bower-collector-0.1.0~dev.277-1.x86_64\", \"dnfExit\": 0, \"beforePid\": \"1953\", \"afterPid\": \"3384\", \"packageSeconds\": 3.7, \"healthySecondsAfterPackage\": 0.03, \"active\": \"active\", \"envFileUntouched\": \"\", \"startedAt\": \"1793437114.194955630\", \"finishedAt\": \"1793437117.925839492\"}"
+ },
+ {
+  "commandId": "c712b84a-57d7-4885-bcf4-d717c03c8480",
+  "host": "Wec",
+  "script": "wec-msi.ps1",
+  "scriptSha256": "2667e39c05ed475e5c13ee276b046feda0a39ad161cfb34d5036b851a7e83d9f",
+  "parameters": {
+   "LABEL": "w16-upgrade-pr",
+   "MSI": "pr.msi",
+   "PROPS": " "
+  },
+  "sentAt": "2026-10-31T08:58:36.380284+00:00",
+  "status": "Success",
+  "output": "{\r\n    \"label\":  \"w16-upgrade-pr\",\r\n    \"msi\":  \"pr.msi\",\r\n    \"exitCode\":  0,\r\n    \"before\":  \"0.1.0.270\",\r\n    \"after\":  \"0.1.0.277\",\r\n    \"startedAt\":  \"2026-10-31T08:58:38.9748825+00:00\",\r\n    \"finishedAt\":  \"2026-10-31T08:58:44.2267992+00:00\",\r\n    \"msiSeconds\":  5.25,\r\n    \"healthyAfterSeconds\":  0.04,\r\n    \"pidBefore\":  3324,\r\n    \"pidAfter\":  1284,\r\n    \"state\":  \"Running\",\r\n    \"account\":  \"NT SERVICE\\\\Bower\",\r\n    \"envNamesBefore\":  25,\r\n    \"envNamesAfter\":  14,\r\n    \"envNamesLost\":  [\r\n                         \"BOWER_INGEST_TOKEN_FILE\",\r\n                         \"BOWER_OUTPUT\",\r\n                         \"BOWER_AZURE_CREDENTIAL\",\r\n                         \"BOWER_DCE_ENDPOINT\",\r\n                         \"BOWER_DCR_ID\",\r\n                         \"AZURE_TENANT_ID\",\r\n                         \"AZURE_CLIENT_ID\",\r\n                         \"AZURE_CLIENT_CERTIFICATE_PATH\",\r\n                         \"BOWER_PRIVACY_HMAC_KEY_FILE\",\r\n                         \"BOWER_WINDOWS_EVENTLOG_CONFIG\",\r\n                         \"BOWER_DELIVERY_LEASE_SECONDS\",\r\n                         \"BOWER_DELIVERY_TIMEOUT_SECONDS\"\r\n                     ],\r\n    \"envNamesAdded\":  [\r\n                          \"BOWER_SETTINGS_FILE\"\r\n                      ],\r\n    \"downgradeMessageLogged\":  false\r\n}"
+ },
+ {
+  "commandId": "81c56847-bdd1-4f30-b593-8343b85bcdd9",
+  "host": "Wec",
+  "script": "wec-backup.ps1",
+  "scriptSha256": "28dc3bdeeb9038e3cdc44ab8c965bd57f80eb77c1855b8ea2061d6f50c3afcc4",
+  "parameters": {
+   "NAME": "wec-ws4-1",
+   "COLLECTOR_ID": "wec-ws4"
+  },
+  "sentAt": "2026-10-31T09:00:18.196592+00:00",
+  "status": "Success",
+  "output": "{\"name\":\"wec-ws4-1\",\"startedAt\":\"2026-10-31T09:00:22.3600548+00:00\",\"seconds\":0.7,\"bytes\":19628032,\"counts\":{\"Queued\":2178,\"Uploading\":0,\"Retrying\":500,\"Delivered\":4784,\"DeadLettered\":0,\"Total\":7462},\"cursors\":1,\"ledger\":\"7462\",\"intact\":true,\"integrity\":\"ok\",\"collector\":\"wec-ws4\",\"cliSha256\":\"15c53a5eff720a3d281448eea9f7f972afa90b1ff7573ffcfec68498131f5317\"}"
+ },
+ {
+  "commandId": "2cd510e8-c52c-4bee-9fc5-f283752b3823",
+  "host": "Linux",
+  "script": "linux-backup.sh",
+  "scriptSha256": "e76cafe26594d959a7a86aa66ed0a1e81832fdd0d3a0a354424adce99dab0d25",
+  "parameters": {
+   "NAME": "linux-ws4-1",
+   "COLLECTOR_ID": "linux-ws4",
+   "QUEUE": "/var/lib/bower/queue.db"
+  },
+  "sentAt": "2026-10-31T09:00:19.756909+00:00",
+  "status": "Success",
+  "output": "{\"name\": \"linux-ws4-1\", \"seconds\": 0.49, \"bytes\": 32989184, \"counts\": {\"queued\": 1037, \"uploading\": 500, \"retrying\": 472, \"delivered\": 10879, \"deadLettered\": 0, \"total\": 12888}, \"cursors\": 0, \"ledger\": 12888, \"intact\": true, \"integrity\": \"ok\", \"cli\": \"609412b26646b924b1b37878931e76d6837997221fb038e9df8c3a97ac922912\", \"permissions\": \"0o600\"}"
+ },
+ {
+  "commandId": "4b922a5a-e2fa-4178-89fe-d0e31106595f",
+  "host": "Linux",
+  "script": "linux-block.sh",
+  "scriptSha256": "1af34dca4cfb2d993319dbbdd61ed06c74d1aa3b366b6280b847bf1b357d9125",
+  "parameters": {
+   "MODE": "off"
+  },
+  "sentAt": "2026-10-31T09:00:41.376752+00:00",
+  "status": "Success",
+  "output": "{\"mode\":\"off\",\"at\":\"2026-10-31T09:00:41.723796262Z\",\"present\":false}"
+ },
+ {
+  "commandId": "d79d225c-8902-482c-a022-e01829a92109",
+  "host": "Wec",
+  "script": "wec-block.ps1",
+  "scriptSha256": "8b1f88d54f8a60f56d59d9ad197942023aa68bd8ce0ec2134dceca70db260f8e",
+  "parameters": {
+   "MODE": "off"
+  },
+  "sentAt": "2026-10-31T09:00:43.117728+00:00",
+  "status": "Success",
+  "output": "{\"mode\":\"off\",\"at\":\"2026-10-31T09:00:46.1506875+00:00\",\"rulePresent\":false}"
+ },
+ {
+  "commandId": "b60adbd9-d395-4d87-8f3f-b3b2f971ebfb",
+  "host": "Wec2",
+  "script": "wec.ps1",
+  "scriptSha256": "4c2f2cc12cf37efc8ed8bd9732e3869c5548f3cdb9332dc83026d86365d4a7ea",
+  "parameters": {
+   "READ_EXISTING": "true"
+  },
+  "sentAt": "2026-10-31T09:01:20.423868+00:00",
+  "status": "Success",
+  "output": "\ufeffWEC subscription created on BOWERWEC2 (readExisting=true); ForwardedEvents 1 GiB."
+ },
+ {
+  "commandId": "28a4e836-7e44-4e57-8d8e-453527fccec0",
+  "host": "Wec2",
+  "script": "wec2-restore.ps1",
+  "scriptSha256": "c98aa641d832dbe6bed82070b503a387fcd1db5b46763b2e32be17cc133a3171",
+  "parameters": {
+   "NAME": "wec-ws4-1"
+  },
+  "sentAt": "2026-10-31T09:01:34.715749+00:00",
+  "status": "Failed",
+  "output": ""
+ },
+ {
+  "commandId": "bb3fbb7a-63b1-43c4-ad3d-637ed9188bf9",
+  "host": "Wec2",
+  "script": "wec2-restore-continue.ps1",
+  "scriptSha256": "2a3e97cc91b027c0d7134d0d9cbd9ceaabc8b7d769514cc7bb2ba5746674a2c2",
+  "parameters": {},
+  "sentAt": "2026-10-31T09:02:17.970210+00:00",
+  "status": "Success",
+  "output": "{\"queueAclRules\":[\"NT AUTHORITY\\\\SYSTEM:FullControl\",\"BUILTIN\\\\Administrators:FullControl\",\"NT SERVICE\\\\Bower:Modify, Synchronize\"],\"service\":\"Running\",\"forwardedRecords\":0}"
+ },
+ {
+  "commandId": "be473658-8a9e-44f2-b059-b588bc5e48de",
+  "host": "Wec",
+  "script": "wec-disable.ps1",
+  "scriptSha256": "ea96665a9d01c60f32e73f78009553c94693c587e29d293b57ea3b0cb7811b4f",
+  "parameters": {},
+  "sentAt": "2026-10-31T09:03:28.104766+00:00",
+  "status": "Success",
+  "output": "{\"at\":\"2026-10-31T09:03:30.3720184+00:00\",\"state\":\"Stopped\"}"
+ },
+ {
+  "commandId": "27103a59-486d-4543-9d56-d7305f77cf3b",
+  "host": "Dc",
+  "script": "forwarder.ps1",
+  "scriptSha256": "069a289eeecb1b8a2ffdd84bd6ae73e5e9e982cf20b680cc8dfd3ee842c47ba4",
+  "parameters": {
+   "TARGET": "BOWERWEC2"
+  },
+  "sentAt": "2026-10-31T09:03:39.570508+00:00",
+  "status": "Success",
+  "output": "Security forwarding to BOWERWEC2 configured with Network Service read access."
+ },
+ {
+  "commandId": "468b4a7b-8c21-41ab-bfb8-c4439f3ad212",
+  "host": "Linux2",
+  "script": "linux2-restore.sh",
+  "scriptSha256": "74bc1f512b4f4b2ebf89183360f6de07d28c8d13665b66ef3d082719f2cb1eae",
+  "parameters": {
+   "NAME": "linux-ws4-1"
+  },
+  "sentAt": "2026-10-31T09:04:11.665706+00:00",
+  "status": "Success",
+  "output": "{\"restoreSeconds\": 0.56, \"counts\": {\"Queued\": 1037, \"Uploading\": 500, \"Retrying\": 472, \"Delivered\": 10879, \"DeadLettered\": 0, \"Total\": 12888}, \"ledger\": 12888, \"integrity\": \"ok\", \"owner\": \"992:992\", \"mode\": \"0o600\", \"stderr\": \"Restored. Unsettled rows will be delivered again (at least once); source cursors resume from the backup point.\"}\nactive"
+ },
+ {
+  "commandId": "8c4df06f-86f1-4576-aee3-4d72522f8fe2",
+  "host": "Linux2",
+  "script": "stop-sender.sh",
+  "scriptSha256": "a3984bcf7b88f90fcb4956f66b8ce4756d9ef26cc4cd4926c6d70d54b217b24d",
+  "parameters": {
+   "STREAM": "s1"
+  },
+  "sentAt": "2026-10-31T09:04:43.079858+00:00",
+  "status": "Success",
+  "output": "{\"stream\": \"s1\", \"target\": \"172.31.244.199\", \"base\": \"2026-10-31T08:38:54Z\", \"rate\": 10, \"start\": 0, \"count\": 144000, \"nextSequence\": 15519, \"final\": false, \"resendWindow\": 1200, \"updatedAt\": \"2026-10-31T09:04:43.122070+00:00\", \"connections\": 6, \"sent\": 15519, \"sendFailures\": 5, \"resent\": 6000, \"connectFailures\": 39}"
+ },
+ {
+  "commandId": "0c3d4ecb-01a9-415a-ab57-2fdcbdada952",
+  "host": "Linux",
+  "script": "linux-disable.sh",
+  "scriptSha256": "6a0758c548d8ab97db3427ea20618b3dae40091ba2a15d1b78b51a248b279176",
+  "parameters": {},
+  "sentAt": "2026-10-31T09:04:59.981937+00:00",
+  "status": "Success",
+  "output": "inactive"
+ },
+ {
+  "commandId": "788dcf49-eb76-4c8d-b571-95215f5b75de",
+  "host": "Linux2",
+  "script": "start-sender.sh",
+  "scriptSha256": "2d0abb729e0a003b047bb3086527beee944ba406e33601255850527ce6ca8764",
+  "parameters": {
+   "STREAM": "s1b",
+   "TARGET": "172.31.244.168",
+   "RATE": "10",
+   "START": "14319",
+   "COUNT": "129681",
+   "BASE": "2026-10-31T08:38:54Z"
+  },
+  "sentAt": "2026-10-31T09:05:15.731041+00:00",
+  "status": "Success",
+  "output": "active\n{\"stream\": \"s1b\", \"target\": \"172.31.244.168\", \"base\": \"2026-10-31T08:38:54Z\", \"rate\": 10, \"start\": 14319, \"count\": 129681, \"nextSequence\": 14341, \"final\": false, \"resendWindow\": 1200, \"updatedAt\": \"2026-10-31T09:05:18.201823+00:00\", \"connections\": 1, \"sent\": 22}"
+ },
+ {
+  "commandId": "b82f5562-ff91-4294-a0d2-13972313fa1b",
+  "host": "Linux",
+  "script": "docker-run.sh",
+  "scriptSha256": "63beacb3c09f8a647c1ba85b9a6c0bc5512aa8d99d8266f3d5f327d60bf4495e",
+  "parameters": {
+   "LABEL": "d01-start-264",
+   "TAG": "264"
+  },
+  "sentAt": "2026-10-31T09:08:35.787102+00:00",
+  "status": "Success",
+  "output": "{\"label\":\"d01-start-264\",\"from\":\"none\",\"to\":\"bower-lab:264\",\"stopSeconds\":0.01,\"healthySeconds\":0.73,\"user\":\"1654:1654\",\"volume\":\"bower-data\",\"state\":\"running\"}"
+ },
+ {
+  "commandId": "243802f5-d8cf-4196-8a5e-1718015c5dcc",
+  "host": "Linux2",
+  "script": "start-sender.sh",
+  "scriptSha256": "d39dcb124afba16feea598c0b79e1e7a39171c13a233541062c23726c7393bed",
+  "parameters": {
+   "STREAM": "s2",
+   "TARGET": "172.31.244.199",
+   "RATE": "10",
+   "START": "0",
+   "COUNT": "60000",
+   "BASE": "2026-10-31T09:08:40Z"
+  },
+  "sentAt": "2026-10-31T09:08:38.957882+00:00",
+  "status": "Success",
+  "output": "active\n{\"stream\": \"s2\", \"target\": \"172.31.244.199\", \"base\": \"2026-10-31T09:08:40Z\", \"rate\": 10, \"start\": 0, \"count\": 60000, \"nextSequence\": 22, \"final\": false, \"resendWindow\": 1200, \"updatedAt\": \"2026-10-31T09:08:41.480019+00:00\", \"connections\": 1, \"sent\": 22}"
+ },
+ {
+  "commandId": "624c54bf-d907-43aa-b197-c0f6e002fa3d",
+  "host": "Linux",
+  "script": "linux-block.sh",
+  "scriptSha256": "3de9cc3f289e54428ee9b118bcf843a849b68bdb68952e18053936363e7b9b02",
+  "parameters": {
+   "MODE": "on"
+  },
+  "sentAt": "2026-10-31T09:10:26.263023+00:00",
+  "status": "Success",
+  "output": "{\"mode\":\"on\",\"at\":\"2026-10-31T09:10:26.545644729Z\",\"present\":true}"
+ },
+ {
+  "commandId": "1c0c9a2b-ab7c-4c66-b9d0-5ebda4272485",
+  "host": "Linux",
+  "script": "docker-run.sh",
+  "scriptSha256": "4dc11df6ece59fdb04a8dd0276dcf4c8ebd92412dc483ff60a78f0df3f3d4bf0",
+  "parameters": {
+   "LABEL": "d03-swap-277",
+   "TAG": "277"
+  },
+  "sentAt": "2026-10-31T09:12:19.931275+00:00",
+  "status": "Success",
+  "output": "{\"label\":\"d03-swap-277\",\"from\":\"bower-lab:264\",\"to\":\"bower-lab:277\",\"stopSeconds\":0.16,\"healthySeconds\":0.7,\"user\":\"1654:1654\",\"volume\":\"bower-data\",\"state\":\"running\"}"
+ },
+ {
+  "commandId": "e20f3b65-a70b-4428-88f0-e82dc7537f99",
+  "host": "Linux",
+  "script": "linux-block.sh",
+  "scriptSha256": "621e609e2fafab2c00e459517fb745ff66e558677ee401255e4d36caeb9961b9",
+  "parameters": {
+   "MODE": "off"
+  },
+  "sentAt": "2026-10-31T09:13:04.869263+00:00",
+  "status": "Success",
+  "output": "{\"mode\":\"off\",\"at\":\"2026-10-31T09:13:05.194174277Z\",\"present\":false}"
+ },
+ {
+  "commandId": "15bb98fb-2463-4496-b5ac-578f8f891905",
+  "host": "Linux2",
+  "script": "linux-upgrade.sh",
+  "scriptSha256": "8c344d22793e786c84b4a8b3964f3f932645b0ea5bc345052e18c5c14081f550",
+  "parameters": {
+   "LABEL": "y03-downgrade-264",
+   "VERB": "downgrade",
+   "PACKAGE": "/opt/bower-lab/old.rpm"
+  },
+  "sentAt": "2026-10-31T09:13:20.261217+00:00",
+  "status": "Success",
+  "output": "{\"label\": \"y03-downgrade-264\", \"before\": \"bower-collector-0.1.0~dev.277-1.x86_64\", \"after\": \"bower-collector-0.1.0~dev.264-1.x86_64\", \"dnfExit\": 0, \"beforePid\": \"31271\", \"afterPid\": \"31913\", \"packageSeconds\": 3.37, \"healthySecondsAfterPackage\": 0.04, \"active\": \"active\", \"envFileUntouched\": \"\", \"startedAt\": \"1793438000.549818480\", \"finishedAt\": \"1793438003.964100561\"}"
+ },
+ {
+  "commandId": "f61c1341-4350-4f22-a559-816a9de1525b",
+  "host": "Wec2",
+  "script": "wec-msi.ps1",
+  "scriptSha256": "48de3c66582698d7b8c388a6186cb809d49bb027ff0f7baf4012b986f4ee60d5",
+  "parameters": {
+   "LABEL": "x03-downgrade-264",
+   "MSI": "old.msi",
+   "PROPS": " "
+  },
+  "sentAt": "2026-10-31T09:15:03.726484+00:00",
+  "status": "Success",
+  "output": "{\r\n    \"label\":  \"x03-downgrade-264\",\r\n    \"msi\":  \"old.msi\",\r\n    \"exitCode\":  0,\r\n    \"before\":  \"0.1.0.277\",\r\n    \"after\":  \"0.1.0.264\",\r\n    \"startedAt\":  \"2026-10-31T09:15:04.7870861+00:00\",\r\n    \"finishedAt\":  \"2026-10-31T09:15:08.8604482+00:00\",\r\n    \"msiSeconds\":  4.07,\r\n    \"healthyAfterSeconds\":  0.03,\r\n    \"pidBefore\":  3876,\r\n    \"pidAfter\":  1608,\r\n    \"state\":  \"Running\",\r\n    \"account\":  \"NT SERVICE\\\\Bower\",\r\n    \"envNamesBefore\":  14,\r\n    \"envNamesAfter\":  13,\r\n    \"envNamesLost\":  [\r\n                         \"BOWER_SETTINGS_FILE\"\r\n                     ],\r\n    \"envNamesAdded\":  [\r\n\r\n                      ],\r\n    \"downgradeMessageLogged\":  false\r\n}"
+ },
+ {
+  "commandId": "c327bae8-765c-4c6b-ab7a-9bd45fce9ee1",
+  "host": "Wec2",
+  "script": "wec-msi.ps1",
+  "scriptSha256": "63049cceb90d5e9a2e2576b8d4b78ef82cdddad069dd618d3e0dd2e812ee7e19",
+  "parameters": {
+   "LABEL": "x05-reinstall-pr",
+   "MSI": "pr.msi",
+   "PROPS": " "
+  },
+  "sentAt": "2026-10-31T09:15:40.316393+00:00",
+  "status": "Success",
+  "output": "{\r\n    \"label\":  \"x05-reinstall-pr\",\r\n    \"msi\":  \"pr.msi\",\r\n    \"exitCode\":  0,\r\n    \"before\":  \"0.1.0.264\",\r\n    \"after\":  \"0.1.0.277\",\r\n    \"startedAt\":  \"2026-10-31T09:15:41.2894151+00:00\",\r\n    \"finishedAt\":  \"2026-10-31T09:15:45.3614833+00:00\",\r\n    \"msiSeconds\":  4.07,\r\n    \"healthyAfterSeconds\":  0.06,\r\n    \"pidBefore\":  1608,\r\n    \"pidAfter\":  2164,\r\n    \"state\":  \"Running\",\r\n    \"account\":  \"NT SERVICE\\\\Bower\",\r\n    \"envNamesBefore\":  13,\r\n    \"envNamesAfter\":  14,\r\n    \"envNamesLost\":  [\r\n\r\n                     ],\r\n    \"envNamesAdded\":  [\r\n                          \"BOWER_SETTINGS_FILE\"\r\n                      ],\r\n    \"downgradeMessageLogged\":  false\r\n}"
+ },
+ {
+  "commandId": "2898630e-f683-49e4-a6e6-e3299aff3955",
+  "host": "Dc",
+  "script": "stop-generator.ps1",
+  "scriptSha256": "f4d9b40ea25951c764994d4f83db2b1ff38f7a97f99369bf58a8f985fc45c37a",
+  "parameters": {},
+  "sentAt": "2026-10-31T09:18:52.116289+00:00",
+  "status": "Success",
+  "output": "{\"stoppedAt\":\"2026-10-31T09:18:54.2743371+00:00\",\"state\":\"Ready\"}"
+ },
+ {
+  "commandId": "8e80c57b-f3be-4daf-bace-375c6691b9ea",
+  "host": "Linux2",
+  "script": "stop-sender.sh",
+  "scriptSha256": "b1a4b991aea61873dd26c9ac2dfa00b81c6b11eec33e677324097d8d59212a88",
+  "parameters": {
+   "STREAM": "s1b"
+  },
+  "sentAt": "2026-10-31T09:18:56.378492+00:00",
+  "status": "Success",
+  "output": "{\"stream\": \"s1b\", \"target\": \"172.31.244.168\", \"base\": \"2026-10-31T08:38:54Z\", \"rate\": 10, \"start\": 14319, \"count\": 129681, \"nextSequence\": 22524, \"final\": false, \"resendWindow\": 1200, \"updatedAt\": \"2026-10-31T09:18:56.501828+00:00\", \"connections\": 2, \"sent\": 8205, \"sendFailures\": 1, \"connectFailures\": 1, \"resent\": 1200}"
+ },
+ {
+  "commandId": "d6d74023-bd0c-4e2a-9f79-1ea38ae46a95",
+  "host": "Linux2",
+  "script": "stop-sender.sh",
+  "scriptSha256": "50449e2c80471e1ee4d339218fda538cb265d343e2e7ce5335b71b4d212d95a6",
+  "parameters": {
+   "STREAM": "s2"
+  },
+  "sentAt": "2026-10-31T09:19:03.006041+00:00",
+  "status": "Success",
+  "output": "{\"stream\": \"s2\", \"target\": \"172.31.244.199\", \"base\": \"2026-10-31T09:08:40Z\", \"rate\": 10, \"start\": 0, \"count\": 60000, \"nextSequence\": 6236, \"final\": false, \"resendWindow\": 1200, \"updatedAt\": \"2026-10-31T09:19:02.880040+00:00\", \"connections\": 2, \"sent\": 6236, \"sendFailures\": 1, \"connectFailures\": 1, \"resent\": 1200}"
+ },
+ {
+  "commandId": "ad4a06f2-fc24-4bd8-84a1-7ba35acda5a6",
+  "host": "Wec2",
+  "script": "wec-dr-subscription.ps1",
+  "scriptSha256": "2ab4f982a4cd3395f4a7dd90a2d0950bc6219259402942f598fc1123b9417d5d",
+  "parameters": {
+   "READ_EXISTING": "true"
+  },
+  "sentAt": "2026-10-31T09:26:02.317897+00:00",
+  "status": "Success",
+  "output": "\ufeffWEC subscription created on BOWERWEC2 (readExisting=true); ForwardedEvents 1 GiB."
+ },
+ {
+  "commandId": "3068c48c-5103-415f-b2a3-6c811d0e5184",
+  "host": "Wec",
+  "script": "wec-enable.ps1",
+  "scriptSha256": "ad820a9085e07604701569f3c5fffa730a8330233753f706ddf83ce1cd9a83f3",
+  "parameters": {},
+  "sentAt": "2026-10-31T09:32:13.399073+00:00",
+  "status": "Success",
+  "output": "{\"at\":\"2026-10-31T09:33:03.1873405+00:00\",\"state\":\"Running\"}"
+ },
+ {
+  "commandId": "fe8247c2-e991-48ca-bc38-f3a5ee9c9814",
+  "host": "Wec",
+  "script": "wec-disable.ps1",
+  "scriptSha256": "ea96665a9d01c60f32e73f78009553c94693c587e29d293b57ea3b0cb7811b4f",
+  "parameters": {},
+  "sentAt": "2026-10-31T09:34:14.233619+00:00",
+  "status": "Success",
+  "output": "{\"at\":\"2026-10-31T09:34:14.9113661+00:00\",\"state\":\"Stopped\"}"
+ }
+]

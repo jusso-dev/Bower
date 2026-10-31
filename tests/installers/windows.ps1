@@ -150,6 +150,32 @@ try {
     Assert-NoToken $data '%ProgramData%\Bower'
     Assert-NoToken $work 'the installer logs'
 
+    # Operator settings outside the MSI-owned service environment (BOWER_SETTINGS_FILE): the
+    # collector must apply them, and upgrade/repair cannot rewrite them. Prove the effect:
+    # an invalid value stops startup, then a valid listener moves /health to another port.
+    Assert-That ($environment -contains "BOWER_SETTINGS_FILE=$data\bower.env") 'settings file not configured'
+    function Test-Health([int] $port) {
+        try { Invoke-RestMethod "http://127.0.0.1:$port/health" -TimeoutSec 2 | Out-Null; $true } catch { $false }
+    }
+    function Write-SettingsFile([string] $content) {
+        Set-Content -LiteralPath (Join-Path $data 'bower.env') -Value $content -Encoding ASCII
+        # Elevated admins on client Windows own new files themselves; the collector requires
+        # SYSTEM or Administrators, as documented.
+        & icacls.exe (Join-Path $data 'bower.env') /setowner '*S-1-5-32-544' | Out-Null
+    }
+    Write-SettingsFile 'BOWER_OUTPUT=not-a-real-output'
+    Stop-Service -Name Bower
+    Start-Service -Name Bower -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 8
+    Assert-That (-not (Test-Health 4319)) 'collector ignored an invalid value in bower.env'
+    Write-SettingsFile 'BOWER_LISTEN_URL=http://127.0.0.1:4329'
+    Stop-Service -Name Bower -ErrorAction SilentlyContinue
+    Start-Service -Name Bower
+    $applied = $false
+    for ($attempt = 0; $attempt -lt 30 -and -not $applied; $attempt++) { Start-Sleep -Seconds 1; $applied = Test-Health 4329 }
+    Assert-That $applied 'collector did not apply BOWER_LISTEN_URL from bower.env'
+    Assert-That (-not (Test-Health 4319)) 'bower.env did not override the service environment'
+
     # An operator secret file; uninstall must remove it too.
     Set-Content -LiteralPath (Join-Path $data 'secrets\ingest-token') -Value 'placeholder'
 
@@ -159,7 +185,7 @@ try {
         '/x', ('"{0}"' -f $msi), '/qn', '/norestart', '/l*v', ('"{0}"' -f (Join-Path $work 'uninstall.log')))
     Assert-That ($uninstall.ExitCode -eq 0) "msiexec /x exited with $($uninstall.ExitCode)"
     Assert-That ($null -eq (Get-Service -Name Bower -ErrorAction SilentlyContinue)) 'service left behind'
-    foreach ($path in 'state\management-credential', 'enrolment', 'secrets') {
+    foreach ($path in 'state\management-credential', 'enrolment', 'secrets', 'bower.env') {
         Assert-That (-not (Test-Path -LiteralPath (Join-Path $data $path))) "$path left behind after uninstall"
     }
     Assert-That (Test-Path -LiteralPath (Join-Path $data 'state\queue.db')) 'queue deleted on uninstall'
