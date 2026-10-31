@@ -150,6 +150,15 @@ try {
     Assert-NoToken $data '%ProgramData%\Bower'
     Assert-NoToken $work 'the installer logs'
 
+    # Operator settings outside the MSI-owned service environment: the collector reads them
+    # after a restart, and upgrade/repair cannot rewrite them.
+    Assert-That ($environment -contains "BOWER_SETTINGS_FILE=$data\bower.env") 'settings file not configured'
+    Set-Content -LiteralPath (Join-Path $data 'bower.env') -Value 'BOWER_QUEUE_RETENTION_HOURS=48' -Encoding ASCII
+    Restart-Service -Name Bower
+    (Get-Service -Name Bower).WaitForStatus('Running', [TimeSpan]::FromSeconds(60))
+    Start-Sleep -Seconds 5
+    Assert-That ((Get-Service -Name Bower).Status -eq 'Running') 'collector did not start with the settings file'
+
     # An operator secret file; uninstall must remove it too.
     Set-Content -LiteralPath (Join-Path $data 'secrets\ingest-token') -Value 'placeholder'
 
@@ -159,7 +168,7 @@ try {
         '/x', ('"{0}"' -f $msi), '/qn', '/norestart', '/l*v', ('"{0}"' -f (Join-Path $work 'uninstall.log')))
     Assert-That ($uninstall.ExitCode -eq 0) "msiexec /x exited with $($uninstall.ExitCode)"
     Assert-That ($null -eq (Get-Service -Name Bower -ErrorAction SilentlyContinue)) 'service left behind'
-    foreach ($path in 'state\management-credential', 'enrolment', 'secrets') {
+    foreach ($path in 'state\management-credential', 'enrolment', 'secrets', 'bower.env') {
         Assert-That (-not (Test-Path -LiteralPath (Join-Path $data $path))) "$path left behind after uninstall"
     }
     Assert-That (Test-Path -LiteralPath (Join-Path $data 'state\queue.db')) 'queue deleted on uninstall'

@@ -2,6 +2,8 @@ using Bower.Collector;
 
 try
 {
+    // Operator overrides that survive package upgrades (the MSI rewrites the service environment).
+    CollectorSettingsFile.Apply();
     CollectorSettings settings = CollectorSettings.FromEnvironment();
     WebApplication app = CollectorApplication.Build(settings);
     await CollectorApplication.InitializeAsync(app, app.Lifetime.ApplicationStopping);

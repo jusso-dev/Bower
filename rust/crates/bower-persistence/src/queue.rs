@@ -482,6 +482,37 @@ LIMIT ?3;",
     }
 }
 
+/// Queue schema version this build reads and writes.
+pub const SCHEMA_VERSION: i64 = 5;
+
+/// Read-only check mirroring C# `SqliteEventStore.RefuseNewerSchemaAsync`.
+pub(crate) fn refuse_newer_schema(connection: &rusqlite::Connection) -> StoreResult<()> {
+    let has_history: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_history');",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if !has_history {
+        return Ok(());
+    }
+    let version: i64 = connection
+        .query_row(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_history;",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if version > SCHEMA_VERSION {
+        return Err(StoreError::Invalid(format!(
+            "Queue schema version {version} is newer than this Bower build supports ({SCHEMA_VERSION}). \
+             The database was not modified. Run the newer Bower version or restore a backup taken before the upgrade."
+        )));
+    }
+    Ok(())
+}
+
 fn read_queued(row: &Row<'_>) -> rusqlite::Result<QueuedEvent> {
     let received_at: String = row.get(3)?;
     let state: i64 = row.get(4)?;
@@ -501,6 +532,9 @@ fn read_queued(row: &Row<'_>) -> rusqlite::Result<QueuedEvent> {
 impl DurableEventStore for SqliteEventStore {
     fn initialize(&self) -> StoreResult<()> {
         self.pool.with(|connection| {
+            // Before any DDL or journal change: never create, migrate or repair tables in a
+            // database a newer build has already moved to a schema this one does not know.
+            refuse_newer_schema(connection)?;
             let _mode: String = connection
                 .query_row("PRAGMA journal_mode = WAL;", [], |row| row.get(0))
                 .map_err(storage)?;
@@ -533,7 +567,7 @@ impl DurableEventStore for SqliteEventStore {
                 transaction.commit().map_err(storage)?;
             }
             let version: i64 = connection.query_row("SELECT MAX(version) FROM schema_history;", [], |row| row.get(0)).map_err(storage)?;
-            if version != 5 { return Err(StoreError::Invalid("Unsupported queue schema version.".into())); }
+            if version != SCHEMA_VERSION { return Err(StoreError::Invalid("Unsupported queue schema version.".into())); }
             self.configure_budget(connection)?;
             let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
             self.check_storage()?;

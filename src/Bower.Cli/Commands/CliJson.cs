@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using Bower.Abstractions;
 using Bower.Evidence;
 using Bower.Packs;
+using Bower.Persistence;
 using Bower.Pipeline;
 
 namespace Bower.Cli.Commands;
@@ -256,6 +257,7 @@ internal sealed record SourceCheckItem(
 [JsonSerializable(typeof(ArchiveCreateOutput))]
 [JsonSerializable(typeof(ArchiveVerifyOutput))]
 [JsonSerializable(typeof(QueueSnapshot))]
+[JsonSerializable(typeof(QueueBackupManifest))]
 [JsonSerializable(typeof(IReadOnlyList<DeadLetterRecord>))]
 [JsonSerializable(typeof(SignedEvidence))]
 [JsonSerializable(typeof(List<DoctorCommand.Check>))]
