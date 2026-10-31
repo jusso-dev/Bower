@@ -68,7 +68,26 @@ public sealed record SyslogListenerStatus(
     long Retries,
     long SubmitFailures,
     long ReceiveErrors,
-    DateTimeOffset? LastFrameAt);
+    DateTimeOffset? LastFrameAt)
+{
+    /// <summary>TLS material reloads applied after a file change.</summary>
+    public long TlsReloads { get; init; }
+
+    /// <summary>Changed TLS files that could not be loaded; the last good material stays in use.</summary>
+    public long TlsReloadFailures { get; init; }
+
+    /// <summary>Handshakes refused by the revocation lists (listed, unknown issuer, stale or badly signed list).</summary>
+    public long TlsRevoked { get; init; }
+
+    /// <summary>Open sessions closed because their client certificate is no longer trusted.</summary>
+    public long TlsSessionsClosed { get; init; }
+
+    public DateTimeOffset? ServerCertificateNotAfter { get; init; }
+
+    public DateTimeOffset? ClientCertificateAuthorityNotAfter { get; init; }
+
+    public DateTimeOffset? ClientRevocationListNextUpdate { get; init; }
+}
 
 /// <summary>
 /// TCP (RFC 6587 octet counting and LF framing), TLS and UDP syslog listeners.
@@ -79,6 +98,13 @@ public sealed record SyslogListenerStatus(
 /// application acknowledgement: frames buffered here or in the kernel when the process
 /// stops are lost unless the sender retransmits. UDP is best effort: datagrams are queued
 /// in a bounded buffer and dropped (and counted) when it is full or the queue is at capacity.
+/// </para>
+/// <para>
+/// TLS material is reloaded when its files change, without dropping connections: new
+/// handshakes use the newest valid certificate, key, client CAs and revocation lists, and a
+/// failed reload keeps the last good material. Open mutual-TLS sessions are validated again
+/// before their next frame after a reload, or once a certificate in their chain or a
+/// revocation list expires; a session whose client is no longer trusted is closed.
 /// </para>
 /// </summary>
 public sealed class SyslogSource : IAsyncDisposable
@@ -111,6 +137,9 @@ public sealed class SyslogSource : IAsyncDisposable
     /// <summary>Wait before retrying a frame the queue could not take yet.</summary>
     public TimeSpan RetryDelay { get; init; } = TimeSpan.FromSeconds(1);
 
+    /// <summary>How often TLS files are checked for changes (on connection, frame or status activity).</summary>
+    public TimeSpan TlsReloadInterval { get; init; } = TimeSpan.FromSeconds(1);
+
     /// <summary>Bound endpoints by listener id (after <see cref="StartAsync"/>).</summary>
     public IReadOnlyDictionary<string, IPEndPoint> Endpoints => endpoints;
 
@@ -130,7 +159,7 @@ public sealed class SyslogSource : IAsyncDisposable
             foreach (Listener listener in listeners)
             {
                 SyslogListenerOptions options = listener.Options;
-                listener.Tls = options.Protocol == "tls" ? LoadTls(options) : null;
+                listener.Tls = options.Protocol == "tls" ? new SyslogTlsSource(options, clock, TlsReloadInterval) : null;
                 IPAddress address = IPAddress.Parse(options.Address);
                 bool datagram = options.Protocol == "udp";
                 Socket socket = datagram
@@ -272,22 +301,29 @@ public sealed class SyslogSource : IAsyncDisposable
         TimeSpan idle = TimeSpan.FromSeconds(listener.Options.IdleTimeoutSeconds);
         NetworkStream network = new(socket, ownsSocket: true);
         Stream stream = network;
+        SyslogTlsSession? session = null;
         try
         {
             if (listener.Tls is { } tls)
             {
                 SslStream secure = new(network, leaveInnerStreamOpen: false);
                 stream = secure;
+                session = new SyslogTlsSession();
                 using CancellationTokenSource handshake = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 handshake.CancelAfter(idle);
                 try
                 {
-                    await secure.AuthenticateAsServerAsync(tls, handshake.Token);
+                    await secure.AuthenticateAsServerAsync(tls.Current.CreateOptions(session, clock), handshake.Token);
                 }
                 catch (Exception exception) when (!cancellationToken.IsCancellationRequested
                     && exception is AuthenticationException or IOException or OperationCanceledException or System.ComponentModel.Win32Exception)
                 {
                     Interlocked.Increment(ref listener.Counters.TlsHandshakeFailures);
+                    if (session.Revoked)
+                    {
+                        Interlocked.Increment(ref listener.Counters.TlsRevoked);
+                    }
+
                     return;
                 }
             }
@@ -327,6 +363,14 @@ public sealed class SyslogSource : IAsyncDisposable
                 }
 
                 listener.Received(result.Frame.Length, clock.GetUtcNow());
+                if (session is not null && !StillTrusted(listener.Tls!, session))
+                {
+                    // The client CA was removed, the certificate was revoked or something in
+                    // its chain expired: refuse this frame and end the session.
+                    Interlocked.Increment(ref listener.Counters.TlsSessionsClosed);
+                    return;
+                }
+
                 if (!await HandleFrameAsync(listener, senderText, result.Frame, waitWhenUnavailable: true, cancellationToken))
                 {
                     return;
@@ -538,60 +582,12 @@ public sealed class SyslogSource : IAsyncDisposable
         : address.AddressFamily == AddressFamily.InterNetworkV6 && address.ScopeId != 0 ? new IPAddress(address.GetAddressBytes())
         : address;
 
-    private static SslServerAuthenticationOptions LoadTls(SyslogListenerOptions options)
+    private bool StillTrusted(SyslogTlsSource tls, SyslogTlsSession session)
     {
-        SyslogTlsOptions tls = options.Tls!;
-        try
-        {
-            X509Certificate2Collection chain = [];
-            chain.ImportFromPemFile(tls.CertificateFile);
-            using X509Certificate2 pem = X509Certificate2.CreateFromPemFile(tls.CertificateFile, tls.PrivateKeyFile);
-            // Re-import so the key is usable by SslStream on every platform (PEM keys are ephemeral).
-            X509Certificate2 server = X509CertificateLoader.LoadPkcs12(pem.Export(X509ContentType.Pkcs12), null);
-            X509Certificate2Collection intermediates = [.. chain.Skip(1)];
-            X509Certificate2Collection? authorities = null;
-            if (tls.ClientCertificateAuthorityFile is { } authorityFile)
-            {
-                authorities = [];
-                authorities.ImportFromPemFile(authorityFile);
-                if (authorities.Count == 0)
-                {
-                    throw new CryptographicException("No client certificate authority.");
-                }
-            }
-
-            // Client chains are built by SslStream with this policy, which adds the
-            // intermediates the sender supplies; only the configured CAs are trusted.
-            X509ChainPolicy? clientPolicy = null;
-            if (authorities is not null)
-            {
-                clientPolicy = new X509ChainPolicy
-                {
-                    TrustMode = X509ChainTrustMode.CustomRootTrust,
-                    RevocationMode = X509RevocationMode.NoCheck
-                };
-                clientPolicy.CustomTrustStore.AddRange(authorities);
-                clientPolicy.ApplicationPolicy.Add(new Oid("1.3.6.1.5.5.7.3.2"));
-            }
-
-            return new SslServerAuthenticationOptions
-            {
-                ServerCertificateContext = SslStreamCertificateContext.Create(server, intermediates, offline: true),
-                // Same protocol floor as the Rust port (rustls: TLS 1.2 and 1.3).
-                EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
-                ClientCertificateRequired = authorities is not null,
-                CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
-                CertificateChainPolicy = clientPolicy,
-                RemoteCertificateValidationCallback = authorities is null
-                    ? null
-                    : (_, certificate, _, errors) => certificate is not null && errors == SslPolicyErrors.None
-            };
-        }
-        catch (Exception exception) when (exception is CryptographicException or IOException or ArgumentException or UnauthorizedAccessException)
-        {
-            // Never echo key material, file contents or the underlying parser message.
-            throw new InvalidOperationException($"Syslog listener {options.Id}: TLS certificate or key could not be loaded.");
-        }
+        SyslogTlsMaterial material = tls.Current;
+        DateTimeOffset now = clock.GetUtcNow();
+        return (material.Generation == session.Generation && now < session.RevalidateAt)
+            || material.StillTrusted(session, now);
     }
 
     private sealed class Listener(SyslogListenerOptions options)
@@ -600,7 +596,7 @@ public sealed class SyslogSource : IAsyncDisposable
 
         public Socket? Socket { get; set; }
 
-        public SslServerAuthenticationOptions? Tls { get; set; }
+        public SyslogTlsSource? Tls { get; set; }
 
         public string Endpoint { get; set; } = string.Empty;
 
@@ -616,6 +612,8 @@ public sealed class SyslogSource : IAsyncDisposable
         public SyslogListenerStatus Snapshot()
         {
             long last = Interlocked.Read(ref Counters.LastFrameTicks);
+            // Reading the material also applies a pending file change, so status reflects it.
+            SyslogTlsMaterial? material = Tls?.Current;
             return new SyslogListenerStatus(
                 Options.Id,
                 Options.Protocol,
@@ -642,7 +640,16 @@ public sealed class SyslogSource : IAsyncDisposable
                 Interlocked.Read(ref Counters.Retries),
                 Interlocked.Read(ref Counters.SubmitFailures),
                 Interlocked.Read(ref Counters.ReceiveErrors),
-                last == 0 ? null : new DateTimeOffset(last, TimeSpan.Zero));
+                last == 0 ? null : new DateTimeOffset(last, TimeSpan.Zero))
+            {
+                TlsReloads = Tls?.Reloads ?? 0,
+                TlsReloadFailures = Tls?.ReloadFailures ?? 0,
+                TlsRevoked = Interlocked.Read(ref Counters.TlsRevoked),
+                TlsSessionsClosed = Interlocked.Read(ref Counters.TlsSessionsClosed),
+                ServerCertificateNotAfter = material?.ServerCertificateNotAfter,
+                ClientCertificateAuthorityNotAfter = material?.ClientCertificateAuthorityNotAfter,
+                ClientRevocationListNextUpdate = material?.ClientRevocationListNextUpdate
+            };
         }
     }
 
@@ -653,6 +660,8 @@ public sealed class SyslogSource : IAsyncDisposable
         public long ConnectionsRejected;
         public long SendersDenied;
         public long TlsHandshakeFailures;
+        public long TlsRevoked;
+        public long TlsSessionsClosed;
         public long FramesReceived;
         public long BytesReceived;
         public long Queued;

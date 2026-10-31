@@ -7,28 +7,29 @@
 //! process stops are lost unless the sender retransmits. UDP is best effort: datagrams are
 //! queued in a bounded buffer and dropped (and counted) when it is full or the queue is at
 //! capacity.
+//!
+//! TLS material is reloaded when its files change, without dropping connections (see
+//! [`crate::tls`]); an open mutual-TLS session whose client is no longer trusted is closed
+//! before its next frame is used.
 
 use std::collections::HashMap;
-use std::io::BufReader;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use bower_contracts::time::{Clock, SystemClock, Timestamp, serde_offset_option};
-use rustls::pki_types::pem::PemObject;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use serde::Serialize;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{Semaphore, mpsc, watch};
 use tokio::task::JoinSet;
-use tokio_rustls::TlsAcceptor;
 
 use crate::config::{ListenerOptions, Route, SyslogSourceConfiguration, normalise};
 use crate::framing::FrameReader;
 use crate::parser::{self, failures};
 use crate::record;
+use crate::tls::{TlsSession, TlsSource, is_revocation_failure};
 
 /// Datagrams buffered per UDP listener before new ones are dropped.
 pub const UDP_QUEUE_CAPACITY: usize = 256;
@@ -103,6 +104,20 @@ pub struct ListenerStatus {
     pub receive_errors: i64,
     #[serde(with = "serde_offset_option")]
     pub last_frame_at: Option<Timestamp>,
+    /// TLS material reloads applied after a file change.
+    pub tls_reloads: i64,
+    /// Changed TLS files that could not be loaded; the last good material stays in use.
+    pub tls_reload_failures: i64,
+    /// Handshakes refused by the revocation lists.
+    pub tls_revoked: i64,
+    /// Open sessions closed because their client certificate is no longer trusted.
+    pub tls_sessions_closed: i64,
+    #[serde(with = "serde_offset_option")]
+    pub server_certificate_not_after: Option<Timestamp>,
+    #[serde(with = "serde_offset_option")]
+    pub client_certificate_authority_not_after: Option<Timestamp>,
+    #[serde(with = "serde_offset_option")]
+    pub client_revocation_list_next_update: Option<Timestamp>,
 }
 
 #[derive(Default)]
@@ -112,6 +127,8 @@ struct Counters {
     connections_rejected: AtomicI64,
     senders_denied: AtomicI64,
     tls_handshake_failures: AtomicI64,
+    tls_revoked: AtomicI64,
+    tls_sessions_closed: AtomicI64,
     frames_received: AtomicI64,
     bytes_received: AtomicI64,
     queued: AtomicI64,
@@ -140,6 +157,7 @@ struct ListenerState {
     counters: Counters,
     endpoint: Mutex<String>,
     last_frame: Mutex<Option<Timestamp>>,
+    tls: OnceLock<Arc<TlsSource>>,
 }
 
 impl ListenerState {
@@ -157,6 +175,9 @@ impl ListenerState {
     fn snapshot(&self) -> ListenerStatus {
         let read = |counter: &AtomicI64| counter.load(Ordering::SeqCst);
         let counters = &self.counters;
+        // Reading the material also applies a pending file change, so status reflects it.
+        let tls = self.tls.get();
+        let material = tls.map(|source| source.current());
         ListenerStatus {
             id: self.options.id.clone(),
             protocol: self.options.protocol.clone(),
@@ -191,6 +212,19 @@ impl ListenerState {
                 .last_frame
                 .lock()
                 .unwrap_or_else(|poison| poison.into_inner()),
+            tls_reloads: tls.map_or(0, |source| source.reloads()),
+            tls_reload_failures: tls.map_or(0, |source| source.reload_failures()),
+            tls_revoked: read(&counters.tls_revoked),
+            tls_sessions_closed: read(&counters.tls_sessions_closed),
+            server_certificate_not_after: material
+                .as_ref()
+                .and_then(|material| material.server_certificate_not_after),
+            client_certificate_authority_not_after: material
+                .as_ref()
+                .and_then(|material| material.client_certificate_authority_not_after),
+            client_revocation_list_next_update: material
+                .as_ref()
+                .and_then(|material| material.client_revocation_list_next_update),
         }
     }
 }
@@ -206,7 +240,7 @@ impl SyslogMetrics {
 }
 
 enum Bound {
-    Stream(TcpListener, Option<TlsAcceptor>),
+    Stream(TcpListener, Option<Arc<TlsSource>>),
     Datagram(UdpSocket),
 }
 
@@ -215,6 +249,7 @@ struct Shared {
     clock: Arc<dyn Clock>,
     gate: Semaphore,
     retry_delay: Duration,
+    tls_reload_interval: Duration,
 }
 
 pub struct SyslogSource {
@@ -239,6 +274,7 @@ impl SyslogSource {
                     counters: Counters::default(),
                     endpoint: Mutex::new(String::new()),
                     last_frame: Mutex::new(None),
+                    tls: OnceLock::new(),
                 })
             })
             .collect();
@@ -251,6 +287,7 @@ impl SyslogSource {
                 clock: clock.unwrap_or_else(|| Arc::new(SystemClock)),
                 gate: Semaphore::new(MAXIMUM_CONCURRENT_SUBMISSIONS),
                 retry_delay: Duration::from_secs(1),
+                tls_reload_interval: Duration::from_secs(1),
             }),
         }
     }
@@ -259,6 +296,14 @@ impl SyslogSource {
     pub fn with_retry_delay(mut self, delay: Duration) -> Self {
         if let Some(shared) = Arc::get_mut(&mut self.shared) {
             shared.retry_delay = delay;
+        }
+        self
+    }
+
+    /// How often TLS files are checked for changes (before `bind`; C# `TlsReloadInterval`).
+    pub fn with_tls_reload_interval(mut self, interval: Duration) -> Self {
+        if let Some(shared) = Arc::get_mut(&mut self.shared) {
+            shared.tls_reload_interval = interval;
         }
         self
     }
@@ -292,8 +337,12 @@ impl SyslogSource {
                 (Bound::Datagram(socket), local)
             } else {
                 let tls = (options.protocol == "tls")
-                    .then(|| load_tls(options))
-                    .transpose()?;
+                    .then(|| TlsSource::load(options, self.shared.tls_reload_interval))
+                    .transpose()?
+                    .map(Arc::new);
+                if let Some(source) = &tls {
+                    let _ = listener.tls.set(Arc::clone(source));
+                }
                 let socket = bind_stream(address, options).map_err(SourceError::Bind)?;
                 let local = socket.local_addr().map_err(SourceError::Bind)?;
                 (Bound::Stream(socket, tls), local)
@@ -356,7 +405,7 @@ async fn stopped(stop: &mut watch::Receiver<bool>) {
 async fn accept(
     listener: Arc<ListenerState>,
     socket: TcpListener,
-    tls: Option<TlsAcceptor>,
+    tls: Option<Arc<TlsSource>>,
     shared: Arc<Shared>,
     mut stop: watch::Receiver<bool>,
 ) {
@@ -421,7 +470,7 @@ async fn serve_connection(
     listener: Arc<ListenerState>,
     stream: TcpStream,
     sender: IpAddr,
-    tls: Option<TlsAcceptor>,
+    tls: Option<Arc<TlsSource>>,
     shared: Arc<Shared>,
     mut stop: watch::Receiver<bool>,
 ) {
@@ -429,20 +478,43 @@ async fn serve_connection(
     let idle =
         Duration::from_secs(u64::try_from(listener.options.idle_timeout_seconds).unwrap_or(60));
     match tls {
-        None => serve_frames(&listener, stream, sender, &shared, idle, &mut stop).await,
-        Some(acceptor) => {
+        None => serve_frames(&listener, stream, sender, &shared, idle, &mut stop, None).await,
+        Some(source) => {
+            let material = source.current();
             let handshake = tokio::select! {
                 () = stopped(&mut stop) => return,
-                handshake = tokio::time::timeout(idle, acceptor.accept(stream)) => handshake,
+                handshake = tokio::time::timeout(idle, material.acceptor.accept(stream)) => handshake,
             };
             match handshake {
                 Ok(Ok(secure)) => {
-                    serve_frames(&listener, secure, sender, &shared, idle, &mut stop).await;
+                    let chain = secure
+                        .get_ref()
+                        .1
+                        .peer_certificates()
+                        .map(|chain| chain.iter().map(|item| item.clone().into_owned()).collect())
+                        .unwrap_or_default();
+                    let session = TlsSession::new(&material, chain);
+                    let trust = Some((source, session));
+                    serve_frames(&listener, secure, sender, &shared, idle, &mut stop, trust).await;
                 }
-                _ => bump(&listener.counters.tls_handshake_failures),
+                Ok(Err(error)) => {
+                    bump(&listener.counters.tls_handshake_failures);
+                    if is_revocation_failure(&error) {
+                        bump(&listener.counters.tls_revoked);
+                    }
+                }
+                Err(_) => bump(&listener.counters.tls_handshake_failures),
             }
         }
     }
+}
+
+/// C# `StillTrusted`: unchanged material and nothing expired, or a fresh validation.
+fn still_trusted(source: &TlsSource, session: &mut TlsSession, now: Timestamp) -> bool {
+    let material = source.current();
+    (material.generation == session.generation
+        && session.revalidate_at.is_none_or(|deadline| now < deadline))
+        || material.still_trusted(session)
 }
 
 async fn serve_frames<S: AsyncRead + AsyncWrite + Unpin>(
@@ -452,6 +524,7 @@ async fn serve_frames<S: AsyncRead + AsyncWrite + Unpin>(
     shared: &Arc<Shared>,
     idle: Duration,
     stop: &mut watch::Receiver<bool>,
+    mut trust: Option<(Arc<TlsSource>, TlsSession)>,
 ) {
     let mut reader = FrameReader::new(
         stream,
@@ -482,6 +555,14 @@ async fn serve_frames<S: AsyncRead + AsyncWrite + Unpin>(
             Ok(Ok(Ok(Some(frame)))) => frame.to_vec(),
         };
         listener.received(frame.len(), shared.clock.utc_now());
+        if let Some((source, session)) = trust.as_mut()
+            && !still_trusted(source, session, shared.clock.utc_now())
+        {
+            // The client CA was removed, the certificate was revoked or something in its
+            // chain expired: refuse this frame and end the session.
+            bump(&listener.counters.tls_sessions_closed);
+            return;
+        }
         let handled = tokio::select! {
             () = stopped(stop) => return,
             handled = handle_frame(listener, sender, &frame, true, shared) => handled,
@@ -635,47 +716,4 @@ async fn handle_frame(
         bump(counter);
         return true;
     }
-}
-
-fn load_tls(options: &ListenerOptions) -> Result<TlsAcceptor, SourceError> {
-    let failed = || SourceError::Tls(options.id.clone());
-    let tls = options.tls.as_ref().ok_or_else(failed)?;
-    let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
-    let certificates = CertificateDer::pem_file_iter(&tls.certificate_file)
-        .map_err(|_| failed())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| failed())?;
-    if certificates.is_empty() {
-        return Err(failed());
-    }
-    let key = PrivateKeyDer::from_pem_file(&tls.private_key_file).map_err(|_| failed())?;
-    let builder = rustls::ServerConfig::builder_with_provider(Arc::clone(&provider))
-        .with_safe_default_protocol_versions()
-        .map_err(|_| failed())?;
-    let builder = match &tls.client_certificate_authority_file {
-        None => builder.with_no_client_auth(),
-        Some(authority) => {
-            let file = std::fs::File::open(authority).map_err(|_| failed())?;
-            let mut roots = rustls::RootCertStore::empty();
-            for certificate in CertificateDer::pem_reader_iter(BufReader::new(file)) {
-                roots
-                    .add(certificate.map_err(|_| failed())?)
-                    .map_err(|_| failed())?;
-            }
-            if roots.is_empty() {
-                return Err(failed());
-            }
-            let verifier = rustls::server::WebPkiClientVerifier::builder_with_provider(
-                Arc::new(roots),
-                provider,
-            )
-            .build()
-            .map_err(|_| failed())?;
-            builder.with_client_cert_verifier(verifier)
-        }
-    };
-    let config = builder
-        .with_single_cert(certificates, key)
-        .map_err(|_| failed())?;
-    Ok(TlsAcceptor::from(Arc::new(config)))
 }

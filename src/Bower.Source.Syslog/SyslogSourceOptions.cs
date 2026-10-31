@@ -56,10 +56,16 @@ public sealed record SyslogListenerOptions(
 
 /// <param name="CertificateFile">PEM server certificate, optionally followed by its intermediates.</param>
 /// <param name="ClientCertificateAuthorityFile">PEM CA certificates. When set, senders must present a client certificate they issued.</param>
+/// <param name="ClientCertificateRevocationListFile">
+/// PEM or DER revocation lists from the client CAs (requires <paramref name="ClientCertificateAuthorityFile"/>).
+/// When set, every client's issuer needs a current, validly signed list and listed certificates are refused.
+/// </param>
+/// <remarks>Every file is reloaded when it changes; see <see cref="SyslogSource"/>.</remarks>
 public sealed record SyslogTlsOptions(
     string CertificateFile,
     string PrivateKeyFile,
-    string? ClientCertificateAuthorityFile = null);
+    string? ClientCertificateAuthorityFile = null,
+    string? ClientCertificateRevocationListFile = null);
 
 /// <summary>
 /// Maps matching messages to one active parser of a loaded signed pack. Hostname and
@@ -244,6 +250,12 @@ public static class SyslogSourceConfigurationLoader
             || (listener.Tls is { } tls && (string.IsNullOrWhiteSpace(tls.CertificateFile) || string.IsNullOrWhiteSpace(tls.PrivateKeyFile))))
         {
             throw Invalid(id, "tls settings are required for protocol tls and not allowed otherwise.");
+        }
+
+        if (listener.Tls is { ClientCertificateRevocationListFile: { } revocationList } withList
+            && (string.IsNullOrWhiteSpace(revocationList) || withList.ClientCertificateAuthorityFile is null))
+        {
+            throw Invalid(id, "tls.clientCertificateRevocationListFile requires tls.clientCertificateAuthorityFile.");
         }
 
         if (listener.AllowedSenders is not { Count: >= 1 and <= MaximumSenders })

@@ -245,7 +245,11 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
                 output_id,
                 count,
                 failure_code,
-                disposition = if retrying { "retrying" } else { "dead-lettered" },
+                disposition = if retrying {
+                    "retrying"
+                } else {
+                    "dead-lettered"
+                },
                 "Output adapter did not deliver events."
             );
         }

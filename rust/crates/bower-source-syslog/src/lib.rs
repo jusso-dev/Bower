@@ -8,6 +8,7 @@ pub mod framing;
 pub mod parser;
 pub mod record;
 pub mod source;
+pub mod tls;
 
 pub use config::{ListenerOptions, Route, SyslogSourceConfiguration};
 pub use parser::{SyslogFormat, SyslogMessage};

@@ -115,7 +115,6 @@ fn worker(
     )
 }
 
-
 #[derive(Clone, Default)]
 struct Captured(Arc<Mutex<Vec<u8>>>);
 
@@ -156,11 +155,7 @@ async fn credential_failure_keeps_events_queued_and_logs_only_metadata() {
                 if item.event_id == "poison" {
                     failure(&item.event_id, "payload-invalid-json", false)
                 } else {
-                    failure(
-                        &item.event_id,
-                        "destination-azure-credential-failed",
-                        true,
-                    )
+                    failure(&item.event_id, "destination-azure-credential-failed", true)
                 }
             })
             .collect();
@@ -175,9 +170,12 @@ async fn credential_failure_keeps_events_queued_and_logs_only_metadata() {
     assert!(logs.contains(
         "Output adapter did not deliver events. output_id=\"fake\" count=2 failure_code=\"destination-azure-credential-failed\" disposition=\"retrying\""
     ), "{logs}");
-    assert!(logs.contains(
-        "count=1 failure_code=\"payload-invalid-json\" disposition=\"dead-lettered\""
-    ), "{logs}");
+    assert!(
+        logs.contains(
+            "count=1 failure_code=\"payload-invalid-json\" disposition=\"dead-lettered\""
+        ),
+        "{logs}"
+    );
     assert_eq!(store.snapshot().unwrap().retrying, 2);
 
     // A credential outage never spends the poison budget: after the fix it drains.

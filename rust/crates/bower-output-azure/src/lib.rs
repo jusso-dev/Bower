@@ -19,6 +19,5 @@ pub use credential::{
 pub use output::{
     API_VERSION, AzureLogsIngestionOptions, AzureLogsIngestionOutput, AzureOutputError,
     CREDENTIAL_FAILED_CODE, ConcurrencyScope, IngestionClientOptions, MONITOR_SCOPE,
-    SINGLE_UPLOAD_THRESHOLD,
-    SystemTimeSource, TimeSource,
+    SINGLE_UPLOAD_THRESHOLD, SystemTimeSource, TimeSource,
 };
