@@ -1,0 +1,25 @@
+// Bower: queue storage pressure. Fires when a collector's newest health record shows the queue
+// database at or above __FILE_PERCENT__% of its page limit, undelivered data at or above
+// __STORAGE_PERCENT__% of BOWER_QUEUE_MAX_BYTES, delivery backpressure, or any record in the window
+// reports intake refused for queue capacity (HTTP 503; syslog and Windows sources stop reading).
+// The page limit is reached first (about cap + 4 MiB of rows, indexes, ledger and retained
+// acknowledged rows), and a full queue cannot queue health records: collector-health-missing
+// covers a queue that is already full.
+// EXTENSION POINT (storage): when collectors report free disk/watermarks under Attributes.storage,
+// add them to StorageSignal below with a null-tolerant coalesce so older collectors still evaluate.
+let usedPercent = __STORAGE_PERCENT__;
+let filePercent = __FILE_PERCENT__;
+BowerSecurity_CL
+| where EventType == "collector_health"
+| extend Refusals = coalesce(toint(Attributes.intake.capacityRefusals), 0) + coalesce(toint(Attributes.intake.privacyAlertRefusals), 0)
+| summarize arg_max(TimeGenerated, Attributes), RefusalsInWindow = sum(Refusals) by CollectorId
+| extend CapacityUsedPercent = todouble(Attributes.storage.capacityUsedPercent),
+    QueueFileUsedPercent = todouble(Attributes.storage.queueFileUsedPercent),
+    UndeliveredMiB = todouble(Attributes.storage.undeliveredMiB),
+    QueueFileMiB = todouble(Attributes.storage.queueFileMiB),
+    DeliveryStatus = tostring(Attributes.delivery.status)
+| extend StorageSignal = coalesce(QueueFileUsedPercent, 0.0) >= filePercent
+    or coalesce(CapacityUsedPercent, 0.0) >= usedPercent
+    or DeliveryStatus == "backpressure" or RefusalsInWindow > 0
+| where StorageSignal
+| project CollectorId, RecordAt = TimeGenerated, QueueFileUsedPercent, QueueFileMiB, CapacityUsedPercent, UndeliveredMiB, RefusalsInWindow, DeliveryStatus

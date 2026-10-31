@@ -1,0 +1,118 @@
+[
+  {
+    "name": "ApiCallReceived_Count",
+    "aggregations": [
+      "Count"
+    ],
+    "dimensions": [
+      "InputStreamId",
+      "ResponseCode"
+    ]
+  },
+  {
+    "name": "MetricIngestionRequest_Count",
+    "aggregations": [
+      "Total",
+      "Average",
+      "Minimum",
+      "Maximum"
+    ],
+    "dimensions": [
+      "InputStreamId",
+      "ResponseCode"
+    ]
+  },
+  {
+    "name": "TransformationErrors_Count",
+    "aggregations": [
+      "Count"
+    ],
+    "dimensions": [
+      "InputStreamId",
+      "ErrorType"
+    ]
+  },
+  {
+    "name": "TransformationRuntime_DurationMs",
+    "aggregations": [
+      "Average",
+      "Minimum",
+      "Maximum"
+    ],
+    "dimensions": [
+      "InputStreamId"
+    ]
+  },
+  {
+    "name": "RowsReceived_Count",
+    "aggregations": [
+      "Total",
+      "Average",
+      "Minimum",
+      "Maximum"
+    ],
+    "dimensions": [
+      "InputStreamId"
+    ]
+  },
+  {
+    "name": "RowsDropped_Count",
+    "aggregations": [
+      "Total",
+      "Average",
+      "Minimum",
+      "Maximum"
+    ],
+    "dimensions": [
+      "InputStreamId"
+    ]
+  },
+  {
+    "name": "UncompressedBytesIn",
+    "aggregations": [
+      "Total",
+      "Average",
+      "Minimum",
+      "Maximum"
+    ],
+    "dimensions": [
+      "InputStreamId"
+    ]
+  },
+  {
+    "name": "UncompressedBytesOut",
+    "aggregations": [
+      "Total",
+      "Average",
+      "Minimum",
+      "Maximum"
+    ],
+    "dimensions": [
+      "InputStreamId",
+      "DestinationTable"
+    ]
+  },
+  {
+    "name": "ColumnsDroppedCount",
+    "aggregations": [
+      "Count",
+      "Maximum"
+    ],
+    "dimensions": [
+      "InputStreamId",
+      "ColumnsDroppedAt"
+    ]
+  },
+  {
+    "name": "BytesReceived_Count",
+    "aggregations": [
+      "Total",
+      "Average",
+      "Minimum",
+      "Maximum"
+    ],
+    "dimensions": [
+      "InputStreamId"
+    ]
+  }
+]

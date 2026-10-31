@@ -1,0 +1,67 @@
+{
+ "poisonEvents": [
+  "posted ws6-poison-2c49418ecae44e5abae9 202",
+  "posted ws6-poison-f6b2befffcd140a19a37 202",
+  "posted ws6-poison-84f3a2eda1b24a3bacaa 202"
+ ],
+ "deadLetterCode": "preflight-field-too-large",
+ "alert": {
+  "rule": "bowerws6-dead-letters",
+  "dimensions": {
+   "CollectorId": "ws6-linux-01"
+  },
+  "monitorCondition": "Fired",
+  "startDateTime": "2026-10-31T09:49:49.6998408Z",
+  "resolvedDateTime": null,
+  "since": "2026-10-31T09:43:26Z",
+  "secondsFromSince": 383.7
+ },
+ "intent": {
+  "change_reference": "CHG-WS6-DLQ-001",
+  "cli_file_sha256": "2c9382357ea50c50e14f33c91bcb959a97d9bec8a27ecf505d2fe393654a773a",
+  "cli_path_sha256": "b8332313aa75ebde5cd485eaeb7b1b869adc1c3c8c0c06d1a58a47b52dc1375e",
+  "command": "queue replay --database <database_path_sha256> --max <maximum_count> --event <each event_id>",
+  "database_device": 66305,
+  "database_inode": 16782891,
+  "database_path_sha256": "f04c3d7ecffa77a680a9a5b1b47da51f23d7ab2723de182373188da0e7ea78de",
+  "delivery_verified": false,
+  "event_ids": [
+   "ws6-poison-2c49418ecae44e5abae9",
+   "ws6-poison-f6b2befffcd140a19a37",
+   "ws6-poison-84f3a2eda1b24a3bacaa"
+  ],
+  "maximum_count": 3,
+  "operation_id": "c9e95c07-95e2-4828-b132-918816757568",
+  "operator": "ws6-operator",
+  "record_type": "intent",
+  "schema_version": 1,
+  "timeout_seconds": 60,
+  "timestamp_utc": "2026-10-31T09:51:09.486933+00:00"
+ },
+ "outcome": {
+  "cli_exit_code": 0,
+  "delivery_verified": false,
+  "operation_id": "c9e95c07-95e2-4828-b132-918816757568",
+  "queue_effect": "unverified",
+  "record_type": "outcome",
+  "schema_version": 1,
+  "status": "cli-exit-zero",
+  "timestamp_utc": "2026-10-31T09:51:09.658439+00:00"
+ },
+ "auditFiles": [
+  "-rw-------. intent.json",
+  "-rw-------. outcome.json"
+ ],
+ "queueAfterReplayBeforeStart": "state 0 (queued): 3",
+ "queueAfterStart": [
+  "ws6-poison-2c49418ecae44e5abae9|4|preflight-field-too-large|1",
+  "ws6-poison-f6b2befffcd140a19a37|4|preflight-field-too-large|1",
+  "ws6-poison-84f3a2eda1b24a3bacaa|4|preflight-field-too-large|1"
+ ],
+ "ledger": [
+  "Ledger entries: 5465; head 5465:ffa358409ad52290efdadbde3db14c59e02283d36599a110dbf05ad1db1d5394",
+  "Ledger intact."
+ ],
+ "destinationRows": "0",
+ "conclusion": "Replay returned the three reviewed IDs to the queue; the output preflight dead-lettered them again (replay does not bypass it); no partial rows reached Sentinel; the ledger stayed intact."
+}

@@ -1,0 +1,29 @@
+{
+ "acceptedVsDestination": {
+  "cutoffReceivedAt": "2026-10-31T10:20:00Z",
+  "queue": [
+   "queue_ids 7092 c4460a3660c9cbad9645da55580a38bb1e9beb859b069cece48cca8aa7883508",
+   "3|7092"
+  ],
+  "sentinel": "sentinel_ids 7092 c4460a3660c9cbad9645da55580a38bb1e9beb859b069cece48cca8aa7883508",
+  "result": "identical: no loss after acceptance"
+ },
+ "nativeVsAccepted": [
+  "native=10069 accepted=7092 missing=2977 cutoff=2026-10-31 10:20:00",
+  "window 08:30:00-09:00:00 native=863 accepted=863",
+  "window 09:00:00-09:10:00 native=518 accepted=516",
+  "window 09:10:00-09:12:00 native=4619 accepted=2339",
+  "window 09:12:00-09:20:00 native=479 accepted=40",
+  "window 09:20:00-09:40:00 native=1197 accepted=945",
+  "window 09:40:00-10:00:00 native=1196 accepted=1192",
+  "window 10:00:00-10:20:00 native=1197 accepted=1197"
+ ],
+ "rsyslog": {
+  "queueFileBeforeRestart": "bower-firewall.00000001 412,864 bytes, not shrinking while live frames flowed",
+  "restart": [
+   "before frames=1503 queue=412864 10:21:25",
+   "after frames=1593 delta=90 queue= 10:22:56"
+  ],
+  "conclusion": "the disk-assisted queue's frames were never forwarded and the file was removed on restart"
+ }
+}

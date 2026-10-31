@@ -1,0 +1,116 @@
+[
+ {
+  "attempt": "archive replay CHG-WS6-ARCHIVE-001",
+  "result": "failed before intent: wrapper parsed only the last line of the multi-line dry-run JSON; audit directory left empty and not reused",
+  "at": "2026-10-31T09:47:25Z",
+  "file": "failed-archive-replay-wrapper.json"
+ },
+ {
+  "attempt": "metric alert bowerws6-dcr-columns-dropped with ColumnsDroppedCount timeAggregation=Count > 0",
+  "result": "false positive",
+  "observed": "fired 2026-10-31T08:20:25Z; metric emits one sample per ingestion request at ColumnsDroppedAt=Transform with count=1, maximum=0.0 (no columns dropped)",
+  "requests": "ApiCallReceived_Count ResponseCode=204 only (8 calls 08:16-08:24)",
+  "change": "aggregation changed to Maximum > 0; redeployed",
+  "file": "failed-dcr-columns-dropped-count.json"
+ },
+ {
+  "attempt": "monitoring.bicep with evaluationFrequency=PT1M, absenceWindow=P2D",
+  "result": "failed",
+  "at": "2026-10-31",
+  "errors": [
+   "One-minute frequency is not supported for this query (3 rules: arg_max/mv-expand/union/join queries). https://aka.ms/lsa_1m_limits",
+   "WindowSize of 2880 minutes is not supported for one minute alert rules. Supported: 1-360 minutes (2 rules)"
+  ],
+  "change": "PT1M removed from the template's allowed frequencies; default and tested frequency PT5M",
+  "file": "failed-monitoring-deploy-1m.json"
+ },
+ {
+  "attempt": "sentinel-health-rules.bicep queryPeriod=P2D queryFrequency=PT5M",
+  "result": "failed",
+  "error": "When queryPeriod >= 2 days, queryFrequency should be >= 1 hour",
+  "change": "default queryPeriod P1D",
+  "file": "failed-sentinel-rules-period.json"
+ },
+ {
+  "finding": "destination-freshness false positive",
+  "detail": "Sentinel incident Bower source / on ws6-drill-dcr is silent: the D6 synthetic bad-timestamp row (no application, CollectorId ws6-drill-dcr) was ingested and treated as a source",
+  "change": "queries ignore rows without CollectorId or ApplicationName",
+  "file": "false-positive-freshness-drill-row.json"
+ },
+ {
+  "finding": "destination-freshness false positive",
+  "detail": "Sentinel incident: source nftables-firewall/validation on ws6-linux-replay is silent; the one-off archive replay collector stopped after the replay",
+  "change": "queries ignore rows labelled bowerReplay",
+  "file": "false-positive-freshness-replay.json"
+ },
+ {
+  "attempt": "dotnet publish with PublishAot=false",
+  "result": "failed: AOT/trim analyzers as errors (IL3050/IL2026) in existing endpoints",
+  "change": "lab publish adds -p:EnableAotAnalyzer=false -p:EnableTrimAnalyzer=false (managed self-contained build; product build unchanged)"
+ },
+ {
+  "attempt": "linux-setup.sh",
+  "result": "failed: rsyslog-gnutls not in AL2023",
+  "change": "rsyslog-openssl with StreamDriver ossl"
+ },
+ {
+  "attempt": "linux-setup.sh",
+  "result": "failed: instance role lacked s3:ListBucket for recursive copy",
+  "change": "ListBucket limited to the artifacts/ prefix (stack update; instances unchanged)"
+ },
+ {
+  "attempt": "linux-setup.sh",
+  "result": "failed: macOS tar extended attributes left ._ files; collector refused ._authentication-failure.yaml (UnauthorizedAccessException)",
+  "change": "tar --no-mac-metadata --no-xattrs; clean reinstall"
+ },
+ {
+  "attempt": "linux-setup.sh",
+  "result": "failed: bower.service 226/NAMESPACE: /var/spool/bower missing (the package creates it)",
+  "change": "harness creates /var/spool/bower"
+ },
+ {
+  "attempt": "drill generator",
+  "result": "failed: sendto EPERM because nftables drops the packet",
+  "change": "generator ignores PermissionError"
+ },
+ {
+  "attempt": "windows-setup.ps1",
+  "result": "failed: deleting a nonexistent WEC subscription aborted setup (same harness error as the earlier pilot)",
+  "change": "delete only when wecutil es lists it"
+ },
+ {
+  "attempt": "windows-setup.ps1",
+  "result": "failed: sc.exe binPath quotes stripped by Windows PowerShell 5.1 (SCM 7000 file not found)",
+  "change": "quoted ImagePath set in the registry"
+ },
+ {
+  "attempt": "windows-setup.ps1",
+  "result": "failed: SCM 7000 access denied: moved folder kept the TEMP ACL",
+  "change": "icacls /reset on the install folder"
+ },
+ {
+  "attempt": "WEC localhost subscription",
+  "result": "RunTimeStatus Trying, WSMan fault 5 Access is denied",
+  "change": "restart WinRM and Wecsvc after adding NETWORK SERVICE to Event Log Readers"
+ },
+ {
+  "attempt": "alerts.py and bower-healthcheck.py",
+  "result": "failed: ISO time parser consumed offset digits",
+  "change": "regex parser; unit test added"
+ },
+ {
+  "attempt": "Test-BowerCollectorHealth.ps1",
+  "result": "wrong: reported WEC subscription 'Unknown' (anchored regex missed the tab-indented line)",
+  "change": "first RunTimeStatus is the subscription, later ones are sources"
+ },
+ {
+  "attempt": "bower-healthcheck.service",
+  "result": "wrong: storage percent used the 10 GiB default instead of BOWER_QUEUE_MAX_BYTES",
+  "change": "unit loads /etc/bower/bower.env"
+ },
+ {
+  "attempt": "drill-replay.sh poison events",
+  "result": "HTTP 403: no producer scope (default deny)",
+  "change": "producer scope for the synthetic ws6-drill/lab identity"
+ }
+]

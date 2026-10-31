@@ -63,6 +63,16 @@ spec:
             httpGet:
               path: /health
               port: http
+          # /health answers 200 while the process serves requests, healthy or degraded, so a
+          # destination outage or a quiet source never restarts the pod; only a hung process does.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
             requests:
               cpu: 50m

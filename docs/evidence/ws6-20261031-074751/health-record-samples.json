@@ -1,0 +1,42 @@
+[
+  {
+    "ApplicationEnvironment": "lab",
+    "ApplicationName": "bower-collector",
+    "Attributes": "{\"recordVersion\":\"1\",\"intervalSeconds\":60,\"sequence\":61,\"collectorStartedAt\":\"2026-10-31T09:28:29.6847671Z\",\"countersSince\":\"2026-10-31T10:27:31.5161204Z\",\"status\":\"healthy\",\"problems\":[],\"delivery\":{\"output\":\"azure-logs-ingestion\",\"status\":\"idle\",\"lastSuccessfulDeliveryAt\":\"2026-10-31T10:28:30.3172428Z\"},\"queue\":{\"queued\":0,\"retrying\":0,\"uploading\":0,\"undelivered\":0,\"deadLettered\":0,\"oldestUndeliveredAt\":null,\"oldestUndeliveredAgeSeconds\":null},\"storage\":{\"queueCapacityMiB\":4,\"undeliveredMiB\":0,\"storedMiB\":1.7,\"capacityUsedPercent\":0,\"queueFileMiB\":3.3,\"queueFileLimitMiB\":8,\"queueFileUsedPercent\":41.5},\"intake\":{\"attemptedRequests\":13,\"capacityRefusals\":0,\"privacyAlertRefusals\":0,\"lastRefusalAt\":null,\"lastRefusalReason\":null},\"pipeline\":{\"eventsIn\":13,\"eventsQueued\":13,\"duplicates\":0,\"suppressed\":0},\"sources\":{\"configured\":true,\"expected\":1,\"active\":1,\"pending\":0,\"silent\":0,\"neverSeen\":0,\"overdue\":[]},\"syslog\":[],\"windowsEventLog\":[{\"id\":\"forwarded-security\",\"channel\":\"ForwardedEvents\",\"state\":\"running\",\"eventsRead\":12,\"queued\":12,\"notSelected\":0,\"parserErrors\":0,\"readErrors\":0,\"gaps\":0,\"resets\":0,\"retries\":0,\"submitFailures\":0,\"cursorConflicts\":0,\"lastEventAt\":\"2026-10-31T10:28:29.1972564Z\",\"lastPollAt\":\"2026-10-31T10:28:31.2108845Z\"}]}",
+    "CollectorId": "ws6-windows-01",
+    "EventAction": "collector.health",
+    "EventCategory": "collector-health",
+    "EventId": "collector-health-akkgfleclkdnaoijjckmdbeklkacangc",
+    "EventOutcomeReason": "Collector health: healthy",
+    "EventResult": "success",
+    "EventSeverity": "informational",
+    "EventType": "collector_health",
+    "Ingested": "None",
+    "Labels": "{\"healthRecordVersion\":\"1\"}",
+    "PolicyId": "BWR-POL-COLLECTOR-HEALTH",
+    "PolicyVersion": "1.0.0",
+    "PrivacyDetected": "[\"field-rule\"]",
+    "TableName": "PrimaryResult",
+    "TimeGenerated": "2026-10-31T10:28:31.5402378Z"
+  },
+  {
+    "ApplicationEnvironment": "lab",
+    "ApplicationName": "bower-collector",
+    "Attributes": "{\"recordVersion\":\"1\",\"intervalSeconds\":60,\"sequence\":18,\"collectorStartedAt\":\"2026-10-31T10:11:58.3835723Z\",\"countersSince\":\"2026-10-31T10:27:58.9197594Z\",\"status\":\"degraded\",\"problems\":[\"dead-letters\"],\"delivery\":{\"output\":\"azure-logs-ingestion\",\"status\":\"degraded\",\"lastSuccessfulDeliveryAt\":\"2026-10-31T10:28:58.7713703Z\"},\"queue\":{\"queued\":0,\"retrying\":0,\"uploading\":0,\"undelivered\":0,\"deadLettered\":3,\"oldestUndeliveredAt\":null,\"oldestUndeliveredAgeSeconds\":null},\"storage\":{\"queueCapacityMiB\":64,\"undeliveredMiB\":0.2,\"storedMiB\":8.9,\"capacityUsedPercent\":0.3,\"queueFileMiB\":20.2,\"queueFileLimitMiB\":68,\"queueFileUsedPercent\":29.7},\"intake\":{\"attemptedRequests\":61,\"capacityRefusals\":0,\"privacyAlertRefusals\":0,\"lastRefusalAt\":null,\"lastRefusalReason\":null},\"pipeline\":{\"eventsIn\":61,\"eventsQueued\":61,\"duplicates\":0,\"suppressed\":0},\"sources\":{\"configured\":true,\"expected\":1,\"active\":1,\"pending\":0,\"silent\":0,\"neverSeen\":0,\"overdue\":[]},\"syslog\":[{\"id\":\"firewall-tls\",\"protocol\":\"tls\",\"activeConnections\":1,\"connectionsAccepted\":0,\"connectionsRejected\":0,\"sendersDenied\":0,\"tlsHandshakeFailures\":0,\"framesReceived\":60,\"queued\":60,\"notRouted\":0,\"parserErrors\":0,\"malformed\":0,\"oversized\":0,\"framingErrors\":0,\"timeouts\":0,\"dropped\":0,\"retries\":0,\"submitFailures\":0,\"receiveErrors\":0,\"lastFrameAt\":\"2026-10-31T10:28:58.2139686Z\"}],\"windowsEventLog\":[]}",
+    "CollectorId": "ws6-linux-01",
+    "EventAction": "collector.health",
+    "EventCategory": "collector-health",
+    "EventId": "collector-health-pboihhihlckjacccofdglhlchannnjoj",
+    "EventOutcomeReason": "Collector health: dead-letters",
+    "EventResult": "failure",
+    "EventSeverity": "medium",
+    "EventType": "collector_health",
+    "Ingested": "None",
+    "Labels": "{\"healthRecordVersion\":\"1\"}",
+    "PolicyId": "BWR-POL-COLLECTOR-HEALTH",
+    "PolicyVersion": "1.0.0",
+    "PrivacyDetected": "None",
+    "TableName": "PrimaryResult",
+    "TimeGenerated": "2026-10-31T10:28:58.9312125Z"
+  }
+]

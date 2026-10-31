@@ -1,0 +1,22 @@
+// Bower: source silent at the destination. Independent of collector logic and health records:
+// one row per collector and application/environment whose newest security event (not a health
+// record or canary) was ingested more than its allowance ago, while it sent within the window.
+// Default allowance __SILENCE_MINUTES__ minutes; per-source overrides in the table below.
+let defaultMinutes = __SILENCE_MINUTES__;
+let overrides = print Rule = dynamic(__SILENCE_OVERRIDES__)
+    | mv-expand Rule
+    | where isnotempty(Rule)
+    | project ApplicationName = tostring(Rule.application), ApplicationEnvironment = tostring(Rule.environment),
+        AllowedMinutes = toint(Rule.maximumSilenceMinutes);
+BowerSecurity_CL
+| where EventType !in ("collector_health", "collector_canary")
+// Bower envelopes always carry both; rows without them did not come from a Bower collector.
+| where isnotempty(CollectorId) and isnotempty(ApplicationName)
+// Archive replays are one-off copies sent through a replay collector, not a live source.
+| where isempty(tostring(Labels.bowerReplay))
+| summarize LastIngested = max(ingestion_time()), LastEventAt = max(TimeGenerated) by CollectorId, ApplicationName, ApplicationEnvironment
+| join kind=leftouter overrides on ApplicationName, ApplicationEnvironment
+| extend AllowedMinutes = coalesce(AllowedMinutes, defaultMinutes)
+| extend SilentMinutes = round(datetime_diff('second', now(), LastIngested) / 60.0, 1)
+| where SilentMinutes > AllowedMinutes
+| project CollectorId, Source = strcat(ApplicationName, "/", ApplicationEnvironment), LastIngested, LastEventAt, SilentMinutes, AllowedMinutes

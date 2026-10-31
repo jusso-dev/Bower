@@ -97,6 +97,24 @@ public static partial class CollectorApplication
             services.GetRequiredService<TimeProvider>(),
             services.GetRequiredService<ILogger<SourceHealth>>()));
         builder.Services.AddHostedService<SuppressionWindowWorker>();
+        if (settings.HealthRecordInterval is not null)
+        {
+            // Checked at build so a bundle that would refuse every health record stops start-up.
+            RequireHealthRecordPolicy(settings, bundle);
+            builder.Services.AddHostedService(services => new CollectorHealthWorker(
+                services.GetRequiredService<SecurityEventProcessor>(),
+                services.GetRequiredService<CollectorIdentity>(),
+                services.GetRequiredService<IDurableEventStore>(),
+                services.GetRequiredService<PipelineTelemetry>(),
+                services.GetRequiredService<SourceHealth>(),
+                services.GetRequiredService<DeliveryActivity>(),
+                settings,
+                services.GetRequiredService<TimeProvider>(),
+                services.GetRequiredService<ILogger<CollectorHealthWorker>>(),
+                services.GetService<SyslogSource>(),
+                services.GetService<WindowsEventLogSource>(),
+                services.GetRequiredService<ManagedPrivacyProfileState>()));
+        }
         if (settings.SyslogConfigPath is not null)
         {
             // Loaded and checked against the loaded packs at build so a bad file stops start-up.
@@ -476,6 +494,30 @@ public static partial class CollectorApplication
                     return Results.Json(status, CollectorJsonContext.Default.StatusResponse);
                 })
             .AddEndpointFilter<IngestAuthenticationFilter>();
+    }
+
+    /// <summary>
+    /// Health records go through policy like any event. Fail closed at start-up when the
+    /// loaded bundle would not accept one, instead of refusing a record every interval.
+    /// </summary>
+    internal static void RequireHealthRecordPolicy(CollectorSettings settings, PolicyBundle bundle)
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        CollectorHealthSample probe = new(
+            now, now, 1, settings.HealthRecordInterval ?? TimeSpan.FromMinutes(5), settings.OutputType, "waiting", null,
+            new QueueSnapshot(0, 0, 0, 0, 0, 0, null), settings.MaximumQueueBytes,
+            new IntakeMetricsSnapshot(now, 0, 0, 0, 0, 0, 0, null, null),
+            new PipelineMetricsSnapshot(now, 0, 0, 0, 0, 0, 0, []),
+            false, [], null, null);
+        PolicyDecision decision = new DeterministicPolicyEvaluator(bundle.Policies)
+            .Evaluate(CollectorHealthRecord.Create(probe, settings.CollectorId, settings.Environment));
+        if (decision.Action is not (DecisionAction.Accept or DecisionAction.RedactAndAccept))
+        {
+            throw new InvalidOperationException(
+                "BOWER_HEALTH_RECORD_INTERVAL_SECONDS is set but no loaded policy accepts collector_health " +
+                $"records (decision {PipelineTelemetry.ActionName(decision.Action)}). Add " +
+                "examples/policies/collector-health/collector-health.yaml to the policy directory or set the interval to 0.");
+        }
     }
 
     private static string Status(QueueSnapshot snapshot, IReadOnlyList<SourceSilenceStatus> sources) =>

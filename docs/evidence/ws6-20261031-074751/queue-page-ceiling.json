@@ -1,0 +1,76 @@
+{
+ "summary": "SQLite max_page_count = (4 x BOWER_QUEUE_MAX_BYTES + 16 MiB) / 4 is reached before the logical cap; enqueue and the delivery loop then fail with SQLITE_FULL",
+ "liveD4": {
+  "cap": 4194304,
+  "statusAtStall": [
+   {
+    "status": "degraded",
+    "queue": {
+     "queued": 2296,
+     "retrying": 0,
+     "uploading": 183,
+     "delivered": 1280,
+     "deadLettered": 0,
+     "undeliveredBytes": 2873175,
+     "oldestUndelivered": "2026-10-31T09:07:45.5641721+00:00"
+    },
+    "intake": {
+     "capacityRefusals": 482,
+     "lastRefusalAt": "2026-10-31T09:19:01.5179074+00:00",
+     "lastRefusalReason": "queue-capacity"
+    },
+    "syslog": [
+     {
+      "activeConnections": 1,
+      "connectionsAccepted": 1,
+      "tlsHandshakeFailures": 0,
+      "connectionsRejected": 0,
+      "framesReceived": 2513,
+      "queued": 2512,
+      "retries": 474
+     }
+    ],
+    "sources": [
+     {
+      "application": "nftables-firewall",
+      "state": "silent",
+      "silentSeconds": 474
+     }
+    ]
+   }
+  ],
+  "pages": [
+   "4096 2048 0",
+   "sqlite_autoindex_queue_events_v5_1|11 queue_events_v5|8",
+   "BOWER_QUEUE_MAX_BYTES=4194304",
+   "86"
+  ],
+  "pagesFields": "page_size page_count freelist_count / table and index counts / cap / delivery-loop failures (EventId 1002) in 15 min",
+  "recovery": [
+   "recovery 2026-10-31T09:19:19.883Z cap=8388608 restarted",
+   "drained 2026-10-31T09:19:24.204Z undelivered=0",
+   "3|3760"
+  ]
+ },
+ "liveD4b": {
+  "cap": 8388608,
+  "healthRecordsBefore": "queueFileUsedPercent 92.1-94.7 with 0 undelivered at 09:27-09:29",
+  "hostCheck": [],
+  "statusAfterRefusals": "09:37:09: 233 capacity refusals, 0 undelivered, 4,619 delivered rows retained",
+  "recovery": [
+   "recovery 2026-10-31T09:37:39.585Z cap=67108864 restarted",
+   "drained 2026-10-31T09:37:41.958Z undelivered=1",
+   "1|1 3|4619"
+  ]
+ },
+ "localReproduction": {
+  "test": "queue-page-ceiling-repro.cs.txt",
+  "output": [
+   "refused at 4775",
+   "refused at 4776",
+   "refused at 4777",
+   "undelivered=3475 bytes=3850300 file=8388608",
+   "SqliteException: SQLite Error 13: 'database or disk is full'."
+  ]
+ }
+}

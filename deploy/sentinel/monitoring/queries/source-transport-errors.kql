@@ -1,0 +1,32 @@
+// Bower: source loss indicators before acceptance. Syslog connection refusals, TLS failures,
+// framing/parse errors, timeouts or drops, connection churn above __SYSLOG_CHURN__ new connections per
+// health interval, and Windows Event Log read errors, gaps, resets or a failed subscription state.
+// Health record counters are deltas since the previous record of the same process.
+let churn = __SYSLOG_CHURN__;
+let health = BowerSecurity_CL
+    | where EventType == "collector_health"
+    | project TimeGenerated, CollectorId, Attributes;
+let syslog = health
+    | mv-expand Listener = Attributes.syslog
+    | where isnotempty(Listener)
+    | extend Errors = coalesce(toint(Listener.connectionsRejected), 0) + coalesce(toint(Listener.sendersDenied), 0)
+        + coalesce(toint(Listener.tlsHandshakeFailures), 0) + coalesce(toint(Listener.malformed), 0)
+        + coalesce(toint(Listener.oversized), 0) + coalesce(toint(Listener.framingErrors), 0)
+        + coalesce(toint(Listener.timeouts), 0) + coalesce(toint(Listener.dropped), 0)
+        + coalesce(toint(Listener.submitFailures), 0) + coalesce(toint(Listener.receiveErrors), 0)
+        + coalesce(toint(Listener.parserErrors), 0),
+        NewConnections = coalesce(toint(Listener.connectionsAccepted), 0)
+    | summarize Errors = sum(Errors), MaxNewConnections = max(NewConnections), FailedStates = 0, Records = count()
+        by CollectorId, Source = strcat("syslog:", tostring(Listener.id));
+let windows = health
+    | mv-expand Subscription = Attributes.windowsEventLog
+    | where isnotempty(Subscription)
+    | extend Errors = coalesce(toint(Subscription.readErrors), 0) + coalesce(toint(Subscription.gaps), 0)
+        + coalesce(toint(Subscription.resets), 0) + coalesce(toint(Subscription.submitFailures), 0)
+        + coalesce(toint(Subscription.parserErrors), 0) + coalesce(toint(Subscription.cursorConflicts), 0),
+        State = tostring(Subscription.state)
+    | summarize Errors = sum(Errors), MaxNewConnections = 0, FailedStates = countif(State !in ("starting", "running", "backpressure")), Records = count()
+        by CollectorId, Source = strcat("winevt:", tostring(Subscription.id));
+union syslog, windows
+| where Errors > 0 or MaxNewConnections > churn or FailedStates > 0
+| project CollectorId, Source, Errors, MaxNewConnections, FailedStates, Records
