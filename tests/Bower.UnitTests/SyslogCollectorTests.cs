@@ -113,6 +113,59 @@ public sealed class SyslogCollectorTests
     }
 
     [Fact]
+    public async Task CriticalFreeSpace_HoldsTheTcpFrameReportsItAndResumesWhenSpaceReturns()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        const long GiB = 1024L * 1024 * 1024;
+        FakeDiskSpaceProbe disk = new(100L * 1024 * 1024, 20 * GiB);
+        await using WebApplication app = await Start(directory, cancellation, disk: disk);
+        SyslogSource source = app.Services.GetRequiredService<SyslogSource>();
+        IDurableEventStore store = app.Services.GetRequiredService<IDurableEventStore>();
+
+        using TcpClient client = new(AddressFamily.InterNetwork);
+        await client.ConnectAsync(source.Endpoints["edge"], cancellation);
+        NetworkStream stream = client.GetStream();
+        await Send(stream, Frame("failure"), cancellation);
+        // Pipelined behind the held frame: never read, so never lost, while space is low.
+        await Send(stream, Frame("failure", "second-user"), cancellation);
+        SyslogListenerStatus held = await WaitFor(source, status => status.Retries >= 2, cancellation);
+        Assert.Equal((0L, 0L, 0L, 1L), (held.Queued, held.SubmitFailures, held.Dropped, held.ActiveConnections));
+        Assert.Equal(0, (await store.GetSnapshotAsync(cancellation)).Queued);
+
+        using HttpClient http = app.GetTestClient();
+        using (HttpResponseMessage health = await http.GetAsync(new Uri("/health", UriKind.Relative), cancellation))
+        {
+            Assert.Contains("degraded", await health.Content.ReadAsStringAsync(cancellation), StringComparison.Ordinal);
+        }
+
+        using (HttpRequestMessage request = new(HttpMethod.Get, "/v1/status"))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Token);
+            using HttpResponseMessage response = await http.SendAsync(request, cancellation);
+            string body = await response.Content.ReadAsStringAsync(cancellation);
+            using JsonDocument status = JsonDocument.Parse(body);
+            JsonElement storage = status.RootElement.GetProperty("storage");
+            Assert.Equal("critical", storage.GetProperty("state").GetString());
+            Assert.True(storage.GetProperty("intakePaused").GetBoolean());
+            Assert.Equal(100L * 1024 * 1024, storage.GetProperty("freeBytes").GetInt64());
+            Assert.Equal(1024L * 1024 * 1024, storage.GetProperty("criticalFreeBytes").GetInt64());
+            Assert.Equal(1_048_576, storage.GetProperty("queueMaximumBytes").GetInt64());
+            Assert.True(storage.GetProperty("queueFileBytes").GetInt64() > 0);
+            Assert.True(storage.GetProperty("storageRefusals").GetInt64() >= 2);
+            Assert.Equal("storage-critical", storage.GetProperty("lastStorageRefusalReason").GetString());
+            Assert.True(status.RootElement.GetProperty("intake").GetProperty("capacityRefusals").GetInt64() >= 2);
+            Assert.DoesNotContain(directory.Path, body, StringComparison.Ordinal);
+            Assert.DoesNotContain("deploy-admin", body, StringComparison.Ordinal);
+        }
+
+        disk.FreeBytes = 10 * GiB;
+        SyslogListenerStatus resumed = await WaitFor(source, status => status.Queued == 2, cancellation);
+        Assert.Equal(0, resumed.SubmitFailures);
+        Assert.Equal(2, (await store.GetSnapshotAsync(cancellation)).Queued);
+    }
+
+    [Fact]
     public async Task TransformFailure_QuarantinesWithoutPersistingAndKeepsTheConnectionOpen()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
@@ -220,7 +273,7 @@ public sealed class SyslogCollectorTests
     }
 
     private static async Task<WebApplication> Start(TemporaryDirectory directory, CancellationToken cancellation, int parser = 0,
-        string[]? transforms = null)
+        string[]? transforms = null, Bower.Persistence.IDiskSpaceProbe? disk = null)
     {
         string pack = Path.Combine(directory.Path, "syslog-pack");
         foreach (string path in Directory.EnumerateFiles(PackSource, "*", SearchOption.AllDirectories))
@@ -267,7 +320,14 @@ public sealed class SyslogCollectorTests
             SingleTrustDomain = true,
             SyslogConfigPath = syslog,
             SourceExpectationsPath = expectations
-        }, builder => builder.WebHost.UseTestServer());
+        }, builder =>
+        {
+            builder.WebHost.UseTestServer();
+            if (disk is not null)
+            {
+                builder.Services.AddSingleton(disk);
+            }
+        });
         await CollectorApplication.InitializeAsync(app, cancellation);
         await app.StartAsync(cancellation);
         // Short retry delay so the backpressure test does not wait a second per attempt.

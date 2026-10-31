@@ -315,6 +315,13 @@ public sealed class HeartbeatV2CollectorTests
         // Redaction counts by type since process start: counts only, never values.
         Assert.NotNull(first["redactions"]!["observedSince"]);
         Assert.NotNull(first["redactions"]!["counts"]!.AsArray());
+        // Queue volume watermarks and queue use for fleet alerting: metadata only.
+        JsonObject storage = first["storage"]!.AsObject();
+        Assert.Matches("^(normal|warning|critical|unknown)$", storage["state"]!.GetValue<string>());
+        Assert.Equal(settings.MaximumQueueBytes, storage["queueMaximumBytes"]!.GetValue<long>());
+        Assert.True(storage["queueFileBytes"]!.GetValue<long>() > 0);
+        Assert.Equal(0, storage["storageRefusals"]!.GetValue<long>());
+        Assert.DoesNotContain(Path.GetDirectoryName(settings.QueuePath)!, storage.ToJsonString(), StringComparison.Ordinal);
 
         JsonObject second = JsonNode.Parse(bodies[1])!.AsObject();
         JsonArray results = second["commandResults"]!.AsArray();

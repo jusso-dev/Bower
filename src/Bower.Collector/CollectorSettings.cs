@@ -90,6 +90,14 @@ public sealed record CollectorSettings
 
     public TimeSpan DeliveryTimeout { get; init; } = TimeSpan.FromMinutes(4);
 
+    /// <summary>
+    /// Free-space watermarks for the queue volume (BOWER_STORAGE_WARNING_FREE_BYTES,
+    /// BOWER_STORAGE_WARNING_FREE_PERCENT, BOWER_STORAGE_CRITICAL_FREE_BYTES,
+    /// BOWER_STORAGE_CRITICAL_FREE_PERCENT). Defaults: warning below max(1 GiB, 10%),
+    /// critical (new events refused) below max(256 MiB, 5%).
+    /// </summary>
+    public Bower.Persistence.StorageWatermarkOptions StorageWatermarks { get; init; } = new();
+
     public QueueDeliveryOptions DeliveryOptions() => new()
     {
         MaximumDeliveryAttempts = MaximumDeliveryAttempts,
@@ -309,6 +317,13 @@ public sealed record CollectorSettings
             MaximumDeliveryAttempts = (int)ReadInt64(read, "BOWER_MAX_DELIVERY_ATTEMPTS", 20),
             DeliveryLeaseDuration = TimeSpan.FromSeconds(ReadInt64(read, "BOWER_DELIVERY_LEASE_SECONDS", 300)),
             DeliveryTimeout = TimeSpan.FromSeconds(ReadInt64(read, "BOWER_DELIVERY_TIMEOUT_SECONDS", 240)),
+            StorageWatermarks = new Bower.Persistence.StorageWatermarkOptions
+            {
+                WarningFreeBytes = ReadInt64(read, "BOWER_STORAGE_WARNING_FREE_BYTES", 1024L * 1024 * 1024),
+                WarningFreePercent = (int)Math.Clamp(ReadInt64(read, "BOWER_STORAGE_WARNING_FREE_PERCENT", 10), -1, 101),
+                CriticalFreeBytes = ReadInt64(read, "BOWER_STORAGE_CRITICAL_FREE_BYTES", 256L * 1024 * 1024),
+                CriticalFreePercent = (int)Math.Clamp(ReadInt64(read, "BOWER_STORAGE_CRITICAL_FREE_PERCENT", 5), -1, 101)
+            },
             OutputType = (read("BOWER_OUTPUT") ?? "none").ToLowerInvariant(),
             AmaSpoolPath = read("BOWER_AMA_SPOOL_PATH")
                 ?? Path.Combine(AppContext.BaseDirectory, "spool"),
@@ -420,6 +435,7 @@ public sealed record CollectorSettings
         }
 
         DeliveryOptions().Validate();
+        StorageWatermarks.Validate();
 
         if (OutputType is not ("none" or "ama-spool" or "azure-logs-ingestion" or "relay"))
         {
@@ -730,6 +746,16 @@ public sealed record CollectorSettings
         if (WindowsEventLogConfigPath is not null)
         {
             material += '\u001f' + "windows-eventlog:" + WindowsEventLogConfigPath;
+        }
+
+        if (StorageWatermarks != new Bower.Persistence.StorageWatermarkOptions())
+        {
+            material += '\u001f' + "storage-watermarks:"
+                + string.Join(',',
+                    StorageWatermarks.WarningFreeBytes.ToString(CultureInfo.InvariantCulture),
+                    StorageWatermarks.WarningFreePercent.ToString(CultureInfo.InvariantCulture),
+                    StorageWatermarks.CriticalFreeBytes.ToString(CultureInfo.InvariantCulture),
+                    StorageWatermarks.CriticalFreePercent.ToString(CultureInfo.InvariantCulture));
         }
 
         if (UsesManagedPrivacyProfile)

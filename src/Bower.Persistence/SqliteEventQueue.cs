@@ -20,8 +20,18 @@ public sealed partial class SqliteEventStore : IDurableEventStore
     /// </summary>
     public long StorageReserveBytes => MaximumStorageBytes / 2 + MaximumStorageBytes / 128 + 65_536;
     private readonly TimeProvider clock;
+    private readonly StorageGuard? storage;
 
     public SqliteEventStore(string databasePath, long maximumBytes, TimeProvider? clock = null)
+        : this(databasePath, maximumBytes, clock, null)
+    {
+    }
+
+    /// <param name="storage">
+    /// Free-space watermarks for the queue volume. New events are refused below the critical
+    /// watermark; acknowledgement, retries, retention and maintenance are never refused by it.
+    /// </param>
+    public SqliteEventStore(string databasePath, long maximumBytes, TimeProvider? clock, StorageGuard? storage)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
         if (maximumBytes < 1_048_576)
@@ -51,7 +61,13 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         this.maximumBytes = maximumBytes;
         MaximumStorageBytes = checked(maximumBytes * 4 + 16_777_216);
         this.clock = clock ?? TimeProvider.System;
+        this.storage = storage;
     }
+
+    /// <summary>The configured logical cap on undelivered payload bytes.</summary>
+    public long MaximumUndeliveredBytes => maximumBytes;
+
+    public StorageGuard? Storage => storage;
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -160,11 +176,26 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         {
             return await EnqueueCoreAsync(candidate, cancellationToken);
         }
-        catch (SqliteException exception) when (exception.SqliteErrorCode == 13)
+        catch (SqliteException exception) when (exception.SqliteErrorCode == SqliteFull)
         {
-            throw new QueueCapacityExceededException(MaximumStorageBytes, MaximumStorageBytes, 0);
+            // The page ceiling and a full volume both surface as SQLITE_FULL. Nothing was
+            // committed: SQLite rolled the statement or transaction back.
+            throw new QueueCapacityExceededException(
+                MaximumStorageBytes, MaximumStorageBytes, 0, VolumeCritical() ? QueueCapacityReasons.StorageFull : QueueCapacityReasons.Queue);
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == SqliteIoError && VolumeCritical())
+        {
+            // Out of space while writing the WAL, syncing or growing shared memory. Report it
+            // as backpressure so sources keep the event (and the connection) and retry.
+            throw new QueueCapacityExceededException(MaximumStorageBytes, MaximumStorageBytes, 0, QueueCapacityReasons.StorageFull);
         }
     }
+
+    private const int SqliteIoError = 10;
+    private const int SqliteFull = 13;
+
+    // A fresh measurement: the error may be the first sign that the volume filled.
+    private bool VolumeCritical() => storage?.Evaluate(force: true).State == StorageState.Critical;
 
     private async Task<EnqueueResult> EnqueueCoreAsync(
         QueuedEvent candidate,
@@ -195,6 +226,7 @@ public sealed partial class SqliteEventStore : IDurableEventStore
             // A suppressed event commits a counter change, so it needs the same physical
             // budget as an insert; refusing here leaves the counters untouched.
             CheckStorage();
+            storage?.ThrowIfCritical();
             if (!await AdmitAsync(connection, transaction, suppression, candidate.ReceivedAt, cancellationToken))
             {
                 await transaction.CommitAsync(cancellationToken);
@@ -219,6 +251,8 @@ public sealed partial class SqliteEventStore : IDurableEventStore
     {
         int payloadBytes = System.Text.Encoding.UTF8.GetByteCount(candidate.Payload);
         CheckStorage();
+        // After the duplicate check, so an exact replay is still answered as a duplicate.
+        storage?.ThrowIfCritical();
         long currentBytes = await GetUndeliveredBytesAsync(connection, transaction, cancellationToken);
         if (payloadBytes > maximumBytes - currentBytes)
         {
@@ -907,6 +941,41 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         return selected.Count;
     }
 
+    /// <summary>Physical queue files and page use. Read-only; never takes the write lock.</summary>
+    public async Task<QueueStorageSnapshot> GetStorageSnapshotAsync(CancellationToken cancellationToken = default)
+    {
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "PRAGMA page_size;";
+        long pageSize = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+        command.CommandText = "PRAGMA page_count;";
+        long pageCount = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+        command.CommandText = "PRAGMA freelist_count;";
+        long freePages = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+        return new QueueStorageSnapshot(
+            FileLength(databasePath),
+            FileLength(databasePath + "-wal"),
+            FileLength(databasePath + "-shm"),
+            pageSize,
+            pageCount,
+            freePages,
+            MaximumStorageBytes / 4 / pageSize,
+            maximumBytes,
+            MaximumStorageBytes);
+    }
+
+    private static long FileLength(string path)
+    {
+        try
+        {
+            return File.Exists(path) ? new FileInfo(path).Length : 0;
+        }
+        catch (IOException)
+        {
+            return 0;
+        }
+    }
+
     public async Task<LedgerHead> GetLedgerHeadAsync(CancellationToken cancellationToken = default)
     {
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
@@ -1035,7 +1104,8 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         UnixFileMode mode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
         foreach (string path in new[] { databasePath, $"{databasePath}-wal", $"{databasePath}-shm" })
         {
-            if (File.Exists(path))
+            // Never chmod through a link: only the queue's own regular files.
+            if (File.Exists(path) && new FileInfo(path).LinkTarget is null)
             {
                 File.SetUnixFileMode(path, mode);
             }
@@ -1046,10 +1116,15 @@ public sealed partial class SqliteEventStore : IDurableEventStore
 public sealed class QueueCapacityExceededException(
     long maximumBytes,
     long currentBytes,
-    long attemptedBytes)
+    long attemptedBytes,
+    string reason = QueueCapacityReasons.Queue)
     : Exception(
-        $"Queue capacity exceeded. Maximum={maximumBytes}, Current={currentBytes}, Attempted={attemptedBytes}.")
+        $"Queue capacity exceeded ({reason}). Maximum={maximumBytes}, Current={currentBytes}, Attempted={attemptedBytes}.")
 {
+    /// <summary>A <see cref="QueueCapacityReasons"/> code. Nothing was committed for the refused event.</summary>
+    public string Reason { get; } = reason;
+
+    public bool IsStorage => Reason is QueueCapacityReasons.StorageCritical or QueueCapacityReasons.StorageFull;
 }
 
 public sealed class InvalidQueueTransitionException(
