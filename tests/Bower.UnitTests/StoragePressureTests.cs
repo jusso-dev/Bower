@@ -138,6 +138,7 @@ public sealed class StoragePressureTests
         };
         CollectorSettings defaults = CollectorSettings.FromEnvironment(name => environment.GetValueOrDefault(name));
         Assert.Equal(new StorageWatermarkOptions(), defaults.StorageWatermarks);
+        Assert.Equal(TimeSpan.FromHours(1), defaults.PressureRetentionFloor);
         Assert.Equal(defaults.ConfigurationHash(), (defaults with { StorageWatermarks = new() }).ConfigurationHash());
 
         environment["BOWER_STORAGE_WARNING_FREE_BYTES"] = "536870912";
@@ -156,6 +157,15 @@ public sealed class StoragePressureTests
             },
             custom.StorageWatermarks);
         Assert.NotEqual(defaults.ConfigurationHash(), custom.ConfigurationHash());
+
+        environment["BOWER_QUEUE_PRESSURE_RETENTION_MINUTES"] = "5";
+        CollectorSettings floor = CollectorSettings.FromEnvironment(name => environment.GetValueOrDefault(name));
+        Assert.Equal(TimeSpan.FromMinutes(5), floor.PressureRetentionFloor);
+        Assert.NotEqual(custom.ConfigurationHash(), floor.ConfigurationHash());
+        environment["BOWER_QUEUE_PRESSURE_RETENTION_MINUTES"] = "100000";
+        Assert.Throws<InvalidOperationException>(
+            () => CollectorSettings.FromEnvironment(name => environment.GetValueOrDefault(name)).Validate());
+        environment.Remove("BOWER_QUEUE_PRESSURE_RETENTION_MINUTES");
 
         environment["BOWER_STORAGE_CRITICAL_FREE_BYTES"] = "1048576";
         Assert.Throws<InvalidOperationException>(

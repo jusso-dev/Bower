@@ -11,7 +11,7 @@ namespace Bower.Collector.Jobs;
 /// <para>
 /// Under storage pressure (queue pages at <see cref="QueueStorageMonitor.PagePressurePercent"/>
 /// of the ceiling, or the volume below its warning watermark) it also removes acknowledged
-/// events older than <see cref="PressureRetentionFloor"/>, oldest first, so retained
+/// events older than <see cref="CollectorSettings.PressureRetentionFloor"/>, oldest first, so retained
 /// acknowledgements cannot refuse new events. That shortens duplicate detection, never
 /// delivery: only acknowledged rows are eligible.
 /// </para>
@@ -30,9 +30,6 @@ public sealed partial class QueueRetentionJob(
 
     // Smaller batches under page pressure, so purging stops close to the target.
     private const int PressureBatchSize = 500;
-
-    /// <summary>Acknowledged events younger than this are kept even under storage pressure.</summary>
-    public static readonly TimeSpan PressureRetentionFloor = TimeSpan.FromHours(1);
 
     /// <summary>Page use the pressure purge brings the queue down to once it starts.</summary>
     public const double PressureTargetPercent = 70;
@@ -70,7 +67,7 @@ public sealed partial class QueueRetentionJob(
         // Low disk: reclaim every eligible row, so new events reuse freed pages instead of
         // growing the file. Page pressure alone: stop once use is back at the target.
         int purged = await PurgeAsync(
-            now - PressureRetentionFloor,
+            now - settings.PressureRetentionFloor,
             diskPressure ? BatchSize : PressureBatchSize,
             async token => diskPressure
                 || (await store.GetStorageSnapshotAsync(token)).PageUtilisationPercent > PressureTargetPercent,
@@ -85,7 +82,7 @@ public sealed partial class QueueRetentionJob(
                 diskPressure ? "low-disk" : "queue-pages",
                 files.PageUtilisationPercent,
                 after.PageUtilisationPercent,
-                (long)PressureRetentionFloor.TotalSeconds);
+                (long)settings.PressureRetentionFloor.TotalSeconds);
         }
     }
 

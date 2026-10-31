@@ -31,6 +31,14 @@ public sealed record CollectorSettings
     /// <summary>How long acknowledged events stay in the queue for duplicate detection.</summary>
     public TimeSpan DeliveredRetention { get; init; } = TimeSpan.FromDays(7);
 
+    /// <summary>
+    /// Acknowledged events younger than this are kept even under storage pressure
+    /// (BOWER_QUEUE_PRESSURE_RETENTION_MINUTES, default 60, at most the retention). Older
+    /// acknowledged events are purged early, oldest first, when queue pages or free disk
+    /// space run low; that only shortens duplicate detection.
+    /// </summary>
+    public TimeSpan PressureRetentionFloor { get; init; } = TimeSpan.FromHours(1);
+
     public string? IngestToken { get; init; }
 
     /// <summary>One revocable credential per producer: lines of "&lt;producer&gt; sha256:&lt;hex&gt;".</summary>
@@ -290,6 +298,7 @@ public sealed record CollectorSettings
             CollectorId = read("BOWER_COLLECTOR_ID") ?? System.Environment.MachineName,
             Environment = read("BOWER_ENVIRONMENT") ?? "unknown",
             MaximumQueueBytes = ReadInt64(read, "BOWER_QUEUE_MAX_BYTES", 10L * 1024 * 1024 * 1024),
+            PressureRetentionFloor = TimeSpan.FromMinutes(ReadInt64(read, "BOWER_QUEUE_PRESSURE_RETENTION_MINUTES", 60)),
             DeliveredRetention = TimeSpan.FromHours(
                 ReadInt64(read, "BOWER_QUEUE_RETENTION_HOURS", 7 * 24)),
             IngestToken = string.IsNullOrWhiteSpace(token) ? null : token,
@@ -420,6 +429,12 @@ public sealed record CollectorSettings
         {
             throw new InvalidOperationException(
                 "BOWER_QUEUE_RETENTION_HOURS must be between 1 and 2160.");
+        }
+
+        if (PressureRetentionFloor < TimeSpan.FromMinutes(1) || PressureRetentionFloor > DeliveredRetention)
+        {
+            throw new InvalidOperationException(
+                "BOWER_QUEUE_PRESSURE_RETENTION_MINUTES must be at least 1 and at most BOWER_QUEUE_RETENTION_HOURS.");
         }
 
         if (IngestRequestsPerSecond is < 1 or > 100_000)
@@ -746,6 +761,12 @@ public sealed record CollectorSettings
         if (WindowsEventLogConfigPath is not null)
         {
             material += '\u001f' + "windows-eventlog:" + WindowsEventLogConfigPath;
+        }
+
+        if (PressureRetentionFloor != TimeSpan.FromHours(1))
+        {
+            material += '\u001f' + "pressure-retention-minutes:"
+                + PressureRetentionFloor.TotalMinutes.ToString(CultureInfo.InvariantCulture);
         }
 
         if (StorageWatermarks != new Bower.Persistence.StorageWatermarkOptions())
