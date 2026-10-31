@@ -316,6 +316,79 @@ public sealed class StoragePressureTests
         Assert.True((await store.VerifyLedgerAsync(Cancellation)).Intact);
     }
 
+    /// <summary>
+    /// Regression for a drain deadlock seen on AWS: intake filled every page, and leasing and
+    /// acknowledging enlarge rows, so settlement failed with SQLITE_FULL forever. Intake now
+    /// stops at the intake limit (pages in use) and settlement may grow the file further.
+    /// </summary>
+    [Fact]
+    public async Task FullIntakeLimit_BacklogStillLeasesAcknowledgesAndDrains()
+    {
+        using SqliteTemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        string path = Path.Combine(directory.Path, "queue.db");
+        SqliteEventStore store = new(path, 8 * MiB, clock);
+        await store.InitializeAsync(Cancellation);
+        int accepted = 0;
+        QueueCapacityExceededException? refused = null;
+        while (refused is null)
+        {
+            try
+            {
+                await store.EnqueueAsync(Event($"backlog-{accepted}", 1_200), Cancellation);
+                accepted++;
+            }
+            catch (QueueCapacityExceededException exception)
+            {
+                refused = exception;
+            }
+        }
+
+        // The page limit, not the logical byte cap, refused the next event.
+        QueueSnapshot backlog = await store.GetSnapshotAsync(Cancellation);
+        Assert.Equal(QueueCapacityReasons.Queue, refused.Reason);
+        Assert.True(backlog.UndeliveredBytes < 8 * MiB);
+        QueueStorageSnapshot full = await store.GetStorageSnapshotAsync(Cancellation);
+        Assert.True(full.PageUtilisationPercent >= 99);
+        Assert.True(full.IntakeLimitPages < full.CeilingPages);
+
+        int settled = 0;
+        while (true)
+        {
+            IReadOnlyList<QueuedEvent> leased = await store.LeaseAsync(500, TimeSpan.FromMinutes(5), Cancellation);
+            if (leased.Count == 0)
+            {
+                break;
+            }
+
+            // Half fail first (retry codes enlarge rows too) and are settled on a later pass.
+            QueuedEvent[] retried = [.. leased.Where(item => item.DeliveryAttempts == 1).Take(leased.Count / 2)];
+            Assert.Empty(await store.MarkFailedBatchAsync(
+                [.. retried.Select(item => new FailureSettlement(item.EventId, "temporary-test", clock.UtcNow, item.LeaseToken))],
+                Cancellation));
+            QueuedEvent[] acknowledged = [.. leased.Except(retried)];
+            Assert.Empty(await store.MarkDeliveredBatchAsync(
+                [.. acknowledged.Select(item => item.EventId)], "azure-logs-ingestion:00000000-0000-0000-0000-000000000000",
+                acknowledged.ToDictionary(item => item.EventId, item => item.LeaseToken!), Cancellation));
+            settled += acknowledged.Length;
+        }
+
+        Assert.Equal(accepted, settled);
+        QueueSnapshot drained = await store.GetSnapshotAsync(Cancellation);
+        Assert.Equal((0, accepted), (drained.Queued + drained.Uploading + drained.Retrying, drained.Delivered));
+        QueueStorageSnapshot grown = await store.GetStorageSnapshotAsync(Cancellation);
+        Assert.True(grown.PageCount <= grown.CeilingPages);
+        Assert.True((await store.VerifyLedgerAsync(Cancellation)).Intact);
+
+        // Acknowledged rows go, freed pages are reused and intake resumes; a restart opens
+        // the grown file.
+        Assert.Equal(accepted, await store.PurgeDeliveredAsync(clock.UtcNow.AddSeconds(1), 100_000, Cancellation));
+        SqliteConnection.ClearAllPools();
+        SqliteEventStore restarted = new(path, 8 * MiB, clock);
+        await restarted.InitializeAsync(Cancellation);
+        Assert.True((await restarted.EnqueueAsync(Event("after-drain", 1_200), Cancellation)).Enqueued);
+    }
+
     [Fact]
     public async Task PressureRetention_KeepsAcknowledgementsInsideTheFloor()
     {
@@ -411,21 +484,19 @@ public sealed class StoragePressureTests
     }
 
     /// <summary>
-    /// SQLITE_FULL inside the write transaction (the page ceiling, which shares the error
-    /// path of a full volume): nothing partial is committed, the error is reported as
-    /// storage backpressure while the volume is critical, and a restarted store recovers
-    /// every committed event. Real ENOSPC on full xfs and NTFS volumes is exercised in the
-    /// AWS storage-pressure lab (docs/production-readiness/03-storage-pressure.md).
+    /// A refusal at the intake page limit commits nothing, and a restarted store recovers
+    /// every committed event. A real ENOSPC (SQLITE_FULL from a full volume, reported as
+    /// <c>storage-full</c>) is exercised on full xfs and NTFS volumes in the AWS
+    /// storage-pressure lab (docs/production-readiness/03-storage-pressure.md).
     /// </summary>
     [Fact]
-    public async Task SqliteFullDuringTheWriteTransaction_CommitsNothingAndRecoversAfterRestart()
+    public async Task PageLimitRefusal_CommitsNothingAndRecoversAfterRestart()
     {
         using SqliteTemporaryDirectory directory = new();
         FakeClock clock = new(TestEvents.Now);
         FakeDiskSpaceProbe probe = new(10 * GiB, 20 * GiB);
         string path = Path.Combine(directory.Path, "queue.db");
-        StorageGuard guard = new(path, new(), probe, clock) { SampleInterval = TimeSpan.FromHours(1) };
-        SqliteEventStore store = new(path, MiB, clock, guard);
+        SqliteEventStore store = new(path, MiB, clock, new StorageGuard(path, new(), probe, clock));
         await store.InitializeAsync(Cancellation);
         await store.EnqueueAsync(Event("committed"), Cancellation);
         IReadOnlyList<QueuedEvent> held = await store.LeaseAsync(10, TimeSpan.FromMinutes(1), Cancellation);
@@ -440,17 +511,9 @@ public sealed class StoragePressureTests
 
         LedgerHead before = await store.GetLedgerHeadAsync(Cancellation);
         QueueSnapshot snapshot = await store.GetSnapshotAsync(Cancellation);
-
-        // The volume reads critical only at the forced re-check after the failure.
-        probe.FreeBytes = MiB;
         QueueCapacityExceededException refused = await Assert.ThrowsAsync<QueueCapacityExceededException>(
             () => store.EnqueueAsync(Event("too-large", 600_000), Cancellation));
-        Assert.Equal(QueueCapacityReasons.StorageFull, refused.Reason);
-        probe.FreeBytes = 10 * GiB;
-        guard.Evaluate(force: true);
-        QueueCapacityExceededException ceiling = await Assert.ThrowsAsync<QueueCapacityExceededException>(
-            () => store.EnqueueAsync(Event("too-large", 600_000), Cancellation));
-        Assert.Equal(QueueCapacityReasons.Queue, ceiling.Reason);
+        Assert.Equal(QueueCapacityReasons.Queue, refused.Reason);
         Assert.Equal(before, await store.GetLedgerHeadAsync(Cancellation));
 
         // Crash: drop every handle and open the files again.

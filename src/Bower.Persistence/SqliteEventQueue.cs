@@ -19,6 +19,24 @@ public sealed partial class SqliteEventStore : IDurableEventStore
     /// it starts: one full WAL transaction plus database growth during checkpoint.
     /// </summary>
     public long StorageReserveBytes => MaximumStorageBytes / 2 + MaximumStorageBytes / 128 + 65_536;
+
+    /// <summary>
+    /// Share of the intake page ceiling (<see cref="MaximumStorageBytes"/> / 4) that new
+    /// events cannot use.
+    /// </summary>
+    public const int SettlementReservePercent = 15;
+
+    /// <summary>
+    /// The database may grow to this multiple (in quarters) of the intake page ceiling, for
+    /// settlement only. Leasing, acknowledging, retrying and dead-lettering enlarge rows, and
+    /// pages packed by appends split when their rows grow, so settling a full backlog can
+    /// nearly double the table. Without this room a backlog that filled the ceiling could
+    /// never be acknowledged and the queue could not drain. 1.75 times the intake ceiling
+    /// stays below the pre-write reserve check.
+    /// </summary>
+    private const long SettlementCeilingQuarters = 7;
+
+    private const long SettlementReserveMinimumBytes = 2 * 1_048_576;
     private readonly TimeProvider clock;
     private readonly StorageGuard? storage;
 
@@ -253,6 +271,7 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         CheckStorage();
         // After the duplicate check, so an exact replay is still answered as a duplicate.
         storage?.ThrowIfCritical();
+        await CheckIntakePagesAsync(connection, transaction, payloadBytes, cancellationToken);
         long currentBytes = await GetUndeliveredBytesAsync(connection, transaction, cancellationToken);
         if (payloadBytes > maximumBytes - currentBytes)
         {
@@ -959,7 +978,8 @@ public sealed partial class SqliteEventStore : IDurableEventStore
             pageSize,
             pageCount,
             freePages,
-            MaximumStorageBytes / 4 / pageSize,
+            IntakePageLimit(MaximumStorageBytes / 4 / pageSize, pageSize),
+            SettlementCeilingPages(pageSize),
             maximumBytes,
             MaximumStorageBytes);
     }
@@ -1020,9 +1040,10 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         await pragmas.ExecuteNonQueryAsync(cancellationToken);
         pragmas.CommandText = "PRAGMA page_size;";
         long pageSize = Convert.ToInt64(await pragmas.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
-        pragmas.CommandText = $"PRAGMA max_page_count = {MaximumStorageBytes / 4 / pageSize};";
+        long ceiling = SettlementCeilingPages(pageSize);
+        pragmas.CommandText = $"PRAGMA max_page_count = {ceiling};";
         long effectivePages = Convert.ToInt64(await pragmas.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
-        if (effectivePages > MaximumStorageBytes / 4 / pageSize)
+        if (effectivePages > ceiling)
         {
             await connection.DisposeAsync();
             throw new QueueCapacityExceededException(MaximumStorageBytes, effectivePages * pageSize, 0);
@@ -1065,6 +1086,41 @@ public sealed partial class SqliteEventStore : IDurableEventStore
             throw new QueueCapacityExceededException(MaximumStorageBytes, current, reserve);
         }
     }
+
+    /// <summary>
+    /// Refuses a new event that would take pages from the settlement reserve. Pages in use
+    /// exclude the free list, so pages freed by retention are reused first.
+    /// </summary>
+    private async Task CheckIntakePagesAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        int payloadBytes,
+        CancellationToken cancellationToken)
+    {
+        await using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT page_size, page_count, freelist_count FROM pragma_page_size, pragma_page_count, pragma_freelist_count;";
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        await reader.ReadAsync(cancellationToken);
+        long pageSize = reader.GetInt64(0);
+        long used = reader.GetInt64(1) - reader.GetInt64(2);
+        long limit = IntakePageLimit(MaximumStorageBytes / 4 / pageSize, pageSize);
+        // The payload (overflow pages for large events) plus its row, ledger and index entries.
+        long needed = (payloadBytes / pageSize) + 8;
+        if (used + needed > limit)
+        {
+            throw new QueueCapacityExceededException(limit * pageSize, used * pageSize, payloadBytes);
+        }
+    }
+
+    /// <summary>The hard page limit SQLite enforces on every connection.</summary>
+    private long SettlementCeilingPages(long pageSize) => MaximumStorageBytes / 4 / pageSize * SettlementCeilingQuarters / 4;
+
+    /// <summary>Pages new events may use: the intake ceiling minus the settlement reserve.</summary>
+    public static long IntakePageLimit(long maximumPages, long pageSize) =>
+        maximumPages - Math.Min(
+            maximumPages / 2,
+            Math.Max(maximumPages * SettlementReservePercent / 100, SettlementReserveMinimumBytes / pageSize));
 
     private static async Task<long> GetUndeliveredBytesAsync(
         SqliteConnection connection,

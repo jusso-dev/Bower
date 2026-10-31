@@ -250,8 +250,10 @@ public sealed class StorageGuard
 }
 
 /// <summary>
-/// Physical queue files and SQLite page use. <see cref="MaximumPages"/> is the page ceiling
-/// (<c>max_page_count</c>); retained acknowledged rows count against it until retention.
+/// Physical queue files and SQLite page use. New events stop once pages in use reach
+/// <see cref="IntakeLimitPages"/>; settlement (lease, acknowledgement, retry) may grow the
+/// file up to <see cref="CeilingPages"/> (<c>max_page_count</c>). Retained acknowledged
+/// rows count against both until retention removes them.
 /// </summary>
 public sealed record QueueStorageSnapshot(
     long DatabaseBytes,
@@ -260,7 +262,8 @@ public sealed record QueueStorageSnapshot(
     long PageSize,
     long PageCount,
     long FreePages,
-    long MaximumPages,
+    long IntakeLimitPages,
+    long CeilingPages,
     long MaximumUndeliveredBytes,
     long MaximumStorageBytes)
 {
@@ -268,5 +271,6 @@ public sealed record QueueStorageSnapshot(
 
     public long UsedPages => Math.Max(0, PageCount - FreePages);
 
-    public double PageUtilisationPercent => MaximumPages <= 0 ? 0 : Math.Round(UsedPages * 100.0 / MaximumPages, 2);
+    /// <summary>Pages in use as a share of the intake limit: at 100 new events are refused.</summary>
+    public double PageUtilisationPercent => IntakeLimitPages <= 0 ? 0 : Math.Round(UsedPages * 100.0 / IntakeLimitPages, 2);
 }
