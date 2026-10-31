@@ -162,6 +162,38 @@ public sealed class WindowsEventLogCollectorTests
     }
 
     [Fact]
+    public async Task CriticalFreeSpace_KeepsTheBookmarkAndResumesWithoutLossWhenSpaceReturns()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using SqliteTemporaryDirectory directory = new();
+        const long GiB = 1024L * 1024 * 1024;
+        FakeDiskSpaceProbe disk = new(100L * 1024 * 1024, 20 * GiB);
+        FakeWindowsEventChannelFactory channels = new();
+        FakeWindowsEventChannel security = channels["Security"];
+        string selected = WindowsEventFixtures.Read("security-4625.xml");
+        security.Add(selected);
+        security.Add(selected.Replace("184467", "184468", StringComparison.Ordinal)
+            .Replace("10:00:00.1234567Z", "10:00:01.0000000Z", StringComparison.Ordinal));
+
+        await using WebApplication app = await Start(directory, channels, cancellation, disk: disk);
+        WindowsEventLogSource source = app.Services.GetRequiredService<WindowsEventLogSource>();
+        IDurableEventStore store = app.Services.GetRequiredService<IDurableEventStore>();
+        WindowsEventSubscriptionStatus held = await WindowsEventLogSourceTests.WaitFor(
+            source, status => status.Retries >= 2, cancellation);
+        // The bookmark stays before the first unread event: the channel keeps them.
+        Assert.Equal("backpressure", held.State);
+        Assert.Equal((0L, 0L), (held.Queued, held.SubmitFailures));
+        Assert.True(held.BookmarkRecordId is null or < 184467);
+        Assert.Equal(0, (await store.GetSnapshotAsync(cancellation)).Queued);
+
+        disk.FreeBytes = 10 * GiB;
+        WindowsEventSubscriptionStatus resumed = await WindowsEventLogSourceTests.WaitFor(
+            source, status => status.Queued == 2 && status.BookmarkRecordId == 184468, cancellation);
+        Assert.Equal(0L, resumed.SubmitFailures);
+        Assert.Equal(2, (await store.GetSnapshotAsync(cancellation)).Queued);
+    }
+
+    [Fact]
     public async Task UnknownParser_StopsStartUp()
     {
         using SqliteTemporaryDirectory directory = new();
@@ -205,7 +237,8 @@ public sealed class WindowsEventLogCollectorTests
         SqliteTemporaryDirectory directory,
         IWindowsEventChannelFactory? channels,
         CancellationToken cancellation,
-        int parser = 0)
+        int parser = 0,
+        Bower.Persistence.IDiskSpaceProbe? disk = null)
     {
         string archive = Path.Combine(directory.Path, "pack");
         string trust = Path.Combine(directory.Path, "trusted.pem");
@@ -251,6 +284,11 @@ public sealed class WindowsEventLogCollectorTests
             if (channels is not null)
             {
                 builder.Services.AddSingleton<IWindowsEventChannelFactory>(channels);
+            }
+
+            if (disk is not null)
+            {
+                builder.Services.AddSingleton(disk);
             }
         });
         try

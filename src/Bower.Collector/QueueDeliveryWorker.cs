@@ -72,13 +72,18 @@ public sealed partial class QueueDeliveryWorker(
 {
     private readonly QueueDeliveryOptions deliveryOptions = options.Validate();
 
+    /// <summary>A persistent loop failure (for example a full volume) is logged once, then once per this many attempts.</summary>
+    public const int LoopFailureLogInterval = 12;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        long consecutiveFailures = 0;
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 int leased = await DeliverOnceAsync(stoppingToken);
+                consecutiveFailures = 0;
                 if (leased == 0)
                 {
                     await Task.Delay(deliveryOptions.IdleDelay, clock, stoppingToken);
@@ -90,9 +95,15 @@ public sealed partial class QueueDeliveryWorker(
             }
             catch (Exception exception)
             {
-                // Storage errors (for example SQLITE_BUSY) must not stop collection. Leased
-                // events stay leased and are reclaimed when the lease expires.
-                LogLoopFailure(logger, exception.GetType().Name);
+                // Storage errors (for example SQLITE_BUSY or a full volume) must not stop
+                // collection. Leased events stay leased and are reclaimed when the lease
+                // expires. Bounded logging: a full disk must not also fill the journal.
+                consecutiveFailures++;
+                if (consecutiveFailures == 1 || consecutiveFailures % LoopFailureLogInterval == 0)
+                {
+                    LogLoopFailure(logger, exception.GetType().Name, consecutiveFailures);
+                }
+
                 await Task.Delay(deliveryOptions.ErrorDelay, clock, stoppingToken);
             }
         }
@@ -273,8 +284,8 @@ public sealed partial class QueueDeliveryWorker(
     [LoggerMessage(
         EventId = 1002,
         Level = LogLevel.Error,
-        Message = "Delivery loop failed with {FailureType}; retrying after back-off.")]
-    private static partial void LogLoopFailure(ILogger logger, string failureType);
+        Message = "Delivery loop failed with {FailureType} ({ConsecutiveFailures} consecutive); retrying after back-off.")]
+    private static partial void LogLoopFailure(ILogger logger, string failureType, long consecutiveFailures);
 
     [LoggerMessage(
         EventId = 1003,

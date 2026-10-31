@@ -37,6 +37,11 @@ spec:
               value: workload-identity
             - name: BOWER_QUEUE_PATH
               value: /var/lib/bower/queue.db
+            # Size the cap below the PVC: the database can reach the cap plus 4 MiB, and
+            # free space must stay above the warning watermark (max(1 GiB, 10%)). 6 GiB
+            # fits the 10Gi claim below. See docs/production-readiness/03-storage-pressure.md.
+            - name: BOWER_QUEUE_MAX_BYTES
+              value: "6442450944"
             - name: BOWER_POLICY_DIRECTORY
               value: /app/policies/default
             - name: BOWER_OUTPUT
@@ -67,9 +72,12 @@ spec:
             requests:
               cpu: 50m
               memory: 128Mi
+              # Container logs only: the root file system is read-only and the queue is on the PVC.
+              ephemeral-storage: 64Mi
             limits:
               cpu: "1"
               memory: 512Mi
+              ephemeral-storage: 512Mi
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

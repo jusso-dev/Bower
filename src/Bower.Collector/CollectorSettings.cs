@@ -31,6 +31,14 @@ public sealed record CollectorSettings
     /// <summary>How long acknowledged events stay in the queue for duplicate detection.</summary>
     public TimeSpan DeliveredRetention { get; init; } = TimeSpan.FromDays(7);
 
+    /// <summary>
+    /// Acknowledged events younger than this are kept even under storage pressure
+    /// (BOWER_QUEUE_PRESSURE_RETENTION_MINUTES, default 60, at most the retention). Older
+    /// acknowledged events are purged early, oldest first, when queue pages or free disk
+    /// space run low; that only shortens duplicate detection.
+    /// </summary>
+    public TimeSpan PressureRetentionFloor { get; init; } = TimeSpan.FromHours(1);
+
     public string? IngestToken { get; init; }
 
     /// <summary>One revocable credential per producer: lines of "&lt;producer&gt; sha256:&lt;hex&gt;".</summary>
@@ -89,6 +97,14 @@ public sealed record CollectorSettings
     public TimeSpan DeliveryLeaseDuration { get; init; } = TimeSpan.FromMinutes(5);
 
     public TimeSpan DeliveryTimeout { get; init; } = TimeSpan.FromMinutes(4);
+
+    /// <summary>
+    /// Free-space watermarks for the queue volume (BOWER_STORAGE_WARNING_FREE_BYTES,
+    /// BOWER_STORAGE_WARNING_FREE_PERCENT, BOWER_STORAGE_CRITICAL_FREE_BYTES,
+    /// BOWER_STORAGE_CRITICAL_FREE_PERCENT). Defaults: warning below max(1 GiB, 10%),
+    /// critical (new events refused) below max(256 MiB, 5%).
+    /// </summary>
+    public Bower.Persistence.StorageWatermarkOptions StorageWatermarks { get; init; } = new();
 
     public QueueDeliveryOptions DeliveryOptions() => new()
     {
@@ -282,6 +298,7 @@ public sealed record CollectorSettings
             CollectorId = read("BOWER_COLLECTOR_ID") ?? System.Environment.MachineName,
             Environment = read("BOWER_ENVIRONMENT") ?? "unknown",
             MaximumQueueBytes = ReadInt64(read, "BOWER_QUEUE_MAX_BYTES", 10L * 1024 * 1024 * 1024),
+            PressureRetentionFloor = TimeSpan.FromMinutes(ReadInt64(read, "BOWER_QUEUE_PRESSURE_RETENTION_MINUTES", 60)),
             DeliveredRetention = TimeSpan.FromHours(
                 ReadInt64(read, "BOWER_QUEUE_RETENTION_HOURS", 7 * 24)),
             IngestToken = string.IsNullOrWhiteSpace(token) ? null : token,
@@ -309,6 +326,13 @@ public sealed record CollectorSettings
             MaximumDeliveryAttempts = (int)ReadInt64(read, "BOWER_MAX_DELIVERY_ATTEMPTS", 20),
             DeliveryLeaseDuration = TimeSpan.FromSeconds(ReadInt64(read, "BOWER_DELIVERY_LEASE_SECONDS", 300)),
             DeliveryTimeout = TimeSpan.FromSeconds(ReadInt64(read, "BOWER_DELIVERY_TIMEOUT_SECONDS", 240)),
+            StorageWatermarks = new Bower.Persistence.StorageWatermarkOptions
+            {
+                WarningFreeBytes = ReadInt64(read, "BOWER_STORAGE_WARNING_FREE_BYTES", 1024L * 1024 * 1024),
+                WarningFreePercent = (int)Math.Clamp(ReadInt64(read, "BOWER_STORAGE_WARNING_FREE_PERCENT", 10), -1, 101),
+                CriticalFreeBytes = ReadInt64(read, "BOWER_STORAGE_CRITICAL_FREE_BYTES", 256L * 1024 * 1024),
+                CriticalFreePercent = (int)Math.Clamp(ReadInt64(read, "BOWER_STORAGE_CRITICAL_FREE_PERCENT", 5), -1, 101)
+            },
             OutputType = (read("BOWER_OUTPUT") ?? "none").ToLowerInvariant(),
             AmaSpoolPath = read("BOWER_AMA_SPOOL_PATH")
                 ?? Path.Combine(AppContext.BaseDirectory, "spool"),
@@ -407,6 +431,12 @@ public sealed record CollectorSettings
                 "BOWER_QUEUE_RETENTION_HOURS must be between 1 and 2160.");
         }
 
+        if (PressureRetentionFloor < TimeSpan.FromMinutes(1) || PressureRetentionFloor > DeliveredRetention)
+        {
+            throw new InvalidOperationException(
+                "BOWER_QUEUE_PRESSURE_RETENTION_MINUTES must be at least 1 and at most BOWER_QUEUE_RETENTION_HOURS.");
+        }
+
         if (IngestRequestsPerSecond is < 1 or > 100_000)
         {
             throw new InvalidOperationException(
@@ -420,6 +450,7 @@ public sealed record CollectorSettings
         }
 
         DeliveryOptions().Validate();
+        StorageWatermarks.Validate();
 
         if (OutputType is not ("none" or "ama-spool" or "azure-logs-ingestion" or "relay"))
         {
@@ -730,6 +761,22 @@ public sealed record CollectorSettings
         if (WindowsEventLogConfigPath is not null)
         {
             material += '\u001f' + "windows-eventlog:" + WindowsEventLogConfigPath;
+        }
+
+        if (PressureRetentionFloor != TimeSpan.FromHours(1))
+        {
+            material += '\u001f' + "pressure-retention-minutes:"
+                + PressureRetentionFloor.TotalMinutes.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (StorageWatermarks != new Bower.Persistence.StorageWatermarkOptions())
+        {
+            material += '\u001f' + "storage-watermarks:"
+                + string.Join(',',
+                    StorageWatermarks.WarningFreeBytes.ToString(CultureInfo.InvariantCulture),
+                    StorageWatermarks.WarningFreePercent.ToString(CultureInfo.InvariantCulture),
+                    StorageWatermarks.CriticalFreeBytes.ToString(CultureInfo.InvariantCulture),
+                    StorageWatermarks.CriticalFreePercent.ToString(CultureInfo.InvariantCulture));
         }
 
         if (UsesManagedPrivacyProfile)

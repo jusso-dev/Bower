@@ -26,7 +26,8 @@ public sealed partial class ManagementHeartbeatJob(
     DeliveryActivity? deliveryActivity = null,
     TimeSpan? exchangeTimeout = null,
     ManagementEnrolment? enrolment = null,
-    PipelineTelemetry? telemetry = null)
+    PipelineTelemetry? telemetry = null,
+    QueueStoragePressure? storagePressure = null)
 {
     public const string Id = "management-heartbeat";
     public const string HttpClientName = "bower-management";
@@ -81,8 +82,10 @@ public sealed partial class ManagementHeartbeatJob(
 
         QueueSnapshot snapshot = await eventStore.GetSnapshotAsync(cancellationToken);
         DateTimeOffset now = DateTimeOffset.UtcNow;
+        QueueStorageStatus? storage = await QueueStorageStatus.CaptureAsync(
+            eventStore, snapshot, storagePressure, telemetry, now, cancellationToken);
         string deliveryStatus = DeliveryHealth.Evaluate(settings.OutputType, snapshot,
-            settings.MaximumQueueBytes, now);
+            settings.MaximumQueueBytes, now, storage?.IntakePaused ?? false);
         // Finished command results stay pending until management acknowledges them.
         IReadOnlyList<CommandResultReport> results = commands?.Ledger.PendingResults() ?? [];
         // Expected applications report as sources so silent ones show in the console.
@@ -151,7 +154,8 @@ public sealed partial class ManagementHeartbeatJob(
                     LastCanary = commands?.Ledger.LastCanary,
                     CommandCapabilities = commands?.Capabilities ?? [],
                     CommandResults = results,
-                    Redactions = telemetry?.RedactionSnapshot()
+                    Redactions = telemetry?.RedactionSnapshot(),
+                    Storage = storage
                 },
                 CollectorJsonContext.Default.CollectorHeartbeat));
         // One budget for the whole exchange, body included: a stalled body cannot hold the

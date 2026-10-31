@@ -19,9 +19,40 @@ public sealed partial class SqliteEventStore : IDurableEventStore
     /// it starts: one full WAL transaction plus database growth during checkpoint.
     /// </summary>
     public long StorageReserveBytes => MaximumStorageBytes / 2 + MaximumStorageBytes / 128 + 65_536;
+
+    /// <summary>
+    /// Share of the intake page ceiling (<see cref="MaximumStorageBytes"/> / 4) that new
+    /// events cannot use.
+    /// </summary>
+    public const int SettlementReservePercent = 15;
+
+    /// <summary>
+    /// The database may grow to this multiple (in quarters) of the intake page ceiling, for
+    /// settlement only. Leasing, acknowledging, retrying and dead-lettering enlarge rows, and
+    /// pages packed by appends split when their rows grow, so settling a full backlog can
+    /// nearly double the table. Without this room a backlog that filled the ceiling could
+    /// never be acknowledged and the queue could not drain. 1.75 times the intake ceiling
+    /// stays below the pre-write reserve check.
+    /// </summary>
+    private const long SettlementCeilingQuarters = 7;
+
+    private const long SettlementReserveMinimumBytes = 2 * 1_048_576;
+
+    private static readonly TimeSpan WalTruncateInterval = TimeSpan.FromSeconds(10);
+    private long nextWalTruncateTicks;
     private readonly TimeProvider clock;
+    private readonly StorageGuard? storage;
 
     public SqliteEventStore(string databasePath, long maximumBytes, TimeProvider? clock = null)
+        : this(databasePath, maximumBytes, clock, null)
+    {
+    }
+
+    /// <param name="storage">
+    /// Free-space watermarks for the queue volume. New events are refused below the critical
+    /// watermark; acknowledgement, retries, retention and maintenance are never refused by it.
+    /// </param>
+    public SqliteEventStore(string databasePath, long maximumBytes, TimeProvider? clock, StorageGuard? storage)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
         if (maximumBytes < 1_048_576)
@@ -51,7 +82,13 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         this.maximumBytes = maximumBytes;
         MaximumStorageBytes = checked(maximumBytes * 4 + 16_777_216);
         this.clock = clock ?? TimeProvider.System;
+        this.storage = storage;
     }
+
+    /// <summary>The configured logical cap on undelivered payload bytes.</summary>
+    public long MaximumUndeliveredBytes => maximumBytes;
+
+    public StorageGuard? Storage => storage;
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -86,6 +123,16 @@ public sealed partial class SqliteEventStore : IDurableEventStore
     {
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
         await using SqliteCommand command = connection.CreateCommand();
+        // New databases let retention return freed pages to the file system (incremental
+        // vacuum). The mode can only be chosen before the first table exists; existing
+        // queues keep reusing freed pages inside the file.
+        command.CommandText = "SELECT COUNT(*) FROM sqlite_master;";
+        if (Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture) == 0)
+        {
+            command.CommandText = "PRAGMA auto_vacuum = INCREMENTAL;";
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
         command.CommandText = "PRAGMA journal_mode = WAL;";
         await command.ExecuteNonQueryAsync(cancellationToken);
         await using SqliteTransaction transaction = await BeginWriteAsync(connection, true, cancellationToken);
@@ -160,11 +207,26 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         {
             return await EnqueueCoreAsync(candidate, cancellationToken);
         }
-        catch (SqliteException exception) when (exception.SqliteErrorCode == 13)
+        catch (SqliteException exception) when (exception.SqliteErrorCode == SqliteFull)
         {
-            throw new QueueCapacityExceededException(MaximumStorageBytes, MaximumStorageBytes, 0);
+            // The page ceiling and a full volume both surface as SQLITE_FULL. Nothing was
+            // committed: SQLite rolled the statement or transaction back.
+            throw new QueueCapacityExceededException(
+                MaximumStorageBytes, MaximumStorageBytes, 0, VolumeCritical() ? QueueCapacityReasons.StorageFull : QueueCapacityReasons.Queue);
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == SqliteIoError && VolumeCritical())
+        {
+            // Out of space while writing the WAL, syncing or growing shared memory. Report it
+            // as backpressure so sources keep the event (and the connection) and retry.
+            throw new QueueCapacityExceededException(MaximumStorageBytes, MaximumStorageBytes, 0, QueueCapacityReasons.StorageFull);
         }
     }
+
+    private const int SqliteIoError = 10;
+    private const int SqliteFull = 13;
+
+    // A fresh measurement: the error may be the first sign that the volume filled.
+    private bool VolumeCritical() => storage?.Evaluate(force: true).State == StorageState.Critical;
 
     private async Task<EnqueueResult> EnqueueCoreAsync(
         QueuedEvent candidate,
@@ -195,6 +257,7 @@ public sealed partial class SqliteEventStore : IDurableEventStore
             // A suppressed event commits a counter change, so it needs the same physical
             // budget as an insert; refusing here leaves the counters untouched.
             CheckStorage();
+            storage?.ThrowIfCritical();
             if (!await AdmitAsync(connection, transaction, suppression, candidate.ReceivedAt, cancellationToken))
             {
                 await transaction.CommitAsync(cancellationToken);
@@ -219,6 +282,9 @@ public sealed partial class SqliteEventStore : IDurableEventStore
     {
         int payloadBytes = System.Text.Encoding.UTF8.GetByteCount(candidate.Payload);
         CheckStorage();
+        // After the duplicate check, so an exact replay is still answered as a duplicate.
+        storage?.ThrowIfCritical();
+        await CheckIntakePagesAsync(connection, transaction, payloadBytes, cancellationToken);
         long currentBytes = await GetUndeliveredBytesAsync(connection, transaction, cancellationToken);
         if (payloadBytes > maximumBytes - currentBytes)
         {
@@ -907,6 +973,88 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         return selected.Count;
     }
 
+    /// <summary>Physical queue files and page use. Read-only; never takes the write lock.</summary>
+    public async Task<QueueStorageSnapshot> GetStorageSnapshotAsync(CancellationToken cancellationToken = default)
+    {
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "PRAGMA page_size;";
+        long pageSize = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+        command.CommandText = "PRAGMA page_count;";
+        long pageCount = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+        command.CommandText = "PRAGMA freelist_count;";
+        long freePages = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+        return new QueueStorageSnapshot(
+            FileLength(databasePath),
+            FileLength(databasePath + "-wal"),
+            FileLength(databasePath + "-shm"),
+            pageSize,
+            pageCount,
+            freePages,
+            IntakePageLimit(MaximumStorageBytes / 4 / pageSize, pageSize),
+            SettlementCeilingPages(pageSize),
+            maximumBytes,
+            MaximumStorageBytes);
+    }
+
+    /// <summary>
+    /// Returns up to <paramref name="maximumPages"/> free pages to the file system
+    /// (incremental vacuum) and checkpoints so the file shrinks. Only databases created with
+    /// incremental auto-vacuum can; others return 0 and keep reusing free pages. Never
+    /// touches rows: it only moves pages already freed by retention.
+    /// </summary>
+    public async Task<long> ReleaseFreePagesAsync(int maximumPages, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(maximumPages, 1);
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "PRAGMA auto_vacuum;";
+        if (Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture) != 2)
+        {
+            return 0;
+        }
+
+        command.CommandText = "PRAGMA freelist_count;";
+        long before = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+        if (before == 0)
+        {
+            return 0;
+        }
+
+        await using (SqliteTransaction transaction = await BeginWriteAsync(connection, false, cancellationToken))
+        {
+            command.Transaction = transaction;
+            command.CommandText = $"PRAGMA incremental_vacuum({maximumPages});";
+            await using (SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken))
+            {
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                }
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        command.Transaction = null;
+        command.CommandText = "PRAGMA freelist_count;";
+        long after = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+        command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        return before - after;
+    }
+
+    private static long FileLength(string path)
+    {
+        try
+        {
+            return File.Exists(path) ? new FileInfo(path).Length : 0;
+        }
+        catch (IOException)
+        {
+            return 0;
+        }
+    }
+
     public async Task<LedgerHead> GetLedgerHeadAsync(CancellationToken cancellationToken = default)
     {
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
@@ -951,9 +1099,10 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         await pragmas.ExecuteNonQueryAsync(cancellationToken);
         pragmas.CommandText = "PRAGMA page_size;";
         long pageSize = Convert.ToInt64(await pragmas.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
-        pragmas.CommandText = $"PRAGMA max_page_count = {MaximumStorageBytes / 4 / pageSize};";
+        long ceiling = SettlementCeilingPages(pageSize);
+        pragmas.CommandText = $"PRAGMA max_page_count = {ceiling};";
         long effectivePages = Convert.ToInt64(await pragmas.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
-        if (effectivePages > MaximumStorageBytes / 4 / pageSize)
+        if (effectivePages > ceiling)
         {
             await connection.DisposeAsync();
             throw new QueueCapacityExceededException(MaximumStorageBytes, effectivePages * pageSize, 0);
@@ -964,6 +1113,12 @@ public sealed partial class SqliteEventStore : IDurableEventStore
     private async Task<SqliteTransaction> BeginWriteAsync(SqliteConnection connection, bool checkCapacity, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (!StorageWithinBudget())
+        {
+            await TryTruncateWalAsync(connection, cancellationToken);
+        }
+
+
         SqliteTransaction transaction = connection.BeginTransaction(IsolationLevel.Serializable, deferred: false);
         try
         {
@@ -982,20 +1137,83 @@ public sealed partial class SqliteEventStore : IDurableEventStore
 
     private void CheckStorage()
     {
-        // cache_spill=OFF bounds a transaction to one WAL frame per database page.
-        // Reserve both a full WAL transaction and database growth during checkpoint.
-        long current = new FileInfo(databasePath).Length;
-        string wal = databasePath + "-wal";
-        if (File.Exists(wal))
+        if (!StorageWithinBudget(out long current))
         {
-            current += new FileInfo(wal).Length;
-        }
-        long reserve = StorageReserveBytes;
-        if (current > MaximumStorageBytes - reserve)
-        {
-            throw new QueueCapacityExceededException(MaximumStorageBytes, current, reserve);
+            throw new QueueCapacityExceededException(MaximumStorageBytes, current, StorageReserveBytes);
         }
     }
+
+    private bool StorageWithinBudget() => StorageWithinBudget(out _);
+
+    private bool StorageWithinBudget(out long current)
+    {
+        // cache_spill=OFF bounds a transaction to one WAL frame per database page.
+        // Reserve both a full WAL transaction and database growth during checkpoint.
+        current = FileLength(databasePath) + FileLength(databasePath + "-wal");
+        return current <= MaximumStorageBytes - StorageReserveBytes;
+    }
+
+    /// <summary>
+    /// A WAL that checkpoints could not reset (readers kept it pinned) can exhaust the write
+    /// budget and refuse acknowledgements too. Reset it before refusing; a reader that still
+    /// pins it makes this a no-op (bounded by the busy timeout) and the write is refused.
+    /// </summary>
+    private async Task TryTruncateWalAsync(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        // At most once per interval: a pinned WAL makes the attempt wait for the busy timeout.
+        long now = clock.GetUtcNow().UtcTicks;
+        long due = Interlocked.Read(ref nextWalTruncateTicks);
+        if (now < due || Interlocked.CompareExchange(ref nextWalTruncateTicks, now + WalTruncateInterval.Ticks, due) != due)
+        {
+            return;
+        }
+
+        try
+        {
+            await using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (SqliteException)
+        {
+            // Busy or out of space: the caller's budget check decides.
+        }
+    }
+
+    /// <summary>
+    /// Refuses a new event that would take pages from the settlement reserve. Pages in use
+    /// exclude the free list, so pages freed by retention are reused first.
+    /// </summary>
+    private async Task CheckIntakePagesAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        int payloadBytes,
+        CancellationToken cancellationToken)
+    {
+        await using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT page_size, page_count, freelist_count FROM pragma_page_size, pragma_page_count, pragma_freelist_count;";
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        await reader.ReadAsync(cancellationToken);
+        long pageSize = reader.GetInt64(0);
+        long used = reader.GetInt64(1) - reader.GetInt64(2);
+        long limit = IntakePageLimit(MaximumStorageBytes / 4 / pageSize, pageSize);
+        // The payload (overflow pages for large events) plus its row, ledger and index entries.
+        long needed = (payloadBytes / pageSize) + 8;
+        if (used + needed > limit)
+        {
+            throw new QueueCapacityExceededException(limit * pageSize, used * pageSize, payloadBytes);
+        }
+    }
+
+    /// <summary>The hard page limit SQLite enforces on every connection.</summary>
+    private long SettlementCeilingPages(long pageSize) => MaximumStorageBytes / 4 / pageSize * SettlementCeilingQuarters / 4;
+
+    /// <summary>Pages new events may use: the intake ceiling minus the settlement reserve.</summary>
+    public static long IntakePageLimit(long maximumPages, long pageSize) =>
+        maximumPages - Math.Min(
+            maximumPages / 2,
+            Math.Max(maximumPages * SettlementReservePercent / 100, SettlementReserveMinimumBytes / pageSize));
 
     private static async Task<long> GetUndeliveredBytesAsync(
         SqliteConnection connection,
@@ -1035,7 +1253,8 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         UnixFileMode mode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
         foreach (string path in new[] { databasePath, $"{databasePath}-wal", $"{databasePath}-shm" })
         {
-            if (File.Exists(path))
+            // Never chmod through a link: only the queue's own regular files.
+            if (File.Exists(path) && new FileInfo(path).LinkTarget is null)
             {
                 File.SetUnixFileMode(path, mode);
             }
@@ -1046,10 +1265,15 @@ public sealed partial class SqliteEventStore : IDurableEventStore
 public sealed class QueueCapacityExceededException(
     long maximumBytes,
     long currentBytes,
-    long attemptedBytes)
+    long attemptedBytes,
+    string reason = QueueCapacityReasons.Queue)
     : Exception(
-        $"Queue capacity exceeded. Maximum={maximumBytes}, Current={currentBytes}, Attempted={attemptedBytes}.")
+        $"Queue capacity exceeded ({reason}). Maximum={maximumBytes}, Current={currentBytes}, Attempted={attemptedBytes}.")
 {
+    /// <summary>A <see cref="QueueCapacityReasons"/> code. Nothing was committed for the refused event.</summary>
+    public string Reason { get; } = reason;
+
+    public bool IsStorage => Reason is QueueCapacityReasons.StorageCritical or QueueCapacityReasons.StorageFull;
 }
 
 public sealed class InvalidQueueTransitionException(

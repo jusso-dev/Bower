@@ -233,10 +233,10 @@ public sealed class SecurityEventProcessor(
                 bytesIn,
                 arranged);
         }
-        catch (QueueCapacityExceededException)
+        catch (QueueCapacityExceededException exception)
         {
             // Nothing was committed for this attempt.
-            telemetry?.RecordCapacityRefusal(bytesIn);
+            telemetry?.RecordCapacityRefusal(bytesIn, exception.Reason);
             throw;
         }
 
