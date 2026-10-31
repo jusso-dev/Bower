@@ -1,0 +1,408 @@
+{
+ "after": [],
+ "before": [],
+ "measurements": {
+  "CollectorA": {
+   "listeners": {
+    "a12": {
+     "accepted": 200,
+     "deliveredToSpool": 200,
+     "expected": 200,
+     "missing": 0,
+     "missingSample": [],
+     "missingSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "unexpectedInScope": 0
+    },
+    "a13": {
+     "accepted": 196,
+     "deliveredToSpool": 196,
+     "expected": 200,
+     "missing": 4,
+     "missingSample": [
+      "a13-n4400x40050",
+      "a13-n4400x40051",
+      "a13-n4400x40100",
+      "a13-n4400x40150"
+     ],
+     "missingSha256": "aefd98f95163cda1dc87bc257668c60c8400871561e1af2bf39bac0f8f795ed0",
+     "unexpectedInScope": 0
+    }
+   },
+   "measuredAt": "2026-10-31T08:27:47.371864+00:00",
+   "passed": false,
+   "scenario": "base-idle-close",
+   "syslog": {
+    "a12": {
+     "activeConnections": 0,
+     "bytesReceived": 50650,
+     "connectionsAccepted": 5,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 0,
+     "framesReceived": 200,
+     "framingErrors": 0,
+     "lastFrameAt": "2026-10-31T08:26:09.4489206+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 200,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 5,
+     "tlsHandshakeFailures": 0
+    },
+    "a13": {
+     "activeConnections": 0,
+     "bytesReceived": 49637,
+     "connectionsAccepted": 5,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 0,
+     "framesReceived": 196,
+     "framingErrors": 0,
+     "lastFrameAt": "2026-10-31T08:26:09.4600206+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 196,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 5,
+     "tlsHandshakeFailures": 0
+    }
+   }
+  },
+  "CollectorA-snapshot": {
+   "active": "active",
+   "at": "2026-10-31T08:27:57.781315+00:00",
+   "connections": 0,
+   "mainPid": "27827",
+   "queue": {
+    "events": 396,
+    "undelivered": 0
+   },
+   "restarts": "0",
+   "syslog": {
+    "a12": {
+     "activeConnections": 0,
+     "bytesReceived": 50650,
+     "connectionsAccepted": 5,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 0,
+     "framesReceived": 200,
+     "framingErrors": 0,
+     "lastFrameAt": "2026-10-31T08:26:09.4489206+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 200,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 5,
+     "tlsHandshakeFailures": 0
+    },
+    "a13": {
+     "activeConnections": 0,
+     "bytesReceived": 49637,
+     "connectionsAccepted": 5,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 0,
+     "framesReceived": 196,
+     "framingErrors": 0,
+     "lastFrameAt": "2026-10-31T08:26:09.4600206+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 196,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 5,
+     "tlsHandshakeFailures": 0
+    }
+   }
+  },
+  "SenderR": {
+   "at": "2026-10-31T08:28:03.960970+00:00",
+   "bootId": "f8638ca2-f415-4f73-b0b4-8eb9d4b0526b",
+   "impstats": {
+    "a12 queue/core.queue": {
+     "discarded.full": 0,
+     "discarded.nf": 0,
+     "enqueued": 200,
+     "full": 0,
+     "maxqsize": 31,
+     "size": 0
+    },
+    "a12 queue[DA]/core.queue": {
+     "discarded.full": 0,
+     "discarded.nf": 0,
+     "enqueued": 0,
+     "full": 0,
+     "maxqsize": 0,
+     "size": 0
+    },
+    "a12/core.action": {
+     "failed": 0,
+     "processed": 200,
+     "resumed": 3,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "a13 queue/core.queue": {
+     "discarded.full": 0,
+     "discarded.nf": 0,
+     "enqueued": 200,
+     "full": 0,
+     "maxqsize": 30,
+     "size": 0
+    },
+    "a13 queue[DA]/core.queue": {
+     "discarded.full": 0,
+     "discarded.nf": 0,
+     "enqueued": 0,
+     "full": 0,
+     "maxqsize": 0,
+     "size": 0
+    },
+    "a13/core.action": {
+     "failed": 0,
+     "processed": 200,
+     "resumed": 3,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-2-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-3-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 1862,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-4-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 16,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-5-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-6-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-7-builtin:omusrmsg/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-8-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-9-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "imjournal/imjournal": {
+     "discarded": 0,
+     "disk_usage_bytes": 8388608,
+     "failed": 0,
+     "poll_failed": 0,
+     "ratelimit_discarded_in_interval": 0,
+     "read": 2208,
+     "recovery_attempts": 0,
+     "rotations": 1,
+     "submitted": 2208
+    },
+    "main Q/core.queue": {
+     "discarded.full": 0,
+     "discarded.nf": 0,
+     "enqueued": 2208,
+     "full": 0,
+     "maxqsize": 270,
+     "size": 0
+    }
+   },
+   "nft": {
+    "A": 200,
+    "B": 0
+   },
+   "queueFiles": {},
+   "rsyslog": "active",
+   "sockets": [
+    {
+     "port": 6514,
+     "recvQ": 1567,
+     "sendQ": 0,
+     "state": "CLOSE-WAIT"
+    },
+    {
+     "port": 6516,
+     "recvQ": 1,
+     "sendQ": 0,
+     "state": "CLOSE-WAIT"
+    }
+   ]
+  }
+ },
+ "passed": false,
+ "runId": "bower-ws1-20261031-075451",
+ "scenario": "base-idle-close",
+ "startAt": 1793434928.496744,
+ "steps": [
+  {
+   "args": "generate --kind nft --track A --first 20000 --count 50 --rate 10 --label base-idle-1",
+   "host": "SenderR",
+   "offset": 0,
+   "submitted": {
+    "output": ""
+   }
+  },
+  {
+   "args": "generate --kind nft --track A --first 20050 --count 50 --rate 100 --label base-idle-2",
+   "host": "SenderR",
+   "offset": 80,
+   "submitted": {
+    "output": ""
+   }
+  },
+  {
+   "args": "generate --kind nft --track A --first 20100 --count 50 --rate 100 --label base-idle-3",
+   "host": "SenderR",
+   "offset": 160,
+   "submitted": {
+    "output": ""
+   }
+  },
+  {
+   "args": "generate --kind nft --track A --first 20150 --count 50 --rate 100 --label base-idle-4",
+   "host": "SenderR",
+   "offset": 240,
+   "submitted": {
+    "output": ""
+   }
+  },
+  {
+   "result": "base-idle-1",
+   "value": {
+    "actualRate": 9.988213346912863,
+    "count": 50,
+    "endedAt": "2026-10-31T08:22:13.516454+00:00",
+    "first": 20000,
+    "generator": "nft",
+    "nativeCounterDelta": {
+     "A": 50,
+     "B": 0
+    },
+    "rate": 10.0,
+    "sent": 50,
+    "startedAt": "2026-10-31T08:22:08.510539+00:00",
+    "track": "A"
+   }
+  },
+  {
+   "result": "base-idle-2",
+   "value": {
+    "actualRate": 98.94050803620499,
+    "count": 50,
+    "endedAt": "2026-10-31T08:23:29.102126+00:00",
+    "first": 20050,
+    "generator": "nft",
+    "nativeCounterDelta": {
+     "A": 50,
+     "B": 0
+    },
+    "rate": 100.0,
+    "sent": 50,
+    "startedAt": "2026-10-31T08:23:28.596761+00:00",
+    "track": "A"
+   }
+  },
+  {
+   "result": "base-idle-3",
+   "value": {
+    "actualRate": 98.92228033544231,
+    "count": 50,
+    "endedAt": "2026-10-31T08:24:49.102560+00:00",
+    "first": 20100,
+    "generator": "nft",
+    "nativeCounterDelta": {
+     "A": 50,
+     "B": 0
+    },
+    "rate": 100.0,
+    "sent": 50,
+    "startedAt": "2026-10-31T08:24:48.597103+00:00",
+    "track": "A"
+   }
+  },
+  {
+   "result": "base-idle-4",
+   "value": {
+    "actualRate": 98.96234458640524,
+    "count": 50,
+    "endedAt": "2026-10-31T08:26:09.025862+00:00",
+    "first": 20150,
+    "generator": "nft",
+    "nativeCounterDelta": {
+     "A": 50,
+     "B": 0
+    },
+    "rate": 100.0,
+    "sent": 50,
+    "startedAt": "2026-10-31T08:26:08.520564+00:00",
+    "track": "A"
+   }
+  }
+ ]
+}

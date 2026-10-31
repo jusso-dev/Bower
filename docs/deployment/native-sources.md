@@ -72,13 +72,14 @@ appropriate source retention reduce loss; UDP is best effort and drops on
 pressure. Do not claim exactly-once delivery or lossless replay.
 
 The [live Sentinel campaign](../evidence/sentinel-native-20261030/README.md) observed
-two missing messages when rsyslog reused a TLS connection after Bower's default
-60-second frame/idle timeout closed it. No collector drop counter increased because
-those frames never reached intake. The tested rsyslog `omfwd` action used
-`RebindInterval="1"` for subsequent runs, alongside mutual TLS, a sender queue and
-`action.resumeRetryCount="-1"`. Validate the configuration with `rsyslogd -N1` and
-test idle/reconnect behavior on the deployed sender version. This reconnect setting
-adds connection overhead and does not guarantee delivery across every failure.
+two missing messages when rsyslog reused a TLS connection after Bower's then-default
+60-second frame/idle timeout closed it. The cause is now known: rsyslog never reads the
+TLS 1.3 session tickets the .NET listener sends, so its pre-send check cannot see the
+close. Bower no longer closes established idle connections by default; a TLS
+connection must start its handshake within `handshakeStartTimeoutSeconds` (60 seconds
+by default). Test senders that delay the TLS handshake. Per-event reconnects
+(`RebindInterval="1"`) are **not** recommended. Use the candidate configuration in the
+[delivery-reliability guide](../production-readiness/01-syslog-delivery-reliability.md).
 Monitor source counts separately from Bower acceptance and destination counts;
 zero missing accepted events does not imply zero source loss.
 

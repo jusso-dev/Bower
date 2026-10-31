@@ -98,6 +98,29 @@ fn record_id_is_stable_for_retransmits_and_distinct_per_sender_and_listener() {
     assert_eq!(first.len(), 39);
 }
 
+#[test]
+fn record_identity_cannot_distinguish_identical_events_from_retransmissions() {
+    let now = bower_contracts::time::now();
+    for (frame, timestamped) in [
+        (b"<13>1 2026-10-26T08:00:00Z h a - - - msg".as_slice(), true),
+        (b"<13>1 - h a - - - msg".as_slice(), false),
+    ] {
+        let message = parser::parse(frame, &now).unwrap();
+        let id = |at| {
+            let text = record::build(&message, frame, "edge", "tcp", "192.0.2.10", &at).unwrap();
+            let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+            string(&value["id"])
+        };
+        let first = id(now);
+        let later = id(now + chrono::Duration::seconds(1));
+        if timestamped {
+            assert_eq!(first, later);
+        } else {
+            assert_ne!(first, later);
+        }
+    }
+}
+
 /// Shared with C#: a peer address becomes `senderAddress` and the event id the same way in
 /// both runtimes (IPv4-mapped IPv6 to IPv4, IPv6 interface scope dropped).
 #[test]
@@ -338,8 +361,28 @@ fn configuration_validates_every_bound() {
             "maximumConnections must be between 1 and 1024",
         ),
         (
-            r#""protocol": "tcp", "idleTimeoutSeconds": 0"#,
-            "idleTimeoutSeconds must be between 1 and 3600",
+            r#""protocol": "tcp", "idleTimeoutSeconds": -1"#,
+            "idleTimeoutSeconds must be between 0 and 3600",
+        ),
+        (
+            r#""protocol": "tcp", "idleTimeoutSeconds": 3601"#,
+            "idleTimeoutSeconds must be between 0 and 3600",
+        ),
+        (
+            r#""protocol": "tcp", "frameTimeoutSeconds": 0"#,
+            "frameTimeoutSeconds must be between 1 and 3600",
+        ),
+        (
+            r#""protocol": "tcp", "frameTimeoutSeconds": 3601"#,
+            "frameTimeoutSeconds must be between 1 and 3600",
+        ),
+        (
+            r#""protocol": "tcp", "handshakeStartTimeoutSeconds": 0"#,
+            "handshakeStartTimeoutSeconds must be between 1 and 3600",
+        ),
+        (
+            r#""protocol": "tcp", "handshakeStartTimeoutSeconds": 3601"#,
+            "handshakeStartTimeoutSeconds must be between 1 and 3600",
         ),
         (
             r#""protocol": "tcp", "routes": []"#,
@@ -408,7 +451,9 @@ fn configuration_rejects_duplicate_listeners_wrong_kind_and_oversized_files() {
     let options = &config::parse(&config_with(listener)).unwrap().listeners[0];
     assert_eq!(options.maximum_message_bytes, 65_536);
     assert_eq!(options.maximum_connections, 64);
-    assert_eq!(options.idle_timeout_seconds, 60);
+    assert_eq!(options.idle_timeout_seconds, 0);
+    assert_eq!(options.frame_timeout_seconds, 60);
+    assert_eq!(options.handshake_start_timeout_seconds, 60);
 }
 
 /// `config-vectors.json`, shared with C# `SyslogSourceTests`: non-canonical addresses,
@@ -575,6 +620,10 @@ impl Running {
 
 struct Options<'a> {
     idle: u32,
+    frame: u32,
+    handshake_start: u32,
+    drain: Duration,
+    stop: Duration,
     connections: u32,
     senders: &'a str,
     tls: Option<String>,
@@ -584,6 +633,10 @@ impl Default for Options<'_> {
     fn default() -> Self {
         Self {
             idle: 30,
+            frame: 30,
+            handshake_start: 60,
+            drain: Duration::from_millis(500),
+            stop: Duration::from_secs(1),
             connections: 8,
             senders: r#""127.0.0.1", "::1""#,
             tls: None,
@@ -603,12 +656,14 @@ async fn start(
     let json = config_with(&format!(
         r#""id": "edge", "protocol": "{protocol}", "address": "127.0.0.1", "port": 0,
         "allowedSenders": [{}], "maximumMessageBytes": 512,
-        "maximumConnections": {}, "idleTimeoutSeconds": {}, {tls}
+        "maximumConnections": {}, "idleTimeoutSeconds": {}, "frameTimeoutSeconds": {}, "handshakeStartTimeoutSeconds": {}, {tls}
         "routes": [{{"appName": "sshd", "pack": "linux-ssh-gateway", "parser": 0}}]"#,
-        options.senders, options.connections, options.idle
+        options.senders, options.connections, options.idle, options.frame, options.handshake_start
     ));
     let mut source = SyslogSource::new(config::parse(&json).unwrap(), sink, None)
-        .with_retry_delay(Duration::from_millis(20));
+        .with_retry_delay(Duration::from_millis(20))
+        .with_drain_timeout(options.drain)
+        .with_stop_timeout(options.stop);
     source.bind().await.map_err(|error| error.to_string())?;
     let endpoint = source.endpoints()["edge"];
     let metrics = source.metrics();
@@ -674,13 +729,14 @@ async fn tcp_accepts_both_framings_and_counts_metadata_only() {
 }
 
 #[tokio::test]
-async fn tcp_slowloris_and_idle_connections_are_closed_and_counted() {
+async fn tcp_slowloris_frames_are_closed_by_the_frame_timeout_but_idle_connections_stay_open() {
     let sink = Arc::new(FakeSink::default());
     let running = start(
         "tcp",
         Arc::clone(&sink),
         Options {
-            idle: 1,
+            idle: 0,
+            frame: 1,
             ..Options::default()
         },
     )
@@ -703,14 +759,121 @@ async fn tcp_slowloris_and_idle_connections_are_closed_and_counted() {
         sent < trickle.len(),
         "connection should close before the trickle completes"
     );
-    let mut idle = TcpStream::connect(running.endpoint).await.unwrap();
-    let status = running
-        .wait_for(|status| status.timeouts == 2 && status.active_connections == 0)
+    running
+        .wait_for(|status| status.timeouts == 1 && status.active_connections == 0)
         .await;
-    assert_eq!(status.frames_received, 0);
-    assert!(sink.records().is_empty());
-    assert!(closed(&mut idle).await);
+    // Idle time between frames is not frame time: with idleTimeoutSeconds 0 a quiet sender
+    // keeps its connection well past the frame timeout, and its next frame is accepted.
+    let mut idle = TcpStream::connect(running.endpoint).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(2_500)).await;
+    idle.write_all(b"<38>Oct 11 22:14:15 gw01 sshd: after a quiet spell\n")
+        .await
+        .unwrap();
+    sink.wait_for(1).await;
+    let status = running.status();
+    assert_eq!(status.timeouts, 1);
+    assert_eq!(status.half_closes, 0);
+    assert_eq!(status.active_connections, 1);
     running.stop().await;
+}
+
+#[tokio::test]
+async fn tcp_idle_timeout_half_closes_and_still_accepts_frames_the_sender_already_sent() {
+    let sink = Arc::new(FakeSink::default());
+    let running = start(
+        "tcp",
+        Arc::clone(&sink),
+        Options {
+            idle: 1,
+            drain: Duration::from_secs(2),
+            ..Options::default()
+        },
+    )
+    .await
+    .unwrap();
+    let mut client = TcpStream::connect(running.endpoint).await.unwrap();
+    // The listener sends FIN (end of stream), not a reset: the sender can still write.
+    assert!(closed(&mut client).await);
+    client
+        .write_all(b"<38>Oct 11 22:14:15 gw01 sshd: crossed the close\n")
+        .await
+        .unwrap();
+    sink.wait_for(1).await;
+    let status = running.wait_for(|status| status.drained_frames == 1).await;
+    assert_eq!(
+        (status.timeouts, status.half_closes, status.queued),
+        (1, 1, 1)
+    );
+    client.shutdown().await.unwrap();
+    let status = running
+        .wait_for(|status| status.active_connections == 0)
+        .await;
+    assert_eq!(status.peer_resets, 0);
+    running.stop().await;
+}
+
+#[tokio::test]
+async fn tcp_drain_ends_a_quiet_half_closed_connection() {
+    let running = start(
+        "tcp",
+        Arc::new(FakeSink::default()),
+        Options {
+            idle: 1,
+            drain: Duration::from_millis(300),
+            ..Options::default()
+        },
+    )
+    .await
+    .unwrap();
+    let mut client = TcpStream::connect(running.endpoint).await.unwrap();
+    assert!(closed(&mut client).await);
+    let status = running
+        .wait_for(|status| status.active_connections == 0)
+        .await;
+    assert_eq!((status.half_closes, status.drained_frames), (1, 0));
+    running.stop().await;
+}
+
+#[tokio::test]
+async fn tcp_a_peer_reset_is_counted() {
+    let running = start("tcp", Arc::new(FakeSink::default()), Options::default())
+        .await
+        .unwrap();
+    let client = TcpStream::connect(running.endpoint).await.unwrap();
+    running
+        .wait_for(|status| status.active_connections == 1)
+        .await;
+    // Linger 0: close sends RST, as a sender closing with unread data does.
+    client.set_zero_linger().unwrap();
+    drop(client);
+    let status = running
+        .wait_for(|status| status.active_connections == 0)
+        .await;
+    assert_eq!(status.peer_resets, 1);
+    running.stop().await;
+}
+
+#[tokio::test]
+async fn keepalive_is_enabled_with_bower_timing() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let stream = TcpStream::connect(listener.local_addr().unwrap())
+        .await
+        .unwrap();
+    bower_source_syslog::source::configure_keepalive(&stream);
+    let socket = socket2::SockRef::from(&stream);
+    assert!(socket.keepalive().unwrap());
+    assert_eq!(
+        socket.tcp_keepalive_time().unwrap(),
+        bower_source_syslog::source::KEEPALIVE_TIME
+    );
+    assert_eq!(
+        socket.tcp_keepalive_interval().unwrap(),
+        bower_source_syslog::source::KEEPALIVE_INTERVAL
+    );
+    assert_eq!(
+        socket.tcp_keepalive_retries().unwrap(),
+        bower_source_syslog::source::KEEPALIVE_PROBES
+    );
 }
 
 #[tokio::test]
@@ -1091,4 +1254,180 @@ async fn stop_cancels_open_connections_and_blocked_submissions_promptly() {
     running.stop().await;
     assert_eq!(metrics.snapshot()[0].queued, 0);
     assert!(closed(&mut idle).await);
+}
+
+#[tokio::test]
+async fn stop_half_closes_and_enqueues_frames_the_sender_sends_before_it_sees_the_end() {
+    let sink = Arc::new(FakeSink::default());
+    let running = start(
+        "tcp",
+        Arc::clone(&sink),
+        Options {
+            drain: Duration::from_secs(3),
+            stop: Duration::from_secs(8),
+            ..Options::default()
+        },
+    )
+    .await
+    .unwrap();
+    let mut client = TcpStream::connect(running.endpoint).await.unwrap();
+    running
+        .wait_for(|status| status.active_connections == 1)
+        .await;
+    let metrics = running.metrics.clone();
+    let _ = running.stop.send(true);
+    // The sender sees end of stream, but what it writes until then is still accepted.
+    assert!(closed(&mut client).await);
+    client
+        .write_all(b"<38>Oct 11 22:14:15 gw01 sshd: in flight at stop\n")
+        .await
+        .unwrap();
+    sink.wait_for(1).await;
+    client.shutdown().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), running.task)
+        .await
+        .expect("stops within the drain bound")
+        .unwrap();
+    let status = metrics.snapshot().remove(0);
+    assert_eq!(
+        (
+            status.queued,
+            status.half_closes,
+            status.drained_frames,
+            status.active_connections
+        ),
+        (1, 1, 1, 0)
+    );
+}
+
+#[tokio::test]
+async fn tls_prehandshake_timeout_releases_exhausted_slot_without_closing_established_idle() {
+    let tls_dir = fixtures().join("tls");
+    let tls = format!(
+        r#"{{"certificateFile": {}, "privateKeyFile": {}}}"#,
+        serde_json::to_string(&tls_dir.join("server.pem")).unwrap(),
+        serde_json::to_string(&tls_dir.join("server-key.pem")).unwrap()
+    );
+    let sink = Arc::new(FakeSink::default());
+    let running = start(
+        "tls",
+        Arc::clone(&sink),
+        Options {
+            tls: Some(tls),
+            idle: 0,
+            handshake_start: 1,
+            connections: 1,
+            ..Options::default()
+        },
+    )
+    .await
+    .unwrap();
+    let _stalled = TcpStream::connect(running.endpoint).await.unwrap();
+    running
+        .wait_for(|status| status.active_connections == 1)
+        .await;
+    let _rejected = TcpStream::connect(running.endpoint).await.unwrap();
+    running
+        .wait_for(|status| status.connections_rejected == 1)
+        .await;
+    running
+        .wait_for(|status| status.timeouts == 1 && status.active_connections == 0)
+        .await;
+    let tcp = TcpStream::connect(running.endpoint).await.unwrap();
+    let mut stream = tls_client(None)
+        .connect(ServerName::try_from("localhost").unwrap(), tcp)
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(1_500)).await;
+    stream
+        .write_all(b"<38>Oct 11 22:14:15 gw01 sshd: still active\n")
+        .await
+        .unwrap();
+    stream.flush().await.unwrap();
+    sink.wait_for(1).await;
+    assert_eq!(running.status().timeouts, 1);
+    running.stop().await;
+}
+
+#[tokio::test]
+async fn tls_a_connection_may_wait_idle_before_its_handshake() {
+    let tls_dir = fixtures().join("tls");
+    let tls = format!(
+        r#"{{"certificateFile": {}, "privateKeyFile": {}}}"#,
+        serde_json::to_string(&tls_dir.join("server.pem")).unwrap(),
+        serde_json::to_string(&tls_dir.join("server-key.pem")).unwrap()
+    );
+    let sink = Arc::new(FakeSink::default());
+    let running = start(
+        "tls",
+        Arc::clone(&sink),
+        Options {
+            tls: Some(tls),
+            idle: 0,
+            frame: 1,
+            ..Options::default()
+        },
+    )
+    .await
+    .unwrap();
+    // syslog-ng connects first and starts TLS only when it has a message: that wait is idle
+    // time, so it is not cut short by the frame (handshake) timeout or counted as a failure.
+    let tcp = TcpStream::connect(running.endpoint).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(2_500)).await;
+    let mut stream = tls_client(None)
+        .connect(ServerName::try_from("localhost").unwrap(), tcp)
+        .await
+        .unwrap();
+    stream
+        .write_all(b"<38>Oct 11 22:14:15 gw01 sshd: late handshake\n")
+        .await
+        .unwrap();
+    stream.flush().await.unwrap();
+    sink.wait_for(1).await;
+    let status = running.status();
+    assert_eq!((status.tls_handshake_failures, status.timeouts), (0, 0));
+    running.stop().await;
+}
+
+#[tokio::test]
+async fn tls_listener_sends_no_session_tickets_a_non_reading_sender_would_keep_unread() {
+    let tls_dir = fixtures().join("tls");
+    let tls = format!(
+        r#"{{"certificateFile": {}, "privateKeyFile": {}, "clientCertificateAuthorityFile": {}}}"#,
+        serde_json::to_string(&tls_dir.join("server.pem")).unwrap(),
+        serde_json::to_string(&tls_dir.join("server-key.pem")).unwrap(),
+        serde_json::to_string(&tls_dir.join("ca.pem")).unwrap()
+    );
+    let running = start(
+        "tls",
+        Arc::new(FakeSink::default()),
+        Options {
+            tls: Some(tls),
+            ..Options::default()
+        },
+    )
+    .await
+    .unwrap();
+    let tcp = TcpStream::connect(running.endpoint).await.unwrap();
+    let stream = tls_client(Some("client"))
+        .connect(ServerName::try_from("localhost").unwrap(), tcp)
+        .await
+        .unwrap();
+    assert_eq!(
+        stream.get_ref().1.protocol_version(),
+        Some(rustls::ProtocolVersion::TLSv1_3)
+    );
+    // rsyslog's pre-send check peeks the TCP socket without reading TLS records. Nothing may
+    // be waiting there, or a later FIN from the listener is invisible to it.
+    let mut byte = [0u8; 1];
+    let pending = tokio::time::timeout(
+        Duration::from_millis(500),
+        stream.get_ref().0.peek(&mut byte),
+    )
+    .await;
+    assert!(
+        pending.is_err(),
+        "no bytes may be pending after the handshake"
+    );
+    running.stop().await;
 }

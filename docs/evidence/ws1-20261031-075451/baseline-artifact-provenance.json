@@ -1,0 +1,31 @@
+{
+  "source": "Local retained WS1 campaign evidence /private/tmp/ws1/evidence; copied byte-for-byte, 2026-11-01.",
+  "scope": "Baseline observations, not a completed production qualification.",
+  "files": {
+    "base-idle-close.json": {
+      "sha256": "f95f257b570214a571f990a9ca494b4ccb0ef0d46055c905b3071bf687ff143b",
+      "bytes": 8974
+    },
+    "base-stuck-capture-collector.txt": {
+      "sha256": "80d32f1ece63b25ae7fbdb0d966d1b7446d5b3b22a5e2c7c55d4aed4f0d56235",
+      "bytes": 398
+    },
+    "base-stuck-capture-sender.txt": {
+      "sha256": "f10fb983ccb6ec8456007b6a03bf5ce3a01d5b0da0d3bb67690c9570f8a029f4",
+      "bytes": 894
+    },
+    "base-rebind1.json": {
+      "sha256": "1629f48c045fca7abc2b45c74be7bfb7f2307d50469bf7f83b184d9d8a8f2b21",
+      "bytes": 8120
+    },
+    "base-journal-rotate.json": {
+      "sha256": "1ded62b97e78e655b0644a0a834d23e3ddc80c19ed7c6270cb158d9cd4f880d5",
+      "bytes": 7815
+    },
+    "base-restart.json": {
+      "sha256": "5ce187e587003a1bd419f71b07fe746e0c590606049565a030d10425cc424d55",
+      "bytes": 8754
+    }
+  },
+  "review": "JSON parsed; captures inspected. Pattern scan found no PEM private keys, bearer credentials, AWS access-key IDs, JWTs, or populated password/secret/token assignments. This scan is not exhaustive. Captures retain private lab IP addresses and synthetic event identifiers."
+}

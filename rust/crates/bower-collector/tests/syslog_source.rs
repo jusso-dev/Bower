@@ -469,9 +469,12 @@ fn listener_status_serializes_with_csharp_names() {
         server_certificate_not_after: None,
         client_certificate_authority_not_after: None,
         client_revocation_list_next_update: None,
+        half_closes: 0,
+        drained_frames: 0,
+        peer_resets: 0,
     };
     assert_eq!(
         serde_json::to_string(&status).unwrap(),
-        r#"{"id":"edge","protocol":"tcp","endpoint":"127.0.0.1:5514","activeConnections":0,"connectionsAccepted":0,"connectionsRejected":0,"sendersDenied":0,"tlsHandshakeFailures":0,"framesReceived":0,"bytesReceived":0,"queued":0,"duplicates":0,"suppressed":0,"notRouted":0,"notSelected":0,"rejected":0,"parserErrors":0,"malformed":0,"oversized":0,"framingErrors":0,"timeouts":0,"dropped":0,"retries":0,"submitFailures":0,"receiveErrors":0,"lastFrameAt":null,"tlsReloads":0,"tlsReloadFailures":0,"tlsRevoked":0,"tlsSessionsClosed":0,"serverCertificateNotAfter":null,"clientCertificateAuthorityNotAfter":null,"clientRevocationListNextUpdate":null}"#
+        r#"{"id":"edge","protocol":"tcp","endpoint":"127.0.0.1:5514","activeConnections":0,"connectionsAccepted":0,"connectionsRejected":0,"sendersDenied":0,"tlsHandshakeFailures":0,"framesReceived":0,"bytesReceived":0,"queued":0,"duplicates":0,"suppressed":0,"notRouted":0,"notSelected":0,"rejected":0,"parserErrors":0,"malformed":0,"oversized":0,"framingErrors":0,"timeouts":0,"dropped":0,"retries":0,"submitFailures":0,"receiveErrors":0,"lastFrameAt":null,"tlsReloads":0,"tlsReloadFailures":0,"tlsRevoked":0,"tlsSessionsClosed":0,"serverCertificateNotAfter":null,"clientCertificateAuthorityNotAfter":null,"clientRevocationListNextUpdate":null,"halfCloses":0,"drainedFrames":0,"peerResets":0}"#
     );
 }

@@ -88,6 +88,24 @@ public sealed class SyslogSourceTests
         static string Id(string record) => JsonDocument.Parse(record).RootElement.GetProperty("id").GetString()!;
     }
 
+    [Fact]
+    public void Record_IdentityCannotDistinguishIdenticalEventsFromRetransmissions()
+    {
+        DateTimeOffset firstTime = new(2026, 10, 26, 8, 0, 0, TimeSpan.Zero);
+        foreach (bool timestamped in new[] { true, false })
+        {
+            byte[] frame = Encoding.UTF8.GetBytes(timestamped
+                ? "<13>1 2026-10-26T08:00:00Z h a - - - msg"
+                : "<13>1 - h a - - - msg");
+            Assert.True(SyslogParser.TryParse(frame, firstTime, out SyslogMessage? message, out _));
+            static string Id(string record) => JsonDocument.Parse(record).RootElement.GetProperty("id").GetString()!;
+            string first = Id(SyslogRecord.Build(message, frame, "edge", "tcp", "192.0.2.10", firstTime));
+            string later = Id(SyslogRecord.Build(message, frame, "edge", "tcp", "192.0.2.10", firstTime.AddSeconds(1)));
+            if (timestamped) Assert.Equal(first, later);
+            else Assert.NotEqual(first, later);
+        }
+    }
+
     [Theory]
     [InlineData("17 <13>1 - - - - - -17 <14>1 - - - - - -", 1)]
     [InlineData("<13>1 - - - - - -\n<14>1 - - - - - -\r\n", 1)]
@@ -150,6 +168,19 @@ public sealed class SyslogSourceTests
         Assert.Equal(480, (await new SyslogFrameReader(counted, 480).ReadFrameAsync(TestContext.Current.CancellationToken)).Frame.Length);
     }
 
+    [Fact]
+    public async Task FrameReader_WaitsForTheFirstByteOfTheNextFrameSkippingBlankLines()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using ChunkedStream stream = new(Encoding.ASCII.GetBytes("\r\n\n<13>1 - - - - - -\n\r\n"), 2);
+        SyslogFrameReader reader = new(stream, 480);
+        Assert.True(await reader.WaitForFrameAsync(cancellation));
+        Assert.Equal("<13>1 - - - - - -", Encoding.ASCII.GetString((await reader.ReadFrameAsync(cancellation)).Frame.Span));
+        // Trailing blank lines do not start a frame: the stream simply ends.
+        Assert.False(await reader.WaitForFrameAsync(cancellation));
+        Assert.True((await reader.ReadFrameAsync(cancellation)).IsEnd);
+    }
+
     [Theory]
     [InlineData("tcp", "0.0.0.0", false, "a non-loopback address requires protocol tls")]
     [InlineData("udp", "192.0.2.1", false, "a non-loopback address requires protocol tls")]
@@ -191,7 +222,12 @@ public sealed class SyslogSourceTests
     [InlineData("\"protocol\": \"tcp\", \"maximumMessageBytes\": 65537", "maximumMessageBytes must be between 480 and 65536")]
     [InlineData("\"protocol\": \"tcp\", \"maximumMessageBytes\": 479", "maximumMessageBytes must be between 480 and 65536")]
     [InlineData("\"protocol\": \"tcp\", \"maximumConnections\": 0", "maximumConnections must be between 1 and 1024")]
-    [InlineData("\"protocol\": \"tcp\", \"idleTimeoutSeconds\": 0", "idleTimeoutSeconds must be between 1 and 3600")]
+    [InlineData("\"protocol\": \"tcp\", \"idleTimeoutSeconds\": -1", "idleTimeoutSeconds must be between 0 and 3600")]
+    [InlineData("\"protocol\": \"tcp\", \"idleTimeoutSeconds\": 3601", "idleTimeoutSeconds must be between 0 and 3600")]
+    [InlineData("\"protocol\": \"tcp\", \"frameTimeoutSeconds\": 0", "frameTimeoutSeconds must be between 1 and 3600")]
+    [InlineData("\"protocol\": \"tcp\", \"frameTimeoutSeconds\": 3601", "frameTimeoutSeconds must be between 1 and 3600")]
+    [InlineData("\"protocol\": \"tcp\", \"handshakeStartTimeoutSeconds\": 0", "handshakeStartTimeoutSeconds must be between 1 and 3600")]
+    [InlineData("\"protocol\": \"tcp\", \"handshakeStartTimeoutSeconds\": 3601", "handshakeStartTimeoutSeconds must be between 1 and 3600")]
     [InlineData("\"protocol\": \"tcp\", \"routes\": []", "routes must list 1–64 entries")]
     [InlineData("\"protocol\": \"tcp\", \"routes\": [{\"pack\": \"\", \"parser\": 0}]", "each route needs a pack id and a parser index of 0 or more")]
     [InlineData("\"protocol\": \"tcp\", \"routes\": [{\"pack\": \"p\", \"parser\": -1}]", "each route needs a pack id and a parser index of 0 or more")]
@@ -238,7 +274,9 @@ public sealed class SyslogSourceTests
         SyslogListenerOptions options = SyslogSourceConfigurationLoader.Parse(Config(listener)).Listeners[0];
         Assert.Equal(65_536, options.MaximumMessageBytes);
         Assert.Equal(64, options.MaximumConnections);
-        Assert.Equal(60, options.IdleTimeoutSeconds);
+        Assert.Equal(0, options.IdleTimeoutSeconds);
+        Assert.Equal(60, options.FrameTimeoutSeconds);
+        Assert.Equal(60, options.HandshakeStartTimeoutSeconds);
     }
 
     /// <summary>
@@ -331,11 +369,11 @@ public sealed class SyslogSourceTests
     }
 
     [Fact]
-    public async Task Tcp_SlowlorisAndIdleConnectionsAreClosedAndCounted()
+    public async Task Tcp_SlowlorisFramesAreClosedByTheFrameTimeoutButIdleConnectionsStayOpen()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
         FakeSink sink = new();
-        await using SyslogSource source = await Start("tcp", sink, cancellation, idleTimeoutSeconds: 1);
+        await using SyslogSource source = await Start("tcp", sink, cancellation, idleTimeoutSeconds: 0, frameTimeoutSeconds: 1);
         using TcpClient slow = await Connect(source, cancellation);
         NetworkStream stream = slow.GetStream();
         // One byte every 300 ms keeps the socket busy but never completes a frame in time.
@@ -354,11 +392,80 @@ public sealed class SyslogSourceTests
             // Closed by the listener mid-trickle.
         }
         Assert.True(sent < trickle.Length, "connection should close before the trickle completes");
+        await WaitFor(source, value => value.Timeouts == 1 && value.ActiveConnections == 0, cancellation);
+
+        // Idle time between frames is not frame time: with idleTimeoutSeconds 0 a quiet sender
+        // keeps its connection well past the frame timeout, and its next frame is accepted.
         using TcpClient idle = await Connect(source, cancellation);
-        SyslogListenerStatus status = await WaitFor(source, value => value.Timeouts == 2 && value.ActiveConnections == 0, cancellation);
-        Assert.Equal(0, status.FramesReceived);
-        Assert.Empty(sink.Records);
-        Assert.Equal(0, await idle.GetStream().ReadAsync(new byte[1], cancellation));
+        await Task.Delay(2_500, cancellation);
+        await idle.GetStream().WriteAsync(Encoding.ASCII.GetBytes("<38>Oct 11 22:14:15 gw01 sshd: after a quiet spell\n"), cancellation);
+        await sink.WaitForAsync(1, cancellation);
+        SyslogListenerStatus status = source.Snapshot()[0];
+        Assert.Equal(1, status.Timeouts);
+        Assert.Equal(0, status.HalfCloses);
+        Assert.Equal(1, status.ActiveConnections);
+    }
+
+    [Fact]
+    public async Task Tcp_IdleTimeoutHalfClosesAndStillAcceptsFramesTheSenderAlreadySent()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        FakeSink sink = new();
+        await using SyslogSource source = await Start("tcp", sink, cancellation, idleTimeoutSeconds: 1, drainMilliseconds: 2_000);
+        using TcpClient client = await Connect(source, cancellation);
+        NetworkStream stream = client.GetStream();
+        // The listener sends FIN (end of stream), not a reset: the sender can still write.
+        Assert.Equal(0, await stream.ReadAsync(new byte[1], cancellation));
+        await stream.WriteAsync(Encoding.ASCII.GetBytes("<38>Oct 11 22:14:15 gw01 sshd: crossed the close\n"), cancellation);
+        await sink.WaitForAsync(1, cancellation);
+        SyslogListenerStatus status = await WaitFor(source, value => value.DrainedFrames == 1, cancellation);
+        Assert.Equal(1, status.Timeouts);
+        Assert.Equal(1, status.HalfCloses);
+        Assert.Equal(1, status.Queued);
+
+        // The sender closes once it sees end of stream; nothing was reset.
+        client.Client.Shutdown(SocketShutdown.Send);
+        status = await WaitFor(source, value => value.ActiveConnections == 0, cancellation);
+        Assert.Equal(0, status.PeerResets);
+    }
+
+    [Fact]
+    public async Task Tcp_DrainEndsAQuietHalfClosedConnection()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        await using SyslogSource source = await Start("tcp", new FakeSink(), cancellation, idleTimeoutSeconds: 1, drainMilliseconds: 300);
+        using TcpClient client = await Connect(source, cancellation);
+        Assert.Equal(0, await client.GetStream().ReadAsync(new byte[1], cancellation));
+        SyslogListenerStatus status = await WaitFor(source, value => value.ActiveConnections == 0, cancellation);
+        Assert.Equal(1, status.HalfCloses);
+        Assert.Equal(0, status.DrainedFrames);
+    }
+
+    [Fact]
+    public async Task Tcp_APeerResetIsCounted()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        await using SyslogSource source = await Start("tcp", new FakeSink(), cancellation);
+        // A raw socket: TcpClient.Dispose shuts down (FIN) before closing.
+        Socket client = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        await client.ConnectAsync(source.Endpoints["edge"], cancellation);
+        await WaitFor(source, value => value.ActiveConnections == 1, cancellation);
+        // Linger 0: close sends RST, as a sender closing with unread data does.
+        client.LingerState = new LingerOption(true, 0);
+        client.Dispose();
+        SyslogListenerStatus status = await WaitFor(source, value => value.ActiveConnections == 0, cancellation);
+        Assert.Equal(1, status.PeerResets);
+    }
+
+    [Fact]
+    public void KeepAlive_IsEnabledWithBowerTiming()
+    {
+        using Socket socket = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        SyslogSource.ConfigureKeepAlive(socket);
+        Assert.NotEqual(0, (int)socket.GetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive)!);
+        Assert.Equal(120, (int)socket.GetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime)!);
+        Assert.Equal(30, (int)socket.GetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval)!);
+        Assert.Equal(30, (int)socket.GetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveRetryCount)!);
     }
 
     [Theory]
@@ -546,6 +653,46 @@ public sealed class SyslogSourceTests
     }
 
     [Fact]
+    public async Task Tls_AConnectionMayWaitIdleBeforeItsHandshake()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        FakeSink sink = new();
+        string tls = Path.Combine(Fixtures, "tls");
+        string serverTls = $$"""{"certificateFile": {{JsonSerializer.Serialize(Path.Combine(tls, "server.pem"))}}, "privateKeyFile": {{JsonSerializer.Serialize(Path.Combine(tls, "server-key.pem"))}}}""";
+        await using SyslogSource source = await Start("tls", sink, cancellation, tls: serverTls, idleTimeoutSeconds: 0, frameTimeoutSeconds: 1);
+        // syslog-ng connects first and starts TLS only when it has a message: that wait is idle
+        // time, so it is not cut short by the frame (handshake) timeout or counted as a failure.
+        using TcpClient tcp = await Connect(source, cancellation);
+        await Task.Delay(2_500, cancellation);
+        await using SslStream stream = new(tcp.GetStream(), leaveInnerStreamOpen: true, (_, certificate, _, _) => IssuedByTestCa(certificate));
+        await stream.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = "localhost" }, cancellation);
+        await stream.WriteAsync(Encoding.ASCII.GetBytes("<38>Oct 11 22:14:15 gw01 sshd: late handshake\n"), cancellation);
+        await sink.WaitForAsync(1, cancellation);
+        SyslogListenerStatus status = source.Snapshot()[0];
+        Assert.Equal((0, 0), (status.TlsHandshakeFailures, status.Timeouts));
+    }
+
+    [Fact]
+    public async Task Tls_UnstartedHandshakeExpiresAndReleasesConnectionSlot()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        FakeSink sink = new();
+        string tls = Path.Combine(Fixtures, "tls");
+        string serverTls = $$"""{"certificateFile": {{JsonSerializer.Serialize(Path.Combine(tls, "server.pem"))}}, "privateKeyFile": {{JsonSerializer.Serialize(Path.Combine(tls, "server-key.pem"))}}}""";
+        await using SyslogSource source = await Start("tls", sink, cancellation, tls: serverTls,
+            idleTimeoutSeconds: 0, maximumConnections: 1, handshakeStartTimeoutSeconds: 1);
+        using TcpClient stalled = await Connect(source, cancellation);
+        await WaitFor(source, value => value.ActiveConnections == 1, cancellation);
+        SyslogListenerStatus expired = await WaitFor(source, value => value.ActiveConnections == 0 && value.Timeouts == 1, cancellation);
+        Assert.Equal(0, expired.TlsHandshakeFailures);
+        await using SslStream stream = await ConnectTls(source, null, cancellation);
+        // Established TLS uses the independent idle setting, not the handshake-start bound.
+        await Task.Delay(1_500, cancellation);
+        await stream.WriteAsync(Encoding.ASCII.GetBytes("<38>Oct 11 22:14:15 gw01 sshd: after timeout\n"), cancellation);
+        await sink.WaitForAsync(1, cancellation);
+    }
+
+    [Fact]
     public async Task Tls_AcceptsAClientCertificateIssuedByAnIntermediateTheSenderSupplies()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
@@ -581,6 +728,48 @@ public sealed class SyslogSourceTests
     }
 
     [Fact]
+    public async Task Stop_WaitsForConnectionsRegisteredAfterShutdownSnapshot()
+    {
+        TaskCompletionSource releaseListener = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource registered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource snapshotTaken = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource connection = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        ConcurrentDictionary<Task, byte> running = new();
+        async Task RegisterConnectionAsync()
+        {
+            await releaseListener.Task;
+            running.TryAdd(connection.Task, 0);
+            registered.SetResult();
+        }
+
+        Task listener = RegisterConnectionAsync();
+        Task stopped = SyslogSource.WaitForListenersAndConnectionsAsync([listener], () =>
+        {
+            snapshotTaken.SetResult();
+            return [.. running.Keys];
+        });
+        releaseListener.SetResult();
+        await registered.Task.WaitAsync(TestContext.Current.CancellationToken);
+        await snapshotTaken.Task.WaitAsync(TestContext.Current.CancellationToken);
+        Assert.False(stopped.IsCompleted);
+        connection.SetResult();
+        await stopped.WaitAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task Stop_WaitsForConnectionsWhenListenerEndsWithCancellation()
+    {
+        TaskCompletionSource connection = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        ConcurrentDictionary<Task, byte> running = new();
+        running.TryAdd(connection.Task, 0);
+        Task listener = Task.FromException(new OperationCanceledException());
+        Task stopped = SyslogSource.WaitForListenersAndConnectionsAsync([listener], () => [.. running.Keys]);
+        Assert.False(stopped.IsCompleted);
+        connection.SetResult();
+        await stopped.WaitAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public async Task Stop_CancelsOpenConnectionsAndBlockedSubmissionsPromptly()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
@@ -597,20 +786,52 @@ public sealed class SyslogSourceTests
         Assert.Equal(0, await idle.GetStream().ReadAsync(new byte[1], cancellation));
     }
 
+    [Fact]
+    public async Task Stop_HalfClosesAndEnqueuesFramesTheSenderSendsBeforeItSeesTheEnd()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        FakeSink sink = new();
+        SyslogSource source = await Start("tcp", sink, cancellation, drainMilliseconds: 3_000, stopMilliseconds: 8_000);
+        using TcpClient client = await Connect(source, cancellation);
+        NetworkStream stream = client.GetStream();
+        await WaitFor(source, value => value.ActiveConnections == 1, cancellation);
+        ValueTask stopping = source.DisposeAsync();
+        // The sender sees end of stream, but what it writes until then is still accepted.
+        Assert.Equal(0, await stream.ReadAsync(new byte[1], cancellation));
+        await stream.WriteAsync(Encoding.ASCII.GetBytes("<38>Oct 11 22:14:15 gw01 sshd: in flight at stop\n"), cancellation);
+        await sink.WaitForAsync(1, cancellation);
+        client.Client.Shutdown(SocketShutdown.Send);
+        await stopping;
+        SyslogListenerStatus status = source.Snapshot()[0];
+        Assert.Equal(1, status.Queued);
+        Assert.Equal(1, status.HalfCloses);
+        Assert.Equal(1, status.DrainedFrames);
+        Assert.Equal(0, status.ActiveConnections);
+    }
+
     internal static string Config(string listener) =>
         $$"""{"apiVersion": "bower.security/v1", "kind": "SyslogSource", "listeners": [{ {{listener}} }]}""";
 
     private static async Task<SyslogSource> Start(string protocol, FakeSink sink, CancellationToken cancellation,
-        int idleTimeoutSeconds = 30, int maximumConnections = 8, string allowedSenders = "\"127.0.0.1\", \"::1\"", string? tls = null)
+        int idleTimeoutSeconds = 30, int maximumConnections = 8, string allowedSenders = "\"127.0.0.1\", \"::1\"", string? tls = null,
+        int frameTimeoutSeconds = 30, int drainMilliseconds = 500, int stopMilliseconds = 1_000,
+        int handshakeStartTimeoutSeconds = 60)
     {
         string json = Config(listener: $$"""
             "id": "edge", "protocol": "{{protocol}}", "address": "127.0.0.1", "port": 0,
             "allowedSenders": [{{allowedSenders}}], "maximumMessageBytes": 512,
             "maximumConnections": {{maximumConnections}}, "idleTimeoutSeconds": {{idleTimeoutSeconds}},
+            "frameTimeoutSeconds": {{frameTimeoutSeconds}},
+            "handshakeStartTimeoutSeconds": {{handshakeStartTimeoutSeconds}},
             {{(tls is null ? "" : "\"tls\": " + tls + ",")}}
             "routes": [{"appName": "sshd", "pack": "linux-ssh-gateway", "parser": 0}]
             """);
-        SyslogSource source = new(SyslogSourceConfigurationLoader.Parse(json), sink) { RetryDelay = TimeSpan.FromMilliseconds(20) };
+        SyslogSource source = new(SyslogSourceConfigurationLoader.Parse(json), sink)
+        {
+            RetryDelay = TimeSpan.FromMilliseconds(20),
+            DrainTimeout = TimeSpan.FromMilliseconds(drainMilliseconds),
+            StopTimeout = TimeSpan.FromMilliseconds(stopMilliseconds)
+        };
         try
         {
             await source.StartAsync(cancellation);
@@ -634,18 +855,7 @@ public sealed class SyslogSourceTests
         X509Certificate2Collection? intermediates = null)
     {
         TcpClient tcp = await Connect(source, cancellation);
-        X509Certificate2Collection authorities = [];
-        authorities.ImportFromPemFile(Path.Combine(Fixtures, "tls", "ca.pem"));
-        X509Certificate2 trusted = authorities[0];
-        SslStream stream = new(tcp.GetStream(), leaveInnerStreamOpen: false, (_, certificate, _, _) =>
-        {
-            if (certificate is null) { return false; }
-            using X509Chain chain = new();
-            chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
-            chain.ChainPolicy.CustomTrustStore.Add(trusted);
-            chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-            return chain.Build(X509CertificateLoader.LoadCertificate(certificate.GetRawCertData()));
-        });
+        SslStream stream = new(tcp.GetStream(), leaveInnerStreamOpen: false, (_, certificate, _, _) => IssuedByTestCa(certificate));
         await stream.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
         {
             TargetHost = "localhost",
@@ -655,6 +865,18 @@ public sealed class SyslogSourceTests
             EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13
         }, cancellation);
         return stream;
+    }
+
+    private static bool IssuedByTestCa(X509Certificate? certificate)
+    {
+        if (certificate is null) { return false; }
+        X509Certificate2Collection authorities = [];
+        authorities.ImportFromPemFile(Path.Combine(Fixtures, "tls", "ca.pem"));
+        using X509Chain chain = new();
+        chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+        chain.ChainPolicy.CustomTrustStore.Add(authorities[0]);
+        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+        return chain.Build(X509CertificateLoader.LoadCertificate(certificate.GetRawCertData()));
     }
 
     private static async Task<SyslogListenerStatus> WaitFor(SyslogSource source, Func<SyslogListenerStatus, bool> condition, CancellationToken cancellation)
