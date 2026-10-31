@@ -1,0 +1,48 @@
+{
+ "wec-ws4-1.manifest.json": {
+  "apiVersion": "bower.security/v1",
+  "kind": "BowerQueueBackup",
+  "createdAt": "2026-10-31T09:00:22.9228031+00:00",
+  "schemaVersion": 5,
+  "databaseFile": "wec-ws4-1.bowerbackup",
+  "databaseBytes": 19628032,
+  "databaseSha256": "97dc42272022e6b3829792e6a3134af8fcc7c9ae45014c33ceb8b73d1d8d5aac",
+  "counts": {
+   "queued": 2178,
+   "uploading": 0,
+   "retrying": 500,
+   "delivered": 4784,
+   "deadLettered": 0,
+   "total": 7462
+  },
+  "sourceCursors": 1,
+  "ledgerSequence": 7462,
+  "ledgerHash": "67c8b0d9227bc6238570a60ba603527185f42a13e803f4e51cb519a913138543",
+  "ledgerIntact": true,
+  "integrityCheck": "ok",
+  "collectorId": "wec-ws4"
+ },
+ "linux-ws4-1.manifest.json": {
+  "apiVersion": "bower.security/v1",
+  "kind": "BowerQueueBackup",
+  "createdAt": "2026-10-31T09:00:20.4718265+00:00",
+  "schemaVersion": 5,
+  "databaseFile": "linux-ws4-1.bowerbackup",
+  "databaseBytes": 32989184,
+  "databaseSha256": "d840899a0ce8f08089a752fe38e67b55af29ab40916e6ac65f372cca50e6fe0f",
+  "counts": {
+   "queued": 1037,
+   "uploading": 500,
+   "retrying": 472,
+   "delivered": 10879,
+   "deadLettered": 0,
+   "total": 12888
+  },
+  "sourceCursors": 0,
+  "ledgerSequence": 12888,
+  "ledgerHash": "e35a99f2de611880e7ffe6f9ed1a27bdd3bb4a96758cebfab86862bee60c0cf2",
+  "ledgerIntact": true,
+  "integrityCheck": "ok",
+  "collectorId": "linux-ws4"
+ }
+}

@@ -58,6 +58,7 @@ public static class QueueBackup
         }
         RefuseExisting(output);
         RefuseExisting(output + ManifestSuffix);
+        Directory.CreateDirectory(Path.GetDirectoryName(output)!);
         if (string.Equals(source, output, StringComparison.OrdinalIgnoreCase))
         {
             throw new IOException("The backup must not replace the live queue database.");

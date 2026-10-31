@@ -139,9 +139,12 @@ The MSI alone takes these properties (remembered for repair and upgrade):
 msiexec /i bower-collector-0.1.0-x64.msi /qn MANAGEMENTENDPOINT=https://bower-management.example.com/ BOWERENVIRONMENT=production
 ```
 
-Other collector settings (output, listener, ingest token file) are not MSI properties
-yet; the MSI rewrites the service `Environment` value on repair and upgrade, so edits
-there do not persist. Warnings and errors go to the Application event log (source
+Other collector settings (output, sources, privacy key file, ingest token file) are not
+MSI properties. Put them in `%ProgramData%\Bower\bower.env` (`KEY=VALUE`, `BOWER_*` and
+`AZURE_*` only), which the service reads through `BOWER_SETTINGS_FILE`. The MSI rewrites
+the service `Environment` value on repair and upgrade, so edits there do not persist;
+`bower.env` is not an MSI file and is kept. See
+[Upgrades, backup and recovery](../production-readiness/04-upgrade-backup-recovery.md#windows-msi-including-wec-hosts). Warnings and errors go to the Application event log (source
 `Bower.Collector`).
 
 Service recovery restarts the collector five seconds after each failure and resets
@@ -172,7 +175,7 @@ action; the Windows install test verifies the installed recovery settings.
 |---|---|---|
 | `apt remove`, `dnf remove`, `rpm -e` | Service, binaries, management credential, any unused token, `/etc/bower/secrets`, `/etc/bower/bower.env` | The queue in `/var/lib/bower` (it may hold events the destination has not acknowledged), policies, keys |
 | `apt purge` | Everything above plus `/var/lib/bower`, `/var/spool/bower`, `/etc/bower` and the `bower` account | Nothing |
-| `msiexec /x` | Service, binaries, management credential, any unused token, `%ProgramData%\Bower\secrets`, remembered settings | `%ProgramData%\Bower\state` (the queue), policies, keys |
+| `msiexec /x` | Service, binaries, management credential, any unused token, `%ProgramData%\Bower\secrets`, `bower.env`, remembered settings | `%ProgramData%\Bower\state` (the queue), policies, keys |
 
 Upgrades keep the credential, so an upgraded collector stays enrolled. Delete the queue
 yourself once you know it is drained (rpm has no purge).
@@ -205,9 +208,9 @@ The jobs use a development-authentication management API on loopback; approval a
 ## Known limits
 
 - Unsigned until the signing secrets are configured (see above).
-- MSI upgrades between two builds of the same version and repair are not exercised in
-  CI; the remembered-property pattern and the upgrade condition on secret removal are
-  covered by review only.
+- MSI and RPM upgrades with populated queues were exercised on AWS
+  ([evidence](../evidence/ws4-20261031-074918/README.md)), not in CI. MSI compares only
+  `major.minor.build`, so it cannot block a downgrade between `0.1.0.N` development builds.
 - arm64 packages and MSIs are built but not install-tested (no arm64 install job).
 - No apt or dnf repository, no auto-update channel (out of scope for #112).
 - The Windows service reports restart requests (managed privacy profile) as a normal
