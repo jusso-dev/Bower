@@ -130,8 +130,9 @@ public sealed class WindowsEventLogSourceTests
         { "nul\0end", "nul\0end" },
         { "&#x1;&#x1F;", "\u0001\u001f" },
         { "&#x0;", "\0" },
-        { "lone\uD800x", "lone\uD800x" },
-        { "&#xD800;", "\uD800" },
+        { "lone\uD800x", "lone\uFFFDD800x" },
+        { "&#xD800;", "\uFFFDD800" },
+        { "replacement\uFFFD", "replacement\uFFFDFFFD" },
         { "\uFFFE", "\uFFFE" },
         { "pair\U0001F600", "pair\U0001F600" }
     };

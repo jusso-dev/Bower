@@ -70,6 +70,42 @@ public static class WindowsEventXml
         return escaped?.ToString() ?? xml;
     }
 
+    /// <summary>
+    /// Makes a value safe for JSON without collisions. JSON cannot carry an unpaired
+    /// surrogate (the writer replaces it with U+FFFD), so two account names differing only
+    /// there would share one pseudonym. U+FFFD is the escape: an unpaired surrogate becomes
+    /// U+FFFD and its four hex digits, an existing U+FFFD becomes U+FFFD and <c>FFFD</c>.
+    /// Values with neither are unchanged; the mapping is reversible.
+    /// </summary>
+    [return: System.Diagnostics.CodeAnalysis.NotNullIfNotNull(nameof(value))]
+    internal static string? EscapeUnpairedSurrogates(string? value)
+    {
+        if (value is null || !value.Any(character => char.IsSurrogate(character) || character == '\uFFFD'))
+        {
+            return value;
+        }
+
+        System.Text.StringBuilder escaped = new(value.Length + 8);
+        for (int index = 0; index < value.Length; index++)
+        {
+            char character = value[index];
+            if (char.IsHighSurrogate(character) && index + 1 < value.Length && char.IsLowSurrogate(value[index + 1]))
+            {
+                escaped.Append(character).Append(value[++index]);
+            }
+            else if (char.IsSurrogate(character) || character == '\uFFFD')
+            {
+                escaped.Append('\uFFFD').Append(((int)character).ToString("X4", CultureInfo.InvariantCulture));
+            }
+            else
+            {
+                escaped.Append(character);
+            }
+        }
+
+        return escaped.ToString();
+    }
+
     public static WindowsEvent Parse(string xml)
     {
         ArgumentNullException.ThrowIfNull(xml);
@@ -108,14 +144,14 @@ public static class WindowsEventXml
         XElement root = document.Root!;
         XElement system = root.Name == ns + "Event" ? root.Element(ns + "System") ?? throw SystemInvalid() : throw SystemInvalid();
 
-        string provider = Text(system.Element(ns + "Provider")?.Attribute("Name")?.Value) ?? throw SystemInvalid();
+        string provider = Text(EscapeUnpairedSurrogates(system.Element(ns + "Provider")?.Attribute("Name")?.Value)) ?? throw SystemInvalid();
         int eventId = Number(system.Element(ns + "EventID")?.Value, ushort.MaxValue) is ulong id ? (int)id : throw SystemInvalid();
         long recordId = Number(system.Element(ns + "EventRecordID")?.Value, long.MaxValue) is ulong record && record > 0
             ? (long)record
             : throw SystemInvalid();
         DateTimeOffset created = ParseSystemTime(system.Element(ns + "TimeCreated")?.Attribute("SystemTime")?.Value) ?? throw SystemInvalid();
-        string channel = Text(system.Element(ns + "Channel")?.Value) ?? throw SystemInvalid();
-        string computer = Text(system.Element(ns + "Computer")?.Value) ?? throw SystemInvalid();
+        string channel = Text(EscapeUnpairedSurrogates(system.Element(ns + "Channel")?.Value)) ?? throw SystemInvalid();
+        string computer = Text(EscapeUnpairedSurrogates(system.Element(ns + "Computer")?.Value)) ?? throw SystemInvalid();
 
         List<KeyValuePair<string, string>> header = [];
         AddNumber("version", system.Element(ns + "Version")?.Value, byte.MaxValue);
@@ -179,7 +215,7 @@ public static class WindowsEventXml
                 throw new WindowsEventFormatException(WindowsEventFailures.RecordTooLarge);
             }
 
-            data.Add(new(name, value));
+            data.Add(new(name, EscapeUnpairedSurrogates(value)));
         }
     }
 

@@ -42,8 +42,12 @@ def now():
     return datetime.datetime.now(datetime.timezone.utc)
 
 
-def run(*args, check=True, quiet=True):
-    result = subprocess.run(args, capture_output=True, text=True)
+def run(*args, check=True, quiet=True, timeout=300):
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # Command names only, as for failures: a hang ends the campaign instead of blocking it.
+        raise SystemExit(f'command timed out: {args[0]} {args[1] if len(args) > 1 else ""}') from None
     if check and result.returncode != 0:
         # Command names only: never echo output that could include key material.
         raise SystemExit(f'command failed: {args[0]} {args[1] if len(args) > 1 else ""} ({result.returncode})')
@@ -318,7 +322,8 @@ WantedBy=multi-user.target
 
 
 def setup(run_id):
-    for path, mode in [(BASE, 0o755), (PKI, 0o700), (TLS, 0o750), (CLIENT, 0o700), (STATE, 0o750), (f'{STATE}/queue', 0o750)]:
+    for path, mode in [(BASE, 0o755), (PKI, 0o700), (TLS, 0o750), (CLIENT, 0o700), (STATE, 0o750), (f'{STATE}/queue', 0o750),
+                       (REPORT, 0o700)]:
         os.makedirs(path, mode=mode, exist_ok=True)
         os.chmod(path, mode)
     for path in (TLS, STATE, f'{STATE}/queue'):

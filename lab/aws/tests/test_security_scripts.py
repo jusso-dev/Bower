@@ -58,6 +58,18 @@ class SyslogScriptTests(unittest.TestCase):
         length, body = counted.split(b' ', 1)
         self.assertEqual(int(length), len(body))
 
+    def test_host_commands_are_bounded_and_fail_with_metadata_only(self):
+        for module, call in ((rotation, lambda: rotation.run('sleep', '5', timeout=0.2)),
+                             (adversarial, lambda: adversarial.command('sleep', '5', timeout=0.2))):
+            with self.assertRaises(SystemExit) as raised:
+                call()
+            self.assertEqual(str(raised.exception), 'command timed out: sleep 5')
+
+    def test_injection_payloads_are_written_as_visible_escapes(self):
+        source = (Path(__file__).parents[1]/'scripts'/'syslog-adversarial.py').read_text()
+        self.assertNotIn('\u202e', source)
+        self.assertIn('\u202etxt.exe', adversarial.INJECTION)
+
     def test_secret_markers_are_synthetic(self):
         self.assertIn('EXAMPLE', adversarial.SECRETS['aws'])
         self.assertTrue(all(value for value in adversarial.SECRETS.values()))

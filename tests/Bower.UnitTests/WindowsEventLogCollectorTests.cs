@@ -225,6 +225,32 @@ public sealed class WindowsEventLogCollectorTests
     }
 
     [Fact]
+    public async Task AccountNamesDifferingOnlyInUnpairedSurrogates_KeepDistinctPseudonyms()
+    {
+        // JSON cannot carry an unpaired surrogate; without escaping, both names would become
+        // the same U+FFFD text and share one pseudonym and actor attribution.
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using SqliteTemporaryDirectory directory = new();
+        FakeWindowsEventChannelFactory channels = new();
+        FakeWindowsEventChannel security = channels["Security"];
+        string template = WindowsEventFixtures.Read("security-4625.xml");
+        security.Add(template.Replace("deploy-admin", "admin\uD800", StringComparison.Ordinal));
+        security.Add(template.Replace("184467", "184468", StringComparison.Ordinal)
+            .Replace("deploy-admin", "admin\uD801", StringComparison.Ordinal));
+        security.Add(template.Replace("184467", "184469", StringComparison.Ordinal)
+            .Replace("deploy-admin", "admin\uFFFD", StringComparison.Ordinal));
+
+        await using WebApplication app = await Start(directory, channels, cancellation);
+        WindowsEventLogSource source = app.Services.GetRequiredService<WindowsEventLogSource>();
+        await WindowsEventLogSourceTests.WaitFor(source, value => value.Queued == 3, cancellation);
+        IReadOnlyList<QueuedEvent> rows = await app.Services.GetRequiredService<IDurableEventStore>()
+            .LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation);
+        string[] pseudonyms = [.. rows.Select(row => JsonSerializer.Deserialize(row.Payload, BowerJson.Envelope)!.Actor!.Username!)];
+        Assert.Equal(3, pseudonyms.Distinct(StringComparer.Ordinal).Count());
+        Assert.All(pseudonyms, pseudonym => Assert.StartsWith("hmac-sha256:", pseudonym, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task UnknownParser_StopsStartUp()
     {
         using SqliteTemporaryDirectory directory = new();

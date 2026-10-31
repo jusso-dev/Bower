@@ -37,11 +37,19 @@ SECRETS = {
     'sentinel': 'BOWER_WS5_SECRET_SENTINEL',
 }
 INJECTION = ['=HYPERLINK("http://evil.invalid","x")', "+cmd|' /C calc'!A0", '@SUM(1+1)',
-             '" | where 1==1 //', "'; drop table x; --", '‮txt.exe', '\x1b[31mred\x1b[0m']
+             '" | where 1==1 //', "'; drop table x; --", '\u202etxt.exe', '\x1b[31mred\x1b[0m']
 
 
 def now():
     return datetime.datetime.now(datetime.timezone.utc)
+
+
+def command(*args, check=False, timeout=300):
+    """Runs a host command with a bound; a hang ends the campaign instead of blocking it."""
+    try:
+        return subprocess.run(list(args), capture_output=True, text=True, check=check, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise SystemExit(f'command timed out: {args[0]} {args[1] if len(args) > 1 else ""}') from None
 
 
 def status():
@@ -199,8 +207,8 @@ def scan():
     for name in ('bower.db', 'bower.db-wal', 'bower.db-shm'):
         path = f'{STATE}/queue/{name}'
         targets[name] = open(path, 'rb').read() if os.path.exists(path) else b''
-    targets['collector-journal'] = subprocess.run(
-        ['journalctl', '-u', 'bower-ws5-collector', '--no-pager', '-o', 'cat'], capture_output=True).stdout
+    targets['collector-journal'] = command(
+        'journalctl', '-u', 'bower-ws5-collector', '--no-pager', '-o', 'cat').stdout.encode()
     _, body = status()
     targets['status'] = json.dumps(body).encode()
     matches = {}
@@ -221,7 +229,7 @@ def configure():
             json.dump(config, handle, indent=1)
         os.chmod(f'{BASE}/syslog.json.new', 0o644)
         os.replace(f'{BASE}/syslog.json.new', f'{BASE}/syslog.json')
-        subprocess.run(['systemctl', 'restart', 'bower-ws5-collector'], check=True)
+        command('systemctl', 'restart', 'bower-ws5-collector', check=True)
     for _ in range(60):
         try:
             return counters()
@@ -231,11 +239,10 @@ def configure():
 
 
 def resources():
-    pid = subprocess.run(['systemctl', 'show', '-p', 'MainPID', '--value', 'bower-ws5-collector'],
-                         capture_output=True, text=True).stdout.strip()
+    pid = command('systemctl', 'show', '-p', 'MainPID', '--value', 'bower-ws5-collector').stdout.strip()
     rss = next((line.split()[1] for line in open(f'/proc/{pid}/status') if line.startswith('VmRSS:')), None)
     return {'collectorRssKiB': int(rss) if rss else None,
-            'active': subprocess.run(['systemctl', 'is-active', 'bower-ws5-collector'], capture_output=True, text=True).stdout.strip()}
+            'active': command('systemctl', 'is-active', 'bower-ws5-collector').stdout.strip()}
 
 
 def main():
