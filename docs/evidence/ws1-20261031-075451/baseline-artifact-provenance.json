@@ -1,7 +1,11 @@
 {
   "source": "Local retained WS1 campaign evidence /private/tmp/ws1/evidence; copied byte-for-byte, 2026-11-01.",
-  "scope": "Baseline observations, not a completed production qualification.",
+  "scope": "Baseline observations, not a completed production qualification. baseline-peek.json is a combined summary, not a byte-for-byte copy; its TLS 1.2 and 1.3 observation arrays were checked against the retained baseline-peek-tls12.txt and baseline-peek-tls13.txt command outputs.",
   "files": {
+    "baseline-peek.json": {
+      "sha256": "44ff07d0ec8592ff275993ee77ff79ef25ba6715a7f732385df23a37cfb40f77",
+      "bytes": 975
+    },
     "base-idle-close.json": {
       "sha256": "f95f257b570214a571f990a9ca494b4ccb0ef0d46055c905b3071bf687ff143b",
       "bytes": 8974
