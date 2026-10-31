@@ -25,5 +25,35 @@
   "Rust delivery_failure_logs.rs",
   "Rust management_commands reload_is_refused_when_the_restart_could_not_load_its_configuration",
   "lab test_security_scripts.py (7)"
- ]
+ ],
+ "postReview": {
+  "commitTested": "47b5f20 (review fixes on top of b61a7c2; origin/main unchanged)",
+  "csharp": {
+   "build": "dotnet build --configuration Release: 0 warnings, 0 errors",
+   "test": "dotnet test --configuration Release: 1925 total, 1924 passed, 1 skipped (native Windows Event Log test on macOS), 0 failed",
+   "format": "dotnet format --verify-no-changes: passed"
+  },
+  "rust": {
+   "fmt": "cargo fmt --check: passed",
+   "clippy": "cargo clippy --all-targets -- -D warnings: passed",
+   "test": "cargo test: 899 passed, 0 failed, 8 ignored"
+  },
+  "lab": {
+   "python": "python3 -m unittest discover -s lab/aws/tests: 55 tests passed"
+  },
+  "docs": "generate_glossary --check, tools/docs tests, mkdocs build --strict and check_links (80 pages): passed",
+  "note": "One earlier full C# run failed CloudPermissionContextTests.PermissionContextSurvivesSqliteReopenAndCapturedAzureProjection (queue.db-wal not found in its temp directory) while other worktrees were building; it passed in the recorded run and is unrelated to these changes.",
+  "newTests": [
+   "C# SyslogTlsRotationTests: same-name CA re-key, critical IDP, unsupported scopes (theory), expired anchor with a valid leaf, FIFO refused, repeated reloads release superseded material",
+   "C# PackRotationTests.Reload_IsRefusedForSourceFilesARestartCouldNotLoad (route/parser mismatch, bad TLS file)",
+   "C# HeartbeatV2CollectorTests: refused reload does not use the rate limit",
+   "C# AzureLogsIngestionOutputTests.Deliver_ClassifiesTokenFailuresByTheirCause (including AggregateException)",
+   "C# WindowsEventLogCollectorTests.AccountNamesDifferingOnlyInUnpairedSurrogates_KeepDistinctPseudonyms",
+   "Rust tls_rotation.rs: the same TLS and revocation cases",
+   "Rust management_commands reload_is_refused_for_source_files_a_restart_could_not_load",
+   "Rust credentials.rs token_failures_are_classified_by_their_cause",
+   "Rust azure_logs_ingestion_output.rs unreachable_token_service_is_a_network_outage_not_a_credential_failure",
+   "lab test_security_scripts.py: command timeouts, report directory, escaped payload"
+  ]
+ }
 }
