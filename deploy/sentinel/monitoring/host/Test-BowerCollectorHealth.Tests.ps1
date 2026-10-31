@@ -85,19 +85,27 @@ Describe 'Test-BowerCollectorHealth on <Shell>' -ForEach $script:Hosts {
         $function = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-QueueDiskSpace' }, $true)
         $function | Should -Not -BeNullOrEmpty
         $probe = Join-Path $TestDrive 'disk-probe.ps1'
-        $probeSource = $function.Extent.Text + @'
+        $functionSource = $function.Extent.Text.Replace("`$fullPath =", "`$script:stage = 'full-path'; `$fullPath =")
+        $functionSource = $functionSource.Replace("`$directory =", "`$script:stage = 'directory'; `$directory =")
+        $functionSource = $functionSource.Replace('Add-Type -TypeDefinition', "`$script:stage = 'add-type'; Add-Type -TypeDefinition")
+        $functionSource = $functionSource.Replace('[ulong] $available = 0', "`$script:stage = 'native-call'; [ulong] `$available = 0")
+        $functionSource = $functionSource.Replace("throw 'Queue volume free space unavailable.'", "`$script:nativeError = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error(); throw 'Queue volume free space unavailable.'")
+        $probeSource = $functionSource + @'
 
 try {
     $disk = Get-QueueDiskSpace $args[0]
     if ($disk.TotalSize -le 0) { throw 'Invalid volume size' }
     'ok'
 } catch {
+    'Stage={0}' -f $script:stage
+    $errorId = ($_.FullyQualifiedErrorId -split ',')[0]
+    if ($errorId -match '^[a-zA-Z0-9_.-]+$') { 'ErrorId={0}' -f $errorId }
     $exception = $_.Exception
     while ($null -ne $exception) {
         '{0} HRESULT={1}' -f $exception.GetType().FullName, $exception.HResult
         $exception = $exception.InnerException
     }
-    'Win32Error={0}' -f [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+    if ($null -ne $script:nativeError) { 'NativeError={0}' -f $script:nativeError }
     exit 1
 }
 '@
