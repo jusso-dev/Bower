@@ -1,0 +1,367 @@
+{
+ "after": [],
+ "before": [],
+ "measurements": {
+  "CollectorA": {
+   "listeners": {
+    "a12": {
+     "accepted": 6000,
+     "deliveredToSpool": 6000,
+     "expected": 6000,
+     "missing": 0,
+     "missingSample": [],
+     "missingSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "unexpectedInScope": 6000
+    },
+    "a13": {
+     "accepted": 0,
+     "deliveredToSpool": 0,
+     "expected": 6000,
+     "missing": 6000,
+     "missingSample": [
+      "a13-n4401x40000",
+      "a13-n4401x40001",
+      "a13-n4401x40002",
+      "a13-n4401x40003",
+      "a13-n4401x40004",
+      "a13-n4401x40005",
+      "a13-n4401x40006",
+      "a13-n4401x40007",
+      "a13-n4401x40008",
+      "a13-n4401x40009",
+      "a13-n4401x40010",
+      "a13-n4401x40011",
+      "a13-n4401x40012",
+      "a13-n4401x40013",
+      "a13-n4401x40014",
+      "a13-n4401x40015",
+      "a13-n4401x40016",
+      "a13-n4401x40017",
+      "a13-n4401x40018",
+      "a13-n4401x40019"
+     ],
+     "missingSha256": "c3fb6180c91efc825457c9a0fc6138754174cac794d39ff8f477583b13a43ed7",
+     "unexpectedInScope": 6000
+    }
+   },
+   "measuredAt": "2026-10-31T08:41:03.854550+00:00",
+   "passed": false,
+   "scenario": "base-restart",
+   "syslog": {
+    "a12": {
+     "activeConnections": 0,
+     "bytesReceived": 1019645,
+     "connectionsAccepted": 1,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 0,
+     "framesReceived": 4023,
+     "framingErrors": 0,
+     "lastFrameAt": "2026-10-31T08:38:46.6758537+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 4023,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 1,
+     "tlsHandshakeFailures": 0
+    },
+    "a13": {
+     "activeConnections": 0,
+     "bytesReceived": 0,
+     "connectionsAccepted": 0,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 0,
+     "framesReceived": 0,
+     "framingErrors": 0,
+     "lastFrameAt": null,
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 0,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 0,
+     "tlsHandshakeFailures": 0
+    }
+   }
+  },
+  "CollectorA-snapshot": {
+   "active": "active",
+   "at": "2026-10-31T08:41:11.700769+00:00",
+   "connections": 0,
+   "mainPid": "28896",
+   "queue": {
+    "events": 30396,
+    "undelivered": 0
+   },
+   "restarts": "0",
+   "syslog": {
+    "a12": {
+     "activeConnections": 0,
+     "bytesReceived": 1019645,
+     "connectionsAccepted": 1,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 0,
+     "framesReceived": 4023,
+     "framingErrors": 0,
+     "lastFrameAt": "2026-10-31T08:38:46.6758537+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 4023,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 1,
+     "tlsHandshakeFailures": 0
+    },
+    "a13": {
+     "activeConnections": 0,
+     "bytesReceived": 0,
+     "connectionsAccepted": 0,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 0,
+     "framesReceived": 0,
+     "framingErrors": 0,
+     "lastFrameAt": null,
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 0,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 0,
+     "tlsHandshakeFailures": 0
+    }
+   }
+  },
+  "SenderR": {
+   "at": "2026-10-31T08:41:13.711629+00:00",
+   "bootId": "f8638ca2-f415-4f73-b0b4-8eb9d4b0526b",
+   "impstats": {
+    "a12 queue/core.queue": {
+     "discarded.full": 0,
+     "discarded.nf": 0,
+     "enqueued": 12000,
+     "full": 0,
+     "maxqsize": 504,
+     "size": 0
+    },
+    "a12 queue[DA]/core.queue": {
+     "discarded.full": 0,
+     "discarded.nf": 0,
+     "enqueued": 0,
+     "full": 0,
+     "maxqsize": 0,
+     "size": 0
+    },
+    "a12/core.action": {
+     "failed": 0,
+     "processed": 12000,
+     "resumed": 2,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "a13 queue/core.queue": {
+     "discarded.full": 0,
+     "discarded.nf": 0,
+     "enqueued": 12000,
+     "full": 0,
+     "maxqsize": 4671,
+     "size": 4671
+    },
+    "a13 queue[DA]/core.queue": {
+     "discarded.full": 0,
+     "discarded.nf": 0,
+     "enqueued": 0,
+     "full": 0,
+     "maxqsize": 0,
+     "size": 0
+    },
+    "a13/core.action": {
+     "failed": 0,
+     "processed": 12000,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-2-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-3-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 214,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-4-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-5-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-6-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-7-builtin:omusrmsg/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-8-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-9-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "imjournal/imjournal": {
+     "discarded": 0,
+     "disk_usage_bytes": 48709632,
+     "failed": 0,
+     "poll_failed": 0,
+     "ratelimit_discarded_in_interval": 0,
+     "read": 12256,
+     "recovery_attempts": 0,
+     "rotations": 13,
+     "submitted": 12256
+    },
+    "main Q/core.queue": {
+     "discarded.full": 0,
+     "discarded.nf": 0,
+     "enqueued": 12256,
+     "full": 0,
+     "maxqsize": 42,
+     "size": 0
+    }
+   },
+   "nft": {
+    "A": 18200,
+    "B": 0
+   },
+   "queueFiles": {},
+   "rsyslog": "active",
+   "rsyslogDiagnostics": {
+    "action 'aN' resumed (module 'builtin:omfwd') [vN.N.N-N.amznN.N.N try https://www.rsyslog.com/e/N ]": 2,
+    "action 'aN' suspended (module 'builtin:omfwd'), retry N. There should be messages before this one giving the reason for suspension. [vN.N.N-N.amznN.N.N try http": 2,
+    "cannot connect to N.N.N.N:N: Connection refused [vN.N.N-N.amznN.N.N try https://www.rsyslog.com/e/N ]": 1,
+    "nsd_ossl: Information, no shared curve between syslog client and server [vN.N.N-N.amznN.N.N]": 2,
+    "nsd_ossl: TLS Connection initiated with remote syslog server. [vN.N.N-N.amznN.N.N]": 2,
+    "nsd_ossl:TLS session terminated with remote syslog server 'N.N.N.N': End Session [vN.N.N-N.amznN.N.N]": 2,
+    "omfwd: remote server at N.N.N.N:N seems to have closed connection. This often happens when the remote peer (or an interim system like a load balancer or firewal": 2
+   },
+   "sockets": [
+    {
+     "port": 6516,
+     "recvQ": 1,
+     "sendQ": 0,
+     "state": "CLOSE-WAIT"
+    },
+    {
+     "port": 6514,
+     "recvQ": 1567,
+     "sendQ": 365744,
+     "state": "CLOSE-WAIT"
+    }
+   ]
+  }
+ },
+ "passed": false,
+ "runId": "bower-ws1-20261031-075451",
+ "scenario": "base-restart",
+ "startAt": 1793435866.4332979,
+ "steps": [
+  {
+   "args": "generate --kind nft --track A --first 60000 --count 6000 --rate 100 --label base-restart",
+   "host": "SenderR",
+   "offset": 0,
+   "submitted": {
+    "output": ""
+   }
+  },
+  {
+   "args": "fault --action restart",
+   "host": "CollectorA",
+   "offset": 20,
+   "submitted": {
+    "output": ""
+   }
+  },
+  {
+   "result": "base-restart",
+   "value": {
+    "actualRate": 99.99101304772584,
+    "count": 6000,
+    "endedAt": "2026-10-31T08:38:46.461525+00:00",
+    "first": 60000,
+    "generator": "nft",
+    "nativeCounterDelta": {
+     "A": 6000,
+     "B": 0
+    },
+    "rate": 100.0,
+    "sent": 6000,
+    "startedAt": "2026-10-31T08:37:46.456123+00:00",
+    "track": "A"
+   }
+  },
+  {
+   "result": "f-base-restart",
+   "value": null
+  }
+ ]
+}

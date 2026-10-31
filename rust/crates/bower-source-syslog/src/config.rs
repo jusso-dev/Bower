@@ -49,8 +49,16 @@ pub struct ListenerOptions {
     pub maximum_message_bytes: i64,
     #[serde(default = "default_maximum_connections")]
     pub maximum_connections: i64,
-    #[serde(default = "default_idle_timeout_seconds")]
+    /// Wait between frames before a graceful half-close; 0 (the default) never closes a
+    /// healthy idle connection (C# `IdleTimeoutSeconds`).
+    #[serde(default)]
     pub idle_timeout_seconds: i64,
+    /// Maximum time a TLS TCP connection may wait before starting its handshake.
+    #[serde(default = "default_handshake_start_timeout_seconds")]
+    pub handshake_start_timeout_seconds: i64,
+    /// TLS handshake, and one frame once its first byte arrived (slow loris).
+    #[serde(default = "default_frame_timeout_seconds")]
+    pub frame_timeout_seconds: i64,
     #[serde(default)]
     pub tls: Option<TlsOptions>,
     #[serde(default)]
@@ -99,7 +107,11 @@ fn default_maximum_message_bytes() -> i64 {
 fn default_maximum_connections() -> i64 {
     64
 }
-fn default_idle_timeout_seconds() -> i64 {
+fn default_frame_timeout_seconds() -> i64 {
+    60
+}
+
+fn default_handshake_start_timeout_seconds() -> i64 {
     60
 }
 
@@ -335,9 +347,19 @@ fn validate(listener: &mut ListenerOptions) -> Result<(), ConfigError> {
             "maximumConnections must be between 1 and 1024.".into(),
         ));
     }
-    if !(1..=3_600).contains(&listener.idle_timeout_seconds) {
+    if !(0..=3_600).contains(&listener.idle_timeout_seconds) {
         return Err(fail(
-            "idleTimeoutSeconds must be between 1 and 3600.".into(),
+            "idleTimeoutSeconds must be between 0 and 3600.".into(),
+        ));
+    }
+    if !(1..=3_600).contains(&listener.frame_timeout_seconds) {
+        return Err(fail(
+            "frameTimeoutSeconds must be between 1 and 3600.".into(),
+        ));
+    }
+    if !(1..=3_600).contains(&listener.handshake_start_timeout_seconds) {
+        return Err(fail(
+            "handshakeStartTimeoutSeconds must be between 1 and 3600.".into(),
         ));
     }
     if !(1..=MAXIMUM_ROUTES).contains(&listener.routes.len()) {

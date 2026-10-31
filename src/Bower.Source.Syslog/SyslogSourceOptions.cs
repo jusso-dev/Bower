@@ -16,8 +16,15 @@ public sealed record SyslogSourceConfiguration(
 /// <param name="AllowedSenders">Addresses or CIDR ranges allowed to send. Everything else is refused and counted.</param>
 /// <param name="Routes">First match wins. A message no route matches is dropped (default deny).</param>
 /// <param name="MaximumConnections">Concurrent TCP/TLS connections; further connections are closed and counted.</param>
-/// <param name="IdleTimeoutSeconds">Longest wait for one complete frame (or the TLS handshake) before the connection closes.</param>
+/// <param name="IdleTimeoutSeconds">
+/// How long a connection may wait between frames before Bower half-closes it and drains what the
+/// sender already sent. 0 (the default) never closes a healthy idle connection: TCP keepalive
+/// finds dead peers instead, because a sender that never reads its socket cannot see the close
+/// and loses what it writes next.
+/// </param>
 /// <param name="AllowInsecureNonLoopback">Allow tcp or udp on a non-loopback address. Only on an isolated network.</param>
+/// <param name="FrameTimeoutSeconds">Longest time for the TLS handshake, and for one frame once its first byte arrived (slow loris).</param>
+/// <param name="HandshakeStartTimeoutSeconds">Longest time a TLS connection may wait before its first handshake byte.</param>
 public sealed record SyslogListenerOptions(
     string Id,
     string Protocol,
@@ -27,9 +34,11 @@ public sealed record SyslogListenerOptions(
     string Address = "127.0.0.1",
     int MaximumMessageBytes = 65_536,
     int MaximumConnections = 64,
-    int IdleTimeoutSeconds = 60,
+    int IdleTimeoutSeconds = 0,
     SyslogTlsOptions? Tls = null,
-    bool AllowInsecureNonLoopback = false)
+    bool AllowInsecureNonLoopback = false,
+    int FrameTimeoutSeconds = 60,
+    int HandshakeStartTimeoutSeconds = 60)
 {
     [JsonIgnore]
     internal IReadOnlyList<SyslogNetwork> Senders { get; init; } = [];
@@ -280,9 +289,19 @@ public static class SyslogSourceConfigurationLoader
             throw Invalid(id, "maximumConnections must be between 1 and 1024.");
         }
 
-        if (listener.IdleTimeoutSeconds is < 1 or > 3_600)
+        if (listener.IdleTimeoutSeconds is < 0 or > 3_600)
         {
-            throw Invalid(id, "idleTimeoutSeconds must be between 1 and 3600.");
+            throw Invalid(id, "idleTimeoutSeconds must be between 0 and 3600.");
+        }
+
+        if (listener.FrameTimeoutSeconds is < 1 or > 3_600)
+        {
+            throw Invalid(id, "frameTimeoutSeconds must be between 1 and 3600.");
+        }
+
+        if (listener.HandshakeStartTimeoutSeconds is < 1 or > 3_600)
+        {
+            throw Invalid(id, "handshakeStartTimeoutSeconds must be between 1 and 3600.");
         }
 
         if (listener.Routes is not { Count: >= 1 and <= MaximumRoutes })

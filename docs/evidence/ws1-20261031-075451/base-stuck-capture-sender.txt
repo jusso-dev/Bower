@@ -1,0 +1,6 @@
+CLOSE-WAIT 1567   365744 172.31.201.114:52350 172.31.201.175:6514 timer:(on,5.510ms,11)
+	 ts sack cubic wscale:8,7 rto:120000 backoff:11 rtt:39.581/10.309 ato:40 mss:8949 pmtu:9001 rcvmss:1566 advmss:8949 cwnd:1 ssthresh:7 bytes_sent:1738860 bytes_retrans:85624 bytes_acked:1645453 bytes_received:2506 segs_out:973 segs_in:952 data_segs_out:956 data_segs_in:2 send 1808747bps lastsnd:114490 lastrcv:773580 lastack:649640 pacing_rate 36174240bps delivery_rate 5065824bps delivered:944 busy:505130ms rwnd_limited:9610ms(1.9%) unacked:1 retrans:1/11 lost:1 rcv_space:38912 rcv_ssthresh:65000 notsent:357960 minrtt:0.065 snd_wnd:103680 rcv_wnd:65024 rehash:11
+08:46:04.340576 ens5  Out IP 172.31.201.114.52350 > 172.31.201.175.6514: Flags [P.], seq 481674724:481682508, ack 4007976584, win 508, options [nop,nop,TS val 2
+
+
+{"status": "Success", "commandId": "d65fb4ad-9811-496c-b610-c878f905eba3"}

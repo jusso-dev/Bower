@@ -34,6 +34,32 @@ public sealed class SyslogFrameReader
         buffer = new byte[maximumMessageBytes + Headroom];
     }
 
+    /// <summary>
+    /// Waits until the first byte of the next frame is buffered, skipping blank lines, so a
+    /// caller can time an idle connection separately from a frame in progress. False at end
+    /// of stream.
+    /// </summary>
+    public async ValueTask<bool> WaitForFrameAsync(CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            while (start < end && buffer[start] is (byte)'\n' or (byte)'\r')
+            {
+                start++;
+            }
+
+            if (start < end)
+            {
+                return true;
+            }
+
+            if (!await FillAsync(cancellationToken))
+            {
+                return false;
+            }
+        }
+    }
+
     public async ValueTask<SyslogFrameResult> ReadFrameAsync(CancellationToken cancellationToken)
     {
         // Blank lines between frames (trailing CR LF from some senders) are not frames.
