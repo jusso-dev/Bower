@@ -727,6 +727,7 @@ impl Collector {
                 clock: Arc::clone(&self.clock),
                 lifetime: self.lifetime.clone(),
                 enrolment: self.enrolment.clone(),
+                settings: Arc::new(self.settings.clone()),
             };
             let token = shutdown.clone();
             tasks.push(tokio::spawn(async move { worker.run(inbox, token).await }));

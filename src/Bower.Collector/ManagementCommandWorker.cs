@@ -4,6 +4,7 @@ using Bower.Collector.Jobs;
 using Bower.Contracts;
 using Bower.Core;
 using Bower.Jobs;
+using Bower.Packs;
 using Bower.Persistence;
 
 namespace Bower.Collector;
@@ -300,6 +301,14 @@ public sealed partial class ManagementCommandWorker(
 
     private (string Status, string Code) Reload(VerifiedManagementCommand command)
     {
+        if (ReloadRefusal(settings) is { } failure)
+        {
+            // Keep running with the configuration already loaded: a restart that cannot load
+            // its packs, trust keys or privacy key would stop collection altogether.
+            LogReloadRefused(logger, failure);
+            return (ManagementCommandResults.Failed, ManagementCommandResults.ReloadValidationFailed);
+        }
+
         if (!ledger.TryBeginReload())
         {
             return (ManagementCommandResults.Failed, ManagementCommandResults.ReloadRateLimited);
@@ -309,6 +318,24 @@ public sealed partial class ManagementCommandWorker(
         ledger.Complete(command.CommandId, ManagementCommandResults.Succeeded, ManagementCommandResults.RestartRequested);
         ManagedPrivacyProfileJob.RequestSupervisorRestart(lifetime);
         return (ManagementCommandResults.Succeeded, ManagementCommandResults.RestartRequested);
+    }
+
+    /// <summary>
+    /// Loads the policies, signed packs (with their trusted keys), privacy profile and HMAC key
+    /// exactly as a restart would. Null when they load; otherwise the failure type only, never
+    /// its message (it can name file paths).
+    /// </summary>
+    public static string? ReloadRefusal(CollectorSettings settings)
+    {
+        try
+        {
+            _ = PolicyBundle.Load(settings.PolicySources());
+            return null;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            return exception.GetType().Name;
+        }
     }
 
     private async Task<(string Status, string Code)> RunCanaryAsync(
@@ -372,6 +399,10 @@ public sealed partial class ManagementCommandWorker(
         };
         return JsonSerializer.Serialize(canary, BowerJson.Envelope);
     }
+
+    [LoggerMessage(EventId = 1307, Level = LogLevel.Error,
+        Message = "Reload refused: the restarted collector could not load its configuration ({FailureType}). The current configuration stays active.")]
+    private static partial void LogReloadRefused(ILogger logger, string failureType);
 
     [LoggerMessage(
         EventId = 1304,

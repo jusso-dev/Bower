@@ -25,7 +25,7 @@ use serde::de::{Deserializer, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use tokio::sync::mpsc;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::jobs::{JobTriggers, MANAGED_PRIVACY_PROFILE_JOB_ID};
 use crate::settings::{CollectorSettings, read_all_text};
@@ -67,6 +67,7 @@ pub mod results {
     pub const CANARY_QUEUED: &str = "canary-queued";
     pub const RESTART_REQUESTED: &str = "restart-requested";
     pub const RELOAD_RATE_LIMITED: &str = "reload-rate-limited";
+    pub const RELOAD_VALIDATION_FAILED: &str = "reload-validation-failed";
 }
 
 pub const MAXIMUM_RESPONSE_BYTES: usize = 64 * 1024;
@@ -968,6 +969,13 @@ impl CommandProcessor {
 
 // ------------------------------------------------------------------ worker
 
+/// C# `ManagementCommandWorker.ReloadRefusal`: loads the policies, signed packs (with their
+/// trusted keys), privacy profile and HMAC key exactly as a restart would. `None` when they
+/// load; otherwise the failure type only, never its message.
+pub fn reload_refusal(settings: &CollectorSettings) -> Option<&'static str> {
+    crate::bundle::load(settings).err().map(|error| error.kind)
+}
+
 /// Executes admitted commands (C# `ManagementCommandWorker`). A task beside the delivery
 /// worker, not a scheduled job: a canary is queued through the normal pipeline
 /// (redaction and policy first), which is queue state.
@@ -981,6 +989,8 @@ pub struct CommandWorker {
     pub lifetime: ApplicationLifetime,
     /// Token enrolment: performs `rotate-credential`.
     pub enrolment: Option<Arc<crate::enrolment::ManagementEnrolment>>,
+    /// The configuration a restart would load, checked before `reload` restarts.
+    pub settings: Arc<CollectorSettings>,
 }
 
 impl CommandWorker {
@@ -1051,6 +1061,15 @@ impl CommandWorker {
     }
 
     fn reload(&self, command: &VerifiedCommand) -> Result<(&'static str, String), &'static str> {
+        if let Some(failure) = reload_refusal(&self.settings) {
+            // Keep running with the configuration already loaded: a restart that cannot load
+            // its packs, trust keys or privacy key would stop collection altogether.
+            error!(
+                failure_type = failure,
+                "Reload refused: the restarted collector could not load its configuration. The current configuration stays active."
+            );
+            return Ok((results::FAILED, results::RELOAD_VALIDATION_FAILED.into()));
+        }
         if !self.ledger.try_begin_reload().map_err(|_| "IOException")? {
             return Ok((results::FAILED, results::RELOAD_RATE_LIMITED.into()));
         }

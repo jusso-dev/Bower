@@ -72,6 +72,7 @@ public static class ManagementCommandResults
     public const string CanaryQueued = "canary-queued";
     public const string RestartRequested = "restart-requested";
     public const string ReloadRateLimited = "reload-rate-limited";
+    public const string ReloadValidationFailed = "reload-validation-failed";
 }
 
 /// <summary>Wire shape of a signed command. Unknown members are rejected: every field is signed.</summary>

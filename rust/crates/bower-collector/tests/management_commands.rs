@@ -553,6 +553,7 @@ fn exchange(settings: &CollectorSettings) -> Exchange {
         clock,
         lifetime: ApplicationLifetime::new(),
         enrolment: None,
+        settings: Arc::new(settings.clone()),
     };
     Exchange {
         heartbeat,
@@ -835,4 +836,58 @@ async fn heartbeat_stalled_response_body_is_bounded_by_the_client_timeout() {
         Duration::from_secs(15)
     );
     server.abort();
+}
+
+/// C# `PackRotationTests`: a reload whose restart could not load its packs, trust keys or
+/// privacy key is refused and the running collector keeps its configuration.
+#[tokio::test]
+async fn reload_is_refused_when_the_restart_could_not_load_its_configuration() {
+    let pack_source =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../packs/linux-ssh-gateway");
+    for fault in [
+        "untrusted-key",
+        "missing-pack",
+        "missing-trusted-key",
+        "short-hmac-key",
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let keys = bower_integrity::signer::generate_key_pair();
+        let other = bower_integrity::signer::generate_key_pair();
+        let signer = if fault == "untrusted-key" {
+            &other
+        } else {
+            &keys
+        };
+        let built = directory.path().join("built");
+        std::fs::create_dir_all(&built).unwrap();
+        let pack = bower_packs::archive::build(&pack_source, &signer.private_key_pem, &built, None)
+            .unwrap();
+        let trusted = directory.path().join("pack-trusted.pem");
+        std::fs::write(&trusted, &keys.public_key_pem).unwrap();
+        let hmac = directory.path().join("privacy-hmac.key");
+        std::fs::write(&hmac, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=").unwrap();
+        let mut settings = CollectorSettings::new(
+            "http://127.0.0.1:4319",
+            directory.path().join("data").join("queue.db"),
+            directory.path().join("no-local-policies"),
+            COLLECTOR_ID,
+        );
+        settings.packs = vec![pack.to_string_lossy().into_owned()];
+        settings.pack_trusted_key_files = vec![trusted.to_string_lossy().into_owned()];
+        settings.privacy_hmac_key_file = Some(hmac.clone());
+        if fault != "untrusted-key" {
+            assert_eq!(commands::reload_refusal(&settings), None, "{fault}");
+        }
+        match fault {
+            "missing-pack" => std::fs::remove_file(&pack).unwrap(),
+            "missing-trusted-key" => std::fs::remove_file(&trusted).unwrap(),
+            "short-hmac-key" => std::fs::write(&hmac, "AAAAAAAAAAA=").unwrap(),
+            _ => {}
+        }
+        let refusal = commands::reload_refusal(&settings);
+        assert!(
+            refusal.is_some_and(|kind| kind.chars().all(char::is_alphanumeric)),
+            "{fault}: {refusal:?}"
+        );
+    }
 }
