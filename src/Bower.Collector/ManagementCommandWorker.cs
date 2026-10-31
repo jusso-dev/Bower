@@ -4,6 +4,7 @@ using Bower.Collector.Jobs;
 using Bower.Contracts;
 using Bower.Core;
 using Bower.Jobs;
+using Bower.Packs;
 using Bower.Persistence;
 
 namespace Bower.Collector;
@@ -300,6 +301,20 @@ public sealed partial class ManagementCommandWorker(
 
     private (string Status, string Code) Reload(VerifiedManagementCommand command)
     {
+        // The rate limit first, without recording: a refused reload does not use the slot.
+        if (!ledger.IsReloadAllowed())
+        {
+            return (ManagementCommandResults.Failed, ManagementCommandResults.ReloadRateLimited);
+        }
+
+        if (ReloadRefusal(settings) is { } failure)
+        {
+            // Keep running with the configuration already loaded: a restart that cannot load
+            // its packs, trust keys or privacy key would stop collection altogether.
+            LogReloadRefused(logger, failure);
+            return (ManagementCommandResults.Failed, ManagementCommandResults.ReloadValidationFailed);
+        }
+
         if (!ledger.TryBeginReload())
         {
             return (ManagementCommandResults.Failed, ManagementCommandResults.ReloadRateLimited);
@@ -309,6 +324,28 @@ public sealed partial class ManagementCommandWorker(
         ledger.Complete(command.CommandId, ManagementCommandResults.Succeeded, ManagementCommandResults.RestartRequested);
         ManagedPrivacyProfileJob.RequestSupervisorRestart(lifetime);
         return (ManagementCommandResults.Succeeded, ManagementCommandResults.RestartRequested);
+    }
+
+    /// <summary>
+    /// Loads everything a restart loads from files, through the same code start-up runs: the
+    /// policies, signed packs and their trusted keys, the privacy profile and HMAC key
+    /// (<see cref="PolicyBundle.Load"/>), then <see cref="CollectorStartupSources.Load"/>
+    /// (source configurations and routes, syslog TLS material, expectations, scopes and
+    /// relay identities). Null when they load; otherwise the failure type only, never its
+    /// message (it can name file paths). Environment changes are not visible here.
+    /// </summary>
+    public static string? ReloadRefusal(CollectorSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        try
+        {
+            _ = CollectorStartupSources.Load(settings, PolicyBundle.Load(settings.PolicySources()));
+            return null;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            return exception.GetType().Name;
+        }
     }
 
     private async Task<(string Status, string Code)> RunCanaryAsync(
@@ -372,6 +409,10 @@ public sealed partial class ManagementCommandWorker(
         };
         return JsonSerializer.Serialize(canary, BowerJson.Envelope);
     }
+
+    [LoggerMessage(EventId = 1307, Level = LogLevel.Error,
+        Message = "Reload refused: the restarted collector could not load its configuration ({FailureType}). The current configuration stays active.")]
+    private static partial void LogReloadRefused(ILogger logger, string failureType);
 
     [LoggerMessage(
         EventId = 1304,

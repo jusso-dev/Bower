@@ -1,0 +1,44 @@
+{
+ "runId": "bower-ws5-20261031-074543",
+ "baseCommit": "9d1bbcd",
+ "branch": "prod-readiness/05-credential-rotation-and-security-failures",
+ "binaries": {
+  "baseline-osx-arm64 (unchanged main, Release build)": {
+   "Bower.Collector.dll": "ee5399fe7f2241c686dd205277f1abf43adf82e076128b8cc5a14fe61ac7e71c",
+   "Bower.Output.AzureLogsIngestion.dll": "ee349bac36dac5219c410c33dd85b768df41cceacb2c29aa933b1a5055755a63"
+  },
+  "candidate-c1-osx-arm64 (credential-failed code + delivery log; source = commit ebe9c65)": {
+   "Bower.Collector.dll": "7e69152fc2d77fbc7b508449ab24cf5733f63122aaba912d0df937e51b84490d",
+   "Bower.Output.AzureLogsIngestion.dll": "14feca8f92c51d88212ce5ba808481afd2bf8deec4e3ec52599dc768055a7b11"
+  },
+  "candidate-c2-osx-arm64 (commit 114c6c4; adversarial HTTP run)": {
+   "Bower.Collector.dll": "128c39283e0ff2c64f05d67bb39298bf8b7ac3010bc7fc1ed7cc7a365063ed50",
+   "Bower.Redaction.dll": "7b78b283e065e974ddffd2ba1d5b4a62fc129caefdfc9f103345acbf9737fc82"
+  },
+  "candidate-linux-arm64 self-contained managed publish (AWS host; syslog sources identical to commit d27d325)": {
+   "Bower.Collector.dll": "07a4a0a6aba6217a2ec651b22a4f781316c584ce30da8e1f8986c212d780021d",
+   "Bower.Source.Syslog.dll": "9bea8863b3f87802c4847e7b5da98195470c712d1bc6d02dfc72158591a08dbb",
+   "artifact.tar.gz": "febd4236700591e9ff57e48503cc3bc1d97d2ca640b6de456c68d342a6f4795b"
+  }
+ },
+ "signing": {
+  "packages": "unsigned development builds",
+  "pack": "nftables-validation 1.0.0 signed with an ephemeral lab key (key id 4b3600c9d83fe8d1); pack hash sha256:71db79f8a6a334eb39b2a96e819d3ce8f51b12f50acfff6268e45745824455b4; private key deleted after the run"
+ },
+ "tools": {
+  "dotnet-sdk": "10.0.403",
+  "azure-cli": "2.87.0",
+  "rsyslog": "rsyslog-8.2204.0-3.amzn2023.0.9.aarch64 (rsyslog-openssl)",
+  "openssl-host": "OpenSSL 3.5.8",
+  "kernel-host": "6.18.56-125.164.amzn2023.aarch64",
+  "ami": "ami-0892a4902d8613588 (al2023-ami-kernel-default-arm64)",
+  "rust": "cargo 1.97.1"
+ },
+ "harness": {
+  "lab/aws/scripts/credential-failure-lab.py": "a3ebc083c3775f55f743dffe100e4d794b40c5c3d1bcceaf580b2d8390b9fcee",
+  "lab/aws/scripts/syslog-tls-rotation.py": "cfe63168f31e3559b5028bd539dfd73a21d4b85a4b41cdcbd409b93c606665ce",
+  "lab/aws/scripts/syslog-tls-setup.sh": "1b60f6693a8ba12e747c84c8d3e617cad39a391471bc604acfbf381b5e3f5564",
+  "lab/aws/scripts/syslog-adversarial.py": "b46846b523996750a7d7b84237b22e0531e4fe299e08b5a7019e474a61930a25"
+ },
+ "note": "The live Azure cases ran an operator copy of the harness (same behaviour) before it was generalised into credential-failure-lab.py; the committed harness was smoke-tested against the same DCR (case smoke, 5/5 delivered)."
+}

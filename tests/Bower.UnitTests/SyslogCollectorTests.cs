@@ -191,7 +191,7 @@ public sealed class SyslogCollectorTests
     {
         SyslogListenerStatus status = new("edge", "tcp", "127.0.0.1:5514", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, null);
         Assert.Equal(
-            """{"id":"edge","protocol":"tcp","endpoint":"127.0.0.1:5514","activeConnections":0,"connectionsAccepted":0,"connectionsRejected":0,"sendersDenied":0,"tlsHandshakeFailures":0,"framesReceived":0,"bytesReceived":0,"queued":0,"duplicates":0,"suppressed":0,"notRouted":0,"notSelected":0,"rejected":0,"parserErrors":0,"malformed":0,"oversized":0,"framingErrors":0,"timeouts":0,"dropped":0,"retries":0,"submitFailures":0,"receiveErrors":0,"lastFrameAt":null}""",
+            """{"id":"edge","protocol":"tcp","endpoint":"127.0.0.1:5514","activeConnections":0,"connectionsAccepted":0,"connectionsRejected":0,"sendersDenied":0,"tlsHandshakeFailures":0,"framesReceived":0,"bytesReceived":0,"queued":0,"duplicates":0,"suppressed":0,"notRouted":0,"notSelected":0,"rejected":0,"parserErrors":0,"malformed":0,"oversized":0,"framingErrors":0,"timeouts":0,"dropped":0,"retries":0,"submitFailures":0,"receiveErrors":0,"lastFrameAt":null,"tlsReloads":0,"tlsReloadFailures":0,"tlsRevoked":0,"tlsSessionsClosed":0,"serverCertificateNotAfter":null,"clientCertificateAuthorityNotAfter":null,"clientRevocationListNextUpdate":null}""",
             JsonSerializer.Serialize<IReadOnlyList<SyslogListenerStatus>>([status], SyslogJsonContext.Default.IReadOnlyListSyslogListenerStatus)[1..^1]);
     }
 

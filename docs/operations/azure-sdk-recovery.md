@@ -18,7 +18,15 @@ accepted IDs; arbitrary service request IDs and response bodies are not retained
 Malformed, mismatched and locally invalid payloads still fail individually.
 An HTTP error alone does not prove record poison: 401/403, DCR/stream errors,
 throttling, transport/token failures and 5xx become retryable `destination-*`
-failures. Ambiguous 400 batches can be bisected, with at most 16 additional
+failures. A token the identity service refuses (expired, revoked or disabled credential,
+wrong tenant or client ID: a 4xx other than 408/429, even after a retried network
+error) or a missing credential configuration is `destination-azure-credential-failed`.
+A token service that cannot be reached or answers 5xx/408/429 is
+`destination-azure-unavailable`, the same as any transport outage. The delivery worker logs
+one payload-free warning per failure code and disposition (event 1008), so a
+credential or role failure is visible beyond a growing retry count; the
+[live credential campaign](../evidence/ws5-20261031-074543/README.md) measured each
+case against Azure. Ambiguous 400 batches can be bisected, with at most 16 additional
 requests per delivery call (SDK transport retries are separately bounded).
 If a singleton still returns 400 and another record succeeds in the same delivery
 call, it is retained as `azure-http-400-isolated` in dead letters immediately.

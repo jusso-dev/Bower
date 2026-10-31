@@ -119,7 +119,14 @@ commands as `expired` straight away.
 Execution is at most once. The command is written to the durable ledger before it
 runs. A command found started but not finished after a restart reports `failed` with
 `interrupted`. A reload within 10 minutes of the last one reports `failed` with
-`reload-rate-limited`.
+`reload-rate-limited`. Before restarting, `reload` runs the start-up loader on the
+files the running configuration names: policies, signed packs (with their trusted
+keys), privacy profile and HMAC key, source configurations and their routes, syslog
+TLS files, source expectations, producer scopes, ingest tokens and relay files. If any
+would not load it reports `failed` with `reload-validation-failed`, logs only the
+failure type, does not use the rate-limit slot, and the running collector keeps its
+last good configuration. Environment variables are fixed at process start, so changed
+environment settings need a supervisor restart, not `reload`.
 
 Bounds:
 

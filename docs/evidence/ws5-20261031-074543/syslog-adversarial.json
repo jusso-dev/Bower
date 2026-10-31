@@ -1,0 +1,334 @@
+{
+ "runId": "bower-ws5-20261031-074543",
+ "startedAt": "2026-10-31T09:04:34.251160+00:00",
+ "endedAt": "2026-10-31T09:05:48.883096+00:00",
+ "listener": {
+  "idleTimeoutSeconds": 5,
+  "maximumConnections": 8,
+  "maximumMessageBytes": 8192
+ },
+ "resourcesBefore": {
+  "collectorRssKiB": 111908,
+  "active": "active"
+ },
+ "resourcesAfter": {
+  "collectorRssKiB": 144856,
+  "active": "active"
+ },
+ "cases": [
+  {
+   "case": "baseline-valid",
+   "outcome": {
+    "serverClosed": false
+   },
+   "counterDelta": {
+    "connectionsAccepted": 1,
+    "framesReceived": 5,
+    "queued": 5,
+    "queueTotal": 5
+   },
+   "seconds": 3.53
+  },
+  {
+   "case": "secrets-in-every-field",
+   "outcome": {
+    "serverClosed": false
+   },
+   "counterDelta": {
+    "connectionsAccepted": 1,
+    "framesReceived": 5,
+    "queued": 5,
+    "queueTotal": 5
+   },
+   "seconds": 3.517
+  },
+  {
+   "case": "injection-strings",
+   "outcome": {
+    "serverClosed": false
+   },
+   "counterDelta": {
+    "connectionsAccepted": 1,
+    "framesReceived": 7,
+    "queued": 7,
+    "queueTotal": 7
+   },
+   "seconds": 3.512
+  },
+  {
+   "case": "nul-control-ansi",
+   "outcome": {
+    "serverClosed": false
+   },
+   "counterDelta": {
+    "connectionsAccepted": 1,
+    "framesReceived": 1,
+    "queued": 1,
+    "queueTotal": 1
+   },
+   "seconds": 3.511
+  },
+  {
+   "case": "invalid-utf8",
+   "outcome": {
+    "serverClosed": false
+   },
+   "counterDelta": {
+    "connectionsAccepted": 1,
+    "framesReceived": 1,
+    "malformed": 1
+   },
+   "seconds": 3.519
+  },
+  {
+   "case": "crlf-injection-line-framed",
+   "outcome": {
+    "serverClosed": false
+   },
+   "counterDelta": {
+    "connectionsAccepted": 1,
+    "framesReceived": 2,
+    "queued": 2,
+    "queueTotal": 2
+   },
+   "seconds": 3.511
+  },
+  {
+   "case": "embedded-newline-octet-framed",
+   "outcome": {
+    "serverClosed": false
+   },
+   "counterDelta": {
+    "connectionsAccepted": 1,
+    "framesReceived": 1,
+    "queued": 1,
+    "queueTotal": 1
+   },
+   "seconds": 3.512
+  },
+  {
+   "case": "huge-structured-data",
+   "outcome": {
+    "serverClosed": false
+   },
+   "counterDelta": {
+    "connectionsAccepted": 1,
+    "framesReceived": 1,
+    "oversized": 1
+   },
+   "seconds": 3.513
+  },
+  {
+   "case": "deeply-nested-json-message",
+   "outcome": {
+    "serverClosed": true
+   },
+   "counterDelta": {
+    "connectionsAccepted": 1,
+    "oversized": 1
+   },
+   "seconds": 1.51
+  },
+  {
+   "case": "oversized-frame",
+   "outcome": {
+    "serverClosed": true
+   },
+   "counterDelta": {
+    "connectionsAccepted": 1,
+    "oversized": 1
+   },
+   "seconds": 1.51
+  },
+  {
+   "case": "octet-count-larger-than-sent",
+   "outcome": {
+    "serverClosed": true
+   },
+   "counterDelta": {
+    "connectionsAccepted": 1,
+    "timeouts": 1
+   },
+   "seconds": 6.51
+  },
+  {
+   "case": "octet-count-overflow",
+   "outcome": {
+    "serverClosed": true
+   },
+   "counterDelta": {
+    "connectionsAccepted": 1,
+    "oversized": 1
+   },
+   "seconds": 1.51
+  },
+  {
+   "case": "octet-count-zero-and-negative",
+   "outcome": {
+    "serverClosed": true
+   },
+   "counterDelta": {
+    "connectionsAccepted": 1,
+    "framingErrors": 1
+   },
+   "seconds": 1.51
+  },
+  {
+   "case": "non-numeric-garbage",
+   "outcome": {
+    "serverClosed": true
+   },
+   "counterDelta": {
+    "connectionsAccepted": 1,
+    "framingErrors": 1
+   },
+   "seconds": 1.51
+  },
+  {
+   "case": "slowloris-one-byte-per-second",
+   "outcome": {
+    "closedAfterSeconds": 6.0
+   },
+   "counterDelta": {
+    "connectionsAccepted": 1,
+    "timeouts": 1
+   },
+   "seconds": 7.514
+  },
+  {
+   "case": "tls-connection-flood",
+   "outcome": {
+    "attempted": 40,
+    "handshakeRefused": 32,
+    "aliveAfterLimit": 7,
+    "legitimateAfterFlood": {
+     "serverClosed": false
+    }
+   },
+   "counterDelta": {
+    "connectionsAccepted": 9,
+    "connectionsRejected": 32,
+    "framesReceived": 1,
+    "queued": 1,
+    "timeouts": 8,
+    "queueTotal": 1
+   },
+   "seconds": 9.541
+  },
+  {
+   "case": "incomplete-handshake-flood",
+   "outcome": {
+    "idleHandshakes": 6,
+    "closedByServer": 6
+   },
+   "counterDelta": {
+    "connectionsAccepted": 6,
+    "tlsHandshakeFailures": 6
+   },
+   "seconds": 8.512
+  },
+  {
+   "case": "burst-1000-frames",
+   "outcome": {
+    "serverClosed": false
+   },
+   "counterDelta": {
+    "activeConnections": 1,
+    "connectionsAccepted": 1,
+    "framesReceived": 492,
+    "queued": 491,
+    "queueTotal": 491
+   },
+   "seconds": 4.517
+  }
+ ],
+ "finalCounters": {
+  "activeConnections": 1,
+  "connectionsAccepted": 31,
+  "connectionsRejected": 32,
+  "tlsHandshakeFailures": 6,
+  "framesReceived": 521,
+  "queued": 518,
+  "duplicates": 0,
+  "notRouted": 0,
+  "notSelected": 0,
+  "rejected": 0,
+  "parserErrors": 0,
+  "malformed": 1,
+  "oversized": 4,
+  "framingErrors": 2,
+  "timeouts": 10,
+  "dropped": 0,
+  "queueTotal": 1068
+ },
+ "markerMatches": {
+  "bower.db": {
+   "aws": 0,
+   "jwt": 0,
+   "github": 0,
+   "tfn": 0,
+   "card": 0,
+   "password": 0,
+   "sentinel": 0,
+   "bytes": 2125824
+  },
+  "bower.db-wal": {
+   "aws": 0,
+   "jwt": 0,
+   "github": 0,
+   "tfn": 0,
+   "card": 0,
+   "password": 0,
+   "sentinel": 0,
+   "bytes": 61832
+  },
+  "bower.db-shm": {
+   "aws": 0,
+   "jwt": 0,
+   "github": 0,
+   "tfn": 0,
+   "card": 0,
+   "password": 0,
+   "sentinel": 0,
+   "bytes": 32768
+  },
+  "collector-journal": {
+   "aws": 0,
+   "jwt": 0,
+   "github": 0,
+   "tfn": 0,
+   "card": 0,
+   "password": 0,
+   "sentinel": 0,
+   "bytes": 8493
+  },
+  "status": {
+   "aws": 0,
+   "jwt": 0,
+   "github": 0,
+   "tfn": 0,
+   "card": 0,
+   "password": 0,
+   "sentinel": 0,
+   "bytes": 4118
+  }
+ },
+ "markers": {
+  "aws": "20 chars",
+  "jwt": "65 chars",
+  "github": "40 chars",
+  "tfn": "9 chars",
+  "card": "16 chars",
+  "password": "21 chars",
+  "sentinel": "25 chars"
+ },
+ "settledCounters": {
+  "fuzz": {
+   "framesReceived": 1024,
+   "queued": 1022,
+   "activeConnections": 0
+  },
+  "queueQueuedTotal": 1571,
+  "note": "status read after the burst connection drained; all 1000 burst frames queued"
+ }
+}

@@ -35,6 +35,8 @@ pub const MONITOR_SCOPE: &str = "https://monitor.azure.com//.default";
 pub const API_VERSION: &str = "2023-01-01";
 /// Hard uncompressed JSON-array byte limit, including commas and brackets.
 pub const SINGLE_UPLOAD_THRESHOLD: usize = 1024 * 1024;
+/// C# `AzureLogsIngestionOutput.CredentialFailedCode`.
+pub const CREDENTIAL_FAILED_CODE: &str = "destination-azure-credential-failed";
 /// `JsonNode.Parse` default maximum depth.
 const MAXIMUM_PAYLOAD_DEPTH: usize = 64;
 
@@ -358,6 +360,9 @@ fn batch_records(records: Vec<(String, Vec<u8>)>) -> Vec<Batch> {
 /// Outcome of one batch after retries.
 enum BatchOutcome {
     Accepted,
+    /// No token: expired, revoked or disabled credential, wrong tenant, or the token
+    /// service is unreachable. Never sent, retryable behind the destination circuit.
+    CredentialFailed,
     /// `status` 0 means no HTTP response (transport, timeout or token failure).
     Failed {
         status: u16,
@@ -492,8 +497,10 @@ impl Uploader {
     ) -> (bool, Option<Duration>, BatchOutcome) {
         let token = match self.credential.get_token(&self.options.scope).await {
             Ok(token) => token,
-            // Credential failures are not retried by the pipeline.
-            Err(_) => {
+            // Credential failures are not retried by the pipeline. The error text can
+            // quote request details: keep only the classification. A token service that
+            // could not be reached is a network outage, not a credential failure.
+            Err(error) if error.is_transport() => {
                 return (
                     false,
                     None,
@@ -504,6 +511,7 @@ impl Uploader {
                     },
                 );
             }
+            Err(_) => return (false, None, BatchOutcome::CredentialFailed),
         };
         let Ok(authorization) = HeaderValue::from_str(&format!("Bearer {}", token.token)) else {
             return (
@@ -727,6 +735,13 @@ impl AzureLogsIngestionOutput {
                 };
             };
             for (event_ids, outcome) in results {
+                if matches!(outcome, BatchOutcome::CredentialFailed) {
+                    for event_id in event_ids {
+                        failures.push(failure(&event_id, CREDENTIAL_FAILED_CODE, true));
+                        failed.insert(event_id);
+                    }
+                    continue;
+                }
                 if let BatchOutcome::Failed {
                     status,
                     retry_after,

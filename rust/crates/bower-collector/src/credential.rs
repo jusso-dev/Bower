@@ -39,7 +39,9 @@ impl AccessTokenSource for ManagementTokenSource {
             match self.0.get_token(scope).await {
                 Ok(token) => Ok(token.token),
                 Err(TokenError::Unavailable(_)) => Err("CredentialUnavailableException"),
-                Err(TokenError::Failed(_)) => Err("AuthenticationFailedException"),
+                Err(TokenError::Failed(_) | TokenError::Transport(_)) => {
+                    Err("AuthenticationFailedException")
+                }
             }
         })
     }

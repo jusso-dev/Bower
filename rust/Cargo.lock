@@ -1065,6 +1065,7 @@ dependencies = [
  "bower-contracts",
  "chrono",
  "hex",
+ "rcgen",
  "rustls",
  "serde",
  "serde_json",

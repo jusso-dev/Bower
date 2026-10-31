@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Security;
 using System.Text;
 using System.Text.Json;
 using Bower.Abstractions;
@@ -159,6 +160,94 @@ public sealed class WindowsEventLogCollectorTests
         }
 
         Assert.Equal([184467L, 184468L, 184470L], security.Returned);
+    }
+
+    [Fact]
+    public async Task HostileEventData_NeverReachesTheQueueRaw()
+    {
+        // An attacker controls the account, workstation, process and status text of a failed
+        // network logon. Each field carries secret markers and injection text; the record
+        // also carries control characters that XML allows. Only the HMAC of the account,
+        // a validated address and a fixed reason may be persisted.
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using SqliteTemporaryDirectory directory = new();
+        FakeWindowsEventChannelFactory channels = new();
+        FakeWindowsEventChannel security = channels["Security"];
+        string[] markers = ["AKIAIOSFODNN7EXAMPLE", "ghp_abcdefghijklmnopqrstuvwxyz0123456789", "4111111111111111",
+            "100000001", "HOSTILE_WS5_SENTINEL"];
+        string hostile = string.Join(" ", markers) + " =HYPERLINK(\"http://evil.invalid\") \" | where 1==1 // '; drop\t\u001b[31m\r\nforged\u202e";
+        string template = WindowsEventFixtures.Read("security-4625.xml");
+        foreach (string field in new[] { "TargetUserName", "TargetDomainName", "WorkstationName", "ProcessName",
+            "LogonProcessName", "AuthenticationPackageName", "SubjectUserName", "Status", "SubStatus", "FailureReason" })
+        {
+            template = System.Text.RegularExpressions.Regex.Replace(template, $"<Data Name='{field}'>[^<]*</Data>",
+                $"<Data Name='{field}'>{SecurityElement.Escape(hostile)}</Data>");
+        }
+
+        security.Add(template);
+        // A hostile address is not an address: the pack parser does not select the event.
+        security.Add(template.Replace("184467", "184468", StringComparison.Ordinal)
+            .Replace("<Data Name='IpAddress'>203.0.113.5</Data>", $"<Data Name='IpAddress'>203.0.113.5{SecurityElement.Escape("\r\n" + hostile)}</Data>", StringComparison.Ordinal));
+        // Characters XML 1.0 forbids, as rendered event XML can carry them: the failed logon is
+        // still collected (dropping it would let an attacker hide it), pseudonymised as usual.
+        security.Add(template.Replace("184467", "184469", StringComparison.Ordinal)
+            .Replace("<Data Name='TargetUserName'>", "<Data Name='TargetUserName'>&#x1;\u0007&#x1F;\uD800x&#xDFFF;y", StringComparison.Ordinal));
+
+        await using (WebApplication app = await Start(directory, channels, cancellation))
+        {
+            WindowsEventLogSource source = app.Services.GetRequiredService<WindowsEventLogSource>();
+            WindowsEventSubscriptionStatus status = await WindowsEventLogSourceTests.WaitFor(
+                source, value => value.Queued == 2 && value.NotSelected == 1 && value.BookmarkRecordId == 184469, cancellation);
+            Assert.Equal(0, status.Malformed);
+            IReadOnlyList<QueuedEvent> rows = await app.Services.GetRequiredService<IDurableEventStore>()
+                .LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation);
+            Assert.Equal(2, rows.Count);
+            Assert.All(rows, row =>
+            {
+                SecurityEventEnvelope stored = JsonSerializer.Deserialize(row.Payload, BowerJson.Envelope)!;
+                Assert.StartsWith("hmac-sha256:", stored.Actor!.Username, StringComparison.Ordinal);
+                Assert.Equal("203.0.113.5", stored.Source!.IpAddress);
+                Assert.Equal("OtherFailure", stored.EventOutcomeReason);
+                Assert.All(markers, marker => Assert.DoesNotContain(marker, row.Payload, StringComparison.Ordinal));
+                Assert.DoesNotContain("HYPERLINK", row.Payload, StringComparison.Ordinal);
+            });
+            Assert.NotEqual(
+                JsonSerializer.Deserialize(rows[0].Payload, BowerJson.Envelope)!.Actor!.Username,
+                JsonSerializer.Deserialize(rows[1].Payload, BowerJson.Envelope)!.Actor!.Username);
+        }
+
+        SqliteConnection.ClearAllPools();
+        foreach (string path in Directory.EnumerateFiles(directory.Path, "queue.db*"))
+        {
+            string bytes = Encoding.UTF8.GetString(await File.ReadAllBytesAsync(path, cancellation));
+            Assert.All(markers, marker => Assert.DoesNotContain(marker, bytes, StringComparison.Ordinal));
+        }
+    }
+
+    [Fact]
+    public async Task AccountNamesDifferingOnlyInUnpairedSurrogates_KeepDistinctPseudonyms()
+    {
+        // JSON cannot carry an unpaired surrogate; without escaping, both names would become
+        // the same U+FFFD text and share one pseudonym and actor attribution.
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using SqliteTemporaryDirectory directory = new();
+        FakeWindowsEventChannelFactory channels = new();
+        FakeWindowsEventChannel security = channels["Security"];
+        string template = WindowsEventFixtures.Read("security-4625.xml");
+        security.Add(template.Replace("deploy-admin", "admin\uD800", StringComparison.Ordinal));
+        security.Add(template.Replace("184467", "184468", StringComparison.Ordinal)
+            .Replace("deploy-admin", "admin\uD801", StringComparison.Ordinal));
+        security.Add(template.Replace("184467", "184469", StringComparison.Ordinal)
+            .Replace("deploy-admin", "admin\uFFFD", StringComparison.Ordinal));
+
+        await using WebApplication app = await Start(directory, channels, cancellation);
+        WindowsEventLogSource source = app.Services.GetRequiredService<WindowsEventLogSource>();
+        await WindowsEventLogSourceTests.WaitFor(source, value => value.Queued == 3, cancellation);
+        IReadOnlyList<QueuedEvent> rows = await app.Services.GetRequiredService<IDurableEventStore>()
+            .LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation);
+        string[] pseudonyms = [.. rows.Select(row => JsonSerializer.Deserialize(row.Payload, BowerJson.Envelope)!.Actor!.Username!)];
+        Assert.Equal(3, pseudonyms.Distinct(StringComparer.Ordinal).Count());
+        Assert.All(pseudonyms, pseudonym => Assert.StartsWith("hmac-sha256:", pseudonym, StringComparison.Ordinal));
     }
 
     [Fact]

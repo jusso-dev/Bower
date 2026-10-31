@@ -548,6 +548,7 @@ async fn rotate_credential_command_rotates_and_reports_its_result() {
         clock,
         lifetime: ApplicationLifetime::new(),
         enrolment: Some(Arc::clone(&harness.enrolment)),
+        settings: Arc::new(harness.settings.clone()),
     };
     let command = VerifiedCommand {
         command_id: "a".repeat(32),

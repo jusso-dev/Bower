@@ -66,6 +66,10 @@ pub struct TlsOptions {
     pub private_key_file: String,
     #[serde(default)]
     pub client_certificate_authority_file: Option<String>,
+    /// PEM or DER revocation lists from the client CAs; requires
+    /// `client_certificate_authority_file` (C# `ClientCertificateRevocationListFile`).
+    #[serde(default)]
+    pub client_certificate_revocation_list_file: Option<String>,
 }
 
 /// Maps matching messages to one active parser of a loaded signed pack. Hostname and
@@ -297,6 +301,15 @@ fn validate(listener: &mut ListenerOptions) -> Result<(), ConfigError> {
     if !tls_valid {
         return Err(fail(
             "tls settings are required for protocol tls and not allowed otherwise.".into(),
+        ));
+    }
+    if let Some(tls) = &listener.tls
+        && let Some(list) = &tls.client_certificate_revocation_list_file
+        && (list.trim().is_empty() || tls.client_certificate_authority_file.is_none())
+    {
+        return Err(fail(
+            "tls.clientCertificateRevocationListFile requires tls.clientCertificateAuthorityFile."
+                .into(),
         ));
     }
     if !(1..=MAXIMUM_SENDERS).contains(&listener.allowed_senders.len()) {

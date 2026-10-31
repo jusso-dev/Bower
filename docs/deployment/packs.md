@@ -120,6 +120,17 @@ BOWER_PRIVACY_HMAC_KEY_FILE=/run/secrets/bower-hmac      # if the profile uses h
 BOWER_PRIVACY_HMAC_KEY_ID=k2026
 ```
 
+`BOWER_PACK_TRUSTED_KEYS` lists one public key **per file** (separate files with `,`
+or `;`); a file holding two concatenated keys fails closed. To rotate the signing key,
+trust both key files, deploy packs re-signed by the new key, then remove the old file.
+Packs and keys are read at start-up: the signed `reload` command loads them (and every
+other start-up file) first and is refused (`reload-validation-failed`) if they would not
+load, so the running collector keeps its last good packs. `reload` re-reads the files
+the running configuration names; a changed `BOWER_PACKS` or `BOWER_PACK_TRUSTED_KEYS`
+needs a supervisor restart. There is no pack version pinning or rollback protection: a
+validly signed older pack loads. See the
+[rotation runbook](../production-readiness/05-credential-rotation-and-security-failures.md).
+
 Pack policies are added to the policy directory's; duplicate policy ids fail start-up.
 Only one privacy profile may be active (from a pack, `BOWER_PRIVACY_PROFILE` or management; see [managed privacy profiles](../privacy/managed-privacy-profiles.md)). The
 collector reports a **policy bundle hash** (policies, packs and profile) to management,
