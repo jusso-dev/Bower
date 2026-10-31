@@ -1,0 +1,8 @@
+{
+  "name": "ag-ws6-silent",
+  "enabled": true,
+  "emailReceivers": 0,
+  "smsReceivers": 0,
+  "webhookReceivers": 0,
+  "armRoleReceivers": 0
+}

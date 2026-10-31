@@ -1,0 +1,109 @@
+[
+  {
+    "name": "bowerws6-dead-letters",
+    "enabled": true,
+    "severity": 2,
+    "evaluationFrequency": "0:05:00",
+    "windowSize": "0:15:00",
+    "autoMitigate": true,
+    "dimensions": [
+      "CollectorId"
+    ],
+    "skipQueryValidation": false,
+    "actionGroups": 1
+  },
+  {
+    "name": "bowerws6-queue-storage",
+    "enabled": true,
+    "severity": 2,
+    "evaluationFrequency": "0:05:00",
+    "windowSize": "0:15:00",
+    "autoMitigate": true,
+    "dimensions": [
+      "CollectorId"
+    ],
+    "skipQueryValidation": false,
+    "actionGroups": 1
+  },
+  {
+    "name": "bowerws6-source-overdue",
+    "enabled": true,
+    "severity": 2,
+    "evaluationFrequency": "0:05:00",
+    "windowSize": "0:15:00",
+    "autoMitigate": true,
+    "dimensions": [
+      "CollectorId",
+      "Source"
+    ],
+    "skipQueryValidation": false,
+    "actionGroups": 1
+  },
+  {
+    "name": "bowerws6-destination-freshness",
+    "enabled": true,
+    "severity": 2,
+    "evaluationFrequency": "0:05:00",
+    "windowSize": "2 days, 0:00:00",
+    "autoMitigate": true,
+    "dimensions": [
+      "CollectorId",
+      "Source"
+    ],
+    "skipQueryValidation": false,
+    "actionGroups": 1
+  },
+  {
+    "name": "bowerws6-collector-health-missing",
+    "enabled": true,
+    "severity": 1,
+    "evaluationFrequency": "0:05:00",
+    "windowSize": "2 days, 0:00:00",
+    "autoMitigate": true,
+    "dimensions": [
+      "CollectorId"
+    ],
+    "skipQueryValidation": false,
+    "actionGroups": 1
+  },
+  {
+    "name": "bowerws6-queue-backlog",
+    "enabled": true,
+    "severity": 2,
+    "evaluationFrequency": "0:05:00",
+    "windowSize": "0:15:00",
+    "autoMitigate": true,
+    "dimensions": [
+      "CollectorId"
+    ],
+    "skipQueryValidation": false,
+    "actionGroups": 1
+  },
+  {
+    "name": "bowerws6-dcr-errors",
+    "enabled": true,
+    "severity": 2,
+    "evaluationFrequency": "0:05:00",
+    "windowSize": "0:15:00",
+    "autoMitigate": true,
+    "dimensions": [
+      "Source"
+    ],
+    "skipQueryValidation": true,
+    "actionGroups": 1
+  },
+  {
+    "name": "bowerws6-source-transport-errors",
+    "enabled": true,
+    "severity": 3,
+    "evaluationFrequency": "0:05:00",
+    "windowSize": "0:15:00",
+    "autoMitigate": true,
+    "dimensions": [
+      "CollectorId",
+      "Source"
+    ],
+    "skipQueryValidation": false,
+    "actionGroups": 1
+  }
+]

@@ -1,0 +1,23 @@
+[
+  {
+    "displayName": "Advanced Multistage Attack Detection",
+    "enabled": true,
+    "severity": "High",
+    "queryFrequency": null,
+    "queryPeriod": null
+  },
+  {
+    "displayName": "Bower source silent at the destination",
+    "enabled": true,
+    "severity": "Medium",
+    "queryFrequency": "PT5M",
+    "queryPeriod": "P1D"
+  },
+  {
+    "displayName": "Bower collector health record missing",
+    "enabled": true,
+    "severity": "High",
+    "queryFrequency": "PT5M",
+    "queryPeriod": "P1D"
+  }
+]

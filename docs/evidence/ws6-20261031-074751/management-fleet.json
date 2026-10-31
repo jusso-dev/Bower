@@ -1,0 +1,46 @@
+{
+ "D1-quiet-source": "fleet check at 2026-10-31T08:59:30Z: ws6-linux-01 needs-check (amber) 'An expected app on this machine has gone quiet.', exit 1",
+ "M-7min": [
+  {
+   "generatedAt": "2026-10-31T10:03:16.6721242+00:00",
+   "metrics": {
+    "bower_fleet_check_status": 1,
+    "bower_fleet_collector_light{collector=\"ws6-linux-01\",state=\"not-heard-from\"}": 1,
+    "bower_fleet_collectors{state=\"not-heard-from\",light=\"amber\"}": 1
+   },
+   "problems": [
+    {
+     "collector": "ws6-linux-01",
+     "label": "Not heard from recently",
+     "lastSeenAt": "2026-10-31T09:56:00.6489376+00:00",
+     "level": "WARNING",
+     "reason": "Has not checked in for a few minutes.",
+     "state": "not-heard-from"
+    }
+   ],
+   "status": "WARNING"
+  }
+ ],
+ "M-15min": [
+  {
+   "generatedAt": "2026-10-31T10:11:25.542827+00:00",
+   "metrics": {
+    "bower_fleet_check_status": 2,
+    "bower_fleet_collector_light{collector=\"ws6-linux-01\",state=\"not-heard-from\"}": 2,
+    "bower_fleet_collectors{state=\"not-heard-from\",light=\"red\"}": 1
+   },
+   "problems": [
+    {
+     "collector": "ws6-linux-01",
+     "label": "Not heard from recently",
+     "lastSeenAt": "2026-10-31T09:56:00.6489376+00:00",
+     "level": "CRITICAL",
+     "reason": "Has not checked in for more than 15 minutes.",
+     "state": "not-heard-from"
+    }
+   ],
+   "status": "CRITICAL"
+  }
+ ],
+ "management": "Bower.Management.Api built from this branch, development authentication on loopback (Development environment), token enrolment approved by a second development person"
+}

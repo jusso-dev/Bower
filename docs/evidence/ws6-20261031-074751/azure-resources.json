@@ -1,0 +1,168 @@
+[
+  {
+    "name": "law-ws6-20261031",
+    "type": "Microsoft.OperationalInsights/workspaces",
+    "location": "australiaeast",
+    "tags": {
+      "Project": "bower-lab",
+      "RunId": "bower-ws6-20261031-074751"
+    }
+  },
+  {
+    "name": "SecurityInsights(law-ws6-20261031)",
+    "type": "Microsoft.OperationsManagement/solutions",
+    "location": "australiaeast",
+    "tags": {}
+  },
+  {
+    "name": "bowerws6-dce",
+    "type": "Microsoft.Insights/dataCollectionEndpoints",
+    "location": "australiaeast",
+    "tags": null
+  },
+  {
+    "name": "bowerws6-dcr",
+    "type": "Microsoft.Insights/dataCollectionRules",
+    "location": "australiaeast",
+    "tags": null
+  },
+  {
+    "name": "ag-ws6-silent",
+    "type": "Microsoft.Insights/actiongroups",
+    "location": "global",
+    "tags": {
+      "Project": "bower-lab",
+      "RunId": "bower-ws6-20261031-074751"
+    }
+  },
+  {
+    "name": "bowerws6-source-overdue",
+    "type": "Microsoft.Insights/scheduledqueryrules",
+    "location": "australiaeast",
+    "tags": {
+      "Project": "bower-lab",
+      "RunId": "bower-ws6-20261031-074751",
+      "bower-alert": "source-overdue"
+    }
+  },
+  {
+    "name": "bowerws6-dcr-columns-dropped",
+    "type": "Microsoft.Insights/metricalerts",
+    "location": "global",
+    "tags": {
+      "Project": "bower-lab",
+      "RunId": "bower-ws6-20261031-074751",
+      "bower-alert": "dcr-columns-dropped"
+    }
+  },
+  {
+    "name": "bowerws6-dcr-no-ingestion",
+    "type": "Microsoft.Insights/metricalerts",
+    "location": "global",
+    "tags": {
+      "Project": "bower-lab",
+      "RunId": "bower-ws6-20261031-074751",
+      "bower-alert": "dcr-no-ingestion"
+    }
+  },
+  {
+    "name": "bowerws6-dead-letters",
+    "type": "Microsoft.Insights/scheduledqueryrules",
+    "location": "australiaeast",
+    "tags": {
+      "Project": "bower-lab",
+      "RunId": "bower-ws6-20261031-074751",
+      "bower-alert": "dead-letters"
+    }
+  },
+  {
+    "name": "bowerws6-destination-freshness",
+    "type": "Microsoft.Insights/scheduledqueryrules",
+    "location": "australiaeast",
+    "tags": {
+      "Project": "bower-lab",
+      "RunId": "bower-ws6-20261031-074751",
+      "bower-alert": "destination-freshness"
+    }
+  },
+  {
+    "name": "bowerws6-dcr-transformation-errors",
+    "type": "Microsoft.Insights/metricalerts",
+    "location": "global",
+    "tags": {
+      "Project": "bower-lab",
+      "RunId": "bower-ws6-20261031-074751",
+      "bower-alert": "dcr-transformation-errors"
+    }
+  },
+  {
+    "name": "bowerws6-dcr-errors",
+    "type": "Microsoft.Insights/scheduledqueryrules",
+    "location": "australiaeast",
+    "tags": {
+      "Project": "bower-lab",
+      "RunId": "bower-ws6-20261031-074751",
+      "bower-alert": "dcr-errors"
+    }
+  },
+  {
+    "name": "bowerws6-source-transport-errors",
+    "type": "Microsoft.Insights/scheduledqueryrules",
+    "location": "australiaeast",
+    "tags": {
+      "Project": "bower-lab",
+      "RunId": "bower-ws6-20261031-074751",
+      "bower-alert": "source-transport-errors"
+    }
+  },
+  {
+    "name": "bowerws6-dcr-rows-dropped",
+    "type": "Microsoft.Insights/metricalerts",
+    "location": "global",
+    "tags": {
+      "Project": "bower-lab",
+      "RunId": "bower-ws6-20261031-074751",
+      "bower-alert": "dcr-rows-dropped"
+    }
+  },
+  {
+    "name": "bowerws6-collector-health-missing",
+    "type": "Microsoft.Insights/scheduledqueryrules",
+    "location": "australiaeast",
+    "tags": {
+      "Project": "bower-lab",
+      "RunId": "bower-ws6-20261031-074751",
+      "bower-alert": "collector-health-missing"
+    }
+  },
+  {
+    "name": "bowerws6-queue-backlog",
+    "type": "Microsoft.Insights/scheduledqueryrules",
+    "location": "australiaeast",
+    "tags": {
+      "Project": "bower-lab",
+      "RunId": "bower-ws6-20261031-074751",
+      "bower-alert": "queue-backlog"
+    }
+  },
+  {
+    "name": "bowerws6-dcr-request-errors",
+    "type": "Microsoft.Insights/metricalerts",
+    "location": "global",
+    "tags": {
+      "Project": "bower-lab",
+      "RunId": "bower-ws6-20261031-074751",
+      "bower-alert": "dcr-request-errors"
+    }
+  },
+  {
+    "name": "bowerws6-queue-storage",
+    "type": "Microsoft.Insights/scheduledqueryrules",
+    "location": "australiaeast",
+    "tags": {
+      "Project": "bower-lab",
+      "RunId": "bower-ws6-20261031-074751",
+      "bower-alert": "queue-storage"
+    }
+  }
+]

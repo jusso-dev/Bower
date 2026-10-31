@@ -1,0 +1,18 @@
+[
+    {
+        "id": "sg-02af6ee189c68d8fd",
+        "ingress": [],
+        "egress": [
+            {
+                "proto": "tcp",
+                "from": 80,
+                "to": 80
+            },
+            {
+                "proto": "tcp",
+                "from": 443,
+                "to": 443
+            }
+        ]
+    }
+]

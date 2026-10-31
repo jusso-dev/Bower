@@ -1,0 +1,38 @@
+[
+ {
+  "alerts": 2,
+  "createdTimeUtc": "2026-10-31T10:09:44.12Z",
+  "firstActivityTimeUtc": "2026-10-30T10:04:30Z",
+  "lastActivityTimeUtc": "2026-10-31T10:07:57Z",
+  "severity": "High",
+  "status": "New",
+  "title": "Bower collector ws6-linux-01 stopped reporting"
+ },
+ {
+  "alerts": 2,
+  "createdTimeUtc": "2026-10-31T10:04:47.99Z",
+  "firstActivityTimeUtc": "2026-10-30T09:59:30Z",
+  "lastActivityTimeUtc": "2026-10-31T10:04:30Z",
+  "severity": "Medium",
+  "status": "New",
+  "title": "Bower source nftables-firewall/validation on ws6-linux-replay is silent"
+ },
+ {
+  "alerts": 8,
+  "createdTimeUtc": "2026-10-31T09:55:36.8033333Z",
+  "firstActivityTimeUtc": "2026-10-30T09:49:58Z",
+  "lastActivityTimeUtc": "2026-10-31T10:22:57Z",
+  "severity": "High",
+  "status": "New",
+  "title": "Bower collector ws6-local-smoke stopped reporting"
+ },
+ {
+  "alerts": 1,
+  "createdTimeUtc": "2026-10-31T09:55:11.89Z",
+  "firstActivityTimeUtc": "2026-10-30T09:49:58Z",
+  "lastActivityTimeUtc": "2026-10-31T09:49:58Z",
+  "severity": "Medium",
+  "status": "New",
+  "title": "Bower source / on ws6-drill-dcr is silent"
+ }
+]

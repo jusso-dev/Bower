@@ -1,0 +1,494 @@
+{
+ "runId": "bower-ws6-20261031-074751",
+ "evaluationFrequency": "PT5M",
+ "drillThresholds": {
+  "healthMissingMinutes": 5,
+  "backlogAgeSeconds": 300,
+  "deliveryLagMinutes": 5,
+  "storageUsedPercent": "70 then 40",
+  "queueFileUsedPercent": 70,
+  "sourceSilenceMinutes": 10,
+  "sourceExpectationsMinutes": 3,
+  "syslogChurnPerInterval": 5,
+  "healthRecordIntervalSeconds": 60
+ },
+ "note": "secondsFromSince = alert start (Fired) or resolution (Resolved) minus the 'since' time: the fault for Fired, the recovery for Resolved",
+ "drills": [
+  {
+   "id": "baseline",
+   "description": "Expected collectors not yet sending, then first health records",
+   "events": {
+    "linuxFirstHealthRecord": "2026-10-31T08:34:50Z",
+    "windowsFirstHealthRecord": "2026-10-31T08:44:10Z"
+   },
+   "alerts": [
+    {
+     "rule": "bowerws6-collector-health-missing",
+     "dimensions": {
+      "CollectorId": "ws6-linux-01"
+     },
+     "monitorCondition": "Resolved",
+     "startDateTime": "2026-10-31T08:12:52.9562802Z",
+     "resolvedDateTime": "2026-10-31T08:48:54.947342Z",
+     "since": "2026-10-31T08:34:50Z",
+     "secondsFromSince": 844.9
+    },
+    {
+     "rule": "bowerws6-collector-health-missing",
+     "dimensions": {
+      "CollectorId": "ws6-windows-01"
+     },
+     "monitorCondition": "Resolved",
+     "startDateTime": "2026-10-31T08:12:53.0153282Z",
+     "resolvedDateTime": "2026-10-31T08:58:54.0167221Z",
+     "since": "2026-10-31T08:44:10Z",
+     "secondsFromSince": 884.0
+    }
+   ]
+  },
+  {
+   "id": "local-smoke-stop",
+   "description": "Local smoke collector stopped by the harness time limit (unplanned)",
+   "events": {
+    "lastHealthRecord": "2026-10-31T08:45:55Z"
+   },
+   "alerts": [
+    {
+     "rule": "bowerws6-collector-health-missing",
+     "dimensions": {
+      "CollectorId": "ws6-local-smoke"
+     },
+     "monitorCondition": "Fired",
+     "startDateTime": "2026-10-31T08:52:52.5358521Z",
+     "resolvedDateTime": null,
+     "since": "2026-10-31T08:45:55Z",
+     "secondsFromSince": 417.5
+    }
+   ]
+  },
+  {
+   "id": "D1",
+   "description": "Silent sources: Linux firewall generator stopped, Windows WEC subscription disabled",
+   "events": {
+    "linuxFault": "fault 2026-10-31T08:48:49.509Z generator stopped",
+    "windowsFault": "fault 2026-10-31T08:48:57.622Z WEC subscription disabled",
+    "linuxRecovered": "recovered 2026-10-31T09:01:21.241Z generator started",
+    "windowsRecovered": "recovered 2026-10-31T09:01:28.672Z WEC subscription enabled"
+   },
+   "alerts": [
+    {
+     "rule": "bowerws6-source-overdue",
+     "dimensions": {
+      "CollectorId": "ws6-linux-01",
+      "Source": "nftables-firewall/validation"
+     },
+     "monitorCondition": "Fired",
+     "startDateTime": "2026-10-31T08:55:33.971915Z",
+     "resolvedDateTime": null,
+     "since": "2026-10-31T08:48:49Z",
+     "secondsFromSince": 405.0
+    },
+    {
+     "rule": "bowerws6-source-overdue",
+     "dimensions": {
+      "CollectorId": "ws6-windows-01",
+      "Source": "windows-security/production"
+     },
+     "monitorCondition": "Fired",
+     "startDateTime": "2026-10-31T08:55:33.908356Z",
+     "resolvedDateTime": null,
+     "since": "2026-10-31T08:48:57Z",
+     "secondsFromSince": 396.9
+    },
+    {
+     "rule": "bowerws6-destination-freshness",
+     "dimensions": {
+      "CollectorId": "ws6-linux-01",
+      "Source": "nftables-firewall/validation"
+     },
+     "monitorCondition": "Fired",
+     "startDateTime": "2026-10-31T09:00:20.4368768Z",
+     "resolvedDateTime": null,
+     "since": "2026-10-31T08:48:49Z",
+     "secondsFromSince": 691.4
+    },
+    {
+     "rule": "bowerws6-destination-freshness",
+     "dimensions": {
+      "CollectorId": "ws6-windows-01",
+      "Source": "windows-security/production"
+     },
+     "monitorCondition": "Fired",
+     "startDateTime": "2026-10-31T09:00:20.3886341Z",
+     "resolvedDateTime": null,
+     "since": "2026-10-31T08:48:57Z",
+     "secondsFromSince": 683.4
+    },
+    {
+     "rule": "bowerws6-source-overdue",
+     "dimensions": {
+      "CollectorId": "ws6-linux-01",
+      "Source": "nftables-firewall/validation"
+     },
+     "monitorCondition": "Resolved",
+     "startDateTime": "2026-10-31T08:55:33.971915Z",
+     "resolvedDateTime": "2026-10-31T09:16:40.72861Z",
+     "since": "2026-10-31T09:01:21Z",
+     "secondsFromSince": 919.7
+    },
+    {
+     "rule": "bowerws6-source-overdue",
+     "dimensions": {
+      "CollectorId": "ws6-windows-01",
+      "Source": "windows-security/production"
+     },
+     "monitorCondition": "Resolved",
+     "startDateTime": "2026-10-31T08:55:33.908356Z",
+     "resolvedDateTime": "2026-10-31T09:16:40.6786577Z",
+     "since": "2026-10-31T09:01:28Z",
+     "secondsFromSince": 912.7
+    },
+    {
+     "rule": "bowerws6-destination-freshness",
+     "dimensions": {
+      "CollectorId": "ws6-linux-01",
+      "Source": "nftables-firewall/validation"
+     },
+     "monitorCondition": "Resolved",
+     "startDateTime": "2026-10-31T09:00:20.4368768Z",
+     "resolvedDateTime": "2026-10-31T09:16:20.7322703Z",
+     "since": "2026-10-31T09:01:21Z",
+     "secondsFromSince": 899.7
+    },
+    {
+     "rule": "bowerws6-destination-freshness",
+     "dimensions": {
+      "CollectorId": "ws6-windows-01",
+      "Source": "windows-security/production"
+     },
+     "monitorCondition": "Resolved",
+     "startDateTime": "2026-10-31T09:00:20.3886341Z",
+     "resolvedDateTime": "2026-10-31T09:16:20.6889451Z",
+     "since": "2026-10-31T09:01:28Z",
+     "secondsFromSince": 892.7
+    }
+   ]
+  },
+  {
+   "id": "D2",
+   "description": "Source loss indicators: 5 openssl s_client without client certificate + 5 plain TCP, then 8 rsyslog restarts",
+   "events": {
+    "tlsFault": "fault 2026-10-31T09:01:51.885Z 5 unauthenticated TLS and plain TCP attempts",
+    "churnFault": "fault 2026-10-31T09:02:26.925Z rsyslog reconnected 8 times"
+   },
+   "alerts": [
+    {
+     "rule": "bowerws6-source-transport-errors",
+     "dimensions": {
+      "CollectorId": "ws6-linux-01",
+      "Source": "syslog:firewall-tls"
+     },
+     "monitorCondition": "Fired",
+     "startDateTime": "2026-10-31T09:06:40.5722455Z",
+     "resolvedDateTime": null,
+     "since": "2026-10-31T09:01:51Z",
+     "secondsFromSince": 289.6
+    },
+    {
+     "rule": "bowerws6-source-transport-errors",
+     "dimensions": {
+      "CollectorId": "ws6-linux-01",
+      "Source": "syslog:firewall-tls"
+     },
+     "monitorCondition": "Resolved",
+     "startDateTime": "2026-10-31T09:06:40.5722455Z",
+     "resolvedDateTime": "2026-10-31T09:32:39.2704653Z",
+     "since": "2026-10-31T09:02:30Z",
+     "secondsFromSince": 1809.3
+    }
+   ]
+  },
+  {
+   "id": "D3",
+   "description": "Delivery failure: collector HTTPS blocked by nftables (uid bower, tcp/443)",
+   "events": {
+    "fault": "fault 2026-10-31T09:07:45.278Z collector HTTPS blocked",
+    "recovered": "recovered 2026-10-31T09:15:42.077Z collector HTTPS restored",
+    "drained": "drained 2026-10-31T09:19:24.204Z undelivered=0"
+   },
+   "alerts": [
+    {
+     "rule": "bowerws6-collector-health-missing",
+     "dimensions": {
+      "CollectorId": "ws6-linux-01"
+     },
+     "monitorCondition": "Fired",
+     "startDateTime": "2026-10-31T09:12:54.957501Z",
+     "resolvedDateTime": null,
+     "since": "2026-10-31T09:07:45Z",
+     "secondsFromSince": 310.0
+    },
+    {
+     "rule": "bowerws6-queue-backlog",
+     "dimensions": {
+      "CollectorId": "ws6-linux-01"
+     },
+     "monitorCondition": "Fired",
+     "startDateTime": "2026-10-31T09:23:27.1388992Z",
+     "resolvedDateTime": null,
+     "since": "2026-10-31T09:07:45Z",
+     "secondsFromSince": 942.1
+    },
+    {
+     "rule": "bowerws6-collector-health-missing",
+     "dimensions": {
+      "CollectorId": "ws6-linux-01"
+     },
+     "monitorCondition": "Resolved",
+     "startDateTime": "2026-10-31T09:12:54.957501Z",
+     "resolvedDateTime": "2026-10-31T09:33:55.102702Z",
+     "since": "2026-10-31T09:19:24Z",
+     "secondsFromSince": 871.1
+    },
+    {
+     "rule": "bowerws6-queue-backlog",
+     "dimensions": {
+      "CollectorId": "ws6-linux-01"
+     },
+     "monitorCondition": "Resolved",
+     "startDateTime": "2026-10-31T09:23:27.1388992Z",
+     "resolvedDateTime": "2026-10-31T09:39:27.9585488Z",
+     "since": "2026-10-31T09:19:24Z",
+     "secondsFromSince": 1204.0
+    }
+   ]
+  },
+  {
+   "id": "D4",
+   "description": "Queue cap: 4,500 denied packets at 200/s into a 4 MiB queue during D3",
+   "events": {
+    "burst": "burst-done 2026-10-31T09:11:10.869Z",
+    "recovery": "recovery 2026-10-31T09:19:19.883Z cap=8388608 restarted",
+    "drained": "drained 2026-10-31T09:19:24.204Z undelivered=0"
+   },
+   "alerts": [
+    {
+     "rule": "bowerws6-queue-storage",
+     "result": "did not fire for this incident: health records refused while full; restart reset counters"
+    },
+    {
+     "rule": "bowerws6-source-overdue",
+     "dimensions": {
+      "CollectorId": "ws6-linux-01",
+      "Source": "nftables-firewall/validation"
+     },
+     "monitorCondition": "Fired",
+     "startDateTime": "2026-10-31T09:20:36.7144402Z",
+     "resolvedDateTime": null,
+     "since": "2026-10-31T09:11:10Z",
+     "secondsFromSince": 566.7
+    },
+    {
+     "rule": "bowerws6-source-overdue",
+     "dimensions": {
+      "CollectorId": "ws6-linux-01",
+      "Source": "nftables-firewall/validation"
+     },
+     "monitorCondition": "Resolved",
+     "startDateTime": "2026-10-31T09:20:36.7144402Z",
+     "resolvedDateTime": "2026-10-31T09:36:36.7993741Z",
+     "since": "2026-10-31T09:19:24Z",
+     "secondsFromSince": 1032.8
+    }
+   ]
+  },
+  {
+   "id": "D4b",
+   "description": "Storage early warning: queue file at 92-97% of its page limit with zero backlog (retained rows), then refusals",
+   "events": {
+    "firstV2Record": "2026-10-31T09:27:21Z",
+    "recovery": "recovery 2026-10-31T09:37:39.585Z cap=67108864 restarted"
+   },
+   "alerts": [
+    {
+     "rule": "bowerws6-queue-storage",
+     "dimensions": {
+      "CollectorId": "ws6-linux-01"
+     },
+     "monitorCondition": "Fired",
+     "startDateTime": "2026-10-31T09:35:31.0584124Z",
+     "resolvedDateTime": null,
+     "since": "2026-10-31T09:27:21Z",
+     "secondsFromSince": 490.1
+    },
+    {
+     "rule": "bowerws6-queue-storage",
+     "dimensions": {
+      "CollectorId": "ws6-linux-01"
+     },
+     "monitorCondition": "Resolved",
+     "startDateTime": "2026-10-31T09:35:31.0584124Z",
+     "resolvedDateTime": "2026-10-31T09:51:31.1225439Z",
+     "since": "2026-10-31T09:37:41Z",
+     "secondsFromSince": 830.1
+    }
+   ]
+  },
+  {
+   "id": "D5",
+   "description": "Collector down: Windows service stopped; process kills on both hosts",
+   "events": {
+    "windowsKill": "fault 2026-10-31T09:06:47.583Z killed 3028",
+    "windowsKillRecovered": "recovered 2026-10-31T09:06:53.877Z service recovery restarted the collector",
+    "linuxKill": "fault 2026-10-31T09:07:05.908Z SIGKILL 30025",
+    "linuxKillRecovered": "recovered 2026-10-31T09:07:12.218Z systemd restarted the collector as 31195",
+    "windowsStop": "fault 2026-10-31T09:07:20.843Z Bower service stopped",
+    "windowsStarted": "recovered 2026-10-31T09:15:35.814Z Bower service started"
+   },
+   "alerts": [
+    {
+     "rule": "bowerws6-collector-health-missing",
+     "dimensions": {
+      "CollectorId": "ws6-windows-01"
+     },
+     "monitorCondition": "Fired",
+     "startDateTime": "2026-10-31T09:12:54.9975132Z",
+     "resolvedDateTime": null,
+     "since": "2026-10-31T09:07:20Z",
+     "secondsFromSince": 335.0
+    },
+    {
+     "rule": "bowerws6-collector-health-missing",
+     "dimensions": {
+      "CollectorId": "ws6-windows-01"
+     },
+     "monitorCondition": "Resolved",
+     "startDateTime": "2026-10-31T09:12:54.9975132Z",
+     "resolvedDateTime": "2026-10-31T09:28:54.6392569Z",
+     "since": "2026-10-31T09:15:35Z",
+     "secondsFromSince": 799.6
+    }
+   ]
+  },
+  {
+   "id": "D6",
+   "description": "DCR errors: three malformed synthetic requests (invalid JSON, not an array, bad timestamp)",
+   "events": {
+    "start": "2026-10-31T09:39:05Z",
+    "responses": [
+     "invalid-json 204",
+     "not-an-array 204",
+     "bad-timestamp 204"
+    ]
+   },
+   "alerts": [
+    {
+     "rule": "bowerws6-dcr-transformation-errors",
+     "dimensions": {},
+     "monitorCondition": "Fired",
+     "startDateTime": "2026-10-31T09:42:22.4440686Z",
+     "resolvedDateTime": null,
+     "since": "2026-10-31T09:39:05Z",
+     "secondsFromSince": 197.4
+    },
+    {
+     "rule": "bowerws6-dcr-rows-dropped",
+     "dimensions": {},
+     "monitorCondition": "Fired",
+     "startDateTime": "2026-10-31T09:43:20.2990679Z",
+     "resolvedDateTime": null,
+     "since": "2026-10-31T09:39:05Z",
+     "secondsFromSince": 255.3
+    },
+    {
+     "rule": "bowerws6-dcr-errors",
+     "dimensions": {
+      "Source": "dcr"
+     },
+     "monitorCondition": "Fired",
+     "startDateTime": "2026-10-31T09:46:11.8686031Z",
+     "resolvedDateTime": null,
+     "since": "2026-10-31T09:39:05Z",
+     "secondsFromSince": 426.9
+    }
+   ]
+  },
+  {
+   "id": "D7",
+   "description": "Dead letters: three synthetic events with attributes over 64 KiB",
+   "events": {
+    "fault": "fault 2026-10-31T09:43:26.756Z poison events posted"
+   },
+   "alerts": [
+    {
+     "rule": "bowerws6-dead-letters",
+     "dimensions": {
+      "CollectorId": "ws6-linux-01"
+     },
+     "monitorCondition": "Fired",
+     "startDateTime": "2026-10-31T09:49:49.6998408Z",
+     "resolvedDateTime": null,
+     "since": "2026-10-31T09:43:26Z",
+     "secondsFromSince": 383.7
+    }
+   ]
+  },
+  {
+   "id": "M",
+   "description": "Linux collector stopped for 16 minutes",
+   "events": {
+    "fault": "fault 2026-10-31T09:56:18.201Z collector stopped",
+    "recovered": "recovered 2026-10-31T10:11:59.008Z collector started",
+    "sentinelIncident": "2026-10-31T10:09:44.12Z"
+   },
+   "alerts": [
+    {
+     "rule": "bowerws6-collector-health-missing",
+     "dimensions": {
+      "CollectorId": "ws6-linux-01"
+     },
+     "monitorCondition": "Fired",
+     "startDateTime": "2026-10-31T10:02:52.3133696Z",
+     "resolvedDateTime": null,
+     "since": "2026-10-31T09:56:18Z",
+     "secondsFromSince": 394.3
+    },
+    {
+     "rule": "bowerws6-destination-freshness",
+     "dimensions": {
+      "CollectorId": "ws6-linux-01",
+      "Source": "nftables-firewall/validation"
+     },
+     "monitorCondition": "Fired",
+     "startDateTime": "2026-10-31T10:10:20.8336022Z",
+     "resolvedDateTime": null,
+     "since": "2026-10-31T09:56:18Z",
+     "secondsFromSince": 842.8
+    },
+    {
+     "rule": "bowerws6-collector-health-missing",
+     "dimensions": {
+      "CollectorId": "ws6-linux-01"
+     },
+     "monitorCondition": "Resolved",
+     "startDateTime": "2026-10-31T10:02:52.3133696Z",
+     "resolvedDateTime": "2026-10-31T10:23:54.9618174Z",
+     "since": "2026-10-31T10:11:59Z",
+     "secondsFromSince": 716.0
+    },
+    {
+     "rule": "bowerws6-destination-freshness",
+     "dimensions": {
+      "CollectorId": "ws6-linux-01",
+      "Source": "nftables-firewall/validation"
+     },
+     "monitorCondition": "Resolved",
+     "startDateTime": "2026-10-31T10:10:20.8336022Z",
+     "resolvedDateTime": "2026-10-31T10:26:19.2260611Z",
+     "since": "2026-10-31T10:11:59Z",
+     "secondsFromSince": 860.2
+    }
+   ]
+  }
+ ]
+}
