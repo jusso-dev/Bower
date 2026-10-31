@@ -257,7 +257,6 @@ internal sealed record SourceCheckItem(
 [JsonSerializable(typeof(ArchiveCreateOutput))]
 [JsonSerializable(typeof(ArchiveVerifyOutput))]
 [JsonSerializable(typeof(QueueSnapshot))]
-[JsonSerializable(typeof(QueueBackupManifest))]
 [JsonSerializable(typeof(IReadOnlyList<DeadLetterRecord>))]
 [JsonSerializable(typeof(SignedEvidence))]
 [JsonSerializable(typeof(List<DoctorCommand.Check>))]

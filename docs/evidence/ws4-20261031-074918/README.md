@@ -102,14 +102,28 @@ ephemeral lab key, which was deleted after the run, and verified against its pub
    (`KEY=VALUE`, `BOWER_*`/`AZURE_*` only, bounded, fails closed), and the MSI points it at
    `%ProgramData%\Bower\bower.env`, which upgrades never rewrite. Uninstall deletes it like
    the Linux `bower.env`. The CI install test covers the setting.
-4. **Compose and Kubernetes had no stable collector id.** The id fell back to the container
-   or pod hostname, which changes on every recreate and breaks replay deduplication and
-   destination identity. Fixed: the manifests require or pin `BOWER_COLLECTOR_ID`. Found by
-   review; the Docker run pinned it.
+4. **Compose and Kubernetes had no stable collector id.** The id fell back to the
+   container or pod hostname, which changes on every recreate and breaks replay
+   deduplication and destination identity. Fixed after review in both runtimes: without
+   `BOWER_COLLECTOR_ID`, the first start persists the machine name to `collector-id` in the
+   data volume, and later starts reuse it. Existing installs keep their current id, and the
+   sample manifests no longer ship a shared literal id. Found by review; the Docker run
+   pinned the id explicitly.
 5. **MSI downgrade protection is ineffective for dev builds** (fourth version field).
    **Open**: release versioning must bump `major.minor.patch`. Documented as a limit.
 
-Rust parity: the queue fix is ported. `BOWER_SETTINGS_FILE` and backup/restore exist in C#
+Post-review hardening was covered by unit and CI tests, not by another AWS run:
+- the backup copy is owner-only from creation;
+- busy queues are retried within a bound;
+- damaged queues are still backed up but need `--allow-damaged` to restore;
+- restore reports the backup's own manifest plus the restored file's hash;
+- the settings file has ownership/ACL trust checks, a startup log line and a defined quoting
+  rule;
+- the collector id persists.
+
+These changed after the measured build `4c30b2a`.
+
+Rust parity: the queue fix and the persisted `collector-id` are ported. `BOWER_SETTINGS_FILE` and backup/restore exist in C#
 only. The Rust collector does not run on Windows, and Linux uses the systemd
 `EnvironmentFile`. The backup format is plain SQLite schema 5, which either runtime opens.
 

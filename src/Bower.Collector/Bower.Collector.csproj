@@ -9,6 +9,8 @@
     <!-- The chiseled runtime image ships without ICU; all comparisons are ordinal. -->
     <InvariantGlobalization>true</InvariantGlobalization>
     <RuntimeIdentifiers>win-x64;win-arm64;linux-x64;linux-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
+    <!-- LibraryImport for statx/geteuid (settings-file owner check on Linux). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Bower.Core/Bower.Core.csproj" />
