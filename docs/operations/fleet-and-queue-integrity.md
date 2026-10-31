@@ -115,7 +115,7 @@ collector. The set is closed:
 |---|---|---|
 | `fetch-bundle` | Fetches the signed privacy profile assignment now (`managed-privacy-profile` job). Management privacy mode only. | `Bower.Operator` |
 | `run-canary` | Queues one synthetic `collector_canary` event through redaction and policy. `queued` means local admission, not Sentinel arrival. Use an evidence bundle for delivery proof. | `Bower.Operator` |
-| `reload` | Graceful supervised restart (exit code 75), at most once every 10 minutes. Refused (`reload-validation-failed`) when the restarted collector could not load its packs, trusted keys or privacy key. | `Bower.Administrator` |
+| `reload` | Graceful supervised restart (exit code 75), at most once every 10 minutes. Refused (`reload-validation-failed`, without using the 10-minute slot) when the restarted collector could not load a file its running configuration names: packs, trusted keys, privacy key, source configurations and routes, syslog TLS files, expectations, scopes, tokens or relay files. Changed environment variables need a supervisor restart. | `Bower.Administrator` |
 | `rotate-credential` | Registers a new key-bound credential and switches to it; the old one stays valid until the new one is used. Token-enrolled collectors only: Entra collectors never advertise it, so it cannot be issued to them. Result `credential-rotated`, or `failed` with `rotation-refused`, `rotation-failed` or `not-enrolled`. | `Bower.Administrator` |
 
 ```http

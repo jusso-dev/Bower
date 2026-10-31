@@ -30,11 +30,11 @@ stated):
 
 | Defect | Before | After |
 | --- | --- | --- |
-| Credential failures looked like network outages | An expired, revoked or disabled Entra credential, or a wrong tenant, was recorded as `destination-azure-unavailable` with **no log line**; operators saw only a growing retry count. | Retryable `destination-azure-credential-failed`, and the delivery worker logs one metadata-only line per failure code (event 1008): `Output adapter azure-logs-ingestion did not deliver 20 events (destination-azure-credential-failed); retrying.` |
-| Syslog TLS rotation needed a restart | Certificates, keys and client CAs were read once at start. A collector restart under 10 events/sec lost **1 of 100** frames in the live test. | Files are reloaded for new handshakes without dropping connections (live: **100/100** frames, **0** sender reconnects). A bad file keeps the last good material and is counted. |
-| Syslog client certificates were never checked for revocation | `RevocationMode.NoCheck`; a stolen sender certificate stayed valid until its CA was removed. | Optional `clientCertificateRevocationListFile`; open sessions are re-validated after a reload and closed when their client is no longer trusted. |
-| A bad pack on `reload` stopped collection | The signed `reload` command restarted the collector even when the replaced pack, trusted key or HMAC key no longer loaded, so the restart failed and nothing ran. | `reload` loads everything first; on failure it reports `reload-validation-failed` and the collector keeps its last good packs. |
-| An attacker could hide a failed logon (Windows, C# only) | A control character or unpaired surrogate in an account name made the rendered event XML invalid; the 4625 event was dropped as `winevt-xml-invalid`. | Forbidden characters are read as character references; the event is collected and the account name is pseudonymised as usual. |
+| Credential failures looked like network outages | An expired, revoked or disabled Entra credential, or a wrong tenant, was recorded as `destination-azure-unavailable` with **no log line**; operators saw only a growing retry count. | A rejection by the identity service (for example `invalid_client`, `unauthorized_client`), even after a retried network error, or a missing or unusable credential configuration is retryable `destination-azure-credential-failed`. A token service that cannot be reached (DNS, proxy, firewall, TLS, timeout) or answers 5xx/408/429 stays `destination-azure-unavailable`. The delivery worker logs one metadata-only line per failure code (event 1008): `Output adapter azure-logs-ingestion did not deliver 20 events (destination-azure-credential-failed); retrying.` |
+| Syslog TLS rotation needed a restart | Certificates, keys and client CAs were read once at start. A collector restart under 10 events/sec lost **1 of 100** frames in the live test. | A background task reads each file once a second and reloads changed material for new handshakes without dropping connections (live: **100/100** frames, **0** sender reconnects). A change that cannot be loaded (any error, including a FIFO or other non-regular file) keeps the last good material, is counted once and retried. Superseded certificates and keys are released once no handshake uses them. |
+| Syslog client certificates were never checked for revocation | `RevocationMode.NoCheck`; a stolen sender certificate stayed valid until its CA was removed. | Optional `clientCertificateRevocationListFile`, evaluated identically by C# and Rust: lists are selected by the key of the CA that issued the sender (so a re-keyed CA with the same name works during overlap) and by their critical issuing distribution point. Open sessions are re-validated after a reload and closed when their client is no longer trusted, including a chain that now ends at an expired CA. |
+| A bad pack or source file on `reload` stopped collection | The signed `reload` command restarted the collector even when a replaced pack, trusted key, HMAC key, syslog route, syslog TLS file or expectations file no longer loaded, so the restart failed and nothing ran. | `reload` first runs the same loader start-up runs (policies, packs, keys, privacy, source configurations and routes, syslog TLS, expectations, scopes, tokens, relay files); on failure it reports `reload-validation-failed`, keeps its rate-limit slot and the collector keeps its last good configuration. |
+| An attacker could hide a failed logon or blur attribution (Windows, C# only) | A control character or unpaired surrogate in an account name made the rendered event XML invalid and the 4625 event was dropped; names differing only in unpaired surrogates would have shared one pseudonym. | Forbidden characters are read as character references; unpaired surrogates are escaped reversibly (U+FFFD plus four hex digits), so every distinct name keeps a distinct pseudonym. |
 
 New status fields (`/v1/status`, metadata only) for alerting: per TLS syslog listener
 `tlsReloads`, `tlsReloadFailures`, `tlsRevoked`, `tlsSessionsClosed`,
@@ -68,7 +68,7 @@ Live results (exact counts by independent destination query; details in §9):
 | # | Credential / trust anchor | Used for | Configured by | Default location | Reload |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Logs Ingestion identity | Upload to the DCR | `BOWER_AZURE_CREDENTIAL` = `managed-identity` (default, optional `BOWER_AZURE_CLIENT_ID`), `workload-identity` (`AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_FEDERATED_TOKEN_FILE`), `environment` (`AZURE_TENANT_ID`, `AZURE_CLIENT_ID` and `AZURE_CLIENT_SECRET` **or** `AZURE_CLIENT_CERTIFICATE_PATH` [+`AZURE_CLIENT_CERTIFICATE_PASSWORD`]) | Managed identity: none. Certificate: a PEM/PFX file you choose (for example `/etc/bower/secrets/ingest.pem`). Secret: an environment variable only. | **Restart** for a changed secret, certificate file or variable (read at start; the C# SDK caches the loaded certificate). Managed identity and workload identity need no rotation; the federated token file is re-read automatically. **A cached access token keeps working until it expires (measured 58–64 minutes)** even after the credential is revoked. |
-| 2 | Syslog listener server certificate and key | TLS 6514 | `BOWER_SYSLOG_CONFIG` → `tls.certificateFile`, `tls.privateKeyFile` | `/etc/bower/syslog/` (Linux), `%ProgramData%\Bower\syslog\` (Windows) | **Hot reload** (checked at most once a second; new handshakes only). |
+| 2 | Syslog listener server certificate and key | TLS 6514 | `BOWER_SYSLOG_CONFIG` → `tls.certificateFile`, `tls.privateKeyFile` | `/etc/bower/syslog/` (Linux), `%ProgramData%\Bower\syslog\` (Windows) | **Hot reload** (a background task checks once a second; new handshakes only). Regular, non-empty files only. |
 | 3 | Syslog client CA bundle | Which senders may connect | `tls.clientCertificateAuthorityFile` (PEM, one or more CAs) | as above | **Hot reload**; open sessions from a removed CA are closed before their next frame. |
 | 4 | Syslog client revocation lists | Revoking individual sender certificates | `tls.clientCertificateRevocationListFile` (PEM or DER, one list per CA) | as above | **Hot reload**; open sessions of newly listed certificates are closed. Lists must be renewed before `nextUpdate`. |
 | 5 | Sender client certificates | Sender (rsyslog, appliance) authenticates to Bower | Sender configuration | Sender host | Sender-side; rsyslog needs a restart (its disk queue survives with `queue.saveOnShutdown`). |
@@ -104,13 +104,16 @@ eventually applies backpressure (HTTP 503 to producers, TCP flow control to sysl
 | Service principal disabled | `destination-azure-credential-failed` | Cached tokens keep working (57 min) | Re-enable; recovers **without restart** (5–31 s) |
 | Wrong tenant ID | `destination-azure-credential-failed` | Each attempt ~10 s (instance discovery), then 30 s cadence | Fix variable, restart |
 | Wrong identity (no role on DCR) | `destination-azure-http-403` | 30 s cadence | Configure the publisher identity, restart |
-| Entra / token endpoint unreachable | `destination-azure-credential-failed` | Same as any outage | Network fix; no restart |
+| Entra / token endpoint unreachable, or answering 5xx/408/429 | `destination-azure-unavailable` (a network outage, not a credential failure) | Same as any outage | Network fix; no restart |
+| Identity service rejects the credential after a retried network error | `destination-azure-credential-failed` (the rejection decides) | 30 s cadence | Fix the credential |
 | DCE unreachable | `destination-azure-unavailable` | Same as any outage | Network fix |
 | Syslog server certificate expired | `tlsHandshakeFailures` rises (senders refuse); `serverCertificateNotAfter` in the past | Senders queue locally (rsyslog disk queue) | Place a valid certificate and key; picked up within a second, no restart |
-| Syslog server certificate file broken or key mismatch | `tlsReloadFailures` +1 | Last good certificate stays in use | Fix the files |
+| Syslog server certificate file broken, key mismatch, or a TLS path replaced by a FIFO, device or directory | `tlsReloadFailures` +1 (once per distinct content) | Last good certificate stays in use; retried every second | Fix the files |
 | Client CA removed while a sender is connected | `tlsSessionsClosed` +1, then `tlsHandshakeFailures` | Open session closed before its next frame; that frame is refused | Overlap CAs during rotation |
 | Client certificate revoked (CRL) | `tlsRevoked`, `tlsSessionsClosed` | Open session closed; reconnects refused | Issue a new sender certificate |
-| CRL past `nextUpdate`, missing for an issuer, or badly signed | `tlsRevoked` for every client of that issuer | All its senders refused | Publish a current signed CRL (hot reload) |
+| No current CRL signed by the issuing CA's key and covering the sender (expired, missing, signed by another key, or scoped to another distribution point) | `tlsRevoked` for every such client | Those senders refused | Publish a current CRL signed by that CA (hot reload) |
+| Sender chain ends at an expired configured CA (a valid leaf) | `tlsHandshakeFailures`; open sessions `tlsSessionsClosed` | Refused at handshake and closed at the next frame | Deploy the re-issued CA certificate |
+| CRL with an unsupported scope (reasons, indirect, relative name) or delta list | Start-up or reload refused with a message naming the feature | Running collector keeps its last good lists | Publish a full, direct list |
 | Client certificate expired / not yet valid / wrong purpose / untrusted CA | `tlsHandshakeFailures` | Refused at handshake | Re-issue |
 | Sender sees wrong server name | Sender error (rsyslog: `peer name not authorized`), no frame reaches Bower | Sender queues; 30/30 delivered after the right certificate returned | Fix certificate SAN |
 | HMAC key file missing or shorter than 32 bytes | Start-up fails with a configuration error; `reload` refused | Running collector unaffected by a refused `reload` | Fix the key file |
@@ -339,20 +342,29 @@ deployment/bower-collector` (Docker: `docker compose up -d --force-recreate`).
 
 #### 6.1.3 Client secret — scheduled rotation with overlap
 
-1. Create a new secret with an end date and write it straight to the protected
-   environment file (never echo it):
+1. Create a new secret with an end date and write it to the protected environment file
+   without echoing it, without passing it in any command's arguments (`printf` is a shell
+   builtin) and only after checking it was issued:
 
    ```bash
+   set -euo pipefail
    umask 077
    NEW=$(az ad app credential reset --id "$APP_ID" --append --display-name "bower-$(date +%Y%m)" \
      --end-date "$(date -u -d '+180 days' +%Y-%m-%d)" --query password -o tsv)
-   sed -i "s#^AZURE_CLIENT_SECRET=.*#AZURE_CLIENT_SECRET=${NEW}#" /etc/bower/bower.env; unset NEW
+   [ -n "$NEW" ] || { echo "no secret was issued; nothing changed" >&2; exit 1; }
+   { grep -v '^AZURE_CLIENT_SECRET=' /etc/bower/bower.env; printf 'AZURE_CLIENT_SECRET=%s\n' "$NEW"; } \
+     > /etc/bower/bower.env.new
+   unset NEW
+   chown root:bower /etc/bower/bower.env.new && chmod 0640 /etc/bower/bower.env.new
+   mv /etc/bower/bower.env.new /etc/bower/bower.env
    systemctl restart bower
    ```
 
    ```powershell
+   $ErrorActionPreference = 'Stop'
    $new = az ad app credential reset --id $AppId --append --display-name "bower-$(Get-Date -Format yyyyMM)" `
      --end-date (Get-Date).AddDays(180).ToString('yyyy-MM-dd') --query password -o tsv
+   if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($new)) { throw 'No secret was issued; nothing changed.' }
    $key = 'HKLM:\SYSTEM\CurrentControlSet\Services\Bower'
    $environment = @((Get-ItemProperty $key).Environment | Where-Object { $_ -notlike 'AZURE_CLIENT_SECRET=*' })
    Set-ItemProperty $key -Name Environment -Type MultiString -Value ($environment + "AZURE_CLIENT_SECRET=$new")
@@ -368,11 +380,16 @@ deployment/bower-collector` (Docker: `docker compose up -d --force-recreate`).
 
 #### 6.1.4 AWS-hosted collector: secret or certificate from Secrets Manager
 
-Give the instance role read access to exactly one secret:
+Give the instance role read access to exactly one secret. Secrets Manager appends a
+random suffix to the ARN, so resolve the full ARN and use it, not a wildcard:
+
+```bash
+aws secretsmanager describe-secret --secret-id bower/ingest-cert --query ARN --output text
+```
 
 ```json
 {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Action": "secretsmanager:GetSecretValue",
-  "Resource": "arn:aws:secretsmanager:ap-southeast-2:<account>:secret:bower/ingest-cert-*"}]}
+  "Resource": "arn:aws:secretsmanager:ap-southeast-2:<account>:secret:bower/ingest-cert-AbCdEf"}]}
 ```
 
 Fetch before the collector starts (`/etc/systemd/system/bower-secrets.service`):
@@ -387,6 +404,23 @@ UMask=0027
 ExecStart=/bin/sh -c 'aws secretsmanager get-secret-value --secret-id bower/ingest-cert --query SecretString --output text > /etc/bower/secrets/ingest.pem.new && chown root:bower /etc/bower/secrets/ingest.pem.new && mv /etc/bower/secrets/ingest.pem.new /etc/bower/secrets/ingest.pem'
 [Install]
 RequiredBy=bower.service
+```
+
+Make `bower.service` depend on it (the package enables `bower.service` only), then
+enable it:
+
+```ini
+# /etc/systemd/system/bower.service.d/secrets.conf
+[Unit]
+Requires=bower-secrets.service
+After=bower-secrets.service
+```
+
+```bash
+systemctl daemon-reload
+systemctl enable bower-secrets.service
+systemctl restart bower-secrets.service bower.service
+systemctl is-enabled bower-secrets.service && systemctl is-active bower.service   # enabled, active
 ```
 
 Rotate: put the new value in Secrets Manager (with the Entra overlap of §6.1.2), then
@@ -475,6 +509,18 @@ changing the sender-trusted CA if the CA itself is affected.
 refused after removal, a new-CA handshake accepted. **Do not** remove the old CA before
 every sender has moved: refused senders lose frames (§3).
 
+**Re-keying a CA that keeps its name.** When the new CA certificate has the same subject
+but a new key, put both CA certificates in the bundle and, with revocation enabled, both
+CAs' current lists in the CRL file (each signed by its own key). Bower judges each sender
+by the lists its own issuer's key signed and ignores same-name lists signed by the other
+key, so senders of both keys keep working during the overlap; a sender whose issuing key
+has no current list is refused. Remove the old CA certificate and its list together once
+every sender has moved. (Unit tested in both collectors.)
+
+**A re-issued CA certificate with the same key** (new validity only) must replace the old
+one in the bundle before the old one expires: a sender chain that can only end at an
+expired configured CA is refused at handshake and its open session is closed.
+
 Emergency (CA compromised): remove it from the bundle immediately and accept that its
 senders stop until re-issued.
 
@@ -500,9 +546,20 @@ openssl crl -in /etc/bower/syslog/client-ca.crl -noout -nextupdate
 a second, 0 frames accepted while revoked. **Renew lists before `nextUpdate`**
 (alert at 2 days); an expired list refuses every sender of that CA.
 
-Supported list signatures: C# accepts RSA PKCS#1 v1.5 and ECDSA with SHA-256/384/512;
-Rust additionally accepts RSA-PSS and Ed25519. Delta lists and lists with critical
-extensions are refused at load (C#) or handshake (Rust); both fail closed.
+How Bower applies the lists (C# and Rust identically): for each sender, only lists that
+name its issuer, whose signature verifies with the key of the CA that actually issued the
+sender, and whose scope covers it apply. The sender is refused when no such list exists,
+when one lists its serial number, or when none is current.
+
+- **Issuing distribution point (critical, as AD CS writes it):** supported. A list naming
+  distribution points covers only senders whose certificate's CRL distribution points
+  name one of them; a list limited to CA or attribute certificates never covers a sender.
+  Issue sender certificates with the CDP the list's IDP names.
+- **Refused with a message naming the feature** (start-up fails; a reload keeps the last
+  good lists and counts a failure): lists limited to some revocation reasons, indirect
+  lists, distribution points relative to the issuer, delta lists, other critical
+  extensions, and signatures other than RSA PKCS#1 v1.5 or ECDSA with SHA-256/384/512.
+  Example: `Syslog listener edge-tls: indirect client revocation lists are not supported.`
 
 ### 6.5 Sender (rsyslog) client certificates
 
@@ -569,8 +626,10 @@ Scheduled rotation (yearly or on staff change with key access):
    [Convert]::ToBase64String($bytes) | Set-Content -NoNewline "$env:ProgramData\Bower\secrets\privacy-hmac-k2.key"
    ```
 
-2. Update `BOWER_PRIVACY_HMAC_KEY_FILE` and `BOWER_PRIVACY_HMAC_KEY_ID=k2`, restart (or
-   signed `reload`; a missing or short key makes `reload` refuse and keeps `k1`).
+2. Update `BOWER_PRIVACY_HMAC_KEY_FILE` and `BOWER_PRIVACY_HMAC_KEY_ID=k2`, then restart
+   the service with its supervisor (`systemctl restart bower`, `Restart-Service Bower`,
+   `kubectl rollout restart`). A signed `reload` cannot apply changed environment
+   variables: the running process validates only the configuration it started with (§6.8).
 3. Move the old key to a vault with restricted access for the investigation retention
    period, then delete it from collectors. With the old key an investigator can compute
    an account's old pseudonym offline: `bower policy test event.json --privacy-profile
@@ -599,7 +658,7 @@ historic `ActorUsername` values as sensitive until they age out.
 
 1. Add the new public key as a **second file** and list both:
    `BOWER_PACK_TRUSTED_KEYS=/etc/bower/keys/pack-trusted.pem;/etc/bower/keys/pack-trusted-2027.pem`.
-   Restart or send the signed `reload`.
+   This changes the environment, so restart with the supervisor; `reload` cannot see it.
 2. Re-sign and deploy packs with the new key; verify each before deploying:
 
    ```bash
@@ -607,15 +666,25 @@ historic `ActorUsername` values as sensitive until they age out.
    install -o root -g root -m 0644 linux-ssh-gateway-1.1.1.bowerpack /etc/bower/packs/
    ```
 
-3. Remove the old key file from the list and restart or `reload`.
+3. Remove the old key file from the list and restart with the supervisor.
 
 Concatenating two keys in one file fails closed (unit test). A pack signed only by a
 removed key no longer loads.
 
-**Replacing a pack:** keep the previous `.bowerpack` file; deploy the new one beside it
-and change `BOWER_PACKS`, or replace it in place, then send `reload`. If the pack, its
-key or the privacy key would not load, `reload` reports `reload-validation-failed`
-(failure type only) and the collector keeps running with the last good pack. A plain
+**`reload` versus a supervisor restart.** The signed `reload` re-runs, before restarting,
+everything start-up loads from **files named by the running configuration**: policies,
+packs and their trusted keys, the privacy profile and HMAC key, the syslog and Windows
+Event Log configurations and their routes to the packs, the syslog TLS files, source
+expectations, producer scopes, ingest token files and relay files. If any would fail it
+reports `reload-validation-failed` (failure type only), does not use its 10-minute rate
+limit and the collector keeps running. Environment variables are fixed when the process
+starts, so a changed environment file (systemd `EnvironmentFile`, the Windows service
+`Environment` value, a Kubernetes manifest) is invisible to the pre-check: apply such
+changes with a supervisor restart, and check them first (for example `bower pack verify`
+on every listed pack with every listed key).
+
+**Replacing a pack:** keep the previous `.bowerpack` file and replace it in place (same
+path), then send `reload`; or change `BOWER_PACKS` and restart with the supervisor. A plain
 restart or reboot with a bad pack on disk **stops** the collector (`Restart=on-failure`
 retries every 5 s): queued events are kept, nothing is collected until the pack is
 fixed. Always `bower pack verify` first.
@@ -760,7 +829,8 @@ with the Linux or Windows steps above.
 
 | Symptom | Likely cause | Check | Fix |
 | --- | --- | --- | --- |
-| Event 1008 `destination-azure-credential-failed` | Expired, deleted or wrong secret/certificate; disabled service principal; wrong tenant; token endpoint unreachable | `az ad app credential list --id $APP_ID`; `az ad sp show --id $APP_ID --query accountEnabled`; tenant in the environment | Issue a credential, restart; re-enable the service principal (no restart) |
+| Event 1008 `destination-azure-credential-failed` | The identity service rejected the credential (expired, deleted or wrong secret/certificate, disabled service principal, wrong tenant or client ID), or the credential configuration is missing or unusable | `az ad app credential list --id $APP_ID`; `az ad sp show --id $APP_ID --query accountEnabled`; tenant and client ID in the environment | Issue a credential, restart; re-enable the service principal (no restart) |
+| Event 1008 `destination-azure-unavailable` | No answer from the DCE or the token service (DNS, proxy, firewall, TLS inspection, timeout) or a 5xx/408/429 from the token service | `curl -sS -o /dev/null -w '%{http_code}' https://login.microsoftonline.com/` and the DCE URL from the collector host; proxy settings | Fix the network path; no restart |
 | Event 1008 `destination-azure-http-403` | No Monitoring Metrics Publisher role on this DCR, or the wrong identity configured | `az role assignment list --assignee $SP_ID --scope $DCR_ID` | Assign the role; wait up to 20 minutes |
 | Delivery works after revoking a credential | Cached access token | Token issue time | Expected for up to about an hour; remove the role and disable the service principal to contain sooner |
 | Certificate replaced but old one still used | The ingestion certificate is loaded at start | Collector start time | Restart |
@@ -769,7 +839,8 @@ with the Linux or Windows steps above.
 | `tlsSessionsClosed` increases | A sender's CA was removed or its certificate revoked or expired | Sender certificate issuer and dates | Re-issue the sender certificate; overlap CAs |
 | rsyslog `peer name not authorized` | Server certificate SAN does not match `StreamDriverPermittedPeers` | `openssl x509 -ext subjectAltName` | Re-issue with the right name |
 | Collector does not start after a pack change | Unsigned, untrusted or tampered pack, or a trusted-key file with two keys | `bower pack verify FILE --trusted-key KEY`; `journalctl -u bower -n 20` | Restore the previous pack or key file |
-| `reload` reports `reload-validation-failed` | Same as above, or a missing/short HMAC key | Collector log event 1307 (failure type) | Fix the files, then `reload` again (rate limit 10 minutes) |
+| `reload` reports `reload-validation-failed` | A pack, key, HMAC key, syslog route or TLS file, Windows route, expectations, scopes, tokens or relay file would not load | Collector log event 1307 (failure type) | Fix the files, then `reload` again (a refused reload does not use the 10-minute rate limit) |
+| An environment change has no effect after `reload` | Environment variables are read only at process start | `systemctl show bower -p Environment` vs the file | Restart with the supervisor |
 | Detections stop matching an account | HMAC key rotated | `ActorUsername` prefix `hmac-sha256:<keyId>:` | Expected; adjust the detection window (§6.7) |
 | Dead letters `preflight-field-too-large` | An event too large for the Sentinel schema | `bower queue dead-letters --database …` | Review; reduce `maximumFieldLength` in the privacy profile; audited replay |
 
@@ -899,5 +970,11 @@ Full evidence, timings and preserved failures:
   tests used client secrets and certificates (the credential types that need rotation).
 - Windows hosts were not part of this run; the Windows XML fix is covered by unit and
   in-process collector tests, not a live WEC host.
-- The Rust collector has no Windows source; its syslog TLS behaviour matches C# except
-  for the documented CRL signature-algorithm and load-time differences.
+- The Rust collector has no Windows source; its syslog TLS, revocation and reload
+  behaviour matches C# (shared tests on both).
+- A signed `reload` cannot validate changed environment variables; use a supervisor
+  restart for those.
+- Changes made after the live campaign (transport-versus-rejection classification of
+  token failures, revocation-list selection by issuing key and IDP scope, expired-anchor
+  refusal in Rust, background TLS refresh, the complete reload pre-check) are covered by
+  unit and integration tests in both collectors and were not re-run against the cloud.

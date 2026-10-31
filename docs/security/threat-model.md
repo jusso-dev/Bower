@@ -292,7 +292,9 @@ Command expiry relies on the collector clock (5 minutes of skew tolerated), so k
 collectors time-synchronised. A collector whose command ledger cannot be read refuses
 every command until an operator removes or repairs the file. A `reload` restarts the
 process: delivery resumes from the durable queue, but the restart briefly interrupts
-ingest.
+ingest. It is refused, before restarting, when any start-up file the running
+configuration names would not load; it cannot validate changed environment variables,
+which only a supervisor restart applies.
 
 A signed transform can still select the wrong substring of a free-text field into an
 allowlisted target (for example a password typed as a username); the privacy engine
@@ -322,8 +324,10 @@ UDP syslog senders can be spoofed (the allow-list checks only the source address
 UDP is best effort. Syslog hostname and app-name are sender-claimed: without a
 per-route `allowedSenders`, any allowed sender can reach any route. Syslog TLS
 material is reloaded when its files change; client certificates are checked against
-an optional revocation list and open sessions are re-validated after a change, but a
-sender loses frames it writes into a refused session. Plain syslog has no
+an optional revocation list signed by their issuing CA's key, and open sessions are
+re-validated after a change, but a sender loses frames it writes into a refused
+session. A file that cannot be loaded keeps the last good material, so a failed
+rotation leaves the old certificate (and an old list until its `nextUpdate`) in force. Plain syslog has no
 application acknowledgement, so frames in flight when the collector stops are lost
 unless the sender retransmits.
 

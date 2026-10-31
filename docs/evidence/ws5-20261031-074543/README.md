@@ -103,7 +103,7 @@ sequence-numbered frames at 10/sec. Bower's queue was reconciled by sequence.
 | Server certificate replaced during traffic | 100 | 100 | `tlsReloads` 1; new handshake served the new certificate; **0 sender reconnects** |
 | Client CA overlap → sender moved to new CA → old CA removed | 100 | 100 | Old-CA handshake refused after removal; new-CA accepted |
 | Emergency revocation of the connected sender (CRL) | 100 | 60 | Session closed (`tlsSessionsClosed` 1); reconnects refused (`tlsRevoked` 39); **all 40 frames sent while revoked lost at rsyslog**; 30/30 after re-issue |
-| Same with the sender capped at TLS 1.2 ([report](syslog-tls12-refusal.json)) | 100 | 60 | Also 40 lost: rsyslog 8.2204 `ossl` writes one frame per refused session regardless of version |
+| Same with the sender capped at TLS 1.2 ([report](syslog-tls12-refusal.json)) | 100 | 60 | Also 40 lost with the sender configured for TLS 1.2 at most (the negotiated version was not captured): rsyslog 8.2204 `ossl` writes one frame into each refused session in both runs |
 | Refused certificates | — | — | Expired, untrusted CA, revoked, server-purpose-only, removed-CA and no certificate: all refused |
 | Wrong server name | 30 | 30 | rsyslog refused (`peer name not authorized`), queued, delivered after the right certificate returned; 1 replayed frame deduplicated |
 | Key not matching certificate | — | — | `tlsReloadFailures` 1; old certificate still served |
@@ -183,6 +183,30 @@ the event as `winevt-xml-invalid`.
   unchanged.
 - The first in-process Windows hostile test could not use a NUL character reference in
   the fake channel. This led to the real finding above.
+
+## Changes after this campaign
+
+Review of the pull request changed behaviour that this campaign measured. These changes
+are covered by unit and integration tests in both collectors (see
+[local checks](local-checks.json)); none was re-run against AWS or Azure, and no cloud
+resource was created for them.
+
+- **Token failures:** an unreachable token service, or one answering 5xx/408/429, is now
+  `destination-azure-unavailable`. The campaign's credential cases (expired, deleted or
+  wrong secret, disabled service principal, wrong tenant) were rejections and keep
+  `destination-azure-credential-failed`.
+- **Revocation lists:** selected by the issuing CA's key and by their issuing
+  distribution point, identically in C# and Rust. The revocation rows above used one list
+  per CA, CAs with distinct names, and no distribution points, so their outcome is
+  unchanged.
+- **TLS reload:** a background task reads the files once a second (the campaign's reload
+  ran on the next connection, frame or status read); non-regular files are refused;
+  superseded certificates are released after their last handshake.
+- **`reload`:** the pre-check now also covers source configurations and routes, syslog
+  TLS files, expectations, scopes, tokens and relay files, and a refused reload does not
+  use the rate limit. The pack and HMAC key cases above are unchanged.
+- **Windows:** unpaired surrogates are escaped reversibly so distinct account names keep
+  distinct pseudonyms.
 
 ## Limits
 

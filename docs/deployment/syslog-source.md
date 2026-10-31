@@ -85,19 +85,26 @@ use the override only on an isolated network you control. With
 one of those CAs (mutual TLS); a sender may present intermediates between its
 certificate and those CAs. TLS 1.2 and 1.3 only.
 
-With `clientCertificateRevocationListFile`, every client's issuing CA needs a current
-revocation list in that file: a listed certificate, an issuer without a list, a list
-past its `nextUpdate` or a list not validly signed by the issuer refuses the handshake
-(end-entity check, as rustls does with unknown status denied and expiry enforced).
-C# accepts RSA PKCS#1 v1.5 and ECDSA (SHA-256/384/512) signed lists and refuses delta
-lists and lists with critical extensions; Rust additionally accepts RSA-PSS and Ed25519
-signed lists.
+With `clientCertificateRevocationListFile`, each client certificate is judged by the
+lists that name its issuer, are signed by the key of the CA that actually issued it
+(so a re-keyed CA keeping its name works while both keys are in use) and whose issuing
+distribution point covers it. The handshake is refused when no such list exists, when
+one lists the certificate, or when none is current (`nextUpdate` not passed)
+(end-entity check). A critical issuing distribution point is supported: a list naming
+distribution points covers only certificates whose CRL distribution points name one of
+them; a list limited to CA or attribute certificates covers no client. Lists limited to
+some reasons, indirect lists, distribution points relative to the issuer, delta lists,
+other critical extensions and signatures other than RSA PKCS#1 v1.5 or ECDSA
+(SHA-256/384/512) are refused at load with a message naming the feature. A client chain
+that can only end at an expired configured CA is refused. C# and Rust behave
+identically.
 
-**Rotation without restart.** The certificate, key, CA bundle and revocation list are
-checked for changes at most once a second (on a new connection, a frame or a status
-read) and reloaded for new handshakes; open connections are kept. A change that cannot
-be loaded (a half-written file, a key that does not match the certificate) is counted
-in `tlsReloadFailures` and the last good material stays in use. Replace each file by an
+**Rotation without restart.** A background task reads the certificate, key, CA bundle
+and revocation list once a second and reloads changed material for new handshakes;
+open connections are kept. Each file is read once per check, so the content checked is
+the content loaded. A change that cannot be loaded (a half-written file, a key that does
+not match the certificate, a path that is not a regular file such as a FIFO) is counted
+once in `tlsReloadFailures`, retried, and the last good material stays in use. Replace each file by an
 atomic rename, key before certificate. After a reload, or once a certificate in its
 chain or a revocation list expires, an open mutual-TLS session is validated again
 before its next frame is used; a session whose client is no longer trusted (CA

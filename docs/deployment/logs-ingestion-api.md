@@ -20,8 +20,12 @@ responses yield `azure-logs-ingestion:accepted:owned-batches`. This records API
 acceptance only, never Sentinel queryability.
 
 Local malformed/mismatched payloads and failed schema preflight are individual
-permanent failures. A credential that cannot obtain a token fails as retryable
-`destination-azure-credential-failed`; a missing role is `destination-azure-http-403`.
+permanent failures. A credential the identity service rejects (any 4xx answer other than 408/429, even
+after a retried network error) or a missing or unusable credential configuration fails
+as retryable `destination-azure-credential-failed`. A token service that cannot be
+reached (DNS, proxy, TLS, timeout) or answers 5xx/408/429 is
+`destination-azure-unavailable`, like any other outage. A missing role is
+`destination-azure-http-403`. C# and Rust classify identically.
 Remote authentication, DCR/stream configuration, throttling,
 transport and server failures pause delivery through a durable destination circuit.
 Retry-After survives terminal SDK retries and collector restart. Configuration
