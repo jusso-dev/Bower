@@ -260,6 +260,11 @@ bower queue verify --database /var/lib/bower/queue.db [--expect-head 902114:<has
 Verification reports modified payloads, rows deleted outside retention, injected
 events, rewritten entries and sequence gaps.
 
+Back up and restore a queue (online, metadata-only manifest, refuses to overwrite) with
+`bower queue backup --database FILE --output BACKUP` and
+`bower queue restore --backup BACKUP --database FILE`; see
+[Upgrades, backup and recovery](../production-readiness/04-upgrade-backup-recovery.md).
+
 **External witness.** Each heartbeat sends the ledger head to management, which keeps
 the last one per collector. A later head with a lower sequence, or the same sequence
 with a different hash, marks the collector `ledger-regression` and writes a

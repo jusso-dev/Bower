@@ -1,0 +1,38 @@
+[
+ {
+  "variant": "A",
+  "binary": "old",
+  "error": "Bower collector failed: InvalidOperationException: Unsupported queue schema version.",
+  "unchanged": true,
+  "objectsBefore": 20,
+  "objectsAfter": 20,
+  "queueTablesAfter": "queue_events,queue_events_v5"
+ },
+ {
+  "variant": "A",
+  "binary": "new",
+  "error": "Bower collector failed: UnsupportedQueueSchemaException: Queue schema version 6 is newer than this Bower build supports (5). The database was not modified. Run the newer Bower version or restore a backup taken before the upgrade.",
+  "unchanged": true,
+  "objectsBefore": 20,
+  "objectsAfter": 20,
+  "queueTablesAfter": "queue_events,queue_events_v5"
+ },
+ {
+  "variant": "B",
+  "binary": "old",
+  "error": "Bower collector failed: SqliteException: SQLite Error 1: 'index ix_queue_events_incarnation already exists'.",
+  "unchanged": false,
+  "objectsBefore": 19,
+  "objectsAfter": 22,
+  "queueTablesAfter": "queue_events,queue_events_v6"
+ },
+ {
+  "variant": "B",
+  "binary": "new",
+  "error": "Bower collector failed: UnsupportedQueueSchemaException: Queue schema version 6 is newer than this Bower build supports (5). The database was not modified. Run the newer Bower version or restore a backup taken before the upgrade.",
+  "unchanged": true,
+  "objectsBefore": 19,
+  "objectsAfter": 19,
+  "queueTablesAfter": "queue_events_v6"
+ }
+]

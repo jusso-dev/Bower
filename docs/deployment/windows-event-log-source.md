@@ -159,7 +159,11 @@ queue database during upgrade. Backpressure preserves the last handled receiving
 position, and the migrated checkpoint is saved atomically. Unknown versions and
 channel mismatches still fail closed. Older collector versions cannot read version
 2 checkpoints, so do not downgrade against a migrated queue database. Events
-already overwritten by Windows cannot be recovered by this migration.
+already overwritten by Windows cannot be recovered by this migration. In the tested WEC
+configuration, collectors before the receiving-bookmark change could not read
+`ForwardedEvents` at all, so version 1 checkpoints are expected only for local channels. A receiving position belongs to
+one host's log: for restores onto another WEC host, follow the order in
+[Upgrades, backup and recovery](../production-readiness/04-upgrade-backup-recovery.md#windows-event-log-and-wec-restores).
 
 - **Bookmark.** Each subscription's position (channel and last record id) is a row in
   the `source_cursors` table of the queue database. The bookmark moves past an event

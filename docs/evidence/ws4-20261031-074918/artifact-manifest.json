@@ -1,0 +1,112 @@
+{
+ "run": "bower-ws4-20261031-074918",
+ "signing": "Packages and MSIs are unsigned (signing deferred); packs were signed with an ephemeral lab key whose private key was deleted after the run.",
+ "baseline": {
+  "commit": "26446690fae7d123e2dfaf117d63467f1f55d37d",
+  "ciRun": 41016990194,
+  "version": "0.1.0-dev.264",
+  "note": "Pilot artifacts downloaded from CI; hashes match docs/evidence/pilot-native-20261030/host-proof.json"
+ },
+ "main": {
+  "commit": "9d1bbcd",
+  "ciRun": 41058963882,
+  "version": "0.1.0-dev.270",
+  "note": "src/ identical to the baseline; only deploy/bicep differs"
+ },
+ "candidate": {
+  "commit": "4c30b2af5a8a268a991015424ccc6c8aeb526c25",
+  "ciRun": 41184468318,
+  "version": "0.1.0-dev.277",
+  "note": "This branch (backup/restore, newer-schema refusal, BOWER_SETTINGS_FILE); full CI dispatch green"
+ },
+ "legacy": {
+  "commit": "74e250fe9d3a57c237d6bc031a11f632a015233c",
+  "note": "Last main commit with v1 WEC bookmarks; no CI artifacts exist. Locally built managed self-contained win-x64 publish (PublishAot=false), side-loaded; labelled local build"
+ },
+ "artifacts": [
+  {
+   "file": "bower-signing.pub.pem",
+   "sha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca"
+  },
+  {
+   "file": "cli-linux-x64.tar.gz",
+   "sha256": "fe7f4da30974d6175051febb0c088181c6e7ee730628e2f41a5f92b6dc0020e2"
+  },
+  {
+   "file": "cli-win-x64.zip",
+   "sha256": "fc4d2b3d39678e0ada7728c531ad83d9ac3f1bc867417c8b1b4fc6b0b8c19f8e"
+  },
+  {
+   "file": "legacy-74e250f-win-x64.zip",
+   "sha256": "c3521d5ff706b85d3113b7523bdb92235d6b50a55fee80ddc97262a0255e9505"
+  },
+  {
+   "file": "new-linux-x64.tar.gz",
+   "sha256": "07e16be281f0810d5f5c0b059af24143e9d86ec44210b70768e6611131ff59dd"
+  },
+  {
+   "file": "new.msi",
+   "sha256": "83db005028b033acf46279f5217abebf8631bb83732d20c20896f2864ca1f6e5"
+  },
+  {
+   "file": "new.rpm",
+   "sha256": "8493a05138f008bce7a9b80e0929458a59622f02a2330bc7ca8e4bce6e757e8a"
+  },
+  {
+   "file": "nftables-validation-1.0.0.bowerpack",
+   "sha256": "1e7f68c126135812413e991bca41410035c0116b220306bfd4f9a8750caff0f0"
+  },
+  {
+   "file": "old-linux-x64.tar.gz",
+   "sha256": "f7a9941a4eebd0fca45f2a09d87dc883026b8e5c7758b6d06bccad2d0a417014"
+  },
+  {
+   "file": "old.msi",
+   "sha256": "dfa4b4350d6000d838aa5b28be466a4d0a2383e4018f6f088fb1f9f9d01eea9d"
+  },
+  {
+   "file": "old.rpm",
+   "sha256": "13b462c2b04582a0b7908b7a185d1b83a6719ac784b3168f93f102244253ab1b"
+  },
+  {
+   "file": "sender.py",
+   "sha256": "2e21fee8477b5a687dbfa5ec128cb04a23c1d361ade99efbd39e15a2ee7f7310"
+  },
+  {
+   "file": "windows-security-logon-1.0.2.bowerpack",
+   "sha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14"
+  },
+  {
+   "file": "probe-win-x64.zip",
+   "sha256": "a2196f89e9dc69e26bb66b821673f8a6b4f99081ef90155ee04052887ea7ad4a"
+  },
+  {
+   "file": "pr.rpm",
+   "sha256": "80c88f3d4f6487357f4aed08522c57fa8f98ba4f86aadbeaeff9af0b53f4d58f"
+  },
+  {
+   "file": "pr.msi",
+   "sha256": "09ff69fd734db5fbe9620f75e498f57a7fa5e80c35fa245be8ef0c8fe0f2e521"
+  },
+  {
+   "file": "pr-linux-x64.tar.gz",
+   "sha256": "2bd218eb7f442fb092c14c8c568ff9cf7abb9f7b43c5e041bb7df0d172545151"
+  },
+  {
+   "file": "pr-cli-win-x64.zip",
+   "sha256": "eb18d95ea70b06bf15ec8de155de2cd559c561430f44fafd816ca61881ec802e"
+  },
+  {
+   "file": "probe-win-x64 (lab probe, local build)",
+   "sha256": "a2196f89e9dc69e26bb66b821673f8a6b4f99081ef90155ee04052887ea7ad4a"
+  }
+ ],
+ "hostObservedExecutables": {
+  "linux dev.264 /opt/bower/Bower.Collector": "d6229ee2b106ee9cd1fe615f4c9f15e3f5036bc26b0cad0aa04b62cf8424e977",
+  "linux dev.277 /opt/bower/Bower.Collector": "aa195614be72d65c7fc68a07bf1a26f6114145df29a3ac93426bd68c00b22c43",
+  "windows dev.264 Bower.Collector.exe": "b206caa79afd1b08086edaf6cbfa586b5d3fc5f1e2c78792291ef3bf3b43f6a7",
+  "windows 74e250f legacy Bower.Collector.exe": "baf238ef86217d5b6fc4da14e37eb35737245b3e56613a3da47e1e5542a621bb",
+  "windows dev.277 bower.exe (CLI)": "15c53a5eff720a3d281448eea9f7f972afa90b1ff7573ffcfec68498131f5317",
+  "linux dev.277 /opt/bower/bower (CLI)": "609412b26646b924b1b37878931e76d6837997221fb038e9df8c3a97ac922912"
+ }
+}

@@ -1,0 +1,47 @@
+{
+ "failed-generator-w-main": {
+  "attempt": "w-main",
+  "failure": "generator rejected Seconds=16200 above its 14400 bound; no events generated",
+  "at": "2026-10-31T08:33:20Z"
+ },
+ "failed-linux-block-1": {
+  "attempt": "linux-block-1",
+  "failure": "nft syntax: fwd is a reserved word; table not created, no outage started",
+  "at": "2026-10-31T08:40:40Z"
+ },
+ "failed-wec2-restore-1": {
+  "attempt": "wec2-restore-1",
+  "failure": "Windows PowerShell 5.1 NativeCommandError on CLI stderr notice after a successful restore; script stopped before config/start",
+  "at": "2026-10-31T09:02Z"
+ },
+ "blocked-dr-subscription": {
+  "scenario": "dr-subscription-replay",
+  "subscription": "Bower-Security-4625-dr",
+  "readExistingEvents": true,
+  "createdAt": "2026-10-31T09:26:12Z",
+  "checkedAt": [
+   "2026-10-31T09:28:49Z",
+   "2026-10-31T09:32Z"
+  ],
+  "forwardedRecordsBefore": 4563,
+  "forwardedRecordsAfter": 4564,
+  "result": "blocked: source showed Active with heartbeats but replayed no existing events within ~6 minutes; not qualified"
+ },
+ "failed-schema-future-1": {
+  "failure": "bower user could not reach root-only lab directories; neither binary opened the queues; result discarded as invalid and rerun",
+  "output": "[\n    {\n        \"variant\": \"A\",\n        \"binary\": \"old\",\n        \"error\": \"Bower collector failed: UnauthorizedAccessException: Access to the path '/var/lib/bower-lab/future/A-old' is denied.\",\n        \"unchanged\": true,\n        \"objectsBefore\": 20,\n        \"objectsAfter\": 20,\n        \"queueTablesAfter\": \"queue_events,queue_events_v5\"\n    },\n    {\n        \"variant\": \"A\",\n        \"binary\": \"new\",\n        \"error\": \"\",\n        \"unchanged\": true,\n        \"objectsBefore\": 20,\n        \"objectsAfter\": 20,\n        \"queueTablesAfter\": \"queue_events,queue_events_v5\"\n    },\n    {\n        \"variant\": \"B\",\n        \"binary\": \"old\",\n        \"error\": \"Bower collector failed: UnauthorizedAccessException: Access to the path '/var/lib/bower-lab/future/B-old' is denied.\",\n        \"unchanged\": true,\n        \"objectsBefore\": 19,\n        \"objectsAfter\": 19,\n        \"queueTablesAfter\": \"queue_events_v6\"\n    },\n    {\n        \"variant\": \"B\",\n        \"binary\": \"new\",\n        \"error\": \"\",\n        \"unchanged\": true,\n        \"objectsBefore\": 19,\n        \"objectsAfter\": 19,\n        \"queueTablesAfter\": \"queue_events_v6\"\n    }\n]\nd6229ee2b106ee9cd1fe615f4c9f15e3f5036bc26b0cad0aa04b62cf8424e977 /opt/bower/Bower.Collector\naa195614be72d65c7fc68a07bf1a26f6114145df29a3ac93426bd68c00b22c43 /opt/bower-lab/pr/collector/Bower.Collector\n"
+ },
+ "legacy-wec-forwardedevents": {
+  "failure": "Legacy 74e250f build on the real WEC read 0 events: every poll failed winevt-read-failed (forwarded records have a null EventRecord.RecordId). v1 bookmarks therefore cannot exist for ForwardedEvents; v1->v2 tested on a local Security subscription instead",
+  "snapshots": [
+   "w01-legacy-start",
+   "w02-legacy-running"
+  ]
+ },
+ "mislabelled-legacy-on-v2": {
+  "failure": "Phase legacy-on-v2 ran the dev.270 binary (harness selected legacy only for the exact name legacy); kept in v1-bookmark-upgrade.json as a continued v2 run. Rerun as legacy-on-v2b"
+ },
+ "sender-s1b-label": {
+  "note": "Resumed stream used STREAM=s1b in its frames, so its 1,202-sequence overlap with s1 produced new identities rather than replays. Accounting treats s1b as its own stream"
+ }
+}

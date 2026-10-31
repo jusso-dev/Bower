@@ -1,0 +1,123 @@
+{
+ "run": "bower-ws4-20261031-074918",
+ "auditedAt": "2026-10-31T09:44:39.451646+00:00",
+ "checks": {
+  "awsAccount": "959038055523",
+  "stack": {
+   "status": "DELETE_COMPLETE",
+   "pass": true
+  },
+  "instances": {
+   "states": [
+    [
+     "i-006a860b3504a9bc9",
+     "terminated"
+    ],
+    [
+     "i-06f181d27ab42b9ed",
+     "terminated"
+    ],
+    [
+     "i-087d734c32e88ee3c",
+     "terminated"
+    ],
+    [
+     "i-0957c2e3eed943ca0",
+     "terminated"
+    ],
+    [
+     "i-0b9496c07135bae07",
+     "terminated"
+    ]
+   ],
+   "pass": true
+  },
+  "instancesById": {
+   "pass": true,
+   "count": 5
+  },
+  "volumes": {
+   "remaining": [],
+   "pass": true
+  },
+  "snapshots": {
+   "remaining": [],
+   "pass": true
+  },
+  "images": {
+   "remaining": [],
+   "pass": true
+  },
+  "securityGroups": {
+   "remaining": [],
+   "pass": true
+  },
+  "subnets": {
+   "remaining": [],
+   "pass": true
+  },
+  "routeTables": {
+   "remaining": [],
+   "pass": true
+  },
+  "networkInterfacesInSubnet": {
+   "remaining": [],
+   "pass": true
+  },
+  "iamRoles": {
+   "remaining": [],
+   "pass": true
+  },
+  "instanceProfiles": {
+   "remaining": [],
+   "pass": true
+  },
+  "secrets": {
+   "remaining": [],
+   "pass": true,
+   "note": "CloudFormation schedules stack secrets for deletion; a scheduled-deletion secret is not billed"
+  },
+  "bucket": {
+   "headBucket": "absent",
+   "pass": true
+  },
+  "expirySchedule": {
+   "pass": true
+  },
+  "logGroups": {
+   "remaining": [],
+   "pass": true
+  },
+  "azureSubscription": true,
+  "azureResourceGroup": {
+   "exists": false,
+   "pass": true
+  },
+  "workspaceSoftDeleted": {
+   "present": false,
+   "pass": true
+  },
+  "entraApps": {
+   "remaining": [],
+   "pass": true
+  },
+  "servicePrincipals": {
+   "remaining": [],
+   "pass": true
+  },
+  "deleted_application": {
+   "remaining": [],
+   "pass": true
+  },
+  "deleted_servicePrincipal": {
+   "remaining": [],
+   "pass": true
+  },
+  "roleAssignments": {
+   "remaining": [],
+   "scanned": 12,
+   "pass": true
+  }
+ },
+ "allPassed": true
+}

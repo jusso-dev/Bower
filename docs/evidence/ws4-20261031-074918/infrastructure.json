@@ -1,0 +1,131 @@
+{
+ "run": "bower-ws4-20261031-074918",
+ "account": "959038055523",
+ "region": "ap-southeast-2",
+ "stack": "arn:aws:cloudformation:ap-southeast-2:959038055523:stack/bower-ws4-20261031-074918/32bab850-d500-11f1-a663-0afff7fd2f87",
+ "expiryGuard": {
+  "type": "EventBridge Scheduler terminateInstances",
+  "at": "2026-10-31T17:53:26Z"
+ },
+ "instances": [
+  {
+   "role": "Linux",
+   "id": "i-0957c2e3eed943ca0",
+   "type": "t3.medium",
+   "ami": "ami-062900c135ab91582",
+   "platform": "Linux/UNIX",
+   "publicIp": null,
+   "imdsTokens": "required",
+   "project": "bower-lab",
+   "runId": "bower-ws4-20261031-074918",
+   "volumes": [
+    "vol-0e4ececab5defdfc0"
+   ]
+  },
+  {
+   "role": "Linux2",
+   "id": "i-006a860b3504a9bc9",
+   "type": "t3.small",
+   "ami": "ami-062900c135ab91582",
+   "platform": "Linux/UNIX",
+   "publicIp": null,
+   "imdsTokens": "required",
+   "project": "bower-lab",
+   "runId": "bower-ws4-20261031-074918",
+   "volumes": [
+    "vol-09b09a36418e0d3a0"
+   ]
+  },
+  {
+   "role": "Wec2",
+   "id": "i-087d734c32e88ee3c",
+   "type": "t3.medium",
+   "ami": "ami-086db0bc6076e24da",
+   "platform": "Windows",
+   "publicIp": null,
+   "imdsTokens": "required",
+   "project": "bower-lab",
+   "runId": "bower-ws4-20261031-074918",
+   "volumes": [
+    "vol-035a234059c83694f"
+   ]
+  },
+  {
+   "role": "Wec",
+   "id": "i-0b9496c07135bae07",
+   "type": "t3.medium",
+   "ami": "ami-086db0bc6076e24da",
+   "platform": "Windows",
+   "publicIp": null,
+   "imdsTokens": "required",
+   "project": "bower-lab",
+   "runId": "bower-ws4-20261031-074918",
+   "volumes": [
+    "vol-0aff76d587fcc56c5"
+   ]
+  },
+  {
+   "role": "Dc",
+   "id": "i-06f181d27ab42b9ed",
+   "type": "t3.medium",
+   "ami": "ami-086db0bc6076e24da",
+   "platform": "Windows",
+   "publicIp": null,
+   "imdsTokens": "required",
+   "project": "bower-lab",
+   "runId": "bower-ws4-20261031-074918",
+   "volumes": [
+    "vol-03fa41fd339b80eb3"
+   ]
+  }
+ ],
+ "volumes": [
+  {
+   "id": "vol-03fa41fd339b80eb3",
+   "sizeGiB": 40,
+   "type": "gp3",
+   "encrypted": true
+  },
+  {
+   "id": "vol-09b09a36418e0d3a0",
+   "sizeGiB": 30,
+   "type": "gp3",
+   "encrypted": true
+  },
+  {
+   "id": "vol-0e4ececab5defdfc0",
+   "sizeGiB": 30,
+   "type": "gp3",
+   "encrypted": true
+  },
+  {
+   "id": "vol-0aff76d587fcc56c5",
+   "sizeGiB": 40,
+   "type": "gp3",
+   "encrypted": true
+  },
+  {
+   "id": "vol-035a234059c83694f",
+   "sizeGiB": 40,
+   "type": "gp3",
+   "encrypted": true
+  }
+ ],
+ "securityGroup": {
+  "id": "sg-0dbe60ea72348ba09",
+  "ingress": [
+   {
+    "protocol": "-1",
+    "sources": [
+     "sg-0dbe60ea72348ba09"
+    ],
+    "cidrs": []
+   }
+  ]
+ },
+ "subnet": {
+  "id": "subnet-0c9c97cf320f7bff0",
+  "cidr": "172.31.244.0/24",
+  "mapPublicIp": false
+ }
+}
