@@ -57,7 +57,7 @@ Live results (exact counts by independent destination query; details in §9):
 | Syslog server certificate, client CA, client certificate rotation; expired, revoked, untrusted, wrong-purpose and wrong-name certificates | **Pass** (refusals as expected). Finding: rsyslog loses the frames it writes into a refused session (40/40 while revoked, under TLS 1.2 or 1.3). |
 | HMAC key rotation | **Pass.** Pseudonyms change and carry the key ID (`hmac-sha256:k1:…` → `hmac-sha256:k2:…`). |
 | Rejected packs (unsigned, untrusted key, tampered, malformed manifest, missing file/key) and trusted-key rotation | **Pass** (unit tested; refusal keeps the running configuration). No version pinning exists. |
-| Malicious payloads and privacy sweep | **Pass**: 0 raw secret markers in queue DB/WAL/SHM, logs, status and Sentinel rows. Findings: LF-framing CRLF injection, events with very large fields dead-letter at preflight, formula/control text arrives byte-exact. |
+| Malicious payloads and privacy sweep | **Pass**: 0 raw secret markers in queue DB/WAL/SHM, logs, status and 28 of 29 accepted Sentinel rows (the 29th, whose ID a detector masked, was checked locally only). Findings: LF-framing CRLF injection, events with very large fields dead-letter at preflight, formula/control text arrives byte-exact. |
 
 ## 2. Credential and trust-anchor inventory
 
@@ -793,7 +793,8 @@ with the Linux or Windows steps above.
   address and a fixed reason; a hostile address is not selected (unit tests).
 - **HTTP ingest and privacy sweep (live, 40 detector samples from the redaction
   corpus in every free-text field):** 0 raw markers in the queue DB/WAL/SHM, collector
-  log, status output and Sentinel rows. Secret-bearing events whose redaction removed
+  log, status output and 28 of 29 accepted Sentinel rows. The remaining row's event ID
+  was masked by a detector and was checked only in the local queue. Secret-bearing events whose redaction removed
   every actor field were quarantined (default deny). Allowed-by-policy identifiers (ABN,
   ACN, SWIFT/BIC) pass through as configured. Formula (`=HYPERLINK(…)`), KQL-looking and
   control-character text arrives in Sentinel **byte-exact**: treat exported query results

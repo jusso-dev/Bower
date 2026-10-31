@@ -1,0 +1,128 @@
+{
+ "aws": {
+  "account": "959038055523",
+  "region": "ap-southeast-2",
+  "stack": "bower-ws5-20261031-074543",
+  "instance": {
+   "InstanceId": "i-0b658aa5d9db69dd5",
+   "ImageId": "ami-0892a4902d8613588",
+   "InstanceType": "t4g.small",
+   "PrivateIpAddress": "172.31.225.238",
+   "PublicIpAddress": null,
+   "SubnetId": "subnet-05b9fcd2d9138a237",
+   "VpcId": "vpc-0386855f644985706",
+   "Architecture": "arm64"
+  },
+  "tags": {
+   "RunId": "bower-ws5-20261031-074543",
+   "Project": "bower-lab",
+   "Name": "bower-ws5-20261031-074543-syslog"
+  },
+  "metadataOptions": {
+   "State": "applied",
+   "HttpTokens": "required",
+   "HttpPutResponseHopLimit": 1,
+   "HttpEndpoint": "enabled",
+   "HttpProtocolIpv6": "disabled",
+   "InstanceMetadataTags": "disabled"
+  },
+  "shutdownBehaviour": "terminate",
+  "volumes": [
+   {
+    "VolumeId": "vol-079838dc8419c3458",
+    "Encrypted": true,
+    "Size": 10,
+    "Tags": {
+     "Name": "bower-ws5-20261031-074543-syslog",
+     "RunId": "bower-ws5-20261031-074543",
+     "Project": "bower-lab"
+    }
+   }
+  ],
+  "securityGroup": {
+   "GroupId": "sg-0c241339c4a95033d",
+   "Ingress": [],
+   "Egress": [
+    {
+     "IpProtocol": "tcp",
+     "FromPort": 443,
+     "ToPort": 443,
+     "UserIdGroupPairs": [],
+     "IpRanges": [
+      {
+       "CidrIp": "0.0.0.0/0"
+      }
+     ],
+     "Ipv6Ranges": [],
+     "PrefixListIds": []
+    }
+   ]
+  },
+  "sharedResourcesReferencedNotModified": {
+   "vpc": "vpc-0386855f644985706 (default VPC)",
+   "natGateway": "nat-016cf975ae7ffe691 (yuma-nat-gw)"
+  },
+  "expiryGuard": "systemd timer bower-expiry.timer (Persistent=true) powers off at the recorded time; InstanceInitiatedShutdownBehavior=terminate",
+  "expiryGuardAtUtc": "2026-10-31 16:29:52",
+  "checks": {
+   "noPublicIp": true,
+   "noInbound": true,
+   "imdsV2Required": true,
+   "encryptedDisks": true,
+   "terminateOnShutdown": true
+  }
+ },
+ "azure": {
+  "subscription": "945092a0-2500-4b25-85a4-99f1c3135906",
+  "tenant": "f4f33fb1-b681-40d1-a854-6f888d45b891",
+  "region": "australiaeast",
+  "resourceGroup": "rg-bower-ws5-20261031-074543",
+  "workspace": "law-bower-ws5-20261031-074543",
+  "workspaceCustomerId": "bb6abacb-056b-46bb-af65-68146bc9597f",
+  "bicep": "deploy/bicep/main.bicep (namePrefix bws5)",
+  "outputs": {
+   "dataCollectionEndpoint": "https://bws5-dce-e5k3.australiaeast-1.ingest.monitor.azure.com",
+   "dataCollectionRuleImmutableId": "dcr-f3b05b22ed07451a8a8393f6ca6e016d",
+   "streamName": "Custom-BowerSecurity",
+   "tableName": "BowerSecurity_CL"
+  },
+  "entraApps": {
+   "pub-expire": {
+    "appId": "0142c712-d916-491a-ba38-cb75ecb1bcf3",
+    "displayName": "bower-ws5-20261031-074543-pub-expire"
+   },
+   "pub-revoke": {
+    "appId": "cf8ac61f-b226-417f-b11f-0209a40fe1ca",
+    "displayName": "bower-ws5-20261031-074543-pub-revoke"
+   },
+   "pub-role": {
+    "appId": "f898473e-792b-4422-af53-4cde2dbed57c",
+    "displayName": "bower-ws5-20261031-074543-pub-role"
+   },
+   "pub-disable": {
+    "appId": "40dc5e9b-bc6b-4166-9048-60a71fcdbbe0",
+    "displayName": "bower-ws5-20261031-074543-pub-disable"
+   },
+   "pub-cert": {
+    "appId": "233babb7-eb88-42e2-8613-dd295146a4fa",
+    "displayName": "bower-ws5-20261031-074543-pub-cert"
+   },
+   "pub-rotate": {
+    "appId": "40cb29c4-7c4f-405d-b776-5713e9fe3ec2",
+    "displayName": "bower-ws5-20261031-074543-pub-rotate"
+   },
+   "verifier": {
+    "appId": "f65ea010-8f1d-4359-9330-41512b2aba6f",
+    "displayName": "bower-ws5-20261031-074543-verifier"
+   }
+  },
+  "roles": {
+   "pub-*": "Monitoring Metrics Publisher on the DCR",
+   "verifier": "Log Analytics Reader on the workspace"
+  }
+ },
+ "local": {
+  "collectorHost": "operator macOS arm64 (Apple M4), framework-dependent .NET 10 Release builds",
+  "docker": "no local container runtime available"
+ }
+}

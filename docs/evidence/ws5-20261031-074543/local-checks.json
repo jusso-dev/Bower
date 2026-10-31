@@ -1,0 +1,29 @@
+{
+ "commitTested": "working tree at 99b3a4a plus the import-order fix committed with this evidence",
+ "csharp": {
+  "build": "dotnet build --configuration Release: 0 warnings, 0 errors",
+  "test": "dotnet test --configuration Release: 1905 total, 1904 passed, 1 skipped (native Windows Event Log test on macOS), 0 failed",
+  "format": "dotnet format --verify-no-changes: initially failed on import ordering in WindowsEventLogCollectorTests.cs (fixed), then passed"
+ },
+ "rust": {
+  "fmt": "cargo fmt --check: passed",
+  "clippy": "cargo clippy --all-targets -- -D warnings: passed",
+  "test": "cargo test: 891 passed, 0 failed, 8 ignored"
+ },
+ "lab": {
+  "python": "python3 -m unittest discover -s lab/aws/tests: 53 tests passed",
+  "cfnLint": "uvx cfn-lint==1.57.2 on the run template: only W3010 (availability zone pinned to the shared NAT gateway zone)"
+ },
+ "newTests": [
+  "C# SyslogTlsRotationTests (14)",
+  "C# PackRotationTests (8)",
+  "C# AzureLogsIngestionOutputTests credential cases (3)",
+  "C# QueueDeliveryWorkerTests.CredentialFailure_KeepsEventsQueuedAndLogsOnlyMetadata",
+  "C# WindowsEventLogSourceTests.Parse_KeepsEventsWithCharactersXmlForbids (9)",
+  "C# WindowsEventLogCollectorTests.HostileEventData_NeverReachesTheQueueRaw",
+  "Rust tls_rotation.rs (8)",
+  "Rust delivery_failure_logs.rs",
+  "Rust management_commands reload_is_refused_when_the_restart_could_not_load_its_configuration",
+  "lab test_security_scripts.py (7)"
+ ]
+}

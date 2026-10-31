@@ -38,6 +38,8 @@ pub(crate) struct TlsMaterial {
     pub server_certificate_not_after: Option<Timestamp>,
     pub client_certificate_authority_not_after: Option<Timestamp>,
     pub client_revocation_list_next_update: Option<Timestamp>,
+    /// Every trusted CA's expiry: an open session is validated again when one passes.
+    authority_expiries: Vec<Timestamp>,
 }
 
 struct Current {
@@ -188,6 +190,7 @@ impl TlsMaterial {
         let mut verifier: Option<Arc<dyn ClientCertVerifier>> = None;
         let mut client_certificate_authority_not_after = None;
         let mut client_revocation_list_next_update = None;
+        let mut authority_expiries = Vec::new();
         let builder = match &tls.client_certificate_authority_file {
             None => builder.with_no_client_auth(),
             Some(authority) => {
@@ -196,6 +199,7 @@ impl TlsMaterial {
                 for certificate in CertificateDer::pem_slice_iter(&bytes) {
                     let certificate = certificate.map_err(|_| failed())?;
                     let expiry = not_after(&certificate);
+                    authority_expiries.extend(expiry);
                     client_certificate_authority_not_after =
                         match (client_certificate_authority_not_after, expiry) {
                             (Some(current), Some(next)) => Some(std::cmp::min(current, next)),
@@ -247,6 +251,7 @@ impl TlsMaterial {
             server_certificate_not_after,
             client_certificate_authority_not_after,
             client_revocation_list_next_update,
+            authority_expiries,
         })
     }
 
@@ -320,12 +325,20 @@ impl TlsSession {
 
     fn accept(&mut self, material: &TlsMaterial) {
         self.generation = material.generation;
-        // The first expiry in the presented chain, the trusted CAs or the lists.
+        // The first expiry in the presented chain, the trusted CAs that can still anchor it
+        // (an already expired CA in the bundle cannot) or the lists.
+        let now = chrono::Utc::now().fixed_offset();
         self.revalidate_at = self
             .chain
             .iter()
             .filter_map(|certificate| not_after(certificate))
-            .chain(material.client_certificate_authority_not_after)
+            .chain(
+                material
+                    .authority_expiries
+                    .iter()
+                    .copied()
+                    .filter(|expiry| *expiry > now),
+            )
             .chain(material.client_revocation_list_next_update)
             .min();
     }

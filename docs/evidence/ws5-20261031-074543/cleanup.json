@@ -1,0 +1,154 @@
+{
+ "runId": "bower-ws5-20261031-074543",
+ "auditedAt": "2026-10-31T09:40:22.107590+00:00",
+ "allPassed": true,
+ "checks": {
+  "aws.account": {
+   "passed": true,
+   "detail": "959038055523"
+  },
+  "aws.stack": {
+   "passed": true,
+   "detail": "describe-stacks: does not exist"
+  },
+  "aws.instance": {
+   "passed": true,
+   "detail": "i-0b658aa5d9db69dd5: terminated"
+  },
+  "aws.volume.vol-079838dc8419c3458": {
+   "passed": true,
+   "detail": "not found"
+  },
+  "aws.volumes.byRunId": {
+   "passed": true,
+   "detail": "0"
+  },
+  "aws.snapshots.byRunId": {
+   "passed": true,
+   "detail": "0"
+  },
+  "aws.sg.sg-0c241339c4a95033d": {
+   "passed": true,
+   "detail": "not found"
+  },
+  "aws.instanceProfile.bower-ws5-20261031-074543-Profile-4R5wN1fMPdyR": {
+   "passed": true,
+   "detail": "NoSuchEntity"
+  },
+  "aws.role.bower-ws5-20261031-074543-Role-7kbZqGLq9mYN": {
+   "passed": true,
+   "detail": "NoSuchEntity"
+  },
+  "aws.routeTable.rtb-0e41e1723f553ecc2": {
+   "passed": true,
+   "detail": "not found"
+  },
+  "aws.subnet.subnet-05b9fcd2d9138a237": {
+   "passed": true,
+   "detail": "not found"
+  },
+  "aws.s3.artifactBucket": {
+   "passed": true,
+   "detail": "head-bucket 404"
+  },
+  "aws.secretsManager.byRunId": {
+   "passed": true,
+   "detail": "0 (none created)"
+  },
+  "aws.scheduler": {
+   "passed": true,
+   "detail": "0 (expiry guard was an on-instance timer)"
+  },
+  "aws.stateMachines": {
+   "passed": true,
+   "detail": "0"
+  },
+  "aws.logGroups": {
+   "passed": true,
+   "detail": "0"
+  },
+  "aws.taggedResources.byRunId": {
+   "passed": true,
+   "detail": {
+    "indexArns": [
+     "arn:aws:ec2:ap-southeast-2:959038055523:volume/vol-079838dc8419c3458",
+     "arn:aws:ec2:ap-southeast-2:959038055523:instance/i-0b658aa5d9db69dd5"
+    ],
+    "authoritativeState": {
+     "arn:aws:ec2:ap-southeast-2:959038055523:volume/vol-079838dc8419c3458": "InvalidVolume.NotFound",
+     "arn:aws:ec2:ap-southeast-2:959038055523:instance/i-0b658aa5d9db69dd5": "terminated"
+    },
+    "recheckedAt": "2026-10-31T09:44:57.931402+00:00",
+    "note": "The Resource Groups Tagging API index still listed these ARNs after deletion; the EC2 APIs report the volume does not exist and the instance is terminated (no charge). Passed only because every listed ARN is confirmed absent or terminated."
+   }
+  },
+  "azure.subscription": {
+   "passed": true,
+   "detail": "945092a0-2500-4b25-85a4-99f1c3135906"
+  },
+  "azure.resourceGroup": {
+   "passed": true,
+   "detail": "exists=false"
+  },
+  "azure.workspace.notSoftDeleted": {
+   "passed": true,
+   "detail": "soft-deleted matches=0 (force deleted)"
+  },
+  "azure.entra.apps": {
+   "passed": true,
+   "detail": "0"
+  },
+  "azure.entra.servicePrincipals": {
+   "passed": true,
+   "detail": "0"
+  },
+  "azure.entra.deletedItems.application": {
+   "passed": true,
+   "detail": "0 in deleted items (purged)"
+  },
+  "azure.entra.deletedItems.servicePrincipal": {
+   "passed": true,
+   "detail": "0 in deleted items (purged)"
+  },
+  "azure.roleAssignment.d8b04895-6264-4f27-a7a5-369fffc56cdc": {
+   "passed": true,
+   "detail": "not found"
+  },
+  "azure.roleAssignment.ebaa3f16-0482-4d17-af61-e155d63cca27": {
+   "passed": true,
+   "detail": "not found"
+  },
+  "azure.roleAssignment.f71767ea-d1f1-4046-b1db-a1c0a6456490": {
+   "passed": true,
+   "detail": "not found"
+  },
+  "azure.roleAssignment.4ba791fe-c0c9-4ee9-a82e-cfe0ef407e3f": {
+   "passed": true,
+   "detail": "not found"
+  },
+  "azure.roleAssignment.1dc5aa25-7f0d-4a1d-809c-405ef6563e3f": {
+   "passed": true,
+   "detail": "not found"
+  },
+  "azure.roleAssignment.3788d3a3-84bf-4f76-bfb7-77b852883dfb": {
+   "passed": true,
+   "detail": "not found"
+  },
+  "azure.roleAssignment.440d3f67-e145-4793-b1ff-74e1acce3093": {
+   "passed": true,
+   "detail": "not found"
+  },
+  "azure.roleAssignment.4ee32d97-c818-4c70-9ccc-aa203b5fd6eb": {
+   "passed": true,
+   "detail": "not found"
+  },
+  "azure.roleAssignments.byScope": {
+   "passed": true,
+   "detail": "0"
+  },
+  "azure.keyVaults": {
+   "passed": true,
+   "detail": "0 (none created)"
+  }
+ }
+}

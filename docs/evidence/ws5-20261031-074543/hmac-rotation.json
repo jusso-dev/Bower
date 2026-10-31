@@ -1,0 +1,24 @@
+{
+ "hmac": {
+  "rowsPerKey": {
+   "k1": 21,
+   "k2": 21
+  },
+  "distinctPseudonymsPerKey": {
+   "k1": 7,
+   "k2": 7
+  },
+  "keyIdsByTag": {
+   "k1": [
+    "k1"
+   ],
+   "k2": [
+    "k2"
+   ]
+  },
+  "pseudonymsJoiningAcrossKeys": 0,
+  "rawUsernamesAtDestination": 0,
+  "prefixFormat": "hmac-sha256:<keyId>:<hex>",
+  "procedure": "collector restarted with BOWER_PRIVACY_HMAC_KEY_FILE and BOWER_PRIVACY_HMAC_KEY_ID changed from k1 to k2, same queue; 7 synthetic accounts sent under each key"
+ }
+}

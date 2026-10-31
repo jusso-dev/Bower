@@ -1,0 +1,415 @@
+{
+ "sent": {
+  "corpus": {
+   "au.tfn": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-au-tfn",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "au.crn": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-au-crn",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "au.medicare": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-au-medicare",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "au.ihi": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-au-ihi",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "au.passport": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-au-passport",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "au.driver-licence": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-au-driver-licence",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "au.dva": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-au-dva",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "fin.credit-card:Visa": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-fin-credit-card-visa",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "fin.credit-card:Mastercard": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-fin-credit-card-mastercard",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "fin.credit-card:Amex": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-fin-credit-card-amex",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "fin.credit-card:Diners": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-fin-credit-card-diners",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "fin.bsb-account": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-fin-bsb-account",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "fin.iban": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-fin-iban",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "fin.payid": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-fin-payid",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "id.email": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-id-email",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "id.phone.au": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-id-phone-au",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "id.phone.intl": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-id-phone-intl",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "id.dob": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-id-dob",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "secret.aws:access-key-id": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-secret-aws-access-key-id",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "secret.aws:secret-access-key": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-secret-aws-secret-access-key",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "secret.azure": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-secret-azure",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "secret.entra": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-secret-entra",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "secret.gcp": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-secret-gcp",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "secret.jwt": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-secret-jwt",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "secret.oauth": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-secret-oauth",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "secret.api-key:OpenAI": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-secret-api-key-openai",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "secret.api-key:Anthropic": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-secret-api-key-anthropic",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "secret.api-key:GitHub": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-secret-api-key-github",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "secret.api-key:GitLab": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-secret-api-key-gitlab",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "secret.api-key:Slack": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-secret-api-key-slack",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "secret.api-key:Stripe": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-secret-api-key-stripe",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "secret.api-key:Twilio": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-secret-api-key-twilio",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "secret.api-key:Atlassian": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-secret-api-key-atlassian",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "secret.api-key:MongoDB": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-secret-api-key-mongodb",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "secret.docker": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-secret-docker",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "secret.database": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-secret-database",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "secret.env-var": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-secret-env-var",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "crypto.material:rsa-private": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-crypto-material-rsa-private",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "crypto.material:openssh-private": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-crypto-material-openssh-private",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "crypto.material:pkcs8-private": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-crypto-material-pkcs8-private",
+    "status": 400,
+    "decision": "quarantine"
+   },
+   "au.abn": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-au-abn",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "au.acn": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-au-acn",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "fin.swift-bic": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-fin-swift-bic",
+    "status": 202,
+    "decision": "redactandaccept"
+   }
+  },
+  "injection": {
+   "0": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-injection-00",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "1": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-injection-01",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "2": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-injection-02",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "3": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-injection-03",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "4": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-injection-04",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "5": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-injection-05",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "6": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-injection-06",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "7": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-injection-07",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "8": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-injection-08",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "9": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-injection-09",
+    "status": 202,
+    "decision": "redactandaccept"
+   },
+   "10": {
+    "eventId": "bower-ws5-20261031-074543-adversarial2-injection-10",
+    "status": 202,
+    "decision": "redactandaccept"
+   }
+  },
+  "edge": {
+   "attributes-depth-40": {
+    "status": 400,
+    "decision": "quarantine",
+    "reasons": [
+     "invalid-json"
+    ]
+   },
+   "field-70000-chars": {
+    "status": 202,
+    "decision": "redactandaccept",
+    "reasons": [
+     "Approved semantic event type: authentication_failure",
+     "All required investigation fields present",
+     "Value score 100 meets minimum 70",
+     "Masked 10 personal field(s)",
+     "Emitted privacy alert event privacy-8486fc46b5324c5f97cf621af14455a9"
+    ]
+   },
+   "body-over-1MiB": {
+    "status": "connection-closed-by-server",
+    "decision": null,
+    "reasons": null
+   },
+   "invalid-json": {
+    "status": 400,
+    "decision": null,
+    "reasons": null
+   },
+   "lone-surrogate-escape": {
+    "status": 400,
+    "decision": "quarantine",
+    "reasons": [
+     "redaction-failed"
+    ]
+   },
+   "duplicate-top-level-key": {
+    "status": 400,
+    "decision": "quarantine",
+    "reasons": [
+     "redaction-failed"
+    ]
+   }
+  }
+ },
+ "localScan": {
+  "bower.db": {
+   "_bytes": 1626112
+  },
+  "bower.db-shm": {
+   "_bytes": 32768
+  },
+  "bower.db-wal": {
+   "_bytes": 8272
+  },
+  "collector.log": {
+   "_bytes": 797
+  },
+  "status": {
+   "_bytes": 3098
+  }
+ },
+ "destinationScan": {
+  "rowsQueried": 28,
+  "distinctIds": 28,
+  "acceptedSent": 29,
+  "acceptedMissingAtDestination": [
+   "bower-ws5-20261031-074543-adversarial2-au-driver-licence"
+  ],
+  "quarantinedPresentAtDestination": [],
+  "rawMarkerMatches": {},
+  "markersChecked": 40,
+  "passThroughByPolicy": {
+   "au.abn": 1,
+   "au.acn": 1,
+   "fin.swift-bic": 1
+  },
+  "injection": {
+   "0": {
+    "rows": 1,
+    "reasonExactlyEqual": "True"
+   },
+   "1": {
+    "rows": 1,
+    "reasonExactlyEqual": "True"
+   },
+   "2": {
+    "rows": 1,
+    "reasonExactlyEqual": "True"
+   },
+   "3": {
+    "rows": 1,
+    "reasonExactlyEqual": "True"
+   },
+   "4": {
+    "rows": 1,
+    "reasonExactlyEqual": "True"
+   },
+   "5": {
+    "rows": 1,
+    "reasonExactlyEqual": "True"
+   },
+   "6": {
+    "rows": 1,
+    "reasonExactlyEqual": "True"
+   },
+   "7": {
+    "rows": 1,
+    "reasonExactlyEqual": "True"
+   },
+   "8": {
+    "rows": 1,
+    "reasonExactlyEqual": "True"
+   },
+   "9": {
+    "rows": 1,
+    "reasonExactlyEqual": "True"
+   },
+   "10": {
+    "rows": 1,
+    "reasonExactlyEqual": "True"
+   }
+  },
+  "acceptedMissingAtDestinationExplanation": {
+   "bower-ws5-20261031-074543-adversarial2-au-driver-licence": "the default au.driver-licence detector masked digits inside the event id itself (the id contains \"licence\" and digits); the row is present at the destination under the masked id (1 row). Known identity false positive, not loss."
+  }
+ },
+ "deadLetters": {
+  "preflight-field-too-large": 2,
+  "note": "the 70,000-character value event from each of the two adversarial runs"
+ },
+ "corpus": "detector samples from the redaction parity vectors and unit tests (40 redacted detectors, 3 allowed-by-policy, 11 injection strings); values are not retained here",
+ "destinationScanCoverage": {
+  "accepted": 29,
+  "scannedAtDestination": 28,
+  "notScannedAtDestination": 1,
+  "reason": "the au.driver-licence event id was masked by the detector, so it did not match the run-prefix scope of the destination marker query; the workspace was deleted before this was noticed. Its queued payload (the uploaded body) was included in the local queue scan, which found 0 markers."
+ }
+}

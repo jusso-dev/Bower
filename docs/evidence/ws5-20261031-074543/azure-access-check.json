@@ -1,0 +1,16 @@
+{
+ "publisherQuery": {
+  "identity": "pub-cert (Monitoring Metrics Publisher on the DCR)",
+  "result": "InsufficientAccessError (denied)"
+ },
+ "verifierQuery": {
+  "identity": "verifier (Log Analytics Reader on the workspace)",
+  "result": "allowed; used for every destination query"
+ },
+ "verifierIngestion": {
+  "identity": "verifier used as the collector ingestion identity (case audience)",
+  "result": "destination-azure-http-403 on every attempt"
+ },
+ "publisherRoles": "Monitoring Metrics Publisher on the DCR only",
+ "verifierRoles": "Log Analytics Reader on the workspace only"
+}

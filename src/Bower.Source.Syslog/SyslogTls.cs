@@ -334,7 +334,7 @@ internal sealed class SyslogTlsMaterial
 }
 
 /// <summary>One TLS connection's accepted client chain, kept to validate it again after a reload.</summary>
-internal sealed class SyslogTlsSession
+internal sealed class SyslogTlsSession : IDisposable
 {
     public X509Certificate2? Leaf { get; private set; }
 
@@ -347,10 +347,20 @@ internal sealed class SyslogTlsSession
 
     public bool Revoked { get; set; }
 
+    public void Dispose()
+    {
+        Leaf?.Dispose();
+        foreach (X509Certificate2 intermediate in Intermediates)
+        {
+            intermediate.Dispose();
+        }
+    }
+
     public void Accept(SyslogTlsMaterial material, X509Certificate2 leaf, X509Chain chain)
     {
         if (!ReferenceEquals(Leaf, leaf))
         {
+            Dispose();
             Leaf = X509CertificateLoader.LoadCertificate(leaf.RawData);
             Intermediates.Clear();
             for (int index = 1; index < chain.ChainElements.Count - 1; index++)

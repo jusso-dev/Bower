@@ -384,6 +384,7 @@ public sealed class SyslogSource : IAsyncDisposable
         finally
         {
             await stream.DisposeAsync();
+            session?.Dispose();
             Interlocked.Decrement(ref listener.Counters.ActiveConnections);
         }
     }
