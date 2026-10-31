@@ -91,6 +91,8 @@ impl SqliteSourceCursorStore {
     pub fn initialize(&self) -> StoreResult<()> {
         let created = !self.pool.path().exists();
         self.pool.with(|connection| {
+            // The cursor table shares the queue database: never add it to a newer queue schema.
+            crate::queue::refuse_newer_schema(connection)?;
             if created {
                 let _mode: String = connection
                     .query_row("PRAGMA journal_mode = 'wal';", [], |row| row.get(0))

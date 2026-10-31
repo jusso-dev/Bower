@@ -178,6 +178,34 @@ internal static class QueueCommands
         Console.WriteLine(result.Intact && headOk ? "Ledger intact." : "Ledger verification FAILED.");
         return result.Intact && headOk ? 0 : 1;
     }
+
+    /// <summary>
+    /// bower queue backup --database FILE --output BACKUP [--collector-id ID]: consistent online
+    /// copy plus BACKUP.manifest.json (metadata only). Never initializes or migrates the source.
+    /// </summary>
+    public static async Task<int> BackupAsync(string[] args)
+    {
+        QueueBackupManifest manifest = await QueueBackup.CreateAsync(
+            CliOptions.Required(args, "--database"),
+            CliOptions.Required(args, "--output"),
+            CliOptions.Get(args, "--collector-id"));
+        Console.WriteLine(JsonSerializer.Serialize(manifest, CliJsonContext.Default.QueueBackupManifest));
+        return 0;
+    }
+
+    /// <summary>
+    /// bower queue restore --backup BACKUP --database FILE: verifies the manifest, refuses to
+    /// overwrite an existing queue or WAL, and checks the restored copy before renaming it.
+    /// </summary>
+    public static async Task<int> RestoreAsync(string[] args)
+    {
+        QueueBackupManifest manifest = await QueueBackup.RestoreAsync(
+            CliOptions.Required(args, "--backup"),
+            CliOptions.Required(args, "--database"));
+        Console.WriteLine(JsonSerializer.Serialize(manifest, CliJsonContext.Default.QueueBackupManifest));
+        Console.Error.WriteLine("Restored. Unsettled rows will be delivered again (at least once); source cursors resume from the backup point.");
+        return 0;
+    }
 }
 
 internal static class TokenCommands

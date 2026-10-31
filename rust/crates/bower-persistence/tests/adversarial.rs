@@ -491,3 +491,60 @@ fn replay_ignores_local_detection_changes_but_preserves_source_attributes() {
         plain
     );
 }
+
+/// Mirrors C# `QueueBackupTests.NewerSchema_FailsClosedWithoutChangingTheDatabase`.
+#[test]
+fn newer_schema_fails_closed_without_changing_the_database() {
+    use sha2::{Digest, Sha256};
+    for renamed_queue_table in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let clock = FakeClock::new(test_now());
+        {
+            let store = store(directory.path(), ONE_MEBIBYTE, &clock);
+            store
+                .enqueue(&event("one", "fp", "{}", clock.now()))
+                .unwrap();
+        }
+        let path = queue_path(directory.path());
+        {
+            let connection = rusqlite::Connection::open(&path).unwrap();
+            let rename = if renamed_queue_table {
+                "DROP VIEW queue_events; ALTER TABLE queue_events_v5 RENAME TO queue_events_v6;"
+            } else {
+                ""
+            };
+            connection
+                .execute_batch(&format!(
+                    "{rename} INSERT INTO schema_history(version, applied_at, hash) VALUES (6, '2027-01-01T00:00:00Z', 'future'); PRAGMA wal_checkpoint(TRUNCATE);"
+                ))
+                .unwrap();
+        }
+        let digest = || Sha256::digest(std::fs::read(&path).unwrap());
+        let objects = || -> i64 {
+            rusqlite::Connection::open(&path)
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM sqlite_master;", [], |row| row.get(0))
+                .unwrap()
+        };
+        let (before, count) = (digest(), objects());
+
+        let store = SqliteEventStore::new(&path, ONE_MEBIBYTE, Some(clock.clone())).unwrap();
+        let Err(StoreError::Invalid(message)) = store.initialize() else {
+            panic!("a newer schema must be refused");
+        };
+        drop(store);
+        assert!(
+            message.contains("newer than this Bower build supports (5)"),
+            "{message}"
+        );
+        assert!(
+            bower_persistence::SqliteSourceCursorStore::new(&path)
+                .unwrap()
+                .initialize()
+                .is_err()
+        );
+        assert_eq!(count, objects());
+        assert_eq!(before, digest());
+        assert_eq!(bower_persistence::SCHEMA_VERSION, 5);
+    }
+}

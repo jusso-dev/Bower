@@ -22,6 +22,8 @@ static async Task<int> RunAsync(string[] args)
             ["queue", "dead-letters", .. string[] rest] => await QueueCommands.DeadLettersAsync(rest),
             ["queue", "replay", .. string[] rest] => await QueueCommands.ReplayAsync(rest),
             ["queue", "verify", .. string[] rest] => await QueueCommands.VerifyAsync(rest),
+            ["queue", "backup", .. string[] rest] => await QueueCommands.BackupAsync(rest),
+            ["queue", "restore", .. string[] rest] => await QueueCommands.RestoreAsync(rest),
             ["test", "emit", .. string[] rest] => await EmitCanaryAsync(rest),
             ["token", "generate", .. string[] rest] => TokenCommands.Generate(rest),
             ["doctor", .. string[] rest] => await DoctorCommand.RunAsync(rest),
@@ -282,6 +284,8 @@ static int WriteHelp()
           bower queue dead-letters --database FILE
           bower queue replay --database FILE (--code PREFIX | --event ID ...)
           bower queue verify --database FILE [--expect-head SEQUENCE:HASH]
+          bower queue backup --database FILE --output BACKUP [--collector-id ID]
+          bower queue restore --backup BACKUP --database FILE
           bower developer init [--path PATH]
           bower privacy validate FILE [--hmac-key-file FILE] [--sample FILE]
           bower policy test EVENT.json... [--policy-directory DIR] [--pack FILE --trusted-key PUB]
