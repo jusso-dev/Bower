@@ -321,7 +321,9 @@ offline past its credential's 30 days needs a new token and a new approval.
 UDP syslog senders can be spoofed (the allow-list checks only the source address) and
 UDP is best effort. Syslog hostname and app-name are sender-claimed: without a
 per-route `allowedSenders`, any allowed sender can reach any route. Syslog TLS
-certificates are read at start-up, so rotation needs a restart. Plain syslog has no
+material is reloaded when its files change; client certificates are checked against
+an optional revocation list and open sessions are re-validated after a change, but a
+sender loses frames it writes into a refused session. Plain syslog has no
 application acknowledgement, so frames in flight when the collector stops are lost
 unless the sender retransmits.
 

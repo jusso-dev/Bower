@@ -643,3 +643,31 @@ async fn revocation_list_requires_an_authority_and_unreadable_lists_stop_start_w
         "Syslog listener edge: TLS certificate or key could not be loaded."
     );
 }
+
+#[tokio::test]
+async fn one_bundle_file_serves_the_certificate_and_key_and_rotates_atomically() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut files = Files::new(directory.path());
+    let ca = authority("syslog-ca", -30, 30);
+    let first = ca.issue("localhost", false, -1, 20);
+    let second = ca.issue("localhost", false, -1, 20);
+    let bundle = directory.path().join("server-bundle.pem");
+    std::fs::write(&bundle, format!("{}\n{}", first.certificate, first.key)).unwrap();
+    files.certificate = bundle.clone();
+    files.key = bundle.clone();
+    let running = start(&files, &ca, Arc::new(Sink::default()), false, false)
+        .await
+        .unwrap();
+    assert_eq!(
+        Connection::open(&running, None).await.unwrap().server,
+        sha(&first)
+    );
+
+    replace(&bundle, &format!("{}\n{}", second.key, second.certificate));
+    running.wait_for(|status| status.tls_reloads == 1).await;
+    assert_eq!(
+        Connection::open(&running, None).await.unwrap().server,
+        sha(&second)
+    );
+    running.stop().await;
+}

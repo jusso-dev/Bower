@@ -58,6 +58,37 @@ public sealed class SyslogTlsRotationTests
     }
 
     [Fact]
+    public async Task OneBundleFile_ServesTheCertificateAndKeyAndRotatesAtomically()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        Pki pki = new(directory.Path);
+        using X509Certificate2 ca = Pki.Authority("syslog-ca");
+        using X509Certificate2 first = Pki.Issue(ca, "localhost", client: false);
+        using X509Certificate2 second = Pki.Issue(ca, "localhost", client: false);
+        string bundle = Path.Combine(directory.Path, "server-bundle.pem");
+        File.WriteAllText(bundle, first.ExportCertificatePem() + "\n" + first.GetECDsaPrivateKey()!.ExportPkcs8PrivateKeyPem());
+        string listener = Listener(pki, mutual: false, revocationList: false)
+            .Replace(JsonSerializer.Serialize(pki.Certificate), JsonSerializer.Serialize(bundle), StringComparison.Ordinal)
+            .Replace(JsonSerializer.Serialize(pki.Key), JsonSerializer.Serialize(bundle), StringComparison.Ordinal);
+        await using SyslogSource source = new(SyslogSourceConfigurationLoader.Parse(SyslogSourceTests.Config(listener)), new SyslogSourceTests.FakeSink())
+        {
+            TlsReloadInterval = TimeSpan.Zero
+        };
+        await source.StartAsync(cancellation);
+        await using (Connection connection = await Connection.OpenAsync(source, null, cancellation))
+        {
+            Assert.Equal(first.Thumbprint, connection.ServerThumbprint);
+        }
+
+        File.WriteAllText(bundle + ".new", second.GetECDsaPrivateKey()!.ExportPkcs8PrivateKeyPem() + "\n" + second.ExportCertificatePem());
+        File.Move(bundle + ".new", bundle, overwrite: true);
+        await WaitFor(source, value => value.TlsReloads == 1, cancellation);
+        await using Connection rotated = await Connection.OpenAsync(source, null, cancellation);
+        Assert.Equal(second.Thumbprint, rotated.ServerThumbprint);
+    }
+
+    [Fact]
     public async Task FailedReload_KeepsLastGoodMaterialUntilTheFilesAreValid()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;

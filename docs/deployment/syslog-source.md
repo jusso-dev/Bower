@@ -75,7 +75,7 @@ stop start-up.
 | `maximumMessageBytes` | 65536 | 480–65536 |
 | `maximumConnections` | 64 | 1–1024 (TCP and TLS) |
 | `idleTimeoutSeconds` | 60 | 1–3600 |
-| `tls` | none | required for `tls`, refused otherwise; PEM files |
+| `tls` | none | required for `tls`, refused otherwise; PEM files: `certificateFile`, `privateKeyFile`, optional `clientCertificateAuthorityFile` and `clientCertificateRevocationListFile` (PEM or DER CRLs; requires the CA file) |
 | `allowInsecureNonLoopback` | false | allow `tcp`/`udp` beyond loopback |
 | `routes` | required | 1–64; `pack`, `parser` (index), optional `hostname`, `appName`, `allowedSenders` (1–64 addresses or CIDR ranges) |
 
@@ -83,8 +83,27 @@ A non-loopback address needs `protocol: tls` unless `allowInsecureNonLoopback` i
 use the override only on an isolated network you control. With
 `clientCertificateAuthorityFile`, senders must present a client certificate issued by
 one of those CAs (mutual TLS); a sender may present intermediates between its
-certificate and those CAs. TLS 1.2 and 1.3 only. Certificates, keys and CA files are
-read at start-up: rotating them needs a collector restart.
+certificate and those CAs. TLS 1.2 and 1.3 only.
+
+With `clientCertificateRevocationListFile`, every client's issuing CA needs a current
+revocation list in that file: a listed certificate, an issuer without a list, a list
+past its `nextUpdate` or a list not validly signed by the issuer refuses the handshake
+(end-entity check, as rustls does with unknown status denied and expiry enforced).
+C# accepts RSA PKCS#1 v1.5 and ECDSA (SHA-256/384/512) signed lists and refuses delta
+lists and lists with critical extensions; Rust additionally accepts RSA-PSS and Ed25519
+signed lists.
+
+**Rotation without restart.** The certificate, key, CA bundle and revocation list are
+checked for changes at most once a second (on a new connection, a frame or a status
+read) and reloaded for new handshakes; open connections are kept. A change that cannot
+be loaded (a half-written file, a key that does not match the certificate) is counted
+in `tlsReloadFailures` and the last good material stays in use. Replace each file by an
+atomic rename, key before certificate. After a reload, or once a certificate in its
+chain or a revocation list expires, an open mutual-TLS session is validated again
+before its next frame is used; a session whose client is no longer trusted (CA
+removed, certificate revoked or expired) is closed and counted in `tlsSessionsClosed`.
+Step-by-step rotation for every environment is in
+[credential rotation and security failures](../production-readiness/05-credential-rotation-and-security-failures.md).
 
 Addresses are canonical IP text: no brackets, ports, IPv6 scopes or whitespace.
 Property names are case-sensitive and a repeated property fails the file.
@@ -98,7 +117,10 @@ any allowed sender can claim `hostname: fw01`. Give a route its own
 ```
 
 Senders should use RFC 5425-style TLS (octet-counted frames) on port 6514, RFC 5424
-format, and send the security-relevant values as structured data.
+format, and send the security-relevant values as structured data. Prefer octet
+counting: with LF framing, a CR/LF that reaches the sender's message text starts a
+second frame (the live adversarial run queued such a forged frame); octet counting
+carries embedded newlines inside one frame.
 
 ## The record a pack parser sees
 
@@ -208,8 +230,12 @@ counters since start: `activeConnections`, `connectionsAccepted`,
 `rejected`, `parserErrors`, `malformed`, `oversized`, `framingErrors`, `timeouts`,
 `dropped` (UDP and backpressure), `retries` (TCP waits for queue space),
 `submitFailures`, `receiveErrors` (UDP socket receive errors; the listener backs off
-100 ms to 1 s and keeps listening) and `lastFrameAt`. They are metadata only and reset
-on restart.
+100 ms to 1 s and keeps listening) and `lastFrameAt`. TLS listeners add `tlsReloads`,
+`tlsReloadFailures`, `tlsRevoked` (handshakes refused by revocation),
+`tlsSessionsClosed` (open sessions closed after re-validation),
+`serverCertificateNotAfter`, `clientCertificateAuthorityNotAfter` (earliest trusted
+CA) and `clientRevocationListNextUpdate` (earliest list); the dates are null for other
+listeners. They are metadata only and counters reset on restart.
 Selected syslog events also appear in the pipeline and intake counters like any other
 source.
 
@@ -225,8 +251,12 @@ sender degrades `/health` once its allowance passes.
   `allowedSenders`, any allowed sender can reach any route (and its pack parser) by
   claiming its hostname or app-name; the parser filter, redaction and policy still
   apply.
-- Certificate rotation needs a restart; an expired server certificate fails every
-  handshake until then.
+- An expired server certificate fails every new handshake until a valid one is in
+  place (it is picked up without a restart). Alert on `serverCertificateNotAfter`.
+- A refused client certificate loses frames at the sender: rsyslog 8.2204 (`ossl`,
+  TLS 1.2 or 1.3) writes one frame into each refused session and drops it. Rotate
+  client CAs and certificates with overlap, and alert on `tlsHandshakeFailures`,
+  `tlsRevoked` and `clientRevocationListNextUpdate`.
 - Plain TCP beyond loopback (with the override) is unauthenticated and unencrypted.
 - A sender allowed to connect can occupy up to `maximumConnections` slots; the idle
   timeout bounds how long.
@@ -237,6 +267,10 @@ sender degrades `/health` once its allowance passes.
 Interoperability tests against a real sender daemon in a container are not part of
 the automated suite; the RFC example vectors, framing and TLS tests run against
 in-process clients.
+
+The [credential rotation campaign](../evidence/ws5-20261031-074543/README.md) ran
+rsyslog 8.2204 over mutual TLS on Amazon Linux 2023: hot server-certificate rotation
+lost no frames and caused no reconnect; a collector restart under load lost one frame.
 
 The manual [native AWS pilot](../evidence/pilot-native-20261030/README.md) uses
 nftables and rsyslog over mutual TLS. It retains source-loss findings from both

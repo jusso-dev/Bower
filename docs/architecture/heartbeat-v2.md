@@ -119,7 +119,10 @@ commands as `expired` straight away.
 Execution is at most once. The command is written to the durable ledger before it
 runs. A command found started but not finished after a restart reports `failed` with
 `interrupted`. A reload within 10 minutes of the last one reports `failed` with
-`reload-rate-limited`.
+`reload-rate-limited`. Before restarting, `reload` loads the policies, signed packs
+(with their trusted keys), privacy profile and HMAC key exactly as the restart would;
+if they do not load it reports `failed` with `reload-validation-failed`, logs only the
+failure type, and the running collector keeps its last good configuration.
 
 Bounds:
 
