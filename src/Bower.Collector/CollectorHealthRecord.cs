@@ -4,7 +4,9 @@ using System.Text;
 using System.Text.Json;
 using Bower.Abstractions;
 using Bower.Contracts;
+using Bower.Collector.Jobs;
 using Bower.Core;
+using Bower.Persistence;
 using Bower.Source.Syslog;
 using Bower.Source.WindowsEventLog;
 
@@ -27,8 +29,7 @@ public sealed record CollectorHealthSample(
     IReadOnlyList<SourceSilenceStatus> Sources,
     IReadOnlyList<SyslogListenerStatus>? Syslog,
     IReadOnlyList<WindowsEventSubscriptionStatus>? WindowsEventLog,
-    long? QueueFileBytes = null,
-    long? QueueFileLimitBytes = null);
+    QueuePageUsage? QueuePages = null);
 
 /// <summary>
 /// Builds the periodic <c>collector_health</c> record. It travels through the same redaction,
@@ -57,14 +58,38 @@ public static class CollectorHealthRecord
     public const long MaximumReportedValue = 9_999_999;
 
     /// <summary>Bounded problem codes, in this order, so queries need no thresholds of their own.</summary>
-    public const string DeadLetters = "dead-letters";
-    public const string Backpressure = "backpressure";
-    public const string Stalled = "stalled";
-    public const string Retrying = "retrying";
+    public const string DeadLetters = DeliveryHealth.DeadLetters;
+    public const string Backpressure = DeliveryHealth.Backpressure;
+    public const string Stalled = DeliveryHealth.Stalled;
+    public const string Retrying = DeliveryHealth.Retrying;
     public const string CapacityRefusals = "capacity-refusals";
     public const string SourceOverdue = "source-overdue";
     public const string SyslogErrors = "syslog-errors";
     public const string WindowsEventLogErrors = "windows-event-log-errors";
+
+    /// <summary>
+    /// Severity of each problem code. Intake refused or about to be, and a stalled backlog, are
+    /// high; set-aside events and silent or failing sources are medium; retries and transport
+    /// errors the sender recovers from are low. The record's status and severity are the worst.
+    /// </summary>
+    public static EventSeverity SeverityOf(string problem) => problem switch
+    {
+        Backpressure or Stalled or CapacityRefusals => EventSeverity.High,
+        DeadLetters or SourceOverdue or WindowsEventLogErrors => EventSeverity.Medium,
+        _ => EventSeverity.Low
+    };
+
+    /// <summary><c>healthy</c>, <c>warning</c> (low), <c>degraded</c> (medium) or <c>critical</c> (high).</summary>
+    public static string StatusOf(IReadOnlyList<string> problems) => Worst(problems) switch
+    {
+        EventSeverity.Informational => "healthy",
+        EventSeverity.Low => "warning",
+        EventSeverity.Medium => "degraded",
+        _ => "critical"
+    };
+
+    private static EventSeverity Worst(IReadOnlyList<string> problems) =>
+        problems.Count == 0 ? EventSeverity.Informational : problems.Max(SeverityOf);
 
     public static string CreateJson(
         CollectorHealthSample sample,
@@ -106,7 +131,7 @@ public static class CollectorHealthRecord
             EventType = SecurityEventTypes.CollectorHealth,
             EventAction = EventAction,
             EventResult = problems.Count == 0 ? EventResult.Success : EventResult.Failure,
-            EventSeverity = problems.Count == 0 ? EventSeverity.Informational : EventSeverity.Medium,
+            EventSeverity = Worst(problems),
             EventOutcomeReason = problems.Count == 0
                 ? "Collector health: healthy"
                 : "Collector health: " + string.Join(", ", problems),
@@ -121,16 +146,20 @@ public static class CollectorHealthRecord
         };
     }
 
-    /// <summary>Problem codes for <paramref name="sample"/>; counters compare with <paramref name="previous"/>.</summary>
+    /// <summary>
+    /// Every problem code that applies, each judged on its own (dead letters do not hide a
+    /// stall or backpressure); counters compare with <paramref name="previous"/>.
+    /// </summary>
     public static IReadOnlyList<string> Problems(CollectorHealthSample sample, CollectorHealthSample? previous)
     {
         ArgumentNullException.ThrowIfNull(sample);
         CollectorHealthSample? baseline = Baseline(sample, previous);
         List<string> problems = [];
-        if (sample.Queue.DeadLettered > 0) problems.Add(DeadLetters);
-        if (sample.DeliveryStatus == "backpressure") problems.Add(Backpressure);
-        if (sample.DeliveryStatus == "stalled") problems.Add(Stalled);
-        if (sample.DeliveryStatus == "retrying") problems.Add(Retrying);
+        if (!string.Equals(sample.OutputType, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            problems.AddRange(DeliveryHealth.Conditions(sample.Queue, sample.QueueCapacityBytes, sample.At));
+        }
+
         if (Delta(sample.Intake.CapacityRefusals, baseline?.Intake.CapacityRefusals)
             + Delta(sample.Intake.PrivacyAlertRefusals, baseline?.Intake.PrivacyAlertRefusals) > 0)
         {
@@ -197,7 +226,7 @@ public static class CollectorHealthRecord
             Number(writer, "sequence", sample.Sequence);
             writer.WriteString("collectorStartedAt", Time(sample.CollectorStartedAt));
             writer.WriteString("countersSince", Time(baseline?.At ?? sample.CollectorStartedAt));
-            writer.WriteString("status", problems.Count == 0 ? "healthy" : "degraded");
+            writer.WriteString("status", StatusOf(problems));
             writer.WriteStartArray("problems");
             foreach (string problem in problems)
             {
@@ -240,14 +269,16 @@ public static class CollectorHealthRecord
             Mebibytes(writer, "undeliveredMiB", queue.UndeliveredBytes);
             Mebibytes(writer, "storedMiB", queue.TotalBytes);
             writer.WriteNumber("capacityUsedPercent", Percent(queue.UndeliveredBytes, sample.QueueCapacityBytes));
-            // The database file stops growing at its page limit (SQLite "database or disk is
-            // full") before undelivered payloads reach BOWER_QUEUE_MAX_BYTES: rows, indexes,
-            // the ledger and retained acknowledged rows all use pages.
-            if (sample.QueueFileBytes is { } fileBytes && sample.QueueFileLimitBytes is { } limitBytes)
+            // The database cannot grow past its page limit (SQLite "database or disk is full"),
+            // which it reaches before undelivered payloads reach BOWER_QUEUE_MAX_BYTES: rows,
+            // indexes, the ledger and retained acknowledged rows all use pages. In-use pages,
+            // not the file length: the file never shrinks, freed pages are reused first.
+            if (sample.QueuePages is { } pages)
             {
-                Mebibytes(writer, "queueFileMiB", fileBytes);
-                Mebibytes(writer, "queueFileLimitMiB", limitBytes);
-                writer.WriteNumber("queueFileUsedPercent", Percent(fileBytes, limitBytes));
+                Mebibytes(writer, "queuePagesUsedMiB", pages.UsedBytes);
+                Mebibytes(writer, "queueFreeListMiB", pages.FreeListBytes);
+                Mebibytes(writer, "queuePageLimitMiB", pages.PageLimitBytes);
+                writer.WriteNumber("queuePagesUsedPercent", pages.UsedPercent);
             }
 
             writer.WriteEndObject();
@@ -380,6 +411,8 @@ public static class CollectorHealthRecord
             Number(writer, "queued", Delta(item.Queued, before?.Queued));
             Number(writer, "notSelected", Delta(item.NotSelected, before?.NotSelected));
             Number(writer, "parserErrors", Delta(item.ParserErrors, before?.ParserErrors));
+            Number(writer, "malformed", Delta(item.Malformed, before?.Malformed));
+            Number(writer, "oversized", Delta(item.Oversized, before?.Oversized));
             Number(writer, "readErrors", Delta(item.ReadErrors, before?.ReadErrors));
             Number(writer, "gaps", Delta(item.Gaps, before?.Gaps));
             Number(writer, "resets", Delta(item.Resets, before?.Resets));

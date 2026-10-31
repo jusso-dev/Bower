@@ -2,6 +2,7 @@ using Bower.Abstractions;
 using Bower.Collector.Jobs;
 using Bower.Core;
 using Bower.Persistence;
+using Microsoft.Data.Sqlite;
 using Bower.Source.Syslog;
 using Bower.Source.WindowsEventLog;
 
@@ -93,9 +94,7 @@ public sealed partial class CollectorHealthWorker(
             sourceHealth.Evaluate(),
             syslog?.Snapshot(),
             windowsEventLog?.Snapshot(),
-            QueueFileBytes(),
-            // SqliteEventStore sets PRAGMA max_page_count to a quarter of its physical budget.
-            (queue as SqliteEventStore)?.MaximumStorageBytes / 4);
+            await QueuePagesAsync(cancellationToken));
         string record = CollectorHealthRecord.CreateJson(sample, identity.Id, settings.Environment, previous);
         try
         {
@@ -126,15 +125,20 @@ public sealed partial class CollectorHealthWorker(
         }
     }
 
-    private long? QueueFileBytes()
+    private async Task<QueuePageUsage?> QueuePagesAsync(CancellationToken cancellationToken)
     {
+        if (queue is not IQueuePageUsageSource source)
+        {
+            return null;
+        }
+
         try
         {
-            FileInfo file = new(settings.QueuePath);
-            return file.Exists ? file.Length : null;
+            return await source.GetPageUsageAsync(cancellationToken);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is SqliteException or QueueCapacityExceededException or IOException)
         {
+            // Unknown is reported as absent; the record itself must still be sent.
             return null;
         }
     }

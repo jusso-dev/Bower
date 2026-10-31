@@ -1031,10 +1031,13 @@ async fn health_is_anonymous_but_status_requires_token() {
     let collector = start(directory.path(), Some(TOKEN), |_| {}).await;
 
     let (_, _, health) = send(&collector.router, get("/health", None)).await;
+    let (live_status, _, live) = send(&collector.router, get("/health/live", None)).await;
     let (anonymous, _, _) = send(&collector.router, get("/v1/status", None)).await;
     let (status, _, body) = send(&collector.router, get("/v1/status", Some(TOKEN))).await;
 
     assert_eq!(health, r#"{"status":"healthy"}"#);
+    assert_eq!(live_status, StatusCode::OK);
+    assert_eq!(live, r#"{"status":"alive"}"#);
     assert_eq!(anonymous, StatusCode::UNAUTHORIZED);
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("queue-retention"), "{body}");

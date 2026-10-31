@@ -34,9 +34,9 @@ public sealed class CollectorHealthRecordTests
                 new SourceSilenceStatus("windows-security", "production", "active", TestEvents.Now, 0, 900)
             ],
             Syslog = [Listener(tlsHandshakeFailures: 2)],
-            WindowsEventLog = [Subscription("winevt-read-failed")],
-            QueueFileBytes = 12_582_912,
-            QueueFileLimitBytes = 14_680_064
+            WindowsEventLog = [Subscription("winevt-read-failed", malformed: 2, oversized: 1)],
+            // 3,072 in-use pages of 3,584, plus 512 free pages the file keeps after retention.
+            QueuePages = new QueuePageUsage(4_096, 3_584, 512, 3_584)
         };
 
         SecurityEventEnvelope record = CollectorHealthRecord.Create(sample, Identity.Id, "production");
@@ -47,18 +47,25 @@ public sealed class CollectorHealthRecordTests
         Assert.Equal(EventResult.Failure, record.EventResult);
         Assert.StartsWith("collector-health-", record.EventId, StringComparison.Ordinal);
         Assert.Equal(TestEvents.Now, record.TimeGenerated);
-        Assert.Equal("Collector health: stalled, source-overdue, syslog-errors, windows-event-log-errors", record.EventOutcomeReason);
+        Assert.Equal(
+            "Collector health: stalled, retrying, source-overdue, syslog-errors, windows-event-log-errors",
+            record.EventOutcomeReason);
+        Assert.Equal(EventSeverity.High, record.EventSeverity);
         IReadOnlyDictionary<string, JsonElement> attributes = record.Attributes!;
-        Assert.Equal("degraded", attributes["status"].GetString());
+        Assert.Equal("critical", attributes["status"].GetString());
         Assert.Equal(1_200, attributes["queue"].GetProperty("oldestUndeliveredAgeSeconds").GetInt64());
         Assert.Equal(43, attributes["queue"].GetProperty("undelivered").GetInt64());
         Assert.Equal(4.0, attributes["storage"].GetProperty("undeliveredMiB").GetDouble());
         Assert.Equal(9.0, attributes["storage"].GetProperty("storedMiB").GetDouble());
         Assert.Equal(10.0, attributes["storage"].GetProperty("queueCapacityMiB").GetDouble());
         Assert.Equal(40.0, attributes["storage"].GetProperty("capacityUsedPercent").GetDouble());
-        Assert.Equal(12.0, attributes["storage"].GetProperty("queueFileMiB").GetDouble());
-        Assert.Equal(14.0, attributes["storage"].GetProperty("queueFileLimitMiB").GetDouble());
-        Assert.Equal(85.7, attributes["storage"].GetProperty("queueFileUsedPercent").GetDouble());
+        // In-use pages, not the file length: the 2 MiB free list does not count.
+        Assert.Equal(12.0, attributes["storage"].GetProperty("queuePagesUsedMiB").GetDouble());
+        Assert.Equal(2.0, attributes["storage"].GetProperty("queueFreeListMiB").GetDouble());
+        Assert.Equal(14.0, attributes["storage"].GetProperty("queuePageLimitMiB").GetDouble());
+        Assert.Equal(85.7, attributes["storage"].GetProperty("queuePagesUsedPercent").GetDouble());
+        Assert.Equal(2, attributes["windowsEventLog"][0].GetProperty("malformed").GetInt64());
+        Assert.Equal(1, attributes["windowsEventLog"][0].GetProperty("oversized").GetInt64());
         Assert.Equal("2026-07-26T01:14:19.0000000+00:00", attributes["countersSince"].GetString());
         JsonElement overdue = Assert.Single(attributes["sources"].GetProperty("overdue").EnumerateArray());
         Assert.Equal("nftables-firewall", overdue.GetProperty("application").GetString());
@@ -118,11 +125,40 @@ public sealed class CollectorHealthRecordTests
         Assert.Equal(
             [CollectorHealthRecord.CapacityRefusals, CollectorHealthRecord.SyslogErrors],
             CollectorHealthRecord.Problems(restarted, previous));
+    }
+
+    [Fact]
+    public void Problems_ReportEveryDeliveryConditionAlongsideDeadLetters()
+    {
+        // Dead letters make DeliveryHealth.Evaluate say only "degraded"; the record must still
+        // report backpressure, a stall and retries, and rank its status by the worst of them.
+        CollectorHealthSample sample = Sample(TestEvents.Now, sequence: 1) with
+        {
+            DeliveryStatus = "degraded",
+            Queue = new QueueSnapshot(100, 5, 1, 0, 2, 10_000_000, TestEvents.Now.AddMinutes(-30), 9_500_000)
+        };
+
         Assert.Equal(
-            [CollectorHealthRecord.DeadLetters, CollectorHealthRecord.Backpressure],
-            CollectorHealthRecord.Problems(
-                unchanged with { DeliveryStatus = "backpressure", Queue = new QueueSnapshot(1, 0, 0, 0, 2, 10, TestEvents.Now, 10) },
-                previous));
+            [CollectorHealthRecord.DeadLetters, CollectorHealthRecord.Backpressure, CollectorHealthRecord.Stalled, CollectorHealthRecord.Retrying],
+            CollectorHealthRecord.Problems(sample, null));
+        SecurityEventEnvelope record = CollectorHealthRecord.Create(sample, Identity.Id, "production");
+        Assert.Equal(EventSeverity.High, record.EventSeverity);
+        Assert.Equal("critical", record.Attributes!["status"].GetString());
+        Assert.Equal("degraded", record.Attributes["delivery"].GetProperty("status").GetString());
+
+        CollectorHealthSample deadLettersOnly = sample with { Queue = new QueueSnapshot(0, 0, 0, 0, 2, 10, null, 0) };
+        Assert.Equal([CollectorHealthRecord.DeadLetters], CollectorHealthRecord.Problems(deadLettersOnly, null));
+        Assert.Equal(EventSeverity.Medium, CollectorHealthRecord.Create(deadLettersOnly, Identity.Id, "production").EventSeverity);
+        Assert.Equal("degraded", CollectorHealthRecord.StatusOf([CollectorHealthRecord.DeadLetters]));
+
+        CollectorHealthSample retryingOnly = sample with { Queue = new QueueSnapshot(0, 1, 0, 0, 0, 10, TestEvents.Now, 10) };
+        Assert.Equal([CollectorHealthRecord.Retrying], CollectorHealthRecord.Problems(retryingOnly, null));
+        Assert.Equal(EventSeverity.Low, CollectorHealthRecord.Create(retryingOnly, Identity.Id, "production").EventSeverity);
+        Assert.Equal("warning", CollectorHealthRecord.StatusOf([CollectorHealthRecord.Retrying]));
+        Assert.Equal("healthy", CollectorHealthRecord.StatusOf([]));
+
+        // Delivery conditions do not apply without an output.
+        Assert.Empty(CollectorHealthRecord.Problems(retryingOnly with { OutputType = "none" }, null));
     }
 
     [Fact]
@@ -320,11 +356,33 @@ public sealed class CollectorHealthRecordTests
         Assert.Equal(60, envelope.Attributes!["intervalSeconds"].GetInt64());
         Assert.Equal("none", envelope.Attributes["delivery"].GetProperty("output").GetString());
         Assert.Equal("BWR-POL-COLLECTOR-HEALTH", envelope.Security!.PolicyId);
-        // The queue database's page limit is a quarter of the store's physical budget.
+        // Read from the store (SQLite max_page_count), not recomputed.
         JsonElement storage = envelope.Attributes["storage"];
-        Assert.Equal(Math.Round((10L * 1024 * 1024 * 1024 * 4 + 16_777_216) / 4 / 1_048_576.0, 1), storage.GetProperty("queueFileLimitMiB").GetDouble());
-        Assert.True(storage.GetProperty("queueFileMiB").GetDouble() > 0);
+        Assert.Equal(Math.Round((10L * 1024 * 1024 * 1024 * 4 + 16_777_216) / 4 / 1_048_576.0, 1), storage.GetProperty("queuePageLimitMiB").GetDouble());
+        Assert.True(storage.GetProperty("queuePagesUsedMiB").GetDouble() > 0);
+        Assert.True(storage.GetProperty("queuePagesUsedPercent").GetDouble() < 1);
         await app.StopAsync(cancellationToken);
+    }
+
+    [Fact]
+    public void Build_FailsClosedWhenThePolicyRefusesDegradedHealthRecords()
+    {
+        using TemporaryDirectory directory = new();
+        string policies = PolicyDirectoryWithHealth(directory.Path);
+        // Accepts healthy and medium records only: high-severity records (a stall,
+        // backpressure) would be refused every interval, exactly when they matter.
+        string health = Path.Combine(policies, "collector-health.yaml");
+        File.WriteAllText(health, File.ReadAllText(health).Replace(
+            "  eventActions:\n    - collector.health\n",
+            "  eventActions:\n    - collector.health\n  eventSeverities:\n    - informational\n    - low\n    - medium\n",
+            StringComparison.Ordinal));
+        Assert.Contains("eventSeverities", File.ReadAllText(health), StringComparison.Ordinal);
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => CollectorApplication.Build(
+            Settings(directory.Path) with { PolicyDirectory = policies, HealthRecordInterval = TimeSpan.FromMinutes(5) },
+            builder => builder.WebHost.UseTestServer()));
+
+        Assert.Contains("severity High", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -433,7 +491,7 @@ public sealed class CollectorHealthRecordTests
         new("firewall-tls", "tls", "127.0.0.1:6514", 1, 3, 0, 0, tlsHandshakeFailures, 500, 50_000, 500, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, dropped, 0, 0, 0, TestEvents.Now.AddSeconds(-5));
 
-    private static WindowsEventSubscriptionStatus Subscription(string state) =>
-        new("forwarded-security", "ForwardedEvents", state, 1_000, 1_000, 1_000_000, 900, 0, 0, 100, 0, 0, 0, 0,
+    private static WindowsEventSubscriptionStatus Subscription(string state, long malformed = 0, long oversized = 0) =>
+        new("forwarded-security", "ForwardedEvents", state, 1_000, 1_000, 1_000_000, 900, 0, 0, 100, 0, 0, malformed, oversized,
             0, 0, 1, 0, 0, 0, TestEvents.Now.AddMinutes(-1), TestEvents.Now);
 }
