@@ -359,6 +359,19 @@ impl SecurityEventProcessor {
             ));
         };
 
+        // Collector health is an internal signal. Rust has no internal health emitter;
+        // every event entering this processor is untrusted source input.
+        if candidate.event_type == event_types::COLLECTOR_HEALTH {
+            return Ok(self.decided(
+                ProcessingResult::failed_at(
+                    DecisionAction::Quarantine,
+                    "reserved-event-type",
+                    ProcessingStage::Validation,
+                ),
+                bytes_in,
+            ));
+        }
+
         let now = self.clock.utc_now();
         let validation_failures = validate(&candidate, now);
         if !validation_failures.is_empty() {

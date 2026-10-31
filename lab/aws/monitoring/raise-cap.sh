@@ -8,7 +8,7 @@ systemctl restart bower
 echo "recovery $(date -u +%Y-%m-%dT%H:%M:%S.%3NZ) cap=$DRILL_CAP restarted"
 for i in $(seq 1 90); do
   token=$(cat /etc/bower/secrets/ingest-token)
-  undelivered=$(curl -fsS -m 3 -H "Authorization: Bearer $token" http://127.0.0.1:4319/v1/status 2>/dev/null | python3 -c 'import json,sys; q=json.load(sys.stdin)["queue"]; print(q["queued"]+q["retrying"]+q["uploading"])' 2>/dev/null || echo -1)
+  undelivered=$(curl -fsS -m 3 -H @/dev/fd/3 3<<<"Authorization: Bearer $token" http://127.0.0.1:4319/v1/status 2>/dev/null | python3 -c 'import json,sys; q=json.load(sys.stdin)["queue"]; print(q["queued"]+q["retrying"]+q["uploading"])' 2>/dev/null || echo -1)
   if [ "$undelivered" -ge 0 ] && [ "$undelivered" -le 5 ]; then echo "drained $(date -u +%Y-%m-%dT%H:%M:%S.%3NZ) undelivered=$undelivered"; break; fi
   sleep 2
 done

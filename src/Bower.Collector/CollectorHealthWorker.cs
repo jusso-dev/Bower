@@ -2,9 +2,9 @@ using Bower.Abstractions;
 using Bower.Collector.Jobs;
 using Bower.Core;
 using Bower.Persistence;
-using Microsoft.Data.Sqlite;
 using Bower.Source.Syslog;
 using Bower.Source.WindowsEventLog;
+using Microsoft.Data.Sqlite;
 
 namespace Bower.Collector;
 
@@ -94,11 +94,12 @@ public sealed partial class CollectorHealthWorker(
             sourceHealth.Evaluate(),
             syslog?.Snapshot(),
             windowsEventLog?.Snapshot(),
-            await QueuePagesAsync(cancellationToken));
+            await QueuePagesAsync(cancellationToken),
+            deliveryActivity.LastFailure);
         string record = CollectorHealthRecord.CreateJson(sample, identity.Id, settings.Environment, previous);
         try
         {
-            ProcessingResult result = await processor.ProcessAsync(
+            ProcessingResult result = await processor.ProcessCollectorHealthAsync(
                 record,
                 identity with { SourceAdapter = CollectorHealthRecord.SourceAdapter },
                 cancellationToken);

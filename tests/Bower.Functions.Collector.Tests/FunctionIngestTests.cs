@@ -37,6 +37,17 @@ public sealed class FunctionIngestTests
     }
 
     [Fact]
+    public async Task Producer_cannot_submit_collector_health()
+    {
+        using Harness harness = new();
+        CollectorResponse response = await harness.PostAsync(
+            Harness.Event(eventType: "collector_health", category: "authentication", secret: false), harness.Entra.Token());
+        Assert.Equal(400, response.StatusCode);
+        Assert.Contains("reserved-event-type", response.Body, StringComparison.Ordinal);
+        Assert.Empty(harness.Fake.Batches);
+    }
+
+    [Fact]
     public async Task Policy_deny_rejects_without_delivering_anything()
     {
         using Harness harness = new();

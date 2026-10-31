@@ -440,6 +440,8 @@ public static partial class CollectorApplication
                     QueueSnapshot snapshot = await eventQueue.GetSnapshotAsync(cancellationToken);
                     LedgerHead ledger = await eventQueue.GetLedgerHeadAsync(cancellationToken);
                     IReadOnlyList<SourceSilenceStatus> sources = sourceHealth.Evaluate();
+                    DeliveryActivity activity = context.RequestServices.GetRequiredService<DeliveryActivity>();
+                    DeliveryFailureActivity? lastFailure = activity.LastFailure;
                     StatusResponse status = new(
                         Status(snapshot, sources),
                         new StatusPolicyResponse(
@@ -481,7 +483,9 @@ public static partial class CollectorApplication
                         Activity = telemetry.BusiestSources(),
                         Tap = context.RequestServices.GetRequiredService<EventTap>().Snapshot(),
                         WindowsEventLog = context.RequestServices.GetService<WindowsEventLogSource>()?.Snapshot(),
-                        QueuePages = await QueuePagesAsync(eventQueue, cancellationToken)
+                        QueuePages = await QueuePagesAsync(eventQueue, cancellationToken),
+                        DeliveryActivity = new StatusDeliveryActivityResponse(
+                            activity.LastSuccessfulDeliveryAt, lastFailure?.Code, lastFailure?.At)
                     };
                     return Results.Json(status, CollectorJsonContext.Default.StatusResponse);
                 })

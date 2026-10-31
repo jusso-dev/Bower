@@ -10,10 +10,17 @@ db=/var/lib/bower/queue.db
 cli=/opt/bower-cli/bower
 case "$DRILL_ACTION" in
   poison)
-    token=$(cat /etc/bower/secrets/ingest-token)
-    python3 - "$token" <<'PY'
-import json, sys, urllib.request, uuid, datetime
-token = sys.argv[1]
+    python3 - <<'PY'
+import json, urllib.request, uuid, datetime
+from pathlib import Path
+
+# Never forward the bearer token to a redirected destination.
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+opener = urllib.request.build_opener(NoRedirect())
+token = Path("/etc/bower/secrets/ingest-token").read_text().strip()
 for index in range(int(3)):
     event_id = "ws6-poison-" + uuid.uuid4().hex[:20]
     words = ("synthetic drill padding " * 700)[:15000]
@@ -26,10 +33,12 @@ for index in range(int(3)):
     request = urllib.request.Request("http://127.0.0.1:4319/v1/events", data=json.dumps(event).encode(), method="POST",
                                      headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(request, timeout=10) as response:
+        with opener.open(request, timeout=10) as response:
             print("posted", event_id, response.status)
     except urllib.error.HTTPError as error:
-        print("posted", event_id, error.code)
+        # A refusal or redirect is not an accepted drill event. Do not print the
+        # response body or mark the phase complete.
+        raise SystemExit(f"Synthetic drill ingestion failed with HTTP {error.code}") from None
 PY
     echo "fault $(now) poison events posted" ;;
   list)

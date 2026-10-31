@@ -76,6 +76,9 @@ internal sealed record StatusResponse(
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public StatusQueuePagesResponse? QueuePages { get; init; }
+
+    /// <summary>Last acknowledgement and last delivery failure code since start-up. Metadata only.</summary>
+    public StatusDeliveryActivityResponse? DeliveryActivity { get; init; }
 }
 
 /// <summary>First server-sent event of a tap session: its effective filters and caps.</summary>
@@ -127,6 +130,15 @@ internal sealed record StatusQueueResponse(
     long TotalBytes,
     long UndeliveredBytes,
     DateTimeOffset? OldestUndelivered);
+
+/// <summary>
+/// Last acknowledgement and most recent delivery failure since start-up (<c>deliveryActivity</c>
+/// in /v1/status). The code is a fixed string, for example <c>destination-azure-credential-failed</c>.
+/// </summary>
+internal sealed record StatusDeliveryActivityResponse(
+    DateTimeOffset? LastSuccessfulDeliveryAt,
+    string? LastFailureCode,
+    DateTimeOffset? LastFailureAt);
 
 /// <summary>Read-only page accounting of the queue database (<c>queuePages</c> in /v1/status).</summary>
 internal sealed record StatusQueuePagesResponse(

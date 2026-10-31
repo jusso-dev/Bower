@@ -4,10 +4,10 @@ Production-readiness gap 6 of 7: **actionable, tested alerts and runbooks** for 
 scoped rollout, Windows WEF/WEC (`ForwardedEvents`) and firewall syslog (RFC 5424 over
 mutual TLS) → Bower collector → Microsoft Sentinel (Logs Ingestion API / DCR).
 
-**Status: alerts and runbooks validated live in Azure and AWS on 31 October 2026, with
-retained failures.** Every alert in the catalogue below fired for a real fault and
-resolved after recovery, with one exception: the Azure storage alert cannot report a queue
-that is *already* full (`collector-health-missing` covers that case). The drill also found
+**Status: production qualification remains open.** An earlier version was exercised in
+Azure and AWS on 31 October 2026 with retained failures; several metrics were not
+triggered and the Azure storage alert did not report an already-full queue. The revised
+rules, host checks and queue-page metrics have not been validated end to end. The drill found
 a **queue page-ceiling defect** that stops delivery after the queue file fills, and a
 recovery procedure that worked. See [known defects](#known-defects-found-by-this-work)
 and the [evidence](../evidence/ws6-20261031-074751/README.md). Releases are **unsigned**
@@ -34,8 +34,8 @@ development builds; this document does not change the production-readiness statu
 
 ## How monitoring works
 
-Three independent paths watch each collector. No single failure (the collector, the
-host, the network, Azure ingestion or the management plane) silences all three.
+Three paths can watch each collector. Their failure modes overlap: verify the alert and
+notification path independently, especially when a host or Azure ingestion is unavailable.
 
 ```text
  firewall ──syslog/mTLS──┐                      ┌── (A) Azure-side: BowerSecurity_CL
@@ -50,11 +50,13 @@ host, the network, Azure ingestion or the management plane) silences all three.
 | Failure | (A) Azure-side | (B) Host-side | (C) Management |
 |---|---|---|---|
 | Firewall or WEC stops sending | `source-overdue`, `destination-freshness` | `source-overdue` warning; WEC subscription state | "Needs a check: an expected app has gone quiet" |
-| Delivery to Sentinel fails (network, credential, DCR) | `collector-health-missing`; DCR metrics and `dcr-errors` | `backlog` warning/critical | "Can't deliver to Sentinel" |
+| Delivery to Sentinel fails: network or destination | `collector-health-missing`; DCR metrics and `dcr-errors` | `destination-failing`, `backlog` | "Can't deliver to Sentinel" |
+| Delivery to Sentinel fails: credential or role | `collector-health-missing` live; `destination-credential` once records arrive | `destination-credential` (CRITICAL); log event 1008 `destination-azure-credential-failed` / `http-403` | "Can't deliver to Sentinel" |
 | Old queued events | `queue-backlog` (while delivery is slow, or after recovery) | `backlog` | "Events waiting more than 15 minutes" |
-| Storage pressure | `queue-storage` (before the queue is full) | `queue-file`, `queue-storage`, `capacity-refusals`, `disk-free` | not reported today |
-| Collector or host down | `collector-health-missing`; `dcr-no-ingestion` (whole fleet) | `collector-unreachable`; systemd/SCM restart | "Not heard from recently" (amber after minutes, red after 15) |
-| Loss before acceptance | `source-transport-errors` (syslog) | `syslog-errors`, `syslog-churn`, `wec-subscription`, `wec-source` | not reported |
+| Storage pressure | `queue-storage` (before the queue is full) | `queue-pages`, `queue-storage`, `capacity-refusals`, `disk-free` | not reported today |
+| Collector or host down | `collector-health-missing`; `table-no-ingestion` (unqualified event-time silence) | `collector-unreachable`; systemd/SCM restart | "Not heard from recently" (amber after minutes, red after 15) |
+| Loss before acceptance | `source-transport-errors` (syslog, Windows) | `syslog-errors`, `syslog-churn`, `wec-subscription`, `wec-source` | not reported |
+| Syslog TLS material expiring or failing to reload | `syslog-tls-expiry`; `source-transport-errors` (reload, revocation) | `syslog-certificate`, `syslog-crl`, `syslog-errors` | not reported |
 | Events set aside | `dead-letters` | `dead-letters` | "Has events that could not be sent and were set aside" |
 
 The Azure path cannot tell "the collector is down" from "delivery is failing": both mean
@@ -68,8 +70,9 @@ What already existed on `main` (commit `9d1bbcd`) and what this work adds.
 
 | Signal | Where | Content | Used by |
 |---|---|---|---|
-| `GET /health` | Collector, no token | `healthy` or `degraded` (dead letters or an overdue expected source). HTTP 200 either way | Readiness/liveness probes, host check |
-| `GET /v1/status` | Collector, ingest token | Queue counts, `oldestUndelivered`, `undeliveredBytes`; `intake` (attempts, capacity refusals, last refusal); `pipeline`; `sources` (silence state per expected source); `syslog` per listener (connections, TLS failures, frames, drops, timeouts); `windowsEventLog` per subscription (state, reads, errors, gaps, bookmark); jobs; adaptive delivery concurrency | Host check, runbooks |
+| `GET /health` | Collector, no token | `healthy` or `degraded` (dead letters or an overdue expected source). HTTP 200 either way; reads the queue (SQLite, 5 s busy timeout) | Readiness probe, host check |
+| **New: `GET /health/live`** | Collector, no token | `alive` while the process serves requests; touches no storage, metadata-free (C# and Rust) | Liveness probe |
+| `GET /v1/status` | Collector, ingest token | Queue counts, `oldestUndelivered`, `undeliveredBytes`; `intake` (attempts, capacity refusals, last refusal); `pipeline`; `sources` (silence state per expected source); `syslog` per listener (connections, TLS failures, frames, drops, timeouts); `windowsEventLog` per subscription (state, reads, errors, gaps, bookmark); jobs; adaptive delivery concurrency. Syslog TLS reload and revocation counters and certificate dates from [credential rotation](05-credential-rotation-and-security-failures.md). **New:** `queuePages` (page size, page limit, in-use and free-list bytes, used percent, read from SQLite) and `deliveryActivity` (last acknowledgement, last failure code and time) | Host check, runbooks |
 | Source silence | `BOWER_SOURCE_EXPECTATIONS` ([details](../operations/suppression-archive-and-source-silence.md#source-silence)) | Per application/environment allowance, durable across restarts | `/health`, status, heartbeat, health record |
 | Heartbeat v2 | Collector → management every 60 s ([schema](../architecture/heartbeat-v2.md)) | Delivery status, undelivered count, oldest age, dead letters, sources, jobs, ledger head | Fleet and home views, fleet check |
 | Fleet view | `GET /api/fleet` (Viewer role) | One plain state and traffic light per collector ([console](../operations/console-fleet.md)) | Fleet check |
@@ -90,8 +93,10 @@ Collector log events worth alerting on (all metadata only):
 | 1004 | Warning | Delivery attempts exhausted; event dead-lettered | R3 |
 | 1006 | Warning | Retry-After above one hour was capped | R2 |
 | 1007 | Warning | Output exceeded its delivery timeout; batch will retry (seen throughout a destination outage) | R1 |
+| 1008 | Warning | Output did not deliver N events; retrying or dead-lettered. Allow-listed `destination-azure-credential-failed`, `destination-azure-http-401` and `destination-azure-http-403` indicate identity or role failure. Other unrecognised codes are reported as `delivery-failure` to avoid exposing arbitrary adapter text ([credential rotation](05-credential-rotation-and-security-failures.md)) | R1 |
 | 1101 | Warning | Management heartbeat failed; collection continues | R8 |
 | 1302 | Warning | Suppression windows could not close (often queue capacity) | R5 |
+| 1307 | Warning | Management `reload` refused: the new configuration would not load (`reload-validation-failed`); the last good configuration keeps running | R8 |
 | 1321 | Warning | Monitoring start of expected sources forgotten (expectations changed) | R6 |
 | 1330 | Warning | **New**: health record refused, queue at capacity | R5 |
 | 1331 | Warning | **New**: health record not queued (policy or validation) | R1 |
@@ -123,7 +128,10 @@ health worker only reads metadata and enqueues its own record.
 - **Identity.** `eventId` is `collector-health-` and 32 letters derived from the collector
   id, process start and sequence. Letters only: a run of digits can match a numeric privacy
   detector (the earlier pilot saw generated ids masked). A restart starts a new series.
-- **Numbers stay below eight digits.** Default privacy detectors scan JSON numbers, and an
+- **Numbers stay below eight digits** (and IDs use letters only). Both are workarounds for
+  default privacy detectors masking Bower-generated identifiers and numbers; the privacy
+  workstream is changing the detectors so they no longer do, after which these limits can be
+  revisited. Default privacy detectors scan JSON numbers, and an
   eight-digit or longer value can match a card, TFN, ABN or Medicare checksum and be masked
   (measured: up to 9 % of random 8–10 digit values, 0–3 % for 11–16 digits, none at 7 or
   fewer). So counters are **deltas since the
@@ -137,20 +145,24 @@ health worker only reads metadata and enqueues its own record.
 | Field (`Attributes.…`) | Meaning |
 |---|---|
 | `recordVersion`, `intervalSeconds`, `sequence`, `collectorStartedAt`, `countersSince` | Record series and the start of this record's counter window |
-| `status`, `problems[]` | `healthy` or `degraded`; bounded codes: `dead-letters`, `backpressure`, `stalled`, `retrying`, `capacity-refusals`, `source-overdue`, `syslog-errors`, `windows-event-log-errors` |
-| `delivery.output`, `delivery.status`, `delivery.lastSuccessfulDeliveryAt` | Output type; `idle`, `waiting`, `pending`, `retrying`, `stalled` (oldest > 5 min), `backpressure` (≥ 90 % of the cap), `degraded` (dead letters), `disabled` |
+| `status`, `problems[]` | Every applicable code, each judged on its own: `dead-letters`, `backpressure`, `stalled`, `retrying`, `destination-credential`, `capacity-refusals`, `source-overdue`, `syslog-errors`, `windows-event-log-errors`. `status` is the worst: `healthy`, `warning` (low: retries, syslog errors), `degraded` (medium: dead letters, silent source, Windows errors) or `critical` (high: backpressure, stall, capacity refusals, credential); `EventSeverity` matches (Informational/Low/Medium/High) |
+| `delivery.output`, `delivery.status`, `delivery.lastSuccessfulDeliveryAt`, `delivery.lastFailureCode`, `delivery.lastFailureAt` | Output type; the heartbeat's single delivery state (`idle`, `waiting`, `pending`, `retrying`, `stalled`, `backpressure`, `degraded`, `disabled`, first match only); the last acknowledgement and the most recent failure code (fixed text, for example `destination-azure-credential-failed`) |
 | `queue.queued`, `retrying`, `uploading`, `undelivered`, `deadLettered`, `oldestUndeliveredAt`, `oldestUndeliveredAgeSeconds` | Queue state when the record was written |
 | `storage.queueCapacityMiB`, `undeliveredMiB`, `storedMiB`, `capacityUsedPercent` | Undelivered payload against `BOWER_QUEUE_MAX_BYTES` |
-| `storage.queueFileMiB`, `queueFileLimitMiB`, `queueFileUsedPercent` | Queue database file against its SQLite page limit (see [defects](#known-defects-found-by-this-work)). **Extension point:** free disk and watermark fields join `storage` additively |
+| `storage.queuePagesUsedMiB`, `queueFreeListMiB`, `queuePageLimitMiB`, `queuePagesUsedPercent` | Queue database **in-use pages** (page count minus free list) against the page limit SQLite enforces (`max_page_count`, read from the store, not recomputed). Freed pages can remain in the free list, so in-use pages can fall while file length does not (see [defects](#known-defects-found-by-this-work)). **Extension point:** free disk and watermark fields join `storage` additively |
 | `intake.attemptedRequests`, `capacityRefusals`, `privacyAlertRefusals`, `lastRefusalAt`, `lastRefusalReason` | Intake in this window |
 | `pipeline.eventsIn`, `eventsQueued`, `duplicates`, `suppressed` | Selection in this window (includes the previous health record) |
 | `sources.configured`, `expected`, `active`, `pending`, `silent`, `neverSeen`, `overdue[]` | Source expectations; `overdue[]` lists up to 25 by `application`, `environment`, `state`, `silentSeconds`, `allowedSilenceSeconds`, `lastSeenAt` |
-| `syslog[]` | Per listener (up to 25): `activeConnections`, and window deltas of `connectionsAccepted`, `connectionsRejected`, `sendersDenied`, `tlsHandshakeFailures`, `framesReceived`, `queued`, `notRouted`, `parserErrors`, `malformed`, `oversized`, `framingErrors`, `timeouts`, `dropped`, `retries`, `submitFailures`, `receiveErrors`; `lastFrameAt` |
-| `windowsEventLog[]` | Per subscription (up to 25): `state`, window deltas of `eventsRead`, `queued`, `notSelected`, `parserErrors`, `readErrors`, `gaps`, `resets`, `retries`, `submitFailures`, `cursorConflicts`; `lastEventAt`, `lastPollAt` |
+| `syslog[]` | Per listener (up to 25): `activeConnections`, and window deltas of `connectionsAccepted`, `connectionsRejected`, `sendersDenied`, `tlsHandshakeFailures`, `framesReceived`, `queued`, `notRouted`, `parserErrors`, `malformed`, `oversized`, `framingErrors`, `timeouts`, `dropped`, `retries`, `submitFailures`, `receiveErrors`, `tlsReloads`, `tlsReloadFailures`, `tlsRevoked`, `tlsSessionsClosed`; `serverCertificateNotAfter`, `clientCertificateAuthorityNotAfter`, `clientRevocationListNextUpdate`, `lastFrameAt` |
+| `windowsEventLog[]` | Per subscription (up to 25): `state`, window deltas of `eventsRead`, `queued`, `notSelected`, `parserErrors`, `malformed`, `oversized`, `readErrors`, `gaps`, `resets`, `retries`, `submitFailures`, `cursorConflicts`; `lastEventAt`, `lastPollAt` |
 
 Interpretation: a record's `TimeGenerated` is when it was written and `ingestion_time()`
 is when Sentinel stored it, so `ingestion_time() - TimeGenerated` is the end-to-end
 delivery delay of the pipeline at that moment.
+
+Page count, free-list count and page limit are sampled separately while the queue may
+be changing. Treat their combined values as a monitoring estimate, not an atomic
+capacity measurement or proof that another write will fit.
 
 ## Alert catalogue
 
@@ -158,7 +170,12 @@ Azure rules are in [`deploy/sentinel/monitoring/monitoring.bicep`](../../deploy/
 (queries in [`queries/`](../../deploy/sentinel/monitoring/queries)); Sentinel analytics
 rules in [`sentinel-health-rules.bicep`](../../deploy/sentinel/monitoring/sentinel-health-rules.bicep).
 All log rules run every 5 minutes (one-minute rules are refused by Azure for these
-queries), count result rows (`> 0` fires), split by the listed dimensions and auto-resolve.
+queries), count result rows (`> 0` fires, except `table-no-ingestion`, which fires on fewer
+than 1), split by the listed dimensions and auto-resolve. The original drill measurements
+below apply to the recorded earlier builds and rule versions. The revised rules and host
+checks have not been qualified end to end; deploy them disabled in an isolated workspace,
+trigger each fault, independently verify firing and recovery, and retain the results before
+using them for production alerting.
 "Measured" columns come from the [live drill](#how-we-tested-this) with the drill
 thresholds; production defaults are in the threshold column.
 
@@ -167,20 +184,35 @@ thresholds; production defaults are in the threshold column.
 | A1 | `collector-health-missing` | Newest `collector_health` per `CollectorId` ingested longer ago than the threshold; `expectedCollectorIds` also alert when never seen ([KQL](../../deploy/sentinel/monitoring/queries/collector-health-missing.kql)) | 15 min (5) over 2 days | 1 | Only destination-side proof that a collector and its delivery path work | Planned maintenance; decommissioned collector still in `expectedCollectorIds`; new DCR cold start (first rows took 6.5 min) | Fired 310–417 s after stop/outage; resolved 716–884 s after recovery |
 | A2 | `dead-letters` | Newest record `queue.deadLettered > 0` ([KQL](../../deploy/sentinel/monitoring/queries/dead-letters.kql)) | > 0 | 2 | Set-aside events never reach Sentinel without an audited replay | Reviewed poison events stay dead-lettered (no purge exists): the alert stays until they are replayed and delivered | Fired 384 s after three poison events |
 | A3 | `queue-backlog` | Newest record `oldestUndeliveredAgeSeconds` above threshold, or any record in the window arrived later than the lag threshold ([KQL](../../deploy/sentinel/monitoring/queries/queue-backlog.kql)) | 900 s age, 15 min lag (300 s, 5 min) | 2 | Old events mean late detections; lag shows an outage that just ended | New DCR cold start; deliberate maintenance outages | Fired 243 s after a 12-minute outage drained; resolved 1,204 s later |
-| A4 | `queue-storage` | Newest record `queueFileUsedPercent` or `capacityUsedPercent` at or above threshold, delivery `backpressure`, or capacity refusals in the window ([KQL](../../deploy/sentinel/monitoring/queries/queue-storage.kql)) | file 70 %, undelivered 40 % | 2 | Warn before refusals and the page-ceiling stall | File size includes SQLite free pages, so it stays high after retention frees space | Fired 490 s after records showed 92 %; resolved 830 s after the cap was raised. **Did not fire for a queue already full** (see A1) |
+| A4 | `queue-storage` | Newest record `queuePagesUsedPercent` (in-use pages) or `capacityUsedPercent` at or above threshold, delivery `backpressure`, or capacity refusals in the window ([KQL](../../deploy/sentinel/monitoring/queries/queue-storage.kql)) | pages 70 %, undelivered 40 % | 2 | Warn before refusals and the page-ceiling stall | Large retained history (lower `BOWER_QUEUE_RETENTION_HOURS` or raise the cap) | Earlier file-length version fired 490 s after records showed 92 %; resolved 830 s after the cap was raised. **Did not fire for a queue already full** (see A1). Revised page-use version unverified. |
 | A5 | `source-overdue` | Newest record `sources.overdue[]` ([KQL](../../deploy/sentinel/monitoring/queries/source-overdue.kql)) | per `BOWER_SOURCE_EXPECTATIONS` (3 min) | 2 | Collector's own view of a firewall or WEC that went quiet | Genuinely quiet sources: size each allowance from real traffic | Fired 397–405 s after the source stopped; resolved 913–1,033 s after |
 | A6 | `destination-freshness` | Newest non-health row per `CollectorId` and `ApplicationName/Environment` older than its allowance ([KQL](../../deploy/sentinel/monitoring/queries/destination-freshness.kql)) | 60 min, per-source overrides (10 min) | 2 | Independent of collector logic and of health records | Low-volume sources (set overrides); retired sources age out after 2 days. Rows without a Bower identity and archive replays are excluded | Fired 683–843 s after the source stopped; resolved 860–900 s after |
-| A7 | `source-transport-errors` | Syslog refusal/TLS/framing/parse/timeout/drop deltas, connection churn above threshold; Windows read errors, gaps, resets or failed state ([KQL](../../deploy/sentinel/monitoring/queries/source-transport-errors.kql)) | any error; churn > 5 new connections per interval | 3 | Loss before acceptance (the pilot lost syslog frames before acceptance) | Scanners hitting the listener; sender restarts; per-message reconnecting senders (raise churn) | Fired 290 s after 10 TLS failures; resolved 1,809 s after the last error |
-| A8 | `dcr-errors` | `DCRLogErrors` for the DCR and `_LogOperation` ingestion warnings ([KQL](../../deploy/sentinel/monitoring/queries/dcr-errors.kql)) | any | 2 | Azure accepted the request but failed or dropped rows | Other producers writing to the same DCR | Fired 427 s after invalid requests |
+| A7 | `source-transport-errors` | Syslog refusal, TLS handshake, TLS reload, revocation (and sessions closed by it), framing, parse, timeout and drop deltas, connection churn above threshold; Windows read, parse, malformed and oversized errors, gaps, resets or failed state ([KQL](../../deploy/sentinel/monitoring/queries/source-transport-errors.kql)) | any error; churn > 5 new connections per interval | 3 | Loss before acceptance (the pilot lost syslog frames before acceptance) | Scanners hitting the listener; sender restarts; per-message reconnecting senders (raise churn) | Earlier version fired 290 s after 10 TLS failures; resolved 1,809 s after the last error. Revised counters unverified. |
+| A8 | `dcr-errors` | `DCRLogErrors` for the DCR and `_LogOperation` ingestion warnings; projects operation names, levels and counts only, never messages or details ([KQL](../../deploy/sentinel/monitoring/queries/dcr-errors.kql)) | any | 2 | Azure accepted the request but failed or dropped rows | Other producers writing to the same DCR | Fired 427 s after invalid requests (earlier version that also projected text) |
+| A9 | `table-no-ingestion` | Rows in `BowerSecurity_CL` in the window; fires when there are **fewer than 1**, so it evaluates on absence ([KQL](../../deploy/sentinel/monitoring/queries/table-no-ingestion.kql)) | none in 30 min (10) | 1 | Event-time silence only; late arrivals can cause a false alert. Not proof of ingestion absence | Fleet maintenance; a new table before its first rows | Revised log-based rule unverified; test absence and recovery in the target workspace. |
+| A10 | `destination-credential` | Health records reporting `destination-credential` (`destination-azure-credential-failed`, HTTP 401/403, nothing delivered since) ([KQL](../../deploy/sentinel/monitoring/queries/destination-credential.kql)) | any, over 2 days | 1 | Attributes an outage to a credential or role problem rather than the network. Records queue behind the failure, so it fires once delivery recovers; live detection is the host check and log event 1008 | Credential rotation without overlap | Unverified; test credential rejection, host detection and destination alert after recovery. |
+| A11 | `syslog-tls-expiry` | Newest record's syslog `serverCertificateNotAfter` or `clientCertificateAuthorityNotAfter` within the threshold, or `clientRevocationListNextUpdate` within its threshold ([KQL](../../deploy/sentinel/monitoring/queries/syslog-tls-expiry.kql)) | 14 days, revocation list 24 h | 2 | Expired TLS material refuses every sender ([credential rotation](05-credential-rotation-and-security-failures.md)) | Long-lived lab certificates | Unverified; test expiry and revocation-list thresholds and recovery. |
 | M1 | `dcr-rows-dropped` (metric) | `RowsDropped_Count` Total | > 0 in 15 min | 1 | Rows silently dropped by Azure | As A8 | Fired 255 s |
 | M2 | `dcr-transformation-errors` (metric) | `TransformationErrors_Count` Count | > 0 in 15 min | 1 | Transform failed for some rows | As A8 | Fired 197 s |
 | M3 | `dcr-columns-dropped` (metric) | `ColumnsDroppedCount` **Maximum** | > 0 in 15 min | 2 | Stream/table schema drift | None seen. `Count` fires on every request (one sample per request): use `Maximum` | Not triggered in the drill |
 | M4 | `dcr-request-errors` (metric) | `ApiCallReceived_Count` excluding `ResponseCode` 200/202/204 | > 0 in 15 min | 2 | Error responses to collectors | Expired or revoked credentials during rotation | Not triggered: the API returned 204 even for malformed bodies (validation is asynchronous) |
-| M5 | `dcr-no-ingestion` (metric) | `ApiCallReceived_Count` | < 1 in 30 min | 1 | Whole fleet silent | Fleet maintenance | Fired with no traffic, resolved 4.7 min after the first request |
 | S1 | Sentinel: *Bower collector health record missing* | Same query as A1 | 15 min, look-back 1 day (5 min) | High incident | SOC queue, grouped per collector | As A1 | Incident 806 s after a collector stop |
 | S2 | Sentinel: *Bower source silent at the destination* | Same query as A6 | 60 min (10 min) | Medium incident | SOC queue per source | As A6 | Incidents created for both genuine and (before the fix) synthetic/replay rows |
-| H1 | Host check (Linux and Windows) | `/health`, `/v1/status`, queue file, disk, WEC `wecutil gr` | exit 1/2 | — | Live state while Azure cannot see it | Restarts during deployments | `collector-unreachable` ≤ 65 s; `syslog-errors` 6 s; `capacity-refusals` 22 s; `queue-file` while `/health` still said healthy |
+| H1 | Host check (Linux and Windows) | `/health`, `/v1/status` (incl. `queuePages`, `deliveryActivity`, syslog TLS dates), disk, WEC `wecutil gr` | exit 1/2 (3 only when nothing is CRITICAL) | — | Live state while Azure cannot see it | Restarts during deployments | Earlier version: `collector-unreachable` ≤ 65 s; `syslog-errors` 6 s; `capacity-refusals` 22 s. Revised host checks and queue page metrics require live verification. |
 | F1 | Fleet check | `/api/fleet` light per collector | amber → 1, red → 2 | — | Management view: not heard from, cannot deliver, quiet source, set aside | Collectors awaiting approval (ignore that state if needed) | Amber at 7 min, red at 15.4 min after a stop |
+
+The current queue-storage query reports `StorageMetricsIncomplete` when either page
+or logical-capacity percentage is missing, invalid or negative. Queue-backlog reports
+`BacklogMetricsIncomplete` when backlog count or ingestion lag is unavailable, or
+when a nonempty backlog has no usable oldest age. These results mean **unknown**,
+not confirmed pressure. An empty backlog can legitimately have no oldest age.
+
+The TLS-expiry query excludes explicitly TCP/UDP listeners. A TLS listener with a
+missing or invalid certificate/CA/CRL date, or a listener with an unknown protocol,
+reports `TlsMetadataIncomplete`. The current health record does not say whether an
+optional client CA or CRL is configured, so an intentionally unconfigured CA/CRL
+also reports unknown; confirm listener configuration on the host before acting. The
+revised queries have structural tests but have not been validated in Sentinel.
 
 ## Deploy 1: enable health records on every collector
 
@@ -226,7 +258,7 @@ health policy, and set the interval:
 
 ```bash
 mkdir -p ./bower-policies && cp policies/default/*.yaml examples/policies/collector-health/collector-health.yaml ./bower-policies/
-docker run -d --name bower --restart unless-stopped --read-only \
+docker --context <docker-context> run -d --name bower --restart unless-stopped --read-only \
   -e BOWER_POLICY_DIRECTORY=/etc/bower/policies -v "$PWD/bower-policies:/etc/bower/policies:ro" \
   -e BOWER_HEALTH_RECORD_INTERVAL_SECONDS=300 ... ghcr.io/<owner>/bower:<version>
 ```
@@ -342,8 +374,22 @@ az monitor metrics alert list -g <rg> --query "[?starts_with(name,'bower')].{nam
 az monitor diagnostic-settings list --resource <dcr resource id> -o table   # <prefix>-dcr-errors, LogErrors
 ```
 
-**Acceptance:** 8 log rules (7 without a DCR name), 5 metric rules, the diagnostic setting
-and 2 Sentinel rules exist and are enabled. With healthy collectors, no alert is fired
+**Acceptance:** The intended log and metric rules and Sentinel rules exist and the
+qualified rules are enabled. The DCR diagnostic setting is optional and is not created
+by default. Set `enableDcrErrorLogs=true` explicitly when validating DCR error logs;
+those logs can incur ingestion charges. `dcr-errors` stays disabled even when
+`enabled=true` unless `enableUnqualifiedDcrErrorQuery=true` is separately supplied.
+Use that opt-in only after validating both absent-table and first-error behavior.
+
+An incremental redeployment with `enableDcrErrorLogs=false` does **not** remove a
+diagnostic setting created by an earlier deployment. To stop its ingestion charges,
+list settings on the intended DCR with `az monitor diagnostic-settings list --resource
+DCR_RESOURCE_ID`, identify the setting owned by this deployment, and delete that
+specific setting with `az monitor diagnostic-settings delete --resource DCR_RESOURCE_ID
+--name SETTING_NAME`. List again to verify removal; leave unrelated settings intact.
+`table-no-ingestion` also stays disabled unless its separate
+`enableUnqualifiedTableNoIngestionQuery=true` opt-in is supplied. It needs a
+late-arrival-safe design and live validation before use. With healthy collectors, no alert is fired
 after 30 minutes except `collector-health-missing` for expected collectors that are not
 yet sending. **Rollback:** redeploy with `enabled=false`, or delete the rules
 (`az monitor scheduled-query delete`, `az monitor metrics alert delete`,
@@ -354,7 +400,7 @@ yet sending. **Rollback:** redeploy with `enabled=false`, or delete the rules
 | "One-minute frequency is not supported for this query" | Azure limits one-minute rules | Use `PT5M` (the template no longer offers `PT1M`) |
 | "WindowSize of 2880 minutes is not supported for one minute alert rules" | Same | Same |
 | Sentinel: "When queryPeriod ≥ 2 days, queryFrequency should be ≥ 1 hour" | Sentinel limit | Keep `queryPeriod` at `P1D`, or use `PT1H` frequency |
-| `dcr-errors` validation error for `DCRLogErrors` | Table appears after the first error | The rule skips validation; this is expected |
+| `dcr-errors` validation error for `DCRLogErrors` | Table may appear only after the first error | Deployment validation is skipped, but this does not establish that runtime queries work without the table. Keep this rule unqualified until both absent-table and first-error behavior are verified. |
 | `dcr-columns-dropped` fires constantly | `Count` aggregation counts one sample per request | Use the template (aggregation `Maximum`) |
 | Alerts never resolve | Azure resolves only after about three healthy evaluations | Expect 12–20 minutes after recovery (measured) |
 
@@ -456,15 +502,15 @@ loopback port; point `--queue-path` at the volume:
 
 ```bash
 python3 bower-healthcheck.py --url http://127.0.0.1:4319 --token-file /etc/bower/ingest-token \
-  --queue-path "$(docker volume inspect -f '{{ .Mountpoint }}' <project>_bower-data)/queue.db" --queue-max-bytes <cap>
-docker inspect -f '{{.State.Status}} restarts={{.RestartCount}}' bower
-docker logs --since 15m bower 2>&1 | grep -E 'warn:|fail:'
+  --queue-path "$(docker --context <docker-context> volume inspect -f '{{ .Mountpoint }}' <project>_bower-data)/queue.db" --queue-max-bytes <cap>
+docker --context <docker-context> inspect -f '{{.State.Status}} restarts={{.RestartCount}}' bower
+docker --context <docker-context> logs --since 15m bower 2>&1 | grep -E 'warn:|fail:'
 ```
 
 ### Kubernetes
 
-The manifest now has a **liveness probe** on `/health` (restarts only a hung process:
-`/health` answers 200 when degraded) besides the readiness probe. Watch restarts and logs:
+The manifest uses `/health/live` for **liveness** without querying the queue. Readiness
+uses `/health`. Watch restarts and logs:
 
 ```bash
 kubectl --context <context> get pods -l app.kubernetes.io/name=bower-collector
@@ -510,8 +556,8 @@ Common diagnosis commands:
 | Linux (RPM/DEB) | `systemctl status bower --no-pager` | `journalctl -u bower --since -30min --no-pager` | `curl -s -H "Authorization: Bearer $(sudo cat /etc/bower/secrets/ingest-token)" http://127.0.0.1:4319/v1/status \| python3 -m json.tool` |
 | Windows (MSI) | `Get-Service Bower; sc.exe qfailure Bower` | `Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='Bower.Collector';StartTime=(Get-Date).AddMinutes(-30)}` | `Invoke-RestMethod http://127.0.0.1:4319/v1/status -Headers @{Authorization="Bearer $((Get-Content $env:ProgramData\Bower\secrets\ingest-token -Raw).Trim())"}` |
 | WEC host | `wecutil es; wecutil gr <subscription>` | `Get-WinEvent -LogName 'Microsoft-Windows-EventCollector/Operational' -MaxEvents 20` | `Get-WinEvent -LogName ForwardedEvents -MaxEvents 1` |
-| Docker | `docker ps -a --filter name=bower` | `docker logs --since 30m bower` | host check against `127.0.0.1:4319` |
-| Kubernetes | `kubectl get pods -l app.kubernetes.io/name=bower-collector` | `kubectl logs deploy/bower-collector --since=30m` | `kubectl port-forward` then the host check |
+| Docker | `docker --context <docker-context> ps -a --filter name=bower` | `docker --context <docker-context> logs --since 30m bower` | host check against `127.0.0.1:4319` |
+| Kubernetes | `kubectl --context <context> get pods -l app.kubernetes.io/name=bower-collector` | `kubectl --context <context> logs deploy/bower-collector --since=30m` | `kubectl --context <context> port-forward` then the host check |
 | AWS EC2 | `aws ec2 describe-instance-status --instance-ids <id>`; SSM `AWS-RunShellScript`/`AWS-RunPowerShellScript` with the commands above | CloudWatch Logs group | as Linux/Windows via SSM |
 | Azure VM | `az vm get-instance-view -g <rg> -n <vm> --query instanceView.statuses` | `az vm run-command invoke ... --scripts "journalctl -u bower -n 50"`; AMA `Syslog`/`Event` tables | as Linux/Windows via Run Command |
 
@@ -748,24 +794,25 @@ and the replay collector's `CollectorId`.
 2. Start the replay collector (`BOWER_COLLECTOR_ID=<id>-replay`, `BOWER_LISTEN_URL=http://127.0.0.1:4329`,
    its own `BOWER_QUEUE_PATH`, the same output and packs, `BOWER_SINGLE_TRUST_DOMAIN=true`
    on loopback only).
-3. `BOWER_INGEST_TOKEN=<token> bower archive replay --archive <dir> --collector-url http://127.0.0.1:4329 --from <ISO> --to <ISO> --event-type <type>`
+3. Inject the collector token through your approved secret mechanism, then run
+   `bower archive replay --archive <dir> --collector-url http://127.0.0.1:4329 --from <ISO> --to <ISO> --event-type <type>`.
 4. Record the outcome (CLI summary: `selected`, responses by status code). Stop the replay
    collector when its queue is empty.
-5. Verify and deduplicate. **Deduplicate by `EventId` alone**: the replayed copy has a
-   different `CollectorId`, so the pilot's `by CollectorId, EventId` does not collapse it
-   (measured: 238 rows instead of 119):
-
-   ```kusto
-   BowerSecurity_CL
-   | where TimeGenerated between (datetime(<from>) .. datetime(<to>))
-   | extend BowerIngested = ingestion_time()
-   | summarize arg_max(BowerIngested, *) by EventId
-   ```
+5. Verify original and replayed identities against the audit manifest. The replayed copy
+   has a different `CollectorId`, so `by CollectorId, EventId` does not collapse it
+   (measured: 238 rows instead of 119). `EventId` alone is also unsafe as a general
+   deduplication key because different collectors can use the same ID. Keep these copies
+   visible until a trusted origin-aware replay identity has been designed and qualified.
 
 Drill result: 119 events selected and accepted (HTTP 202), all delivered; every `EventId`
 had exactly 2 rows (original and replay), the two identity sets had the same SHA-256
-digest, and the query above returned exactly 119. Alerts and detections should exclude or
-deduplicate `Labels.bowerReplay` rows; the freshness rules already ignore them.
+digest. Grouping by `EventId` returned 119 for this isolated fixture only; it does not
+establish cross-collector uniqueness. Replay labels are producer-supplied and can be
+forged; direct DCR writers can also forge `CollectorId`. Restrict DCR writers and do not
+treat labels or collector IDs as authenticated origin proof. The freshness rule currently
+excludes records marked `Labels.bowerReplay`; a forged label can hide a source from that
+view, so use independent source-side monitoring and qualify a trusted boundary before
+relying on that rule.
 
 ## Escalation
 
@@ -877,8 +924,13 @@ self-contained publish, not Native AOT, unsigned).
    Workaround: raise the cap and restart (R5). Fix belongs with the queue/storage work:
    reserve page headroom for delivery state transitions and count retained rows.
 2. **The Azure storage alert cannot see a full queue.** Health records are refused like any
-   event at capacity. A1 covers the full-queue case; A4 is an early warning.
-3. **Archive replays are not collapsed by `by CollectorId, EventId`.** Use `by EventId`.
+   event at capacity. A1 can detect missing health records for explicitly expected
+   collectors or collectors still visible in its look-back; configure expected IDs so
+   long-silent collectors do not disappear. A4 is an early warning.
+3. **Archive replays are not collapsed by `by CollectorId, EventId`.** In this drill,
+   `by EventId` collapsed the measured copies, but event IDs are not proven globally
+   unique across collectors. Qualify the origin-aware replay identity and collision
+   handling in the replay-safe detection workstream before relying on deduplication.
 4. **Sender-side loss under back-pressure (outside Bower; reported to the syslog
    workstream).** Over the drill, the kernel logged 10,069 denied packets before 10:20 UTC
    and Bower accepted 7,092. Every accepted event reached Sentinel (identical identity
@@ -891,15 +943,27 @@ self-contained publish, not Native AOT, unsigned).
 
 ## Known limits
 
+- **DCR error alert blocked:** the query references `DCRLogErrors` directly. Skipping
+  deployment validation does not make an absent table queryable at runtime. Verify
+  both absent-table behavior and first-error detection in an isolated Azure workspace
+  before relying on this rule; the previous live drill does not establish both cases.
+- Delivery failure metadata normalizes untrusted relay rejection text to
+  `relay-rejected:unknown` and unknown adapter codes to a bounded generic code.
+  Retry classification is unchanged; obtain detailed diagnosis from the trusted
+  destination. Existing queue rows written before this change are not rewritten.
+
 - One collector of each kind, synthetic traffic, short drills (about two hours); not a
   multi-day soak. Thresholds are starting points; tune them from real traffic.
 - Azure alert latency is bounded below by the five-minute evaluation, ingestion delay and
   the threshold itself; auto-resolution took 12–20 minutes (about three healthy
   evaluations), and 30 minutes for windowed rules. Azure cannot alert faster than this.
 - A new DCR or table took 6.5 minutes to make the first rows queryable.
-- `queueFileUsedPercent` uses the file size, which includes free pages; it overstates use
-  after retention until pages are reused. The page-limit formula mirrors the current
-  persistence code and must change with it.
+- Queue page metrics now use in-use pages rather than file length, but the revised
+  calculation and alerts have not been qualified against the storage-pressure changes.
+  Revalidate thresholds when that workstream is integrated.
+- The revised Windows host check asks Windows for free space on the queue directory,
+  including an NTFS mounted folder. Its mounted-volume behavior has not been tested on
+  Windows; verify it against independently measured queue-volume free space before use.
 - WEC subscription health is host-side only: Bower reads `ForwardedEvents` and cannot see
   the subscription's own state. Per-device (per firewall or per WEF source) silence needs
   one syslog listener per device or a pack field that maps the device; this work does not
@@ -910,3 +974,70 @@ self-contained publish, not Native AOT, unsigned).
   Bower does not dead-letter destination outages, so there was no transient dead letter to
   replay successfully.
 - Releases are unsigned development builds; signing is out of scope here.
+
+### Monitoring coverage and inventory prerequisites
+
+Health records list at most 25 syslog listeners and 25 Windows subscriptions. The
+`monitoringCoverage` flags identify truncation. Source transport and syslog TLS
+expiry alerts emit a `coverage-incomplete` source when their corresponding flag
+is false or missing, including records from older collectors. Treat this as an
+actionable monitoring gap: reduce the number of listeners/subscriptions per
+collector or deploy monitoring that covers every source. These query changes
+require validation against the target Sentinel workspace before qualification.
+
+Configure `expectedCollectorIds` with every production collector and maintain
+the inventory when collectors are added or removed. With the default empty
+inventory, a collector that never reports cannot be detected, and a missing
+collector drops out of the two-day `absenceWindow` after its last record ages
+out. Listed collectors continue to alert even when never seen in the window.
+Destination freshness rules likewise cannot discover sources that have no
+records within their lookback. An independently maintained expected-source
+inventory and validated alert coverage are release blockers; do not interpret
+an empty query result as proof that every source is healthy.
+
+The source transport alert also reports a listener with retry activity in two
+distinct health records in its lookback, or a Windows subscription with retries
+or `backpressure` in two distinct health records. These records need not be
+consecutive. A single transient record does not meet this threshold. Configure
+`healthWindow` to cover at least two health-record intervals plus ingestion
+delay; a one-hour reporting interval cannot be monitored by the default 30-minute
+window. Missing health records require the separate collector absence alert.
+These revised rules require Sentinel validation, including sustained and
+transient cases, before production qualification.
+
+Host and fleet checks permit cleartext HTTP only for literal `127.0.0.1` or
+`[::1]`; remote endpoints must use HTTPS with a normally trusted certificate
+matching the hostname. URLs containing user info, a query or a fragment are
+rejected, and redirects are not followed.
+
+**Release blocker — table ingestion absence:** `table-no-ingestion` evaluates
+the scheduled event-time window. Older backlog arriving now can fall outside
+that window and trigger a false absence alert. Its result does not prove that
+no rows arrived. A design that scans a suitably wide event-time range and
+evaluates ingestion time, including late arrivals and service limits, needs
+live Azure validation before it can be used as an ingestion-absence signal.
+
+**Release blocker — health record authenticity:** The C# collector reserves
+`collector_health` for its internal worker; ordinary producer and pack input is
+quarantined with `reserved-event-type`. Relay trusts the authenticated downstream
+collector and its key to enforce the same reservation. Rust parity, adversarial
+cross-ingress and relay validation, and destination validation remain required.
+Previously queued or already ingested forgeries are not removed, and direct DCR
+writers can forge records: restrict those writers and assess existing data. Until
+these trust assumptions are validated, do not treat a health record as proof of
+collector status. A compromised downstream collector or its relay key can still
+forge health records; mutual TLS authenticates the collector, not its worker.
+
+When a host check has no matching prior baseline (first run, state loss, new
+source, or collector restart), nonzero source error counters produce a warning
+that their age is unknown. Subsequent checks compare counters within the same
+collector process. Preserve and monitor the state file to avoid losing those
+comparisons.
+
+The fleet check returns UNKNOWN when there are no collectors or every collector
+is removed; retained historical entries alone are not an active fleet.
+
+The Windows host check limits each collector response to 4 MiB while reading it
+and does not follow redirects. Oversized or unreadable status responses are
+reported as unavailable without echoing their contents. Validate the check under
+the intended Windows PowerShell version before rollout.

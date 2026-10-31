@@ -10,6 +10,7 @@ script hash in commands.jsonl beside the state file.
 import argparse
 import hashlib
 import json
+import re
 import shlex
 import subprocess
 import sys
@@ -17,6 +18,21 @@ import time
 from pathlib import Path
 
 ACCOUNT = "959038055523"
+RESERVED_ENV = {"BOWER_LAB_BUCKET", "BOWER_LAB_RUN", "AWS_DEFAULT_REGION"}
+
+
+def extra_environment(items):
+    """Validate public extra variables before constructing shell or PowerShell code."""
+    result = {}
+    seen = set()
+    for item in items:
+        key, separator, value = item.partition("=")
+        if (not separator or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key)
+                or key.upper() in RESERVED_ENV or key.upper() in seen):
+            raise ValueError("Invalid, duplicate or reserved environment variable name")
+        seen.add(key.upper())
+        result[key] = value
+    return result
 
 
 def aws(profile, region, *args):
@@ -38,6 +54,10 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if not 30 <= args.timeout <= 7200:
         raise SystemExit("SSM execution timeout must be bounded")
+    try:
+        extra = extra_environment(args.env)
+    except ValueError as error:
+        raise SystemExit(str(error)) from None
     state = json.loads(args.state.read_text(encoding="utf-8"))
     identity = aws(args.profile, args.region, "sts", "get-caller-identity")
     if identity.get("Account") != ACCOUNT:
@@ -55,7 +75,7 @@ def main(argv=None):
         raise SystemExit("Script does not match host platform")
     values = {"BOWER_LAB_BUCKET": state["outputs"]["Bucket"], "BOWER_LAB_RUN": state["runId"],
               "AWS_DEFAULT_REGION": args.region}
-    values.update(item.split("=", 1) for item in args.env)
+    values.update(extra)
     if windows:
         prefix = "\n".join("$env:" + key + "='" + value.replace("'", "''") + "'" for key, value in values.items())
     else:

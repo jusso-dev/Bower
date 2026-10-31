@@ -28,6 +28,40 @@ fn processor(
 }
 
 #[test]
+fn reserved_health_is_quarantined_before_policy_or_privacy_alert() {
+    struct MustNotEvaluate;
+    impl bower_contracts::TelemetryPolicyEvaluator for MustNotEvaluate {
+        fn evaluate(
+            &self,
+            _: &bower_contracts::SecurityEventEnvelope,
+        ) -> bower_contracts::PolicyDecision {
+            panic!("reserved event reached policy");
+        }
+    }
+    let store = Arc::new(MemoryStore::default());
+    let input =
+        authentication_failure_json("").replace("authentication_failure", "collector_health");
+    let redactor = FixedRedactor(RedactionResult {
+        succeeded: true,
+        redacted_json: Some(input.clone()),
+        privacy_detected: Some(vec!["secret.test".into()]),
+        ..RedactionResult::default()
+    });
+    let subject = SecurityEventProcessor::new(
+        Arc::new(redactor),
+        Arc::new(MustNotEvaluate),
+        store.clone(),
+        Arc::new(now),
+    );
+    let result = subject.process(&input, &identity()).unwrap();
+    assert_eq!(result.action, DecisionAction::Quarantine);
+    assert_eq!(result.stage, bower_core::ProcessingStage::Validation);
+    assert_eq!(result.reasons, ["reserved-event-type"]);
+    assert!(result.event_id.is_none());
+    assert!(store.items().is_empty());
+}
+
+#[test]
 fn process_redacts_before_persistence_and_explains_acceptance() {
     let store = Arc::new(MemoryStore::default());
     let redactor = FieldRedactor {

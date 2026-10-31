@@ -3,8 +3,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Bower.Abstractions;
-using Bower.Contracts;
 using Bower.Collector.Jobs;
+using Bower.Contracts;
 using Bower.Core;
 using Bower.Persistence;
 using Bower.Source.Syslog;
@@ -29,7 +29,8 @@ public sealed record CollectorHealthSample(
     IReadOnlyList<SourceSilenceStatus> Sources,
     IReadOnlyList<SyslogListenerStatus>? Syslog,
     IReadOnlyList<WindowsEventSubscriptionStatus>? WindowsEventLog,
-    QueuePageUsage? QueuePages = null);
+    QueuePageUsage? QueuePages = null,
+    DeliveryFailureActivity? LastDeliveryFailure = null);
 
 /// <summary>
 /// Builds the periodic <c>collector_health</c> record. It travels through the same redaction,
@@ -68,13 +69,23 @@ public static class CollectorHealthRecord
     public const string WindowsEventLogErrors = "windows-event-log-errors";
 
     /// <summary>
+    /// The destination refused this collector's identity: the credential failed
+    /// (<c>destination-azure-credential-failed</c>) or the role is missing (HTTP 401/403).
+    /// Distinct from an unreachable destination, which the backlog problems cover.
+    /// </summary>
+    public const string DestinationCredential = "destination-credential";
+
+    private static readonly string[] CredentialFailureCodes =
+        [Bower.Output.AzureLogsIngestion.AzureLogsIngestionOutput.CredentialFailedCode, "destination-azure-http-401", "destination-azure-http-403"];
+
+    /// <summary>
     /// Severity of each problem code. Intake refused or about to be, and a stalled backlog, are
     /// high; set-aside events and silent or failing sources are medium; retries and transport
     /// errors the sender recovers from are low. The record's status and severity are the worst.
     /// </summary>
     public static EventSeverity SeverityOf(string problem) => problem switch
     {
-        Backpressure or Stalled or CapacityRefusals => EventSeverity.High,
+        Backpressure or Stalled or CapacityRefusals or DestinationCredential => EventSeverity.High,
         DeadLetters or SourceOverdue or WindowsEventLogErrors => EventSeverity.Medium,
         _ => EventSeverity.Low
     };
@@ -158,6 +169,14 @@ public static class CollectorHealthRecord
         if (!string.Equals(sample.OutputType, "none", StringComparison.OrdinalIgnoreCase))
         {
             problems.AddRange(DeliveryHealth.Conditions(sample.Queue, sample.QueueCapacityBytes, sample.At));
+            // A credential failure in this window that no acknowledgement has followed.
+            if (sample.LastDeliveryFailure is { } failure
+                && CredentialFailureCodes.Any(code => failure.Code.StartsWith(code, StringComparison.Ordinal))
+                && failure.At >= (baseline?.At ?? sample.CollectorStartedAt)
+                && (sample.LastSuccessfulDeliveryAt is not { } success || success <= failure.At))
+            {
+                problems.Add(DestinationCredential);
+            }
         }
 
         if (Delta(sample.Intake.CapacityRefusals, baseline?.Intake.CapacityRefusals)
@@ -194,7 +213,8 @@ public static class CollectorHealthRecord
         + Delta(item.Oversized, before?.Oversized) + Delta(item.FramingErrors, before?.FramingErrors)
         + Delta(item.Timeouts, before?.Timeouts) + Delta(item.Dropped, before?.Dropped)
         + Delta(item.SubmitFailures, before?.SubmitFailures) + Delta(item.ReceiveErrors, before?.ReceiveErrors)
-        + Delta(item.ParserErrors, before?.ParserErrors);
+        + Delta(item.ParserErrors, before?.ParserErrors) + Delta(item.TlsReloadFailures, before?.TlsReloadFailures)
+        + Delta(item.TlsRevoked, before?.TlsRevoked) + Delta(item.TlsSessionsClosed, before?.TlsSessionsClosed);
 
     private static long WindowsErrorCount(WindowsEventSubscriptionStatus item, WindowsEventSubscriptionStatus? before) =>
         Delta(item.ReadErrors, before?.ReadErrors) + Delta(item.Gaps, before?.Gaps) + Delta(item.Resets, before?.Resets)
@@ -239,6 +259,17 @@ public static class CollectorHealthRecord
             writer.WriteString("output", sample.OutputType);
             writer.WriteString("status", sample.DeliveryStatus);
             WriteTime(writer, "lastSuccessfulDeliveryAt", sample.LastSuccessfulDeliveryAt);
+            if (sample.LastDeliveryFailure is { } lastFailure)
+            {
+                writer.WriteString("lastFailureCode", lastFailure.Code);
+                WriteTime(writer, "lastFailureAt", lastFailure.At);
+            }
+            else
+            {
+                writer.WriteNull("lastFailureCode");
+                writer.WriteNull("lastFailureAt");
+            }
+
             writer.WriteEndObject();
 
             QueueSnapshot queue = sample.Queue;
@@ -308,6 +339,11 @@ public static class CollectorHealthRecord
             Number(writer, "eventsQueued", Delta(pipeline.EventsQueued, pipelineBefore?.EventsQueued));
             Number(writer, "duplicates", Delta(pipeline.Duplicates, pipelineBefore?.Duplicates));
             Number(writer, "suppressed", Delta(pipeline.Suppressed, pipelineBefore?.Suppressed));
+            writer.WriteEndObject();
+
+            writer.WriteStartObject("monitoringCoverage");
+            writer.WriteBoolean("syslogComplete", (sample.Syslog?.Count ?? 0) <= MaximumListed);
+            writer.WriteBoolean("windowsEventLogComplete", (sample.WindowsEventLog?.Count ?? 0) <= MaximumListed);
             writer.WriteEndObject();
 
             WriteSources(writer, sample);
@@ -387,6 +423,13 @@ public static class CollectorHealthRecord
             Number(writer, "retries", Delta(item.Retries, before?.Retries));
             Number(writer, "submitFailures", Delta(item.SubmitFailures, before?.SubmitFailures));
             Number(writer, "receiveErrors", Delta(item.ReceiveErrors, before?.ReceiveErrors));
+            Number(writer, "tlsReloads", Delta(item.TlsReloads, before?.TlsReloads));
+            Number(writer, "tlsReloadFailures", Delta(item.TlsReloadFailures, before?.TlsReloadFailures));
+            Number(writer, "tlsRevoked", Delta(item.TlsRevoked, before?.TlsRevoked));
+            Number(writer, "tlsSessionsClosed", Delta(item.TlsSessionsClosed, before?.TlsSessionsClosed));
+            WriteTime(writer, "serverCertificateNotAfter", item.ServerCertificateNotAfter);
+            WriteTime(writer, "clientCertificateAuthorityNotAfter", item.ClientCertificateAuthorityNotAfter);
+            WriteTime(writer, "clientRevocationListNextUpdate", item.ClientRevocationListNextUpdate);
             WriteTime(writer, "lastFrameAt", item.LastFrameAt);
             writer.WriteEndObject();
         }

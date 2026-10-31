@@ -21,14 +21,44 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
+import re
 from datetime import datetime, timezone
 
 OK, WARNING, CRITICAL, UNKNOWN = 0, 1, 2, 3
 NAMES = {OK: "OK", WARNING: "WARNING", CRITICAL: "CRITICAL", UNKNOWN: "UNKNOWN"}
+# Worst first: a CRITICAL finding is never hidden by an UNKNOWN one.
+RANK = {OK: 0, WARNING: 1, UNKNOWN: 2, CRITICAL: 3}
 SYSLOG_ERRORS = ("connectionsRejected", "sendersDenied", "tlsHandshakeFailures", "malformed", "oversized",
-                 "framingErrors", "timeouts", "dropped", "submitFailures", "receiveErrors", "parserErrors")
-WINDOWS_ERRORS = ("readErrors", "gaps", "resets", "submitFailures", "parserErrors", "cursorConflicts")
+                 "framingErrors", "timeouts", "dropped", "submitFailures", "receiveErrors", "parserErrors",
+                 "tlsReloadFailures", "tlsRevoked", "tlsSessionsClosed")
+WINDOWS_ERRORS = ("readErrors", "gaps", "resets", "submitFailures", "parserErrors", "malformed", "oversized",
+                  "cursorConflicts")
+# The destination refused this collector's identity (credential or role), not an outage.
+CREDENTIAL_FAILURES = ("destination-azure-credential-failed", "destination-azure-http-401", "destination-azure-http-403")
 MAX_BODY = 4 * 1024 * 1024
+
+
+def safe_base_url(value):
+    """Reject cleartext remote requests and ambiguous authorities before reading a token."""
+    try:
+        if any(ord(char) <= 32 or ord(char) == 127 for char in value) or "\\" in value:
+            return False
+        parts = urllib.parse.urlsplit(value)
+        if not parts.hostname or parts.username is not None or parts.password is not None or parts.query or parts.fragment:
+            return False
+        _ = parts.port  # Reject malformed or out-of-range ports.
+        if parts.scheme == "https":
+            return True
+        return parts.scheme == "http" and bool(re.fullmatch(r"(?:127\.0\.0\.1|\[::1\])(?::[0-9]+)?", parts.netloc, re.IGNORECASE))
+    except ValueError:
+        return False
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never forward a monitoring request or its bearer token to a redirect target."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 
 def parser():
@@ -47,9 +77,12 @@ def parser():
     result.add_argument("--storage-warning-percent", type=float, default=40.0,
                         help="Undelivered bytes as a percentage of BOWER_QUEUE_MAX_BYTES")
     result.add_argument("--storage-critical-percent", type=float, default=60.0)
-    result.add_argument("--file-warning-percent", type=float, default=70.0,
-                        help="Queue database size as a percentage of its page limit")
-    result.add_argument("--file-critical-percent", type=float, default=85.0)
+    result.add_argument("--pages-warning-percent", type=float, default=70.0,
+                        help="Queue database in-use pages as a percentage of its page limit (from /v1/status)")
+    result.add_argument("--pages-critical-percent", type=float, default=85.0)
+    result.add_argument("--certificate-warning-days", type=float, default=14.0,
+                        help="Syslog server or client CA certificate expiring within this many days")
+    result.add_argument("--certificate-critical-days", type=float, default=2.0)
     result.add_argument("--disk-warning-percent", type=float, default=20.0, help="Free space below which to warn")
     result.add_argument("--disk-critical-percent", type=float, default=10.0)
     result.add_argument("--refusal-window-seconds", type=int, default=900,
@@ -67,7 +100,7 @@ def fetch(url, token, timeout):
     request = urllib.request.Request(url, headers={"Accept": "application/json"})
     if token:
         request.add_header("Authorization", "Bearer " + token)
-    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - operator-supplied local URL
+    with urllib.request.build_opener(NoRedirect()).open(request, timeout=timeout) as response:
         body = response.read(MAX_BODY + 1)
         if len(body) > MAX_BODY:
             raise ValueError("response-too-large")
@@ -114,12 +147,12 @@ def save_state(path, state):
     os.replace(temporary, path)
 
 
-def queue_file_limit(queue_max_bytes):
-    """The collector's SQLite page limit for the queue database: (4 x cap + 16 MiB) / 4."""
-    return (queue_max_bytes * 4 + 16 * 1024 * 1024) // 4
+def worst(levels):
+    """The verdict for a set of levels: CRITICAL, then UNKNOWN, then WARNING, then OK."""
+    return max(levels, key=RANK.get, default=OK)
 
 
-def evaluate(health, status, disk, options, previous, now, queue_file_bytes=None):
+def evaluate(health, status, disk, options, previous, now):
     """Returns (verdict, findings, metrics, state). Pure: no I/O."""
     findings = []
     metrics = {"bower_up": 1 if health is not None else 0}
@@ -169,6 +202,32 @@ def evaluate(health, status, disk, options, previous, now, queue_file_bytes=None
         if last_refusal and (now - last_refusal).total_seconds() <= options.refusal_window_seconds:
             find(CRITICAL, "capacity-refusals", "Intake was refused for queue capacity within the refusal window.")
 
+        # In-use pages against the page limit, both reported by the collector: the file never
+        # shrinks, so its length would stay high after a drain.
+        pages = status.get("queuePages") or {}
+        if pages.get("pageLimitBytes"):
+            pages_percent = float(pages.get("usedPercent") or 0)
+            metrics["bower_queue_pages_used_bytes"] = int(pages.get("usedBytes") or 0)
+            metrics["bower_queue_free_list_bytes"] = int(pages.get("freeListBytes") or 0)
+            metrics["bower_queue_page_limit_bytes"] = int(pages["pageLimitBytes"])
+            metrics["bower_queue_pages_used_percent"] = pages_percent
+            if pages_percent >= options.pages_critical_percent:
+                find(CRITICAL, "queue-pages", f"Queue database pages are {pages_percent:.1f}% of the page limit.")
+            elif pages_percent >= options.pages_warning_percent:
+                find(WARNING, "queue-pages", f"Queue database pages are {pages_percent:.1f}% of the page limit.")
+
+        activity = status.get("deliveryActivity") or {}
+        code = activity.get("lastFailureCode")
+        failed_at = parse_time(activity.get("lastFailureAt"))
+        succeeded_at = parse_time(activity.get("lastSuccessfulDeliveryAt"))
+        if code and failed_at and (succeeded_at is None or succeeded_at <= failed_at) \
+                and (now - failed_at).total_seconds() <= options.refusal_window_seconds:
+            if code in CREDENTIAL_FAILURES:
+                find(CRITICAL, "destination-credential",
+                     f"Delivery is failing with {code} and nothing was delivered since; fix the credential or role.")
+            else:
+                find(WARNING, "destination-failing", "Delivery is failing and nothing was delivered since.")
+
         overdue = [item for item in (status.get("sources") or []) if item.get("state") in ("silent", "never-seen")]
         metrics["bower_sources_overdue"] = len(overdue)
         for item in overdue[:10]:
@@ -186,10 +245,30 @@ def evaluate(health, status, disk, options, previous, now, queue_file_bytes=None
             metrics[f'bower_syslog_connections_accepted_total{{listener="{key}"}}'] = accepted
             metrics[f'bower_syslog_active_connections{{listener="{key}"}}'] = int(listener.get("activeConnections") or 0)
             before = previous.get("syslog", {}).get(key) if same_process else None
-            if before is not None and errors > before.get("errors", 0):
+            if before is None and errors > 0:
+                find(WARNING, "syslog-errors", f"Listener {key}: {errors} existing error(s); baseline unavailable.")
+            elif before is not None and errors > before.get("errors", 0):
                 find(WARNING, "syslog-errors", f"Listener {key}: {errors - before['errors']} new refusal/TLS/framing/drop error(s).")
             if before is not None and accepted - before.get("accepted", 0) > options.churn_warning_connections:
                 find(WARNING, "syslog-churn", f"Listener {key}: {accepted - before['accepted']} new connections since the last run.")
+            for field, label in (("serverCertificateNotAfter", "server certificate"),
+                                 ("clientCertificateAuthorityNotAfter", "client CA certificate")):
+                expires = parse_time(listener.get(field))
+                if expires is None:
+                    continue
+                days = (expires - now).total_seconds() / 86400
+                metrics[f'bower_syslog_certificate_days_left{{listener="{key}",certificate="{field}"}}'] = round(days, 2)
+                if days <= options.certificate_critical_days:
+                    find(CRITICAL, "syslog-certificate", f"Listener {key}: {label} expires in {days:.1f} days.")
+                elif days <= options.certificate_warning_days:
+                    find(WARNING, "syslog-certificate", f"Listener {key}: {label} expires in {days:.1f} days.")
+            next_update = parse_time(listener.get("clientRevocationListNextUpdate"))
+            if next_update is not None:
+                hours = (next_update - now).total_seconds() / 3600
+                if hours <= 0:
+                    find(CRITICAL, "syslog-crl", f"Listener {key}: the revocation list is stale; senders are refused.")
+                elif hours <= 24:
+                    find(WARNING, "syslog-crl", f"Listener {key}: the revocation list must be refreshed within {hours:.1f} hours.")
         for subscription in status.get("windowsEventLog") or []:
             key = str(subscription.get("id"))
             errors = sum(int(subscription.get(name) or 0) for name in WINDOWS_ERRORS)
@@ -198,19 +277,10 @@ def evaluate(health, status, disk, options, previous, now, queue_file_bytes=None
             if subscription.get("state") not in ("starting", "running", "backpressure"):
                 find(CRITICAL, "windows-event-log", f"Subscription {key} is {subscription.get('state')}.")
             before = previous.get("windowsEventLog", {}).get(key) if same_process else None
-            if before is not None and errors > before.get("errors", 0):
+            if before is None and errors > 0:
+                find(WARNING, "windows-event-log", f"Subscription {key}: {errors} existing error(s); baseline unavailable.")
+            elif before is not None and errors > before.get("errors", 0):
                 find(WARNING, "windows-event-log", f"Subscription {key}: {errors - before['errors']} new read error(s).")
-
-    if queue_file_bytes is not None and options.queue_max_bytes > 0:
-        # The database stops growing here ("database or disk is full") before undelivered
-        # payloads reach BOWER_QUEUE_MAX_BYTES; delivery can then stall until the cap is raised.
-        file_percent = 100.0 * queue_file_bytes / queue_file_limit(options.queue_max_bytes)
-        metrics["bower_queue_file_bytes"] = queue_file_bytes
-        metrics["bower_queue_file_limit_used_percent"] = round(file_percent, 2)
-        if file_percent >= options.file_critical_percent:
-            find(CRITICAL, "queue-file", f"Queue database is at {file_percent:.1f}% of its page limit.")
-        elif file_percent >= options.file_warning_percent:
-            find(WARNING, "queue-file", f"Queue database is at {file_percent:.1f}% of its page limit.")
 
     if disk is not None:
         free_percent = 100.0 * disk["free"] / disk["total"] if disk["total"] else 0.0
@@ -221,11 +291,9 @@ def evaluate(health, status, disk, options, previous, now, queue_file_bytes=None
         elif free_percent <= options.disk_warning_percent:
             find(WARNING, "disk-free", f"Queue volume has {free_percent:.1f}% free.")
 
-    levels = [code for code, name in NAMES.items() if any(item["level"] == name for item in findings)]
-    verdict = max(levels) if levels else OK
-    if verdict == OK and status is None and options.token_file:
-        verdict = UNKNOWN
-        findings.append({"level": "UNKNOWN", "code": "status-unavailable", "detail": "/v1/status could not be read."})
+    if status is None and options.token_file:
+        find(UNKNOWN, "status-unavailable", "/v1/status could not be read.")
+    verdict = worst(code for code, name in NAMES.items() if any(item["level"] == name for item in findings))
     metrics["bower_check_status"] = verdict
     return verdict, findings, metrics, state
 
@@ -263,6 +331,9 @@ def write_atomic(path, text):
 def main(argv=None):
     options = parser().parse_args(argv)
     now = datetime.now(timezone.utc)
+    if not safe_base_url(options.url):
+        print("UNKNOWN: monitoring URL must use HTTPS or literal loopback HTTP")
+        return UNKNOWN
     base = options.url.rstrip("/")
     try:
         token = read_token(options.token_file)
@@ -272,24 +343,47 @@ def main(argv=None):
     health = status = None
     try:
         health = fetch(base + "/health", None, options.timeout)
-    except (urllib.error.URLError, OSError, ValueError):
+    except (urllib.error.URLError, OSError):
         health = None
+    except (ValueError, RecursionError):
+        health = []  # Reached the collector, but its response is invalid.
     if health is not None and token:
         try:
             status = fetch(base + "/v1/status", token, options.timeout)
-        except (urllib.error.URLError, OSError, ValueError):
+        except (urllib.error.URLError, OSError):
             status = None
+        except (ValueError, RecursionError):
+            status = []  # Invalid content is UNKNOWN, not a successful status read.
     previous = load_state(options.state_file)
+    disk = disk_usage(options.queue_path)
     try:
-        queue_file_bytes = os.path.getsize(options.queue_path) if os.path.isfile(options.queue_path) else None
-    except OSError:
-        queue_file_bytes = None
-    verdict, findings, metrics, state = evaluate(
-        health, status, disk_usage(options.queue_path), options, previous, now, queue_file_bytes)
-    try:
-        save_state(options.state_file, state)
-    except OSError:
-        pass
+        if health is not None and (not isinstance(health, dict) or not isinstance(health.get("status"), str)):
+            raise ValueError("invalid-health")
+        if status is not None and (not isinstance(status, dict) or not isinstance(status.get("queue"), dict)
+                                   or not isinstance(status.get("intake"), dict)):
+            raise ValueError("invalid-status")
+        verdict, findings, metrics, state = evaluate(health, status, disk, options, previous, now)
+    except (TypeError, ValueError, AttributeError, OverflowError, RecursionError):
+        # Never print an exception: conversion errors can contain response values.
+        # Keep the previous baseline, and still evaluate independently known disk and
+        # reachability conditions so a critical failure cannot be hidden by UNKNOWN.
+        status = None
+        safe_health = health if isinstance(health, dict) or health is None else {"status": "unknown"}
+        verdict, findings, metrics, state = evaluate(safe_health, None, disk, options, {}, now)
+        findings.append({"level": "UNKNOWN", "code": "invalid-response", "detail": "Collector returned an invalid monitoring document."})
+        verdict = worst([verdict, UNKNOWN])
+        metrics["bower_check_status"] = verdict
+    if disk is None:
+        findings.append({"level": "UNKNOWN", "code": "disk-unknown", "detail": "Queue volume free space could not be read."})
+        verdict = worst([verdict, UNKNOWN])
+        metrics["bower_check_status"] = verdict
+    # A failed read keeps the previous baselines: overwriting them with empty state would hide
+    # every error that happened while the collector could not be read.
+    if status is not None:
+        try:
+            save_state(options.state_file, state)
+        except OSError:
+            pass
     metrics["bower_check_timestamp_seconds"] = int(time.time())
     if options.prometheus_file:
         write_atomic(options.prometheus_file, prometheus(metrics))

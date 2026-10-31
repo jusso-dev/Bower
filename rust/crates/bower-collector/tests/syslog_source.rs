@@ -22,7 +22,7 @@ fn repo_root() -> PathBuf {
         .unwrap()
 }
 
-fn syslog_parser(transforms: &[&str]) -> String {
+fn syslog_parser(transforms: &[&str], event_type: &str) -> String {
     let field = |name: &str, kind: &str, ocsf: &str, asim: &str, sensitive: bool| serde_json::json!({"sourceName": name, "type": kind, "ocsfPath": ocsf, "asimField": asim, "sensitive": sensitive});
     let mut parser = serde_json::json!({
         "version": "1.0",
@@ -39,7 +39,7 @@ fn syslog_parser(transforms: &[&str]) -> String {
             "applicationName": "ssh-gateway",
             "environment": "production",
             "eventCategory": "authentication",
-            "eventType": "authentication_failure",
+            "eventType": event_type,
             "eventAction": "authentication.attempt",
             "eventResult": "failure",
             "match": {"appName": "sshd", "sd.auth@32473.result": "failure"},
@@ -71,11 +71,20 @@ fn copy_directory(from: &Path, to: &Path) {
 }
 
 fn settings(directory: &Path, parser: usize, transforms: &[&str]) -> CollectorSettings {
+    settings_with_event_type(directory, parser, transforms, "authentication_failure")
+}
+
+fn settings_with_event_type(
+    directory: &Path,
+    parser: usize,
+    transforms: &[&str],
+    event_type: &str,
+) -> CollectorSettings {
     let pack = directory.join("syslog-pack");
     copy_directory(&repo_root().join("packs/linux-ssh-gateway"), &pack);
     std::fs::write(
         pack.join("parsers/sshd-json.json"),
-        syslog_parser(transforms),
+        syslog_parser(transforms, event_type),
     )
     .unwrap();
     let samples = pack.join("samples/ssh.jsonl");
@@ -192,6 +201,10 @@ async fn start(directory: &Path) -> Started {
 
 async fn start_with(directory: &Path, transforms: &[&str]) -> Started {
     let settings = settings(directory, 0, transforms);
+    start_settings(settings).await
+}
+
+async fn start_settings(settings: CollectorSettings) -> Started {
     let mut collector: Collector = host::build(
         settings.clone(),
         bundle::load(&settings).unwrap(),
@@ -225,6 +238,23 @@ fn frame(result: &str, user: &str) -> String {
 
 fn count(listener: &serde_json::Value, name: &str) -> i64 {
     listener[name].as_i64().unwrap()
+}
+
+#[tokio::test]
+async fn signed_syslog_parser_cannot_submit_reserved_health_events() {
+    let directory = tempfile::tempdir().unwrap();
+    let settings = settings_with_event_type(directory.path(), 0, &[], "collector_health");
+    let started = start_settings(settings).await;
+    let mut client = TcpStream::connect(started.endpoints["edge"]).await.unwrap();
+    client
+        .write_all(frame("failure", "forged-health-source").as_bytes())
+        .await
+        .unwrap();
+    started
+        .listener("edge", |listener| count(listener, "rejected") == 1)
+        .await;
+    assert_eq!(started.store.snapshot().unwrap().queued, 0);
+    started.stop().await;
 }
 
 #[tokio::test]

@@ -1,0 +1,6 @@
+// Candidate event-time absence rule, not proof that ingestion stopped. Scheduled query
+// windowing can exclude old events ingested now (outage replay). Production qualification
+// is blocked pending a wider event-time scan, ingestion_time() logic and live validation.
+BowerSecurity_CL
+| where isnotempty(CollectorId)
+| project TimeGenerated, CollectorId

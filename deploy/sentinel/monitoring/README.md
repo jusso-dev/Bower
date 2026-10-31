@@ -6,7 +6,7 @@ deployment steps for every environment, runbooks and the audited replay procedur
 
 | Path | Content |
 |---|---|
-| `monitoring.bicep` | Azure Monitor log alerts on `BowerSecurity_CL` (collector health, dead letters, backlog, storage, source silence, source loss indicators, DCR errors), DCR metric alerts and the DCR error-log diagnostic setting. Created disabled by default |
+| `monitoring.bicep` | Azure Monitor log alerts on `BowerSecurity_CL` and DCR metric alerts, disabled by default. The DCR error-log diagnostic setting requires a separate opt-in and can incur charges. |
 | `sentinel-health-rules.bicep` | Microsoft Sentinel scheduled analytics rules (collector missing, source silent) that open incidents. Disabled by default |
 | `queries/*.kql` | The rule queries, with `__PLACEHOLDERS__` the templates replace. Paste into Logs or the portal after replacing them |
 | `host/` | Local health checks for Linux (`bower-healthcheck.py`, systemd service and timer, `bower.service` drop-in) and Windows (`Test-BowerCollectorHealth.ps1`), with tests |

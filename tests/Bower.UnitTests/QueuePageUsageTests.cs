@@ -93,6 +93,9 @@ public sealed class QueuePageUsageTests
         Assert.True(pages.GetProperty("freeListBytes").GetInt64() >= 0);
         Assert.True(pages.GetProperty("usedPercent").GetDouble() is > 0 and < 100);
         Assert.Equal(4_096, pages.GetProperty("pageSize").GetInt64());
+        JsonElement activity = body.RootElement.GetProperty("deliveryActivity");
+        Assert.Equal(JsonValueKind.Null, activity.GetProperty("lastFailureCode").ValueKind);
+        Assert.Equal(JsonValueKind.Null, activity.GetProperty("lastSuccessfulDeliveryAt").ValueKind);
 
         // Liveness answers even when the queue database is gone: it never opens storage.
         await app.StopAsync(cancellationToken);

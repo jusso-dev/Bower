@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 SPEC = importlib.util.spec_from_file_location("healthcheck", Path(__file__).with_name("bower-healthcheck.py"))
 healthcheck = importlib.util.module_from_spec(SPEC)
@@ -23,8 +24,9 @@ TOKEN = "test-token-never-printed"
 
 def options(**overrides):
     values = dict(queue_max_bytes=10 * 1024 ** 3, backlog_warning_seconds=900, backlog_critical_seconds=3600,
-                  storage_warning_percent=70.0, storage_critical_percent=90.0, file_warning_percent=70.0,
-                  file_critical_percent=85.0, disk_warning_percent=20.0,
+                  storage_warning_percent=70.0, storage_critical_percent=90.0, pages_warning_percent=70.0,
+                  pages_critical_percent=85.0, certificate_warning_days=14.0, certificate_critical_days=2.0,
+                  disk_warning_percent=20.0,
                   disk_critical_percent=10.0, refusal_window_seconds=900, token_file="token",
                   churn_warning_connections=5)
     values.update(overrides)
@@ -50,6 +52,19 @@ def codes(findings):
     return [item["code"] for item in findings]
 
 
+class UrlSafetyTests(unittest.TestCase):
+    def test_unsafe_url_never_opens_a_request(self):
+        with patch.object(healthcheck.urllib.request, "build_opener") as opener:
+            self.assertEqual(healthcheck.UNKNOWN, healthcheck.main(["--url", "http://example.com"]))
+            opener.assert_not_called()
+
+    def test_urls_require_https_or_literal_loopback(self):
+        for value in ("http://127.0.0.1:4319", "http://[::1]:4319", "https://example.com:443"):
+            self.assertTrue(healthcheck.safe_base_url(value), value)
+        for value in ("http://example.com", "http://localhost", "http://127.1", "http://127.0.0.1.evil", "http://127.0.0.1@evil", "https://user@example.com", "https://example.com?x=y", "https://example.com\\@evil", "https://example.com:99999", "https://example.com\n.evil"):
+            self.assertFalse(healthcheck.safe_base_url(value), value)
+
+
 class EvaluateTests(unittest.TestCase):
     def test_healthy_collector_is_ok(self):
         verdict, findings, metrics, _ = healthcheck.evaluate(
@@ -62,7 +77,7 @@ class EvaluateTests(unittest.TestCase):
     def test_unreachable_collector_is_critical(self):
         verdict, findings, metrics, _ = healthcheck.evaluate(None, None, None, options(), {}, NOW)
         self.assertEqual(healthcheck.CRITICAL, verdict)
-        self.assertEqual(["collector-unreachable"], codes(findings))
+        self.assertEqual(["collector-unreachable", "status-unavailable"], codes(findings))
         self.assertEqual(0, metrics["bower_up"])
 
     def test_backlog_storage_dead_letters_and_refusals(self):
@@ -109,9 +124,20 @@ class EvaluateTests(unittest.TestCase):
         self.assertEqual(["syslog-errors"], codes(findings))
         self.assertIn("3 new", findings[0]["detail"])
         self.assertEqual(5, metrics['bower_syslog_errors_total{listener="firewall-tls"}'])
-        # A restart resets counters: no comparison across processes.
+        # A restart discards the old baseline but reports nonzero current counters.
         restarted = dict(worse, intake=dict(worse["intake"], observedSince="2026-10-31T08:59:00Z"))
-        verdict, _, _, _ = healthcheck.evaluate({"status": "healthy"}, restarted, None, options(), state, NOW)
+        verdict, findings, _, _ = healthcheck.evaluate({"status": "healthy"}, restarted, None, options(), state, NOW)
+        self.assertEqual(healthcheck.WARNING, verdict)
+        self.assertIn("baseline unavailable", findings[0]["detail"])
+
+    def test_missing_baseline_reports_existing_source_errors(self):
+        current = status(syslog=[{"id": "fw", "dropped": 2}],
+                         windowsEventLog=[{"id": "wec", "state": "running", "readErrors": 1}])
+        verdict, findings, _, baseline = healthcheck.evaluate({"status": "healthy"}, current, None, options(), {}, NOW)
+        self.assertEqual(healthcheck.WARNING, verdict)
+        self.assertEqual(["syslog-errors", "windows-event-log"], codes(findings))
+        self.assertTrue(all("baseline unavailable" in item["detail"] for item in findings))
+        verdict, _, _, _ = healthcheck.evaluate({"status": "healthy"}, current, None, options(), baseline, NOW)
         self.assertEqual(healthcheck.OK, verdict)
 
     def test_connection_churn(self):
@@ -122,14 +148,65 @@ class EvaluateTests(unittest.TestCase):
         self.assertEqual(healthcheck.WARNING, verdict)
         self.assertEqual(["syslog-churn"], codes(findings))
 
-    def test_queue_file_near_its_page_limit(self):
-        limit = healthcheck.queue_file_limit(4 * 1024 ** 2)
-        self.assertEqual(8 * 1024 ** 2, limit)
-        verdict, findings, metrics, _ = healthcheck.evaluate(
-            {"status": "healthy"}, status(), None, options(queue_max_bytes=4 * 1024 ** 2), {}, NOW, int(limit * 0.9))
+    def test_queue_pages_come_from_the_collector_not_the_file_length(self):
+        # 90 % of the page limit in use: critical.
+        full = status(queuePages={"pageSize": 4096, "pageLimitBytes": 8388608, "usedBytes": 7549747,
+                                  "freeListBytes": 0, "usedPercent": 90.0})
+        verdict, findings, metrics, _ = healthcheck.evaluate({"status": "healthy"}, full, None, options(), {}, NOW)
         self.assertEqual(healthcheck.CRITICAL, verdict)
-        self.assertEqual(["queue-file"], codes(findings))
-        self.assertEqual(90.0, metrics["bower_queue_file_limit_used_percent"])
+        self.assertEqual(["queue-pages"], codes(findings))
+        self.assertEqual(90.0, metrics["bower_queue_pages_used_percent"])
+        # After a drain the file keeps its size but the pages are free: healthy again.
+        drained = status(queuePages={"pageSize": 4096, "pageLimitBytes": 8388608, "usedBytes": 419430,
+                                     "freeListBytes": 7130317, "usedPercent": 5.0})
+        verdict, findings, metrics, _ = healthcheck.evaluate({"status": "healthy"}, drained, None, options(), {}, NOW)
+        self.assertEqual(healthcheck.OK, verdict)
+        self.assertEqual(7130317, metrics["bower_queue_free_list_bytes"])
+        # An older collector without queuePages: no page check, no guess.
+        verdict, findings, metrics, _ = healthcheck.evaluate({"status": "healthy"}, status(), None, options(), {}, NOW)
+        self.assertNotIn("bower_queue_pages_used_percent", metrics)
+
+    def test_credential_failure_is_distinct_from_an_unreachable_destination(self):
+        failing = status(deliveryActivity={"lastSuccessfulDeliveryAt": "2026-10-31T08:50:00Z",
+                                           "lastFailureCode": "destination-azure-credential-failed",
+                                           "lastFailureAt": "2026-10-31T08:59:30.1234567+00:00"})
+        verdict, findings, _, _ = healthcheck.evaluate({"status": "healthy"}, failing, None, options(), {}, NOW)
+        self.assertEqual(healthcheck.CRITICAL, verdict)
+        self.assertEqual(["destination-credential"], codes(findings))
+        tied = status(deliveryActivity=dict(failing["deliveryActivity"],
+                                            lastSuccessfulDeliveryAt=failing["deliveryActivity"]["lastFailureAt"]))
+        self.assertEqual(healthcheck.CRITICAL, healthcheck.evaluate(
+            {"status": "healthy"}, tied, None, options(), {}, NOW)[0])
+        unreachable = status(deliveryActivity=dict(failing["deliveryActivity"], lastFailureCode="destination-azure-unavailable"))
+        verdict, findings, _, _ = healthcheck.evaluate({"status": "healthy"}, unreachable, None, options(), {}, NOW)
+        self.assertEqual(healthcheck.WARNING, verdict)
+        self.assertEqual(["destination-failing"], codes(findings))
+        recovered = status(deliveryActivity=dict(failing["deliveryActivity"], lastSuccessfulDeliveryAt="2026-10-31T08:59:50Z"))
+        verdict, findings, _, _ = healthcheck.evaluate({"status": "healthy"}, recovered, None, options(), {}, NOW)
+        self.assertEqual(healthcheck.OK, verdict)
+
+    def test_syslog_certificates_and_revocation_list(self):
+        listener = {"id": "firewall-tls", "serverCertificateNotAfter": "2026-11-01T08:00:00Z",
+                    "clientCertificateAuthorityNotAfter": "2026-11-10T09:00:00Z",
+                    "clientRevocationListNextUpdate": "2026-10-31T08:00:00Z"}
+        verdict, findings, metrics, _ = healthcheck.evaluate(
+            {"status": "healthy"}, status(syslog=[listener]), None, options(), {}, NOW)
+        self.assertEqual(healthcheck.CRITICAL, verdict)
+        self.assertEqual(["syslog-certificate", "syslog-certificate", "syslog-crl"], codes(findings))
+        self.assertEqual(["CRITICAL", "WARNING", "CRITICAL"], [item["level"] for item in findings])
+
+    def test_windows_malformed_and_oversized_count_as_errors(self):
+        subscription = {"id": "forwarded-security", "state": "running", "malformed": 0, "oversized": 0}
+        _, _, _, state = healthcheck.evaluate({"status": "healthy"}, status(windowsEventLog=[subscription]), None, options(), {}, NOW)
+        worse = status(windowsEventLog=[dict(subscription, malformed=1, oversized=2)])
+        verdict, findings, _, _ = healthcheck.evaluate({"status": "healthy"}, worse, None, options(), state, NOW)
+        self.assertEqual(healthcheck.WARNING, verdict)
+        self.assertIn("3 new", findings[0]["detail"])
+
+    def test_critical_outranks_unknown(self):
+        self.assertEqual(healthcheck.CRITICAL, healthcheck.worst([healthcheck.UNKNOWN, healthcheck.CRITICAL]))
+        self.assertEqual(healthcheck.UNKNOWN, healthcheck.worst([healthcheck.WARNING, healthcheck.UNKNOWN]))
+        self.assertEqual(healthcheck.OK, healthcheck.worst([]))
 
     def test_low_disk(self):
         verdict, findings, _, _ = healthcheck.evaluate(
@@ -141,6 +218,15 @@ class EvaluateTests(unittest.TestCase):
         verdict, findings, _, _ = healthcheck.evaluate({"status": "healthy"}, None, None, options(), {}, NOW)
         self.assertEqual(healthcheck.UNKNOWN, verdict)
         self.assertEqual(["status-unavailable"], codes(findings))
+
+    def test_unreadable_status_is_not_hidden_by_warning_or_critical(self):
+        for free, expected in [(15, healthcheck.UNKNOWN), (5, healthcheck.CRITICAL)]:
+            with self.subTest(free=free):
+                verdict, findings, _, _ = healthcheck.evaluate(
+                    {"status": "healthy"}, None, {"total": 100, "free": free}, options(), {}, NOW)
+                self.assertEqual(expected, verdict)
+                self.assertIn("disk-free", codes(findings))
+                self.assertIn("status-unavailable", codes(findings))
 
     def test_parse_time_accepts_dotnet_precision_and_offsets(self):
         self.assertEqual(datetime(2026, 10, 31, 8, 34, 45, 223163, tzinfo=timezone.utc),
@@ -162,7 +248,7 @@ class Collector(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802 - http.server API
         if self.path == "/health":
             payload = {"status": "healthy"}
-        elif self.path == "/v1/status" and self.headers.get("Authorization") == "Bearer " + TOKEN:
+        elif self.path == "/v1/status" and self.headers.get("Authorization") == "Bearer " + TOKEN and Collector.body is not None:
             payload = Collector.body
         else:
             self.send_response(401)
@@ -211,6 +297,92 @@ class MainTests(unittest.TestCase):
         self.assertNotIn(TOKEN, output)
         self.assertEqual("WARNING", json.loads(output)["status"])
         self.assertIn("bower_queue_dead_lettered_events 2", Path(prometheus_file).read_text(encoding="utf-8"))
+
+    def test_failed_status_read_keeps_previous_baselines(self):
+        state_file = os.path.join(self.directory.name, "state.json")
+        Collector.body = status(syslog=[{"id": "firewall-tls", "tlsHandshakeFailures": 2, "connectionsAccepted": 1}])
+        self.run_check("--state-file", state_file)
+        saved = Path(state_file).read_text(encoding="utf-8")
+        self.assertIn("firewall-tls", saved)
+        Collector.body = None  # /v1/status now fails
+        code, _ = self.run_check("--state-file", state_file)
+        self.assertEqual(healthcheck.UNKNOWN, code)
+        self.assertEqual(saved, Path(state_file).read_text(encoding="utf-8"))
+
+    def test_unknown_disk_is_never_reported_healthy(self):
+        with patch.object(healthcheck, "disk_usage", return_value=None):
+            code, output = self.run_check("--format", "json")
+        self.assertEqual(healthcheck.UNKNOWN, code)
+        self.assertIn("disk-unknown", codes(json.loads(output)["findings"]))
+
+    def test_malformed_status_is_unknown_and_does_not_echo_response_or_replace_baseline(self):
+        state_file = os.path.join(self.directory.name, "state.json")
+        self.run_check("--state-file", state_file)
+        saved = Path(state_file).read_text(encoding="utf-8")
+        Collector.body = status(queue=dict(status()["queue"], queued="synthetic-secret-marker"))
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            code, output = self.run_check("--format", "json", "--state-file", state_file)
+        self.assertEqual(healthcheck.UNKNOWN, code)
+        self.assertIn("invalid-response", codes(json.loads(output)["findings"]))
+        self.assertNotIn("synthetic-secret-marker", output + stderr.getvalue())
+        self.assertEqual(saved, Path(state_file).read_text(encoding="utf-8"))
+
+    def test_malformed_health_is_unknown_without_echoing_the_error(self):
+        with patch.object(healthcheck, "fetch", side_effect=[ValueError("synthetic-secret-marker"), status()]):
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                code, output = self.run_check("--format", "json")
+        self.assertEqual(healthcheck.UNKNOWN, code)
+        self.assertIn("invalid-response", codes(json.loads(output)["findings"]))
+        self.assertNotIn("synthetic-secret-marker", output + stderr.getvalue())
+
+    def test_malformed_status_does_not_hide_critical_disk_pressure(self):
+        Collector.body = status(queue=dict(status()["queue"], queued="invalid"))
+        with patch.object(healthcheck, "disk_usage", return_value={"total": 100, "free": 0}):
+            code, output = self.run_check("--format", "json")
+        self.assertEqual(healthcheck.CRITICAL, code)
+        self.assertIn("invalid-response", codes(json.loads(output)["findings"]))
+        self.assertIn("disk-free", codes(json.loads(output)["findings"]))
+
+    def test_untrusted_failure_code_is_not_echoed(self):
+        Collector.body = status(deliveryActivity={"lastFailureCode": "destination-azure-http-401-synthetic-secret-marker",
+                                                  "lastFailureAt": datetime.now(timezone.utc).isoformat()})
+        code, output = self.run_check("--format", "json")
+        self.assertEqual(healthcheck.WARNING, code)
+        self.assertIn("destination-failing", codes(json.loads(output)["findings"]))
+        self.assertNotIn("synthetic-secret-marker", output)
+
+    def test_authenticated_redirect_is_not_followed(self):
+        class Sink(BaseHTTPRequestHandler):
+            requests = 0
+            def do_GET(self):
+                type(self).requests += 1
+                self.send_response(200)
+                self.end_headers()
+            def log_message(self, *args):
+                pass
+        target = ThreadingHTTPServer(("127.0.0.1", 0), Sink)
+        threading.Thread(target=target.serve_forever, daemon=True).start()
+        class Redirect(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(302)
+                self.send_header("Location", f"http://127.0.0.1:{target.server_port}/stolen")
+                self.end_headers()
+            def log_message(self, *args):
+                pass
+        source = ThreadingHTTPServer(("127.0.0.1", 0), Redirect)
+        threading.Thread(target=source.serve_forever, daemon=True).start()
+        try:
+            with self.assertRaises(healthcheck.urllib.error.HTTPError):
+                healthcheck.fetch(f"http://127.0.0.1:{source.server_port}/v1/status", TOKEN, 2)
+            self.assertEqual(0, Sink.requests)
+            handler = healthcheck.NoRedirect()
+            request = healthcheck.urllib.request.Request("https://collector.example/v1/status")
+            self.assertIsNone(handler.redirect_request(request, None, 302, "Found", {}, "http://other.example/"))
+        finally:
+            source.shutdown(); source.server_close()
+            target.shutdown(); target.server_close()
 
     def test_unreachable_collector(self):
         port = self.server.server_port

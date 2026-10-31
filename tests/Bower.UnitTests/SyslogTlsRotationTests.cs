@@ -504,6 +504,8 @@ public sealed class SyslogTlsRotationTests
             using X509Certificate2 next = Pki.Issue(ca, "localhost", client: false);
             pki.WriteBundle(next);
             await WaitFor(source, value => value.TlsReloads == index, cancellation);
+            // A completed reload has released the source's superseded reference.
+            Assert.Equal(1, source.TlsMaterialsAlive("edge"));
         }
 
         Assert.Equal(1, source.TlsMaterialsAlive("edge"));

@@ -6,7 +6,7 @@ set -euo pipefail
 now() { date -u +%Y-%m-%dT%H:%M:%S.%3NZ; }
 status() {
   local token; token=$(cat /etc/bower/secrets/ingest-token)
-  curl -fsS -m 5 -H "Authorization: Bearer $token" http://127.0.0.1:4319/v1/status | python3 -c '
+  curl -fsS -m 5 -H @/dev/fd/3 3<<<"Authorization: Bearer $token" http://127.0.0.1:4319/v1/status | python3 -c '
 import json,sys
 s=json.load(sys.stdin); q=s["queue"]; i=s["intake"]
 print(json.dumps({"status":s["status"],"queue":{k:q[k] for k in ("queued","retrying","uploading","delivered","deadLettered","undeliveredBytes","oldestUndelivered")},

@@ -24,7 +24,20 @@ public sealed class SecurityEventProcessor(
         ArgumentNullException.ThrowIfNull(candidateJson);
         long bytesIn = Encoding.UTF8.GetByteCount(candidateJson);
         telemetry?.RecordAttempt(bytesIn);
-        return await ProcessCoreAsync(candidateJson, collector, bytesIn, cancellationToken);
+        return await ProcessCoreAsync(candidateJson, collector, bytesIn, false, cancellationToken);
+    }
+
+    // Only the collector assembly's own health worker uses this entry point. Origin is
+    // selected by code, never by a property or collector identity in the submitted JSON.
+    internal async Task<ProcessingResult> ProcessCollectorHealthAsync(
+        string candidateJson,
+        CollectorIdentity collector,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(candidateJson);
+        long bytesIn = Encoding.UTF8.GetByteCount(candidateJson);
+        telemetry?.RecordAttempt(bytesIn);
+        return await ProcessCoreAsync(candidateJson, collector, bytesIn, true, cancellationToken);
     }
 
     /// <summary>
@@ -91,6 +104,7 @@ public sealed class SecurityEventProcessor(
         string candidateJson,
         CollectorIdentity collector,
         long bytesIn,
+        bool internalHealth,
         CancellationToken cancellationToken)
     {
         RedactionResult redaction;
@@ -132,6 +146,13 @@ public sealed class SecurityEventProcessor(
         {
             return Decided(
                 ProcessingResult.Failed(DecisionAction.Quarantine, "schema-invalid", ProcessingStage.Schema),
+                bytesIn);
+        }
+
+        if (string.Equals(candidate.EventType, SecurityEventTypes.CollectorHealth, StringComparison.Ordinal) != internalHealth)
+        {
+            return Decided(
+                ProcessingResult.Failed(DecisionAction.Quarantine, "reserved-event-type", ProcessingStage.Validation),
                 bytesIn);
         }
 

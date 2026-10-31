@@ -325,6 +325,9 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
             is_retryable,
             retry_after,
         } = failure;
+        // Relay rejection codes are untrusted. Persist and log only a bounded code;
+        // compute retry/destination classification from the original outcome above.
+        let code = safe_failure_code(&code, destination);
         if !is_retryable {
             return FailureSettlement {
                 lease_token: None,
@@ -390,6 +393,70 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
             .unwrap_or_else(|_| Err(StoreError::Storage("queue call panicked".into())))
             .map_err(DeliveryError::Store)
     }
+}
+
+/// C# `SafePersistedFailureCode`: preserve known classifications without retaining
+/// arbitrary adapter-provided text in the queue, logs or dead-letter metadata.
+fn safe_failure_code(code: &str, destination: bool) -> String {
+    const CAPPED: &str = ":retry-after-capped";
+    let (base, capped) = code
+        .strip_suffix(CAPPED)
+        .map_or((code, false), |base| (base, true));
+    let known = matches!(
+        base,
+        "destination-azure-credential-failed"
+            | "destination-azure-paused"
+            | "destination-azure-unavailable"
+            | "destination-azure-cancelled"
+            | "destination-output-timeout"
+            | "destination-ama-cancelled"
+            | "destination-relay-unavailable"
+            | "destination-relay-response-invalid"
+            | "destination-relay-result-missing"
+            | "payload-invalid-json"
+            | "payload-event-id-mismatch"
+            | "payload-too-large"
+            | "preflight-record-too-large"
+            | "preflight-field-too-large"
+            | "preflight-type-mismatch"
+            | "preflight-time-generated-missing"
+            | "output-adapter-failure"
+            | "output-result-missing"
+            | "azure-http-400-isolated"
+            | "record-exceeds-ama-file-limit"
+    ) || [
+        "destination-azure-http-",
+        "destination-relay-http-",
+        "relay-http-",
+        "azure-http-",
+    ]
+    .into_iter()
+    .any(|prefix| is_http_status_code(base, prefix));
+    let safe = if known {
+        base
+    } else if base.starts_with("relay-rejected:") {
+        "relay-rejected:unknown"
+    } else if destination {
+        "destination-output-failure"
+    } else {
+        "delivery-failure"
+    };
+    if capped {
+        format!("{safe}{CAPPED}")
+    } else {
+        safe.to_string()
+    }
+}
+
+fn is_http_status_code(code: &str, prefix: &str) -> bool {
+    let Some(status) = code.strip_prefix(prefix) else {
+        return false;
+    };
+    let bytes = status.as_bytes();
+    bytes.len() == 3
+        && (b'1'..=b'5').contains(&bytes[0])
+        && bytes[1].is_ascii_digit()
+        && bytes[2].is_ascii_digit()
 }
 
 /// Exponential back-off: `min(300, 2^min(attempt, 8))` seconds plus up to

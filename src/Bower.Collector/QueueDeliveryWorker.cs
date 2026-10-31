@@ -3,12 +3,37 @@ using Bower.Abstractions;
 namespace Bower.Collector;
 
 /// <summary>
-/// When the output last acknowledged an event, for the heartbeat. In memory, so null until
-/// the first acknowledgement after start-up; management keeps the last reported time.
+/// When the output last acknowledged an event, for the heartbeat, and the most recent
+/// failure code (a fixed string such as <c>destination-azure-credential-failed</c>), for
+/// status and health records. In memory, so null until the first outcome after start-up;
+/// management keeps the last reported time.
 /// </summary>
 public sealed class DeliveryActivity
 {
+    private readonly Lock gate = new();
     private long lastTicks;
+    private DeliveryFailureActivity? lastFailure;
+
+    /// <summary>The most recent delivery failure since start-up, or null.</summary>
+    public DeliveryFailureActivity? LastFailure
+    {
+        get
+        {
+            lock (gate)
+            {
+                return lastFailure;
+            }
+        }
+    }
+
+    public void RecordFailure(string code, DateTimeOffset at)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(code);
+        lock (gate)
+        {
+            lastFailure = new DeliveryFailureActivity(code, at);
+        }
+    }
 
     public DateTimeOffset? LastSuccessfulDeliveryAt
     {
@@ -22,6 +47,9 @@ public sealed class DeliveryActivity
     public void RecordDelivery(DateTimeOffset at) =>
         Interlocked.Exchange(ref lastTicks, at.UtcTicks);
 }
+
+/// <summary>A delivery failure code (fixed text, never response or exception content) and when it was settled.</summary>
+public sealed record DeliveryFailureActivity(string Code, DateTimeOffset At);
 
 public sealed record QueueDeliveryOptions
 {
@@ -202,16 +230,18 @@ public sealed partial class QueueDeliveryWorker(
                 new DeliveryFailure(item.EventId, "output-result-missing", true, null)));
         }
 
-        // One metadata-only line per outcome: without it an expired credential or a removed
-        // role is visible only as a growing retry count. Codes are fixed strings, never
-        // response bodies, exception text or event content.
+        // Output adapters can return free-form failure codes (including from a relay).
+        // Only a bounded allow-list reaches logs or health metadata.
+        string? lastFailure = null;
         foreach (IGrouping<(string Code, bool Retrying), FailureSettlement> group in failed
-            .GroupBy(item => (item.FailureCode, item.RetryAfter is not null))
-            .OrderBy(group => group.Key.FailureCode, StringComparer.Ordinal))
+            .GroupBy(item => (Code: SafeFailureCode(item.FailureCode), Retrying: item.RetryAfter is not null))
+            .OrderBy(group => group.Key.Code, StringComparer.Ordinal))
         {
             LogDeliveryFailures(logger, output.Id, group.Count(), group.Key.Code,
                 group.Key.Retrying ? "retrying" : "dead-lettered");
+            if (lastFailure is null || IsCredentialFailure(group.Key.Code)) lastFailure = group.Key.Code;
         }
+        if (lastFailure is not null) activity?.RecordFailure(lastFailure, clock.GetUtcNow());
 
         if (failed.Count > 0)
         {
@@ -228,17 +258,33 @@ public sealed partial class QueueDeliveryWorker(
         return events.Count;
     }
 
+    private static bool IsCredentialFailure(string code) => code is
+        "destination-azure-credential-failed" or "destination-azure-http-401" or "destination-azure-http-403";
+
+    private static string SafeFailureCode(string code) => code switch
+    {
+        "destination-azure-http-401:retry-after-capped" => "destination-azure-http-401",
+        "destination-azure-http-403:retry-after-capped" => "destination-azure-http-403",
+        "destination-azure-credential-failed" or "destination-azure-http-401" or "destination-azure-http-403"
+            or "payload-invalid-json" or "payload-event-id-mismatch" or "payload-too-large"
+            or "destination-output-timeout" or "output-adapter-failure" or "output-result-missing" => code,
+        _ => "delivery-failure"
+    };
+
     private FailureSettlement ToSettlement(QueuedEvent item, DeliveryFailure failure)
     {
+        // Adapter codes can be influenced by a relay. Preserve destination/retry
+        // classification from the original outcome, but persist only bounded codes.
+        string safeCode = SafePersistedFailureCode(failure.Code, failure.IsDestinationFailure);
         if (!failure.IsRetryable)
         {
-            return new FailureSettlement(item.EventId, failure.Code, null, item.LeaseToken);
+            return new FailureSettlement(item.EventId, safeCode, null, item.LeaseToken);
         }
 
         if (!failure.IsDestinationFailure && item.DeliveryAttempts >= deliveryOptions.MaximumDeliveryAttempts)
         {
             LogAttemptsExhausted(logger, output.Id, item.DeliveryAttempts);
-            return new FailureSettlement(item.EventId, $"max-attempts-exceeded:{failure.Code}", null, item.LeaseToken);
+            return new FailureSettlement(item.EventId, $"max-attempts-exceeded:{safeCode}", null, item.LeaseToken);
         }
 
         DateTimeOffset retryAt = clock.GetUtcNow().Add(failure.IsDestinationFailure
@@ -246,7 +292,7 @@ public sealed partial class QueueDeliveryWorker(
             : CalculateRetryDelay(item.DeliveryAttempts));
         if (failure.RetryAfter > retryAt) retryAt = failure.RetryAfter.Value;
         DateTimeOffset maximum = clock.GetUtcNow().AddHours(1);
-        string code = failure.Code;
+        string code = safeCode;
         if (retryAt > maximum)
         {
             retryAt = maximum;
@@ -254,6 +300,39 @@ public sealed partial class QueueDeliveryWorker(
             LogRetryAfterCapped(logger, output.Id);
         }
         return new FailureSettlement(item.EventId, code, retryAt, item.LeaseToken);
+    }
+
+    private static string SafePersistedFailureCode(string code, bool destination)
+    {
+        const string capped = ":retry-after-capped";
+        bool hasCap = code.EndsWith(capped, StringComparison.Ordinal);
+        string baseCode = hasCap ? code[..^capped.Length] : code;
+        string safe = baseCode switch
+        {
+            "destination-azure-credential-failed" or "destination-azure-paused" or "destination-azure-unavailable"
+                or "destination-azure-cancelled" or "destination-output-timeout" or "destination-ama-cancelled"
+                or "destination-relay-unavailable" or "destination-relay-response-invalid" or "destination-relay-result-missing"
+                or "payload-invalid-json" or "payload-event-id-mismatch" or "payload-too-large"
+                or "preflight-record-too-large" or "preflight-field-too-large" or "preflight-type-mismatch"
+                or "preflight-time-generated-missing"
+                or "output-adapter-failure" or "output-result-missing" or "azure-http-400-isolated"
+                or "record-exceeds-ama-file-limit" => baseCode,
+            _ when IsHttpStatusCode(baseCode, "destination-azure-http-")
+                || IsHttpStatusCode(baseCode, "destination-relay-http-")
+                || IsHttpStatusCode(baseCode, "relay-http-")
+                || IsHttpStatusCode(baseCode, "azure-http-") => baseCode,
+            _ when baseCode.StartsWith("relay-rejected:", StringComparison.Ordinal) => "relay-rejected:unknown",
+            _ => destination ? "destination-output-failure" : "delivery-failure"
+        };
+        return hasCap ? safe + capped : safe;
+    }
+
+    private static bool IsHttpStatusCode(string code, string prefix)
+    {
+        if (!code.StartsWith(prefix, StringComparison.Ordinal)) return false;
+        ReadOnlySpan<char> status = code.AsSpan(prefix.Length);
+        return status.Length == 3 && status[0] is >= '1' and <= '5'
+            && status[1] is >= '0' and <= '9' && status[2] is >= '0' and <= '9';
     }
 
     [LoggerMessage(EventId = 1006, Level = LogLevel.Warning,

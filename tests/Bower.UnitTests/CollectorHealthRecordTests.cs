@@ -162,6 +162,72 @@ public sealed class CollectorHealthRecordTests
     }
 
     [Fact]
+    public void Problems_ReportACredentialFailureUntilADeliverySucceeds()
+    {
+        CollectorHealthSample previous = Sample(TestEvents.Now, sequence: 1);
+        CollectorHealthSample failing = previous with
+        {
+            At = TestEvents.Now.AddMinutes(5),
+            Sequence = 2,
+            LastSuccessfulDeliveryAt = TestEvents.Now.AddMinutes(-1),
+            LastDeliveryFailure = new DeliveryFailureActivity("destination-azure-credential-failed", TestEvents.Now.AddMinutes(4))
+        };
+
+        Assert.Equal([CollectorHealthRecord.DestinationCredential], CollectorHealthRecord.Problems(failing, previous));
+        // A mixed batch can report success and a credential failure at the same clock tick.
+        Assert.Equal([CollectorHealthRecord.DestinationCredential], CollectorHealthRecord.Problems(
+            failing with { LastSuccessfulDeliveryAt = TestEvents.Now.AddMinutes(4) }, previous));
+        SecurityEventEnvelope record = CollectorHealthRecord.Create(failing, Identity.Id, "production", previous);
+        Assert.Equal(EventSeverity.High, record.EventSeverity);
+        Assert.Equal("destination-azure-credential-failed", record.Attributes!["delivery"].GetProperty("lastFailureCode").GetString());
+        // A missing role (HTTP 403) is an identity problem too.
+        Assert.Equal(
+            [CollectorHealthRecord.DestinationCredential],
+            CollectorHealthRecord.Problems(
+                failing with { LastDeliveryFailure = new DeliveryFailureActivity("destination-azure-http-403", TestEvents.Now.AddMinutes(4)) },
+                previous));
+        // An unreachable destination is not; nor a failure a later delivery superseded, nor one
+        // reported by an earlier record.
+        Assert.Empty(CollectorHealthRecord.Problems(
+            failing with { LastDeliveryFailure = new DeliveryFailureActivity("destination-azure-unavailable", TestEvents.Now.AddMinutes(4)) },
+            previous));
+        Assert.Empty(CollectorHealthRecord.Problems(failing with { LastSuccessfulDeliveryAt = TestEvents.Now.AddMinutes(4.5) }, previous));
+        Assert.Empty(CollectorHealthRecord.Problems(
+            failing with { LastDeliveryFailure = new DeliveryFailureActivity("destination-azure-credential-failed", TestEvents.Now.AddMinutes(-2)) },
+            previous));
+    }
+
+    [Fact]
+    public void Create_ReportsSyslogTlsReloadAndCertificateLifetimes()
+    {
+        CollectorHealthSample previous = Sample(TestEvents.Now, sequence: 1) with { Syslog = [Listener()] };
+        SyslogListenerStatus listener = Listener() with
+        {
+            TlsReloads = 2,
+            TlsReloadFailures = 1,
+            TlsRevoked = 1,
+            ServerCertificateNotAfter = TestEvents.Now.AddDays(10),
+            ClientCertificateAuthorityNotAfter = TestEvents.Now.AddDays(300),
+            ClientRevocationListNextUpdate = TestEvents.Now.AddDays(1)
+        };
+        CollectorHealthSample current = previous with { At = TestEvents.Now.AddMinutes(5), Sequence = 2, Syslog = [listener] };
+
+        SecurityEventEnvelope record = CollectorHealthRecord.Create(current, Identity.Id, "production", previous);
+
+        JsonElement item = record.Attributes!["syslog"][0];
+        Assert.Equal(2, item.GetProperty("tlsReloads").GetInt64());
+        Assert.Equal(1, item.GetProperty("tlsReloadFailures").GetInt64());
+        Assert.Equal(1, item.GetProperty("tlsRevoked").GetInt64());
+        Assert.Equal(TestEvents.Now.AddDays(10), item.GetProperty("serverCertificateNotAfter").GetDateTimeOffset());
+        Assert.Equal(TestEvents.Now.AddDays(1), item.GetProperty("clientRevocationListNextUpdate").GetDateTimeOffset());
+        Assert.Equal([CollectorHealthRecord.SyslogErrors], CollectorHealthRecord.Problems(current, previous));
+        // A successful reload alone is not an error.
+        Assert.Empty(CollectorHealthRecord.Problems(
+            previous with { At = TestEvents.Now.AddMinutes(5), Sequence = 2, Syslog = [Listener() with { TlsReloads = 1 }] },
+            previous));
+    }
+
+    [Fact]
     public void Create_BoundsListedSources()
     {
         SourceSilenceStatus[] sources = [.. Enumerable.Range(0, 40).Select(index =>
@@ -175,6 +241,62 @@ public sealed class CollectorHealthRecordTests
         Assert.Equal(CollectorHealthRecord.MaximumListed, listed.GetArrayLength());
         Assert.Equal("app-39", listed[0].GetProperty("application").GetString());
         Assert.Equal(40, record.Attributes["sources"].GetProperty("neverSeen").GetInt64());
+    }
+
+    [Fact]
+    public void Create_ReportsIncompleteTransportCoverageWhenListsAreTruncated()
+    {
+        SyslogListenerStatus[] listeners = [.. Enumerable.Range(0, 26).Select(i =>
+            Listener(tlsHandshakeFailures: i == 25 ? 1 : 0) with
+            {
+                Id = $"listener-{i}",
+                ServerCertificateNotAfter = i == 25 ? TestEvents.Now.AddDays(1) : null
+            })];
+        WindowsEventSubscriptionStatus[] subscriptions = [.. Enumerable.Range(0, 26).Select(i =>
+            Subscription(i == 25 ? "winevt-read-failed" : "running") with { Id = $"subscription-{i}" })];
+        CollectorHealthSample sample = Sample(TestEvents.Now, 1) with { Syslog = listeners, WindowsEventLog = subscriptions };
+        SecurityEventEnvelope record = CollectorHealthRecord.Create(sample, Identity.Id, "production");
+        Assert.Equal(25, record.Attributes!["syslog"].GetArrayLength());
+        Assert.Equal(25, record.Attributes["windowsEventLog"].GetArrayLength());
+        Assert.Contains(CollectorHealthRecord.SyslogErrors, CollectorHealthRecord.Problems(sample, null));
+        Assert.Contains(CollectorHealthRecord.WindowsEventLogErrors, CollectorHealthRecord.Problems(sample, null));
+        JsonElement coverage = record.Attributes["monitoringCoverage"];
+        Assert.False(coverage.GetProperty("syslogComplete").GetBoolean());
+        Assert.False(coverage.GetProperty("windowsEventLogComplete").GetBoolean());
+        Assert.DoesNotContain("127.0.0.1", JsonSerializer.Serialize(record, BowerJson.Envelope), StringComparison.Ordinal);
+        foreach (CollectorHealthSample complete in new[]
+        {
+            sample with { Syslog = listeners[..25], WindowsEventLog = subscriptions[..25] },
+            sample with { Syslog = null, WindowsEventLog = null }
+        })
+        {
+            coverage = CollectorHealthRecord.Create(complete, Identity.Id, "production").Attributes!["monitoringCoverage"];
+            Assert.True(coverage.GetProperty("syslogComplete").GetBoolean());
+            Assert.True(coverage.GetProperty("windowsEventLogComplete").GetBoolean());
+        }
+    }
+
+    [Fact]
+    public async Task Process_QuarantinesExternallySubmittedHealthRegardlessOfCategoryOrAdapter()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = new(Path.Combine(directory.Path, "queue.db"), 1_048_576, clock);
+        await store.InitializeAsync(cancellationToken);
+        SecurityEventProcessor processor = new(new JsonEventRedactor(), new RejectUnexpectedPolicyEvaluation(), store, clock);
+        SecurityEventEnvelope health = CollectorHealthRecord.Create(Sample(TestEvents.Now, 1), Identity.Id, "production");
+        foreach (string category in new[] { SecurityEventCategories.CollectorHealth, "authentication" })
+        {
+            string payload = JsonSerializer.Serialize(health with { EventCategory = category }, BowerJson.Envelope);
+            ProcessingResult result = await processor.ProcessAsync(payload,
+                Identity with { SourceAdapter = CollectorHealthRecord.SourceAdapter }, cancellationToken);
+            Assert.Equal(DecisionAction.Quarantine, result.Action);
+            Assert.Equal(ProcessingStage.Validation, result.Stage);
+            Assert.Equal(["reserved-event-type"], result.Reasons);
+            Assert.False(result.Queued);
+        }
+        Assert.Equal(0, (await store.GetSnapshotAsync(cancellationToken)).Queued);
     }
 
     [Fact]
@@ -201,7 +323,7 @@ public sealed class CollectorHealthRecordTests
         };
         string candidate = CollectorHealthRecord.CreateJson(sample, Identity.Id, "production");
 
-        ProcessingResult result = await processor.ProcessAsync(
+        ProcessingResult result = await processor.ProcessCollectorHealthAsync(
             candidate, Identity with { SourceAdapter = CollectorHealthRecord.SourceAdapter }, cancellationToken);
 
         Assert.True(result.Queued, string.Join(",", result.Reasons));
@@ -320,6 +442,25 @@ public sealed class CollectorHealthRecordTests
     }
 
     [Fact]
+    public async Task Host_RejectsProducerHealthRecord()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = CollectorApplication.Build(
+            Settings(directory.Path) with { PolicyDirectory = PolicyDirectoryWithHealth(directory.Path) },
+            builder => builder.WebHost.UseTestServer());
+        await CollectorApplication.InitializeAsync(app, cancellationToken);
+        await app.StartAsync(cancellationToken);
+        using HttpClient client = app.GetTestClient();
+        string payload = CollectorHealthRecord.CreateJson(Sample(TestEvents.Now, 1), Identity.Id, "production");
+        using HttpResponseMessage response = await client.PostAsync("/v1/events",
+            new StringContent(payload, System.Text.Encoding.UTF8, "application/json"), cancellationToken);
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("reserved-event-type", await response.Content.ReadAsStringAsync(cancellationToken), StringComparison.Ordinal);
+        await app.StopAsync(cancellationToken);
+    }
+
+    [Fact]
     public async Task Host_QueuesAndDeliversARecordAtStartUp()
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
@@ -399,6 +540,8 @@ public sealed class CollectorHealthRecordTests
     [Theory]
     [InlineData(null, null)]
     [InlineData("0", null)]
+    [InlineData("00", null)]
+    [InlineData("+0", null)]
     [InlineData("60", 60)]
     [InlineData("3600", 3600)]
     public void Settings_ReadTheHealthRecordInterval(string? value, int? seconds)
@@ -486,6 +629,12 @@ public sealed class CollectorHealthRecordTests
         new(TestEvents.Now.AddHours(-1), 100, 10_000, capacityRefusals, capacityRefusals * 10, 0, 0,
             capacityRefusals == 0 ? null : TestEvents.Now.AddMinutes(-1),
             capacityRefusals == 0 ? null : PipelineTelemetry.QueueCapacityReason);
+
+    private sealed class RejectUnexpectedPolicyEvaluation : ITelemetryPolicyEvaluator
+    {
+        public PolicyDecision Evaluate(SecurityEventEnvelope candidate) =>
+            throw new InvalidOperationException("Reserved events must not reach policy evaluation.");
+    }
 
     private static SyslogListenerStatus Listener(long tlsHandshakeFailures = 0, long dropped = 0) =>
         new("firewall-tls", "tls", "127.0.0.1:6514", 1, 3, 0, 0, tlsHandshakeFailures, 500, 50_000, 500, 0, 0,

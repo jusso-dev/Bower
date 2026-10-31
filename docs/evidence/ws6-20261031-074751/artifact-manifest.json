@@ -11,7 +11,7 @@
   "v2 (from 09:27, drills D4b, D6, D7, M; adds storage.queueFile* fields)": {
    "linux-x64 Bower.Collector.dll": "c77eadd97a3218e4c7bc1f5b75f2c5a0986134a0a9d965a14a802799ba05db76",
    "win-x64 Bower.Collector.dll": "12ca84a98f49a6d9d395bacf8fc1df835b9856fbc3dc33962f6667a3fd8da996",
-   "note": "No C# source changed after the v2 build; the source hashes below are the v2 sources"
+   "note": "The source hashes below describe the v2 build. Later review changes altered the working tree and have not been verified by this drill."
   }
  },
  "cli": {

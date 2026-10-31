@@ -75,7 +75,7 @@ PY
     echo "intent: $(cat $audit/intent.json)"; echo "outcome: $(cat $audit/outcome.json)"
     sleep 20
     token=$(cat /etc/bower/secrets/ingest-token)
-    curl -fsS -H "Authorization: Bearer $token" http://127.0.0.1:4329/v1/status | python3 -c 'import json,sys; q=json.load(sys.stdin)["queue"]; print(json.dumps(q))' ;;
+    curl -fsS -H @/dev/fd/3 3<<<"Authorization: Bearer $token" http://127.0.0.1:4329/v1/status | python3 -c 'import json,sys; q=json.load(sys.stdin)["queue"]; print(json.dumps(q))' ;;
   stop-replay-collector) systemctl stop bower-replay; echo "replay collector stopped $(now)" ;;
   *) echo "unknown action" >&2; exit 2 ;;
 esac

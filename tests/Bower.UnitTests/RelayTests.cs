@@ -222,6 +222,26 @@ public sealed class RelayUnitTests
     }
 
     [Fact]
+    public async Task Intake_TrustsAuthenticatedDownstreamHealthButRejectsMismatchedCollector()
+    {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (RelayIntake intake, _) = await IntakeAsync(directory, ct);
+        (string payload, _) = Arranged("health-a", "edge-01");
+        SecurityEventEnvelope envelope = JsonSerializer.Deserialize<SecurityEventEnvelope>(payload, BowerJson.Envelope)! with
+        {
+            EventType = SecurityEventTypes.CollectorHealth,
+            EventCategory = SecurityEventCategories.CollectorHealth
+        };
+        payload = JsonSerializer.Serialize(envelope, BowerJson.Envelope);
+        string fingerprint = EventIdentity.Create(envelope);
+        RelayIntakeOutcome wrong = await intake.AcceptAsync("edge-02", Batch("edge-01", ("health-a", fingerprint, payload)), ct);
+        Assert.NotEqual(200, wrong.StatusCode);
+        RelayIntakeOutcome correct = await intake.AcceptAsync("edge-01", Batch("edge-01", ("health-a", fingerprint, payload)), ct);
+        Assert.Equal(RelayEventStatuses.Accepted, Assert.Single(correct.Response!.Results).Status);
+    }
+
+    [Fact]
     public async Task Intake_RefusesAnythingThatIsNotThisDownstreamsDecidedEnvelope()
     {
         CancellationToken ct = TestContext.Current.CancellationToken;

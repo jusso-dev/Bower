@@ -25,6 +25,12 @@ param namePrefix string = 'bower'
 @description('Create the rules enabled. Default false: review queries and thresholds against the tenant first.')
 param enabled bool = false
 
+@description('Explicitly opt in to the unqualified DCR error query after absent-table and first-error behavior are validated. Requires enabled=true as well.')
+param enableUnqualifiedDcrErrorQuery bool = false
+
+@description('Explicitly opt in to the unqualified event-time table-silence query after late-arrival behavior is validated. Requires enabled=true as well.')
+param enableUnqualifiedTableNoIngestionQuery bool = false
+
 @description('Existing action group resource IDs notified by every rule. Empty: alerts are recorded in Azure Monitor only.')
 param actionGroupResourceIds array = []
 
@@ -62,10 +68,10 @@ param deliveryLagMinutes int = 15
 @maxValue(100)
 param storageUsedPercent int = 40
 
-@description('Queue database size as a percentage of its SQLite page limit that counts as storage pressure.')
+@description('Queue database in-use pages as a percentage of its SQLite page limit that counts as storage pressure.')
 @minValue(1)
 @maxValue(100)
-param queueFileUsedPercent int = 70
+param queuePagesUsedPercent int = 70
 
 @description('Default minutes without new security events from a collector and application/environment before it is reported silent at the destination.')
 @minValue(5)
@@ -78,15 +84,35 @@ param sourceSilenceOverrides array = []
 @minValue(0)
 param syslogChurnPerInterval int = 5
 
-@description('Create DCR metric alerts (dropped rows or columns, transformation errors, error responses, no ingestion requests).')
+@description('Create DCR metric alerts (dropped rows or columns, transformation errors, error responses).')
 param createDcrMetricAlerts bool = true
 
-@description('Minutes with no Logs Ingestion request at the DCR before the fleet-wide no-ingestion metric alert fires.')
-@minValue(5)
+@description('Minutes with no row at all in BowerSecurity_CL before the fleet-wide no-ingestion log alert fires. One of 5, 10, 15, 30, 45, 60, 120, 180, 240, 300, 360.')
+@allowed([
+  5
+  10
+  15
+  30
+  45
+  60
+  120
+  180
+  240
+  300
+  360
+])
 param noIngestionMinutes int = 30
 
-@description('Send DCR ingestion error logs (DCRLogErrors) to the workspace. Required by the dcr-errors rule.')
-param enableDcrErrorLogs bool = true
+@description('Days before a syslog server or client CA certificate expires to alert.')
+@minValue(1)
+param certificateExpiryDays int = 14
+
+@description('Hours before the syslog client revocation list must be refreshed to alert.')
+@minValue(1)
+param revocationListHours int = 24
+
+@description('Opt in to sending DCR ingestion error logs (DCRLogErrors) to the workspace. Required by the dcr-errors rule and may incur ingestion charges.')
+param enableDcrErrorLogs bool = false
 
 resource workspace 'Microsoft.OperationalInsights/workspaces@2025-07-01' existing = {
   name: workspaceName
@@ -132,12 +158,12 @@ var healthRules = [
   {
     name: 'queue-storage'
     displayName: 'Bower queue storage pressure'
-    description: 'Queue file near its page limit, undelivered data near BOWER_QUEUE_MAX_BYTES, delivery backpressure, or intake refused for capacity. Runbook: R5.'
+    description: 'Queue database pages near their limit, undelivered data near BOWER_QUEUE_MAX_BYTES, delivery backpressure, or intake refused for capacity. Runbook: R5.'
     severity: 2
     windowSize: healthWindow
     dimensions: ['CollectorId']
     skipQueryValidation: false
-    query: replace(replace(loadTextContent('queries/queue-storage.kql'), '__STORAGE_PERCENT__', string(storageUsedPercent)), '__FILE_PERCENT__', string(queueFileUsedPercent))
+    query: replace(replace(loadTextContent('queries/queue-storage.kql'), '__STORAGE_PERCENT__', string(storageUsedPercent)), '__PAGES_PERCENT__', string(queuePagesUsedPercent))
   }
   {
     name: 'source-overdue'
@@ -169,6 +195,38 @@ var healthRules = [
     skipQueryValidation: false
     query: replace(loadTextContent('queries/source-transport-errors.kql'), '__SYSLOG_CHURN__', string(syslogChurnPerInterval))
   }
+  {
+    name: 'destination-credential'
+    displayName: 'Bower destination refused the collector identity'
+    description: 'A collector reported destination-azure-credential-failed or HTTP 401/403 with nothing delivered since: a credential or role problem, not a network outage. Fires once the queued records arrive. Runbook: R1.'
+    severity: 1
+    windowSize: absenceWindow
+    dimensions: ['CollectorId']
+    skipQueryValidation: false
+    query: loadTextContent('queries/destination-credential.kql')
+  }
+  {
+    name: 'syslog-tls-expiry'
+    displayName: 'Bower syslog TLS certificate or revocation list expiring'
+    description: 'A syslog listener server certificate or client CA expires soon, or its revocation list needs refreshing. Runbook: R7.'
+    severity: 2
+    windowSize: healthWindow
+    dimensions: ['CollectorId', 'Source']
+    skipQueryValidation: false
+    query: replace(replace(loadTextContent('queries/syslog-tls-expiry.kql'), '__CERTIFICATE_DAYS__', string(certificateExpiryDays)), '__CRL_HOURS__', string(revocationListHours))
+  }
+  {
+    name: 'table-no-ingestion'
+    displayName: 'Bower table event-time silence (unqualified)'
+    description: 'No event-time row in the window. Old backlog arriving now can be excluded, so this does not prove ingestion stopped. Requires live validation. Runbook: R1.'
+    severity: 1
+    windowSize: 'PT${noIngestionMinutes}M'
+    dimensions: []
+    skipQueryValidation: false
+    operator: 'LessThan'
+    threshold: 1
+    query: loadTextContent('queries/table-no-ingestion.kql')
+  }
 ]
 
 var dcrRules = empty(dataCollectionRuleName) ? [] : [
@@ -198,7 +256,7 @@ resource alertRules 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = [for r
     displayName: rule.displayName
     description: rule.description
     severity: rule.severity
-    enabled: enabled
+    enabled: enabled && (rule.name != 'dcr-errors' || enableUnqualifiedDcrErrorQuery) && (rule.name != 'table-no-ingestion' || enableUnqualifiedTableNoIngestionQuery)
     evaluationFrequency: evaluationFrequency
     windowSize: rule.windowSize
     scopes: [
@@ -212,8 +270,9 @@ resource alertRules 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = [for r
         {
           query: rule.query
           timeAggregation: 'Count'
-          operator: 'GreaterThan'
-          threshold: 0
+          // Most rules fire on any row; table-no-ingestion fires when there is none.
+          operator: rule.?operator ?? 'GreaterThan'
+          threshold: rule.?threshold ?? 0
           dimensions: [for dimension in rule.dimensions: {
             name: dimension
             operator: 'Include'
@@ -310,17 +369,6 @@ var metricRules = [
         ]
       }
     ]
-  }
-  {
-    name: 'dcr-no-ingestion'
-    description: 'No Logs Ingestion requests reached the Bower DCR from any collector. Fleet-wide delivery outage or every collector down. Runbook: R1.'
-    severity: 1
-    metricName: 'ApiCallReceived_Count'
-    operator: 'LessThan'
-    threshold: 1
-    aggregation: 'Count'
-    windowSize: 'PT${noIngestionMinutes}M'
-    dimensions: []
   }
 ]
 

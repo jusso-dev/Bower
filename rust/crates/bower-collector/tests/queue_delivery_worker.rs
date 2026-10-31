@@ -223,6 +223,65 @@ async fn deliver_once_dead_letters_after_maximum_attempts() {
 }
 
 #[tokio::test]
+async fn relay_rejection_does_not_persist_untrusted_failure_text() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new();
+    let store = create_store(&directory, &clock);
+    enqueue(&store, &clock, &["event"]);
+    let output = FakeOutput(Box::new(|events| {
+        result(
+            &[],
+            events
+                .iter()
+                .map(|item| {
+                    failure(
+                        &item.event_id,
+                        "relay-rejected:synthetic-secret-marker",
+                        false,
+                    )
+                })
+                .collect(),
+            None,
+        )
+    }));
+    worker(store.clone(), output, &clock, 1)
+        .deliver_once(&ShutdownToken::never())
+        .await
+        .unwrap();
+    let dead = store.list_dead_lettered(10).unwrap();
+    assert_eq!(dead.len(), 1);
+    assert_eq!(
+        dead[0].failure_code.as_deref(),
+        Some("relay-rejected:unknown")
+    );
+}
+
+#[tokio::test]
+async fn unknown_destination_failure_preserves_retry_classification() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new();
+    let store = create_store(&directory, &clock);
+    enqueue(&store, &clock, &["event"]);
+    let output = FakeOutput(Box::new(|events| {
+        result(
+            &[],
+            events
+                .iter()
+                .map(|item| failure(&item.event_id, "destination-synthetic-secret-marker", true))
+                .collect(),
+            None,
+        )
+    }));
+    let worker = worker(store.clone(), output, &clock, 1);
+    worker.deliver_once(&ShutdownToken::never()).await.unwrap();
+    clock.advance(Duration::from_secs(31));
+    worker.deliver_once(&ShutdownToken::never()).await.unwrap();
+    let snapshot = store.snapshot().unwrap();
+    assert_eq!(snapshot.retrying, 1);
+    assert_eq!(snapshot.dead_lettered, 0);
+}
+
+#[tokio::test]
 async fn deliver_once_ignores_settlement_of_reclaimed_lease() {
     let directory = tempfile::tempdir().unwrap();
     let clock = FakeClock::new();

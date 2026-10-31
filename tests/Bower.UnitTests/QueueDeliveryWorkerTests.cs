@@ -1,6 +1,7 @@
 using Bower.Abstractions;
 using Bower.Collector;
 using Bower.Persistence;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -251,6 +252,103 @@ public sealed class QueueDeliveryWorkerTests
         clock.Advance(TimeSpan.FromMinutes(2));
         Assert.Equal(2, await restarted.DeliverOnceAsync(cancellationToken));
         Assert.Equal(2, (await reopened.GetSnapshotAsync(cancellationToken)).Delivered);
+    }
+
+    [Fact]
+    public async Task DeliveryActivity_RecordsTheLastFailureCodeAndLaterSuccess()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore store, FakeClock clock) = await CreateStoreAsync(directory, cancellationToken);
+        await EnqueueAsync(store, clock, ["a"], cancellationToken);
+        bool repaired = false;
+        FakeOutput output = new(events => repaired
+            ? new DeliveryResult(events.Select(item => item.EventId).ToArray(), [], "accepted")
+            : new DeliveryResult([], [.. events.Select(item =>
+                new DeliveryFailure(item.EventId, "destination-azure-credential-failed", true, null))], null));
+        DeliveryActivity activity = new();
+        QueueDeliveryWorker worker = new(store, output, clock, new QueueDeliveryOptions(), new RecordingLogger(), activity);
+
+        await worker.DeliverOnceAsync(cancellationToken);
+
+        Assert.Equal(new DeliveryFailureActivity("destination-azure-credential-failed", clock.UtcNow), activity.LastFailure);
+        Assert.Null(activity.LastSuccessfulDeliveryAt);
+        repaired = true;
+        clock.Advance(TimeSpan.FromSeconds(31));
+        await worker.DeliverOnceAsync(cancellationToken);
+        Assert.Equal(clock.UtcNow, activity.LastSuccessfulDeliveryAt);
+        // The failure stays as history; consumers compare it with the last success.
+        Assert.Equal("destination-azure-credential-failed", activity.LastFailure?.Code);
+    }
+
+    [Fact]
+    public async Task DeliveryTelemetry_DoesNotExposeUntrustedFailureCodesOrHideCredentialFailure()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore store, FakeClock clock) = await CreateStoreAsync(directory, cancellationToken);
+        await EnqueueAsync(store, clock, ["credential", "untrusted"], cancellationToken);
+        const string secret = "secret-marker-never-log";
+        FakeOutput output = new(events => new DeliveryResult([], [.. events.Select(item =>
+            new DeliveryFailure(item.EventId, item.EventId == "credential"
+                ? "destination-azure-http-401:retry-after-capped" : $"relay-rejected:{secret}", true, null))], null));
+        DeliveryActivity activity = new();
+        RecordingLogger logger = new();
+        QueueDeliveryWorker worker = new(store, output, clock, new QueueDeliveryOptions(), logger, activity);
+
+        await worker.DeliverOnceAsync(cancellationToken);
+
+        Assert.Equal("destination-azure-http-401", activity.LastFailure?.Code);
+        Assert.DoesNotContain(logger.Messages, line => line.Contains(secret, StringComparison.Ordinal));
+        Assert.Contains(logger.Messages, line => line.Contains("delivery-failure", StringComparison.Ordinal));
+        Assert.Equal(2, (await store.GetSnapshotAsync(cancellationToken)).Retrying);
+        await using SqliteConnection connection = new($"Data Source={Path.Combine(directory.Path, "queue.db")}");
+        await connection.OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT last_failure_code FROM queue_events_v5 WHERE event_id = 'untrusted'";
+        Assert.Equal("relay-rejected:unknown", await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    [Fact]
+    public async Task UnknownDestinationFailure_StaysRetryableWithoutPersistingItsUntrustedCode()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore store, FakeClock clock) = await CreateStoreAsync(directory, token);
+        await EnqueueAsync(store, clock, ["event"], token);
+        FakeOutput output = new(events => new DeliveryResult([], events.Select(item =>
+            new DeliveryFailure(item.EventId, "destination-synthetic-secret-marker", true, null)).ToArray(), null));
+        QueueDeliveryWorker worker = new(store, output, clock, new QueueDeliveryOptions { MaximumDeliveryAttempts = 1 }, NullLogger<QueueDeliveryWorker>.Instance);
+        await worker.DeliverOnceAsync(token);
+        clock.Advance(TimeSpan.FromSeconds(31));
+        await worker.DeliverOnceAsync(token);
+        QueueSnapshot snapshot = await store.GetSnapshotAsync(token);
+        Assert.Equal(1, snapshot.Retrying);
+        Assert.Equal(0, snapshot.DeadLettered);
+        await using SqliteConnection connection = new($"Data Source={Path.Combine(directory.Path, "queue.db")}");
+        await connection.OpenAsync(token);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT last_failure_code FROM queue_events_v5 WHERE event_id = 'event'";
+        Assert.Equal("destination-output-failure", await command.ExecuteScalarAsync(token));
+    }
+
+    [Fact]
+    public async Task RelayRejection_StoresOnlyTheBoundedCodeInDeadLetterMetadata()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore store, FakeClock clock) = await CreateStoreAsync(directory, token);
+        await EnqueueAsync(store, clock, ["event"], token);
+        FakeOutput output = new(events => new DeliveryResult([], events.Select(item =>
+            new DeliveryFailure(item.EventId, "relay-rejected:synthetic-secret-marker", false, null)).ToArray(), null));
+        await CreateWorker(store, output, clock).DeliverOnceAsync(token);
+        DeadLetterRecord row = Assert.Single(await store.ListDeadLetteredAsync(10, token));
+        Assert.Equal("relay-rejected:unknown", row.FailureCode);
+        await using SqliteConnection connection = new($"Data Source={Path.Combine(directory.Path, "queue.db")}");
+        await connection.OpenAsync(token);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT last_failure_code FROM queue_events_v5 WHERE event_id = 'event'";
+        Assert.Equal("relay-rejected:unknown", await command.ExecuteScalarAsync(token));
     }
 
     [Fact]

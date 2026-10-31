@@ -11,5 +11,8 @@ BowerSecurity_CL
 | extend OldestUndeliveredAgeSeconds = toint(Attributes.queue.oldestUndeliveredAgeSeconds),
     Undelivered = toint(Attributes.queue.undelivered),
     DeliveryStatus = tostring(Attributes.delivery.status)
-| where coalesce(OldestUndeliveredAgeSeconds, 0) > backlogSeconds or MaxArrivalLagMinutes > lagMinutes
-| project CollectorId, RecordAt = TimeGenerated, OldestUndeliveredAgeSeconds, Undelivered, DeliveryStatus, MaxArrivalLagMinutes
+| extend BacklogMetricsIncomplete = isnull(Undelivered) or Undelivered < 0
+    or (Undelivered > 0 and (isnull(OldestUndeliveredAgeSeconds) or OldestUndeliveredAgeSeconds < 0))
+    or isnull(MaxArrivalLagMinutes)
+| where BacklogMetricsIncomplete or OldestUndeliveredAgeSeconds > backlogSeconds or MaxArrivalLagMinutes > lagMinutes
+| project CollectorId, RecordAt = TimeGenerated, OldestUndeliveredAgeSeconds, Undelivered, DeliveryStatus, MaxArrivalLagMinutes, BacklogMetricsIncomplete

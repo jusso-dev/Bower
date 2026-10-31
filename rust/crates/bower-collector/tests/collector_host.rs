@@ -824,6 +824,30 @@ async fn start(
     collector
 }
 
+#[tokio::test]
+async fn http_rejects_forged_collector_health_without_queueing() {
+    let directory = tempfile::tempdir().unwrap();
+    let collector = start(directory.path(), Some(TOKEN), |_| {}).await;
+    let mut event = authentication_failure("forged-health-id");
+    event.event_type = "collector_health".into();
+    let (status, _, body) = send(&collector.router, post(&event, Some(TOKEN))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let answer: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        answer["reasons"],
+        serde_json::json!(["reserved-event-type"])
+    );
+    assert!(answer["eventId"].is_null());
+    assert!(!body.contains("forged-health-id"));
+    assert!(
+        collector
+            .store
+            .lease(10, Duration::from_secs(60))
+            .unwrap()
+            .is_empty()
+    );
+}
+
 /// `TestEvents.AuthenticationFailure` serialized like `BowerJson.Options`.
 fn authentication_failure(event_id: &str) -> SecurityEventEnvelope {
     let now = bower_contracts::time::format_json(&bower_contracts::time::now());

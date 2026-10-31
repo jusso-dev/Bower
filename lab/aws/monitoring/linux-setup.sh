@@ -85,4 +85,4 @@ echo "collector: $(systemctl is-active bower) rsyslog: $(systemctl is-active rsy
 curl -fsS http://127.0.0.1:4319/health; echo
 sha256sum /opt/bower/Bower.Collector /opt/bower/Bower.Collector.dll /opt/bower-cli/bower /etc/bower/packs/*.bowerpack | sed 's|  | |'
 token=$(cat /etc/bower/secrets/ingest-token)
-curl -fsS -H "Authorization: Bearer $token" http://127.0.0.1:4319/v1/status | python3 -c 'import json,sys; s=json.load(sys.stdin); print(json.dumps({"status":s["status"],"queue":s["queue"],"syslog":[{k:l[k] for k in ("id","activeConnections","connectionsAccepted","framesReceived","queued","tlsHandshakeFailures")} for l in s.get("syslog") or []],"sources":s.get("sources")}))'
+curl -fsS -H @/dev/fd/3 3<<<"Authorization: Bearer $token" http://127.0.0.1:4319/v1/status | python3 -c 'import json,sys; s=json.load(sys.stdin); print(json.dumps({"status":s["status"],"queue":s["queue"],"syslog":[{k:l[k] for k in ("id","activeConnections","connectionsAccepted","framesReceived","queued","tlsHandshakeFailures")} for l in s.get("syslog") or []],"sources":s.get("sources")}))'

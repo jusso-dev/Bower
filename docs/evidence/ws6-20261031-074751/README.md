@@ -1,7 +1,8 @@
 # Monitoring, alerting and runbook drill — 31 October 2026
 
-**Every catalogue alert fired for a real fault and resolved after recovery, except the
-Azure storage alert for an already-full queue (the outage alert covered it).** The drill
+**The recorded earlier drill exercised several alerts; the storage alert did not fire
+for an already-full queue, and some metrics were not triggered.** Later changes to
+rules and host checks have not been live-qualified by this evidence. The drill
 also found a queue page-ceiling defect that stalls delivery, and sender-side syslog loss
 under back-pressure. Neither changes the readiness status. Builds were **unsigned**
 development builds. [Temporary-resource cleanup is verified](cleanup.json) (30 of 30
