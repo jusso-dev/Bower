@@ -79,6 +79,33 @@ BeforeAll {
 }
 
 Describe 'Test-BowerCollectorHealth on <Shell>' -ForEach $script:Hosts {
+    It 'reads the queue volume in a fresh process' {
+        $tokens = $null; $parseErrors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($script:Check, [ref] $tokens, [ref] $parseErrors)
+        $function = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-QueueDiskSpace' }, $true)
+        $function | Should -Not -BeNullOrEmpty
+        $probe = Join-Path $TestDrive 'disk-probe.ps1'
+        $probeSource = $function.Extent.Text + @'
+
+try {
+    $disk = Get-QueueDiskSpace $args[0]
+    if ($disk.TotalSize -le 0) { throw 'Invalid volume size' }
+    'ok'
+} catch {
+    $exception = $_.Exception
+    while ($null -ne $exception) {
+        '{0} HRESULT={1}' -f $exception.GetType().FullName, $exception.HResult
+        $exception = $exception.InnerException
+    }
+    'Win32Error={0}' -f [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+    exit 1
+}
+'@
+        Set-Content -LiteralPath $probe -Value $probeSource
+        $diagnostic = & $Shell -NoProfile -ExecutionPolicy Bypass -File $probe (Join-Path $TestDrive 'queue.db')
+        $LASTEXITCODE | Should -Be 0 -Because ("disk probe: " + ($diagnostic -join ', '))
+    }
+
     It 'rejects unsafe initial URLs before requests' {
         foreach ($url in @('http://example.com', 'http://localhost', 'http://127.1', 'http://127.0.0.1.evil',
                            'http://127.0.0.1@evil', 'https://user@example.com', 'https://example.com?x=y')) {
