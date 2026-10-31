@@ -411,49 +411,60 @@ public sealed class StoragePressureTests
     }
 
     /// <summary>
-    /// A real ENOSPC from the kernel: the WAL is redirected to <c>/dev/full</c>, so the commit
-    /// itself fails exactly as on a full volume. Linux only.
+    /// SQLITE_FULL inside the write transaction (the page ceiling, which shares the error
+    /// path of a full volume): nothing partial is committed, the error is reported as
+    /// storage backpressure while the volume is critical, and a restarted store recovers
+    /// every committed event. Real ENOSPC on full xfs and NTFS volumes is exercised in the
+    /// AWS storage-pressure lab (docs/production-readiness/03-storage-pressure.md).
     /// </summary>
     [Fact]
-    public async Task DiskFullDuringCommit_RefusesWithoutPartialStateAndRecoversAfterRestart()
+    public async Task SqliteFullDuringTheWriteTransaction_CommitsNothingAndRecoversAfterRestart()
     {
-        Assert.SkipUnless(OperatingSystem.IsLinux() && File.Exists("/dev/full"), "Needs Linux /dev/full for a real ENOSPC.");
         using SqliteTemporaryDirectory directory = new();
         FakeClock clock = new(TestEvents.Now);
         FakeDiskSpaceProbe probe = new(10 * GiB, 20 * GiB);
         string path = Path.Combine(directory.Path, "queue.db");
         StorageGuard guard = new(path, new(), probe, clock) { SampleInterval = TimeSpan.FromHours(1) };
-        SqliteEventStore store = new(path, 10 * MiB, clock, guard);
+        SqliteEventStore store = new(path, MiB, clock, guard);
         await store.InitializeAsync(Cancellation);
         await store.EnqueueAsync(Event("committed"), Cancellation);
-        await store.EnqueueAsync(Event("leased"), Cancellation);
-        IReadOnlyList<QueuedEvent> leases = await store.LeaseAsync(10, TimeSpan.FromMinutes(1), Cancellation);
-        LedgerHead before = await store.GetLedgerHeadAsync(Cancellation);
-        guard.Evaluate(force: true);
+        IReadOnlyList<QueuedEvent> held = await store.LeaseAsync(10, TimeSpan.FromMinutes(1), Cancellation);
+        // Acknowledged rows occupy most pages while undelivered bytes stay tiny.
+        for (int index = 0; (await store.GetStorageSnapshotAsync(Cancellation)).PageUtilisationPercent < 90; index++)
+        {
+            await store.EnqueueAsync(Event($"ack-{index}", 4_000), Cancellation);
+            QueuedEvent lease = (await store.LeaseAsync(10, TimeSpan.FromMinutes(1), Cancellation))
+                .Single(item => item.EventId.StartsWith("ack-", StringComparison.Ordinal));
+            await store.MarkDeliveredAsync(lease.EventId, "ack", lease.LeaseToken, Cancellation);
+        }
 
-        // The volume fills between the last watermark sample and the commit.
-        FillVolume(path);
+        LedgerHead before = await store.GetLedgerHeadAsync(Cancellation);
+        QueueSnapshot snapshot = await store.GetSnapshotAsync(Cancellation);
+
+        // The volume reads critical only at the forced re-check after the failure.
         probe.FreeBytes = MiB;
         QueueCapacityExceededException refused = await Assert.ThrowsAsync<QueueCapacityExceededException>(
-            () => store.EnqueueAsync(Event("refused"), Cancellation));
+            () => store.EnqueueAsync(Event("too-large", 600_000), Cancellation));
         Assert.Equal(QueueCapacityReasons.StorageFull, refused.Reason);
-        // Acknowledgement cannot commit either; the lease stays and nothing is lost.
-        await Assert.ThrowsAnyAsync<SqliteException>(() => store.MarkDeliveredBatchAsync(
-            ["committed"], "ack", leases.ToDictionary(item => item.EventId, item => item.LeaseToken!), Cancellation));
-
-        // Crash: drop every handle, free the space and start again.
-        FreeVolume(path);
         probe.FreeBytes = 10 * GiB;
-        SqliteEventStore restarted = new(path, 10 * MiB, clock, new StorageGuard(path, new(), probe, clock));
+        guard.Evaluate(force: true);
+        QueueCapacityExceededException ceiling = await Assert.ThrowsAsync<QueueCapacityExceededException>(
+            () => store.EnqueueAsync(Event("too-large", 600_000), Cancellation));
+        Assert.Equal(QueueCapacityReasons.Queue, ceiling.Reason);
+        Assert.Equal(before, await store.GetLedgerHeadAsync(Cancellation));
+
+        // Crash: drop every handle and open the files again.
+        SqliteConnection.ClearAllPools();
+        SqliteEventStore restarted = new(path, MiB, clock, new StorageGuard(path, new(), probe, clock));
         await restarted.InitializeAsync(Cancellation);
         Assert.Equal(before, await restarted.GetLedgerHeadAsync(Cancellation));
         Assert.True((await restarted.VerifyLedgerAsync(Cancellation)).Intact);
-        QueueSnapshot recovered = await restarted.GetSnapshotAsync(Cancellation);
-        Assert.Equal((0, 2, 0), (recovered.Queued, recovered.Uploading, recovered.Delivered));
-        clock.Advance(TimeSpan.FromMinutes(2));
-        Assert.Equal(2, (await restarted.LeaseAsync(10, TimeSpan.FromMinutes(1), Cancellation)).Count);
-        Assert.True((await restarted.EnqueueAsync(Event("refused"), Cancellation)).Enqueued);
-        Assert.True((await restarted.EnqueueAsync(Event("committed"), Cancellation)).Duplicate);
+        Assert.Equal(snapshot, await restarted.GetSnapshotAsync(Cancellation));
+        Assert.Empty(await restarted.MarkDeliveredBatchAsync(
+            ["committed"], "ack", held.ToDictionary(item => item.EventId, item => item.LeaseToken!), Cancellation));
+        Assert.Equal(snapshot.Delivered + 1, await restarted.PurgeDeliveredAsync(clock.UtcNow.AddSeconds(1), 100_000, Cancellation));
+        Assert.True((await restarted.EnqueueAsync(Event("too-large", 600_000), Cancellation)).Enqueued);
+        Assert.True((await restarted.EnqueueAsync(Event("committed"), Cancellation)).Enqueued);
         await using SqliteConnection check = new($"Data Source={path};Pooling=False");
         await check.OpenAsync(Cancellation);
         await using SqliteCommand integrity = check.CreateCommand();
@@ -462,51 +473,30 @@ public sealed class StoragePressureTests
     }
 
     [Fact]
-    public async Task RestartOnAFullVolume_StartsRefusesIntakeAndResumesWhenSpaceReturns()
+    public async Task RestartWhileCritical_StartsAndDrainsButRefusesNewEventsUntilSpaceReturns()
     {
-        Assert.SkipUnless(OperatingSystem.IsLinux() && File.Exists("/dev/full"), "Needs Linux /dev/full for a real ENOSPC.");
         using SqliteTemporaryDirectory directory = new();
         FakeClock clock = new(TestEvents.Now);
         string path = Path.Combine(directory.Path, "queue.db");
         SqliteEventStore store = new(path, 10 * MiB, clock);
         await store.InitializeAsync(Cancellation);
         await store.EnqueueAsync(Event("before-restart"), Cancellation);
-        FillVolume(path);
+        SqliteConnection.ClearAllPools();
 
         FakeDiskSpaceProbe probe = new(MiB, 20 * GiB);
         SqliteEventStore restarted = new(path, 10 * MiB, clock, new StorageGuard(path, new(), probe, clock));
         await restarted.InitializeAsync(Cancellation);
-        Assert.Equal(1, (await restarted.GetSnapshotAsync(Cancellation)).Queued);
         QueueCapacityExceededException refused = await Assert.ThrowsAsync<QueueCapacityExceededException>(
-            () => restarted.EnqueueAsync(Event("during-full"), Cancellation));
+            () => restarted.EnqueueAsync(Event("during-critical"), Cancellation));
         Assert.Equal(QueueCapacityReasons.StorageCritical, refused.Reason);
-        // Leasing writes too: it fails without changing state until space returns.
-        await Assert.ThrowsAnyAsync<SqliteException>(() => restarted.LeaseAsync(10, TimeSpan.FromMinutes(1), Cancellation));
+        QueuedEvent lease = Assert.Single(await restarted.LeaseAsync(10, TimeSpan.FromMinutes(1), Cancellation));
+        await restarted.MarkDeliveredAsync(lease.EventId, "ack", lease.LeaseToken, Cancellation);
+        Assert.Equal(1, (await restarted.GetSnapshotAsync(Cancellation)).Delivered);
 
-        FreeVolume(path);
         probe.FreeBytes = 10 * GiB;
         clock.Advance(TimeSpan.FromSeconds(1));
-        Assert.True((await restarted.EnqueueAsync(Event("during-full"), Cancellation)).Enqueued);
-        Assert.Equal(2, (await restarted.LeaseAsync(10, TimeSpan.FromMinutes(1), Cancellation)).Count);
+        Assert.True((await restarted.EnqueueAsync(Event("during-critical"), Cancellation)).Enqueued);
         Assert.True((await restarted.VerifyLedgerAsync(Cancellation)).Intact);
-    }
-
-    // Closes every pooled handle (SQLite checkpoints and removes the WAL), then points the
-    // WAL at /dev/full: every later WAL write fails with ENOSPC, as on a full volume.
-    private static void FillVolume(string path)
-    {
-        SqliteConnection.ClearAllPools();
-        Assert.False(File.Exists(path + "-wal"));
-        File.CreateSymbolicLink(path + "-wal", "/dev/full");
-    }
-
-    private static void FreeVolume(string path)
-    {
-        SqliteConnection.ClearAllPools();
-        if (new FileInfo(path + "-wal").LinkTarget is not null)
-        {
-            File.Delete(path + "-wal");
-        }
     }
 
     private static CollectorSettings Settings() => new()
