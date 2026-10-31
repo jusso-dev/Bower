@@ -12,6 +12,7 @@ import datetime as dt
 import hashlib
 import json
 import os
+import pwd
 import re
 import socket
 import sqlite3
@@ -83,12 +84,13 @@ def rsyslog():
 
 
 def sender_queue(stats):
-    return sum(stats.get(name, {}).get("size", 0) for name in ("bower queue", "bower queue[DA]"))
+    return sum(stats.get(name, {}).get("size", 0) for name in ("ws3", "bower queue", "bower queue[DA]"))
 
 
 def block():
-    rule = ("table inet ws3_block { chain out { type filter hook output priority 0; policy accept; "
-            "meta skuid \"bower\" tcp dport 443 reject with tcp reset; } }")
+    uid = pwd.getpwnam("bower").pw_uid
+    rule = ("table inet ws3_block {\n chain out {\n  type filter hook output priority 0; policy accept;\n"
+            f"  meta skuid {uid} tcp dport 443 reject with tcp reset\n }}\n}}\n")
     subprocess.run(["nft", "-f", "-"], input=rule, text=True, check=True)
 
 
@@ -284,7 +286,7 @@ def summarise(recorder, started, generator):
         "listenerSubmitFailures": rows[-1].get("listenerSubmitFailures") if rows else None,
         "listenerDropped": rows[-1].get("listenerDropped") if rows else None,
         "samples": len(rows), "final": rows[-1] if rows else None,
-        "journal": journal_counts(started.replace("T", " ").rstrip("Z")),
+        "journal": journal_counts(started[:19].replace("T", " ")),
     }
 
 
@@ -342,7 +344,7 @@ def scenario_disk_full(recorder, generator, args):
     subprocess.run(["systemctl", "restart", "bower"], check=False)
     recorder.mark("service-restarted-while-full")
     up = recorder.wait(lambda row: row.get("health") is not None, 180, "service-answering-while-full")
-    recorder.mark("restart-observation", answered=up is not None, journal=journal_counts(restart.replace("T", " ").rstrip("Z")),
+    recorder.mark("restart-observation", answered=up is not None, journal=journal_counts(restart[:19].replace("T", " ")),
                   activeState=subprocess.run(["systemctl", "is-active", "bower"], capture_output=True, text=True).stdout.strip(),
                   restarts=subprocess.run(["systemctl", "show", "bower", "-p", "NRestarts", "--value"],
                                           capture_output=True, text=True).stdout.strip())
@@ -353,19 +355,26 @@ def scenario_disk_full(recorder, generator, args):
     time.sleep(60)
 
 
+def scenario_smoke(recorder, generator, args):
+    recorder.mark("generating", rate=generator.rate)
+    time.sleep(args.hold)
+
+
 def reconcile():
     """Generated sequence numbers against queued identities (read-only)."""
     generated_next = int((STATE / "next-seq").read_text())
     expected = {f"ws3l{seq:07d}" for seq in range(1, generated_next)}
     connection = sqlite3.connect(f"file:{QUEUE_DIR / 'queue.db'}?mode=ro", uri=True)
-    seen, delivered, duplicates, payload_bytes, rows = {}, set(), 0, 0, 0
+    seen, delivered, duplicates, payload_bytes, rows, types = {}, set(), 0, 0, 0, {}
     for event_id, payload, state, size in connection.execute(
             "SELECT event_id, payload, state, payload_bytes FROM queue_events_v5"):
         rows += 1
         payload_bytes += size
         envelope = json.loads(payload)
+        kind = envelope.get("eventType") or "unknown"
+        types[kind] = types.get(kind, 0) + 1
         sequence = ((envelope.get("request") or {}).get("correlationId"))
-        if not sequence:
+        if not sequence or kind != "network_connection_denied":
             continue
         if sequence in seen:
             duplicates += 1
@@ -380,14 +389,14 @@ def reconcile():
     missing = sorted(expected - set(seen))
     return {"generated": len(expected), "queuedIdentities": len(seen), "missingFromQueue": len(missing),
             "missingSample": missing[:20], "unexpected": len(set(seen) - expected), "duplicateSequences": duplicates,
-            "deliveredInQueue": len(delivered), "queueRows": rows, "averagePayloadBytes": payload_bytes // max(rows, 1),
+            "deliveredInQueue": len(delivered), "queueRows": rows, "rowsByEventType": types, "averagePayloadBytes": payload_bytes // max(rows, 1),
             "generatedDigest": digest(expected), "queuedDigest": digest(seen), "sqliteIntegrity": integrity,
             "ledgerPurgedRows": purged, "rsyslog": rsyslog()}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("scenario", choices=["queue-cap", "watermarks", "disk-full", "reconcile", "probe"])
+    parser.add_argument("scenario", choices=["smoke", "queue-cap", "watermarks", "disk-full", "reconcile", "probe"])
     parser.add_argument("--rate", type=int, default=100)
     parser.add_argument("--hold", type=int, default=120)
     parser.add_argument("--limit", type=int, default=3600)
@@ -407,7 +416,7 @@ def main():
     recorder.thread.start()
     generator.start()
     try:
-        {"queue-cap": scenario_queue_cap, "watermarks": scenario_watermarks,
+        {"smoke": scenario_smoke, "queue-cap": scenario_queue_cap, "watermarks": scenario_watermarks,
          "disk-full": scenario_disk_full}[args.scenario](recorder, generator, args)
     finally:
         generator.stop()

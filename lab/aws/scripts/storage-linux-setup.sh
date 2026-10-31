@@ -4,13 +4,18 @@
 # sender (disk-assisted queue, mutual TLS) and configures Azure Logs Ingestion.
 # Prints metadata only: never key material, tokens or event payloads.
 set -euo pipefail
+trap 'echo "failed at line $LINENO" >&2' ERR
 umask 077
 : "${BOWER_LAB_RUN:?}" "${BOWER_LAB_BUCKET:?}" "${BOWER_DCE:?}" "${BOWER_DCR:?}" "${BOWER_TENANT:?}" "${BOWER_PUBLISHER:?}"
 [[ "$BOWER_LAB_RUN" =~ ^bower-ws3-[0-9]{8}-[0-9]{6}$ ]]
 [ "$(id -u)" = 0 ]
 artifacts=/root/ws3-artifacts
 mkdir -p "$artifacts"
-aws s3 cp --quiet --recursive "s3://$BOWER_LAB_BUCKET/$BOWER_LAB_RUN/artifacts/linux/" "$artifacts/"
+mkdir -p "$artifacts"
+aws s3 cp --quiet "s3://$BOWER_LAB_BUCKET/$BOWER_LAB_RUN/artifacts/linux/SHA256SUMS" "$artifacts/SHA256SUMS"
+for file in $(awk '{print $2}' "$artifacts/SHA256SUMS"); do
+  aws s3 cp --quiet "s3://$BOWER_LAB_BUCKET/$BOWER_LAB_RUN/artifacts/linux/$file" "$artifacts/$file"
+done
 (cd "$artifacts" && sha256sum -c --quiet SHA256SUMS)
 
 # The queue volume: the only non-root disk of exactly 1 GiB.
@@ -24,7 +29,7 @@ if ! findmnt -n /var/lib/bower >/dev/null; then
   mount /var/lib/bower
 fi
 
-dnf install -q -y rsyslog rsyslog-gnutls nftables sqlite jq python3 >/dev/null
+dnf install -q -y rsyslog rsyslog-openssl nftables sqlite jq python3 >/dev/null
 dnf install -q -y "$artifacts/collector.rpm" >/dev/null
 chown bower:bower /var/lib/bower && chmod 0700 /var/lib/bower
 
@@ -108,7 +113,7 @@ global(DefaultNetstreamDriverCAFile="/etc/rsyslog.d/tls/ca.pem"
 ruleset(name="ws3" queue.type="LinkedList" queue.size="200000") {
   action(type="omfwd" name="bower" target="127.0.0.1" port="6514" protocol="tcp"
          TCP_Framing="octet-counted" template="RSYSLOG_SyslogProtocol23Format"
-         StreamDriver="gtls" StreamDriverMode="1" StreamDriverAuthMode="x509/name"
+         StreamDriver="ossl" StreamDriverMode="1" StreamDriverAuthMode="x509/name"
          StreamDriverPermittedPeers="bower-server" RebindInterval="0"
          queue.type="LinkedList" queue.filename="ws3-bower" queue.size="100000"
          queue.maxDiskSpace="2g" queue.saveOnShutdown="on" queue.highWatermark="60000"
@@ -117,6 +122,10 @@ ruleset(name="ws3" queue.type="LinkedList" queue.size="200000") {
 CONF
 rsyslogd -N1 >/dev/null 2>&1
 systemctl enable -q --now rsyslog && systemctl restart rsyslog
+# Never start against the bare mount point if the queue volume is missing.
+install -d /etc/systemd/system/bower.service.d
+printf '[Unit]\nRequiresMountsFor=/var/lib/bower\n' > /etc/systemd/system/bower.service.d/queue-volume.conf
+systemctl daemon-reload
 systemctl enable -q bower && systemctl restart bower
 for _ in $(seq 1 60); do
   curl -fsS http://127.0.0.1:4319/health >/dev/null 2>&1 && break

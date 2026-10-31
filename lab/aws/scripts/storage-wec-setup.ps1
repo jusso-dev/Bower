@@ -8,11 +8,13 @@ foreach ($name in 'BOWER_DCE','BOWER_DCR','BOWER_TENANT','BOWER_PUBLISHER') {
 Import-Module AWSPowerShell
 $work = 'C:\ws3'; $artifacts = "$work\artifacts"
 New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
-foreach ($object in Get-S3Object -BucketName $env:BOWER_LAB_BUCKET -KeyPrefix "$env:BOWER_LAB_RUN/artifacts/windows/") {
-    Read-S3Object -BucketName $env:BOWER_LAB_BUCKET -Key $object.Key -File (Join-Path $artifacts (Split-Path $object.Key -Leaf)) | Out-Null
-}
+New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
+$prefix = "$env:BOWER_LAB_RUN/artifacts/windows"
+Read-S3Object -BucketName $env:BOWER_LAB_BUCKET -Key "$prefix/SHA256SUMS" -File "$artifacts\SHA256SUMS" | Out-Null
 foreach ($line in Get-Content "$artifacts\SHA256SUMS") {
     $hash, $file = $line -split '\s+\*?', 2
+    if ($file -notmatch '^[A-Za-z0-9._-]+$') { throw 'Unexpected artifact name' }
+    Read-S3Object -BucketName $env:BOWER_LAB_BUCKET -Key "$prefix/$file" -File (Join-Path $artifacts $file) | Out-Null
     if ((Get-FileHash (Join-Path $artifacts $file) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $hash) { throw "Checksum mismatch: $file" }
 }
 
@@ -25,11 +27,10 @@ if (-not (Test-Path 'Q:\')) {
     Format-Volume -DriveLetter Q -FileSystem NTFS -NewFileSystemLabel bowerqueue -Confirm:$false | Out-Null
 }
 
-if (-not (Get-Service Bower -ErrorAction SilentlyContinue)) {
-    $process = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @('/i', "$artifacts\collector.msi", '/qn', '/norestart',
-        '/l*v', "$work\msi.log", 'COLLECTORID=ws3-wec', 'BOWERENVIRONMENT=validation')
-    if ($process.ExitCode -ne 0) { throw "MSI failed with $($process.ExitCode)" }
-}
+# Install or upgrade in place. The MSI rewrites the service Environment, so it is set again below.
+$process = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @('/i', "$artifacts\collector.msi", '/qn', '/norestart',
+    '/l*v', "$work\msi.log", 'COLLECTORID=ws3-wec', 'BOWERENVIRONMENT=validation')
+if ($process.ExitCode -notin 0, 1638) { throw "MSI failed with $($process.ExitCode)" }
 Stop-Service Bower -ErrorAction SilentlyContinue
 $data = 'C:\ProgramData\Bower'
 Copy-Item "$artifacts\windows-security-logon-1.0.2.bowerpack" "$data\packs\" -Force

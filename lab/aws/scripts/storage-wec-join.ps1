@@ -8,9 +8,7 @@ $adapter = Get-NetAdapter | Where-Object Status -eq 'Up' | Select-Object -First 
 Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses $env:BOWER_DC_IP
 $secure = ConvertTo-SecureString (Get-SECSecretValue -SecretId "bower-lab/$env:BOWER_LAB_RUN/dc-admin").SecretString -AsPlainText -Force
 $credential = New-Object System.Management.Automation.PSCredential('WS3\Administrator', $secure)
-Rename-Computer -NewName 'WEC' -Force -WarningAction SilentlyContinue
-Start-Sleep -Seconds 2
-Add-Computer -DomainName 'ws3.lab' -Credential $credential -Options JoinWithNewName -Force -WarningAction SilentlyContinue
+Add-Computer -DomainName 'ws3.lab' -NewName 'WEC' -Credential $credential -Force -WarningAction SilentlyContinue
 Remove-Variable secure, credential
 @{phase='wec-join'; state='joined-rebooting'} | ConvertTo-Json -Compress
 exit 3010

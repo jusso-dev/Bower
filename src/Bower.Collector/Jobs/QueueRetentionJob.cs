@@ -34,6 +34,9 @@ public sealed partial class QueueRetentionJob(
     /// <summary>Page use the pressure purge brings the queue down to once it starts.</summary>
     public const double PressureTargetPercent = 70;
 
+    /// <summary>Page use (of the intake limit) at which new events are effectively refused.</summary>
+    public const double IntakeBlockedPercent = 95;
+
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         DateTimeOffset now = clock.GetUtcNow();
@@ -65,9 +68,12 @@ public sealed partial class QueueRetentionJob(
         }
 
         // Low disk: reclaim every eligible row, so new events reuse freed pages instead of
-        // growing the file. Page pressure alone: stop once use is back at the target.
+        // growing the file. Page pressure alone: stop once use is back at the target. Once
+        // new events are refused, intake outranks duplicate detection: the floor no longer
+        // protects acknowledged rows (after a large drain they are all recent).
+        bool intakeBlocked = files.PageUtilisationPercent >= IntakeBlockedPercent;
         int purged = await PurgeAsync(
-            now - settings.PressureRetentionFloor,
+            intakeBlocked ? now.AddSeconds(1) : now - settings.PressureRetentionFloor,
             diskPressure ? BatchSize : PressureBatchSize,
             async token => diskPressure
                 || (await store.GetStorageSnapshotAsync(token)).PageUtilisationPercent > PressureTargetPercent,
@@ -79,7 +85,7 @@ public sealed partial class QueueRetentionJob(
             LogPressurePurged(
                 logger,
                 purged,
-                diskPressure ? "low-disk" : "queue-pages",
+                diskPressure ? "low-disk" : intakeBlocked ? "intake-blocked" : "queue-pages",
                 files.PageUtilisationPercent,
                 after.PageUtilisationPercent,
                 (long)settings.PressureRetentionFloor.TotalSeconds);
@@ -157,7 +163,7 @@ public sealed partial class QueueRetentionJob(
     [LoggerMessage(
         EventId = 1506,
         Level = LogLevel.Warning,
-        Message = "Queue retention removed {Count} acknowledged event(s) early under storage pressure ({Trigger}); queue pages {BeforePercent}% -> {AfterPercent}% of the ceiling. Duplicate detection now covers at least {FloorSeconds} seconds of acknowledged events.")]
+        Message = "Queue retention removed {Count} acknowledged event(s) early under storage pressure ({Trigger}); queue pages {BeforePercent}% -> {AfterPercent}% of the ceiling. Acknowledged events younger than {FloorSeconds} seconds are kept unless intake was blocked.")]
     private static partial void LogPressurePurged(
         ILogger logger, int count, string trigger, double beforePercent, double afterPercent, long floorSeconds);
 

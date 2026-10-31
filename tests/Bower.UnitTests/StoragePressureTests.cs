@@ -389,6 +389,91 @@ public sealed class StoragePressureTests
         Assert.True((await restarted.EnqueueAsync(Event("after-drain", 1_200), Cancellation)).Enqueued);
     }
 
+    /// <summary>
+    /// Seen on AWS: after a backlog drained, every page held a fresh acknowledgement, so the
+    /// floor kept them and intake stayed refused. Once intake is blocked the floor yields.
+    /// </summary>
+    [Fact]
+    public async Task BlockedIntake_ReclaimsRecentAcknowledgementsDespiteTheFloor()
+    {
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        string path = Path.Combine(directory.Path, "queue.db");
+        SqliteEventStore store = new(path, MiB, clock, new StorageGuard(path, new(), new FakeDiskSpaceProbe(10 * GiB, 20 * GiB), clock));
+        await store.InitializeAsync(Cancellation);
+        for (int index = 0; ; index++)
+        {
+            try
+            {
+                await store.EnqueueAsync(Event($"ack-{index}", 2_000), Cancellation);
+            }
+            catch (QueueCapacityExceededException)
+            {
+                break;
+            }
+
+            QueuedEvent lease = Assert.Single(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), Cancellation));
+            await store.MarkDeliveredAsync(lease.EventId, "ack", lease.LeaseToken, Cancellation);
+        }
+
+        Assert.True((await store.GetStorageSnapshotAsync(Cancellation)).PageUtilisationPercent >= QueueRetentionJob.IntakeBlockedPercent);
+        QueueStoragePressure pressure = new();
+        RecordingLogger<QueueRetentionJob> logger = new();
+        await new QueueRetentionJob(store, clock, Settings(), logger, null, pressure).RunAsync(Cancellation);
+        Assert.True(pressure.PurgedEvents > 0);
+        Assert.Contains(logger.Messages, message => message.Contains("intake-blocked", StringComparison.Ordinal));
+        Assert.True((await store.GetStorageSnapshotAsync(Cancellation)).PageUtilisationPercent <= QueueRetentionJob.PressureTargetPercent + 5);
+        Assert.True((await store.EnqueueAsync(Event("accepted-again", 2_000), Cancellation)).Enqueued);
+    }
+
+    /// <summary>
+    /// A WAL a reader kept pinned refuses writes, acknowledgements included; once the reader
+    /// is gone the next write resets the WAL itself instead of waiting for daily maintenance.
+    /// </summary>
+    [Fact]
+    public async Task PinnedWal_SelfHealsOnTheNextWriteOnceTheReaderCloses()
+    {
+        using SqliteTemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "queue.db");
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = new(path, MiB, clock);
+        await store.InitializeAsync(Cancellation);
+        await store.EnqueueAsync(Event("retained"), Cancellation);
+        await using (SqliteConnection reader = new($"Data Source={path};Pooling=False"))
+        {
+            await reader.OpenAsync(Cancellation);
+            using SqliteTransaction snapshot = reader.BeginTransaction(deferred: true);
+            using SqliteCommand read = reader.CreateCommand();
+            read.Transaction = snapshot;
+            read.CommandText = "SELECT COUNT(*) FROM queue_events_v5;";
+            await read.ExecuteScalarAsync(Cancellation);
+            bool blocked = false;
+            for (int index = 0; index < 2_000 && !blocked; index++)
+            {
+                try
+                {
+                    IReadOnlyList<QueuedEvent> leases = await store.LeaseAsync(1, TimeSpan.FromMinutes(1), Cancellation);
+                    if (leases.Count != 0)
+                    {
+                        await store.MarkRetryingAsync("retained", "temporary", clock.UtcNow, leases[0].LeaseToken, Cancellation);
+                    }
+                }
+                catch (QueueCapacityExceededException)
+                {
+                    blocked = true;
+                }
+            }
+
+            Assert.True(blocked);
+        }
+
+        // No MaintainAsync: once the rate limit allows, the write path truncates the WAL itself.
+        clock.Advance(TimeSpan.FromSeconds(10));
+        Assert.True((await store.EnqueueAsync(Event("after-reader"), Cancellation)).Enqueued);
+        Assert.True(new FileInfo(path + "-wal").Length < store.StorageReserveBytes);
+        Assert.True((await store.VerifyLedgerAsync(Cancellation)).Intact);
+    }
+
     [Fact]
     public async Task PressureRetention_KeepsAcknowledgementsInsideTheFloor()
     {

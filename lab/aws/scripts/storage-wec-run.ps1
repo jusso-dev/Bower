@@ -2,14 +2,16 @@
 # The driver comes from this run's checksummed artifacts; results are metadata only.
 $ErrorActionPreference = 'Stop'
 if ($env:BOWER_LAB_RUN -notmatch '^bower-ws3-\d{8}-\d{6}$') { throw 'Unexpected run id' }
-if ($env:BOWER_SCENARIO -notmatch '^(queue-cap|watermarks|disk-full|reconcile|probe)$') { throw 'Unexpected scenario' }
+if ($env:BOWER_SCENARIO -notmatch '^(smoke|queue-cap|watermarks|disk-full|reconcile|probe)$') { throw 'Unexpected scenario' }
 Import-Module AWSPowerShell
 $artifacts = 'C:\ws3\artifacts'
-foreach ($object in Get-S3Object -BucketName $env:BOWER_LAB_BUCKET -KeyPrefix "$env:BOWER_LAB_RUN/artifacts/windows/") {
-    Read-S3Object -BucketName $env:BOWER_LAB_BUCKET -Key $object.Key -File (Join-Path $artifacts (Split-Path $object.Key -Leaf)) | Out-Null
-}
+New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
+$prefix = "$env:BOWER_LAB_RUN/artifacts/windows"
+Read-S3Object -BucketName $env:BOWER_LAB_BUCKET -Key "$prefix/SHA256SUMS" -File "$artifacts\SHA256SUMS" | Out-Null
 foreach ($line in Get-Content "$artifacts\SHA256SUMS") {
     $hash, $file = $line -split '\s+\*?', 2
+    if ($file -notmatch '^[A-Za-z0-9._-]+$') { throw 'Unexpected artifact name' }
+    Read-S3Object -BucketName $env:BOWER_LAB_BUCKET -Key "$prefix/$file" -File (Join-Path $artifacts $file) | Out-Null
     if ((Get-FileHash (Join-Path $artifacts $file) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $hash) { throw "Checksum mismatch: $file" }
 }
 $env:PATH = "C:\ws3;$env:PATH"

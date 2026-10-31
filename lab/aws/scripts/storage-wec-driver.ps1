@@ -5,7 +5,7 @@
 # HTTPS, fills the dedicated Q: volume with a bounded filler, restarts the service and
 # samples metadata every five seconds. Output: counters, sizes, states, times and digests.
 param(
-    [Parameter(Mandatory = $true)][ValidateSet('queue-cap', 'watermarks', 'disk-full', 'reconcile', 'probe')][string]$Scenario,
+    [Parameter(Mandatory = $true)][ValidateSet('smoke', 'queue-cap', 'watermarks', 'disk-full', 'reconcile', 'probe')][string]$Scenario,
     [ValidateRange(1, 100)][int]$Rate = 50,
     [ValidateRange(10, 1800)][int]$Hold = 120,
     [ValidateRange(60, 7200)][int]$Limit = 3600,
@@ -125,12 +125,12 @@ function Fill-Completely {
     try { foreach ($size in 65536, 4096, 512) { $chunk = New-Object byte[] $size; try { while ($true) { $stream.Write($chunk, 0, $size); $stream.Flush($true) } } catch { } } } finally { try { $stream.Dispose() } catch { } }
     (Get-Item $filler).Length
 }
+# Receiving-log counts only: a forwarded event's RecordId is its origin record id, not
+# its position in ForwardedEvents. Without wrap or clear, the receiving position of the
+# newest record equals the record count.
 function Get-Forwarded {
     $log = Get-WinEvent -ListLog ForwardedEvents
-    $newest = Get-WinEvent -LogName ForwardedEvents -MaxEvents 1 -ErrorAction SilentlyContinue
-    $oldest = Get-WinEvent -LogName ForwardedEvents -MaxEvents 1 -Oldest -ErrorAction SilentlyContinue
-    @{ records = $log.RecordCount; fileBytes = $log.FileSize; maximumBytes = $log.MaximumSizeInBytes
-       newestRecordId = $newest.RecordId; oldestRecordId = $oldest.RecordId }
+    @{ records = $log.RecordCount; fileBytes = $log.FileSize; maximumBytes = $log.MaximumSizeInBytes; isFull = $log.IsLogFull }
 }
 function Sample {
     $free, $total = Get-Free
@@ -167,7 +167,7 @@ function Wait-Until([scriptblock]$condition, [int]$timeout, [string]$label) {
 function Hold([int]$seconds) { $end = (Get-Date).AddSeconds($seconds); while ((Get-Date) -lt $end) { [void](Sample); Start-Sleep 5 } }
 function Test-Drained($row) {
     $row.queued -eq 0 -and $row.uploading -eq 0 -and $row.retrying -eq 0 -and $row.intakePaused -eq $false -and
-        $row.bookmarkRecordId -ge $row.forwardedNewestRecordId
+        $row.bookmarkRecordId -ge $row.forwardedRecords
 }
 
 function Reconcile {
@@ -222,8 +222,9 @@ $script:generator.Start()
 try {
     Mark 'generating' @{ rate = $Rate }
     Hold 30
-    Block; Mark 'destination-blocked'
+    if ($Scenario -ne 'smoke') { Block; Mark 'destination-blocked' }
     switch ($Scenario) {
+        'smoke' { Hold $Hold }
         'queue-cap' {
             [void](Wait-Until { param($r) $r.capacityRefusals -gt 0 -and $r.sourceRetries -gt 0 } $Limit 'queue-cap-refusing')
             Hold $Hold
@@ -258,8 +259,7 @@ try {
             Hold 60
         }
     }
-    Unblock; Mark 'destination-restored'
-    Hold 120
+    if ($Scenario -ne 'smoke') { Unblock; Mark 'destination-restored'; Hold 120 }
 } finally {
     $script:generator.Stop(); Mark 'generator-stopped' @{ nextSeq = $script:generator.Next; failedBinds = $script:generator.Failed; unexpectedSuccess = $script:generator.Unexpected }
     Unblock; Remove-Item $filler -Force -ErrorAction SilentlyContinue
@@ -272,7 +272,7 @@ $summary = [ordered]@{ phase = "wec-$Scenario"; startedAt = $started; endedAt = 
     firstWarningAt = (& $first { param($r) $r.storageState -in 'warning', 'critical' })
     firstCriticalAt = (& $first { param($r) $r.storageState -eq 'critical' })
     firstRefusalAt = (& $first { param($r) $r.sourceRetries -gt $samples[0].sourceRetries })
-    maximumForwardedLag = ($samples | ForEach-Object { if ($_.bookmarkRecordId) { $_.forwardedNewestRecordId - $_.bookmarkRecordId } else { 0 } } | Measure-Object -Maximum).Maximum
+    maximumForwardedLag = ($samples | ForEach-Object { if ($_.bookmarkRecordId) { $_.forwardedRecords - $_.bookmarkRecordId } else { 0 } } | Measure-Object -Maximum).Maximum
     maximumUndeliveredBytes = ($samples | Measure-Object undeliveredBytes -Maximum).Maximum
     minimumFreeBytes = ($samples | Measure-Object freeBytes -Minimum).Minimum
     maximumQueueFileBytes = ($samples | Measure-Object queueFileBytes -Maximum).Maximum

@@ -37,6 +37,9 @@ public sealed partial class SqliteEventStore : IDurableEventStore
     private const long SettlementCeilingQuarters = 7;
 
     private const long SettlementReserveMinimumBytes = 2 * 1_048_576;
+
+    private static readonly TimeSpan WalTruncateInterval = TimeSpan.FromSeconds(10);
+    private long nextWalTruncateTicks;
     private readonly TimeProvider clock;
     private readonly StorageGuard? storage;
 
@@ -1054,6 +1057,12 @@ public sealed partial class SqliteEventStore : IDurableEventStore
     private async Task<SqliteTransaction> BeginWriteAsync(SqliteConnection connection, bool checkCapacity, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (!StorageWithinBudget())
+        {
+            await TryTruncateWalAsync(connection, cancellationToken);
+        }
+
+
         SqliteTransaction transaction = connection.BeginTransaction(IsolationLevel.Serializable, deferred: false);
         try
         {
@@ -1072,18 +1081,46 @@ public sealed partial class SqliteEventStore : IDurableEventStore
 
     private void CheckStorage()
     {
+        if (!StorageWithinBudget(out long current))
+        {
+            throw new QueueCapacityExceededException(MaximumStorageBytes, current, StorageReserveBytes);
+        }
+    }
+
+    private bool StorageWithinBudget() => StorageWithinBudget(out _);
+
+    private bool StorageWithinBudget(out long current)
+    {
         // cache_spill=OFF bounds a transaction to one WAL frame per database page.
         // Reserve both a full WAL transaction and database growth during checkpoint.
-        long current = new FileInfo(databasePath).Length;
-        string wal = databasePath + "-wal";
-        if (File.Exists(wal))
+        current = FileLength(databasePath) + FileLength(databasePath + "-wal");
+        return current <= MaximumStorageBytes - StorageReserveBytes;
+    }
+
+    /// <summary>
+    /// A WAL that checkpoints could not reset (readers kept it pinned) can exhaust the write
+    /// budget and refuse acknowledgements too. Reset it before refusing; a reader that still
+    /// pins it makes this a no-op (bounded by the busy timeout) and the write is refused.
+    /// </summary>
+    private async Task TryTruncateWalAsync(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        // At most once per interval: a pinned WAL makes the attempt wait for the busy timeout.
+        long now = clock.GetUtcNow().UtcTicks;
+        long due = Interlocked.Read(ref nextWalTruncateTicks);
+        if (now < due || Interlocked.CompareExchange(ref nextWalTruncateTicks, now + WalTruncateInterval.Ticks, due) != due)
         {
-            current += new FileInfo(wal).Length;
+            return;
         }
-        long reserve = StorageReserveBytes;
-        if (current > MaximumStorageBytes - reserve)
+
+        try
         {
-            throw new QueueCapacityExceededException(MaximumStorageBytes, current, reserve);
+            await using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (SqliteException)
+        {
+            // Busy or out of space: the caller's budget check decides.
         }
     }
 
