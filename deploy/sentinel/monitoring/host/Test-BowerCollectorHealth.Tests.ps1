@@ -87,14 +87,16 @@ Describe 'Test-BowerCollectorHealth on <Shell>' -ForEach $script:Hosts {
         $probe = Join-Path $TestDrive 'disk-probe.ps1'
         $functionSource = $function.Extent.Text.Replace("`$fullPath =", "`$script:stage = 'full-path'; `$fullPath =")
         $functionSource = $functionSource.Replace("`$directory =", "`$script:stage = 'directory'; `$directory =")
-        $functionSource = $functionSource.Replace('Add-Type -TypeDefinition', "`$script:stage = 'add-type'; Add-Type -TypeDefinition")
-        $functionSource = $functionSource.Replace('[ulong] $available = 0', "`$script:stage = 'native-call'; [ulong] `$available = 0")
+        $functionSource = $functionSource.Replace('$diskType = Add-Type', "`$script:stage = 'add-type'; `$diskType = Add-Type")
+        $functionSource = $functionSource.Replace('[System.UInt64] $available = 0', "`$script:stage = 'native-call'; [System.UInt64] `$available = 0")
         $functionSource = $functionSource.Replace("throw 'Queue volume free space unavailable.'", "`$script:nativeError = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error(); throw 'Queue volume free space unavailable.'")
         $probeSource = $functionSource + @'
 
 try {
     $disk = Get-QueueDiskSpace $args[0]
     if ($disk.TotalSize -le 0) { throw 'Invalid volume size' }
+    $disk = Get-QueueDiskSpace $args[0]
+    if ($disk.TotalSize -le 0) { throw 'Invalid volume size on repeat' }
     'ok'
 } catch {
     'Stage={0}' -f $script:stage

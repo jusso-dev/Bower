@@ -136,7 +136,9 @@ function Get-QueueDiskSpace([string] $Path) {
     $fullPath = [IO.Path]::GetFullPath($Path)
     $directory = if ([IO.Directory]::Exists($fullPath)) { $fullPath } else { [IO.Path]::GetDirectoryName($fullPath) }
     if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
-        Add-Type -TypeDefinition @'
+        $diskType = 'BowerHealthDiskSpace' -as [type]
+        if ($null -eq $diskType) {
+            $diskType = Add-Type -PassThru -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public static class BowerHealthDiskSpace {
@@ -145,8 +147,9 @@ public static class BowerHealthDiskSpace {
     public static extern bool GetDiskFreeSpaceEx(string path, out ulong available, out ulong total, out ulong free);
 }
 '@
-        [ulong] $available = 0; [ulong] $total = 0; [ulong] $free = 0
-        if (-not [BowerHealthDiskSpace]::GetDiskFreeSpaceEx($directory, [ref] $available, [ref] $total, [ref] $free)) {
+        }
+        [System.UInt64] $available = 0; [System.UInt64] $total = 0; [System.UInt64] $free = 0
+        if (-not $diskType::GetDiskFreeSpaceEx($directory, [ref] $available, [ref] $total, [ref] $free)) {
             throw 'Queue volume free space unavailable.'
         }
         return [pscustomobject]@{ AvailableFreeSpace = $available; TotalSize = $total }
