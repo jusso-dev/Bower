@@ -119,6 +119,12 @@ public sealed record CollectorSettings
     /// <summary>Directory for the verifiable long-term archive (BOWER_ARCHIVE_PATH).</summary>
     public string? ArchivePath { get; init; }
 
+    /// <summary>
+    /// How often to queue a <c>collector_health</c> record (BOWER_HEALTH_RECORD_INTERVAL_SECONDS,
+    /// 60-3600). Null (unset or 0) disables the record.
+    /// </summary>
+    public TimeSpan? HealthRecordInterval { get; init; }
+
     /// <summary>JSON file of syslog listeners and pack routes (BOWER_SYSLOG_CONFIG).</summary>
     public string? SyslogConfigPath { get; init; }
 
@@ -347,6 +353,9 @@ public sealed record CollectorSettings
                 StringComparison.OrdinalIgnoreCase),
             SourceExpectationsPath = Blank(read("BOWER_SOURCE_EXPECTATIONS")),
             ArchivePath = Blank(read("BOWER_ARCHIVE_PATH")),
+            HealthRecordInterval = ReadInt64(read, "BOWER_HEALTH_RECORD_INTERVAL_SECONDS", 0) is var healthSeconds and not 0
+                ? TimeSpan.FromSeconds(healthSeconds)
+                : null,
             SyslogConfigPath = Blank(read("BOWER_SYSLOG_CONFIG")),
             TapEnabled = ReadBoolean(read, "BOWER_TAP_ENABLED", true),
             TapMaximumSessions = (int)ReadInt64(read, "BOWER_TAP_MAX_SESSIONS", 2),
@@ -420,6 +429,13 @@ public sealed record CollectorSettings
         }
 
         DeliveryOptions().Validate();
+
+        if (HealthRecordInterval is { } healthInterval
+            && (healthInterval < TimeSpan.FromSeconds(60) || healthInterval > TimeSpan.FromHours(1)))
+        {
+            throw new InvalidOperationException(
+                "BOWER_HEALTH_RECORD_INTERVAL_SECONDS must be 0 (off) or between 60 and 3600.");
+        }
 
         if (OutputType is not ("none" or "ama-spool" or "azure-logs-ingestion" or "relay"))
         {
@@ -720,6 +736,11 @@ public sealed record CollectorSettings
         if (ArchivePath is not null)
         {
             material += '\u001f' + "archive:" + ArchivePath;
+        }
+
+        if (HealthRecordInterval is { } health)
+        {
+            material += '\u001f' + "health-record-seconds:" + health.TotalSeconds.ToString(CultureInfo.InvariantCulture);
         }
 
         if (SyslogConfigPath is not null)

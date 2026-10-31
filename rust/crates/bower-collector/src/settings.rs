@@ -156,6 +156,9 @@ pub struct CollectorSettings {
     /// BOWER_WINDOWS_EVENTLOG_CONFIG. Read only to refuse it: the Windows Event Log source
     /// is C#-only (the Rust collector does not run on Windows).
     pub windows_event_log_config_path: Option<PathBuf>,
+    /// BOWER_HEALTH_RECORD_INTERVAL_SECONDS. Read only to refuse it: periodic
+    /// `collector_health` records are C#-only (a recorded parity gap).
+    pub health_record_interval: Option<String>,
 }
 
 // Never print the ingest token.
@@ -245,6 +248,7 @@ impl CollectorSettings {
             tap_maximum_event_bytes: 16_384,
             tap_producers: Vec::new(),
             windows_event_log_config_path: None,
+            health_record_interval: None,
         }
     }
 
@@ -368,6 +372,7 @@ impl CollectorSettings {
             tap_producers: split_list(read("BOWER_TAP_PRODUCERS").as_deref()),
             windows_event_log_config_path: blank(read("BOWER_WINDOWS_EVENTLOG_CONFIG"))
                 .map(PathBuf::from),
+            health_record_interval: blank(read("BOWER_HEALTH_RECORD_INTERVAL_SECONDS")),
         };
         settings.validate()?;
         Ok(settings)
@@ -554,6 +559,18 @@ impl CollectorSettings {
             return Err(invalid(
                 "BOWER_WINDOWS_EVENTLOG_CONFIG is supported only by the C# collector on Windows; \
                  the Rust collector does not read the Windows Event Log.",
+            ));
+        }
+
+        // Alert rules expect the records; never run as if they were being sent.
+        if self
+            .health_record_interval
+            .as_deref()
+            .is_some_and(|value| value.trim() != "0")
+        {
+            return Err(invalid(
+                "BOWER_HEALTH_RECORD_INTERVAL_SECONDS is supported only by the C# collector; \
+                 the Rust collector does not emit collector_health records.",
             ));
         }
 

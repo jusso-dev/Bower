@@ -21,6 +21,12 @@ public static class SecurityEventTypes
     /// </summary>
     public const string CollectorCanary = "collector_canary";
     public const string CollectorUploadFailed = "collector_upload_failed";
+
+    /// <summary>
+    /// Periodic collector health record (opt-in, BOWER_HEALTH_RECORD_INTERVAL_SECONDS): queue,
+    /// delivery, intake, source silence and source transport counters. Metadata only.
+    /// </summary>
+    public const string CollectorHealth = "collector_health";
     public const string TelemetryAggregationSummary = "telemetry_aggregation_summary";
 }
 

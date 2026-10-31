@@ -1,0 +1,41 @@
+# Required when BOWER_HEALTH_RECORD_INTERVAL_SECONDS is set: it accepts the periodic
+# collector_health records that Sentinel alert rules use to detect a stopped collector,
+# failed delivery, queue age and storage pressure. Without it the collector does not start.
+# See docs/production-readiness/06-monitoring-and-runbooks.md.
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+
+metadata:
+  id: BWR-POL-COLLECTOR-HEALTH
+  name: Collector health records
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-10-31
+
+match:
+  eventCategories:
+    - collector-health
+  eventTypes:
+    - collector_health
+  eventActions:
+    - collector.health
+
+requirements:
+  requiredFields:
+    - timeGenerated
+    - eventType
+    - eventResult
+    - application.name
+    - request.correlationId
+  atLeastOne:
+    - actor.username
+  recommendedFields: []
+
+decision:
+  action: accept
+  minimumValueScore: 50
+  neverSample: true
+
+routing:
+  profile: operations
+  destination: security-events
