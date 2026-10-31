@@ -1,0 +1,64 @@
+{
+ "linux": {
+  "D1": [
+   "2026-10-31T08:50:23+0000 ip-172-31-216-94.ap-southeast-2.compute.internal bower-healthcheck[29578]: OK: collector healthy",
+   "2026-10-31T08:51:28+0000 ip-172-31-216-94.ap-southeast-2.compute.internal bower-healthcheck[29644]: OK: collector healthy",
+   "2026-10-31T08:52:12+0000 ip-172-31-216-94.ap-southeast-2.compute.internal bower-healthcheck[29715]: WARNING: health-degraded: The collector reports degraded (dead letters or an overdue source).; source-overdue: nftables-firewall/validation is silent."
+  ],
+  "D2": [
+   "2026-10-31T09:03:02+0000 ip-172-31-216-94.ap-southeast-2.compute.internal bower-healthcheck[30829]: OK: collector healthy",
+   "2026-10-31T09:03:06+0000 ip-172-31-216-94.ap-southeast-2.compute.internal bower-healthcheck[30897]: OK: collector healthy"
+  ],
+  "D4": [
+   "2026-10-31T09:08:42+0000 ip-172-31-216-94.ap-southeast-2.compute.internal bower-healthcheck[31307]: OK: collector healthy",
+   "2026-10-31T09:09:47+0000 ip-172-31-216-94.ap-southeast-2.compute.internal bower-healthcheck[31381]: OK: collector healthy",
+   "2026-10-31T09:10:52+0000 ip-172-31-216-94.ap-southeast-2.compute.internal bower-healthcheck[31475]: OK: collector healthy",
+   "2026-10-31T09:11:32+0000 ip-172-31-216-94.ap-southeast-2.compute.internal bower-healthcheck[31589]: CRITICAL: capacity-refusals: Intake was refused for queue capacity within the refusal window.",
+   "2026-10-31T09:11:42+0000 ip-172-31-216-94.ap-southeast-2.compute.internal bower-healthcheck[31604]: CRITICAL: capacity-refusals: Intake was refused for queue capacity within the refusal window."
+  ],
+  "D4b": [],
+  "D4-deadlock": [
+   "2026-10-31T09:19:02+0000 ip-172-31-216-94.ap-southeast-2.compute.internal bower-healthcheck[32104]: CRITICAL: health-degraded: The collector reports degraded (dead letters or an overdue source).; capacity-refusals: Intake was refused for queue capacity within the refusal window.; source-overdue: nftables-firewall/validation is silent."
+  ],
+  "M": [
+   "2026-10-31T10:02:32+0000 ip-172-31-216-94.ap-southeast-2.compute.internal bower-healthcheck[35439]: CRITICAL: collector-unreachable: The collector did not answer /health.",
+   "2026-10-31T10:11:07+0000 ip-172-31-216-94.ap-southeast-2.compute.internal bower-healthcheck[35907]: CRITICAL: collector-unreachable: The collector did not answer /health."
+  ],
+  "systemdRestartAfterSigkill": [
+   "fault 2026-10-31T09:07:05.908Z SIGKILL 30025",
+   "recovered 2026-10-31T09:07:12.218Z systemd restarted the collector as 31195"
+  ]
+ },
+ "windows": {
+  "D1-before-fix": [
+   "2026-10-31T08:52:22.6278613Z 9102 CRITICAL: health-degraded: The collector reports degraded (dead letters or an overdue source).; source-overdue: windows-security/production is silent.; wec-subscription: WEC subscription bower-forwarded is Unknown.; wec-source: WEC subscription bower-forwarded has 2 event source(s) not Active.",
+   "2026-10-31T08:52:03.9422771Z 9102 CRITICAL: health-degraded: The collector reports degraded (dead letters or an overdue source).; source-overdue: windows-security/production is silent.; wec-subscription: WEC subscription bower-forwarded is Unknown.; wec-source: WEC subscription bower-forwarded has 2 event source(s) not Active.",
+   "2026-10-31T08:51:03.6937721Z 9102 CRITICAL: wec-subscription: WEC subscription bower-forwarded is Unknown.; wec-source: WEC subscription bower-forwarded has 2 event source(s) not Active.",
+   "2026-10-31T08:50:04.2561580Z 9102 CRITICAL: wec-subscription: WEC subscription bower-forwarded is Unknown.; wec-source: WEC subscription bower-forwarded has 2 event source(s) not Active.",
+   "2026-10-31T08:49:03.7399459Z 9102 CRITICAL: wec-subscription: WEC subscription bower-forwarded is Unknown.; wec-source: WEC subscription bower-forwarded has 2 event source(s) not Active.",
+   "2026-10-31T08:48:04.2446980Z 9102 CRITICAL: wec-subscription: WEC subscription bower-forwarded is Unknown."
+  ],
+  "D1-after-fix": [
+   "2026-10-31T09:01:04.3228857Z 9102 CRITICAL: health-degraded: The collector reports degraded (dead letters or an overdue source).; source-overdue: windows-security/production is silent.; wec-subscription: WEC subscription bower-forwarded is Disabled.; wec-source: WEC subscription bower-forwarded has 1 event source(s) not Active.",
+   "2026-10-31T09:00:55.6577225Z 9102 CRITICAL: health-degraded: The collector reports degraded (dead letters or an overdue source).; source-overdue: windows-security/production is silent.; wec-subscription: WEC subscription bower-forwarded is Disabled.; wec-source: WEC subscription bower-forwarded has 1 event source(s) not Active.",
+   "2026-10-31T09:00:05.1874709Z 9102 CRITICAL: health-degraded: The collector reports degraded (dead letters or an overdue source).; source-overdue: windows-security/production is silent.; wec-subscription: WEC subscription bower-forwarded is Disabled.; wec-source: WEC subscription bower-forwarded has 1 event source(s) not Active."
+  ],
+  "scmRestartAfterKill": [
+   "fault 2026-10-31T09:06:47.583Z killed 3028",
+   "recovered 2026-10-31T09:06:53.877Z service recovery restarted the collector"
+  ],
+  "collectorApplicationLog": [
+   "2026-10-31T10:00:00.9583884Z 1201 Category: Bower.Collector.Jobs.QueueRetentionJob EventId: 1201 Queue retention removed 0 acknowledged event(s).",
+   "2026-10-31T09:28:29.8487815Z 0 Category: Microsoft.Hosting.Lifetime EventId: 0 Application started. Hosting environment: Production; Content root path: C:\\Program Files\\Bower\\",
+   "2026-10-31T09:28:29.8487815Z 14 Category: Microsoft.Hosting.Lifetime EventId: 14 Now listening on: http://127.0.0.1:4319",
+   "2026-10-31T09:28:29.7550239Z 1110 Category: Bower.Collector.WindowsEventLogIntakeService EventId: 1110 Windows Event Log subscription forwarded-security reading channel ForwardedEvents.",
+   "2026-10-31T09:28:22.7216875Z 0 Category: Microsoft.Hosting.Lifetime EventId: 0 Application is shutting down...",
+   "2026-10-31T09:15:35.6576098Z 0 Category: Microsoft.Hosting.Lifetime EventId: 0 Application started. Hosting environment: Production; Content root path: C:\\Program Files\\Bower\\",
+   "2026-10-31T09:15:35.6576098Z 14 Category: Microsoft.Hosting.Lifetime EventId: 14 Now listening on: http://127.0.0.1:4319",
+   "2026-10-31T09:15:35.5940579Z 1110 Category: Bower.Collector.WindowsEventLogIntakeService EventId: 1110 Windows Event Log subscription forwarded-security reading channel ForwardedEvents.",
+   "2026-10-31T09:07:20.5922838Z 0 Category: Microsoft.Hosting.Lifetime EventId: 0 Application is shutting down...",
+   "2026-10-31T09:06:53.5018934Z 0 Category: Microsoft.Hosting.Lifetime EventId: 0 Application started. Hosting environment: Production; Content root path: C:\\Program Files\\Bower\\"
+  ]
+ },
+ "note": "Linux: journal lines of bower-healthcheck.service (one run per minute). Windows: Application log, source Bower.HealthCheck, 9100-9103. The Windows check's WEC subscription parsing had a bug (reported 'Unknown') until 09:00; the fixed script reported 'Disabled'."
+}

@@ -1,0 +1,278 @@
+[
+ {
+  "dimensions": {
+   "CollectorId": "ws6-linux-01",
+   "Source": "nftables-firewall/validation"
+  },
+  "id": "f5d0f7d4-7907-2a45-42bf-e930f3b5001f",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T10:26:19.2260611Z",
+  "rule": "bowerws6-destination-freshness",
+  "severity": "Sev2",
+  "startDateTime": "2026-10-31T10:10:20.8336022Z"
+ },
+ {
+  "dimensions": {
+   "CollectorId": "ws6-linux-replay",
+   "Source": "nftables-firewall/validation"
+  },
+  "id": "fbe136b7-73d4-71ff-60af-20c673df001f",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T10:26:19.1841573Z",
+  "rule": "bowerws6-destination-freshness",
+  "severity": "Sev2",
+  "startDateTime": "2026-10-31T10:00:17.9626594Z"
+ },
+ {
+  "dimensions": {
+   "CollectorId": "ws6-linux-01"
+  },
+  "id": "e2f5cc6b-46e9-663c-9dc1-1c23784e001f",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T10:23:54.9618174Z",
+  "rule": "bowerws6-collector-health-missing",
+  "severity": "Sev1",
+  "startDateTime": "2026-10-31T10:02:52.3133696Z"
+ },
+ {
+  "dimensions": {
+   "CollectorId": "ws6-drill-dcr",
+   "Source": "/"
+  },
+  "id": "cbf7ff64-b1de-990d-08fa-8bfd3779001f",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T10:16:17.9391278Z",
+  "rule": "bowerws6-destination-freshness",
+  "severity": "Sev2",
+  "startDateTime": "2026-10-31T09:50:19.8362161Z"
+ },
+ {
+  "dimensions": {
+   "CollectorId": "ws6-linux-01"
+  },
+  "id": "12bab919-b6c5-3625-e234-366a5386001f",
+  "monitorCondition": "Fired",
+  "resolvedDateTime": null,
+  "rule": "bowerws6-queue-backlog",
+  "severity": "Sev2",
+  "startDateTime": "2026-10-31T10:13:27.5709316Z"
+ },
+ {
+  "dimensions": {
+   "Source": "dcr"
+  },
+  "id": "fcb7aee3-ff0a-dff3-ba61-ce034db0001f",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T10:07:09.8610268Z",
+  "rule": "bowerws6-dcr-errors",
+  "severity": "Sev2",
+  "startDateTime": "2026-10-31T09:46:11.8686031Z"
+ },
+ {
+  "dimensions": {},
+  "id": "16c71bfe-85ff-40b1-aa4e-634126d7f000",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T10:00:28.7960646Z",
+  "rule": "bowerws6-dcr-rows-dropped",
+  "severity": "Sev1",
+  "startDateTime": "2026-10-31T09:43:20.2990679Z"
+ },
+ {
+  "dimensions": {},
+  "id": "a93aa619-a201-4193-b79d-0ef3fd23f000",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T09:59:23.9950319Z",
+  "rule": "bowerws6-dcr-transformation-errors",
+  "severity": "Sev1",
+  "startDateTime": "2026-10-31T09:42:22.4440686Z"
+ },
+ {
+  "dimensions": {
+   "CollectorId": "ws6-linux-01"
+  },
+  "id": "4bc17c6f-4653-eda6-f171-074c36bc001f",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T09:51:31.1225439Z",
+  "rule": "bowerws6-queue-storage",
+  "severity": "Sev2",
+  "startDateTime": "2026-10-31T09:35:31.0584124Z"
+ },
+ {
+  "dimensions": {
+   "CollectorId": "ws6-linux-01"
+  },
+  "id": "bc6197d9-8a7e-ddbf-f0dc-18cda7a5001f",
+  "monitorCondition": "Fired",
+  "resolvedDateTime": null,
+  "rule": "bowerws6-dead-letters",
+  "severity": "Sev2",
+  "startDateTime": "2026-10-31T09:49:49.6998408Z"
+ },
+ {
+  "dimensions": {
+   "CollectorId": "ws6-linux-01"
+  },
+  "id": "d74022b8-5378-a9c2-a461-c55ce0bc001f",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T09:39:27.9585488Z",
+  "rule": "bowerws6-queue-backlog",
+  "severity": "Sev2",
+  "startDateTime": "2026-10-31T09:23:27.1388992Z"
+ },
+ {
+  "dimensions": {
+   "CollectorId": "ws6-linux-01",
+   "Source": "nftables-firewall/validation"
+  },
+  "id": "181f5df3-0ac6-143c-9508-4c42817f001f",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T09:36:36.7993741Z",
+  "rule": "bowerws6-source-overdue",
+  "severity": "Sev2",
+  "startDateTime": "2026-10-31T09:20:36.7144402Z"
+ },
+ {
+  "dimensions": {
+   "CollectorId": "ws6-linux-01"
+  },
+  "id": "89c72986-6ef8-bba1-7192-5b510d7f001f",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T09:33:55.102702Z",
+  "rule": "bowerws6-collector-health-missing",
+  "severity": "Sev1",
+  "startDateTime": "2026-10-31T09:12:54.957501Z"
+ },
+ {
+  "dimensions": {
+   "CollectorId": "ws6-linux-01",
+   "Source": "syslog:firewall-tls"
+  },
+  "id": "1619225a-3699-b07f-108e-cbb370ea001f",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T09:32:39.2704653Z",
+  "rule": "bowerws6-source-transport-errors",
+  "severity": "Sev3",
+  "startDateTime": "2026-10-31T09:06:40.5722455Z"
+ },
+ {
+  "dimensions": {
+   "CollectorId": "ws6-windows-01"
+  },
+  "id": "8ff33357-46e8-0196-e1be-88f6eb0e001f",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T09:28:54.6392569Z",
+  "rule": "bowerws6-collector-health-missing",
+  "severity": "Sev1",
+  "startDateTime": "2026-10-31T09:12:54.9975132Z"
+ },
+ {
+  "dimensions": {
+   "CollectorId": "ws6-linux-01",
+   "Source": "nftables-firewall/validation"
+  },
+  "id": "f0374d20-b27e-03ba-2822-318b68f6001f",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T09:16:40.72861Z",
+  "rule": "bowerws6-source-overdue",
+  "severity": "Sev2",
+  "startDateTime": "2026-10-31T08:55:33.971915Z"
+ },
+ {
+  "dimensions": {
+   "CollectorId": "ws6-windows-01",
+   "Source": "windows-security/production"
+  },
+  "id": "e2839924-1ea3-51e4-7ea6-4c4367b2001f",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T09:16:40.6786577Z",
+  "rule": "bowerws6-source-overdue",
+  "severity": "Sev2",
+  "startDateTime": "2026-10-31T08:55:33.908356Z"
+ },
+ {
+  "dimensions": {
+   "CollectorId": "ws6-linux-01",
+   "Source": "nftables-firewall/validation"
+  },
+  "id": "a3b2a427-4f7f-7158-da05-da8273c1001f",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T09:16:20.7322703Z",
+  "rule": "bowerws6-destination-freshness",
+  "severity": "Sev2",
+  "startDateTime": "2026-10-31T09:00:20.4368768Z"
+ },
+ {
+  "dimensions": {
+   "CollectorId": "ws6-windows-01",
+   "Source": "windows-security/production"
+  },
+  "id": "cfebaed4-35bf-d3b5-b32a-4c023680001f",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T09:16:20.6889451Z",
+  "rule": "bowerws6-destination-freshness",
+  "severity": "Sev2",
+  "startDateTime": "2026-10-31T09:00:20.3886341Z"
+ },
+ {
+  "dimensions": {},
+  "id": "01916a68-f55d-4d72-adc0-adf49b61f000",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T09:13:45.7850729Z",
+  "rule": "bowerws6-dcr-columns-dropped",
+  "severity": "Sev2",
+  "startDateTime": "2026-10-31T08:20:25.5768763Z"
+ },
+ {
+  "dimensions": {
+   "CollectorId": "ws6-windows-01"
+  },
+  "id": "a58fdbff-8f68-b8d2-279e-e26dee66001f",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T08:58:54.0167221Z",
+  "rule": "bowerws6-collector-health-missing",
+  "severity": "Sev1",
+  "startDateTime": "2026-10-31T08:12:53.0153282Z"
+ },
+ {
+  "dimensions": {
+   "CollectorId": "ws6-local-smoke"
+  },
+  "id": "3a7b487b-59cf-82e8-44c3-afa32111001f",
+  "monitorCondition": "Fired",
+  "resolvedDateTime": null,
+  "rule": "bowerws6-collector-health-missing",
+  "severity": "Sev1",
+  "startDateTime": "2026-10-31T08:52:52.5358521Z"
+ },
+ {
+  "dimensions": {
+   "CollectorId": "ws6-local-smoke"
+  },
+  "id": "45685a58-aace-1427-394a-2e74827c001f",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T08:49:28.396562Z",
+  "rule": "bowerws6-queue-backlog",
+  "severity": "Sev2",
+  "startDateTime": "2026-10-31T08:23:26.249324Z"
+ },
+ {
+  "dimensions": {
+   "CollectorId": "ws6-linux-01"
+  },
+  "id": "0617eb02-001b-7825-f613-e21a3542001f",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T08:48:54.947342Z",
+  "rule": "bowerws6-collector-health-missing",
+  "severity": "Sev1",
+  "startDateTime": "2026-10-31T08:12:52.9562802Z"
+ },
+ {
+  "dimensions": {},
+  "id": "f3198581-1f3a-4268-9d91-5c2f2fc1f000",
+  "monitorCondition": "Resolved",
+  "resolvedDateTime": "2026-10-31T08:21:35.5502324Z",
+  "rule": "bowerws6-dcr-no-ingestion",
+  "severity": "Sev1",
+  "startDateTime": "2026-10-31T08:18:03.5144575Z"
+ }
+]

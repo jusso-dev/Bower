@@ -1,0 +1,92 @@
+[
+  {
+    "name": "bowerws6-dcr-request-errors",
+    "enabled": true,
+    "severity": 2,
+    "windowSize": "PT15M",
+    "evaluationFrequency": "PT1M",
+    "criteria": [
+      {
+        "metricName": "ApiCallReceived_Count",
+        "timeAggregation": "Count",
+        "operator": "GreaterThan",
+        "threshold": 0.0,
+        "dimensions": [
+          {
+            "name": "ResponseCode",
+            "operator": "Exclude",
+            "values": [
+              "200",
+              "202",
+              "204"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "bowerws6-dcr-columns-dropped",
+    "enabled": true,
+    "severity": 2,
+    "windowSize": "PT15M",
+    "evaluationFrequency": "PT1M",
+    "criteria": [
+      {
+        "metricName": "ColumnsDroppedCount",
+        "timeAggregation": "Maximum",
+        "operator": "GreaterThan",
+        "threshold": 0.0,
+        "dimensions": null
+      }
+    ]
+  },
+  {
+    "name": "bowerws6-dcr-no-ingestion",
+    "enabled": true,
+    "severity": 1,
+    "windowSize": "PT15M",
+    "evaluationFrequency": "PT1M",
+    "criteria": [
+      {
+        "metricName": "ApiCallReceived_Count",
+        "timeAggregation": "Count",
+        "operator": "LessThan",
+        "threshold": 1.0,
+        "dimensions": null
+      }
+    ]
+  },
+  {
+    "name": "bowerws6-dcr-transformation-errors",
+    "enabled": true,
+    "severity": 1,
+    "windowSize": "PT15M",
+    "evaluationFrequency": "PT1M",
+    "criteria": [
+      {
+        "metricName": "TransformationErrors_Count",
+        "timeAggregation": "Count",
+        "operator": "GreaterThan",
+        "threshold": 0.0,
+        "dimensions": null
+      }
+    ]
+  },
+  {
+    "name": "bowerws6-dcr-rows-dropped",
+    "enabled": true,
+    "severity": 1,
+    "windowSize": "PT15M",
+    "evaluationFrequency": "PT1M",
+    "criteria": [
+      {
+        "metricName": "RowsDropped_Count",
+        "timeAggregation": "Total",
+        "operator": "GreaterThan",
+        "threshold": 0.0,
+        "dimensions": null
+      }
+    ]
+  }
+]

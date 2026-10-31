@@ -1,0 +1,86 @@
+{
+ "base": "main 9d1bbcdf7db0b779846e13b0a79a6f0ac3b5cca1 plus this branch's working tree (builds were made before the commit)",
+ "build": "dotnet publish -c Release -r <rid> --self-contained -p:PublishAot=false -p:EnableAotAnalyzer=false -p:EnableTrimAnalyzer=false (managed, not Native AOT). Unsigned development builds.",
+ "collector": {
+  "v1 (08:16-09:27, drills D1-D5 and baseline)": {
+   "linux-x64 Bower.Collector": "1e8ce178dafd3aa94d248e14b2409453724ec3dea97c01cc4336f7aee8b5fb78",
+   "linux-x64 Bower.Collector.dll": "ee88d169d96f1aa9d816f6121b6140a9efe94743981fb28e30b70ddfa28b660b",
+   "win-x64 Bower.Collector.exe": "1bc112433fbe62e350761df60c3c23cf238bb4346238c785295f15873530121d",
+   "win-x64 Bower.Collector.dll": "765a134ce81f85f6891deaf99619f15d0f35a2f69603eb2fdce91556528b6de0"
+  },
+  "v2 (from 09:27, drills D4b, D6, D7, M; adds storage.queueFile* fields)": {
+   "linux-x64 Bower.Collector.dll": "c77eadd97a3218e4c7bc1f5b75f2c5a0986134a0a9d965a14a802799ba05db76",
+   "win-x64 Bower.Collector.dll": "12ca84a98f49a6d9d395bacf8fc1df835b9856fbc3dc33962f6667a3fd8da996",
+   "note": "No C# source changed after the v2 build; the source hashes below are the v2 sources"
+  }
+ },
+ "cli": {
+  "linux-x64 bower": "2c9382357ea50c50e14f33c91bcb959a97d9bec8a27ecf505d2fe393654a773a"
+ },
+ "managementApi": {
+  "linux-x64": "built from this branch at 08:55; binary hash not recorded"
+ },
+ "packs": {
+  "signingKey": "ephemeral lab key 5d2867e3afc53af4 (deleted after the run)",
+  "nftables-validation-1.0.0": {
+   "packHash": "sha256:71db79f8a6a334eb39b2a96e819d3ce8f51b12f50acfff6268e45745824455b4",
+   "archiveOnHost": "bb3828775a5f2944a7a63d86b10394776c2921210af6a6e31b42a8e25c85fca0"
+  },
+  "windows-security-logon-1.0.2": {
+   "packHash": "sha256:cdb2df2ceb3ebdff163d10b91b617e38d26928fc3cc99ae04c1f98a9179308dc",
+   "archiveOnHost": "893f658ffc1e6ecb07cbb1ac2e641eabf72a8f23d51fb784f259e75745afe589"
+  }
+ },
+ "hostScriptsDeployed": {
+  "bower-healthcheck.py (Linux, from 09:27)": "688df443472285b3c0de5671de487f2d362f2a23fd22fd5c4fc899a6236b1512",
+  "Test-BowerCollectorHealth.ps1 (Windows, from 09:28)": "8546089dfa1265cc225d802919c54e533ae6ab08b8b0b16c056f283ce1fbd9f7"
+ },
+ "sources": {
+  "src/Bower.Collector/CollectorHealthRecord.cs": "3aa63631695adaab2514a8b079aa7dcb6b314162b6edd8eb088174fef5b8e710",
+  "src/Bower.Collector/CollectorHealthWorker.cs": "6389f9bd1d3860b301e446327d91f165bc95ce8baa13247d8def885e3a2c40d0",
+  "src/Bower.Collector/CollectorSettings.cs": "2e3100489282228cdb6fddbf29cd3137b985ecf305cef22c418638df66d2d7cf",
+  "src/Bower.Collector/CollectorApplication.cs": "59a5a302dc13544d56b09e980818f1a1f8506e0f3a3d3278f65d154c5fa662e8",
+  "src/Bower.Contracts/SecurityEventTypes.cs": "881108ad3bc686986cdd2ce09a682c06443991516bb2f8600a01f4b136c0fa39",
+  "examples/policies/collector-health/collector-health.yaml": "ced5117d8832fd394b4dfdafbf714d9f23461d3e8e5afbfdddd86c1ae97a8940",
+  "deploy/sentinel/monitoring/host/bower-healthcheck.py": "688df443472285b3c0de5671de487f2d362f2a23fd22fd5c4fc899a6236b1512",
+  "deploy/sentinel/monitoring/host/Test-BowerCollectorHealth.ps1": "ee990b99aed781a776e07d32acac71bac920b299c4404048271c398efa582b74",
+  "deploy/sentinel/monitoring/fleet/bower-fleet-check.py": "cda06ecae6370a74cc8577c72857bf8ef5f12b2aa609c1026f61c275aa002606",
+  "tools/audited-replay/replay.py": "68941d4946c81410e2a8c629e0c8e6848f6f9df184b8138aa7610c3fafd39682",
+  "deploy/bicep/main.bicep": "bd6512d218e28ddb2b99735ac2a6a0c63122863db7f11fbcfc99f94a7a63b441"
+ },
+ "harness": {
+  "lab/aws/monitoring/README.md": "3c30ae6887ec93217fab52821325c702f3a0f0facf652a3ef5f2b8fb4705c8ae",
+  "lab/aws/monitoring/alerts.py": "b040513ae218a24f31fd2291188aaa051877a476c3ae82b2213b1ef6b17496a8",
+  "lab/aws/monitoring/diag-linux.sh": "25814ed1c8993a3647ac2a82d42c7c20b087eb5038359982b6f9f5b613ecf2fa",
+  "lab/aws/monitoring/diag-windows.ps1": "aee5f43abcc328dc240d6a7ec4e8ab4730e0e883fd355988a4b3eb0881f9ea73",
+  "lab/aws/monitoring/drill-archive.sh": "99b4ca513ff7ea96cb461460cbe4027fdb18a44128eda4f3f86adce51a659293",
+  "lab/aws/monitoring/drill-linux.sh": "76a66644b1a903be2b7764b22fa71eb265c23235a080e6490bab492a25bf7493",
+  "lab/aws/monitoring/drill-replay.sh": "56e9c8cf7605055bbaf361691fe3fa7eb02f0eb2899fb65b5cc751718fc8dad9",
+  "lab/aws/monitoring/drill-windows.ps1": "4b300d36904670a4c39d9b4c37eba73aa49309fda4969bd052f13ddfd00ed0ec",
+  "lab/aws/monitoring/fleet-check.sh": "43d59d403f3bc5bd4f5caba19b353da4b03190c18efaffb2b77425e9735c34b7",
+  "lab/aws/monitoring/linux-management.sh": "ac388f865c051a1aba6b272feba8b72639a73d9e9fe6ff0f6d5c9ea2ab421ad1",
+  "lab/aws/monitoring/linux-setup.sh": "b91db3fea5837b2861ccb14741d06bfcdc64bb0e9900c47388f175cd123560e7",
+  "lab/aws/monitoring/producer-scope.sh": "41447b66fdd68d594737256a04e9d8eede02942fd42f52973e8da408f6250abd",
+  "lab/aws/monitoring/queue-digest.sh": "0777c20190ac679810d018c7653cfe17cc4a5fa22f9f9a1337efc73532e4e3e9",
+  "lab/aws/monitoring/queue-pages.sh": "b749e2b693114d483a3726bcf72f317b5d455f47a64c2a8656729846583d651c",
+  "lab/aws/monitoring/queue-states.sh": "b25427ccc54889dfc4d50462a61b2b2d0d6487677f98ad2d76cd46ad8ffc96cf",
+  "lab/aws/monitoring/raise-cap.sh": "e2221724cbb8e87e38fc8325e6ddfe98fc4ed37409d2601ba4bfebc8011264fb",
+  "lab/aws/monitoring/rsyslog-restart.sh": "f66976aa7fd65f0f4af91cf4e54d25046873b9c3873a957917ffba03026fa339",
+  "lab/aws/monitoring/rsyslog-state.sh": "f3eb46da4ae8e0b0e7ee2b3958f84611a2bb37fd631d9581041885038c5c7d9b",
+  "lab/aws/monitoring/run.py": "bf66980d25a4cb7e8bd1edd632d7e44418c986feb5b8589d91ea740af0f07754",
+  "lab/aws/monitoring/source-count.sh": "3be944be12866ff900e5b29437dfea4dd8884ed48b3bb5dfe0ae3a7fa9ba901b",
+  "lab/aws/monitoring/source-loss.sh": "5b6926ddc2a1a5ac058a033d96340c6616abe319f0d4470948e8f381d8c0a682",
+  "lab/aws/monitoring/stack.py": "9fd6a7b5b6e4489bd3453c4e533e3caae5443828019a42390d1b0b0f3d4031fe",
+  "lab/aws/monitoring/update-healthcheck-unit.sh": "d6f36de5d66a6e72016630a436d69383e805270899381eda452236d4ca017727",
+  "lab/aws/monitoring/update-healthcheck.ps1": "601378625becb5c9fff9cc834a64204f366c6f32df5be90051e985453b51bd7a",
+  "lab/aws/monitoring/update-healthcheck.sh": "340a1e594eb97489cf6f42c6c8c24051f0cb8c7f7bafcac4165bea3f063a2820",
+  "lab/aws/monitoring/upgrade-linux.sh": "6f7650f333a0a906d9b40daa7d87a1ab42baf012d11d8ca03f32cbb908156b01",
+  "lab/aws/monitoring/upgrade-windows.ps1": "e67850777772af6813a2cbf7476e25cf5540cd8d24eea1c089a4ce3ff8904a12",
+  "lab/aws/monitoring/upload.sh": "9c7b8af04d69462578f813a726ae2f9b13e45addd095dc158ff4f3aa7732e9b2",
+  "lab/aws/monitoring/windows-setup.ps1": "a5684e28029fef729cac16136ec1f1c2d047cb978ad3c0c06c0a2b0bdd42212d"
+ },
+ "hosts": {
+  "linux": "Amazon Linux 2023 ami-062900c135ab91582, t3.small, 20 GiB gp3 encrypted, rsyslog 8.2204.0 (rsyslog-openssl)",
+  "windows": "Windows Server 2022 Datacenter ami-086db0bc6076e24da, t3.medium, 40 GiB gp3 encrypted"
+ }
+}

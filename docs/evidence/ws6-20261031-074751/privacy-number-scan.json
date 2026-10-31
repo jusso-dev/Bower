@@ -1,0 +1,25 @@
+{
+ "method": "3,000 random integers per digit length placed in attributes.n of a valid envelope, redacted with the default JsonEventRedactor; counted when the value changed",
+ "results": [
+  "1 digits: 0/3000 e.g. ",
+  "2 digits: 0/3000 e.g. ",
+  "3 digits: 0/3000 e.g. ",
+  "4 digits: 0/3000 e.g. ",
+  "5 digits: 0/3000 e.g. ",
+  "6 digits: 0/3000 e.g. ",
+  "7 digits: 0/3000 e.g. ",
+  "8 digits: 279/3000 e.g. 14804099",
+  "9 digits: 248/3000 e.g. 323600851",
+  "10 digits: 166/3000 e.g. 3605917251",
+  "11 digits: 5/3000 e.g. 61422665682",
+  "12 digits: 0/3000 e.g. ",
+  "13 digits: 37/3000 e.g. 4495142346012",
+  "14 digits: 9/3000 e.g. 30035890000888",
+  "15 digits: 6/3000 e.g. 374390736303473",
+  "16 digits: 96/3000 e.g. 2693848688944172",
+  "17 digits: 0/3000 e.g. ",
+  "18 digits: 0/3000 e.g. "
+ ],
+ "conclusion": "values with 8 or more digits can be masked; the health record keeps every number at 7 digits or fewer",
+ "observedInDrill": "6 of about 6,700 firewall syslog event ids (hex) were masked and raised sensitive_data_detected; none of 158 collector_health records"
+}

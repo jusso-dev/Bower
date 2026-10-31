@@ -1,0 +1,50 @@
+using Bower.Abstractions;
+using Bower.Persistence;
+namespace Bower.UnitTests;
+public sealed class ZzScratchQueueFull
+{
+    [Fact]
+    public async Task Reproduce()
+    {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        string path = Path.Combine(directory.Path, "queue.db");
+        SqliteEventStore store = new(path, 4_194_304, clock);
+        await store.InitializeAsync(ct);
+        List<string> log = [];
+        int index = 0;
+        string payload = "{\"v\":\"" + new string('x', 1100) + "\"}";
+        // Delivered history first, as on a running collector.
+        for (; index < 1300; index++)
+        {
+            await store.EnqueueAsync(new QueuedEvent(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"e{index}"), string.Create(System.Globalization.CultureInfo.InvariantCulture, $"sha256:{index}"), payload, clock.UtcNow), ct);
+        }
+        while (true)
+        {
+            IReadOnlyList<QueuedEvent> leased = await store.LeaseAsync(500, TimeSpan.FromMinutes(1), ct);
+            if (leased.Count == 0) break;
+            await store.MarkDeliveredBatchAsync([.. leased.Select(e => e.EventId)], "ack", leased.ToDictionary(e => e.EventId, e => e.LeaseToken!), ct);
+        }
+        int refused = 0;
+        for (; index < 20000 && refused < 3; index++)
+        {
+            try { await store.EnqueueAsync(new QueuedEvent(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"e{index}"), string.Create(System.Globalization.CultureInfo.InvariantCulture, $"sha256:{index}"), payload, clock.UtcNow), ct); }
+            catch (QueueCapacityExceededException) { refused++; log.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"refused at {index}")); }
+        }
+        QueueSnapshot snapshot = await store.GetSnapshotAsync(ct);
+        log.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"undelivered={snapshot.Queued} bytes={snapshot.UndeliveredBytes} file={new FileInfo(path).Length}"));
+        try
+        {
+            IReadOnlyList<QueuedEvent> leased = await store.LeaseAsync(500, TimeSpan.FromMinutes(1), ct);
+            log.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"leased {leased.Count}"));
+            IReadOnlyList<string> stale = await store.MarkDeliveredBatchAsync([.. leased.Select(e => e.EventId)], "ack", leased.ToDictionary(e => e.EventId, e => e.LeaseToken!), ct);
+            log.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"delivered ok, stale {stale.Count}"));
+        }
+        catch (Exception exception)
+        {
+            log.Add($"{exception.GetType().Name}: {exception.Message}");
+        }
+        File.WriteAllLines("/tmp/ws6/queue-full-repro.txt", log);
+    }
+}
