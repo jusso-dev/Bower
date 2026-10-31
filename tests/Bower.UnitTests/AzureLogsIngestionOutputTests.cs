@@ -277,6 +277,47 @@ public sealed class AzureLogsIngestionOutputTests
             .AcknowledgedEventIds.Order());
     }
 
+    public static TheoryData<string, string> TokenFailureTrees => new()
+    {
+        // As Azure.Identity reports them (recorded from a live client-secret credential).
+        { "dns-proxy-or-firewall", "destination-azure-unavailable" },
+        { "identity-service-503", "destination-azure-unavailable" },
+        { "invalid-client", AzureLogsIngestionOutput.CredentialFailedCode },
+        { "retried-transport-then-rejected", AzureLogsIngestionOutput.CredentialFailedCode },
+        { "not-configured", AzureLogsIngestionOutput.CredentialFailedCode }
+    };
+
+    [Theory]
+    [MemberData(nameof(TokenFailureTrees))]
+    public async Task Deliver_ClassifiesTokenFailuresByTheirCause(string tree, string code)
+    {
+        static Exception Transport() => new Azure.RequestFailedException(0, "send failed",
+            new HttpRequestException("connect", new System.Net.Sockets.SocketException(61)));
+        Exception failure = tree switch
+        {
+            "dns-proxy-or-firewall" => new Azure.Identity.AuthenticationFailedException("token",
+                new AggregateException(Transport(), Transport())),
+            "identity-service-503" => new Azure.Identity.AuthenticationFailedException("token",
+                new Microsoft.Identity.Client.MsalServiceException("service_not_available", "busy", 503)),
+            "invalid-client" => new Azure.Identity.AuthenticationFailedException("token",
+                new Microsoft.Identity.Client.MsalServiceException("invalid_client", "AADSTS7000215", 401)),
+            "retried-transport-then-rejected" => new Azure.Identity.AuthenticationFailedException("token",
+                new AggregateException(Transport(),
+                    new Microsoft.Identity.Client.MsalServiceException("unauthorized_client", "AADSTS700016", 400))),
+            _ => new Azure.Identity.CredentialUnavailableException("environment variables are not set")
+        };
+        RecordingHandler handler = new(_ => HttpStatusCode.NoContent);
+        AzureLogsIngestionOutput output = CreateOutput(handler, credential: new ThrowingCredential(failure));
+
+        DeliveryResult result = await output.DeliverAsync([Event("a")], TestContext.Current.CancellationToken);
+
+        DeliveryFailure item = Assert.Single(result.Failures);
+        Assert.Equal(code, item.Code);
+        Assert.True(item.IsRetryable);
+        Assert.True(item.IsDestinationFailure);
+        Assert.Empty(handler.Requests);
+    }
+
     [Fact]
     public async Task Deliver_TransportFailureIsNotReportedAsCredentialFailure()
     {

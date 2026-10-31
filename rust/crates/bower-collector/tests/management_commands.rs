@@ -262,11 +262,13 @@ fn ledger_rate_limits_reloads() {
     let directory = tempfile::tempdir().unwrap();
     let clock = FakeClock::new(now());
     let shared: Arc<dyn Clock> = Arc::new(clock.clone());
-    assert!(
-        CommandLedger::new(directory.path(), Arc::clone(&shared))
-            .try_begin_reload()
-            .unwrap()
-    );
+    let ledger = CommandLedger::new(directory.path(), Arc::clone(&shared));
+    // The peek a reload makes before its pre-check never uses the slot.
+    assert!(ledger.reload_allowed());
+    assert!(ledger.reload_allowed());
+    assert!(ledger.try_begin_reload().unwrap());
+    assert!(!ledger.reload_allowed());
+    drop(ledger);
     clock.advance(chrono::TimeDelta::minutes(9));
     assert!(
         !CommandLedger::new(directory.path(), Arc::clone(&shared))
@@ -883,6 +885,94 @@ async fn reload_is_refused_when_the_restart_could_not_load_its_configuration() {
             "missing-trusted-key" => std::fs::remove_file(&trusted).unwrap(),
             "short-hmac-key" => std::fs::write(&hmac, "AAAAAAAAAAA=").unwrap(),
             _ => {}
+        }
+        let refusal = commands::reload_refusal(&settings);
+        assert!(
+            refusal.is_some_and(|kind| kind.chars().all(char::is_alphanumeric)),
+            "{fault}: {refusal:?}"
+        );
+    }
+}
+
+/// C# `Reload_IsRefusedForSourceFilesARestartCouldNotLoad`: the pre-check runs the loader
+/// start-up runs (`startup::load`), so source files that would stop a restart refuse it.
+#[tokio::test]
+async fn reload_is_refused_for_source_files_a_restart_could_not_load() {
+    let pack_source =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../packs/linux-ssh-gateway");
+    for fault in [
+        "route-to-a-parser-the-pack-no-longer-has",
+        "half-written-tls-certificate",
+        "tls-key-not-matching",
+        "syslog-config-deleted",
+        "malformed-source-expectations",
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let keys = bower_integrity::signer::generate_key_pair();
+        let built = directory.path().join("built");
+        std::fs::create_dir_all(&built).unwrap();
+        let pack =
+            bower_packs::archive::build(&pack_source, &keys.private_key_pem, &built, None).unwrap();
+        let trusted = directory.path().join("pack-trusted.pem");
+        std::fs::write(&trusted, &keys.public_key_pem).unwrap();
+        let hmac = directory.path().join("privacy-hmac.key");
+        std::fs::write(&hmac, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=").unwrap();
+        let server_key = rcgen::KeyPair::generate().unwrap();
+        let server = rcgen::CertificateParams::new(vec!["localhost".to_string()])
+            .unwrap()
+            .self_signed(&server_key)
+            .unwrap();
+        let certificate = directory.path().join("syslog-server.pem");
+        let key = directory.path().join("syslog-server-key.pem");
+        std::fs::write(&certificate, server.pem()).unwrap();
+        std::fs::write(&key, server_key.serialize_pem()).unwrap();
+        let syslog = directory.path().join("syslog.json");
+        let write_syslog = |parser: u32| {
+            let quote = |path: &Path| serde_json::to_string(&path.to_string_lossy()).unwrap();
+            std::fs::write(
+                &syslog,
+                format!(
+                    r#"{{"apiVersion": "bower.security/v1", "kind": "SyslogSource", "listeners": [{{
+                    "id": "edge", "protocol": "tls", "address": "127.0.0.1", "port": 0, "allowedSenders": ["127.0.0.1"],
+                    "tls": {{"certificateFile": {}, "privateKeyFile": {}}},
+                    "routes": [{{"appName": "sshd", "pack": "linux-ssh-gateway", "parser": {parser}}}]}}]}}"#,
+                    quote(&certificate),
+                    quote(&key)
+                ),
+            )
+            .unwrap();
+        };
+        write_syslog(0);
+        let expectations = directory.path().join("expectations.json");
+        std::fs::write(
+            &expectations,
+            r#"{"apiVersion": "bower.security/v1", "kind": "SourceExpectations",
+             "sources": [{"application": "ssh-gateway", "environment": "production", "maximumSilenceMinutes": 5}]}"#,
+        )
+        .unwrap();
+        let mut settings = CollectorSettings::new(
+            "http://127.0.0.1:4319",
+            directory.path().join("data").join("queue.db"),
+            directory.path().join("no-local-policies"),
+            COLLECTOR_ID,
+        );
+        settings.packs = vec![pack.to_string_lossy().into_owned()];
+        settings.pack_trusted_key_files = vec![trusted.to_string_lossy().into_owned()];
+        settings.privacy_hmac_key_file = Some(hmac.clone());
+        settings.syslog_config_path = Some(syslog.clone());
+        settings.source_expectations_path = Some(expectations.clone());
+        assert_eq!(commands::reload_refusal(&settings), None, "{fault}");
+        match fault {
+            "route-to-a-parser-the-pack-no-longer-has" => write_syslog(7),
+            "half-written-tls-certificate" => {
+                let text = std::fs::read_to_string(&certificate).unwrap();
+                std::fs::write(&certificate, &text[..60]).unwrap();
+            }
+            "tls-key-not-matching" => {
+                std::fs::write(&key, rcgen::KeyPair::generate().unwrap().serialize_pem()).unwrap()
+            }
+            "syslog-config-deleted" => std::fs::remove_file(&syslog).unwrap(),
+            _ => std::fs::write(&expectations, r#"{"kind": "#).unwrap(),
         }
         let refusal = commands::reload_refusal(&settings);
         assert!(

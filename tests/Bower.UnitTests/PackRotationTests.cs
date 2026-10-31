@@ -1,4 +1,7 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using System.Text.Json;
 using Bower.Collector;
 using Bower.Integrity;
 using Bower.Packs;
@@ -105,6 +108,75 @@ public sealed class PackRotationTests
         // One key per file: two keys concatenated into one file fail closed.
         deployment.Install(newPack, oldPublic + newPublic);
         Assert.NotNull(ManagementCommandWorker.ReloadRefusal(deployment.Settings()));
+    }
+
+    [Theory]
+    [InlineData("route-to-a-parser-the-pack-no-longer-has")]
+    [InlineData("half-written-tls-certificate")]
+    [InlineData("tls-key-not-matching")]
+    [InlineData("syslog-config-deleted")]
+    [InlineData("malformed-source-expectations")]
+    public void Reload_IsRefusedForSourceFilesARestartCouldNotLoad(string fault)
+    {
+        // The pre-check runs the same loader start-up runs (CollectorStartupSources), so
+        // every file that would stop a restart refuses the reload instead.
+        using TemporaryDirectory directory = new();
+        (string privatePem, string publicPem, _) = DetachedSigner.GenerateKeyPair();
+        Deployment deployment = new(directory.Path);
+        deployment.Install(PackArchive.Build(ExamplePack, privatePem, directory.Path), publicPem);
+        string certificate = Path.Combine(directory.Path, "syslog-server.pem");
+        string key = Path.Combine(directory.Path, "syslog-server-key.pem");
+        using (ECDsa serverKey = ECDsa.Create(ECCurve.NamedCurves.nistP256))
+        using (X509Certificate2 server = new CertificateRequest("CN=localhost", serverKey, HashAlgorithmName.SHA256)
+            .CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30)))
+        {
+            File.WriteAllText(certificate, server.ExportCertificatePem());
+            File.WriteAllText(key, serverKey.ExportPkcs8PrivateKeyPem());
+        }
+
+        string syslog = Path.Combine(directory.Path, "syslog.json");
+        WriteSyslog(parser: 0);
+        string expectations = Path.Combine(directory.Path, "expectations.json");
+        File.WriteAllText(expectations, """
+            {"apiVersion": "bower.security/v1", "kind": "SourceExpectations",
+             "sources": [{"application": "ssh-gateway", "environment": "production", "maximumSilenceMinutes": 5}]}
+            """);
+        CollectorSettings settings = deployment.Settings() with { SyslogConfigPath = syslog, SourceExpectationsPath = expectations };
+        Assert.Null(ManagementCommandWorker.ReloadRefusal(settings));
+
+        switch (fault)
+        {
+            case "route-to-a-parser-the-pack-no-longer-has":
+                WriteSyslog(parser: 7);
+                break;
+            case "half-written-tls-certificate":
+                File.WriteAllText(certificate, File.ReadAllText(certificate)[..60]);
+                break;
+            case "tls-key-not-matching":
+                using (ECDsa other = ECDsa.Create(ECCurve.NamedCurves.nistP256))
+                {
+                    File.WriteAllText(key, other.ExportPkcs8PrivateKeyPem());
+                }
+
+                break;
+            case "syslog-config-deleted":
+                File.Delete(syslog);
+                break;
+            default:
+                File.WriteAllText(expectations, "{\"kind\": ");
+                break;
+        }
+
+        string? refusal = ManagementCommandWorker.ReloadRefusal(settings);
+        Assert.NotNull(refusal);
+        Assert.Matches("^[A-Za-z]+$", refusal);
+
+        void WriteSyslog(int parser) => File.WriteAllText(syslog, $$"""
+            {"apiVersion": "bower.security/v1", "kind": "SyslogSource", "listeners": [{
+              "id": "edge", "protocol": "tls", "address": "127.0.0.1", "port": 0, "allowedSenders": ["127.0.0.1"],
+              "tls": {"certificateFile": {{JsonSerializer.Serialize(certificate)}}, "privateKeyFile": {{JsonSerializer.Serialize(key)}}},
+              "routes": [{"appName": "sshd", "pack": "linux-ssh-gateway", "parser": {{parser}}}]}]}
+            """);
     }
 
     private static void Rewrite(string archive, Action<ZipArchive> change)

@@ -373,7 +373,8 @@ async fn service_fabric_pins_the_endpoint_certificate_thumbprint() {
         .get_token(SCOPE)
         .await
         .unwrap_err();
-    assert!(matches!(error, TokenError::Unavailable(_)), "{error}");
+    // The TLS handshake fails before any answer: the token service is unreachable.
+    assert!(matches!(error, TokenError::Transport(_)), "{error}");
     assert_eq!(log.lock().unwrap().len(), 1);
 
     // Service Fabric identities are configured in the cluster, not at runtime.
@@ -534,7 +535,8 @@ async fn imds_honours_retry_after_and_retries_transport_failures() {
     .get_token(SCOPE)
     .await
     .unwrap_err();
-    assert!(matches!(error, TokenError::Unavailable(_)));
+    // Nothing answered: a network outage, not a credential failure.
+    assert!(matches!(error, TokenError::Transport(_)), "{error}");
     // 40 ms + 80 ms of backoff, less jitter.
     assert!(started.elapsed() >= Duration::from_millis(96));
 }
@@ -887,4 +889,66 @@ async fn username_password_refuses_federated_accounts_and_hides_errors() {
     );
     assert!(!text.contains("p@ss") && !text.contains("AADSTS"));
     assert!(!format!("{:?}", password_credential(String::new())).contains("p@ss"));
+}
+
+/// C# `Deliver_ClassifiesTokenFailuresByTheirCause`: no answer or a temporary answer from
+/// the token service is `Transport` (a network outage); a rejection is `Failed`, even after
+/// retried temporary failures.
+#[tokio::test]
+async fn token_failures_are_classified_by_their_cause() {
+    let certificate = Arc::new(ClientCertificate::load(&fixture("client.pem"), None).unwrap());
+    let credential = |authority: String| ClientCertificateCredential {
+        client: reqwest::Client::new(),
+        tenant_id: "tenant-1".to_owned(),
+        client_id: "client-1".to_owned(),
+        certificate: certificate.clone(),
+        authority_host: authority,
+        send_certificate_chain: false,
+    };
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let closed = listener.local_addr().unwrap();
+    drop(listener);
+    let error = credential(format!("http://{closed}/"))
+        .get_token(SCOPE)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, TokenError::Transport(_)), "{error}");
+
+    for (status, expect_transport) in [
+        (StatusCode::SERVICE_UNAVAILABLE, true),
+        (StatusCode::TOO_MANY_REQUESTS, true),
+        (StatusCode::REQUEST_TIMEOUT, true),
+        (StatusCode::UNAUTHORIZED, false),
+        (StatusCode::BAD_REQUEST, false),
+    ] {
+        let (address, _) = serve(move |_, _| {
+            (
+                status,
+                r#"{"error":"invalid_client","error_description":"AADSTS7000215 secret"}"#,
+            )
+                .into_response()
+        })
+        .await;
+        let error = credential(format!("http://{address}/"))
+            .get_token(SCOPE)
+            .await
+            .unwrap_err();
+        assert_eq!(error.is_transport(), expect_transport, "{status}: {error}");
+        assert!(!error.to_string().contains("AADSTS"), "{error}");
+    }
+
+    // Managed identity: a retried server error, then a rejection, is a credential failure.
+    let (address, _) = serve(|n, _| {
+        if n == 1 {
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        } else {
+            (StatusCode::BAD_REQUEST, r#"{"error":"invalid_request"}"#).into_response()
+        }
+    })
+    .await;
+    let error = imds(address, fast_retry(3))
+        .get_token(SCOPE)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, TokenError::Failed(_)), "{error}");
 }

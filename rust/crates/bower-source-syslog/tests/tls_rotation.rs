@@ -46,13 +46,18 @@ struct Issued {
 }
 
 fn authority(name: &str, from: i64, to: i64) -> Authority {
+    authority_with_key(name, from, to, KeyPair::generate().unwrap())
+}
+
+/// A CA certificate for a given key: two calls with copies of one key make a re-issued CA.
+fn authority_with_key(name: &str, from: i64, to: i64, key: KeyPair) -> Authority {
     let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
     params.distinguished_name.push(DnType::CommonName, name);
     params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
     params.not_before = day!(from);
     params.not_after = day!(to);
-    Authority(CertifiedIssuer::self_signed(params, KeyPair::generate().unwrap()).unwrap())
+    Authority(CertifiedIssuer::self_signed(params, key).unwrap())
 }
 
 impl Authority {
@@ -61,6 +66,17 @@ impl Authority {
     }
 
     fn issue(&self, name: &str, client: bool, from: i64, to: i64) -> Issued {
+        self.issue_with_point(name, client, from, to, None)
+    }
+
+    fn issue_with_point(
+        &self,
+        name: &str,
+        client: bool,
+        from: i64,
+        to: i64,
+        point: Option<&str>,
+    ) -> Issued {
         let key = KeyPair::generate().unwrap();
         let names = if client {
             Vec::new()
@@ -79,6 +95,11 @@ impl Authority {
         params.serial_number = Some(SerialNumber::from(serial));
         params.not_before = day!(from);
         params.not_after = day!(to);
+        if let Some(uri) = point {
+            params.crl_distribution_points = vec![rcgen::CrlDistributionPoint {
+                uris: vec![uri.to_string()],
+            }];
+        }
         let certificate = params.signed_by(&key, &self.0).unwrap();
         Issued {
             certificate: certificate.pem(),
@@ -89,11 +110,22 @@ impl Authority {
 
     /// A signed list revoking `revoked`, valid from `this_update` to `next_update` days.
     fn revocation_list(&self, revoked: &[&Issued], this_update: i64, next_update: i64) -> String {
+        self.scoped_list(revoked, this_update, next_update, None)
+    }
+
+    /// As `revocation_list`, with a critical issuing distribution point (rcgen marks it critical).
+    fn scoped_list(
+        &self,
+        revoked: &[&Issued],
+        this_update: i64,
+        next_update: i64,
+        point: Option<rcgen::CrlIssuingDistributionPoint>,
+    ) -> String {
         CertificateRevocationListParams {
             this_update: day!(this_update),
             next_update: day!(next_update),
             crl_number: SerialNumber::from(SERIAL.fetch_add(1, Ordering::SeqCst)),
-            issuing_distribution_point: None,
+            issuing_distribution_point: point,
             revoked_certs: revoked
                 .iter()
                 .map(|issued| RevokedCertParams {
@@ -413,9 +445,10 @@ async fn failed_reload_keeps_last_good_material_until_the_files_are_valid() {
     // A certificate written before its key: the pair does not match, so nothing changes.
     replace(&files.certificate, &second.certificate);
     replace(&files.key, &unrelated.key);
-    running
-        .wait_for(|status| status.tls_reload_failures == 1)
-        .await;
+    let failures = running
+        .wait_for(|status| status.tls_reload_failures >= 1)
+        .await
+        .tls_reload_failures;
     assert_eq!(
         Connection::open(&running, None).await.unwrap().server,
         sha(&first)
@@ -423,7 +456,7 @@ async fn failed_reload_keeps_last_good_material_until_the_files_are_valid() {
 
     replace(&files.key, "-----BEGIN PRIVATE KEY-----\nAAAA");
     running
-        .wait_for(|status| status.tls_reload_failures == 2)
+        .wait_for(|status| status.tls_reload_failures > failures)
         .await;
 
     files.server(&second);
@@ -669,5 +702,260 @@ async fn one_bundle_file_serves_the_certificate_and_key_and_rotates_atomically()
         Connection::open(&running, None).await.unwrap().server,
         sha(&second)
     );
+    running.stop().await;
+}
+
+#[tokio::test]
+async fn same_name_rekeyed_authority_uses_only_the_list_signed_by_the_issuing_key() {
+    let directory = tempfile::tempdir().unwrap();
+    let files = Files::new(directory.path());
+    let old_ca = authority("syslog-ca", -30, 30);
+    let new_ca = authority("syslog-ca", -30, 30);
+    let server = old_ca.issue("localhost", false, -1, 20);
+    let old_sender = old_ca.issue("firewall-01", true, -1, 20);
+    let new_sender = new_ca.issue("firewall-02", true, -1, 20);
+    let revoked_new = new_ca.issue("firewall-03", true, -1, 20);
+    files.server(&server);
+    files.authorities(&[&old_ca, &new_ca]);
+    replace(
+        &files.revocations,
+        &(old_ca.revocation_list(&[], -1, 7) + &new_ca.revocation_list(&[&revoked_new], -1, 7)),
+    );
+    let sink = Arc::new(Sink::default());
+    let running = start(&files, &old_ca, Arc::clone(&sink), true, true)
+        .await
+        .unwrap();
+
+    assert!(Connection::try_deliver(&running, &old_sender, "old key").await);
+    assert!(Connection::try_deliver(&running, &new_sender, "new key").await);
+    assert!(!Connection::try_deliver(&running, &revoked_new, "revoked by new key").await);
+    running.wait_for(|status| status.tls_revoked == 1).await;
+    sink.wait_for(2).await;
+
+    // Only the new key's list left: the old key's senders have no list and fail closed.
+    replace(
+        &files.revocations,
+        &new_ca.revocation_list(&[&revoked_new], -1, 7),
+    );
+    running.wait_for(|status| status.tls_reloads >= 1).await;
+    assert!(!Connection::try_deliver(&running, &old_sender, "old key without a list").await);
+    assert!(Connection::try_deliver(&running, &new_sender, "new key still listed").await);
+    running.wait_for(|status| status.tls_revoked == 2).await;
+    running.stop().await;
+}
+
+#[tokio::test]
+async fn critical_issuing_distribution_point_scopes_the_list_to_its_distribution_point() {
+    const POINT: &str = "http://crl.example.test/syslog-ca.crl";
+    let directory = tempfile::tempdir().unwrap();
+    let files = Files::new(directory.path());
+    let ca = authority("syslog-ca", -30, 30);
+    let server = ca.issue("localhost", false, -1, 20);
+    let sender = ca.issue_with_point("firewall-01", true, -1, 20, Some(POINT));
+    let revoked = ca.issue_with_point("firewall-02", true, -1, 20, Some(POINT));
+    let elsewhere = ca.issue_with_point(
+        "firewall-03",
+        true,
+        -1,
+        20,
+        Some("http://crl.example.test/other.crl"),
+    );
+    files.server(&server);
+    files.authorities(&[&ca]);
+    replace(
+        &files.revocations,
+        &ca.scoped_list(
+            &[&revoked],
+            -1,
+            7,
+            Some(rcgen::CrlIssuingDistributionPoint {
+                distribution_point: rcgen::CrlDistributionPoint {
+                    uris: vec![POINT.to_string()],
+                },
+                scope: Some(rcgen::CrlScope::UserCertsOnly),
+            }),
+        ),
+    );
+    let sink = Arc::new(Sink::default());
+    let running = start(&files, &ca, Arc::clone(&sink), true, true)
+        .await
+        .unwrap();
+
+    assert!(Connection::try_deliver(&running, &sender, "in scope").await);
+    assert!(!Connection::try_deliver(&running, &revoked, "listed").await);
+    // A list for another distribution point does not establish this sender's status.
+    assert!(!Connection::try_deliver(&running, &elsewhere, "out of scope").await);
+    running.wait_for(|status| status.tls_revoked == 2).await;
+    assert_eq!(sink.messages(), ["in scope"]);
+    running.stop().await;
+}
+
+fn der(tag: u8, content: &[u8]) -> Vec<u8> {
+    let mut out = vec![tag];
+    if content.len() < 0x80 {
+        out.push(u8::try_from(content.len()).unwrap());
+    } else {
+        let bytes = u16::try_from(content.len()).unwrap().to_be_bytes();
+        out.extend([0x82, bytes[0], bytes[1]]);
+    }
+    out.extend_from_slice(content);
+    out
+}
+
+/// A list with a critical issuing distribution point whose fields are `scope` (DER), as
+/// C# `Pki.ScopedList` builds; the scope is refused before any signature is checked.
+fn hand_built_scoped_list(scope: &[u8]) -> String {
+    use base64::Engine as _;
+    format!(
+        "-----BEGIN X509 CRL-----\n{}\n-----END X509 CRL-----\n",
+        base64::engine::general_purpose::STANDARD.encode(list_bytes(scope))
+    )
+}
+
+fn list_bytes(scope: &[u8]) -> Vec<u8> {
+    let algorithm = der(
+        0x30,
+        &der(0x06, &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x02]),
+    );
+    let name = der(
+        0x30,
+        &der(
+            0x31,
+            &der(
+                0x30,
+                &[der(0x06, &[0x55, 0x04, 0x03]), der(0x0C, b"syslog-ca")].concat(),
+            ),
+        ),
+    );
+    let extension = der(
+        0x30,
+        &[
+            der(0x06, &[0x55, 0x1D, 0x1C]),
+            der(0x01, &[0xFF]),
+            der(0x04, &der(0x30, scope)),
+        ]
+        .concat(),
+    );
+    let tbs = der(
+        0x30,
+        &[
+            der(0x02, &[1]),
+            algorithm.clone(),
+            name,
+            der(0x17, b"261001000000Z"),
+            der(0x17, b"491231000000Z"),
+            der(0xA0, &der(0x30, &extension)),
+        ]
+        .concat(),
+    );
+    der(
+        0x30,
+        &[tbs, algorithm, der(0x03, &[0, 0x30, 0x00])].concat(),
+    )
+}
+
+#[tokio::test]
+async fn unsupported_list_scope_stops_start_with_a_clear_message() {
+    let relative = der(
+        0xA0,
+        &der(
+            0xA1,
+            &der(
+                0x30,
+                &[der(0x06, &[0x55, 0x04, 0x03]), der(0x0C, b"relative")].concat(),
+            ),
+        ),
+    );
+    for (scope, message) in [
+        (
+            der(0x83, &[1, 0x60]),
+            "client revocation lists limited to some revocation reasons are not supported.",
+        ),
+        (
+            der(0x84, &[0xFF]),
+            "indirect client revocation lists are not supported.",
+        ),
+        (
+            relative,
+            "client revocation list distribution points relative to the issuer are not supported.",
+        ),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let files = Files::new(directory.path());
+        let ca = authority("syslog-ca", -30, 30);
+        files.server(&ca.issue("localhost", false, -1, 20));
+        files.authorities(&[&ca]);
+        replace(&files.revocations, &hand_built_scoped_list(&scope));
+        let error = start(&files, &ca, Arc::new(Sink::default()), true, true)
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(error, format!("Syslog listener edge: {message}"));
+    }
+}
+
+#[tokio::test]
+async fn valid_sender_under_an_expired_authority_is_refused_and_its_open_session_closed() {
+    // The sender's certificate is valid, but the only trusted copy of its CA has expired
+    // (a CA certificate re-issued with the same key and subject was not deployed).
+    let directory = tempfile::tempdir().unwrap();
+    let files = Files::new(directory.path());
+    let key = KeyPair::generate().unwrap().serialize_pem();
+    let current = authority_with_key("syslog-ca", -60, 30, KeyPair::from_pem(&key).unwrap());
+    let expired = authority_with_key("syslog-ca", -60, -1, KeyPair::from_pem(&key).unwrap());
+    let server = current.issue("localhost", false, -1, 20);
+    let sender = current.issue("firewall-01", true, -1, 20);
+    files.server(&server);
+    files.authorities(&[&current]);
+    let sink = Arc::new(Sink::default());
+    let running = start(&files, &current, Arc::clone(&sink), true, false)
+        .await
+        .unwrap();
+    let mut open = Connection::open(&running, Some(&sender)).await.unwrap();
+    open.send("trusted").await.unwrap();
+    sink.wait_for(1).await;
+
+    files.authorities(&[&expired]);
+    running.wait_for(|status| status.tls_reloads >= 1).await;
+    open.send("after the anchor expired").await.unwrap();
+    running
+        .wait_for(|status| status.tls_sessions_closed == 1)
+        .await;
+    assert!(!Connection::try_deliver(&running, &sender, "reconnect").await);
+    assert_eq!(sink.messages(), ["trusted"]);
+    running.stop().await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn non_regular_file_is_refused_without_blocking_and_the_last_good_material_stays() {
+    let directory = tempfile::tempdir().unwrap();
+    let files = Files::new(directory.path());
+    let ca = authority("syslog-ca", -30, 30);
+    let server = ca.issue("localhost", false, -1, 20);
+    let sender = ca.issue("firewall-01", true, -1, 20);
+    files.server(&server);
+    files.authorities(&[&ca]);
+    let sink = Arc::new(Sink::default());
+    let running = start(&files, &ca, Arc::clone(&sink), true, false)
+        .await
+        .unwrap();
+
+    let fifo = directory.path().join("fifo");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success()
+    );
+    std::fs::rename(&fifo, &files.authorities).unwrap();
+    running
+        .wait_for(|status| status.tls_reload_failures >= 1)
+        .await;
+    assert!(Connection::try_deliver(&running, &sender, "last good material").await);
+    files.authorities(&[&ca]);
+    sink.wait_for(1).await;
+    assert_eq!(running.status().tls_reloads, 0);
     running.stop().await;
 }

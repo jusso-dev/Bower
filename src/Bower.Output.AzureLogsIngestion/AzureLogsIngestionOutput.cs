@@ -219,10 +219,10 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter, IOutputConcurrenc
             catch (Exception exception) when (exception is not OperationCanceledException || !token.IsCancellationRequested)
             {
                 // Credential/transport exceptions may contain secrets. Never retain text, only
-                // whether the token could not be acquired (expired, revoked or disabled
+                // whether the credential was rejected (expired, revoked or disabled
                 // credential, wrong tenant): operators must tell that from a network outage.
                 status = 0;
-                credentialFailed = exception is AuthenticationFailedException or CredentialUnavailableException;
+                credentialFailed = IsCredentialFailure(exception);
             }
 
             if (status is >= 200 and < 300)
@@ -256,6 +256,57 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter, IOutputConcurrenc
     }
 
     public const int MaximumBatchBytes = 1024 * 1024;
+
+    /// <summary>
+    /// Whether a token failure is the credential's fault rather than the network's (same
+    /// rule as the Rust port). Walks inner and aggregate exceptions, because Azure.Core
+    /// retries wrap attempts in an <see cref="AggregateException"/>:
+    /// a rejection by the identity service (an MSAL 4xx other than 408/429, such as
+    /// <c>invalid_client</c> or <c>unauthorized_client</c>) anywhere in the tree is a
+    /// credential failure, even after a retried transport error; otherwise a transport
+    /// cause (DNS, proxy, firewall, TLS, timeout) or a 5xx/408/429 from the identity
+    /// service is a network outage; otherwise an Azure.Identity credential exception
+    /// (missing or unusable configuration) is a credential failure.
+    /// </summary>
+    internal static bool IsCredentialFailure(Exception exception)
+    {
+        List<Exception> tree = [];
+        Collect(exception, tree, depth: 0);
+        if (tree.Any(item => item is Microsoft.Identity.Client.MsalServiceException { StatusCode: >= 400 and < 500 and not 408 and not 429 }))
+        {
+            return true;
+        }
+
+        if (tree.Any(item => item is HttpRequestException or System.Net.Sockets.SocketException or IOException
+            or TimeoutException or OperationCanceledException or RequestFailedException { Status: 0 or >= 500 or 408 or 429 }
+            or Microsoft.Identity.Client.MsalServiceException))
+        {
+            return false;
+        }
+
+        return tree.Any(item => item is AuthenticationFailedException or CredentialUnavailableException);
+
+        static void Collect(Exception item, List<Exception> tree, int depth)
+        {
+            if (depth > 16)
+            {
+                return;
+            }
+
+            tree.Add(item);
+            if (item is AggregateException aggregate)
+            {
+                foreach (Exception inner in aggregate.InnerExceptions)
+                {
+                    Collect(inner, tree, depth + 1);
+                }
+            }
+            else if (item.InnerException is { } inner)
+            {
+                Collect(inner, tree, depth + 1);
+            }
+        }
+    }
 
     /// <summary>
     /// The configured credential could not obtain a token. Retryable behind the durable

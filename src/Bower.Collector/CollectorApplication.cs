@@ -69,6 +69,9 @@ public static partial class CollectorApplication
         VerifiedManagedPrivacyProfile? cachedManagedProfile = null;
         PolicyBundle bundle = PolicyBundle.Load(settings.PolicySources(cached => cachedManagedProfile = cached));
         builder.Services.AddSingleton(bundle);
+        // Every other file a start reads, checked exactly as the signed reload pre-check does,
+        // so a bad file stops start-up.
+        CollectorStartupSources sources = CollectorStartupSources.Load(settings, bundle);
         // Management mode fails closed until the first sync resolves (see ManagedPrivacyProfileState).
         builder.Services.AddSingleton(settings.UsesManagedPrivacyProfile
             ? new ManagedPrivacyProfileState(cachedManagedProfile, settings.ManagedPrivacyAllowDefault)
@@ -87,21 +90,14 @@ public static partial class CollectorApplication
         builder.Services.AddSingleton(services =>
             new EventTap(settings.TapOptions(), services.GetRequiredService<TimeProvider>()));
         builder.Services.AddSingleton<SecurityEventProcessor>();
-        // Loaded at build so a malformed expectations file stops start-up.
-        SourceExpectations? expectations = settings.SourceExpectationsPath is null
-            ? null
-            : SourceExpectationsLoader.LoadFile(settings.SourceExpectationsPath);
         builder.Services.AddSingleton(services => new SourceHealth(
-            expectations,
+            sources.Expectations,
             services.GetRequiredService<PipelineTelemetry>(),
             services.GetRequiredService<TimeProvider>(),
             services.GetRequiredService<ILogger<SourceHealth>>()));
         builder.Services.AddHostedService<SuppressionWindowWorker>();
-        if (settings.SyslogConfigPath is not null)
+        if (sources.Syslog is { } syslog)
         {
-            // Loaded and checked against the loaded packs at build so a bad file stops start-up.
-            SyslogSourceConfiguration syslog = SyslogSourceConfigurationLoader.LoadFile(settings.SyslogConfigPath);
-            SyslogRoutes.Validate(syslog, bundle);
             builder.Services.AddSingleton(services => new SyslogSource(
                 syslog,
                 new CollectorSyslogSink(
@@ -115,12 +111,8 @@ public static partial class CollectorApplication
                 services.GetRequiredService<TimeProvider>()));
             builder.Services.AddHostedService<SyslogIntakeService>();
         }
-        if (settings.WindowsEventLogConfigPath is not null)
+        if (sources.WindowsEventLog is { } windowsEventLog)
         {
-            // Loaded and checked against the loaded packs at build so a bad file stops start-up.
-            WindowsEventLogSourceConfiguration windowsEventLog =
-                WindowsEventLogSourceConfigurationLoader.LoadFile(settings.WindowsEventLogConfigPath);
-            WindowsEventLogRoutes.Validate(windowsEventLog, bundle);
             // Bookmarks live with the queue, so a restart resumes where the queue left off.
             builder.Services.AddSingleton(new WindowsEventLogBookmarks(settings.QueuePath));
             builder.Services.AddSingleton(services => new WindowsEventLogSource(
@@ -142,8 +134,8 @@ public static partial class CollectorApplication
         builder.Services.AddSingleton<EventIdentityConflicts>();
         builder.Services.AddSingleton(
             new CollectorIdentity(settings.CollectorId, settings.Version, "local-http", settings.ConfigurationHash()));
-        builder.Services.AddSingleton(new ProducerAuthorization(settings.ProducerScopesFile, settings.SingleTrustDomain));
-        builder.Services.AddSingleton(new IngestAuthentication(settings.IngestToken, settings.IngestTokensFile));
+        builder.Services.AddSingleton(sources.Producers);
+        builder.Services.AddSingleton(sources.Ingest);
         builder.Services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -180,14 +172,7 @@ public static partial class CollectorApplication
         {
             // Relay role. The pins and the server certificate are read here, so a bad file
             // stops start-up; the listener starts with the host, after queue initialisation.
-            RelayDownstreams downstreams = RelayDownstreams.Load(settings.RelayDownstreamsFile!);
-            using (RelayCertificates.Load(
-                settings.RelayCertificateFile!,
-                settings.RelayKeyFile!,
-                "BOWER_RELAY_CERTIFICATE_FILE and BOWER_RELAY_KEY_FILE"))
-            {
-            }
-
+            RelayDownstreams downstreams = sources.RelayDownstreams!;
             builder.Services.AddSingleton(downstreams);
             builder.Services.AddSingleton(new RelayTelemetry(downstreams.CollectorIds));
             builder.Services.AddSingleton<RelayIntake>();

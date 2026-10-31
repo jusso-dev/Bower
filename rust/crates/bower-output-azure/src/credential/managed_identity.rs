@@ -370,9 +370,8 @@ impl ManagedIdentityCredential {
                 Err(_) => (true, None, None),
             };
             if !retriable || retry >= self.retry.max_retries {
-                return outcome.map_err(|_| {
-                    TokenError::Unavailable(format!("{SOURCE} endpoint unreachable"))
-                });
+                return outcome
+                    .map_err(|_| TokenError::Transport(format!("{SOURCE} endpoint unreachable")));
             }
             drop(outcome);
             retry += 1;

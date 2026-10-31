@@ -65,6 +65,23 @@ pub enum TokenError {
     /// (C# `AuthenticationFailedException`).
     #[error("authentication failed: {0}")]
     Failed(String),
+    /// No answer from the token service, or a temporary one (5xx, 408, 429): DNS, proxy,
+    /// firewall or TLS failures. Classified as a network outage, not a credential failure
+    /// (C# `AuthenticationFailedException` caused by a transport error).
+    #[error("token service unavailable: {0}")]
+    Transport(String),
+}
+
+impl TokenError {
+    /// Whether the token service itself could not be reached or was temporarily failing.
+    pub fn is_transport(&self) -> bool {
+        matches!(self, Self::Transport(_))
+    }
+}
+
+/// Statuses that mean the token service is temporarily unavailable, not a rejection.
+fn is_transient_status(status: u16) -> bool {
+    status >= 500 || status == 408 || status == 429
 }
 
 pub type TokenFuture<'a> =
@@ -294,13 +311,18 @@ async fn read_token_response(
     let body = response
         .bytes()
         .await
-        .map_err(|_| TokenError::Failed(format!("{source} response could not be read")))?;
+        .map_err(|_| TokenError::Transport(format!("{source} response could not be read")))?;
     if !status.is_success() {
-        return Err(TokenError::Failed(format!(
+        let message = format!(
             "{source} returned HTTP {} ({})",
             status.as_u16(),
             error_code(&body)
-        )));
+        );
+        return Err(if is_transient_status(status.as_u16()) {
+            TokenError::Transport(message)
+        } else {
+            TokenError::Failed(message)
+        });
     }
     parse_token_response(&body)
 }
@@ -312,7 +334,7 @@ async fn send_for_token(
     let response = request
         .send()
         .await
-        .map_err(|_| TokenError::Unavailable(format!("{source} endpoint unreachable")))?;
+        .map_err(|_| TokenError::Transport(format!("{source} endpoint unreachable")))?;
     read_token_response(response, source).await
 }
 
@@ -683,18 +705,19 @@ impl UsernamePasswordCredential {
             .send()
             .await
             .map_err(|_| {
-                TokenError::Unavailable("Microsoft Entra endpoint unreachable".to_owned())
+                TokenError::Transport("Microsoft Entra endpoint unreachable".to_owned())
             })?;
         let status = response.status();
-        let body = response
-            .bytes()
-            .await
-            .map_err(|_| TokenError::Failed("user realm response could not be read".to_owned()))?;
+        let body = response.bytes().await.map_err(|_| {
+            TokenError::Transport("user realm response could not be read".to_owned())
+        })?;
         if !status.is_success() {
-            return Err(TokenError::Failed(format!(
-                "user realm discovery returned HTTP {}",
-                status.as_u16()
-            )));
+            let message = format!("user realm discovery returned HTTP {}", status.as_u16());
+            return Err(if is_transient_status(status.as_u16()) {
+                TokenError::Transport(message)
+            } else {
+                TokenError::Failed(message)
+            });
         }
         serde_json::from_slice::<Value>(&body)
             .ok()

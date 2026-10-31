@@ -69,6 +69,9 @@ pub trait SyslogSink: Send + Sync + 'static {
 pub enum SourceError {
     #[error("Syslog listener {0}: TLS certificate or key could not be loaded.")]
     Tls(String),
+    /// A revocation list Bower cannot apply correctly (C# `UnsupportedRevocationListException`).
+    #[error("Syslog listener {0}: {1}")]
+    TlsUnsupported(String, String),
     #[error("{0}")]
     Bind(std::io::Error),
 }
@@ -175,7 +178,7 @@ impl ListenerState {
     fn snapshot(&self) -> ListenerStatus {
         let read = |counter: &AtomicI64| counter.load(Ordering::SeqCst);
         let counters = &self.counters;
-        // Reading the material also applies a pending file change, so status reflects it.
+        // Generation and dates only; the refresh task applies file changes.
         let tls = self.tls.get();
         let material = tls.map(|source| source.current());
         ListenerStatus {
@@ -300,7 +303,8 @@ impl SyslogSource {
         self
     }
 
-    /// How often TLS files are checked for changes (before `bind`; C# `TlsReloadInterval`).
+    /// How often a background task checks the TLS files for changes, at least 10 ms
+    /// (before `bind`; C# `TlsReloadInterval`).
     pub fn with_tls_reload_interval(mut self, interval: Duration) -> Self {
         if let Some(shared) = Arc::get_mut(&mut self.shared) {
             shared.tls_reload_interval = interval;
@@ -337,7 +341,7 @@ impl SyslogSource {
                 (Bound::Datagram(socket), local)
             } else {
                 let tls = (options.protocol == "tls")
-                    .then(|| TlsSource::load(options, self.shared.tls_reload_interval))
+                    .then(|| TlsSource::load(options))
                     .transpose()?
                     .map(Arc::new);
                 if let Some(source) = &tls {
@@ -367,6 +371,13 @@ impl SyslogSource {
                 (Arc::clone(listener), Arc::clone(&self.shared), stop.clone());
             match bound {
                 Bound::Stream(socket, tls) => {
+                    if let Some(source) = &tls {
+                        tasks.spawn(refresh_tls(
+                            Arc::clone(source),
+                            self.shared.tls_reload_interval,
+                            stop.clone(),
+                        ));
+                    }
                     tasks.spawn(accept(listener, socket, tls, shared, stop));
                 }
                 Bound::Datagram(socket) => {
@@ -509,12 +520,26 @@ async fn serve_connection(
     }
 }
 
-/// C# `StillTrusted`: unchanged material and nothing expired, or a fresh validation.
+/// C# `StillTrusted`: unchanged material and nothing expired (a lock-free generation
+/// check), or a fresh validation.
 fn still_trusted(source: &TlsSource, session: &mut TlsSession, now: Timestamp) -> bool {
-    let material = source.current();
-    (material.generation == session.generation
+    (source.generation() == session.generation
         && session.revalidate_at.is_none_or(|deadline| now < deadline))
-        || material.still_trusted(session)
+        || source.current().still_trusted(session)
+}
+
+/// C# `RefreshTlsAsync`: checks the TLS files every interval on the blocking pool, off the
+/// connection and frame paths.
+async fn refresh_tls(source: Arc<TlsSource>, interval: Duration, mut stop: watch::Receiver<bool>) {
+    let interval = interval.max(Duration::from_millis(10));
+    loop {
+        tokio::select! {
+            () = stopped(&mut stop) => return,
+            () = tokio::time::sleep(interval) => {}
+        }
+        let source = Arc::clone(&source);
+        let _ = tokio::task::spawn_blocking(move || source.refresh()).await;
+    }
 }
 
 async fn serve_frames<S: AsyncRead + AsyncWrite + Unpin>(

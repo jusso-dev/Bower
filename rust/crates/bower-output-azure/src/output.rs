@@ -498,7 +498,19 @@ impl Uploader {
         let token = match self.credential.get_token(&self.options.scope).await {
             Ok(token) => token,
             // Credential failures are not retried by the pipeline. The error text can
-            // quote request details: keep only the classification.
+            // quote request details: keep only the classification. A token service that
+            // could not be reached is a network outage, not a credential failure.
+            Err(error) if error.is_transport() => {
+                return (
+                    false,
+                    None,
+                    BatchOutcome::Failed {
+                        status: 0,
+                        retry_after: None,
+                        retry_capped: false,
+                    },
+                );
+            }
             Err(_) => return (false, None, BatchOutcome::CredentialFailed),
         };
         let Ok(authorization) = HeaderValue::from_str(&format!("Bearer {}", token.token)) else {

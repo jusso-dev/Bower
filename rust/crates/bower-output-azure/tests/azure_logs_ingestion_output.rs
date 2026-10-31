@@ -429,6 +429,31 @@ async fn token_failure_fails_batch_as_retryable_without_sending() {
     assert!(mock.requests.lock().unwrap().is_empty());
 }
 
+struct TransportFailure;
+
+impl TokenProvider for TransportFailure {
+    fn get_token<'a>(&'a self, _scope: &'a str) -> TokenFuture<'a> {
+        Box::pin(async {
+            Err(TokenError::Transport(
+                "Microsoft Entra endpoint unreachable".to_owned(),
+            ))
+        })
+    }
+}
+
+#[tokio::test]
+async fn unreachable_token_service_is_a_network_outage_not_a_credential_failure() {
+    let (base, mock) = start(status(204)).await;
+
+    let result = output_with(&base, 2, Arc::new(TransportFailure))
+        .deliver(&[event("a", "")])
+        .await;
+
+    assert_eq!(result.failures[0].code, "destination-azure-unavailable");
+    assert!(result.failures[0].is_retryable);
+    assert!(mock.requests.lock().unwrap().is_empty());
+}
+
 #[tokio::test]
 async fn token_is_cached_across_batches_and_calls() {
     let (base, _) = start(status(204)).await;

@@ -436,6 +436,16 @@ public sealed class ManagementCommandLedger
         }
     }
 
+    /// <summary>True when no reload ran within <see cref="ReloadInterval"/>; records nothing.</summary>
+    public bool IsReloadAllowed()
+    {
+        lock (gate)
+        {
+            DateTimeOffset now = clock.GetUtcNow();
+            return !(lastReloadAt is { } last && now - last < ReloadInterval && now >= last);
+        }
+    }
+
     /// <summary>True (and recorded) when no reload ran within <see cref="ReloadInterval"/>.</summary>
     public bool TryBeginReload()
     {

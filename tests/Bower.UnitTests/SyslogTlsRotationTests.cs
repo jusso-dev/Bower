@@ -73,7 +73,7 @@ public sealed class SyslogTlsRotationTests
             .Replace(JsonSerializer.Serialize(pki.Key), JsonSerializer.Serialize(bundle), StringComparison.Ordinal);
         await using SyslogSource source = new(SyslogSourceConfigurationLoader.Parse(SyslogSourceTests.Config(listener)), new SyslogSourceTests.FakeSink())
         {
-            TlsReloadInterval = TimeSpan.Zero
+            TlsReloadInterval = TimeSpan.FromMilliseconds(10)
         };
         await source.StartAsync(cancellation);
         await using (Connection connection = await Connection.OpenAsync(source, null, cancellation))
@@ -105,7 +105,7 @@ public sealed class SyslogTlsRotationTests
         // A certificate written before its key: the pair does not match, so nothing changes.
         File.WriteAllText(pki.Certificate, second.ExportCertificatePem());
         File.WriteAllText(pki.Key, unrelated.GetECDsaPrivateKey()!.ExportPkcs8PrivateKeyPem());
-        await WaitFor(source, value => value.TlsReloadFailures == 1, cancellation);
+        long failures = (await WaitFor(source, value => value.TlsReloadFailures >= 1, cancellation)).TlsReloadFailures;
         await using (Connection stillFirst = await Connection.OpenAsync(source, null, cancellation))
         {
             Assert.Equal(first.Thumbprint, stillFirst.ServerThumbprint);
@@ -113,7 +113,7 @@ public sealed class SyslogTlsRotationTests
 
         // A truncated file is another failure, not an outage.
         File.WriteAllText(pki.Key, "-----BEGIN PRIVATE KEY-----\nAAAA");
-        await WaitFor(source, value => value.TlsReloadFailures == 2, cancellation);
+        await WaitFor(source, value => value.TlsReloadFailures > failures, cancellation);
 
         pki.WriteServer(second);
         await WaitFor(source, value => value.TlsReloads == 1, cancellation);
@@ -314,13 +314,223 @@ public sealed class SyslogTlsRotationTests
         Assert.ThrowsAny<Exception>(() => CertificateRevocationList.Load([0x30, 0x03, 0x02, 0x01]));
     }
 
+    [Fact]
+    public async Task SameNameReKeyedAuthority_UsesOnlyTheListSignedByTheIssuingKey()
+    {
+        // A CA re-keyed under the same subject: during the overlap the bundle holds both CA
+        // certificates and the file holds both lists. Each sender is judged by the list its
+        // own issuer's key signed; a same-name list signed by the other key is ignored.
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        Pki pki = new(directory.Path);
+        using X509Certificate2 oldCa = Pki.Authority("syslog-ca");
+        using X509Certificate2 newCa = Pki.Authority("syslog-ca");
+        using X509Certificate2 server = Pki.Issue(oldCa, "localhost", client: false);
+        using X509Certificate2 oldSender = Pki.Issue(oldCa, "firewall-01", client: true);
+        using X509Certificate2 newSender = Pki.Issue(newCa, "firewall-02", client: true);
+        using X509Certificate2 revokedNew = Pki.Issue(newCa, "firewall-03", client: true);
+        pki.WriteServer(server);
+        pki.WriteAuthorities(oldCa, newCa);
+        pki.WriteRevocationLists(Pki.RevocationList(oldCa, []), Pki.RevocationList(newCa, [revokedNew]));
+        SyslogSourceTests.FakeSink sink = new();
+        await using SyslogSource source = await Start(pki, sink, cancellation, revocationList: true);
+
+        Assert.True(await Connection.TryDeliverAsync(source, oldSender, "old key", cancellation));
+        Assert.True(await Connection.TryDeliverAsync(source, newSender, "new key", cancellation));
+        Assert.False(await Connection.TryDeliverAsync(source, revokedNew, "revoked by new key", cancellation));
+        await WaitFor(source, value => value.TlsRevoked == 1, cancellation);
+        await sink.WaitForAsync(2, cancellation);
+
+        // Only the new key's list left: the old key's senders have no list and fail closed.
+        pki.WriteRevocationLists(Pki.RevocationList(newCa, [revokedNew], number: 2));
+        await WaitFor(source, value => value.TlsReloads >= 1, cancellation);
+        Assert.False(await Connection.TryDeliverAsync(source, oldSender, "old key without a list", cancellation));
+        Assert.True(await Connection.TryDeliverAsync(source, newSender, "new key still listed", cancellation));
+        await WaitFor(source, value => value.TlsRevoked == 2, cancellation);
+    }
+
+    [Fact]
+    public async Task CriticalIssuingDistributionPoint_ScopesTheListToItsDistributionPoint()
+    {
+        // AD CS and other enterprise CAs mark the issuing distribution point critical.
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        Pki pki = new(directory.Path);
+        const string Point = "http://crl.example.test/syslog-ca.crl";
+        using X509Certificate2 ca = Pki.Authority("syslog-ca");
+        using X509Certificate2 server = Pki.Issue(ca, "localhost", client: false);
+        using X509Certificate2 sender = Pki.Issue(ca, "firewall-01", client: true, distributionPoint: Point);
+        using X509Certificate2 revoked = Pki.Issue(ca, "firewall-02", client: true, distributionPoint: Point);
+        using X509Certificate2 elsewhere = Pki.Issue(ca, "firewall-03", client: true, distributionPoint: "http://crl.example.test/other.crl");
+        pki.WriteServer(server);
+        pki.WriteAuthorities(ca);
+        pki.WriteRevocationLists(Pki.ScopedList(ca, [revoked], writer =>
+        {
+            Pki.FullName(writer, Point);
+            writer.WriteBoolean(true, new Asn1Tag(TagClass.ContextSpecific, 1)); // onlyContainsUserCerts
+        }));
+        SyslogSourceTests.FakeSink sink = new();
+        await using SyslogSource source = await Start(pki, sink, cancellation, revocationList: true);
+
+        Assert.True(await Connection.TryDeliverAsync(source, sender, "in scope", cancellation));
+        Assert.False(await Connection.TryDeliverAsync(source, revoked, "listed", cancellation));
+        // A list for another distribution point does not establish this sender's status.
+        Assert.False(await Connection.TryDeliverAsync(source, elsewhere, "out of scope", cancellation));
+        await WaitFor(source, value => value.TlsRevoked == 2, cancellation);
+        Assert.Single(sink.Records);
+    }
+
+    public static TheoryData<string, string> UnsupportedScopes => new()
+    {
+        { "reasons", "client revocation lists limited to some revocation reasons are not supported." },
+        { "indirect", "indirect client revocation lists are not supported." },
+        { "relative", "client revocation list distribution points relative to the issuer are not supported." }
+    };
+
+    [Theory]
+    [MemberData(nameof(UnsupportedScopes))]
+    public async Task UnsupportedListScope_StopsStartWithAClearMessage(string scope, string message)
+    {
+        using TemporaryDirectory directory = new();
+        Pki pki = new(directory.Path);
+        using X509Certificate2 ca = Pki.Authority("syslog-ca");
+        using X509Certificate2 server = Pki.Issue(ca, "localhost", client: false);
+        pki.WriteServer(server);
+        pki.WriteAuthorities(ca);
+        pki.WriteRevocationLists(Pki.ScopedList(ca, [], writer =>
+        {
+            switch (scope)
+            {
+                case "reasons":
+                    writer.WriteBitString([0x60], 1, new Asn1Tag(TagClass.ContextSpecific, 3));
+                    break;
+                case "indirect":
+                    writer.WriteBoolean(true, new Asn1Tag(TagClass.ContextSpecific, 4));
+                    break;
+                default:
+                    using (writer.PushSequence(new Asn1Tag(TagClass.ContextSpecific, 0)))
+                    using (writer.PushSetOf(new Asn1Tag(TagClass.ContextSpecific, 1)))
+                    using (writer.PushSequence())
+                    {
+                        writer.WriteObjectIdentifier("2.5.4.3");
+                        writer.WriteCharacterString(UniversalTagNumber.UTF8String, "relative");
+                    }
+
+                    break;
+            }
+        }));
+        InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await using SyslogSource source = await Start(pki, new SyslogSourceTests.FakeSink(), TestContext.Current.CancellationToken, revocationList: true);
+        });
+        Assert.Equal($"Syslog listener edge: {message}", failure.Message);
+    }
+
+    [Fact]
+    public async Task ValidSenderUnderAnExpiredAuthority_IsRefusedAndItsOpenSessionClosed()
+    {
+        // The sender's certificate is valid, but the only trusted copy of its CA has expired
+        // (a CA certificate re-issued with the same key and subject was not deployed).
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        Pki pki = new(directory.Path);
+        using ECDsa caKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using X509Certificate2 current = Pki.AuthorityWithKey("syslog-ca", caKey, Now.AddDays(-60), Now.AddDays(30));
+        using X509Certificate2 expired = Pki.AuthorityWithKey("syslog-ca", caKey, Now.AddDays(-60), Now.AddDays(-1));
+        using X509Certificate2 server = Pki.Issue(current, "localhost", client: false);
+        using X509Certificate2 sender = Pki.Issue(current, "firewall-01", client: true);
+        pki.WriteServer(server);
+        pki.WriteAuthorities(current);
+        SyslogSourceTests.FakeSink sink = new();
+        await using SyslogSource source = await Start(pki, sink, cancellation);
+        Connection open = await Connection.OpenAsync(source, sender, cancellation);
+        await open.SendAsync("trusted", cancellation);
+        await sink.WaitForAsync(1, cancellation);
+
+        pki.WriteAuthorities(expired);
+        await WaitFor(source, value => value.TlsReloads >= 1, cancellation);
+        await open.SendAsync("after the anchor expired", cancellation);
+        await WaitFor(source, value => value.TlsSessionsClosed == 1, cancellation);
+        Assert.False(await Connection.TryDeliverAsync(source, sender, "reconnect", cancellation));
+        Assert.Single(sink.Records);
+        await open.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task NonRegularFile_IsRefusedWithoutBlockingAndTheLastGoodMaterialStays()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "FIFOs are a Unix file type.");
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        Pki pki = new(directory.Path);
+        using X509Certificate2 ca = Pki.Authority("syslog-ca");
+        using X509Certificate2 server = Pki.Issue(ca, "localhost", client: false);
+        using X509Certificate2 sender = Pki.Issue(ca, "firewall-01", client: true);
+        pki.WriteServer(server);
+        pki.WriteAuthorities(ca);
+        SyslogSourceTests.FakeSink sink = new();
+        await using SyslogSource source = await Start(pki, sink, cancellation);
+
+        string fifo = Path.Combine(directory.Path, "fifo");
+        using (System.Diagnostics.Process mkfifo = System.Diagnostics.Process.Start("mkfifo", fifo)!)
+        {
+            await mkfifo.WaitForExitAsync(cancellation);
+        }
+
+        File.Move(fifo, pki.Authorities, overwrite: true);
+        await WaitFor(source, value => value.TlsReloadFailures >= 1, cancellation);
+        Assert.True(await Connection.TryDeliverAsync(source, sender, "last good material", cancellation));
+        pki.WriteAuthorities(ca);
+        await sink.WaitForAsync(1, cancellation);
+        Assert.Equal(0, source.Snapshot()[0].TlsReloads);
+    }
+
+    [Fact]
+    public async Task RepeatedReloads_DisposeSupersededMaterialOnceNoHandshakeHoldsIt()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        Pki pki = new(directory.Path);
+        using X509Certificate2 ca = Pki.Authority("syslog-ca");
+        SyslogSourceTests.FakeSink sink = new();
+        using (X509Certificate2 first = Pki.Issue(ca, "localhost", client: false))
+        {
+            pki.WriteServer(first);
+        }
+
+        await using SyslogSource source = await Start(pki, sink, cancellation, mutual: false);
+        for (int index = 1; index <= 10; index++)
+        {
+            using X509Certificate2 next = Pki.Issue(ca, "localhost", client: false);
+            pki.WriteBundle(next);
+            await WaitFor(source, value => value.TlsReloads == index, cancellation);
+        }
+
+        Assert.Equal(1, source.TlsMaterialsAlive("edge"));
+
+        // A handshake in flight holds its generation across a reload.
+        using TcpClient pending = new(AddressFamily.InterNetwork);
+        await pending.ConnectAsync(source.Endpoints["edge"], cancellation);
+        await WaitFor(source, value => value.ActiveConnections == 1, cancellation);
+        using (X509Certificate2 next = Pki.Issue(ca, "localhost", client: false))
+        {
+            pki.WriteBundle(next);
+        }
+
+        await WaitFor(source, value => value.TlsReloads == 11, cancellation);
+        Assert.Equal(2, source.TlsMaterialsAlive("edge"));
+        pending.Close();
+        await WaitFor(source, value => value.ActiveConnections == 0, cancellation);
+        Assert.Equal(1, source.TlsMaterialsAlive("edge"));
+    }
+
     private static async Task<SyslogSource> Start(Pki pki, SyslogSourceTests.FakeSink sink, CancellationToken cancellation,
         bool mutual = true, bool revocationList = false)
     {
         SyslogSource source = new(SyslogSourceConfigurationLoader.Parse(SyslogSourceTests.Config(Listener(pki, mutual, revocationList))), sink)
         {
             RetryDelay = TimeSpan.FromMilliseconds(20),
-            TlsReloadInterval = TimeSpan.Zero
+            TlsReloadInterval = TimeSpan.FromMilliseconds(10)
         };
         try
         {
@@ -480,6 +690,26 @@ public sealed class SyslogTlsRotationTests
 
         public void WriteRevocations(byte[] der) => Replace(Revocations, PemEncoding.WriteString("X509 CRL", der));
 
+        public void WriteRevocationLists(params byte[][] lists) =>
+            Replace(Revocations, string.Join('\n', lists.Select(list => PemEncoding.WriteString("X509 CRL", list))));
+
+        /// <summary>Key and certificate in the two configured files, written in one step each but key first.</summary>
+        public void WriteBundle(X509Certificate2 certificate)
+        {
+            string bundle = certificate.ExportCertificatePem() + "\n" + certificate.GetECDsaPrivateKey()!.ExportPkcs8PrivateKeyPem();
+            Replace(Key, bundle);
+            Replace(Certificate, bundle);
+        }
+
+        public static X509Certificate2 AuthorityWithKey(string name, ECDsa key, DateTimeOffset notBefore, DateTimeOffset notAfter)
+        {
+            CertificateRequest request = new($"CN={name}", key, HashAlgorithmName.SHA256);
+            request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
+            request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true));
+            request.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(request.PublicKey, false));
+            return request.CreateSelfSigned(notBefore, notAfter);
+        }
+
         private static void Replace(string path, string content)
         {
             string staging = path + ".new";
@@ -508,7 +738,7 @@ public sealed class SyslogTlsRotationTests
         }
 
         public static X509Certificate2 Issue(X509Certificate2 authority, string name, bool client,
-            DateTimeOffset? notBefore = null, DateTimeOffset? notAfter = null)
+            DateTimeOffset? notBefore = null, DateTimeOffset? notAfter = null, string? distributionPoint = null)
         {
             using ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             CertificateRequest request = new($"CN={name}", key, HashAlgorithmName.SHA256);
@@ -517,6 +747,11 @@ public sealed class SyslogTlsRotationTests
             request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
                 [new Oid(client ? "1.3.6.1.5.5.7.3.2" : "1.3.6.1.5.5.7.3.1")], false));
             request.CertificateExtensions.Add(X509AuthorityKeyIdentifierExtension.CreateFromCertificate(authority, true, false));
+            if (distributionPoint is not null)
+            {
+                request.CertificateExtensions.Add(CertificateRevocationListBuilder.BuildCrlDistributionPointExtension([distributionPoint]));
+            }
+
             if (!client)
             {
                 SubjectAlternativeNameBuilder names = new();
@@ -550,6 +785,87 @@ public sealed class SyslogTlsRotationTests
 
             return builder.Build(authority, new BigInteger(number), nextUpdate ?? Now.AddDays(7), HashAlgorithmName.SHA256,
                 thisUpdate: thisUpdate ?? Now.AddMinutes(-5));
+        }
+
+        /// <summary>
+        /// An ECDSA list with a critical issuing distribution point (RFC 5280 5.2.5), as AD CS and
+        /// other enterprise CAs write; <paramref name="scope"/> writes the IDP's fields.
+        /// </summary>
+        public static byte[] ScopedList(X509Certificate2 authority, X509Certificate2[] revoked, Action<AsnWriter> scope)
+        {
+            AsnWriter tbs = new(AsnEncodingRules.DER);
+            using (tbs.PushSequence())
+            {
+                tbs.WriteInteger(1);
+                WriteEcdsaSha256(tbs);
+                tbs.WriteEncodedValue(authority.SubjectName.RawData);
+                tbs.WriteUtcTime(Now.AddMinutes(-5));
+                tbs.WriteUtcTime(Now.AddDays(1));
+                if (revoked.Length > 0)
+                {
+                    using (tbs.PushSequence())
+                    {
+                        foreach (X509Certificate2 certificate in revoked)
+                        {
+                            using (tbs.PushSequence())
+                            {
+                                tbs.WriteIntegerUnsigned(certificate.SerialNumberBytes.Span);
+                                tbs.WriteUtcTime(Now.AddMinutes(-1));
+                            }
+                        }
+                    }
+                }
+
+                AsnWriter point = new(AsnEncodingRules.DER);
+                using (point.PushSequence())
+                {
+                    scope(point);
+                }
+
+                using (tbs.PushSequence(new Asn1Tag(TagClass.ContextSpecific, 0)))
+                using (tbs.PushSequence())
+                using (tbs.PushSequence())
+                {
+                    tbs.WriteObjectIdentifier("2.5.29.28");
+                    tbs.WriteBoolean(true);
+                    tbs.WriteOctetString(point.Encode());
+                }
+            }
+
+            return Sign(authority, tbs.Encode());
+        }
+
+        /// <summary>IDP <c>distributionPoint</c> = <c>fullName</c> with one URI.</summary>
+        public static void FullName(AsnWriter writer, string uri)
+        {
+            using (writer.PushSequence(new Asn1Tag(TagClass.ContextSpecific, 0)))
+            using (writer.PushSequence(new Asn1Tag(TagClass.ContextSpecific, 0)))
+            {
+                writer.WriteCharacterString(UniversalTagNumber.IA5String, uri, new Asn1Tag(TagClass.ContextSpecific, 6));
+            }
+        }
+
+        private static byte[] Sign(X509Certificate2 authority, byte[] signedPart)
+        {
+            using ECDsa key = authority.GetECDsaPrivateKey()!;
+            byte[] signature = key.SignData(signedPart, HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence);
+            AsnWriter list = new(AsnEncodingRules.DER);
+            using (list.PushSequence())
+            {
+                list.WriteEncodedValue(signedPart);
+                WriteEcdsaSha256(list);
+                list.WriteBitString(signature);
+            }
+
+            return list.Encode();
+        }
+
+        private static void WriteEcdsaSha256(AsnWriter writer)
+        {
+            using (writer.PushSequence())
+            {
+                writer.WriteObjectIdentifier("1.2.840.10045.4.3.2");
+            }
         }
 
         /// <summary>A minimal ECDSA list built by hand, to cover encodings the builder never writes.</summary>

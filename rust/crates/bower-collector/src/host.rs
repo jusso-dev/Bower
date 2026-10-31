@@ -11,7 +11,6 @@ use bower_contracts::{
     DeliveryResult, DurableEventStore, EventRedactor, OutputAdapter, OutputConcurrencySnapshot,
     QueuedEvent, TelemetryPolicyEvaluator,
 };
-use bower_core::source_expectations::{self, SourceExpectationsError};
 use bower_core::{CollectorIdentity, PipelineTelemetry, ProcessError, SecurityEventProcessor};
 use bower_output_ama_spool::{AmaSpoolOptions, AmaSpoolOutput};
 use bower_output_azure::{AzureLogsIngestionOptions, AzureLogsIngestionOutput, TokenProvider};
@@ -238,23 +237,12 @@ pub fn build(
     )
     .with_telemetry(Arc::clone(&telemetry))
     .with_tap(Arc::clone(&tap) as Arc<dyn bower_core::TapSink>);
+    // Every other file a start reads, checked exactly as the signed reload pre-check does,
+    // so a bad file stops start-up (C# `CollectorStartupSources`).
+    let sources = crate::startup::load(&settings, &bundle.packs, Arc::clone(&clock))?;
     let packs = Arc::new(bundle.packs);
-    // Loaded at build so a malformed expectations file stops start-up.
-    let expectations = settings
-        .source_expectations_path
-        .as_ref()
-        .map(source_expectations::load_file)
-        .transpose()
-        .map_err(|error| {
-            let kind = match &error {
-                SourceExpectationsError::FileNotFound => "FileNotFoundException",
-                SourceExpectationsError::InvalidData(_) => "InvalidDataException",
-                SourceExpectationsError::Io(_) => "IOException",
-            };
-            HostError::new(kind, error.to_string())
-        })?;
     let source_health = Arc::new(SourceHealth::new(
-        expectations,
+        sources.expectations,
         Arc::clone(&telemetry),
         Arc::clone(&clock),
     ));
@@ -265,11 +253,7 @@ pub fn build(
         .transpose()
         .map_err(|error| HostError::new("ArgumentException", error.to_string()))?
         .map(Arc::new);
-    let auth = Arc::new(IngestAuthentication::with_clock(
-        settings.ingest_token.as_deref(),
-        settings.ingest_tokens_file.as_deref(),
-        Arc::clone(&clock),
-    )?);
+    let auth = Arc::new(sources.auth);
     let catalog = Arc::new(JobCatalog::default());
     let policy_hash = bundle.info.hash.clone();
     let privacy_profile_hash = bundle.info.privacy_profile_hash.clone();
@@ -283,36 +267,30 @@ pub fn build(
         ManagedPrivacyState::local()
     });
     let delivery_status = Arc::new(DeliveryStatus::new(options.output.clone()));
-    // Loaded and checked against the loaded packs at build so a bad file stops start-up.
-    let syslog = settings
-        .syslog_config_path
-        .as_ref()
-        .map(|path| crate::syslog::load(path, &packs))
-        .transpose()?
-        .map(|configuration| {
-            bower_source_syslog::SyslogSource::new(
-                configuration,
-                Arc::new(crate::syslog::CollectorSyslogSink {
-                    processor: processor.clone(),
-                    identity: identity.clone(),
-                    packs: Arc::clone(&packs),
-                    managed_privacy: Arc::clone(&managed_privacy),
-                    clock: Arc::clone(&clock),
-                    telemetry: Arc::clone(&telemetry),
-                    tap: Some(Arc::clone(&tap)),
-                }),
-                Some(Arc::clone(&clock)),
-            )
-        });
+    let syslog = sources.syslog.map(|configuration| {
+        bower_source_syslog::SyslogSource::new(
+            configuration,
+            Arc::new(crate::syslog::CollectorSyslogSink {
+                processor: processor.clone(),
+                identity: identity.clone(),
+                packs: Arc::clone(&packs),
+                managed_privacy: Arc::clone(&managed_privacy),
+                clock: Arc::clone(&clock),
+                telemetry: Arc::clone(&telemetry),
+                tap: Some(Arc::clone(&tap)),
+            }),
+            Some(Arc::clone(&clock)),
+        )
+    });
     // Relay role. The pins and the server certificate are read here, so a bad file stops
     // start-up; the listener binds in `initialize`, after queue initialisation.
     let (relay_server, relay_telemetry) = if settings.is_relay() {
-        let downstreams = Arc::new(crate::relay::downstreams::RelayDownstreams::load(
-            settings
-                .relay_downstreams_file
-                .as_deref()
-                .unwrap_or(std::path::Path::new("")),
-        )?);
+        let downstreams = Arc::new(sources.relay_downstreams.ok_or_else(|| {
+            HostError::new(
+                "InvalidOperationException",
+                "BOWER_RELAY_DOWNSTREAMS_FILE is required.",
+            )
+        })?);
         let telemetry = Arc::new(crate::relay::telemetry::RelayTelemetry::new(
             downstreams.collector_ids(),
         ));
@@ -344,10 +322,7 @@ pub fn build(
         source_health: Arc::clone(&source_health),
         store: Arc::clone(&store),
         auth: Arc::clone(&auth),
-        authorization: Arc::new(crate::authorization::ProducerAuthorization::new(
-            settings.producer_scopes_file.as_deref(),
-            settings.single_trust_domain,
-        )?),
+        authorization: Arc::new(sources.authorization),
         limiter: Arc::new(TokenBucket::new(
             u32::try_from(settings.ingest_requests_per_second).unwrap_or(1),
         )),
@@ -664,7 +639,8 @@ impl Collector {
         if let Some(source) = self.syslog.as_mut() {
             // A bind or TLS failure stops start-up (C# `SyslogIntakeService.StartAsync`).
             source.bind().await.map_err(|error| match error {
-                bower_source_syslog::SourceError::Tls(_) => {
+                bower_source_syslog::SourceError::Tls(_)
+                | bower_source_syslog::SourceError::TlsUnsupported(..) => {
                     HostError::new("InvalidOperationException", error.to_string())
                 }
                 bower_source_syslog::SourceError::Bind(inner) => {

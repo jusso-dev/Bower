@@ -301,6 +301,12 @@ public sealed partial class ManagementCommandWorker(
 
     private (string Status, string Code) Reload(VerifiedManagementCommand command)
     {
+        // The rate limit first, without recording: a refused reload does not use the slot.
+        if (!ledger.IsReloadAllowed())
+        {
+            return (ManagementCommandResults.Failed, ManagementCommandResults.ReloadRateLimited);
+        }
+
         if (ReloadRefusal(settings) is { } failure)
         {
             // Keep running with the configuration already loaded: a restart that cannot load
@@ -321,15 +327,19 @@ public sealed partial class ManagementCommandWorker(
     }
 
     /// <summary>
-    /// Loads the policies, signed packs (with their trusted keys), privacy profile and HMAC key
-    /// exactly as a restart would. Null when they load; otherwise the failure type only, never
-    /// its message (it can name file paths).
+    /// Loads everything a restart loads from files, through the same code start-up runs: the
+    /// policies, signed packs and their trusted keys, the privacy profile and HMAC key
+    /// (<see cref="PolicyBundle.Load"/>), then <see cref="CollectorStartupSources.Load"/>
+    /// (source configurations and routes, syslog TLS material, expectations, scopes and
+    /// relay identities). Null when they load; otherwise the failure type only, never its
+    /// message (it can name file paths). Environment changes are not visible here.
     /// </summary>
     public static string? ReloadRefusal(CollectorSettings settings)
     {
+        ArgumentNullException.ThrowIfNull(settings);
         try
         {
-            _ = PolicyBundle.Load(settings.PolicySources());
+            _ = CollectorStartupSources.Load(settings, PolicyBundle.Load(settings.PolicySources()));
             return null;
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)

@@ -237,7 +237,11 @@ public sealed class HeartbeatV2CollectorTests
         FakeClock clock = new(Now);
         ManagementCommandLedger ledger = new(directory.Path, clock);
 
+        // The peek a reload makes before its pre-check never uses the slot.
+        Assert.True(ledger.IsReloadAllowed());
+        Assert.True(ledger.IsReloadAllowed());
         Assert.True(ledger.TryBeginReload());
+        Assert.False(ledger.IsReloadAllowed());
         clock.Advance(TimeSpan.FromMinutes(9));
         Assert.False(new ManagementCommandLedger(directory.Path, clock).TryBeginReload());
         clock.Advance(TimeSpan.FromMinutes(1));

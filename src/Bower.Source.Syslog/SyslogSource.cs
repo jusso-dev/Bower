@@ -137,8 +137,26 @@ public sealed class SyslogSource : IAsyncDisposable
     /// <summary>Wait before retrying a frame the queue could not take yet.</summary>
     public TimeSpan RetryDelay { get; init; } = TimeSpan.FromSeconds(1);
 
-    /// <summary>How often TLS files are checked for changes (on connection, frame or status activity).</summary>
+    /// <summary>How often a background loop checks the TLS files for changes (at least 10 ms).</summary>
     public TimeSpan TlsReloadInterval { get; init; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Loads every TLS listener's certificate, key, CA bundle and revocation lists as
+    /// <see cref="StartAsync"/> would, then releases them. Start-up and the signed reload
+    /// pre-check call this, so a reload is refused for files that would stop a restart.
+    /// </summary>
+    public static void ValidateTls(SyslogSourceConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        foreach (SyslogListenerOptions listener in configuration.Listeners.Where(listener => listener.Protocol == "tls"))
+        {
+            SyslogTlsMaterial.Validate(listener);
+        }
+    }
+
+    /// <summary>TLS material generations not yet disposed for a listener (tests: no handle growth across reloads).</summary>
+    internal int TlsMaterialsAlive(string listenerId) =>
+        listeners.Single(listener => listener.Options.Id == listenerId).Tls?.MaterialsAlive ?? 0;
 
     /// <summary>Bound endpoints by listener id (after <see cref="StartAsync"/>).</summary>
     public IReadOnlyDictionary<string, IPEndPoint> Endpoints => endpoints;
@@ -159,7 +177,7 @@ public sealed class SyslogSource : IAsyncDisposable
             foreach (Listener listener in listeners)
             {
                 SyslogListenerOptions options = listener.Options;
-                listener.Tls = options.Protocol == "tls" ? new SyslogTlsSource(options, clock, TlsReloadInterval) : null;
+                listener.Tls = options.Protocol == "tls" ? new SyslogTlsSource(options) : null;
                 IPAddress address = IPAddress.Parse(options.Address);
                 bool datagram = options.Protocol == "udp";
                 Socket socket = datagram
@@ -182,6 +200,7 @@ public sealed class SyslogSource : IAsyncDisposable
             foreach (Listener listener in listeners)
             {
                 listener.Socket?.Dispose();
+                listener.Tls?.Dispose();
             }
 
             throw;
@@ -194,6 +213,10 @@ public sealed class SyslogSource : IAsyncDisposable
             Track(listener.Options.Protocol == "udp"
                 ? Task.Run(() => ServeUdpAsync(listener, token), CancellationToken.None)
                 : Task.Run(() => AcceptAsync(listener, token), CancellationToken.None));
+            if (listener.Tls is { } tls)
+            {
+                Track(Task.Run(() => RefreshTlsAsync(tls, token), CancellationToken.None));
+            }
         }
 
         return Task.CompletedTask;
@@ -221,6 +244,11 @@ public sealed class SyslogSource : IAsyncDisposable
         catch (Exception exception) when (exception is OperationCanceledException or SocketException or ObjectDisposedException or IOException)
         {
             // Stopping: connections and loops end by cancellation or a closed socket.
+        }
+
+        foreach (Listener listener in listeners)
+        {
+            listener.Tls?.Dispose();
         }
 
         stopping.Dispose();
@@ -311,9 +339,12 @@ public sealed class SyslogSource : IAsyncDisposable
                 session = new SyslogTlsSession();
                 using CancellationTokenSource handshake = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 handshake.CancelAfter(idle);
+                // The material is held for the handshake only, so a reload never disposes
+                // certificates a handshake in flight is still using.
+                SyslogTlsMaterial material = tls.Acquire();
                 try
                 {
-                    await secure.AuthenticateAsServerAsync(tls.Current.CreateOptions(session, clock), handshake.Token);
+                    await secure.AuthenticateAsServerAsync(material.CreateOptions(session, clock), handshake.Token);
                 }
                 catch (Exception exception) when (!cancellationToken.IsCancellationRequested
                     && exception is AuthenticationException or IOException or OperationCanceledException or System.ComponentModel.Win32Exception)
@@ -325,6 +356,10 @@ public sealed class SyslogSource : IAsyncDisposable
                     }
 
                     return;
+                }
+                finally
+                {
+                    material.Release();
                 }
             }
 
@@ -585,10 +620,39 @@ public sealed class SyslogSource : IAsyncDisposable
 
     private bool StillTrusted(SyslogTlsSource tls, SyslogTlsSession session)
     {
-        SyslogTlsMaterial material = tls.Current;
         DateTimeOffset now = clock.GetUtcNow();
-        return (material.Generation == session.Generation && now < session.RevalidateAt)
-            || material.StillTrusted(session, now);
+        if (tls.Peek.Generation == session.Generation && now < session.RevalidateAt)
+        {
+            return true;
+        }
+
+        SyslogTlsMaterial material = tls.Acquire();
+        try
+        {
+            return material.StillTrusted(session, now);
+        }
+        finally
+        {
+            material.Release();
+        }
+    }
+
+    /// <summary>Checks the TLS files every interval off the connection and frame paths.</summary>
+    private async Task RefreshTlsAsync(SyslogTlsSource tls, CancellationToken cancellationToken)
+    {
+        TimeSpan interval = TlsReloadInterval < TimeSpan.FromMilliseconds(10) ? TimeSpan.FromMilliseconds(10) : TlsReloadInterval;
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(interval, clock, cancellationToken);
+                tls.Refresh();
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Stopping.
+        }
     }
 
     private sealed class Listener(SyslogListenerOptions options)
@@ -613,8 +677,8 @@ public sealed class SyslogSource : IAsyncDisposable
         public SyslogListenerStatus Snapshot()
         {
             long last = Interlocked.Read(ref Counters.LastFrameTicks);
-            // Reading the material also applies a pending file change, so status reflects it.
-            SyslogTlsMaterial? material = Tls?.Current;
+            // Generation and dates only: no certificate handle is touched.
+            SyslogTlsMaterial? material = Tls?.Peek;
             return new SyslogListenerStatus(
                 Options.Id,
                 Options.Protocol,
