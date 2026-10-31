@@ -123,6 +123,34 @@ public sealed class WindowsEventLogSourceTests
         Assert.Equal(code, failure.Message);
     }
 
+    public static TheoryData<string, string> ForbiddenCharacters => new()
+    {
+        { "a\u0007b", "a\u0007b" },
+        { "\u001b[31mred", "\u001b[31mred" },
+        { "nul\0end", "nul\0end" },
+        { "&#x1;&#x1F;", "\u0001\u001f" },
+        { "&#x0;", "\0" },
+        { "lone\uD800x", "lone\uD800x" },
+        { "&#xD800;", "\uD800" },
+        { "\uFFFE", "\uFFFE" },
+        { "pair\U0001F600", "pair\U0001F600" }
+    };
+
+    [Theory]
+    [MemberData(nameof(ForbiddenCharacters))]
+    public void Parse_KeepsEventsWithCharactersXmlForbids(string rendered, string expected)
+    {
+        // An attacker chooses the account name of a failed logon. Characters XML 1.0
+        // forbids, raw or as references, must not make the event unreadable (and so
+        // invisible); the value is kept exactly for HMAC and redaction.
+        string xml = WindowsEventFixtures.Read("security-4625.xml").Replace("deploy-admin", rendered, StringComparison.Ordinal);
+
+        WindowsEvent parsed = WindowsEventXml.Parse(xml);
+
+        Assert.Equal(expected, parsed.Data.Single(item => item.Key == "data.TargetUserName").Value);
+        Assert.Equal(4625, parsed.EventId);
+    }
+
     [Fact]
     public void Record_MatchesTheSampleThePackIsTestedWith()
     {
