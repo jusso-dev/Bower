@@ -23,7 +23,6 @@ import urllib.request
 from pathlib import Path
 
 QUEUE_DIR = Path("/var/lib/bower")
-FILLER = QUEUE_DIR / "ws3-filler"
 STATE = Path("/var/lib/ws3-lab")
 LOGS = Path("/var/log/ws3")
 TOKEN = Path("/etc/bower/secrets/ingest-token")
@@ -102,28 +101,33 @@ def blocked():
     return subprocess.run(["nft", "list", "table", "inet", "ws3_block"], capture_output=True).returncode == 0
 
 
+def filler_files():
+    return sorted(QUEUE_DIR.glob("ws3-filler*"))
+
+
+def filler_bytes():
+    return sum(path.stat().st_size for path in filler_files())
+
+
 def fill_to(free_target):
-    """Grows or shrinks the filler so that free space is about free_target bytes."""
-    free, _ = volume()
-    current = FILLER.stat().st_size if FILLER.exists() else 0
-    size = max(0, current + free - free_target)
-    if size == 0:
-        FILLER.unlink(missing_ok=True)
-        return 0
-    if size < current:
-        os.truncate(FILLER, size)
-    else:
-        subprocess.run(["fallocate", "-l", str(size), str(FILLER)], check=True)
-    return size
+    """Adds or removes bounded filler chunks (at most 64 MiB each) until free space is about free_target."""
+    while True:
+        free, _ = volume()
+        if free > free_target + MIB:
+            size = min(64 * MIB, free - free_target)
+            path = QUEUE_DIR / f"ws3-filler-{len(filler_files()):04d}"
+            subprocess.run(["fallocate", "-l", str(size), str(path)], check=True)
+        elif free < free_target - 64 * MIB and filler_files():
+            filler_files()[-1].unlink()
+        else:
+            return filler_bytes()
 
 
 def fill_completely():
-    """Allocates every remaining block, then writes until ENOSPC."""
-    free, _ = volume()
-    if free > 8 * MIB:
-        fill_to(4 * MIB)
+    """Allocates every remaining block in chunks, then writes until ENOSPC."""
+    fill_to(4 * MIB)
     chunk = b"\0" * 65536
-    with FILLER.open("ab") as stream:
+    with (QUEUE_DIR / "ws3-filler-last").open("ab") as stream:
         for size in (65536, 4096, 512):
             try:
                 while True:
@@ -132,11 +136,12 @@ def fill_completely():
                     os.fsync(stream.fileno())
             except OSError:
                 pass
-    return FILLER.stat().st_size
+    return filler_bytes()
 
 
 def release_filler():
-    FILLER.unlink(missing_ok=True)
+    for path in filler_files():
+        path.unlink(missing_ok=True)
 
 
 class Generator(threading.Thread):
@@ -202,7 +207,7 @@ class Recorder:
     def sample(self):
         free, total = volume()
         row = {"at": iso(), "phase": self.phase, "freeBytes": free, "totalBytes": total,
-               "fillerBytes": FILLER.stat().st_size if FILLER.exists() else 0,
+               "fillerBytes": filler_bytes(),
                "destinationBlocked": blocked(), "health": healthy(),
                "generatorNext": self.generator.next if self.generator else None}
         try:
@@ -312,11 +317,11 @@ def scenario_watermarks(recorder, generator, args):
     recorder.mark("destination-blocked")
     s = status()["storage"]
     fill_to(s["warningFreeBytes"] - 32 * MIB)
-    recorder.mark("filled-below-warning", fillerBytes=FILLER.stat().st_size)
+    recorder.mark("filled-below-warning", fillerBytes=filler_bytes())
     recorder.wait(lambda row: row.get("storageState") == "warning", 60, "warning-reported")
     time.sleep(60)
     fill_to(s["criticalFreeBytes"] + 24 * MIB)
-    recorder.mark("filled-near-critical", fillerBytes=FILLER.stat().st_size)
+    recorder.mark("filled-near-critical", fillerBytes=filler_bytes())
     recorder.wait(lambda row: row.get("storageState") == "critical", args.limit, "critical-reported")
     time.sleep(args.hold)
     release_filler()

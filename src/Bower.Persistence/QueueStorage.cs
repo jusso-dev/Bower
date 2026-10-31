@@ -271,6 +271,9 @@ public sealed record QueueStorageSnapshot(
 
     public long UsedPages => Math.Max(0, PageCount - FreePages);
 
+    /// <summary>Free pages inside the file: reused by new rows, or released by incremental vacuum.</summary>
+    public long FreeBytes => FreePages * PageSize;
+
     /// <summary>Pages in use as a share of the intake limit: at 100 new events are refused.</summary>
     public double PageUtilisationPercent => IntakeLimitPages <= 0 ? 0 : Math.Round(UsedPages * 100.0 / IntakeLimitPages, 2);
 }

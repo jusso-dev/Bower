@@ -123,6 +123,16 @@ public sealed partial class SqliteEventStore : IDurableEventStore
     {
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
         await using SqliteCommand command = connection.CreateCommand();
+        // New databases let retention return freed pages to the file system (incremental
+        // vacuum). The mode can only be chosen before the first table exists; existing
+        // queues keep reusing freed pages inside the file.
+        command.CommandText = "SELECT COUNT(*) FROM sqlite_master;";
+        if (Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture) == 0)
+        {
+            command.CommandText = "PRAGMA auto_vacuum = INCREMENTAL;";
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
         command.CommandText = "PRAGMA journal_mode = WAL;";
         await command.ExecuteNonQueryAsync(cancellationToken);
         await using SqliteTransaction transaction = await BeginWriteAsync(connection, true, cancellationToken);
@@ -985,6 +995,52 @@ public sealed partial class SqliteEventStore : IDurableEventStore
             SettlementCeilingPages(pageSize),
             maximumBytes,
             MaximumStorageBytes);
+    }
+
+    /// <summary>
+    /// Returns up to <paramref name="maximumPages"/> free pages to the file system
+    /// (incremental vacuum) and checkpoints so the file shrinks. Only databases created with
+    /// incremental auto-vacuum can; others return 0 and keep reusing free pages. Never
+    /// touches rows: it only moves pages already freed by retention.
+    /// </summary>
+    public async Task<long> ReleaseFreePagesAsync(int maximumPages, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(maximumPages, 1);
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "PRAGMA auto_vacuum;";
+        if (Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture) != 2)
+        {
+            return 0;
+        }
+
+        command.CommandText = "PRAGMA freelist_count;";
+        long before = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+        if (before == 0)
+        {
+            return 0;
+        }
+
+        await using (SqliteTransaction transaction = await BeginWriteAsync(connection, false, cancellationToken))
+        {
+            command.Transaction = transaction;
+            command.CommandText = $"PRAGMA incremental_vacuum({maximumPages});";
+            await using (SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken))
+            {
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                }
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        command.Transaction = null;
+        command.CommandText = "PRAGMA freelist_count;";
+        long after = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+        command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        return before - after;
     }
 
     private static long FileLength(string path)

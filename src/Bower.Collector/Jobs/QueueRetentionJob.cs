@@ -54,6 +54,44 @@ public sealed partial class QueueRetentionJob(
         if (queue is SqliteEventStore store)
         {
             await ReclaimUnderPressureAsync(store, now, cancellationToken);
+            await ReleaseFreePagesAsync(store, cancellationToken);
+        }
+    }
+
+    /// <summary>Pages returned to the file system per step (8 MiB at 4 KiB pages), so the WAL stays small.</summary>
+    public const int ReleaseStepPages = 2_048;
+
+    private const int MaximumReleaseSteps = 64;
+
+    /// <summary>
+    /// Shrinks the database by releasing free pages when the volume is short of space or the
+    /// file grew past the intake limit (after settling a large backlog). Bounded steps.
+    /// </summary>
+    private async Task ReleaseFreePagesAsync(SqliteEventStore store, CancellationToken cancellationToken)
+    {
+        QueueStorageSnapshot files = await store.GetStorageSnapshotAsync(cancellationToken);
+        StorageState disk = store.Storage?.Evaluate().State ?? StorageState.Normal;
+        bool needed = disk is StorageState.Warning or StorageState.Critical || files.PageCount > files.IntakeLimitPages;
+        if (!needed || files.FreePages == 0)
+        {
+            return;
+        }
+
+        long released = 0;
+        for (int step = 0; step < MaximumReleaseSteps && !cancellationToken.IsCancellationRequested; step++)
+        {
+            long pages = await store.ReleaseFreePagesAsync(ReleaseStepPages, cancellationToken);
+            released += pages;
+            if (pages < ReleaseStepPages)
+            {
+                break;
+            }
+        }
+
+        if (released > 0)
+        {
+            long databaseBytes = (await store.GetStorageSnapshotAsync(cancellationToken)).DatabaseBytes;
+            LogPagesReleased(logger, released * files.PageSize, databaseBytes);
         }
     }
 
@@ -159,6 +197,12 @@ public sealed partial class QueueRetentionJob(
         Level = LogLevel.Information,
         Message = "Queue retention removed {Count} acknowledged event(s).")]
     private static partial void LogPurged(ILogger logger, int count);
+
+    [LoggerMessage(
+        EventId = 1507,
+        Level = LogLevel.Information,
+        Message = "Queue retention returned {ReleasedBytes} bytes of free pages to the file system; database now {DatabaseBytes} bytes.")]
+    private static partial void LogPagesReleased(ILogger logger, long releasedBytes, long databaseBytes);
 
     [LoggerMessage(
         EventId = 1506,

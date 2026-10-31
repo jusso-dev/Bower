@@ -2,7 +2,7 @@
 # The driver comes from this run's checksummed artifacts; results are metadata only.
 $ErrorActionPreference = 'Stop'
 if ($env:BOWER_LAB_RUN -notmatch '^bower-ws3-\d{8}-\d{6}$') { throw 'Unexpected run id' }
-if ($env:BOWER_SCENARIO -notmatch '^(smoke|queue-cap|watermarks|disk-full|reconcile|probe)$') { throw 'Unexpected scenario' }
+if ($env:BOWER_SCENARIO -notmatch '^(smoke|queue-cap|watermarks|disk-full|wrap|reconcile|probe)$') { throw 'Unexpected scenario' }
 Import-Module AWSPowerShell
 $artifacts = 'C:\ws3\artifacts'
 New-Item -ItemType Directory -Force -Path $artifacts | Out-Null

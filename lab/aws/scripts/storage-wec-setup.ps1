@@ -43,8 +43,13 @@ if (-not (Test-Path "$secrets\hmac.key")) {
     $bytes = New-Object byte[] 36; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
     ([Convert]::ToBase64String($bytes) -replace '[+/=]','') | Set-Content -NoNewline -Encoding ascii "$secrets\ingest-token"
 }
-New-Item -ItemType Directory -Force -Path 'Q:\bower' | Out-Null
-icacls 'Q:\bower' /inheritance:r /grant:r 'NT SERVICE\Bower:(OI)(CI)F' 'BUILTIN\Administrators:(OI)(CI)F' 'NT AUTHORITY\SYSTEM:(OI)(CI)F' | Out-Null
+# After storage-wec-layout.ps1 the volume is mounted at the state folder (default path).
+$mounted = (Get-Partition -DriveLetter Q).AccessPaths -contains 'C:\ProgramData\Bower\state\'
+$queuePath = if ($mounted) { 'C:\ProgramData\Bower\state\queue.db' } else { 'Q:\bower\queue.db' }
+if (-not $mounted) {
+    New-Item -ItemType Directory -Force -Path 'Q:\bower' | Out-Null
+    icacls 'Q:\bower' /inheritance:r /grant:r 'NT SERVICE\Bower:(OI)(CI)F' 'BUILTIN\Administrators:(OI)(CI)F' 'NT AUTHORITY\SYSTEM:(OI)(CI)F' | Out-Null
+}
 foreach ($file in "$secrets\azure-publisher.pem", "$secrets\hmac.key", "$secrets\ingest-token") { icacls $file /grant 'NT SERVICE\Bower:R' | Out-Null }
 @'
 {"apiVersion": "bower.security/v1", "kind": "WindowsEventLogSource", "subscriptions": [
@@ -87,7 +92,7 @@ if ($access -notmatch [regex]::Escape($sid)) { wevtutil sl ForwardedEvents "/ca:
 if ((wecutil es) -notcontains 'ws3-security') { wecutil cs "$work\subscription.xml" }
 
 $environment = @(
-    'BOWER_LISTEN_URL=http://127.0.0.1:4319', 'BOWER_QUEUE_PATH=Q:\bower\queue.db',
+    'BOWER_LISTEN_URL=http://127.0.0.1:4319', "BOWER_QUEUE_PATH=$queuePath",
     "BOWER_POLICY_DIRECTORY=$data\policies", 'BOWER_COLLECTOR_ID=ws3-wec', 'BOWER_ENVIRONMENT=validation',
     "BOWER_PACKS=$data\packs\windows-security-logon-1.0.2.bowerpack", "BOWER_PACK_TRUSTED_KEYS=$data\keys\pack-trusted.pem",
     "BOWER_PRIVACY_HMAC_KEY_FILE=$secrets\hmac.key", "BOWER_INGEST_TOKEN_FILE=$secrets\ingest-token",

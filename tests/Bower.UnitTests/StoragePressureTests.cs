@@ -474,6 +474,155 @@ public sealed class StoragePressureTests
         Assert.True((await store.VerifyLedgerAsync(Cancellation)).Intact);
     }
 
+    /// <summary>
+    /// Workstream 6's reproduction (docs/evidence/ws6-20261031-074751, PR #164): 4 MiB cap,
+    /// 1,300 acknowledged rows, then enqueue until refused. Before the fix the next lease
+    /// failed with SQLITE_FULL and delivery never resumed. Now leasing and acknowledgement
+    /// succeed, a crash in the middle of settlement recovers every event, and retention
+    /// reopens intake without raising the cap.
+    /// </summary>
+    [Fact]
+    public async Task Workstream6PageCeiling_DeliveryResumesSurvivesACrashAndIntakeReopens()
+    {
+        using SqliteTemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        string path = Path.Combine(directory.Path, "queue.db");
+        SqliteEventStore store = new(path, 4 * MiB, clock);
+        await store.InitializeAsync(Cancellation);
+        string payload = "{\"v\":\"" + new string('x', 1100) + "\"}";
+        QueuedEvent Candidate(int index) => new($"e{index}", $"sha256:{index}", payload, clock.UtcNow);
+        int index = 0;
+        for (; index < 1300; index++)
+        {
+            await store.EnqueueAsync(Candidate(index), Cancellation);
+        }
+
+        await DrainAsync(store);
+        int accepted = 0;
+        for (; ; index++)
+        {
+            try
+            {
+                await store.EnqueueAsync(Candidate(index), Cancellation);
+                accepted++;
+            }
+            catch (QueueCapacityExceededException exception)
+            {
+                Assert.Equal(QueueCapacityReasons.Queue, exception.Reason);
+                break;
+            }
+        }
+
+        Assert.True(accepted > 1_000);
+        LedgerHead head = await store.GetLedgerHeadAsync(Cancellation);
+
+        // Settle half, then crash with the rest leased.
+        IReadOnlyList<QueuedEvent> leased = await store.LeaseAsync(10_000, TimeSpan.FromMinutes(1), Cancellation);
+        Assert.Equal(accepted, leased.Count);
+        QueuedEvent[] firstHalf = [.. leased.Take(accepted / 2)];
+        Assert.Empty(await store.MarkDeliveredBatchAsync(
+            [.. firstHalf.Select(item => item.EventId)], "ack", firstHalf.ToDictionary(item => item.EventId, item => item.LeaseToken!), Cancellation));
+        SqliteConnection.ClearAllPools();
+
+        SqliteEventStore restarted = new(path, 4 * MiB, clock);
+        await restarted.InitializeAsync(Cancellation);
+        Assert.Equal(head, await restarted.GetLedgerHeadAsync(Cancellation));
+        clock.Advance(TimeSpan.FromMinutes(2));
+        Assert.Equal(accepted - firstHalf.Length, await DrainAsync(restarted));
+        QueueSnapshot drained = await restarted.GetSnapshotAsync(Cancellation);
+        Assert.Equal((0L, 1300L + accepted), (drained.Queued + drained.Uploading + drained.Retrying, drained.Delivered));
+        Assert.True((await restarted.VerifyLedgerAsync(Cancellation)).Intact);
+
+        // Intake is blocked by acknowledged rows only; retention reclaims them without a
+        // cap change or restart, and freed pages are reused.
+        await Assert.ThrowsAsync<QueueCapacityExceededException>(() => restarted.EnqueueAsync(Candidate(index), Cancellation));
+        QueueStoragePressure pressure = new();
+        await new QueueRetentionJob(restarted, clock, Settings(), new RecordingLogger<QueueRetentionJob>(), null, pressure).RunAsync(Cancellation);
+        Assert.True(pressure.PurgedEvents > 0);
+        long fileBefore = new FileInfo(path).Length;
+        Assert.True((await restarted.EnqueueAsync(Candidate(index), Cancellation)).Enqueued);
+        Assert.True(new FileInfo(path).Length <= fileBefore);
+
+        async Task<int> DrainAsync(SqliteEventStore target)
+        {
+            int settled = 0;
+            while (await target.LeaseAsync(500, TimeSpan.FromMinutes(1), Cancellation) is { Count: > 0 } batch)
+            {
+                Assert.Empty(await target.MarkDeliveredBatchAsync(
+                    [.. batch.Select(item => item.EventId)], "ack", batch.ToDictionary(item => item.EventId, item => item.LeaseToken!), Cancellation));
+                settled += batch.Count;
+            }
+
+            return settled;
+        }
+    }
+
+    [Fact]
+    public async Task Retention_ReturnsFreedPagesToTheFileSystemUnderPressure()
+    {
+        using SqliteTemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        FakeDiskSpaceProbe probe = new(10 * GiB, 20 * GiB);
+        string path = Path.Combine(directory.Path, "queue.db");
+        SqliteEventStore store = new(path, 64 * MiB, clock, new StorageGuard(path, new(), probe, clock));
+        await store.InitializeAsync(Cancellation);
+        Assert.Equal(2, await ScalarAsync(path, "PRAGMA auto_vacuum;"));
+        for (int index = 0; index < 3_000; index++)
+        {
+            await store.EnqueueAsync(Event($"r-{index}", 2_000), Cancellation);
+        }
+
+        while (await store.LeaseAsync(500, TimeSpan.FromMinutes(1), Cancellation) is { Count: > 0 } batch)
+        {
+            await store.MarkDeliveredBatchAsync(
+                [.. batch.Select(item => item.EventId)], "ack", batch.ToDictionary(item => item.EventId, item => item.LeaseToken!), Cancellation);
+        }
+
+        await store.MaintainAsync(Cancellation);
+        long grown = new FileInfo(path).Length;
+        clock.Advance(TimeSpan.FromHours(2));
+
+        // Low disk: acknowledged rows past the floor go and their pages leave the file.
+        probe.FreeBytes = 1536 * MiB;
+        await new QueueRetentionJob(store, clock, Settings(), new RecordingLogger<QueueRetentionJob>(), null, new QueueStoragePressure())
+            .RunAsync(Cancellation);
+        long shrunk = new FileInfo(path).Length;
+        Assert.True(shrunk < grown / 4, $"database {grown} -> {shrunk} bytes");
+        Assert.Equal(0, (await store.GetStorageSnapshotAsync(Cancellation)).FreePages);
+        Assert.True((await store.VerifyLedgerAsync(Cancellation)).Intact);
+        Assert.True((await store.EnqueueAsync(Event("after-release"), Cancellation)).Enqueued);
+    }
+
+    [Fact]
+    public async Task ReleaseFreePages_IsANoOpForDatabasesCreatedWithoutIncrementalVacuum()
+    {
+        using SqliteTemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "queue.db");
+        await using (SqliteConnection connection = new($"Data Source={path};Pooling=False"))
+        {
+            await connection.OpenAsync(Cancellation);
+            await using SqliteCommand create = connection.CreateCommand();
+            create.CommandText = "CREATE TABLE existing_before_bower(id INTEGER);";
+            await create.ExecuteNonQueryAsync(Cancellation);
+        }
+
+        SqliteEventStore store = new(path, 10 * MiB);
+        await store.InitializeAsync(Cancellation);
+        Assert.Equal(0, await ScalarAsync(path, "PRAGMA auto_vacuum;"));
+        await store.EnqueueAsync(Event("kept", 50_000), Cancellation);
+        Assert.Equal(0, await store.ReleaseFreePagesAsync(1_000, Cancellation));
+        Assert.Equal(1, (await store.GetSnapshotAsync(Cancellation)).Queued);
+    }
+
+    private static async Task<long> ScalarAsync(string path, string sql)
+    {
+        await using SqliteConnection connection = new($"Data Source={path};Pooling=False");
+        await connection.OpenAsync(Cancellation);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        return Convert.ToInt64(await command.ExecuteScalarAsync(Cancellation), System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     [Fact]
     public async Task PressureRetention_KeepsAcknowledgementsInsideTheFloor()
     {

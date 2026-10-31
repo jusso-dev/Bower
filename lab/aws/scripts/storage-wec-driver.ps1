@@ -5,7 +5,7 @@
 # HTTPS, fills the dedicated Q: volume with a bounded filler, restarts the service and
 # samples metadata every five seconds. Output: counters, sizes, states, times and digests.
 param(
-    [Parameter(Mandatory = $true)][ValidateSet('smoke', 'queue-cap', 'watermarks', 'disk-full', 'reconcile', 'probe')][string]$Scenario,
+    [Parameter(Mandatory = $true)][ValidateSet('smoke', 'queue-cap', 'watermarks', 'disk-full', 'wrap', 'reconcile', 'probe')][string]$Scenario,
     [ValidateRange(1, 100)][int]$Rate = 50,
     [ValidateRange(10, 1800)][int]$Hold = 120,
     [ValidateRange(60, 7200)][int]$Limit = 3600,
@@ -16,6 +16,8 @@ $work = 'C:\ws3'; $logs = "$work\logs"; $filler = 'Q:\ws3-filler'
 New-Item -ItemType Directory -Force -Path $logs | Out-Null
 $secrets = 'C:\ProgramData\Bower\secrets'
 $token = (Get-Content "$secrets\ingest-token" -Raw).Trim()
+$queuePath = ((Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\Bower').Environment |
+    Where-Object { $_ -like 'BOWER_QUEUE_PATH=*' }) -replace '^BOWER_QUEUE_PATH=', ''
 $journal = "$logs\$Scenario.jsonl"
 $events = New-Object System.Collections.ArrayList
 $samples = New-Object System.Collections.ArrayList
@@ -182,7 +184,7 @@ function Reconcile {
     }
     Copy-Item 'C:\Program Files\Bower\e_sqlite3.dll' "$work\e_sqlite3.dll" -Force -ErrorAction SilentlyContinue
     [Environment]::CurrentDirectory = $work
-    $rows = [Ws3Queue]::Query('Q:\bower\queue.db', "SELECT event_id, json_extract(payload,'$.actor.username'), state, payload_bytes FROM queue_events_v5", 4)
+    $rows = [Ws3Queue]::Query($queuePath, "SELECT event_id, json_extract(payload,'$.actor.username'), state, payload_bytes FROM queue_events_v5", 4)
     $queued = @{}; $delivered = 0; $unexpected = 0; $duplicates = 0; $bytes = 0
     foreach ($row in $rows) {
         $bytes += [long]$row[3]
@@ -193,7 +195,10 @@ function Reconcile {
             if ($row[2] -eq '3') { $delivered++ }
         } else { $unexpected++ }
     }
-    $integrity = [Ws3Queue]::Query('Q:\bower\queue.db', 'PRAGMA integrity_check', 1)[0][0]
+    $integrity = [Ws3Queue]::Query($queuePath, 'PRAGMA integrity_check', 1)[0][0]
+    # Pseudonym to synthetic sequence, for the independent destination query only (not evidence).
+    $map = @{}; foreach ($pair in $bySeq.GetEnumerator()) { $map[$pair.Key] = $pair.Value }
+    $map | ConvertTo-Json -Compress | Set-Content -Encoding ascii "$logs\reconcile-hmac-map.json"
     $forwardedNames = @{}
     foreach ($event in Get-WinEvent -FilterHashtable @{ LogName = 'ForwardedEvents'; Id = 4625 } -ErrorAction SilentlyContinue) {
         $match = [regex]::Match($event.ToXml(), "<Data Name='TargetUserName'>(ws3w\d{7})</Data>")
@@ -213,6 +218,28 @@ function Reconcile {
 }
 
 if ($Scenario -eq 'reconcile') { Reconcile; exit 0 }
+if ($Scenario -eq 'wrap') {
+    # Bower stalled (service stopped) while WEF keeps forwarding into a deliberately tiny
+    # ForwardedEvents: the overwritten records are lost upstream and counted as gaps.
+    $script:phase = 'wrap'; $started = Now
+    $original = (Get-WinEvent -ListLog ForwardedEvents).MaximumSizeInBytes
+    [void](Sample)
+    Stop-Service Bower; Mark 'collector-stopped'
+    wevtutil sl ForwardedEvents /ms:1052672; Mark 'forwarded-events-1mib'
+    $script:generator = New-Object Ws3Generator($Target, $Rate, "$work\next-seq")
+    $script:generator.Start(); Mark 'generating' @{ rate = $Rate }
+    Start-Sleep -Seconds $Hold
+    $script:generator.Stop(); Mark 'generator-stopped' @{ nextSeq = $script:generator.Next }
+    Start-Sleep -Seconds 60
+    $forwarded = Get-Forwarded; Mark 'forwarded-before-restart' $forwarded
+    Start-Service Bower; Mark 'collector-started'
+    [void](Wait-Until { param($r) $r.subscriptionState -eq 'running' -and $r.queued -eq 0 -and $r.uploading -eq 0 } 600 'drained')
+    wevtutil sl ForwardedEvents /ms:$original; Mark 'forwarded-events-restored' @{ maximumBytes = $original }
+    $text = [ordered]@{ phase = 'wec-wrap'; startedAt = $started; endedAt = (Now); events = $events
+        generated = @{ firstSeq = $script:generator.First; nextSeq = $script:generator.Next; count = $script:generator.Next - $script:generator.First }
+        final = $samples[-1] } | ConvertTo-Json -Depth 6 -Compress
+    $text | Set-Content -Encoding utf8 "$logs\wrap-summary.json"; $text; exit 0
+}
 if ($Scenario -eq 'probe') { $script:phase = 'probe'; Sample | ConvertTo-Json -Compress; exit 0 }
 
 $script:phase = 'start'; $started = Now
@@ -273,9 +300,9 @@ $summary = [ordered]@{ phase = "wec-$Scenario"; startedAt = $started; endedAt = 
     firstCriticalAt = (& $first { param($r) $r.storageState -eq 'critical' })
     firstRefusalAt = (& $first { param($r) $r.sourceRetries -gt $samples[0].sourceRetries })
     maximumForwardedLag = ($samples | ForEach-Object { if ($_.bookmarkRecordId) { $_.forwardedRecords - $_.bookmarkRecordId } else { 0 } } | Measure-Object -Maximum).Maximum
-    maximumUndeliveredBytes = ($samples | Measure-Object undeliveredBytes -Maximum).Maximum
+    maximumUndeliveredBytes = ($samples | Where-Object { $null -ne $_.undeliveredBytes } | Measure-Object undeliveredBytes -Maximum).Maximum
     minimumFreeBytes = ($samples | Measure-Object freeBytes -Minimum).Minimum
-    maximumQueueFileBytes = ($samples | Measure-Object queueFileBytes -Maximum).Maximum
+    maximumQueueFileBytes = ($samples | Where-Object { $null -ne $_.queueFileBytes } | Measure-Object queueFileBytes -Maximum).Maximum
     sourceGaps = $samples[-1].sourceGaps; sourceSubmitFailures = $samples[-1].sourceSubmitFailures
     samples = $samples.Count; final = $samples[-1] }
 $text = $summary | ConvertTo-Json -Depth 6 -Compress
