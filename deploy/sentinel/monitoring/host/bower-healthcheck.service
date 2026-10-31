@@ -1,0 +1,24 @@
+[Unit]
+Description=Bower collector local health check
+Documentation=https://github.com/jusso-dev/Bower/blob/main/docs/production-readiness/06-monitoring-and-runbooks.md
+After=bower.service
+
+[Service]
+Type=oneshot
+User=bower
+Group=bower
+# Same settings file as the collector, so BOWER_QUEUE_MAX_BYTES and BOWER_QUEUE_PATH match it.
+EnvironmentFile=-/etc/bower/bower.env
+# Exit 1 (warning) or 2 (critical) marks this unit failed: `systemctl --failed`, the journal
+# (SyslogIdentifier below) and any log shipper (CloudWatch agent, Azure Monitor Agent) see it.
+ExecStart=/usr/bin/python3 /opt/bower/monitoring/bower-healthcheck.py \
+    --url http://127.0.0.1:4319 \
+    --token-file /etc/bower/secrets/ingest-token \
+    --state-file /var/lib/bower/healthcheck-state.json \
+    --prometheus-file /var/lib/bower/healthcheck.prom
+SyslogIdentifier=bower-healthcheck
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/bower

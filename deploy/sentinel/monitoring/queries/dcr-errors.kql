@@ -1,0 +1,16 @@
+// Bower: Azure Monitor rejected or dropped Logs Ingestion data for the Bower DCR (DCRLogErrors,
+// written when the DCR diagnostic setting "LogErrors" is enabled), plus workspace ingestion
+// warnings and errors (_LogOperation). Delivery failures that never reach Azure (network,
+// credentials) do not appear here: collector-health-missing covers them. Error messages can
+// echo submitted values, so only the operation name is projected; read details in the workspace.
+let dcrErrors = DCRLogErrors
+    | where _ResourceId =~ "__DCR_RESOURCE_ID__"
+    | summarize Errors = count(), LastError = max(TimeGenerated), Sample = take_any(OperationName)
+        by Source = "dcr";
+let workspaceIssues = _LogOperation
+    | where Category == "Ingestion" and Level in ("Warning", "Error")
+    | where Detail has_any ("BowerSecurity", "Bower")
+    | summarize Errors = count(), LastError = max(TimeGenerated), Sample = take_any(Detail) by Source = strcat("workspace:", Operation);
+union dcrErrors, workspaceIssues
+| where Errors > 0
+| project Source, Errors, LastError, Sample = substring(Sample, 0, 512)

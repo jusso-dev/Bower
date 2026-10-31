@@ -1,0 +1,15 @@
+// Bower: old queued events. Fires when a collector's newest health record reports an oldest
+// undelivered event older than __BACKLOG_SECONDS__ seconds, or when health records arrive more than
+// __LAG_MINUTES__ minutes after they were written (delivery was delayed; the backlog is draining).
+// A collector that cannot deliver at all sends no records: collector-health-missing covers it.
+let backlogSeconds = __BACKLOG_SECONDS__;
+let lagMinutes = __LAG_MINUTES__;
+BowerSecurity_CL
+| where EventType == "collector_health"
+| extend ArrivalLagMinutes = round(datetime_diff('second', ingestion_time(), TimeGenerated) / 60.0, 1)
+| summarize arg_max(TimeGenerated, Attributes), MaxArrivalLagMinutes = max(ArrivalLagMinutes) by CollectorId
+| extend OldestUndeliveredAgeSeconds = toint(Attributes.queue.oldestUndeliveredAgeSeconds),
+    Undelivered = toint(Attributes.queue.undelivered),
+    DeliveryStatus = tostring(Attributes.delivery.status)
+| where coalesce(OldestUndeliveredAgeSeconds, 0) > backlogSeconds or MaxArrivalLagMinutes > lagMinutes
+| project CollectorId, RecordAt = TimeGenerated, OldestUndeliveredAgeSeconds, Undelivered, DeliveryStatus, MaxArrivalLagMinutes
