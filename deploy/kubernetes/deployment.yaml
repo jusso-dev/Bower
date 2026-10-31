@@ -37,10 +37,9 @@ spec:
               value: workload-identity
             - name: BOWER_QUEUE_PATH
               value: /var/lib/bower/queue.db
-            # Stable and unique per collector: the default (the pod name) changes on every
-            # rollout, which breaks replay deduplication and destination identity.
-            - name: BOWER_COLLECTOR_ID
-              value: replace-me-collector-01
+            # BOWER_COLLECTOR_ID is optional: without it the first start persists the pod name
+            # to /var/lib/bower/collector-id on the PVC and later pods reuse it. Set it
+            # explicitly (unique per collector) to choose the id.
             - name: BOWER_POLICY_DIRECTORY
               value: /app/policies/default
             - name: BOWER_OUTPUT

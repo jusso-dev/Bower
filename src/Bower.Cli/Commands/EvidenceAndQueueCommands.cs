@@ -182,6 +182,7 @@ internal static class QueueCommands
     /// <summary>
     /// bower queue backup --database FILE --output BACKUP [--collector-id ID]: consistent online
     /// copy plus BACKUP.manifest.json (metadata only). Never initializes or migrates the source.
+    /// A damaged queue is still copied; the command then warns and exits 3.
     /// </summary>
     public static async Task<int> BackupAsync(string[] args)
     {
@@ -189,21 +190,32 @@ internal static class QueueCommands
             CliOptions.Required(args, "--database"),
             CliOptions.Required(args, "--output"),
             CliOptions.Get(args, "--collector-id"));
-        Console.WriteLine(JsonSerializer.Serialize(manifest, CliJsonContext.Default.QueueBackupManifest));
+        Console.WriteLine(QueueBackup.ToJson(manifest));
+        if (manifest.Damaged)
+        {
+            Console.Error.WriteLine(
+                "WARNING: the queue FAILED its integrity or ledger check. The backup was written and marked " +
+                "damaged; keep it and the original files. Restoring it requires --allow-damaged.");
+            return 3;
+        }
         return 0;
     }
 
     /// <summary>
-    /// bower queue restore --backup BACKUP --database FILE: verifies the manifest, refuses to
-    /// overwrite an existing queue or WAL, and checks the restored copy before renaming it.
+    /// bower queue restore --backup BACKUP --database FILE [--allow-damaged]: verifies the
+    /// manifest, refuses to overwrite an existing queue or WAL, and checks the restored copy
+    /// before renaming it.
     /// </summary>
     public static async Task<int> RestoreAsync(string[] args)
     {
-        QueueBackupManifest manifest = await QueueBackup.RestoreAsync(
+        QueueRestoreResult result = await QueueBackup.RestoreAsync(
             CliOptions.Required(args, "--backup"),
-            CliOptions.Required(args, "--database"));
-        Console.WriteLine(JsonSerializer.Serialize(manifest, CliJsonContext.Default.QueueBackupManifest));
-        Console.Error.WriteLine("Restored. Unsettled rows will be delivered again (at least once); source cursors resume from the backup point.");
+            CliOptions.Required(args, "--database"),
+            allowDamaged: CliOptions.Has(args, "--allow-damaged"));
+        Console.WriteLine(QueueBackup.ToJson(result));
+        Console.Error.WriteLine(result.RestoredDamagedBackup
+            ? "Restored a DAMAGED backup as requested. Verify the queue before delivery resumes."
+            : "Restored. Unsettled rows will be delivered again (at least once); source cursors resume from the backup point.");
         return 0;
     }
 }

@@ -22,7 +22,7 @@ still verifies signed packs against the trusted keys you configure.
 | --- | --- | --- | --- |
 | In-place upgrade, RPM/DEB (`dnf upgrade`, `apt install`) | Yes | Queue, leases, delivered rows, `bower.env`, TLS, packs, keys and permissions kept | 264 → 270 → 277 under load with a blocked destination |
 | In-place upgrade, MSI (major upgrade) | Yes, **once settings are in `bower.env`** | Same; without `bower.env`, older MSIs drop hand-edited service settings | 264 → 270 dropped 12 settings; 270 → 277 with `bower.env` kept them |
-| Docker image swap on the same volume | Yes, with a pinned `BOWER_COLLECTOR_ID` | Same | 264 → 277 under load |
+| Docker image swap on the same volume | Yes; the collector id persists in the volume | Same | 264 → 277 under load |
 | Kubernetes image change | Yes, `Recreate` with one replica | Same | Not run live |
 | Process crash (SIGKILL / `taskkill /F`) | Yes | No accepted event lost; healthy in about 6 s | Both platforms |
 | Host power loss / forced stop | Yes | Pending backlog kept on disk | Both platforms |
@@ -49,7 +49,7 @@ your configuration management or secret store.
 | Privacy HMAC key (`BOWER_PRIVACY_HMAC_KEY_FILE`) | `/etc/bower/secrets/` | `%ProgramData%\Bower\secrets\` | Secret | **No** | **Yes**; the same key is needed to keep pseudonyms stable |
 | Ingest token, Azure client certificate, TLS private keys | `/etc/bower/secrets`, TLS directory | `secrets` | Secret | **No** | **Yes** |
 | Management credential (`management-credential/credential.json`) | Next to `queue.db` | `state\management-credential` | Next to `queue.db` | **No** | **Yes**; key-bound. Re-enrol on a new host. |
-| Collector identity (`BOWER_COLLECTOR_ID`) | `bower.env` | MSI `COLLECTORID` (remembered) | Must be set explicitly | Recorded in the backup manifest with `--collector-id` | No |
+| Collector identity (`BOWER_COLLECTOR_ID`, else `collector-id` beside `queue.db`) | `bower.env`, else `/var/lib/bower/collector-id` | MSI `COLLECTORID` (remembered) | Environment, else `collector-id` in the volume/PVC | `collector-id` is not; record the id with `--collector-id` | No |
 | Archive segments (`BOWER_ARCHIVE_PATH`), AMA spool | Configured paths | Configured paths | Volumes | No | No |
 
 The collector never stores the HMAC key, token or Azure credentials in the queue, so a
@@ -74,7 +74,14 @@ at rest (see [Backup handling](#backup-handling-and-encryption)).
   tested WEC configuration, builds before #157 could not read `ForwardedEvents` at all
   (`winevt-read-failed`: forwarded records have no `RecordId`), so v1 bookmarks are
   expected only for local channels such as `Security`.
-- **Event identity.** Fingerprints include `BOWER_COLLECTOR_ID`. A Windows event id
+- **Collector id.** When `BOWER_COLLECTOR_ID` is unset, the first start writes the machine
+  name it would have used to `collector-id` beside the queue database, and later starts
+  reuse it (C# and Rust read the same file). Existing installs therefore keep their current
+  id, and containers or pods keep theirs after a recreate as long as the volume persists. A
+  configured `BOWER_COLLECTOR_ID` always wins and never rewrites the file. An invalid
+  `collector-id` stops startup instead of being replaced. The startup log records the id
+  and its source (`Configured`, `Persisted` or `Created`).
+- **Event identity.** Fingerprints include the collector id. A Windows event id
   combines channel, origin computer, origin record id and creation time, and does not depend
   on the WEC host or Bower subscription id. A syslog id combines listener id, sender address
   and the exact frame. Keep the collector id, listener ids and the HMAC key stable across
@@ -239,13 +246,43 @@ else, such as output, Azure identity, HMAC key file and Windows Event Log config
 in `%ProgramData%\Bower\bower.env`. The service environment points at that file with
 `BOWER_SETTINGS_FILE`.
 
-`bower.env` format: one `KEY=VALUE` per line, `#` comments, blank lines allowed, and an
-optional pair of double quotes around a value. Only `BOWER_*` and `AZURE_*` names are
-accepted. A repeated key, a bad line or a file over 64 KiB stops startup, with an error
-that gives the line number but never the value. File values override the service
-environment, like systemd `EnvironmentFile=`. The file inherits the protected
-`%ProgramData%\Bower` ACL (SYSTEM and Administrators full control, the service read-only).
-Uninstall (not upgrade) deletes it.
+`bower.env` format:
+
+- One `KEY=VALUE` per line; only `BOWER_*` and `AZURE_*` names are accepted.
+- Lines starting with `#` or `;` are comments, and blank lines are allowed.
+- A value may be wrapped in one matching pair of single (`'…'`) or double (`"…"`) quotes,
+  which are removed.
+- There are **no escapes, variable expansion or line continuations**, so Windows paths need
+  no doubling. This is simpler than systemd `EnvironmentFile=`; do not rely on its
+  escaping rules.
+- File values override the service environment.
+- Errors give the line number, never the value. Startup stops on a repeated key, an
+  unterminated quote, any other bad line, or a file over 64 KiB.
+
+The file can change trust anchors (`BOWER_PACK_TRUSTED_KEYS`,
+`BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS`), paths and outputs. The collector therefore refuses
+it unless only trusted principals can change it:
+
+- **Windows:** the file and its folder must be owned by SYSTEM, Administrators or
+  TrustedInstaller. Only those principals may hold write, delete, change-permission or
+  take-ownership rights; the service account gets read only. The MSI sets that protected ACL
+  on `%ProgramData%\Bower`, and a file created there inherits it. Elevated administrators on
+  Windows 10/11 own the files they create, so set the owner explicitly:
+  `icacls "%ProgramData%\Bower\bower.env" /setowner *S-1-5-32-544`.
+- **Linux:** the file and its folder must be owned by root or the collector's account,
+  must not be group- or world-writable, and the file must not be a symbolic link.
+- **macOS:** the same mode and link checks, without the owner check.
+
+Startup and logging:
+
+- A missing file is **not** an error, because fresh MSI installs set the path before any
+  file exists. Startup does fail if a `bower.env.txt` sibling exists (an editor added
+  `.txt`), or if the file exists but cannot be read, for example because the service cannot
+  traverse its folder.
+- The startup log records `Settings file <path>: Applied|NotPresent|NotConfigured,
+  <n> setting(s) applied.`, metadata only.
+
+Uninstall (not upgrade) deletes the file.
 
 > Measured: upgrading dev.264 → dev.270 with settings in the registry **dropped 12 settings**
 > (output, Azure identity, HMAC key file, Windows Event Log config, lease and timeout). The
@@ -270,6 +307,7 @@ $current = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\Bower').En
 $lines = $current | Where-Object { $msiOwned -notcontains ($_ -split '=', 2)[0] -and ($_ -split '=', 2)[1] }
 if ($lines -match '^(BOWER_INGEST_TOKEN|AZURE_CLIENT_SECRET)=') { throw 'Move inline secrets to files first' }
 Set-Content -LiteralPath "$root\bower.env" -Value (@('# Operator settings kept across upgrades') + $lines) -Encoding ASCII
+icacls "$root\bower.env" /setowner '*S-1-5-32-544' | Out-Null        # owner must be SYSTEM or Administrators
 Get-Content "$root\bower.env" | ForEach-Object { ($_ -split '=', 2)[0] }   # names only
 ```
 
@@ -376,17 +414,18 @@ also loses the settings file wiring.
 
 **Prerequisites:**
 
-- A pinned, unique `BOWER_COLLECTOR_ID`. The default is the container hostname, which
-  changes on every `docker compose up` that recreates the container, and a new id breaks
-  replay deduplication and destination identity. `deploy/docker/compose.yaml` now requires
-  it.
+- A stable collector id. Either set a unique `BOWER_COLLECTOR_ID`, or keep the data volume:
+  the first start writes the container hostname to `/var/lib/bower/collector-id`, and later
+  containers reuse it. A new id breaks replay deduplication and destination identity.
+  Before this release the id was the container hostname on every start, so it changed on
+  each recreate.
 - The queue on a named volume (`bower-data:/var/lib/bower`) owned by uid 1654.
 - Secrets mounted read-only and readable by uid 1654.
 
 ### Upgrade
 
 ```bash
-export BOWER_COLLECTOR_ID=edge-syd-01           # same value as before, every time
+export BOWER_COLLECTOR_ID=edge-syd-01           # optional; otherwise collector-id in the volume is reused
 # Back up the live queue from the host (the image has no shell); the CLI only needs the file path.
 sudo bower queue backup --database /var/lib/docker/volumes/bower-data/_data/queue.db \
   --output /var/backups/bower/edge-syd-01-$(date -u +%Y%m%dT%H%M%SZ).bowerbackup --collector-id "$BOWER_COLLECTOR_ID"
@@ -424,7 +463,7 @@ answers within about a second (0.16 s stop and 0.7 s to healthy in the lab).
 | Symptom | Cause | Action |
 | --- | --- | --- |
 | `Access to the path '/var/lib/bower/...' is denied` | Volume owned by another uid | `chown -R 1654:1654` on the volume path, or create the volume from the image |
-| Duplicates at the destination after every recreate | `BOWER_COLLECTOR_ID` not pinned | Set it to a stable value; deduplicate past duplicates at query time |
+| Duplicates at the destination after every recreate | Release before the persisted id, or a new volume each time | Upgrade, keep the volume or set `BOWER_COLLECTOR_ID`; deduplicate past duplicates at query time |
 | Senders refused after the swap | Port/network mode changed, or `allowedSenders` does not match NATed addresses | Keep host networking or preserve the client source address |
 
 ## Kubernetes
@@ -435,8 +474,10 @@ answers within about a second (0.16 s stop and 0.7 s to healthy in the lab).
   `deploy/kubernetes/deployment.yaml`) and a `ReadWriteOnce` PVC. `RollingUpdate` starts the
   new pod before the old one stops; with a `ReadWriteOnce` volume, the new pod either cannot
   attach or, on the same node, runs two SQLite writers on one queue. Do not use it.
-- **Stable identity.** Set `BOWER_COLLECTOR_ID` explicitly, because pod names change on every
-  rollout. The manifest now has a placeholder that you must replace. For several collectors,
+- **Stable identity.** Pod names change on every rollout. Without `BOWER_COLLECTOR_ID`, the
+  first pod writes its name to `collector-id` on the PVC and later pods reuse it. Set
+  `BOWER_COLLECTOR_ID` explicitly to choose a meaningful, unique id; never copy one literal id
+  into several manifests. For several collectors,
   use a StatefulSet with `volumeClaimTemplates` and derive the id from the stable pod name
   (`metadata.name`, for example `bower-0`). Keep `podManagementPolicy: OrderedReady` and
   `updateStrategy: RollingUpdate`; a StatefulSet replaces each pod after the old one has
@@ -501,10 +542,24 @@ of every committed row, including WAL frames not yet checkpointed. Next to it,
 - row counts per state (queued, uploading, retrying, delivered, dead-lettered),
 - the number of source cursors,
 - the ledger head sequence and hash, and the ledger and `integrity_check` results,
-- the optional collector id.
+- the optional collector id;
+- `integrityOk` and `ledgerIntact`.
 
 The command never initialises, migrates or repairs the source. It refuses a schema it does
-not support, refuses to overwrite an existing file, and leaves the live collector running.
+not support, refuses to overwrite an existing file, and refuses an output path that is the
+live database or its `-wal`/`-shm`/`-journal` file. It leaves the live collector running.
+
+- **Permissions.** The copy and manifest are created owner-only (0600, or a protected ACL
+  for SYSTEM, Administrators and the current user) **before** any page is copied, so an
+  interrupted backup never leaves a readable copy. A missing output directory is created
+  owner-only (0700 / the same ACL). An existing directory is left as it is.
+- **Busy queues.** If the queue stays busy or locked (`SQLITE_BUSY`/`SQLITE_LOCKED`, for
+  example during a checkpoint), the copy is retried with backoff for up to 30 seconds.
+  After that it gives up with an error and writes nothing.
+- **Damaged queues.** If the copy fails the SQLite integrity check or the ledger check,
+  **the backup is still written**, with `integrityOk`/`ledgerIntact` set to `false`. That is
+  exactly when you need a copy. The command then prints a warning and **exits 3**.
+  `bower queue restore` refuses such a backup unless you pass `--allow-damaged`.
 Writers keep writing during the copy (WAL readers do not block writers). Run it on a
 schedule that matches your recovery point objective.
 
@@ -528,15 +583,16 @@ icacls $dir /inheritance:r /grant:r 'SYSTEM:(OI)(CI)F' 'Administrators:(OI)(CI)F
 if ($LASTEXITCODE -ne 0) { throw "backup failed: $LASTEXITCODE" }
 ```
 
-Expected output: the manifest as JSON (property names in PascalCase on stdout,
-camelCase in the `.manifest.json` file), for example:
+Expected output: the manifest as JSON, the same as the `.manifest.json` file, for example:
 
 ```json
-{ "SchemaVersion": 5, "DatabaseBytes": 19628032, "Counts": { "Queued": 2178, "Uploading": 0, "Retrying": 500, "Delivered": 4784, "DeadLettered": 0, "Total": 7462 },
-  "SourceCursors": 1, "LedgerSequence": 7462, "LedgerIntact": true, "IntegrityCheck": "ok", "CollectorId": "wec-01" }
+{ "schemaVersion": 5, "databaseBytes": 19628032, "databaseSha256": "…",
+  "counts": { "queued": 2178, "uploading": 0, "retrying": 500, "delivered": 4784, "deadLettered": 0, "total": 7462 },
+  "sourceCursors": 1, "ledgerSequence": 7462, "ledgerIntact": true, "integrityOk": true, "integrityCheck": "ok",
+  "collectorId": "wec-01", "damaged": false }
 ```
 
-Pass: exit code 0, `LedgerIntact` true, `IntegrityCheck` `ok`, a backup file of mode 0600
+Pass: exit code 0, `damaged` false, a backup file of mode 0600
 (Linux) or restricted ACL (Windows), and the manifest present. Measured: 0.5–0.7 s for
 20–33 MB under live load.
 
@@ -595,7 +651,15 @@ Start-Service Bower
 
 The restored file inherits the `state` folder ACL (the service gets Modify). Expected
 stderr: `Restored. Unsettled rows will be delivered again (at least once); source cursors
-resume from the backup point.` Measured: 0.56 s for 33 MB.
+resume from the backup point.` stdout reports:
+
+- `backup`: the backup's own manifest, unchanged, including its `createdAt` and hash;
+- `restoredDatabaseSha256` and `restoredDatabaseBytes`: the restored `queue.db` after its
+  final WAL header change, at `restoredAt`;
+- `restoredDamagedBackup`.
+
+The restored hash differs from the backup hash because the journal mode is set in the file
+header. Measured: 0.56 s for 33 MB.
 
 **New host checklist:**
 
@@ -721,7 +785,14 @@ Known limits:
   (`rpm -q`, `DisplayVersion`) and the executable SHA-256.
 - **Rust.** The Rust CLI has no `queue backup` / `queue restore`; use the C# CLI (schema 5
   is shared). The Rust collector does not read `BOWER_SETTINGS_FILE`; on Linux, use systemd
-  `EnvironmentFile`.
+  `EnvironmentFile`. Both runtimes implement the newer-schema refusal and the persisted
+  `collector-id`.
+- **Lab coverage of later changes.** The AWS run used build `4c30b2a`. Review fixes made
+  afterwards were covered by unit, CI install and local tests only, not re-run on AWS:
+  - owner-only temporary copies, busy retry, damaged-queue backups and the restore result
+    fields;
+  - the settings-file trust, quoting and logging rules;
+  - the persisted `collector-id`.
 - **Syslog.** There is no application acknowledgement: frames in flight when a collector
   crashes, restarts or is replaced are lost unless the sender resends them.
 - **WEC.** The source-side gap above applies when a WEC host is lost. DR-subscription

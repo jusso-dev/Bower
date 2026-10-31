@@ -285,7 +285,7 @@ static int WriteHelp()
           bower queue replay --database FILE (--code PREFIX | --event ID ...)
           bower queue verify --database FILE [--expect-head SEQUENCE:HASH]
           bower queue backup --database FILE --output BACKUP [--collector-id ID]
-          bower queue restore --backup BACKUP --database FILE
+          bower queue restore --backup BACKUP --database FILE [--allow-damaged]
           bower developer init [--path PATH]
           bower privacy validate FILE [--hmac-key-file FILE] [--sample FILE]
           bower policy test EVENT.json... [--policy-directory DIR] [--pack FILE --trusted-key PUB]
