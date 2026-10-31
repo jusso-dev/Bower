@@ -1,0 +1,8 @@
+// Bower: events set aside (dead-lettered) after exhausting delivery attempts or a permanent rejection.
+// Uses each collector's newest collector_health record. Recover with the audited replay procedure.
+BowerSecurity_CL
+| where EventType == "collector_health"
+| summarize arg_max(TimeGenerated, Attributes) by CollectorId
+| extend DeadLettered = toint(Attributes.queue.deadLettered), DeliveryStatus = tostring(Attributes.delivery.status)
+| where DeadLettered > 0
+| project CollectorId, RecordAt = TimeGenerated, DeadLettered, DeliveryStatus
