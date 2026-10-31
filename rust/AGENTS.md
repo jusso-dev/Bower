@@ -12,6 +12,8 @@ Management API and the console stay C# only. The Windows Event Log source
 (`src/Bower.Source.WindowsEventLog`) is C#-only because the Rust collector does not
 target Windows: `bower-collector` refuses `BOWER_WINDOWS_EVENTLOG_CONFIG` at start-up
 (fail closed). Port it only together with a Windows build and CI job.
+Periodic `collector_health` records (`CollectorHealthWorker`) are also C#-only for now:
+`bower-collector` refuses `BOWER_HEALTH_RECORD_INTERVAL_SECONDS` other than `0` (fail closed).
 
 ## Parity rules
 

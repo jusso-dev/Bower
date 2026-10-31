@@ -13,6 +13,9 @@ pub mod event_types {
     /// Synthetic event sent by `bower evidence run`; always labelled evidenceType=canary.
     pub const COLLECTOR_CANARY: &str = "collector_canary";
     pub const COLLECTOR_UPLOAD_FAILED: &str = "collector_upload_failed";
+    /// Periodic collector health record. Emitted only by the C# collector; the Rust
+    /// collector refuses BOWER_HEALTH_RECORD_INTERVAL_SECONDS.
+    pub const COLLECTOR_HEALTH: &str = "collector_health";
     pub const TELEMETRY_AGGREGATION_SUMMARY: &str = "telemetry_aggregation_summary";
 }
 
