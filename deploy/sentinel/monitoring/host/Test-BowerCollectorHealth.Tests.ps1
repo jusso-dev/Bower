@@ -71,6 +71,11 @@ BeforeAll {
             -QueuePath (Join-Path $TestDrive 'queue.db') -DiskWarningPercent 0 -DiskCriticalPercent 0 -Format Json @Extra
         return [pscustomobject]@{ Code = $LASTEXITCODE; Output = ($output -join "`n") }
     }
+
+    function Get-FindingCodes($Result) {
+        try { return @((($Result.Output | ConvertFrom-Json).findings).code) -join ',' }
+        catch { return 'non-json-output' }
+    }
 }
 
 Describe 'Test-BowerCollectorHealth on <Shell>' -ForEach $script:Hosts {
@@ -89,7 +94,7 @@ Describe 'Test-BowerCollectorHealth on <Shell>' -ForEach $script:Hosts {
         try { $result = Invoke-Check $Shell $collector.Url }
         finally { Stop-FakeCollector $collector }
         $report = $result.Output | ConvertFrom-Json
-        $result.Code | Should -Be 1
+        $result.Code | Should -Be 1 -Because ("finding codes: " + (Get-FindingCodes $result))
         @($report.findings.code) | Should -Contain 'syslog-errors'
         @($report.findings.code) | Should -Contain 'windows-event-log'
         @($report.findings | Where-Object { $_.detail -match 'baseline unavailable' }).Count | Should -Be 2
@@ -160,7 +165,7 @@ Describe 'Test-BowerCollectorHealth on <Shell>' -ForEach $script:Hosts {
                 deliveryActivity = @{ lastFailureCode = 'destination-azure-http-401-synthetic-secret-marker'; lastFailureAt = [datetime]::UtcNow.ToString('o') }
             }
             $result = Invoke-Check $Shell $collector.Url
-            $result.Code | Should -Be 1
+            $result.Code | Should -Be 1 -Because ("finding codes: " + (Get-FindingCodes $result))
             ($result.Output | ConvertFrom-Json).findings.code | Should -Contain 'destination-failing'
             $result.Output | Should -Not -Match 'synthetic-secret-marker'
         }
@@ -212,7 +217,8 @@ Describe 'Test-BowerCollectorHealth on <Shell>' -ForEach $script:Hosts {
         $collector = Initialize-FakeCollector
         try {
             $collector.Shared.Body = New-Status
-            (Invoke-Check $Shell $collector.Url @('-StateFile', $state)).Code | Should -Be 1
+            $initial = Invoke-Check $Shell $collector.Url @('-StateFile', $state)
+            $initial.Code | Should -Be 1 -Because ("finding codes: " + (Get-FindingCodes $initial))
             $collector.Shared.Body = New-Status @{
                 syslog = @(@{ id = 'firewall-tls'; tlsHandshakeFailures = 3; connectionsAccepted = 1 })
                 windowsEventLog = @(@{ id = 'forwarded-security'; state = 'running'; readErrors = 0; malformed = 1; oversized = 1 })
@@ -265,7 +271,7 @@ Describe 'Test-BowerCollectorHealth on <Shell>' -ForEach $script:Hosts {
         ($credential.Output | ConvertFrom-Json).findings[0].code | Should -Be 'destination-credential'
         $tied.Code | Should -Be 2
         ($tied.Output | ConvertFrom-Json).findings[0].code | Should -Be 'destination-credential'
-        $unavailable.Code | Should -Be 1
+        $unavailable.Code | Should -Be 1 -Because ("finding codes: " + (Get-FindingCodes $unavailable))
         ($unavailable.Output | ConvertFrom-Json).findings[0].code | Should -Be 'destination-failing'
     }
 }
