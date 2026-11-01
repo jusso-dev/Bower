@@ -11,6 +11,8 @@ services:
       # The container listens on 0.0.0.0, so producers must authenticate.
       # Generate one with: dotnet run --project src/Bower.Cli -- token generate
       BOWER_INGEST_TOKEN: ${BOWER_INGEST_TOKEN:?set BOWER_INGEST_TOKEN}
+      # Optional BOWER_COLLECTOR_ID: without it the first start persists the container
+      # hostname to bower-data/collector-id and recreated containers reuse it.
       BOWER_OUTPUT: ama-spool
       BOWER_AMA_SPOOL_PATH: /var/spool/bower
     volumes:

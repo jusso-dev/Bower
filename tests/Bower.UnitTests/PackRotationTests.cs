@@ -185,6 +185,70 @@ public sealed class PackRotationTests
         change(zip);
     }
 
+    [Fact]
+    public void Reload_IsRefusedWhenTheRestartWouldReadABadSettingsFileOrCollectorId()
+    {
+        using TemporaryDirectory directory = new();
+        (string privatePem, string publicPem, _) = DetachedSigner.GenerateKeyPair();
+        Deployment deployment = new(directory.Path);
+        deployment.Install(PackArchive.Build(ExamplePack, privatePem, directory.Path), publicPem);
+        CollectorSettings settings = deployment.Settings();
+        string configuration = Path.Combine(directory.Path, "config");
+        Directory.CreateDirectory(configuration);
+        string settingsFile = Path.Combine(configuration, "bower.env");
+        string queue = Path.Combine(directory.Path, "data", "queue.db");
+        Dictionary<string, string> process = new(StringComparer.Ordinal)
+        {
+            [CollectorSettingsFile.Variable] = settingsFile,
+            ["BOWER_QUEUE_PATH"] = queue,
+            ["BOWER_POLICY_DIRECTORY"] = settings.PolicyDirectory,
+            // Supervisor value the file overrides; a restart sees the file's value.
+            ["BOWER_PACKS"] = Path.Combine(directory.Path, "no-such.bowerpack")
+        };
+        // Started collector: the file set BOWER_PACKS, so the supervisor's original value is recorded.
+        Dictionary<string, string?> originals = new(StringComparer.Ordinal) { ["BOWER_PACKS"] = process["BOWER_PACKS"] };
+        void WriteSettings(string content)
+        {
+            File.WriteAllText(settingsFile, content);
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(settingsFile, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                File.SetUnixFileMode(configuration, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            }
+        }
+        string? Refusal() => ManagementCommandWorker.ReloadRefusal(
+            settings, () => CollectorSettingsFile.RestartReader(name => process.GetValueOrDefault(name), originals));
+        string good = $"BOWER_PACKS={deployment.Pack}\nBOWER_PACK_TRUSTED_KEYS={deployment.TrustedKey}\n" +
+            $"BOWER_PRIVACY_HMAC_KEY_FILE={deployment.HmacKey}\n";
+
+        WriteSettings(good);
+        Assert.Null(Refusal());
+        // The collector id a restart resolves is the persisted default, read without writing.
+        Assert.Equal(Environment.MachineName, CollectorSettingsFile.RestartReader(name => process.GetValueOrDefault(name), originals)("BOWER_COLLECTOR_ID"));
+        Assert.False(File.Exists(Path.Combine(directory.Path, "data", CollectorIdentityFile.FileName)));
+
+        // Removing a key from the file: the restart falls back to the supervisor's value.
+        WriteSettings(good.Replace($"BOWER_PACKS={deployment.Pack}\n", "", StringComparison.Ordinal));
+        Assert.Equal("PackVerificationException", Refusal());
+
+        WriteSettings(good + "NOT A SETTING\n");
+        Assert.Equal(nameof(InvalidOperationException), Refusal());
+
+        if (!OperatingSystem.IsWindows())
+        {
+            WriteSettings(good);
+            File.SetUnixFileMode(settingsFile, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.OtherWrite);
+            Assert.Equal(nameof(InvalidOperationException), Refusal());
+        }
+
+        WriteSettings(good);
+        Directory.CreateDirectory(Path.GetDirectoryName(queue)!);
+        File.WriteAllText(Path.Combine(Path.GetDirectoryName(queue)!, CollectorIdentityFile.FileName), "bad id with spaces\n");
+        Assert.Equal(nameof(InvalidOperationException), Refusal());
+        process["BOWER_COLLECTOR_ID"] = "collector-1"; // a configured id never reads the file
+        Assert.Null(Refusal());
+    }
+
     /// <summary>Files laid out as an installer does: one pack, its trust key file and an HMAC key.</summary>
     private sealed class Deployment(string directory)
     {

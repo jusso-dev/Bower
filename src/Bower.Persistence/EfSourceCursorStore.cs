@@ -51,6 +51,8 @@ public sealed class EfSourceCursorStore : ISourceCursorStore
         bool created = !File.Exists(databasePath);
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
         await using SqliteCommand command = connection.CreateCommand();
+        // The cursor table shares the queue database: never add it to a newer queue schema.
+        await SqliteEventStore.RefuseNewerSchemaAsync(command, cancellationToken);
         // As EF Core's EnsureCreated did: a new database file starts in WAL mode.
         command.CommandText = created ? "PRAGMA journal_mode = 'wal';" + CreateTableSql : CreateTableSql;
         await command.ExecuteNonQueryAsync(cancellationToken);

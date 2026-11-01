@@ -10,6 +10,11 @@ using Bower.Management.Api;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Logging.Abstractions;
+using CollectorCredentialRotationRequest = Bower.Management.Api.CollectorCredentialRotationRequest;
+using CollectorEnrolmentRequest = Bower.Management.Api.CollectorEnrolmentRequest;
+using CollectorHeartbeat = Bower.Management.Api.CollectorHeartbeat;
+using CollectorRegistration = Bower.Management.Api.CollectorRegistration;
+using IssuedCollectorCredential = Bower.Management.Api.IssuedCollectorCredential;
 
 namespace Bower.UnitTests;
 
