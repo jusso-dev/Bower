@@ -212,13 +212,15 @@ jobs:
       - name: Validate AWS lab harness
         run: |
           python3 -m unittest discover -s lab/aws/tests -v
+          python3 -m unittest discover -s lab/aws/monitoring -p 'test_*.py' -v
           python3 -m compileall -q lab/aws/scripts
+          python3 -m compileall -q lab/aws/monitoring
           for script in lab/aws/scripts/*.sh; do bash -n "$script"; done
           python3 lab/aws/scripts/template.py "$RUNNER_TEMP/bower-lab.json"
       - name: Check Windows lab script syntax
         shell: pwsh
         run: |
-          foreach ($file in Get-ChildItem lab/aws/scripts/*.ps1) {
+          foreach ($file in Get-ChildItem @('lab/aws/scripts/*.ps1', 'lab/aws/monitoring/*.ps1', 'lab/aws/tests/*.ps1')) {
             $tokens = $null
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
@@ -274,6 +276,17 @@ jobs:
           $configuration.Run.Exit = $true
           $configuration.Output.Verbosity = 'Detailed'
           Invoke-Pester -Configuration $configuration
+      - name: Test qualification harness and native ACL rollback on PowerShell 5.1 and 7
+        shell: pwsh
+        run: |
+          foreach ($engine in @('powershell.exe', 'pwsh.exe')) {
+            foreach ($fixture in Get-ChildItem lab/aws/tests/test_*.ps1 | Sort-Object Name) {
+              & $engine -NoProfile -NonInteractive -File $fixture.FullName
+              if ($LASTEXITCODE -ne 0) {
+                throw "Qualification fixture $($fixture.Name) failed under $engine with exit $LASTEXITCODE"
+              }
+            }
+          }
 
   powershell:
     needs: changes

@@ -4,12 +4,15 @@
 // credentials) do not appear here: collector-health-missing covers them. Error messages and
 // operation details can echo submitted values, so only bounded names and counts are projected
 // (operation names, levels and the input stream); read details in the workspace.
-let dcrErrors = DCRLogErrors
+// The typed empty leg keeps the union valid before either diagnostic table exists.
+// isfuzzy drops only unresolved source legs; runtime query failures still fail the query.
+union isfuzzy=true
+    (datatable(Source:string, Operation:string, Level:string, Errors:long, LastError:datetime) []),
+    (DCRLogErrors
     | where _ResourceId =~ "__DCR_RESOURCE_ID__"
-    | summarize Errors = count(), LastError = max(TimeGenerated) by Source = "dcr", Operation = substring(OperationName, 0, 128), Level = "Error";
-let workspaceIssues = _LogOperation
+    | summarize Errors = count(), LastError = max(TimeGenerated) by Source = "dcr", Operation = substring(OperationName, 0, 128), Level = "Error"),
+    (_LogOperation
     | where Category == "Ingestion" and Level in ("Warning", "Error")
-    | summarize Errors = count(), LastError = max(TimeGenerated) by Source = "workspace", Operation = substring(Operation, 0, 128), Level;
-union dcrErrors, workspaceIssues
+    | summarize Errors = count(), LastError = max(TimeGenerated) by Source = "workspace", Operation = substring(Operation, 0, 128), Level)
 | where Errors > 0
 | project Source, Operation, Level, Errors, LastError

@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import subprocess
 import tempfile
 import threading
@@ -12,6 +13,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location("monitoring_stack", Path(__file__).resolve().parents[1] / "monitoring/stack.py")
 module = importlib.util.module_from_spec(spec)
@@ -22,8 +24,43 @@ run_spec.loader.exec_module(run_module)
 
 
 class MonitoringStackTests(unittest.TestCase):
+    def test_security_group_rule_descriptions_use_ec2_allowed_characters(self):
+        allowed = re.compile(r'^[a-zA-Z0-9. _\-:/()#,@\[\]+=&;{}!$*]{0,255}$')
+        for resource in module.template()['Resources'].values():
+            properties = resource.get('Properties', {})
+            rules = []
+            if resource['Type'] in ('AWS::EC2::SecurityGroupIngress', 'AWS::EC2::SecurityGroupEgress'):
+                rules.append(properties)
+            if resource['Type'] == 'AWS::EC2::SecurityGroup':
+                rules.extend(properties.get('SecurityGroupIngress', []))
+                rules.extend(properties.get('SecurityGroupEgress', []))
+            for rule in rules:
+                self.assertRegex(rule.get('Description', ''), allowed)
+
+    @staticmethod
+    def configured_template(sender=False):
+        """Resolve only the optional topology condition, leaving AWS references symbolic."""
+        omitted = object()
+
+        def resolve(value):
+            if value == {"Ref": "AWS::NoValue"}:
+                return omitted
+            if isinstance(value, list):
+                return [item for child in value if (item := resolve(child)) is not omitted]
+            if isinstance(value, dict):
+                if value.get("Condition") == "WithSyslogSender" and not sender:
+                    return omitted
+                if "Fn::If" in value:
+                    condition, yes, no = value["Fn::If"]
+                    assert condition == "WithSyslogSender"
+                    return resolve(yes if sender else no)
+                return {key: item for key, child in value.items() if (item := resolve(child)) is not omitted}
+            return value
+
+        return resolve(module.template())
+
     def setUp(self):
-        self.template = module.template()
+        self.template = self.configured_template()
         self.resources = self.template["Resources"]
 
     def of_type(self, name):
@@ -79,12 +116,85 @@ class MonitoringStackTests(unittest.TestCase):
         target = self.resources["ExpirySchedule"]["Properties"]["Target"]
         self.assertEqual("arn:aws:scheduler:::aws-sdk:ec2:terminateInstances", target["Arn"])
 
+    def test_sender_is_opt_in_and_disabled_topology_has_no_sender_references(self):
+        raw = module.template()
+        self.assertEqual("false", raw["Parameters"]["EnableSyslogSender"]["Default"])
+        self.assertEqual({"Fn::Equals": [{"Ref": "EnableSyslogSender"}, "true"]},
+                         raw["Conditions"]["WithSyslogSender"])
+        self.assertNotIn('"Ref": "Sender"', json.dumps(self.template["Resources"]))
+        self.assertNotIn("SenderId", self.template["Outputs"])
+        self.assertNotIn("SenderIp", self.template["Outputs"])
+        self.assertEqual([{"Ref": "HostGroup"}], self.resources["Linux"]["Properties"]["SecurityGroupIds"])
+
+    def test_optional_sender_has_scoped_tls_network_and_expiry(self):
+        configured = self.configured_template(sender=True)
+        resources = configured["Resources"]
+        instances = {name: resource["Properties"] for name, resource in resources.items()
+                     if resource["Type"] == "AWS::EC2::Instance"}
+        self.assertEqual({"Linux", "Windows", "Sender"}, set(instances))
+        self.assertEqual([{"Ref": "HostGroup"}], instances["Windows"]["SecurityGroupIds"])
+        self.assertEqual([{"Ref": "HostGroup"}, {"Ref": "CollectorSyslogGroup"}], instances["Linux"]["SecurityGroupIds"])
+        self.assertEqual([{"Ref": "HostGroup"}, {"Ref": "SenderGroup"}], instances["Sender"]["SecurityGroupIds"])
+        self.assertEqual({"Ref": "SenderProfile"}, instances["Sender"]["IamInstanceProfile"])
+        sender_access = resources["SenderRole"]["Properties"]["Policies"][0]["PolicyDocument"]["Statement"]
+        self.assertEqual({"s3:GetObject": {"Fn::Sub": "${Artifacts.Arn}/artifacts/qualification/${RunId}/sender/*"},
+                          "s3:PutObject": {"Fn::Sub": "${Artifacts.Arn}/results/sender/*"}},
+                         {statement["Action"]: statement["Resource"] for statement in sender_access})
+        ingress = [r["Properties"] for r in resources.values() if r["Type"] == "AWS::EC2::SecurityGroupIngress"]
+        self.assertEqual(1, len(ingress))
+        rule = ingress[0]
+        self.assertEqual({"Ref": "CollectorSyslogGroup"}, rule["GroupId"])
+        self.assertEqual({"Ref": "SenderGroup"}, rule["SourceSecurityGroupId"])
+        self.assertEqual(("tcp", 6514, 6514), (rule["IpProtocol"], rule["FromPort"], rule["ToPort"]))
+        self.assertNotIn("CidrIp", rule)
+        self.assertNotIn("CidrIpv6", rule)
+        for name, instance in instances.items():
+            self.assertNotIn("KeyName", instance, name)
+            self.assertEqual({"Ref": "PrivateSubnet"}, instance["SubnetId"], name)
+            self.assertEqual("required", instance["MetadataOptions"]["HttpTokens"], name)
+            self.assertEqual("terminate", instance["InstanceInitiatedShutdownBehavior"], name)
+            for disk in instance["BlockDeviceMappings"]:
+                self.assertTrue(disk["Ebs"]["Encrypted"], name)
+                self.assertTrue(disk["Ebs"]["DeleteOnTermination"], name)
+        statement = resources["ExpiryRole"]["Properties"]["Policies"][0]["PolicyDocument"]["Statement"][0]
+        self.assertEqual(3, len(statement["Resource"]))
+        self.assertNotIn("*", str(statement["Resource"]))
+        for name in instances:
+            self.assertIn({"Fn::Sub": "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${" + name + "}"},
+                          statement["Resource"])
+        schedule_input = resources["ExpirySchedule"]["Properties"]["Target"]["Input"]["Fn::Sub"]
+        self.assertEqual('{"InstanceIds":["${L}","${W}","${S}"]}', schedule_input[0])
+        self.assertEqual({"Ref": "Sender"}, schedule_input[1]["S"])
+
     def test_extra_environment_cannot_inject_commands_or_override_owned_run(self):
         self.assertEqual({"example": "a=b"}, run_module.extra_environment(["example=a=b"]))
         for items in [["X;touch /tmp/no=value"], ["BOWER_LAB_RUN=other"],
                       ["aws_default_region=other"], ["x=one", "X=two"], ["NO_EQUALS"]]:
             with self.subTest(items=items), self.assertRaises(ValueError):
                 run_module.extra_environment(items)
+
+    def test_sender_command_rejects_wrong_role_before_sending_ssm(self):
+        state = {"runId": "bower-ws6-20990101-000000", "outputs": {"SenderId": "i-owned"}}
+        instance = {"State": {"Name": "running"}, "Tags": [
+            {"Key": "Project", "Value": "bower-lab"}, {"Key": "RunId", "Value": state["runId"]},
+            {"Key": "Role", "Value": "linux-collector"}]}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.json"
+            path.write_text(json.dumps(state), encoding="utf-8")
+            with patch.object(run_module, "aws", side_effect=[{"Account": run_module.ACCOUNT},
+                    {"Reservations": [{"Instances": [instance]}]}]) as aws:
+                with self.assertRaisesRegex(SystemExit, "role does not match"):
+                    run_module.main(["Sender", "unused.sh", "--state", str(path)])
+                self.assertEqual(2, aws.call_count)
+
+    def test_sender_command_rejects_disabled_sender_before_ec2_or_ssm(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.json"
+            path.write_text(json.dumps({"runId": "bower-ws6-20990101-000000", "outputs": {}}), encoding="utf-8")
+            with patch.object(run_module, "aws", return_value={"Account": run_module.ACCOUNT}) as aws:
+                with self.assertRaisesRegex(SystemExit, "not enabled"):
+                    run_module.main(["Sender", "unused.sh", "--state", str(path)])
+                self.assertEqual(1, aws.call_count)
 
 
 class UploadOwnershipTests(unittest.TestCase):

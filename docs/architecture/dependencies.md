@@ -240,3 +240,15 @@ The site self-hosts the existing console's OFL-licensed Geist variable font. The
 license accompanies the font in `docs/assets/fonts/`. Browser checks reuse the
 console's Playwright version in a separate locked test package. `@axe-core/playwright` is a development-only
 accessibility check for the documentation; it is never included in the published site. Lighthouse is a development-only performance/accessibility audit, also excluded from the site.
+
+### Windows lab queue identity evidence: inbox SQLite API
+
+`lab/aws/monitoring/wec-qualification.ps1` uses `winsqlite3.dll`, the Windows
+Server 2016+ inbox SQLite API, through PS5.1-compatible P/Invoke. This is a lab-only
+read-only projection of `event_id` and `received_at` needed to reconcile native
+WEC identities with actual durable queue acceptance. It avoids exporting queue
+payloads or installing a separate SQLite executable/runtime package. Input rows
+and field lengths are bounded; unsupported APIs and read errors fail the
+qualification. The production collector retains its existing SQLite dependency.
+The API must be exercised on the owned Windows host; cross-platform compilation
+and mocked tests do not establish native compatibility.

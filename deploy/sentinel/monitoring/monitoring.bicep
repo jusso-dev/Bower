@@ -217,15 +217,13 @@ var healthRules = [
   }
   {
     name: 'table-no-ingestion'
-    displayName: 'Bower table event-time silence (unqualified)'
-    description: 'No event-time row in the window. Old backlog arriving now can be excluded, so this does not prove ingestion stopped. Requires live validation. Runbook: R1.'
+    displayName: 'Bower table ingestion silence'
+    description: 'No recent ingestion among events within absenceWindow. Set that scan horizon longer than the supported outage/replay age. Runbook: R1.'
     severity: 1
-    windowSize: 'PT${noIngestionMinutes}M'
+    windowSize: absenceWindow
     dimensions: []
     skipQueryValidation: false
-    operator: 'LessThan'
-    threshold: 1
-    query: loadTextContent('queries/table-no-ingestion.kql')
+    query: replace(loadTextContent('queries/table-no-ingestion.kql'), '__NO_INGESTION_MINUTES__', string(noIngestionMinutes))
   }
 ]
 

@@ -43,7 +43,7 @@ def aws(profile, region, *args):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("host", choices=("Linux", "Windows"))
+    parser.add_argument("host", choices=("Linux", "Windows", "Sender"))
     parser.add_argument("script", type=Path)
     parser.add_argument("--state", required=True, type=Path)
     parser.add_argument("--profile", default="homelab-admin")
@@ -62,12 +62,17 @@ def main(argv=None):
     identity = aws(args.profile, args.region, "sts", "get-caller-identity")
     if identity.get("Account") != ACCOUNT:
         raise SystemExit("Unexpected AWS account")
-    instance_id = state["outputs"][args.host + "Id"]
+    instance_id = state["outputs"].get(args.host + "Id")
+    if not instance_id:
+        raise SystemExit("Requested host is not enabled in this drill run")
     instance = aws(args.profile, args.region, "ec2", "describe-instances", "--instance-ids", instance_id)[
         "Reservations"][0]["Instances"][0]
     tags = {tag["Key"]: tag["Value"] for tag in instance.get("Tags", [])}
     if tags.get("Project") != "bower-lab" or tags.get("RunId") != state["runId"]:
         raise SystemExit("Instance is outside this drill run")
+    expected_role = {"Linux": "linux-collector", "Windows": "windows-wec", "Sender": "syslog-sender"}[args.host]
+    if tags.get("Role") != expected_role:
+        raise SystemExit("Instance role does not match the requested drill host")
     if instance.get("State", {}).get("Name") != "running":
         raise SystemExit("Instance is not running")
     windows = instance.get("Platform") == "windows"

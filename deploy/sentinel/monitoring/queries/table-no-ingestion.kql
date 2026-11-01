@@ -1,6 +1,8 @@
-// Candidate event-time absence rule, not proof that ingestion stopped. Scheduled query
-// windowing can exclude old events ingested now (outage replay). Production qualification
-// is blocked pending a wider event-time scan, ingestion_time() logic and live validation.
+// Ingestion-time silence within the configured event-time scan horizon (absenceWindow).
+// This includes outage backlog whose TimeGenerated falls within that horizon. Events older
+// than the horizon remain outside coverage; select it to exceed the supported replay age.
 BowerSecurity_CL
 | where isnotempty(CollectorId)
-| project TimeGenerated, CollectorId
+| summarize LastIngested = max(ingestion_time())
+| where isnull(LastIngested) or LastIngested < ago(__NO_INGESTION_MINUTES__m)
+| project LastIngested
