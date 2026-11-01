@@ -5,6 +5,7 @@ collector in a new private subnet of an existing VPC, using an existing NAT gate
 No public addresses, SSM administration only, encrypted disks, IMDSv2, and an
 independent EventBridge Scheduler expiry. An optional separate Linux sender permits
 only sender-to-Linux-collector TLS on port 6514 and is included in expiry when enabled.
+EnableWindows=false omits the Windows WEC host (firewall-only runs such as RELP).
 """
 
 import argparse
@@ -26,6 +27,10 @@ def attr(name, attribute):
 
 def sender_enabled(yes, no=None):
     return {"Fn::If": ["WithSyslogSender", yes, ref("AWS::NoValue") if no is None else no]}
+
+
+def windows_enabled(yes, no=None):
+    return {"Fn::If": ["WithWindows", yes, ref("AWS::NoValue") if no is None else no]}
 
 
 def context(why, *constraints):
@@ -121,6 +126,8 @@ def template():
             groups.append(sender_enabled(collector_group))
             extra["Metadata"] = context("Linux collector for local and optional remote syslog qualification.",
                 "Only conditional CollectorSyslogGroup may add inbound TLS.")
+        elif name == "Windows":
+            extra = {"Condition": "WithWindows"}
         elif name == "Sender":
             groups.append(sender_group)
             extra = {"Condition": "WithSyslogSender", "Metadata": context(
@@ -136,13 +143,13 @@ def template():
             "Tags": tags(role_name)}, DependsOn=["PrivateRoute", "PrivateAssociation"], **extra)
         outputs[name + "Id"] = {"Value": ref(name)}
         outputs[name + "Ip"] = {"Value": attr(name, "PrivateIp")}
-        if name == "Sender":
-            outputs[name + "Id"]["Condition"] = "WithSyslogSender"
-            outputs[name + "Ip"]["Condition"] = "WithSyslogSender"
+        if name in ("Sender", "Windows"):
+            outputs[name + "Id"]["Condition"] = "WithSyslogSender" if name == "Sender" else "WithWindows"
+            outputs[name + "Ip"]["Condition"] = outputs[name + "Id"]["Condition"]
     # Independent expiry: terminates exactly these instances even if the operator disappears.
-    instances = [sub("arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${" + name + "}")
-                 for name in ("Linux", "Windows")]
-    instances.append(sender_enabled(sub("arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${Sender}")))
+    instances = [sub("arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${Linux}"),
+                 windows_enabled(sub("arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${Windows}")),
+                 sender_enabled(sub("arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${Sender}"))]
     add("ExpiryRole", "IAM::Role", {"AssumeRolePolicyDocument": {"Version": "2012-10-17", "Statement": [
             {"Effect": "Allow", "Principal": {"Service": "scheduler.amazonaws.com"}, "Action": "sts:AssumeRole",
              "Condition": {"StringEquals": {"aws:SourceAccount": ref("AWS::AccountId")}}}]},
@@ -153,20 +160,27 @@ def template():
     add("ExpirySchedule", "Scheduler::Schedule", {"ScheduleExpression": sub("at(${Expiry})"),
         "ScheduleExpressionTimezone": "UTC", "FlexibleTimeWindow": {"Mode": "OFF"},
         "Target": {"Arn": "arn:aws:scheduler:::aws-sdk:ec2:terminateInstances", "RoleArn": attr("ExpiryRole", "Arn"),
-            "Input": sender_enabled(
-                {"Fn::Sub": ['{"InstanceIds":["${L}","${W}","${S}"]}',
-                    {"L": ref("Linux"), "W": ref("Windows"), "S": ref("Sender")}]},
-                {"Fn::Sub": ['{"InstanceIds":["${L}","${W}"]}', {"L": ref("Linux"), "W": ref("Windows")}]})}},
+            "Input": windows_enabled(
+                sender_enabled(
+                    {"Fn::Sub": ['{"InstanceIds":["${L}","${W}","${S}"]}',
+                        {"L": ref("Linux"), "W": ref("Windows"), "S": ref("Sender")}]},
+                    {"Fn::Sub": ['{"InstanceIds":["${L}","${W}"]}', {"L": ref("Linux"), "W": ref("Windows")}]}),
+                sender_enabled(
+                    {"Fn::Sub": ['{"InstanceIds":["${L}","${S}"]}', {"L": ref("Linux"), "S": ref("Sender")}]},
+                    {"Fn::Sub": ['{"InstanceIds":["${L}"]}', {"L": ref("Linux")}]}))}},
         Metadata=context("Independent expiry bounds abandoned-run instance charges.",
-            "Target exactly Linux and Windows, plus Sender only when enabled; teardown must still delete the stack."))
+            "Target exactly Linux, Windows only when enabled and Sender only when enabled; teardown must still delete the stack."))
     return {"AWSTemplateFormatVersion": "2010-09-09",
         "Description": "Bower monitoring drill: private Linux and Windows collectors, optional isolated firewall sender, SSM only, self-expiring",
         "Metadata": {"AWSToolsMetrics": {"AWSAgentToolkit": "aws-cloudformation@2"}},
-        "Conditions": {"WithSyslogSender": {"Fn::Equals": [ref("EnableSyslogSender"), "true"]}},
+        "Conditions": {"WithSyslogSender": {"Fn::Equals": [ref("EnableSyslogSender"), "true"]},
+                       "WithWindows": {"Fn::Equals": [ref("EnableWindows"), "true"]}},
         "Parameters": {
             "EnableSyslogSender": {"Type": "String", "Default": "false", "AllowedValues": ["true", "false"],
                 "Description": "Create a separate Linux nftables/rsyslog sender; permit only its TLS feed to Linux."},
-            "RunId": {"Type": "String", "AllowedPattern": "bower-ws6-[0-9]{8}-[0-9]{6}"},
+            "EnableWindows": {"Type": "String", "Default": "true", "AllowedValues": ["true", "false"],
+                "Description": "Create the Windows WEC host; false for firewall-only qualification."},
+            "RunId": {"Type": "String", "AllowedPattern": "bower-(ws6|fw)-[0-9]{8}-[0-9]{6}"},
             "Expiry": {"Type": "String", "AllowedPattern": "[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"},
             "VpcId": {"Type": "AWS::EC2::VPC::Id"},
             "NatGatewayId": {"Type": "String", "AllowedPattern": "nat-[0-9a-f]{8,17}"},

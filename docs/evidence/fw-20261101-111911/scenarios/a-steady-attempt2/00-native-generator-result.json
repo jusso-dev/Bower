@@ -1,0 +1,15 @@
+{
+ "actualRate": 9.999131680237806,
+ "count": 600,
+ "endedAt": "2026-11-01T14:13:13.437308+00:00",
+ "first": 1100000,
+ "generator": "nft",
+ "nativeCounterDelta": {
+  "A": 600,
+  "B": 0
+ },
+ "rate": 10.0,
+ "sent": 600,
+ "startedAt": "2026-11-01T14:12:13.432086+00:00",
+ "track": "A"
+}

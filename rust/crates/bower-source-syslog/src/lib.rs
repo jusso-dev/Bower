@@ -1,12 +1,13 @@
 //! Syslog source (C# `Bower.Source.Syslog`, the specification): strict RFC 5424 and
-//! RFC 3164 parsing, RFC 6587 framing, flat pack-parser records and bounded TCP, TLS and
-//! UDP listeners. Default deny: a message becomes an event only through a route to an
+//! RFC 3164 parsing, RFC 6587 framing, flat pack-parser records and bounded TCP, TLS, UDP
+//! and RELP listeners. Default deny: a message becomes an event only through a route to an
 //! active signed pack parser that selects it.
 
 pub mod config;
 pub mod framing;
 pub mod parser;
 pub mod record;
+pub mod relp;
 pub mod source;
 pub mod tls;
 

@@ -284,8 +284,8 @@ fn validate(listener: &mut ListenerOptions) -> Result<(), ConfigError> {
     }
     let id = listener.id.clone();
     let fail = |message: String| invalid_data(format!("Syslog listener {id}: {message}"));
-    if !matches!(listener.protocol.as_str(), "tcp" | "tls" | "udp") {
-        return Err(fail("protocol must be tcp, tls or udp.".into()));
+    if !matches!(listener.protocol.as_str(), "tcp" | "tls" | "udp" | "relp") {
+        return Err(fail("protocol must be tcp, tls, udp or relp.".into()));
     }
     let Some(address) = parse_address(&listener.address) else {
         return Err(fail("address must be an IP address.".into()));
@@ -295,16 +295,17 @@ fn validate(listener: &mut ListenerOptions) -> Result<(), ConfigError> {
     }
     if !normalise(address).is_loopback()
         && listener.protocol != "tls"
+        && listener.tls.is_none()
         && !listener.allow_insecure_non_loopback
     {
         return Err(fail(
-            "a non-loopback address requires protocol tls; set allowInsecureNonLoopback only on an isolated network."
+            "a non-loopback address requires protocol tls (or relp with tls); set allowInsecureNonLoopback only on an isolated network."
                 .into(),
         ));
     }
     let tls_valid = match &listener.tls {
         Some(tls) => {
-            listener.protocol == "tls"
+            matches!(listener.protocol.as_str(), "tls" | "relp")
                 && !tls.certificate_file.trim().is_empty()
                 && !tls.private_key_file.trim().is_empty()
         }
@@ -312,7 +313,8 @@ fn validate(listener: &mut ListenerOptions) -> Result<(), ConfigError> {
     };
     if !tls_valid {
         return Err(fail(
-            "tls settings are required for protocol tls and not allowed otherwise.".into(),
+            "tls settings are required for protocol tls, optional for relp and not allowed otherwise."
+                .into(),
         ));
     }
     if let Some(tls) = &listener.tls

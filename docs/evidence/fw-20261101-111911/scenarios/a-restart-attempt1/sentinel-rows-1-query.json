@@ -1,0 +1,35 @@
+{
+ "schemaVersion": 1,
+ "recordType": "firewall-destination-query-evidence",
+ "runId": "bower-fw-20261101-111911",
+ "scenario": "a-restart",
+ "collectorId": "bower-fw-20261101-111911-linux",
+ "workspaceId": "b41439ee-2723-4f42-ba8c-070677cc6226",
+ "verifierClientId": "cfa6ab6b-138f-4225-9795-29d3a9bb8515",
+ "planSha256": "6f54933d8afe1310599918fe2de91b3d04a07e446e62f7c22b148533596857e6",
+ "packSha256": "44aa95145b1662dcca81c0f54f1c24dbc61bcaa832de3e4de14171d062636bc5",
+ "query": {
+  "text": "BowerSecurity_CL\n| where CollectorId == \"bower-fw-20261101-111911-linux\" and ApplicationName == \"nftables-firewall\"\n    and ApplicationEnvironment == \"validation\" and EventType == \"network_connection_denied\"\n| where TimeGenerated between (datetime(2026-11-01T13:31:37.903000+00:00) .. datetime(2026-11-01T13:32:49.903000+00:00))\n| where ingestion_time() <= datetime(2026-11-01T13:35:53.726880+00:00)\n| summarize Copies=count(), FirstGenerated=min(TimeGenerated), LastGenerated=max(TimeGenerated),\n    FirstIngested=min(ingestion_time()), LastIngested=max(ingestion_time()) by EventId\n| project EventId, Copies, FirstGenerated, LastGenerated, FirstIngested, LastIngested\n| take 200001",
+  "sha256": "0f55e0a616e0c72f424b9d1a24ad1c183750eb04ecb85eca00be8be564e36ee5",
+  "requestBodySha256": "2254994df96b727dacf7c857323e5926c14ee2c075c379c1af75b2cb6513bf43",
+  "cutoff": "2026-11-01T13:35:53.726880+00:00",
+  "generatedStart": "2026-11-01T13:31:37.903000+00:00",
+  "generatedEnd": "2026-11-01T13:32:49.903000+00:00",
+  "apiTimespan": null
+ },
+ "verifierSourceSha256": "f613d1d9839c74ca2834ceb0df0aaf6e11e38e66f9d483df21af771c09130dd4",
+ "queryResponseComplete": true,
+ "columns": [
+  "EventId",
+  "Copies",
+  "FirstGenerated",
+  "LastGenerated",
+  "FirstIngested",
+  "LastIngested"
+ ],
+ "distinctIdentities": 6000,
+ "identitySetSha256": "c3e6746fff6e67ab2f78e0e899dfb81455389f42a80761c4f181a9f39aaf5ad7",
+ "deliveryQualified": false,
+ "rowsFile": "sentinel-rows-1.jsonl",
+ "originalSha256": "872d53951a4b05de2a98886bf81a71f1430e413a25193dfa13e54a73049df80e"
+}

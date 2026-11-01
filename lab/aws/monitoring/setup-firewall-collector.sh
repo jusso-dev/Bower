@@ -53,7 +53,7 @@ def fetch_artifacts(role, required):
     run = os.environ["BOWER_LAB_RUN"]
     bucket = os.environ["BOWER_LAB_BUCKET"]
     expected_manifest = os.environ["BOWER_ARTIFACT_MANIFEST_SHA256"]
-    if os.geteuid() != 0 or not re.fullmatch(r"bower-ws6-\d{8}-\d{6}", run):
+    if os.geteuid() != 0 or not re.fullmatch(r"bower-(?:ws6|fw)-\d{8}-\d{6}", run):
         fail("not-an-owned-root-drill")
     if not re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", bucket):
         fail("invalid-artifact-bucket")
@@ -230,6 +230,14 @@ def wait_for_collector():
 
 stage, run, manifest_hash = fetch_artifacts("collector", REQUIRED)
 peer = private_ip(os.environ["BOWER_SYSLOG_SENDER_IP"])
+# tls (default) or relp: the same mutual-TLS material on listener a13, port 6514.
+protocol = os.environ.get("BOWER_SYSLOG_PROTOCOL", "tls")
+if protocol not in ("tls", "relp"):
+    fail("unsupported-syslog-protocol")
+# Optional undelivered-queue cap for the queue-capacity scenario (16 MiB to 1 GiB).
+queue_cap = os.environ.get("BOWER_QUEUE_MAX_BYTES", "")
+if queue_cap and (not re.fullmatch(r"[0-9]{8,10}", queue_cap) or not 16777216 <= int(queue_cap) <= 1073741824):
+    fail("invalid-queue-cap")
 destination = destination_environment((stage / "sentinel.env").read_text())
 existing_env = Path("/etc/bower/bower.env")
 if existing_env.exists():
@@ -275,7 +283,7 @@ for name, destination_path in {
         "ca.pem": "/etc/bower/syslog/ca.pem"}.items():
     install_file(stage / name, destination_path, 0o640, "bower")
 syslog = {"apiVersion": "bower.security/v1", "kind": "SyslogSource", "listeners": [{
-    "id": "a13", "protocol": "tls", "address": "0.0.0.0", "port": 6514, "allowedSenders": [peer],
+    "id": "a13", "protocol": protocol, "address": "0.0.0.0", "port": 6514, "allowedSenders": [peer],
     "idleTimeoutSeconds": 0, "frameTimeoutSeconds": 60, "handshakeStartTimeoutSeconds": 60,
     "tls": {"certificateFile": "/etc/bower/syslog/server.pem", "privateKeyFile": "/etc/bower/syslog/server-key.pem",
             "clientCertificateAuthorityFile": "/etc/bower/syslog/ca.pem"},
@@ -291,6 +299,8 @@ destination.update({
     "BOWER_PACK_TRUSTED_KEYS": "/etc/bower/keys/pack-signing.pub.pem",
     "BOWER_SYSLOG_CONFIG": "/etc/bower/syslog.json", "BOWER_INGEST_TOKEN_FILE": "/etc/bower/secrets/token",
     "BOWER_HEALTH_RECORD_INTERVAL_SECONDS": "60"})
+if queue_cap:
+    destination["BOWER_QUEUE_MAX_BYTES"] = queue_cap
 (stage / "bower.env").write_text("".join(key + "=" + value + "\n" for key, value in sorted(destination.items())))
 install_file(stage / "bower.env", existing_env, 0o640, "bower")
 unit = """[Unit]
@@ -339,7 +349,8 @@ wait_for_collector()
 print(json.dumps({"phase": "firewall-collector-setup", "runId": run, "manifestSha256": manifest_hash,
                   "collectorSha256": hashlib.sha256((release / "Bower.Collector").read_bytes()).hexdigest(),
                   "syslogConfigSha256": hashlib.sha256(Path("/etc/bower/syslog.json").read_bytes()).hexdigest(),
-                  "listener": "a13", "port": 6514, "output": "azure-logs-ingestion", "tls13Tickets": 0,
+                  "listener": "a13", "protocol": protocol, "port": 6514, "queueMaxBytes": queue_cap or None,
+                  "output": "azure-logs-ingestion", "tls13Tickets": 0,
                   "destinationQueryVerified": False}))
 
 PY

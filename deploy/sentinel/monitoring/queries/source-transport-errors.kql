@@ -20,7 +20,7 @@ let syslog = health
         + coalesce(toint(Listener.parserErrors), 0) + coalesce(toint(Listener.tlsReloadFailures), 0)
         + coalesce(toint(Listener.tlsRevoked), 0) + coalesce(toint(Listener.tlsSessionsClosed), 0),
         NewConnections = coalesce(toint(Listener.connectionsAccepted), 0),
-        Retrying = coalesce(toint(Listener.retries), 0) > 0
+        Retrying = coalesce(toint(Listener.retries), 0) > 0 or coalesce(toint(Listener.relpBusyCloses), 0) > 0
     | summarize Errors = sum(Errors), MaxNewConnections = tolong(max(NewConnections)), FailedStates = tolong(0), Records = count(),
         ImpairedRecords = tolong(array_length(make_set_if(TimeGenerated, Retrying, 2)))
         by CollectorId, Source = strcat("syslog:", tostring(Listener.id));

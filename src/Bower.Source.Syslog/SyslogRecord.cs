@@ -85,7 +85,8 @@ public static class SyslogRecord
     /// <summary>
     /// <c>syslog-</c> + 32 hex characters of SHA-256 over listener, sender and the exact
     /// frame bytes, so a retransmitted frame deduplicates. Without a message timestamp the
-    /// receive time is included, because the record's time would differ on retransmit.
+    /// receive time is included, so two distinct identical messages are never merged; a
+    /// retransmission (including a RELP resend) of such a message can then become a second event.
     /// </summary>
     internal static string EventId(string listenerId, string senderAddress, ReadOnlySpan<byte> frame, string? receivedAt)
     {

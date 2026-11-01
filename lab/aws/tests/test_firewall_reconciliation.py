@@ -347,3 +347,14 @@ class FirewallReconciliationTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ScenarioNameTests(unittest.TestCase):
+    def test_plans_with_digits_in_scenario_names_are_accepted_and_others_refused(self):
+        base = {'schemaVersion': 1, 'runId': 'bower-fw-20330518-000000', 'collectorId': 'bower-fw-20330518-000000-linux',
+                'listener': 'a13', 'startEpoch': 2000000000, 'collectNotBeforeEpoch': 2000000905,
+                'expectedBlocks': ['nft:A:1940000:10']}
+        self.assertEqual(10, len(query.expected(dict(base, scenario='a-destination-outage-15m'))))
+        for name in ('a-Outage', 'c-steady', 'a_steady', 'a-steady;x'):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                query.expected(dict(base, scenario=name))

@@ -1,0 +1,35 @@
+{
+ "schemaVersion": 1,
+ "recordType": "firewall-destination-query-evidence",
+ "runId": "bower-fw-20261101-111911",
+ "scenario": "a-sender-reboot-only",
+ "collectorId": "bower-fw-20261101-111911-linux",
+ "workspaceId": "b41439ee-2723-4f42-ba8c-070677cc6226",
+ "verifierClientId": "cfa6ab6b-138f-4225-9795-29d3a9bb8515",
+ "planSha256": "96a90f30f50291aabc1f400db51f141c7c00446faf4665472aa9324c42857aba",
+ "packSha256": "44aa95145b1662dcca81c0f54f1c24dbc61bcaa832de3e4de14171d062636bc5",
+ "query": {
+  "text": "BowerSecurity_CL\n| where CollectorId == \"bower-fw-20261101-111911-linux\" and ApplicationName == \"nftables-firewall\"\n    and ApplicationEnvironment == \"validation\" and EventType == \"network_connection_denied\"\n| where TimeGenerated between (datetime(2026-11-01T12:36:09.309000+00:00) .. datetime(2026-11-01T12:40:11.309000+00:00))\n| where ingestion_time() <= datetime(2026-11-01T12:53:50.835917+00:00)\n| summarize Copies=count(), FirstGenerated=min(TimeGenerated), LastGenerated=max(TimeGenerated),\n    FirstIngested=min(ingestion_time()), LastIngested=max(ingestion_time()) by EventId\n| project EventId, Copies, FirstGenerated, LastGenerated, FirstIngested, LastIngested\n| take 200001",
+  "sha256": "1fac20fdd6f410fd32ed0ec70d2dfc42a4b9d2cbc63633375ea0eb8782f9a21e",
+  "requestBodySha256": "1eacee4348c670947b6102f1449e4a40cbf01b9e8090c504f47a31e40ffbac64",
+  "cutoff": "2026-11-01T12:53:50.835917+00:00",
+  "generatedStart": "2026-11-01T12:36:09.309000+00:00",
+  "generatedEnd": "2026-11-01T12:40:11.309000+00:00",
+  "apiTimespan": null
+ },
+ "verifierSourceSha256": "f613d1d9839c74ca2834ceb0df0aaf6e11e38e66f9d483df21af771c09130dd4",
+ "queryResponseComplete": true,
+ "columns": [
+  "EventId",
+  "Copies",
+  "FirstGenerated",
+  "LastGenerated",
+  "FirstIngested",
+  "LastIngested"
+ ],
+ "distinctIdentities": 600,
+ "identitySetSha256": "2bb47a0001c10b920d82052321dc3bb3c27e846183a99e01bf446620117204f1",
+ "deliveryQualified": false,
+ "rowsFile": "sentinel-rows-1.jsonl",
+ "originalSha256": "814f6d38016dde7e9f258dcb72a01407b6f30ab501189fadf6c9b6aa4ecb38bb"
+}

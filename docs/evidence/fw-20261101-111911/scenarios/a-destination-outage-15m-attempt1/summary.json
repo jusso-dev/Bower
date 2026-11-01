@@ -1,0 +1,89 @@
+{
+  "scenario": "a-destination-outage-15m",
+  "attempt": 1,
+  "runId": "bower-fw-20261101-111911",
+  "planSha256": "2061d9dd69fd4c5e7db9ad182eed40298ecf9997f9a01713f23a876b5fcfcb0e",
+  "startEpoch": 1793549180.677,
+  "expectedBlocks": [
+    "nft:A:1940000:9000"
+  ],
+  "destinationBlock": {
+    "exit": 0,
+    "applied": {
+      "runId": "bower-fw-20261101-111911",
+      "planSha256": "2061d9dd69fd4c5e7db9ad182eed40298ecf9997f9a01713f23a876b5fcfcb0e",
+      "table": "bower_outage_2061d9dd69fd4c5e",
+      "appliedAt": "2026-11-01T16:03:53.390688+00:00",
+      "appliedMonotonic": 8678.669492923,
+      "rulesSha256": "bdd69ffb54c0c8dd90411b62d98de47b544fdcea832ad55fdb0de9b4987410d0",
+      "serviceUid": 992,
+      "guardArmed": true,
+      "tableSnapshotSha256": "bb907ca7465ef35333ac66ffd333b0699593c7b0ae29888c4e615c79cedc432c",
+      "bootId": "bc27feb0-4220-4356-a7e5-28435c88272e",
+      "guardUnit": "bower-outage-2061d9dd69fd4c5e",
+      "restoreNotBeforeEpoch": 1793550085.677,
+      "scope": "Bower service UID outbound TCP443; IPv4 and IPv6; ingestion and token refresh",
+      "destinationOutageQualified": false,
+      "key": "results/firewall/a-destination-outage-15m/2061d9dd69fd4c5e7db9ad182eed40298ecf9997f9a01713f23a876b5fcfcb0e/fault/applied.json",
+      "localEvidenceDirectory": "/var/lib/bower-lab/bower_outage_2061d9dd69fd4c5e"
+    }
+  },
+  "steps": [
+    {
+      "host": "Sender",
+      "offsetSeconds": 0.0,
+      "exit": 0,
+      "output": null
+    }
+  ],
+  "collected": [
+    {
+      "kind": "native-generator-result",
+      "file": "00-native-generator-result.json",
+      "exit": 0
+    },
+    {
+      "kind": "queue-acceptance-only",
+      "file": "01-queue-acceptance-only.json",
+      "exit": 0
+    },
+    {
+      "kind": "collector-snapshot",
+      "file": "02-collector-snapshot.json",
+      "exit": 0
+    },
+    {
+      "kind": "sender-snapshot",
+      "file": "03-sender-snapshot.json",
+      "exit": 0
+    }
+  ],
+  "faults": [],
+  "queueExports": [
+    {
+      "key": "results/firewall/a-destination-outage-15m/2061d9dd69fd4c5e7db9ad182eed40298ecf9997f9a01713f23a876b5fcfcb0e/7cbfe4a65be34a68beeb7fe595c18367.json",
+      "sha256": "004f88455fedcd46764f4576ac82ac86df59ad8815abf8695ea67cd27157834f",
+      "bytes": 1205586,
+      "rows": 9000,
+      "malformedRows": 0,
+      "destinationQueryVerified": false
+    }
+  ],
+  "queries": [
+    {
+      "query": 1,
+      "exit": 2,
+      "report": "reconciliation-1.json",
+      "strictPass": null,
+      "identityComplete": null
+    },
+    {
+      "query": 2,
+      "exit": 0,
+      "report": "reconciliation-2.json",
+      "strictPass": true,
+      "identityComplete": true
+    }
+  ],
+  "finishedAt": "2026-11-01T16:29:06.411629+00:00"
+}

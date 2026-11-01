@@ -1,0 +1,1543 @@
+{
+ "schemaVersion": 1,
+ "scenarios": [
+  {
+   "attempt": "a-blackhole-attempt1",
+   "planSha256": "11699fb11e162d08d765227cdc753136c8f53ff40d78f02ff46ef0a0343e94f2",
+   "publicPlanSha256": "d46d0e527129156ecc3f095280877be0da583e98b68e2487498b5dd2b61efaa0",
+   "queueExports": [
+    {
+     "file": "queue-identities.jsonl",
+     "exportSha256": "37f528e7eb8a1c04ac6f98d381cd5fa2320a85c99e14dd8831e394eac11f567a",
+     "rows": 1800,
+     "helperSha256": "3de4758e7d107cf2886e42822c700106999cb474f9d85168bff6ec7e39f94083"
+    }
+   ],
+   "expected": 1800,
+   "identityComplete": true,
+   "strictPass": true,
+   "queryCutoff": "2026-11-01T13:54:55.357662+00:00",
+   "native": {
+    "sent": 1800,
+    "nativeCounterDelta": 1800,
+    "identitySetSha256": "c40f468d4e2721f95952b6c7d61ff2ee34e4e953fa10b37f53a71121e3a320e9",
+    "actualRates": [
+     9.999709205178636
+    ]
+   },
+   "queue": {
+    "distinctIds": 1800,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "c40f468d4e2721f95952b6c7d61ff2ee34e4e953fa10b37f53a71121e3a320e9"
+   },
+   "sentinel": {
+    "distinctIds": 1800,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "c40f468d4e2721f95952b6c7d61ff2ee34e4e953fa10b37f53a71121e3a320e9",
+    "firstIngested": "2026-11-01T13:49:00.011619+00:00",
+    "lastIngested": "2026-11-01T13:52:00.380046+00:00",
+    "rows": 1800,
+    "duplicateRows": 0
+   },
+   "scenario": "a-blackhole",
+   "startEpoch": 1793540937.307,
+   "senderRsyslog": "8.2610.0",
+   "dedupProof": {
+    "RawRows": 1800,
+    "CollapsedRows": 1800,
+    "DistinctIds": 1800,
+    "collapses": true
+   },
+   "queries": [
+    {
+     "query": 1,
+     "exit": 0,
+     "report": "reconciliation-1.json",
+     "strictPass": true,
+     "identityComplete": true
+    }
+   ],
+   "faults": [
+    {
+     "action": "blackhole",
+     "host": "Linux",
+     "record": {
+      "duration": 120,
+      "endedAt": "2026-11-01T13:51:27.602028+00:00",
+      "fault": "blackhole",
+      "packets": 20,
+      "startedAt": "2026-11-01T13:49:27.392182+00:00"
+     }
+    }
+   ],
+   "relpCountersSinceCollectorStart": {
+    "connectionsAccepted": 2,
+    "framesReceived": 4500,
+    "queued": 4372,
+    "duplicates": 128,
+    "relpAcknowledged": 4500,
+    "relpServerCloses": 0,
+    "relpBusyCloses": 0,
+    "retries": 0,
+    "framingErrors": 0,
+    "tlsHandshakeFailures": 0,
+    "peerResets": 0,
+    "oversized": 0,
+    "malformed": 0
+   }
+  },
+  {
+   "attempt": "a-burst-attempt1",
+   "planSha256": "26cf7f06426b2c5f16846066b822bfe7b5dbe35605f28a2a0f0ea49314c2810d",
+   "publicPlanSha256": "3cefbf17040d84a4bdb55e93e980f1447e05d43be00dd5e9fd2fb27abf615752",
+   "queueExports": [
+    {
+     "file": "queue-identities.jsonl",
+     "exportSha256": "31cebdcf01e5f30775b4d38a4a649dacf2f20be1fa15a10bf18e0e3a2250a6c8",
+     "rows": 6000,
+     "helperSha256": "3de4758e7d107cf2886e42822c700106999cb474f9d85168bff6ec7e39f94083"
+    }
+   ],
+   "expected": 6000,
+   "identityComplete": true,
+   "strictPass": true,
+   "queryCutoff": "2026-11-01T14:09:40.582752+00:00",
+   "native": {
+    "sent": 6000,
+    "nativeCounterDelta": 6000,
+    "identitySetSha256": "6e95d40df17c0da379a53cf841b9a6af99bee1aa4bb664b489838085c0fc2621",
+    "actualRates": [
+     99.99132022678356
+    ]
+   },
+   "queue": {
+    "distinctIds": 6000,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "6e95d40df17c0da379a53cf841b9a6af99bee1aa4bb664b489838085c0fc2621"
+   },
+   "sentinel": {
+    "distinctIds": 6000,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "6e95d40df17c0da379a53cf841b9a6af99bee1aa4bb664b489838085c0fc2621",
+    "firstIngested": "2026-11-01T14:06:00.667225+00:00",
+    "lastIngested": "2026-11-01T14:07:02.890933+00:00",
+    "rows": 6000,
+    "duplicateRows": 0
+   },
+   "scenario": "a-burst",
+   "startEpoch": 1793541957.836,
+   "senderRsyslog": "8.2610.0",
+   "dedupProof": {
+    "RawRows": 6000,
+    "CollapsedRows": 6000,
+    "DistinctIds": 6000,
+    "collapses": true
+   },
+   "queries": [
+    {
+     "query": 1,
+     "exit": 0,
+     "report": "reconciliation-1.json",
+     "strictPass": true,
+     "identityComplete": true
+    }
+   ],
+   "faults": [],
+   "relpCountersSinceCollectorStart": {
+    "connectionsAccepted": 3,
+    "framesReceived": 12300,
+    "queued": 12172,
+    "duplicates": 128,
+    "relpAcknowledged": 12300,
+    "relpServerCloses": 0,
+    "relpBusyCloses": 0,
+    "retries": 0,
+    "framingErrors": 0,
+    "tlsHandshakeFailures": 0,
+    "peerResets": 0,
+    "oversized": 0,
+    "malformed": 0
+   }
+  },
+  {
+   "attempt": "a-capacity-refusal-attempt1",
+   "planSha256": "45e40dc7deea89610ce73c2fe39228eceedf52a66d9b7c0b4ed0645dad87fbbf",
+   "publicPlanSha256": "a02461667d5f7f1c79bc995d014be8cdb172c1ebe1393ab95c9c34a6b8b5dae0",
+   "queueExports": [
+    {
+     "file": "queue-identities.jsonl",
+     "exportSha256": "df7b3351195c324046552948139e8e7e1defc2da865563c5bf73aad0409d040d",
+     "rows": 20000,
+     "helperSha256": "3de4758e7d107cf2886e42822c700106999cb474f9d85168bff6ec7e39f94083"
+    }
+   ],
+   "expected": 20000,
+   "identityComplete": true,
+   "strictPass": true,
+   "queryCutoff": "2026-11-01T16:46:58.677987+00:00",
+   "native": {
+    "sent": 20000,
+    "nativeCounterDelta": 20000,
+    "identitySetSha256": "3ce8a1c79f4a7cbf57b01cf163b425ffce49d1cc4a6130b1ef20d6172c5ea47c",
+    "actualRates": [
+     99.99741286493477
+    ]
+   },
+   "queue": {
+    "distinctIds": 20000,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "3ce8a1c79f4a7cbf57b01cf163b425ffce49d1cc4a6130b1ef20d6172c5ea47c"
+   },
+   "sentinel": {
+    "distinctIds": 20000,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "3ce8a1c79f4a7cbf57b01cf163b425ffce49d1cc4a6130b1ef20d6172c5ea47c",
+    "firstIngested": "2026-11-01T16:43:50.225024+00:00",
+    "lastIngested": "2026-11-01T16:44:29.944811+00:00",
+    "rows": 20000,
+    "duplicateRows": 0
+   },
+   "scenario": "a-capacity-refusal",
+   "startEpoch": 1793550769.797,
+   "senderRsyslog": "8.2610.0",
+   "dedupProof": {
+    "RawRows": 20000,
+    "CollapsedRows": 20000,
+    "DistinctIds": 20000,
+    "collapses": true
+   },
+   "queries": [
+    {
+     "query": 1,
+     "exit": 0,
+     "report": "reconciliation-1.json",
+     "strictPass": true,
+     "identityComplete": true
+    }
+   ],
+   "faults": [
+    {
+     "action": "raise-cap",
+     "host": "Linux",
+     "record": {
+      "duration": 0,
+      "endedAt": "2026-11-01T16:43:47.011054+00:00",
+      "fault": "raise-cap",
+      "previousCap": "124432440",
+      "startedAt": "2026-11-01T16:43:29.896409+00:00"
+     }
+    }
+   ],
+   "relpCountersSinceCollectorStart": {
+    "connectionsAccepted": 1,
+    "framesReceived": 4131,
+    "queued": 4131,
+    "duplicates": 0,
+    "relpAcknowledged": 4131,
+    "relpServerCloses": 0,
+    "relpBusyCloses": 0,
+    "retries": 0,
+    "framingErrors": 0,
+    "tlsHandshakeFailures": 0,
+    "peerResets": 0,
+    "oversized": 0,
+    "malformed": 0
+   }
+  },
+  {
+   "attempt": "a-collector-reboot-attempt1",
+   "planSha256": "77331bac199cef56e7be6092a08c307568bf082e26e12bedf722d8de7e4de37b",
+   "publicPlanSha256": "aa2b46de26effc26f344ae27b2dd0435b3b2f1a0effbadfabe32df9b4fa3161f",
+   "queueExports": [
+    {
+     "file": "queue-identities.jsonl",
+     "exportSha256": "10921e8851db270b4114fd1b85528332b13c21e809386cca7be41bb6111649a1",
+     "rows": 3000,
+     "helperSha256": "3de4758e7d107cf2886e42822c700106999cb474f9d85168bff6ec7e39f94083"
+    }
+   ],
+   "expected": 3000,
+   "identityComplete": true,
+   "strictPass": true,
+   "queryCutoff": "2026-11-01T13:46:24.797973+00:00",
+   "native": {
+    "sent": 3000,
+    "nativeCounterDelta": 3000,
+    "identitySetSha256": "d0c3aad2e37a6908a5792003e8014609b71b1b3fa806575144065b8e8ecdf7d8",
+    "actualRates": [
+     9.999825764202532
+    ]
+   },
+   "queue": {
+    "distinctIds": 3000,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "d0c3aad2e37a6908a5792003e8014609b71b1b3fa806575144065b8e8ecdf7d8"
+   },
+   "sentinel": {
+    "distinctIds": 3000,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "d0c3aad2e37a6908a5792003e8014609b71b1b3fa806575144065b8e8ecdf7d8",
+    "firstIngested": "2026-11-01T13:38:31.588661+00:00",
+    "lastIngested": "2026-11-01T13:43:31.158748+00:00",
+    "rows": 3000,
+    "duplicateRows": 0
+   },
+   "scenario": "a-collector-reboot",
+   "startEpoch": 1793540307.787,
+   "senderRsyslog": "8.2610.0",
+   "dedupProof": {
+    "RawRows": 3000,
+    "CollapsedRows": 3000,
+    "DistinctIds": 3000,
+    "collapses": true
+   },
+   "queries": [
+    {
+     "query": 1,
+     "exit": 0,
+     "report": "reconciliation-1.json",
+     "strictPass": true,
+     "identityComplete": true
+    }
+   ],
+   "faults": [
+    {
+     "action": "reboot",
+     "host": "Linux",
+     "record": {
+      "duration": 0,
+      "endedAt": "2026-11-01T13:38:57.910039+00:00",
+      "fault": "reboot",
+      "startedAt": "2026-11-01T13:38:57.883487+00:00"
+     }
+    }
+   ],
+   "relpCountersSinceCollectorStart": {
+    "connectionsAccepted": 1,
+    "framesReceived": 2700,
+    "queued": 2572,
+    "duplicates": 128,
+    "relpAcknowledged": 2700,
+    "relpServerCloses": 0,
+    "relpBusyCloses": 0,
+    "retries": 0,
+    "framingErrors": 0,
+    "tlsHandshakeFailures": 0,
+    "peerResets": 0,
+    "oversized": 0,
+    "malformed": 0
+   }
+  },
+  {
+   "attempt": "a-destination-outage-15m-attempt1",
+   "planSha256": "2061d9dd69fd4c5e7db9ad182eed40298ecf9997f9a01713f23a876b5fcfcb0e",
+   "publicPlanSha256": "9b861160916058bb08e3529d59b2e5483e45a7c59b75911d21096bb9a50e218c",
+   "queueExports": [
+    {
+     "file": "queue-identities.jsonl",
+     "exportSha256": "004f88455fedcd46764f4576ac82ac86df59ad8815abf8695ea67cd27157834f",
+     "rows": 9000,
+     "helperSha256": "3de4758e7d107cf2886e42822c700106999cb474f9d85168bff6ec7e39f94083"
+    }
+   ],
+   "expected": 9000,
+   "identityComplete": true,
+   "strictPass": true,
+   "queryCutoff": "2026-11-01T16:29:03.660824+00:00",
+   "native": {
+    "sent": 9000,
+    "nativeCounterDelta": 9000,
+    "identitySetSha256": "f3b0df8e2fa575eba7ec486be4677f781e71a5db5b1c3d4cfd53027923545764",
+    "actualRates": [
+     9.999940530909212
+    ]
+   },
+   "queue": {
+    "distinctIds": 9000,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "f3b0df8e2fa575eba7ec486be4677f781e71a5db5b1c3d4cfd53027923545764"
+   },
+   "sentinel": {
+    "distinctIds": 9000,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "f3b0df8e2fa575eba7ec486be4677f781e71a5db5b1c3d4cfd53027923545764",
+    "firstIngested": "2026-11-01T16:21:30.018807+00:00",
+    "lastIngested": "2026-11-01T16:21:34.837480+00:00",
+    "rows": 9000,
+    "duplicateRows": 0
+   },
+   "scenario": "a-destination-outage-15m",
+   "startEpoch": 1793549180.677,
+   "senderRsyslog": "8.2610.0",
+   "dedupProof": {
+    "RawRows": 9000,
+    "CollapsedRows": 9000,
+    "DistinctIds": 9000,
+    "collapses": true
+   },
+   "queries": [
+    {
+     "query": 1,
+     "exit": 2,
+     "report": "reconciliation-1.json",
+     "strictPass": null,
+     "identityComplete": null
+    },
+    {
+     "query": 2,
+     "exit": 0,
+     "report": "reconciliation-2.json",
+     "strictPass": true,
+     "identityComplete": true
+    }
+   ],
+   "faults": [],
+   "relpCountersSinceCollectorStart": {
+    "connectionsAccepted": 3,
+    "framesReceived": 28200,
+    "queued": 28072,
+    "duplicates": 128,
+    "relpAcknowledged": 28200,
+    "relpServerCloses": 0,
+    "relpBusyCloses": 0,
+    "retries": 0,
+    "framingErrors": 0,
+    "tlsHandshakeFailures": 0,
+    "peerResets": 0,
+    "oversized": 0,
+    "malformed": 0
+   }
+  },
+  {
+   "attempt": "a-reset-attempt1",
+   "planSha256": "837b44222fd5c5fa437bc2568012f4057d3da66b2dda8ec0c5b09f159a8bd57b",
+   "publicPlanSha256": "20cffcbe1550a435250a4de87fdf94a869fdf7a8a8f8b250fd7e2fb4c5e4c23f",
+   "queueExports": [
+    {
+     "file": "queue-identities.jsonl",
+     "exportSha256": "bf901988d324e18d426a67bd646fd521847c463a9ef8656aa5be18b4f4e040da",
+     "rows": 1200,
+     "helperSha256": "d3498ab74e7a9cfab6e9e54afcc962dcfbacb0dc7ebb5d4f902cdbcbb09e5268"
+    }
+   ],
+   "expected": 1200,
+   "identityComplete": true,
+   "strictPass": true,
+   "queryCutoff": "2026-11-01T11:59:29.256019+00:00",
+   "native": {
+    "sent": 1200,
+    "nativeCounterDelta": 1200,
+    "identitySetSha256": "31d910c61eca28f4227cc336eed064b4bb00d6267cee317d12f7225cc2d521d2",
+    "actualRates": [
+     9.999558939120988
+    ]
+   },
+   "queue": {
+    "distinctIds": 1200,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "31d910c61eca28f4227cc336eed064b4bb00d6267cee317d12f7225cc2d521d2"
+   },
+   "sentinel": {
+    "distinctIds": 1200,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "31d910c61eca28f4227cc336eed064b4bb00d6267cee317d12f7225cc2d521d2",
+    "firstIngested": "2026-11-01T11:51:34.827354+00:00",
+    "lastIngested": "2026-11-01T11:53:36.337983+00:00",
+    "rows": 1200,
+    "duplicateRows": 0
+   },
+   "scenario": "a-reset",
+   "startEpoch": 1793533890.611,
+   "senderRsyslog": "8.2204.0",
+   "dedupProof": {
+    "RawRows": 1200,
+    "CollapsedRows": 1200,
+    "DistinctIds": 1200,
+    "collapses": true
+   },
+   "queries": [
+    {
+     "query": 1,
+     "exit": 0,
+     "report": "reconciliation-1.json",
+     "strictPass": true,
+     "identityComplete": true
+    }
+   ],
+   "faults": [
+    {
+     "action": "reset",
+     "host": "Linux",
+     "record": {
+      "duration": 10,
+      "endedAt": "2026-11-01T11:52:10.894301+00:00",
+      "fault": "reset",
+      "packets": 6,
+      "startedAt": "2026-11-01T11:52:00.703491+00:00"
+     }
+    }
+   ],
+   "relpCountersSinceCollectorStart": {
+    "connectionsAccepted": 2,
+    "framesReceived": 5448,
+    "queued": 5222,
+    "duplicates": 226,
+    "relpAcknowledged": 5448,
+    "relpServerCloses": 0,
+    "relpBusyCloses": 0,
+    "retries": 0,
+    "framingErrors": 0,
+    "tlsHandshakeFailures": 0,
+    "peerResets": 0,
+    "oversized": 0,
+    "malformed": 0
+   }
+  },
+  {
+   "attempt": "a-reset-attempt2",
+   "planSha256": "a05b8447b14e96771b88c47cdc69d880311abd66de5372ee896bd0aebffb89f2",
+   "publicPlanSha256": "5a19c91662cbd1119a0b7c6e8d468cb60fcb081b8eb4bf21f55e7300c1437e3b",
+   "queueExports": [
+    {
+     "file": "queue-identities.jsonl",
+     "exportSha256": "978d8b9b61643e323436a3b48244b6317c4dc718f953e6d6508bbc37871b06b8",
+     "rows": 1200,
+     "helperSha256": "3de4758e7d107cf2886e42822c700106999cb474f9d85168bff6ec7e39f94083"
+    }
+   ],
+   "expected": 1200,
+   "identityComplete": true,
+   "strictPass": true,
+   "queryCutoff": "2026-11-01T13:29:06.578723+00:00",
+   "native": {
+    "sent": 1200,
+    "nativeCounterDelta": 1200,
+    "identitySetSha256": "8cbb147eef3a710b32d8600817bb5f8e061f83db21fc5ddd43f6d2528f24321f",
+    "actualRates": [
+     9.999559743216794
+    ]
+   },
+   "queue": {
+    "distinctIds": 1200,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "8cbb147eef3a710b32d8600817bb5f8e061f83db21fc5ddd43f6d2528f24321f"
+   },
+   "sentinel": {
+    "distinctIds": 1200,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "8cbb147eef3a710b32d8600817bb5f8e061f83db21fc5ddd43f6d2528f24321f",
+    "firstIngested": "2026-11-01T13:24:09.494539+00:00",
+    "lastIngested": "2026-11-01T13:26:10.281331+00:00",
+    "rows": 1200,
+    "duplicateRows": 0
+   },
+   "scenario": "a-reset",
+   "startEpoch": 1793539444.72,
+   "senderRsyslog": "8.2610.0",
+   "dedupProof": {
+    "RawRows": 1200,
+    "CollapsedRows": 1200,
+    "DistinctIds": 1200,
+    "collapses": true
+   },
+   "queries": [
+    {
+     "query": 1,
+     "exit": 0,
+     "report": "reconciliation-1.json",
+     "strictPass": true,
+     "identityComplete": true
+    }
+   ],
+   "faults": [
+    {
+     "action": "reset",
+     "host": "Linux",
+     "record": {
+      "duration": 10,
+      "endedAt": "2026-11-01T13:24:44.904168+00:00",
+      "fault": "reset",
+      "packets": 6,
+      "startedAt": "2026-11-01T13:24:34.820096+00:00"
+     }
+    }
+   ],
+   "relpCountersSinceCollectorStart": {
+    "connectionsAccepted": 2,
+    "framesReceived": 5348,
+    "queued": 5219,
+    "duplicates": 129,
+    "relpAcknowledged": 5348,
+    "relpServerCloses": 0,
+    "relpBusyCloses": 0,
+    "retries": 0,
+    "framingErrors": 0,
+    "tlsHandshakeFailures": 0,
+    "peerResets": 0,
+    "oversized": 0,
+    "malformed": 0
+   }
+  },
+  {
+   "attempt": "a-restart-attempt1",
+   "planSha256": "6f54933d8afe1310599918fe2de91b3d04a07e446e62f7c22b148533596857e6",
+   "publicPlanSha256": "a8e3769e816f8026b76d2e1eb5bbb299dfb77fdbc3670df040ea7ff66e5f575d",
+   "queueExports": [
+    {
+     "file": "queue-identities.jsonl",
+     "exportSha256": "874800d5d762dac07c58c43222f48ad5394edd2e01850f32590f6ea3c2eef6b8",
+     "rows": 6000,
+     "helperSha256": "3de4758e7d107cf2886e42822c700106999cb474f9d85168bff6ec7e39f94083"
+    }
+   ],
+   "expected": 6000,
+   "identityComplete": true,
+   "strictPass": true,
+   "queryCutoff": "2026-11-01T13:35:53.726880+00:00",
+   "native": {
+    "sent": 6000,
+    "nativeCounterDelta": 6000,
+    "identitySetSha256": "c3e6746fff6e67ab2f78e0e899dfb81455389f42a80761c4f181a9f39aaf5ad7",
+    "actualRates": [
+     99.99140326910124
+    ]
+   },
+   "queue": {
+    "distinctIds": 6000,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "c3e6746fff6e67ab2f78e0e899dfb81455389f42a80761c4f181a9f39aaf5ad7"
+   },
+   "sentinel": {
+    "distinctIds": 6000,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "c3e6746fff6e67ab2f78e0e899dfb81455389f42a80761c4f181a9f39aaf5ad7",
+    "firstIngested": "2026-11-01T13:31:42.269947+00:00",
+    "lastIngested": "2026-11-01T13:32:46.316267+00:00",
+    "rows": 6000,
+    "duplicateRows": 0
+   },
+   "scenario": "a-restart",
+   "startEpoch": 1793539899.903,
+   "senderRsyslog": "8.2610.0",
+   "dedupProof": {
+    "RawRows": 6004,
+    "CollapsedRows": 6000,
+    "DistinctIds": 6000,
+    "collapses": true
+   },
+   "queries": [
+    {
+     "query": 1,
+     "exit": 0,
+     "report": "reconciliation-1.json",
+     "strictPass": true,
+     "identityComplete": true
+    }
+   ],
+   "faults": [
+    {
+     "action": "restart",
+     "host": "Linux",
+     "record": {
+      "duration": 0,
+      "endedAt": "2026-11-01T13:32:05.144694+00:00",
+      "fault": "restart",
+      "startedAt": "2026-11-01T13:31:59.993465+00:00"
+     }
+    }
+   ],
+   "relpCountersSinceCollectorStart": {
+    "connectionsAccepted": 1,
+    "framesReceived": 4015,
+    "queued": 3887,
+    "duplicates": 128,
+    "relpAcknowledged": 4015,
+    "relpServerCloses": 0,
+    "relpBusyCloses": 0,
+    "retries": 0,
+    "framingErrors": 0,
+    "tlsHandshakeFailures": 0,
+    "peerResets": 0,
+    "oversized": 0,
+    "malformed": 0
+   }
+  },
+  {
+   "attempt": "a-sender-reboot-attempt1",
+   "planSha256": "ea45bb298fa768d539236f5ee8923696635abb4ed4b4001df875d8b8d4b451ab",
+   "publicPlanSha256": "20ef16d49e8a157733488f056a722eb79282ba8f0f7d7a5beb329fd347fb0ad9",
+   "queueExports": [
+    {
+     "file": "queue-identities.jsonl",
+     "exportSha256": "ea8a2723782b04fa49ada8dfb3ab32ced5e9e28166e55f0637f84bf6303ca255",
+     "rows": 594,
+     "helperSha256": "d3498ab74e7a9cfab6e9e54afcc962dcfbacb0dc7ebb5d4f902cdbcbb09e5268"
+    }
+   ],
+   "expected": 600,
+   "identityComplete": false,
+   "strictPass": false,
+   "queryCutoff": "2026-11-01T12:28:39.365212+00:00",
+   "native": {
+    "sent": 600,
+    "nativeCounterDelta": 600,
+    "identitySetSha256": "12853648bff5af40b17811fd319d4b1d213c15baa685dce36611c42ebb22fa2d",
+    "actualRates": [
+     9.999114121318431
+    ]
+   },
+   "queue": {
+    "distinctIds": 594,
+    "missing": 6,
+    "extra": 0,
+    "identitySetSha256": "77fb92393c6bfd44bb5b54b6d36760dbf6a9660919cba2afaf60afb9cebd6a5a"
+   },
+   "sentinel": {
+    "distinctIds": 594,
+    "missing": 6,
+    "extra": 0,
+    "identitySetSha256": "77fb92393c6bfd44bb5b54b6d36760dbf6a9660919cba2afaf60afb9cebd6a5a",
+    "firstIngested": "2026-11-01T12:06:12.041362+00:00",
+    "lastIngested": "2026-11-01T12:06:21.297042+00:00",
+    "rows": 594,
+    "duplicateRows": 0
+   },
+   "scenario": "a-sender-reboot",
+   "startEpoch": 1793534524.802,
+   "senderRsyslog": "8.2204.0",
+   "dedupProof": {
+    "RawRows": 594,
+    "CollapsedRows": 594,
+    "DistinctIds": 594,
+    "collapses": false
+   },
+   "queries": [
+    {
+     "query": 1,
+     "exit": 1,
+     "report": "reconciliation-1.json",
+     "strictPass": false,
+     "identityComplete": false
+    },
+    {
+     "query": 2,
+     "exit": 1,
+     "report": "reconciliation-2.json",
+     "strictPass": false,
+     "identityComplete": false
+    },
+    {
+     "query": 3,
+     "exit": 1,
+     "report": "reconciliation-3.json",
+     "strictPass": false,
+     "identityComplete": false
+    }
+   ],
+   "faults": [
+    {
+     "action": "stop-start",
+     "host": "Linux",
+     "record": {
+      "duration": 240,
+      "endedAt": "2026-11-01T12:06:09.957209+00:00",
+      "fault": "stop-start",
+      "startedAt": "2026-11-01T12:02:04.823507+00:00"
+     }
+    },
+    {
+     "action": "reboot",
+     "host": "Sender",
+     "record": {
+      "duration": 0,
+      "endedAt": "2026-11-01T12:03:24.846182+00:00",
+      "fault": "reboot",
+      "startedAt": "2026-11-01T12:03:24.811630+00:00"
+     }
+    }
+   ],
+   "relpCountersSinceCollectorStart": {
+    "connectionsAccepted": 1,
+    "framesReceived": 595,
+    "queued": 594,
+    "duplicates": 1,
+    "relpAcknowledged": 595,
+    "relpServerCloses": 0,
+    "relpBusyCloses": 0,
+    "retries": 0,
+    "framingErrors": 0,
+    "tlsHandshakeFailures": 0,
+    "peerResets": 0,
+    "oversized": 0,
+    "malformed": 0
+   }
+  },
+  {
+   "attempt": "a-sender-reboot-attempt2",
+   "planSha256": "5843abdd5980eaab1f6e470eda4ab9590784bbd2fef24dbba89c6bff3c171f3d",
+   "publicPlanSha256": "70c3eab3d1b9bcd3055b59b7255343879cab980192a6773956c8973757fbde79",
+   "queueExports": [
+    {
+     "file": "queue-identities.jsonl",
+     "exportSha256": "2bbc7874049ba8df4108d5973f0f824fdd1e964ca9f92fb2a998ce7049fb04b1",
+     "rows": 600,
+     "helperSha256": "3de4758e7d107cf2886e42822c700106999cb474f9d85168bff6ec7e39f94083"
+    }
+   ],
+   "expected": 600,
+   "identityComplete": true,
+   "strictPass": true,
+   "queryCutoff": "2026-11-01T13:05:19.264994+00:00",
+   "native": {
+    "sent": 600,
+    "nativeCounterDelta": 600,
+    "identitySetSha256": "437dfb8bcd8236ba70be9069c58dc5685e732734a689f57fade639242f3e41ef",
+    "actualRates": [
+     9.999118864146853
+    ]
+   },
+   "queue": {
+    "distinctIds": 600,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "437dfb8bcd8236ba70be9069c58dc5685e732734a689f57fade639242f3e41ef"
+   },
+   "sentinel": {
+    "distinctIds": 600,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "437dfb8bcd8236ba70be9069c58dc5685e732734a689f57fade639242f3e41ef",
+    "firstIngested": "2026-11-01T13:00:43.133130+00:00",
+    "lastIngested": "2026-11-01T13:00:51.001403+00:00",
+    "rows": 600,
+    "duplicateRows": 0
+   },
+   "scenario": "a-sender-reboot",
+   "startEpoch": 1793537799.188,
+   "senderRsyslog": "8.2610.0",
+   "dedupProof": {
+    "RawRows": 600,
+    "CollapsedRows": 600,
+    "DistinctIds": 600,
+    "collapses": true
+   },
+   "queries": [
+    {
+     "query": 1,
+     "exit": 0,
+     "report": "reconciliation-1.json",
+     "strictPass": true,
+     "identityComplete": true
+    }
+   ],
+   "faults": [
+    {
+     "action": "stop-start",
+     "host": "Linux",
+     "record": {
+      "duration": 240,
+      "endedAt": "2026-11-01T13:00:39.566354+00:00",
+      "fault": "stop-start",
+      "startedAt": "2026-11-01T12:56:39.288079+00:00"
+     }
+    },
+    {
+     "action": "reboot",
+     "host": "Sender",
+     "record": {
+      "duration": 0,
+      "endedAt": "2026-11-01T12:57:59.235855+00:00",
+      "fault": "reboot",
+      "startedAt": "2026-11-01T12:57:59.197237+00:00"
+     }
+    }
+   ],
+   "relpCountersSinceCollectorStart": {
+    "connectionsAccepted": 1,
+    "framesReceived": 601,
+    "queued": 600,
+    "duplicates": 1,
+    "relpAcknowledged": 601,
+    "relpServerCloses": 0,
+    "relpBusyCloses": 0,
+    "retries": 0,
+    "framingErrors": 0,
+    "tlsHandshakeFailures": 0,
+    "peerResets": 0,
+    "oversized": 0,
+    "malformed": 0
+   }
+  },
+  {
+   "attempt": "a-sender-reboot-only-attempt1",
+   "planSha256": "96a90f30f50291aabc1f400db51f141c7c00446faf4665472aa9324c42857aba",
+   "publicPlanSha256": "0d52c3da4fefe3284aa9b5fa2c7d80f979513330bb354c649d7987ee12847781",
+   "queueExports": [
+    {
+     "file": "queue-identities-2.jsonl",
+     "exportSha256": "74e967047c1e2d3483bfe13c2cca46761ebd2e705198e903fb8ceba49e2f639e",
+     "rows": 600,
+     "helperSha256": "3de4758e7d107cf2886e42822c700106999cb474f9d85168bff6ec7e39f94083"
+    },
+    {
+     "file": "queue-identities.jsonl",
+     "exportSha256": "9ccfb40a485c7ac3651f8e88e9e442211b1d5883d66d8fef8809d9e4a64a67d4",
+     "rows": 600,
+     "helperSha256": "d3498ab74e7a9cfab6e9e54afcc962dcfbacb0dc7ebb5d4f902cdbcbb09e5268"
+    }
+   ],
+   "expected": 600,
+   "identityComplete": true,
+   "strictPass": true,
+   "queryCutoff": "2026-11-01T12:53:50.835917+00:00",
+   "native": {
+    "sent": 600,
+    "nativeCounterDelta": 600,
+    "identitySetSha256": "2bb47a0001c10b920d82052321dc3bb3c27e846183a99e01bf446620117204f1",
+    "actualRates": [
+     99.91319608132957
+    ]
+   },
+   "queue": {
+    "distinctIds": 600,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "2bb47a0001c10b920d82052321dc3bb3c27e846183a99e01bf446620117204f1"
+   },
+   "sentinel": {
+    "distinctIds": 600,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "2bb47a0001c10b920d82052321dc3bb3c27e846183a99e01bf446620117204f1",
+    "firstIngested": "2026-11-01T12:36:14.621464+00:00",
+    "lastIngested": "2026-11-01T12:36:24.567599+00:00",
+    "rows": 600,
+    "duplicateRows": 0
+   },
+   "scenario": "a-sender-reboot-only",
+   "startEpoch": 1793536571.309,
+   "senderRsyslog": "8.2204.0",
+   "dedupProof": {
+    "RawRows": 600,
+    "CollapsedRows": 600,
+    "DistinctIds": 600,
+    "collapses": true
+   },
+   "queries": [
+    {
+     "query": 1,
+     "exit": 0,
+     "report": "reconciliation-1.json",
+     "strictPass": true,
+     "identityComplete": true
+    }
+   ],
+   "faults": [],
+   "relpCountersSinceCollectorStart": {
+    "connectionsAccepted": 2,
+    "framesReceived": 1195,
+    "queued": 1194,
+    "duplicates": 1,
+    "relpAcknowledged": 1195,
+    "relpServerCloses": 0,
+    "relpBusyCloses": 0,
+    "retries": 0,
+    "framingErrors": 0,
+    "tlsHandshakeFailures": 0,
+    "peerResets": 0,
+    "oversized": 0,
+    "malformed": 0
+   }
+  },
+  {
+   "attempt": "a-sender-reboot-only-attempt2",
+   "planSha256": "903ec45bdeee56c550385cac4d7c067f94ae6b1d5456943292d1b56d584218db",
+   "publicPlanSha256": "c4f395de428af413d996861c33d3e34df3a531c6417aa6ad3cd776ee7a466a06",
+   "queueExports": [
+    {
+     "file": "queue-identities.jsonl",
+     "exportSha256": "6ee00d6ee85c9a70413aaced4ac9b74ea9d101b66241386fe3dbab79099a5e51",
+     "rows": 600,
+     "helperSha256": "3de4758e7d107cf2886e42822c700106999cb474f9d85168bff6ec7e39f94083"
+    }
+   ],
+   "expected": 600,
+   "identityComplete": true,
+   "strictPass": true,
+   "queryCutoff": "2026-11-01T13:14:54.654891+00:00",
+   "native": {
+    "sent": 600,
+    "nativeCounterDelta": 600,
+    "identitySetSha256": "d41689530b6ad6da902b22dc91eea68c5c7bbc6d3f59e3e4e0e702957a9a2006",
+    "actualRates": [
+     99.91479536021622
+    ]
+   },
+   "queue": {
+    "distinctIds": 600,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "d41689530b6ad6da902b22dc91eea68c5c7bbc6d3f59e3e4e0e702957a9a2006"
+   },
+   "sentinel": {
+    "distinctIds": 600,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "d41689530b6ad6da902b22dc91eea68c5c7bbc6d3f59e3e4e0e702957a9a2006",
+    "firstIngested": "2026-11-01T13:07:56.592140+00:00",
+    "lastIngested": "2026-11-01T13:08:04.192822+00:00",
+    "rows": 600,
+    "duplicateRows": 0
+   },
+   "scenario": "a-sender-reboot-only",
+   "startEpoch": 1793538473.211,
+   "senderRsyslog": "8.2610.0",
+   "dedupProof": {
+    "RawRows": 600,
+    "CollapsedRows": 600,
+    "DistinctIds": 600,
+    "collapses": true
+   },
+   "queries": [
+    {
+     "query": 1,
+     "exit": 0,
+     "report": "reconciliation-1.json",
+     "strictPass": true,
+     "identityComplete": true
+    }
+   ],
+   "faults": [
+    {
+     "action": "reboot",
+     "host": "Sender",
+     "record": {
+      "duration": 0,
+      "endedAt": "2026-11-01T13:08:01.427852+00:00",
+      "fault": "reboot",
+      "startedAt": "2026-11-01T13:08:01.311227+00:00"
+     }
+    }
+   ],
+   "relpCountersSinceCollectorStart": {
+    "connectionsAccepted": 2,
+    "framesReceived": 1201,
+    "queued": 1200,
+    "duplicates": 1,
+    "relpAcknowledged": 1201,
+    "relpServerCloses": 0,
+    "relpBusyCloses": 0,
+    "retries": 0,
+    "framingErrors": 0,
+    "tlsHandshakeFailures": 0,
+    "peerResets": 0,
+    "oversized": 0,
+    "malformed": 0
+   }
+  },
+  {
+   "attempt": "a-sender-stop-start-attempt1",
+   "planSha256": "9004cebedb1a14ecb4d128de5b55b7cc8d8bccca7f71dee24b97531a5d4146a3",
+   "publicPlanSha256": "3fa4eef33b5df72116d23dbc3c1c492674d0fcefbbb1aa6fb5ddd5ff38f17465",
+   "queueExports": [
+    {
+     "file": "queue-identities.jsonl",
+     "exportSha256": "28f2d618612e87f16f1bef1a63c9cc1e8934e67f4351b360dc8d3a0394520e81",
+     "rows": 1800,
+     "helperSha256": "3de4758e7d107cf2886e42822c700106999cb474f9d85168bff6ec7e39f94083"
+    }
+   ],
+   "expected": 1800,
+   "identityComplete": true,
+   "strictPass": true,
+   "queryCutoff": "2026-11-01T14:03:25.570687+00:00",
+   "native": {
+    "sent": 1800,
+    "nativeCounterDelta": 1800,
+    "identitySetSha256": "23e1f93f4f3e9924a2d9464c3c5e91d994dbc57ef999af8d216476fa701fed78",
+    "actualRates": [
+     9.999708485276123
+    ]
+   },
+   "queue": {
+    "distinctIds": 1800,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "23e1f93f4f3e9924a2d9464c3c5e91d994dbc57ef999af8d216476fa701fed78"
+   },
+   "sentinel": {
+    "distinctIds": 1800,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "23e1f93f4f3e9924a2d9464c3c5e91d994dbc57ef999af8d216476fa701fed78",
+    "firstIngested": "2026-11-01T13:57:31.724411+00:00",
+    "lastIngested": "2026-11-01T14:00:33.203031+00:00",
+    "rows": 1800,
+    "duplicateRows": 0
+   },
+   "scenario": "a-sender-stop-start",
+   "startEpoch": 1793541449.273,
+   "senderRsyslog": "8.2610.0",
+   "dedupProof": {
+    "RawRows": 1800,
+    "CollapsedRows": 1800,
+    "DistinctIds": 1800,
+    "collapses": true
+   },
+   "queries": [
+    {
+     "query": 1,
+     "exit": 0,
+     "report": "reconciliation-1.json",
+     "strictPass": true,
+     "identityComplete": true
+    }
+   ],
+   "faults": [
+    {
+     "action": "stop-start",
+     "host": "Sender",
+     "record": {
+      "duration": 60,
+      "endedAt": "2026-11-01T13:58:59.759489+00:00",
+      "fault": "stop-start",
+      "startedAt": "2026-11-01T13:57:59.373080+00:00"
+     }
+    }
+   ],
+   "relpCountersSinceCollectorStart": {
+    "connectionsAccepted": 3,
+    "framesReceived": 6300,
+    "queued": 6172,
+    "duplicates": 128,
+    "relpAcknowledged": 6300,
+    "relpServerCloses": 0,
+    "relpBusyCloses": 0,
+    "retries": 0,
+    "framingErrors": 0,
+    "tlsHandshakeFailures": 0,
+    "peerResets": 0,
+    "oversized": 0,
+    "malformed": 0
+   }
+  },
+  {
+   "attempt": "a-sigkill-attempt1",
+   "planSha256": "8c7ee1b1210eb7933668b2fbbf24e0eeff62aa0d53081f6ce1208dff159536d1",
+   "publicPlanSha256": "58f3ada417ca6b4c420c0e0873227bd8921fc23ac075c5f7d05e5df95322f129",
+   "queueExports": [
+    {
+     "file": "queue-identities.jsonl",
+     "exportSha256": "96ec4299dcd104e06d118ddc2dce68c927a05c28fafcf824f9167072854f74a0",
+     "rows": 6000,
+     "helperSha256": "d3498ab74e7a9cfab6e9e54afcc962dcfbacb0dc7ebb5d4f902cdbcbb09e5268"
+    }
+   ],
+   "expected": 6000,
+   "identityComplete": true,
+   "strictPass": false,
+   "queryCutoff": "2026-11-01T11:48:58.610456+00:00",
+   "native": {
+    "sent": 6000,
+    "nativeCounterDelta": 6000,
+    "identitySetSha256": "edc569023114df2039b588eb6a368f3b86cad5f8d0bbe26eaf47d9359ee472c8",
+    "actualRates": [
+     99.97812345521263
+    ]
+   },
+   "queue": {
+    "distinctIds": 6000,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "edc569023114df2039b588eb6a368f3b86cad5f8d0bbe26eaf47d9359ee472c8"
+   },
+   "sentinel": {
+    "distinctIds": 6000,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "edc569023114df2039b588eb6a368f3b86cad5f8d0bbe26eaf47d9359ee472c8",
+    "firstIngested": "2026-11-01T11:42:01.869727+00:00",
+    "lastIngested": "2026-11-01T11:47:24.495590+00:00",
+    "rows": 6011,
+    "duplicateRows": 11
+   },
+   "scenario": "a-sigkill",
+   "startEpoch": 1793533319.979,
+   "senderRsyslog": "8.2204.0",
+   "dedupProof": {
+    "RawRows": 6011,
+    "CollapsedRows": 6000,
+    "DistinctIds": 6000,
+    "collapses": true
+   },
+   "queries": [
+    {
+     "query": 1,
+     "exit": 1,
+     "report": "reconciliation-1.json",
+     "strictPass": false,
+     "identityComplete": true
+    }
+   ],
+   "faults": [
+    {
+     "action": "kill",
+     "host": "Linux",
+     "record": {
+      "duration": 0,
+      "endedAt": "2026-11-01T11:42:20.069233+00:00",
+      "fault": "kill",
+      "killedPid": 6185,
+      "startedAt": "2026-11-01T11:42:20.043491+00:00"
+     }
+    }
+   ],
+   "relpCountersSinceCollectorStart": {
+    "connectionsAccepted": 1,
+    "framesReceived": 4124,
+    "queued": 4022,
+    "duplicates": 102,
+    "relpAcknowledged": 4124,
+    "relpServerCloses": 0,
+    "relpBusyCloses": 0,
+    "retries": 0,
+    "framingErrors": 0,
+    "tlsHandshakeFailures": 0,
+    "peerResets": 0,
+    "oversized": 0,
+    "malformed": 0
+   }
+  },
+  {
+   "attempt": "a-sigkill-attempt2",
+   "planSha256": "264201a6f5d2b333b44889acda65971ec4dd119831edd29b7a48458083844cda",
+   "publicPlanSha256": "3cf584b8bc775c372d785ecec33f71b72a2038205239918acd795f69ca0e52ec",
+   "queueExports": [
+    {
+     "file": "queue-identities.jsonl",
+     "exportSha256": "6eaa4c66270194bfde450e5b27acc2ea07a4ec1e893565ac8b30ade1419fac5a",
+     "rows": 6000,
+     "helperSha256": "3de4758e7d107cf2886e42822c700106999cb474f9d85168bff6ec7e39f94083"
+    }
+   ],
+   "expected": 6000,
+   "identityComplete": true,
+   "strictPass": true,
+   "queryCutoff": "2026-11-01T13:21:31.913303+00:00",
+   "native": {
+    "sent": 6000,
+    "nativeCounterDelta": 6000,
+    "identitySetSha256": "b55873f9b602bd9176a700e22d95ac6424873b0bf5b3a89ab0c50c2de912b6e3",
+    "actualRates": [
+     99.99139951308072
+    ]
+   },
+   "queue": {
+    "distinctIds": 6000,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "b55873f9b602bd9176a700e22d95ac6424873b0bf5b3a89ab0c50c2de912b6e3"
+   },
+   "sentinel": {
+    "distinctIds": 6000,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "b55873f9b602bd9176a700e22d95ac6424873b0bf5b3a89ab0c50c2de912b6e3",
+    "firstIngested": "2026-11-01T13:17:30.188247+00:00",
+    "lastIngested": "2026-11-01T13:18:33.968835+00:00",
+    "rows": 6000,
+    "duplicateRows": 0
+   },
+   "scenario": "a-sigkill",
+   "startEpoch": 1793539047.432,
+   "senderRsyslog": "8.2610.0",
+   "dedupProof": {
+    "RawRows": 6021,
+    "CollapsedRows": 6000,
+    "DistinctIds": 6000,
+    "collapses": true
+   },
+   "queries": [
+    {
+     "query": 1,
+     "exit": 0,
+     "report": "reconciliation-1.json",
+     "strictPass": true,
+     "identityComplete": true
+    }
+   ],
+   "faults": [
+    {
+     "action": "kill",
+     "host": "Linux",
+     "record": {
+      "duration": 0,
+      "endedAt": "2026-11-01T13:17:47.579049+00:00",
+      "fault": "kill",
+      "killedPid": 30967,
+      "startedAt": "2026-11-01T13:17:47.523460+00:00"
+     }
+    }
+   ],
+   "relpCountersSinceCollectorStart": {
+    "connectionsAccepted": 1,
+    "framesReceived": 4025,
+    "queued": 4019,
+    "duplicates": 6,
+    "relpAcknowledged": 4025,
+    "relpServerCloses": 0,
+    "relpBusyCloses": 0,
+    "retries": 0,
+    "framingErrors": 0,
+    "tlsHandshakeFailures": 0,
+    "peerResets": 0,
+    "oversized": 0,
+    "malformed": 0
+   }
+  },
+  {
+   "attempt": "a-steady-attempt1",
+   "planSha256": "8cb7e9da7ba4ccc36526219645186151ded0ddce5c11754044589af674bcc579",
+   "publicPlanSha256": "882fda2e3ce8c248bee1cbb241274cfcf6f1209bdd472b8838f92f8165724a5e",
+   "queueExports": [
+    {
+     "file": "queue-identities.jsonl",
+     "exportSha256": "c547dc83162c52fed5c54b04318c41f606e8a6ed4ee93d954755d05b62237532",
+     "rows": 600,
+     "helperSha256": "d3498ab74e7a9cfab6e9e54afcc962dcfbacb0dc7ebb5d4f902cdbcbb09e5268"
+    }
+   ],
+   "expected": 600,
+   "identityComplete": true,
+   "strictPass": true,
+   "queryCutoff": "2026-11-01T11:39:08.185985+00:00",
+   "native": {
+    "sent": 600,
+    "nativeCounterDelta": 600,
+    "identitySetSha256": "f30792b34cd5b5a81d372424a98782c2bbc038642a44d2da91985c3289e5e872",
+    "actualRates": [
+     9.999103508543566
+    ]
+   },
+   "queue": {
+    "distinctIds": 600,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "f30792b34cd5b5a81d372424a98782c2bbc038642a44d2da91985c3289e5e872"
+   },
+   "sentinel": {
+    "distinctIds": 600,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "f30792b34cd5b5a81d372424a98782c2bbc038642a44d2da91985c3289e5e872",
+    "firstIngested": "2026-11-01T11:33:22.572443+00:00",
+    "lastIngested": "2026-11-01T11:34:20.463571+00:00",
+    "rows": 600,
+    "duplicateRows": 0
+   },
+   "scenario": "a-steady",
+   "startEpoch": 1793532797.832,
+   "senderRsyslog": "8.2204.0",
+   "dedupProof": {
+    "RawRows": 600,
+    "CollapsedRows": 600,
+    "DistinctIds": 600,
+    "collapses": true
+   },
+   "queries": [
+    {
+     "query": 1,
+     "exit": 0,
+     "report": "reconciliation-1.json",
+     "strictPass": true,
+     "identityComplete": true
+    }
+   ],
+   "faults": [],
+   "relpCountersSinceCollectorStart": {
+    "connectionsAccepted": 1,
+    "framesReceived": 600,
+    "queued": 600,
+    "duplicates": 0,
+    "relpAcknowledged": 600,
+    "relpServerCloses": 0,
+    "relpBusyCloses": 0,
+    "retries": 0,
+    "framingErrors": 0,
+    "tlsHandshakeFailures": 0,
+    "peerResets": 0,
+    "oversized": 0,
+    "malformed": 0
+   }
+  },
+  {
+   "attempt": "a-steady-attempt2",
+   "planSha256": "6d56309137b4b35a204e98d6b1322835c7727626510200cc538a68d4254ce8aa",
+   "publicPlanSha256": "12826128a97e3f87bd23e9fd1dbe7c4c72b91c63a9d91bd50cd3c1a3a1361526",
+   "queueExports": [
+    {
+     "file": "queue-identities.jsonl",
+     "exportSha256": "6088dcea1678982fb8ba6179bc5d67db5b082180daec6dd63ab44f83457c84bc",
+     "rows": 600,
+     "helperSha256": "3de4758e7d107cf2886e42822c700106999cb474f9d85168bff6ec7e39f94083"
+    }
+   ],
+   "expected": 600,
+   "identityComplete": true,
+   "strictPass": true,
+   "queryCutoff": "2026-11-01T14:16:00.996366+00:00",
+   "native": {
+    "sent": 600,
+    "nativeCounterDelta": 600,
+    "identitySetSha256": "eb6198d8d31829e89b3da25b66cc70ef506db78875a99936a31d9cbc0fe70e67",
+    "actualRates": [
+     9.999131680237806
+    ]
+   },
+   "queue": {
+    "distinctIds": 600,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "eb6198d8d31829e89b3da25b66cc70ef506db78875a99936a31d9cbc0fe70e67"
+   },
+   "sentinel": {
+    "distinctIds": 600,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "eb6198d8d31829e89b3da25b66cc70ef506db78875a99936a31d9cbc0fe70e67",
+    "firstIngested": "2026-11-01T14:12:17.318118+00:00",
+    "lastIngested": "2026-11-01T14:13:17.930745+00:00",
+    "rows": 600,
+    "duplicateRows": 0
+   },
+   "scenario": "a-steady",
+   "startEpoch": 1793542333.332,
+   "senderRsyslog": "8.2610.0",
+   "dedupProof": {
+    "RawRows": 600,
+    "CollapsedRows": 600,
+    "DistinctIds": 600,
+    "collapses": true
+   },
+   "queries": [
+    {
+     "query": 1,
+     "exit": 0,
+     "report": "reconciliation-1.json",
+     "strictPass": true,
+     "identityComplete": true
+    }
+   ],
+   "faults": [],
+   "relpCountersSinceCollectorStart": {
+    "connectionsAccepted": 3,
+    "framesReceived": 12900,
+    "queued": 12772,
+    "duplicates": 128,
+    "relpAcknowledged": 12900,
+    "relpServerCloses": 0,
+    "relpBusyCloses": 0,
+    "retries": 0,
+    "framingErrors": 0,
+    "tlsHandshakeFailures": 0,
+    "peerResets": 0,
+    "oversized": 0,
+    "malformed": 0
+   }
+  },
+  {
+   "attempt": "b-idle-gaps-attempt1",
+   "planSha256": "e40fa074e46207cc886f889fcef91432190f11d774795747e4a39c7f01af7613",
+   "publicPlanSha256": "dc09284e6aeb7818e5547993b17faccdd26aa61954c46fdae60131e86cb5c802",
+   "queueExports": [
+    {
+     "file": "queue-identities.jsonl",
+     "exportSha256": "9884be7a15240af265b3086a962c8c9a3071a9d616bb5478fd41b8dbb5b2ed23",
+     "rows": 6300,
+     "helperSha256": "3de4758e7d107cf2886e42822c700106999cb474f9d85168bff6ec7e39f94083"
+    }
+   ],
+   "expected": 6300,
+   "identityComplete": true,
+   "strictPass": true,
+   "queryCutoff": "2026-11-01T16:03:47.883977+00:00",
+   "native": {
+    "sent": 6300,
+    "nativeCounterDelta": 6300,
+    "identitySetSha256": "e9304f97e8006046454b99895d74195cef18b937867ad7e73a755c1b6534a84e",
+    "actualRates": [
+     9.994949314231652,
+     99.49246060312119,
+     99.50726410888464,
+     99.99161797930593
+    ]
+   },
+   "queue": {
+    "distinctIds": 6300,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "e9304f97e8006046454b99895d74195cef18b937867ad7e73a755c1b6534a84e"
+   },
+   "sentinel": {
+    "distinctIds": 6300,
+    "missing": 0,
+    "extra": 0,
+    "identitySetSha256": "e9304f97e8006046454b99895d74195cef18b937867ad7e73a755c1b6534a84e",
+    "firstIngested": "2026-11-01T14:19:08.556733+00:00",
+    "lastIngested": "2026-11-01T16:00:27.533373+00:00",
+    "rows": 6300,
+    "duplicateRows": 0
+   },
+   "scenario": "b-idle-gaps",
+   "startEpoch": 1793542742.54,
+   "senderRsyslog": "8.2610.0",
+   "dedupProof": {
+    "RawRows": 6300,
+    "CollapsedRows": 6300,
+    "DistinctIds": 6300,
+    "collapses": true
+   },
+   "queries": [
+    {
+     "query": 1,
+     "exit": 0,
+     "report": "reconciliation-1.json",
+     "strictPass": true,
+     "identityComplete": true
+    }
+   ],
+   "faults": [],
+   "relpCountersSinceCollectorStart": {
+    "connectionsAccepted": 3,
+    "framesReceived": 19200,
+    "queued": 19072,
+    "duplicates": 128,
+    "relpAcknowledged": 19200,
+    "relpServerCloses": 0,
+    "relpBusyCloses": 0,
+    "retries": 0,
+    "framingErrors": 0,
+    "tlsHandshakeFailures": 0,
+    "peerResets": 0,
+    "oversized": 0,
+    "malformed": 0
+   }
+  }
+ ]
+}

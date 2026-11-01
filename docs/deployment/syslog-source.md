@@ -6,7 +6,7 @@ a privacy gateway in front of those senders, not a syslog server for the estate:
 broad syslog fan-in stays with the Azure Monitor Agent.
 
 ```
-sender ──TLS (or loopback TCP/UDP)──▶ listener ──▶ parse ──▶ route ──▶ signed pack parser ──▶ redact + policy ──▶ durable queue
+sender ──RELP or TLS (or loopback TCP/UDP)──▶ listener ──▶ parse ──▶ route ──▶ signed pack parser ──▶ redact + policy ──▶ durable queue
                                        allow-list   RFC 5424   host/app   match filter          (default deny)       (acknowledgement)
                                        limits       RFC 3164
 ```
@@ -68,20 +68,20 @@ stop start-up.
 | Setting | Default | Bounds |
 |---|---|---|
 | `id` | required | 1–63 lowercase letters, digits, hyphens; unique |
-| `protocol` | required | `tcp`, `tls` or `udp` |
+| `protocol` | required | `tcp`, `tls`, `udp` or `relp` (see [RELP](#relp-acknowledged-delivery)) |
 | `address` | `127.0.0.1` | an IP address (canonical text) |
 | `port` | required | 0–65535 (0: chosen by the OS, for tests) |
 | `allowedSenders` | required | 1–64 addresses or CIDR ranges (host bits zero) |
 | `maximumMessageBytes` | 65536 | 480–65536 |
-| `maximumConnections` | 64 | 1–1024 (TCP and TLS) |
+| `maximumConnections` | 64 | 1–1024 (TCP, TLS and RELP) |
 | `idleTimeoutSeconds` | 0 | 0–3600; 0 does not close an established healthy idle connection |
-| `handshakeStartTimeoutSeconds` | 60 | 1–3600; TLS connection must send its first handshake byte in this time |
+| `handshakeStartTimeoutSeconds` | 60 | 1–3600; TLS connection must send its first handshake byte in this time; a RELP session must also send `open` in this time |
 | `frameTimeoutSeconds` | 60 | 1–3600; TLS handshake after its first byte, and one frame after its first byte |
-| `tls` | none | required for `tls`, refused otherwise; PEM files: `certificateFile`, `privateKeyFile`, optional `clientCertificateAuthorityFile` and `clientCertificateRevocationListFile` (PEM or DER CRLs; requires the CA file) |
+| `tls` | none | required for `tls`, optional for `relp` (RELP over TLS), refused otherwise; PEM files: `certificateFile`, `privateKeyFile`, optional `clientCertificateAuthorityFile` and `clientCertificateRevocationListFile` (PEM or DER CRLs; requires the CA file) |
 | `allowInsecureNonLoopback` | false | allow `tcp`/`udp` beyond loopback |
 | `routes` | required | 1–64; `pack`, `parser` (index), optional `hostname`, `appName`, `allowedSenders` (1–64 addresses or CIDR ranges) |
 
-A non-loopback address needs `protocol: tls` unless `allowInsecureNonLoopback` is set;
+A non-loopback address needs `protocol: tls` (or `relp` with `tls`) unless `allowInsecureNonLoopback` is set;
 use the override only on an isolated network you control. With
 `clientCertificateAuthorityFile`, senders must present a client certificate issued by
 one of those CAs (mutual TLS); a sender may present intermediates between its
@@ -155,6 +155,12 @@ deduplicate, but distinct byte-identical events can also collapse while the id r
 the queue's deduplication window. Without a timestamp the receive time is part of the id,
 so a retransmission at a different time can produce a duplicate. Plain syslog supplies no
 reliable way to tell these cases apart; qualify the actual sender and monitor its counts.
+RELP uses the same rule. A RELP resend is byte for byte the original, so with a message
+timestamp it is the same id and deduplicates. Without a timestamp (a `-` NILVALUE, or a
+template without one) the receive time is in the id: two distinct identical messages are
+both kept, but a resend after a reconnect becomes a second event (a duplicate row, never a
+lost event). Configure RELP senders with RFC 5424 high-precision timestamps (rsyslog
+`RSYSLOG_SyslogProtocol23Format`) so resends deduplicate.
 A pack parser for RFC 5424 sshd
 structured data:
 
@@ -263,6 +269,59 @@ Strict and fail closed, with stable codes:
   `OPENSSL_CONF` with `NumTickets = 0`, or pin rsyslog to TLS 1.2; see the guide. The Rust
   collector sends no tickets.
 
+## RELP (acknowledged delivery)
+
+`protocol: relp` speaks the Reliable Event Logging Protocol as rsyslog `omrelp` and librelp
+do, optionally over TLS with the same certificate, client CA, revocation-list and hot
+reload settings as `tls`. It closes the gap plain syslog leaves: Bower answers each
+`syslog` transaction `200 OK` **only after a final durable decision**, so the sender keeps
+every unanswered message in its window and resends it after a reconnect.
+
+- **Answered `200 OK`:** durably enqueued, already in the queue (duplicate), suppressed,
+  not selected, rejected by policy, not routed, malformed, or oversized. These are final:
+  the same bytes would get the same decision.
+- **Never answered:** a full queue or gated intake (`Unavailable`), a storage error, or a
+  session whose client certificate stopped being trusted. A storage error or lost trust
+  ends the session; the sender resends after it reconnects.
+- **Bounded backpressure.** A message the queue keeps refusing is retried every second for
+  up to 30 seconds (`RelpBusyTimeout`, shorter than `omrelp`'s 90-second response
+  timeout); then Bower sends `serverclose` and ends the session without answering. Before
+  closing it reads away what the sender still sends (bounded: until the sender closes or is
+  quiet for 5 seconds, `frameTimeoutSeconds`, or 16 MiB), so the close is a FIN rather than a
+  reset over unread bytes. The sender keeps the message and its window and reconnects;
+  `relpBusyCloses` counts this, and each refused attempt also counts in `retries`.
+  Bower never answers a refused message with an error code, because librelp drops a
+  message from its resend list when it receives a non-200 response.
+- **In order, one at a time.** The next frame is read only after the current one is
+  answered, so the sender's window (rsyslog default 128) bounds what is in flight.
+- **Strict protocol.** TXNR and DATALEN are 1–9 digits, the command 1–32 letters, each
+  followed by exactly one space (anything else, such as `1Xopen` or `2:syslog`, ends the
+  session), and a zero DATALEN is followed directly by LF. The first frame must be `open` (transaction 1,
+  offering `relp_version` and `commands=syslog`; offers are bounded to 4 KiB, 16 offers of
+  16 values); transactions must follow 1, 2, 3 … and wrap after 999,999,999. Any other
+  command, a second `open`, a client `rsp`, a bad trailer or an out-of-sequence number ends
+  the session without an answer (`framingErrors`). An `open` without `syslog` is refused
+  with `500` and the session ends.
+- **Oversized messages.** A `syslog` frame whose data exceeds `maximumMessageBytes` + 2 (a
+  trailing CR LF is removed) is read past without buffering (any declared length up to
+  999,999,999 bytes; memory stays one fixed buffer and the whole frame must arrive within
+  `frameTimeoutSeconds`), answered `200 OK` and counted in `oversized`, so a sender is never
+  stuck resending it. An oversized non-`syslog` frame ends the session. Keep the sender's
+  `maxMessageSize` at or below `maximumMessageBytes` so nothing is dropped this way.
+- **Stop and idle.** On stop (and at a non-zero idle timeout) Bower sends the RELP
+  `serverclose` hint, half-closes, then keeps reading and enqueuing frames the sender wrote
+  before it saw the hint (unanswered; the sender resends them later and they deduplicate)
+  until the sender closes or is quiet for 5 seconds. While closing, a frame the queue refuses
+  gets one attempt only, then Bower stops processing and closes (the sender resends it). A
+  client `close` is answered once every earlier transaction is answered.
+- **Crash.** Frames written but not committed when Bower is killed are unanswered, so
+  the sender resends them; committed but unanswered frames come back as duplicates.
+
+A RELP sender still loses its in-memory window if the *sender* is killed or loses power
+before resending; a disk-assisted action queue holds only messages not yet handed to the
+RELP window. See [delivery reliability](../production-readiness/01-syslog-delivery-reliability.md#rel-relp)
+for measured results, sender configuration and deployment.
+
 ## Monitoring
 
 `GET /v1/status` (token required) has a `syslog` array, one entry per listener, with
@@ -274,7 +333,9 @@ counters since start: `activeConnections`, `connectionsAccepted`,
 `submitFailures`, `receiveErrors` (UDP socket receive errors; the listener backs off
 100 ms to 1 s and keeps listening), `halfCloses` (connections Bower half-closed at an
 idle timeout or stop), `drainedFrames` (frames received after that half-close),
-`peerResets` (observed resets; best effort) and `lastFrameAt`. TLS and platform error reporting can prevent reset
+`peerResets` (observed resets; best effort), `relpAcknowledged` (RELP transactions answered
+`200 OK`), `relpServerCloses` (RELP sessions Bower ended with `serverclose`: stop, idle or
+busy), `relpBusyCloses` (RELP sessions ended because the queue kept refusing) and `lastFrameAt`. TLS and platform error reporting can prevent reset
 classification. Do not treat a zero count as proof of no resets.
 `timeouts`
 counts idle-timeout expiries and frames that missed `frameTimeoutSeconds`. TLS listeners

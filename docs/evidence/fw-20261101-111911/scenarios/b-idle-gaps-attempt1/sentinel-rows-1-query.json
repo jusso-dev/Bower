@@ -1,0 +1,35 @@
+{
+ "schemaVersion": 1,
+ "recordType": "firewall-destination-query-evidence",
+ "runId": "bower-fw-20261101-111911",
+ "scenario": "b-idle-gaps",
+ "collectorId": "bower-fw-20261101-111911-linux",
+ "workspaceId": "b41439ee-2723-4f42-ba8c-070677cc6226",
+ "verifierClientId": "cfa6ab6b-138f-4225-9795-29d3a9bb8515",
+ "planSha256": "e40fa074e46207cc886f889fcef91432190f11d774795747e4a39c7f01af7613",
+ "packSha256": "44aa95145b1662dcca81c0f54f1c24dbc61bcaa832de3e4de14171d062636bc5",
+ "query": {
+  "text": "BowerSecurity_CL\n| where CollectorId == \"bower-fw-20261101-111911-linux\" and ApplicationName == \"nftables-firewall\"\n    and ApplicationEnvironment == \"validation\" and EventType == \"network_connection_denied\"\n| where TimeGenerated between (datetime(2026-11-01T14:19:00.540000+00:00) .. datetime(2026-11-01T16:00:27.540000+00:00))\n| where ingestion_time() <= datetime(2026-11-01T16:03:47.883977+00:00)\n| summarize Copies=count(), FirstGenerated=min(TimeGenerated), LastGenerated=max(TimeGenerated),\n    FirstIngested=min(ingestion_time()), LastIngested=max(ingestion_time()) by EventId\n| project EventId, Copies, FirstGenerated, LastGenerated, FirstIngested, LastIngested\n| take 200001",
+  "sha256": "98f8a34b4ed76976dd8c043128a1ae7824ab74c6452dfec99283ac593c99b2c3",
+  "requestBodySha256": "45f36249e15f6abb1a53a39a7ba0c5ea8b7e2fb0948784d8a81f4fe4dafbf0f5",
+  "cutoff": "2026-11-01T16:03:47.883977+00:00",
+  "generatedStart": "2026-11-01T14:19:00.540000+00:00",
+  "generatedEnd": "2026-11-01T16:00:27.540000+00:00",
+  "apiTimespan": null
+ },
+ "verifierSourceSha256": "f613d1d9839c74ca2834ceb0df0aaf6e11e38e66f9d483df21af771c09130dd4",
+ "queryResponseComplete": true,
+ "columns": [
+  "EventId",
+  "Copies",
+  "FirstGenerated",
+  "LastGenerated",
+  "FirstIngested",
+  "LastIngested"
+ ],
+ "distinctIdentities": 6300,
+ "identitySetSha256": "e9304f97e8006046454b99895d74195cef18b937867ad7e73a755c1b6534a84e",
+ "deliveryQualified": false,
+ "rowsFile": "sentinel-rows-1.jsonl",
+ "originalSha256": "aec57c4ea3b6b59c7e28cfec39bc06a2176ef8f3003df3ae1b77d48228ea9298"
+}

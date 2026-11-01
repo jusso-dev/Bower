@@ -72,7 +72,8 @@ pub fn build(
 }
 
 /// `syslog-` + 32 hex characters of SHA-256 over listener, sender and the exact frame
-/// bytes (plus the receive time when the message has no timestamp).
+/// bytes (plus the receive time when the message has no timestamp, so distinct identical
+/// messages are never merged; a retransmission of such a message can become a second event).
 pub fn event_id(
     listener_id: &str,
     sender_address: &str,

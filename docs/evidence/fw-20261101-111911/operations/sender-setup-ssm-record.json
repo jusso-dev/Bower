@@ -1,0 +1,1 @@
+{"commandId": "96514147-c875-4af6-85b2-66fb3c0d0966", "instanceId": "i-0f41641df895c024c", "host": "Sender", "script": "setup-firewall-sender.sh", "sha256": "ad6a9a49fcf470f9e10f8ef455fc6b9ea8e40f95d84caccf9052a2b440b78a4e", "sentAt": "2026-11-01T11:29:05Z", "status": "Success", "responseCode": 0}

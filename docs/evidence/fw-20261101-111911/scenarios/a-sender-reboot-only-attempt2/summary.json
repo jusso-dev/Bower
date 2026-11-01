@@ -1,0 +1,78 @@
+{
+  "scenario": "a-sender-reboot-only",
+  "attempt": 2,
+  "runId": "bower-fw-20261101-111911",
+  "planSha256": "903ec45bdeee56c550385cac4d7c067f94ae6b1d5456943292d1b56d584218db",
+  "startEpoch": 1793538473.211,
+  "expectedBlocks": [
+    "nft:A:1400000:600"
+  ],
+  "steps": [
+    {
+      "host": "Sender",
+      "offsetSeconds": 0.0,
+      "exit": 0,
+      "output": null
+    },
+    {
+      "host": "Sender",
+      "offsetSeconds": 8,
+      "exit": 0,
+      "output": null
+    }
+  ],
+  "collected": [
+    {
+      "kind": "native-generator-result",
+      "file": "00-native-generator-result.json",
+      "exit": 0
+    },
+    {
+      "kind": "queue-acceptance-only",
+      "file": "01-queue-acceptance-only.json",
+      "exit": 0
+    },
+    {
+      "kind": "collector-snapshot",
+      "file": "02-collector-snapshot.json",
+      "exit": 0
+    },
+    {
+      "kind": "sender-snapshot",
+      "file": "03-sender-snapshot.json",
+      "exit": 0
+    }
+  ],
+  "faults": [
+    {
+      "action": "reboot",
+      "host": "Sender",
+      "record": {
+        "duration": 0,
+        "endedAt": "2026-11-01T13:08:01.427852+00:00",
+        "fault": "reboot",
+        "startedAt": "2026-11-01T13:08:01.311227+00:00"
+      }
+    }
+  ],
+  "queueExports": [
+    {
+      "key": "results/firewall/a-sender-reboot-only/903ec45bdeee56c550385cac4d7c067f94ae6b1d5456943292d1b56d584218db/f3a8814027ce48b1af3c85c74f241903.json",
+      "sha256": "6ee00d6ee85c9a70413aaced4ac9b74ea9d101b66241386fe3dbab79099a5e51",
+      "bytes": 80870,
+      "rows": 600,
+      "malformedRows": 0,
+      "destinationQueryVerified": false
+    }
+  ],
+  "queries": [
+    {
+      "query": 1,
+      "exit": 0,
+      "report": "reconciliation-1.json",
+      "strictPass": true,
+      "identityComplete": true
+    }
+  ],
+  "finishedAt": "2026-11-01T13:14:57.343506+00:00"
+}

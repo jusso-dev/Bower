@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "runId": "bower-fw-20261101-111911",
+  "scenario": "a-sender-reboot-only",
+  "collectorId": "bower-fw-20261101-111911-linux",
+  "planSha256": "903ec45bdeee56c550385cac4d7c067f94ae6b1d5456943292d1b56d584218db",
+  "packSha256": "44aa95145b1662dcca81c0f54f1c24dbc61bcaa832de3e4de14171d062636bc5",
+  "queryCutoff": "2026-11-01T13:14:54.654891+00:00",
+  "expected": 600,
+  "expectedSetSha256": "d41689530b6ad6da902b22dc91eea68c5c7bbc6d3f59e3e4e0e702957a9a2006",
+  "native": {
+    "sent": 600,
+    "nativeCounterDelta": 600,
+    "identitySetSha256": "d41689530b6ad6da902b22dc91eea68c5c7bbc6d3f59e3e4e0e702957a9a2006",
+    "actualRates": [
+      99.91479536021622
+    ],
+    "rateTolerancePercent": 5
+  },
+  "queue": {
+    "distinctIds": 600,
+    "missing": 0,
+    "extra": 0,
+    "missingSetSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "extraSetSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "identitySetSha256": "d41689530b6ad6da902b22dc91eea68c5c7bbc6d3f59e3e4e0e702957a9a2006"
+  },
+  "sentinel": {
+    "distinctIds": 600,
+    "missing": 0,
+    "extra": 0,
+    "missingSetSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "extraSetSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "identitySetSha256": "d41689530b6ad6da902b22dc91eea68c5c7bbc6d3f59e3e4e0e702957a9a2006",
+    "firstIngested": "2026-11-01T13:07:56.592140+00:00",
+    "lastIngested": "2026-11-01T13:08:04.192822+00:00",
+    "rows": 600,
+    "duplicateRows": 0
+  },
+  "queueMissingAtSentinel": 0,
+  "sentinelAbsentFromQueue": 0,
+  "identityComplete": true,
+  "strictPass": true,
+  "destinationQueryVerified": true,
+  "queryRole": "verifier",
+  "scope": "identity reconciliation only; fault and topology evidence assessed separately",
+  "workspaceId": "b41439ee-2723-4f42-ba8c-070677cc6226",
+  "verifierClientId": "cfa6ab6b-138f-4225-9795-29d3a9bb8515",
+  "queueEvidenceSha256": "6ee00d6ee85c9a70413aaced4ac9b74ea9d101b66241386fe3dbab79099a5e51",
+  "nativeEvidenceSha256": [
+    "5f94c79b3960d55cd226beaf8eb10835c7792b472f7b5a75ba9f54180376f175"
+  ],
+  "destinationEvidence": {
+    "file": "sentinel-rows-1.json",
+    "bytes": 88020,
+    "sha256": "d1c746529da354e2b6f0999787407c918c63b4cf74a54edbd089c21b8e818240",
+    "distinctIdentities": 600
+  }
+}

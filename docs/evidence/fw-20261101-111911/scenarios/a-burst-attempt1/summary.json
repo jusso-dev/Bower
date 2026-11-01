@@ -1,0 +1,61 @@
+{
+  "scenario": "a-burst",
+  "attempt": 1,
+  "runId": "bower-fw-20261101-111911",
+  "planSha256": "26cf7f06426b2c5f16846066b822bfe7b5dbe35605f28a2a0f0ea49314c2810d",
+  "startEpoch": 1793541957.836,
+  "expectedBlocks": [
+    "nft:A:1700000:6000"
+  ],
+  "steps": [
+    {
+      "host": "Sender",
+      "offsetSeconds": 0.0,
+      "exit": 0,
+      "output": null
+    }
+  ],
+  "collected": [
+    {
+      "kind": "native-generator-result",
+      "file": "00-native-generator-result.json",
+      "exit": 0
+    },
+    {
+      "kind": "queue-acceptance-only",
+      "file": "01-queue-acceptance-only.json",
+      "exit": 0
+    },
+    {
+      "kind": "collector-snapshot",
+      "file": "02-collector-snapshot.json",
+      "exit": 0
+    },
+    {
+      "kind": "sender-snapshot",
+      "file": "03-sender-snapshot.json",
+      "exit": 0
+    }
+  ],
+  "faults": [],
+  "queueExports": [
+    {
+      "key": "results/firewall/a-burst/26cf7f06426b2c5f16846066b822bfe7b5dbe35605f28a2a0f0ea49314c2810d/68c9cf5bc2eb4f1a8520be4754eb69e4.json",
+      "sha256": "31cebdcf01e5f30775b4d38a4a649dacf2f20be1fa15a10bf18e0e3a2250a6c8",
+      "bytes": 803916,
+      "rows": 6000,
+      "malformedRows": 0,
+      "destinationQueryVerified": false
+    }
+  ],
+  "queries": [
+    {
+      "query": 1,
+      "exit": 0,
+      "report": "reconciliation-1.json",
+      "strictPass": true,
+      "identityComplete": true
+    }
+  ],
+  "finishedAt": "2026-11-01T14:09:43.276983+00:00"
+}

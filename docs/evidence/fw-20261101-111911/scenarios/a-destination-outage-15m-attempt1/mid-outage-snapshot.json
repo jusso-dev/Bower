@@ -1,0 +1,1 @@
+{"observedAt":"2026-11-01T16:15:14.217732+00:00","queue":{"events":48510,"undelivered":5345},"a13":{"framesReceived":24534,"queued":24406,"relpAcknowledged":24534,"relpBusyCloses":0,"retries":0},"note":"collector snapshot during the destination block; RELP intake continues"}

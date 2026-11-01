@@ -53,7 +53,7 @@ def fetch_artifacts(role, required):
     run = os.environ["BOWER_LAB_RUN"]
     bucket = os.environ["BOWER_LAB_BUCKET"]
     expected_manifest = os.environ["BOWER_ARTIFACT_MANIFEST_SHA256"]
-    if os.geteuid() != 0 or not re.fullmatch(r"bower-ws6-\d{8}-\d{6}", run):
+    if os.geteuid() != 0 or not re.fullmatch(r"bower-(?:ws6|fw)-\d{8}-\d{6}", run):
         fail("not-an-owned-root-drill")
     if not re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", bucket):
         fail("invalid-artifact-bucket")
@@ -158,6 +158,10 @@ def local_certificate_fetch(stage, key, destination, sha256=None):
 
 stage, run, manifest_hash = fetch_artifacts("sender", REQUIRED)
 peer = private_ip(os.environ["BOWER_SYSLOG_COLLECTOR_IP"])
+# omfwd (the recommended TLS profile, default) or relp (omrelp over mutual TLS).
+transport = os.environ.get("BOWER_SYSLOG_TRANSPORT", "omfwd")
+if transport not in ("omfwd", "relp"):
+    fail("unsupported-sender-transport")
 verify_certificate(stage, "sender-r.pem", "sender-r-key.pem", "sslclient")
 verify_run_marker(run, "sender")
 pki = Path("/etc/pki/bower-lab")
@@ -168,6 +172,12 @@ for name in ("ca.pem", "sender-r.pem", "sender-r-key.pem"):
 tool = install_tool(stage)
 with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
     tool.install_sender(SimpleNamespace(docker=False))
+relp_build = None
+if transport == "relp":
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
+        tool.install_relp()
+    relp_build = json.loads(output.getvalue())
 # Use the exact reviewed recommended profile. The only substituted operation is
 # fetching the two already-verified public certificates from the local stage;
 # no exchange/* S3 permission is granted and no TLS verification is bypassed.
@@ -182,31 +192,39 @@ install_file(stage / "journald.conf", journal_directory / "60-bower-qualificatio
 command("systemctl", "restart", "systemd-journald.service")
 command("journalctl", "--flush")
 with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-    tool.configure_rsyslog(SimpleNamespace(a=peer, b=peer, cert="sender-r",
+    tool.configure_rsyslog(SimpleNamespace(a=peer, b=peer, cert="sender-r", transport=transport,
                                           profile="recommended", rebind=0, only="a13", queue="recommended"))
 configuration = Path("/etc/rsyslog.d/10-bower-lab.conf").read_text()
 base_configuration = Path("/etc/rsyslog.conf").read_text()
 if not (re.search(r'workDirectory\s*=\s*"/var/lib/rsyslog"', base_configuration, re.I)
         or re.search(r"^\s*\$WorkDirectory\s+/var/lib/rsyslog\s*$", base_configuration, re.M | re.I)):
     fail("rsyslog-work-directory-is-not-persistent")
-required_settings = ('RebindInterval="0"', 'ResendLastMSGOnReconnect="on"', 'KeepAlive="on"',
-                     'KeepAlive.Time="60"', 'KeepAlive.Interval="10"', 'KeepAlive.Probes="6"',
-                     'queue.size="200000"', 'queue.highWatermark="150000"', 'queue.lowWatermark="100000"',
-                     'queue.maxDiskSpace="2g"', 'queue.timeoutEnqueue="86400000"', 'queue.saveOnShutdown="on"',
-                     'queue.discardMark="200000"', 'queue.discardSeverity="8"',
-                     'queue.checkpointInterval="100"', 'queue.syncQueueFiles="off"',
-                     'StreamDriverAuthMode="x509/name"', 'StreamDriverPermittedPeers="collector-a.bower.lab"',
-                     'TCP_Framing="octet-counted"', 'action.resumeRetryCount="-1"')
+queue_settings = ('queue.size="200000"', 'queue.highWatermark="150000"', 'queue.lowWatermark="100000"',
+                  'queue.maxDiskSpace="2g"', 'queue.timeoutEnqueue="86400000"', 'queue.saveOnShutdown="on"',
+                  'queue.discardMark="200000"', 'queue.discardSeverity="8"',
+                  'queue.checkpointInterval="100"', 'queue.syncQueueFiles="off"', 'action.resumeRetryCount="-1"')
+if transport == "relp":
+    required_settings = queue_settings + (
+        'module(load="omrelp" tls.tlslib="openssl")', 'tls="on"', 'tls.authmode="name"',
+        'tls.permittedpeer=["collector-a.bower.lab"]', 'windowSize="128"', 'timeout="90"',
+        'rebindInterval="0"', 'template="RSYSLOG_SyslogProtocol23Format"')
+else:
+    required_settings = queue_settings + (
+        'RebindInterval="0"', 'ResendLastMSGOnReconnect="on"', 'KeepAlive="on"',
+        'KeepAlive.Time="60"', 'KeepAlive.Interval="10"', 'KeepAlive.Probes="6"',
+        'StreamDriverAuthMode="x509/name"', 'StreamDriverPermittedPeers="collector-a.bower.lab"',
+        'TCP_Framing="octet-counted"')
 if any(setting not in configuration for setting in required_settings):
     fail("recommended-sender-profile-mismatch")
-if configuration.count('type="omfwd"') != 1 or 'port="6514"' not in configuration:
+if configuration.count('type="' + ("omrelp" if transport == "relp" else "omfwd") + '"') != 1 or 'port="6514"' not in configuration:
     fail("sender-must-forward-only-a13")
 if 'Ratelimit.Burst="200000"' not in base_configuration:
     fail("imjournal-rate-bound-missing")
 if command("systemctl", "is-active", "rsyslog.service") != "active":
     fail("sender-not-active")
 print(json.dumps({"phase": "firewall-sender-setup", "runId": run, "manifestSha256": manifest_hash,
-                  "profile": "recommended", "listener": "a13", "port": 6514,
+                  "profile": "recommended", "transport": transport, "relpBuild": relp_build,
+                  "listener": "a13", "port": 6514,
                   "senderConfigSha256": hashlib.sha256(configuration.encode()).hexdigest(),
                   "sourceToolSha256": hashlib.sha256((stage / "syslog-host.py").read_bytes()).hexdigest(),
                   "journalStorage": "persistent", "nftCounters": tool.nft_packets(),

@@ -210,8 +210,8 @@ public sealed class SyslogSourceTests
 
     [Theory]
     [InlineData("\"protocol\": \"tls\", \"address\": \"0.0.0.0\"", "tls settings are required for protocol tls")]
-    [InlineData("\"protocol\": \"tcp\", \"tls\": {\"certificateFile\": \"c\", \"privateKeyFile\": \"k\"}", "tls settings are required for protocol tls and not allowed otherwise")]
-    [InlineData("\"protocol\": \"sctp\"", "protocol must be tcp, tls or udp")]
+    [InlineData("\"protocol\": \"tcp\", \"tls\": {\"certificateFile\": \"c\", \"privateKeyFile\": \"k\"}", "tls settings are required for protocol tls, optional for relp and not allowed otherwise")]
+    [InlineData("\"protocol\": \"sctp\"", "protocol must be tcp, tls, udp or relp")]
     [InlineData("\"protocol\": \"tcp\", \"address\": \"localhost\"", "address must be an IP address")]
     [InlineData("\"protocol\": \"tcp\", \"address\": \"127.1\"", "address must be an IP address")]
     [InlineData("\"protocol\": \"tcp\", \"port\": 70000", "port must be between 0 and 65535")]
@@ -867,7 +867,7 @@ public sealed class SyslogSourceTests
         return stream;
     }
 
-    private static bool IssuedByTestCa(X509Certificate? certificate)
+    internal static bool IssuedByTestCa(X509Certificate? certificate)
     {
         if (certificate is null) { return false; }
         X509Certificate2Collection authorities = [];
@@ -901,6 +901,12 @@ public sealed class SyslogSourceTests
         public bool Throw { get; init; }
 
         public TaskCompletionSource? Block { get; set; }
+
+        /// <summary>Ends any remaining unavailable responses: queue capacity is back.</summary>
+        public void Accept() => Interlocked.Exchange(ref unavailable, 0);
+
+        /// <summary>From now on the queue refuses every submission.</summary>
+        public void Refuse() => Interlocked.Exchange(ref unavailable, int.MaxValue);
 
         public int Attempts;
 

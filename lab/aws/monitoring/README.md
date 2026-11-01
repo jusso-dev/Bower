@@ -26,6 +26,7 @@ Its local HTML screenshot is evidence of the rendered report, not a cloud portal
 | `alerts.py` | Watches Azure Monitor alert instances until one fires or resolves; lists Sentinel incidents |
 | `azure-environment.py` | Prepares/plans/applies the isolated Azure destination, owns separate ingest/verifier applications, and verifies RG/application/service-principal/owned-role cleanup |
 | `qualify-azure.py` | Separately validates Azure KQL with explicitly labelled direct synthetic ingestion, then removes its own RG and temporary user role; it is not collector-delivery proof |
+| `relp-scenario.py`, `relp-evidence.py`, `relp-dedup-proof.py`, `queue-cap.sh`, `update-sender-rsyslog.sh`, `sender-shutdown-diag.sh` | RELP firewall qualification: one scenario end to end, sanitized evidence export, the Sentinel deduplication proof, the queue-capacity cap, the sender rsyslog 8.2610.0 build and a read-only sender shutdown diagnostic ([FIREWALL-RELP.md](FIREWALL-RELP.md)) |
 | Others | Read-only diagnostics (queue states and pages, source counts, rsyslog state) and the recovery used in the drill (`raise-cap.sh`) |
 
 ```bash

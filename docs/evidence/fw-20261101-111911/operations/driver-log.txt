@@ -1,0 +1,104 @@
+11:39:30 a-sigkill attempt 1 plan 8c7ee1b1210e starts 2026-11-01T11:41:59.978627+00:00
+11:39:38 dispatched 2 steps: exits [0, 0]
+11:39:38 waiting 212s for collection
+11:49:00 query 1 exit 1 identityComplete True strictPass False
+11:49:00 evidence <operator-home>/.bower-lab/bower-fw-20261101-111911/evidence/a-sigkill-attempt1
+11:49:00 a-reset attempt 1 plan 837b44222fd5 starts 2026-11-01T11:51:30.610566+00:00
+11:49:07 dispatched 2 steps: exits [0, 0]
+11:49:07 waiting 273s for collection
+11:59:34 query 1 exit 0 identityComplete True strictPass True
+11:59:34 evidence <operator-home>/.bower-lab/bower-fw-20261101-111911/evidence/a-reset-attempt1
+11:59:34 a-sender-reboot attempt 1 plan ea45bb298fa7 starts 2026-11-01T12:02:04.801710+00:00
+11:59:44 dispatched 3 steps: exits [0, 0, 0]
+11:59:44 waiting 470s for collection
+12:18:36 query 1 exit 1 identityComplete False strictPass False
+12:23:39 query 2 exit 1 identityComplete False strictPass False
+12:28:41 query 3 exit 1 identityComplete False strictPass False
+12:33:41 evidence <operator-home>/.bower-lab/bower-fw-20261101-111911/evidence/a-sender-reboot-attempt1
+12:33:41 a-sender-reboot-only attempt 1 plan 96a90f30f502 starts 2026-11-01T12:36:11.309187+00:00
+12:33:49 dispatched 2 steps: exits [0, 0]
+12:33:49 waiting 381s for collection
+12:46:14 query 1 exit 2 identityComplete None strictPass None
+12:51:15 query 2 exit 2 identityComplete None strictPass None
+12:54:09 a-sender-reboot attempt 2 plan 5843abdd5980 starts 2026-11-01T12:56:39.188352+00:00
+12:54:16 dispatched 3 steps: exits [0, 0, 0]
+12:54:16 waiting 472s for collection
+13:05:23 query 1 exit 0 identityComplete True strictPass True
+13:05:23 evidence <operator-home>/.bower-lab/bower-fw-20261101-111911/evidence/a-sender-reboot-attempt2
+13:05:23 a-sender-reboot-only attempt 2 plan 903ec45bdeee starts 2026-11-01T13:07:53.210927+00:00
+13:05:33 dispatched 2 steps: exits [0, 0]
+13:05:33 waiting 380s for collection
+13:14:57 query 1 exit 0 identityComplete True strictPass True
+13:14:57 evidence <operator-home>/.bower-lab/bower-fw-20261101-111911/evidence/a-sender-reboot-only-attempt2
+13:14:57 a-sigkill attempt 2 plan 264201a6f5d2 starts 2026-11-01T13:17:27.432323+00:00
+13:15:07 dispatched 2 steps: exits [0, 0]
+13:15:07 waiting 210s for collection
+13:21:34 query 1 exit 0 identityComplete True strictPass True
+13:21:34 evidence <operator-home>/.bower-lab/bower-fw-20261101-111911/evidence/a-sigkill-attempt2
+13:21:34 a-reset attempt 2 plan a05b8447b14e starts 2026-11-01T13:24:04.719941+00:00
+13:21:45 dispatched 2 steps: exits [0, 0]
+13:21:45 waiting 269s for collection
+13:29:09 query 1 exit 0 identityComplete True strictPass True
+13:29:09 evidence <operator-home>/.bower-lab/bower-fw-20261101-111911/evidence/a-reset-attempt2
+13:29:09 a-restart attempt 1 plan 6f54933d8afe starts 2026-11-01T13:31:39.903350+00:00
+13:29:19 dispatched 2 steps: exits [0, 0]
+13:29:19 waiting 210s for collection
+13:35:57 query 1 exit 0 identityComplete True strictPass True
+13:35:57 evidence <operator-home>/.bower-lab/bower-fw-20261101-111911/evidence/a-restart-attempt1
+13:35:57 a-collector-reboot attempt 1 plan 77331bac199c starts 2026-11-01T13:38:27.787298+00:00
+13:36:08 dispatched 2 steps: exits [0, 0]
+13:36:08 waiting 450s for collection
+13:46:27 query 1 exit 0 identityComplete True strictPass True
+13:46:27 evidence <operator-home>/.bower-lab/bower-fw-20261101-111911/evidence/a-collector-reboot-attempt1
+13:46:27 a-blackhole attempt 1 plan 11699fb11e16 starts 2026-11-01T13:48:57.307300+00:00
+13:46:36 dispatched 2 steps: exits [0, 0]
+13:46:36 waiting 331s for collection
+13:54:59 query 1 exit 0 identityComplete True strictPass True
+13:54:59 evidence <operator-home>/.bower-lab/bower-fw-20261101-111911/evidence/a-blackhole-attempt1
+13:54:59 a-sender-stop-start attempt 1 plan 9004cebedb1a starts 2026-11-01T13:57:29.272782+00:00
+13:55:07 dispatched 2 steps: exits [0, 0]
+13:55:07 waiting 332s for collection
+14:03:27 query 1 exit 0 identityComplete True strictPass True
+14:03:27 evidence <operator-home>/.bower-lab/bower-fw-20261101-111911/evidence/a-sender-stop-start-attempt1
+14:03:27 a-burst attempt 1 plan 26cf7f06426b starts 2026-11-01T14:05:57.836150+00:00
+14:03:36 dispatched 1 steps: exits [0]
+14:03:36 waiting 206s for collection
+14:09:43 query 1 exit 0 identityComplete True strictPass True
+14:09:43 evidence <operator-home>/.bower-lab/bower-fw-20261101-111911/evidence/a-burst-attempt1
+14:09:43 a-steady attempt 2 plan 6d56309137b4 starts 2026-11-01T14:12:13.331985+00:00
+14:09:51 dispatched 1 steps: exits [0]
+14:09:51 waiting 207s for collection
+14:16:16 query 1 exit 0 identityComplete True strictPass True
+14:16:16 evidence <operator-home>/.bower-lab/bower-fw-20261101-111911/evidence/a-steady-attempt2
+14:16:32 b-idle-gaps attempt 1 plan e40fa074e462 starts 2026-11-01T14:19:02.539571+00:00
+14:16:43 dispatched 4 steps: exits [0, 0, 0, 0]
+14:16:43 waiting 6224s for collection
+16:03:50 query 1 exit 0 identityComplete True strictPass True
+16:03:50 evidence <operator-home>/.bower-lab/bower-fw-20261101-111911/evidence/b-idle-gaps-attempt1
+16:03:50 a-destination-outage-15m attempt 1 plan 2061d9dd69fd starts 2026-11-01T16:06:20.677153+00:00
+16:04:05 dispatched 1 steps: exits [0]
+16:04:05 waiting 1041s for collection
+16:24:03 query 1 exit 2 identityComplete None strictPass None
+16:29:06 query 2 exit 0 identityComplete True strictPass True
+16:29:06 evidence <operator-home>/.bower-lab/bower-fw-20261101-111911/evidence/a-destination-outage-15m-attempt1
+16:30:19 a-capacity-refusal attempt 1 plan 45e40dc7deea starts 2026-11-01T16:32:49.797335+00:00
+16:30:36 dispatched 2 steps: exits [0, 0]
+16:30:36 waiting 794s for collection
+16:47:01 query 1 exit 0 identityComplete True strictPass True
+16:47:01 evidence <operator-home>/.bower-lab/bower-fw-20261101-111911/evidence/a-capacity-refusal-attempt1
+14:16:32 b-idle-gaps attempt 1 plan e40fa074e462 starts 2026-11-01T14:19:02.539571+00:00
+14:16:43 dispatched 4 steps: exits [0, 0, 0, 0]
+14:16:43 waiting 6224s for collection
+16:03:50 query 1 exit 0 identityComplete True strictPass True
+16:03:50 evidence <operator-home>/.bower-lab/bower-fw-20261101-111911/evidence/b-idle-gaps-attempt1
+16:03:50 a-destination-outage-15m attempt 1 plan 2061d9dd69fd starts 2026-11-01T16:06:20.677153+00:00
+16:04:05 dispatched 1 steps: exits [0]
+16:04:05 waiting 1041s for collection
+16:24:03 query 1 exit 2 identityComplete None strictPass None
+16:29:06 query 2 exit 0 identityComplete True strictPass True
+16:29:06 evidence <operator-home>/.bower-lab/bower-fw-20261101-111911/evidence/a-destination-outage-15m-attempt1
+16:30:19 a-capacity-refusal attempt 1 plan 45e40dc7deea starts 2026-11-01T16:32:49.797335+00:00
+16:30:36 dispatched 2 steps: exits [0, 0]
+16:30:36 waiting 794s for collection
+16:47:01 query 1 exit 0 identityComplete True strictPass True
+16:47:01 evidence <operator-home>/.bower-lab/bower-fw-20261101-111911/evidence/a-capacity-refusal-attempt1

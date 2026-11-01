@@ -1,0 +1,35 @@
+{
+ "schemaVersion": 1,
+ "recordType": "firewall-destination-query-evidence",
+ "runId": "bower-fw-20261101-111911",
+ "scenario": "a-sender-reboot",
+ "collectorId": "bower-fw-20261101-111911-linux",
+ "workspaceId": "b41439ee-2723-4f42-ba8c-070677cc6226",
+ "verifierClientId": "cfa6ab6b-138f-4225-9795-29d3a9bb8515",
+ "planSha256": "ea45bb298fa768d539236f5ee8923696635abb4ed4b4001df875d8b8d4b451ab",
+ "packSha256": "44aa95145b1662dcca81c0f54f1c24dbc61bcaa832de3e4de14171d062636bc5",
+ "query": {
+  "text": "BowerSecurity_CL\n| where CollectorId == \"bower-fw-20261101-111911-linux\" and ApplicationName == \"nftables-firewall\"\n    and ApplicationEnvironment == \"validation\" and EventType == \"network_connection_denied\"\n| where TimeGenerated between (datetime(2026-11-01T12:02:02.802000+00:00) .. datetime(2026-11-01T12:07:34.802000+00:00))\n| where ingestion_time() <= datetime(2026-11-01T12:28:39.365212+00:00)\n| summarize Copies=count(), FirstGenerated=min(TimeGenerated), LastGenerated=max(TimeGenerated),\n    FirstIngested=min(ingestion_time()), LastIngested=max(ingestion_time()) by EventId\n| project EventId, Copies, FirstGenerated, LastGenerated, FirstIngested, LastIngested\n| take 200001",
+  "sha256": "d111668d27badd0496586a32c5fc23c2dc9f49a8fec237b8bfba4bd87e717b00",
+  "requestBodySha256": "b5d9eea143467f6b06171daf8a8f2344b1b480ddf139aea8f4d22168c2be7626",
+  "cutoff": "2026-11-01T12:28:39.365212+00:00",
+  "generatedStart": "2026-11-01T12:02:02.802000+00:00",
+  "generatedEnd": "2026-11-01T12:07:34.802000+00:00",
+  "apiTimespan": null
+ },
+ "verifierSourceSha256": "f613d1d9839c74ca2834ceb0df0aaf6e11e38e66f9d483df21af771c09130dd4",
+ "queryResponseComplete": true,
+ "columns": [
+  "EventId",
+  "Copies",
+  "FirstGenerated",
+  "LastGenerated",
+  "FirstIngested",
+  "LastIngested"
+ ],
+ "distinctIdentities": 594,
+ "identitySetSha256": "77fb92393c6bfd44bb5b54b6d36760dbf6a9660919cba2afaf60afb9cebd6a5a",
+ "deliveryQualified": false,
+ "rowsFile": "sentinel-rows-3.jsonl",
+ "originalSha256": "1d91da2ff21cbd8b089c70e434d50b65462b52069a24e1cf352d2d2f553518ae"
+}

@@ -1,0 +1,1 @@
+{"commandId": "e58ee5b2-4714-4234-a9a5-1d3d1c6d2d89", "instanceId": "i-0f41641df895c024c", "host": "Sender", "script": "update-sender-rsyslog.sh", "sha256": "9f1e4a9126a563680c3cd755d3cf4b673de39fc21279a5679edfc8a1e2874758", "sentAt": "2026-11-01T12:41:14Z", "status": "Success", "responseCode": 0}

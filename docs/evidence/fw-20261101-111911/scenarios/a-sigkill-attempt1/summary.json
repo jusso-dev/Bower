@@ -1,0 +1,77 @@
+{
+  "scenario": "a-sigkill",
+  "attempt": 1,
+  "runId": "bower-fw-20261101-111911",
+  "planSha256": "8c7ee1b1210eb7933668b2fbbf24e0eeff62aa0d53081f6ce1208dff159536d1",
+  "startEpoch": 1793533319.979,
+  "expectedBlocks": [
+    "nft:A:240000:6000"
+  ],
+  "steps": [
+    {
+      "host": "Sender",
+      "offsetSeconds": 0,
+      "exit": 0,
+      "output": null
+    },
+    {
+      "host": "Linux",
+      "offsetSeconds": 20,
+      "exit": 0,
+      "output": null
+    }
+  ],
+  "collected": [
+    {
+      "kind": "native-generator-result",
+      "file": "00-native-generator-result.json",
+      "exit": 0
+    },
+    {
+      "kind": "queue-acceptance-only",
+      "file": "01-queue-acceptance-only.json",
+      "exit": 0
+    },
+    {
+      "kind": "collector-snapshot",
+      "file": "02-collector-snapshot.json",
+      "exit": 0
+    },
+    {
+      "kind": "sender-snapshot",
+      "file": "03-sender-snapshot.json",
+      "exit": 0
+    }
+  ],
+  "faults": [
+    {
+      "action": "kill",
+      "host": "Linux",
+      "record": {
+        "duration": 0,
+        "endedAt": "2026-11-01T11:42:20.069233+00:00",
+        "fault": "kill",
+        "killedPid": 6185,
+        "startedAt": "2026-11-01T11:42:20.043491+00:00"
+      }
+    }
+  ],
+  "queueExport": {
+    "key": "results/firewall/a-sigkill/8c7ee1b1210eb7933668b2fbbf24e0eeff62aa0d53081f6ce1208dff159536d1/1f365809869344a0b48fa0029edffb8a.json",
+    "sha256": "96ec4299dcd104e06d118ddc2dce68c927a05c28fafcf824f9167072854f74a0",
+    "bytes": 803711,
+    "rows": 6000,
+    "malformedRows": 0,
+    "destinationQueryVerified": false
+  },
+  "queries": [
+    {
+      "query": 1,
+      "exit": 1,
+      "report": "reconciliation-1.json",
+      "strictPass": false,
+      "identityComplete": true
+    }
+  ],
+  "finishedAt": "2026-11-01T11:49:00.548725+00:00"
+}

@@ -24,13 +24,23 @@ REGION = 'australiaeast'
 PROJECT = 'bower-lab'
 READER_ROLE = '73c42c96-874c-492b-b04d-ab87d138a893'
 ROLES = ('ingest', 'verifier')
+GRAPH_DELETED = 'https://graph.microsoft.com/v1.0/directory/deletedItems/'
+# A generated name, or the owning AWS run's id so Azure resources share its RunId.
+RUN_PATTERN = r'bower-val-\d{12}-[0-9a-f]{8}|bower-(?:ws6|fw)-\d{8}-\d{6}'
+
+
+class NotFoundError(RuntimeError):
+    """Graph or Resource Manager reported the object as not found (only that proves absence)."""
 
 
 def az(*args):
     result = subprocess.run(['az', *args, '--only-show-errors', '--output', 'json'],
                             capture_output=True, text=True, check=False)
     if result.returncode:
-        # Azure errors can echo input; never print error text or tokens.
+        # Azure errors can echo input; never print error text or tokens. Only the exact
+        # not-found codes are classified; everything else stays a generic failure.
+        if re.search(r'\b(Request_ResourceNotFound|ResourceNotFound|ResourceGroupNotFound)\b', result.stderr):
+            raise NotFoundError('Azure object not found: ' + ' '.join(args[:2]))
         raise RuntimeError('Azure CLI failed: ' + ' '.join(args[:2]))
     return json.loads(result.stdout) if result.stdout.strip() else None
 
@@ -112,11 +122,13 @@ def plan_hash(repo, state):
     return digest.hexdigest()
 
 
-def prepare(root, state_path):
+def prepare(root, state_path, run_id=None):
     if state_path.exists():
         raise RuntimeError('State already exists; use cleanup or another state directory')
     now = dt.datetime.now(dt.timezone.utc)
-    run = 'bower-val-' + now.strftime('%y%m%d%H%M%S') + '-' + secrets.token_hex(4)
+    run = run_id or 'bower-val-' + now.strftime('%y%m%d%H%M%S') + '-' + secrets.token_hex(4)
+    if not re.fullmatch(RUN_PATTERN, run):
+        raise ValueError('Invalid Azure run id')
     state = {'run': run, 'group': 'rg-' + run, 'workspaceName': run + '-logs',
              'subscription': SUB, 'tenant': TENANT, 'region': REGION,
              'createdAt': now.isoformat(), 'identities': {}}
@@ -190,6 +202,23 @@ def local_cleanup(root):
     return failures
 
 
+def purge_deleted(object_id):
+    """Permanently remove a soft-deleted application or service principal. True only when Graph
+    then reports it not found; any other failure (throttling, permission, token) is unverified."""
+    uuid.UUID(object_id)
+    try:
+        az('rest', '--method', 'delete', '--url', GRAPH_DELETED + object_id)
+    except RuntimeError:
+        pass
+    try:
+        az('rest', '--method', 'get', '--url', GRAPH_DELETED + object_id)
+        return False
+    except NotFoundError:
+        return True
+    except RuntimeError:
+        return False
+
+
 def cleanup(root, state_path, state, timeout):
     errors = []
     # Reconcile names recorded before app creation. Only exact, unique run-owned names qualify.
@@ -228,11 +257,22 @@ def cleanup(root, state_path, state, timeout):
                     az('ad', 'sp', 'delete', '--id', sp['id'])
                 if matches:
                     az('ad', 'app', 'delete', '--id', app['id'])
+                # Deleted applications and principals stay restorable for 30 days unless purged.
+                for object_id in (identity.get('objectId'), identity.get('principalId')):
+                    if object_id:
+                        purge_deleted(object_id)
         except Exception:
             errors.append(role + ' cleanup failed; rerun cleanup and inspect ownership')
     try:
         if az('group', 'exists', '--name', state['group'], '--subscription', SUB):
             group_owned(state)
+            # Force-delete the workspace first so it is not kept soft-deleted for 14 days.
+            if state.get('workspaceResourceId'):
+                try:
+                    az('monitor', 'log-analytics', 'workspace', 'delete', '--resource-group', state['group'],
+                       '--workspace-name', state['workspaceName'], '--subscription', SUB, '--force', 'true', '--yes')
+                except RuntimeError:
+                    errors.append('workspace force delete failed')
             az('group', 'delete', '--name', state['group'], '--subscription', SUB, '--yes', '--no-wait')
     except Exception:
         errors.append('resource group cleanup failed or ownership mismatch')
@@ -251,6 +291,9 @@ def cleanup(root, state_path, state, timeout):
                     remaining.append(role + ' service principal')
                 if identity.get('principalId') and owned_assignments(state, identity['principalId']):
                     remaining.append(role + ' role assignment')
+                for kind, object_id in (('application', identity.get('objectId')), ('service principal', identity.get('principalId'))):
+                    if object_id and not purge_deleted(object_id):
+                        remaining.append(role + ' deleted ' + kind + ' (present or purge unverified)')
             if not remaining or time.monotonic() >= deadline:
                 errors.extend('remaining: ' + item for item in remaining)
                 break
@@ -273,6 +316,7 @@ def main():
     parser.add_argument('--repo', type=Path, default=Path(__file__).resolve().parents[3])
     parser.add_argument('--apply', action='store_true', help='explicitly authorize this action to modify Azure')
     parser.add_argument('--timeout-seconds', type=int, default=300)
+    parser.add_argument('--run-id', help='prepare only: name Azure resources after this owning AWS RunId')
     args = parser.parse_args()
     if args.action in ('prepare', 'apply', 'sentinel', 'cleanup') and not args.apply:
         parser.error('this action requires --apply')
@@ -292,11 +336,11 @@ def main():
                 raise RuntimeError('State directory contains existing lab files; use a fresh directory')
             owns_local_files = True
             account()
-            state = prepare(root, state_path)
+            state = prepare(root, state_path, args.run_id)
             result = {'prepared': True, 'group': state['group'], 'workspaceId': state['workspaceId']}
         else:
             state = json.loads(state_path.read_text())
-            if state.get('subscription') != SUB or state.get('tenant') != TENANT or not re.fullmatch(r'bower-val-\d{12}-[0-9a-f]{8}', state.get('run', '')) or state.get('group') != 'rg-' + state['run'] or state.get('workspaceName') != state['run'] + '-logs':
+            if state.get('subscription') != SUB or state.get('tenant') != TENANT or not re.fullmatch(RUN_PATTERN, state.get('run', '')) or state.get('group') != 'rg-' + state['run'] or state.get('workspaceName') != state['run'] + '-logs':
                 raise RuntimeError('Invalid saved deployment target or run')
             workspace = ('/subscriptions/' + SUB + '/resourceGroups/' + state['group']
                          + '/providers/Microsoft.OperationalInsights/workspaces/' + state['workspaceName'])

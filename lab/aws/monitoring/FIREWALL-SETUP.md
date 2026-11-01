@@ -1,5 +1,9 @@
 # Separate firewall sender qualification setup
 
+For the RELP listener and `omrelp` sender (protocol and transport switches, the pinned
+`omrelp` build, the rsyslog 8.2610.0 upgrade and the added scenarios) see
+[FIREWALL-RELP.md](FIREWALL-RELP.md).
+
 These scripts configure only the disposable monitoring lab. They do not create
 AWS or Azure resources, provision an Azure identity, or establish production
 qualification. Use the final reviewed collector and signed pack. Preserve failed

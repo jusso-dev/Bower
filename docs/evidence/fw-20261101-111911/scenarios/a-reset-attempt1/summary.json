@@ -1,0 +1,77 @@
+{
+  "scenario": "a-reset",
+  "attempt": 1,
+  "runId": "bower-fw-20261101-111911",
+  "planSha256": "837b44222fd5c5fa437bc2568012f4057d3da66b2dda8ec0c5b09f159a8bd57b",
+  "startEpoch": 1793533890.611,
+  "expectedBlocks": [
+    "nft:A:280000:1200"
+  ],
+  "steps": [
+    {
+      "host": "Sender",
+      "offsetSeconds": 0,
+      "exit": 0,
+      "output": null
+    },
+    {
+      "host": "Linux",
+      "offsetSeconds": 30,
+      "exit": 0,
+      "output": null
+    }
+  ],
+  "collected": [
+    {
+      "kind": "native-generator-result",
+      "file": "00-native-generator-result.json",
+      "exit": 0
+    },
+    {
+      "kind": "queue-acceptance-only",
+      "file": "01-queue-acceptance-only.json",
+      "exit": 0
+    },
+    {
+      "kind": "collector-snapshot",
+      "file": "02-collector-snapshot.json",
+      "exit": 0
+    },
+    {
+      "kind": "sender-snapshot",
+      "file": "03-sender-snapshot.json",
+      "exit": 0
+    }
+  ],
+  "faults": [
+    {
+      "action": "reset",
+      "host": "Linux",
+      "record": {
+        "duration": 10,
+        "endedAt": "2026-11-01T11:52:10.894301+00:00",
+        "fault": "reset",
+        "packets": 6,
+        "startedAt": "2026-11-01T11:52:00.703491+00:00"
+      }
+    }
+  ],
+  "queueExport": {
+    "key": "results/firewall/a-reset/837b44222fd5c5fa437bc2568012f4057d3da66b2dda8ec0c5b09f159a8bd57b/3b123fb4c0884fab9c21589a8a221e0f.json",
+    "sha256": "bf901988d324e18d426a67bd646fd521847c463a9ef8656aa5be18b4f4e040da",
+    "bytes": 161172,
+    "rows": 1200,
+    "malformedRows": 0,
+    "destinationQueryVerified": false
+  },
+  "queries": [
+    {
+      "query": 1,
+      "exit": 0,
+      "report": "reconciliation-1.json",
+      "strictPass": true,
+      "identityComplete": true
+    }
+  ],
+  "finishedAt": "2026-11-01T11:59:34.723694+00:00"
+}

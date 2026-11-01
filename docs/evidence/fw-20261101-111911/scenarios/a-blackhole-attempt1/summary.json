@@ -1,0 +1,79 @@
+{
+  "scenario": "a-blackhole",
+  "attempt": 1,
+  "runId": "bower-fw-20261101-111911",
+  "planSha256": "11699fb11e162d08d765227cdc753136c8f53ff40d78f02ff46ef0a0343e94f2",
+  "startEpoch": 1793540937.307,
+  "expectedBlocks": [
+    "nft:A:1160000:1800"
+  ],
+  "steps": [
+    {
+      "host": "Sender",
+      "offsetSeconds": 0,
+      "exit": 0,
+      "output": null
+    },
+    {
+      "host": "Linux",
+      "offsetSeconds": 30,
+      "exit": 0,
+      "output": null
+    }
+  ],
+  "collected": [
+    {
+      "kind": "native-generator-result",
+      "file": "00-native-generator-result.json",
+      "exit": 0
+    },
+    {
+      "kind": "queue-acceptance-only",
+      "file": "01-queue-acceptance-only.json",
+      "exit": 0
+    },
+    {
+      "kind": "collector-snapshot",
+      "file": "02-collector-snapshot.json",
+      "exit": 0
+    },
+    {
+      "kind": "sender-snapshot",
+      "file": "03-sender-snapshot.json",
+      "exit": 0
+    }
+  ],
+  "faults": [
+    {
+      "action": "blackhole",
+      "host": "Linux",
+      "record": {
+        "duration": 120,
+        "endedAt": "2026-11-01T13:51:27.602028+00:00",
+        "fault": "blackhole",
+        "packets": 20,
+        "startedAt": "2026-11-01T13:49:27.392182+00:00"
+      }
+    }
+  ],
+  "queueExports": [
+    {
+      "key": "results/firewall/a-blackhole/11699fb11e162d08d765227cdc753136c8f53ff40d78f02ff46ef0a0343e94f2/08c800b759f346f691039092193420ca.json",
+      "sha256": "37f528e7eb8a1c04ac6f98d381cd5fa2320a85c99e14dd8831e394eac11f567a",
+      "bytes": 241541,
+      "rows": 1800,
+      "malformedRows": 0,
+      "destinationQueryVerified": false
+    }
+  ],
+  "queries": [
+    {
+      "query": 1,
+      "exit": 0,
+      "report": "reconciliation-1.json",
+      "strictPass": true,
+      "identityComplete": true
+    }
+  ],
+  "finishedAt": "2026-11-01T13:54:59.181512+00:00"
+}

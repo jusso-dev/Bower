@@ -1,0 +1,78 @@
+{
+  "scenario": "a-sender-stop-start",
+  "attempt": 1,
+  "runId": "bower-fw-20261101-111911",
+  "planSha256": "9004cebedb1a14ecb4d128de5b55b7cc8d8bccca7f71dee24b97531a5d4146a3",
+  "startEpoch": 1793541449.273,
+  "expectedBlocks": [
+    "nft:A:1260000:1800"
+  ],
+  "steps": [
+    {
+      "host": "Sender",
+      "offsetSeconds": 0,
+      "exit": 0,
+      "output": null
+    },
+    {
+      "host": "Sender",
+      "offsetSeconds": 30,
+      "exit": 0,
+      "output": null
+    }
+  ],
+  "collected": [
+    {
+      "kind": "native-generator-result",
+      "file": "00-native-generator-result.json",
+      "exit": 0
+    },
+    {
+      "kind": "queue-acceptance-only",
+      "file": "01-queue-acceptance-only.json",
+      "exit": 0
+    },
+    {
+      "kind": "collector-snapshot",
+      "file": "02-collector-snapshot.json",
+      "exit": 0
+    },
+    {
+      "kind": "sender-snapshot",
+      "file": "03-sender-snapshot.json",
+      "exit": 0
+    }
+  ],
+  "faults": [
+    {
+      "action": "stop-start",
+      "host": "Sender",
+      "record": {
+        "duration": 60,
+        "endedAt": "2026-11-01T13:58:59.759489+00:00",
+        "fault": "stop-start",
+        "startedAt": "2026-11-01T13:57:59.373080+00:00"
+      }
+    }
+  ],
+  "queueExports": [
+    {
+      "key": "results/firewall/a-sender-stop-start/9004cebedb1a14ecb4d128de5b55b7cc8d8bccca7f71dee24b97531a5d4146a3/05353b303e5948e29dcffbe68d27ab5d.json",
+      "sha256": "28f2d618612e87f16f1bef1a63c9cc1e8934e67f4351b360dc8d3a0394520e81",
+      "bytes": 241542,
+      "rows": 1800,
+      "malformedRows": 0,
+      "destinationQueryVerified": false
+    }
+  ],
+  "queries": [
+    {
+      "query": 1,
+      "exit": 0,
+      "report": "reconciliation-1.json",
+      "strictPass": true,
+      "identityComplete": true
+    }
+  ],
+  "finishedAt": "2026-11-01T14:03:27.729854+00:00"
+}
