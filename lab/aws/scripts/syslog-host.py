@@ -385,10 +385,25 @@ def fault(args):
         sh("docker", "start", "bower-syslog-ng")
     elif args.action == "reboot":
         (LAB / "reboot-requested").write_text(started + "\n")
+        record = {"fault": args.action, "startedAt": started, "bootId": Path("/proc/sys/kernel/random/boot_id").read_text().strip()}
+        (RESULTS / ("fault-reboot-" + str(int(args.at)) + ".json")).parent.mkdir(parents=True, exist_ok=True)
+        (RESULTS / ("fault-reboot-" + str(int(args.at)) + ".json")).write_text(json.dumps(record))
+        sh("sync")
         sh("systemctl", "reboot", check=False)
+    elif args.action == "raise-cap":
+        # Operator recovery from a full queue (monitoring/raise-cap.sh): raise the undelivered
+        # cap to the 10 GiB default and restart. Never deletes or resets queue rows.
+        env = Path("/etc/bower/bower.env")
+        text = env.read_text()
+        detail["previousCap"] = (re.search(r"^BOWER_QUEUE_MAX_BYTES=(\d+)$", text, re.M) or [None, None])[1]
+        env.write_text(re.sub(r"^BOWER_QUEUE_MAX_BYTES=\d+\n", "", text, flags=re.M))
+        sh("systemctl", "restart", args.unit)
     else:
         raise RuntimeError("Unknown fault")
-    emit({"fault": args.action, "startedAt": started, "endedAt": utc(), "duration": args.duration, **detail})
+    record = {"fault": args.action, "startedAt": started, "endedAt": utc(), "duration": args.duration, **detail}
+    (RESULTS / ("fault-" + args.action + "-" + str(int(args.at)) + ".json")).parent.mkdir(parents=True, exist_ok=True)
+    (RESULTS / ("fault-" + args.action + "-" + str(int(args.at)) + ".json")).write_text(json.dumps(record))
+    emit(record)
 
 
 # ---------------------------------------------------------------- senders
@@ -452,6 +467,62 @@ RSYSLOG_ACTION = '''action(name="{name}" type="omfwd" target="{ip}" port="{port}
        queue.type="LinkedList" queue.filename="bower_{name}" queue.saveOnShutdown="on"{queue}
        action.resumeRetryCount="-1" action.resumeInterval="5" action.reportSuspension="on")
 '''
+# RELP sender (rsyslog omrelp). Amazon Linux 2023 ships rsyslog 8.2204.0 without
+# rsyslog-relp or librelp, so the lab builds both from upstream sources pinned by SHA-256.
+RELP_SOURCES = {
+    "librelp": ("https://download.rsyslog.com/librelp/librelp-1.12.0.tar.gz",
+                "e2e53a9812d06f95d0a311bbfafba78704835de6d7f0ea0fd9c0d94e8eae496a"),
+    "rsyslog": ("https://www.rsyslog.com/files/download/rsyslog/rsyslog-8.2204.0.tar.gz",
+                "7eb52db775f87f6975b70a5fbff982507c68ba3306ae05ff967443258442245d"),
+}
+OMRELP = Path("/usr/lib64/rsyslog/omrelp.so")
+RSYSLOG_RELP_ACTION = '''action(name="{name}" type="omrelp" target="{ip}" port="{port}"
+       template="RSYSLOG_SyslogProtocol23Format"
+       tls="on" tls.cacert="{pki}/ca.pem" tls.mycert="{pki}/{cert}.pem" tls.myprivkey="{pki}/{cert}-key.pem"
+       tls.authmode="name" tls.permittedpeer=["{peer}"]
+       windowSize="128" timeout="90" conn.timeout="10" rebindInterval="0"
+       queue.type="LinkedList" queue.filename="bower_{name}" queue.saveOnShutdown="on"{queue}
+       action.resumeRetryCount="-1" action.resumeInterval="5" action.reportSuspension="on")
+'''
+
+
+def install_relp(_args=None):
+    """Build librelp (OpenSSL TLS) and rsyslog's omrelp for the installed rsyslog version."""
+    installed = sh("rpm", "-q", "--queryformat", "%{VERSION}", "rsyslog")
+    if installed != "8.2204.0":
+        raise RuntimeError("omrelp source is pinned to rsyslog 8.2204.0")
+    sh("dnf", "-y", "-q", "install", "gcc", "make", "pkgconf-pkg-config", "openssl-devel", "libestr-devel",
+       "libfastjson-devel", "zlib-devel", "libuuid-devel", "libcurl-devel", "systemd-devel", "flex", "bison")
+    build = LAB / "relp-build"
+    shutil.rmtree(build, ignore_errors=True)
+    build.mkdir(parents=True)
+    digests = {}
+    for name, (url, sha256) in RELP_SOURCES.items():
+        archive = build / (name + ".tar.gz")
+        with urllib.request.urlopen(url, timeout=120) as response:
+            archive.write_bytes(response.read(64 * 1024 * 1024))
+        digests[name] = hashlib.sha256(archive.read_bytes()).hexdigest()
+        if digests[name] != sha256:
+            raise RuntimeError(name + " source checksum mismatch")
+        sh("tar", "-xzf", str(archive), "-C", str(build), "--no-same-owner")
+    librelp = next(path for path in build.glob("librelp-*") if path.is_dir())
+    sh("./configure", "--prefix=/usr", "--libdir=/usr/lib64", "--enable-tls-openssl", "--disable-tls",
+       cwd=librelp)
+    sh("make", "-j2", cwd=librelp)
+    sh("make", "install", cwd=librelp)
+    sh("ldconfig")
+    rsyslog = next(path for path in build.glob("rsyslog-*") if path.is_dir())
+    environment = dict(os.environ, PKG_CONFIG_PATH="/usr/lib64/pkgconfig")
+    sh("./configure", "--prefix=/usr", "--libdir=/usr/lib64", "--enable-relp", "--disable-libgcrypt",
+       "--disable-generate-man-pages", cwd=rsyslog, env=environment)
+    sh("make", "-j2", "-C", "plugins/omrelp", cwd=rsyslog, env=environment)
+    shutil.copyfile(rsyslog / "plugins/omrelp/.libs/omrelp.so", OMRELP)
+    os.chmod(OMRELP, 0o755)
+    emit({"librelp": "1.12.0", "rsyslogSource": installed, "sourceSha256": digests,
+          "omrelpSha256": hashlib.sha256(OMRELP.read_bytes()).hexdigest(),
+          "librelpSha256": hashlib.sha256(Path(os.path.realpath("/usr/lib64/librelp.so")).read_bytes()).hexdigest()})
+
+
 # Queue sizing per profile. "pilot" keeps rsyslog's defaults (1,000 messages in memory,
 # timeoutEnqueue 2 s), as the pilot and ws6 did; "small" is the recommended profile scaled
 # down so a short outage reaches the disk part.
@@ -472,7 +543,8 @@ def configure_rsyslog(args):
     install_cert(args.cert)
     profile = args.profile
     tls12 = 'gnutlsPriorityString="MinProtocol=TLSv1.2\\nMaxProtocol=TLSv1.2"'
-    lines = ["# Bower syslog delivery-reliability lab: profile " + profile,
+    relp = getattr(args, "transport", "omfwd") == "relp"
+    lines = ["# Bower syslog delivery-reliability lab: profile " + profile + (" over RELP" if relp else ""),
              'global(DefaultNetstreamDriverCAFile="{0}/ca.pem" DefaultNetstreamDriverCertFile="{0}/{1}.pem"'
              ' DefaultNetstreamDriverKeyFile="{0}/{1}-key.pem")'.format(PKI, args.cert),
              'module(load="imfile" mode="inotify")',
@@ -480,6 +552,8 @@ def configure_rsyslog(args):
              # after rsyslog's default 2 s; the pilot profile keeps the defaults.
              '' if args.queue == "pilot" else 'main_queue(queue.timeoutEnqueue="86400000")',
              'module(load="impstats" interval="10" severity="7" log.syslog="off" log.file="/var/log/rsyslog-stats.log" format="json")']
+    if relp:
+        lines.append('module(load="omrelp" tls.tlslib="openssl")')
     for name in ("create", "copytruncate", "idle"):
         lines.append('input(type="imfile" File="{d}/{n}.log" Tag="bowerseq" Ruleset="bower_{t}" freshStartTail="off"'
                      ' reopenOnTruncate="{r}" PersistStateInterval="1" addMetadata="off")'.format(
@@ -492,6 +566,10 @@ def configure_rsyslog(args):
         lines.append('ruleset(name="bower_{}") {{'.format(track))
         for name, ip, port, pin12 in actions:
             peer = "collector-" + track + "." + DOMAIN
+            if relp:
+                lines.append(RSYSLOG_RELP_ACTION.format(name=name, ip=ip, port=port, peer=peer, pki=PKI, cert=args.cert,
+                                                        queue=RSYSLOG_QUEUES[args.queue]))
+                continue
             lines.append(RSYSLOG_ACTION.format(name=name, ip=ip, port=port, peer=peer, queue=RSYSLOG_QUEUES[args.queue],
                                                priority=("\n       " + tls12) if pin12 else "",
                                                rebind=args.rebind, resend="on" if profile == "recommended" else "off",
@@ -512,7 +590,7 @@ def configure_rsyslog(args):
         raise RuntimeError("rsyslogd -N1 failed")
     sh("systemctl", "enable", "rsyslog")
     sh("systemctl", "restart", "rsyslog")
-    emit({"profile": profile, "queue": args.queue, "rebind": args.rebind, "conf": hashlib.sha256(Path("/etc/rsyslog.d/10-bower-lab.conf").read_bytes()).hexdigest(),
+    emit({"profile": profile, "transport": "relp" if relp else "omfwd", "queue": args.queue, "rebind": args.rebind, "conf": hashlib.sha256(Path("/etc/rsyslog.d/10-bower-lab.conf").read_bytes()).hexdigest(),
           "rsyslogConf": hashlib.sha256(conf.read_bytes()).hexdigest(), "boundedImjournal": "Ratelimit.Burst" in conf.read_text(),
           "active": sh("systemctl", "is-active", "rsyslog", check=False)})
 
@@ -795,7 +873,9 @@ def main():
     p = sub.add_parser("configure-rsyslog"); p.add_argument("--a", required=True); p.add_argument("--b", required=True)
     p.add_argument("--cert", required=True); p.add_argument("--profile", choices=("recommended", "pilot"), default="recommended")
     p.add_argument("--rebind", type=int, default=0); p.add_argument("--only")
-    p.add_argument("--queue", choices=tuple(RSYSLOG_QUEUES), default="recommended"); p.set_defaults(func=configure_rsyslog)
+    p.add_argument("--queue", choices=tuple(RSYSLOG_QUEUES), default="recommended")
+    p.add_argument("--transport", choices=("omfwd", "relp"), default="omfwd"); p.set_defaults(func=configure_rsyslog)
+    p = sub.add_parser("install-relp"); p.set_defaults(func=install_relp)
     p = sub.add_parser("generate"); p.add_argument("--kind", choices=("nft", "file"), required=True)
     p.add_argument("--track", choices=("A", "B"), default="A"); p.add_argument("--first", type=int, required=True)
     p.add_argument("--count", type=int, required=True); p.add_argument("--rate", type=float, required=True)

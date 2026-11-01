@@ -38,9 +38,10 @@ class MonitoringStackTests(unittest.TestCase):
                 self.assertRegex(rule.get('Description', ''), allowed)
 
     @staticmethod
-    def configured_template(sender=False):
-        """Resolve only the optional topology condition, leaving AWS references symbolic."""
+    def configured_template(sender=False, windows=True):
+        """Resolve only the optional topology conditions, leaving AWS references symbolic."""
         omitted = object()
+        enabled = {"WithSyslogSender": sender, "WithWindows": windows}
 
         def resolve(value):
             if value == {"Ref": "AWS::NoValue"}:
@@ -48,12 +49,12 @@ class MonitoringStackTests(unittest.TestCase):
             if isinstance(value, list):
                 return [item for child in value if (item := resolve(child)) is not omitted]
             if isinstance(value, dict):
-                if value.get("Condition") == "WithSyslogSender" and not sender:
+                if isinstance(value.get("Condition"), str) and not enabled.get(value["Condition"], True):
                     return omitted
                 if "Fn::If" in value:
                     condition, yes, no = value["Fn::If"]
-                    assert condition == "WithSyslogSender"
-                    return resolve(yes if sender else no)
+                    assert condition in enabled
+                    return resolve(yes if enabled[condition] else no)
                 return {key: item for key, child in value.items() if (item := resolve(child)) is not omitted}
             return value
 
@@ -115,6 +116,20 @@ class MonitoringStackTests(unittest.TestCase):
         self.assertNotIn("*", str(statement["Resource"]))
         target = self.resources["ExpirySchedule"]["Properties"]["Target"]
         self.assertEqual("arn:aws:scheduler:::aws-sdk:ec2:terminateInstances", target["Arn"])
+
+    def test_firewall_only_topology_has_no_windows_host_or_expiry_target(self):
+        template = self.configured_template(sender=True, windows=False)
+        resources = template["Resources"]
+        self.assertNotIn("Windows", resources)
+        self.assertEqual({"Linux", "Sender"}, {name for name, item in resources.items() if item["Type"] == "AWS::EC2::Instance"})
+        self.assertNotIn("WindowsId", template["Outputs"])
+        statement = resources["ExpiryRole"]["Properties"]["Policies"][0]["PolicyDocument"]["Statement"][0]
+        self.assertEqual(2, len(statement["Resource"]))
+        self.assertNotIn("Windows", json.dumps(statement["Resource"]))
+        target = resources["ExpirySchedule"]["Properties"]["Target"]["Input"]
+        self.assertEqual({"Fn::Sub": ['{"InstanceIds":["${L}","${S}"]}', {"L": {"Ref": "Linux"}, "S": {"Ref": "Sender"}}]}, target)
+        self.assertEqual("true", module.template()["Parameters"]["EnableWindows"]["Default"])
+        self.assertRegex("bower-fw-20261101-120000", module.template()["Parameters"]["RunId"]["AllowedPattern"])
 
     def test_sender_is_opt_in_and_disabled_topology_has_no_sender_references(self):
         raw = module.template()

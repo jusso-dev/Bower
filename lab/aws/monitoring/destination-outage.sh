@@ -56,7 +56,7 @@ try:
     applied = json.loads((root / 'applied.json').read_text())
     record['bootUnchanged'] = Path('/proc/sys/kernel/random/boot_id').read_text().strip() == applied['bootId']
     record['blockedSecondsLowerBound'] = record['restorationStartedMonotonic'] - applied['appliedMonotonic']
-    record['minimumDurationPassed'] = record['bootUnchanged'] and record['blockedSecondsLowerBound'] >= 3600
+    record['minimumDurationPassed'] = record['bootUnchanged'] and record['blockedSecondsLowerBound'] >= scope.get('outageSeconds', 3600)
 except Exception as error:
     # Removal can succeed even when the timing evidence is missing or unreadable.
     # Preserve that fact, but never mark the duration qualified without evidence.
@@ -76,7 +76,12 @@ def scope_from_environment(environment, now):
     run, plan = environment['BOWER_LAB_RUN'], environment['BOWER_PLAN_SHA256']
     bucket = environment['BOWER_LAB_BUCKET']
     start = float(environment['BOWER_GENERATION_START_EPOCH'])
-    if (not re.fullmatch(r'bower-ws6-\d{8}-\d{6}', run) or not re.fullmatch(r'[0-9a-f]{64}', plan)
+    # Default: the one-hour outage plan. Shorter outages (at least 10 minutes) serve the
+    # RELP destination-outage and queue-capacity scenarios; the scenario names the results.
+    seconds = int(environment.get('BOWER_OUTAGE_SECONDS', '3600'))
+    scenario = environment.get('BOWER_SCENARIO', 'a-destination-outage')
+    if (not 600 <= seconds <= 3600 or not re.fullmatch(r'a-[a-z0-9-]{1,40}', scenario)
+            or not re.fullmatch(r'bower-(?:ws6|fw)-\d{8}-\d{6}', run) or not re.fullmatch(r'[0-9a-f]{64}', plan)
             or not re.fullmatch(r'[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]', bucket)
             or environment.get('AWS_DEFAULT_REGION') != 'ap-southeast-2'
             or not math.isfinite(start) or not 30 <= start - now <= 900):
@@ -84,8 +89,8 @@ def scope_from_environment(environment, now):
     table = 'bower_outage_' + plan[:16]
     return {'runId': run, 'planSha256': plan, 'bucket': bucket, 'table': table,
             'ownerComment': run + ':' + plan, 'generationStartEpoch': start,
-            'restoreNotBeforeEpoch': start + 3605,
-            'resultPrefix': 'results/firewall/a-destination-outage/' + plan + '/fault'}
+            'outageSeconds': seconds, 'restoreNotBeforeEpoch': start + seconds + 5,
+            'resultPrefix': 'results/firewall/' + scenario + '/' + plan + '/fault'}
 
 
 def rules_for(scope, uid):
@@ -132,7 +137,7 @@ def main():
     (root / 'rules.nft').write_text(rules)
     command('nft', '--check', '-f', str(root / 'rules.nft'))
     delay = math.ceil(scope['restoreNotBeforeEpoch'] - time.time())
-    if not 3600 < delay <= 4510:
+    if not scope['outageSeconds'] < delay <= scope['outageSeconds'] + 910:
         raise ValueError('Guard scheduling window expired')
     # Arm first. Restoration remains independent of this SSM process/session.
     command('systemd-run', '--unit=' + scope['unit'], '--on-active=' + str(delay) + 's',

@@ -58,7 +58,7 @@ def digest(ids):
 
 
 def expected(plan):
-    if (plan.get('schemaVersion') != 1 or not re.fullmatch(r'bower-ws6-\d{8}-\d{6}', plan.get('runId', ''))
+    if (plan.get('schemaVersion') != 1 or not re.fullmatch(r'bower-(?:ws6|fw)-\d{8}-\d{6}', plan.get('runId', ''))
             or plan.get('collectorId') != plan['runId'] + '-linux' or plan.get('listener') != 'a13'
             or not re.fullmatch(r'[ab]-[a-z-]+', plan.get('scenario', ''))):
         raise ValueError('Invalid plan ownership or scope')

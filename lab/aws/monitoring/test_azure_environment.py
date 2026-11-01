@@ -38,6 +38,13 @@ class AzureEnvironmentTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'ownership'):
                 lab.group_owned(self.state)
 
+    def test_prepare_accepts_only_an_owning_aws_run_id(self):
+        for run in ('bower-fw-20261101-120000; rm', 'rg-bower-fw-20261101-120000', 'bower-xx-20261101-120000'):
+            with self.subTest(run=run), self.assertRaisesRegex(ValueError, 'Invalid Azure run id'):
+                lab.prepare(self.root, self.path, run)
+        self.assertTrue(lab.re.fullmatch(lab.RUN_PATTERN, 'bower-fw-20261101-120000'))
+        self.assertTrue(lab.re.fullmatch(lab.RUN_PATTERN, self.run))
+
     def test_prepare_refuses_preexisting_group_before_writing_state(self):
         with mock.patch.object(lab, 'az', return_value=True):
             with self.assertRaisesRegex(RuntimeError, 'already exists'):
@@ -75,10 +82,20 @@ class AzureEnvironmentTests(unittest.TestCase):
                 return None
             if args[:3] == ('role', 'assignment', 'list'):
                 return []
+            if args[:1] == ('rest',) and args[4].startswith(lab.GRAPH_DELETED):
+                object_id = args[4][len(lab.GRAPH_DELETED):]
+                if args[2] == 'delete':
+                    purged.add(object_id)
+                    return None
+                if object_id in purged:
+                    raise RuntimeError('not found')
+                return {'id': object_id}
             raise AssertionError(args)
 
+        purged = set()
         with mock.patch.object(lab, 'az', side_effect=fake_az):
             self.assertEqual({'cleaned': True}, lab.cleanup(self.root, self.path, self.state, 0))
+        self.assertEqual({app_object, principal}, purged)
         self.assertEqual(app_id, self.state['identities']['ingest']['appId'])
         self.assertFalse((self.root / 'ingest-key.pem').exists())
         self.assertTrue(any(call[:3] == ('ad', 'sp', 'delete') for call in calls))

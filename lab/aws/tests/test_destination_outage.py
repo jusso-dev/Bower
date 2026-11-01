@@ -49,8 +49,22 @@ class DestinationOutageTests(unittest.TestCase):
         self.assertLess(source.index("command('systemd-run'"), source.index("command('nft', '-f'"))
         self.assertIn("tables[0].get('comment') != scope['ownerComment']", module.RESTORE)
         self.assertIn("['nft', 'delete', 'table', 'inet', scope['table']]", module.RESTORE)
-        self.assertIn("record['bootUnchanged'] and record['blockedSecondsLowerBound'] >= 3600", module.RESTORE)
+        self.assertIn("record['bootUnchanged'] and record['blockedSecondsLowerBound'] >= scope.get('outageSeconds', 3600)", module.RESTORE)
         compile(module.RESTORE, 'restore.py', 'exec')
+
+    def test_outage_duration_defaults_to_one_hour_and_shorter_scenarios_are_bounded(self):
+        scope = module.scope_from_environment(self.environment(), 2000000000)
+        self.assertEqual((3600, 2000000120 + 3605), (scope['outageSeconds'], scope['restoreNotBeforeEpoch']))
+        self.assertEqual('results/firewall/a-destination-outage/' + 'a' * 64 + '/fault', scope['resultPrefix'])
+        env = dict(self.environment(), BOWER_LAB_RUN='bower-fw-20330518-000000', BOWER_OUTAGE_SECONDS='900',
+                   BOWER_SCENARIO='a-relp-destination-outage')
+        scope = module.scope_from_environment(env, 2000000000)
+        self.assertEqual((900, 2000000120 + 905), (scope['outageSeconds'], scope['restoreNotBeforeEpoch']))
+        self.assertEqual('results/firewall/a-relp-destination-outage/' + 'a' * 64 + '/fault', scope['resultPrefix'])
+        for field, value in [('BOWER_OUTAGE_SECONDS', '599'), ('BOWER_OUTAGE_SECONDS', '3601'),
+                             ('BOWER_SCENARIO', '../escape'), ('BOWER_SCENARIO', 'b-idle')]:
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                module.scope_from_environment(dict(self.environment(), **{field: value}), 2000000000)
 
     def test_one_hour_generation_is_distinct_from_source_blackhole(self):
         catalogue = planner.load_catalogue(ROOT / 'scripts', '10.0.1.10', '10.0.1.11')

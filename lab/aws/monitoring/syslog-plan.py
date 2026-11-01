@@ -23,7 +23,9 @@ import time
 HERE = Path(__file__).resolve().parent
 SCENARIOS = ("a-steady", "a-burst", "a-restart", "a-sigkill", "a-blackhole", "a-reset",
              "a-collector-reboot", "a-sender-stop-start", "a-sender-reboot", "b-idle-gaps",
-             "a-destination-outage")
+             "a-destination-outage", "a-sender-reboot-only", "a-capacity-refusal", "a-destination-outage-15m")
+# Scenarios whose ingestion-only egress block is installed separately by destination-outage.sh.
+DESTINATION_BLOCKS = {"a-destination-outage": 3600, "a-destination-outage-15m": 900, "a-capacity-refusal": 600}
 ROLES = {"CollectorA": ("Linux", "CollectorA"), "CollectorB": ("Linux", "CollectorA"),
          "SenderR": ("Sender", "SenderR")}
 # The native Track A rule logs only UDP destination ports 4400..4449.
@@ -80,6 +82,25 @@ def load_catalogue(source, collector_ip, sender_ip):
         "duration": 3605, "settle": 1800,
         "steps": [module.generate("SenderR", "A", 50, 36000, 10, label="a-destination-outage")],
         "measure": [("CollectorA", "a13", "nft:A:1000000:36000")], "before": [], "after": []}
+    # RELP qualification additions. Sender reboot alone: a 100/s burst ends about two seconds
+    # before the reboot, so events can still sit in the journal, imjournal, the action queue
+    # or the RELP window when rsyslog stops.
+    catalogue["a-sender-reboot-only"] = {"name": "a-sender-reboot-only", "number": 25, "duration": 240, "settle": 300,
+        "steps": [module.generate("SenderR", "A", 25, 600, 100, label="a-sender-reboot-only"),
+                  {"at": 8, "host": "SenderR", "unit": "f-sender-reboot-only", "args": "fault --action reboot"}],
+        "measure": [("CollectorA", "a13", "nft:A:500000:600")], "before": [], "after": []}
+    # Queue capacity: with the destination blocked for 600 s and a lowered cap (queue-cap.sh),
+    # Bower refuses; RELP never acknowledges, the sender keeps the backlog. After restoration
+    # the operator recovery raises the cap and restarts Bower; nothing may be lost.
+    catalogue["a-capacity-refusal"] = {"name": "a-capacity-refusal", "number": 26, "duration": 660, "settle": 1500,
+        "steps": [module.generate("SenderR", "A", 26, 20000, 100, label="a-capacity-refusal"),
+                  {"at": 640, "host": "CollectorA", "unit": "f-raise-cap", "args": "fault --action raise-cap"}],
+        "measure": [("CollectorA", "a13", "nft:A:520000:20000")], "before": [], "after": []}
+    # A 15-minute ingestion outage while RELP intake continues (the one-hour plan stays separate).
+    catalogue["a-destination-outage-15m"] = {"name": "a-destination-outage-15m", "number": 52,
+        "duration": 905, "settle": 1800,
+        "steps": [module.generate("SenderR", "A", 52, 9000, 10, label="a-destination-outage-15m")],
+        "measure": [("CollectorA", "a13", "nft:A:1040000:9000")], "before": [], "after": []}
     return catalogue
 
 
@@ -160,16 +181,20 @@ def plan(catalogue, name, source, state, collector_ip, sender_ip, start_epoch, s
                 "No other scenario runs concurrently; idle-gaps must remain free of unrelated events on this listener.",
                 "Retention must preserve all scoped queue identities until collection; preserve earlier evidence and use a disjoint sequence offset for a new candidate.",
             ]}
-    if name == "a-destination-outage":
+    if name in DESTINATION_BLOCKS:
+        seconds = DESTINATION_BLOCKS[name]
         result["externalFaultRequirement"] = {
             "implementedByThisPlan": False,
             "target": "Collector Bower service UID outbound TCP443 (IPv4/IPv6): ingestion and token refresh; preserve SSM and inbound syslog",
-            "blockBeforeEpoch": start_epoch, "restoreNotBeforeEpoch": start_epoch + 3600,
-            "minimumVerifiedDurationSeconds": 3600,
+            "blockBeforeEpoch": start_epoch, "restoreNotBeforeEpoch": start_epoch + seconds,
+            "minimumVerifiedDurationSeconds": seconds,
             "evidenceRequired": ["exact Bower service UID, scoped nftables rule hash and unchanged host boot ID",
                 "independent timed restoration guard installed before blocking",
                 "block activation and restoration timestamps; no Sentinel ingress during block",
-                "queue retained all 36000 identities; peak depth/bytes and no drops",
+                "queue retained all {} identities; peak depth/bytes and no drops".format(
+                    sum(generation["count"] for generation in generations))
+                if name != "a-capacity-refusal" else
+                "queue refused while full (RELP busy closes, retries) and the sender retained every identity",
                 "post-restoration queue drain and independent Sentinel identity reconciliation"],
         }
     return result
@@ -201,7 +226,7 @@ def main():
         parser.error("Monitoring state is oversized")
     state = json.loads(state_path.read_text())
     run_id = state.get("runId", "")
-    if not re.fullmatch(r"bower-ws6-\d{8}-\d{6}", run_id):
+    if not re.fullmatch(r"bower-(?:ws6|fw)-\d{8}-\d{6}", run_id):
         parser.error("Invalid monitoring run ID")
     if state.get("outputs", {}).get("LinuxIp") != args.collector_ip or state.get("outputs", {}).get("SenderIp") != args.sender_ip:
         parser.error("Plan addresses must match the owned monitoring state")
