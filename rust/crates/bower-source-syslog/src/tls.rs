@@ -310,9 +310,14 @@ impl TlsMaterial {
                 builder.with_client_cert_verifier(built)
             }
         };
-        let config = builder
+        let mut config = builder
             .with_single_cert(certificates, key)
             .map_err(|_| failed())?;
+        // No session tickets or resumption: syslog connections are long lived, and a sender
+        // that never reads (rsyslog) would keep tickets unread, hiding a half-close from it
+        // (see the `source` module documentation).
+        config.send_tls13_tickets = 0;
+        config.session_storage = Arc::new(rustls::server::NoServerSessionStorage {});
         Ok(Self {
             generation,
             acceptor: TlsAcceptor::from(Arc::new(config)),

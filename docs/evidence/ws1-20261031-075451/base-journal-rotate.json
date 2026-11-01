@@ -1,0 +1,342 @@
+{
+ "after": [],
+ "before": [],
+ "measurements": {
+  "CollectorA": {
+   "listeners": {
+    "a12": {
+     "accepted": 6000,
+     "deliveredToSpool": 6000,
+     "expected": 6000,
+     "missing": 0,
+     "missingSample": [],
+     "missingSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "unexpectedInScope": 0
+    },
+    "a13": {
+     "accepted": 6000,
+     "deliveredToSpool": 6000,
+     "expected": 6000,
+     "missing": 0,
+     "missingSample": [],
+     "missingSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "unexpectedInScope": 0
+    }
+   },
+   "measuredAt": "2026-10-31T08:34:21.167483+00:00",
+   "passed": true,
+   "scenario": "a-journal-rotate",
+   "syslog": {
+    "a12": {
+     "activeConnections": 1,
+     "bytesReceived": 3108556,
+     "connectionsAccepted": 6051,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 39,
+     "framesReceived": 12239,
+     "framingErrors": 0,
+     "lastFrameAt": "2026-10-31T08:34:04.6128809+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 12200,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 5,
+     "tlsHandshakeFailures": 2
+    },
+    "a13": {
+     "activeConnections": 1,
+     "bytesReceived": 3200761,
+     "connectionsAccepted": 6421,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 406,
+     "framesReceived": 12602,
+     "framingErrors": 0,
+     "lastFrameAt": "2026-10-31T08:34:06.3124031+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 12196,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 5,
+     "tlsHandshakeFailures": 2
+    }
+   }
+  },
+  "CollectorA-snapshot": {
+   "active": "active",
+   "at": "2026-10-31T08:34:25.613566+00:00",
+   "connections": 2,
+   "mainPid": "27827",
+   "queue": {
+    "events": 24396,
+    "undelivered": 0
+   },
+   "restarts": "0",
+   "syslog": {
+    "a12": {
+     "activeConnections": 1,
+     "bytesReceived": 3108556,
+     "connectionsAccepted": 6051,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 39,
+     "framesReceived": 12239,
+     "framingErrors": 0,
+     "lastFrameAt": "2026-10-31T08:34:04.6128809+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 12200,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 5,
+     "tlsHandshakeFailures": 2
+    },
+    "a13": {
+     "activeConnections": 1,
+     "bytesReceived": 3200761,
+     "connectionsAccepted": 6421,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 406,
+     "framesReceived": 12602,
+     "framingErrors": 0,
+     "lastFrameAt": "2026-10-31T08:34:06.3124031+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 12196,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 5,
+     "tlsHandshakeFailures": 2
+    }
+   }
+  },
+  "SenderR": {
+   "at": "2026-10-31T08:34:30.877904+00:00",
+   "bootId": "f8638ca2-f415-4f73-b0b4-8eb9d4b0526b",
+   "impstats": {
+    "a12 queue/core.queue": {
+     "discarded.full": 0,
+     "discarded.nf": 0,
+     "enqueued": 6000,
+     "full": 0,
+     "maxqsize": 36,
+     "size": 0
+    },
+    "a12 queue[DA]/core.queue": {
+     "discarded.full": 0,
+     "discarded.nf": 0,
+     "enqueued": 0,
+     "full": 0,
+     "maxqsize": 0,
+     "size": 0
+    },
+    "a12/core.action": {
+     "failed": 0,
+     "processed": 6000,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "a13 queue/core.queue": {
+     "discarded.full": 0,
+     "discarded.nf": 0,
+     "enqueued": 6000,
+     "full": 0,
+     "maxqsize": 36,
+     "size": 0
+    },
+    "a13 queue[DA]/core.queue": {
+     "discarded.full": 0,
+     "discarded.nf": 0,
+     "enqueued": 0,
+     "full": 0,
+     "maxqsize": 0,
+     "size": 0
+    },
+    "a13/core.action": {
+     "failed": 0,
+     "processed": 6000,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-2-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-3-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 148,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-4-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-5-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-6-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-7-builtin:omusrmsg/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-8-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-9-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "imjournal/imjournal": {
+     "discarded": 0,
+     "disk_usage_bytes": 48709632,
+     "failed": 0,
+     "poll_failed": 0,
+     "ratelimit_discarded_in_interval": 0,
+     "read": 6162,
+     "recovery_attempts": 0,
+     "rotations": 13,
+     "submitted": 6162
+    },
+    "main Q/core.queue": {
+     "discarded.full": 0,
+     "discarded.nf": 0,
+     "enqueued": 6162,
+     "full": 0,
+     "maxqsize": 42,
+     "size": 0
+    }
+   },
+   "nft": {
+    "A": 12200,
+    "B": 0
+   },
+   "queueFiles": {},
+   "rsyslog": "active",
+   "rsyslogDiagnostics": {
+    "imjournal: journal files changed, reloading...  [vN.N.N-N.amznN.N.N try https://www.rsyslog.com/e/N ]": 13,
+    "nsd_ossl: Information, no shared curve between syslog client and server [vN.N.N-N.amznN.N.N]": 2,
+    "nsd_ossl: TLS Connection initiated with remote syslog server. [vN.N.N-N.amznN.N.N]": 2
+   },
+   "sockets": [
+    {
+     "port": 6516,
+     "recvQ": 0,
+     "sendQ": 0,
+     "state": "ESTAB"
+    },
+    {
+     "port": 6514,
+     "recvQ": 1566,
+     "sendQ": 0,
+     "state": "ESTAB"
+    }
+   ]
+  }
+ },
+ "passed": true,
+ "runId": "bower-ws1-20261031-075451",
+ "scenario": "a-journal-rotate",
+ "startAt": 1793435581.9857469,
+ "steps": [
+  {
+   "args": "generate --kind nft --track A --first 380000 --count 6000 --rate 100 --label a-journal-rotate",
+   "host": "SenderR",
+   "offset": 0,
+   "submitted": {
+    "output": ""
+   }
+  },
+  {
+   "args": "fault --action journal-rotate --duration 50 --interval 5",
+   "host": "SenderR",
+   "offset": 5,
+   "submitted": {
+    "output": ""
+   }
+  },
+  {
+   "result": "a-journal-rotate",
+   "value": {
+    "actualRate": 99.9608950496202,
+    "count": 6000,
+    "endedAt": "2026-10-31T08:34:02.028640+00:00",
+    "first": 380000,
+    "generator": "nft",
+    "nativeCounterDelta": {
+     "A": 6000,
+     "B": 0
+    },
+    "rate": 100.0,
+    "sent": 6000,
+    "startedAt": "2026-10-31T08:33:02.005154+00:00",
+    "track": "A"
+   }
+  },
+  {
+   "result": "f-journal-rotate",
+   "value": null
+  }
+ ]
+}

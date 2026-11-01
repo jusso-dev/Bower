@@ -87,6 +87,15 @@ public sealed record SyslogListenerStatus(
     public DateTimeOffset? ClientCertificateAuthorityNotAfter { get; init; }
 
     public DateTimeOffset? ClientRevocationListNextUpdate { get; init; }
+
+    /// <summary>Connections Bower half-closed (idle timeout or stop) instead of resetting them.</summary>
+    public long HalfCloses { get; init; }
+
+    /// <summary>Frames received after Bower half-closed their connection.</summary>
+    public long DrainedFrames { get; init; }
+
+    /// <summary>Connections a sender or middlebox reset; frames in flight may be lost.</summary>
+    public long PeerResets { get; init; }
 }
 
 /// <summary>
@@ -95,9 +104,12 @@ public sealed record SyslogListenerStatus(
 /// TCP and TLS: each connection handles one frame at a time and reads the next frame only
 /// after the sink has durably enqueued (or definitively dropped) the current one, so a full
 /// queue stops reading and TCP flow control pushes back on the sender. Plain syslog has no
-/// application acknowledgement: frames buffered here or in the kernel when the process
-/// stops are lost unless the sender retransmits. UDP is best effort: datagrams are queued
-/// in a bounded buffer and dropped (and counted) when it is full or the queue is at capacity.
+/// application acknowledgement, so Bower never resets a healthy connection: an idle timeout
+/// or a stop half-closes it (TCP FIN, no TLS close_notify, which a sender that never reads
+/// would mistake for data) and keeps reading the frames the sender already sent until it
+/// closes or goes quiet. Frames still in flight when the process is killed are lost unless
+/// the sender retransmits. UDP is best effort: datagrams are queued in a bounded buffer and
+/// dropped (and counted) when it is full or the queue is at capacity.
 /// </para>
 /// <para>
 /// TLS material is reloaded when its files change, without dropping connections: new
@@ -115,12 +127,31 @@ public sealed class SyslogSource : IAsyncDisposable
     /// <summary>Submissions in flight across all listeners; others wait (and stop reading).</summary>
     public const int MaximumConcurrentSubmissions = 16;
 
+    /// <summary>
+    /// TCP keepalive on accepted connections: first probe after two minutes of silence, which
+    /// also keeps load balancer and firewall flow state alive (AWS NLB 350 s, Azure Load
+    /// Balancer 4 minutes by default).
+    /// </summary>
+    public static readonly TimeSpan KeepAliveTime = TimeSpan.FromSeconds(120);
+
+    public static readonly TimeSpan KeepAliveInterval = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Unanswered probes before a dead peer's connection closes, about 17 minutes in all:
+    /// longer than a Linux sender's own retransmission timeout (about 15 minutes), so an
+    /// outage the sender survives never makes Bower reset what it retransmits afterwards.
+    /// </summary>
+    public const int KeepAliveProbes = 30;
+
     private readonly ISyslogSink sink;
     private readonly TimeProvider clock;
     private readonly List<Listener> listeners;
     private readonly SemaphoreSlim gate = new(MaximumConcurrentSubmissions);
+    private readonly CancellationTokenSource draining = new();
     private readonly CancellationTokenSource stopping = new();
     private readonly ConcurrentDictionary<Task, byte> running = new();
+    private readonly List<Task> listenerTasks = [];
+    private readonly List<Task> tlsRefreshTasks = [];
     private Dictionary<string, IPEndPoint> endpoints = [];
     private int started;
     private int disposed;
@@ -157,6 +188,20 @@ public sealed class SyslogSource : IAsyncDisposable
     /// <summary>TLS material generations not yet disposed for a listener (tests: no handle growth across reloads).</summary>
     internal int TlsMaterialsAlive(string listenerId) =>
         listeners.Single(listener => listener.Options.Id == listenerId).Tls?.MaterialsAlive ?? 0;
+
+    /// <summary>Handshakes holding TLS material for a listener (tests).</summary>
+    internal long TlsHandshakesInFlight(string listenerId) =>
+        Interlocked.Read(ref listeners.Single(listener => listener.Options.Id == listenerId).Counters.TlsHandshakesInFlight);
+
+    /// <summary>After Bower half-closes a connection, how long it waits for each further frame the sender already sent.</summary>
+    public TimeSpan DrainTimeout { get; init; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Time allowed for graceful drain before cancellation. Final shutdown still waits for
+    /// listener and sink operations to finish; it requires cooperative cancellation and is
+    /// not bounded by this timeout.
+    /// </summary>
+    public TimeSpan StopTimeout { get; init; } = TimeSpan.FromSeconds(20);
 
     /// <summary>Bound endpoints by listener id (after <see cref="StartAsync"/>).</summary>
     public IReadOnlyDictionary<string, IPEndPoint> Endpoints => endpoints;
@@ -210,12 +255,15 @@ public sealed class SyslogSource : IAsyncDisposable
         CancellationToken token = stopping.Token;
         foreach (Listener listener in listeners)
         {
-            Track(listener.Options.Protocol == "udp"
+            Task listenerTask = listener.Options.Protocol == "udp"
                 ? Task.Run(() => ServeUdpAsync(listener, token), CancellationToken.None)
-                : Task.Run(() => AcceptAsync(listener, token), CancellationToken.None));
+                : Task.Run(() => AcceptAsync(listener, token), CancellationToken.None);
+            listenerTasks.Add(listenerTask);
             if (listener.Tls is { } tls)
             {
-                Track(Task.Run(() => RefreshTlsAsync(tls, token), CancellationToken.None));
+                // Keep trust material current throughout the drain. Refresh loops are
+                // awaited separately so they do not hold the drain open.
+                tlsRefreshTasks.Add(Task.Run(() => RefreshTlsAsync(tls, token), CancellationToken.None));
             }
         }
 
@@ -231,7 +279,9 @@ public sealed class SyslogSource : IAsyncDisposable
             return;
         }
 
-        await stopping.CancelAsync();
+        // Stop accepting and half-close every connection, so senders see the end of the stream
+        // while the frames they already sent are still read and enqueued; then stop the rest.
+        await draining.CancelAsync();
         foreach (Listener listener in listeners)
         {
             listener.Socket?.Dispose();
@@ -239,11 +289,30 @@ public sealed class SyslogSource : IAsyncDisposable
 
         try
         {
-            await Task.WhenAll(running.Keys);
+            await WaitForListenersAndConnectionsAsync(listenerTasks, () => [.. running.Keys]).WaitAsync(StopTimeout);
+        }
+        catch (Exception exception) when (exception is TimeoutException or OperationCanceledException or SocketException or ObjectDisposedException or IOException)
+        {
+            // Connections still open after the drain are stopped below.
+        }
+
+        await stopping.CancelAsync();
+        try
+        {
+            await WaitForListenersAndConnectionsAsync(listenerTasks, () => [.. running.Keys]);
         }
         catch (Exception exception) when (exception is OperationCanceledException or SocketException or ObjectDisposedException or IOException)
         {
             // Stopping: connections and loops end by cancellation or a closed socket.
+        }
+
+        try
+        {
+            await Task.WhenAll(tlsRefreshTasks);
+        }
+        catch (OperationCanceledException)
+        {
+            // The refresh loops stop with the source.
         }
 
         foreach (Listener listener in listeners)
@@ -251,8 +320,28 @@ public sealed class SyslogSource : IAsyncDisposable
             listener.Tls?.Dispose();
         }
 
+        draining.Dispose();
         stopping.Dispose();
         gate.Dispose();
+    }
+
+    // A listener can finish accepting just as shutdown takes its first snapshot and register
+    // a connection afterwards. Wait for all producers of connection tasks to exit before
+    // taking the final snapshot, so no task can outlive the resources it uses.
+    internal static async Task WaitForListenersAndConnectionsAsync(
+        IReadOnlyCollection<Task> listenerTasks,
+        Func<Task[]> snapshotConnections)
+    {
+        try
+        {
+            await Task.WhenAll(listenerTasks);
+        }
+        catch (Exception exception) when (exception is OperationCanceledException or SocketException or ObjectDisposedException or IOException)
+        {
+            // Closed listeners are normal during shutdown; still wait for their connections.
+        }
+
+        await Task.WhenAll(snapshotConnections());
     }
 
     private void Track(Task task)
@@ -283,6 +372,10 @@ public sealed class SyslogSource : IAsyncDisposable
                 backoff = TimeSpan.Zero;
             }
             catch (Exception exception) when (exception is OperationCanceledException or ObjectDisposedException)
+            {
+                return;
+            }
+            catch (SocketException) when (draining.IsCancellationRequested)
             {
                 return;
             }
@@ -326,27 +419,52 @@ public sealed class SyslogSource : IAsyncDisposable
 
     private async Task ServeConnectionAsync(Listener listener, Socket socket, IPAddress sender, CancellationToken cancellationToken)
     {
-        TimeSpan idle = TimeSpan.FromSeconds(listener.Options.IdleTimeoutSeconds);
+        SyslogListenerOptions options = listener.Options;
+        TimeSpan? idle = options.IdleTimeoutSeconds == 0 ? null : TimeSpan.FromSeconds(options.IdleTimeoutSeconds);
+        TimeSpan frameTimeout = TimeSpan.FromSeconds(options.FrameTimeoutSeconds);
+        ConfigureKeepAlive(socket);
         NetworkStream network = new(socket, ownsSocket: true);
         Stream stream = network;
         SyslogTlsSession? session = null;
+        Task? pending = null;
         try
         {
             if (listener.Tls is { } tls)
             {
+                // Bound unauthenticated connections even when established-session idle is disabled.
+                // Some senders initiate TLS only when they have data; qualify their reconnect behavior.
+                Task<int> first = socket.ReceiveAsync(new byte[1], SocketFlags.Peek, cancellationToken).AsTask();
+                pending = first;
+                if (!await CompletesAsync(first, TimeSpan.FromSeconds(options.HandshakeStartTimeoutSeconds), draining.Token, cancellationToken))
+                {
+                    if (!draining.IsCancellationRequested)
+                    {
+                        Interlocked.Increment(ref listener.Counters.Timeouts);
+                    }
+
+                    return;
+                }
+
+                pending = null;
+                if (await first == 0)
+                {
+                    return;
+                }
+
                 SslStream secure = new(network, leaveInnerStreamOpen: false);
                 stream = secure;
                 session = new SyslogTlsSession();
-                using CancellationTokenSource handshake = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                handshake.CancelAfter(idle);
+                using CancellationTokenSource handshake = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, draining.Token);
+                handshake.CancelAfter(frameTimeout);
                 // The material is held for the handshake only, so a reload never disposes
                 // certificates a handshake in flight is still using.
                 SyslogTlsMaterial material = tls.Acquire();
+                Interlocked.Increment(ref listener.Counters.TlsHandshakesInFlight);
                 try
                 {
                     await secure.AuthenticateAsServerAsync(material.CreateOptions(session, clock), handshake.Token);
                 }
-                catch (Exception exception) when (!cancellationToken.IsCancellationRequested
+                catch (Exception exception) when (!cancellationToken.IsCancellationRequested && !draining.IsCancellationRequested
                     && exception is AuthenticationException or IOException or OperationCanceledException or System.ComponentModel.Win32Exception)
                 {
                     Interlocked.Increment(ref listener.Counters.TlsHandshakeFailures);
@@ -360,30 +478,64 @@ public sealed class SyslogSource : IAsyncDisposable
                 finally
                 {
                     material.Release();
+                    Interlocked.Decrement(ref listener.Counters.TlsHandshakesInFlight);
                 }
             }
 
-            SyslogFrameReader reader = new(stream, listener.Options.MaximumMessageBytes);
+            SyslogFrameReader reader = new(stream, options.MaximumMessageBytes);
             string senderText = sender.ToString();
-            while (!cancellationToken.IsCancellationRequested)
+            bool halfClosed = false;
+            while (true)
             {
-                SyslogFrameResult result;
-                using (CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+                if (!halfClosed && draining.IsCancellationRequested)
                 {
-                    // The whole next frame must arrive within the idle timeout: a sender that
-                    // trickles bytes (slow loris) is closed as surely as an idle one.
-                    deadline.CancelAfter(idle);
-                    try
+                    halfClosed = HalfClose(listener, socket);
+                    if (!halfClosed)
                     {
-                        result = await reader.ReadFrameAsync(deadline.Token);
-                    }
-                    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-                    {
-                        Interlocked.Increment(ref listener.Counters.Timeouts);
                         return;
                     }
                 }
 
+                // Between frames: an idle connection is closed only gracefully, never reset.
+                Task<bool> next = reader.WaitForFrameAsync(cancellationToken).AsTask();
+                pending = next;
+                if (!halfClosed && !await CompletesAsync(next, idle, draining.Token, cancellationToken))
+                {
+                    if (!draining.IsCancellationRequested)
+                    {
+                        Interlocked.Increment(ref listener.Counters.Timeouts);
+                    }
+
+                    halfClosed = HalfClose(listener, socket);
+                    if (!halfClosed)
+                    {
+                        return;
+                    }
+                }
+
+                if (halfClosed && !await CompletesAsync(next, DrainTimeout, CancellationToken.None, cancellationToken))
+                {
+                    return;
+                }
+
+                pending = null;
+                if (!await next)
+                {
+                    return;
+                }
+
+                // A frame has started: the rest must arrive within the frame timeout, so a sender
+                // that trickles bytes (slow loris) is closed.
+                Task<SyslogFrameResult> read = reader.ReadFrameAsync(cancellationToken).AsTask();
+                pending = read;
+                if (!await CompletesAsync(read, frameTimeout, CancellationToken.None, cancellationToken))
+                {
+                    Interlocked.Increment(ref listener.Counters.Timeouts);
+                    return;
+                }
+
+                pending = null;
+                SyslogFrameResult result = await read;
                 if (result.IsEnd)
                 {
                     return;
@@ -406,7 +558,13 @@ public sealed class SyslogSource : IAsyncDisposable
                     return;
                 }
 
-                if (!await HandleFrameAsync(listener, senderText, result.Frame, waitWhenUnavailable: true, cancellationToken))
+                if (halfClosed)
+                {
+                    Interlocked.Increment(ref listener.Counters.DrainedFrames);
+                }
+
+                if (!await HandleFrameAsync(listener, senderText, result.Frame, waitWhenUnavailable: true, cancellationToken,
+                    session is null ? null : () => StillTrusted(listener.Tls!, session)))
                 {
                     return;
                 }
@@ -414,13 +572,98 @@ public sealed class SyslogSource : IAsyncDisposable
         }
         catch (Exception exception) when (exception is OperationCanceledException or IOException or SocketException or ObjectDisposedException)
         {
-            // Peer reset, shutdown or a closed socket: the connection simply ends.
+            // Peer reset, shutdown or a closed socket: the connection simply ends. A reset can
+            // discard frames the sender wrote after its last successful send, so it is counted.
+            if (!cancellationToken.IsCancellationRequested && IsReset(exception))
+            {
+                Interlocked.Increment(ref listener.Counters.PeerResets);
+            }
         }
         finally
         {
             await stream.DisposeAsync();
+            if (pending is not null)
+            {
+                try
+                {
+                    await pending;
+                }
+                catch (Exception exception) when (exception is OperationCanceledException or IOException or SocketException or ObjectDisposedException)
+                {
+                    // The read ended with the stream it was reading.
+                }
+            }
+
             session?.Dispose();
             Interlocked.Decrement(ref listener.Counters.ActiveConnections);
+        }
+    }
+
+    /// <summary>
+    /// True when <paramref name="task"/> completes within <paramref name="limit"/> (null: no
+    /// limit); false when the limit passes or <paramref name="interrupt"/> fires first. The task
+    /// keeps running either way, so a read in progress is never cancelled half way.
+    /// </summary>
+    private static async Task<bool> CompletesAsync(Task task, TimeSpan? limit, CancellationToken interrupt, CancellationToken cancellationToken)
+    {
+        if (task.IsCompleted)
+        {
+            return true;
+        }
+
+        using CancellationTokenSource wait = CancellationTokenSource.CreateLinkedTokenSource(interrupt, cancellationToken);
+        try
+        {
+            await task.WaitAsync(limit ?? Timeout.InfiniteTimeSpan, wait.Token);
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && interrupt.IsCancellationRequested)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Sends TCP FIN and keeps the receive side open. No TLS close_notify: a sender that never
+    /// reads (rsyslog checks for end of stream with a non-blocking peek) would mistake it for
+    /// data and keep writing into a connection about to close.
+    /// </summary>
+    private static bool HalfClose(Listener listener, Socket socket)
+    {
+        try
+        {
+            socket.Shutdown(SocketShutdown.Send);
+        }
+        catch (Exception exception) when (exception is SocketException or ObjectDisposedException)
+        {
+            return false;
+        }
+
+        Interlocked.Increment(ref listener.Counters.HalfCloses);
+        return true;
+    }
+
+    private static bool IsReset(Exception exception) =>
+        (exception as SocketException ?? exception.InnerException as SocketException)?.SocketErrorCode
+            is SocketError.ConnectionReset or SocketError.ConnectionAborted;
+
+    /// <summary>Enables keepalive with Bower's timing; a platform without per-socket timing keeps its own.</summary>
+    internal static void ConfigureKeepAlive(Socket socket)
+    {
+        try
+        {
+            socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+            socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, (int)KeepAliveTime.TotalSeconds);
+            socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval, (int)KeepAliveInterval.TotalSeconds);
+            socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveRetryCount, KeepAliveProbes);
+        }
+        catch (SocketException)
+        {
+            // Already reset, or the platform refuses per-socket keepalive timing.
         }
     }
 
@@ -527,7 +770,8 @@ public sealed class SyslogSource : IAsyncDisposable
         string sender,
         ReadOnlyMemory<byte> frame,
         bool waitWhenUnavailable,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<bool>? isTrusted = null)
     {
         SyslogListenerOptions options = listener.Options;
         DateTimeOffset receivedAt = clock.GetUtcNow();
@@ -560,6 +804,14 @@ public sealed class SyslogSource : IAsyncDisposable
             await gate.WaitAsync(cancellationToken);
             try
             {
+                // A frame may have waited on the gate or queue after the session was
+                // validated. Recheck before each retry so revocation closes it.
+                if (isTrusted is not null && !isTrusted())
+                {
+                    Interlocked.Increment(ref listener.Counters.TlsSessionsClosed);
+                    return false;
+                }
+
                 outcome = await sink.SubmitAsync(options, route, record, cancellationToken);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
@@ -713,13 +965,17 @@ public sealed class SyslogSource : IAsyncDisposable
                 TlsSessionsClosed = Interlocked.Read(ref Counters.TlsSessionsClosed),
                 ServerCertificateNotAfter = material?.ServerCertificateNotAfter,
                 ClientCertificateAuthorityNotAfter = material?.ClientCertificateAuthorityNotAfter,
-                ClientRevocationListNextUpdate = material?.ClientRevocationListNextUpdate
+                ClientRevocationListNextUpdate = material?.ClientRevocationListNextUpdate,
+                HalfCloses = Interlocked.Read(ref Counters.HalfCloses),
+                DrainedFrames = Interlocked.Read(ref Counters.DrainedFrames),
+                PeerResets = Interlocked.Read(ref Counters.PeerResets)
             };
         }
     }
 
     private sealed class Counters
     {
+        public long TlsHandshakesInFlight;
         public long ActiveConnections;
         public long ConnectionsAccepted;
         public long ConnectionsRejected;
@@ -744,6 +1000,9 @@ public sealed class SyslogSource : IAsyncDisposable
         public long Retries;
         public long SubmitFailures;
         public long ReceiveErrors;
+        public long HalfCloses;
+        public long DrainedFrames;
+        public long PeerResets;
         public long LastFrameTicks;
     }
 }

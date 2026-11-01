@@ -3,10 +3,15 @@
 //! TCP and TLS: each connection handles one frame at a time and reads the next frame only
 //! after the sink has durably enqueued (or definitively dropped) the current one, so a
 //! full queue stops reading and TCP flow control pushes back on the sender. Plain syslog
-//! has no application acknowledgement: frames buffered here or in the kernel when the
-//! process stops are lost unless the sender retransmits. UDP is best effort: datagrams are
-//! queued in a bounded buffer and dropped (and counted) when it is full or the queue is at
-//! capacity.
+//! has no application acknowledgement, so a healthy connection is never reset: an idle
+//! timeout or a stop half-closes it (TCP FIN, no TLS close_notify) and keeps reading what
+//! the sender already sent. UDP is best effort: datagrams are queued in a bounded buffer
+//! and dropped (and counted) when it is full or the queue is at capacity.
+//!
+//! Known divergence from C#: this listener sends no TLS 1.3 session tickets. .NET on
+//! OpenSSL always sends them, and a sender that never reads (rsyslog) keeps them unread,
+//! which hides Bower's FIN from rsyslog's pre-send peek and turns the sender's close into
+//! a reset. C# has no API to turn them off; see docs/production-readiness.
 //!
 //! TLS material is reloaded when its files change, without dropping connections (see
 //! [`crate::tls`]); an open mutual-TLS session whose client is no longer trusted is closed
@@ -20,7 +25,7 @@ use std::time::Duration;
 
 use bower_contracts::time::{Clock, SystemClock, Timestamp, serde_offset_option};
 use serde::Serialize;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{Semaphore, mpsc, watch};
 use tokio::task::JoinSet;
@@ -35,6 +40,13 @@ use crate::tls::{TlsSession, TlsSource, is_revocation_failure};
 pub const UDP_QUEUE_CAPACITY: usize = 256;
 /// Submissions in flight across all listeners; others wait (and stop reading).
 pub const MAXIMUM_CONCURRENT_SUBMISSIONS: usize = 16;
+/// TCP keepalive on accepted connections (C# `SyslogSource.KeepAliveTime` and friends):
+/// first probe after two minutes of silence, which also keeps load balancer flow state
+/// alive; 30 unanswered probes 30 s apart (about 17 minutes) outlast a Linux sender's own
+/// retransmission timeout.
+pub const KEEPALIVE_TIME: Duration = Duration::from_secs(120);
+pub const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
+pub const KEEPALIVE_PROBES: u32 = 30;
 
 /// What happened to one record handed to the collector (C# `SyslogSubmitOutcome`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -121,6 +133,12 @@ pub struct ListenerStatus {
     pub client_certificate_authority_not_after: Option<Timestamp>,
     #[serde(with = "serde_offset_option")]
     pub client_revocation_list_next_update: Option<Timestamp>,
+    /// Connections half-closed (idle timeout or stop) instead of reset.
+    pub half_closes: i64,
+    /// Frames received after their connection was half-closed.
+    pub drained_frames: i64,
+    /// Connections a sender or middlebox reset; frames in flight may be lost.
+    pub peer_resets: i64,
 }
 
 #[derive(Default)]
@@ -149,6 +167,9 @@ struct Counters {
     retries: AtomicI64,
     submit_failures: AtomicI64,
     receive_errors: AtomicI64,
+    half_closes: AtomicI64,
+    drained_frames: AtomicI64,
+    peer_resets: AtomicI64,
 }
 
 fn bump(counter: &AtomicI64) {
@@ -228,6 +249,9 @@ impl ListenerState {
             client_revocation_list_next_update: material
                 .as_ref()
                 .and_then(|material| material.client_revocation_list_next_update),
+            half_closes: read(&counters.half_closes),
+            drained_frames: read(&counters.drained_frames),
+            peer_resets: read(&counters.peer_resets),
         }
     }
 }
@@ -253,6 +277,8 @@ struct Shared {
     gate: Semaphore,
     retry_delay: Duration,
     tls_reload_interval: Duration,
+    drain_timeout: Duration,
+    stop_timeout: Duration,
 }
 
 pub struct SyslogSource {
@@ -291,6 +317,8 @@ impl SyslogSource {
                 gate: Semaphore::new(MAXIMUM_CONCURRENT_SUBMISSIONS),
                 retry_delay: Duration::from_secs(1),
                 tls_reload_interval: Duration::from_secs(1),
+                drain_timeout: Duration::from_secs(5),
+                stop_timeout: Duration::from_secs(20),
             }),
         }
     }
@@ -308,6 +336,24 @@ impl SyslogSource {
     pub fn with_tls_reload_interval(mut self, interval: Duration) -> Self {
         if let Some(shared) = Arc::get_mut(&mut self.shared) {
             shared.tls_reload_interval = interval;
+        }
+        self
+    }
+
+    /// After a half-close, the wait for each further frame (C# `DrainTimeout`). Call before `bind`.
+    pub fn with_drain_timeout(mut self, timeout: Duration) -> Self {
+        if let Some(shared) = Arc::get_mut(&mut self.shared) {
+            shared.drain_timeout = timeout;
+        }
+        self
+    }
+
+    /// Graceful connection-drain timeout (C# `StopTimeout`). Aborting async tasks cannot
+    /// stop an already-running `spawn_blocking` sink, which can outlive this source and
+    /// delay runtime shutdown. Call before `bind`.
+    pub fn with_stop_timeout(mut self, timeout: Duration) -> Self {
+        if let Some(shared) = Arc::get_mut(&mut self.shared) {
+            shared.stop_timeout = timeout;
         }
         self
     }
@@ -366,16 +412,18 @@ impl SyslogSource {
     /// Serves until `stop` turns true, then closes every connection and returns.
     pub async fn run(self, stop: watch::Receiver<bool>) {
         let mut tasks = JoinSet::new();
+        let mut refresh_tasks = JoinSet::new();
+        let (refresh_stop, refresh_rx) = watch::channel(false);
         for (listener, bound) in self.listeners.iter().zip(self.bound) {
             let (listener, shared, stop) =
                 (Arc::clone(listener), Arc::clone(&self.shared), stop.clone());
             match bound {
                 Bound::Stream(socket, tls) => {
                     if let Some(source) = &tls {
-                        tasks.spawn(refresh_tls(
+                        refresh_tasks.spawn(refresh_tls(
                             Arc::clone(source),
                             self.shared.tls_reload_interval,
-                            stop.clone(),
+                            refresh_rx.clone(),
                         ));
                     }
                     tasks.spawn(accept(listener, socket, tls, shared, stop));
@@ -386,6 +434,8 @@ impl SyslogSource {
             }
         }
         while tasks.join_next().await.is_some() {}
+        let _ = refresh_stop.send(true);
+        while refresh_tasks.join_next().await.is_some() {}
     }
 }
 
@@ -462,8 +512,16 @@ async fn accept(
             stop.clone(),
         ));
     }
-    // Connections observe the same stop signal; wait for them to close.
-    while connections.join_next().await.is_some() {}
+    // Connections observe the same stop signal: they half-close and drain what senders
+    // already sent. Whatever is still open after the drain bound is stopped.
+    let drained = tokio::time::timeout(shared.stop_timeout, async {
+        while connections.join_next().await.is_some() {}
+    })
+    .await;
+    if drained.is_err() {
+        connections.abort_all();
+        while connections.join_next().await.is_some() {}
+    }
 }
 
 struct ActiveGuard(Arc<ListenerState>);
@@ -486,15 +544,37 @@ async fn serve_connection(
     mut stop: watch::Receiver<bool>,
 ) {
     let _guard = ActiveGuard(Arc::clone(&listener));
-    let idle =
-        Duration::from_secs(u64::try_from(listener.options.idle_timeout_seconds).unwrap_or(60));
+    configure_keepalive(&stream);
+    let frame_timeout =
+        Duration::from_secs(u64::try_from(listener.options.frame_timeout_seconds).unwrap_or(60));
     match tls {
-        None => serve_frames(&listener, stream, sender, &shared, idle, &mut stop, None).await,
+        None => serve_frames(&listener, stream, sender, &shared, &mut stop, None).await,
         Some(source) => {
+            // Bound unauthenticated connections, including peers that never start TLS.
+            // This separate limit accommodates senders that start TLS lazily without
+            // applying the idle timeout to an already authenticated session.
+            let start_timeout = Duration::from_secs(
+                u64::try_from(listener.options.handshake_start_timeout_seconds).unwrap_or(60),
+            );
+            let mut first = [0u8; 1];
+            let started = tokio::select! {
+                () = stopped(&mut stop) => return,
+                peeked = async {
+                    tokio::time::timeout(start_timeout, stream.peek(&mut first)).await.ok()
+                } => peeked,
+            };
+            match started {
+                None => {
+                    bump(&listener.counters.timeouts);
+                    return;
+                }
+                Some(Ok(0) | Err(_)) => return,
+                Some(Ok(_)) => {}
+            }
             let material = source.current();
             let handshake = tokio::select! {
                 () = stopped(&mut stop) => return,
-                handshake = tokio::time::timeout(idle, material.acceptor.accept(stream)) => handshake,
+                handshake = tokio::time::timeout(frame_timeout, material.acceptor.accept(stream)) => handshake,
             };
             match handshake {
                 Ok(Ok(secure)) => {
@@ -506,7 +586,7 @@ async fn serve_connection(
                         .unwrap_or_default();
                     let session = TlsSession::new(&material, chain);
                     let trust = Some((source, session));
-                    serve_frames(&listener, secure, sender, &shared, idle, &mut stop, trust).await;
+                    serve_frames(&listener, secure, sender, &shared, &mut stop, trust).await;
                 }
                 Ok(Err(error)) => {
                     bump(&listener.counters.tls_handshake_failures);
@@ -542,33 +622,128 @@ async fn refresh_tls(source: Arc<TlsSource>, interval: Duration, mut stop: watch
     }
 }
 
-async fn serve_frames<S: AsyncRead + AsyncWrite + Unpin>(
+/// Keepalive with Bower's timing; a platform that refuses per-socket timing keeps its own.
+pub fn configure_keepalive(stream: &TcpStream) {
+    let keepalive = socket2::TcpKeepalive::new()
+        .with_time(KEEPALIVE_TIME)
+        .with_interval(KEEPALIVE_INTERVAL);
+    #[cfg(not(target_os = "windows"))]
+    let keepalive = keepalive.with_retries(KEEPALIVE_PROBES);
+    let _ = socket2::SockRef::from(stream).set_tcp_keepalive(&keepalive);
+}
+
+/// The TCP connection under a stream, for a half-close that sends FIN but no TLS
+/// close_notify: a sender that never reads would mistake close_notify for data.
+pub trait TcpHalf {
+    fn tcp(&mut self) -> &mut TcpStream;
+}
+
+impl TcpHalf for TcpStream {
+    fn tcp(&mut self) -> &mut TcpStream {
+        self
+    }
+}
+
+impl TcpHalf for tokio_rustls::server::TlsStream<TcpStream> {
+    fn tcp(&mut self) -> &mut TcpStream {
+        self.get_mut().0
+    }
+}
+
+async fn half_close<S: TcpHalf>(listener: &ListenerState, stream: &mut S) -> bool {
+    if stream.tcp().shutdown().await.is_err() {
+        return false;
+    }
+    bump(&listener.counters.half_closes);
+    true
+}
+
+enum Between {
+    Frame(std::io::Result<bool>),
+    Idle,
+    Stop,
+}
+
+async fn serve_frames<S: AsyncRead + AsyncWrite + Unpin + TcpHalf>(
     listener: &Arc<ListenerState>,
     stream: S,
     sender: IpAddr,
     shared: &Arc<Shared>,
-    idle: Duration,
     stop: &mut watch::Receiver<bool>,
     mut trust: Option<(Arc<TlsSource>, TlsSession)>,
 ) {
+    let options = &listener.options;
+    let idle = (options.idle_timeout_seconds > 0)
+        .then(|| Duration::from_secs(u64::try_from(options.idle_timeout_seconds).unwrap_or(0)));
+    let frame_timeout =
+        Duration::from_secs(u64::try_from(options.frame_timeout_seconds).unwrap_or(60));
     let mut reader = FrameReader::new(
         stream,
-        usize::try_from(listener.options.maximum_message_bytes).unwrap_or(65_536),
+        usize::try_from(options.maximum_message_bytes).unwrap_or(65_536),
     );
+    let mut half_closed = false;
     loop {
-        // The whole next frame must arrive within the idle timeout: a sender that trickles
-        // bytes (slow loris) is closed as surely as an idle one.
-        let frame = tokio::select! {
-            () = stopped(stop) => return,
-            frame = tokio::time::timeout(idle, reader.read_frame()) => frame,
+        // Between frames: an idle connection is closed only gracefully, never reset.
+        // `wait_for_frame` is cancel-safe, so the timers below never lose buffered bytes.
+        let between = if half_closed {
+            match tokio::time::timeout(shared.drain_timeout, reader.wait_for_frame()).await {
+                Ok(ready) => Between::Frame(ready),
+                Err(_) => return,
+            }
+        } else {
+            tokio::select! {
+                () = stopped(stop) => Between::Stop,
+                ready = async {
+                    match idle {
+                        Some(limit) => tokio::time::timeout(limit, reader.wait_for_frame()).await.ok(),
+                        None => Some(reader.wait_for_frame().await),
+                    }
+                } => ready.map_or(Between::Idle, Between::Frame),
+            }
         };
-        let frame = match frame {
+        match between {
+            Between::Stop | Between::Idle => {
+                if matches!(between, Between::Idle) {
+                    bump(&listener.counters.timeouts);
+                }
+                half_closed = half_close(listener, reader.get_mut()).await;
+                if !half_closed {
+                    return;
+                }
+                continue;
+            }
+            Between::Frame(Err(error)) => {
+                // A reset can discard frames the sender wrote after its last successful
+                // send, so it is counted.
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted
+                ) {
+                    bump(&listener.counters.peer_resets);
+                }
+                return;
+            }
+            Between::Frame(Ok(false)) => return,
+            Between::Frame(Ok(true)) => {}
+        }
+        // A frame has started: the rest must arrive within the frame timeout, so a sender
+        // that trickles bytes (slow loris) is closed.
+        let frame = match tokio::time::timeout(frame_timeout, reader.read_frame()).await {
             Err(_) => {
                 bump(&listener.counters.timeouts);
                 return;
             }
-            // Peer reset or closed socket: the connection simply ends.
-            Ok(Err(_)) | Ok(Ok(Ok(None))) => return,
+            // A reset while reading an incomplete frame can discard sender data too.
+            Ok(Err(error)) => {
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted
+                ) {
+                    bump(&listener.counters.peer_resets);
+                }
+                return;
+            }
+            Ok(Ok(Ok(None))) => return,
             Ok(Ok(Err(failure))) => {
                 bump(if failure == failures::FRAME_TOO_LARGE {
                     &listener.counters.oversized
@@ -588,11 +763,10 @@ async fn serve_frames<S: AsyncRead + AsyncWrite + Unpin>(
             bump(&listener.counters.tls_sessions_closed);
             return;
         }
-        let handled = tokio::select! {
-            () = stopped(stop) => return,
-            handled = handle_frame(listener, sender, &frame, true, shared) => handled,
-        };
-        if !handled {
+        if half_closed {
+            bump(&listener.counters.drained_frames);
+        }
+        if !handle_frame(listener, sender, &frame, true, shared, trust.as_mut()).await {
             return;
         }
     }
@@ -617,7 +791,7 @@ async fn serve_udp(
                 let Some((sender, frame)) = next else { return };
                 tokio::select! {
                     () = stopped(&mut stop) => return,
-                    _ = handle_frame(&listener, sender, &frame, false, &shared) => {}
+                    _ = handle_frame(&listener, sender, &frame, false, &shared, None) => {}
                 }
             }
         })
@@ -678,6 +852,7 @@ async fn handle_frame(
     frame: &[u8],
     wait_when_unavailable: bool,
     shared: &Arc<Shared>,
+    mut trust: Option<&mut (Arc<TlsSource>, TlsSession)>,
 ) -> bool {
     let options = &listener.options;
     let counters = &listener.counters;
@@ -707,6 +882,12 @@ async fn handle_frame(
             let Ok(_permit) = shared.gate.acquire().await else {
                 return false;
             };
+            if let Some((source, session)) = trust.as_mut()
+                && !still_trusted(source, session, shared.clock.utc_now())
+            {
+                bump(&counters.tls_sessions_closed);
+                return false;
+            }
             let (sink, listener, route, record) = (
                 Arc::clone(&shared.sink),
                 Arc::clone(listener),
@@ -740,5 +921,91 @@ async fn handle_frame(
         };
         bump(counter);
         return true;
+    }
+}
+
+#[cfg(test)]
+mod reset_tests {
+    use super::*;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+    use tokio::io::ReadBuf;
+
+    struct NeverSink;
+    impl SyslogSink for NeverSink {
+        fn submit(
+            &self,
+            _: &ListenerOptions,
+            _: &Route,
+            _: &str,
+        ) -> Result<SubmitOutcome, SinkFailure> {
+            panic!("an incomplete frame must never reach the sink")
+        }
+    }
+    struct PartialThenReset {
+        sent: bool,
+        error: std::io::ErrorKind,
+    }
+    impl AsyncRead for PartialThenReset {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            if !self.sent {
+                self.sent = true;
+                buf.put_slice(b"<38>partial");
+                Poll::Ready(Ok(()))
+            } else {
+                Poll::Ready(Err(std::io::Error::from(self.error)))
+            }
+        }
+    }
+    impl AsyncWrite for PartialThenReset {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+            data: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            Poll::Ready(Ok(data.len()))
+        }
+        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+        fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+    impl TcpHalf for PartialThenReset {
+        fn tcp(&mut self) -> &mut TcpStream {
+            panic!("this test does not half-close")
+        }
+    }
+    #[tokio::test]
+    async fn reset_while_reading_partial_frame_is_counted() {
+        let configuration = crate::config::parse(r#"{"apiVersion":"bower.security/v1","kind":"SyslogSource","listeners":[{"id":"edge","protocol":"tcp","address":"127.0.0.1","port":0,"allowedSenders":["127.0.0.1"],"routes":[{"appName":"sshd","pack":"ssh","parser":0}]}]}"#).unwrap();
+        for (error, expected) in [
+            (std::io::ErrorKind::ConnectionReset, 1),
+            (std::io::ErrorKind::ConnectionAborted, 1),
+            (std::io::ErrorKind::BrokenPipe, 0),
+        ] {
+            let source = SyslogSource::new(configuration.clone(), Arc::new(NeverSink), None);
+            let listener = &source.listeners[0];
+            let (_sender, mut stop) = watch::channel(false);
+            serve_frames(
+                listener,
+                PartialThenReset { sent: false, error },
+                "127.0.0.1".parse().unwrap(),
+                &source.shared,
+                &mut stop,
+                None,
+            )
+            .await;
+            assert_eq!(
+                listener.counters.peer_resets.load(Ordering::SeqCst),
+                expected
+            );
+            assert_eq!(listener.counters.frames_received.load(Ordering::SeqCst), 0);
+        }
     }
 }

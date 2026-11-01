@@ -2,7 +2,7 @@
 //! rotation on a live TLS listener, and the certificates it must refuse.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -183,7 +183,7 @@ fn replace(path: &Path, content: &str) {
 }
 
 #[derive(Default)]
-struct Sink(Mutex<Vec<String>>);
+struct Sink(Mutex<Vec<String>>, AtomicBool);
 
 impl SyslogSink for Sink {
     fn submit(
@@ -192,6 +192,9 @@ impl SyslogSink for Sink {
         _: &Route,
         record: &str,
     ) -> Result<SubmitOutcome, SinkFailure> {
+        if self.1.load(Ordering::SeqCst) {
+            return Ok(SubmitOutcome::Unavailable);
+        }
         self.0.lock().unwrap().push(record.to_string());
         Ok(SubmitOutcome::Queued)
     }
@@ -296,7 +299,8 @@ async fn start(
         config::parse(&listener(files, mutual, revocations)).map_err(|error| error.to_string())?;
     let mut source = SyslogSource::new(configuration, sink, None)
         .with_retry_delay(Duration::from_millis(20))
-        .with_tls_reload_interval(Duration::ZERO);
+        .with_tls_reload_interval(Duration::ZERO)
+        .with_drain_timeout(Duration::from_secs(1));
     source.bind().await.map_err(|error| error.to_string())?;
     let endpoint = source.endpoints()["edge"];
     let metrics = source.metrics();
@@ -566,6 +570,63 @@ async fn revocation_list_refuses_listed_senders_and_closes_their_open_sessions()
         .await;
     assert!(!Connection::try_deliver(&running, &good, "reconnect").await);
     assert_eq!(sink.messages(), ["good sender"]);
+    running.stop().await;
+}
+
+#[tokio::test]
+async fn revocation_is_applied_during_shutdown_drain() {
+    let directory = tempfile::tempdir().unwrap();
+    let files = Files::new(directory.path());
+    let ca = authority("syslog-ca", -30, 30);
+    let server = ca.issue("localhost", false, -1, 20);
+    let sender = ca.issue("firewall-01", true, -1, 20);
+    files.server(&server);
+    files.authorities(&[&ca]);
+    replace(&files.revocations, &ca.revocation_list(&[], -1, 7));
+    let sink = Arc::new(Sink::default());
+    let running = start(&files, &ca, Arc::clone(&sink), true, true)
+        .await
+        .unwrap();
+    let mut open = Connection::open(&running, Some(&sender)).await.unwrap();
+    open.send("before shutdown").await.unwrap();
+    sink.wait_for(1).await;
+
+    running.stop.send(true).unwrap();
+    running.wait_for(|status| status.half_closes == 1).await;
+    replace(&files.revocations, &ca.revocation_list(&[&sender], -1, 7));
+    running.wait_for(|status| status.tls_reloads == 1).await;
+    open.send("after revocation").await.unwrap();
+    running
+        .wait_for(|status| status.tls_sessions_closed == 1)
+        .await;
+    assert_eq!(sink.messages(), ["before shutdown"]);
+    running.stop().await;
+}
+
+#[tokio::test]
+async fn revocation_closes_backpressured_session_before_retry() {
+    let directory = tempfile::tempdir().unwrap();
+    let files = Files::new(directory.path());
+    let ca = authority("syslog-ca", -30, 30);
+    let server = ca.issue("localhost", false, -1, 20);
+    let sender = ca.issue("firewall-01", true, -1, 20);
+    files.server(&server);
+    files.authorities(&[&ca]);
+    replace(&files.revocations, &ca.revocation_list(&[], -1, 7));
+    let sink = Arc::new(Sink::default());
+    sink.1.store(true, Ordering::SeqCst);
+    let running = start(&files, &ca, Arc::clone(&sink), true, true)
+        .await
+        .unwrap();
+    let mut open = Connection::open(&running, Some(&sender)).await.unwrap();
+    open.send("held for retry").await.unwrap();
+    running.wait_for(|status| status.retries > 0).await;
+    replace(&files.revocations, &ca.revocation_list(&[&sender], -1, 7));
+    running.wait_for(|status| status.tls_reloads == 1).await;
+    running
+        .wait_for(|status| status.tls_sessions_closed == 1)
+        .await;
+    assert!(sink.messages().is_empty());
     running.stop().await;
 }
 

@@ -1,0 +1,7 @@
+apiVersion: bower.security/v1
+kind: PrivacyProfile
+metadata:
+  id: syslog-reliability-minimized
+  version: 1.0.0
+  description: Existing privacy defaults after signed field selection.
+maximumFieldLength: 16384

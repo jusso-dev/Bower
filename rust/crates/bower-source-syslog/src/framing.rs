@@ -34,6 +34,27 @@ impl<R: AsyncRead + Unpin> FrameReader<R> {
         self.stream
     }
 
+    pub fn get_mut(&mut self) -> &mut R {
+        &mut self.stream
+    }
+
+    /// Waits until the first byte of the next frame is buffered, skipping blank lines, so a
+    /// caller can time an idle connection separately from a frame in progress. `false` at
+    /// the end of the stream. Cancel-safe: buffered bytes stay buffered.
+    pub async fn wait_for_frame(&mut self) -> std::io::Result<bool> {
+        loop {
+            while self.start < self.end && matches!(self.buffer[self.start], b'\n' | b'\r') {
+                self.start += 1;
+            }
+            if self.start < self.end {
+                return Ok(true);
+            }
+            if !self.fill().await? {
+                return Ok(false);
+            }
+        }
+    }
+
     /// `Ok(None)` at the end of the stream; `Err(code)` on a framing failure. The frame is
     /// valid until the next read.
     pub async fn read_frame(&mut self) -> std::io::Result<Result<Option<&[u8]>, &'static str>> {
