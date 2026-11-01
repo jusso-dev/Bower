@@ -228,6 +228,80 @@ public sealed class SyslogCollectorTests
     }
 
     [Fact]
+    public async Task Relp_AcknowledgesOnlyDurableEventsAndAResendAfterRestartIsADuplicate()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory first = new();
+        using TemporaryDirectory second = new();
+        string queue = Path.Combine(first.Path, "queue.db");
+        string[] frames = [Frame("failure", "relp-user-1"), Frame("failure", "relp-user-2"), Frame("failure", "relp-user-3")];
+        await using (WebApplication app = await Start(first, cancellation))
+        {
+            SyslogSource source = app.Services.GetRequiredService<SyslogSource>();
+            IDurableEventStore store = app.Services.GetRequiredService<IDurableEventStore>();
+            await using SyslogRelpTests.Client client = await SyslogRelpTests.Client.ConnectAsync(source.Endpoints["edge-relp"], cancellation);
+            Assert.StartsWith("1 rsp 57 200 OK", await client.OpenAsync(cancellation), StringComparison.Ordinal);
+            await client.SendAsync(2, frames[0], cancellation);
+            Assert.Equal("2 rsp 6 200 OK\n", await client.ReadFrameAsync(cancellation));
+            // The acknowledgement follows the commit: the queue already holds the event.
+            Assert.Equal(1, (await store.GetSnapshotAsync(cancellation)).Queued);
+            await client.SendAsync(3, frames[1], cancellation);
+            Assert.Equal("3 rsp 6 200 OK\n", await client.ReadFrameAsync(cancellation));
+        }
+
+        // A sender that never saw those acknowledgements (the collector restarted) resends them.
+        await using WebApplication restarted = await Start(second, cancellation, queuePath: queue);
+        SyslogSource relp = restarted.Services.GetRequiredService<SyslogSource>();
+        await using SyslogRelpTests.Client again = await SyslogRelpTests.Client.ConnectAsync(relp.Endpoints["edge-relp"], cancellation);
+        await again.OpenAsync(cancellation);
+        for (int index = 0; index < frames.Length; index++)
+        {
+            await again.SendAsync(index + 2, frames[index], cancellation);
+        }
+
+        for (int index = 0; index < frames.Length; index++)
+        {
+            Assert.Equal($"{index + 2} rsp 6 200 OK\n", await again.ReadFrameAsync(cancellation));
+        }
+
+        SyslogListenerStatus status = await WaitFor(relp, value => value.RelpAcknowledged == 3, cancellation, "edge-relp");
+        Assert.Equal((1, 2), (status.Queued, status.Duplicates));
+        IDurableEventStore durable = restarted.Services.GetRequiredService<IDurableEventStore>();
+        Assert.Equal(3, (await durable.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation)).Count);
+    }
+
+    [Fact]
+    public async Task Relp_AFullQueueIsNeverAcknowledgedAndTheResendIsQueuedOnceSpaceReturns()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await Start(directory, cancellation);
+        SyslogSource source = app.Services.GetRequiredService<SyslogSource>();
+        IDurableEventStore store = app.Services.GetRequiredService<IDurableEventStore>();
+        await store.EnqueueAsync(new QueuedEvent("filler", "sha256:filler", new string('x', 1_048_000), DateTimeOffset.UtcNow), cancellation);
+        string frame = Frame("failure", "relp-busy");
+        await using (SyslogRelpTests.Client refused = await SyslogRelpTests.Client.ConnectAsync(source.Endpoints["edge-relp"], cancellation))
+        {
+            await refused.OpenAsync(cancellation);
+            await refused.SendAsync(2, frame, cancellation);
+            Assert.Equal("0 serverclose 0\n", await refused.ReadFrameAsync(cancellation));
+            Assert.Null(await refused.ReadFrameAsync(cancellation));
+        }
+
+        SyslogListenerStatus busy = await WaitFor(source, value => value.RelpBusyCloses == 1, cancellation, "edge-relp");
+        Assert.Equal((0, 0), (busy.Queued, busy.RelpAcknowledged));
+
+        QueuedEvent filler = Assert.Single(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
+        await store.MarkDeliveredAsync(filler.EventId, "test-ack", filler.LeaseToken, cancellation);
+        await using SyslogRelpTests.Client resend = await SyslogRelpTests.Client.ConnectAsync(source.Endpoints["edge-relp"], cancellation);
+        await resend.OpenAsync(cancellation);
+        await resend.SendAsync(2, frame, cancellation);
+        Assert.Equal("2 rsp 6 200 OK\n", await resend.ReadFrameAsync(cancellation));
+        Assert.StartsWith("syslog-", Assert.Single(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation)).EventId, StringComparison.Ordinal);
+        Assert.Equal(1, source.Snapshot().Single(item => item.Id == "edge-relp").Queued);
+    }
+
+    [Fact]
     public async Task TransformFailure_QuarantinesWithoutPersistingAndKeepsTheConnectionOpen()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
@@ -306,7 +380,7 @@ public sealed class SyslogCollectorTests
     {
         SyslogListenerStatus status = new("edge", "tcp", "127.0.0.1:5514", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, null);
         Assert.Equal(
-            """{"id":"edge","protocol":"tcp","endpoint":"127.0.0.1:5514","activeConnections":0,"connectionsAccepted":0,"connectionsRejected":0,"sendersDenied":0,"tlsHandshakeFailures":0,"framesReceived":0,"bytesReceived":0,"queued":0,"duplicates":0,"suppressed":0,"notRouted":0,"notSelected":0,"rejected":0,"parserErrors":0,"malformed":0,"oversized":0,"framingErrors":0,"timeouts":0,"dropped":0,"retries":0,"submitFailures":0,"receiveErrors":0,"lastFrameAt":null,"tlsReloads":0,"tlsReloadFailures":0,"tlsRevoked":0,"tlsSessionsClosed":0,"serverCertificateNotAfter":null,"clientCertificateAuthorityNotAfter":null,"clientRevocationListNextUpdate":null,"halfCloses":0,"drainedFrames":0,"peerResets":0}""",
+            """{"id":"edge","protocol":"tcp","endpoint":"127.0.0.1:5514","activeConnections":0,"connectionsAccepted":0,"connectionsRejected":0,"sendersDenied":0,"tlsHandshakeFailures":0,"framesReceived":0,"bytesReceived":0,"queued":0,"duplicates":0,"suppressed":0,"notRouted":0,"notSelected":0,"rejected":0,"parserErrors":0,"malformed":0,"oversized":0,"framingErrors":0,"timeouts":0,"dropped":0,"retries":0,"submitFailures":0,"receiveErrors":0,"lastFrameAt":null,"tlsReloads":0,"tlsReloadFailures":0,"tlsRevoked":0,"tlsSessionsClosed":0,"serverCertificateNotAfter":null,"clientCertificateAuthorityNotAfter":null,"clientRevocationListNextUpdate":null,"halfCloses":0,"drainedFrames":0,"peerResets":0,"relpAcknowledged":0,"relpServerCloses":0,"relpBusyCloses":0}""",
             JsonSerializer.Serialize<IReadOnlyList<SyslogListenerStatus>>([status], SyslogJsonContext.Default.IReadOnlyListSyslogListenerStatus)[1..^1]);
     }
 
@@ -335,7 +409,7 @@ public sealed class SyslogCollectorTests
     }
 
     private static async Task<WebApplication> Start(TemporaryDirectory directory, CancellationToken cancellation, int parser = 0,
-        string[]? transforms = null, string? identityAction = null, bool crlf = false)
+        string[]? transforms = null, string? identityAction = null, bool crlf = false, string? queuePath = null)
     {
         string pack = Path.Combine(directory.Path, "syslog-pack");
         foreach (string path in Directory.EnumerateFiles(PackSource, "*", SearchOption.AllDirectories))
@@ -383,6 +457,8 @@ public sealed class SyslogCollectorTests
               {"id": "edge", "protocol": "tcp", "port": 0, "allowedSenders": ["127.0.0.1"],
                "routes": [{"appName": "sshd", "pack": "linux-ssh-gateway", "parser": {{parser}}}]},
               {"id": "edge-udp", "protocol": "udp", "port": 0, "allowedSenders": ["127.0.0.1"],
+               "routes": [{"appName": "sshd", "pack": "linux-ssh-gateway", "parser": {{parser}}}]},
+              {"id": "edge-relp", "protocol": "relp", "port": 0, "allowedSenders": ["127.0.0.1"],
                "routes": [{"appName": "sshd", "pack": "linux-ssh-gateway", "parser": {{parser}}}]}
             ]}
             """);
@@ -395,7 +471,7 @@ public sealed class SyslogCollectorTests
         {
             CollectorId = "syslog-collector-test",
             ListenUrl = "http://127.0.0.1:4319",
-            QueuePath = Path.Combine(directory.Path, "queue.db"),
+            QueuePath = queuePath ?? Path.Combine(directory.Path, "queue.db"),
             PolicyDirectory = Path.Combine(directory.Path, "no-defaults"),
             Packs = [archive],
             PackTrustedKeyFiles = [trust],
@@ -408,9 +484,11 @@ public sealed class SyslogCollectorTests
         }, builder => builder.WebHost.UseTestServer());
         await CollectorApplication.InitializeAsync(app, cancellation);
         await app.StartAsync(cancellation);
-        // Short retry delay so the backpressure test does not wait a second per attempt.
+        // Short retry delay and RELP busy limit so the backpressure tests do not wait seconds per attempt.
         typeof(SyslogSource).GetProperty(nameof(SyslogSource.RetryDelay))!.SetValue(
             app.Services.GetRequiredService<SyslogSource>(), TimeSpan.FromMilliseconds(50));
+        typeof(SyslogSource).GetProperty(nameof(SyslogSource.RelpBusyTimeout))!.SetValue(
+            app.Services.GetRequiredService<SyslogSource>(), TimeSpan.FromMilliseconds(500));
         return app;
     }
 

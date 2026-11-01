@@ -317,9 +317,12 @@ fn configuration_validates_every_bound() {
         ),
         (
             r#""protocol": "tcp", "tls": {"certificateFile": "c", "privateKeyFile": "k"}"#,
-            "tls settings are required for protocol tls and not allowed otherwise",
+            "tls settings are required for protocol tls, optional for relp and not allowed otherwise",
         ),
-        (r#""protocol": "sctp""#, "protocol must be tcp, tls or udp"),
+        (
+            r#""protocol": "sctp""#,
+            "protocol must be tcp, tls, udp or relp",
+        ),
         (
             r#""protocol": "tcp", "address": "localhost""#,
             "address must be an IP address",

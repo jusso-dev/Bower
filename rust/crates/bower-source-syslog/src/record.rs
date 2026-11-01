@@ -21,11 +21,13 @@ pub fn build(
     received_at: &Timestamp,
 ) -> Result<String, &'static str> {
     let received = format(received_at);
+    // RELP resends a message byte for byte after a reconnect, so its id never includes the
+    // receive time: a resend must deduplicate even without a message timestamp.
     let id = event_id(
         listener_id,
         sender_address,
         frame,
-        message.timestamp.is_none().then_some(received.as_str()),
+        (message.timestamp.is_none() && protocol != "relp").then_some(received.as_str()),
     );
     let mut fields: Vec<(String, JsonElement)> = vec![
         ("id".into(), id.into()),
@@ -72,7 +74,7 @@ pub fn build(
 }
 
 /// `syslog-` + 32 hex characters of SHA-256 over listener, sender and the exact frame
-/// bytes (plus the receive time when the message has no timestamp).
+/// bytes (plus the receive time when the message has no timestamp, except for RELP).
 pub fn event_id(
     listener_id: &str,
     sender_address: &str,

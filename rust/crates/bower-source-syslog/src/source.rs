@@ -13,6 +13,15 @@
 //! which hides Bower's FIN from rsyslog's pre-send peek and turns the sender's close into
 //! a reset. C# has no API to turn them off; see docs/production-readiness.
 //!
+//! RELP (rsyslog `omrelp`): one transaction at a time, in order. A `syslog` transaction is
+//! answered `200 OK` only after the sink has durably enqueued it or made a final decision
+//! (duplicate, suppressed, unrouted, malformed, oversized or rejected by policy). A full
+//! queue or a failed sink is never answered: the sender keeps the message in its window and
+//! resends it after reconnecting, and the event id makes the resend a duplicate. A refusal
+//! that outlasts the busy limit, an idle timeout or a stop ends the session with a
+//! `serverclose` hint; frames the sender wrote before it saw the hint are still enqueued,
+//! unacknowledged.
+//!
 //! TLS material is reloaded when its files change, without dropping connections (see
 //! [`crate::tls`]); an open mutual-TLS session whose client is no longer trusted is closed
 //! before its next frame is used.
@@ -34,6 +43,7 @@ use crate::config::{ListenerOptions, Route, SyslogSourceConfiguration, normalise
 use crate::framing::FrameReader;
 use crate::parser::{self, failures};
 use crate::record;
+use crate::relp::{self, Command, RelpReader};
 use crate::tls::{TlsSession, TlsSource, is_revocation_failure};
 
 /// Datagrams buffered per UDP listener before new ones are dropped.
@@ -139,6 +149,13 @@ pub struct ListenerStatus {
     pub drained_frames: i64,
     /// Connections a sender or middlebox reset; frames in flight may be lost.
     pub peer_resets: i64,
+    /// RELP `syslog` transactions answered `200 OK`, each after a final durable decision.
+    pub relp_acknowledged: i64,
+    /// RELP sessions Bower ended with a `serverclose` hint (stop, idle or busy).
+    pub relp_server_closes: i64,
+    /// RELP sessions closed because the queue refused a message for longer than the busy
+    /// limit; the sender keeps and resends it.
+    pub relp_busy_closes: i64,
 }
 
 #[derive(Default)]
@@ -170,6 +187,9 @@ struct Counters {
     half_closes: AtomicI64,
     drained_frames: AtomicI64,
     peer_resets: AtomicI64,
+    relp_acknowledged: AtomicI64,
+    relp_server_closes: AtomicI64,
+    relp_busy_closes: AtomicI64,
 }
 
 fn bump(counter: &AtomicI64) {
@@ -252,6 +272,9 @@ impl ListenerState {
             half_closes: read(&counters.half_closes),
             drained_frames: read(&counters.drained_frames),
             peer_resets: read(&counters.peer_resets),
+            relp_acknowledged: read(&counters.relp_acknowledged),
+            relp_server_closes: read(&counters.relp_server_closes),
+            relp_busy_closes: read(&counters.relp_busy_closes),
         }
     }
 }
@@ -279,6 +302,7 @@ struct Shared {
     tls_reload_interval: Duration,
     drain_timeout: Duration,
     stop_timeout: Duration,
+    relp_busy_timeout: Duration,
 }
 
 pub struct SyslogSource {
@@ -319,6 +343,7 @@ impl SyslogSource {
                 tls_reload_interval: Duration::from_secs(1),
                 drain_timeout: Duration::from_secs(5),
                 stop_timeout: Duration::from_secs(20),
+                relp_busy_timeout: Duration::from_secs(30),
             }),
         }
     }
@@ -358,6 +383,16 @@ impl SyslogSource {
         self
     }
 
+    /// How long a RELP session holds one message the queue keeps refusing before it ends
+    /// the session (unacknowledged) with `serverclose` (C# `RelpBusyTimeout`). Shorter than
+    /// rsyslog `omrelp`'s 90-second response timeout. Call before `bind`.
+    pub fn with_relp_busy_timeout(mut self, timeout: Duration) -> Self {
+        if let Some(shared) = Arc::get_mut(&mut self.shared) {
+            shared.relp_busy_timeout = timeout;
+        }
+        self
+    }
+
     pub fn metrics(&self) -> SyslogMetrics {
         SyslogMetrics(Arc::clone(&self.listeners))
     }
@@ -386,7 +421,9 @@ impl SyslogSource {
                 let local = socket.local_addr().map_err(SourceError::Bind)?;
                 (Bound::Datagram(socket), local)
             } else {
-                let tls = (options.protocol == "tls")
+                let tls = options
+                    .tls
+                    .is_some()
                     .then(|| TlsSource::load(options))
                     .transpose()?
                     .map(Arc::new);
@@ -548,7 +585,7 @@ async fn serve_connection(
     let frame_timeout =
         Duration::from_secs(u64::try_from(listener.options.frame_timeout_seconds).unwrap_or(60));
     match tls {
-        None => serve_frames(&listener, stream, sender, &shared, &mut stop, None).await,
+        None => serve_stream(&listener, stream, sender, &shared, &mut stop, None).await,
         Some(source) => {
             // Bound unauthenticated connections, including peers that never start TLS.
             // This separate limit accommodates senders that start TLS lazily without
@@ -586,7 +623,7 @@ async fn serve_connection(
                         .unwrap_or_default();
                     let session = TlsSession::new(&material, chain);
                     let trust = Some((source, session));
-                    serve_frames(&listener, secure, sender, &shared, &mut stop, trust).await;
+                    serve_stream(&listener, secure, sender, &shared, &mut stop, trust).await;
                 }
                 Ok(Err(error)) => {
                     bump(&listener.counters.tls_handshake_failures);
@@ -664,6 +701,249 @@ enum Between {
     Stop,
 }
 
+async fn serve_stream<S: AsyncRead + AsyncWrite + Unpin + TcpHalf>(
+    listener: &Arc<ListenerState>,
+    stream: S,
+    sender: IpAddr,
+    shared: &Arc<Shared>,
+    stop: &mut watch::Receiver<bool>,
+    trust: Option<(Arc<TlsSource>, TlsSession)>,
+) {
+    if listener.options.protocol == "relp" {
+        serve_relp(listener, stream, sender, shared, stop, trust).await;
+    } else {
+        serve_frames(listener, stream, sender, shared, stop, trust).await;
+    }
+}
+
+fn count_reset(listener: &ListenerState, error: &std::io::Error) {
+    if matches!(
+        error.kind(),
+        std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted
+    ) {
+        bump(&listener.counters.peer_resets);
+    }
+}
+
+/// One RELP session after any TLS handshake (C# `ServeRelpAsync`). Transactions are handled
+/// strictly in order: the next frame is read only after the current one is answered, so
+/// the sender's window bounds what it has in flight. The first frame must be `open`
+/// (transaction 1) within the handshake-start timeout; any framing, sequence or command
+/// error ends the session without an answer.
+async fn serve_relp<S: AsyncRead + AsyncWrite + Unpin + TcpHalf>(
+    listener: &Arc<ListenerState>,
+    stream: S,
+    sender: IpAddr,
+    shared: &Arc<Shared>,
+    stop: &mut watch::Receiver<bool>,
+    mut trust: Option<(Arc<TlsSource>, TlsSession)>,
+) {
+    let options = &listener.options;
+    let counters = &listener.counters;
+    let seconds = |value: i64| Duration::from_secs(u64::try_from(value).unwrap_or(60));
+    let idle = (options.idle_timeout_seconds > 0).then(|| seconds(options.idle_timeout_seconds));
+    let frame_timeout = seconds(options.frame_timeout_seconds);
+    let open_timeout = seconds(options.handshake_start_timeout_seconds);
+    let maximum = usize::try_from(options.maximum_message_bytes).unwrap_or(65_536);
+    // Room for the CR LF some senders append; the message is checked against the maximum
+    // once the line ending is removed.
+    let mut reader = RelpReader::new(stream, (maximum + 2).max(relp::MAXIMUM_OFFER_BYTES));
+    let mut expected = 1u64;
+    let mut open = false;
+    // After serverclose Bower writes nothing more. It keeps reading and enqueuing what the
+    // sender wrote before it saw the hint; those stay unacknowledged and deduplicate when
+    // the sender resends them.
+    let mut closing = false;
+    loop {
+        let between = if closing {
+            match tokio::time::timeout(shared.drain_timeout, reader.wait_for_frame()).await {
+                Ok(ready) => Between::Frame(ready),
+                Err(_) => return,
+            }
+        } else {
+            let limit = if open { idle } else { Some(open_timeout) };
+            tokio::select! {
+                () = stopped(stop) => Between::Stop,
+                ready = async {
+                    match limit {
+                        Some(limit) => tokio::time::timeout(limit, reader.wait_for_frame()).await.ok(),
+                        None => Some(reader.wait_for_frame().await),
+                    }
+                } => ready.map_or(Between::Idle, Between::Frame),
+            }
+        };
+        match between {
+            Between::Stop | Between::Idle => {
+                if matches!(between, Between::Idle) {
+                    bump(&counters.timeouts);
+                }
+                if !open || !server_close(listener, reader.get_mut(), frame_timeout).await {
+                    return;
+                }
+                closing = true;
+                continue;
+            }
+            Between::Frame(Err(error)) => {
+                count_reset(listener, &error);
+                return;
+            }
+            Between::Frame(Ok(false)) => return,
+            Between::Frame(Ok(true)) => {}
+        }
+        let (transaction, command, data, oversized) =
+            match tokio::time::timeout(frame_timeout, reader.read_frame()).await {
+                Err(_) => {
+                    bump(&counters.timeouts);
+                    return;
+                }
+                Ok(Err(error)) => {
+                    count_reset(listener, &error);
+                    return;
+                }
+                Ok(Ok(relp::Frame::End)) => return,
+                Ok(Ok(relp::Frame::Failed(failure))) => {
+                    bump(if failure == relp::failures::DATA_TOO_LARGE {
+                        &counters.oversized
+                    } else {
+                        &counters.framing_errors
+                    });
+                    return;
+                }
+                Ok(Ok(relp::Frame::Frame {
+                    transaction,
+                    command,
+                    data,
+                    oversized,
+                })) => (transaction, command, data.to_vec(), oversized),
+            };
+        if transaction != expected || (command == Command::Open) == open {
+            // Out of sequence, a repeated open, or anything before open.
+            bump(&counters.framing_errors);
+            return;
+        }
+        expected = relp::next(expected);
+        match command {
+            Command::Open => {
+                if relp::accept_offers(&data).is_err() {
+                    bump(&counters.framing_errors);
+                    let _ = write(
+                        reader.get_mut(),
+                        &relp::open_refused(transaction),
+                        frame_timeout,
+                    )
+                    .await;
+                    return;
+                }
+                if !write(
+                    reader.get_mut(),
+                    &relp::open_accepted(transaction),
+                    frame_timeout,
+                )
+                .await
+                {
+                    bump(&counters.timeouts);
+                    return;
+                }
+                open = true;
+                continue;
+            }
+            Command::Close => {
+                // Every earlier transaction is already answered.
+                if !closing {
+                    let _ = write(
+                        reader.get_mut(),
+                        &relp::close_accepted(transaction),
+                        frame_timeout,
+                    )
+                    .await;
+                }
+                return;
+            }
+            Command::Syslog => {}
+            _ => {
+                bump(&counters.framing_errors);
+                return;
+            }
+        }
+        let message = relp::trim_line_ending(&data);
+        listener.received(message.len(), shared.clock.utc_now());
+        if let Some((source, session)) = trust.as_mut()
+            && !still_trusted(source, session, shared.clock.utc_now())
+        {
+            bump(&counters.tls_sessions_closed);
+            return;
+        }
+        if closing {
+            bump(&counters.drained_frames);
+        }
+        let disposition = if oversized || message.len() > maximum {
+            // Final: the same bytes would be refused again, so answer instead of making the
+            // sender resend forever.
+            bump(&counters.oversized);
+            Disposition::Decided
+        } else {
+            let busy = (!closing).then_some(shared.relp_busy_timeout);
+            handle_frame(
+                listener,
+                sender,
+                message,
+                true,
+                shared,
+                trust.as_mut(),
+                busy,
+            )
+            .await
+        };
+        match disposition {
+            Disposition::Close => return,
+            Disposition::Busy => {
+                bump(&counters.relp_busy_closes);
+                server_close(listener, reader.get_mut(), frame_timeout).await;
+                return;
+            }
+            Disposition::Decided if !closing => {
+                if !write(
+                    reader.get_mut(),
+                    &relp::acknowledge(transaction),
+                    frame_timeout,
+                )
+                .await
+                {
+                    bump(&counters.timeouts);
+                    return;
+                }
+                bump(&counters.relp_acknowledged);
+            }
+            Disposition::Decided => {}
+        }
+    }
+}
+
+/// Writes and flushes within `limit`, so a sender that stops reading cannot hold a session.
+async fn write<S: AsyncWrite + Unpin>(stream: &mut S, frame: &[u8], limit: Duration) -> bool {
+    matches!(
+        tokio::time::timeout(limit, async {
+            stream.write_all(frame).await?;
+            stream.flush().await
+        })
+        .await,
+        Ok(Ok(()))
+    )
+}
+
+/// Sends the `serverclose` hint, then half-closes. False when the connection is already gone.
+async fn server_close<S: AsyncWrite + Unpin + TcpHalf>(
+    listener: &ListenerState,
+    stream: &mut S,
+    limit: Duration,
+) -> bool {
+    if !write(stream, &relp::server_close(), limit).await {
+        return false;
+    }
+    bump(&listener.counters.relp_server_closes);
+    half_close(listener, stream).await
+}
+
 async fn serve_frames<S: AsyncRead + AsyncWrite + Unpin + TcpHalf>(
     listener: &Arc<ListenerState>,
     stream: S,
@@ -715,12 +995,7 @@ async fn serve_frames<S: AsyncRead + AsyncWrite + Unpin + TcpHalf>(
             Between::Frame(Err(error)) => {
                 // A reset can discard frames the sender wrote after its last successful
                 // send, so it is counted.
-                if matches!(
-                    error.kind(),
-                    std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted
-                ) {
-                    bump(&listener.counters.peer_resets);
-                }
+                count_reset(listener, &error);
                 return;
             }
             Between::Frame(Ok(false)) => return,
@@ -735,12 +1010,7 @@ async fn serve_frames<S: AsyncRead + AsyncWrite + Unpin + TcpHalf>(
             }
             // A reset while reading an incomplete frame can discard sender data too.
             Ok(Err(error)) => {
-                if matches!(
-                    error.kind(),
-                    std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted
-                ) {
-                    bump(&listener.counters.peer_resets);
-                }
+                count_reset(listener, &error);
                 return;
             }
             Ok(Ok(Ok(None))) => return,
@@ -766,7 +1036,9 @@ async fn serve_frames<S: AsyncRead + AsyncWrite + Unpin + TcpHalf>(
         if half_closed {
             bump(&listener.counters.drained_frames);
         }
-        if !handle_frame(listener, sender, &frame, true, shared, trust.as_mut()).await {
+        if handle_frame(listener, sender, &frame, true, shared, trust.as_mut(), None).await
+            != Disposition::Decided
+        {
             return;
         }
     }
@@ -791,7 +1063,7 @@ async fn serve_udp(
                 let Some((sender, frame)) = next else { return };
                 tokio::select! {
                     () = stopped(&mut stop) => return,
-                    _ = handle_frame(&listener, sender, &frame, false, &shared, None) => {}
+                    _ = handle_frame(&listener, sender, &frame, false, &shared, None, None) => {}
                 }
             }
         })
@@ -844,8 +1116,18 @@ async fn serve_udp(
     let _ = worker.await;
 }
 
-/// Parse, route, build the record and submit. False when the connection should close
-/// (the sink failed, so the frame was not durably accepted).
+/// What happened to one frame (C# `FrameDisposition`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Disposition {
+    /// Durably enqueued or finally dropped.
+    Decided,
+    /// Not durably accepted (the sink failed or the session lost trust): close.
+    Close,
+    /// The queue refused it for longer than the busy limit.
+    Busy,
+}
+
+/// Parse, route, build the record and submit (C# `HandleFrameAsync`).
 async fn handle_frame(
     listener: &Arc<ListenerState>,
     sender: IpAddr,
@@ -853,17 +1135,18 @@ async fn handle_frame(
     wait_when_unavailable: bool,
     shared: &Arc<Shared>,
     mut trust: Option<&mut (Arc<TlsSource>, TlsSession)>,
-) -> bool {
+    busy_limit: Option<Duration>,
+) -> Disposition {
     let options = &listener.options;
     let counters = &listener.counters;
     let received_at = shared.clock.utc_now();
     let Ok(message) = parser::parse(frame, &received_at) else {
         bump(&counters.malformed);
-        return true;
+        return Disposition::Decided;
     };
     let Some(route) = options.route(&message, sender).cloned() else {
         bump(&counters.not_routed);
-        return true;
+        return Disposition::Decided;
     };
     let Ok(record) = record::build(
         &message,
@@ -874,19 +1157,20 @@ async fn handle_frame(
         &received_at,
     ) else {
         bump(&counters.oversized);
-        return true;
+        return Disposition::Decided;
     };
     let record = Arc::new(record);
+    let refused_since = tokio::time::Instant::now();
     loop {
         let outcome = {
             let Ok(_permit) = shared.gate.acquire().await else {
-                return false;
+                return Disposition::Close;
             };
             if let Some((source, session)) = trust.as_mut()
                 && !still_trusted(source, session, shared.clock.utc_now())
             {
                 bump(&counters.tls_sessions_closed);
-                return false;
+                return Disposition::Close;
             }
             let (sink, listener, route, record) = (
                 Arc::clone(&shared.sink),
@@ -901,11 +1185,14 @@ async fn handle_frame(
             Ok(Ok(outcome)) => outcome,
             _ => {
                 bump(&counters.submit_failures);
-                return false;
+                return Disposition::Close;
             }
         };
         let counter = match outcome {
             SubmitOutcome::Unavailable if wait_when_unavailable => {
+                if busy_limit.is_some_and(|limit| refused_since.elapsed() >= limit) {
+                    return Disposition::Busy;
+                }
                 bump(&counters.retries);
                 tokio::time::sleep(shared.retry_delay).await;
                 continue;
@@ -920,7 +1207,7 @@ async fn handle_frame(
             SubmitOutcome::Rejected => &counters.rejected,
         };
         bump(counter);
-        return true;
+        return Disposition::Decided;
     }
 }
 

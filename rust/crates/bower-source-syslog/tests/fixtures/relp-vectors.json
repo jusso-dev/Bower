@@ -1,0 +1,434 @@
+{
+  "frames": [
+    {
+      "name": "librelp-open-syslog-close",
+      "maximum": 128,
+      "input": "1 open 86 relp_version=0\nrelp_software=librelp,1.12.0,http://librelp.adiscon.com\ncommands=syslog\n2 syslog 13 <13>1 - - - -\n3 close 0\n",
+      "results": [
+        {
+          "transaction": 1,
+          "command": "open",
+          "data": "relp_version=0\nrelp_software=librelp,1.12.0,http://librelp.adiscon.com\ncommands=syslog",
+          "oversized": false
+        },
+        {
+          "transaction": 2,
+          "command": "syslog",
+          "data": "<13>1 - - - -",
+          "oversized": false
+        },
+        {
+          "transaction": 3,
+          "command": "close",
+          "data": "",
+          "oversized": false
+        },
+        "end"
+      ]
+    },
+    {
+      "name": "zero-length-data-has-no-separator",
+      "maximum": 64,
+      "input": "7 close 0\n",
+      "results": [
+        {
+          "transaction": 7,
+          "command": "close",
+          "data": "",
+          "oversized": false
+        },
+        "end"
+      ]
+    },
+    {
+      "name": "leading-zeros-are-digits",
+      "maximum": 64,
+      "input": "001 syslog 003 abc\n",
+      "results": [
+        {
+          "transaction": 1,
+          "command": "syslog",
+          "data": "abc",
+          "oversized": false
+        },
+        "end"
+      ]
+    },
+    {
+      "name": "data-may-contain-newlines",
+      "maximum": 64,
+      "input": "4 syslog 4 a\nb\n\n",
+      "results": [
+        {
+          "transaction": 4,
+          "command": "syslog",
+          "data": "a\nb\n",
+          "oversized": false
+        },
+        "end"
+      ]
+    },
+    {
+      "name": "other-commands-parse",
+      "maximum": 64,
+      "input": "5 starttls 0\n6 rsp 6 200 OK\n0 serverclose 0\n",
+      "results": [
+        {
+          "transaction": 5,
+          "command": "unknown",
+          "data": "",
+          "oversized": false
+        },
+        {
+          "transaction": 6,
+          "command": "rsp",
+          "data": "200 OK",
+          "oversized": false
+        },
+        {
+          "transaction": 0,
+          "command": "serverclose",
+          "data": "",
+          "oversized": false
+        },
+        "end"
+      ]
+    },
+    {
+      "name": "maximum-numbers",
+      "maximum": 64,
+      "input": "999999999 syslog 000000001 x\n",
+      "results": [
+        {
+          "transaction": 999999999,
+          "command": "syslog",
+          "data": "x",
+          "oversized": false
+        },
+        "end"
+      ]
+    },
+    {
+      "name": "oversized-syslog-is-skipped",
+      "maximum": 4,
+      "input": "2 syslog 10 0123456789\n3 syslog 2 ok\n",
+      "results": [
+        {
+          "transaction": 2,
+          "command": "syslog",
+          "data": "",
+          "oversized": true
+        },
+        {
+          "transaction": 3,
+          "command": "syslog",
+          "data": "ok",
+          "oversized": false
+        },
+        "end"
+      ]
+    },
+    {
+      "name": "oversized-open-fails",
+      "maximum": 4,
+      "input": "1 open 10 0123456789\n",
+      "results": [
+        {
+          "failure": "relp-data-too-large"
+        }
+      ]
+    },
+    {
+      "name": "syslog-beyond-discard-bound-fails",
+      "maximum": 4,
+      "input": "1 syslog 1048577 x",
+      "results": [
+        {
+          "failure": "relp-data-too-large"
+        }
+      ]
+    },
+    {
+      "name": "ten-digit-transaction",
+      "maximum": 64,
+      "input": "1234567890 syslog 1 x\n",
+      "results": [
+        {
+          "failure": "relp-frame-invalid"
+        }
+      ]
+    },
+    {
+      "name": "ten-digit-length",
+      "maximum": 64,
+      "input": "1 syslog 0000000001 x\n",
+      "results": [
+        {
+          "failure": "relp-frame-invalid"
+        }
+      ]
+    },
+    {
+      "name": "transaction-not-a-number",
+      "maximum": 64,
+      "input": "x syslog 1 x\n",
+      "results": [
+        {
+          "failure": "relp-frame-invalid"
+        }
+      ]
+    },
+    {
+      "name": "missing-command",
+      "maximum": 64,
+      "input": "1  1 x\n",
+      "results": [
+        {
+          "failure": "relp-frame-invalid"
+        }
+      ]
+    },
+    {
+      "name": "command-with-digit",
+      "maximum": 64,
+      "input": "1 sys1og 1 x\n",
+      "results": [
+        {
+          "failure": "relp-frame-invalid"
+        }
+      ]
+    },
+    {
+      "name": "command-too-long",
+      "maximum": 64,
+      "input": "1 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0\n",
+      "results": [
+        {
+          "failure": "relp-frame-invalid"
+        }
+      ]
+    },
+    {
+      "name": "command-at-maximum-length",
+      "maximum": 64,
+      "input": "1 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0\n",
+      "results": [
+        {
+          "transaction": 1,
+          "command": "unknown",
+          "data": "",
+          "oversized": false
+        },
+        "end"
+      ]
+    },
+    {
+      "name": "missing-length",
+      "maximum": 64,
+      "input": "1 syslog x\n",
+      "results": [
+        {
+          "failure": "relp-frame-invalid"
+        }
+      ]
+    },
+    {
+      "name": "zero-length-with-separator",
+      "maximum": 64,
+      "input": "1 close 0 \n",
+      "results": [
+        {
+          "failure": "relp-frame-invalid"
+        }
+      ]
+    },
+    {
+      "name": "data-without-separator",
+      "maximum": 64,
+      "input": "1 syslog 1x\n",
+      "results": [
+        {
+          "failure": "relp-frame-invalid"
+        }
+      ]
+    },
+    {
+      "name": "wrong-trailer",
+      "maximum": 64,
+      "input": "1 syslog 1 xy",
+      "results": [
+        {
+          "failure": "relp-frame-invalid"
+        }
+      ]
+    },
+    {
+      "name": "length-longer-than-data",
+      "maximum": 64,
+      "input": "1 syslog 5 ab\n",
+      "results": [
+        {
+          "failure": "relp-frame-truncated"
+        }
+      ]
+    },
+    {
+      "name": "truncated-header",
+      "maximum": 64,
+      "input": "12 sys",
+      "results": [
+        {
+          "failure": "relp-frame-truncated"
+        }
+      ]
+    },
+    {
+      "name": "oversized-syslog-wrong-trailer",
+      "maximum": 4,
+      "input": "2 syslog 6 012345X",
+      "results": [
+        {
+          "failure": "relp-frame-invalid"
+        }
+      ]
+    },
+    {
+      "name": "oversized-syslog-truncated",
+      "maximum": 4,
+      "input": "2 syslog 6 0123",
+      "results": [
+        {
+          "failure": "relp-frame-truncated"
+        }
+      ]
+    },
+    {
+      "name": "crlf-is-not-a-trailer",
+      "maximum": 64,
+      "input": "1 close 0\r\n",
+      "results": [
+        {
+          "failure": "relp-frame-invalid"
+        }
+      ]
+    },
+    {
+      "name": "leading-space",
+      "maximum": 64,
+      "input": " 1 close 0\n",
+      "results": [
+        {
+          "failure": "relp-frame-invalid"
+        }
+      ]
+    }
+  ],
+  "offers": [
+    {
+      "name": "librelp",
+      "data": "relp_version=0\nrelp_software=librelp,1.12.0,http://librelp.adiscon.com\ncommands=syslog",
+      "accepted": true
+    },
+    {
+      "name": "trailing-newline-and-unknown-offers",
+      "data": "commands=syslog,starttls\nrelp_version=1\nfuture=yes\n",
+      "accepted": true
+    },
+    {
+      "name": "no-syslog-command",
+      "data": "relp_version=0\ncommands=",
+      "accepted": false
+    },
+    {
+      "name": "no-version",
+      "data": "commands=syslog",
+      "accepted": false
+    },
+    {
+      "name": "version-not-integer",
+      "data": "relp_version=x\ncommands=syslog",
+      "accepted": false
+    },
+    {
+      "name": "version-without-value",
+      "data": "relp_version\ncommands=syslog",
+      "accepted": false
+    },
+    {
+      "name": "name-too-long",
+      "data": "relp_version=0\ncommands=syslog\nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn=1",
+      "accepted": false
+    },
+    {
+      "name": "value-too-long",
+      "data": "relp_version=0\ncommands=syslog\nx=vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+      "accepted": false
+    },
+    {
+      "name": "control-character",
+      "data": "relp_version=0\ncommands=sys\tlog",
+      "accepted": false
+    },
+    {
+      "name": "too-many-offers",
+      "data": "relp_version=0\ncommands=syslog\no0=1\no1=1\no2=1\no3=1\no4=1\no5=1\no6=1\no7=1\no8=1\no9=1\no10=1\no11=1\no12=1\no13=1\no14=1",
+      "accepted": false
+    },
+    {
+      "name": "sixteen-offers",
+      "data": "relp_version=0\ncommands=syslog\no0=1\no1=1\no2=1\no3=1\no4=1\no5=1\no6=1\no7=1\no8=1\no9=1\no10=1\no11=1\no12=1\no13=1",
+      "accepted": true
+    },
+    {
+      "name": "too-many-values",
+      "data": "relp_version=0\ncommands=syslog,c0,c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13,c14,c15",
+      "accepted": false
+    },
+    {
+      "name": "empty",
+      "data": "",
+      "accepted": false
+    }
+  ],
+  "responses": [
+    {
+      "kind": "openAccepted",
+      "transaction": 1,
+      "text": "1 rsp 57 200 OK\nrelp_version=0\nrelp_software=bower\ncommands=syslog\n"
+    },
+    {
+      "kind": "acknowledge",
+      "transaction": 42,
+      "text": "42 rsp 6 200 OK\n"
+    },
+    {
+      "kind": "openRefused",
+      "transaction": 1,
+      "text": "1 rsp 44 500 required command not supported by client\n"
+    },
+    {
+      "kind": "closeAccepted",
+      "transaction": 9,
+      "text": "9 rsp 0\n"
+    },
+    {
+      "kind": "serverClose",
+      "transaction": 0,
+      "text": "0 serverclose 0\n"
+    }
+  ],
+  "transactions": [
+    [
+      1,
+      2
+    ],
+    [
+      999999998,
+      999999999
+    ],
+    [
+      999999999,
+      1
+    ]
+  ]
+}

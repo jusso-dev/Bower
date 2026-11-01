@@ -11,7 +11,12 @@ public sealed record SyslogSourceConfiguration(
     string Kind,
     IReadOnlyList<SyslogListenerOptions> Listeners);
 
-/// <param name="Protocol"><c>tcp</c>, <c>tls</c> or <c>udp</c>.</param>
+/// <param name="Protocol">
+/// <c>tcp</c>, <c>tls</c>, <c>udp</c> or <c>relp</c> (the Reliable Event Logging Protocol that
+/// rsyslog <c>omrelp</c> and librelp speak, over TLS when <paramref name="Tls"/> is set). RELP
+/// acknowledges each message only after Bower has durably decided it, so a sender keeps and
+/// resends everything else.
+/// </param>
 /// <param name="Port">0 lets the operating system choose (tests and diagnostics).</param>
 /// <param name="AllowedSenders">Addresses or CIDR ranges allowed to send. Everything else is refused and counted.</param>
 /// <param name="Routes">First match wins. A message no route matches is dropped (default deny).</param>
@@ -235,9 +240,9 @@ public static class SyslogSourceConfigurationLoader
         }
 
         string id = listener.Id;
-        if (listener.Protocol is not ("tcp" or "tls" or "udp"))
+        if (listener.Protocol is not ("tcp" or "tls" or "udp" or "relp"))
         {
-            throw Invalid(id, "protocol must be tcp, tls or udp.");
+            throw Invalid(id, "protocol must be tcp, tls, udp or relp.");
         }
 
         if (!TryParseAddress(listener.Address, out IPAddress? address))
@@ -250,15 +255,16 @@ public static class SyslogSourceConfigurationLoader
             throw Invalid(id, "port must be between 0 and 65535.");
         }
 
-        if (!IPAddress.IsLoopback(address) && listener.Protocol != "tls" && !listener.AllowInsecureNonLoopback)
+        if (!IPAddress.IsLoopback(address) && listener.Protocol != "tls" && listener.Tls is null && !listener.AllowInsecureNonLoopback)
         {
-            throw Invalid(id, "a non-loopback address requires protocol tls; set allowInsecureNonLoopback only on an isolated network.");
+            throw Invalid(id, "a non-loopback address requires protocol tls (or relp with tls); set allowInsecureNonLoopback only on an isolated network.");
         }
 
-        if ((listener.Protocol == "tls") != (listener.Tls is not null)
+        if ((listener.Protocol == "tls" && listener.Tls is null)
+            || (listener.Protocol is "tcp" or "udp" && listener.Tls is not null)
             || (listener.Tls is { } tls && (string.IsNullOrWhiteSpace(tls.CertificateFile) || string.IsNullOrWhiteSpace(tls.PrivateKeyFile))))
         {
-            throw Invalid(id, "tls settings are required for protocol tls and not allowed otherwise.");
+            throw Invalid(id, "tls settings are required for protocol tls, optional for relp and not allowed otherwise.");
         }
 
         if (listener.Tls is { ClientCertificateRevocationListFile: { } revocationList } withList
