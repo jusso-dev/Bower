@@ -276,6 +276,13 @@ counters, enums, numeric code maps and offset timestamps. Unknown fields or free
 text are rejected. All selected paths and their ancestors must be ordinary,
 non-reparse paths. Unrelated logs/files are never selected.
 
+The bounded `credentialIsolation` allowlist includes
+`per-phase-logon-new-credentials`, `per-worker-logon-new-credentials`, and
+`per-process-logon-new-credentials`. The process profile keeps the same reviewed
+counter/timestamp fields; child-process input, credentials and arbitrary output
+are not accepted checkpoint metadata. An incomplete process checkpoint retains
+false native/destination/delivery qualification flags, just like other profiles.
+
 After the per-file hashes, the exporter emits a fresh summary schema:
 
 ```json

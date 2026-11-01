@@ -113,7 +113,7 @@ function Assert-WecCheckpoint($Checkpoint, [string]$RunId, [string]$Phase) {
     $numberFields = @('seconds', 'actualRate')
     $enumFields = @{
         executionKind = @('native-windows', 'simulated')
-        credentialIsolation = @('per-phase-logon-new-credentials', 'per-worker-logon-new-credentials')
+        credentialIsolation = @('per-phase-logon-new-credentials', 'per-worker-logon-new-credentials', 'per-process-logon-new-credentials')
         credentialMode = @('explicit-stable-per-phase', 'implicit-token')
     }
     $mapFields = @('resultCodes', 'sessionResultCodes', 'sessionCleanupCodes', 'initializationFailureReasons')

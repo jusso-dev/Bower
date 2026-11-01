@@ -88,6 +88,8 @@ class WecReconciliationTests(unittest.TestCase):
         self.phase = copy.deepcopy(original)
         self.phase['generator'].update(credentialIsolation='per-worker-logon-new-credentials', workerCount=4, sessionCleanupCodes={'2250': 4})
         self.assertTrue(self.report()['strictPass'])
+        self.phase['generator']['credentialIsolation'] = 'per-process-logon-new-credentials'
+        self.assertTrue(self.report()['strictPass'])
         self.phase['generator']['sessionCleanupCodes'] = {'2250': 3}
         with self.assertRaises(ValueError): self.source()
         self.phase['generator'].update(sessionCleanupCodes={'2250': 4}, credentialMode='implicit-token')

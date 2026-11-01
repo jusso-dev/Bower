@@ -69,7 +69,7 @@ def source_evidence(phase, native, forwarded, queue):
     require(phase.get('mode', 'phase') == 'phase', 'diagnostic-not-qualification')
     generator = phase['generator']
     isolation = generator['credentialIsolation']
-    require(isolation in ('per-worker-logon-new-credentials', 'per-phase-logon-new-credentials')
+    require(isolation in ('per-worker-logon-new-credentials', 'per-phase-logon-new-credentials', 'per-process-logon-new-credentials')
             and generator['initialized'] is True and generator['sessionResultCodes'] == {}
             and generator['initializationFailureReasons'] == {}
             and transport.stamp(generator['startedAt']) == begin
@@ -82,7 +82,7 @@ def source_evidence(phase, native, forwarded, queue):
     count = generator['requested']
     require(type(count) is int and 0 < count <= MAX_NATIVE and count % rate == 0
             and count / rate <= 3600, 'requested-count')
-    if isolation == 'per-phase-logon-new-credentials' or 'credentialMode' in generator:
+    if isolation in ('per-phase-logon-new-credentials', 'per-process-logon-new-credentials') or 'credentialMode' in generator:
         require(generator['executionKind'] == 'native-windows'
                 and generator['credentialMode'] == 'explicit-stable-per-phase'
                 and type(generator['workerCount']) is int and generator['workerCount'] == min(64 if isolation == 'per-phase-logon-new-credentials' else 4, count)

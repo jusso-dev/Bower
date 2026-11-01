@@ -225,7 +225,7 @@ function Complete-WecWarmup([string]$Root, [string]$Phase, [string]$Account, $Be
 
 function Add-WecGenerator {
     if ('BowerWecNetworkGenerator' -as [type]) { return }
-    Add-Type -TypeDefinition @'
+    $source = @'
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -275,8 +275,109 @@ public sealed class BowerWecWindowsNative : IBowerWecNetworkNative {
     public bool Revert() {return RevertToSelf();}
     public bool Close(IntPtr token) {return CloseHandle(token);}
 }
+
+// One native RPC client process per owned LUID avoids cross-thread RPC bindings.
+// Only fixed commands/numeric results cross redirected pipes; credentials never
+// enter command arguments, script files, logs, or evidence.
+public sealed class BowerWecProcessNative : IBowerWecNetworkNative, IDisposable {
+    private sealed class Child { public Process Process; public Thread ErrorPump; public readonly object Gate=new object(); public bool Disposed; }
+    private readonly ConcurrentDictionary<int,Child> children=new ConcurrentDictionary<int,Child>();
+    private readonly ThreadLocal<int> current=new ThreadLocal<int>();
+    private readonly object lifecycle=new object();private bool disposed;
+    private readonly string script; private int next; private readonly int responseTimeout;
+    private readonly Func<ProcessStartInfo,Process> startProcess;
+    public bool NativeExecution {get;private set;}
+    public BowerWecProcessNative(string scriptPath):this(scriptPath,null,30000) {}
+    // Injected launchers are local simulated transport tests, never native evidence.
+    public BowerWecProcessNative(string scriptPath,Func<ProcessStartInfo,Process> launcher,int timeout) {
+        if(String.IsNullOrEmpty(scriptPath) || !File.Exists(scriptPath) || timeout<100 || timeout>30000)throw new ArgumentException("worker-script");
+        script=scriptPath;responseTimeout=timeout;NativeExecution=launcher==null;
+        startProcess=launcher??delegate(ProcessStartInfo info){var process=new Process {StartInfo=info};if(!process.Start())throw new InvalidOperationException("worker-start");return process;};
+    }
+    private bool KillOwned(Child child) {
+        lock(child.Gate) {
+            if(child.Disposed)return true;
+            try {if(!child.Process.HasExited)child.Process.Kill();return child.Process.WaitForExit(1000);}catch{return false;}
+        }
+    }
+    private void DrainErrors(Child child) {
+        var stream=child.Process.StandardError.BaseStream;
+        child.ErrorPump=new Thread(delegate(){
+            byte[] buffer=new byte[1024];int total=0;
+            try {int amount;while((amount=stream.Read(buffer,0,buffer.Length))>0){total+=amount;if(total>4096){KillOwned(child);break;}}}catch{}
+        });
+        child.ErrorPump.IsBackground=true;child.ErrorPump.Start();
+    }
+    private int Read(Child child,int timeout) {
+        var clock=Stopwatch.StartNew();var line=new System.Text.StringBuilder(16);char[] buffer=new char[1];
+        try {
+            while(true) {
+                int remaining=timeout-(int)clock.ElapsedMilliseconds;
+                if(remaining<=0)throw new TimeoutException("worker-response-timeout");
+                var read=child.Process.StandardOutput.ReadAsync(buffer,0,1);
+                if(!read.Wait(remaining))throw new TimeoutException("worker-response-timeout");
+                if(read.Result!=1)throw new InvalidOperationException("worker-response-eof");
+                if(buffer[0]=='\n')break;
+                if(line.Length>=16)throw new InvalidOperationException("worker-response-bound");
+                line.Append(buffer[0]);
+            }
+            int code;
+            if(!Int32.TryParse(line.ToString().TrimEnd('\r'),System.Globalization.NumberStyles.AllowLeadingSign,
+                System.Globalization.CultureInfo.InvariantCulture,out code))throw new InvalidOperationException("worker-response");
+            return code;
+        } catch {KillOwned(child);throw;}
+    }
+    private int Send(string command) {
+        Child child;if(!children.TryGetValue(current.Value,out child))throw new InvalidOperationException("worker-owner");
+        child.Process.StandardInput.WriteLine(command);child.Process.StandardInput.Flush();return Read(child,responseTimeout);
+    }
+    public IntPtr CreateToken(string account,string password) {
+        int id=Interlocked.Increment(ref next);Child child;
+        var info=new ProcessStartInfo {
+            FileName=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),@"WindowsPowerShell\v1.0\powershell.exe"),
+            Arguments="-NoLogo -NoProfile -NonInteractive -File \""+script+"\"",
+            UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true
+        };
+        // Disposal cannot snapshot between process start and registration; a
+        // waiting creator observes disposed before it can launch another child.
+        lock(lifecycle) {
+            if(disposed)throw new ObjectDisposedException("owned-worker");
+            child=new Child {Process=startProcess(info)};children.TryAdd(id,child);DrainErrors(child);
+        }
+        string input=Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(account+"\n"+password));
+        child.Process.StandardInput.WriteLine(input);child.Process.StandardInput.Flush();
+        int code=Read(child,30000);if(code!=0)throw new System.ComponentModel.Win32Exception(code);
+        return new IntPtr(id);
+    }
+    public void Impersonate(IntPtr token) {
+        if(!children.ContainsKey(token.ToInt32()))throw new InvalidOperationException("worker-owner");current.Value=token.ToInt32();
+    }
+    public int Connect(string account,string password,bool explicitCredentials) {
+        if(!explicitCredentials)throw new InvalidOperationException("worker-credentials");return Send("connect");
+    }
+    public int Cancel() {return Send("cancel");}
+    public bool Revert() {return Send("revert")==0;}
+    public bool Close(IntPtr token) {
+        if(current.Value!=token.ToInt32())throw new InvalidOperationException("worker-owner");
+        bool closed=Send("close")==0;Child child=children[current.Value];
+        return closed && child.Process.WaitForExit(1000) && child.Process.ExitCode==0;
+    }
+    public void Dispose() {
+        Child[] owned;
+        lock(lifecycle) {if(disposed)return;disposed=true;owned=new List<Child>(children.Values).ToArray();}
+        foreach(var child in owned) {
+            KillOwned(child);
+            if(child.ErrorPump!=null)child.ErrorPump.Join(1000);
+            lock(child.Gate) {try {child.Process.Dispose();child.Disposed=true;}catch{}}
+        }
+    }
+}
+
 public static class BowerWecNetworkGenerator {
-    public static IDictionary<string,object> Run(string account,int rate,int seconds,string cancel,string profile,bool warmup,Action<object> reconcileWarmup) {
+    public static IDictionary<string,object> Run(string account,int rate,int seconds,string cancel,string profile,bool warmup,Action<object> reconcileWarmup,string workerScript) {
+        if(profile=="process-explicit") {
+            using(var native=new BowerWecProcessNative(workerScript))return RunWithNative(account,rate,seconds,cancel,profile,native,30000,warmup,reconcileWarmup);
+        }
         return RunWithNative(account,rate,seconds,cancel,profile,new BowerWecWindowsNative(),30000,warmup,reconcileWarmup);
     }
     // Dependency injection exercises scheduling/accounting without producing fake host evidence.
@@ -289,9 +390,9 @@ public static class BowerWecNetworkGenerator {
         string profile,IBowerWecNetworkNative native,int waitMilliseconds,bool warmup,Action<object> reconcileWarmup) {
         if(rate<1 || rate>100 || seconds<1 || seconds>3600 || rate*seconds>50000 ||
            !Regex.IsMatch(account,"^bwr[a-f0-9]{17}$") || native==null || waitMilliseconds<1 || waitMilliseconds>30000 ||
-           (profile!="phase-explicit" && profile!="worker-explicit" && profile!="worker-null") ||
+           (profile!="phase-explicit" && profile!="worker-explicit" && profile!="process-explicit" && profile!="worker-null") ||
            (warmup && (profile=="worker-null" || reconcileWarmup==null)))throw new ArgumentOutOfRangeException();
-        bool shared=profile=="phase-explicit", explicitCredentials=profile!="worker-null", isolated=profile=="worker-explicit";
+        bool shared=profile=="phase-explicit", explicitCredentials=profile!="worker-null", isolated=profile=="worker-explicit" || profile=="process-explicit";
         int requested=rate*seconds,workers=Math.Min(isolated?4:64,requested),scheduled=0,completed=0,succeeded=0,active=0,maximum=0;
         int setupFailures=0,impersonationFailures=0,revertFailures=0,closeFailures=0,cleanupFailures=0,remaining=workers;
         int warmScheduled=0,warmCompleted=0,warmActive=0,warmMaximum=0,warmSucceeded=0;
@@ -445,12 +546,12 @@ public static class BowerWecNetworkGenerator {
         var finalCleanupCodes=new Dictionary<string,int>();foreach(var pair in cleanupCodes)finalCleanupCodes.Add(pair.Key.ToString(),pair.Value);
         var initializationReasons=new Dictionary<string,int>();foreach(var pair in reasons)initializationReasons.Add(pair.Key,pair.Value);
         return new Dictionary<string,object> {
-            {"executionKind",native is BowerWecWindowsNative?"native-windows":"simulated"},
+            {"executionKind",native is BowerWecWindowsNative || (native is BowerWecProcessNative && ((BowerWecProcessNative)native).NativeExecution)?"native-windows":"simulated"},
             {"warmupRequired",warmup},{"warmupVerified",warmupVerified},{"warmup",warmupSummary},
             {"initializationFailureReasons",initializationReasons},{"requested",requested},{"scheduled",scheduled},{"completed",completed},
             {"unexpectedSuccesses",succeeded},{"drained",drained},{"cancelled",File.Exists(cancel)},{"seconds",elapsed},
             {"actualRate",elapsed>0?completed/elapsed:0},{"maxConcurrency",maximum},{"workerCount",workers},{"resultCodes",resultCodes},
-            {"credentialIsolation",shared?"per-phase-logon-new-credentials":"per-worker-logon-new-credentials"},
+            {"credentialIsolation",shared?"per-phase-logon-new-credentials":profile=="process-explicit"?"per-process-logon-new-credentials":"per-worker-logon-new-credentials"},
             {"credentialMode",explicitCredentials?"explicit-stable-per-phase":"implicit-token"},{"initialized",initialized},
             {"sessionSetupFailures",setupFailures},{"impersonationFailures",impersonationFailures},{"revertFailures",revertFailures},
             {"handleCloseFailures",closeFailures},{"sessionResultCodes",setupCodes},{"sessionCleanupFailures",cleanupFailures},
@@ -460,6 +561,58 @@ public static class BowerWecNetworkGenerator {
     }
 }
 '@
+    Add-Type -TypeDefinition $source
+    $script:wecNativeSource = $source
+}
+
+
+function Write-WecProcessScript([string]$Root, [string]$Phase, [string]$Source) {
+    if ($Phase -cnotmatch '^[a-z][a-z0-9-]{0,39}$') { throw 'phase-parameters' }
+    $path = Join-Path $Root ($Phase + '-worker.ps1')
+    $template = @'
+$ErrorActionPreference='Stop'
+$ProgressPreference='SilentlyContinue'
+$native=$null;$token=[IntPtr]::Zero;$impersonated=$false
+try {
+    Add-Type -TypeDefinition ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__SOURCE__')))
+    $inputLine=[Console]::ReadLine()
+    if($null -eq $inputLine -or $inputLine.Length -gt 256){throw 'input-bound'}
+    $parts=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($inputLine)).Split("`n")
+    if($parts.Count -ne 2 -or $parts[0] -cnotmatch '^bwr[a-f0-9]{17}$' -or $parts[1] -cnotmatch '^synthetic-invalid-[a-f0-9]{32}$'){throw 'input-shape'}
+    $native=New-Object BowerWecWindowsNative
+    $token=$native.CreateToken($parts[0],$parts[1]);$native.Impersonate($token);$impersonated=$true
+    [Console]::WriteLine('0')
+    while($null -ne ($command=[Console]::ReadLine())) {
+        switch -CaseSensitive ($command) {
+            'connect' { [Console]::WriteLine([string]$native.Connect($parts[0],$parts[1],$true)) }
+            'cancel' { [Console]::WriteLine([string]$native.Cancel()) }
+            'revert' { if(-not $native.Revert()){throw 'revert'};$impersonated=$false;[Console]::WriteLine('0') }
+            'close' { if(-not $native.Close($token)){throw 'close'};$token=[IntPtr]::Zero;[Console]::WriteLine('0');exit 0 }
+            default {throw 'command'}
+        }
+    }
+    exit 1
+} catch {
+    $code=-1
+    if($_.Exception -is [ComponentModel.Win32Exception]){$code=$_.Exception.NativeErrorCode}
+    elseif($_.Exception.InnerException -is [ComponentModel.Win32Exception]){$code=$_.Exception.InnerException.NativeErrorCode}
+    [Console]::WriteLine([string]$code)
+    exit 1
+} finally {
+    if($native -and $impersonated){[void]$native.Revert()}
+    if($native -and $token -ne [IntPtr]::Zero){[void]$native.Close($token)}
+}
+'@
+    $contents = $template.Replace('__SOURCE__', [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Source)))
+    $bytes = [Text.Encoding]::UTF8.GetBytes($contents)
+    if ($bytes.Length -gt 131072) { throw 'worker-script-bound' }
+    $stream = [IO.File]::Open($path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try { $stream.Write($bytes, 0, $bytes.Length); $stream.Flush($true) } finally { $stream.Dispose() }
+    $hashPath = $path + '.sha256'
+    $hashBytes = [Text.Encoding]::ASCII.GetBytes((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant())
+    $hashStream = [IO.File]::Open($hashPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try { $hashStream.Write($hashBytes, 0, $hashBytes.Length); $hashStream.Flush($true) } finally { $hashStream.Dispose() }
+    return $path
 }
 
 $lock = $null
@@ -481,7 +634,7 @@ try {
     $diagnostic = $action -eq 'diagnostic'
     $generatorProfile = $env:BOWER_WEC_PROFILE
     if (-not $generatorProfile) { $generatorProfile = 'phase-explicit' }
-    if ($generatorProfile -notin @('phase-explicit', 'worker-explicit', 'worker-null') -or (-not $diagnostic -and $generatorProfile -eq 'worker-null')) { throw 'generator-profile' }
+    if ($generatorProfile -notin @('phase-explicit', 'worker-explicit', 'process-explicit', 'worker-null') -or (-not $diagnostic -and $generatorProfile -eq 'worker-null')) { throw 'generator-profile' }
     $phase = $env:BOWER_WEC_PHASE
     [int]$rate = 0; [int]$seconds = 0
     if ($diagnostic) { $env:BOWER_WEC_RATE = '1'; $env:BOWER_WEC_SECONDS = '1' }
@@ -500,12 +653,14 @@ try {
     if ($before.state -ne 'running') { throw 'source-not-running' }
     $step = 'generator-compile'
     Add-WecGenerator
+    $workerScript = $null
+    if ($generatorProfile -eq 'process-explicit') { $workerScript = Write-WecProcessScript $root $phase $script:wecNativeSource }
     $step = 'generator-execute'
     $sourceBeforeWarmup = $before
     $warmupCallback = [Action[object]] { param($metadata)
         $script:before = Complete-WecWarmup $root $phase $config.accountName $sourceBeforeWarmup $metadata
     }
-    $result = [BowerWecNetworkGenerator]::Run($config.accountName, $rate, $seconds, "$root\cancel", $generatorProfile, (-not $diagnostic), $warmupCallback)
+    $result = [BowerWecNetworkGenerator]::Run($config.accountName, $rate, $seconds, "$root\cancel", $generatorProfile, (-not $diagnostic), $warmupCallback, $workerScript)
     Write-WecGeneratorCheckpoint "$root\$phase-generator.json" $config.runId $phase $action $result
     $step = 'generator-timing'
     $since = [DateTimeOffset]::Parse([string]$result.startedAt, [Globalization.CultureInfo]::InvariantCulture)

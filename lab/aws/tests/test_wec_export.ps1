@@ -47,6 +47,16 @@ try {
     $plan = Get-WecEvidenceExportPlan $root $run $phase
     if (-not $plan.partialEvidence -or -not $plan.checkpointOnly -or -not $plan.checkpointIncluded -or
         $plan.files.Count -ne 1 -or $plan.missingPhaseFiles.Count -ne 4 -or $plan.deliveryQualified -or $plan.destinationQueryVerified) { throw 'checkpoint-only contract' }; $tests++
+    $processCheckpoint = New-Checkpoint
+    $processCheckpoint.generator.credentialIsolation = 'per-process-logon-new-credentials'
+    $processCheckpoint.generator.workerCount = 4
+    Write-Checkpoint $processCheckpoint
+    $processPlan = Get-WecEvidenceExportPlan $root $run $phase
+    if (-not $processPlan.partialEvidence -or -not $processPlan.checkpointOnly -or
+        $processPlan.files.Count -ne 1 -or $processPlan.missingPhaseFiles.Count -ne 4 -or
+        $processPlan.destinationQueryVerified -or $processPlan.deliveryQualified) { throw 'process checkpoint upgraded to qualification' }; $tests++
+    Write-Checkpoint (New-Checkpoint)
+
     [IO.File]::WriteAllText((Join-Path $root 'unrelated-secret.log'), 'synthetic-do-not-export')
     $plan = Get-WecEvidenceExportPlan $root $run $phase
     if ($plan.files.file -contains 'unrelated-secret.log') { throw 'arbitrary file selected' }; $tests++
@@ -61,7 +71,7 @@ try {
     Write-Checkpoint (New-Checkpoint)
     $plan = Get-WecEvidenceExportPlan $root $run $phase
     if (-not $plan.partialEvidence -or $plan.checkpointOnly -or ($plan.missingPhaseFiles -join ',') -cne "$phase-queue.ids") { throw 'partial set contract' }; $tests++
-    foreach ($change in 'run', 'phase', 'type', 'qualified', 'extra', 'generator-extra', 'generator-code', 'generator-reason') {
+    foreach ($change in 'run', 'phase', 'type', 'qualified', 'extra', 'generator-extra', 'generator-code', 'generator-reason', 'generator-isolation') {
         $checkpoint = New-Checkpoint
         switch ($change) {
             run { $checkpoint.runId = 'bower-ws6-20261101-010102' }
@@ -71,6 +81,7 @@ try {
             extra { $checkpoint | Add-Member -NotePropertyName payload -NotePropertyValue 'synthetic-secret' }
             generator-extra { $checkpoint.generator | Add-Member -NotePropertyName password -NotePropertyValue 'synthetic-secret' }
             generator-code { $checkpoint.generator.sessionResultCodes | Add-Member -NotePropertyName secret -NotePropertyValue 1 }
+            generator-isolation { $checkpoint.generator.credentialIsolation = 'arbitrary-process-profile' }
             generator-reason { $checkpoint.generator.initializationFailureReasons | Add-Member -NotePropertyName secret -NotePropertyValue 1 }
         }
         Write-Checkpoint $checkpoint

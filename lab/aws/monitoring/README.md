@@ -180,6 +180,8 @@ series hashes, incomplete-run interpretation and teardown requirements.
 
 ### Reproduce the owned DCR first-error diagnostic
 
+Run the Azure environment helper and DCR probe on a Linux or macOS operator machine. On Windows, use WSL2 with both the repository and private state in the Linux filesystem (for example, under your Linux home directory), not `/mnt/c`. The helper requires POSIX ownership and permissions. This requirement applies to the operator machine; the WEC host under test runs Windows natively.
+
 This sends **one intentionally malformed synthetic request** to the disposable
 lab's owned Data Collection Rule (DCR). It is a diagnostic exercise, not collector
 or Sentinel delivery qualification. Use an isolated workspace and disable external

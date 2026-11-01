@@ -339,3 +339,32 @@ attempts, including with all cleanup held behind a completion barrier. Reducing
 session count changes load-generator implementation only; the exact native event
 counts and 100/sec burst requirement are unchanged. Failed probe checkpoints
 remain failed evidence.
+
+
+### Separate RPC client processes
+
+`BOWER_WEC_PROFILE=process-explicit` retains the four-worker scheduler, native
+SMB authentication, exact identity checks and rate gates, but gives each worker
+a separate PowerShell process and NEW_CREDENTIALS session. This investigates RPC
+binding failures observed with multiple impersonated threads, including after a
+host reboot. It is a generator implementation alternative, not evidence of a
+qualified rate until the native and destination checks pass.
+
+Each child compiles the same reviewed native wrapper, receives only synthetic
+invalid credentials over redirected stdin, and accepts a fixed protocol:
+connect, cancel, revert and close. Responses are numeric error codes only.
+Credentials never appear in command arguments or the generated child script.
+Pipe responses are limited to 16 characters and a total 30-second deadline.
+Stderr is discarded through a fixed 1-KiB buffer, with a 4-KiB total cap; overflow
+terminates that owned child without logging its output. Start/registration and
+disposal are synchronized so late creators cannot escape the owned child set.
+The parent owns each child Process object, waits for successful handle cleanup
+and process exit, and terminates only those owned children on bounded failure.
+A forced termination cannot qualify the phase. The generated phase-worker script
+contains code only, is bounded to 128 KiB, and remains on the temporary lab host
+until host teardown. Its adjacent `.sha256` sidecar records the exact script hash.
+The evidence isolation enum is `per-process-logon-new-credentials`; all four
+owned cleanups, native event counts/rates and destination identities remain
+mandatory. Local child-protocol tests inject a fake native class and are marked
+simulated; Windows CI additionally exercises the parent process transport with
+that same fake class, without making an SMB request.
