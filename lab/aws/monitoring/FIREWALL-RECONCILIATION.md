@@ -97,8 +97,14 @@ UID and overlapping outage tables, creates a unique owned inet OUTPUT table,
 and arms an independent systemd timer **before** installing its drop rule. It
 restores at least five seconds after the generation's 3,600-second window.
 Setup failure removes the rule immediately and invalidates the attempt. The
-restorer verifies the table ownership comment and removes only that table;
-it never flushes a shared ruleset. No reboot belongs in this outage scenario:
+restorer verifies an exact snapshot of the installed table, chains, rules and
+handles, then removes only that table; it never flushes a shared ruleset. The
+snapshot excludes nft's version metadata but retains every rule and handle.
+It is recorded atomically in the protected scope file immediately after rule
+installation. This also works with nft 1.0.4, whose JSON output omits the table
+comment. A changed or replaced table fails the ownership check. Historical
+scope files without a snapshot still require their original ownership comment.
+No reboot belongs in this outage scenario:
 a changed boot ID or absent rule invalidates duration evidence. The transient
 timer is independent of SSM, not a guarantee across host reboot.
 
@@ -112,6 +118,13 @@ blocked duration. These reports do not replace destination queries showing no
 ingress during the outage, queue-capacity sampling, and final identity proof.
 If restoration fails, use SSM to inspect the exact owned table/guard, restore
 only that rule, and record the failed attempt before teardown.
+
+The 2026-11-01 campaign retained an automatic-restoration failure caused by the
+missing JSON comment and a separately verified manual restoration after more
+than one hour. The corrected snapshot check subsequently removed an empty owned
+table through an independent 15-second systemd timer on the same nft version.
+That native control did not block traffic and did not repeat the one-hour test;
+keep its guard-control result separate from the workload's outage/delivery proof.
 
 ## 3. Export queue identities safely
 

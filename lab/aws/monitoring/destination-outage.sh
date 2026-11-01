@@ -35,7 +35,17 @@ try:
         raise RuntimeError('Owned rule absent or unreadable before restoration')
     document = json.loads(listing.stdout)
     tables = [entry['table'] for entry in document['nftables'] if 'table' in entry]
-    if len(tables) != 1 or tables[0].get('comment') != scope['ownerComment']:
+    snapshot = scope.get('tableSnapshotSha256')
+    if snapshot is not None:
+        # nft 1.0.4 omits table comments in JSON. Bind ownership to the exact
+        # post-install table, chains, rules and handles, captured before load.
+        entries = [entry for entry in document['nftables'] if 'metainfo' not in entry]
+        digest = hashlib.sha256(json.dumps(entries, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        if (len(tables) != 1 or tables[0].get('family') != 'inet'
+                or tables[0].get('name') != scope['table'] or digest != snapshot):
+            raise RuntimeError('Owned table snapshot changed')
+        record['ownershipCheck'] = 'exact-installed-table-snapshot'
+    elif len(tables) != 1 or tables[0].get('comment') != scope['ownerComment']:
         raise RuntimeError('Owned table marker changed')
     removed = subprocess.run(['nft', 'delete', 'table', 'inet', scope['table']], capture_output=True, timeout=30)
     if removed.returncode:
@@ -134,9 +144,20 @@ def main():
     try:
         command('nft', '-f', str(root / 'rules.nft'))
         active = True
+        installed = json.loads(command('nft', '-j', 'list', 'table', 'inet', scope['table']).stdout)
+        entries = [entry for entry in installed['nftables'] if 'metainfo' not in entry]
+        tables = [entry['table'] for entry in entries if 'table' in entry]
+        if len(tables) != 1 or tables[0].get('family') != 'inet' or tables[0].get('name') != scope['table']:
+            raise RuntimeError('Installed outage table scope mismatch')
+        scope['tableSnapshotSha256'] = hashlib.sha256(json.dumps(entries, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        scope_path = root / 'scope.json'
+        temporary_scope = root / 'scope-installed.json'
+        temporary_scope.write_text(json.dumps(scope) + '\n')
+        temporary_scope.replace(scope_path)
         applied = {'runId': scope['runId'], 'planSha256': scope['planSha256'], 'table': scope['table'],
                    'appliedAt': dt.datetime.now(dt.timezone.utc).isoformat(), 'appliedMonotonic': time.monotonic(),
                    'rulesSha256': scope['rulesSha256'], 'serviceUid': uid, 'guardArmed': True,
+                   'tableSnapshotSha256': scope['tableSnapshotSha256'],
                    'bootId': Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
                    'guardUnit': scope['unit'], 'restoreNotBeforeEpoch': scope['restoreNotBeforeEpoch'],
                    'scope': 'Bower service UID outbound TCP443; IPv4 and IPv6; ingestion and token refresh',

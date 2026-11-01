@@ -2,6 +2,7 @@ import importlib.util
 import contextlib
 import io
 import json
+import hashlib
 from pathlib import Path
 import tempfile
 import types
@@ -68,6 +69,49 @@ class DestinationOutageTests(unittest.TestCase):
 
     def test_restorer_refuses_foreign_table(self):
         self.run_restorer(owner_matches=False)
+
+    def test_snapshot_restores_when_nft_omits_table_comments(self):
+        self.run_snapshot_restorer(None)
+
+    def test_snapshot_refuses_replaced_or_modified_table(self):
+        for mutation in ('handle', 'rule', 'family', 'extra'):
+            with self.subTest(mutation=mutation):
+                self.run_snapshot_restorer(mutation)
+
+    def run_snapshot_restorer(self, mutation):
+        scope = module.scope_from_environment(self.environment(), 2000000000)
+        entries = [{'table': {'family': 'inet', 'name': scope['table'], 'handle': 2}},
+                   {'rule': {'family': 'inet', 'table': scope['table'], 'handle': 3,
+                             'expr': [{'match': {'right': 992}}, {'drop': None}]}}]
+        scope['tableSnapshotSha256'] = hashlib.sha256(json.dumps(entries, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        if mutation == 'handle': entries[0]['table']['handle'] = 4
+        if mutation == 'rule': entries[1]['rule']['expr'][0]['match']['right'] = 993
+        if mutation == 'family': entries[0]['table']['family'] = 'ip'
+        if mutation == 'extra': entries.append({'chain': {'name': 'foreign'}})
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'scope.json').write_text(json.dumps(scope))
+            (root / 'applied.json').write_text(json.dumps({'appliedMonotonic': 300, 'bootId': 'synthetic-boot'}))
+            listing = json.dumps({'nftables': [{'metainfo': {'version': '1.0.4'}}, *entries]})
+            responses = [types.SimpleNamespace(returncode=0, stdout=listing), types.SimpleNamespace(returncode=0)]
+            if mutation is None: responses.append(types.SimpleNamespace(returncode=0))
+            original_read = Path.read_text
+            def read(path, *args, **kwargs):
+                return 'synthetic-boot' if str(path) == '/proc/sys/kernel/random/boot_id' else original_read(path, *args, **kwargs)
+            with mock.patch.object(module.sys, 'argv', ['restore.py', str(root)]), \
+                    mock.patch.object(module.subprocess, 'run', side_effect=responses) as commands, \
+                    mock.patch.object(module.time, 'monotonic', side_effect=[4000, 4001]), \
+                    mock.patch.object(Path, 'read_text', read), contextlib.redirect_stdout(io.StringIO()), \
+                    self.assertRaises(SystemExit) as stopped:
+                exec(compile(module.RESTORE, 'restore.py', 'exec'), {})
+            report = json.loads((root / 'restored.json').read_text())
+            self.assertEqual(mutation is None, report['removed'])
+            self.assertEqual(mutation is None, report['minimumDurationPassed'])
+            self.assertEqual(0 if mutation is None else 1, stopped.exception.code)
+            deletions = [call for call in commands.call_args_list if call.args[0][:2] == ['nft', 'delete']]
+            self.assertEqual(1 if mutation is None else 0, len(deletions))
+            if mutation is None:
+                self.assertEqual('exact-installed-table-snapshot', report['ownershipCheck'])
 
     def test_missing_timing_evidence_preserves_removal_but_does_not_qualify(self):
         scope = module.scope_from_environment(self.environment(), 2000000000)
