@@ -241,6 +241,13 @@ license accompanies the font in `docs/assets/fonts/`. Browser checks reuse the
 console's Playwright version in a separate locked test package. `@axe-core/playwright` is a development-only
 accessibility check for the documentation; it is never included in the published site. Lighthouse is a development-only performance/accessibility audit, also excluded from the site.
 
+The docs test package temporarily overrides only `@sentry/bundler-plugins`'s
+`glob` to 14.0.3. Lighthouse's current Sentry dependency requests glob 13, whose
+minimatch dependency and cancellation handling have moderate denial-of-service
+advisories. Glob 14.0.3 uses a patched minimatch. This crosses Sentry's declared
+major-version range, so the docs checks must exercise compatibility; remove the
+override when Sentry or Lighthouse supports a patched dependency chain.
+
 ### Windows lab queue identity evidence: inbox SQLite API
 
 `lab/aws/monitoring/wec-qualification.ps1` uses `winsqlite3.dll`, the Windows
