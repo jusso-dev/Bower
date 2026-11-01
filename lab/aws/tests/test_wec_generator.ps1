@@ -87,7 +87,14 @@ try {
     Assert-Generator ($diagnostic.requested -eq 1 -and $diagnostic.workerCount -eq 1 -and $backend.Created -eq 1 -and -not $backend.ExplicitOnly) 'bounded legacy diagnostic'
     foreach ($mode in 'setup-failure','impersonation-failure','cleanup-failure','connect-exception','unexpected-success','blocked','initialization-blocked') {
         $backend = New-Object BowerWecFakeNative; $backend.Mode = $mode
-        $result = [BowerWecNetworkGenerator]::RunWithNative('bwraaaaaaaaaaaaaaaaa', 1, 1, $cancel, 'phase-explicit', $backend, 50)
+        # Ordinary failure accounting must not race a 50ms thread-start deadline
+        # on a busy CI host. Only the deliberate timeout cases use that deadline.
+        $timeoutCase = $mode -in @('blocked', 'initialization-blocked')
+        $waitMilliseconds = if ($timeoutCase) { 50 } else { 5000 }
+        $result = [BowerWecNetworkGenerator]::RunWithNative('bwraaaaaaaaaaaaaaaaa', 1, 1, $cancel, 'phase-explicit', $backend, $waitMilliseconds)
+        if (-not $timeoutCase) {
+            Assert-Generator ($result.initialized -and $result.drained -and $result.workersRemainingAtReturn -eq 0) 'failure-accounting worker did not finish'
+        }
         switch ($mode) {
             'setup-failure' { Assert-Generator ($result.sessionSetupFailures -eq 1 -and $result.scheduled -eq 0 -and $result.sessionResultCodes['5'] -eq 1) 'setup failure lost' }
             'impersonation-failure' { Assert-Generator ($result.impersonationFailures -eq 1 -and $result.scheduled -eq 0) 'impersonation failure lost' }
