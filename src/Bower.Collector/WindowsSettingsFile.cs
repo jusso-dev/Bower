@@ -11,6 +11,8 @@ internal static partial class WindowsSettingsFile
 {
     private const uint ReadControl = 0x00020000;
     private const uint ReadAttributes = 0x00000080;
+    private const uint ListDirectory = 0x00000001;
+    private const uint Synchronize = 0x00100000;
     private const uint GenericRead = 0x80000000;
     private const uint ShareRead = 1;
     private const uint OpenExisting = 3;
@@ -45,12 +47,12 @@ internal static partial class WindowsSettingsFile
             for (int index = 0; index < components.Length - 1; index++)
             {
                 current = Path.Combine(current, components[index]);
-                directory = OpenHandle(current, directory: true);
+                directory = OpenRelative(directory, components[index], directory: true);
                 directories.Add(directory);
                 Verify(directory, current, directory: true, ancestor: index < components.Length - 2);
             }
 
-            SafeFileHandle file = OpenHandle(Path.Combine(current, components[^1]), directory: false);
+            SafeFileHandle file = OpenRelative(directory, components[^1], directory: false);
             try
             {
                 Verify(file, path, directory: false, ancestor: false);
@@ -70,19 +72,65 @@ internal static partial class WindowsSettingsFile
         }
     }
 
-    private static SafeFileHandle OpenHandle(string path, bool directory)
+    internal static SafeFileHandle OpenHandle(string path, bool directory)
     {
         // No sharing of delete or data-write access: existing writers cause a safe refusal,
         // and opened components cannot be replaced during the remaining path walk.
-        SafeFileHandle handle = CreateFile(path, directory ? ReadControl | ReadAttributes : GenericRead | ReadControl,
+        // FILE_LIST_DIRECTORY is essential: metadata-only handles do not participate in
+        // the read/write/delete sharing checks, so they would not lock the path component.
+        SafeFileHandle handle = CreateFile(path, directory ? ReadControl | ReadAttributes | ListDirectory : GenericRead | ReadControl,
             ShareRead, IntPtr.Zero, OpenExisting, BackupSemantics | OpenReparsePoint, IntPtr.Zero);
         if (!handle.IsInvalid) return handle;
         int error = Marshal.GetLastPInvokeError();
         handle.Dispose();
-        if (error == 2) throw new FileNotFoundException("BOWER_SETTINGS_FILE does not exist.");
-        if (error == 3) throw new DirectoryNotFoundException("BOWER_SETTINGS_FILE directory does not exist.");
-        throw new InvalidOperationException("BOWER_SETTINGS_FILE cannot be opened through locked local handles.");
+        throw OpenError((uint)error);
     }
+
+    internal static unsafe SafeFileHandle OpenRelative(SafeFileHandle parent, string name, bool directory)
+    {
+        if (name.Length is 0 or > 32_766 || name is "." or ".." || name.IndexOfAny(['\\', '/', ':', '\0']) >= 0)
+            throw new InvalidOperationException("BOWER_SETTINGS_FILE contains an invalid path component.");
+        bool addedReference = false;
+        try
+        {
+            parent.DangerousAddRef(ref addedReference);
+            fixed (char* characters = name)
+            {
+                UnicodeName component = new()
+                {
+                    Length = checked((ushort)(name.Length * sizeof(char))),
+                    MaximumLength = checked((ushort)(name.Length * sizeof(char))),
+                    Buffer = (IntPtr)characters
+                };
+                ObjectAttributes attributes = new()
+                {
+                    Length = (uint)sizeof(ObjectAttributes),
+                    RootDirectory = parent.DangerousGetHandle(),
+                    ObjectName = (IntPtr)(&component),
+                    Attributes = 0x40 | 0x1000 // OBJ_CASE_INSENSITIVE | OBJ_DONT_REPARSE
+                };
+                // Resolve one name against its already verified directory object, never
+                // by rewalking an absolute string through mutable ancestor attributes.
+                int status = NtCreateFile(out SafeFileHandle handle,
+                    Synchronize | (directory ? ReadControl | ReadAttributes | ListDirectory : GenericRead | ReadControl),
+                    in attributes, out _, IntPtr.Zero, 0, ShareRead, 1 /* FILE_OPEN */,
+                    OpenReparsePoint | 0x20 /* FILE_SYNCHRONOUS_IO_NONALERT */
+                        | (directory ? 1u /* FILE_DIRECTORY_FILE */ : 0x40u /* FILE_NON_DIRECTORY_FILE */),
+                    IntPtr.Zero, 0);
+                if (status >= 0 && !handle.IsInvalid) return handle;
+                handle.Dispose();
+                throw OpenError(RtlNtStatusToDosError(status));
+            }
+        }
+        finally { if (addedReference) parent.DangerousRelease(); }
+    }
+
+    private static Exception OpenError(uint error) => error switch
+    {
+        2 => new FileNotFoundException("BOWER_SETTINGS_FILE does not exist."),
+        3 => new DirectoryNotFoundException("BOWER_SETTINGS_FILE directory does not exist."),
+        _ => new InvalidOperationException($"BOWER_SETTINGS_FILE cannot be opened through locked local handles (Win32 error {error}).")
+    };
 
     private static void Verify(SafeFileHandle handle, string path, bool directory, bool ancestor)
     {
@@ -113,6 +161,40 @@ internal static partial class WindowsSettingsFile
         public uint Attributes;
         public uint ReparseTag;
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct UnicodeName
+    {
+        public ushort Length;
+        public ushort MaximumLength;
+        public IntPtr Buffer;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ObjectAttributes
+    {
+        public uint Length;
+        public IntPtr RootDirectory;
+        public IntPtr ObjectName;
+        public uint Attributes;
+        public IntPtr SecurityDescriptor;
+        public IntPtr SecurityQualityOfService;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct IoStatusBlock
+    {
+        public IntPtr Status;
+        public UIntPtr Information;
+    }
+
+    [LibraryImport("ntdll.dll")]
+    private static partial int NtCreateFile(out SafeFileHandle handle, uint access, in ObjectAttributes attributes,
+        out IoStatusBlock status, IntPtr allocationSize, uint fileAttributes, uint sharing,
+        uint disposition, uint options, IntPtr extendedAttributes, uint extendedAttributesLength);
+
+    [LibraryImport("ntdll.dll")]
+    private static partial uint RtlNtStatusToDosError(int status);
 
     [LibraryImport("kernel32.dll", EntryPoint = "CreateFileW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
     private static partial SafeFileHandle CreateFile(string path, uint access, uint sharing, IntPtr security, uint creation, uint flags, IntPtr template);

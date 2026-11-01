@@ -2,6 +2,7 @@ using System.Runtime.Versioning;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using Bower.Collector;
+using Microsoft.Win32.SafeHandles;
 
 namespace Bower.UnitTests;
 
@@ -43,6 +44,13 @@ public sealed class WindowsSettingsFileTests
             using (StreamWriter writer = new(file)) writer.Write("BOWER_OUTPUT=none");
 
             Assert.Equal("none", CollectorSettingsFile.Load(path)!["BOWER_OUTPUT"]);
+            using (SafeFileHandle lockedDirectory = WindowsSettingsFile.OpenHandle(outer, directory: true))
+            {
+                Exception? rename = Record.Exception(() => Directory.Move(outer, outer + ".renamed"));
+                Assert.True(rename is IOException or UnauthorizedAccessException,
+                    "A verified directory handle must prevent renaming its path component.");
+                Assert.True(Directory.Exists(outer));
+            }
             using (FileStream verified = WindowsSettingsFile.Open(path))
             {
                 Assert.Throws<IOException>(() => File.Move(path, path + ".replaced"));
@@ -64,6 +72,14 @@ public sealed class WindowsSettingsFileTests
 
             DirectorySecurity writableAncestor = new();
             Protect(writableAncestor);
+            writableAncestor.AddAccessRule(new FileSystemAccessRule(users,
+                FileSystemRights.WriteAttributes | FileSystemRights.WriteExtendedAttributes, AccessControlType.Allow));
+            new DirectoryInfo(outer).SetAccessControl(writableAncestor);
+            Assert.Equal("none", CollectorSettingsFile.Load(path)!["BOWER_OUTPUT"]);
+            // These same grants are unsafe on the immediate settings directory.
+            new DirectoryInfo(inner).SetAccessControl(writableAncestor);
+            Assert.Throws<InvalidOperationException>(() => CollectorSettingsFile.Load(path));
+            new DirectoryInfo(inner).SetAccessControl(directories);
             writableAncestor.AddAccessRule(new FileSystemAccessRule(users,
                 FileSystemRights.DeleteSubdirectoriesAndFiles, AccessControlType.Allow));
             new DirectoryInfo(outer).SetAccessControl(writableAncestor);

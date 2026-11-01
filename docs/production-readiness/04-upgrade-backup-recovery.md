@@ -280,11 +280,14 @@ platform-specific checks before applying it:
 
 **Windows handle verification:** only local fixed-drive paths are accepted; mapped network drives, UNC/device paths,
 alternate data streams and reparse points (including directory junctions) are refused.
-The loader opens and checks every directory by handle and keeps those handles locked
-against deletion while opening the next component. It checks the final file's ACL on the
+The loader opens each next component relative to the verified parent handle with
+`NtCreateFile` and `OBJ_DONT_REPARSE`, and keeps those handles locked against deletion.
+It never re-resolves a descendant through an absolute ancestor path. It checks the final file's ACL on the
 same handle used to read its bytes. Existing writers cause a safe refusal. Ancestors may
-permit creating new children, as normal drive-root ACLs do; they may not grant untrusted
-users rights to modify their attributes, permissions, ownership or existing children.
+permit creating new children and ordinary attribute writes, as normal drive-root and
+ProgramData ACLs do; they may not grant untrusted users rights to change permissions,
+ownership or delete existing children. Handle-relative opens and reparse checks prevent
+those metadata grants from redirecting the file read.
 The immediate settings folder and file forbid all untrusted writes. Null and unsupported
 discretionary ACLs are refused rather than interpreted as safe.
 
