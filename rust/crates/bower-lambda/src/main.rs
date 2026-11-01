@@ -13,6 +13,7 @@ use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    bower_contracts::panic_privacy::install();
     // CloudWatch adds timestamps; logs carry metadata only.
     tracing_subscriber::fmt()
         .with_env_filter(

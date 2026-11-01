@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using Azure.Core;
 using Bower.Abstractions;
+using Bower.Core;
 using Bower.Functions.Collector;
 using Bower.Packs;
 using Microsoft.Extensions.DependencyInjection;
@@ -180,7 +181,8 @@ internal sealed class Harness : IDisposable
     public Harness(
         FunctionSettings? settings = null,
         IOutputAdapter? output = null,
-        IProducerAuthenticator? authenticator = null)
+        IProducerAuthenticator? authenticator = null,
+        IEventRedactor? redactor = null)
     {
         Entra = new TestEntra();
         Output = output ?? new FakeOutput();
@@ -191,6 +193,19 @@ internal sealed class Harness : IDisposable
             Output,
             authenticator ?? Entra.Authenticator(),
             new StaticCredential());
+        if (redactor is not null)
+        {
+            services.AddSingleton(provider => new FunctionCollector(
+                provider.GetRequiredService<FunctionSettings>(),
+                provider.GetRequiredService<PolicyBundle>(),
+                redactor,
+                provider.GetRequiredService<ITelemetryPolicyEvaluator>(),
+                provider.GetRequiredService<ProducerAuthorization>(),
+                provider.GetRequiredService<IProducerAuthenticator>(),
+                provider.GetRequiredService<IOutputAdapter>(),
+                provider.GetRequiredService<TimeProvider>(),
+                provider.GetRequiredService<ILogger<FunctionCollector>>()));
+        }
         provider = services.BuildServiceProvider();
         Collector = provider.GetRequiredService<FunctionCollector>();
     }

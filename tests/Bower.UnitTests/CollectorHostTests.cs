@@ -2,8 +2,11 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Bower.Abstractions;
 using Bower.Collector;
 using Bower.Contracts;
+using Bower.Packs;
+using Bower.PolicyEngine;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
@@ -22,6 +25,73 @@ public sealed class SerialHostTests
 public sealed class CollectorHostTests
 {
     private const string Token = "test-ingest-token-0123456789abcdef0123456789";
+
+    [Theory]
+    [InlineData("throw")]
+    [InlineData("failure")]
+    [InlineData("missing")]
+    [InlineData("damaged")]
+    public async Task Ingest_OperationalRedactionFailureIsRetryableAndDoesNotLeak(string mode)
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        IEventRedactor redactor = new PackDetectionRedactor(new UnavailableTestRedactor(mode), new DeterministicPolicyEvaluator([]), []);
+        await using WebApplication app = await StartAsync(directory, Token, cancellation, redactor: redactor);
+        using HttpClient client = app.GetTestClient();
+        using HttpRequestMessage request = Post(AuthenticationFailure() with { EventId = "synthetic-id" }, Token);
+        using HttpResponseMessage response = await client.SendAsync(request, cancellation);
+        string body = await response.Content.ReadAsStringAsync(cancellation);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal(TimeSpan.FromSeconds(60), response.Headers.RetryAfter?.Delta);
+        Assert.Contains("redaction-unavailable", body, StringComparison.Ordinal);
+        Assert.DoesNotContain(UnavailableTestRedactor.SecretMarker, body, StringComparison.Ordinal);
+        Assert.DoesNotContain("synthetic-id", body, StringComparison.Ordinal);
+        Assert.Empty(await app.Services.GetRequiredService<IDurableEventStore>().LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
+    }
+
+    [Fact]
+    public async Task Ingest_ValidJsonWithInvalidSchemaRemainsPermanentFailure()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await StartAsync(directory, Token, cancellation);
+        using HttpClient client = app.GetTestClient();
+        string body = JsonSerializer.Serialize(AuthenticationFailure() with { EventId = "safe-id" }, BowerJson.Envelope);
+        System.Text.Json.Nodes.JsonObject json = System.Text.Json.Nodes.JsonNode.Parse(body)!.AsObject();
+        json["timeGenerated"] = "invalid-date";
+        using HttpRequestMessage request = new(HttpMethod.Post, "/v1/events") { Content = new StringContent(json.ToJsonString(), System.Text.Encoding.UTF8, "application/json") };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Token);
+        using HttpResponseMessage response = await client.SendAsync(request, cancellation);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(response.Headers.RetryAfter);
+        Assert.Empty(await app.Services.GetRequiredService<IDurableEventStore>().LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
+    }
+
+    [Fact]
+    public async Task Ingest_IdentityChangedByPrivacyIsRetryableAndNeverQueued()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await StartAsync(directory, Token, cancellation);
+        using HttpClient client = app.GetTestClient();
+        SecurityEventEnvelope first = AuthenticationFailure() with { EventId = "10040680-c19c-4eec-8ca0-056e33f7f420" };
+        SecurityEventEnvelope second = first with { EventId = "10170680-c19c-4eec-8ca0-056e33f7f420" };
+        foreach (SecurityEventEnvelope candidate in new[] { first, second, first })
+        {
+            using HttpRequestMessage request = Post(candidate, Token);
+            using HttpResponseMessage response = await client.SendAsync(request, cancellation);
+            string body = await response.Content.ReadAsStringAsync(cancellation);
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+            Assert.Equal(TimeSpan.FromSeconds(60), response.Headers.RetryAfter?.Delta);
+            Assert.Contains("event-id-redacted", body, StringComparison.Ordinal);
+            Assert.DoesNotContain(candidate.EventId, body, StringComparison.Ordinal);
+            using JsonDocument json = JsonDocument.Parse(body);
+            Assert.False(json.RootElement.GetProperty("queued").GetBoolean());
+            Assert.False(json.RootElement.GetProperty("duplicate").GetBoolean());
+        }
+        Bower.Abstractions.IDurableEventStore store = app.Services.GetRequiredService<Bower.Abstractions.IDurableEventStore>();
+        Assert.Empty(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
+    }
 
     [Fact]
     public async Task Ingest_RejectsMissingAndWrongTokens()
@@ -60,6 +130,7 @@ public sealed class CollectorHostTests
         string body = await response.Content.ReadAsStringAsync(cancellationToken);
 
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.Null(response.Headers.RetryAfter);
         Assert.Contains("redactandaccept", body, StringComparison.Ordinal);
         Assert.DoesNotContain("never-persist", body, StringComparison.Ordinal);
     }
@@ -502,7 +573,8 @@ public sealed class CollectorHostTests
         string? token,
         CancellationToken cancellationToken,
         Func<CollectorSettings, CollectorSettings>? adjust = null,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        IEventRedactor? redactor = null)
     {
         CollectorSettings settings = BaseSettings(directory.Path) with { IngestToken = token };
         settings = adjust?.Invoke(settings) ?? settings;
@@ -511,6 +583,7 @@ public sealed class CollectorHostTests
             builder =>
             {
                 builder.WebHost.UseTestServer();
+                if (redactor is not null) builder.Services.AddSingleton(redactor);
                 if (clock is not null)
                 {
                     builder.Services.AddSingleton(clock);

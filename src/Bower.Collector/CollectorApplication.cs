@@ -23,6 +23,8 @@ namespace Bower.Collector;
 /// <summary>Composes the collector host. Kept separate from Program for integration tests.</summary>
 public static partial class CollectorApplication
 {
+    // A privacy refusal can remain deterministic until operator or producer remediation.
+    private const string RedactionRetryAfterSeconds = "60";
     public static WebApplication Build(
         CollectorSettings settings,
         Action<WebApplicationBuilder>? configure = null,
@@ -390,7 +392,7 @@ public static partial class CollectorApplication
                                 result.PolicyDecision.Score))
                     { Suppressed = result.Suppressed };
 
-                    int statusCode = result.Action switch
+                    int statusCode = result.RedactionRetryRequired ? StatusCodes.Status503ServiceUnavailable : result.Action switch
                     {
                         DecisionAction.Accept or DecisionAction.RedactAndAccept => result.Duplicate ? 200 : 202,
                         DecisionAction.Reject => 422,
@@ -401,6 +403,10 @@ public static partial class CollectorApplication
                         conflicts.Record(producer, authentication.Required);
                         statusCode = StatusCodes.Status409Conflict;
                         response = response with { Remediation = EventIdentityConflicts.Remediation };
+                    }
+                    if (statusCode == StatusCodes.Status503ServiceUnavailable && result.RedactionRetryRequired)
+                    {
+                        context.Response.Headers.RetryAfter = RedactionRetryAfterSeconds;
                     }
                     return Results.Json(response, CollectorJsonContext.Default.IngestResponse, statusCode: statusCode);
                 })

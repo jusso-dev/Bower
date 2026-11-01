@@ -4,7 +4,7 @@
 use std::cell::Cell;
 use std::panic::{self, AssertUnwindSafe};
 
-use bower_contracts::{EventRedactor, RedactionResult};
+use bower_contracts::{EventRedactor, RedactionContext, RedactionResult, generated_event_ids};
 use indexmap::IndexMap;
 
 use crate::applicator::PolicyApplicator;
@@ -251,11 +251,30 @@ impl PrivacyEngine {
     /// Never panics: any failure, including a panicking custom detector, quarantines the
     /// payload with `redaction-failed` (C# catches every exception the same way).
     pub fn redact_json(&self, json: &str) -> PrivacyScanResult {
-        panic::catch_unwind(AssertUnwindSafe(|| self.redact_json_unguarded(json)))
-            .unwrap_or_else(|_| PrivacyScanResult::fail("redaction-failed"))
+        self.redact_json_with(json, &RedactionContext::default())
     }
 
-    fn redact_json_unguarded(&self, json: &str) -> PrivacyScanResult {
+    /// As [`PrivacyEngine::redact_json`], but the Bower-generated values described by
+    /// `context` skip value detectors (see [`RedactionContext`]). Field rules and length
+    /// limits still apply; a malformed event id exempts nothing.
+    pub fn redact_json_with(
+        &self,
+        json: &str,
+        context: &RedactionContext<'_>,
+    ) -> PrivacyScanResult {
+        let _sensitive = bower_contracts::panic_privacy::protect();
+        let generated = Generated {
+            event_id: context
+                .generated_event_id
+                .filter(|id| generated_event_ids::is_well_formed(id)),
+        };
+        panic::catch_unwind(AssertUnwindSafe(|| {
+            self.redact_json_unguarded(json, generated)
+        }))
+        .unwrap_or_else(|_| PrivacyScanResult::fail("redaction-failed"))
+    }
+
+    fn redact_json_unguarded(&self, json: &str, generated: Generated<'_>) -> PrivacyScanResult {
         if is_null_or_whitespace(json) {
             return PrivacyScanResult::fail("empty-payload");
         }
@@ -273,16 +292,22 @@ impl PrivacyEngine {
 
         // Detector failures and malformed structures (duplicate keys, unpaired
         // surrogates) are security failures: quarantine, never persist.
-        match self.redact_root(&mut root) {
+        match self.redact_root(&mut root, generated) {
             Ok(result) => result,
             Err(RedactionFailed) => PrivacyScanResult::fail("redaction-failed"),
         }
     }
 
-    fn redact_root(&self, root: &mut Object) -> Step<PrivacyScanResult> {
+    fn redact_root(&self, root: &mut Object, generated: Generated<'_>) -> Step<PrivacyScanResult> {
         let mut findings = Vec::new();
         sanitize_change(root, &mut findings)?;
-        self.walk_object(root, "$", &mut findings, &CustomScanBudget::default())?;
+        self.walk_object(
+            root,
+            "$",
+            &mut findings,
+            &CustomScanBudget::default(),
+            generated,
+        )?;
         self.apply_field_rules(root, &mut findings)?;
         self.enforce_field_length_object(root, "$", &mut findings)?;
 
@@ -321,6 +346,7 @@ impl PrivacyEngine {
     /// Scans and sanitises a raw text payload (syslog line, CSV cell, …). Never panics;
     /// failures return `redaction-failed` like [`PrivacyEngine::redact_json`].
     pub fn redact_text(&self, text: &str) -> PrivacyTextResult {
+        let _sensitive = bower_contracts::panic_privacy::protect();
         if text.len() > MAXIMUM_PAYLOAD_BYTES {
             return PrivacyTextResult::fail("payload-too-large");
         }
@@ -347,6 +373,7 @@ impl PrivacyEngine {
         parent_path: &str,
         findings: &mut Vec<AppliedFinding>,
         budget: &CustomScanBudget,
+        generated: Generated<'_>,
     ) -> Step {
         if object.poisoned {
             return Err(RedactionFailed);
@@ -409,9 +436,21 @@ impl PrivacyEngine {
             let Some(child) = object.map.get_mut(&property_name) else {
                 continue;
             };
+            // Only exact string values of the two root identity fields; never nested values.
+            if let (Some(id), Node::String(text)) = (generated.event_id, &*child)
+                && matches!(property_name.as_str(), "eventId" | "eventOriginalId")
+                && !text.invalid
+                && text.value == id
+            {
+                continue;
+            }
             match child {
-                Node::Object(nested) => self.walk_object(nested, &path, findings, budget)?,
-                Node::Array(items) => self.walk_array(items, &path, findings, budget)?,
+                Node::Object(nested) => {
+                    self.walk_object(nested, &path, findings, budget, generated.nested())?
+                }
+                Node::Array(items) => {
+                    self.walk_array(items, &path, findings, budget, generated.nested())?
+                }
                 scalar => self.redact_scalar(scalar, &path, findings, budget)?,
             }
         }
@@ -425,12 +464,17 @@ impl PrivacyEngine {
         path: &str,
         findings: &mut Vec<AppliedFinding>,
         budget: &CustomScanBudget,
+        generated: Generated<'_>,
     ) -> Step {
         for (index, item) in items.iter_mut().enumerate() {
             let item_path = format!("{path}[{index}]");
             match item {
-                Node::Object(nested) => self.walk_object(nested, &item_path, findings, budget)?,
-                Node::Array(nested) => self.walk_array(nested, &item_path, findings, budget)?,
+                Node::Object(nested) => {
+                    self.walk_object(nested, &item_path, findings, budget, generated)?
+                }
+                Node::Array(nested) => {
+                    self.walk_array(nested, &item_path, findings, budget, generated)?
+                }
                 scalar => self.redact_scalar(scalar, &item_path, findings, budget)?,
             }
         }
@@ -859,6 +903,23 @@ impl EventRedactor for PrivacyEngine {
     fn redact(&self, json: &str) -> RedactionResult {
         self.redact_json(json).to_redaction_result()
     }
+
+    fn redact_with(&self, json: &str, context: &RedactionContext<'_>) -> RedactionResult {
+        self.redact_json_with(json, context).to_redaction_result()
+    }
+}
+
+/// The validated [`RedactionContext`] of one scan (C# `PrivacyEngine.Generated`).
+#[derive(Clone, Copy, Default)]
+struct Generated<'a> {
+    event_id: Option<&'a str>,
+}
+
+impl Generated<'_> {
+    /// Below the root the identity exemption no longer applies.
+    fn nested(self) -> Self {
+        Self { event_id: None }
+    }
 }
 
 /// String or number text of a scalar; fails on strings C# cannot read.
@@ -1016,5 +1077,9 @@ impl Default for JsonEventRedactor {
 impl EventRedactor for JsonEventRedactor {
     fn redact(&self, json: &str) -> RedactionResult {
         self.engine.redact(json)
+    }
+
+    fn redact_with(&self, json: &str, context: &RedactionContext<'_>) -> RedactionResult {
+        self.engine.redact_with(json, context)
     }
 }

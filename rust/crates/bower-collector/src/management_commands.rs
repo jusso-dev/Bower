@@ -1134,6 +1134,8 @@ impl CommandWorker {
             Ok(result) if result.action == DecisionAction::Reject => "rejected",
             Ok(_) => "quarantined",
             Err(ProcessError::Store(StoreError::Full(_))) => "failed",
+            Err(ProcessError::EventIdRedacted) => "failed",
+            Err(ProcessError::RedactionUnavailable) => "failed",
             Err(ProcessError::Store(_)) => return Err("SqliteException"),
             Err(ProcessError::Serialization(_)) => return Err("JsonException"),
         };

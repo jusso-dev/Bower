@@ -4,6 +4,7 @@
 mod support;
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use bower_contracts::envelope::DecisionAction;
 use bower_contracts::types::event_types;
@@ -181,19 +182,144 @@ fn process_deduplicates_stable_source_event() {
 }
 
 #[test]
-fn redaction_failure_or_panic_quarantines_without_persisting() {
+fn changed_or_removed_root_identity_is_retryable_without_persistence_or_exposure() {
+    let store = Arc::new(MemoryStore::default());
+    for original_id in ["sensitive-id-1111", "sensitive-id-2222"] {
+        let input = authentication_failure_json("").replace("event-1", original_id);
+        for output in [
+            input.replace(original_id, "same-redacted-id"),
+            input.replace(&format!("\"eventId\":\"{original_id}\","), ""),
+            "{bad-json".to_owned(),
+            "[]".to_owned(),
+            input.replace(
+                &format!("\"eventId\":\"{original_id}\","),
+                &format!("\"eventId\":\"{original_id}\",\"eventId\":\"{original_id}\","),
+            ),
+        ] {
+            let redactor = FixedRedactor(RedactionResult {
+                succeeded: true,
+                redacted_json: Some(output),
+                ..RedactionResult::default()
+            });
+            let error = processor(redactor, &store)
+                .process(&input, &identity())
+                .unwrap_err();
+            assert!(matches!(error, ProcessError::EventIdRedacted));
+            assert_eq!(error.to_string(), "event-id-redacted");
+            assert!(store.items().is_empty());
+        }
+    }
+}
+
+#[test]
+fn malformed_or_ambiguous_original_identity_is_schema_invalid() {
+    let store = Arc::new(MemoryStore::default());
+    let valid = authentication_failure_json("");
+    let duplicate = valid.replace(
+        "\"eventId\":\"event-1\",",
+        "\"eventId\":\"event-1\",\"eventId\":\"event-2\",",
+    );
+    for input in ["{bad-json", "[]", duplicate.as_str()] {
+        let redactor = FixedRedactor(RedactionResult {
+            succeeded: true,
+            redacted_json: Some(valid.clone()),
+            ..RedactionResult::default()
+        });
+        let result = processor(redactor, &store)
+            .process(input, &identity())
+            .unwrap();
+        assert_eq!(result.stage, bower_core::ProcessingStage::Schema);
+        assert_eq!(result.reasons, ["schema-invalid"]);
+        assert!(store.items().is_empty());
+        let failed = processor(
+            FixedRedactor(RedactionResult::failed("sensitive-marker")),
+            &store,
+        )
+        .process(input, &identity())
+        .unwrap();
+        assert_eq!(failed.stage, bower_core::ProcessingStage::Schema);
+        assert_eq!(failed.reasons, ["schema-invalid"]);
+    }
+    let incomplete = processor(
+        FixedRedactor(RedactionResult::failed("secret-marker")),
+        &store,
+    )
+    .process("{\"eventId\":\"x\"}", &identity())
+    .unwrap();
+    assert_eq!(incomplete.reasons, ["schema-invalid"]);
+}
+
+#[test]
+fn redaction_precedes_identity_parsing_but_oversized_input_is_rejected_first() {
+    struct CountingRedactor(Arc<AtomicUsize>, String);
+    impl bower_contracts::EventRedactor for CountingRedactor {
+        fn redact(&self, _json: &str) -> RedactionResult {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            RedactionResult {
+                succeeded: true,
+                redacted_json: Some(self.1.clone()),
+                ..RedactionResult::default()
+            }
+        }
+    }
+
+    let store = Arc::new(MemoryStore::default());
+    let calls = Arc::new(AtomicUsize::new(0));
+    let valid = authentication_failure_json("");
+    let duplicate = valid.replace(
+        "\"eventId\":\"event-1\",",
+        "\"eventId\":\"event-1\",\"eventId\":\"event-2\",",
+    );
+    let subject = processor(CountingRedactor(calls.clone(), valid), &store);
+    for (index, input) in ["{bad-json", duplicate.as_str()].iter().enumerate() {
+        let result = subject.process(input, &identity()).unwrap();
+        assert_eq!(result.reasons, ["schema-invalid"]);
+        assert_eq!(calls.load(Ordering::SeqCst), index + 1);
+    }
+    let oversized = "x".repeat(1_048_577);
+    let result = subject.process(&oversized, &identity()).unwrap();
+    assert_eq!(result.reasons, ["schema-invalid"]);
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert!(store.items().is_empty());
+}
+
+#[test]
+fn redaction_corrupting_an_otherwise_valid_envelope_is_retryable() {
+    let store = Arc::new(MemoryStore::default());
+    let valid = authentication_failure_json("");
+    let corrupt = valid.replace("\"eventResult\":\"failure\"", "\"eventResult\":123");
+    let make_redactor = || {
+        FixedRedactor(RedactionResult {
+            succeeded: true,
+            redacted_json: Some(corrupt.clone()),
+            ..RedactionResult::default()
+        })
+    };
+    assert!(matches!(
+        processor(make_redactor(), &store).process(&valid, &identity()),
+        Err(ProcessError::RedactionUnavailable)
+    ));
+    let invalid_original = valid.replace("\"eventResult\":\"failure\"", "\"eventResult\":456");
+    let result = processor(make_redactor(), &store)
+        .process(&invalid_original, &identity())
+        .unwrap();
+    assert_eq!(result.reasons, ["schema-invalid"]);
+    assert!(store.items().is_empty());
+}
+
+#[test]
+fn redaction_failure_or_panic_retries_without_persisting_or_exposing_details() {
     let store = Arc::new(MemoryStore::default());
     let json = authentication_failure_json("");
 
     let failed = processor(
-        FixedRedactor(RedactionResult::failed("depth-exceeded")),
+        FixedRedactor(RedactionResult::failed("sensitive-failure-marker")),
         &store,
     )
     .process(&json, &identity())
-    .unwrap();
-    assert_eq!(failed.action, DecisionAction::Quarantine);
-    assert_eq!(failed.reasons, ["depth-exceeded"]);
-    assert!(failed.event_id.is_none());
+    .unwrap_err();
+    assert!(matches!(failed, ProcessError::RedactionUnavailable));
+    assert_eq!(failed.to_string(), "redaction-unavailable");
 
     let no_json = RedactionResult {
         succeeded: true,
@@ -201,15 +327,28 @@ fn redaction_failure_or_panic_quarantines_without_persisting() {
     };
     let missing = processor(FixedRedactor(no_json), &store)
         .process(&json, &identity())
-        .unwrap();
-    assert_eq!(missing.reasons, ["redaction-failed"]);
+        .unwrap_err();
+    assert!(matches!(missing, ProcessError::RedactionUnavailable));
 
     let panicked = processor(PanickingRedactor, &store)
         .process(&json, &identity())
-        .unwrap();
-    assert_eq!(panicked.action, DecisionAction::Quarantine);
-    assert_eq!(panicked.reasons, ["redaction-failed"]);
+        .unwrap_err();
+    assert!(matches!(panicked, ProcessError::RedactionUnavailable));
     assert!(store.items().is_empty());
+}
+
+#[test]
+fn redactor_panic_is_not_written_to_stderr() {
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "redaction_failure_or_panic_retries_without_persisting_or_exposing_details",
+            "--nocapture",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("detector crashed"));
 }
 
 #[test]

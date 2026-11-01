@@ -9,6 +9,7 @@ use bower_collector::{
 use tracing::info;
 
 fn main() -> ExitCode {
+    bower_contracts::panic_privacy::install();
     if std::env::args()
         .skip(1)
         .any(|argument| argument == "--healthcheck")

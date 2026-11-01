@@ -612,7 +612,7 @@ fn activity_is_tracked_from_accepted_events_and_survives_restart() {
     clock.advance(180);
     pipeline.process(&accepted, &identity).unwrap();
     pipeline.process(&rejected, &identity).unwrap();
-    // C# runs the real redactor, which rejects a non-object: redaction stage.
+    // A non-object has no unambiguous root identity: schema-invalid without processing.
     let failing = SecurityEventProcessor::new(
         Arc::new(support::FixedRedactor(RedactionResult::failed(
             "schema-invalid",
@@ -661,9 +661,10 @@ fn activity_is_tracked_from_accepted_events_and_survives_restart() {
         && row.policy_id == "BWR-POL-DEFAULT-DENY"
         && row.action == "reject"));
     assert!(
-        metrics.rows.iter().any(|row| row.stage == "redaction"
-            && row.policy_id == "-"
-            && row.action == "quarantine")
+        metrics
+            .rows
+            .iter()
+            .any(|row| row.stage == "schema" && row.policy_id == "-" && row.action == "quarantine")
     );
     assert!(metrics.bytes_queued > 0);
 }

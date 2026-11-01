@@ -10,6 +10,7 @@ using Bower.Contracts;
 using Bower.Core;
 using Bower.Integrity;
 using Bower.Packs;
+using Bower.Redaction.Privacy;
 using Bower.Source.Syslog;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -83,6 +84,118 @@ public sealed class SyslogCollectorTests
         Assert.NotEqual(JsonValueKind.Null, expected.GetProperty("lastSeenAt").ValueKind);
         Assert.DoesNotContain("deploy-admin", body, StringComparison.Ordinal);
         Assert.DoesNotContain("secret-marker", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GeneratedEventId_SkipsContentDetectorsWhileTheSameValueFromAProducerIsScanned()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await Start(directory, cancellation);
+        SyslogSource source = app.Services.GetRequiredService<SyslogSource>();
+        IDurableEventStore store = app.Services.GetRequiredService<IDurableEventStore>();
+
+        // The test pack's privacy profile adds a custom detector for 32-character hex
+        // values, as operators do for generic API keys: it matches every record id.
+        DateTimeOffset at = DateTimeOffset.UtcNow;
+        string frame = Frame("failure", "lab-user-1", at);
+        string id = SyslogId("edge", "127.0.0.1", frame);
+
+        using TcpClient client = new(AddressFamily.InterNetwork);
+        await client.ConnectAsync(source.Endpoints["edge"], cancellation);
+        await Send(client.GetStream(), frame, cancellation);
+        await WaitFor(source, status => status.Queued == 1, cancellation);
+        QueuedEvent row = Assert.Single(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
+        SecurityEventEnvelope stored = JsonSerializer.Deserialize(row.Payload, BowerJson.Envelope)!;
+        Assert.Equal(id, row.EventId);
+        Assert.Equal(id, stored.EventId);
+        Assert.Equal(id, stored.EventOriginalId);
+        Assert.DoesNotContain("custom.hex-digest", row.Payload, StringComparison.Ordinal);
+        // Source text in the same record is still redacted.
+        Assert.DoesNotContain("secret-marker", row.Payload, StringComparison.Ordinal);
+        Assert.DoesNotContain("lab-user-", row.Payload, StringComparison.Ordinal);
+
+        // The same characters sent by a producer are source data: still scanned. Because
+        // masking changes the identity, the caller must retain and retry the record.
+        using HttpClient http = app.GetTestClient();
+        using HttpRequestMessage request = new(HttpMethod.Post, "/v1/events")
+        {
+            Content = new StringContent($$"""
+                {"schemaVersion":"1.0.0","eventId":"{{id}}","timeGenerated":"{{at:O}}","eventCategory":"authentication",
+                 "eventType":"authentication_failure","eventAction":"authentication.attempt","eventResult":"failure",
+                 "application":{"name":"ssh-gateway","environment":"production"},"actor":{"username":"producer"} }
+                """, Encoding.UTF8, "application/json")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Token);
+        using HttpResponseMessage response = await http.SendAsync(request, cancellation);
+        using JsonDocument answer = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellation));
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal(JsonValueKind.Null, answer.RootElement.GetProperty("eventId").ValueKind);
+        Assert.Contains("event-id-redacted", answer.RootElement.GetProperty("reasons").ToString(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("""{"id":"syslog-0123456789abcdef0123456789abcdef","message":"x"}""", "syslog-0123456789abcdef0123456789abcdef")]
+    [InlineData("""{"message":"x","id":"syslog-0123456789abcdef0123456789abcdef"}""", null)]
+    [InlineData("""{"id":"syslog-0123456789ABCDEF0123456789ABCDEF"}""", null)]
+    [InlineData("""{"id":"4111111111111111"}""", null)]
+    [InlineData("""{"id":17}""", null)]
+    [InlineData("""[{"id":"syslog-0123456789abcdef0123456789abcdef"}]""", null)]
+    [InlineData("not json", null)]
+    public void GeneratedRecordId_IsOnlyTheSourcesLeadingWellFormedId(string record, string? expected) =>
+        Assert.Equal(expected, GeneratedEventIds.FromSourceRecord(record));
+
+    // Shared with the Rust port (bower-collector tests/syslog_source.rs).
+    private const string HexDigestDetector = """
+        customDetectors:
+          - id: custom.hex-digest
+            description: Test detector for 32-character lowercase hex values.
+            pattern: '[0-9a-f]{32}'
+            action: mask
+            tests:
+              match: ['0123456789abcdef0123456789abcdef']
+
+        """;
+
+    private static string SyslogId(string listener, string sender, string frame)
+    {
+        byte[] material = [.. Encoding.UTF8.GetBytes(listener), 0x1F, .. Encoding.UTF8.GetBytes(sender), 0x1F, .. Encoding.UTF8.GetBytes(frame)];
+        return "syslog-" + Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(material))[..32];
+    }
+
+    [Theory]
+    [InlineData("mask")]
+    [InlineData("remove")]
+    public async Task RedactedIdentity_RetriesTcpAndCountsUdpDropWithoutQueueing(string identityAction)
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await Start(directory, cancellation, identityAction: identityAction);
+        SyslogSource source = app.Services.GetRequiredService<SyslogSource>();
+        IDurableEventStore store = app.Services.GetRequiredService<IDurableEventStore>();
+        using TcpClient tcp = new(AddressFamily.InterNetwork);
+        await tcp.ConnectAsync(source.Endpoints["edge"], cancellation);
+        await Send(tcp.GetStream(), Frame("failure"), cancellation);
+        await WaitFor(source, status => status.Retries >= 2, cancellation);
+        using UdpClient udp = new(AddressFamily.InterNetwork);
+        await udp.SendAsync(Encoding.UTF8.GetBytes(Frame("failure", "udp-user")), source.Endpoints["edge-udp"], cancellation);
+        await WaitFor(source, status => status.Dropped == 1, cancellation, "edge-udp");
+        using HttpClient http = app.GetTestClient();
+        using HttpRequestMessage request = new(HttpMethod.Post, "/v1/packs/linux-ssh-gateway/parsers/0/events")
+        {
+            Content = new StringContent($$"""
+                {"id":"http-pack-source-id","timestamp":"{{DateTimeOffset.UtcNow:O}}","appName":"sshd",
+                 "sd.auth@32473.result":"failure","sd.auth@32473.user":"user","sd.auth@32473.src":"203.0.113.5"}
+                """, Encoding.UTF8, "application/json")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Token);
+        using HttpResponseMessage response = await http.SendAsync(request, cancellation);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal(TimeSpan.FromSeconds(60), response.Headers.RetryAfter?.Delta);
+        string responseBody = await response.Content.ReadAsStringAsync(cancellation);
+        Assert.Contains("event-id-redacted", responseBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("http-pack-source-id", responseBody, StringComparison.Ordinal);
+        Assert.Empty(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
     }
 
     [Fact]
@@ -195,8 +308,8 @@ public sealed class SyslogCollectorTests
             JsonSerializer.Serialize<IReadOnlyList<SyslogListenerStatus>>([status], SyslogJsonContext.Default.IReadOnlyListSyslogListenerStatus)[1..^1]);
     }
 
-    private static string Frame(string result, string user = "deploy-admin") =>
-        $"<38>1 {DateTimeOffset.UtcNow:yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'} gw01 sshd 4242 auth " +
+    private static string Frame(string result, string user = "deploy-admin", DateTimeOffset? at = null) =>
+        $"<38>1 {at ?? DateTimeOffset.UtcNow:yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'} gw01 sshd 4242 auth " +
         $"[auth@32473 user=\"{user}\" src=\"203.0.113.5\" result=\"{result}\"] Failed password secret-marker";
 
     private static async Task Send(NetworkStream stream, string frame, CancellationToken cancellation)
@@ -220,7 +333,7 @@ public sealed class SyslogCollectorTests
     }
 
     private static async Task<WebApplication> Start(TemporaryDirectory directory, CancellationToken cancellation, int parser = 0,
-        string[]? transforms = null)
+        string[]? transforms = null, string? identityAction = null)
     {
         string pack = Path.Combine(directory.Path, "syslog-pack");
         foreach (string path in Directory.EnumerateFiles(PackSource, "*", SearchOption.AllDirectories))
@@ -231,8 +344,23 @@ public sealed class SyslogCollectorTests
         }
 
         File.WriteAllText(Path.Combine(pack, "parsers", "sshd-json.json"), SyslogParser(transforms));
+        if (identityAction is not null)
+        {
+            string privacyPath = Path.Combine(pack, "privacy.yaml");
+            File.WriteAllText(privacyPath, File.ReadAllText(privacyPath).Replace("fields:\n", $"fields:\n  - path: eventId\n    action: {identityAction}\n", StringComparison.Ordinal));
+        }
+        File.AppendAllText(Path.Combine(pack, "privacy.yaml"), HexDigestDetector);
         string samples = Path.Combine(pack, "samples", "ssh.jsonl");
-        File.WriteAllLines(samples, File.ReadAllLines(samples).Where(line => !line.Contains("\"raw\":", StringComparison.Ordinal)));
+        string[] sampleLines = File.ReadAllLines(samples).Where(line => !line.Contains("\"raw\":", StringComparison.Ordinal)).ToArray();
+        if (identityAction is not null)
+        {
+            JsonObject sample = JsonNode.Parse(sampleLines[0])!.AsObject();
+            sample["expect"] = "quarantine";
+            sample.Remove("expectFields");
+            sample.Remove("expectedDetections");
+            sampleLines = [sample.ToJsonString()];
+        }
+        File.WriteAllLines(samples, sampleLines);
         (string privateKey, string publicKey, _) = DetachedSigner.GenerateKeyPair();
         string archive = PackArchive.Build(pack, privateKey, directory.Path);
         string trust = Path.Combine(directory.Path, "trusted.pem");

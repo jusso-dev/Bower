@@ -80,6 +80,31 @@ fn settings_with_event_type(
     transforms: &[&str],
     event_type: &str,
 ) -> CollectorSettings {
+    settings_with_options(directory, parser, transforms, event_type, false)
+}
+
+fn settings_with_identity_rule(
+    directory: &Path,
+    parser: usize,
+    transforms: &[&str],
+    alter_identity: bool,
+) -> CollectorSettings {
+    settings_with_options(
+        directory,
+        parser,
+        transforms,
+        "authentication_failure",
+        alter_identity,
+    )
+}
+
+fn settings_with_options(
+    directory: &Path,
+    parser: usize,
+    transforms: &[&str],
+    event_type: &str,
+    alter_identity: bool,
+) -> CollectorSettings {
     let pack = directory.join("syslog-pack");
     copy_directory(&repo_root().join("packs/linux-ssh-gateway"), &pack);
     std::fs::write(
@@ -87,6 +112,19 @@ fn settings_with_event_type(
         syslog_parser(transforms, event_type),
     )
     .unwrap();
+    // Same test detector as the C# SyslogCollectorTests: it matches every record id.
+    let privacy = pack.join("privacy.yaml");
+    let mut profile = std::fs::read_to_string(&privacy).unwrap();
+    if alter_identity {
+        profile = profile.replace(
+            "maximumFieldLength:",
+            "  - path: eventId\n    action: sha256\nmaximumFieldLength:",
+        );
+    }
+    profile.push_str(
+        "customDetectors:\n  - id: custom.hex-digest\n    description: Test detector for 32-character lowercase hex values.\n    pattern: '[0-9a-f]{32}'\n    action: mask\n    tests:\n      match: ['0123456789abcdef0123456789abcdef']\n",
+    );
+    std::fs::write(&privacy, profile).unwrap();
     let samples = pack.join("samples/ssh.jsonl");
     let kept: Vec<String> = std::fs::read_to_string(&samples)
         .unwrap()
@@ -322,6 +360,132 @@ async fn selected_frame_is_redacted_durably_queued_deduplicated_and_keeps_the_so
     assert_eq!(sources[0]["application"], "ssh-gateway");
     assert_eq!(sources[0]["state"], "active");
     assert!(!sources[0]["lastSeenAt"].is_null());
+    started.stop().await;
+}
+
+#[tokio::test]
+async fn generated_event_id_skips_content_detectors_while_the_same_value_from_a_producer_is_scanned()
+ {
+    let directory = tempfile::tempdir().unwrap();
+    let started = start(directory.path()).await;
+    // The test pack's privacy profile adds a custom detector for 32-character hex values,
+    // as operators do for generic API keys: it matches every record id.
+    let counted = frame("failure", "lab-user-1");
+    let payload = counted.split_once(' ').unwrap().1.to_owned();
+    let id = bower_source_syslog::record::event_id("edge", "127.0.0.1", payload.as_bytes(), None);
+
+    let mut client = TcpStream::connect(started.endpoints["edge"]).await.unwrap();
+    client.write_all(counted.as_bytes()).await.unwrap();
+    started
+        .listener("edge", |listener| count(listener, "queued") == 1)
+        .await;
+    let rows = started.store.lease(10, Duration::from_secs(60)).unwrap();
+    let [row] = rows.as_slice() else {
+        panic!("expected one queued syslog event")
+    };
+    let stored: serde_json::Value = serde_json::from_str(&row.payload).unwrap();
+    assert_eq!(row.event_id, id);
+    assert_eq!(stored["eventId"], id.as_str());
+    assert_eq!(stored["eventOriginalId"], id.as_str());
+    assert!(!row.payload.contains("custom.hex-digest"));
+    // Source text in the same record is still redacted.
+    assert!(!row.payload.contains("secret-marker") && !row.payload.contains("lab-user-"));
+
+    // The same characters sent by a producer are source data: still scanned and masked.
+    let event = serde_json::json!({
+        "schemaVersion": "1.0.0", "eventId": id, "timeGenerated": stored["timeGenerated"],
+        "eventCategory": "authentication", "eventType": "authentication_failure",
+        "eventAction": "authentication.attempt", "eventResult": "failure",
+        "application": { "name": "ssh-gateway", "environment": "production" },
+        "actor": { "username": "producer" }
+    });
+    let request = Request::post("/v1/events")
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(event.to_string()))
+        .unwrap();
+    let response = started
+        .collector_router
+        .clone()
+        .oneshot(request)
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        axum::http::StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert_eq!(response.headers()[header::RETRY_AFTER], "60");
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let answer: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        answer,
+        serde_json::json!({
+            "eventId": null, "decision": "quarantine", "queued": false,
+            "duplicate": false, "reasons": ["event-id-redacted"], "policy": null
+        })
+    );
+    assert!(!body.windows(id.len()).any(|window| window == id.as_bytes()));
+    assert_eq!(started.store.snapshot().unwrap().queued, 0);
+    started.stop().await;
+}
+
+#[tokio::test]
+async fn altered_identity_holds_tcp_frames_and_counts_udp_loss() {
+    let directory = tempfile::tempdir().unwrap();
+    let settings = settings_with_identity_rule(directory.path(), 0, &[], true);
+    let started = start_settings(settings).await;
+    let selected = frame("failure", "lab-user");
+    let mut client = TcpStream::connect(started.endpoints["edge"]).await.unwrap();
+    client.write_all(selected.as_bytes()).await.unwrap();
+    started
+        .listener("edge", |listener| count(listener, "retries") > 0)
+        .await;
+    assert_eq!(started.store.snapshot().unwrap().queued, 0);
+    let udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let datagram = selected.split_once(' ').unwrap().1;
+    udp.send_to(datagram.as_bytes(), started.endpoints["edge-udp"])
+        .await
+        .unwrap();
+    started
+        .listener("edge-udp", |listener| count(listener, "dropped") > 0)
+        .await;
+    assert_eq!(started.store.snapshot().unwrap().queued, 0);
+    // The same signed-pack detection wrapper must not hide an altered identity
+    // from HTTP callers either.
+    let event = serde_json::json!({
+        "schemaVersion": "1.0.0", "eventId": "source-identity-sensitive",
+        "timeGenerated": bower_contracts::time::now().to_rfc3339(),
+        "eventCategory": "authentication", "eventType": "authentication_failure",
+        "eventAction": "authentication.attempt", "eventResult": "failure",
+        "application": { "name": "ssh-gateway", "environment": "production" }
+    });
+    let response = started
+        .collector_router
+        .clone()
+        .oneshot(
+            Request::post("/v1/events")
+                .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(event.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        axum::http::StatusCode::SERVICE_UNAVAILABLE
+    );
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&body).unwrap()["reasons"],
+        serde_json::json!(["event-id-redacted"])
+    );
+    assert!(!String::from_utf8_lossy(&body).contains("source-identity-sensitive"));
+    assert_eq!(started.store.snapshot().unwrap().queued, 0);
     started.stop().await;
 }
 

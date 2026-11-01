@@ -24,7 +24,7 @@ use bower_collector::app::{MAXIMUM_PAYLOAD_BYTES, PolicyReference, raw_json_text
 use bower_collector::authorization::ProducerAuthorization;
 use bower_contracts::time::Clock;
 use bower_contracts::{DecisionAction, EventRedactor, QueuedEvent, TelemetryPolicyEvaluator};
-use bower_core::{CollectorIdentity, ProcessingResult, SecurityEventProcessor};
+use bower_core::{CollectorIdentity, ProcessError, ProcessingResult, SecurityEventProcessor};
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use tracing::{info, warn};
@@ -224,6 +224,7 @@ fn error(kind: InvocationKind, status: u16, message: &'static str) -> Invocation
 enum Element {
     Forbidden,
     Failed,
+    Retry(&'static str),
     Processed(Box<ProcessedElement>),
 }
 
@@ -526,11 +527,23 @@ impl<S: AuditSink> Handler<S> {
                 if !self.authorization.is_authorized(producer, candidate) {
                     return (Element::Forbidden, Vec::new());
                 }
-                let processed =
-                    catch_unwind(AssertUnwindSafe(|| processor.process(candidate, &identity)));
+                let _guard = bower_contracts::panic_privacy::protect();
+                let processed = guarded_process(|| processor.process(candidate, &identity));
                 let result = match processed {
-                    Ok(Ok(result)) => result,
-                    Ok(Err(_)) | Err(_) => {
+                    Some(Ok(result)) => result,
+                    Some(Err(
+                        error
+                        @ (ProcessError::EventIdRedacted | ProcessError::RedactionUnavailable),
+                    )) => {
+                        let code = match error {
+                            ProcessError::EventIdRedacted => "event-id-redacted",
+                            _ => "redaction-unavailable",
+                        };
+                        drop(store.take_new());
+                        drop(store.take_duplicates());
+                        return (Element::Retry(code), Vec::new());
+                    }
+                    Some(Err(_)) | None => {
                         warn!(failure_type = "processing", "Event processing failed.");
                         // Drop anything a failed element managed to capture.
                         drop(store.take_new());
@@ -761,6 +774,10 @@ fn respond(
             summary.retry += 1;
             return (500, empty(500, "Event processing failed."));
         }
+        Element::Retry(code) => {
+            summary.retry += 1;
+            return (503, empty(503, code));
+        }
         Element::Processed(processed) => processed.result,
     };
 
@@ -856,9 +873,35 @@ fn respond(
     )
 }
 
+fn guarded_process<T>(operation: impl FnOnce() -> T) -> Option<T> {
+    let _guard = bower_contracts::panic_privacy::protect();
+    catch_unwind(AssertUnwindSafe(operation)).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lambda_guarded_processing_does_not_report_sensitive_panic() {
+        const CHILD: &str = "BOWER_LAMBDA_PANIC_TEST_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            assert!(guarded_process(|| panic!("lambda-sensitive-panic-5761")).is_none());
+            return;
+        }
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "handler::tests::lambda_guarded_processing_does_not_report_sensitive_panic",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("lambda-sensitive-panic-5761"));
+    }
 
     fn delivery(status: &'static str) -> DeliveryReport {
         DeliveryReport {

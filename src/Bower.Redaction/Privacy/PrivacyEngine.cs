@@ -40,6 +40,9 @@ public sealed partial class PrivacyEngine : IEventRedactor
 
     public RedactionResult Redact(string json) => RedactJson(json).ToRedactionResult();
 
+    public RedactionResult Redact(string json, RedactionContext context) =>
+        RedactJson(json, context).ToRedactionResult();
+
     /// <summary>
     /// Detector ids that warrant a first-class SOC security event when observed.
     /// High-risk regulated AU identifiers, secrets and crypto — not routine email mask noise.
@@ -86,8 +89,16 @@ public sealed partial class PrivacyEngine : IEventRedactor
             or DetectorIds.SecurityMarking;
     }
 
-    public PrivacyScanResult RedactJson(string json)
+    public PrivacyScanResult RedactJson(string json) => RedactJson(json, RedactionContext.None);
+
+    /// <summary>
+    /// As <see cref="RedactJson(string)"/>, but the Bower-generated values described by
+    /// <paramref name="context"/> skip value detectors (see <see cref="RedactionContext"/>).
+    /// Field rules and length limits still apply; a malformed event id exempts nothing.
+    /// </summary>
+    public PrivacyScanResult RedactJson(string json, RedactionContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
         if (string.IsNullOrWhiteSpace(json))
         {
             return PrivacyScanResult.Fail("empty-payload");
@@ -116,7 +127,9 @@ public sealed partial class PrivacyEngine : IEventRedactor
 
             List<AppliedFinding> findings = [];
             SanitizeChange(rootObject, findings);
-            WalkObject(rootObject, "$", findings, new CustomScanBudget());
+            Generated generated = new(
+                GeneratedEventIds.IsWellFormed(context.GeneratedEventId) ? context.GeneratedEventId : null);
+            WalkObject(rootObject, "$", findings, new CustomScanBudget(), generated, root: true);
             ApplyFieldRules(rootObject, findings);
             EnforceFieldLength(rootObject, "$", findings);
 
@@ -188,7 +201,13 @@ public sealed partial class PrivacyEngine : IEventRedactor
         }
     }
 
-    private void WalkObject(JsonObject value, string parentPath, List<AppliedFinding> findings, CustomScanBudget budget)
+    private void WalkObject(
+        JsonObject value,
+        string parentPath,
+        List<AppliedFinding> findings,
+        CustomScanBudget budget,
+        Generated generated,
+        bool root = false)
     {
         int redactedKeyIndex = 0;
         string keyPath = $"{parentPath}.[key]";
@@ -245,6 +264,11 @@ public sealed partial class PrivacyEngine : IEventRedactor
             }
 
             string path = $"{parentPath}.{propertyName}";
+            if (root && generated.EventId is { } id && IsGeneratedIdentity(propertyName, child, id))
+            {
+                continue;
+            }
+
             if (child is JsonValue jsonValue && TryGetScannableText(jsonValue, out string? text))
             {
                 string redacted = ApplyDetectorsToValue(text, path, findings, budget);
@@ -258,27 +282,37 @@ public sealed partial class PrivacyEngine : IEventRedactor
 
             if (child is JsonObject childObject)
             {
-                WalkObject(childObject, path, findings, budget);
+                WalkObject(childObject, path, findings, budget, generated);
             }
             else if (child is JsonArray array)
             {
-                WalkArray(array, path, findings, budget);
+                WalkArray(array, path, findings, budget, generated);
             }
         }
     }
 
-    private void WalkArray(JsonArray array, string path, List<AppliedFinding> findings, CustomScanBudget budget)
+    /// <summary>The validated <see cref="RedactionContext"/> of one scan.</summary>
+    private readonly record struct Generated(string? EventId);
+
+    /// <summary>Only exact string values of the two root identity fields; never nested values.</summary>
+    private static bool IsGeneratedIdentity(string propertyName, JsonNode? child, string generatedEventId) =>
+        propertyName is "eventId" or "eventOriginalId"
+        && child is JsonValue value
+        && value.GetValueKind() == JsonValueKind.String
+        && string.Equals(value.GetValue<string>(), generatedEventId, StringComparison.Ordinal);
+
+    private void WalkArray(JsonArray array, string path, List<AppliedFinding> findings, CustomScanBudget budget, Generated generated)
     {
         for (int index = 0; index < array.Count; index++)
         {
             string itemPath = $"{path}[{index}]";
             if (array[index] is JsonObject nested)
             {
-                WalkObject(nested, itemPath, findings, budget);
+                WalkObject(nested, itemPath, findings, budget, generated);
             }
             else if (array[index] is JsonArray nestedArray)
             {
-                WalkArray(nestedArray, itemPath, findings, budget);
+                WalkArray(nestedArray, itemPath, findings, budget, generated);
             }
             else if (array[index] is JsonValue arrayValue &&
                      TryGetScannableText(arrayValue, out string? arrayText))

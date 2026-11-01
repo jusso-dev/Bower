@@ -64,6 +64,10 @@ pub struct ProcessingOutcome {
 pub enum ProcessFailure {
     /// `QueueCapacityExceededException`: backpressure, producers retry later.
     QueueFull,
+    /// Redaction changed the identity; producer must retain and retry the event.
+    EventIdRedacted,
+    /// The privacy pipeline is unavailable; producer must retain and retry.
+    RedactionUnavailable,
     /// Any other failure; the type name only (never payload text).
     Other(&'static str),
 }
@@ -522,6 +526,31 @@ async fn ingest_candidate(
                     error: "Collector queue is at capacity; retry later.",
                 },
             );
+        }
+        Ok(Err(
+            failure @ (ProcessFailure::EventIdRedacted | ProcessFailure::RedactionUnavailable),
+        )) => {
+            let reason = match failure {
+                ProcessFailure::EventIdRedacted => "event-id-redacted",
+                _ => "redaction-unavailable",
+            };
+            let mut response = json_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                &IngestResponse {
+                    event_id: None,
+                    decision: "quarantine".into(),
+                    queued: false,
+                    duplicate: false,
+                    reasons: vec![reason.into()],
+                    policy: None,
+                    remediation: None,
+                    suppressed: false,
+                },
+            );
+            response
+                .headers_mut()
+                .insert(header::RETRY_AFTER, HeaderValue::from_static("60"));
+            return response;
         }
         Ok(Err(ProcessFailure::Other(failure))) => {
             error!(failure_type = failure, "Event processing failed.");

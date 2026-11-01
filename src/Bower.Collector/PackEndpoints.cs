@@ -106,7 +106,7 @@ public static partial class CollectorApplication
                     result.Queued, result.Duplicate, result.Reasons,
                     result.PolicyDecision is null ? null : new IngestPolicyResponse(result.PolicyDecision.PolicyId,
                         result.PolicyDecision.PolicyVersion, result.PolicyDecision.PolicyHash, result.PolicyDecision.Score));
-                int status = result.Action switch
+                int status = result.RedactionRetryRequired ? StatusCodes.Status503ServiceUnavailable : result.Action switch
                 {
                     DecisionAction.Accept or DecisionAction.RedactAndAccept => result.Duplicate ? 200 : 202,
                     DecisionAction.Reject => 422,
@@ -117,6 +117,10 @@ public static partial class CollectorApplication
                     conflicts.Record(producer, authentication.Required);
                     status = StatusCodes.Status409Conflict;
                     response = response with { Remediation = EventIdentityConflicts.Remediation };
+                }
+                if (status == StatusCodes.Status503ServiceUnavailable && result.RedactionRetryRequired)
+                {
+                    context.Response.Headers.RetryAfter = RedactionRetryAfterSeconds;
                 }
                 return Results.Json(response, CollectorJsonContext.Default.IngestResponse, statusCode: status);
             })

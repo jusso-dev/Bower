@@ -128,6 +128,8 @@ impl EventProcessor for CoreProcessor {
                 suppressed: result.suppressed,
             }),
             Err(ProcessError::Store(error)) => Err(error.into()),
+            Err(ProcessError::EventIdRedacted) => Err(ProcessFailure::EventIdRedacted),
+            Err(ProcessError::RedactionUnavailable) => Err(ProcessFailure::RedactionUnavailable),
             Err(ProcessError::Serialization(_)) => Err(ProcessFailure::Other("JsonException")),
         }
     }
