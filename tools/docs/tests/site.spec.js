@@ -24,9 +24,9 @@ for (const [scheme, oldIndex, newIndex] of [['default', 0, 1], ['slate', 1, 0]])
 }
 
 for (const theme of ['light', 'dark']) {
-  test(`accessible documentation in ${theme} mode`, async ({ page }) => {
-    await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
-    for (const path of pages) {
+  for (const path of pages) {
+    test(`accessible documentation ${path || 'home'} in ${theme} mode`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
       await page.goto(path || './');
       if (theme === 'light' && await page.locator('body').getAttribute('data-md-color-scheme') !== 'default') {
         await page.locator('label[title="Switch to light mode"]').click();
@@ -35,8 +35,8 @@ for (const theme of ['light', 'dark']) {
       await page.evaluate(() => document.fonts.ready);
       const result = await new AxeBuilder({ page }).analyze();
       expect(result.violations, `${theme} ${path}: ${JSON.stringify(result.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })))}`).toEqual([]);
-    }
-  });
+    });
+  }
 }
 
 test('flow controls work with keyboard and respect reduced motion', async ({ page }) => {
