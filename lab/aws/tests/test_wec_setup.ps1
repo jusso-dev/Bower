@@ -59,6 +59,8 @@ foreach ($endpoint in 'http://synthetic.ingest.monitor.azure.com', 'https://user
     $settings.dce = $endpoint
     Test-WecRejected { Read-WecDestination $settings }
 }
+# Resolve the enum explicitly before invoking ZipFile on Windows PowerShell 5.1.
+Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $temp = Join-Path ([IO.Path]::GetTempPath()) ('bower-wec-validation-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $temp | Out-Null

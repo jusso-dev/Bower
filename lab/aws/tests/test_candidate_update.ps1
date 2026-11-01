@@ -10,6 +10,8 @@ if ($errors.Count) { throw 'candidate parse' }
 foreach ($function in $ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] }, $false)) {
     . ([scriptblock]::Create($function.Extent.Text))
 }
+# Windows PowerShell 5.1 does not resolve ZipArchiveMode merely by loading ZipFile.
+Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $root = Join-Path ([IO.Path]::GetTempPath()) ('bower-candidate-tests-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $root | Out-Null
