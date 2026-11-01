@@ -29,11 +29,18 @@ GRAPH_DELETED = 'https://graph.microsoft.com/v1.0/directory/deletedItems/'
 RUN_PATTERN = r'bower-val-\d{12}-[0-9a-f]{8}|bower-(?:ws6|fw)-\d{8}-\d{6}'
 
 
+class NotFoundError(RuntimeError):
+    """Graph or Resource Manager reported the object as not found (only that proves absence)."""
+
+
 def az(*args):
     result = subprocess.run(['az', *args, '--only-show-errors', '--output', 'json'],
                             capture_output=True, text=True, check=False)
     if result.returncode:
-        # Azure errors can echo input; never print error text or tokens.
+        # Azure errors can echo input; never print error text or tokens. Only the exact
+        # not-found codes are classified; everything else stays a generic failure.
+        if re.search(r'\b(Request_ResourceNotFound|ResourceNotFound|ResourceGroupNotFound)\b', result.stderr):
+            raise NotFoundError('Azure object not found: ' + ' '.join(args[:2]))
         raise RuntimeError('Azure CLI failed: ' + ' '.join(args[:2]))
     return json.loads(result.stdout) if result.stdout.strip() else None
 
@@ -196,7 +203,8 @@ def local_cleanup(root):
 
 
 def purge_deleted(object_id):
-    """Permanently remove a soft-deleted application or service principal; True when absent."""
+    """Permanently remove a soft-deleted application or service principal. True only when Graph
+    then reports it not found; any other failure (throttling, permission, token) is unverified."""
     uuid.UUID(object_id)
     try:
         az('rest', '--method', 'delete', '--url', GRAPH_DELETED + object_id)
@@ -205,8 +213,10 @@ def purge_deleted(object_id):
     try:
         az('rest', '--method', 'get', '--url', GRAPH_DELETED + object_id)
         return False
-    except RuntimeError:
+    except NotFoundError:
         return True
+    except RuntimeError:
+        return False
 
 
 def cleanup(root, state_path, state, timeout):
@@ -283,7 +293,7 @@ def cleanup(root, state_path, state, timeout):
                     remaining.append(role + ' role assignment')
                 for kind, object_id in (('application', identity.get('objectId')), ('service principal', identity.get('principalId'))):
                     if object_id and not purge_deleted(object_id):
-                        remaining.append(role + ' deleted ' + kind)
+                        remaining.append(role + ' deleted ' + kind + ' (present or purge unverified)')
             if not remaining or time.monotonic() >= deadline:
                 errors.extend('remaining: ' + item for item in remaining)
                 break

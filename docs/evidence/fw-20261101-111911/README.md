@@ -105,6 +105,21 @@ duplicate rows came only from at-least-once delivery after a collector kill or r
 21 rows (SIGKILL) and 4 (restart), all collapsing to the exact sets with the documented query.
 
 
+**Review changes after the live run (not re-run on AWS, deliberately).** The campaign ran
+collector commit `24ece92`. Review then changed five RELP behaviours in both runtimes:
+
+- a timestamp-less message's id now includes the receive time again;
+- every field separator must be one space;
+- oversized `syslog` frames of any declared length are read past and answered;
+- a refused frame gets one attempt once a session is closing;
+- a busy close reads the rest of the window away so it ends with a FIN.
+
+None of these changes the measured paths. The lab messages always carry RFC 5424
+timestamps, and the pack keys events by port pair. librelp always sends single spaces. No
+oversized or closing-time refusal occurred. The capacity scenario's busy closes are covered
+by the busy-close unit tests and a repeated local run with real librelp 1.12.0 against both
+collectors (3 SIGKILLs, a 12-second refusal, 3 graceful stops: 0 missing, 0 duplicate rows).
+
 ## Failed and repeated attempts (preserved)
 
 - `a-sender-reboot` attempt 1 (rsyslog 8.2204.0): **failed, 6 of 600 missing** at the queue
@@ -155,6 +170,17 @@ the region, re-verifying each ARN the tagging API still listed; the Azure resour
 resource tagged with the RunId, the soft-deleted workspace list (the workspace was
 force-deleted); both Entra applications and service principals (deleted and purged from deleted
 items); and their role assignments. The shared VPC, NAT gateway and every other pre-existing
-resource were untouched. The first audit run is preserved in
-[`operations/cleanup-first-audit-run.txt`](operations/cleanup-first-audit-run.txt). Local
-private staging (keys, certificates, tokens, Azure identity files and caches) was deleted.
+resource were untouched. Local private staging (keys, certificates, tokens, Azure identity
+files and caches) was deleted.
+
+Every absence is proven by the exact not-found code of its own query (recorded as `errorCode`
+on each check: for example `InvalidInstanceID.NotFound`, `NoSuchEntity`, `404` for the bucket,
+`ResourceNotFoundException`, and Graph `Request_ResourceNotFound` for each purged application
+and service principal) or by a successful empty listing. Throttling, access denied, an expired
+token or any other error fails the audit. This is the corrected audit, re-run read-only on
+2 November after review found that the earlier version counted any failed query as absence.
+Its inputs were rebuilt from the earlier audit's recorded IDs
+([`operations/cleanup-audit-inputs-*.json`](operations/cleanup-audit-inputs-stack-resources.json)).
+History is preserved: the first run (tagging-API lag)
+[`operations/cleanup-first-audit-run.txt`](operations/cleanup-first-audit-run.txt) and the
+superseded second run [`operations/cleanup-audit-superseded.json`](operations/cleanup-audit-superseded.json).

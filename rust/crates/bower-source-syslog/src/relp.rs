@@ -3,10 +3,11 @@
 //! A frame is `TXNR SP COMMAND SP DATALEN [SP DATA] LF`, parsed as librelp does: TXNR and
 //! DATALEN are 1–9 ASCII digits, the command 1–32 ASCII letters, and a zero DATALEN is
 //! followed directly by the LF trailer. Memory is one fixed buffer of the data limit plus
-//! header room. A `syslog` frame up to [`MAXIMUM_DISCARD_BYTES`] that exceeds the limit is
-//! read past (not buffered) so the session can answer it as a final drop instead of making
-//! the sender resend it forever; any other oversized or malformed frame fails, and the
-//! caller closes the session.
+//! header room. A `syslog` frame that exceeds the limit is read past without buffering (at
+//! most 999,999,999 bytes, within the caller's frame timeout) so the session can answer it as
+//! a final drop instead of making the sender resend it forever; any other oversized or
+//! malformed frame fails, and the caller closes the session. Every field separator must be
+//! exactly one space.
 
 use tokio::io::{AsyncRead, AsyncReadExt};
 
@@ -21,8 +22,6 @@ pub mod failures {
 
 pub const MAXIMUM_DIGITS: usize = 9;
 pub const MAXIMUM_COMMAND_LENGTH: usize = 32;
-/// Largest oversized `syslog` frame that is skipped and answered; larger ones end the session.
-pub const MAXIMUM_DISCARD_BYTES: usize = 1_048_576;
 /// The only RELP protocol version (librelp's current version).
 pub const VERSION: u32 = 0;
 /// Largest `open` offer data Bower reads; librelp sends about 100 bytes.
@@ -117,6 +116,11 @@ impl<R: AsyncRead + Unpin> RelpReader<R> {
             Ok(number) => number,
             Err(failure) => return Ok(Frame::Failed(failure)),
         };
+        match self.byte_at(digits).await? {
+            None => return Ok(Frame::Failed(failures::FRAME_TRUNCATED)),
+            Some(b' ') => {}
+            Some(_) => return Ok(Frame::Failed(failures::FRAME_INVALID)),
+        }
         let mut offset = digits + 1;
         let mut letters = 0;
         loop {
@@ -160,7 +164,7 @@ impl<R: AsyncRead + Unpin> RelpReader<R> {
         offset += 1;
         let length = usize::try_from(length).unwrap_or(usize::MAX);
         if length > self.maximum {
-            return if command == Command::Syslog && length <= MAXIMUM_DISCARD_BYTES {
+            return if command == Command::Syslog {
                 self.skip(transaction, offset, length).await
             } else {
                 Ok(Frame::Failed(failures::DATA_TOO_LARGE))

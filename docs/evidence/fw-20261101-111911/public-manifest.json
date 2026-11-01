@@ -1,15 +1,31 @@
 {
  "README.md": {
-  "bytes": 13480,
-  "sha256": "c36d33313addf94d2959fefa76cc95d5d6e443555310c3501f68c369274e2941"
+  "bytes": 15292,
+  "sha256": "6564e9ed0fd4729a44323d6a0b47f094bae481e02c5913efcd38c89cdde4a019"
  },
  "cleanup.json": {
-  "bytes": 3833,
-  "sha256": "c017c3648068ff99ec6ee6dc7b54124e8d87be32d3d17beffe0c8b3771a592b9"
+  "bytes": 4459,
+  "sha256": "fb1d087b0890829f81cb5baf8183ad1d56c8e590adfe5aa0c9002861802421bd"
  },
  "operations/a-sender-reboot-attempt1-diag.txt": {
   "bytes": 18896,
   "sha256": "b89012d7c234b78aee1bf944c5e9a8d7e71d275bf01b4f8c11877c072c694f0c"
+ },
+ "operations/cleanup-audit-inputs-azure.json": {
+  "bytes": 434,
+  "sha256": "72c9ea0d9c9fd7de9182a92090189bf6935d0da6d07025bf1178fc03f29d16aa"
+ },
+ "operations/cleanup-audit-inputs-stack-resources.json": {
+  "bytes": 1176,
+  "sha256": "ecf5169cbd1407571a3bf1159835c6736bde9f351ace9f7a846e7faacc683947"
+ },
+ "operations/cleanup-audit-inputs-volumes.json": {
+  "bytes": 50,
+  "sha256": "0a41370ba8bc875c0eb7dc45db56bab602b7d9784aa7fec2cc1e181bd43ef99a"
+ },
+ "operations/cleanup-audit-superseded.json": {
+  "bytes": 3833,
+  "sha256": "c017c3648068ff99ec6ee6dc7b54124e8d87be32d3d17beffe0c8b3771a592b9"
  },
  "operations/cleanup-first-audit-run.txt": {
   "bytes": 722,

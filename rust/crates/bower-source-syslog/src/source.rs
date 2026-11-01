@@ -34,7 +34,7 @@ use std::time::Duration;
 
 use bower_contracts::time::{Clock, SystemClock, Timestamp, serde_offset_option};
 use serde::Serialize;
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{Semaphore, mpsc, watch};
 use tokio::task::JoinSet;
@@ -882,7 +882,12 @@ async fn serve_relp<S: AsyncRead + AsyncWrite + Unpin + TcpHalf>(
             bump(&counters.oversized);
             Disposition::Decided
         } else {
-            let busy = (!closing).then_some(shared.relp_busy_timeout);
+            // While closing, one attempt only: an unanswered frame is resent after the reconnect.
+            let busy = Some(if closing {
+                Duration::ZERO
+            } else {
+                shared.relp_busy_timeout
+            });
             handle_frame(
                 listener,
                 sender,
@@ -897,8 +902,16 @@ async fn serve_relp<S: AsyncRead + AsyncWrite + Unpin + TcpHalf>(
         match disposition {
             Disposition::Close => return,
             Disposition::Busy => {
-                bump(&counters.relp_busy_closes);
-                server_close(listener, reader.get_mut(), frame_timeout).await;
+                if !closing {
+                    bump(&counters.relp_busy_closes);
+                    if !server_close(listener, reader.get_mut(), frame_timeout).await {
+                        return;
+                    }
+                }
+                // The rest of the sender's window is unanswered and comes back after the
+                // reconnect. Read it away (bounded) so the close is a FIN, not a reset over
+                // unread bytes.
+                discard(reader.get_mut(), shared.drain_timeout, frame_timeout).await;
                 return;
             }
             Disposition::Decided if !closing => {
@@ -915,6 +928,25 @@ async fn serve_relp<S: AsyncRead + AsyncWrite + Unpin + TcpHalf>(
                 bump(&counters.relp_acknowledged);
             }
             Disposition::Decided => {}
+        }
+    }
+}
+
+/// Most bytes read and dropped after a busy close (C# `RelpCloseDiscardBytes`).
+pub const RELP_CLOSE_DISCARD_BYTES: usize = 16 * 1024 * 1024;
+
+/// Reads and drops what the sender still sends after a busy close until it closes, goes quiet
+/// for `quiet`, `limit` passes or [`RELP_CLOSE_DISCARD_BYTES`] are read (C# `DiscardAsync`).
+/// Closing a socket with unread received bytes sends a TCP reset; draining first lets the
+/// close be a FIN.
+async fn discard<S: AsyncRead + Unpin>(stream: &mut S, quiet: Duration, limit: Duration) {
+    let started = tokio::time::Instant::now();
+    let mut buffer = vec![0u8; 16_384];
+    let mut discarded = 0;
+    while discarded < RELP_CLOSE_DISCARD_BYTES && started.elapsed() < limit {
+        match tokio::time::timeout(quiet, stream.read(&mut buffer)).await {
+            Ok(Ok(count)) if count > 0 => discarded += count,
+            _ => return,
         }
     }
 }

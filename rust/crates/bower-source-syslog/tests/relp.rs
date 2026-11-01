@@ -19,7 +19,7 @@ use bower_source_syslog::{
 };
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName};
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpStream;
 use tokio::sync::watch;
 
@@ -238,19 +238,37 @@ fn configuration_relp_needs_tls_beyond_loopback_and_accepts_tls_settings() {
 }
 
 #[test]
-fn record_relp_ids_ignore_receive_time_so_resends_deduplicate() {
-    let frame = b"<38>1 - gw01 sshd - - - no timestamp";
+fn record_relp_ids_include_receive_time_only_without_a_timestamp() {
     let first: bower_contracts::time::Timestamp = "2026-11-01T00:00:00+00:00".parse().unwrap();
-    let later = first + chrono::Duration::minutes(30);
-    let message = parser::parse(frame, &first).unwrap();
-    assert!(message.timestamp.is_none());
-    let id = |protocol: &str, at| {
-        let built = record::build(&message, frame, "edge", protocol, "10.0.0.1", at).unwrap();
+    let id = |frame: &[u8], at: &bower_contracts::time::Timestamp| {
+        let message = parser::parse(frame, at).unwrap();
+        let built = record::build(&message, frame, "edge", "relp", "10.0.0.1", at).unwrap();
         let value: serde_json::Value = serde_json::from_str(&built).unwrap();
         value["id"].as_str().unwrap().to_string()
     };
-    assert_eq!(id("relp", &first), id("relp", &later));
-    assert_ne!(id("tls", &first), id("tls", &later));
+    let bare = b"<38>1 - gw01 sshd - - - no timestamp";
+    let stamped = b"<38>1 2026-11-01T00:00:00.000001Z gw01 sshd - - - timestamp";
+    // Without a timestamp, distinct identical messages stay distinct, as for plain TCP.
+    assert_ne!(
+        id(bare, &first),
+        id(bare, &(first + chrono::Duration::seconds(1)))
+    );
+    // With one, a resend is the same event whenever it arrives.
+    assert_eq!(
+        id(stamped, &first),
+        id(stamped, &(first + chrono::Duration::minutes(30)))
+    );
+}
+
+/// System time that moves at least one second per reading, so receive times differ.
+#[derive(Default)]
+struct SteppingClock(AtomicI64);
+
+impl bower_contracts::time::Clock for SteppingClock {
+    fn utc_now(&self) -> bower_contracts::time::Timestamp {
+        bower_contracts::time::now()
+            + chrono::Duration::seconds(self.0.fetch_add(1, Ordering::SeqCst) + 1)
+    }
 }
 
 /// A sink that queues, refuses, fails or blocks, and (for the crash test) survives a
@@ -355,6 +373,7 @@ struct Options {
     stop: Duration,
     busy: Duration,
     tls: Option<String>,
+    clock: Option<Arc<dyn bower_contracts::time::Clock>>,
 }
 
 impl Default for Options {
@@ -367,6 +386,7 @@ impl Default for Options {
             stop: Duration::from_secs(1),
             busy: Duration::from_secs(30),
             tls: None,
+            clock: None,
         }
     }
 }
@@ -383,7 +403,7 @@ async fn start(sink: Arc<Sink>, options: Options) -> Running {
         "routes": [{{"appName": "sshd", "pack": "linux-ssh-gateway", "parser": 0}}]"#,
         options.idle, options.frame, options.handshake_start
     ));
-    let mut source = SyslogSource::new(config::parse(&json).unwrap(), sink, None)
+    let mut source = SyslogSource::new(config::parse(&json).unwrap(), sink, options.clock)
         .with_retry_delay(Duration::from_millis(20))
         .with_drain_timeout(options.drain)
         .with_stop_timeout(options.stop)
@@ -415,6 +435,17 @@ impl Client<TcpStream> {
 
     async fn shutdown(&mut self) {
         self.reader.get_mut().shutdown().await.unwrap();
+    }
+
+    /// One raw read: `Ok(0)` at a graceful end of stream; a reset is an error.
+    async fn read_raw(&mut self) -> std::io::Result<usize> {
+        let mut buffer = [0u8; 4_096];
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            self.reader.get_mut().read(&mut buffer),
+        )
+        .await
+        .expect("server closes")
     }
 }
 
@@ -689,7 +720,11 @@ async fn session_protocol_errors_end_the_session_without_submitting() {
         "1 open 30 relp_version=0\ncommands=syslog\n2 rsp 6 200 OK\n",
         "1 open 30 relp_version=0\ncommands=syslog\n2 starttls 0\n",
         "1 open 30 relp_version=0\ncommands=syslog\n2 syslog 3 abcd\n",
-        "1 open 30 relp_version=0\ncommands=syslog\n2 syslog 2000000 x\n",
+        "1Xopen 30 relp_version=0\ncommands=syslog\n",
+        "1 open 30 relp_version=0\ncommands=syslog\n2:syslog 1 x\n",
+        "1 open 30 relp_version=0\ncommands=syslog\n2 syslog:1 x\n",
+        "1 open 30 relp_version=0\ncommands=syslog\n2 syslog 1:x\n",
+        "1 open 30 relp_version=0\ncommands=syslog\n2 open 2000000 x\n",
     ] {
         let sink = Arc::new(Sink::default());
         let running = start(Arc::clone(&sink), Options::default()).await;
@@ -717,15 +752,18 @@ async fn session_an_oversized_message_is_a_final_drop_and_the_session_continues(
     let long = format!("<38>Oct 11 22:14:15 gw01 sshd: {}", "y".repeat(600));
     client.send(2, &huge).await;
     client.send(3, &long).await;
-    client.send(4, "<38>Oct 11 22:14:15 gw01 sshd: fits").await;
-    for transaction in 2..=4 {
+    // Larger than any buffer (and than the former 1 MiB bound): read past and answered.
+    let larger = format!("<38>Oct 11 22:14:15 gw01 sshd: {}", "z".repeat(1_200_000));
+    client.send(4, &larger).await;
+    client.send(5, "<38>Oct 11 22:14:15 gw01 sshd: fits").await;
+    for transaction in 2..=5 {
         assert_eq!(
             client.read().await.unwrap(),
             format!("{transaction} rsp 6 200 OK\n")
         );
     }
     assert_eq!(sink.messages(), ["fits"]);
-    assert_eq!(running.status().oversized, 2);
+    assert_eq!(running.status().oversized, 3);
     running.stop().await;
 }
 
@@ -809,6 +847,171 @@ async fn stop_sends_server_close_then_enqueues_what_the_sender_already_sent_with
         ),
         (1, 1, 1)
     );
+}
+
+#[tokio::test]
+async fn session_identical_timestampless_messages_are_all_kept_and_a_timestamped_resend_is_a_duplicate()
+ {
+    let sink = Arc::new(Sink {
+        commit_limit: AtomicUsize::new(usize::MAX),
+        ..Sink::default()
+    });
+    let running = start(
+        Arc::clone(&sink),
+        Options {
+            clock: Some(Arc::new(SteppingClock::default())),
+            ..Options::default()
+        },
+    )
+    .await;
+    let mut client = Client::connect(&running).await;
+    client.open().await;
+    // Two genuinely distinct events with identical bytes and no timestamp.
+    client
+        .send(2, "<38>1 - gw01 sshd - - - repeated denial")
+        .await;
+    client
+        .send(3, "<38>1 - gw01 sshd - - - repeated denial")
+        .await;
+    client
+        .send(
+            4,
+            "<38>1 2026-11-01T00:00:00.000001Z gw01 sshd - - - stamped",
+        )
+        .await;
+    for transaction in 2..=4 {
+        assert_eq!(
+            client.read().await.unwrap(),
+            format!("{transaction} rsp 6 200 OK\n")
+        );
+    }
+    drop(client);
+    // The sender reconnects and resends the timestamped message: one event, not two.
+    let mut again = Client::connect(&running).await;
+    again.open().await;
+    again
+        .send(
+            2,
+            "<38>1 2026-11-01T00:00:00.000001Z gw01 sshd - - - stamped",
+        )
+        .await;
+    assert_eq!(again.read().await.unwrap(), "2 rsp 6 200 OK\n");
+    let mut messages = sink.messages();
+    messages.sort();
+    assert_eq!(messages, ["repeated denial", "repeated denial", "stamped"]);
+    let status = running.status();
+    assert_eq!((status.queued, status.duplicates), (3, 1));
+    running.stop().await;
+}
+
+#[tokio::test]
+async fn stop_makes_one_attempt_for_a_frame_after_server_close_when_the_queue_refuses() {
+    let sink = Arc::new(Sink::default());
+    let running = start(
+        Arc::clone(&sink),
+        Options {
+            drain: Duration::from_secs(2),
+            stop: Duration::from_secs(10),
+            ..Options::default()
+        },
+    )
+    .await;
+    let metrics = running.metrics.clone();
+    let mut client = Client::connect(&running).await;
+    client.open().await;
+    sink.unavailable.store(i64::MAX, Ordering::SeqCst);
+    let started = std::time::Instant::now();
+    let stopping = tokio::spawn(running.stop());
+    assert_eq!(client.read().await.unwrap(), "0 serverclose 0\n");
+    client
+        .send(2, "<38>Oct 11 22:14:15 gw01 sshd: refused while closing")
+        .await;
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while sink.attempts.load(Ordering::SeqCst) == 0 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    client.shutdown().await;
+    stopping.await.unwrap();
+    // One attempt, no retry loop until the stop timeout; the sender resends it later.
+    assert_eq!(sink.attempts.load(Ordering::SeqCst), 1);
+    assert!(
+        started.elapsed() < Duration::from_secs(8),
+        "{:?}",
+        started.elapsed()
+    );
+    let status = metrics.snapshot().remove(0);
+    assert_eq!((status.retries, status.relp_busy_closes), (0, 0));
+    assert!(sink.messages().is_empty());
+}
+
+#[tokio::test]
+async fn busy_close_reads_the_rest_of_the_window_so_the_close_is_a_fin_not_a_reset() {
+    let sink = Arc::new(Sink {
+        unavailable: AtomicI64::new(1_000_000),
+        ..Sink::default()
+    });
+    let running = start(
+        Arc::clone(&sink),
+        Options {
+            busy: Duration::from_millis(200),
+            drain: Duration::from_secs(1),
+            ..Options::default()
+        },
+    )
+    .await;
+    let mut client = Client::connect(&running).await;
+    client.open().await;
+    client
+        .send(2, "<38>Oct 11 22:14:15 gw01 sshd: refused")
+        .await;
+    assert_eq!(client.read().await.unwrap(), "0 serverclose 0\n");
+    // The rest of the window was already on its way when the sender saw the hint.
+    let mut window = String::new();
+    for transaction in 3..130 {
+        let data = format!(
+            "<38>Oct 11 22:14:15 gw01 sshd: in flight {}",
+            "w".repeat(400)
+        );
+        window.push_str(&format!("{transaction} syslog {} {data}\n", data.len()));
+    }
+    client.write(&window).await;
+    client.shutdown().await;
+    // A graceful end of stream: Bower read the unanswered frames away before closing.
+    assert_eq!(client.read_raw().await.unwrap(), 0);
+    let status = running
+        .wait_for(|status| status.active_connections == 0)
+        .await;
+    assert_eq!(
+        (
+            status.relp_busy_closes,
+            status.relp_acknowledged,
+            status.queued
+        ),
+        (1, 0, 0)
+    );
+    running.stop().await;
+}
+
+#[test]
+fn tls_validation_covers_relp_listeners_with_tls() {
+    let tls = fixtures().join("tls");
+    let listener = |certificate: &Path| {
+        config_with(&format!(
+            r#""id": "edge", "protocol": "relp", "address": "127.0.0.1", "port": 0, "allowedSenders": ["127.0.0.1"],
+            "tls": {{"certificateFile": {}, "privateKeyFile": {}}},
+            "routes": [{{"appName": "sshd", "pack": "linux-ssh-gateway", "parser": 0}}]"#,
+            serde_json::to_string(certificate).unwrap(),
+            serde_json::to_string(&tls.join("server-key.pem")).unwrap()
+        ))
+    };
+    let valid = config::parse(&listener(&tls.join("server.pem"))).unwrap();
+    assert!(bower_source_syslog::tls::validate(&valid).is_ok());
+    // Start-up and the signed reload pre-check refuse unloadable RELP TLS files too.
+    let missing = config::parse(&listener(&tls.join("absent.pem"))).unwrap();
+    assert!(bower_source_syslog::tls::validate(&missing).is_err());
 }
 
 #[tokio::test]

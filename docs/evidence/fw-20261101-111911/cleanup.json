@@ -1,7 +1,7 @@
 {
  "schemaVersion": 1,
  "runId": "bower-fw-20261101-111911",
- "checkedAt": "2026-11-01T22:39:24.489602+00:00",
+ "checkedAt": "2026-11-01T22:57:45.089891+00:00",
  "accountId": "959038055523",
  "region": "ap-southeast-2",
  "azureSubscription": "945092a0-2500-4b25-85a4-99f1c3135906",
@@ -12,73 +12,81 @@
   },
   {
    "check": "S3 bucket bower-fw-20261101-111911-artifacts-sym9y7mnhxgn",
-   "absent": true
+   "absent": true,
+   "errorCode": "404"
   },
   {
    "check": "security group sg-05fa49d9b800e68c9",
-   "absent": true
+   "absent": true,
+   "errorCode": "InvalidGroup.NotFound"
   },
   {
    "check": "IAM role bower-fw-20261101-111911-ExpiryRole-8Qgv9HahO0eb",
-   "absent": true
+   "absent": true,
+   "errorCode": "NoSuchEntity"
   },
   {
    "check": "expiry schedule bower-fw-20261101-111911-ExpirySchedule-P1ZWZSTDCGX1",
-   "absent": true
+   "absent": true,
+   "errorCode": "ResourceNotFoundException"
   },
   {
    "check": "security group sg-0ca17bc9e81fb733d",
-   "absent": true
+   "absent": true,
+   "errorCode": "InvalidGroup.NotFound"
   },
   {
    "check": "instance profile bower-fw-20261101-111911-HostProfile-YTmRaLV9BiGm",
-   "absent": true
+   "absent": true,
+   "errorCode": "NoSuchEntity"
   },
   {
    "check": "IAM role bower-fw-20261101-111911-HostRole-x9knJiBpM56t",
-   "absent": true
+   "absent": true,
+   "errorCode": "NoSuchEntity"
   },
   {
-   "check": "instance i-09076358fe836a227",
-   "absent": true,
-   "detail": [
-    "terminated"
-   ]
+   "check": "instance i-09076358fe836a227 (terminated)",
+   "absent": true
   },
   {
    "check": "route table rtb-0aad41fea56995f8a",
-   "absent": true
+   "absent": true,
+   "errorCode": "InvalidRouteTableID.NotFound"
   },
   {
    "check": "subnet subnet-07fcfcbb2f7a1b3db",
-   "absent": true
+   "absent": true,
+   "errorCode": "InvalidSubnetID.NotFound"
   },
   {
-   "check": "instance i-0f41641df895c024c",
-   "absent": true,
-   "detail": [
-    "terminated"
-   ]
+   "check": "instance i-0f41641df895c024c (terminated)",
+   "absent": true
   },
   {
    "check": "security group sg-052871bf1b4eeb37e",
-   "absent": true
+   "absent": true,
+   "errorCode": "InvalidGroup.NotFound"
   },
   {
    "check": "instance profile bower-fw-20261101-111911-SenderProfile-TaGrt35ERCfZ",
-   "absent": true
+   "absent": true,
+   "errorCode": "NoSuchEntity"
   },
   {
    "check": "IAM role bower-fw-20261101-111911-SenderRole-XE1YCiksxXEJ",
-   "absent": true
+   "absent": true,
+   "errorCode": "NoSuchEntity"
   },
   {
    "check": "EBS volume vol-0974ce026d279720e",
-   "absent": true
+   "absent": true,
+   "errorCode": "InvalidVolume.NotFound"
   },
   {
    "check": "EBS volume vol-041433c14d4616ee5",
-   "absent": true
+   "absent": true,
+   "errorCode": "InvalidVolume.NotFound"
   },
   {
    "check": "EBS snapshots tagged RunId",
@@ -95,15 +103,13 @@
   {
    "check": "AWS resources tagged RunId (tagging API, region; listed ARNs re-verified)",
    "absent": true,
-   "detail": {
-    "listedByTaggingApi": [
-     "arn:aws:ec2:ap-southeast-2:959038055523:instance/i-0f41641df895c024c",
-     "arn:aws:ec2:ap-southeast-2:959038055523:volume/vol-0974ce026d279720e",
-     "arn:aws:ec2:ap-southeast-2:959038055523:volume/vol-041433c14d4616ee5",
-     "arn:aws:ec2:ap-southeast-2:959038055523:instance/i-09076358fe836a227"
-    ],
-    "notConfirmedGone": []
-   }
+   "listedByTaggingApi": [
+    "arn:aws:ec2:ap-southeast-2:959038055523:instance/i-0f41641df895c024c",
+    "arn:aws:ec2:ap-southeast-2:959038055523:volume/vol-0974ce026d279720e",
+    "arn:aws:ec2:ap-southeast-2:959038055523:volume/vol-041433c14d4616ee5",
+    "arn:aws:ec2:ap-southeast-2:959038055523:instance/i-09076358fe836a227"
+   ],
+   "notConfirmedGone": []
   },
   {
    "check": "Azure resource group rg-bower-fw-20261101-111911",
@@ -127,11 +133,13 @@
   },
   {
    "check": "deleted-items application 5dabe50e-3b31-4e7b-b88c-1afd702718a1",
-   "absent": true
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
   },
   {
    "check": "deleted-items service principal 08028ec0-fc0d-4f93-a2a9-9d2af95773cd",
-   "absent": true
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
   },
   {
    "check": "role assignments of bower-fw-20261101-111911-ingest",
@@ -147,11 +155,13 @@
   },
   {
    "check": "deleted-items application e5226f47-5a8a-4a74-9e23-d6c94b85f614",
-   "absent": true
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
   },
   {
    "check": "deleted-items service principal f8af2643-d102-49c9-8033-5201b23b6379",
-   "absent": true
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
   },
   {
    "check": "role assignments of bower-fw-20261101-111911-verifier",

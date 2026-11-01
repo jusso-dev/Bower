@@ -11,9 +11,13 @@ let listeners = latestHealth
 | extend Protocol = tolower(tostring(Listener.protocol)),
     ServerCertificateNotAfter = todatetime(Listener.serverCertificateNotAfter),
     ClientCaNotAfter = todatetime(Listener.clientCertificateAuthorityNotAfter),
-    RevocationListNextUpdate = todatetime(Listener.clientRevocationListNextUpdate);
+    RevocationListNextUpdate = todatetime(Listener.clientRevocationListNextUpdate)
+// TLS material: protocol tls, or relp with tls. Records carry an explicit tls flag; a relp
+// listener always reports its server certificate date when it has TLS material.
+| extend Tls = Protocol == "tls" or (Protocol == "relp"
+    and coalesce(tobool(Listener.tls), isnotnull(ServerCertificateNotAfter)));
 let expiry = listeners
-| where Protocol == "tls"
+| where Tls
 | where ServerCertificateNotAfter < now() + __CERTIFICATE_DAYS__d
     or ClientCaNotAfter < now() + __CERTIFICATE_DAYS__d
     or RevocationListNextUpdate < now() + __CRL_HOURS__h
@@ -22,7 +26,7 @@ let expiry = listeners
 // The current health schema does not say whether client CA/CRL files are configured.
 // Missing optional dates on TLS therefore mean unknown, not a proven expiry or a clean bill of health.
 let listenerUnknown = listeners
-| where Protocol !in ("tls", "tcp", "udp") or (Protocol == "tls" and
+| where Protocol !in ("tls", "tcp", "udp", "relp") or (Tls and
     (isnull(ServerCertificateNotAfter) or isnull(ClientCaNotAfter) or isnull(RevocationListNextUpdate)))
 | project CollectorId, Source = strcat("syslog:", tostring(Listener.id), ":tls-metadata-unknown"), RecordAt = TimeGenerated,
     ServerCertificateNotAfter, ClientCaNotAfter, RevocationListNextUpdate, CoverageIncomplete = false, TlsMetadataIncomplete = true;

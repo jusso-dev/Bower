@@ -143,17 +143,51 @@ public sealed class SyslogRelpTests
     }
 
     [Fact]
-    public void Record_RelpIdsIgnoreReceiveTimeSoResendsDeduplicate()
+    public void Record_RelpIdsIncludeReceiveTimeOnlyWithoutATimestamp()
     {
-        byte[] frame = "<38>1 - gw01 sshd - - - no timestamp"u8.ToArray();
         DateTimeOffset first = DateTimeOffset.Parse("2026-11-01T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture);
-        Assert.True(SyslogParser.TryParse(frame, first, out SyslogMessage? message, out _));
-        Assert.Null(message!.Timestamp);
-        Assert.Equal(Id("relp", first), Id("relp", first.AddMinutes(30)));
-        Assert.NotEqual(Id("tls", first), Id("tls", first.AddMinutes(30)));
+        byte[] bare = "<38>1 - gw01 sshd - - - no timestamp"u8.ToArray();
+        byte[] stamped = "<38>1 2026-11-01T00:00:00.000001Z gw01 sshd - - - timestamp"u8.ToArray();
+        // Without a timestamp, distinct identical messages stay distinct, as for plain TCP.
+        Assert.NotEqual(Id(bare, first), Id(bare, first.AddSeconds(1)));
+        // With one, a resend is the same event whenever it arrives.
+        Assert.Equal(Id(stamped, first), Id(stamped, first.AddMinutes(30)));
 
-        string Id(string protocol, DateTimeOffset at) =>
-            JsonDocument.Parse(SyslogRecord.Build(message, frame, "edge", protocol, "10.0.0.1", at)).RootElement.GetProperty("id").GetString()!;
+        static string Id(byte[] frame, DateTimeOffset at)
+        {
+            Assert.True(SyslogParser.TryParse(frame, at, out SyslogMessage? message, out _));
+            return JsonDocument.Parse(SyslogRecord.Build(message!, frame, "edge", "relp", "10.0.0.1", at)).RootElement.GetProperty("id").GetString()!;
+        }
+    }
+
+    [Fact]
+    public async Task Session_IdenticalTimestamplessMessagesAreAllKeptAndATimestampedResendIsADuplicate()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        DurableSink sink = new() { CommitLimit = int.MaxValue };
+        TimeProvider clock = new SteppingClock();
+        await using SyslogSource source = await Start(sink, cancellation, clock: clock);
+        await using (Client client = await Client.ConnectAsync(source, cancellation))
+        {
+            await client.OpenAsync(cancellation);
+            // Two genuinely distinct events with identical bytes and no timestamp.
+            await client.SendAsync(2, "<38>1 - gw01 sshd - - - repeated denial", cancellation);
+            await client.SendAsync(3, "<38>1 - gw01 sshd - - - repeated denial", cancellation);
+            await client.SendAsync(4, "<38>1 2026-11-01T00:00:00.000001Z gw01 sshd - - - stamped", cancellation);
+            for (int transaction = 2; transaction <= 4; transaction++)
+            {
+                Assert.Equal($"{transaction} rsp 6 200 OK\n", await client.ReadFrameAsync(cancellation));
+            }
+        }
+
+        // The sender reconnects and resends the timestamped message: one event, not two.
+        await using Client again = await Client.ConnectAsync(source, cancellation);
+        await again.OpenAsync(cancellation);
+        await again.SendAsync(2, "<38>1 2026-11-01T00:00:00.000001Z gw01 sshd - - - stamped", cancellation);
+        Assert.Equal("2 rsp 6 200 OK\n", await again.ReadFrameAsync(cancellation));
+        Assert.Equal(["repeated denial", "repeated denial", "stamped"], sink.Committed.Values.Order(StringComparer.Ordinal));
+        SyslogListenerStatus status = source.Snapshot()[0];
+        Assert.Equal((3, 1), (status.Queued, status.Duplicates));
     }
 
     [Fact]
@@ -327,7 +361,11 @@ public sealed class SyslogRelpTests
     [InlineData("1 open 30 relp_version=0\ncommands=syslog\n2 rsp 6 200 OK\n", "client response")]
     [InlineData("1 open 30 relp_version=0\ncommands=syslog\n2 starttls 0\n", "unknown command")]
     [InlineData("1 open 30 relp_version=0\ncommands=syslog\n2 syslog 3 abcd\n", "bad trailer")]
-    [InlineData("1 open 30 relp_version=0\ncommands=syslog\n2 syslog 2000000 x\n", "beyond the discard bound")]
+    [InlineData("1Xopen 30 relp_version=0\ncommands=syslog\n", "letter after the transaction")]
+    [InlineData("1 open 30 relp_version=0\ncommands=syslog\n2:syslog 1 x\n", "colon after the transaction")]
+    [InlineData("1 open 30 relp_version=0\ncommands=syslog\n2 syslog:1 x\n", "colon after the command")]
+    [InlineData("1 open 30 relp_version=0\ncommands=syslog\n2 syslog 1:x\n", "colon after the length")]
+    [InlineData("1 open 30 relp_version=0\ncommands=syslog\n2 open 2000000 x\n", "oversized non-syslog frame")]
     public async Task Session_ProtocolErrorsEndTheSessionWithoutSubmitting(string input, string reason)
     {
         Assert.NotEmpty(reason);
@@ -356,12 +394,16 @@ public sealed class SyslogRelpTests
         await client.OpenAsync(cancellation);
         await client.SendAsync(2, "<38>Oct 11 22:14:15 gw01 sshd: " + new string('x', 5_000), cancellation);
         await client.SendAsync(3, "<38>Oct 11 22:14:15 gw01 sshd: " + new string('y', 600), cancellation);
-        await client.SendAsync(4, "<38>Oct 11 22:14:15 gw01 sshd: fits", cancellation);
-        Assert.Equal("2 rsp 6 200 OK\n", await client.ReadFrameAsync(cancellation));
-        Assert.Equal("3 rsp 6 200 OK\n", await client.ReadFrameAsync(cancellation));
-        Assert.Equal("4 rsp 6 200 OK\n", await client.ReadFrameAsync(cancellation));
+        // Larger than any buffer (and than the former 1 MiB bound): read past and answered, never resent forever.
+        await client.SendAsync(4, "<38>Oct 11 22:14:15 gw01 sshd: " + new string('z', 1_200_000), cancellation);
+        await client.SendAsync(5, "<38>Oct 11 22:14:15 gw01 sshd: fits", cancellation);
+        for (int transaction = 2; transaction <= 5; transaction++)
+        {
+            Assert.Equal($"{transaction} rsp 6 200 OK\n", await client.ReadFrameAsync(cancellation));
+        }
+
         Assert.Equal("fits", JsonDocument.Parse(Assert.Single(sink.Records)).RootElement.GetProperty("message").GetString());
-        Assert.Equal(2, source.Snapshot()[0].Oversized);
+        Assert.Equal(3, source.Snapshot()[0].Oversized);
     }
 
     [Fact]
@@ -408,6 +450,57 @@ public sealed class SyslogRelpTests
         Assert.Equal(["before stop", "in flight"], sink.Records.Select(record => JsonDocument.Parse(record).RootElement.GetProperty("message").GetString()!));
         SyslogListenerStatus status = source.Snapshot()[0];
         Assert.Equal((1, 1, 1), (status.RelpAcknowledged, status.RelpServerCloses, status.DrainedFrames));
+    }
+
+    [Fact]
+    public async Task Stop_MakesOneAttemptForAFrameAfterServerCloseWhenTheQueueRefuses()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        SyslogSourceTests.FakeSink sink = new();
+        SyslogSource source = await Start(sink, cancellation, drainMilliseconds: 2_000, stopMilliseconds: 10_000);
+        await using Client client = await Client.ConnectAsync(source, cancellation);
+        await client.OpenAsync(cancellation);
+        sink.Refuse();
+        System.Diagnostics.Stopwatch elapsed = System.Diagnostics.Stopwatch.StartNew();
+        ValueTask stopping = source.DisposeAsync();
+        Assert.Equal("0 serverclose 0\n", await client.ReadFrameAsync(cancellation));
+        await client.SendAsync(2, "<38>Oct 11 22:14:15 gw01 sshd: refused while closing", cancellation);
+        await WaitFor(source, value => sink.Attempts == 1, cancellation);
+        client.Shutdown();
+        await stopping;
+        // One attempt, no retry loop until the stop timeout; the sender resends it later.
+        Assert.Equal(1, sink.Attempts);
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(8), elapsed.Elapsed.ToString());
+        Assert.Equal((0, 0), (source.Snapshot()[0].Retries, source.Snapshot()[0].RelpBusyCloses));
+        Assert.Empty(sink.Records);
+    }
+
+    [Fact]
+    public async Task BusyClose_ReadsTheRestOfTheWindowSoTheCloseIsAFinNotAReset()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        SyslogSourceTests.FakeSink sink = new() { UnavailableResponses = 1_000_000 };
+        await using SyslogSource source = await Start(sink, cancellation, busy: TimeSpan.FromMilliseconds(200), drainMilliseconds: 1_000);
+        await using Client client = await Client.ConnectAsync(source, cancellation);
+        await client.OpenAsync(cancellation);
+        await client.SendAsync(2, "<38>Oct 11 22:14:15 gw01 sshd: refused", cancellation);
+        Assert.Equal("0 serverclose 0\n", await client.ReadFrameAsync(cancellation));
+        // The rest of the window was already on its way when the sender saw the hint.
+        StringBuilder window = new();
+        for (long transaction = 3; transaction < 130; transaction++)
+        {
+            string data = "<38>Oct 11 22:14:15 gw01 sshd: in flight " + new string('w', 400);
+            window.Append(CultureInfo(transaction)).Append(" syslog ").Append(CultureInfo(data.Length)).Append(' ').Append(data).Append('\n');
+        }
+
+        await client.WriteAsync(window.ToString(), cancellation);
+        client.Shutdown();
+        // A graceful end of stream: Bower read the unanswered frames away before closing.
+        Assert.Equal(0, await client.ReadRawAsync(cancellation));
+        SyslogListenerStatus status = await WaitFor(source, value => value.ActiveConnections == 0, cancellation);
+        Assert.Equal((1, 0, 0), (status.RelpBusyCloses, status.RelpAcknowledged, status.Queued));
+
+        static string CultureInfo(long value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
 
     [Fact]
@@ -474,7 +567,7 @@ public sealed class SyslogRelpTests
 
     private static async Task<SyslogSource> Start(ISyslogSink sink, CancellationToken cancellation, TimeSpan? busy = null,
         int idleTimeoutSeconds = 0, int frameTimeoutSeconds = 30, int handshakeStartTimeoutSeconds = 60,
-        int drainMilliseconds = 500, int stopMilliseconds = 1_000, string? tls = null)
+        int drainMilliseconds = 500, int stopMilliseconds = 1_000, string? tls = null, TimeProvider? clock = null)
     {
         string json = SyslogSourceTests.Config($$"""
             "id": "edge", "protocol": "relp", "address": "127.0.0.1", "port": 0,
@@ -484,7 +577,7 @@ public sealed class SyslogRelpTests
             {{(tls is null ? "" : "\"tls\": " + tls + ",")}}
             "routes": [{"appName": "sshd", "pack": "linux-ssh-gateway", "parser": 0}]
             """);
-        SyslogSource source = new(SyslogSourceConfigurationLoader.Parse(json), sink)
+        SyslogSource source = new(SyslogSourceConfigurationLoader.Parse(json), sink, clock)
         {
             RetryDelay = TimeSpan.FromMilliseconds(20),
             RelpBusyTimeout = busy ?? TimeSpan.FromSeconds(30),
@@ -582,6 +675,14 @@ public sealed class SyslogRelpTests
 
         public void Shutdown() => tcp.Client.Shutdown(SocketShutdown.Send);
 
+        /// <summary>One raw read: 0 at a graceful end of stream; a reset throws.</summary>
+        public async Task<int> ReadRawAsync(CancellationToken cancellation)
+        {
+            using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+            timeout.CancelAfter(TimeSpan.FromSeconds(10));
+            return await stream.ReadAsync(new byte[4_096], timeout.Token);
+        }
+
         public async ValueTask DisposeAsync()
         {
             await stream.DisposeAsync();
@@ -621,6 +722,14 @@ public sealed class SyslogRelpTests
 
             return SyslogSubmitOutcome.Queued;
         }
+    }
+
+    /// <summary>System time that moves at least one second per reading, so receive times differ.</summary>
+    private sealed class SteppingClock : TimeProvider
+    {
+        private long seconds;
+
+        public override DateTimeOffset GetUtcNow() => base.GetUtcNow().AddSeconds(Interlocked.Increment(ref seconds));
     }
 
     private sealed class ChunkedStream(byte[] data, int chunk) : MemoryStream(data)

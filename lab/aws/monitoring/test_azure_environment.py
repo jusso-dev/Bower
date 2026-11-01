@@ -38,6 +38,28 @@ class AzureEnvironmentTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'ownership'):
                 lab.group_owned(self.state)
 
+    def test_purge_counts_only_graph_not_found_as_purged(self):
+        object_id = '22222222-2222-4222-8222-222222222222'
+        for failure, purged in ((lab.NotFoundError('not found'), True), (RuntimeError('throttled'), False),
+                                (None, False)):
+            def fake_az(*args):
+                if args[2] == 'get' and failure is not None:
+                    raise failure
+                return {'id': object_id} if args[2] == 'get' else None
+            with self.subTest(failure=failure), mock.patch.object(lab, 'az', side_effect=fake_az):
+                self.assertIs(purged, lab.purge_deleted(object_id))
+
+    def test_cli_errors_are_classified_only_by_exact_not_found_codes(self):
+        for stderr, kind in (('ERROR: Not Found({"error":{"code":"Request_ResourceNotFound"}})', lab.NotFoundError),
+                             ('ERROR: Forbidden({"error":{"code":"Authorization_RequestDenied"}})', RuntimeError),
+                             ('ERROR: AADSTS700082: The refresh token has expired', RuntimeError)):
+            completed = subprocess.CompletedProcess([], 1, stdout='', stderr=stderr)
+            with self.subTest(stderr=stderr), mock.patch.object(lab.subprocess, 'run', return_value=completed):
+                with self.assertRaises(RuntimeError) as raised:
+                    lab.az('rest', '--method', 'get')
+                self.assertIs(kind, type(raised.exception))
+                self.assertNotIn('AADSTS', str(raised.exception))
+
     def test_prepare_accepts_only_an_owning_aws_run_id(self):
         for run in ('bower-fw-20261101-120000; rm', 'rg-bower-fw-20261101-120000', 'bower-xx-20261101-120000'):
             with self.subTest(run=run), self.assertRaisesRegex(ValueError, 'Invalid Azure run id'):
@@ -88,7 +110,7 @@ class AzureEnvironmentTests(unittest.TestCase):
                     purged.add(object_id)
                     return None
                 if object_id in purged:
-                    raise RuntimeError('not found')
+                    raise lab.NotFoundError('not found')
                 return {'id': object_id}
             raise AssertionError(args)
 

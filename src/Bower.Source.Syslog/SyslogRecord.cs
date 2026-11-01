@@ -31,9 +31,7 @@ public static class SyslogRecord
         string received = Format(receivedAt);
         List<KeyValuePair<string, string>> fields =
         [
-            // RELP resends a message byte for byte after a reconnect, so its id never includes
-            // the receive time: a resend must deduplicate even without a message timestamp.
-            new("id", EventId(listenerId, senderAddress, frame, message.Timestamp is null && protocol != "relp" ? received : null)),
+            new("id", EventId(listenerId, senderAddress, frame, message.Timestamp is null ? received : null)),
             new("listener", listenerId),
             new("protocol", protocol),
             new("senderAddress", senderAddress),
@@ -87,8 +85,8 @@ public static class SyslogRecord
     /// <summary>
     /// <c>syslog-</c> + 32 hex characters of SHA-256 over listener, sender and the exact
     /// frame bytes, so a retransmitted frame deduplicates. Without a message timestamp the
-    /// receive time is included (except for RELP), because the record's time would differ on
-    /// retransmit.
+    /// receive time is included, so two distinct identical messages are never merged; a
+    /// retransmission (including a RELP resend) of such a message can then become a second event.
     /// </summary>
     internal static string EventId(string listenerId, string senderAddress, ReadOnlySpan<byte> frame, string? receivedAt)
     {

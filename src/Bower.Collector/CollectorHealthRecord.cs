@@ -406,6 +406,9 @@ public static class CollectorHealthRecord
             writer.WriteStartObject();
             writer.WriteString("id", item.Id);
             writer.WriteString("protocol", item.Protocol);
+            // A listener with TLS material (protocol tls, or relp with tls) always reports its
+            // server certificate date; plaintext tcp, udp and relp never do.
+            writer.WriteBoolean("tls", item.ServerCertificateNotAfter is not null);
             Number(writer, "activeConnections", item.ActiveConnections);
             Number(writer, "connectionsAccepted", Delta(item.ConnectionsAccepted, before?.ConnectionsAccepted));
             Number(writer, "connectionsRejected", Delta(item.ConnectionsRejected, before?.ConnectionsRejected));
@@ -427,6 +430,11 @@ public static class CollectorHealthRecord
             Number(writer, "tlsReloadFailures", Delta(item.TlsReloadFailures, before?.TlsReloadFailures));
             Number(writer, "tlsRevoked", Delta(item.TlsRevoked, before?.TlsRevoked));
             Number(writer, "tlsSessionsClosed", Delta(item.TlsSessionsClosed, before?.TlsSessionsClosed));
+            // RELP: answered transactions, serverclose hints and sessions ended because the queue
+            // kept refusing (each refused attempt also counts in retries, as for TCP and TLS).
+            Number(writer, "relpAcknowledged", Delta(item.RelpAcknowledged, before?.RelpAcknowledged));
+            Number(writer, "relpServerCloses", Delta(item.RelpServerCloses, before?.RelpServerCloses));
+            Number(writer, "relpBusyCloses", Delta(item.RelpBusyCloses, before?.RelpBusyCloses));
             WriteTime(writer, "serverCertificateNotAfter", item.ServerCertificateNotAfter);
             WriteTime(writer, "clientCertificateAuthorityNotAfter", item.ClientCertificateAuthorityNotAfter);
             WriteTime(writer, "clientRevocationListNextUpdate", item.ClientRevocationListNextUpdate);

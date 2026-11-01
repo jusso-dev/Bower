@@ -44,18 +44,16 @@ public readonly record struct RelpFrameResult(
 /// <summary>
 /// RELP framing as librelp parses it: TXNR and DATALEN are 1–9 ASCII digits, the command 1–32
 /// ASCII letters, a zero DATALEN is followed directly by the LF trailer. Memory is one fixed
-/// buffer of the data limit plus header room. A <c>syslog</c> frame up to
-/// <see cref="MaximumDiscardBytes"/> that exceeds the limit is read past (not buffered) so the
-/// session can answer it as a final drop instead of making the sender resend it forever; any
-/// other oversized or malformed frame fails, and the caller closes the session.
+/// buffer of the data limit plus header room. A <c>syslog</c> frame that exceeds the limit is
+/// read past without buffering (at most 999,999,999 bytes, within the caller's frame timeout)
+/// so the session can answer it as a final drop instead of making the sender resend it forever;
+/// any other oversized or malformed frame fails, and the caller closes the session. Every field
+/// separator must be exactly one space.
 /// </summary>
 public sealed class RelpFrameReader
 {
     public const int MaximumDigits = 9;
     public const int MaximumCommandLength = 32;
-
-    /// <summary>Largest oversized <c>syslog</c> frame that is skipped and answered; larger ones end the session.</summary>
-    public const int MaximumDiscardBytes = 1_048_576;
 
     // TXNR SP COMMAND SP DATALEN SP: 9 + 1 + 32 + 1 + 9 + 1, plus the trailer.
     private const int Headroom = 64;
@@ -101,6 +99,12 @@ public sealed class RelpFrameReader
             return RelpFrameResult.Failed(failure);
         }
 
+        int separator = await ByteAtAsync(digits, cancellationToken);
+        if (separator != ' ')
+        {
+            return RelpFrameResult.Failed(separator < 0 ? RelpFailures.FrameTruncated : RelpFailures.FrameInvalid);
+        }
+
         int offset = digits + 1;
         int letters = 0;
         while (true)
@@ -131,7 +135,7 @@ public sealed class RelpFrameReader
         }
 
         offset += digits;
-        int separator = await ByteAtAsync(offset, cancellationToken);
+        separator = await ByteAtAsync(offset, cancellationToken);
         if (separator < 0)
         {
             return RelpFrameResult.Failed(RelpFailures.FrameTruncated);
@@ -156,8 +160,8 @@ public sealed class RelpFrameReader
         offset++;
         if (length > maximum)
         {
-            return command == RelpCommand.Syslog && length <= MaximumDiscardBytes
-                ? await SkipAsync(transaction, offset, (int)length, cancellationToken)
+            return command == RelpCommand.Syslog
+                ? await SkipAsync(transaction, offset, length, cancellationToken)
                 : RelpFrameResult.Failed(RelpFailures.DataTooLarge);
         }
 
@@ -207,10 +211,10 @@ public sealed class RelpFrameReader
     }
 
     /// <summary>Reads past <paramref name="length"/> data bytes and checks the trailer.</summary>
-    private async ValueTask<RelpFrameResult> SkipAsync(long transaction, int offset, int length, CancellationToken cancellationToken)
+    private async ValueTask<RelpFrameResult> SkipAsync(long transaction, int offset, long length, CancellationToken cancellationToken)
     {
         start += offset;
-        int remaining = length;
+        long remaining = length;
         while (remaining > 0)
         {
             if (start == end && !await FillAsync(cancellationToken))
@@ -218,7 +222,7 @@ public sealed class RelpFrameReader
                 return RelpFrameResult.Failed(RelpFailures.FrameTruncated);
             }
 
-            int take = Math.Min(remaining, end - start);
+            int take = (int)Math.Min(remaining, end - start);
             start += take;
             remaining -= take;
         }

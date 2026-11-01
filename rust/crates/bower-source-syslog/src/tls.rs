@@ -45,7 +45,7 @@ pub fn validate(configuration: &SyslogSourceConfiguration) -> Result<(), SourceE
     for listener in configuration
         .listeners
         .iter()
-        .filter(|listener| listener.protocol == "tls")
+        .filter(|listener| listener.tls.is_some())
     {
         let files = TlsFiles::read(listener).map_err(|()| SourceError::Tls(listener.id.clone()))?;
         TlsMaterial::load(listener, &files, 0)?;

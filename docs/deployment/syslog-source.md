@@ -155,10 +155,12 @@ deduplicate, but distinct byte-identical events can also collapse while the id r
 the queue's deduplication window. Without a timestamp the receive time is part of the id,
 so a retransmission at a different time can produce a duplicate. Plain syslog supplies no
 reliable way to tell these cases apart; qualify the actual sender and monitor its counts.
-**RELP listeners never include the receive time**: a RELP resend is byte for byte the same
-message, so it must deduplicate even without a timestamp. Configure RELP senders with
-RFC 5424 high-precision timestamps (rsyslog `RSYSLOG_SyslogProtocol23Format`); two
-distinct timestamp-less messages with identical bytes from one sender collapse to one id.
+RELP uses the same rule. A RELP resend is byte for byte the original, so with a message
+timestamp it is the same id and deduplicates. Without a timestamp (a `-` NILVALUE, or a
+template without one) the receive time is in the id: two distinct identical messages are
+both kept, but a resend after a reconnect becomes a second event (a duplicate row, never a
+lost event). Configure RELP senders with RFC 5424 high-precision timestamps (rsyslog
+`RSYSLOG_SyslogProtocol23Format`) so resends deduplicate.
 A pack parser for RFC 5424 sshd
 structured data:
 
@@ -283,28 +285,35 @@ every unanswered message in its window and resends it after a reconnect.
   ends the session; the sender resends after it reconnects.
 - **Bounded backpressure.** A message the queue keeps refusing is retried every second for
   up to 30 seconds (`RelpBusyTimeout`, shorter than `omrelp`'s 90-second response
-  timeout); then Bower sends `serverclose` and ends the session without answering. The
-  sender keeps the message and its window and reconnects; `relpBusyCloses` counts this.
+  timeout); then Bower sends `serverclose` and ends the session without answering. Before
+  closing it reads away what the sender still sends (bounded: until the sender closes or is
+  quiet for 5 seconds, `frameTimeoutSeconds`, or 16 MiB), so the close is a FIN rather than a
+  reset over unread bytes. The sender keeps the message and its window and reconnects;
+  `relpBusyCloses` counts this, and each refused attempt also counts in `retries`.
   Bower never answers a refused message with an error code, because librelp drops a
   message from its resend list when it receives a non-200 response.
 - **In order, one at a time.** The next frame is read only after the current one is
   answered, so the sender's window (rsyslog default 128) bounds what is in flight.
-- **Strict protocol.** TXNR and DATALEN are 1–9 digits, the command 1–32 letters, a zero
-  DATALEN is followed directly by LF. The first frame must be `open` (transaction 1,
+- **Strict protocol.** TXNR and DATALEN are 1–9 digits, the command 1–32 letters, each
+  followed by exactly one space (anything else, such as `1Xopen` or `2:syslog`, ends the
+  session), and a zero DATALEN is followed directly by LF. The first frame must be `open` (transaction 1,
   offering `relp_version` and `commands=syslog`; offers are bounded to 4 KiB, 16 offers of
   16 values); transactions must follow 1, 2, 3 … and wrap after 999,999,999. Any other
   command, a second `open`, a client `rsp`, a bad trailer or an out-of-sequence number ends
   the session without an answer (`framingErrors`). An `open` without `syslog` is refused
   with `500` and the session ends.
 - **Oversized messages.** A `syslog` frame whose data exceeds `maximumMessageBytes` + 2 (a
-  trailing CR LF is removed) is read past without buffering, answered `200 OK` and counted
-  in `oversized`, so a sender is never stuck resending it; frames above 1 MiB, and any
-  oversized non-`syslog` frame, end the session.
+  trailing CR LF is removed) is read past without buffering (any declared length up to
+  999,999,999 bytes; memory stays one fixed buffer and the whole frame must arrive within
+  `frameTimeoutSeconds`), answered `200 OK` and counted in `oversized`, so a sender is never
+  stuck resending it. An oversized non-`syslog` frame ends the session. Keep the sender's
+  `maxMessageSize` at or below `maximumMessageBytes` so nothing is dropped this way.
 - **Stop and idle.** On stop (and at a non-zero idle timeout) Bower sends the RELP
   `serverclose` hint, half-closes, then keeps reading and enqueuing frames the sender wrote
   before it saw the hint (unanswered; the sender resends them later and they deduplicate)
-  until the sender closes or is quiet for 5 seconds. A client `close` is answered once
-  every earlier transaction is answered.
+  until the sender closes or is quiet for 5 seconds. While closing, a frame the queue refuses
+  gets one attempt only, then Bower stops processing and closes (the sender resends it). A
+  client `close` is answered once every earlier transaction is answered.
 - **Crash.** Frames written but not committed when Bower is killed are unanswered, so
   the sender resends them; committed but unanswered frames come back as duplicates.
 

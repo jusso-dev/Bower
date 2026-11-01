@@ -905,6 +905,9 @@ public sealed class SyslogSourceTests
         /// <summary>Ends any remaining unavailable responses: queue capacity is back.</summary>
         public void Accept() => Interlocked.Exchange(ref unavailable, 0);
 
+        /// <summary>From now on the queue refuses every submission.</summary>
+        public void Refuse() => Interlocked.Exchange(ref unavailable, int.MaxValue);
+
         public int Attempts;
 
         public IReadOnlyList<string> Records => [.. records];

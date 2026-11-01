@@ -222,6 +222,9 @@ public sealed class SyslogSource : IAsyncDisposable
     /// </summary>
     public TimeSpan RelpBusyTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
+    /// <summary>Most bytes read and dropped after a busy close (a full 128-message window of 64 KiB messages fits).</summary>
+    public const int RelpCloseDiscardBytes = 16 * 1024 * 1024;
+
     /// <summary>
     /// Time allowed for graceful drain before cancellation. Final shutdown still waits for
     /// listener and sink operations to finish; it requires cooperative cancellation and is
@@ -790,8 +793,9 @@ public sealed class SyslogSource : IAsyncDisposable
             }
             else
             {
+                // While closing, one attempt only: an unanswered frame is resent after the reconnect.
                 disposition = await HandleFrameAsync(listener, sender, message, waitWhenUnavailable: true, cancellationToken,
-                    isTrusted, closing ? null : RelpBusyTimeout);
+                    isTrusted, closing ? TimeSpan.Zero : RelpBusyTimeout);
             }
 
             if (disposition == FrameDisposition.Close)
@@ -801,8 +805,18 @@ public sealed class SyslogSource : IAsyncDisposable
 
             if (disposition == FrameDisposition.Busy)
             {
-                Interlocked.Increment(ref listener.Counters.RelpBusyCloses);
-                await ServerCloseAsync(listener, socket, stream, frameTimeout, cancellationToken);
+                if (!closing)
+                {
+                    Interlocked.Increment(ref listener.Counters.RelpBusyCloses);
+                    if (!await ServerCloseAsync(listener, socket, stream, frameTimeout, cancellationToken))
+                    {
+                        return;
+                    }
+                }
+
+                // The rest of the sender's window is unanswered and comes back after the reconnect.
+                // Read it away (bounded) so the close is a FIN, not a reset over unread bytes.
+                await DiscardAsync(stream, pending, frameTimeout, cancellationToken);
                 return;
             }
 
@@ -853,6 +867,37 @@ public sealed class SyslogSource : IAsyncDisposable
 
         Interlocked.Increment(ref listener.Counters.RelpServerCloses);
         return HalfClose(listener, socket);
+    }
+
+    /// <summary>
+    /// Reads and drops what the sender still sends after a busy close until it closes, goes quiet
+    /// for <see cref="DrainTimeout"/>, <paramref name="limit"/> passes or
+    /// <see cref="RelpCloseDiscardBytes"/> are read. Closing a socket with unread received bytes
+    /// sends a TCP reset; draining first lets the close be a FIN.
+    /// </summary>
+    private async Task DiscardAsync(Stream stream, StrongBox<Task?> pending, TimeSpan limit, CancellationToken cancellationToken)
+    {
+        byte[] buffer = new byte[16_384];
+        long discarded = 0;
+        long deadline = clock.GetTimestamp();
+        while (discarded < RelpCloseDiscardBytes && clock.GetElapsedTime(deadline) < limit)
+        {
+            Task<int> read = stream.ReadAsync(buffer, cancellationToken).AsTask();
+            pending.Value = read;
+            if (!await CompletesAsync(read, DrainTimeout, CancellationToken.None, cancellationToken))
+            {
+                return;
+            }
+
+            pending.Value = null;
+            int count = await read;
+            if (count == 0)
+            {
+                return;
+            }
+
+            discarded += count;
+        }
     }
 
     /// <summary>Writes and flushes within <paramref name="limit"/>, so a sender that stops reading cannot hold a session.</summary>

@@ -117,9 +117,10 @@ What RELP still cannot cover:
 - **Duplicates at the destination.** RELP removes pre-admission loss; Sentinel delivery
   stays at-least-once. A collector crash between Sentinel ingestion and marking the row
   delivered sends that batch again. Deduplicate in queries by `EventId` (R9).
-- **Identity collapse without timestamps.** RELP ids never include the receive time, so
-  two distinct, byte-identical, timestamp-less messages from one sender share one id.
-  Send RFC 5424 high-precision timestamps.
+- **Resend duplicates without timestamps.** A message without a timestamp gets the receive
+  time in its id (as for plain TCP), so two distinct identical messages are both kept, but a
+  RELP resend of such a message after a reconnect becomes a second event. Send RFC 5424
+  high-precision timestamps so resends deduplicate.
 
 ## R2. Collector listener for RELP
 
@@ -164,11 +165,13 @@ reload without dropping sessions ([syslog source](../deployment/syslog-source.md
 | `handshakeStartTimeoutSeconds` | `60` | Bounds the wait for the first TLS byte and, for RELP, for the `open` command. |
 | `frameTimeoutSeconds` | `60` | Bounds the TLS handshake, every frame once started, and every response write (a sender that stops reading its answers is closed). |
 | `maximumConnections` | at least 2 × senders + headroom | A reconnect can briefly overlap the old session until keepalive or `serverclose` ends it. |
-| `maximumMessageBytes` | 65536 (default) | Keep it at or above rsyslog's `maxMessageSize` (default 8 KiB). Larger messages are answered and counted as `oversized`, never resent forever. |
+| `maximumMessageBytes` | 65536 (default) | Keep it at or above rsyslog's `maxMessageSize` (global setting, default 8 KiB; size it for your largest firewall message plus the RFC 5424 header). A larger message is read past without buffering, answered and counted as `oversized` (a final drop), never resent forever. |
 
 Bower's RELP limits are fixed and not configurable: one transaction in progress per
-session, offers ≤ 4 KiB, frames ≤ `maximumMessageBytes` + 2 (oversized `syslog` frames up
-to 1 MiB are read past and answered), busy hold 30 s, stop drain 5 s per frame.
+session, offers ≤ 4 KiB, frames ≤ `maximumMessageBytes` + 2 (oversized `syslog` frames of
+any declared length are read past within `frameTimeoutSeconds` and answered), busy hold 30 s,
+then up to 16 MiB or 5 s of quiet read away before the close, stop drain 5 s per frame, and
+one queue attempt per frame once a session is closing.
 
 The firewall pack decides the event id. The lab pack maps a stable synthetic key; a pack
 that maps `eventId` to the record `id` gets `syslog-` + SHA-256 over listener, sender
@@ -184,6 +187,8 @@ tarballs pinned by SHA-256 (R5.1). Debian, Ubuntu (`rsyslog-relp`), RHEL, Rocky 
 `/etc/rsyslog.d/60-bower-relp.conf`:
 
 ```
+# Largest message rsyslog forwards; keep it at or below Bower's maximumMessageBytes (64 KiB).
+global(maxMessageSize="64k")
 module(load="omrelp" tls.tlslib="openssl")
 module(load="impstats" interval="60" severity="7" log.syslog="off"
        log.file="/var/log/rsyslog-stats.log" format="json")
@@ -229,9 +234,10 @@ RateLimitBurst=200000
 
 | Setting | Why |
 |---|---|
+| `global(maxMessageSize="64k")` | rsyslog truncates longer messages before sending; at or below the listener's `maximumMessageBytes`, no message is dropped as `oversized` by Bower. Raise both together if your firewall emits longer lines. |
 | `module(load="omrelp" tls.tlslib="openssl")` | librelp's OpenSSL backend (the lab build has no GnuTLS backend). With a distribution package, either backend works; keep the one it was built with. |
 | `type="omrelp"`, `port` | RELP to the Bower listener. |
-| `template="RSYSLOG_SyslogProtocol23Format"` | RFC 5424 with RFC 3339 timestamps (microseconds when high-precision timestamps are on, the default). Bower removes the template's trailing LF. A timestamp in every message keeps distinct events distinct; RELP ids never include the receive time. |
+| `template="RSYSLOG_SyslogProtocol23Format"` | RFC 5424 with RFC 3339 timestamps (microseconds when high-precision timestamps are on, the default). Bower removes the template's trailing LF. With a timestamp, a RELP resend has the same id and deduplicates; without one, the receive time is part of the id, so a resend after a reconnect becomes a second event. |
 | `tls="on"`, `tls.cacert`, `tls.mycert`, `tls.myprivkey` | Mutual TLS: validate the collector and present the sender certificate. |
 | `tls.authmode="name"`, `tls.permittedpeer` | Check the collector certificate name. Never use anonymous TLS. |
 | `windowSize="128"` | rsyslog's default: at most 128 unanswered messages. Larger windows raise throughput on high-latency links but also what a *sender* crash can lose. |
@@ -483,7 +489,7 @@ relay to Bower is then the one measured lossless across collector faults (R10).
 
 | Signal | Where | Alert when |
 |---|---|---|
-| `relpAcknowledged` | `/v1/status` → `syslog[]` | flat while the source is active |
+| `relpAcknowledged` | `/v1/status` → `syslog[]`; also deltas in each `collector_health` record (`syslog[].relpAcknowledged`, `relpServerCloses`, `relpBusyCloses`, `tls`) | flat while the source is active |
 | `relpBusyCloses`, `retries` | same | any increase: the queue is refusing (full or gated); the sender is buffering |
 | `relpServerCloses` | same | increases outside planned stops, idle closes or busy closes |
 | `framingErrors`, `tlsHandshakeFailures`, `oversized` | same | any increase |
@@ -502,7 +508,7 @@ relay to Bower is then the one measured lossless across collector faults (R10).
 | `relpBusyCloses` rising, relay queue growing | Bower queue full or storage limit | `/v1/status` `queue`, disk space | Restore delivery; raise `BOWER_QUEUE_MAX_BYTES` or free storage and restart; the relay resends |
 | `relpAcknowledged` flat, relay suspended | Listener down or blocked | `ss -tnlp '( sport = :20514 )'`, security groups | Restore the listener; the relay resends its window |
 | Duplicate rows in Sentinel | At-least-once delivery after a collector crash | R9 query | Expected; deduplicate by `EventId` |
-| `oversized` rising | rsyslog `maxMessageSize` above `maximumMessageBytes` | relay config | Align limits; oversized messages are dropped with an answer |
+| `oversized` rising | rsyslog `maxMessageSize` above `maximumMessageBytes` | relay config (`global(maxMessageSize="64k")`) | Set `maxMessageSize` ≤ `maximumMessageBytes`; oversized messages are dropped with an answer, counted, never resent |
 | `librelp: error opening connection` after a collector reboot | Collector not ready yet | rsyslog journal | Expected; it retries every `action.resumeInterval` |
 
 ## R9. Reconcile and deduplicate in Sentinel
@@ -594,6 +600,21 @@ collector) and this live campaign with rsyslog's `omrelp` (8.2204.0 and 8.2610.0
 against librelp 1.12.0 with OpenSSL) are the interop proof. No Docker/CI rsyslog interop
 test exists yet.
 
+**Review changes after the live run (not re-run on AWS, deliberately).** The campaign ran
+collector commit `24ece92`. Review then changed five RELP behaviours in both runtimes:
+
+- a timestamp-less message's id now includes the receive time again;
+- every field separator must be one space;
+- oversized `syslog` frames of any declared length are read past and answered;
+- a refused frame gets one attempt once a session is closing;
+- a busy close reads the rest of the window away so it ends with a FIN.
+
+None of these changes the measured paths. The lab messages always carry RFC 5424
+timestamps, and the pack keys events by port pair. librelp always sends single spaces. No
+oversized or closing-time refusal occurred. The capacity scenario's busy closes are covered
+by the busy-close unit tests and a repeated local run with real librelp 1.12.0 against both
+collectors (3 SIGKILLs, a 12-second refusal, 3 graceful stops: 0 missing, 0 duplicate rows).
+
 **Failed and repeated attempts, all preserved in the evidence.**
 
 - `a-sender-reboot` attempt 1 (rsyslog 8.2204.0): **failed, 6 of 600 missing** at the queue
@@ -630,7 +651,8 @@ test exists yet.
 - **Environments.** Only Linux AWS EC2 collector and sender were tested live. Windows,
   Docker, Kubernetes, Azure and on-premises procedures are documented but not qualified.
 - **Duplicates.** Delivery to Sentinel stays at-least-once; deduplicate by `EventId`.
-- **Identity.** RELP ids never include the receive time; send timestamps (R3).
+- **Identity.** Without a message timestamp the id includes the receive time, so a RELP
+  resend of such a message becomes a duplicate event; send timestamps (R3).
 - **Rust collector.** The Rust port implements the same RELP listener with the same vectors
   and tests and passed the local librelp interop runs; the live campaign ran the C#
   collector only.

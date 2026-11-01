@@ -139,12 +139,12 @@
       ]
     },
     {
-      "name": "syslog-beyond-discard-bound-fails",
+      "name": "large-oversized-syslog-is-read-past-not-refused",
       "maximum": 4,
-      "input": "1 syslog 1048577 x",
+      "input": "1 syslog 999999999 x",
       "results": [
         {
-          "failure": "relp-data-too-large"
+          "failure": "relp-frame-truncated"
         }
       ]
     },
@@ -320,6 +320,86 @@
         {
           "failure": "relp-frame-invalid"
         }
+      ]
+    },
+    {
+      "name": "letter-after-transaction",
+      "maximum": 64,
+      "input": "1Xopen 0\n",
+      "results": [
+        {
+          "failure": "relp-frame-invalid"
+        }
+      ]
+    },
+    {
+      "name": "colon-after-transaction",
+      "maximum": 64,
+      "input": "2:syslog 1 x\n",
+      "results": [
+        {
+          "failure": "relp-frame-invalid"
+        }
+      ]
+    },
+    {
+      "name": "tab-after-transaction",
+      "maximum": 64,
+      "input": "2\tsyslog 1 x\n",
+      "results": [
+        {
+          "failure": "relp-frame-invalid"
+        }
+      ]
+    },
+    {
+      "name": "colon-after-command",
+      "maximum": 64,
+      "input": "1 open:0\n",
+      "results": [
+        {
+          "failure": "relp-frame-invalid"
+        }
+      ]
+    },
+    {
+      "name": "colon-after-length",
+      "maximum": 64,
+      "input": "1 syslog 1:x\n",
+      "results": [
+        {
+          "failure": "relp-frame-invalid"
+        }
+      ]
+    },
+    {
+      "name": "two-spaces-after-transaction",
+      "maximum": 64,
+      "input": "1  syslog 1 x\n",
+      "results": [
+        {
+          "failure": "relp-frame-invalid"
+        }
+      ]
+    },
+    {
+      "name": "oversized-syslog-of-two-thousand-bytes-is-skipped",
+      "maximum": 4,
+      "input": "2 syslog 2000 zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\n3 close 0\n",
+      "results": [
+        {
+          "transaction": 2,
+          "command": "syslog",
+          "data": "",
+          "oversized": true
+        },
+        {
+          "transaction": 3,
+          "command": "close",
+          "data": "",
+          "oversized": false
+        },
+        "end"
       ]
     }
   ],
