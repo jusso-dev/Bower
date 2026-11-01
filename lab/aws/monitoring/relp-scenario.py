@@ -76,9 +76,19 @@ def main():
     parser.add_argument("--sequence-offset", default="0")
     parser.add_argument("--lead-seconds", type=int, default=180)
     parser.add_argument("--ingestion-wait-seconds", type=int, default=600)
+    parser.add_argument("--reconcile-only", type=Path,
+                        help="Existing attempt directory: export and query again into new files (no dispatch)")
     args = parser.parse_args()
     state = json.loads(args.state.read_text())
     outputs = state["outputs"]
+    if args.reconcile_only:
+        root = args.reconcile_only
+        plan = json.loads((root / "plan.json").read_text())
+        summary = json.loads((root / "summary.json").read_text()) if (root / "summary.json").exists() else {
+            "scenario": plan["scenario"], "runId": state["runId"]}
+        summary.setdefault("reconciliationRetries", []).append(dt.datetime.now(dt.timezone.utc).isoformat())
+        reconcile(args, state, root, plan, summary, 0)
+        return
     attempt = 1
     while (args.evidence / "{}-attempt{}".format(args.scenario, attempt)).exists():
         attempt += 1
@@ -154,30 +164,35 @@ def main():
         (root / "fault-{}-{}.json".format(action, at)).write_text(json.dumps(record, indent=1) + "\n")
         faults.append({"action": action, "host": step["host"], "record": record})
     summary["faults"] = faults
+    reconcile(args, state, root, plan, summary, args.ingestion_wait_seconds)
 
+
+def reconcile(args, state, root, plan, summary, ingestion_wait):
+    """Export queue identities and query Sentinel; every file name is new for this pass."""
+    outputs = state["outputs"]
+    plan_hash = hashlib.sha256((root / "plan.json").read_bytes()).hexdigest()
+    exports = len(list(root.glob("queue-identities*.json")))
     code, out = run_host(args.state, "Linux", HERE / "export-firewall-queue.sh", {
         "BOWER_SCENARIO": args.scenario, "BOWER_PLAN_SHA256": plan_hash,
         "BOWER_EXPECTED_BLOCKS": ",".join(plan["expectedBlocks"]),
         "BOWER_SCOPE_START_EPOCH": "{:.3f}".format(plan["startEpoch"] - 2),
         "BOWER_SCOPE_END_EPOCH": "{:.3f}".format(plan["collectNotBeforeEpoch"])}, timeout=300)
     export = last_json(out)
-    summary["queueExport"] = export
+    summary.setdefault("queueExports", []).append(export)
     if code or not export or "key" not in export:
         summary["outcome"] = "queue export failed"
         (root / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
         raise SystemExit("queue export failed")
-    queue = root / "queue-identities.json"
+    queue = root / ("queue-identities.json" if exports == 0 else "queue-identities-{}.json".format(exports + 1))
     subprocess.run(["aws", "--profile", PROFILE, "--region", REGION, "s3", "cp", "--only-show-errors",
                     "s3://" + outputs["Bucket"] + "/" + export["key"], str(queue)], check=True, timeout=300)
     if hashlib.sha256(queue.read_bytes()).hexdigest() != export["sha256"]:
         raise SystemExit("queue export hash mismatch")
 
-    natives = []
-    for index, item in enumerate(collected):
-        if item["kind"] == "native-generator-result":
-            natives.append(root / item["file"])
-    time.sleep(max(0, args.ingestion_wait_seconds))
-    for query in range(1, 4):
+    natives = [root / name for name in sorted(path.name for path in root.glob("*-native-generator-result.json"))]
+    time.sleep(max(0, ingestion_wait))
+    first = len(list(root.glob("reconciliation-*.json"))) + 1
+    for query in range(first, first + 3):
         report, rows = root / "reconciliation-{}.json".format(query), root / "sentinel-rows-{}.json".format(query)
         argv = [sys.executable, str(HERE / "query-firewall.py"), "--plan", str(root / "plan.json"),
                 "--queue", str(queue), "--pack-sha256", args.pack_sha256,

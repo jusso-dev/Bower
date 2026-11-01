@@ -142,6 +142,32 @@ class MonitoringSyslogPlanTests(unittest.TestCase):
         for previous, following in zip(ordered, ordered[1:]):
             self.assertLessEqual(previous[1], following[0], 'final campaign native identity ranges overlap')
 
+    def test_relp_scenarios_freeze_ranges_faults_and_destination_blocks(self):
+        source = Path(__file__).resolve().parents[1] / 'scripts'
+        catalogue = module.load_catalogue(source, '10.0.1.10', '10.0.1.11')
+        expected = {'a-sender-reboot-only': (['nft:A:500000:600'], None, ['reboot']),
+                    'a-capacity-refusal': (['nft:A:520000:20000'], 600, ['raise-cap']),
+                    'a-destination-outage-15m': (['nft:A:1040000:9000'], 900, [])}
+        blocks = []
+        for name, (ranges, seconds, faults) in expected.items():
+            plan = module.plan(catalogue, name, source, Path('/public/state.json'), '10.0.1.10', '10.0.1.11', 2000000000)
+            self.assertEqual(ranges, plan['expectedBlocks'])
+            self.assertEqual(seconds, plan.get('externalFaultRequirement', {}).get('minimumVerifiedDurationSeconds'))
+            arguments = [' '.join(step['command']) for step in plan['steps']]
+            self.assertEqual(faults, [re.search(r'fault --action ([a-z-]+)', text).group(1) for text in arguments if 'fault --action' in text])
+            for generation in plan['generations']:
+                self.assertLessEqual(generation['count'] / generation['rate'] + generation['startEpoch'], plan['collectNotBeforeEpoch'])
+            blocks.extend(ranges)
+        # Disjoint from every earlier scenario range in the same queue.
+        taken = set()
+        for name in module.SCENARIOS:
+            plan = module.plan(catalogue, name, source, Path('/public/state.json'), '10.0.1.10', '10.0.1.11', 2000000000)
+            for block in plan['expectedBlocks']:
+                first, count = map(int, block.split(':')[2:])
+                ids = set(range(first, first + count))
+                self.assertFalse(taken & ids, block)
+                taken |= ids
+
     def test_multi_block_measurement_preserves_each_range(self):
         scenario = self.scenario()
         blocks = '+'.join(measure[2] for measure in scenario['measure'])

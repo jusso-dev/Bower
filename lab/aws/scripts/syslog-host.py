@@ -476,6 +476,12 @@ RELP_SOURCES = {
                 "7eb52db775f87f6975b70a5fbff982507c68ba3306ae05ff967443258442245d"),
 }
 OMRELP = Path("/usr/lib64/rsyslog/omrelp.so")
+# rsyslog 8.2606.0 and later re-enqueue a transactional action's in-flight batch when a
+# shutdown interrupts its retry loop (upstream ChangeLog 2026-05-31). 8.2204.0 drops that
+# batch, which lost events when the sender rebooted while the collector was down.
+RSYSLOG_SOURCE = ("https://www.rsyslog.com/files/download/rsyslog/rsyslog-8.2610.0.tar.gz",
+                  "7bdf95e81ea6c0ee5d586342d57d2a6e395b089fb3c67318a0dc555816de404b")
+RSYSLOG_PREFIX = Path("/usr/local")
 RSYSLOG_RELP_ACTION = '''action(name="{name}" type="omrelp" target="{ip}" port="{port}"
        template="RSYSLOG_SyslogProtocol23Format"
        tls="on" tls.cacert="{pki}/ca.pem" tls.mycert="{pki}/{cert}.pem" tls.myprivkey="{pki}/{cert}-key.pem"
@@ -521,6 +527,44 @@ def install_relp(_args=None):
     emit({"librelp": "1.12.0", "rsyslogSource": installed, "sourceSha256": digests,
           "omrelpSha256": hashlib.sha256(OMRELP.read_bytes()).hexdigest(),
           "librelpSha256": hashlib.sha256(Path(os.path.realpath("/usr/lib64/librelp.so")).read_bytes()).hexdigest()})
+
+
+def install_rsyslog_source(_args=None):
+    """Build rsyslog 8.2610.0 (imjournal, imfile, impstats, omrelp over OpenSSL) into /usr/local
+    and run it in place of the distribution binary through a systemd drop-in; configuration,
+    work directory, queue files and imjournal state stay where they are."""
+    if not Path("/usr/lib64/librelp.so").exists():
+        raise RuntimeError("Build librelp first (install-relp)")
+    sh("dnf", "-y", "-q", "install", "gcc", "make", "pkgconf-pkg-config", "openssl-devel", "libestr-devel",
+       "libfastjson-devel", "zlib-devel", "libuuid-devel", "systemd-devel", "flex", "bison")
+    build = LAB / "rsyslog-build"
+    shutil.rmtree(build, ignore_errors=True)
+    build.mkdir(parents=True)
+    url, sha256 = RSYSLOG_SOURCE
+    archive = build / "rsyslog.tar.gz"
+    with urllib.request.urlopen(url, timeout=120) as response:
+        archive.write_bytes(response.read(64 * 1024 * 1024))
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    if digest != sha256:
+        raise RuntimeError("rsyslog source checksum mismatch")
+    sh("tar", "-xzf", str(archive), "-C", str(build), "--no-same-owner")
+    source = next(path for path in build.glob("rsyslog-*") if path.is_dir())
+    environment = dict(os.environ, PKG_CONFIG_PATH="/usr/lib64/pkgconfig")
+    sh("./configure", "--prefix=" + str(RSYSLOG_PREFIX), "--enable-imjournal", "--enable-libsystemd=yes",
+       "--enable-imfile", "--enable-impstats", "--disable-impstats-push", "--enable-relp", "--enable-openssl",
+       "--disable-gnutls", "--disable-libgcrypt", "--disable-libyaml", "--disable-fmhttp",
+       "--disable-default-tests", "--disable-generate-man-pages", cwd=source, env=environment)
+    sh("make", "-j2", cwd=source, env=environment)
+    sh("make", "install", cwd=source, env=environment)
+    binary = RSYSLOG_PREFIX / "sbin/rsyslogd"
+    dropin = Path("/etc/systemd/system/rsyslog.service.d")
+    dropin.mkdir(parents=True, exist_ok=True)
+    (dropin / "60-bower-rsyslog-source.conf").write_text(
+        "[Service]\nExecStart=\nExecStart=" + str(binary) + " -n $SYSLOGD_OPTIONS\n")
+    sh("systemctl", "daemon-reload")
+    emit({"rsyslogSource": "8.2610.0", "sourceSha256": digest, "rsyslogdSha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
+          "omrelpSha256": hashlib.sha256((RSYSLOG_PREFIX / "lib/rsyslog/omrelp.so").read_bytes()).hexdigest(),
+          "version": sh(str(binary), "-v").splitlines()[0]})
 
 
 # Queue sizing per profile. "pilot" keeps rsyslog's defaults (1,000 messages in memory,
@@ -876,6 +920,7 @@ def main():
     p.add_argument("--queue", choices=tuple(RSYSLOG_QUEUES), default="recommended")
     p.add_argument("--transport", choices=("omfwd", "relp"), default="omfwd"); p.set_defaults(func=configure_rsyslog)
     p = sub.add_parser("install-relp"); p.set_defaults(func=install_relp)
+    p = sub.add_parser("install-rsyslog-source"); p.set_defaults(func=install_rsyslog_source)
     p = sub.add_parser("generate"); p.add_argument("--kind", choices=("nft", "file"), required=True)
     p.add_argument("--track", choices=("A", "B"), default="A"); p.add_argument("--first", type=int, required=True)
     p.add_argument("--count", type=int, required=True); p.add_argument("--rate", type=float, required=True)

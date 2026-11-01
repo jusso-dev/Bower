@@ -115,6 +115,50 @@ class FirewallSetupTests(unittest.TestCase):
                 self.assertIn(setting, configuration)
             self.assertIn('Ratelimit.Burst="200000"', (root / "etc/rsyslog.conf").read_text())
 
+    def test_relp_transport_generates_one_mutual_tls_omrelp_action_with_the_same_queue(self):
+        source = ROOT.parent / "scripts/syslog-host.py"
+        spec = importlib.util.spec_from_file_location("setup_relp_profile_fixture", source)
+        tool = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(tool)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "etc/rsyslog.d").mkdir(parents=True)
+            (root / "etc/rsyslog.conf").write_text('global(workDirectory="/var/lib/rsyslog")\nmodule(load="imjournal" StateFile="imjournal.state")\n')
+
+            def local_path(value):
+                return root / str(value).lstrip("/")
+
+            with patch.object(tool, "Path", side_effect=local_path), patch.object(tool, "install_cert"), \
+                    patch.object(tool, "RESULTS", root / "results"), \
+                    patch.object(tool, "sh", return_value="active"), \
+                    patch.object(tool.subprocess, "run", return_value=SimpleNamespace(returncode=0)), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                tool.configure_rsyslog(SimpleNamespace(a="10.0.1.10", b="10.0.1.10", cert="sender-r", transport="relp",
+                                                       profile="recommended", rebind=0, only="a13", queue="recommended"))
+            configuration = (root / "etc/rsyslog.d/10-bower-lab.conf").read_text()
+            self.assertEqual(1, configuration.count('type="omrelp"'))
+            self.assertNotIn('type="omfwd"', configuration)
+            for setting in ('module(load="omrelp" tls.tlslib="openssl")', 'port="6514"', 'tls="on"',
+                            'tls.authmode="name"', 'tls.permittedpeer=["collector-a.bower.lab"]',
+                            'tls.mycert="/etc/pki/bower-lab/sender-r.pem"', 'windowSize="128"', 'timeout="90"',
+                            'rebindInterval="0"', 'template="RSYSLOG_SyslogProtocol23Format"',
+                            'queue.size="200000"', 'queue.timeoutEnqueue="86400000"', 'queue.saveOnShutdown="on"'):
+                self.assertIn(setting, configuration)
+        # The omrelp build is pinned to exact upstream sources and the installed rsyslog version.
+        self.assertEqual({"librelp", "rsyslog"}, set(tool.RELP_SOURCES))
+        for url, digest in tool.RELP_SOURCES.values():
+            self.assertTrue(url.startswith("https://"))
+            self.assertRegex(digest, "^[0-9a-f]{64}$")
+        self.assertIn("rsyslog-8.2204.0.tar.gz", tool.RELP_SOURCES["rsyslog"][0])
+
+    def test_collector_protocol_and_queue_cap_are_validated(self):
+        text = (ROOT / "setup-firewall-collector.sh").read_text()
+        self.assertIn('if protocol not in ("tls", "relp"):', text)
+        self.assertIn('"id": "a13", "protocol": protocol', text)
+        self.assertIn("16777216 <= int(queue_cap) <= 1073741824", text)
+        sender = (ROOT / "setup-firewall-sender.sh").read_text()
+        self.assertIn('if transport not in ("omfwd", "relp"):', sender)
+
     def test_certificate_fetch_adapter_cannot_request_other_keys_or_destinations(self):
         for key, destination in (("exchange/private-key.pem", "/etc/pki/bower-lab/private-key.pem"),
                                  ("exchange/ca.pem", "/etc/other/ca.pem")):
