@@ -1,0 +1,13 @@
+// Bower: expected source silent, as judged by the collector (BOWER_SOURCE_EXPECTATIONS).
+// One row per collector and overdue application/environment from the newest health record.
+BowerSecurity_CL
+| where EventType == "collector_health"
+| summarize arg_max(TimeGenerated, Attributes) by CollectorId
+| mv-expand Overdue = Attributes.sources.overdue
+| where isnotempty(Overdue)
+| project CollectorId, RecordAt = TimeGenerated,
+    Source = strcat(tostring(Overdue.application), "/", tostring(Overdue.environment)),
+    State = tostring(Overdue.state),
+    SilentMinutes = round(toint(Overdue.silentSeconds) / 60.0, 1),
+    AllowedMinutes = round(toint(Overdue.allowedSilenceSeconds) / 60.0, 1),
+    LastSeenAt = todatetime(Overdue.lastSeenAt)

@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "recordType": "firewall-source-fault-proof",
+  "runId": "bower-ws6-20261101-011000",
+  "scenario": "a-reset",
+  "faultExecutionVerified": true,
+  "deliveryQualified": false,
+  "faults": [
+    {
+      "stepIndex": 1,
+      "host": "Linux",
+      "instanceId": "i-04baca853cd5a072d",
+      "unit": "bower-lab-f-reset",
+      "action": "reset",
+      "plannedAt": "2026-11-01T04:49:55.298219+00:00",
+      "before": {
+        "schemaVersion": 1,
+        "runId": "bower-ws6-20261101-011000",
+        "scenario": "a-reset",
+        "unit": "bower-lab-f-reset",
+        "action": "reset",
+        "mode": "before",
+        "observedAt": "2026-11-01T04:46:40.240128+00:00",
+        "bootId": "831aab98-511f-4562-b53c-45b86a3778ba",
+        "services": {
+          "bower": {
+            "MainPID": 36307,
+            "NRestarts": 1,
+            "ExecMainStartTimestampMonotonic": 11242970419,
+            "ActiveState": "active",
+            "SubState": "running",
+            "startTicks": 1124294
+          },
+          "rsyslog": {
+            "MainPID": 0,
+            "NRestarts": 0,
+            "ExecMainStartTimestampMonotonic": 0,
+            "ActiveState": "inactive",
+            "SubState": "dead"
+          }
+        },
+        "faultRecords": [],
+        "deliveryQualified": false,
+        "installedSourceSha256": "72d53ac898c3e87bbe276bdd37a3adfce57b9da2a977834a14ae45942c6f6383"
+      },
+      "after": {
+        "schemaVersion": 1,
+        "runId": "bower-ws6-20261101-011000",
+        "scenario": "a-reset",
+        "unit": "bower-lab-f-reset",
+        "action": "reset",
+        "mode": "after",
+        "observedAt": "2026-11-01T04:55:10.926781+00:00",
+        "bootId": "831aab98-511f-4562-b53c-45b86a3778ba",
+        "services": {
+          "bower": {
+            "MainPID": 36307,
+            "NRestarts": 1,
+            "ExecMainStartTimestampMonotonic": 11242970419,
+            "ActiveState": "active",
+            "SubState": "running",
+            "startTicks": 1124294
+          },
+          "rsyslog": {
+            "MainPID": 0,
+            "NRestarts": 0,
+            "ExecMainStartTimestampMonotonic": 0,
+            "ActiveState": "inactive",
+            "SubState": "dead"
+          }
+        },
+        "faultRecords": [
+          {
+            "fault": "reset",
+            "startedAt": "2026-11-01T04:49:55.394738+00:00",
+            "endedAt": "2026-11-01T04:50:05.475411+00:00",
+            "duration": 10,
+            "packetCount": 6
+          }
+        ],
+        "deliveryQualified": false,
+        "faultCompletionRecorded": true,
+        "installedSourceSha256": "72d53ac898c3e87bbe276bdd37a3adfce57b9da2a977834a14ae45942c6f6383"
+      },
+      "affectedPacketCount": 6,
+      "faultElapsedSeconds": 10.080672979354858
+    }
+  ],
+  "sourceSha256": {
+    "fault-1-before.json": "0840ef76aeb1a87e0b440db4913e8402f2d90b23f53b19c639df7e2c2c9cfd45",
+    "fault-1-after.json": "caa0fb7912d8c97a46491f1e0b5c156760e85a7d6b281ce6ec32706b8f0f79ce",
+    "fault-1-before-command.json": "6e4f68dbf392a070ecaef40a1c8a76b5f4d140f672dff27f622cf7b6ff0f810a",
+    "fault-1-after-command.json": "27a818dde284ddc5e6fe3547e6a918fa3c1b7b50f3af2ea218648e4c72ff1d35",
+    "plan.json": "e505117818b76d53c454900d62b818fc628671dc2dbb1d6db5301ed916a0d1fe"
+  },
+  "sourceProofSha256": "825f5c8eba1c7acd2145d5221bc9d59481f1044b908575682043a1ddc5be88ba",
+  "commandReceipts": {
+    "fault-1-after-command.json": {
+      "commandId": "cbd54047-e97b-4fbc-8e5c-5bd5c3004bd8",
+      "instanceId": "i-04baca853cd5a072d",
+      "host": "Linux",
+      "script": "capture-sourcefault.sh",
+      "sha256": "328ca454d5cff0a56749c2761e2ad3954cafd38dc62cfbaf5c7ccd48db7e4b2d",
+      "sentAt": "2026-11-01T04:55:10Z",
+      "status": "Success",
+      "responseCode": 0
+    },
+    "fault-1-before-command.json": {
+      "commandId": "d3803778-50ee-4950-99d7-c8ac6af1f773",
+      "instanceId": "i-04baca853cd5a072d",
+      "host": "Linux",
+      "script": "capture-sourcefault.sh",
+      "sha256": "328ca454d5cff0a56749c2761e2ad3954cafd38dc62cfbaf5c7ccd48db7e4b2d",
+      "sentAt": "2026-11-01T04:46:40Z",
+      "status": "Success",
+      "responseCode": 0
+    }
+  }
+}

@@ -1,0 +1,216 @@
+{
+  "qualification": "BASELINE; final candidate pending",
+  "baseline_commit": "95d7c05dc5bf5bb10c5865ae37bd32d21a27e8b5",
+  "final_candidate_commit": "733eb7448a98e3ac449c8427753b799ad3fec5c1",
+  "firewall_steady": {
+    "expected": 600,
+    "native_sent": 600,
+    "native_counter_delta": 600,
+    "actual_rate_events_per_second": 9.99911102153527,
+    "queue_distinct_ids": 600,
+    "sentinel_distinct_ids": 600,
+    "sentinel_rows": 600,
+    "sentinel_duplicate_rows": 0,
+    "missing_at_sentinel": 0,
+    "sentinel_absent_from_queue": 0,
+    "identity_complete": true,
+    "strict_pass": true,
+    "destination_query_verified": true,
+    "query_role": "verifier",
+    "query_cutoff": "2026-11-01T02:02:26.287037+00:00",
+    "expected_identity_set_sha256": "f30792b34cd5b5a81d372424a98782c2bbc038642a44d2da91985c3289e5e872",
+    "queue_identity_set_sha256": "f30792b34cd5b5a81d372424a98782c2bbc038642a44d2da91985c3289e5e872",
+    "sentinel_identity_set_sha256": "f30792b34cd5b5a81d372424a98782c2bbc038642a44d2da91985c3289e5e872",
+    "plan_sha256": "9788c1b72a6766063412578318c4c243f8e5d6781db73b8dbcaf05b0b7dc9fa7",
+    "pack_sha256": "bf08c34d4669be5966e2f9680fdfd0e6cccc5aae73d1f3bc1a57484ddacc4637"
+  },
+  "firewall_burst": {
+    "expected": 6000,
+    "native_sent": 6000,
+    "native_counter_delta": 6000,
+    "actual_rate_events_per_second": 99.99125257857435,
+    "queue_distinct_ids": 6000,
+    "sentinel_distinct_ids": 6000,
+    "sentinel_rows": 6000,
+    "sentinel_duplicate_rows": 0,
+    "missing_at_sentinel": 0,
+    "sentinel_absent_from_queue": 0,
+    "identity_complete": true,
+    "strict_pass": true,
+    "destination_query_verified": true,
+    "query_role": "verifier",
+    "query_cutoff": "2026-11-01T02:09:11.823934+00:00",
+    "expected_identity_set_sha256": "95bbbc50c4f541b50d2474d7ae8d07347af83ed530db19c465b360a183cbe59a",
+    "queue_identity_set_sha256": "95bbbc50c4f541b50d2474d7ae8d07347af83ed530db19c465b360a183cbe59a",
+    "sentinel_identity_set_sha256": "95bbbc50c4f541b50d2474d7ae8d07347af83ed530db19c465b360a183cbe59a",
+    "plan_sha256": "eac03f6ef88249108673ccab425202f1faa493cb8b04a7898246879a3e287b6b",
+    "pack_sha256": "bf08c34d4669be5966e2f9680fdfd0e6cccc5aae73d1f3bc1a57484ddacc4637"
+  },
+  "original_export_attempt": {
+    "status": "failed-evidence-validation",
+    "queue_rows": 0,
+    "malformed_rows": 600,
+    "native_events": 600,
+    "local_accepted_events": 600,
+    "sentinel_delivery_qualified": false,
+    "note": "The original queue.json and queue-export.json are retained unchanged. This attempt cannot qualify delivery.",
+    "cause_under_investigation": "Python 3.9 parsing of .NET seven-digit fractional-second ISO timestamps"
+  },
+  "wec_preflight": {
+    "requested_rate": 100,
+    "requested_calls": 1000,
+    "scheduled_calls": 1000,
+    "completed_calls": 1000,
+    "result_codes": {
+      "1219": 390,
+      "1326": 610
+    },
+    "actual_rate_calls_per_second": 99.96356527972685,
+    "native_distinct_ids": 609,
+    "forwarded_distinct_ids": 609,
+    "queue_identity_count": 610,
+    "queue_exact_native_match": false,
+    "native_identity_sha256": "ded9eae2ba83162ff76423145f108d70a1c5faa13d75691bb30675aebf00bc15",
+    "forwarded_identity_sha256": "ded9eae2ba83162ff76423145f108d70a1c5faa13d75691bb30675aebf00bc15",
+    "queue_identity_sha256": "9da0c523be51eea0ce93f736838fd3cf6067540770cb71e88ce2bb061bab3059",
+    "accepted_delta": 610,
+    "native_verified": false,
+    "destination_query_verified": false,
+    "delivery_qualified": false
+  },
+  "synthetic_kql": {
+    "scope": "live-azure-synthetic-query-qualification",
+    "reported_passed": true,
+    "query_row_counts": {
+      "emptyTableSilence": 1,
+      "absentDiagnosticTables": 0,
+      "lateArrivalSilence": 0,
+      "lateArrivalFreshness": 0,
+      "queue-storage": 1,
+      "queue-backlog": 1,
+      "dead-letters": 1,
+      "source-overdue": 1,
+      "collector-health-missing": 1,
+      "source-transport-errors": 2,
+      "destination-credential": 1,
+      "syslog-tls-expiry": 1,
+      "queue-storage-recovered": 0,
+      "queue-backlog-recovered": 0,
+      "dead-letters-recovered": 0,
+      "source-overdue-recovered": 0
+    },
+    "resource_group_absent": true
+  },
+  "real_collector_monitoring": {
+    "kind": "deployed-alert-query-validation-against-real-collector-records",
+    "queried_at": "2026-11-01T02:13:07.682730+00:00",
+    "rules": [
+      {
+        "name": "queue-backlog",
+        "enabled": true,
+        "query_sha256": "56c92d59d83578f46169a59191f752a0b1854732860ae84376c99b010f590967",
+        "rows": 0
+      },
+      {
+        "name": "source-transport-errors",
+        "enabled": true,
+        "query_sha256": "2a5e4c47d90503682a938270318a5a49dc4d84086e980cb29fdebe0c360918be",
+        "rows": 0
+      },
+      {
+        "name": "collector-health-missing",
+        "enabled": true,
+        "query_sha256": "9de09d9500e07498f18da410221c2ffce687f735e6b1a8cb29bd700ae2920cf9",
+        "rows": 0
+      },
+      {
+        "name": "destination-credential",
+        "enabled": true,
+        "query_sha256": "5e8e18dd3397a55e8a830ce33211c962365cb246e1ccfa4eec8c642b2e50de9a",
+        "rows": 0
+      },
+      {
+        "name": "dead-letters",
+        "enabled": true,
+        "query_sha256": "8f9d122c39d0277db66d1009f9dd6084dac4550c15c32148f9bfcb796f08de6e",
+        "rows": 0
+      },
+      {
+        "name": "dcr-errors",
+        "enabled": false,
+        "query_sha256": "3dd34832617813fc4d210e1a9e3d7d5f4978732ce670163ac908e00ecb1989ca",
+        "rows": 0
+      },
+      {
+        "name": "syslog-tls-expiry",
+        "enabled": true,
+        "query_sha256": "c068127c43ec3269f40594101030880d652b6aeaa3b7d0d123e96415783e1d38",
+        "rows": 2
+      },
+      {
+        "name": "table-no-ingestion",
+        "enabled": true,
+        "query_sha256": "d05180c039c69809b24963e226f676421593ed130455fd8389148fc292d7c7f5",
+        "rows": 0
+      },
+      {
+        "name": "source-overdue",
+        "enabled": true,
+        "query_sha256": "be879b01e8adee74554d6eb230a306e5369a195713f4dfd234563f6187516127",
+        "rows": 0
+      },
+      {
+        "name": "destination-freshness",
+        "enabled": true,
+        "query_sha256": "bcc2df59c6eddd1bd0feaecf70876cb15b4822239cfd1e15bad0e75d0058b12b",
+        "rows": 0
+      },
+      {
+        "name": "queue-storage",
+        "enabled": true,
+        "query_sha256": "88f481d3150ac416eb63cdc4d1b4ae8cf4d2c8423ad9201bedb0c123c0f1ada2",
+        "rows": 0
+      }
+    ]
+  },
+  "ci_provenance": {
+    "run_id": 41261615065,
+    "attempt": 1,
+    "windows_executable_sha256": "9e19f3beec6a07e464d4adeb8a57653f07cfcea61b672117016cb04efd2e1730",
+    "windows_zip_sha256": "b16079234bd403b2a29e27c77471b27b86682aab54b4a42bec8442bda016e1fa",
+    "windows_artifact_digest": "sha256:1b876bf538423fd6838fc52b7d6d55fecf1dfa4fb7bb73170a8c9b9456d97cf8",
+    "windows_manifest_sha256": "35ed3f5ac13bbb87060682fa4ea366809c46612a289593b0861e93d671a65c63",
+    "windows_pack_sha256": "87186ac2979d7ba3793891b1948044986cc9dc187efdf1f031b091d47f589443",
+    "pack_build_and_samples_passed": true,
+    "source_inputs_match_native_commit": true
+  },
+  "source_report_sha256": {
+    "steady": "6f661494db342542b06c4c3138a1293f775268cf3de0b04a24ef67edf1df7b8c",
+    "burst": "bf55ba977e75cfed4b12a50f3ffa8fdef9688369513b836d656e5300e9856a56",
+    "first_export_attempt": "58d60e8e49d355b7cb6f1a0afb87d37006be565bc3db624d38972cb13ef15c47",
+    "wec_preflight": "387d5c6d49fe7459e8db4fd920dacd9bc51502b49ef502f204699b1ff97f604e",
+    "synthetic_kql_result": "0c73e1c2c39d33d87ab75fdfef61ba926fc93dc31810c912ee90a2a69f9ea3b6",
+    "synthetic_kql_results": "705695b6b38b25f2e33f1e2f1f4459ee24db203c0291a1834b02d5dfb4ef2567",
+    "synthetic_kql_observations": "48c6274b78d8262be2d22b9636a7cef2a4f9bdfb3d4bdfee9ec1291087a8ddc8",
+    "synthetic_kql_cleanup": "0d7ec454f26824630f1562edeb350ed350a2a023f919d936a3a56c98d6daf12e",
+    "monitoring_queries": "371fb0a1c9e125920054b6d29e10e9f483f09ec9e41a94ec1f9995d19baeea66",
+    "ci_provenance": "eddf767d564193cede58c8c94580a0723382ed848fa6206a5d046ad34cbf2394",
+    "windows_provenance": "0f70f3c0e624ba1360dc53fd37b968e6042e5d8359eef8efa588324304c76d6a",
+    "wec_accepted_destination_diagnostic": "b76550a036b4e0feb618452d1436f48085b48b61ba2af0f9d87f99e380224af9"
+  },
+  "wec_accepted_destination_diagnostic": {
+    "scope": "accepted queue IDs to Sentinel only; native requested-count and rate qualification failed",
+    "queried_at": "2026-11-01T02:32:44.917619+00:00",
+    "query_sha256": "4c07a37a1633ddf4903d862bb1cf2873ea926448879e476c74dee57b9b5d481e",
+    "queue_ids": 610,
+    "sentinel_ids": 610,
+    "missing": 0,
+    "extra": 0,
+    "duplicate_rows": 0,
+    "source_requested": 1000,
+    "source_window_native_ids": 609,
+    "source_qualification_passed": false,
+    "production_qualified": false,
+    "accepted_ids_destination_verified": true
+  }
+}

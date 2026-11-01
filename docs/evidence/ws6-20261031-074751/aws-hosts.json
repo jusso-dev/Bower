@@ -1,0 +1,50 @@
+[
+    {
+        "id": "i-03df631f129fe1e06",
+        "type": "t3.medium",
+        "ami": "ami-086db0bc6076e24da",
+        "platform": "Windows",
+        "privateIp": "172.31.216.127",
+        "publicIp": null,
+        "imds": "required",
+        "state": "running",
+        "tags": [
+            {
+                "Key": "RunId",
+                "Value": "bower-ws6-20261031-074751"
+            },
+            {
+                "Key": "Role",
+                "Value": "windows-wec"
+            },
+            {
+                "Key": "Project",
+                "Value": "bower-lab"
+            }
+        ]
+    },
+    {
+        "id": "i-001ebc66ad35043cc",
+        "type": "t3.small",
+        "ami": "ami-062900c135ab91582",
+        "platform": "Linux/UNIX",
+        "privateIp": "172.31.216.94",
+        "publicIp": null,
+        "imds": "required",
+        "state": "running",
+        "tags": [
+            {
+                "Key": "Project",
+                "Value": "bower-lab"
+            },
+            {
+                "Key": "Role",
+                "Value": "linux-collector"
+            },
+            {
+                "Key": "RunId",
+                "Value": "bower-ws6-20261031-074751"
+            }
+        ]
+    }
+]

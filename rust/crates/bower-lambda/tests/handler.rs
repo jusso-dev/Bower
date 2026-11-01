@@ -122,6 +122,22 @@ async fn unmapped_or_unsigned_callers_and_out_of_scope_events_are_denied_without
 }
 
 #[tokio::test]
+async fn forged_collector_health_never_reaches_the_destination() {
+    let sink = FakeSink::default();
+    let mut event = authentication_failure("forged-health-id");
+    event["eventType"] = json!("collector_health");
+    let invocation = url_handler(&sink)
+        .invoke(&url_event(Some(ROLE_SESSION), &event.to_string()))
+        .await;
+    assert_eq!(invocation.status, 400);
+    let body: Value = serde_json::from_str(&invocation.body).unwrap();
+    assert_eq!(body["reasons"], json!(["reserved-event-type"]));
+    assert!(body["eventId"].is_null());
+    assert!(!invocation.body.contains("forged-health-id"));
+    assert!(sink.calls().is_empty());
+}
+
+#[tokio::test]
 async fn policy_rejection_is_reported_and_not_sent() {
     let sink = FakeSink::default();
     let handler = url_handler(&sink);

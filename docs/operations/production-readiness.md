@@ -26,6 +26,22 @@ Do not generalize an approval of this path to the whole platform.
 
 ## Evidence and blockers
 
+The [1 November final-candidate campaign](../evidence/ws6-20261101-final/README.md)
+completed its planned final tests, evidence export and session cleanup. Its idle
+schedule reconciled all 6,300 native/queue/Sentinel identities with zero missing,
+extra or duplicate rows; observed gaps were 299.952, 1,804.015 and 3,903.945 seconds.
+The nominal five-minute gap was about 48 ms short of 300 seconds. Windows steady,
+burst, one-hour outage and already-admitted queue restart scopes also passed.
+Native firewall completeness remains failed for forced kill (21 missing of 6,000),
+reset (4 of 1,200), and combined collector stop / sender reboot (2 of 600), despite
+every admitted identity reaching Sentinel. The exact pre-admission loss location
+is unproven. These failed gates remain open; cleanup does not establish production
+readiness. Plain TCP/TLS
+cannot acknowledge durable application admission; production requirements that
+include crash-lossless firewall delivery need a qualified retained-source replay
+workflow or an application-acknowledged transport. See the
+[syslog reliability runbook](../production-readiness/01-syslog-delivery-reliability.md).
+
 Initial audit baseline: main `9eb7af047702dbde60e4e49773784e0db4704f59`, including PR #157.
 Existing AWS results are from the documented `473c6ec` backport artifact, not a test
 of every subsequent main change. Re-run against the release candidate hashes.
@@ -40,7 +56,7 @@ of every subsequent main change. Re-run against the release candidate hashes.
 | Sustained capacity and outage budget | [Native pilot](../evidence/pilot-native-20261030/README.md): 10/sec, 100/sec bursts for 60 sec, one-hour outage on each collector; 59,400 distinct source events reconciled per final campaign, 48.5/55.8-sec firewall/WEC drain. Four Windows replayed rows fail the retained strict zero-duplicate check. Two earlier firewall source-loss attempts remain recorded. | Repeat the measured envelope with the signed release and actual sender/payload distribution. Qualify longer operation, production retention and query/alert replay handling. The 81-minute campaigns do not establish multi-day soak or exactly-once delivery. |
 | Authentication, keys and privacy | Default-deny routing, redaction before persistence, signed packs and client-certificate rejection have local/AWS evidence. The [credential and security-failure campaign](../evidence/ws5-20261031-074543/README.md) exercised expired/revoked/disabled Entra credentials, role removal, wrong tenant, secret/certificate/HMAC/CA/CRL rotation, rejected packs and adversarial payloads against a disposable Sentinel workspace and AWS syslog host ([runbook](../production-readiness/05-credential-rotation-and-security-failures.md)). | Test expired/revoked credentials, certificate and HMAC-key rotation, malicious payloads, unsigned/untrusted packs and incorrect policy on the release deployment. Check durable files and reports for raw privacy sentinels. |
 | Signed distribution and upgrades | Installer and optional signing machinery exist. [Populated upgrade, crash, power-loss and restore evidence](../evidence/ws4-20261031-074918/README.md) on unsigned dev.264 → 270 → 277 RPM/MSI/Docker reconciles every accepted event at Sentinel, including the WEC v1 → v2 migration. The [recovery guide](../production-readiness/04-upgrade-backup-recovery.md) documents downgrades and limits. | Verify actual signed release artifacts and trusted pack provenance. Release versions must bump `major.minor.patch` (MSI cannot block dev-build downgrades). Kubernetes, Azure VM and DEB upgrades were not run live. |
-| Operations and reproducible evidence | Source/queue reports, screenshots and [AWS cleanup proof](../evidence/aws-native-20261030/cleanup.json) are committed. | Validate actionable alerts for source silence, destination failure, queue age/capacity and disk pressure. Exercise audited replay (queue restore is [exercised](../evidence/ws4-20261031-074918/README.md)). Publish the release manifest, configuration hashes, query results, measurements and final resource cleanup. |
+| Operations and reproducible evidence | Source/queue reports, screenshots and [AWS cleanup proof](../evidence/aws-native-20261030/cleanup.json) are committed. [Alerts and runbooks](../production-readiness/06-monitoring-and-runbooks.md) were exercised live ([evidence](../evidence/ws6-20261031-074751/README.md)); the drill found a queue page-ceiling delivery stall. | Validate actionable alerts for source silence, destination failure, queue age/capacity and disk pressure. Exercise audited replay (queue restore is [exercised](../evidence/ws4-20261031-074918/README.md)). Publish the release manifest, configuration hashes, query results, measurements and final resource cleanup. |
 
 ## Current recovery work
 

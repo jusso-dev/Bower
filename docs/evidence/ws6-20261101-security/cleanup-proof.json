@@ -1,0 +1,18 @@
+{
+  "checkedAt": "2026-11-01T04:25:30.487419+00:00",
+  "stackDeleted": true,
+  "instanceTerminated": true,
+  "volumesAbsent": true,
+  "subnetAbsent": true,
+  "securityGroupAbsent": true,
+  "routeTableAbsent": true,
+  "bucketAbsent": true,
+  "rolesAbsent": true,
+  "instanceProfileAbsent": true,
+  "scheduleAbsent": true,
+  "sharedVpcAvailable": true,
+  "sharedNatAvailable": true,
+  "testAzureIdentityAbsent": true,
+  "hostSecretPathsRemoved": true,
+  "passed": true
+}

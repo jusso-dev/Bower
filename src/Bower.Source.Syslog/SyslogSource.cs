@@ -12,7 +12,7 @@ namespace Bower.Source.Syslog;
 /// <summary>What happened to one record handed to the collector.</summary>
 public enum SyslogSubmitOutcome
 {
-    /// <summary>Durably enqueued. This is the acknowledgement point.</summary>
+    /// <summary>Durably enqueued. This is an internal admission result, not a wire acknowledgement.</summary>
     Queued,
     Duplicate,
     Suppressed,

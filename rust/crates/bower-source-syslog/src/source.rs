@@ -51,7 +51,7 @@ pub const KEEPALIVE_PROBES: u32 = 30;
 /// What happened to one record handed to the collector (C# `SyslogSubmitOutcome`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SubmitOutcome {
-    /// Durably enqueued. This is the acknowledgement point.
+    /// Durably enqueued. This is an internal admission result, not a wire acknowledgement.
     Queued,
     Duplicate,
     Suppressed,

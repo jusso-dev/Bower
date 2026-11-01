@@ -1,0 +1,239 @@
+{
+  "recordType": "owned-azure-alert-instances",
+  "runId": "bower-val-261101012039-b428b328",
+  "capturedAt": "2026-11-01T07:14:03.598395+00:00",
+  "alerts": [
+    {
+      "alertRule": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/scheduledqueryrules/qualification-monitor-destination-freshness",
+      "severity": "Sev2",
+      "signalType": "Log",
+      "monitorCondition": "Fired",
+      "alertState": "New",
+      "startDateTime": "2026-11-01T07:10:07.0879291Z",
+      "lastModifiedDateTime": "2026-11-01T07:10:07.0879291Z",
+      "targetResource": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs",
+      "id": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs/providers/Microsoft.AlertsManagement/alerts/19685c74-bf45-a49d-4ffd-6684e891001f"
+    },
+    {
+      "alertRule": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/scheduledqueryrules/qualification-monitor-destination-freshness",
+      "severity": "Sev2",
+      "signalType": "Log",
+      "monitorCondition": "Fired",
+      "alertState": "New",
+      "startDateTime": "2026-11-01T06:10:06.8564379Z",
+      "lastModifiedDateTime": "2026-11-01T06:10:06.8564379Z",
+      "targetResource": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs",
+      "id": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs/providers/Microsoft.AlertsManagement/alerts/348386a4-95fd-ab62-7a4b-9615e600001f"
+    },
+    {
+      "alertRule": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/scheduledqueryrules/qualification-monitor-collector-health-missing",
+      "severity": "Sev1",
+      "signalType": "Log",
+      "monitorCondition": "Fired",
+      "alertState": "New",
+      "startDateTime": "2026-11-01T05:24:07.6478022Z",
+      "lastModifiedDateTime": "2026-11-01T05:24:07.6478022Z",
+      "targetResource": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs",
+      "id": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs/providers/Microsoft.AlertsManagement/alerts/7a124eb4-5409-ffb8-50c0-94903900001f"
+    },
+    {
+      "alertRule": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/scheduledqueryrules/qualification-monitor-destination-freshness",
+      "severity": "Sev2",
+      "signalType": "Log",
+      "monitorCondition": "Fired",
+      "alertState": "New",
+      "startDateTime": "2026-11-01T05:20:04.7134695Z",
+      "lastModifiedDateTime": "2026-11-01T05:20:04.7134695Z",
+      "targetResource": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs",
+      "id": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs/providers/Microsoft.AlertsManagement/alerts/64d08422-01a8-d6b0-8c7a-85dafa4f001f"
+    },
+    {
+      "alertRule": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/scheduledqueryrules/qualification-monitor-queue-backlog",
+      "severity": "Sev2",
+      "signalType": "Log",
+      "monitorCondition": "Resolved",
+      "alertState": "New",
+      "startDateTime": "2026-11-01T04:52:42.3729591Z",
+      "lastModifiedDateTime": "2026-11-01T05:19:14.556695Z",
+      "targetResource": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs",
+      "id": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs/providers/Microsoft.AlertsManagement/alerts/60f790ff-73e6-8b00-2a28-c8c2456d001f"
+    },
+    {
+      "alertRule": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/scheduledqueryrules/qualification-monitor-destination-freshness",
+      "severity": "Sev2",
+      "signalType": "Log",
+      "monitorCondition": "Fired",
+      "alertState": "New",
+      "startDateTime": "2026-11-01T05:15:16.1169418Z",
+      "lastModifiedDateTime": "2026-11-01T05:15:16.1169418Z",
+      "targetResource": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs",
+      "id": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs/providers/Microsoft.AlertsManagement/alerts/b393f7be-083a-f1eb-1db5-404c8024001f"
+    },
+    {
+      "alertRule": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/scheduledqueryrules/qualification-monitor-dcr-errors",
+      "severity": "Sev2",
+      "signalType": "Log",
+      "monitorCondition": "Resolved",
+      "alertState": "New",
+      "startDateTime": "2026-11-01T04:29:00.8373796Z",
+      "lastModifiedDateTime": "2026-11-01T05:15:00.0503021Z",
+      "targetResource": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs",
+      "id": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs/providers/Microsoft.AlertsManagement/alerts/14390ea9-4b55-e0b5-3d22-c8dff9a9001f"
+    },
+    {
+      "alertRule": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/scheduledqueryrules/qualification-monitor-destination-freshness",
+      "severity": "Sev2",
+      "signalType": "Log",
+      "monitorCondition": "Resolved",
+      "alertState": "New",
+      "startDateTime": "2026-11-01T04:40:05.9370717Z",
+      "lastModifiedDateTime": "2026-11-01T05:01:05.5299753Z",
+      "targetResource": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs",
+      "id": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs/providers/Microsoft.AlertsManagement/alerts/c4f92302-d117-9641-db79-7a4a9861001f"
+    },
+    {
+      "alertRule": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/scheduledqueryrules/qualification-monitor-collector-health-missing",
+      "severity": "Sev1",
+      "signalType": "Log",
+      "monitorCondition": "Resolved",
+      "alertState": "New",
+      "startDateTime": "2026-11-01T04:04:07.8244697Z",
+      "lastModifiedDateTime": "2026-11-01T05:00:15.3186377Z",
+      "targetResource": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs",
+      "id": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs/providers/Microsoft.AlertsManagement/alerts/011ec9d1-896a-26e9-63a6-16c83725001f"
+    },
+    {
+      "alertRule": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/Microsoft.Insights/metricAlerts/qualification-monitor-dcr-request-errors",
+      "severity": "Sev2",
+      "signalType": "Metric",
+      "monitorCondition": "Resolved",
+      "alertState": "New",
+      "startDateTime": "2026-11-01T04:26:20.0344563Z",
+      "lastModifiedDateTime": "2026-11-01T04:49:10.2137247Z",
+      "targetResource": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/datacollectionrules/bower-val-261101012039-b428b328-dcr",
+      "id": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/datacollectionrules/bower-val-261101012039-b428b328-dcr/providers/Microsoft.AlertsManagement/alerts/424acf02-a1cb-43dd-97df-086ac217f000"
+    },
+    {
+      "alertRule": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/scheduledqueryrules/qualification-monitor-queue-backlog",
+      "severity": "Sev2",
+      "signalType": "Log",
+      "monitorCondition": "Resolved",
+      "alertState": "New",
+      "startDateTime": "2026-11-01T03:57:42.4051231Z",
+      "lastModifiedDateTime": "2026-11-01T04:24:15.2584552Z",
+      "targetResource": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs",
+      "id": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs/providers/Microsoft.AlertsManagement/alerts/852a7deb-7b70-ba46-6d09-612f3382001f"
+    },
+    {
+      "alertRule": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/scheduledqueryrules/qualification-monitor-collector-health-missing",
+      "severity": "Sev1",
+      "signalType": "Log",
+      "monitorCondition": "Fired",
+      "alertState": "New",
+      "startDateTime": "2026-11-01T04:14:08.0655427Z",
+      "lastModifiedDateTime": "2026-11-01T04:14:08.0655427Z",
+      "targetResource": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs",
+      "id": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs/providers/Microsoft.AlertsManagement/alerts/38d1f2eb-c8f3-d738-b177-f8141e54001f"
+    },
+    {
+      "alertRule": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/scheduledqueryrules/qualification-monitor-collector-health-missing",
+      "severity": "Sev1",
+      "signalType": "Log",
+      "monitorCondition": "Resolved",
+      "alertState": "New",
+      "startDateTime": "2026-11-01T03:09:08.1007937Z",
+      "lastModifiedDateTime": "2026-11-01T04:10:10.7796175Z",
+      "targetResource": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs",
+      "id": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs/providers/Microsoft.AlertsManagement/alerts/36291c08-f1cd-7898-18d7-cf10d269001f"
+    },
+    {
+      "alertRule": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/scheduledqueryrules/qualification-monitor-queue-storage",
+      "severity": "Sev2",
+      "signalType": "Log",
+      "monitorCondition": "Resolved",
+      "alertState": "New",
+      "startDateTime": "2026-11-01T03:54:00.3651333Z",
+      "lastModifiedDateTime": "2026-11-01T04:10:00.397395Z",
+      "targetResource": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs",
+      "id": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs/providers/Microsoft.AlertsManagement/alerts/691aa2c3-8133-1a2b-734b-cf117169001f"
+    },
+    {
+      "alertRule": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/scheduledqueryrules/qualification-monitor-destination-freshness",
+      "severity": "Sev2",
+      "signalType": "Log",
+      "monitorCondition": "Resolved",
+      "alertState": "New",
+      "startDateTime": "2026-11-01T03:45:04.555943Z",
+      "lastModifiedDateTime": "2026-11-01T04:06:05.7493093Z",
+      "targetResource": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs",
+      "id": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs/providers/Microsoft.AlertsManagement/alerts/d2523f11-d285-f31d-a87b-cacd522b001f"
+    },
+    {
+      "alertRule": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/scheduledqueryrules/qualification-monitor-syslog-tls-expiry",
+      "severity": "Sev2",
+      "signalType": "Log",
+      "monitorCondition": "Fired",
+      "alertState": "New",
+      "startDateTime": "2026-11-01T03:58:47.8716661Z",
+      "lastModifiedDateTime": "2026-11-01T03:58:47.8716661Z",
+      "targetResource": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs",
+      "id": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs/providers/Microsoft.AlertsManagement/alerts/4c353a00-6108-8907-c560-97f12ed3001f"
+    },
+    {
+      "alertRule": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/scheduledqueryrules/qualification-monitor-syslog-tls-expiry",
+      "severity": "Sev2",
+      "signalType": "Log",
+      "monitorCondition": "Fired",
+      "alertState": "New",
+      "startDateTime": "2026-11-01T03:58:47.8246318Z",
+      "lastModifiedDateTime": "2026-11-01T03:58:47.8246318Z",
+      "targetResource": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs",
+      "id": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs/providers/Microsoft.AlertsManagement/alerts/88be5147-d7c6-7e27-2e5d-56a186f2001f"
+    },
+    {
+      "alertRule": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/scheduledqueryrules/qualification-monitor-dcr-errors",
+      "severity": "Sev2",
+      "signalType": "Log",
+      "monitorCondition": "Resolved",
+      "alertState": "New",
+      "startDateTime": "2026-11-01T03:14:00.7183169Z",
+      "lastModifiedDateTime": "2026-11-01T03:44:57.9642303Z",
+      "targetResource": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs",
+      "id": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs/providers/Microsoft.AlertsManagement/alerts/218692ac-5049-4b15-63e9-18ab7a97001f"
+    },
+    {
+      "alertRule": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/scheduledqueryrules/qualification-monitor-syslog-tls-expiry",
+      "severity": "Sev2",
+      "signalType": "Log",
+      "monitorCondition": "Resolved",
+      "alertState": "New",
+      "startDateTime": "2026-11-01T02:13:47.0285814Z",
+      "lastModifiedDateTime": "2026-11-01T03:34:52.4292728Z",
+      "targetResource": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs",
+      "id": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs/providers/Microsoft.AlertsManagement/alerts/4a6e489b-b0fb-8b88-4cc4-18800d0c001f"
+    },
+    {
+      "alertRule": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/scheduledqueryrules/qualification-monitor-syslog-tls-expiry",
+      "severity": "Sev2",
+      "signalType": "Log",
+      "monitorCondition": "Resolved",
+      "alertState": "New",
+      "startDateTime": "2026-11-01T02:13:46.9817036Z",
+      "lastModifiedDateTime": "2026-11-01T03:34:52.383845Z",
+      "targetResource": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs",
+      "id": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.operationalinsights/workspaces/bower-val-261101012039-b428b328-logs/providers/Microsoft.AlertsManagement/alerts/66c3cfc3-fcf7-8e09-9717-f2654cfa001f"
+    },
+    {
+      "alertRule": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/Microsoft.Insights/metricAlerts/qualification-monitor-dcr-transformation-errors",
+      "severity": "Sev1",
+      "signalType": "Metric",
+      "monitorCondition": "Resolved",
+      "alertState": "New",
+      "startDateTime": "2026-11-01T03:04:38.8186581Z",
+      "lastModifiedDateTime": "2026-11-01T03:21:43.4956323Z",
+      "targetResource": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/datacollectionrules/bower-val-261101012039-b428b328-dcr",
+      "id": "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourcegroups/rg-bower-val-261101012039-b428b328/providers/microsoft.insights/datacollectionrules/bower-val-261101012039-b428b328-dcr/providers/Microsoft.AlertsManagement/alerts/1661cf39-58d6-4c8f-b1d4-420cc8aaf000"
+    }
+  ],
+  "deliveryQualified": false
+}

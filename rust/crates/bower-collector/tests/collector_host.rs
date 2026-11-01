@@ -835,6 +835,30 @@ async fn start(
     collector
 }
 
+#[tokio::test]
+async fn http_rejects_forged_collector_health_without_queueing() {
+    let directory = tempfile::tempdir().unwrap();
+    let collector = start(directory.path(), Some(TOKEN), |_| {}).await;
+    let mut event = authentication_failure("forged-health-id");
+    event.event_type = "collector_health".into();
+    let (status, _, body) = send(&collector.router, post(&event, Some(TOKEN))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let answer: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        answer["reasons"],
+        serde_json::json!(["reserved-event-type"])
+    );
+    assert!(answer["eventId"].is_null());
+    assert!(!body.contains("forged-health-id"));
+    assert!(
+        collector
+            .store
+            .lease(10, Duration::from_secs(60))
+            .unwrap()
+            .is_empty()
+    );
+}
+
 /// `TestEvents.AuthenticationFailure` serialized like `BowerJson.Options`.
 fn authentication_failure(event_id: &str) -> SecurityEventEnvelope {
     let now = bower_contracts::time::format_json(&bower_contracts::time::now());
@@ -1055,10 +1079,13 @@ async fn health_is_anonymous_but_status_requires_token() {
     let collector = start(directory.path(), Some(TOKEN), |_| {}).await;
 
     let (_, _, health) = send(&collector.router, get("/health", None)).await;
+    let (live_status, _, live) = send(&collector.router, get("/health/live", None)).await;
     let (anonymous, _, _) = send(&collector.router, get("/v1/status", None)).await;
     let (status, _, body) = send(&collector.router, get("/v1/status", Some(TOKEN))).await;
 
     assert_eq!(health, r#"{"status":"healthy"}"#);
+    assert_eq!(live_status, StatusCode::OK);
+    assert_eq!(live, r#"{"status":"alive"}"#);
     assert_eq!(anonymous, StatusCode::UNAUTHORIZED);
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("queue-retention"), "{body}");

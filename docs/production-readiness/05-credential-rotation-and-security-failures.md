@@ -4,6 +4,17 @@
 TLS → Bower → Microsoft Sentinel). Release packages remain unsigned; this is not a
 production approval.** Evidence: [`docs/evidence/ws5-20261031-074543`](../evidence/ws5-20261031-074543/README.md).
 
+The [1 November isolated security rerun](../evidence/ws6-20261101-security/README.md)
+retested the `733eb74` collector and independently reconciled ten credential-failure
+and recovery events in Sentinel. TLS revocation correctly closed the session and
+refused the revoked client, but the tested rsyslog sender lost 40 frames before
+collector acceptance during revocation and one during a collector restart, even
+with the checked recommended delivery settings. The test used loopback and lab
+certificates; qualify the actual sender's retention and replay separately. The local
+synthetic-marker scan and filesystem check have narrower scopes described in the
+report. The separate security resources were removed; the main campaign's cleanup
+is a separate gate.
+
 This document is the operator runbook for every credential and trust anchor Bower uses
 in the scoped rollout. It covers how each is configured, stored and reloaded, and how to
 rotate it on a schedule or revoke it in an emergency on each supported environment. It

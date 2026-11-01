@@ -69,6 +69,16 @@ internal sealed record StatusResponse(
     /// <summary>Windows Event Log subscription counters; omitted when BOWER_WINDOWS_EVENTLOG_CONFIG is not set. Metadata only.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<Bower.Source.WindowsEventLog.WindowsEventSubscriptionStatus>? WindowsEventLog { get; init; }
+
+    /// <summary>
+    /// Queue database pages against their limit: in-use bytes, free-list bytes and the page
+    /// limit, so host checks never recompute the limit. Omitted when it cannot be read.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public StatusQueuePagesResponse? QueuePages { get; init; }
+
+    /// <summary>Last acknowledgement and last delivery failure code since start-up. Metadata only.</summary>
+    public StatusDeliveryActivityResponse? DeliveryActivity { get; init; }
 }
 
 /// <summary>First server-sent event of a tap session: its effective filters and caps.</summary>
@@ -120,6 +130,27 @@ internal sealed record StatusQueueResponse(
     long TotalBytes,
     long UndeliveredBytes,
     DateTimeOffset? OldestUndelivered);
+
+/// <summary>
+/// Last acknowledgement and most recent delivery failure since start-up (<c>deliveryActivity</c>
+/// in /v1/status). The code is a fixed string, for example <c>destination-azure-credential-failed</c>.
+/// </summary>
+internal sealed record StatusDeliveryActivityResponse(
+    DateTimeOffset? LastSuccessfulDeliveryAt,
+    string? LastFailureCode,
+    DateTimeOffset? LastFailureAt);
+
+/// <summary>Read-only page accounting of the queue database (<c>queuePages</c> in /v1/status).</summary>
+internal sealed record StatusQueuePagesResponse(
+    long PageSize,
+    long PageLimitBytes,
+    long UsedBytes,
+    long FreeListBytes,
+    double UsedPercent)
+{
+    public static StatusQueuePagesResponse From(Bower.Persistence.QueuePageUsage usage) =>
+        new(usage.PageSize, usage.PageLimitBytes, usage.UsedBytes, usage.FreeListBytes, usage.UsedPercent);
+}
 
 internal sealed record CollectorRegistration(
     string CollectorId,

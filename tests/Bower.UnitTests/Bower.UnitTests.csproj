@@ -45,6 +45,10 @@
       <Link>policies/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="../../examples/policies/collector-health/*.yaml">
+      <Link>examples/policies/collector-health/%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <!-- C# outcomes pinned for the Rust port (rust/crates/bower-policy). -->
     <Content Include="../../rust/crates/bower-policy/tests/fixtures/**/*">
       <Link>policy-vectors/%(RecursiveDir)%(Filename)%(Extension)</Link>

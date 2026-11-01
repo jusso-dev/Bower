@@ -1,0 +1,532 @@
+{
+  "schemaVersion": 1,
+  "recordType": "observed-idle-gap-proof",
+  "runId": "bower-ws6-20261101-011000",
+  "planSha256": "f634d707fb43c75df526217330663c471cc4d5054a4e4cc24c171af5084c5a58",
+  "sourceSha256": {
+    "syslog-campaign.py": "85b862a48f270837fe316e81f23b948c65cf9fee06e3439669f24228da37b97c",
+    "syslog-host.py": "72d53ac898c3e87bbe276bdd37a3adfce57b9da2a977834a14ae45942c6f6383",
+    "syslog-host.sh": "d72790c1c34cbf18059e35c3c6309215e1b64c84a1120c4185087fb53f0cdd27",
+    "syslog-lab.py": "f88b3807be1fc3a9dcd35c778da60e20b3170323c5505a2b708747726434b138"
+  },
+  "pulses": [
+    {
+      "label": "b-idle-p0",
+      "actualRate": 9.9946726106205,
+      "count": 100,
+      "endedAt": "2026-11-01T05:31:21.753297+00:00",
+      "first": 1500000,
+      "generator": "nft",
+      "nativeCounterDelta": {
+        "A": 100,
+        "B": 0
+      },
+      "rate": 10.0,
+      "sent": 100,
+      "startedAt": "2026-11-01T05:31:11.747950+00:00",
+      "track": "A",
+      "sourceSha256": "69fc029b84f81c326be04670921bb4883d89d7a78357c139c0e8a0b0457016f3"
+    },
+    {
+      "label": "b-idle-p1",
+      "actualRate": 99.48861429564235,
+      "count": 100,
+      "endedAt": "2026-11-01T05:36:22.710235+00:00",
+      "first": 1500100,
+      "generator": "nft",
+      "nativeCounterDelta": {
+        "A": 100,
+        "B": 0
+      },
+      "rate": 100.0,
+      "sent": 100,
+      "startedAt": "2026-11-01T05:36:21.705083+00:00",
+      "track": "A",
+      "sourceSha256": "30cd81950014f7446d120fa5dfb87da845aead6601a34a89627a95146c8d256c"
+    },
+    {
+      "label": "b-idle-p2",
+      "actualRate": 99.48719534085816,
+      "count": 100,
+      "endedAt": "2026-11-01T06:06:27.730232+00:00",
+      "first": 1500200,
+      "generator": "nft",
+      "nativeCounterDelta": {
+        "A": 100,
+        "B": 0
+      },
+      "rate": 100.0,
+      "sent": 100,
+      "startedAt": "2026-11-01T06:06:26.725063+00:00",
+      "track": "A",
+      "sourceSha256": "f3559b6895eb45834e29e8e7ab56f944fccf263ff475629721274b6dcfd962f1"
+    },
+    {
+      "label": "b-idle-p3",
+      "actualRate": 99.99117395239449,
+      "count": 6000,
+      "endedAt": "2026-11-01T07:12:31.680758+00:00",
+      "first": 1500300,
+      "generator": "nft",
+      "nativeCounterDelta": {
+        "A": 6000,
+        "B": 0
+      },
+      "rate": 100.0,
+      "sent": 6000,
+      "startedAt": "2026-11-01T07:11:31.675450+00:00",
+      "track": "A",
+      "sourceSha256": "65dbcad374567a0000b8d71dbf4b47f2ba5e5655adbeaddefc8e1bc9e446e080"
+    }
+  ],
+  "gaps": [
+    {
+      "after": "b-idle-p0",
+      "before": "b-idle-p1",
+      "plannedGapMinutes": 5,
+      "previousActualEnd": "2026-11-01T05:31:21.753297+00:00",
+      "nextActualStart": "2026-11-01T05:36:21.705083+00:00",
+      "observedGapSeconds": 299.951786
+    },
+    {
+      "after": "b-idle-p1",
+      "before": "b-idle-p2",
+      "plannedGapMinutes": 30,
+      "previousActualEnd": "2026-11-01T05:36:22.710235+00:00",
+      "nextActualStart": "2026-11-01T06:06:26.725063+00:00",
+      "observedGapSeconds": 1804.014828
+    },
+    {
+      "after": "b-idle-p2",
+      "before": "b-idle-p3",
+      "plannedGapMinutes": 65,
+      "previousActualEnd": "2026-11-01T06:06:27.730232+00:00",
+      "nextActualStart": "2026-11-01T07:11:31.675450+00:00",
+      "observedGapSeconds": 3903.945218
+    }
+  ],
+  "scheduleReceipts": [
+    {
+      "commandId": "f596232e-0f8b-43ef-959b-c768bfdf0348",
+      "instanceId": "i-0078d9ac013917ff9",
+      "host": "Sender",
+      "script": "syslog-host.sh",
+      "sha256": "d72790c1c34cbf18059e35c3c6309215e1b64c84a1120c4185087fb53f0cdd27",
+      "sentAt": "2026-11-01T05:28:25Z",
+      "status": "Success",
+      "responseCode": 0
+    },
+    {
+      "commandId": "86446912-767b-4541-87d3-da19c31e107e",
+      "instanceId": "i-0078d9ac013917ff9",
+      "host": "Sender",
+      "script": "syslog-host.sh",
+      "sha256": "d72790c1c34cbf18059e35c3c6309215e1b64c84a1120c4185087fb53f0cdd27",
+      "sentAt": "2026-11-01T05:28:34Z",
+      "status": "Success",
+      "responseCode": 0
+    },
+    {
+      "commandId": "f631107f-ce1f-4e2d-b7d1-ce1d47ed7ddb",
+      "instanceId": "i-0078d9ac013917ff9",
+      "host": "Sender",
+      "script": "syslog-host.sh",
+      "sha256": "d72790c1c34cbf18059e35c3c6309215e1b64c84a1120c4185087fb53f0cdd27",
+      "sentAt": "2026-11-01T05:28:43Z",
+      "status": "Success",
+      "responseCode": 0
+    },
+    {
+      "commandId": "104f1369-6bc5-4e9f-9635-198cb74cf112",
+      "instanceId": "i-0078d9ac013917ff9",
+      "host": "Sender",
+      "script": "syslog-host.sh",
+      "sha256": "d72790c1c34cbf18059e35c3c6309215e1b64c84a1120c4185087fb53f0cdd27",
+      "sentAt": "2026-11-01T05:28:51Z",
+      "status": "Success",
+      "responseCode": 0
+    }
+  ],
+  "collectionReceipts": [
+    {
+      "index": 0,
+      "kind": "native-generator-result",
+      "driverReturnCode": 0,
+      "driverFileSha256": "f19ae5747d8e039da50b07431292c6158a15e633531ab9f2d4f128dba5458584",
+      "receipt": {
+        "commandId": "e50038d4-d2f8-45c5-939d-23520e472fb3",
+        "instanceId": "i-0078d9ac013917ff9",
+        "host": "Sender",
+        "script": "syslog-host.sh",
+        "sha256": "d72790c1c34cbf18059e35c3c6309215e1b64c84a1120c4185087fb53f0cdd27",
+        "sentAt": "2026-11-01T07:12:42Z",
+        "status": "Success",
+        "responseCode": 0
+      }
+    },
+    {
+      "index": 1,
+      "kind": "native-generator-result",
+      "driverReturnCode": 0,
+      "driverFileSha256": "298d9f6d10e1679804a08832368b8ba01c31c9368e70969719c25890c9bfb1ec",
+      "receipt": {
+        "commandId": "9e000e30-8e2c-46df-8d90-8b946dcc522a",
+        "instanceId": "i-0078d9ac013917ff9",
+        "host": "Sender",
+        "script": "syslog-host.sh",
+        "sha256": "d72790c1c34cbf18059e35c3c6309215e1b64c84a1120c4185087fb53f0cdd27",
+        "sentAt": "2026-11-01T07:12:50Z",
+        "status": "Success",
+        "responseCode": 0
+      }
+    },
+    {
+      "index": 2,
+      "kind": "native-generator-result",
+      "driverReturnCode": 0,
+      "driverFileSha256": "ddb04086e54c0232df9e8141ad7e91675b23c39ccb3992cc58dde2ab41a80734",
+      "receipt": {
+        "commandId": "1fc7d6cb-71d5-45bb-a3bb-000317f8cb3b",
+        "instanceId": "i-0078d9ac013917ff9",
+        "host": "Sender",
+        "script": "syslog-host.sh",
+        "sha256": "d72790c1c34cbf18059e35c3c6309215e1b64c84a1120c4185087fb53f0cdd27",
+        "sentAt": "2026-11-01T07:12:58Z",
+        "status": "Success",
+        "responseCode": 0
+      }
+    },
+    {
+      "index": 3,
+      "kind": "native-generator-result",
+      "driverReturnCode": 0,
+      "driverFileSha256": "cb7a335f95427a96baafdba6013686c9356b82a8dc72acc7c8fb2ebf7212b529",
+      "receipt": {
+        "commandId": "c0fc10bc-7acf-4ad9-ad17-4955f52c5287",
+        "instanceId": "i-0078d9ac013917ff9",
+        "host": "Sender",
+        "script": "syslog-host.sh",
+        "sha256": "d72790c1c34cbf18059e35c3c6309215e1b64c84a1120c4185087fb53f0cdd27",
+        "sentAt": "2026-11-01T07:13:07Z",
+        "status": "Success",
+        "responseCode": 0
+      }
+    },
+    {
+      "index": 4,
+      "kind": "queue-acceptance-only",
+      "driverReturnCode": 0,
+      "driverFileSha256": "f9e894336bddcfb36a85d7a7cbfafae215906733264d42feb0eb60a0bca809e1",
+      "receipt": {
+        "commandId": "b0867635-aeda-4bd8-90d2-d75feadf3ec5",
+        "instanceId": "i-04baca853cd5a072d",
+        "host": "Linux",
+        "script": "syslog-host.sh",
+        "sha256": "d72790c1c34cbf18059e35c3c6309215e1b64c84a1120c4185087fb53f0cdd27",
+        "sentAt": "2026-11-01T07:13:16Z",
+        "status": "Success",
+        "responseCode": 0
+      }
+    },
+    {
+      "index": 5,
+      "kind": "queue-acceptance-only",
+      "driverReturnCode": 0,
+      "driverFileSha256": "5214ed429c6c844208cead129f8bc6872ab73cbd14615056bcbf063b0a768737",
+      "receipt": {
+        "commandId": "251f3be1-7a68-42d0-9918-8d45968f7cce",
+        "instanceId": "i-04baca853cd5a072d",
+        "host": "Linux",
+        "script": "syslog-host.sh",
+        "sha256": "d72790c1c34cbf18059e35c3c6309215e1b64c84a1120c4185087fb53f0cdd27",
+        "sentAt": "2026-11-01T07:13:16Z",
+        "status": "Success",
+        "responseCode": 0
+      }
+    },
+    {
+      "index": 6,
+      "kind": "queue-acceptance-only",
+      "driverReturnCode": 0,
+      "driverFileSha256": "aefb160abc1d273ea073e90671e7e9737247caf12bdc8c9eb0a9c80840d2c851",
+      "receipt": {
+        "commandId": "22c5a22d-42d6-4629-b9f7-9576c240ff71",
+        "instanceId": "i-04baca853cd5a072d",
+        "host": "Linux",
+        "script": "syslog-host.sh",
+        "sha256": "d72790c1c34cbf18059e35c3c6309215e1b64c84a1120c4185087fb53f0cdd27",
+        "sentAt": "2026-11-01T07:13:16Z",
+        "status": "Success",
+        "responseCode": 0
+      }
+    },
+    {
+      "index": 7,
+      "kind": "queue-acceptance-only",
+      "driverReturnCode": 0,
+      "driverFileSha256": "e469339ae7d42e94648c50ee69b7d8ab3817bf990a6fd3bc7f88fa6f8bc43a8c",
+      "receipt": {
+        "commandId": "b28302ed-058e-47ce-8076-eb528b46578c",
+        "instanceId": "i-04baca853cd5a072d",
+        "host": "Linux",
+        "script": "syslog-host.sh",
+        "sha256": "d72790c1c34cbf18059e35c3c6309215e1b64c84a1120c4185087fb53f0cdd27",
+        "sentAt": "2026-11-01T07:13:16Z",
+        "status": "Success",
+        "responseCode": 0
+      }
+    },
+    {
+      "index": 8,
+      "kind": "collector-snapshot",
+      "driverReturnCode": 0,
+      "driverFileSha256": "d41608dec60b71c521b591c5b9ab20eab06ab528db11e1d46b2f3d30086269d5",
+      "receipt": {
+        "commandId": "0c91a4c1-cd16-4f4d-a298-2b92278ff01d",
+        "instanceId": "i-04baca853cd5a072d",
+        "host": "Linux",
+        "script": "syslog-host.sh",
+        "sha256": "d72790c1c34cbf18059e35c3c6309215e1b64c84a1120c4185087fb53f0cdd27",
+        "sentAt": "2026-11-01T07:13:24Z",
+        "status": "Success",
+        "responseCode": 0
+      }
+    },
+    {
+      "index": 9,
+      "kind": "sender-snapshot",
+      "driverReturnCode": 0,
+      "driverFileSha256": "7f1679b8de6eb6c5aa6c3272f3b70435e8c7e96e27695754ec5d5aef4519c7d7",
+      "receipt": {
+        "commandId": "eb0128f1-2512-4b0f-9806-d52e9c05d661",
+        "instanceId": "i-0078d9ac013917ff9",
+        "host": "Sender",
+        "script": "syslog-host.sh",
+        "sha256": "d72790c1c34cbf18059e35c3c6309215e1b64c84a1120c4185087fb53f0cdd27",
+        "sentAt": "2026-11-01T07:13:31Z",
+        "status": "Success",
+        "responseCode": 0
+      }
+    }
+  ],
+  "queueMeasurements": [
+    {
+      "index": 4,
+      "scenario": "b-idle-gaps-before-gaps",
+      "measuredAt": "2026-11-01T07:13:17.396681+00:00",
+      "listeners": {
+        "a13": {
+          "accepted": 100,
+          "deliveredToSpool": 100,
+          "expected": 100,
+          "malformedKeys": 0,
+          "missing": 0,
+          "missingSample": [],
+          "missingSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "passed": true,
+      "settleLimitSeconds": 1200,
+      "receipt": {
+        "commandId": "b0867635-aeda-4bd8-90d2-d75feadf3ec5",
+        "instanceId": "i-04baca853cd5a072d",
+        "host": "Linux",
+        "script": "syslog-host.sh",
+        "sha256": "d72790c1c34cbf18059e35c3c6309215e1b64c84a1120c4185087fb53f0cdd27",
+        "sentAt": "2026-11-01T07:13:16Z",
+        "status": "Success",
+        "responseCode": 0
+      },
+      "sourceSha256": "f9e894336bddcfb36a85d7a7cbfafae215906733264d42feb0eb60a0bca809e1"
+    },
+    {
+      "index": 5,
+      "scenario": "b-idle-gaps-after-5min",
+      "measuredAt": "2026-11-01T07:13:17.439481+00:00",
+      "listeners": {
+        "a13": {
+          "accepted": 100,
+          "deliveredToSpool": 100,
+          "expected": 100,
+          "malformedKeys": 0,
+          "missing": 0,
+          "missingSample": [],
+          "missingSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "passed": true,
+      "settleLimitSeconds": 1200,
+      "receipt": {
+        "commandId": "251f3be1-7a68-42d0-9918-8d45968f7cce",
+        "instanceId": "i-04baca853cd5a072d",
+        "host": "Linux",
+        "script": "syslog-host.sh",
+        "sha256": "d72790c1c34cbf18059e35c3c6309215e1b64c84a1120c4185087fb53f0cdd27",
+        "sentAt": "2026-11-01T07:13:16Z",
+        "status": "Success",
+        "responseCode": 0
+      },
+      "sourceSha256": "5214ed429c6c844208cead129f8bc6872ab73cbd14615056bcbf063b0a768737"
+    },
+    {
+      "index": 6,
+      "scenario": "b-idle-gaps-after-30min",
+      "measuredAt": "2026-11-01T07:13:17.273015+00:00",
+      "listeners": {
+        "a13": {
+          "accepted": 100,
+          "deliveredToSpool": 100,
+          "expected": 100,
+          "malformedKeys": 0,
+          "missing": 0,
+          "missingSample": [],
+          "missingSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "passed": true,
+      "settleLimitSeconds": 1200,
+      "receipt": {
+        "commandId": "22c5a22d-42d6-4629-b9f7-9576c240ff71",
+        "instanceId": "i-04baca853cd5a072d",
+        "host": "Linux",
+        "script": "syslog-host.sh",
+        "sha256": "d72790c1c34cbf18059e35c3c6309215e1b64c84a1120c4185087fb53f0cdd27",
+        "sentAt": "2026-11-01T07:13:16Z",
+        "status": "Success",
+        "responseCode": 0
+      },
+      "sourceSha256": "aefb160abc1d273ea073e90671e7e9737247caf12bdc8c9eb0a9c80840d2c851"
+    },
+    {
+      "index": 7,
+      "scenario": "b-idle-gaps-burst-after-65min",
+      "measuredAt": "2026-11-01T07:13:17.174215+00:00",
+      "listeners": {
+        "a13": {
+          "accepted": 6000,
+          "deliveredToSpool": 6000,
+          "expected": 6000,
+          "malformedKeys": 0,
+          "missing": 0,
+          "missingSample": [],
+          "missingSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "passed": true,
+      "settleLimitSeconds": 1200,
+      "receipt": {
+        "commandId": "b28302ed-058e-47ce-8076-eb528b46578c",
+        "instanceId": "i-04baca853cd5a072d",
+        "host": "Linux",
+        "script": "syslog-host.sh",
+        "sha256": "d72790c1c34cbf18059e35c3c6309215e1b64c84a1120c4185087fb53f0cdd27",
+        "sentAt": "2026-11-01T07:13:16Z",
+        "status": "Success",
+        "responseCode": 0
+      },
+      "sourceSha256": "e469339ae7d42e94648c50ee69b7d8ab3817bf990a6fd3bc7f88fa6f8bc43a8c"
+    }
+  ],
+  "collection": {
+    "scenario": "b-idle-gaps",
+    "collectionStartedAt": "2026-11-01T07:12:39.675321+00:00",
+    "collectionElapsedSeconds": 69.45573341700037,
+    "stages": [
+      {
+        "stage": "collect-0",
+        "returncode": 0,
+        "startedAt": "2026-11-01T07:12:39.675737+00:00",
+        "finishedAt": "2026-11-01T07:12:48.568826+00:00",
+        "elapsedSeconds": 8.893524832999901
+      },
+      {
+        "stage": "collect-1",
+        "returncode": 0,
+        "startedAt": "2026-11-01T07:12:48.568904+00:00",
+        "finishedAt": "2026-11-01T07:12:56.654871+00:00",
+        "elapsedSeconds": 8.086354749999373
+      },
+      {
+        "stage": "collect-2",
+        "returncode": 0,
+        "startedAt": "2026-11-01T07:12:56.654930+00:00",
+        "finishedAt": "2026-11-01T07:13:05.077140+00:00",
+        "elapsedSeconds": 8.422631500000534
+      },
+      {
+        "stage": "collect-3",
+        "returncode": 0,
+        "startedAt": "2026-11-01T07:13:05.077246+00:00",
+        "finishedAt": "2026-11-01T07:13:13.302295+00:00",
+        "elapsedSeconds": 8.225450291000016
+      },
+      {
+        "stage": "collect-7",
+        "returncode": 0,
+        "startedAt": "2026-11-01T07:13:13.308999+00:00",
+        "finishedAt": "2026-11-01T07:13:22.422119+00:00",
+        "elapsedSeconds": 9.113639416999831
+      },
+      {
+        "stage": "collect-6",
+        "returncode": 0,
+        "startedAt": "2026-11-01T07:13:13.307790+00:00",
+        "finishedAt": "2026-11-01T07:13:22.426625+00:00",
+        "elapsedSeconds": 9.119274208000206
+      },
+      {
+        "stage": "collect-5",
+        "returncode": 0,
+        "startedAt": "2026-11-01T07:13:13.306752+00:00",
+        "finishedAt": "2026-11-01T07:13:22.475031+00:00",
+        "elapsedSeconds": 9.168704832999538
+      },
+      {
+        "stage": "collect-4",
+        "returncode": 0,
+        "startedAt": "2026-11-01T07:13:13.306650+00:00",
+        "finishedAt": "2026-11-01T07:13:22.497632+00:00",
+        "elapsedSeconds": 9.191411458999937
+      },
+      {
+        "stage": "collect-8",
+        "returncode": 0,
+        "startedAt": "2026-11-01T07:13:22.497900+00:00",
+        "finishedAt": "2026-11-01T07:13:29.874013+00:00",
+        "elapsedSeconds": 7.376470750000408
+      },
+      {
+        "stage": "collect-9",
+        "returncode": 0,
+        "startedAt": "2026-11-01T07:13:29.874081+00:00",
+        "finishedAt": "2026-11-01T07:13:36.946396+00:00",
+        "elapsedSeconds": 7.072660542000449
+      },
+      {
+        "stage": "export",
+        "returncode": 0,
+        "startedAt": "2026-11-01T07:13:36.946463+00:00",
+        "finishedAt": "2026-11-01T07:13:44.065679+00:00",
+        "elapsedSeconds": 7.119561708000219
+      },
+      {
+        "stage": "reconcile",
+        "returncode": 0,
+        "startedAt": "2026-11-01T07:13:44.065754+00:00",
+        "finishedAt": "2026-11-01T07:13:49.126229+00:00",
+        "elapsedSeconds": 5.060718000000634
+      }
+    ],
+    "complete": true
+  },
+  "collectionOutcomeSha256": "ea706cfd27241391b62df945a4398dd0323f0f515b16453954980bd828dea311",
+  "collectionHelperSha256": "94257d3a185747070a695d5591f4ca51b338acb3312bfd3acf6628730d29fada",
+  "scope": "Observed native generator end-to-start gaps; scheduler targets alone do not prove elapsed idle time. This is an idle test, not a fault-injection test.",
+  "timingBudget": {
+    "preferredCollectionFinish": "2026-11-01T07:35:00+00:00",
+    "absoluteCollectionStop": "2026-11-01T07:40:00+00:00",
+    "unchangedResourceExpiry": "2026-11-01T08:10:00+00:00",
+    "actualCollectionFinish": "2026-11-01T07:13:49.126229+00:00",
+    "contingencyMarginUsed": false
+  }
+}

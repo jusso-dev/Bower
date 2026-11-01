@@ -1,0 +1,17 @@
+// Bower: collector health record missing (collector down, host down, or delivery to Sentinel failing).
+// One row per collector whose newest collector_health record was ingested more than
+// __MISSING_MINUTES__ minutes ago, or (when listed in the expected set) never arrived in the window.
+// Requires BOWER_HEALTH_RECORD_INTERVAL_SECONDS and the BWR-POL-COLLECTOR-HEALTH policy on each collector.
+let missingAfter = __MISSING_MINUTES__m;
+let expected = print CollectorId = dynamic(__EXPECTED_COLLECTORS__)
+    | mv-expand CollectorId to typeof(string)
+    | where isnotempty(CollectorId);
+let seen = BowerSecurity_CL
+    | where EventType == "collector_health" and isnotempty(CollectorId)
+    | summarize LastIngested = max(ingestion_time()), LastRecordAt = max(TimeGenerated) by CollectorId;
+union
+    (expected | join kind=leftanti seen on CollectorId | extend LastIngested = datetime(null), LastRecordAt = datetime(null)),
+    seen
+| where isnull(LastIngested) or LastIngested < ago(missingAfter)
+| extend MinutesSinceLastRecord = iff(isnull(LastIngested), real(null), round(datetime_diff('second', now(), LastIngested) / 60.0, 1))
+| project CollectorId, LastIngested, LastRecordAt, MinutesSinceLastRecord

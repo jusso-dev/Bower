@@ -1,0 +1,80 @@
+{
+ "failedFirstAttempt": {
+  "attempt": "archive replay CHG-WS6-ARCHIVE-001",
+  "result": "failed before intent: wrapper parsed only the last line of the multi-line dry-run JSON; audit directory left empty and not reused",
+  "at": "2026-10-31T09:47:25Z"
+ },
+ "intent": {
+  "archive_verification": {
+   "firstSequence": 1,
+   "headHash": "d9c09da790e911c731d1a109a9aba0ce0e0e2c71e38388569f9c65165c71cdb0",
+   "headSequence": 5252,
+   "intact": true,
+   "segments": 5,
+   "verifiedEvents": 5252
+  },
+  "change_reference": "CHG-WS6-ARCHIVE-002",
+  "command": "archive replay --from --to --event-type network_connection_denied",
+  "dry_run": {
+   "dryRun": true,
+   "responses": {},
+   "selected": 119
+  },
+  "from": "2026-10-31T08:40:00Z",
+  "operation_id": "99ba47ca-6ff8-4785-b957-c28deb5814d8",
+  "operator": "ws6-operator",
+  "record_type": "intent",
+  "schema_version": 1,
+  "target_collector": "ws6-linux-replay",
+  "timestamp_utc": "2026-10-31T09:48:01.514581+00:00",
+  "to": "2026-10-31T08:42:00Z"
+ },
+ "outcome": {
+  "cli_exit_code": 0,
+  "cli_summary": {
+   "dryRun": false,
+   "responses": {
+    "202": 119
+   },
+   "selected": 119
+  },
+  "delivery_verified": false,
+  "record_type": "outcome",
+  "schema_version": 1,
+  "timestamp_utc": "2026-10-31T09:48:04.442818+00:00"
+ },
+ "replayCollectorQueue": {
+  "commandId": "340f4009-3b55-4282-9fc5-e6d6b4506f7f",
+  "instanceId": "i-001ebc66ad35043cc",
+  "host": "Linux",
+  "script": "drill-archive.sh",
+  "sha256": "99b4ca513ff7ea96cb461460cbe4027fdb18a44128eda4f3f86adce51a659293",
+  "sentAt": "2026-10-31T09:48:00Z",
+  "status": "Success",
+  "responseCode": 0
+ },
+ "destination": {
+  "window": "2026-10-31T08:40:00Z..08:42:00Z, EventType network_connection_denied",
+  "rowsByCollector": {
+   "ws6-linux-01": {
+    "rows": 119,
+    "ids": 119,
+    "replayLabelled": 0
+   },
+   "ws6-linux-replay": {
+    "rows": 119,
+    "ids": 119,
+    "replayLabelled": 119
+   }
+  },
+  "copiesPerEventId": {
+   "2": 119
+  },
+  "dedupByEventId": 119,
+  "dedupByCollectorIdAndEventId": 238,
+  "sortedIdDigests": [
+   "ws6-linux-01 119 3560592983cab0ddcc2795c390ab2e44c22ebc9e3c7ee0151175056deea5f26b",
+   "ws6-linux-replay 119 3560592983cab0ddcc2795c390ab2e44c22ebc9e3c7ee0151175056deea5f26b"
+  ]
+ }
+}

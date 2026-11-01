@@ -212,20 +212,28 @@ jobs:
       - name: Validate AWS lab harness
         run: |
           python3 -m unittest discover -s lab/aws/tests -v
+          python3 -m unittest discover -s lab/aws/monitoring -p 'test_*.py' -v
           python3 -m compileall -q lab/aws/scripts
+          python3 -m compileall -q lab/aws/monitoring
           for script in lab/aws/scripts/*.sh; do bash -n "$script"; done
           python3 lab/aws/scripts/template.py "$RUNNER_TEMP/bower-lab.json"
       - name: Check Windows lab script syntax
         shell: pwsh
         run: |
-          foreach ($file in Get-ChildItem lab/aws/scripts/*.ps1) {
+          foreach ($file in Get-ChildItem @('lab/aws/scripts/*.ps1', 'lab/aws/monitoring/*.ps1', 'lab/aws/tests/*.ps1')) {
             $tokens = $null
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
             if ($errors.Count) { $errors | Write-Error; exit 1 }
           }
+      - name: Test monitoring host and fleet checks
+        run: |
+          python3 -B -m unittest discover -s deploy/sentinel/monitoring/host -v
+          python3 -B -m unittest discover -s deploy/sentinel/monitoring/fleet -v
+          for script in lab/aws/monitoring/*.sh; do bash -n "$script"; done
+          python3 lab/aws/monitoring/stack.py "$RUNNER_TEMP/bower-monitoring-lab.json"
       - name: Lint CloudFormation
-        run: uvx cfn-lint==1.57.2 deploy/aws/*.yaml "$RUNNER_TEMP/bower-lab.json"
+        run: uvx cfn-lint==1.57.2 deploy/aws/*.yaml "$RUNNER_TEMP/bower-lab.json" "$RUNNER_TEMP/bower-monitoring-lab.json"
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: 1.15.8
@@ -235,6 +243,50 @@ jobs:
           terraform fmt -check -diff
           terraform init -backend=false -input=false
           terraform validate
+
+  monitoring-windows:
+    needs: changes
+    if: needs.changes.outputs.infrastructure == 'true'
+    # The Windows health check runs under Windows PowerShell 5.1 on most hosts and under
+    # PowerShell 7 elsewhere; the Pester suite runs every case under both.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Pester
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+              Install-Module -Name Pester -RequiredVersion 5.9.1 -SkipPublisherCheck -Scope CurrentUser -Force -ErrorAction Stop
+              break
+            } catch {
+              if ($attempt -eq 3) { throw }
+              Start-Sleep -Seconds (5 * $attempt)
+            }
+          }
+      - name: Test Windows health check and mounted volumes on PowerShell 5.1 and 7
+        shell: pwsh
+        run: |
+          Import-Module Pester -RequiredVersion 5.9.1
+          $configuration = New-PesterConfiguration
+          $configuration.Run.Path = 'deploy/sentinel/monitoring/host'
+          $configuration.Run.Exit = $true
+          $configuration.Output.Verbosity = 'Detailed'
+          Invoke-Pester -Configuration $configuration
+      - name: Test qualification harness and native ACL rollback on PowerShell 5.1 and 7
+        shell: pwsh
+        run: |
+          foreach ($engine in @('powershell.exe', 'pwsh.exe')) {
+            foreach ($fixture in Get-ChildItem lab/aws/tests/test_*.ps1 | Sort-Object Name) {
+              & $engine -NoProfile -NonInteractive -File $fixture.FullName
+              if ($LASTEXITCODE -ne 0) {
+                throw "Qualification fixture $($fixture.Name) failed under $engine with exit $LASTEXITCODE"
+              }
+            }
+          }
 
   powershell:
     needs: changes
@@ -640,7 +692,7 @@ jobs:
   ci-success:
     name: ci-success
     if: always()
-    needs: [changes, workflow-lint, build-test, windows-event-log, rust, infrastructure, powershell, ui, e2e, docker, docker-arm64, publish, package-linux, package-windows, install-linux, install-windows]
+    needs: [changes, workflow-lint, build-test, windows-event-log, rust, infrastructure, monitoring-windows, powershell, ui, e2e, docker, docker-arm64, publish, package-linux, package-windows, install-linux, install-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Require every selected check to pass
@@ -658,7 +710,7 @@ jobs:
           selected = results['changes'].get('outputs', {})
           groups = {
               'dotnet': ['build-test'], 'rust': ['rust'],
-              'infrastructure': ['infrastructure'], 'powershell': ['powershell'],
+              'infrastructure': ['infrastructure', 'monitoring-windows'], 'powershell': ['powershell'],
               'ui': ['ui'], 'e2e': ['e2e'], 'windows': ['windows-event-log'],
               'containers': ['docker', 'docker-arm64'], 'platforms': ['publish'],
               'packaging': ['package-linux', 'package-windows', 'install-linux', 'install-windows'],

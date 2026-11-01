@@ -8,7 +8,8 @@ namespace Bower.Collector;
 /// <summary>
 /// Collector side of the syslog source (see <see cref="PackRecordIntake"/>). Returning
 /// <see cref="SyslogSubmitOutcome.Queued"/> means the event is durably enqueued; that is the
-/// TCP acknowledgement point.
+/// durable admission boundary. TCP/TLS acknowledgements do not confirm this commit
+/// to the sender; bytes buffered before admission can be lost on a process crash.
 /// </summary>
 internal sealed class CollectorSyslogSink(
     PolicyBundle bundle,

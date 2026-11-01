@@ -247,3 +247,15 @@ minimatch dependency and cancellation handling have moderate denial-of-service
 advisories. Glob 14.0.3 uses a patched minimatch. This crosses Sentry's declared
 major-version range, so the docs checks must exercise compatibility; remove the
 override when Sentry or Lighthouse supports a patched dependency chain.
+
+### Windows lab queue identity evidence: inbox SQLite API
+
+`lab/aws/monitoring/wec-qualification.ps1` uses `winsqlite3.dll`, the Windows
+Server 2016+ inbox SQLite API, through PS5.1-compatible P/Invoke. This is a lab-only
+read-only projection of `event_id` and `received_at` needed to reconcile native
+WEC identities with actual durable queue acceptance. It avoids exporting queue
+payloads or installing a separate SQLite executable/runtime package. Input rows
+and field lengths are bounded; unsupported APIs and read errors fail the
+qualification. The production collector retains its existing SQLite dependency.
+The API must be exercised on the owned Windows host; cross-platform compilation
+and mocked tests do not establish native compatibility.

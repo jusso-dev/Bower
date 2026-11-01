@@ -191,6 +191,7 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .merge(ingest)
         .route("/health", get(health))
+        .route("/health/live", get(health_live))
         .route("/v1/status", get(status))
         .route("/v1/tap", get(crate::tap_http::tap))
         .layer(Extension(Arc::new(EventIdentityConflicts::default())))
@@ -624,6 +625,12 @@ async fn read_store<T: Send + 'static>(
 #[derive(Serialize)]
 struct HealthBody {
     status: &'static str,
+}
+
+// Process liveness (C# /health/live): touches no storage, so a busy or locked queue
+// database never restarts a working collector. Metadata-free.
+async fn health_live() -> Response {
+    json_response(StatusCode::OK, &HealthBody { status: "alive" })
 }
 
 // Liveness for probes: status only, no queue metadata without a token.

@@ -1,0 +1,35 @@
+// Bower: syslog TLS material about to expire, from each collector's newest health record. The
+// server certificate or the client CA certificate expires within __CERTIFICATE_DAYS__ days, or the
+// client revocation list must be refreshed within __CRL_HOURS__ hours (a stale list refuses every
+// sender of that CA).
+let latestHealth = BowerSecurity_CL
+| where EventType == "collector_health"
+| summarize arg_max(TimeGenerated, Attributes) by CollectorId;
+let listeners = latestHealth
+| mv-expand Listener = Attributes.syslog
+| where isnotempty(Listener)
+| extend Protocol = tolower(tostring(Listener.protocol)),
+    ServerCertificateNotAfter = todatetime(Listener.serverCertificateNotAfter),
+    ClientCaNotAfter = todatetime(Listener.clientCertificateAuthorityNotAfter),
+    RevocationListNextUpdate = todatetime(Listener.clientRevocationListNextUpdate);
+let expiry = listeners
+| where Protocol == "tls"
+| where ServerCertificateNotAfter < now() + __CERTIFICATE_DAYS__d
+    or ClientCaNotAfter < now() + __CERTIFICATE_DAYS__d
+    or RevocationListNextUpdate < now() + __CRL_HOURS__h
+| project CollectorId, Source = strcat("syslog:", tostring(Listener.id)), RecordAt = TimeGenerated,
+    ServerCertificateNotAfter, ClientCaNotAfter, RevocationListNextUpdate, CoverageIncomplete = false, TlsMetadataIncomplete = false;
+// The current health schema does not say whether client CA/CRL files are configured.
+// Missing optional dates on TLS therefore mean unknown, not a proven expiry or a clean bill of health.
+let listenerUnknown = listeners
+| where Protocol !in ("tls", "tcp", "udp") or (Protocol == "tls" and
+    (isnull(ServerCertificateNotAfter) or isnull(ClientCaNotAfter) or isnull(RevocationListNextUpdate)))
+| project CollectorId, Source = strcat("syslog:", tostring(Listener.id), ":tls-metadata-unknown"), RecordAt = TimeGenerated,
+    ServerCertificateNotAfter, ClientCaNotAfter, RevocationListNextUpdate, CoverageIncomplete = false, TlsMetadataIncomplete = true;
+// Missing metadata is unknown, including for older collector versions.
+let incomplete = latestHealth
+| where coalesce(tobool(Attributes.monitoringCoverage.syslogComplete), false) == false
+| project CollectorId, Source = "syslog:coverage-incomplete", RecordAt = TimeGenerated,
+    ServerCertificateNotAfter = datetime(null), ClientCaNotAfter = datetime(null),
+    RevocationListNextUpdate = datetime(null), CoverageIncomplete = true, TlsMetadataIncomplete = false;
+union expiry, listenerUnknown, incomplete

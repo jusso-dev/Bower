@@ -98,6 +98,24 @@ public static partial class CollectorApplication
             services.GetRequiredService<TimeProvider>(),
             services.GetRequiredService<ILogger<SourceHealth>>()));
         builder.Services.AddHostedService<SuppressionWindowWorker>();
+        if (settings.HealthRecordInterval is not null)
+        {
+            // Checked at build so a bundle that would refuse every health record stops start-up.
+            RequireHealthRecordPolicy(settings, bundle);
+            builder.Services.AddHostedService(services => new CollectorHealthWorker(
+                services.GetRequiredService<SecurityEventProcessor>(),
+                services.GetRequiredService<CollectorIdentity>(),
+                services.GetRequiredService<IDurableEventStore>(),
+                services.GetRequiredService<PipelineTelemetry>(),
+                services.GetRequiredService<SourceHealth>(),
+                services.GetRequiredService<DeliveryActivity>(),
+                settings,
+                services.GetRequiredService<TimeProvider>(),
+                services.GetRequiredService<ILogger<CollectorHealthWorker>>(),
+                services.GetService<SyslogSource>(),
+                services.GetService<WindowsEventLogSource>(),
+                services.GetRequiredService<ManagedPrivacyProfileState>()));
+        }
         if (sources.Syslog is { } syslog)
         {
             builder.Services.AddSingleton(services => new SyslogSource(
@@ -396,7 +414,13 @@ public static partial class CollectorApplication
             .AddEndpointFilter<ManagedPrivacyProfileGateFilter>()
             .RequireRateLimiting("ingest");
 
-        // Liveness for probes: status only, no queue metadata without a token.
+        // Process liveness: answers while the host serves requests and touches no storage, so a
+        // busy or locked queue database never restarts a working collector. Metadata-free.
+        app.MapGet(
+            "/health/live",
+            () => Results.Json(new HealthResponse("alive"), CollectorJsonContext.Default.HealthResponse));
+
+        // Readiness and status for probes: status only, no queue metadata without a token.
         app.MapGet(
             "/health",
             async (IDurableEventStore eventQueue, SourceHealth sources, CancellationToken cancellationToken) =>
@@ -422,6 +446,8 @@ public static partial class CollectorApplication
                     QueueSnapshot snapshot = await eventQueue.GetSnapshotAsync(cancellationToken);
                     LedgerHead ledger = await eventQueue.GetLedgerHeadAsync(cancellationToken);
                     IReadOnlyList<SourceSilenceStatus> sources = sourceHealth.Evaluate();
+                    DeliveryActivity activity = context.RequestServices.GetRequiredService<DeliveryActivity>();
+                    DeliveryFailureActivity? lastFailure = activity.LastFailure;
                     StatusResponse status = new(
                         Status(snapshot, sources),
                         new StatusPolicyResponse(
@@ -462,11 +488,79 @@ public static partial class CollectorApplication
                         Relay = context.RequestServices.GetService<RelayTelemetry>()?.Snapshot(),
                         Activity = telemetry.BusiestSources(),
                         Tap = context.RequestServices.GetRequiredService<EventTap>().Snapshot(),
-                        WindowsEventLog = context.RequestServices.GetService<WindowsEventLogSource>()?.Snapshot()
+                        WindowsEventLog = context.RequestServices.GetService<WindowsEventLogSource>()?.Snapshot(),
+                        QueuePages = await QueuePagesAsync(eventQueue, cancellationToken),
+                        DeliveryActivity = new StatusDeliveryActivityResponse(
+                            activity.LastSuccessfulDeliveryAt, lastFailure?.Code, lastFailure?.At)
                     };
                     return Results.Json(status, CollectorJsonContext.Default.StatusResponse);
                 })
             .AddEndpointFilter<IngestAuthenticationFilter>();
+    }
+
+    /// <summary>
+    /// Health records go through policy like any event. Fail closed at start-up when the
+    /// loaded bundle would refuse one, instead of refusing a record every interval: a healthy
+    /// record and degraded ones of every severity (result failure; low, medium, high), since a
+    /// bundle that refused only those would hide exactly the records the alerts need.
+    /// </summary>
+    internal static void RequireHealthRecordPolicy(CollectorSettings settings, PolicyBundle bundle)
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        long capacity = settings.MaximumQueueBytes;
+        CollectorHealthSample healthy = new(
+            now, now, 1, settings.HealthRecordInterval ?? TimeSpan.FromMinutes(5), settings.OutputType, "waiting", null,
+            new QueueSnapshot(0, 0, 0, 0, 0, 0, null), capacity,
+            new IntakeMetricsSnapshot(now, 0, 0, 0, 0, 0, 0, null, null),
+            new PipelineMetricsSnapshot(now, 0, 0, 0, 0, 0, 0, []),
+            false, [], null, null);
+        CollectorHealthSample[] probes =
+        [
+            healthy,
+            // Low: retries only.
+            healthy with { OutputType = "azure-logs-ingestion", Queue = new QueueSnapshot(0, 1, 0, 0, 0, 1, now, 1) },
+            // Medium: dead letters.
+            healthy with { OutputType = "azure-logs-ingestion", Queue = new QueueSnapshot(0, 0, 0, 0, 1, 1, null) },
+            // High: backpressure and a stall.
+            healthy with
+            {
+                OutputType = "azure-logs-ingestion",
+                Queue = new QueueSnapshot(1, 0, 0, 0, 0, capacity, now.AddHours(-1), capacity)
+            }
+        ];
+        DeterministicPolicyEvaluator evaluator = new(bundle.Policies);
+        foreach (CollectorHealthSample probe in probes)
+        {
+            SecurityEventEnvelope record = CollectorHealthRecord.Create(probe, settings.CollectorId, settings.Environment);
+            PolicyDecision decision = evaluator.Evaluate(record);
+            if (decision.Action is not (DecisionAction.Accept or DecisionAction.RedactAndAccept))
+            {
+                throw new InvalidOperationException(
+                    "BOWER_HEALTH_RECORD_INTERVAL_SECONDS is set but no loaded policy accepts collector_health " +
+                    $"records with result {record.EventResult} and severity {record.EventSeverity} " +
+                    $"(decision {PipelineTelemetry.ActionName(decision.Action)}). Add " +
+                    "examples/policies/collector-health/collector-health.yaml to the policy directory or set the interval to 0.");
+            }
+        }
+    }
+
+    private static async Task<StatusQueuePagesResponse?> QueuePagesAsync(
+        IDurableEventStore queue,
+        CancellationToken cancellationToken)
+    {
+        if (queue is not IQueuePageUsageSource source)
+        {
+            return null;
+        }
+
+        try
+        {
+            return StatusQueuePagesResponse.From(await source.GetPageUsageAsync(cancellationToken));
+        }
+        catch (Exception exception) when (exception is Microsoft.Data.Sqlite.SqliteException or QueueCapacityExceededException or IOException)
+        {
+            return null;
+        }
     }
 
     private static string Status(QueueSnapshot snapshot, IReadOnlyList<SourceSilenceStatus> sources) =>

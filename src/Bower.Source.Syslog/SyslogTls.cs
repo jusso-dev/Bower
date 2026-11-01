@@ -96,8 +96,8 @@ internal sealed class SyslogTlsSource : IDisposable
         SyslogTlsMaterial previous = Interlocked.Exchange(ref current, next);
         stamp = files.Stamp;
         lastFailure = null;
-        // Publish completion only after releasing the source's old reference. An in-flight
-        // handshake can still hold the old generation until that handshake ends.
+        // Report completion after the source releases its previous reference.
+        // An in-flight handshake may still hold that material independently.
         previous.Release();
         Interlocked.Increment(ref reloads);
     }

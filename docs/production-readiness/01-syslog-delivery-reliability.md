@@ -1,12 +1,39 @@
 # 01 — Reliable firewall syslog delivery
 
+The [1 November final-candidate campaign](../evidence/ws6-20261101-final/README.md)
+retains a failed forced-kill test: all 6,000 synthetic firewall events were generated,
+but only 5,979 reached Bower's durable queue and Sentinel. The same 21 identities
+remained missing after the declared settle window. All admitted identities reached
+the destination; this does not make the native-to-destination test a pass. Sender
+queue overflow and journal rate-limit counters were zero, but the exact location
+of the loss among socket, TLS and frame buffers is not established.
+
+The same completed final campaign retained failures for TCP reset (4 missing of
+1,200) and combined collector stop / sender reboot (2 of 600); the combined test
+does not isolate sender-diskqueue loss. Its idle schedule passed exact native,
+queue and Sentinel reconciliation for 6,300 identities with no missing, extra or
+duplicate rows. Observed end-to-next-start gaps were 299.952, 1,804.015 and
+3,903.945 seconds: the nominal five-minute gap was about 48 ms short of 300 seconds.
+The planned tests, sanitized exports and session cleanup are complete. Native
+completeness failures remain open and no production-readiness claim is made.
+
+TCP/TLS transport acknowledgement is not acknowledgement of Bower's durable commit.
+Disk-assisted rsyslog queues and `ResendLastMSGOnReconnect` cannot guarantee replay
+of every frame already written to the connection. A crash-lossless production path
+requires a source that retains uniquely identified events until application-level
+durable acknowledgement, or a separately qualified retained-source replay workflow.
+Reducing read buffers or increasing sender queue capacity cannot supply that guarantee.
+The current plain syslog path remains unqualified for that requirement.
+
 **Gap.** The native pilot lost firewall events *before* Bower accepted them: 768
 events in the first attempt, 43 of 59,400 with rsyslog `RebindInterval="1"`, and a
-smaller loss when Bower closed an idle connection. The final profile passed one
-81-minute run but was never tested against idle gaps over an hour, reconnects,
-transport resets, sender or collector outages, crashes or log rollover.
+smaller loss when Bower closed an idle connection. At that earlier pilot snapshot,
+the profile had passed one 81-minute run but had not yet been tested against idle
+gaps over an hour, reconnects, transport resets, sender or collector outages,
+crashes or log rollover. The 1 November campaign above adds scoped final results;
+it does not qualify another appliance's retention/replay behavior or log rollover.
 
-**Status: incomplete.** The AWS campaign was interrupted. This draft records
+**Historical campaign status: incomplete.** The 31 October AWS campaign was interrupted. This draft records
 observations from the run, proposed changes to Bower and the sender, and a
 procedure for qualifying a firewall or appliance. The profile is not yet qualified.
 It covers every environment where the
@@ -42,9 +69,10 @@ syslog source runs. The measured boundary is **acceptance into the Bower queue**
 Run `bower-ws1-20261031-075451`, AWS Sydney, separate Amazon Linux 2023 sender and
 collector hosts, mutual TLS with certificate and name validation on both sides.
 Every event carries a sequence key, so "lost" means a key that never reached the
-Bower queue, not an estimate. The evidence export and reconciliation are pending.
+Bower queue, not an estimate. At that historical snapshot, evidence export and
+reconciliation were pending; see the separately reconciled 1 November results above.
 
-**Qualification incomplete.** The campaign was interrupted before its final
+**Historical qualification incomplete.** That campaign was interrupted before its final
 evidence export and reconciliation. Its retained scenarios include both passing
 and failing results; the final profile must not be treated as qualified until the
 reports are reviewed, published and independently reconciled.

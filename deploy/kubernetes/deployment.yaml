@@ -66,6 +66,15 @@ spec:
             httpGet:
               path: /health
               port: http
+          # Liveness avoids queue reads so a busy database cannot restart a healthy process.
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
             requests:
               cpu: 50m

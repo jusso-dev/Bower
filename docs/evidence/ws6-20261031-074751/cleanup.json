@@ -1,0 +1,166 @@
+{
+ "runId": "bower-ws6-20261031-074751",
+ "auditedAt": "2026-10-31T10:36:25.264362+00:00",
+ "passed": true,
+ "checks": [
+  {
+   "check": "aws-account",
+   "passed": true,
+   "detail": "959038055523"
+  },
+  {
+   "check": "aws-stack-absent",
+   "passed": true,
+   "detail": "aws: [ERROR]: An error occurred (ValidationError) when calling the DescribeStacks operation: Stack with id bower-ws6-20261031-074751 does not exist"
+  },
+  {
+   "check": "aws-instances-terminated",
+   "passed": true,
+   "detail": [
+    [
+     "i-03df631f129fe1e06",
+     "terminated"
+    ],
+    [
+     "i-001ebc66ad35043cc",
+     "terminated"
+    ]
+   ]
+  },
+  {
+   "check": "aws-volumes-absent",
+   "passed": true,
+   "detail": 0
+  },
+  {
+   "check": "aws-snapshots-absent",
+   "passed": true,
+   "detail": 0
+  },
+  {
+   "check": "aws-securitygroups-absent",
+   "passed": true,
+   "detail": 0
+  },
+  {
+   "check": "aws-subnets-absent",
+   "passed": true,
+   "detail": 0
+  },
+  {
+   "check": "aws-routetables-absent",
+   "passed": true,
+   "detail": 0
+  },
+  {
+   "check": "aws-networkinterfaces-absent",
+   "passed": true,
+   "detail": 0
+  },
+  {
+   "check": "aws-subnet-cidr-free",
+   "passed": true,
+   "detail": 0
+  },
+  {
+   "check": "aws-bucket-absent",
+   "passed": true,
+   "detail": []
+  },
+  {
+   "check": "aws-iam-roles-absent",
+   "passed": true,
+   "detail": []
+  },
+  {
+   "check": "aws-instance-profiles-absent",
+   "passed": true,
+   "detail": []
+  },
+  {
+   "check": "aws-schedules-absent",
+   "passed": true,
+   "detail": []
+  },
+  {
+   "check": "aws-secrets-absent",
+   "passed": true,
+   "detail": 0
+  },
+  {
+   "check": "aws-log-groups-absent",
+   "passed": true,
+   "detail": []
+  },
+  {
+   "check": "azure-resource-group-absent",
+   "passed": true,
+   "detail": "false"
+  },
+  {
+   "check": "azure-tagged-resources-absent",
+   "passed": true,
+   "detail": []
+  },
+  {
+   "check": "azure-workspace-not-soft-deleted",
+   "passed": true,
+   "detail": []
+  },
+  {
+   "check": "azure-action-groups-absent",
+   "passed": true,
+   "detail": "listed"
+  },
+  {
+   "check": "entra-app-ingest-absent",
+   "passed": true,
+   "detail": "not found"
+  },
+  {
+   "check": "entra-sp-ingest-absent",
+   "passed": true,
+   "detail": "not found"
+  },
+  {
+   "check": "entra-deleted-application-ingest-purged",
+   "passed": true,
+   "detail": 0
+  },
+  {
+   "check": "entra-deleted-servicePrincipal-ingest-purged",
+   "passed": true,
+   "detail": 0
+  },
+  {
+   "check": "azure-role-assignments-ingest-absent",
+   "passed": true,
+   "detail": "none"
+  },
+  {
+   "check": "entra-app-reader-absent",
+   "passed": true,
+   "detail": "not found"
+  },
+  {
+   "check": "entra-sp-reader-absent",
+   "passed": true,
+   "detail": "not found"
+  },
+  {
+   "check": "entra-deleted-application-reader-purged",
+   "passed": true,
+   "detail": 0
+  },
+  {
+   "check": "entra-deleted-servicePrincipal-reader-purged",
+   "passed": true,
+   "detail": 0
+  },
+  {
+   "check": "azure-role-assignments-reader-absent",
+   "passed": true,
+   "detail": "none"
+  }
+ ]
+}

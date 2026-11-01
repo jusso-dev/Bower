@@ -346,7 +346,12 @@ public sealed partial class ManagementCommandWorker(
             CollectorSettings restart = restartEnvironment is null
                 ? settings
                 : CollectorSettings.FromEnvironment(restartEnvironment());
-            _ = CollectorStartupSources.Load(restart, PolicyBundle.Load(restart.PolicySources()));
+            PolicyBundle bundle = PolicyBundle.Load(restart.PolicySources());
+            _ = CollectorStartupSources.Load(restart, bundle);
+            if (restart.HealthRecordInterval is not null)
+            {
+                CollectorApplication.RequireHealthRecordPolicy(restart, bundle);
+            }
             return null;
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)

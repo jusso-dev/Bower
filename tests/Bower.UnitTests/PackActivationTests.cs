@@ -59,6 +59,20 @@ public sealed class PackActivationTests
     }
 
     [Fact]
+    public async Task SignedPack_CannotProduceReservedHealthEvent()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await Start(directory, cancellation, reservedHealth: true);
+        using HttpClient client = app.GetTestClient();
+        using HttpResponseMessage response = await Send(client, Raw(), cancellation);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("reserved-event-type", await response.Content.ReadAsStringAsync(cancellation), StringComparison.Ordinal);
+        IDurableEventStore store = app.Services.GetRequiredService<IDurableEventStore>();
+        Assert.Equal(0, (await store.GetSnapshotAsync(cancellation)).Queued);
+    }
+
+    [Fact]
     public async Task SignedPack_RawRecordBecomesRedactedDurableDetection_AndReplayDeduplicates()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
@@ -498,7 +512,7 @@ public sealed class PackActivationTests
         }
     }
 
-    private static async Task<WebApplication> Start(TemporaryDirectory directory, CancellationToken cancellation, bool singleTrustDomain = true, int rate = 1000, bool active = true, IEventRedactor? redactor = null, string? tokensFile = null)
+    private static async Task<WebApplication> Start(TemporaryDirectory directory, CancellationToken cancellation, bool singleTrustDomain = true, int rate = 1000, bool active = true, IEventRedactor? redactor = null, string? tokensFile = null, bool reservedHealth = false)
     {
         (string privateKey, string publicKey, _) = DetachedSigner.GenerateKeyPair();
         string source = Source;
@@ -513,6 +527,18 @@ public sealed class PackActivationTests
             string samples = Path.Combine(source, "samples", "ssh.jsonl");
             File.WriteAllLines(samples, File.ReadAllLines(samples).Where(line => !line.Contains("\"raw\":", StringComparison.Ordinal)));
         }
+        if (reservedHealth)
+        {
+            source = Path.Combine(directory.Path, "reserved-health");
+            CopyPack(source);
+            string parserPath = Path.Combine(source, "parsers", "sshd-json.json");
+            JsonObject parser = JsonNode.Parse(File.ReadAllText(parserPath))!.AsObject();
+            parser["runtime"]!["eventType"] = "collector_health";
+            File.WriteAllText(parserPath, parser.ToJsonString());
+            string samples = Path.Combine(source, "samples", "ssh.jsonl");
+            File.WriteAllLines(samples, File.ReadAllLines(samples).Where(line => !line.Contains("\"raw\":", StringComparison.Ordinal)));
+        }
+
         string archive = PackArchive.Build(source, privateKey, directory.Path);
         string trust = Path.Combine(directory.Path, "trusted.pem");
         string hmac = Path.Combine(directory.Path, "hmac.key");

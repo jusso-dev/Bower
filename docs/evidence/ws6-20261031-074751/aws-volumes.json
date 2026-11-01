@@ -1,0 +1,14 @@
+[
+    {
+        "id": "vol-0238d5942f04ff48f",
+        "size": 20,
+        "type": "gp3",
+        "encrypted": true
+    },
+    {
+        "id": "vol-0cba364db11be13c7",
+        "size": 40,
+        "type": "gp3",
+        "encrypted": true
+    }
+]

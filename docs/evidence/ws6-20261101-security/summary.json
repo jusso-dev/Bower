@@ -1,0 +1,572 @@
+{
+  "schemaVersion": 1,
+  "recordType": "sanitized-isolated-security-qualification",
+  "runId": "bower-ws6-20261101-035853",
+  "candidateCommit": "733eb7448a98e3ac449c8427753b799ad3fec5c1",
+  "scope": "isolated Linux host and synthetic data; no general production-readiness claim",
+  "sourceHashes": {
+    "candidateLinuxExecutableSha256": "785c1b06d642d9fec4998d1693148caa482bcebb395e77293fc08902d00fc41e",
+    "sqliteLibrarySha256": "eddcd4aa561d5b8f252db77e8272e7d1aed96bcab9fda3f177ca542f916290bf",
+    "ws5HarnessSha256": "281f205994294bcf9c2d8dd44b52cbd731daea12a89cb62af28e6144e12bde6a",
+    "recommendedTestScriptSha256": "0547025a187efbab7f5c68b2c974280318671c8bf440e6b8fc44bc2205b8dfef",
+    "healthcheckSha256": "f8610f6c654a91079aa7b6e41f6121bfcb999f68969b55753b4e847f1a9644b1",
+    "securityStackTemplateSha256": "13ce1f86a240b5f8683ff1942ba49d8ae4ad941f0084073a0dd1d2b5a3d6006e"
+  },
+  "ws5Sender": {
+    "kind": "synthetic-isolated-host-security",
+    "candidateCommit": "733eb7448a98e3ac449c8427753b799ad3fec5c1",
+    "scope": "source and local queue; no Sentinel delivery claim",
+    "sender": "WS5 rsyslog linked-list disk-assisted profile, loopback TLS; distinct from final recommended profile",
+    "sourceReportSha256": "76061629395d1e10a41d837da87691e0df13f2460bfdfd30843c155c37533a11",
+    "adversarialReportSha256": "10aec177bb81afb19adb403806bf7abf1a61b538063c646867df90a12fb582b3",
+    "phases": [
+      {
+        "phase": "baseline",
+        "sent": 100,
+        "accepted": 100,
+        "missing": 0,
+        "startedAt": "2026-11-01T04:06:12.936146+00:00",
+        "endedAt": "2026-11-01T04:06:22.946565+00:00"
+      },
+      {
+        "phase": "server-certificate-hot-rotation",
+        "sent": 100,
+        "accepted": 100,
+        "missing": 0,
+        "startedAt": "2026-11-01T04:06:22.946889+00:00",
+        "endedAt": "2026-11-01T04:06:34.997567+00:00"
+      },
+      {
+        "phase": "client-ca-overlap-rotation",
+        "sent": 100,
+        "accepted": 100,
+        "missing": 0,
+        "startedAt": "2026-11-01T04:06:34.997969+00:00",
+        "endedAt": "2026-11-01T04:06:47.919129+00:00"
+      },
+      {
+        "phase": "emergency-client-revocation",
+        "sent": 100,
+        "accepted": 60,
+        "missing": 40,
+        "sessionClosed": true,
+        "reconnectRefusedAsRevoked": true,
+        "revokedHandshakeAccepted": false,
+        "acceptedWhileRevoked": 0,
+        "startedAt": "2026-11-01T04:06:47.919656+00:00",
+        "endedAt": "2026-11-01T04:08:59.480690+00:00",
+        "revokedAt": "2026-11-01T04:06:51.441746+00:00",
+        "rsyslogTlsErrors": 114
+      },
+      {
+        "phase": "refused-client-certificates",
+        "refused": {
+          "expired-client": true,
+          "untrusted-client": true,
+          "revoked-client": true,
+          "server-purpose-as-client": true,
+          "removed-authority-client": true,
+          "no-client-certificate": true
+        }
+      },
+      {
+        "phase": "wrong-server-name",
+        "sent": 30,
+        "accepted": 30,
+        "missing": 0,
+        "startedAt": "2026-11-01T04:08:59.501747+00:00",
+        "endedAt": "2026-11-01T04:09:15.926007+00:00",
+        "acceptedWhileWrongName": 0,
+        "pythonNameCheckAccepted": false,
+        "context": "The server presented a certificate for the wrong peer name, then the correct certificate was restored. Acceptance is reported over the whole phase; acceptedWhileWrongName records observations before repair."
+      },
+      {
+        "phase": "failed-reload",
+        "failureCounted": true,
+        "handshakeStillAccepted": true,
+        "servedSha256": "bd988dfff2eb0849fabf07fc9a02cf2a0bb0d3eecec152eacb57ac7045527d3e",
+        "context": "Mismatched TLS key reload; handshakeStillAccepted and servedSha256 describe continuity of the previous certificate."
+      },
+      {
+        "phase": "collector-restart-under-load",
+        "sent": 100,
+        "accepted": 99,
+        "missing": 1,
+        "startedAt": "2026-11-01T04:09:17.939775+00:00",
+        "endedAt": "2026-11-01T04:11:34.089091+00:00"
+      }
+    ],
+    "adversarial": {
+      "caseCount": 18,
+      "cases": [
+        {
+          "case": "baseline-valid",
+          "outcome": {
+            "serverClosed": false
+          },
+          "counterDelta": {
+            "connectionsAccepted": 1,
+            "framesReceived": 5,
+            "queued": 5,
+            "queueTotal": 5
+          }
+        },
+        {
+          "case": "secrets-in-every-field",
+          "outcome": {
+            "serverClosed": false
+          },
+          "counterDelta": {
+            "connectionsAccepted": 1,
+            "framesReceived": 5,
+            "queued": 5,
+            "queueTotal": 5
+          }
+        },
+        {
+          "case": "injection-strings",
+          "outcome": {
+            "serverClosed": false
+          },
+          "counterDelta": {
+            "connectionsAccepted": 1,
+            "framesReceived": 7,
+            "queued": 7,
+            "queueTotal": 7
+          }
+        },
+        {
+          "case": "nul-control-ansi",
+          "outcome": {
+            "serverClosed": false
+          },
+          "counterDelta": {
+            "connectionsAccepted": 1,
+            "framesReceived": 1,
+            "queued": 1,
+            "queueTotal": 1
+          }
+        },
+        {
+          "case": "invalid-utf8",
+          "outcome": {
+            "serverClosed": false
+          },
+          "counterDelta": {
+            "connectionsAccepted": 1,
+            "framesReceived": 1,
+            "malformed": 1
+          }
+        },
+        {
+          "case": "crlf-injection-line-framed",
+          "outcome": {
+            "serverClosed": false
+          },
+          "counterDelta": {
+            "connectionsAccepted": 1,
+            "framesReceived": 2,
+            "queued": 2,
+            "queueTotal": 2
+          }
+        },
+        {
+          "case": "embedded-newline-octet-framed",
+          "outcome": {
+            "serverClosed": false
+          },
+          "counterDelta": {
+            "connectionsAccepted": 1,
+            "framesReceived": 1,
+            "queued": 1,
+            "queueTotal": 1
+          }
+        },
+        {
+          "case": "huge-structured-data",
+          "outcome": {
+            "serverClosed": false
+          },
+          "counterDelta": {
+            "connectionsAccepted": 1,
+            "framesReceived": 1,
+            "oversized": 1
+          }
+        },
+        {
+          "case": "deeply-nested-json-message",
+          "outcome": {
+            "serverClosed": true
+          },
+          "counterDelta": {
+            "connectionsAccepted": 1,
+            "oversized": 1
+          }
+        },
+        {
+          "case": "oversized-frame",
+          "outcome": {
+            "serverClosed": true
+          },
+          "counterDelta": {
+            "connectionsAccepted": 1,
+            "oversized": 1
+          }
+        },
+        {
+          "case": "octet-count-larger-than-sent",
+          "outcome": {
+            "serverClosed": false
+          },
+          "counterDelta": {
+            "connectionsAccepted": 1,
+            "framingErrors": 1
+          }
+        },
+        {
+          "case": "octet-count-overflow",
+          "outcome": {
+            "serverClosed": true
+          },
+          "counterDelta": {
+            "connectionsAccepted": 1,
+            "oversized": 1
+          }
+        },
+        {
+          "case": "octet-count-zero-and-negative",
+          "outcome": {
+            "serverClosed": true
+          },
+          "counterDelta": {
+            "connectionsAccepted": 1,
+            "framingErrors": 1
+          }
+        },
+        {
+          "case": "non-numeric-garbage",
+          "outcome": {
+            "serverClosed": true
+          },
+          "counterDelta": {
+            "connectionsAccepted": 1,
+            "framingErrors": 1
+          }
+        },
+        {
+          "case": "slowloris-one-byte-per-second",
+          "outcome": {
+            "closedAfterSeconds": null
+          },
+          "counterDelta": {
+            "connectionsAccepted": 1
+          }
+        },
+        {
+          "case": "tls-connection-flood",
+          "outcome": {
+            "attempted": 40,
+            "handshakeRefused": 32,
+            "aliveAfterLimit": 7,
+            "legitimateAfterFlood": {
+              "serverClosed": false
+            }
+          },
+          "counterDelta": {
+            "connectionsAccepted": 9,
+            "connectionsRejected": 32,
+            "framesReceived": 1,
+            "queued": 1,
+            "timeouts": 8,
+            "queueTotal": 1
+          }
+        },
+        {
+          "case": "incomplete-handshake-flood",
+          "outcome": {
+            "idleHandshakes": 6,
+            "closedByServer": 0
+          },
+          "counterDelta": {
+            "connectionsAccepted": 6
+          }
+        },
+        {
+          "case": "burst-1000-frames",
+          "outcome": {
+            "serverClosed": false
+          },
+          "counterDelta": {
+            "activeConnections": 1,
+            "connectionsAccepted": 1,
+            "framesReceived": 498,
+            "queued": 497,
+            "queueTotal": 498
+          }
+        }
+      ],
+      "markerCounts": {
+        "bower.db": {
+          "aws": 0,
+          "jwt": 0,
+          "github": 0,
+          "tfn": 0,
+          "card": 0,
+          "password": 0,
+          "sentinel": 0,
+          "bytes": 2011136
+        },
+        "bower.db-wal": {
+          "aws": 0,
+          "jwt": 0,
+          "github": 0,
+          "tfn": 0,
+          "card": 0,
+          "password": 0,
+          "sentinel": 0,
+          "bytes": 41232
+        },
+        "bower.db-shm": {
+          "aws": 0,
+          "jwt": 0,
+          "github": 0,
+          "tfn": 0,
+          "card": 0,
+          "password": 0,
+          "sentinel": 0,
+          "bytes": 32768
+        },
+        "collector-journal": {
+          "aws": 0,
+          "jwt": 0,
+          "github": 0,
+          "tfn": 0,
+          "card": 0,
+          "password": 0,
+          "sentinel": 0,
+          "bytes": 3195
+        },
+        "status": {
+          "aws": 0,
+          "jwt": 0,
+          "github": 0,
+          "tfn": 0,
+          "card": 0,
+          "password": 0,
+          "sentinel": 0,
+          "bytes": 4452
+        }
+      }
+    },
+    "qualificationLimit": "Sender losses occurred before durable collector acceptance during revocation and restart.",
+    "senderPackage": "rsyslog-8.2204.0-3.amzn2023.0.9.x86_64",
+    "startedAt": "2026-11-01T04:06:12.920189+00:00",
+    "endedAt": "2026-11-01T04:11:34.089830+00:00"
+  },
+  "recommendedSender": {
+    "kind": "recommended-profile-focused-tls",
+    "sourceSha256": "281f205994294bcf9c2d8dd44b52cbd731daea12a89cb62af28e6144e12bde6a",
+    "priorProfileSha256": "3076734d6f16794d4fbb3ead9fb1e8b0e977b3c864f766b0e1701ae3b7f038bb",
+    "profileSha256": "e26fa7442e9bdab17a0d6c1e1b222a9fef066e0ee099987820f00e04475bae11",
+    "profileDifferences": "isolated paths, client/server certificates, peer name and loopback ports; required delivery settings matched",
+    "requiredSettingsVerified": true,
+    "phases": [
+      {
+        "phase": "revoked-client",
+        "sent": 100,
+        "accepted": 60,
+        "missing": 40,
+        "sentSetSha256": "45a747341c8d1c8d03c33351fd4e74f3d6bc0dd3b26877ae35420e6e80a58952",
+        "acceptedSetSha256": "b8fd0309ea74d07fe555a0d58c46e1145b104ed30a9c86f827d36cdbaea58f73",
+        "groups": {
+          "beforeRevocation": {
+            "sent": 30,
+            "accepted": 30,
+            "missing": 0
+          },
+          "duringRevocation": {
+            "sent": 40,
+            "accepted": 0,
+            "missing": 40
+          },
+          "afterReissue": {
+            "sent": 30,
+            "accepted": 30,
+            "missing": 0
+          }
+        },
+        "startedAt": "2026-11-01T04:17:37.384690+00:00",
+        "revokedAt": "2026-11-01T04:17:41.415163+00:00",
+        "endedAt": "2026-11-01T04:17:48.648320+00:00",
+        "reloadObserved": true,
+        "sessionClosed": true,
+        "reconnectRefused": true,
+        "revokedHandshakeAccepted": false,
+        "duplicatesDelta": 0
+      },
+      {
+        "phase": "collector-restart",
+        "sent": 100,
+        "accepted": 99,
+        "missing": 1,
+        "sentSetSha256": "eb4621f9c932fa8f50f6fbb0acde62d589569e58dc543b8defd7e75144bca3fd",
+        "acceptedSetSha256": "f7afd80949ad925b164396585cf726b62332f9a594e27d87dda04b532c485354",
+        "groups": {
+          "beforeRestart": {
+            "sent": 30,
+            "accepted": 30,
+            "missing": 0
+          },
+          "afterRestart": {
+            "sent": 70,
+            "accepted": 69,
+            "missing": 1
+          }
+        },
+        "startedAt": "2026-11-01T04:19:49.327509+00:00",
+        "endedAt": "2026-11-01T04:20:04.373578+00:00",
+        "duplicatesDelta": 0
+      }
+    ],
+    "startedAt": "2026-11-01T04:17:36.873859+00:00",
+    "endedAt": "2026-11-01T04:22:05.063715+00:00",
+    "complete": true
+  },
+  "credentialCases": {
+    "kind": "isolated-current-candidate-credential-security",
+    "cases": {
+      "rejected": {
+        "expectedFailure": "destination-azure-credential-failed",
+        "send": {
+          "tag": "fault",
+          "statuses": {
+            "202": 5
+          }
+        },
+        "failure": {
+          "matchedCount": 5,
+          "totalCount": 5,
+          "matchedCode": "destination-azure-credential-failed"
+        },
+        "recovery": {
+          "matchedCount": 5,
+          "totalCount": 5,
+          "matchedCode": "delivered:"
+        }
+      },
+      "network": {
+        "expectedFailure": "destination-azure-unavailable",
+        "send": {
+          "tag": "fault",
+          "statuses": {
+            "202": 5
+          }
+        },
+        "failure": {
+          "matchedCount": 5,
+          "totalCount": 5,
+          "matchedCode": "destination-azure-unavailable"
+        },
+        "recovery": {
+          "matchedCount": 5,
+          "totalCount": 5,
+          "matchedCode": "delivered:"
+        }
+      }
+    }
+  },
+  "sentinelReconciliation": {
+    "queryAt": "2026-11-01T04:18:07.361158+00:00",
+    "queryRole": "independent-verifier",
+    "scope": "two synthetic isolated credential-failure/recovery collectors",
+    "acceptedCount": 10,
+    "destinationRows": 10,
+    "missing": 0,
+    "extra": 0,
+    "duplicates": 0,
+    "artifacts": {
+      "credential-accepted.ids": "fc73ab7ab1daf12e5dc2f181a7d757035ac62291bc03687806209d713b781d13",
+      "credential-expected.ids": "fc73ab7ab1daf12e5dc2f181a7d757035ac62291bc03687806209d713b781d13",
+      "credential-sentinel-rows.json": "762f7773d2b0cb630f3f28c2e5d698a94050d395b95eb5ba67233e7082e8c991",
+      "credential-sentinel-query.kql": "689cc77c139f43376f8f9e2edabcd55e33003c1ead82596343840cb49eeef9f4"
+    }
+  },
+  "filesystemMonitoring": {
+    "scope": "maintained host filesystem check on dedicated 32 MiB tmpfs; not collector queue saturation",
+    "startedAt": "2026-11-01T04:22:23.180982+00:00",
+    "phases": [
+      {
+        "phase": "warning",
+        "totalBytes": 33554432,
+        "freeBytes": 6291456,
+        "diskLevels": [
+          "WARNING"
+        ],
+        "overallStatus": "WARNING",
+        "statusAvailable": true,
+        "checkedAt": "2026-11-01T04:22:23.299013+00:00"
+      },
+      {
+        "phase": "critical",
+        "totalBytes": 33554432,
+        "freeBytes": 2097152,
+        "diskLevels": [
+          "CRITICAL"
+        ],
+        "overallStatus": "CRITICAL",
+        "statusAvailable": true,
+        "checkedAt": "2026-11-01T04:22:23.423408+00:00"
+      },
+      {
+        "phase": "recovered",
+        "totalBytes": 33554432,
+        "freeBytes": 33554432,
+        "diskLevels": [],
+        "overallStatus": "WARNING",
+        "statusAvailable": true,
+        "checkedAt": "2026-11-01T04:22:23.513779+00:00"
+      }
+    ],
+    "cleaned": true,
+    "checksPassed": true,
+    "endedAt": "2026-11-01T04:22:23.546994+00:00"
+  },
+  "syntheticStorageAlert": {
+    "stimulus": "direct synthetic health record with 95 percent page usage, followed by healthy record; not real queue pressure",
+    "pressurePostAt": "2026-11-01T03:49:17.636934+00:00",
+    "pressureHttpStatus": 204,
+    "recoveryPostAt": "2026-11-01T03:54:43.564517+00:00",
+    "recoveryHttpStatus": 204,
+    "transitions": [
+      {
+        "condition": "Fired",
+        "startedAt": "2026-11-01T03:54:00.3651333Z",
+        "resolvedAt": null
+      },
+      {
+        "condition": "Resolved",
+        "startedAt": "2026-11-01T03:54:00.3651333Z",
+        "resolvedAt": "2026-11-01T04:10:00.4440112Z"
+      }
+    ],
+    "actionGroupsConfigured": false
+  },
+  "cleanup": {
+    "checkedAt": "2026-11-01T04:25:30.487419+00:00",
+    "stackDeleted": true,
+    "instanceTerminated": true,
+    "volumesAbsent": true,
+    "subnetAbsent": true,
+    "securityGroupAbsent": true,
+    "routeTableAbsent": true,
+    "bucketAbsent": true,
+    "rolesAbsent": true,
+    "instanceProfileAbsent": true,
+    "scheduleAbsent": true,
+    "sharedVpcAvailable": true,
+    "sharedNatAvailable": true,
+    "testAzureIdentityAbsent": true,
+    "hostSecretPathsRemoved": true,
+    "passed": true
+  }
+}
