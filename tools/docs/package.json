@@ -10,5 +10,10 @@
   "scripts": {
     "test": "playwright test",
     "screenshots": "playwright test --grep screenshots"
+  },
+  "overrides": {
+    "@sentry/bundler-plugins": {
+      "glob": "14.0.3"
+    }
   }
 }
