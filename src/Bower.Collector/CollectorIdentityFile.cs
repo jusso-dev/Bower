@@ -28,20 +28,21 @@ public static class CollectorIdentityFile
     /// <summary>Resolves the id before settings are read and exports it as <c>BOWER_COLLECTOR_ID</c>.</summary>
     public static CollectorIdSource Apply(Func<string, string?>? read = null, Action<string, string>? write = null)
     {
+        bool processEnvironment = read is null;
         read ??= Environment.GetEnvironmentVariable;
         write ??= Environment.SetEnvironmentVariable;
-        string queuePath = read("BOWER_QUEUE_PATH") is { Length: > 0 } configuredPath
-            ? configuredPath
-            : Path.Combine(AppContext.BaseDirectory, "data", "bower.db");
+        string queuePath = QueuePath(read);
         (string id, CollectorIdSource source) = Resolve(read("BOWER_COLLECTOR_ID"), queuePath, () => Environment.MachineName);
         if (source != CollectorIdSource.Configured)
         {
+            StartupEnvironment.RecordOriginal(read, "BOWER_COLLECTOR_ID", processEnvironment);
             write("BOWER_COLLECTOR_ID", id);
         }
         return source;
     }
 
-    public static (string Id, CollectorIdSource Source) Resolve(string? configured, string queuePath, Func<string> machineName)
+    /// <summary>The id a start would use; <paramref name="persist"/> false never writes (reload pre-check).</summary>
+    public static (string Id, CollectorIdSource Source) Resolve(string? configured, string queuePath, Func<string> machineName, bool persist = true)
     {
         if (!string.IsNullOrWhiteSpace(configured))
         {
@@ -68,6 +69,10 @@ public static class CollectorIdentityFile
         {
             throw new InvalidOperationException("The machine name is not a valid collector id; set BOWER_COLLECTOR_ID.");
         }
+        if (!persist)
+        {
+            return (id, CollectorIdSource.Created);
+        }
         Directory.CreateDirectory(directory);
         string temporary = Path.Combine(directory, $".{FileName}.{Guid.NewGuid():N}.tmp");
         try
@@ -78,7 +83,7 @@ public static class CollectorIdentityFile
         catch (IOException) when (File.Exists(path))
         {
             // Another process created it first; its id wins.
-            return Resolve(configured, queuePath, machineName);
+            return Resolve(configured, queuePath, machineName, persist);
         }
         finally
         {
@@ -86,6 +91,10 @@ public static class CollectorIdentityFile
         }
         return (id, CollectorIdSource.Created);
     }
+
+    /// <summary>Default queue path when <c>BOWER_QUEUE_PATH</c> is unset (as <see cref="CollectorSettings"/>).</summary>
+    public static string QueuePath(Func<string, string?> read) =>
+        read("BOWER_QUEUE_PATH") is { Length: > 0 } configured ? configured : Path.Combine(AppContext.BaseDirectory, "data", "bower.db");
 
     public static bool IsValid(string value) =>
         value.Length is > 0 and <= MaximumLength && value.All(character => !char.IsControl(character) && !char.IsWhiteSpace(character));

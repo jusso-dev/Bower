@@ -260,8 +260,8 @@ in `%ProgramData%\Bower\bower.env`. The service environment points at that file 
   unterminated quote, any other bad line, or a file over 64 KiB.
 
 The file can change trust anchors (`BOWER_PACK_TRUSTED_KEYS`,
-`BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS`), paths and outputs. The collector therefore refuses
-it unless only trusted principals can change it:
+`BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS`), paths and outputs. The collector performs
+platform-specific checks before applying it:
 
 - **Windows:** the file and its folder must be owned by SYSTEM, Administrators or
   TrustedInstaller. Only those principals may hold write, delete, change-permission or
@@ -269,9 +269,32 @@ it unless only trusted principals can change it:
   on `%ProgramData%\Bower`, and a file created there inherits it. Elevated administrators on
   Windows 10/11 own the files they create, so set the owner explicitly:
   `icacls "%ProgramData%\Bower\bower.env" /setowner *S-1-5-32-544`.
-- **Linux:** the file and its folder must be owned by root or the collector's account,
-  must not be group- or world-writable, and the file must not be a symbolic link.
+- **Linux:** each component is opened relative to its verified parent handle without
+  following symbolic links. The opened file and directories must be owned by root or
+  the collector's account. The file and non-sticky directories must not be group- or
+  world-writable; a trusted-owned sticky directory such as `/tmp` is allowed. The
+  opened file must be regular and is read from that same handle. Filesystems whose
+  ownership or mode cannot be verified are refused. A symlink anywhere in the path is
+  refused, so use the real path in configuration.
 - **macOS:** the same mode and link checks, without the owner check.
+
+**Windows handle verification:** only local fixed-drive paths are accepted; mapped network drives, UNC/device paths,
+alternate data streams and reparse points (including directory junctions) are refused.
+The loader opens and checks every directory by handle and keeps those handles locked
+against deletion while opening the next component. It checks the final file's ACL on the
+same handle used to read its bytes. Existing writers cause a safe refusal. Ancestors may
+permit creating new children, as normal drive-root ACLs do; they may not grant untrusted
+users rights to modify their attributes, permissions, ownership or existing children.
+The immediate settings folder and file forbid all untrusted writes. Null and unsupported
+discretionary ACLs are refused rather than interpreted as safe.
+
+**Qualification:** the dedicated Windows CI test must pass on the candidate. It exercises
+the real handle/ACL APIs, concurrent writers, replacement attempts, writable ancestors,
+file and directory reparse points, null DACLs and alternate streams. Linux uses descriptor
+relative opens and verifies owner/mode; installer compatibility and filesystem-specific
+ACL behavior still require the supported-host qualification. macOS checks do not cover
+owners or all ancestors and are outside the first production rollout. Do not interpret
+a passing macOS startup check as a race-safe trust guarantee.
 
 Startup and logging:
 
@@ -283,6 +306,22 @@ Startup and logging:
   <n> setting(s) applied.`, metadata only.
 
 Uninstall (not upgrade) deletes the file.
+
+The signed `reload` command restarts the collector, and a restart re-reads this file and
+`collector-id`. The reload pre-check therefore first rebuilds the environment the restart
+can reconstruct: the current process's original supervisor environment, overridden by
+`bower.env` as it is on disk now
+(path-checked and parsed again, with the trust limits above), with the collector id resolved
+without writing. It then loads policies, packs and sources with those settings. A rejected or
+unreadable settings file, a value rejected by settings or source validation, or an invalid
+`collector-id` is reported as
+`reload-validation-failed`, and the running collector keeps its configuration.
+This is not a complete restart rehearsal: it does not open the queue, bind the listener,
+or observe changes to the supervisor environment made after this process started. An
+inaccessible queue path, a conflicting port, or changed supervisor settings can still
+make the subsequent restart fail. Check those separately and monitor collection after a
+reload.
+See [credential rotation](05-credential-rotation-and-security-failures.md).
 
 > Measured: upgrading dev.264 → dev.270 with settings in the registry **dropped 12 settings**
 > (output, Azure identity, HMAC key file, Windows Event Log config, lease and timeout). The
@@ -609,7 +648,13 @@ not with `bower queue restore` (which expects a manifest).
   encrypted: S3 with SSE-KMS and a bucket policy denying non-TLS access, Azure Storage with
   customer-managed keys, BitLocker/LUKS volumes, or `age`/`gpg` on the file. Restrict reads
   to the recovery role.
-- Keep the manifest with the file; restore verifies the hash before it changes anything.
+- Keep the manifest with the file; restore copies the backup into a private staging directory
+  and verifies that copy against the manifest before opening it with SQLite. Staging is
+  bounded to the manifest's recorded byte count; a truncated or growing input is rejected.
+  The manifest is
+  not signed: an attacker able to replace both it and the backup can substitute a matching
+  pair. Protect their storage and the destination's parent directory from untrusted writes;
+  an attacker who can replace children of that directory can interfere with staging or restore.
 - Back up configuration (`bower.env`, source configs, packs, public keys) through your
   configuration management. Keep secrets in your secret store (Key Vault, Secrets Manager,
   CyberArk), not with the queue backup.

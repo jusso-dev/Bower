@@ -122,6 +122,16 @@ public sealed class CollectorSettingsFileTests
     }
 
     [Fact]
+    public void Load_AcceptsFileAtExactByteLimit()
+    {
+        using TemporaryDirectory directory = new();
+        const string prefix = "BOWER_OUTPUT=";
+        string value = new('x', (int)CollectorSettingsFile.MaximumBytes - prefix.Length);
+        string path = Write(directory, prefix + value);
+        Assert.Equal(value, CollectorSettingsFile.Load(path)!["BOWER_OUTPUT"]);
+    }
+
+    [Fact]
     public void Load_RejectsFilesOrFoldersOthersCanChangeAndSymbolicLinks()
     {
         if (OperatingSystem.IsWindows())
@@ -150,6 +160,29 @@ public sealed class CollectorSettingsFileTests
         File.CreateSymbolicLink(link, trusted);
         Assert.Contains("symbolic link", Assert.Throws<InvalidOperationException>(() => CollectorSettingsFile.Load(link)).Message,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LinuxLoad_RejectsSymlinkedParentsAndWritableAncestors()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        using TemporaryDirectory directory = new();
+        string child = Path.Combine(directory.Path, "child");
+        Directory.CreateDirectory(child);
+        File.SetUnixFileMode(directory.Path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        File.SetUnixFileMode(child, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        string file = Path.Combine(child, "bower.env");
+        File.WriteAllText(file, "BOWER_OUTPUT=none");
+        File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        Assert.NotNull(CollectorSettingsFile.Load(file));
+
+        string link = Path.Combine(directory.Path, "linked");
+        Directory.CreateSymbolicLink(link, child);
+        Assert.Throws<InvalidOperationException>(() => CollectorSettingsFile.Load(Path.Combine(link, "bower.env")));
+
+        File.SetUnixFileMode(directory.Path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.OtherWrite);
+        try { Assert.Throws<InvalidOperationException>(() => CollectorSettingsFile.Load(file)); }
+        finally { File.SetUnixFileMode(directory.Path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
     }
 
     private static bool IsRoot() => Environment.UserName == "root";

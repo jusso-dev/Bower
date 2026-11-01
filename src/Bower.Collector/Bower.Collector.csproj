@@ -23,6 +23,7 @@
     <ProjectReference Include="../Bower.Source.WindowsEventLog/Bower.Source.WindowsEventLog.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Bower.UnitTests" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />
   </ItemGroup>
 </Project>

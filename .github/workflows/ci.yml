@@ -143,6 +143,13 @@ jobs:
           dotnet test --project tests/Bower.UnitTests/Bower.UnitTests.csproj
           --configuration Release --no-build
           --filter-class "Bower.UnitTests.WindowsEventLog*"
+      - name: Windows settings handle and ACL tests
+        env:
+          BOWER_REQUIRE_WINDOWS_SETTINGS_TESTS: "1"
+        run: >
+          dotnet test --project tests/Bower.UnitTests/Bower.UnitTests.csproj
+          --configuration Release --no-build
+          --filter-class "Bower.UnitTests.WindowsSettingsFileTests"
 
   rust:
     needs: changes

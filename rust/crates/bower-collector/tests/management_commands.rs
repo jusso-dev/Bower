@@ -981,3 +981,32 @@ async fn reload_is_refused_for_source_files_a_restart_could_not_load() {
         );
     }
 }
+
+/// Mirrors C# `Reload_IsRefusedWhenTheRestartWouldReadABadSettingsFileOrCollectorId` (the
+/// collector-id part; the Rust collector has no settings file): a restart reads
+/// `collector-id` itself, so an invalid one refuses the reload.
+#[test]
+fn reload_is_refused_when_the_restart_would_read_an_invalid_collector_id() {
+    if std::env::var("BOWER_COLLECTOR_ID").is_ok() {
+        return; // A configured id never reads the file.
+    }
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(directory.path().join("policies")).unwrap();
+    let settings = CollectorSettings::new(
+        "http://127.0.0.1:4319",
+        directory.path().join("data").join("queue.db"),
+        directory.path().join("policies"),
+        COLLECTOR_ID,
+    );
+    assert_eq!(commands::reload_refusal(&settings), None);
+    std::fs::create_dir_all(directory.path().join("data")).unwrap();
+    std::fs::write(
+        directory.path().join("data").join("collector-id"),
+        "bad id\n",
+    )
+    .unwrap();
+    assert_eq!(
+        commands::reload_refusal(&settings),
+        Some("InvalidOperationException")
+    );
+}

@@ -159,10 +159,6 @@ public static class QueueBackup
                 "Queue backup was taken from a damaged queue (integrity or ledger check failed). " +
                 "Restore it only for recovery with --allow-damaged.");
         }
-        if (!File.Exists(backup) || Sha256(backup) != expected.DatabaseSha256)
-        {
-            throw new InvalidDataException("Queue backup is missing or does not match its manifest.");
-        }
         // Never overwrite a queue, and never place a restored database beside a stale WAL:
         // SQLite would apply another database's frames to it.
         foreach (string path in new[] { target, target + "-wal", target + "-shm", target + "-journal" })
@@ -172,12 +168,19 @@ public static class QueueBackup
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
 
         string temporary = Temporary(target);
+        string stagingDirectory = Temporary(target) + ".staging";
         try
         {
+            // Hash the exact private copy SQLite will read, not a path that can be replaced
+            // between verification and opening. The target parent must be trusted; a user
+            // able to replace its children can still interfere with the restore.
+            CreatePrivateDirectory(stagingDirectory);
+            string stagedBackup = Path.Combine(stagingDirectory, "backup.db");
+            await StageBackupAsync(backup, stagedBackup, expected.DatabaseBytes, expected.DatabaseSha256, cancellationToken);
             // Owner-only on Unix from creation; on Windows the copy inherits the queue
             // folder's ACL so the service account can open it.
             CreatePrivateFile(temporary, privateAcl: false);
-            await using (SqliteConnection snapshot = Open(backup, SqliteOpenMode.ReadOnly, timeout))
+            await using (SqliteConnection snapshot = Open(stagedBackup, SqliteOpenMode.ReadOnly, timeout))
             await using (SqliteConnection restored = Open(temporary, SqliteOpenMode.ReadWrite, timeout))
             {
                 await CopyAsync(snapshot, restored, timeout, cancellationToken);
@@ -203,6 +206,41 @@ public static class QueueBackup
         finally
         {
             DeleteTemporary(temporary);
+            if (Directory.Exists(stagingDirectory)) Directory.Delete(stagingDirectory, recursive: true);
+        }
+    }
+
+    /// <summary>Copy into a protected staging directory and verify the bytes that will be restored.</summary>
+    internal static async Task StageBackupAsync(string backup, string stagedBackup, long expectedBytes, string expectedHash, CancellationToken cancellationToken)
+    {
+        CreatePrivateFile(stagedBackup, privateAcl: true);
+        try
+        {
+            await using FileStream source = new(backup, FileMode.Open, FileAccess.Read, FileShare.Read);
+            await using FileStream target = new(stagedBackup, FileMode.Truncate, FileAccess.Write, FileShare.None);
+            if (expectedBytes <= 0 || source.Length != expectedBytes)
+                throw new InvalidDataException("Queue backup size does not match its manifest.");
+            // A file can grow while being copied on Unix. Bound the new staging allocation
+            // to the reviewed manifest instead of following an unbounded concurrent writer.
+            byte[] buffer = new byte[65_536];
+            long remaining = expectedBytes;
+            while (remaining > 0)
+            {
+                int count = await source.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, remaining)), cancellationToken);
+                if (count == 0) throw new InvalidDataException("Queue backup size does not match its manifest.");
+                await target.WriteAsync(buffer.AsMemory(0, count), cancellationToken);
+                remaining -= count;
+            }
+            if (source.ReadByte() != -1) throw new InvalidDataException("Queue backup size does not match its manifest.");
+            await target.FlushAsync(cancellationToken);
+        }
+        catch (FileNotFoundException exception)
+        {
+            throw new InvalidDataException("Queue backup is missing or does not match its manifest.", exception);
+        }
+        if (Sha256(stagedBackup) != expectedHash)
+        {
+            throw new InvalidDataException("Queue backup is missing or does not match its manifest.");
         }
     }
 
@@ -223,7 +261,7 @@ public static class QueueBackup
             throw new InvalidDataException("Queue backup manifest is invalid.", exception);
         }
         if (manifest is null || manifest.ApiVersion != ApiVersion || manifest.Kind != Kind
-            || string.IsNullOrEmpty(manifest.DatabaseSha256)
+            || manifest.DatabaseBytes <= 0 || string.IsNullOrEmpty(manifest.DatabaseSha256)
             || (!manifest.Damaged && (manifest.Counts is null || string.IsNullOrEmpty(manifest.LedgerHash))))
         {
             throw new InvalidDataException("Queue backup manifest is invalid.");

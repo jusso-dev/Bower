@@ -8,6 +8,9 @@ using Bower.Integrity;
 using Bower.Management.Api;
 using Bower.Redaction.Privacy;
 using Microsoft.AspNetCore.Builder;
+using CollectorHeartbeat = Bower.Management.Api.CollectorHeartbeat;
+using CollectorRegistration = Bower.Management.Api.CollectorRegistration;
+using ErrorResponse = Bower.Management.Api.ErrorResponse;
 
 namespace Bower.UnitTests;
 

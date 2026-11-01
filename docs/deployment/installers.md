@@ -142,9 +142,13 @@ msiexec /i bower-collector-0.1.0-x64.msi /qn MANAGEMENTENDPOINT=https://bower-ma
 Other collector settings (output, sources, privacy key file, ingest token file) are not
 MSI properties. Put them in `%ProgramData%\Bower\bower.env` (`KEY=VALUE`, `BOWER_*` and
 `AZURE_*` only), which the service reads through `BOWER_SETTINGS_FILE`. The MSI rewrites
-the service `Environment` value on repair and upgrade, so edits there do not persist;
+the service environment on repair and upgrade. Windows reads the file through locked,
+ACL-verified handles and refuses reparse points throughout the path. The candidate must
+pass the dedicated Windows handle/ACL CI test and installer qualification before release;
+see [settings-file trust and qualification](../production-readiness/04-upgrade-backup-recovery.md).
+Edits to the service `Environment` value do not persist;
 `bower.env` is not an MSI file and is kept. It inherits the folder's protected ACL; the
-collector refuses it unless SYSTEM or Administrators own it and only they can write it. See
+collector checks ownership and write access, subject to the limitations above. See
 [Upgrades, backup and recovery](../production-readiness/04-upgrade-backup-recovery.md#windows-msi-including-wec-hosts). Warnings and errors go to the Application event log (source
 `Bower.Collector`).
 

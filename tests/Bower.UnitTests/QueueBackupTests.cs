@@ -161,7 +161,26 @@ public sealed class QueueBackupTests
 
         await Assert.ThrowsAsync<InvalidDataException>(() => QueueBackup.RestoreAsync(backup, target, cancellationToken: Cancellation));
 
-        Assert.False(Directory.Exists(Path.GetDirectoryName(target)));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(Path.GetDirectoryName(target)!));
+    }
+
+    [Fact]
+    public async Task Restore_StagesVerifiedBytesBeforeSourceReplacement()
+    {
+        using TemporaryDirectory directory = new();
+        string backup = await CreateBackupAsync(directory);
+        string expected = Sha256(backup);
+        long bytes = new FileInfo(backup).Length;
+        string staged = Path.Combine(directory.Path, "staged.db");
+        await QueueBackup.StageBackupAsync(backup, staged, bytes, expected, Cancellation);
+        File.Delete(backup);
+        await File.WriteAllTextAsync(backup, "replacement", Cancellation);
+        Assert.Equal(expected, Sha256(staged));
+        string rejected = Path.Combine(directory.Path, "rejected.db");
+        await Assert.ThrowsAsync<InvalidDataException>(() => QueueBackup.StageBackupAsync(backup, rejected, bytes, expected, Cancellation));
+        string oversized = Path.Combine(directory.Path, "oversized.db");
+        await Assert.ThrowsAsync<InvalidDataException>(() => QueueBackup.StageBackupAsync(staged, oversized, bytes - 1, expected, Cancellation));
+        Assert.Equal(0, new FileInfo(oversized).Length);
     }
 
     [Fact]

@@ -28,6 +28,24 @@ pub fn resolve(
     queue_path: &Path,
     machine_name: impl Fn() -> String,
 ) -> Result<(String, Source), HostError> {
+    resolve_with(configured, queue_path, machine_name, true)
+}
+
+/// The id a restart would use, without writing (the signed `reload` pre-check).
+pub fn check(
+    configured: Option<String>,
+    queue_path: &Path,
+    machine_name: impl Fn() -> String,
+) -> Result<String, HostError> {
+    resolve_with(configured, queue_path, machine_name, false).map(|(id, _)| id)
+}
+
+fn resolve_with(
+    configured: Option<String>,
+    queue_path: &Path,
+    machine_name: impl Fn() -> String,
+    persist: bool,
+) -> Result<(String, Source), HostError> {
     if let Some(id) = configured.filter(|value| !value.trim().is_empty()) {
         return Ok((id, Source::Configured));
     }
@@ -68,6 +86,9 @@ pub fn resolve(
             "The machine name is not a valid collector id; set BOWER_COLLECTOR_ID.",
         ));
     }
+    if !persist {
+        return Ok((id, Source::Created));
+    }
     std::fs::create_dir_all(&directory).map_err(|error| HostError::io(&directory, &error))?;
     let temporary = directory.join(format!(
         ".{FILE_NAME}.{}.tmp",
@@ -79,7 +100,7 @@ pub fn resolve(
     match written {
         Ok(()) => Ok((id, Source::Created)),
         // Another process created it first; its id wins.
-        Err(_) if path.exists() => resolve(None, queue_path, machine_name),
+        Err(_) if path.exists() => resolve_with(None, queue_path, machine_name, persist),
         Err(error) => Err(HostError::io(&path, &error)),
     }
 }
@@ -109,6 +130,20 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(directory.path().join("state").join(FILE_NAME)).unwrap(),
             "pod-abc\n"
+        );
+    }
+
+    #[test]
+    fn check_validates_without_writing() {
+        let directory = tempfile::tempdir().unwrap();
+        let queue = directory.path().join("queue.db");
+        assert_eq!(check(None, &queue, || "host-1".into()).unwrap(), "host-1");
+        assert!(!directory.path().join(FILE_NAME).exists());
+        std::fs::write(directory.path().join(FILE_NAME), "bad id\n").unwrap();
+        assert!(check(None, &queue, || "host-1".into()).is_err());
+        assert_eq!(
+            check(Some("configured".into()), &queue, || "host-1".into()).unwrap(),
+            "configured"
         );
     }
 
