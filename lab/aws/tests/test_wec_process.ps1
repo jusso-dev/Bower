@@ -47,6 +47,23 @@ try {
     Assert-Process ($childErrors.Count -eq 0) 'child script syntax'
     $inputLine = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("bwraaaaaaaaaaaaaaaaa`nsynthetic-invalid-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
     $result = Invoke-FakeWorker $path @($inputLine, 'connect', 'cancel', 'revert', 'close')
+    if ($result.code -ne 0) {
+        # This child contains only the fake native class and fixed synthetic input.
+        # Never print arbitrary process output: identify startup policy failures or
+        # exception types from a separately instrumented, disposable fake child.
+        $startupCategory = 'other'
+        if (-not $result.errorOutput) { $startupCategory = 'no-stderr' }
+        elseif ($result.errorOutput -match 'PSSecurityException|UnauthorizedAccess|ExecutionPolicy') { $startupCategory = 'execution-policy' }
+        $diagnosticPath = Join-Path $directory 'fake-diagnostic.ps1'
+        $diagnostic = [IO.File]::ReadAllText($path).Replace('    $code=-1', '    [Console]::Error.WriteLine($_.Exception.GetType().FullName); if($_.Exception.InnerException){[Console]::Error.WriteLine($_.Exception.InnerException.GetType().FullName)}; [Console]::Error.WriteLine($_.CategoryInfo.Category.ToString()); $code=-1')
+        [IO.File]::WriteAllText($diagnosticPath, $diagnostic)
+        $diagnosed = Invoke-FakeWorker $diagnosticPath @($inputLine, 'connect', 'cancel', 'revert', 'close')
+        $types = 'redacted'
+        if ($diagnosed.errorOutput.Length -le 512 -and $diagnosed.errorOutput -cmatch '^[A-Za-z.\r\n]*$') { $types = $diagnosed.errorOutput.Trim() }
+        $numeric = 'redacted'
+        if ($diagnosed.output.Length -le 128 -and $diagnosed.output -cmatch '^[0-9\r\n-]*$') { $numeric = $diagnosed.output.Trim() }
+        @{ fakeChildFailure = $true; engine = $PSVersionTable.PSVersion.ToString(); exitCode = $result.code; startupCategory = $startupCategory; exceptionTypes = $types; numericProtocol = $numeric } | ConvertTo-Json -Compress | Write-Output
+    }
     Assert-Process ($result.code -eq 0) 'child clean exit'
     Assert-Process (($result.output -split '\r?\n' | Where-Object { $_ }) -join ',' -eq '0,1326,2250,0,0') 'child fixed numeric protocol'
     Assert-Process ($result.errorOutput -eq '') 'child stderr'
