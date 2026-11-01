@@ -23,7 +23,7 @@ if ($safe.fullyQualifiedErrorId -cne 'NativeCommandError' -or ($safe | ConvertTo
 function Test-WecRejected([scriptblock]$Action) {
     $rejected = $false
     try { & $Action | Out-Null } catch { $rejected = $true }
-    if (-not $rejected) { throw 'invalid input accepted' }
+    if (-not $rejected) { throw ("invalid input accepted at fixture index " + $script:tests) }
     $script:tests++
 }
 function Get-TestManifest {
@@ -38,6 +38,21 @@ $run = 'bower-ws6-20261101-010101'
 $manifest = Get-TestManifest
 if ((Assert-WecManifest $manifest $run).Count -ne 9) { throw 'valid manifest refused' }; $tests++
 Test-WecRejected { Assert-WecManifest $manifest 'bower-ws6-20261101-010102' }
+# JSON numeric representation differs: PS5.1 uses Int32 here, PS7 uses Int64.
+# Neither accepted integer type may mask an earlier hash or shape failure.
+foreach ($integerType in 'Int32', 'Int64') {
+    foreach ($fault in 'valid', 'hash', 'fields') {
+        $typedManifest = Get-TestManifest
+        $typedManifest.files.'collector.zip'.bytes = if ($integerType -eq 'Int32') { [int]1 } else { [long]1 }
+        switch ($fault) {
+            hash { $typedManifest.files.'collector.zip'.sha256 = '../escape' }
+            fields { $typedManifest.files.'collector.zip' | Add-Member -NotePropertyName unexpected -NotePropertyValue 1 }
+        }
+        if ($fault -eq 'valid') {
+            if ((Assert-WecManifest $typedManifest $run).Count -ne 9) { throw 'valid integer type refused' }; $tests++
+        } else { Test-WecRejected { Assert-WecManifest $typedManifest $run } }
+    }
+}
 foreach ($change in 'role', 'extra', 'hash', 'large', 'fraction', 'unknown') {
     $manifest = Get-TestManifest
     switch ($change) {

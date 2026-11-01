@@ -49,7 +49,7 @@ function Assert-WecManifest($Manifest, [string]$RunId) {
         $item = $Manifest.files.$name
         if ((@($item.PSObject.Properties.Name | Sort-Object) -join ',') -cne 'bytes,sha256' -or
             $item.sha256 -cnotmatch '^[a-f0-9]{64}$' -or
-            $item.bytes -isnot [long] -and $item.bytes -isnot [int] -or
+            ($item.bytes -isnot [long] -and $item.bytes -isnot [int]) -or
             $item.bytes -lt 1 -or $item.bytes -gt $limits[$name]) { throw 'manifest-entry' }
     }
     return $limits
