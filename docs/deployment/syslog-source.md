@@ -74,7 +74,9 @@ stop start-up.
 | `allowedSenders` | required | 1–64 addresses or CIDR ranges (host bits zero) |
 | `maximumMessageBytes` | 65536 | 480–65536 |
 | `maximumConnections` | 64 | 1–1024 (TCP and TLS) |
-| `idleTimeoutSeconds` | 60 | 1–3600 |
+| `idleTimeoutSeconds` | 0 | 0–3600; 0 does not close an established healthy idle connection |
+| `handshakeStartTimeoutSeconds` | 60 | 1–3600; TLS connection must send its first handshake byte in this time |
+| `frameTimeoutSeconds` | 60 | 1–3600; TLS handshake after its first byte, and one frame after its first byte |
 | `tls` | none | required for `tls`, refused otherwise; PEM files: `certificateFile`, `privateKeyFile`, optional `clientCertificateAuthorityFile` and `clientCertificateRevocationListFile` (PEM or DER CRLs; requires the CA file) |
 | `allowInsecureNonLoopback` | false | allow `tcp`/`udp` beyond loopback |
 | `routes` | required | 1–64; `pack`, `parser` (index), optional `hostname`, `appName`, `allowedSenders` (1–64 addresses or CIDR ranges) |
@@ -109,6 +111,8 @@ atomic rename, key before certificate. After a reload, or once a certificate in 
 chain or a revocation list expires, an open mutual-TLS session is validated again
 before its next frame is used; a session whose client is no longer trusted (CA
 removed, certificate revoked or expired) is closed and counted in `tlsSessionsClosed`.
+Revocation is checked before each sink attempt; it cannot retroactively cancel a sink
+submission already in progress, and detection depends on the material reload interval.
 Step-by-step rotation for every environment is in
 [credential rotation and security failures](../production-readiness/05-credential-rotation-and-security-failures.md).
 
@@ -145,10 +149,13 @@ longer than 2048 characters are left out because a pack parser cannot read them)
 | `hostname`, `appName`, `procId`, `msgId`, `message` | when present |
 | `sd.<SD-ID>.<PARAM-NAME>` | each structured-data parameter |
 
-Map `eventId` to `id` and `timeGenerated` to `timestamp`, so a retransmitted frame
-deduplicates. (Without a message timestamp the receive time is part of the id, so
-retransmits of such frames are not deduplicated.) Byte-identical messages from one
-sender with the same timestamp are one event. A pack parser for RFC 5424 sshd
+Map `eventId` to `id` and `timeGenerated` to `timestamp`. With a message timestamp,
+the same frame from the same listener and sender has the same id: a retransmission can
+deduplicate, but distinct byte-identical events can also collapse while the id remains in
+the queue's deduplication window. Without a timestamp the receive time is part of the id,
+so a retransmission at a different time can produce a duplicate. Plain syslog supplies no
+reliable way to tell these cases apart; qualify the actual sender and monitor its counts.
+A pack parser for RFC 5424 sshd
 structured data:
 
 ```json
@@ -207,8 +214,25 @@ Strict and fail closed, with stable codes:
   frames (a trailing CR is removed), chosen per frame. An oversized length, a bad
   count or any other framing error closes the connection; framing cannot be
   resynchronised safely. UDP is one message per datagram.
-- The whole next frame must arrive within `idleTimeoutSeconds`, so slow senders that
-  trickle bytes are closed like idle ones. The TLS handshake has the same bound.
+- Once the first byte of a frame arrives, the whole frame must arrive within
+  `frameTimeoutSeconds`, so senders that trickle bytes (slow loris) are closed. The TLS
+  handshake has the same bound.
+- Before a TLS handshake begins, `handshakeStartTimeoutSeconds` limits the wait
+  for its first byte. Once it starts, `frameTimeoutSeconds` bounds the handshake.
+  A sender that opens TCP but delays TLS longer than this limit will be disconnected;
+  test lazy TLS senders and reconnect behavior before rollout.
+  Older collectors reject unknown fields: omit `handshakeStartTimeoutSeconds` when
+  using its 60-second default. Setting a non-default value requires an updated
+  collector that supports the field; guided setup omits it at the default. Older
+  collectors retain their existing pre-handshake behavior when the field is absent.
+- Time between frames on an established connection is governed by `idleTimeoutSeconds`. The default, 0, never closes a
+  healthy idle connection: a sender that never reads its socket (rsyslog) cannot see the
+  close and loses what it writes next. With a non-zero value Bower half-closes at expiry
+  (TCP FIN, no TLS `close_notify`) and keeps reading frames the sender already sent until
+  it closes or is quiet for 5 seconds.
+- Accepted connections use TCP keepalive (first probe after 120 s idle, every 30 s, 30
+  probes): dead peers are closed after about 17 minutes, and keepalive traffic keeps load
+  balancer and firewall flow state alive.
 - Connections beyond `maximumConnections`, and senders outside `allowedSenders`, are
   closed immediately. At most 16 submissions run at once across all listeners.
 - **Acknowledgement point (TCP and TLS).** A frame counts as accepted only once it is
@@ -220,13 +244,24 @@ Strict and fail closed, with stable codes:
 - **UDP is best effort.** Datagrams wait in a buffer of 256 per listener; when it is
   full, or the queue is at capacity, they are dropped and counted. There is no way to
   push back on a UDP sender.
-- **On crash or stop.** Plain syslog has no application acknowledgement. Frames
-  already in the kernel socket buffer or Bower's read buffer, and a frame waiting for
-  queue space, are lost unless the sender retransmits; everything enqueued before the
-  stop is durable. TCP/TLS with a sender-side disk queue reduces exposure but does
-  not prove end-to-end lossless delivery: the sender can consider bytes sent before
-  Bower durably accepts them. Qualify source retention and replay, idle/reconnect
-  behavior, crashes and queue pressure for the actual sender.
+- **On stop.** Bower stops accepting and half-closes connections while attempting to
+  drain in-flight frames. The default per-connection quiet drain is 5 seconds and
+  the graceful drain budget is 20 seconds. Neither guarantees delivery of every
+  frame already sent. In C#, the final wait requires sinks and listeners to honour
+  cancellation and can exceed the budget indefinitely. In Rust, an already-running
+  blocking sink can continue after the source returns and delay runtime shutdown.
+  Size host grace periods for the workload and verify cancellation in the deployment.
+- **On crash.** Plain syslog has no application acknowledgement. Frames already in the
+  kernel socket buffer or Bower's read buffer, and a frame waiting for queue space, are
+  lost unless the sender retransmits; everything enqueued before the crash is durable.
+  TCP/TLS with a sender-side disk queue reduces exposure but does not prove end-to-end
+  lossless delivery. Qualify the actual sender with
+  [the delivery-reliability guide](../production-readiness/01-syslog-delivery-reliability.md).
+- **TLS 1.3 session tickets (C# collector).** .NET on OpenSSL sends two TLS 1.3 session
+  tickets after every handshake and offers no setting to stop them. rsyslog never reads
+  them, which hides Bower's half-close from rsyslog's pre-send check. Give the service
+  `OPENSSL_CONF` with `NumTickets = 0`, or pin rsyslog to TLS 1.2; see the guide. The Rust
+  collector sends no tickets.
 
 ## Monitoring
 
@@ -237,8 +272,13 @@ counters since start: `activeConnections`, `connectionsAccepted`,
 `rejected`, `parserErrors`, `malformed`, `oversized`, `framingErrors`, `timeouts`,
 `dropped` (UDP and backpressure), `retries` (TCP waits for queue space),
 `submitFailures`, `receiveErrors` (UDP socket receive errors; the listener backs off
-100 ms to 1 s and keeps listening) and `lastFrameAt`. TLS listeners add `tlsReloads`,
-`tlsReloadFailures`, `tlsRevoked` (handshakes refused by revocation),
+100 ms to 1 s and keeps listening), `halfCloses` (connections Bower half-closed at an
+idle timeout or stop), `drainedFrames` (frames received after that half-close),
+`peerResets` (observed resets; best effort) and `lastFrameAt`. TLS and platform error reporting can prevent reset
+classification. Do not treat a zero count as proof of no resets.
+`timeouts`
+counts idle-timeout expiries and frames that missed `frameTimeoutSeconds`. TLS listeners
+add `tlsReloads`, `tlsReloadFailures`, `tlsRevoked` (handshakes refused by revocation),
 `tlsSessionsClosed` (open sessions closed after re-validation),
 `serverCertificateNotAfter`, `clientCertificateAuthorityNotAfter` (earliest trusted
 CA) and `clientRevocationListNextUpdate` (earliest list); the dates are null for other
@@ -265,8 +305,10 @@ sender degrades `/health` once its allowance passes.
   client CAs and certificates with overlap, and alert on `tlsHandshakeFailures`,
   `tlsRevoked` and `clientRevocationListNextUpdate`.
 - Plain TCP beyond loopback (with the override) is unauthenticated and unencrypted.
-- A sender allowed to connect can occupy up to `maximumConnections` slots; the idle
-  timeout bounds how long.
+- A sender allowed to connect can occupy up to `maximumConnections` slots. With the
+  default `idleTimeoutSeconds: 0` a healthy idle connection keeps its slot; keepalive
+  closes dead ones after about 17 minutes. Set a non-zero idle timeout only for senders
+  that read their sockets (for example syslog-ng).
 - Lost frames on crash, as above.
 
 ## Not verified here
@@ -281,6 +323,9 @@ lost no frames and caused no reconnect; a collector restart under load lost one 
 
 The manual [native AWS pilot](../evidence/pilot-native-20261030/README.md) uses
 nftables and rsyslog over mutual TLS. It retains source-loss findings from both
-idle connection closure and per-event reconnect configurations. A passing measured
+idle connection closure and per-event reconnect configurations. The
+[delivery-reliability guide](../production-readiness/01-syslog-delivery-reliability.md)
+documents an interrupted follow-up campaign and a proposed sender and collector
+configuration; its results and evidence export are incomplete. A passing measured
 traffic window does not establish durable application acknowledgements or qualify
 another appliance's buffering and replay behavior.

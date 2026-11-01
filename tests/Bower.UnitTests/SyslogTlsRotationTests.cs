@@ -199,6 +199,57 @@ public sealed class SyslogTlsRotationTests
         await open.DisposeAsync();
     }
 
+    [Fact]
+    public async Task RevocationList_IsAppliedDuringShutdownDrain()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        Pki pki = new(directory.Path);
+        using X509Certificate2 ca = Pki.Authority("syslog-ca");
+        using X509Certificate2 server = Pki.Issue(ca, "localhost", client: false);
+        using X509Certificate2 sender = Pki.Issue(ca, "firewall-01", client: true);
+        pki.WriteServer(server);
+        pki.WriteAuthorities(ca);
+        pki.WriteRevocations(Pki.RevocationList(ca, []));
+        SyslogSourceTests.FakeSink sink = new();
+        SyslogSource source = await Start(pki, sink, cancellation, revocationList: true);
+        await using Connection open = await Connection.OpenAsync(source, sender, cancellation);
+        await open.SendAsync("before shutdown", cancellation);
+        await sink.WaitForAsync(1, cancellation);
+
+        Task stopping = source.DisposeAsync().AsTask();
+        await WaitFor(source, value => value.HalfCloses == 1, cancellation);
+        pki.WriteRevocations(Pki.RevocationList(ca, [sender], number: 2));
+        await WaitFor(source, value => value.TlsReloads == 1, cancellation);
+        await open.SendAsync("after revocation", cancellation);
+        await WaitFor(source, value => value.TlsSessionsClosed == 1, cancellation);
+        Assert.Single(sink.Records);
+        await stopping;
+    }
+
+    [Fact]
+    public async Task RevocationList_ClosesBackpressuredSessionBeforeRetry()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        Pki pki = new(directory.Path);
+        using X509Certificate2 ca = Pki.Authority("syslog-ca");
+        using X509Certificate2 server = Pki.Issue(ca, "localhost", client: false);
+        using X509Certificate2 sender = Pki.Issue(ca, "firewall-01", client: true);
+        pki.WriteServer(server);
+        pki.WriteAuthorities(ca);
+        pki.WriteRevocations(Pki.RevocationList(ca, []));
+        SyslogSourceTests.FakeSink sink = new() { UnavailableResponses = 100000 };
+        await using SyslogSource source = await Start(pki, sink, cancellation, revocationList: true);
+        await using Connection open = await Connection.OpenAsync(source, sender, cancellation);
+        await open.SendAsync("held for retry", cancellation);
+        await WaitFor(source, value => value.Retries > 0, cancellation);
+        pki.WriteRevocations(Pki.RevocationList(ca, [sender], number: 2));
+        await WaitFor(source, value => value.TlsReloads == 1, cancellation);
+        await WaitFor(source, value => value.TlsSessionsClosed == 1, cancellation);
+        Assert.Empty(sink.Records);
+    }
+
     [Theory]
     [InlineData("stale")]
     [InlineData("forged")]
@@ -504,6 +555,8 @@ public sealed class SyslogTlsRotationTests
             using X509Certificate2 next = Pki.Issue(ca, "localhost", client: false);
             pki.WriteBundle(next);
             await WaitFor(source, value => value.TlsReloads == index, cancellation);
+            // Observing the completed reload also observes release of the source reference.
+            Assert.Equal(1, source.TlsMaterialsAlive("edge"));
         }
 
         Assert.Equal(1, source.TlsMaterialsAlive("edge"));
@@ -512,6 +565,15 @@ public sealed class SyslogTlsRotationTests
         using TcpClient pending = new(AddressFamily.InterNetwork);
         await pending.ConnectAsync(source.Endpoints["edge"], cancellation);
         await WaitFor(source, value => value.ActiveConnections == 1, cancellation);
+        // Start, but do not finish, a TLS handshake. A connection that has not sent
+        // its first byte deliberately waits without acquiring any TLS material.
+        await pending.GetStream().WriteAsync(new byte[] { 0x16 }, cancellation);
+        using CancellationTokenSource handshakeTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        handshakeTimeout.CancelAfter(TimeSpan.FromSeconds(10));
+        while (source.TlsHandshakesInFlight("edge") != 1)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(20), handshakeTimeout.Token);
+        }
         using (X509Certificate2 next = Pki.Issue(ca, "localhost", client: false))
         {
             pki.WriteBundle(next);
@@ -530,7 +592,8 @@ public sealed class SyslogTlsRotationTests
         SyslogSource source = new(SyslogSourceConfigurationLoader.Parse(SyslogSourceTests.Config(Listener(pki, mutual, revocationList))), sink)
         {
             RetryDelay = TimeSpan.FromMilliseconds(20),
-            TlsReloadInterval = TimeSpan.FromMilliseconds(10)
+            TlsReloadInterval = TimeSpan.FromMilliseconds(10),
+            DrainTimeout = TimeSpan.FromSeconds(1)
         };
         try
         {

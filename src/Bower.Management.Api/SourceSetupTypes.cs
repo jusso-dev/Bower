@@ -63,6 +63,10 @@ internal sealed partial class SyslogSourceSetup : SourceSetupType
             "port", "Port", SourceFieldKinds.Number, true,
             "6514 is the standard syslog-over-TLS port. 1 to 65535.", "6514", Minimum: 1, Maximum: 65_535, MaximumLength: 5)),
         new(new SourceFieldDefinition(
+            "handshakeStartTimeoutSeconds", "TLS handshake start timeout (seconds)", SourceFieldKinds.Number, true,
+            "Maximum wait for the first TLS handshake byte. Check lazy sender reconnects; a custom value requires an updated collector.",
+            "60", Minimum: 1, Maximum: 3_600, MaximumLength: 4, ShownWhenField: "protocol", ShownWhenValues: TlsOnly)),
+        new(new SourceFieldDefinition(
             "allowedSenders", "Allowed senders", SourceFieldKinds.AddressList, true,
             "IP addresses or CIDR ranges that may connect, one per line (at most 64). Everything else is refused.",
             Placeholder: "10.20.0.0/24", MaximumLength: 4096)),
@@ -172,6 +176,10 @@ internal sealed partial class SyslogSourceSetup : SourceSetupType
         };
         if (protocol == "tls")
         {
+            int handshakeStartTimeout = int.Parse(values["handshakeStartTimeoutSeconds"], System.Globalization.CultureInfo.InvariantCulture);
+            // The default is implicit so plans continue to load on older collectors that
+            // reject unknown settings. A custom value requires the updated collector.
+            if (handshakeStartTimeout != 60) listener["handshakeStartTimeoutSeconds"] = handshakeStartTimeout;
             JsonObject tls = new()
             {
                 ["certificateFile"] = values["certificateFile"],
@@ -235,6 +243,13 @@ internal sealed partial class SyslogSourceSetup : SourceSetupType
         }
 
         string indent = conditions.Count > 0 ? "  " : string.Empty;
+        if (protocol == "tls")
+        {
+            text.Append("# A .NET collector sends TLS 1.3 session tickets that rsyslog never reads, which hides a\n");
+            text.Append("# closed connection from rsyslog. TLS 1.2 is pinned below; remove that line only when the\n");
+            text.Append("# collector runs with OPENSSL_CONF NumTickets = 0 (docs/production-readiness/01).\n");
+        }
+
         if (conditions.Count > 0)
         {
             text.Append("if ").Append(string.Join(" and ", conditions)).Append(" then {\n");
@@ -252,10 +267,14 @@ internal sealed partial class SyslogSourceSetup : SourceSetupType
             {
                 text.Append(indent).Append("       StreamDriver=\"gtls\" StreamDriverMode=\"1\" StreamDriverAuthMode=\"x509/name\"\n");
                 text.Append(indent).Append("       StreamDriverPermittedPeers=\"").Append(target).Append("\"\n");
+                text.Append(indent).Append("       gnutlsPriorityString=\"NORMAL:-VERS-TLS1.3:-VERS-TLS1.1:-VERS-TLS1.0\"\n");
             }
 
+            // One persistent connection; keepalive finds a dead one before the next write.
+            text.Append(indent).Append("       RebindInterval=\"0\" ResendLastMSGOnReconnect=\"on\"\n");
+            text.Append(indent).Append("       KeepAlive=\"on\" KeepAlive.Time=\"60\" KeepAlive.Interval=\"10\" KeepAlive.Probes=\"6\"\n");
             text.Append(indent).Append("       queue.type=\"LinkedList\" queue.filename=\"bower_forward_").Append(values["listenerId"]).Append("\" queue.saveOnShutdown=\"on\"\n");
-            text.Append(indent).Append("       action.resumeRetryCount=\"-1\"\n");
+            text.Append(indent).Append("       queue.maxDiskSpace=\"2g\" action.resumeRetryCount=\"-1\" action.resumeInterval=\"5\" action.reportSuspension=\"on\"\n");
         }
 
         text.Append(indent).Append("       template=\"RSYSLOG_SyslogProtocol23Format\")\n");

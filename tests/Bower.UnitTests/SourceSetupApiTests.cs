@@ -106,10 +106,17 @@ public sealed class SourceSetupApiTests
         Assert.True(result.Valid);
         SourceSetupPlan plan = result.Plan!;
         SyslogSourceConfiguration syslog = SyslogSourceConfigurationLoader.Parse(File(plan, "syslog.json"));
+        Assert.DoesNotContain("handshakeStartTimeoutSeconds", File(plan, "syslog.json"), StringComparison.Ordinal);
         SyslogListenerOptions listener = Assert.Single(syslog.Listeners);
         Assert.Equal("edge-tls", listener.Id);
         Assert.Equal(6514, listener.Port);
+        Assert.Equal(60, listener.HandshakeStartTimeoutSeconds);
         Assert.Equal(2, listener.AllowedSenders.Count);
+        Dictionary<string, string> customised = SyslogValues();
+        customised["handshakeStartTimeoutSeconds"] = "120";
+        SourceSetupPlanResult customisedResult = await PlanAsync(app, "syslog", "edge-01", customised, cancellationToken);
+        Assert.True(customisedResult.Valid);
+        Assert.Equal(120, Assert.Single(SyslogSourceConfigurationLoader.Parse(File(customisedResult.Plan!, "syslog.json")).Listeners).HandshakeStartTimeoutSeconds);
         Assert.Equal("linux-ssh-gateway", Assert.Single(listener.Routes).Pack);
         string expectations = Path.Combine(directory.Path, "expectations.json");
         await System.IO.File.WriteAllTextAsync(expectations, File(plan, "source-expectations.json"), cancellationToken);
@@ -120,6 +127,11 @@ public sealed class SourceSetupApiTests
         SourceSetupSnippet rsyslog = Assert.Single(plan.Snippets);
         Assert.Contains("if $programname == 'sshd' then {", rsyslog.Content, StringComparison.Ordinal);
         Assert.Contains("StreamDriverPermittedPeers=\"collector.example.org\"", rsyslog.Content, StringComparison.Ordinal);
+        // The qualified sender profile (docs/production-readiness/01-syslog-delivery-reliability.md).
+        Assert.Contains("RebindInterval=\"0\" ResendLastMSGOnReconnect=\"on\"", rsyslog.Content, StringComparison.Ordinal);
+        Assert.Contains("KeepAlive=\"on\"", rsyslog.Content, StringComparison.Ordinal);
+        Assert.Contains("gnutlsPriorityString=\"NORMAL:-VERS-TLS1.3", rsyslog.Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("RebindInterval=\"1\"", rsyslog.Content, StringComparison.Ordinal);
         Assert.StartsWith("sha256:", plan.ContentHash, StringComparison.Ordinal);
         // Same values, same bytes, same hash.
         Assert.Equal(plan.ContentHash, (await PlanAsync(app, "syslog", "edge-01", SyslogValues(), cancellationToken)).Plan!.ContentHash);

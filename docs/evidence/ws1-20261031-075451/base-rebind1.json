@@ -1,0 +1,351 @@
+{
+ "after": [
+  {
+   "args": "configure-rsyslog --a 172.31.201.175 --b 172.31.201.245 --cert sender-r --profile pilot --only a13,a12 --rebind 0",
+   "host": "SenderR",
+   "result": {
+    "active": "active",
+    "boundedImjournal": true,
+    "conf": "5b17f33ef80cad96b2e10c7a1442433f5ddf46e5945e34a4ce0b2b6dff07ada0",
+    "profile": "pilot",
+    "rebind": 0,
+    "rsyslogConf": "4784292345e254a7afd8cc89f6ccf236be462df920efd78b7291bae9fb5759d5"
+   }
+  }
+ ],
+ "before": [
+  {
+   "args": "configure-rsyslog --a 172.31.201.175 --b 172.31.201.245 --cert sender-r --profile pilot --only a13,a12 --rebind 1",
+   "host": "SenderR",
+   "result": {
+    "active": "active",
+    "boundedImjournal": true,
+    "conf": "71de2ad318df4d6f510ed2bac13d65c765ef7c6ea0bfc5aed6151b0762874053",
+    "profile": "pilot",
+    "rebind": 1,
+    "rsyslogConf": "4784292345e254a7afd8cc89f6ccf236be462df920efd78b7291bae9fb5759d5"
+   }
+  }
+ ],
+ "measurements": {
+  "CollectorA": {
+   "listeners": {
+    "a12": {
+     "accepted": 6000,
+     "deliveredToSpool": 6000,
+     "expected": 6000,
+     "missing": 0,
+     "missingSample": [],
+     "missingSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "unexpectedInScope": 0
+    },
+    "a13": {
+     "accepted": 6000,
+     "deliveredToSpool": 6000,
+     "expected": 6000,
+     "missing": 0,
+     "missingSample": [],
+     "missingSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "unexpectedInScope": 0
+    }
+   },
+   "measuredAt": "2026-10-31T08:31:19.948615+00:00",
+   "passed": true,
+   "scenario": "base-rebind1",
+   "syslog": {
+    "a12": {
+     "activeConnections": 1,
+     "bytesReceived": 1584556,
+     "connectionsAccepted": 6050,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 39,
+     "framesReceived": 6239,
+     "framingErrors": 0,
+     "lastFrameAt": "2026-10-31T08:31:15.4037365+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 6200,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 5,
+     "tlsHandshakeFailures": 2
+    },
+    "a13": {
+     "activeConnections": 1,
+     "bytesReceived": 1676761,
+     "connectionsAccepted": 6420,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 406,
+     "framesReceived": 6602,
+     "framingErrors": 0,
+     "lastFrameAt": "2026-10-31T08:31:10.7890211+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 6196,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 5,
+     "tlsHandshakeFailures": 2
+    }
+   }
+  },
+  "CollectorA-snapshot": {
+   "active": "active",
+   "at": "2026-10-31T08:31:27.033873+00:00",
+   "connections": 2,
+   "mainPid": "27827",
+   "queue": {
+    "events": 12396,
+    "undelivered": 0
+   },
+   "restarts": "0",
+   "syslog": {
+    "a12": {
+     "activeConnections": 1,
+     "bytesReceived": 1584556,
+     "connectionsAccepted": 6050,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 39,
+     "framesReceived": 6239,
+     "framingErrors": 0,
+     "lastFrameAt": "2026-10-31T08:31:15.4037365+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 6200,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 5,
+     "tlsHandshakeFailures": 2
+    },
+    "a13": {
+     "activeConnections": 1,
+     "bytesReceived": 1676761,
+     "connectionsAccepted": 6420,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 406,
+     "framesReceived": 6602,
+     "framingErrors": 0,
+     "lastFrameAt": "2026-10-31T08:31:10.7890211+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 6196,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 5,
+     "tlsHandshakeFailures": 2
+    }
+   }
+  },
+  "SenderR": {
+   "at": "2026-10-31T08:31:30.851735+00:00",
+   "bootId": "f8638ca2-f415-4f73-b0b4-8eb9d4b0526b",
+   "impstats": {
+    "a12 queue/core.queue": {
+     "discarded.full": 0,
+     "discarded.nf": 0,
+     "enqueued": 6000,
+     "full": 0,
+     "maxqsize": 2710,
+     "size": 0
+    },
+    "a12 queue[DA]/core.queue": {
+     "discarded.full": 0,
+     "discarded.nf": 0,
+     "enqueued": 0,
+     "full": 0,
+     "maxqsize": 0,
+     "size": 0
+    },
+    "a12/core.action": {
+     "failed": 0,
+     "processed": 6000,
+     "resumed": 3,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "a13 queue/core.queue": {
+     "discarded.full": 0,
+     "discarded.nf": 0,
+     "enqueued": 6000,
+     "full": 0,
+     "maxqsize": 2153,
+     "size": 0
+    },
+    "a13 queue[DA]/core.queue": {
+     "discarded.full": 0,
+     "discarded.nf": 0,
+     "enqueued": 0,
+     "full": 0,
+     "maxqsize": 0,
+     "size": 0
+    },
+    "a13/core.action": {
+     "failed": 0,
+     "processed": 6000,
+     "resumed": 6,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-2-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-3-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 8076,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-4-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-5-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-6-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-7-builtin:omusrmsg/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-8-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "action-9-builtin:omfile/core.action": {
+     "failed": 0,
+     "processed": 0,
+     "resumed": 0,
+     "suspended": 0,
+     "suspended.duration": 0
+    },
+    "imjournal/imjournal": {
+     "discarded": 0,
+     "disk_usage_bytes": 16781312,
+     "failed": 0,
+     "poll_failed": 0,
+     "ratelimit_discarded_in_interval": 0,
+     "read": 14083,
+     "recovery_attempts": 0,
+     "rotations": 1,
+     "submitted": 14083
+    },
+    "main Q/core.queue": {
+     "discarded.full": 0,
+     "discarded.nf": 0,
+     "enqueued": 14083,
+     "full": 0,
+     "maxqsize": 177,
+     "size": 0
+    }
+   },
+   "nft": {
+    "A": 6200,
+    "B": 0
+   },
+   "queueFiles": {},
+   "rsyslog": "active",
+   "sockets": [
+    {
+     "port": 6514,
+     "recvQ": 1566,
+     "sendQ": 0,
+     "state": "ESTAB"
+    },
+    {
+     "port": 6516,
+     "recvQ": 0,
+     "sendQ": 0,
+     "state": "ESTAB"
+    }
+   ]
+  }
+ },
+ "passed": true,
+ "runId": "bower-ws1-20261031-075451",
+ "scenario": "base-rebind1",
+ "startAt": 1793435381.130806,
+ "steps": [
+  {
+   "args": "generate --kind nft --track A --first 40000 --count 6000 --rate 100 --label base-rebind1",
+   "host": "SenderR",
+   "offset": 0,
+   "submitted": {
+    "output": ""
+   }
+  },
+  {
+   "result": "base-rebind1",
+   "value": {
+    "actualRate": 99.98771942164463,
+    "count": 6000,
+    "endedAt": "2026-10-31T08:30:41.160119+00:00",
+    "first": 40000,
+    "generator": "nft",
+    "nativeCounterDelta": {
+     "A": 6000,
+     "B": 0
+    },
+    "rate": 100.0,
+    "sent": 6000,
+    "startedAt": "2026-10-31T08:29:41.152737+00:00",
+    "track": "A"
+   }
+  }
+ ]
+}

@@ -205,3 +205,23 @@ Rates vary; estimate from current Sydney-region prices and keep the bounded expi
 The first run did not configure an AWS Budget alarm. Do not label this harness as
 complete until the remaining #136 phases, cost alarm and production authentication
 coverage are implemented and verified.
+
+### WS1 syslog lab: record and audit EBS volumes
+
+Use the same WS1 run state file throughout. After the stack is ready, run
+`python3 lab/aws/scripts/syslog-lab.py status --state <state.json>` while all
+four instances still expose their EBS mappings. It records each verified stack
+instance's volume IDs in `volumeInventory`; keep the state file until cleanup is
+verified. `destroy --state <state.json>` rechecks the account, stack, bucket and
+instance ownership, refreshes the volume inventory and persists it before any
+deletion. A previously recorded complete inventory can cover an instance already
+terminated by the expiry guard; if no complete inventory exists, teardown stops
+for investigation rather than claiming those volumes are absent.
+
+After `destroy` completes, run `python3 lab/aws/scripts/syslog-lab.py audit --state
+<state.json>`. The audit checks every recorded volume ID individually as well as
+tagged volumes, and requires the specific AWS volume-not-found response for each
+recorded ID. Missing or incomplete inventory, a surviving untagged volume, an
+unexpected AWS error or an invalid subnet ID prevents a clean audit. Investigate
+and remove any remaining resources only after verifying their ownership. A timeout
+or a successful delete command alone is not proof that charges have stopped.

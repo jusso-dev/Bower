@@ -1,0 +1,26 @@
+{
+  "version": "1.0", "format": "Json",
+  "fields": [
+    {"sourceName":"key","type":"Text","ocsfPath":"metadata.uid","asimField":"EventUid","sensitive":false},
+    {"sourceName":"listener","type":"Text","ocsfPath":"metadata.log_name","asimField":"EventOriginalSubType","sensitive":false},
+    {"sourceName":"timestamp","type":"DateTime","ocsfPath":"time","asimField":"TimeGenerated","sensitive":false},
+    {"sourceName":"appName","type":"Text","ocsfPath":"app.name","asimField":"DvcAppName","sensitive":false},
+    {"sourceName":"message","type":"Text","ocsfPath":"message","asimField":"EventMessage","sensitive":false},
+    {"sourceName":"result","type":"Text","ocsfPath":"status","asimField":"EventResult","sensitive":true},
+    {"sourceName":"source_ip","type":"IpAddress","ocsfPath":"src_endpoint.ip","asimField":"SrcIpAddr","sensitive":true},
+    {"sourceName":"reason","type":"Text","ocsfPath":"status_detail","asimField":"EventResultDetails","sensitive":false}
+  ],
+  "runtime": {
+    "applicationName":"syslog-sequence-probe","environment":"validation",
+    "eventCategory":"network-security","eventType":"network_connection_denied",
+    "eventAction":"network.connect","eventResult":"denied",
+    "transforms":[
+      ".m = regex_extract(.message, 'BOWER_SEQ (?<k>[rg][0-9]{2}x[0-9]{6}) ')",
+      "if .appName == \"bowerseq\" && .m.k != null { .result = \"probe\" } else { .result = \"ignored\" }",
+      ".key = concat(.listener, \"-\", .m.k)",
+      ".source_ip = .senderAddress", ".reason = \"SyslogDeliveryProbe\"", "del(.m)"
+    ],
+    "match":{"result":"probe"},
+    "fields":{"eventId":"key","timeGenerated":"timestamp","source.ipAddress":"source_ip","eventOutcomeReason":"reason"}
+  }
+}

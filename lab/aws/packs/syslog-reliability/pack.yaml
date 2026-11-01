@@ -1,0 +1,17 @@
+apiVersion: bower.security/v1
+kind: Pack
+metadata:
+  id: syslog-reliability
+  version: 1.0.0
+  name: Syslog delivery reliability probes
+  description: Sequence-keyed nftables denials and file lines from the temporary AWS senders.
+  owner: Security Operations
+policies:
+  - policy.yaml
+privacyProfile: privacy.yaml
+parsers:
+  - parser-nftables.json
+  - parser-sequence.json
+samples:
+  - samples.jsonl
+dcr: true
