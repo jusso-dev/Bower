@@ -31,15 +31,17 @@ public sealed class WindowsEventLogCollectorTests
     private static string PackSource => Path.Combine(AppContext.BaseDirectory, "packs", "windows-security-logon");
 
     [Theory]
-    [InlineData("mask")]
-    [InlineData("remove")]
-    public async Task RedactedIdentity_DoesNotAdvanceBookmarkOrQueueAnEvent(string identityAction)
+    [InlineData("mask", false)]
+    [InlineData("mask", true)]
+    [InlineData("remove", false)]
+    [InlineData("remove", true)]
+    public async Task RedactedIdentity_DoesNotAdvanceBookmarkOrQueueAnEvent(string identityAction, bool crlf)
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
         using SqliteTemporaryDirectory directory = new();
         FakeWindowsEventChannelFactory channels = new();
         channels["Security"].Add(WindowsEventFixtures.Read("security-4625.xml"));
-        await using WebApplication app = await Start(directory, channels, cancellation, identityAction: identityAction);
+        await using WebApplication app = await Start(directory, channels, cancellation, identityAction: identityAction, crlf: crlf);
         using EventTapSession tap = app.Services.GetRequiredService<EventTap>().TryOpen(
             new EventTapRequest("test", TapPoint.Redacted, null, null, 2, TimeSpan.FromSeconds(30), 1))!;
         WindowsEventLogSource source = app.Services.GetRequiredService<WindowsEventLogSource>();
@@ -261,7 +263,8 @@ public sealed class WindowsEventLogCollectorTests
         CancellationToken cancellation,
         int parser = 0,
         string? identityAction = null,
-        IEventRedactor? redactor = null)
+        IEventRedactor? redactor = null,
+        bool crlf = false)
     {
         string archive = Path.Combine(directory.Path, "pack");
         string trust = Path.Combine(directory.Path, "trusted.pem");
@@ -281,7 +284,15 @@ public sealed class WindowsEventLogCollectorTests
                     File.Copy(path, target);
                 }
                 string privacyPath = Path.Combine(source, "privacy.yaml");
-                File.WriteAllText(privacyPath, File.ReadAllText(privacyPath).Replace("fields:\n", $"fields:\n  - path: eventId\n    action: {identityAction}\n", StringComparison.Ordinal));
+                string privacy = File.ReadAllText(privacyPath).Replace("\r\n", "\n", StringComparison.Ordinal);
+                if (crlf)
+                {
+                    // Exercise Windows checkout line endings before applying the same edit.
+                    privacy = privacy.Replace("\n", "\r\n", StringComparison.Ordinal);
+                }
+                privacy = privacy.Replace("\r\n", "\n", StringComparison.Ordinal);
+                Assert.Contains("fields:\n", privacy, StringComparison.Ordinal);
+                File.WriteAllText(privacyPath, privacy.Replace("fields:\n", $"fields:\n  - path: eventId\n    action: {identityAction}\n", StringComparison.Ordinal));
                 string samplePath = Path.Combine(source, "samples", "security-4625.jsonl");
                 JsonObject sample = JsonNode.Parse(File.ReadLines(samplePath).First())!.AsObject();
                 sample["expect"] = "quarantine";
