@@ -1,0 +1,179 @@
+{
+  "schemaVersion": 1,
+  "recordType": "retained-cleanup-attempts",
+  "runId": "bower-ws6-20261101-011000",
+  "awsAttempts": [
+    {
+      "sourceFile": "aws-removal-bucket-071737.json",
+      "sourceSha256": "221bd4cd6666380def2a0e624a1ed2f74d7791d7addc27ff74d652f08e60eeee",
+      "receipt": {
+        "recordType": "owned-aws-removal-receipt",
+        "runId": "bower-ws6-20261101-011000",
+        "action": "bucket",
+        "startedAt": "2026-11-01T07:17:37.951710+00:00",
+        "inventoryPlanSha256": "daf0efcd316034b79207a6fa4fa375ec3b30c1ea33a1358e275350a223d2151e",
+        "operations": [
+          {
+            "operation": "stack-blocked-only-by-owned-nonempty-bucket",
+            "at": "2026-11-01T07:17:39.575612+00:00",
+            "stackId": "arn:aws:cloudformation:ap-southeast-2:959038055523:stack/bower-ws6-20261101-011000/32476fc0-d592-11f1-85e7-0affd835096b"
+          },
+          {
+            "operation": "bucket-ownership-rechecked",
+            "at": "2026-11-01T07:17:40.324187+00:00",
+            "bucket": "bower-ws6-20261101-011000-artifacts-6vtwseruf2ex",
+            "ownershipTags": {
+              "Role": "artifacts",
+              "Project": "bower-lab",
+              "aws:cloudformation:stack-name": "bower-ws6-20261101-011000",
+              "aws:cloudformation:stack-id": "arn:aws:cloudformation:ap-southeast-2:959038055523:stack/bower-ws6-20261101-011000/32476fc0-d592-11f1-85e7-0affd835096b",
+              "aws:cloudformation:logical-id": "Artifacts",
+              "RunId": "bower-ws6-20261101-011000",
+              "Name": "bower-ws6-20261101-011000-artifacts"
+            }
+          },
+          {
+            "operation": "multipart-uploads-aborted",
+            "at": "2026-11-01T07:17:41.049815+00:00",
+            "count": 0
+          }
+        ],
+        "complete": false,
+        "errorCategory": "AttributeError",
+        "errorCode": "ownership-or-evidence-assertion",
+        "finishedAt": "2026-11-01T07:17:44.429512+00:00"
+      }
+    },
+    {
+      "sourceFile": "aws-removal-bucket-071809.json",
+      "sourceSha256": "954d64169daf82cb56cd87451c0999edd67b321172507fa13301b105d595cc9e",
+      "receipt": {
+        "recordType": "owned-aws-removal-receipt",
+        "runId": "bower-ws6-20261101-011000",
+        "action": "bucket",
+        "startedAt": "2026-11-01T07:18:09.989606+00:00",
+        "inventoryPlanSha256": "daf0efcd316034b79207a6fa4fa375ec3b30c1ea33a1358e275350a223d2151e",
+        "operations": [
+          {
+            "operation": "stack-blocked-only-by-owned-nonempty-bucket",
+            "at": "2026-11-01T07:18:11.650860+00:00",
+            "stackId": "arn:aws:cloudformation:ap-southeast-2:959038055523:stack/bower-ws6-20261101-011000/32476fc0-d592-11f1-85e7-0affd835096b"
+          },
+          {
+            "operation": "bucket-ownership-rechecked",
+            "at": "2026-11-01T07:18:12.437630+00:00",
+            "bucket": "bower-ws6-20261101-011000-artifacts-6vtwseruf2ex",
+            "ownershipTags": {
+              "Role": "artifacts",
+              "Project": "bower-lab",
+              "aws:cloudformation:stack-name": "bower-ws6-20261101-011000",
+              "aws:cloudformation:stack-id": "arn:aws:cloudformation:ap-southeast-2:959038055523:stack/bower-ws6-20261101-011000/32476fc0-d592-11f1-85e7-0affd835096b",
+              "aws:cloudformation:logical-id": "Artifacts",
+              "RunId": "bower-ws6-20261101-011000",
+              "Name": "bower-ws6-20261101-011000-artifacts"
+            }
+          },
+          {
+            "operation": "multipart-uploads-aborted",
+            "at": "2026-11-01T07:18:13.192607+00:00",
+            "count": 0
+          },
+          {
+            "operation": "object-version-deletion-plan",
+            "at": "2026-11-01T07:18:13.958881+00:00",
+            "count": 0
+          },
+          {
+            "operation": "object-versions-and-delete-markers-removed",
+            "at": "2026-11-01T07:18:13.958992+00:00",
+            "count": 0
+          },
+          {
+            "operation": "delete-bucket-requested",
+            "at": "2026-11-01T07:18:17.458399+00:00",
+            "bucket": "bower-ws6-20261101-011000-artifacts-6vtwseruf2ex"
+          }
+        ],
+        "complete": true,
+        "finishedAt": "2026-11-01T07:18:17.458505+00:00"
+      }
+    },
+    {
+      "sourceFile": "aws-removal-stack-071536.json",
+      "sourceSha256": "bed95f2c3419ee8aa74b18cbd65328830ac8b617f9bdd036e2b728edac72f71d",
+      "receipt": {
+        "recordType": "owned-aws-removal-receipt",
+        "runId": "bower-ws6-20261101-011000",
+        "action": "stack",
+        "startedAt": "2026-11-01T07:15:36.502448+00:00",
+        "inventoryPlanSha256": "daf0efcd316034b79207a6fa4fa375ec3b30c1ea33a1358e275350a223d2151e",
+        "operations": [
+          {
+            "operation": "delete-stack-requested",
+            "at": "2026-11-01T07:15:39.640365+00:00",
+            "stackId": "arn:aws:cloudformation:ap-southeast-2:959038055523:stack/bower-ws6-20261101-011000/32476fc0-d592-11f1-85e7-0affd835096b",
+            "ownershipTags": {
+              "Project": "bower-lab",
+              "RunId": "bower-ws6-20261101-011000"
+            }
+          },
+          {
+            "operation": "stack-status",
+            "at": "2026-11-01T07:15:40.370984+00:00",
+            "status": "DELETE_IN_PROGRESS"
+          },
+          {
+            "operation": "stack-status",
+            "at": "2026-11-01T07:16:47.181254+00:00",
+            "status": "DELETE_FAILED"
+          }
+        ],
+        "complete": false,
+        "errorCategory": "RuntimeError",
+        "errorCode": "stack-delete-failed",
+        "finishedAt": "2026-11-01T07:16:47.181375+00:00"
+      }
+    },
+    {
+      "sourceFile": "aws-removal-stack-071842.json",
+      "sourceSha256": "d345898ba3269c676fddf1e15ab3892b680404ccae457d3013e848449df69109",
+      "receipt": {
+        "recordType": "owned-aws-removal-receipt",
+        "runId": "bower-ws6-20261101-011000",
+        "action": "stack",
+        "startedAt": "2026-11-01T07:18:42.448280+00:00",
+        "inventoryPlanSha256": "daf0efcd316034b79207a6fa4fa375ec3b30c1ea33a1358e275350a223d2151e",
+        "operations": [
+          {
+            "operation": "delete-stack-requested",
+            "at": "2026-11-01T07:18:46.088271+00:00",
+            "stackId": "arn:aws:cloudformation:ap-southeast-2:959038055523:stack/bower-ws6-20261101-011000/32476fc0-d592-11f1-85e7-0affd835096b",
+            "ownershipTags": {
+              "Project": "bower-lab",
+              "RunId": "bower-ws6-20261101-011000"
+            }
+          },
+          {
+            "operation": "stack-status",
+            "at": "2026-11-01T07:18:46.838153+00:00",
+            "status": "DELETE_IN_PROGRESS"
+          },
+          {
+            "operation": "stack-status",
+            "at": "2026-11-01T07:18:58.170699+00:00",
+            "status": "DELETE_COMPLETE"
+          }
+        ],
+        "complete": true,
+        "finishedAt": "2026-11-01T07:18:58.170772+00:00"
+      }
+    }
+  ],
+  "azureCleanupCheckedAt": "2026-11-01T07:17:58.495882+00:00",
+  "azureCleanupErrors": [],
+  "notes": [
+    "The first stack deletion failed because the actual template tried to delete a nonempty artifact bucket; all other stack resources had DELETE_COMPLETE.",
+    "The first bucket attempt received a successful quiet DeleteObjects response but then failed locally while parsing absent output. The corrected retry independently listed zero remaining versions/delete markers before deleting the bucket. The first batch size was not retained; no exact deleted-version count is claimed.",
+    "The same stack was then retried to DELETE_COMPLETE. These failed attempts remain failed receipts; final absence is established by the separate independent verifier."
+  ]
+}

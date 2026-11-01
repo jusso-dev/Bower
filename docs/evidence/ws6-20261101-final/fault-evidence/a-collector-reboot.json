@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "recordType": "firewall-source-fault-proof",
+  "runId": "bower-ws6-20261101-011000",
+  "scenario": "a-collector-reboot",
+  "faultExecutionVerified": true,
+  "deliveryQualified": false,
+  "faults": [
+    {
+      "stepIndex": 1,
+      "host": "Linux",
+      "instanceId": "i-04baca853cd5a072d",
+      "unit": "bower-lab-f-reboot",
+      "action": "reboot",
+      "plannedAt": "2026-11-01T05:00:11.029111+00:00",
+      "before": {
+        "schemaVersion": 1,
+        "runId": "bower-ws6-20261101-011000",
+        "scenario": "a-collector-reboot",
+        "unit": "bower-lab-f-reboot",
+        "action": "reboot",
+        "mode": "before",
+        "observedAt": "2026-11-01T04:56:49.539316+00:00",
+        "bootId": "831aab98-511f-4562-b53c-45b86a3778ba",
+        "services": {
+          "bower": {
+            "MainPID": 36307,
+            "NRestarts": 1,
+            "ExecMainStartTimestampMonotonic": 11242970419,
+            "ActiveState": "active",
+            "SubState": "running",
+            "startTicks": 1124294
+          },
+          "rsyslog": {
+            "MainPID": 0,
+            "NRestarts": 0,
+            "ExecMainStartTimestampMonotonic": 0,
+            "ActiveState": "inactive",
+            "SubState": "dead"
+          }
+        },
+        "faultRecords": [],
+        "deliveryQualified": false,
+        "installedSourceSha256": "72d53ac898c3e87bbe276bdd37a3adfce57b9da2a977834a14ae45942c6f6383"
+      },
+      "after": {
+        "schemaVersion": 1,
+        "runId": "bower-ws6-20261101-011000",
+        "scenario": "a-collector-reboot",
+        "unit": "bower-lab-f-reboot",
+        "action": "reboot",
+        "mode": "after",
+        "observedAt": "2026-11-01T05:05:24.843100+00:00",
+        "bootId": "0cce8507-e869-4b46-ab44-9976c3f9e2ae",
+        "services": {
+          "bower": {
+            "MainPID": 1898,
+            "NRestarts": 0,
+            "ExecMainStartTimestampMonotonic": 5405404,
+            "ActiveState": "active",
+            "SubState": "running",
+            "startTicks": 540
+          },
+          "rsyslog": {
+            "MainPID": 0,
+            "NRestarts": 0,
+            "ExecMainStartTimestampMonotonic": 0,
+            "ActiveState": "inactive",
+            "SubState": "dead"
+          }
+        },
+        "faultRecords": [
+          {
+            "fault": "reboot",
+            "startedAt": "2026-11-01T05:00:11.068726+00:00",
+            "endedAt": "2026-11-01T05:00:11.086056+00:00",
+            "duration": 0
+          }
+        ],
+        "deliveryQualified": false,
+        "rebootRequestedAt": "2026-11-01T05:00:11.068726+00:00",
+        "faultCompletionRecorded": true,
+        "installedSourceSha256": "72d53ac898c3e87bbe276bdd37a3adfce57b9da2a977834a14ae45942c6f6383"
+      },
+      "rebootVerified": true
+    }
+  ],
+  "sourceSha256": {
+    "fault-1-before.json": "da0533a7881c1d307c21a716345b59bb5a713ba863f07d18079ec5c622127a56",
+    "fault-1-after.json": "0496ceeba8caa3d6bc3ea48830a9c66bc84bf4dc31272181cd48094a10c99187",
+    "fault-1-before-command.json": "4669929f7c0723b45c8cba852b700e727b6c72a82c112a9d8108c4026502872c",
+    "fault-1-after-command.json": "0fd89653d6f19f3cbe9faacade429faf17538a964609eb95a27b9a7c337a67da",
+    "plan.json": "f3b021b24a6066bb51b35d5b9341caa195373aac6a3fce063e85b986bc591db9"
+  },
+  "sourceProofSha256": "59d07140a1144b6732785a3e3a3446cbffe72a8ca8ba9a4c04d2026186273149",
+  "commandReceipts": {
+    "fault-1-after-command.json": {
+      "commandId": "b3f30b92-ca08-47e2-b96b-a144a8233367",
+      "instanceId": "i-04baca853cd5a072d",
+      "host": "Linux",
+      "script": "capture-sourcefault.sh",
+      "sha256": "328ca454d5cff0a56749c2761e2ad3954cafd38dc62cfbaf5c7ccd48db7e4b2d",
+      "sentAt": "2026-11-01T05:05:24Z",
+      "status": "Success",
+      "responseCode": 0
+    },
+    "fault-1-before-command.json": {
+      "commandId": "84b0d2d9-9e6b-4dbe-93ca-1fdb75e0f29a",
+      "instanceId": "i-04baca853cd5a072d",
+      "host": "Linux",
+      "script": "capture-sourcefault.sh",
+      "sha256": "328ca454d5cff0a56749c2761e2ad3954cafd38dc62cfbaf5c7ccd48db7e4b2d",
+      "sentAt": "2026-11-01T04:56:49Z",
+      "status": "Success",
+      "responseCode": 0
+    }
+  }
+}

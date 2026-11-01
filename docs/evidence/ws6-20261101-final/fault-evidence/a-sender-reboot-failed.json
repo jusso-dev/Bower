@@ -1,0 +1,220 @@
+{
+  "schemaVersion": 1,
+  "recordType": "firewall-source-fault-proof",
+  "runId": "bower-ws6-20261101-011000",
+  "scenario": "a-sender-reboot",
+  "faultExecutionVerified": true,
+  "deliveryQualified": false,
+  "faults": [
+    {
+      "stepIndex": 0,
+      "host": "Linux",
+      "instanceId": "i-04baca853cd5a072d",
+      "unit": "bower-lab-f-collector-down",
+      "action": "stop-start",
+      "plannedAt": "2026-11-01T05:16:23.161082+00:00",
+      "before": {
+        "schemaVersion": 1,
+        "runId": "bower-ws6-20261101-011000",
+        "scenario": "a-sender-reboot",
+        "unit": "bower-lab-f-collector-down",
+        "action": "stop-start",
+        "mode": "before",
+        "observedAt": "2026-11-01T05:13:34.155927+00:00",
+        "bootId": "0cce8507-e869-4b46-ab44-9976c3f9e2ae",
+        "services": {
+          "bower": {
+            "MainPID": 1898,
+            "NRestarts": 0,
+            "ExecMainStartTimestampMonotonic": 5405404,
+            "ActiveState": "active",
+            "SubState": "running",
+            "startTicks": 540
+          },
+          "rsyslog": {
+            "MainPID": 0,
+            "NRestarts": 0,
+            "ExecMainStartTimestampMonotonic": 0,
+            "ActiveState": "inactive",
+            "SubState": "dead"
+          }
+        },
+        "faultRecords": [],
+        "deliveryQualified": false,
+        "installedSourceSha256": "72d53ac898c3e87bbe276bdd37a3adfce57b9da2a977834a14ae45942c6f6383"
+      },
+      "after": {
+        "schemaVersion": 1,
+        "runId": "bower-ws6-20261101-011000",
+        "scenario": "a-sender-reboot",
+        "unit": "bower-lab-f-collector-down",
+        "action": "stop-start",
+        "mode": "after",
+        "observedAt": "2026-11-01T05:27:35.996876+00:00",
+        "bootId": "0cce8507-e869-4b46-ab44-9976c3f9e2ae",
+        "services": {
+          "bower": {
+            "MainPID": 3399,
+            "NRestarts": 0,
+            "ExecMainStartTimestampMonotonic": 1208216510,
+            "ActiveState": "active",
+            "SubState": "running",
+            "startTicks": 120821
+          },
+          "rsyslog": {
+            "MainPID": 0,
+            "NRestarts": 0,
+            "ExecMainStartTimestampMonotonic": 0,
+            "ActiveState": "inactive",
+            "SubState": "dead"
+          }
+        },
+        "faultRecords": [
+          {
+            "fault": "stop-start",
+            "startedAt": "2026-11-01T05:16:23.260413+00:00",
+            "endedAt": "2026-11-01T05:20:28.499717+00:00",
+            "duration": 240
+          }
+        ],
+        "deliveryQualified": false,
+        "faultCompletionRecorded": true,
+        "installedSourceSha256": "72d53ac898c3e87bbe276bdd37a3adfce57b9da2a977834a14ae45942c6f6383"
+      },
+      "processChanged": true,
+      "faultElapsedSeconds": 245.23930406570435
+    },
+    {
+      "stepIndex": 2,
+      "host": "Sender",
+      "instanceId": "i-0078d9ac013917ff9",
+      "unit": "bower-lab-f-sender-reboot",
+      "action": "reboot",
+      "plannedAt": "2026-11-01T05:17:43.161082+00:00",
+      "before": {
+        "schemaVersion": 1,
+        "runId": "bower-ws6-20261101-011000",
+        "scenario": "a-sender-reboot",
+        "unit": "bower-lab-f-sender-reboot",
+        "action": "reboot",
+        "mode": "before",
+        "observedAt": "2026-11-01T05:13:42.838458+00:00",
+        "bootId": "99fd6f98-c2eb-4edb-82e0-06be5642eba9",
+        "services": {
+          "bower": {
+            "MainPID": 0,
+            "NRestarts": 0,
+            "ExecMainStartTimestampMonotonic": 0,
+            "ActiveState": "inactive",
+            "SubState": "dead"
+          },
+          "rsyslog": {
+            "MainPID": 35184,
+            "NRestarts": 0,
+            "ExecMainStartTimestampMonotonic": 13722806744,
+            "ActiveState": "active",
+            "SubState": "running",
+            "startTicks": 1372280
+          }
+        },
+        "faultRecords": [],
+        "deliveryQualified": false,
+        "installedSourceSha256": "72d53ac898c3e87bbe276bdd37a3adfce57b9da2a977834a14ae45942c6f6383"
+      },
+      "after": {
+        "schemaVersion": 1,
+        "runId": "bower-ws6-20261101-011000",
+        "scenario": "a-sender-reboot",
+        "unit": "bower-lab-f-sender-reboot",
+        "action": "reboot",
+        "mode": "after",
+        "observedAt": "2026-11-01T05:27:43.958314+00:00",
+        "bootId": "a6ee162e-5977-41f2-b216-d225cfa4a8e4",
+        "services": {
+          "bower": {
+            "MainPID": 0,
+            "NRestarts": 0,
+            "ExecMainStartTimestampMonotonic": 0,
+            "ActiveState": "inactive",
+            "SubState": "dead"
+          },
+          "rsyslog": {
+            "MainPID": 2035,
+            "NRestarts": 0,
+            "ExecMainStartTimestampMonotonic": 5661479,
+            "ActiveState": "active",
+            "SubState": "running",
+            "startTicks": 566
+          }
+        },
+        "faultRecords": [
+          {
+            "fault": "reboot",
+            "startedAt": "2026-11-01T05:17:43.261091+00:00",
+            "endedAt": "2026-11-01T05:17:43.279327+00:00",
+            "duration": 0
+          }
+        ],
+        "deliveryQualified": false,
+        "rebootRequestedAt": "2026-11-01T05:17:43.261091+00:00",
+        "faultCompletionRecorded": true,
+        "installedSourceSha256": "72d53ac898c3e87bbe276bdd37a3adfce57b9da2a977834a14ae45942c6f6383"
+      },
+      "rebootVerified": true
+    }
+  ],
+  "sourceSha256": {
+    "fault-0-before.json": "04bf243fd65f2102d69f64998cafaf57010035a40283fa42babf24f3d42a46f3",
+    "fault-0-after.json": "8657b7c8dccd1a8e2d7fb3e3e0f68d7b19b6d624265c756f491e6acff34e280f",
+    "fault-0-before-command.json": "038d7ffe858d51e9d76006484284230ae6bcd92bf9f8536f73fe14cca80cb683",
+    "fault-0-after-command.json": "452a3285bdd63680fa3af159c2e885a4d2d4c42e3d5fc211ac6c826b154e1a42",
+    "fault-2-before.json": "d504a408bb1c0d58928df483a9a92dc128a983585af0eb56ae01a8b88e7bce91",
+    "fault-2-after.json": "407281471b6dae31b4b260308ec0890672ce4ba913a501db19ae29a0d57e1cfc",
+    "fault-2-before-command.json": "6557673bfd85ad7185130a533a737c31b12e5ca63ecf3b7c45ece7eb54020ad8",
+    "fault-2-after-command.json": "6f440516f417d1384128e7e1f5a2d4ca770b5e0cdccc51573af07f0ca5d45249",
+    "plan.json": "1f8e9ebd3ac27162e2a28b1da7273b73e30489838d2232012599da3cac76529d"
+  },
+  "sourceProofSha256": "8401856f570c37288f50bc72a44a10dda24498011486296df37843e12eae36e7",
+  "commandReceipts": {
+    "fault-0-after-command.json": {
+      "commandId": "8451bd42-883a-4cc3-9fa5-42b516b2a471",
+      "instanceId": "i-04baca853cd5a072d",
+      "host": "Linux",
+      "script": "capture-sourcefault.sh",
+      "sha256": "328ca454d5cff0a56749c2761e2ad3954cafd38dc62cfbaf5c7ccd48db7e4b2d",
+      "sentAt": "2026-11-01T05:27:35Z",
+      "status": "Success",
+      "responseCode": 0
+    },
+    "fault-0-before-command.json": {
+      "commandId": "c90c1338-b2cf-4d72-9cf8-1978057841ea",
+      "instanceId": "i-04baca853cd5a072d",
+      "host": "Linux",
+      "script": "capture-sourcefault.sh",
+      "sha256": "328ca454d5cff0a56749c2761e2ad3954cafd38dc62cfbaf5c7ccd48db7e4b2d",
+      "sentAt": "2026-11-01T05:13:33Z",
+      "status": "Success",
+      "responseCode": 0
+    },
+    "fault-2-after-command.json": {
+      "commandId": "c46aeb83-4771-49ea-bb0b-318c16711326",
+      "instanceId": "i-0078d9ac013917ff9",
+      "host": "Sender",
+      "script": "capture-sourcefault.sh",
+      "sha256": "328ca454d5cff0a56749c2761e2ad3954cafd38dc62cfbaf5c7ccd48db7e4b2d",
+      "sentAt": "2026-11-01T05:27:43Z",
+      "status": "Success",
+      "responseCode": 0
+    },
+    "fault-2-before-command.json": {
+      "commandId": "21d3661a-0830-46b4-aee8-a826a47a9df8",
+      "instanceId": "i-0078d9ac013917ff9",
+      "host": "Sender",
+      "script": "capture-sourcefault.sh",
+      "sha256": "328ca454d5cff0a56749c2761e2ad3954cafd38dc62cfbaf5c7ccd48db7e4b2d",
+      "sentAt": "2026-11-01T05:13:42Z",
+      "status": "Success",
+      "responseCode": 0
+    }
+  }
+}

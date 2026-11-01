@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "recordType": "current-session-credential-staging-verification",
+  "runId": "bower-ws6-20261101-011000",
+  "checkedAt": "2026-11-01T07:18:42.339634+00:00",
+  "inventoryPlanSha256": "daf0efcd316034b79207a6fa4fa375ec3b30c1ea33a1358e275350a223d2151e",
+  "requestSha256": "c92398553428ba0b9c5d636bb00ddeefee5d7f07b99ed7a0ee8e4a252f08ce21",
+  "checks": [
+    {
+      "path": "/private/tmp/bower-final-qualification/pki",
+      "absent": true
+    },
+    {
+      "path": "/private/tmp/bower-final-qualification/signing",
+      "absent": true
+    },
+    {
+      "path": "/private/tmp/bower-final-qualification/azure-cli-ingest",
+      "absent": true
+    },
+    {
+      "path": "/private/tmp/bower-final-qualification/azure-cli-verifier",
+      "absent": true
+    },
+    {
+      "path": "/private/tmp/bower-final-qualification/artifacts/qualification/bower-ws6-20261101-011000",
+      "absent": true
+    },
+    {
+      "path": "/private/tmp/bower-final-qualification/candidate-733eb74/artifacts/qualification/bower-ws6-20261101-011000",
+      "absent": true
+    },
+    {
+      "path": "/private/tmp/bower-final-qualification/ingest-key.pem",
+      "absent": true
+    },
+    {
+      "path": "/private/tmp/bower-final-qualification/ingest-cert.pem",
+      "absent": true
+    },
+    {
+      "path": "/private/tmp/bower-final-qualification/ingest-identity.pem",
+      "absent": true
+    },
+    {
+      "path": "/private/tmp/bower-final-qualification/verifier-key.pem",
+      "absent": true
+    },
+    {
+      "path": "/private/tmp/bower-final-qualification/verifier-cert.pem",
+      "absent": true
+    },
+    {
+      "path": "/private/tmp/bower-final-qualification/verifier-identity.pem",
+      "absent": true
+    }
+  ],
+  "errors": [],
+  "credentialStagingRemoved": true,
+  "scope": "Exact current-session credential files, dedicated Azure caches, PKI/signing and run-owned artifact copies only.",
+  "preserved": [
+    "repository and public evidence",
+    "default Azure and AWS configuration",
+    "private metadata, checkpoints and audit scripts",
+    "all unrelated and historical discovery paths"
+  ]
+}

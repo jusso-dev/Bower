@@ -1,0 +1,8 @@
+# Captured qualification evidence is verified by byte count and SHA-256.
+# Preserve original bytes on every platform, including Windows CRLF receipts.
+docs/evidence/ws6-20261101-final/** -text
+docs/evidence/ws6-20261101-final/identity-evidence/*.ids whitespace=cr-at-eol
+
+# This is the exact executed verifier source, whose original final blank line
+# is included in its published hash. Do not normalize the captured artifact.
+docs/evidence/ws6-20261101-final/cleanup/verify-final-cleanup.py whitespace=-blank-at-eof

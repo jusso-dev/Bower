@@ -83,6 +83,20 @@ try {
     [IO.File]::WriteAllText($path, (($rows | ForEach-Object { $_ | ConvertTo-Json -Depth 8 -Compress }) -join "`n") + "`n")
     Assert-Sample ((Read-BowerSampleSet $directory).Count -eq 5) 'many JSONL shape'
     Assert-SampleFileReleased $path
+    # Match the running worker's sharing mode: a read observer must share Write
+    # even though it never writes. Exercise this on native Windows PowerShell.
+    $writerStream = [IO.File]::Open($path, [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::Read)
+    $writer = New-Object IO.StreamWriter($writerStream, (New-Object Text.UTF8Encoding($false)))
+    try {
+        $writer.WriteLine(($rows[0] | ConvertTo-Json -Depth 8 -Compress)); $writer.Flush()
+        Assert-Sample ((Read-BowerSampleSet $directory).Count -eq 1) 'active writer blocks observer'
+        $writer.Write('{"sequence":'); $writer.Flush()
+        Assert-Rejected { Read-BowerSampleSet $directory }
+    } finally { $writer.Dispose(); $writerStream.Dispose() }
+    Assert-SampleFileReleased $path
+    [IO.File]::WriteAllText($path, ($rows[0] | ConvertTo-Json -Depth 8 -Compress))
+    Assert-Rejected { Read-BowerSampleSet $directory }
+    Assert-SampleFileReleased $path
     [IO.File]::WriteAllText($path, ("{}`n" * 482))
     Assert-Rejected { Read-BowerSampleSet $directory }
     Assert-SampleFileReleased $path
@@ -90,6 +104,9 @@ try {
     Assert-Rejected { Read-BowerSampleSet $directory }
     Assert-SampleFileReleased $path
     [IO.File]::WriteAllText($path, '{invalid-json')
+    Assert-Rejected { Read-BowerSampleSet $directory }
+    Assert-SampleFileReleased $path
+    [IO.File]::WriteAllText($path, "{invalid-json`n")
     Assert-Rejected { Read-BowerSampleSet $directory }
     Assert-SampleFileReleased $path
     Write-BowerSampleJson (Join-Path $directory 'summary.json') $report

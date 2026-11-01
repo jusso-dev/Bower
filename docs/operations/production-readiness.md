@@ -26,6 +26,22 @@ Do not generalize an approval of this path to the whole platform.
 
 ## Evidence and blockers
 
+The [1 November final-candidate campaign](../evidence/ws6-20261101-final/README.md)
+completed its planned final tests, evidence export and session cleanup. Its idle
+schedule reconciled all 6,300 native/queue/Sentinel identities with zero missing,
+extra or duplicate rows; observed gaps were 299.952, 1,804.015 and 3,903.945 seconds.
+The nominal five-minute gap was about 48 ms short of 300 seconds. Windows steady,
+burst, one-hour outage and already-admitted queue restart scopes also passed.
+Native firewall completeness remains failed for forced kill (21 missing of 6,000),
+reset (4 of 1,200), and combined collector stop / sender reboot (2 of 600), despite
+every admitted identity reaching Sentinel. The exact pre-admission loss location
+is unproven. These failed gates remain open; cleanup does not establish production
+readiness. Plain TCP/TLS
+cannot acknowledge durable application admission; production requirements that
+include crash-lossless firewall delivery need a qualified retained-source replay
+workflow or an application-acknowledged transport. See the
+[syslog reliability runbook](../production-readiness/01-syslog-delivery-reliability.md).
+
 Initial audit baseline: main `9eb7af047702dbde60e4e49773784e0db4704f59`, including PR #157.
 Existing AWS results are from the documented `473c6ec` backport artifact, not a test
 of every subsequent main change. Re-run against the release candidate hashes.

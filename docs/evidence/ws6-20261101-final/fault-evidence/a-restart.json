@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "recordType": "firewall-source-fault-proof",
+  "runId": "bower-ws6-20261101-011000",
+  "scenario": "a-restart",
+  "faultExecutionVerified": true,
+  "deliveryQualified": false,
+  "faults": [
+    {
+      "stepIndex": 1,
+      "host": "Linux",
+      "instanceId": "i-04baca853cd5a072d",
+      "unit": "bower-lab-f-restart",
+      "action": "restart",
+      "plannedAt": "2026-11-01T04:23:47.098268+00:00",
+      "before": {
+        "schemaVersion": 1,
+        "runId": "bower-ws6-20261101-011000",
+        "scenario": "a-restart",
+        "unit": "bower-lab-f-restart",
+        "action": "restart",
+        "mode": "before",
+        "observedAt": "2026-11-01T04:20:44.208402+00:00",
+        "bootId": "831aab98-511f-4562-b53c-45b86a3778ba",
+        "services": {
+          "bower": {
+            "MainPID": 29498,
+            "NRestarts": 0,
+            "ExecMainStartTimestampMonotonic": 3900090467,
+            "ActiveState": "active",
+            "SubState": "running",
+            "startTicks": 390006
+          },
+          "rsyslog": {
+            "MainPID": 0,
+            "NRestarts": 0,
+            "ExecMainStartTimestampMonotonic": 0,
+            "ActiveState": "inactive",
+            "SubState": "dead"
+          }
+        },
+        "faultRecords": [],
+        "deliveryQualified": false,
+        "installedSourceSha256": "72d53ac898c3e87bbe276bdd37a3adfce57b9da2a977834a14ae45942c6f6383"
+      },
+      "after": {
+        "schemaVersion": 1,
+        "runId": "bower-ws6-20261101-011000",
+        "scenario": "a-restart",
+        "unit": "bower-lab-f-restart",
+        "action": "restart",
+        "mode": "after",
+        "observedAt": "2026-11-01T04:25:16.390086+00:00",
+        "bootId": "831aab98-511f-4562-b53c-45b86a3778ba",
+        "services": {
+          "bower": {
+            "MainPID": 35967,
+            "NRestarts": 0,
+            "ExecMainStartTimestampMonotonic": 10918230314,
+            "ActiveState": "active",
+            "SubState": "running",
+            "startTicks": 1091821
+          },
+          "rsyslog": {
+            "MainPID": 0,
+            "NRestarts": 0,
+            "ExecMainStartTimestampMonotonic": 0,
+            "ActiveState": "inactive",
+            "SubState": "dead"
+          }
+        },
+        "faultRecords": [
+          {
+            "fault": "restart",
+            "startedAt": "2026-11-01T04:23:47.194718+00:00",
+            "endedAt": "2026-11-01T04:23:47.328708+00:00",
+            "duration": 0
+          }
+        ],
+        "deliveryQualified": false,
+        "faultCompletionRecorded": true,
+        "installedSourceSha256": "72d53ac898c3e87bbe276bdd37a3adfce57b9da2a977834a14ae45942c6f6383"
+      },
+      "processChanged": true,
+      "faultElapsedSeconds": 0.13399004936218262
+    }
+  ],
+  "sourceSha256": {
+    "fault-1-before.json": "11415556296922a123518890d5b38d93fc342b2f93be99e79be74ef9c4b824ec",
+    "fault-1-after.json": "6f90dd3e3c0fa03f5e90d23facd898cdc8a61ac397c01948d9690c10e02496ab",
+    "fault-1-before-command.json": "a761d1793c72941f9ec8fe6d1debc7a9f4226d2012a4801fe31ab12778c99396",
+    "fault-1-after-command.json": "0ab70d7996d2951fe179dace67e549fbaae6bd040b019d1cbe8a2ee436b5d839",
+    "plan.json": "d09a3a4718e619f29190187a12627de55e706d8ab053b025eac2c831fdad1a9b"
+  },
+  "sourceProofSha256": "ffffe8dc9dea97196950f24193fd0484e4607f8ff739b43aa9e037d4ece216b1",
+  "commandReceipts": {
+    "fault-1-after-command.json": {
+      "commandId": "fe23a0cf-c545-4409-9894-a9fbe73d54bf",
+      "instanceId": "i-04baca853cd5a072d",
+      "host": "Linux",
+      "script": "capture-sourcefault.sh",
+      "sha256": "328ca454d5cff0a56749c2761e2ad3954cafd38dc62cfbaf5c7ccd48db7e4b2d",
+      "sentAt": "2026-11-01T04:25:16Z",
+      "status": "Success",
+      "responseCode": 0
+    },
+    "fault-1-before-command.json": {
+      "commandId": "56bdec92-5b8b-442c-8b14-86207e4afe8c",
+      "instanceId": "i-04baca853cd5a072d",
+      "host": "Linux",
+      "script": "capture-sourcefault.sh",
+      "sha256": "328ca454d5cff0a56749c2761e2ad3954cafd38dc62cfbaf5c7ccd48db7e4b2d",
+      "sentAt": "2026-11-01T04:20:43Z",
+      "status": "Success",
+      "responseCode": 0
+    }
+  }
+}

@@ -1,76 +1,75 @@
-# Final-candidate qualification — incomplete
+# Final candidate qualification evidence
 
-Candidate `733eb7448a98e3ac449c8427753b799ad3fec5c1` · run `bower-ws6-20261101-011000`.
-Snapshot: `2026-11-01T03:18:35.134051+00:00`. **General production readiness is not established.**
+Run `bower-ws6-20261101-011000`. Generated `2026-11-01T07:24:58.061652+00:00`.
 
-| Scenario | Requested | Native → accepted queue | Queried Sentinel | Result |
-| --- | ---: | --- | --- | --- |
-| Firewall steady, 10/sec | 600 | 600 → 600 | 600, no duplicates | EXACT PASS |
-| Firewall burst, 100/sec | 6,000 | 6,000 → 6,000 | 6,000, no duplicates | EXACT PASS |
-| Windows WEC steady, 10/sec | 600 | 600 → 600 WEC → 600 queue | 600, no duplicates | EXACT PASS |
-| Earlier Windows steady attempt | 600 | 567 → 567 WEC → 567 queue | No qualifying claim | FAILED |
-| Windows burst attempt, 100/sec | 6,000 | 3,179 → 3,179 WEC → 3,179 queue | No qualifying claim | FAILED |
+**Production readiness is not established.** Exact passes apply only to their recorded scope.
 
-The fresh Windows `final-steady-warm1` phase passed exact identity reconciliation:
-600 native Security 4625 events, 600 WEC events, 600 accepted queue identities,
-and 600 independently queried Sentinel identities/rows. Missing, extra and
-duplicate counts were all zero. Native rate was
-`9.998910/sec`.
-Its 100-event connection warm-up has separate native/WEC/queue identity files
-and never counts toward measured traffic. Each qualifying phase has its own
-source and destination hashes in [summary.json](summary.json).
+| Phase | Expected | Native | Queue | Sentinel | Outcome |
+|---|---|---|---|---|---|
+| Linux steady · 10/sec | 600 | 600 | 600 | 600 | PASS |
+| Linux burst · 100/sec | 6000 | 6000 | 6000 | 6000 | PASS |
+| Linux one-hour destination outage | 36000 | 36000 | 36000 | 36000 | DELIVERY PASS; MANUAL RESTORE |
+| Linux a-restart | 6000 | 6000 | 6000 | 6000 | PASS |
+| Linux a-blackhole | 1800 | 1800 | 1800 | 1800 | PASS |
+| Linux a-collector-reboot | 3000 | 3000 | 3000 | 3000 | PASS |
+| Linux a-sender-stop-start | 1800 | 1800 | 1800 | 1800 | PASS |
+| Linux a-sigkill | 6000 | 6000 | 5979 | 5979 | FAIL |
+| Linux a-reset | 1200 | 1200 | 1196 | 1196 | FAIL |
+| Linux a-sender-reboot | 600 | 600 | 598 | 598 | FAIL |
+| Linux idle gaps · 5/30/65 minutes | 6300 | 6300 | 6300 | 6300 | PASS |
+| Windows steady · 10/sec | 600 | 600 | 600 | 600 | PASS |
+| Windows diagnostic · 100/sec | 1000 | 1000 | 1000 | 1000 | PASS |
+| Windows burst · 100/sec | 6000 | 6000 | 6000 | 6000 | PASS |
+| Windows one-hour destination outage | 36000 | 36000 | 36000 | 36000 | PASS |
+| Windows already-admitted queue restart | 600 | 600 | 600 | 600 | PASS |
+| Earlier Windows steady attempt | 600 | 567 | 567 | not qualified | FAIL |
+| Earlier Windows burst attempt | 6000 | 3179 | 3179 | not qualified | FAIL |
 
-The earlier `final-steady` failure remains preserved: 600 authentication calls
-returned code 1326 but produced only 567 observed native Security events. All
-567 were forwarded and queued. Its native rate was
-`9.455161/sec`, below the 9.9/sec qualification floor.
-This does not establish 33 losses inside WEC/Bower. A structurally complete
-export (`partialEvidence=false`) does not turn that failed phase into a pass.
+## Idle qualification
 
-The first warmed Windows burst also failed qualification: 6,000 authentication
-calls produced 3,179 observed native events, all of which reached WEC and the
-queue. Its native rate was 52.967652/sec. This is not proof of 2,821 losses in
-WEC/Bower. Two subsequent worker-isolation diagnostics stopped before a complete
-phase report; their bounded generator checkpoints, separate warm-up files and
-explicit missing-phase lists are hash-verified and retained. They do not count
-as passing phases. Testing is still active; later diagnostic/retry results are
-outside this snapshot until independently verified.
+All four pulses were reconciled against retained exact queue and Sentinel identities. The strict idle gate passed. Collection finished at 07:13:49 UTC, before the original 07:35 preference; the contingency margin was unused. The nominal five-minute gap measured 299.952 seconds, about 48 ms short of 300 seconds; no literal five-minute minimum is claimed. Observed generator end-to-next-start gaps: 299.952 seconds, 1804.015 seconds, 3903.945 seconds. Timings come from native reports, not schedule targets.
 
-The failed-burst Windows resource series captured 21/21 samples with zero sample
-failures over 300.096991 seconds, peak pending 8 and zero dead letters. This does
-not upgrade the failed traffic result.
+## Retained failures
 
-The Linux final-burst sampler captured 21/21 samples with zero failures over
-300.007176 seconds: unchanged boot, zero restarts/counter resets, peak pending
-20, zero dead letters, peak sampled process RSS 70,639,616 bytes. The Windows
-original sampler smoke failed all 5 metric samples under PowerShell 5.1 before
-the disk-binding fix (zero available samples). That actual failed run is
-preserved separately, with local file hashes in the machine-readable summary.
-The fresh fixed sampler smoke then captured 5/5 samples with zero failures over
-60.087869 seconds. A separate export attempt of that fixed run occurred before
-60 seconds elapsed; it was premature and did not invalidate the subsequently
-completed fixed series. Resource sampling is supporting
-evidence and does not prove destination delivery.
+Native completeness remains failed for SIGKILL (21 missing of 6,000), TCP reset (4 of 1,200), and combined collector-stop/sender-reboot (2 of 600). Every admitted identity in those phases reached Sentinel. The exact pre-admission loss location is unproven. Plain TCP/TLS syslog provides no application-level durable-admission acknowledgement. Earlier Windows attempts produced 567 of 600 and 3,179 of 6,000 requested native events; all observed native events reached WEC and the queue, so these are not demonstrated WEC/Bower transport losses. Other failed or stopped Windows diagnostics, the original failed resource-sampler smoke and unsuccessful export/query attempts remain in the structured summary. Later successful runs do not replace those records.
 
-One-hour outage/recovery, remaining idle tests, and independent AWS/Azure
-cleanup verification remain pending. Do not infer cleanup from an expiry
-schedule. Earlier `95d7c05` baseline attempts and the
-[2026-10-31 monitoring drill](../ws6-20261031-074751/README.md) remain separate.
+## Destination outages
 
-## Retained proof
+Linux delivered all 36,000 identities after a 3,888.609-second destination block and drained in 32.860 seconds. Its original automatic outage guard failed; manual restoration at 03:54:24.465269 UTC is retained. A corrected helper passed a separate 15-second empty-table control, not a repeat one-hour test. Windows delivered all 36,000 native/WEC/queue identities after a 3,731.344-second block, with restoration at 04:48:27.0357445 UTC and a 45.246-second drain. Windows proof uses exact sets, source-counter delta and a pre-restore zero-row destination query; per-event queue receipt timestamps were not exported.
 
-- [Machine-readable evidence, query results and verified SHA-256 values](summary.json).
-- [Rendered report](report.html) and [actual local-HTML screenshot](report.png).
-- Failed WEC command: `1c1a2c32-85e7-40a5-95f6-ab6415b98d17`;
-  export: `2ec3b389-a664-4c2a-b2a2-038db23672d3`.
-- Passing WEC steady command: `884b4e95-bece-4fb9-8853-975437069a16`;
-  export: `3174b762-94cf-4792-90ae-f1f16d1200a5`.
-- Linux burst sampler export: `3337048d-039e-4531-84de-d865ee0765c7`.
-- Windows completed sampler export: `1b985b39-7120-4eac-b3cd-28b134805d0f`;
-  early attempt: `f9152c7c-ae7b-4aab-b145-1a60a136cc0d`.
+## Windows buffered restart
 
-All downloaded artifacts were verified against owned-host byte counts and
-SHA-256 receipts. The screenshot depicts this real local HTML summary, not a
-cloud portal. No raw payloads, credentials, private keys or token caches are
-published. Protected source artifacts remain under the campaign's
-`candidate-733eb74-r2/wec` and `resource-sampling` paths until approved cleanup.
+The Windows buffered restart preserved all 50,366 already-admitted winevt identities and bookmark 50,367 across PID 3172 → 3760, with 5.604617-second SCM recovery. The measured 600-event phase matched native/WEC/queue/Sentinel exactly. This scope excludes concurrent native generation across the kill.
+
+## Resource series
+
+linuxFinalHourOutage: 361/361 available samples over 5400.006 seconds; 0 sample failures, 0 process restarts, 0 source-counter resets; final pending 0. windowsFinalHourOutage: 301/301 available samples over 4500.085 seconds; 0 sample failures, 0 process restarts, 0 source-counter resets; final pending 0.
+
+## Monitoring
+
+Scoped recovery was verified for the original real-collector health/freshness and DCR request-error alerts. Synthetic probes, disposable TLS-certificate baselines and the deliberately retired Windows host remain separate alert scopes; no all-alerts-clear claim is made. A synthetic malformed-request diagnostic is not collector delivery evidence. Final owned alert metadata and all deployed query windows were captured before Azure teardown; see the finalSnapshot artifacts in summary.json. Eight final query result sets were empty. Nonempty rows covered the retired Windows host, synthetic or completed-security collectors, and two disposable Linux TLS baselines.
+
+## Session cleanup
+
+Independent verification passed all 26 absence checks and all 3 shared-infrastructure presence checks using the original pinned ownership plan. The exact session AWS stack, instances/volumes, retained bucket, IAM/network scaffolding and Azure group, resources, applications, service principals and scoped grants were removed. Verified current-session credential staging was removed separately. Shared VPC/NAT/routes, default AWS/Azure configuration, repository, private metadata and audit scripts were preserved. The initial nonempty-bucket stack failure and local quiet-response parsing failure are retained with the successful retries; see cleanup/removal-attempts.json. The unchanged original verifier retained a failed instance-list check because EC2 had aged out the previously terminated Windows record. A separate reviewed supplement required successful empty exact-ID and filtered queries plus the pinned 05:09 retirement proof; all other checks are unchanged. The original source and failed result remain published.
+
+## Qualification limits
+
+Production readiness is not established. The strict native-completeness failures remain open, release signing is deferred, and no production firewall appliance or account-wide/all-region billing audit is claimed. This campaign ran frozen candidate 733eb7448a98e3ac449c8427753b799ad3fec5c1; later uncommitted runtime changes are not qualified by these results.
+
+## Retained proof and reproduction
+
+- [Structured summary and source hashes](summary.json).
+- [Exact identity evidence and offline verifier](identity-evidence/README.md).
+- [Resource series and offline verifier](resource-evidence/README.md).
+- [Actual fault execution evidence](fault-evidence/README.md).
+- [Linux outage temporal proof](firewall-outage-temporal-proof.json) and [Windows outage temporal proof](windows-outage-temporal-proof.json).
+- [Windows buffered restart proof](windows-buffered-restart-proof.json).
+- [Observed idle timings and collection receipts](firewall-idle-proof.json).
+- [Independent cleanup proof, verifier provenance and offline checks](cleanup/README.md).
+- [Bounded public manifest](public-manifest.json), including byte counts and SHA-256 hashes.
+- [Rendered report](report.html), [actual local HTML screenshot](report.png), and [screenshot provenance](render-receipt.json).
+
+The screenshot is a real headless Chrome render of this local evidence summary, not an AWS/Azure portal capture. Public files contain synthetic identities, timestamps and bounded metadata, not raw event XML, payloads, queue databases or credentials. Historical per-phase cleanup flags describe their capture time; the final cleanup section records the campaign result.
+
+![Actual local evidence-summary screenshot; not an AWS or Azure portal capture](report.png)

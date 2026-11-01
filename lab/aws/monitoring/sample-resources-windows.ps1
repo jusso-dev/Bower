@@ -155,13 +155,36 @@ function Read-BowerSampleSet([string]$Root) {
     $rows = New-Object 'System.Collections.Generic.List[object]'
     # Windows PowerShell 5.1 can retain File.ReadLines' lazy enumerator when
     # validation throws. Always release the handle before returning or failing.
-    $reader = [IO.File]::OpenText($path)
+    # The worker holds FileAccess.Write/FileShare.Read. The observer must also
+    # share that existing writer; OpenText's FileShare.Read denies it on Windows.
+    $stream = [IO.File]::Open($path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+    $reader = $null
     try {
-        while ($null -ne ($line = $reader.ReadLine())) {
-            if ([Text.Encoding]::UTF8.GetByteCount($line) -gt 8192 -or $rows.Count -ge 481) { throw 'sample-row-bound' }
-            $rows.Add(($line | ConvertFrom-Json))
+        # Pin an observation boundary so a concurrently appended partial row is
+        # never treated as a complete observation. Workers always terminate rows.
+        $length = $stream.Length
+        if ($length -gt 4194304) { throw 'sample-file-bound' }
+        if ($length -gt 0) {
+            $null = $stream.Seek($length - 1, [IO.SeekOrigin]::Begin)
+            if ($stream.ReadByte() -ne 10) { throw 'sample-incomplete-observation' }
+            $null = $stream.Seek(0, [IO.SeekOrigin]::Begin)
         }
-    } finally { $reader.Dispose() }
+        $snapshot = New-Object byte[] ([int]$length)
+        $offset = 0
+        while ($offset -lt $length) {
+            $count = $stream.Read($snapshot, $offset, [int]$length - $offset)
+            if ($count -eq 0) { throw 'sample-incomplete-observation' }
+            $offset += $count
+        }
+        $memory = New-Object IO.MemoryStream(,$snapshot)
+        try {
+            $reader = New-Object IO.StreamReader($memory, [Text.Encoding]::UTF8, $true, 1024, $true)
+            while ($null -ne ($line = $reader.ReadLine())) {
+                if ([Text.Encoding]::UTF8.GetByteCount($line) -gt 8192 -or $rows.Count -ge 481) { throw 'sample-row-bound' }
+                $rows.Add(($line | ConvertFrom-Json))
+            }
+        } finally { if ($reader) { $reader.Dispose() }; $memory.Dispose() }
+    } finally { $stream.Dispose() }
     return ,$rows.ToArray()
 }
 
@@ -307,7 +330,14 @@ try {
         if ($scope.runId -cne $run -or $scope.scope -cne $scopeName -or $scope.planSha256 -cne $plan -or $scope.bucket -cne $bucket -or $scope.role -cne 'windows') { throw 'saved-scope' }
         $finalized = $false
         if (Test-Path "$root\summary.json") { $finalized = (Get-Content "$root\summary.json" -Raw | ConvertFrom-Json).finalized -eq $true }
-        $rows = Read-BowerSampleSet $root
+        try { $rows = Read-BowerSampleSet $root } catch {
+            if ($action -eq 'status' -and -not $finalized) {
+                @{ recordType = 'resource-observation'; observationComplete = $false; samplingComplete = $false;
+                    deliveryQualified = $false; scope = $scopeName; planSha256 = $plan } | ConvertTo-Json -Compress
+                exit 0
+            }
+            throw
+        }
         $report = Get-BowerSampleSummary -Scope $scope -Rows $rows -Finalized $finalized -CurrentBoot (Get-BowerSampleBoot)
         if ($action -eq 'export') {
             $task = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop

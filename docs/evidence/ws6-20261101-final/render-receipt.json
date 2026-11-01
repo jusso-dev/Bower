@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "recordType": "actual-local-html-screenshot",
+  "renderedAt": "2026-11-01T07:25:00.440Z",
+  "htmlSha256": "567ca8ff9a80113aebbe8e916ca7d6fd3f9332854bc927d6e0aa0b3dd9f9d2f2",
+  "imageSha256": "e56d44fae46fa1902cbff2f8587e0b661c650bd00e116e2519b716006820b832",
+  "browser": "156.0.8078.79",
+  "browserProduct": "Google Chrome",
+  "headless": true,
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "deviceScaleFactor": 1,
+  "fullPage": true,
+  "dimensions": {
+    "width": 1440,
+    "height": 3373
+  },
+  "scope": "Real local evidence-summary render; not an AWS/Azure portal capture.",
+  "rendererSha256": "fe3881fb86767c15ecf97c0f4612371d7105771ef73cfb4fdbddba0183a8d1d5"
+}

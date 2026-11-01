@@ -1,0 +1,257 @@
+{
+  "schemaVersion": 1,
+  "recordType": "independent-final-cleanup-verification",
+  "runId": "bower-ws6-20261101-011000",
+  "startedAt": "2026-11-01T07:19:20.160086+00:00",
+  "inventoryPlanSha256": "daf0efcd316034b79207a6fa4fa375ec3b30c1ea33a1358e275350a223d2151e",
+  "account": "959038055523",
+  "subscription": "945092a0-2500-4b25-85a4-99f1c3135906",
+  "tenant": "f4f33fb1-b681-40d1-a854-6f888d45b891",
+  "checks": [
+    {
+      "check": "aws-stack",
+      "passed": true,
+      "evidence": {
+        "stackId": "arn:aws:cloudformation:ap-southeast-2:959038055523:stack/bower-ws6-20261101-011000/32476fc0-d592-11f1-85e7-0affd835096b",
+        "statuses": [
+          "DELETE_COMPLETE"
+        ]
+      }
+    },
+    {
+      "check": "aws-instances",
+      "passed": false,
+      "evidence": {
+        "i-04baca853cd5a072d": "terminated",
+        "i-0078d9ac013917ff9": "terminated"
+      }
+    },
+    {
+      "check": "aws-volumes",
+      "passed": true,
+      "evidence": {
+        "expectedAbsent": [
+          "vol-060b1ec313b65e691",
+          "vol-088dbb33e82eefa10",
+          "vol-0f2ec42f779daaa5c"
+        ],
+        "remaining": []
+      }
+    },
+    {
+      "check": "aws-run-tagged-snapshots",
+      "passed": true,
+      "evidence": {
+        "runId": "bower-ws6-20261101-011000",
+        "remaining": []
+      }
+    },
+    {
+      "check": "aws-run-tagged-images",
+      "passed": true,
+      "evidence": {
+        "runId": "bower-ws6-20261101-011000",
+        "remaining": []
+      }
+    },
+    {
+      "check": "aws-run-tagged-elastic-ips",
+      "passed": true,
+      "evidence": {
+        "runId": "bower-ws6-20261101-011000",
+        "remaining": []
+      }
+    },
+    {
+      "check": "aws-run-tagged-vpc-endpoints",
+      "passed": true,
+      "evidence": {
+        "runId": "bower-ws6-20261101-011000",
+        "remaining": []
+      }
+    },
+    {
+      "check": "aws-retained-buckets",
+      "passed": true,
+      "evidence": {
+        "expectedAbsent": [
+          "bower-ws6-20261101-011000-artifacts-6vtwseruf2ex"
+        ],
+        "remaining": []
+      }
+    },
+    {
+      "check": "AWS::EC2::SecurityGroup:sg-02e83cf9072d722d0",
+      "passed": true,
+      "evidence": {
+        "expectedAbsent": "sg-02e83cf9072d722d0",
+        "remaining": []
+      }
+    },
+    {
+      "check": "aws-role:bower-ws6-20261101-011000-ExpiryRole-sZS3kczXNtgT",
+      "passed": true,
+      "evidence": {
+        "role": "bower-ws6-20261101-011000-ExpiryRole-sZS3kczXNtgT"
+      }
+    },
+    {
+      "check": "aws-expiry-schedule",
+      "passed": true,
+      "evidence": {
+        "schedule": "bower-ws6-20261101-011000-ExpirySchedule-1BAHD5QG1680A"
+      }
+    },
+    {
+      "check": "AWS::EC2::SecurityGroup:sg-05dc77ea83e38dd27",
+      "passed": true,
+      "evidence": {
+        "expectedAbsent": "sg-05dc77ea83e38dd27",
+        "remaining": []
+      }
+    },
+    {
+      "check": "aws-profile:bower-ws6-20261101-011000-HostProfile-5sdjyaDop7Rr",
+      "passed": true,
+      "evidence": {
+        "profile": "bower-ws6-20261101-011000-HostProfile-5sdjyaDop7Rr"
+      }
+    },
+    {
+      "check": "aws-role:bower-ws6-20261101-011000-HostRole-THnsdoTNOZbz",
+      "passed": true,
+      "evidence": {
+        "role": "bower-ws6-20261101-011000-HostRole-THnsdoTNOZbz"
+      }
+    },
+    {
+      "check": "AWS::EC2::RouteTable:rtb-0a11fb7aa0e2bd7fd",
+      "passed": true,
+      "evidence": {
+        "expectedAbsent": "rtb-0a11fb7aa0e2bd7fd",
+        "remaining": []
+      }
+    },
+    {
+      "check": "AWS::EC2::Subnet:subnet-018cec762390b2841",
+      "passed": true,
+      "evidence": {
+        "expectedAbsent": "subnet-018cec762390b2841",
+        "remaining": []
+      }
+    },
+    {
+      "check": "AWS::EC2::SecurityGroup:sg-0da6cf1743b92a829",
+      "passed": true,
+      "evidence": {
+        "expectedAbsent": "sg-0da6cf1743b92a829",
+        "remaining": []
+      }
+    },
+    {
+      "check": "aws-profile:bower-ws6-20261101-011000-SenderProfile-oxfJBgM93Edc",
+      "passed": true,
+      "evidence": {
+        "profile": "bower-ws6-20261101-011000-SenderProfile-oxfJBgM93Edc"
+      }
+    },
+    {
+      "check": "aws-role:bower-ws6-20261101-011000-SenderRole-QsDeQ8K8B1Xb",
+      "passed": true,
+      "evidence": {
+        "role": "bower-ws6-20261101-011000-SenderRole-QsDeQ8K8B1Xb"
+      }
+    },
+    {
+      "check": "azure-resource-group",
+      "passed": true,
+      "evidence": {
+        "resourceGroup": "rg-bower-val-261101012039-b428b328"
+      }
+    },
+    {
+      "check": "azure-resources",
+      "passed": true,
+      "evidence": {
+        "resourceGroup": "rg-bower-val-261101012039-b428b328",
+        "remaining": []
+      }
+    },
+    {
+      "check": "azure-app:ingest",
+      "passed": true,
+      "evidence": {
+        "applicationId": "e95710d6-2290-4b12-b866-a293ae6bdd31",
+        "remaining": []
+      }
+    },
+    {
+      "check": "azure-sp:ingest",
+      "passed": true,
+      "evidence": {
+        "applicationId": "e95710d6-2290-4b12-b866-a293ae6bdd31",
+        "remaining": []
+      }
+    },
+    {
+      "check": "azure-app:verifier",
+      "passed": true,
+      "evidence": {
+        "applicationId": "5d1b7e19-535c-4836-9cc0-38c30675cd3d",
+        "remaining": []
+      }
+    },
+    {
+      "check": "azure-sp:verifier",
+      "passed": true,
+      "evidence": {
+        "applicationId": "5d1b7e19-535c-4836-9cc0-38c30675cd3d",
+        "remaining": []
+      }
+    },
+    {
+      "check": "azure-role-assignments",
+      "passed": true,
+      "evidence": {
+        "expectedAbsentCount": 2,
+        "remaining": []
+      }
+    }
+  ],
+  "preservationChecks": [
+    {
+      "check": "shared-vpc-present",
+      "passed": true,
+      "evidence": {
+        "vpc-0386855f644985706": "available"
+      }
+    },
+    {
+      "check": "shared-nat-present",
+      "passed": true,
+      "evidence": {
+        "nat-016cf975ae7ffe691": "available"
+      }
+    },
+    {
+      "check": "shared-route-tables-present",
+      "passed": true,
+      "evidence": {
+        "present": [
+          "rtb-00487b4fc01067ce1",
+          "rtb-0bc5b52701db3603a"
+        ]
+      }
+    }
+  ],
+  "scope": "Exact session-owned resources from the reviewed plan; shared infrastructure is outside removal scope and checked for presence separately.",
+  "checkedAt": "2026-11-01T07:19:45.628360+00:00",
+  "allCheckedResourcesAbsent": false,
+  "sharedInfrastructurePresent": true,
+  "cleanupVerified": false,
+  "limitations": [
+    "This is not an account-wide all-region billing audit.",
+    "Stack deletion covers stack-owned route associations; shared VPC/NAT infrastructure is intentionally preserved.",
+    "Private staging-file removal is verified separately."
+  ]
+}

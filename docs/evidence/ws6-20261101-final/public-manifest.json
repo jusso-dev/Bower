@@ -1,0 +1,589 @@
+{
+  "schemaVersion": 1,
+  "recordType": "bounded-public-evidence-manifest",
+  "runId": "bower-ws6-20261101-011000",
+  "generatedAt": "2026-11-01T07:25:03.114530+00:00",
+  "finalPublicationAudit": true,
+  "screenshotMatchesCurrentHtml": true,
+  "exclusions": [
+    "public-manifest.json (self-reference)"
+  ],
+  "limits": {
+    "maximumFiles": 200,
+    "maximumFileBytes": 67108864,
+    "maximumTotalBytes": 209715200,
+    "maximumIdentityRowsPerFile": 200000,
+    "maximumResourceRowsPerFile": 481
+  },
+  "checks": {
+    "pathAndArtifactClassAllowlistPassed": true,
+    "identityOnlyColumnsPassed": true,
+    "resourceNumericMetadataPassed": true,
+    "forbiddenRawCredentialFieldsAbsent": true,
+    "secretPatternScanPassed": true,
+    "freshCopyOfflineIdentityAndResourceVerifiersPassed": true,
+    "identityRowsChecked": 451617,
+    "resourceRowsChecked": 662,
+    "freshCopyOfflineCleanupVerifierPassed": true
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 7603,
+      "sha256": "5fd18c005854457e72866f7aba6a1c98b90646025b796bc68d9b5d07fa4621e8",
+      "artifactClass": "documentation"
+    },
+    {
+      "path": "cleanup/README.md",
+      "bytes": 4148,
+      "sha256": "e01d784bdf72372c7bafa216c82e61727932c1520f75151a8d6eba1cc5282f6e",
+      "artifactClass": "documentation"
+    },
+    {
+      "path": "cleanup/cloud-verification-original.json",
+      "bytes": 6689,
+      "sha256": "0dcaf16b6ca7bbcbf39408ccb59401208d0142b4d11893bbff85ee2e980c452f",
+      "artifactClass": "retained original verifier outcome"
+    },
+    {
+      "path": "cleanup/cloud-verification.json",
+      "bytes": 7197,
+      "sha256": "b23f0f8976760ad0f1bde219bbf2ec889a4f6f1f74afd059b06db187add10a2a",
+      "artifactClass": "independent scoped cloud absence proof"
+    },
+    {
+      "path": "cleanup/local-staging-verification.json",
+      "bytes": 2122,
+      "sha256": "aa5846daed764691d7331192516b1f2aa990479f637f0ad8e7e307f21d2a42cc",
+      "artifactClass": "scoped credential staging absence proof"
+    },
+    {
+      "path": "cleanup/removal-attempts.json",
+      "bytes": 7795,
+      "sha256": "1669c79e17d0754aa9c27c280de996dea8f5d9680d7b3fa1d193c40840bb1c7d",
+      "artifactClass": "retained scoped cleanup attempt metadata"
+    },
+    {
+      "path": "cleanup/verify-final-cleanup-original.py",
+      "bytes": 11770,
+      "sha256": "031e390e115a76125098da613e569d9e29892690479eac3074d82024575e4d9f",
+      "artifactClass": "unchanged original reviewed cleanup verifier"
+    },
+    {
+      "path": "cleanup/verify-final-cleanup.py",
+      "bytes": 14153,
+      "sha256": "5ac7cc42b6ec47d6760c07379e2ff2ead91824f45847b87c4fdb3a274a1b5538",
+      "artifactClass": "reviewed read-only cleanup verifier source"
+    },
+    {
+      "path": "fault-evidence/README.md",
+      "bytes": 2381,
+      "sha256": "5ba0f55d2025f29befecba7e432cf65ee4dfc95891ab6dd404327469c5e9387c",
+      "artifactClass": "documentation"
+    },
+    {
+      "path": "fault-evidence/a-blackhole.json",
+      "bytes": 4233,
+      "sha256": "b9619852d7720912349e32b4b5b72bdb85224855fe2595a7e4b63ee932238f4a",
+      "artifactClass": "projected fault execution metadata"
+    },
+    {
+      "path": "fault-evidence/a-collector-reboot.json",
+      "bytes": 4204,
+      "sha256": "0411fc67dababc45629b608994086afb154c932e55e2475cb8faa89bf3799c32",
+      "artifactClass": "projected fault execution metadata"
+    },
+    {
+      "path": "fault-evidence/a-reset-failed.json",
+      "bytes": 4190,
+      "sha256": "4291dafa1c2e9bddf39f67c8b01278a5b7712f35053fff1bc4b69de24d5589b0",
+      "artifactClass": "projected fault execution metadata"
+    },
+    {
+      "path": "fault-evidence/a-restart.json",
+      "bytes": 4176,
+      "sha256": "4aa0c89e273df928b2cb6bc67b9e45bb9a22c99f2eed22873863a9dc5d9a44ee",
+      "artifactClass": "projected fault execution metadata"
+    },
+    {
+      "path": "fault-evidence/a-sender-reboot-failed.json",
+      "bytes": 7983,
+      "sha256": "c3784dc0c8c8ff105bc5ba52d3c77fc00c9f7233e050e1495887d42efe3c866a",
+      "artifactClass": "projected fault execution metadata"
+    },
+    {
+      "path": "fault-evidence/a-sender-stop-start.json",
+      "bytes": 4232,
+      "sha256": "29ecd4b1fe061f0cfe4178b3d6cbebd43db81fd49be4f101bc37c86a4de19256",
+      "artifactClass": "projected fault execution metadata"
+    },
+    {
+      "path": "fault-evidence/a-sigkill-failed.json",
+      "bytes": 4190,
+      "sha256": "5c2452df8bb2f7a0f414010732f27af8dcb015812470b5352048a2ffed9b4b1b",
+      "artifactClass": "projected fault execution metadata"
+    },
+    {
+      "path": "fault-evidence/capture-sourcefault.sh",
+      "bytes": 3779,
+      "sha256": "328ca454d5cff0a56749c2761e2ad3954cafd38dc62cfbaf5c7ccd48db7e4b2d",
+      "artifactClass": "reviewed read-only metadata source"
+    },
+    {
+      "path": "firewall-idle-proof.json",
+      "bytes": 18078,
+      "sha256": "8037beffbcff1bd04a0c69cf6207627ee5008ebadad06b43d4fb8f682bc75c90",
+      "artifactClass": "observed native idle timing and collection metadata"
+    },
+    {
+      "path": "firewall-outage-temporal-proof.json",
+      "bytes": 2502,
+      "sha256": "0be44e76dd31716cc5caaffa9ca1e3b310954974bea80aa5c97f9f188eb21615",
+      "artifactClass": "derived temporal proof"
+    },
+    {
+      "path": "identity-evidence/README.md",
+      "bytes": 14007,
+      "sha256": "1b040e532699bd32ce08e5d7028e28ce4ad0c6f7e1777ea84b5d3543d079a61f",
+      "artifactClass": "documentation"
+    },
+    {
+      "path": "identity-evidence/firewall-a-blackhole-expected.ids",
+      "bytes": 28800,
+      "sha256": "880c73ea861c04a78d7db007008de1a2e7b9e07932eb0471f056f5bc672b46cc",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-blackhole-queue-identities.jsonl",
+      "bytes": 163622,
+      "sha256": "3463d3a55e55687806e5ebd3d272f773c7cc7854ef919d23ef1c8d381ec601bb",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-blackhole-sentinel-identities.jsonl",
+      "bytes": 258644,
+      "sha256": "1a0d855b376dbc01ba62000d793de5aedb9c24bf52a1f45b8fa39056e7ecea7f",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-burst-expected.ids",
+      "bytes": 96000,
+      "sha256": "12637128ed40b2eda4066a8dec38262c2cc9604664dbe0a8f4c2b2c63530cacf",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-burst-queue-identities.jsonl",
+      "bytes": 545422,
+      "sha256": "36309fe7cee8f49d3595c6024a1f32ac3a34a43622aa0d572c1800a94b3f2886",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-burst-sentinel-identities.jsonl",
+      "bytes": 861922,
+      "sha256": "82f216b4bf4e023d83eb1546826a0ee265171d4961a34a02bc58342f67ed0d53",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-collector-reboot-expected.ids",
+      "bytes": 48000,
+      "sha256": "f241f8449a653eacd81acd80d599c8984b6927bda8b5ab9a06c23e04a3c45907",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-collector-reboot-queue-identities.jsonl",
+      "bytes": 272705,
+      "sha256": "d8ae2352883827906a08241a0b0c4a2d03d384060e9ab6b5b3c22bfbfeb6bfa9",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-collector-reboot-sentinel-identities.jsonl",
+      "bytes": 430670,
+      "sha256": "4fcff11c342f491ddfd471a93bb27f17972ef2013ea9841e54e33474609c5e77",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-destination-outage-expected.ids",
+      "bytes": 576000,
+      "sha256": "eaf9671602c010c68bc2d942a02fadcd74fc0a5f8e47537dbd607657ed158dab",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-destination-outage-queue-identities.jsonl",
+      "bytes": 3272451,
+      "sha256": "22a6fb8a451285c14d110da843f442adb9bdac1a7aafea3ff42699d9105d5769",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-destination-outage-sentinel-identities.jsonl",
+      "bytes": 5168916,
+      "sha256": "636365149cbee276bb9ad233c786d5ff75499de0434e96688322feff7556fe41",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-reset-failed-expected.ids",
+      "bytes": 19200,
+      "sha256": "16e22db5821e98d5f1eaa10e38f5a7d8e1c3e849a9cad51a253a13dd9369ee79",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-reset-failed-missing.ids",
+      "bytes": 64,
+      "sha256": "a7fe0f10396bf1c07a33d55fbf2bcf26f26477066c7ad2cd25879a1f3e54b02f",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-reset-failed-queue-identities.jsonl",
+      "bytes": 108715,
+      "sha256": "7acf46bf1a87524611d087faf49e65bb08ff2bc6d07d190de4c97d3af20a6855",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-reset-failed-sentinel-identities.jsonl",
+      "bytes": 171626,
+      "sha256": "3eadb3c83d4d4e9f2f8b14b48804d60c961ea681eccd08fd3fc31894bb0da9b3",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-restart-expected.ids",
+      "bytes": 96000,
+      "sha256": "ec74ae46ba2019c39eeb74bc40142a9ff7f8e8de2db4ce51685937eccf90bacd",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-restart-queue-identities.jsonl",
+      "bytes": 545382,
+      "sha256": "082e06a9c9fbdca1539dd05905e2a4f87f9d79f09812ccd8611f713c8f40bafb",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-restart-sentinel-identities.jsonl",
+      "bytes": 861414,
+      "sha256": "0b950b8282449c962f19333d6b9eb8f34cceeb9237c4c0f033c8b5e53ecfb23f",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-sender-reboot-failed-expected.ids",
+      "bytes": 9600,
+      "sha256": "5d385224824cc1296aae39b21f79a2706e3106600d14bbd3394fd7d17bf7cb7b",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-sender-reboot-failed-missing.ids",
+      "bytes": 32,
+      "sha256": "9e263e47256861acebf6a6661d4196372e6ed20fd6bb2469d4e745c4fecf3766",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-sender-reboot-failed-queue-identities.jsonl",
+      "bytes": 54347,
+      "sha256": "e5afb51e4d3b5b71a25cfcb9b3f14655d2a0069960fa0ef31630600784095b34",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-sender-reboot-failed-sentinel-identities.jsonl",
+      "bytes": 85630,
+      "sha256": "603c8f87473d010f2fe7f540ed1723c62da18c3f868ac9fc9b098e245eabbf61",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-sender-stop-start-expected.ids",
+      "bytes": 28800,
+      "sha256": "67678f9753f8388bf88d128476b2cb39d799cd08f68203e2bc2bd4da8de9818b",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-sender-stop-start-queue-identities.jsonl",
+      "bytes": 163612,
+      "sha256": "9752257d7ff8e6895299cc543d24149bcb0c23979f753b6ea272156294df92b4",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-sender-stop-start-sentinel-identities.jsonl",
+      "bytes": 258512,
+      "sha256": "fb4edd126e34bc7c9b41452e859e04c8b0f07a9bf921e652b91063560d6fca49",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-sigkill-failed-expected.ids",
+      "bytes": 96000,
+      "sha256": "d26e542115115cec10c7f2ed61d5ddd4abbf62845f3cf3fb01da4f8f9fa5ee6f",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-sigkill-failed-missing.ids",
+      "bytes": 336,
+      "sha256": "2bbfea0b105b4801b05f9a7ed305179da50c990fbd8d179437e3254b04242d30",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-sigkill-failed-queue-identities.jsonl",
+      "bytes": 543490,
+      "sha256": "3ff015a08aec9ef0ad108d325af44a5faa8a53f12fdc23ca3ef83c2d9bea2006",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-sigkill-failed-sentinel-identities.jsonl",
+      "bytes": 858168,
+      "sha256": "c785ff40ddc0c115f3e9c95d95c5f144634d976e4e00c42731459f636101651b",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-steady-expected.ids",
+      "bytes": 9600,
+      "sha256": "4d65d25f73b1e80935ff595ead7adfa184508a9b58a45b3260f5b34fd8c4c3a4",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-steady-queue-identities.jsonl",
+      "bytes": 54540,
+      "sha256": "1254a9e2de6de3c586b0c4afc058c960b5989cfda762aebd35ec1bc4d1d95fcc",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-a-steady-sentinel-identities.jsonl",
+      "bytes": 86130,
+      "sha256": "02525d36221a997648f7dcd67e131cb3b140b94b04ed8a1e143f4a53db88c246",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-b-idle-gaps-expected.ids",
+      "bytes": 100800,
+      "sha256": "030eb90a4eefadca3b16f44c6151fe26ff11045512b2a9066d62cc768ef2d35a",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-b-idle-gaps-queue-identities.jsonl",
+      "bytes": 572626,
+      "sha256": "f5f6249da3bf5c0bd6d1f65ef3d13a1b901522c0742b43d34db05a3524c99aaa",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/firewall-b-idle-gaps-sentinel-identities.jsonl",
+      "bytes": 904846,
+      "sha256": "8f4adee965f4eff75f467381057c1b3a7843166bf248fb03d2dcf94a1a846c68",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/wec-final-burst-warm1-source.ids",
+      "bytes": 130339,
+      "sha256": "a3b3d13b06989dd55b8452fae64e6fcf6102ecc35a250d973eee07086dd5317a",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/wec-final-process-burst1-sentinel-identities.jsonl",
+      "bytes": 1004896,
+      "sha256": "075454088cc448876488e759c3702b7e74335b2abd5e8a4c23f479cfa5465edf",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/wec-final-process-burst1-source.ids",
+      "bytes": 246000,
+      "sha256": "2f50886c6b67e95aaadb13a0fe5426e94f0290e44b151ba655c38770a76a6be0",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/wec-final-process-burst1-warmup-source.ids",
+      "bytes": 4100,
+      "sha256": "2a0c5a9b01b15d8318f72562dfa6d6993714532e29680e17273231848b9a8085",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/wec-final-process-explicit-probe2-sentinel-identities.jsonl",
+      "bytes": 167654,
+      "sha256": "a9d9c27f7a678cde9063447ea5a8a24c975396623c6caa4d3e696fb2132c0ba4",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/wec-final-process-explicit-probe2-source.ids",
+      "bytes": 41000,
+      "sha256": "3fb9caeb36c54b1447e3baddf04fe06674c7a38ccf64a74f35f678f2e4279466",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/wec-final-process-explicit-probe2-warmup-source.ids",
+      "bytes": 4100,
+      "sha256": "6b80d4e2a3c625925f518113b7c093ff214900cbd8831b236579e90fd6792e3c",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/wec-final-process-outage1-sentinel-identities.jsonl",
+      "bytes": 6037574,
+      "sha256": "fee8b900be6c6bb3c9ea4c5b53f919717b99cecd87e536c6253157f0d6446eed",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/wec-final-process-outage1-source.ids",
+      "bytes": 1476000,
+      "sha256": "b324fb5160126c1545b7b4fca562926efcfd5d86f6baaa6383f6b844fdf69857",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/wec-final-process-outage1-warmup-source.ids",
+      "bytes": 4100,
+      "sha256": "e86dad008e886de81328bd54f36bac56c13ec5f142cf42944d1297d7cace08be",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/wec-final-process-restart1-after-all-winevt.ids",
+      "bytes": 2014639,
+      "sha256": "9f58cc1b4b5c237ab7d1d00880f1fff6a527e2be80c33cd20357685bc0dbe41e",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/wec-final-process-restart1-before-all-winevt.ids",
+      "bytes": 2014639,
+      "sha256": "9f58cc1b4b5c237ab7d1d00880f1fff6a527e2be80c33cd20357685bc0dbe41e",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/wec-final-process-restart1-pre-kill-all-winevt.ids",
+      "bytes": 2014639,
+      "sha256": "9f58cc1b4b5c237ab7d1d00880f1fff6a527e2be80c33cd20357685bc0dbe41e",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/wec-final-process-restart1-sentinel-identities.jsonl",
+      "bytes": 100682,
+      "sha256": "d810ecafdf7c9fdc78ac6538bd65d2cbc6f3322a5e4bb1b27759589bcb6cb2e4",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/wec-final-process-restart1-source.ids",
+      "bytes": 24600,
+      "sha256": "9413f2058345d480eda7896838cbb386d2c8ba01fc709a3e7c149492c0da5ca1",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/wec-final-process-restart1-warmup-source.ids",
+      "bytes": 4100,
+      "sha256": "c90d9145f7aa96696ed1137c98b568540ade5736c072b537210c17d11efdb752",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/wec-final-steady-source.ids",
+      "bytes": 23247,
+      "sha256": "fd2d0a139494dcb23ff80a70d826c6b39022b04387b8cb7e508a37b6485a4dc1",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/wec-final-steady-warm1-sentinel-identities.jsonl",
+      "bytes": 100546,
+      "sha256": "9c6716ab767c21b7699d1943e6f2595941afaff0020406275b50e0b79658e77e",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/wec-final-steady-warm1-source.ids",
+      "bytes": 24600,
+      "sha256": "2d4b1e2cda0fb3255addd15f71d9287796429c08a0603e9ebd7838a119839b5d",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "identity-evidence/wec-final-steady-warm1-warmup-source.ids",
+      "bytes": 4100,
+      "sha256": "7d4d06feaf2dc2bebda1deba8d1d7bf56bc4c6d41fd9a031a26e905418a9e43d",
+      "artifactClass": "synthetic identity-only evidence"
+    },
+    {
+      "path": "monitoring/final-alert-instances.json",
+      "bytes": 20406,
+      "sha256": "6e81cb7ea8f691b37bd78f1da71729156b7c76cf5bfc53f6043b53d3c2dc607c",
+      "artifactClass": "owned alert metadata"
+    },
+    {
+      "path": "monitoring/final-deployed-window-queries.json",
+      "bytes": 13497,
+      "sha256": "e9c7a5dbb263e975877406d0afd897842a444b65d5f318e4552d8f057706546e",
+      "artifactClass": "bounded deployed monitoring query metadata"
+    },
+    {
+      "path": "native-guard-control-result.json",
+      "bytes": 934,
+      "sha256": "1d8141874d6847bbcc82dd86a70b31b80d97178613637bc4e7d862e3eef51df8",
+      "artifactClass": "bounded native control metadata"
+    },
+    {
+      "path": "native-guard-control.sh",
+      "bytes": 3640,
+      "sha256": "9a2b8d8f2e2fe3b5df978aa88988bfeac7dc8a4abd855b02cb92f06874d10aba",
+      "artifactClass": "reviewed native control source"
+    },
+    {
+      "path": "render-receipt.json",
+      "bytes": 710,
+      "sha256": "ade621e4aa47741018c5e0dabf2bd6d4814caef66c50dfb92558c003aa4c5d5d",
+      "artifactClass": "screenshot provenance"
+    },
+    {
+      "path": "report.html",
+      "bytes": 8764,
+      "sha256": "567ca8ff9a80113aebbe8e916ca7d6fd3f9332854bc927d6e0aa0b3dd9f9d2f2",
+      "artifactClass": "rendered evidence source"
+    },
+    {
+      "path": "report.png",
+      "bytes": 597809,
+      "sha256": "e56d44fae46fa1902cbff2f8587e0b661c650bd00e116e2519b716006820b832",
+      "artifactClass": "actual HTML screenshot"
+    },
+    {
+      "path": "resource-evidence/README.md",
+      "bytes": 4201,
+      "sha256": "c6a184fefc71b3a31bed643fb6a304df3da9543dd5569483f61560ab5304e43a",
+      "artifactClass": "documentation"
+    },
+    {
+      "path": "resource-evidence/linux-final-hour-outage-export-summary.json",
+      "bytes": 1501,
+      "sha256": "91317e730cd34776b2ce7f143ab2d40086a69fac8ceb0892e5aa4988a7fba3a4",
+      "artifactClass": "resource metrics only"
+    },
+    {
+      "path": "resource-evidence/linux-final-hour-outage-samples.jsonl",
+      "bytes": 307429,
+      "sha256": "b33a37980631ebe7f0c2c4dead2e0138131d5c0f7d9a4a6e8394adc0c1dad183",
+      "artifactClass": "resource metrics only"
+    },
+    {
+      "path": "resource-evidence/linux-final-hour-outage-scope.json",
+      "bytes": 481,
+      "sha256": "9d45b821c3cd9876bdd3a5dcdd2926fcd20e66d94e650d851cd6c414dd0a55fc",
+      "artifactClass": "resource metrics only"
+    },
+    {
+      "path": "resource-evidence/windows-final-hour-outage-export-summary.json",
+      "bytes": 1317,
+      "sha256": "d045d2fa04b3a80d5cd95f3d2b844b74c90ff92b950751165d428492dc4ea6be",
+      "artifactClass": "resource metrics only"
+    },
+    {
+      "path": "resource-evidence/windows-final-hour-outage-samples.jsonl",
+      "bytes": 244162,
+      "sha256": "0094768362f36f734c8afbe25cbfe2ff966e32d065b6d1faff9119084bdf931b",
+      "artifactClass": "resource metrics only"
+    },
+    {
+      "path": "resource-evidence/windows-final-hour-outage-scope.json",
+      "bytes": 459,
+      "sha256": "e8ada032cc3602a2724c0ddc2cc036764a9190c4a95a8cc228c26b65eda718b0",
+      "artifactClass": "resource metrics only"
+    },
+    {
+      "path": "summary.json",
+      "bytes": 272256,
+      "sha256": "03e00173e4d2b36fed941acf2cfcb9f8223333ca0cb7dfc7e0114b27693aebf0",
+      "artifactClass": "structured evidence summary"
+    },
+    {
+      "path": "windows-buffered-restart-proof.json",
+      "bytes": 10315,
+      "sha256": "a2ae436dc7c857a97a237a05d589a0720bc3e98bc7d396e79d83375207aad0e0",
+      "artifactClass": "derived accepted-queue restart proof"
+    },
+    {
+      "path": "windows-outage-temporal-proof.json",
+      "bytes": 7737,
+      "sha256": "43fecf5e4cacd9fe758f91c09b70894484b1b23d72caf915317a5e77c137aef7",
+      "artifactClass": "derived temporal proof"
+    }
+  ]
+}

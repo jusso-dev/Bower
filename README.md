@@ -115,6 +115,16 @@ not feature count. The first candidate is the C# Windows WEC and TLS firewall
 syslog path to Microsoft Sentinel. See the
 [production readiness gates](docs/operations/production-readiness.md) for current
 evidence, unresolved blockers and the validation required before this status changes.
+The [1 November candidate evidence](docs/evidence/ws6-20261101-final/README.md)
+records completed final tests and verified session cleanup. The idle schedule
+reconciled all 6,300 native, queue and Sentinel identities with zero missing,
+extra or duplicate rows. Native completeness still failed for forced collector
+kill (21 missing of 6,000), TCP reset (4 of 1,200), and combined collector stop /
+sender reboot (2 of 600). Every admitted identity in those phases reached Sentinel.
+Plain TCP/TLS has no durable application acknowledgement; a crash-lossless
+deployment needs qualified source retention and replay or an acknowledged delivery
+path. These retained failures and deferred release signing leave production
+qualification incomplete.
 The [live Sentinel qualification](docs/evidence/sentinel-native-20261030/README.md)
 adds destination-query evidence from packaged Windows WEC and firewall collectors,
 including process-crash and Windows reboot recovery. It also records a real syslog

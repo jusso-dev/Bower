@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "recordType": "firewall-source-fault-proof",
+  "runId": "bower-ws6-20261101-011000",
+  "scenario": "a-blackhole",
+  "faultExecutionVerified": true,
+  "deliveryQualified": false,
+  "faults": [
+    {
+      "stepIndex": 1,
+      "host": "Linux",
+      "instanceId": "i-04baca853cd5a072d",
+      "unit": "bower-lab-f-blackhole",
+      "action": "blackhole",
+      "plannedAt": "2026-11-01T04:41:17.810043+00:00",
+      "before": {
+        "schemaVersion": 1,
+        "runId": "bower-ws6-20261101-011000",
+        "scenario": "a-blackhole",
+        "unit": "bower-lab-f-blackhole",
+        "action": "blackhole",
+        "mode": "before",
+        "observedAt": "2026-11-01T04:38:15.111275+00:00",
+        "bootId": "831aab98-511f-4562-b53c-45b86a3778ba",
+        "services": {
+          "bower": {
+            "MainPID": 36307,
+            "NRestarts": 1,
+            "ExecMainStartTimestampMonotonic": 11242970419,
+            "ActiveState": "active",
+            "SubState": "running",
+            "startTicks": 1124294
+          },
+          "rsyslog": {
+            "MainPID": 0,
+            "NRestarts": 0,
+            "ExecMainStartTimestampMonotonic": 0,
+            "ActiveState": "inactive",
+            "SubState": "dead"
+          }
+        },
+        "faultRecords": [],
+        "deliveryQualified": false,
+        "installedSourceSha256": "72d53ac898c3e87bbe276bdd37a3adfce57b9da2a977834a14ae45942c6f6383"
+      },
+      "after": {
+        "schemaVersion": 1,
+        "runId": "bower-ws6-20261101-011000",
+        "scenario": "a-blackhole",
+        "unit": "bower-lab-f-blackhole",
+        "action": "blackhole",
+        "mode": "after",
+        "observedAt": "2026-11-01T04:45:40.937550+00:00",
+        "bootId": "831aab98-511f-4562-b53c-45b86a3778ba",
+        "services": {
+          "bower": {
+            "MainPID": 36307,
+            "NRestarts": 1,
+            "ExecMainStartTimestampMonotonic": 11242970419,
+            "ActiveState": "active",
+            "SubState": "running",
+            "startTicks": 1124294
+          },
+          "rsyslog": {
+            "MainPID": 0,
+            "NRestarts": 0,
+            "ExecMainStartTimestampMonotonic": 0,
+            "ActiveState": "inactive",
+            "SubState": "dead"
+          }
+        },
+        "faultRecords": [
+          {
+            "fault": "blackhole",
+            "startedAt": "2026-11-01T04:41:17.904700+00:00",
+            "endedAt": "2026-11-01T04:43:17.985484+00:00",
+            "duration": 120,
+            "packetCount": 11
+          }
+        ],
+        "deliveryQualified": false,
+        "faultCompletionRecorded": true,
+        "installedSourceSha256": "72d53ac898c3e87bbe276bdd37a3adfce57b9da2a977834a14ae45942c6f6383"
+      },
+      "affectedPacketCount": 11,
+      "faultElapsedSeconds": 120.08078384399414
+    }
+  ],
+  "sourceSha256": {
+    "fault-1-before.json": "306450a85a3fd29409841e5e383913c08255721c922bc31f2d4388f22fc09b10",
+    "fault-1-after.json": "862e4b5ec902aaf792d0e5ab2e355c06ff81e8dd354cfc1181bd54f15c84d688",
+    "fault-1-before-command.json": "98cccb3fc5fb540df5b8f629e5f312c549fac513ca634bcf47d685a6a810edc0",
+    "fault-1-after-command.json": "55cc0783d8f0d1d4603f6c762d702f9cf8d0fa7b7106a19b01c4939163adf671",
+    "plan.json": "8901dca1578af3a1e5c819350dc74a1ca35ec7be67e038dd8ad2348e4046fe0c"
+  },
+  "sourceProofSha256": "1983e1a7804c783b23fd1f1652b067a8244100d689612fc961a83d6e217aaac7",
+  "commandReceipts": {
+    "fault-1-after-command.json": {
+      "commandId": "6c8cec94-a80d-44fd-99f1-9d66ebfae9f8",
+      "instanceId": "i-04baca853cd5a072d",
+      "host": "Linux",
+      "script": "capture-sourcefault.sh",
+      "sha256": "328ca454d5cff0a56749c2761e2ad3954cafd38dc62cfbaf5c7ccd48db7e4b2d",
+      "sentAt": "2026-11-01T04:45:40Z",
+      "status": "Success",
+      "responseCode": 0
+    },
+    "fault-1-before-command.json": {
+      "commandId": "c5d8bb74-6035-4a1e-9b9e-33b94a1fe713",
+      "instanceId": "i-04baca853cd5a072d",
+      "host": "Linux",
+      "script": "capture-sourcefault.sh",
+      "sha256": "328ca454d5cff0a56749c2761e2ad3954cafd38dc62cfbaf5c7ccd48db7e4b2d",
+      "sentAt": "2026-11-01T04:38:14Z",
+      "status": "Success",
+      "responseCode": 0
+    }
+  }
+}

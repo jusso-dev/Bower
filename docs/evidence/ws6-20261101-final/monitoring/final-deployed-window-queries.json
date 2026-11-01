@@ -1,0 +1,508 @@
+{
+  "kind": "deployed-alert-query-validation-against-real-collector-records",
+  "queriedAt": "2026-11-01T07:14:04.096593+00:00",
+  "rules": [
+    {
+      "name": "qualification-monitor-queue-backlog",
+      "enabled": true,
+      "querySha256": "56c92d59d83578f46169a59191f752a0b1854732860ae84376c99b010f590967",
+      "windowSize": "PT30M",
+      "timespanSeconds": 1800,
+      "response": {
+        "tables": [
+          {
+            "name": "PrimaryResult",
+            "columns": [
+              {
+                "name": "CollectorId",
+                "type": "string"
+              },
+              {
+                "name": "RecordAt",
+                "type": "datetime"
+              },
+              {
+                "name": "OldestUndeliveredAgeSeconds",
+                "type": "int"
+              },
+              {
+                "name": "Undelivered",
+                "type": "int"
+              },
+              {
+                "name": "DeliveryStatus",
+                "type": "string"
+              },
+              {
+                "name": "MaxArrivalLagMinutes",
+                "type": "real"
+              },
+              {
+                "name": "BacklogMetricsIncomplete",
+                "type": "bool"
+              }
+            ],
+            "rows": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "qualification-monitor-source-transport-errors",
+      "enabled": true,
+      "querySha256": "2a5e4c47d90503682a938270318a5a49dc4d84086e980cb29fdebe0c360918be",
+      "windowSize": "PT30M",
+      "timespanSeconds": 1800,
+      "response": {
+        "tables": [
+          {
+            "name": "PrimaryResult",
+            "columns": [
+              {
+                "name": "CollectorId",
+                "type": "string"
+              },
+              {
+                "name": "Source",
+                "type": "string"
+              },
+              {
+                "name": "Errors",
+                "type": "long"
+              },
+              {
+                "name": "MaxNewConnections",
+                "type": "long"
+              },
+              {
+                "name": "FailedStates",
+                "type": "long"
+              },
+              {
+                "name": "Records",
+                "type": "long"
+              },
+              {
+                "name": "ImpairedRecords",
+                "type": "long"
+              },
+              {
+                "name": "CoverageIncomplete",
+                "type": "bool"
+              }
+            ],
+            "rows": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "qualification-monitor-collector-health-missing",
+      "enabled": true,
+      "querySha256": "9de09d9500e07498f18da410221c2ffce687f735e6b1a8cb29bd700ae2920cf9",
+      "windowSize": "P2D",
+      "timespanSeconds": 172800,
+      "response": {
+        "tables": [
+          {
+            "name": "PrimaryResult",
+            "columns": [
+              {
+                "name": "CollectorId",
+                "type": "string"
+              },
+              {
+                "name": "LastIngested",
+                "type": "datetime"
+              },
+              {
+                "name": "LastRecordAt",
+                "type": "datetime"
+              },
+              {
+                "name": "MinutesSinceLastRecord",
+                "type": "real"
+              }
+            ],
+            "rows": [
+              [
+                "bower-ws6-20261101-011000-windows",
+                "2026-11-01T05:08:23.8553316Z",
+                "2026-11-01T05:08:18.5369914Z",
+                125.8
+              ],
+              [
+                "qualification-synthetic-storage-b7fbb8784428",
+                "2026-11-01T03:54:44.3575756Z",
+                "2026-11-01T03:54:39.686575Z",
+                199.5
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "qualification-monitor-destination-credential",
+      "enabled": true,
+      "querySha256": "5e8e18dd3397a55e8a830ce33211c962365cb246e1ccfa4eec8c642b2e50de9a",
+      "windowSize": "P2D",
+      "timespanSeconds": 172800,
+      "response": {
+        "tables": [
+          {
+            "name": "PrimaryResult",
+            "columns": [
+              {
+                "name": "CollectorId",
+                "type": "string"
+              },
+              {
+                "name": "FirstRecord",
+                "type": "datetime"
+              },
+              {
+                "name": "LastRecord",
+                "type": "datetime"
+              },
+              {
+                "name": "Records",
+                "type": "long"
+              },
+              {
+                "name": "LastFailureCode",
+                "type": "string"
+              }
+            ],
+            "rows": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "qualification-monitor-dead-letters",
+      "enabled": true,
+      "querySha256": "8f9d122c39d0277db66d1009f9dd6084dac4550c15c32148f9bfcb796f08de6e",
+      "windowSize": "PT30M",
+      "timespanSeconds": 1800,
+      "response": {
+        "tables": [
+          {
+            "name": "PrimaryResult",
+            "columns": [
+              {
+                "name": "CollectorId",
+                "type": "string"
+              },
+              {
+                "name": "RecordAt",
+                "type": "datetime"
+              },
+              {
+                "name": "DeadLettered",
+                "type": "int"
+              },
+              {
+                "name": "DeliveryStatus",
+                "type": "string"
+              }
+            ],
+            "rows": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "qualification-monitor-dcr-errors",
+      "enabled": true,
+      "querySha256": "3dd34832617813fc4d210e1a9e3d7d5f4978732ce670163ac908e00ecb1989ca",
+      "windowSize": "PT30M",
+      "timespanSeconds": 1800,
+      "response": {
+        "tables": [
+          {
+            "name": "PrimaryResult",
+            "columns": [
+              {
+                "name": "Source",
+                "type": "string"
+              },
+              {
+                "name": "Operation",
+                "type": "string"
+              },
+              {
+                "name": "Level",
+                "type": "string"
+              },
+              {
+                "name": "Errors",
+                "type": "long"
+              },
+              {
+                "name": "LastError",
+                "type": "datetime"
+              }
+            ],
+            "rows": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "qualification-monitor-syslog-tls-expiry",
+      "enabled": true,
+      "querySha256": "c068127c43ec3269f40594101030880d652b6aeaa3b7d0d123e96415783e1d38",
+      "windowSize": "PT30M",
+      "timespanSeconds": 1800,
+      "response": {
+        "tables": [
+          {
+            "name": "PrimaryResult",
+            "columns": [
+              {
+                "name": "CollectorId",
+                "type": "string"
+              },
+              {
+                "name": "Source",
+                "type": "string"
+              },
+              {
+                "name": "RecordAt",
+                "type": "datetime"
+              },
+              {
+                "name": "ServerCertificateNotAfter",
+                "type": "datetime"
+              },
+              {
+                "name": "ClientCaNotAfter",
+                "type": "datetime"
+              },
+              {
+                "name": "RevocationListNextUpdate",
+                "type": "datetime"
+              },
+              {
+                "name": "CoverageIncomplete",
+                "type": "bool"
+              },
+              {
+                "name": "TlsMetadataIncomplete",
+                "type": "bool"
+              }
+            ],
+            "rows": [
+              [
+                "bower-ws6-20261101-011000-linux",
+                "syslog:a13",
+                "2026-11-01T07:13:32.5683749Z",
+                "2026-11-02T01:30:59Z",
+                "2026-11-02T01:30:58Z",
+                null,
+                false,
+                false
+              ],
+              [
+                "bower-ws6-20261101-011000-linux",
+                "syslog:a13:tls-metadata-unknown",
+                "2026-11-01T07:13:32.5683749Z",
+                "2026-11-02T01:30:59Z",
+                "2026-11-02T01:30:58Z",
+                null,
+                false,
+                true
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "qualification-monitor-table-no-ingestion",
+      "enabled": true,
+      "querySha256": "d05180c039c69809b24963e226f676421593ed130455fd8389148fc292d7c7f5",
+      "windowSize": "P2D",
+      "timespanSeconds": 172800,
+      "response": {
+        "tables": [
+          {
+            "name": "PrimaryResult",
+            "columns": [
+              {
+                "name": "LastIngested",
+                "type": "datetime"
+              }
+            ],
+            "rows": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "qualification-monitor-source-overdue",
+      "enabled": true,
+      "querySha256": "be879b01e8adee74554d6eb230a306e5369a195713f4dfd234563f6187516127",
+      "windowSize": "PT30M",
+      "timespanSeconds": 1800,
+      "response": {
+        "tables": [
+          {
+            "name": "PrimaryResult",
+            "columns": [
+              {
+                "name": "CollectorId",
+                "type": "string"
+              },
+              {
+                "name": "RecordAt",
+                "type": "datetime"
+              },
+              {
+                "name": "Source",
+                "type": "string"
+              },
+              {
+                "name": "State",
+                "type": "string"
+              },
+              {
+                "name": "SilentMinutes",
+                "type": "real"
+              },
+              {
+                "name": "AllowedMinutes",
+                "type": "real"
+              },
+              {
+                "name": "LastSeenAt",
+                "type": "datetime"
+              }
+            ],
+            "rows": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "qualification-monitor-destination-freshness",
+      "enabled": true,
+      "querySha256": "bcc2df59c6eddd1bd0feaecf70876cb15b4822239cfd1e15bad0e75d0058b12b",
+      "windowSize": "P2D",
+      "timespanSeconds": 172800,
+      "response": {
+        "tables": [
+          {
+            "name": "PrimaryResult",
+            "columns": [
+              {
+                "name": "CollectorId",
+                "type": "string"
+              },
+              {
+                "name": "Source",
+                "type": "string"
+              },
+              {
+                "name": "LastIngested",
+                "type": "datetime"
+              },
+              {
+                "name": "LastEventAt",
+                "type": "datetime"
+              },
+              {
+                "name": "SilentMinutes",
+                "type": "real"
+              },
+              {
+                "name": "AllowedMinutes",
+                "type": "long"
+              }
+            ],
+            "rows": [
+              [
+                "bower-ws6-20261101-011000-windows",
+                "windows-security/production",
+                "2026-11-01T05:05:42.8344161Z",
+                "2026-11-01T05:03:04.520505Z",
+                128.8,
+                60
+              ],
+              [
+                "bower-ws6-20261101-035853-network",
+                "credential-lab/lab",
+                "2026-11-01T04:15:06.8526042Z",
+                "2026-11-01T04:14:20.250759Z",
+                179.4,
+                60
+              ],
+              [
+                "bower-ws6-20261101-035853-rejected",
+                "credential-lab/lab",
+                "2026-11-01T04:14:20.7488659Z",
+                "2026-11-01T04:13:47.084777Z",
+                180.2,
+                60
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "qualification-monitor-queue-storage",
+      "enabled": true,
+      "querySha256": "88f481d3150ac416eb63cdc4d1b4ae8cf4d2c8423ad9201bedb0c123c0f1ada2",
+      "windowSize": "PT30M",
+      "timespanSeconds": 1800,
+      "response": {
+        "tables": [
+          {
+            "name": "PrimaryResult",
+            "columns": [
+              {
+                "name": "CollectorId",
+                "type": "string"
+              },
+              {
+                "name": "RecordAt",
+                "type": "datetime"
+              },
+              {
+                "name": "QueuePagesUsedPercent",
+                "type": "real"
+              },
+              {
+                "name": "QueuePagesUsedMiB",
+                "type": "real"
+              },
+              {
+                "name": "CapacityUsedPercent",
+                "type": "real"
+              },
+              {
+                "name": "UndeliveredMiB",
+                "type": "real"
+              },
+              {
+                "name": "RefusalsInWindow",
+                "type": "long"
+              },
+              {
+                "name": "DeliveryStatus",
+                "type": "string"
+              },
+              {
+                "name": "StorageMetricsIncomplete",
+                "type": "bool"
+              }
+            ],
+            "rows": []
+          }
+        ]
+      }
+    }
+  ]
+}
