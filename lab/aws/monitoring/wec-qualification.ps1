@@ -572,17 +572,21 @@ function Write-WecProcessScript([string]$Root, [string]$Phase, [string]$Source) 
     $template = @'
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
-$native=$null;$token=[IntPtr]::Zero;$impersonated=$false
+[Console]::OutputEncoding=[Text.Encoding]::ASCII
+$native=$null;$token=[IntPtr]::Zero;$impersonated=$false;$inputReader=$null
 try {
+    # The parent .NET Framework writer inherits its console encoding and can
+    # emit a BOM during process startup. Detect it explicitly on the owned pipe.
+    $inputReader=[IO.StreamReader]::new([Console]::OpenStandardInput(),[Text.Encoding]::UTF8,$true,256,$true)
     Add-Type -TypeDefinition ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__SOURCE__')))
-    $inputLine=[Console]::ReadLine()
+    $inputLine=$inputReader.ReadLine()
     if($null -eq $inputLine -or $inputLine.Length -gt 256){throw 'input-bound'}
     $parts=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($inputLine)).Split("`n")
     if($parts.Count -ne 2 -or $parts[0] -cnotmatch '^bwr[a-f0-9]{17}$' -or $parts[1] -cnotmatch '^synthetic-invalid-[a-f0-9]{32}$'){throw 'input-shape'}
     $native=New-Object BowerWecWindowsNative
     $token=$native.CreateToken($parts[0],$parts[1]);$native.Impersonate($token);$impersonated=$true
     [Console]::WriteLine('0')
-    while($null -ne ($command=[Console]::ReadLine())) {
+    while($null -ne ($command=$inputReader.ReadLine())) {
         switch -CaseSensitive ($command) {
             'connect' { [Console]::WriteLine([string]$native.Connect($parts[0],$parts[1],$true)) }
             'cancel' { [Console]::WriteLine([string]$native.Cancel()) }
@@ -601,6 +605,7 @@ try {
 } finally {
     if($native -and $impersonated){[void]$native.Revert()}
     if($native -and $token -ne [IntPtr]::Zero){[void]$native.Close($token)}
+    if($inputReader){$inputReader.Dispose()}
 }
 '@
     $contents = $template.Replace('__SOURCE__', [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Source)))

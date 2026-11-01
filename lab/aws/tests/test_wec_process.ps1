@@ -10,6 +10,9 @@ $function = $ast.FindAll({ param($node) $node -is [Management.Automation.Languag
 $directory = Join-Path ([IO.Path]::GetTempPath()) ('bower-worker-' + [guid]::NewGuid().ToString('N'))
 [void](New-Item $directory -ItemType Directory)
 $checks = 0
+$previousInputEncoding = [Console]::InputEncoding
+# Reproduce the Windows runner's UTF-8 parent / legacy child encoding mismatch.
+[Console]::InputEncoding = New-Object Text.UTF8Encoding($true)
 function Assert-Process($Condition, [string]$Name) { if (-not $Condition) { throw $Name }; $script:checks++ }
 $native = @'
 using System;
@@ -32,6 +35,8 @@ function Invoke-FakeWorker([string]$Path, [string[]]$Lines) {
     $process.StartInfo.RedirectStandardOutput = $true
     $process.StartInfo.RedirectStandardError = $true
     $process.StartInfo.CreateNoWindow = $true
+    # .NET Framework implicitly uses this encoding; modern .NET has an override.
+    if ($process.StartInfo.PSObject.Properties['StandardInputEncoding']) { $process.StartInfo.StandardInputEncoding = [Console]::InputEncoding }
     try {
         [void]$process.Start()
         foreach ($line in $Lines) { $process.StandardInput.WriteLine($line) }
@@ -67,6 +72,11 @@ try {
     Assert-Process ($result.code -eq 0) 'child clean exit'
     Assert-Process (($result.output -split '\r?\n' | Where-Object { $_ }) -join ',' -eq '0,1326,2250,0,0') 'child fixed numeric protocol'
     Assert-Process ($result.errorOutput -eq '') 'child stderr'
+    [Console]::InputEncoding = [Text.Encoding]::Unicode
+    try {
+        $unicodeResult = Invoke-FakeWorker $path @($inputLine, 'connect', 'cancel', 'revert', 'close')
+        Assert-Process ($unicodeResult.code -eq 0 -and $unicodeResult.errorOutput -eq '' -and (($unicodeResult.output -split '\r?\n' | Where-Object { $_ }) -join ',') -eq '0,1326,2250,0,0') 'UTF-16 parent pipe preamble'
+    } finally { [Console]::InputEncoding = New-Object Text.UTF8Encoding($true) }
     $result = Invoke-FakeWorker $path @($inputLine, 'SECRET-invalid-command')
     Assert-Process ($result.code -ne 0 -and $result.output -notmatch 'SECRET' -and $result.errorOutput -notmatch 'SECRET') 'invalid command leakage'
     $result = Invoke-FakeWorker $path @('invalid-base64-SECRET')
@@ -148,4 +158,4 @@ public static class BowerProcessTransportChecks {
     try { [void](Write-WecProcessScript $directory 'oversized' ('a' * 131072)) } catch { $rejected = $true }
     Assert-Process ($rejected -and -not (Test-Path (Join-Path $directory 'oversized-worker.ps1'))) 'worker script bound'
     Write-Output "WEC process protocol: $checks checks passed (simulated native child only)."
-} finally { Remove-Item -LiteralPath $directory -Recurse -Force }
+} finally { [Console]::InputEncoding = $previousInputEncoding; Remove-Item -LiteralPath $directory -Recurse -Force }

@@ -367,7 +367,11 @@ The evidence isolation enum is `per-process-logon-new-credentials`; all four
 owned cleanups, native event counts/rates and destination identities remain
 mandatory. Local child-protocol tests inject a fake native class and are marked
 simulated; Windows CI additionally exercises the parent process transport with
-that same fake class, without making an SMB request.
+that same fake class, without making an SMB request. The pipe carries only Base64
+setup, fixed commands and numeric replies. The child explicitly detects a
+byte-order mark because Windows PowerShell 5.1 can emit one while constructing
+the inherited-encoding pipe writer. Fixtures cover UTF-8 and UTF-16 parent
+encodings, including the real parent transport with a fake native backend.
 
 ## Run the one-hour Windows destination outage
 
