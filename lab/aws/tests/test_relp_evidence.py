@@ -1,4 +1,6 @@
+import contextlib
 import hashlib
+import io
 import importlib.util
 import json
 from pathlib import Path
@@ -17,7 +19,7 @@ class RelpEvidenceTests(unittest.TestCase):
             home = root / "home" / "operator"
             attempt = root / "private" / "a-steady-attempt1"
             attempt.mkdir(parents=True)
-            plan = json.dumps({"steps": [{"command": [str(home / "repo/run.py")]}]}).encode()
+            plan = json.dumps({"startEpoch": 1.0, "steps": [{"command": [str(home / "repo/run.py")]}]}).encode()
             (attempt / "plan.json").write_bytes(plan)
             (attempt / "summary.json").write_text(json.dumps({"scenario": "a-steady", "queries": [], "faults": []}))
             (attempt / "queue-identities.json").write_text(json.dumps({"rows": [
@@ -28,7 +30,8 @@ class RelpEvidenceTests(unittest.TestCase):
             argv = sys.argv
             sys.argv = ["relp-evidence.py", str(root / "private"), str(public), "--home", str(home)]
             try:
-                module.main()
+                with contextlib.redirect_stdout(io.StringIO()):
+                    module.main()
             finally:
                 sys.argv = argv
             target = public / "scenarios" / "a-steady-attempt1"

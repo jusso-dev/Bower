@@ -15,7 +15,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
-import shutil
+import sys
 
 COPY = re.compile(r"\d{2}-(native-generator-result|queue-acceptance-only|collector-snapshot|sender-snapshot)\.json"
                   r"|fault-[a-z-]+-\d+\.json|reconciliation-\d+\.json|summary\.json|destination-block-applied\.json|dedup-proof\.json")
@@ -29,16 +29,46 @@ def redact(text, home):
     return text.replace(str(home), "<operator-home>")
 
 
+def outcome(record):
+    queue, sentinel = record.get("queue", {}), record.get("sentinel", {})
+    if not record.get("identityComplete"):
+        return "**FAIL**: {} missing at the queue, {} at Sentinel".format(queue.get("missing"), sentinel.get("missing"))
+    proof = record.get("dedupProof", {})
+    duplicates = proof["RawRows"] - proof["DistinctIds"] if proof else sentinel.get("duplicateRows")
+    if not duplicates:
+        return "PASS (strict: 0 missing, 0 duplicate rows)"
+    return "PASS: 0 missing; {} duplicate Sentinel rows{}".format(
+        duplicates, ", collapse to {}".format(proof["CollapsedRows"]) if proof.get("collapses") else "")
+
+
+def table(scenarios):
+    rows = ["| Scenario | Attempt | Sender rsyslog | Native | Queue distinct (missing) | Sentinel distinct (missing) | Sentinel rows at reconciliation / final | Outcome |",
+            "|---|---|---|---|---|---|---|---|"]
+    for record in sorted(scenarios, key=lambda item: item["startEpoch"]):
+        queue, sentinel, native = record.get("queue", {}), record.get("sentinel", {}), record.get("native", {})
+        final = record.get("dedupProof", {}).get("RawRows", "n/a")
+        rows.append("| `{}` | {} | {} | {} | {} ({}) | {} ({}) | {} / {} | {} |".format(
+            record["scenario"], record["attempt"].rsplit("-attempt", 1)[1], record.get("senderRsyslog", "?"),
+            native.get("nativeCounterDelta"), queue.get("distinctIds"), queue.get("missing"),
+            sentinel.get("distinctIds"), sentinel.get("missing"), sentinel.get("rows"), final, outcome(record)))
+    return "\n".join(rows) + "\n"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("private", type=Path, help="Private evidence root (relp-scenario.py --evidence)")
     parser.add_argument("public", type=Path, help="New public evidence directory")
     parser.add_argument("--home", type=Path, default=Path.home())
+    parser.add_argument("--sender-upgrade-epoch", type=float,
+                        help="When the sender moved to rsyslog 8.2610.0; earlier attempts used 8.2204.0")
     args = parser.parse_args()
     out = args.public
     out.mkdir(parents=True, exist_ok=True)
     scenarios = []
     for attempt in sorted(path for path in args.private.iterdir() if path.is_dir() and "-attempt" in path.name):
+        if not (attempt / "summary.json").exists():
+            print("skipping attempt still in progress: " + attempt.name, file=sys.stderr)
+            continue
         target = out / "scenarios" / attempt.name
         target.mkdir(parents=True, exist_ok=True)
         plan_bytes = (attempt / "plan.json").read_bytes()
@@ -74,6 +104,13 @@ def main():
                                             "rows", "duplicateRows", "identitySetSha256", "actualRates",
                                             "firstIngested", "lastIngested")}
         record["scenario"] = summary["scenario"]
+        record["startEpoch"] = json.loads(plan_bytes)["startEpoch"]
+        if args.sender_upgrade_epoch:
+            record["senderRsyslog"] = "8.2610.0" if record["startEpoch"] > args.sender_upgrade_epoch else "8.2204.0"
+        proof = attempt / "dedup-proof.json"
+        if proof.exists():
+            record["dedupProof"] = {key: value for key, value in json.loads(proof.read_text()).items()
+                                    if key in ("RawRows", "CollapsedRows", "DistinctIds", "collapses")}
         record["queries"] = summary.get("queries", [])
         record["faults"] = [{"action": fault["action"], "host": fault["host"], "record": fault["record"]}
                             for fault in summary.get("faults", [])]
@@ -86,6 +123,7 @@ def main():
                 "peerResets", "oversized", "malformed")}
         scenarios.append(record)
     (out / "summary.json").write_text(json.dumps({"schemaVersion": 1, "scenarios": scenarios}, indent=1) + "\n")
+    (out / "results-table.md").write_text(table(scenarios))
     manifest = {}
     for path in sorted(out.rglob("*")):
         if path.is_file() and path.name != "public-manifest.json":

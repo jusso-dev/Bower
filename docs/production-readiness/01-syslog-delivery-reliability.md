@@ -1,5 +1,596 @@
 # 01 — Reliable firewall syslog delivery
 
+**Current verdict (2 November 2026): firewall syslog over RELP is qualified for the
+tested scope; plain TCP/TLS syslog is not.** Run
+[`bower-fw-20261101-111911`](../evidence/fw-20261101-111911/README.md) sent real nftables
+denials from a separate Amazon Linux 2023 sender through rsyslog `omrelp` over mutual TLS
+into Bower's new RELP listener (CI-built NativeAOT collector), then into a real Microsoft
+Sentinel workspace, checked by an independent read-only verifier identity. With the
+recommended sender (rsyslog 8.2610.0), every scenario delivered **every native identity
+to Bower's queue and to Sentinel with 0 missing**, including the three scenarios that lost
+events with plain syslog on 1 November: SIGKILL under load (21 of 6,000 lost before), TCP
+reset (4 of 1,200) and collector stop plus sender reboot (2 of 600).
+
+{{RESULTS_SUMMARY}}
+
+What this does **not** establish: a production firewall appliance (the lab sender is
+rsyslog on Linux with kernel nftables denials), the first hop from an appliance that cannot
+speak RELP (R6), loss of a *sender's* in-memory RELP window when the sender itself is killed
+or loses power, Windows, Kubernetes, Docker or Azure-hosted collectors (procedures are
+documented, not live-qualified), a 24-hour soak, or signed release packages (signing is
+deferred).
+
+## Contents
+
+**Part 1 — RELP (recommended)**
+
+- [R1. RELP: why it closes the gap](#rel-relp)
+- [R2. Collector listener for RELP](#r2-collector-listener-for-relp)
+- [R3. rsyslog `omrelp` sender configuration](#r3-rsyslog-omrelp-sender-configuration)
+- [R4. Certificates](#r4-certificates)
+- [R5. Step-by-step deployment by environment](#r5-step-by-step-deployment-by-environment)
+- [R6. Firewalls that only speak syslog: the relay topology](#r6-firewalls-that-only-speak-syslog-tcpudptls-the-relay-topology)
+- [R7. Monitoring RELP](#r7-monitoring-relp)
+- [R8. Troubleshooting RELP](#r8-troubleshooting-relp)
+- [R9. Reconcile and deduplicate in Sentinel](#r9-reconcile-and-deduplicate-in-sentinel)
+- [R10. How we tested RELP](#r10-how-we-tested-relp)
+- [R11. Known limits of the RELP path](#r11-known-limits-of-the-relp-path)
+
+**Part 2 — plain TCP/TLS syslog (fallback for senders that cannot use RELP; history)**
+
+1. [Summary of results](#1-summary-of-results)
+2. [What syslog delivery can and cannot guarantee](#2-what-syslog-delivery-can-and-cannot-guarantee)
+3. [Root causes of the pilot losses](#3-root-causes-of-the-pilot-losses)
+4. [What changed in Bower](#4-what-changed-in-bower)
+5. [Candidate configuration](#5-candidate-configuration)
+6. [Certificates for the listener and senders](#6-certificates-for-the-listener-and-senders)
+7. [Step-by-step deployment by environment](#7-step-by-step-deployment-by-environment)
+8. [Monitoring pre-acceptance loss](#8-monitoring-pre-acceptance-loss)
+9. [Qualifying your firewall or appliance](#9-qualifying-your-firewall-or-appliance)
+10. [Troubleshooting](#10-troubleshooting)
+11. [How we tested this](#11-how-we-tested-this)
+12. [Known limits](#12-known-limits)
+
+---
+
+# Part 1 — RELP (recommended)
+
+## R1. RELP: why it closes the gap {#rel-relp}
+
+Plain syslog over TCP or TLS has no application-level acknowledgement. A sender writes
+into a socket and forgets the message; whatever sits in socket, TLS and frame buffers
+when a connection dies is lost. That is the mechanism behind every pre-admission loss
+retained in the [1 November campaign](../evidence/ws6-20261101-final/README.md): SIGKILL
+(21 of 6,000), TCP reset (4 of 1,200) and collector stop plus sender reboot (2 of 600).
+
+RELP (the Reliable Event Logging Protocol spoken by rsyslog `omrelp` and librelp) adds a
+numbered transaction and a response to every message. Bower's RELP listener answers
+`200 OK` **only after a final durable decision** (the event is committed to the SQLite
+queue with `synchronous=FULL`, is already in it, or is finally dropped by policy,
+routing, parsing or size). The sender keeps every unanswered message in its window, in
+memory, and resends the whole window after it reconnects. The event id makes a resend of
+an already-committed message a duplicate, never a second row.
+
+```
+rsyslog (imjournal → action queue on disk) ─omrelp window (≤128 unanswered)─▶ Bower RELP listener
+      ▲                                                                           │ parse → route → pack → redact → policy
+      └──────────────────── rsp 200 OK, sent only after the queue commit ◀───────┘ durable queue (fsync) → Sentinel
+```
+
+| Failure | Plain TCP/TLS syslog | RELP into Bower |
+|---|---|---|
+| Collector process killed (SIGKILL, OOM, crash) | Frames in kernel/TLS/frame buffers lost | Unanswered frames resent after restart; committed-but-unanswered ones deduplicate |
+| TCP reset by a middlebox or peer | Bytes in flight lost | Unanswered frames resent on the new session |
+| Collector stop or restart | Best-effort half-close drain | `serverclose`, then frames already sent are committed; the rest are resent |
+| Collector host reboot, network blackhole | Depends on timing | As above, once the session is re-established |
+| Queue full or storage refusing | TCP flow control only; bytes already read can be lost on a crash | Never answered; the sender keeps the window; bounded 30 s hold, then `serverclose` |
+| Destination (Sentinel) outage | Queue buffers (unchanged) | Queue buffers (unchanged); RELP intake continues |
+| **Sender** killed or loses power with an unanswered window | Lost | **Still lost**: librelp's window is in memory |
+| Appliance → relay hop that cannot speak RELP | n/a | **Not covered**: that hop is plain syslog (see R6) |
+
+What RELP still cannot cover:
+
+- **The sender's own memory.** `omrelp` hands a message to librelp and rsyslog treats it as
+  done; librelp keeps unanswered messages in memory only. A graceful sender stop waits up to
+  `timeout` for answers and sends `close`; a sender crash, kill or power loss loses the
+  unanswered window (at most `windowSize` messages, normally a few at steady rates because
+  Bower answers within milliseconds).
+- **Hops before the RELP sender.** Firewalls that emit only UDP or TCP syslog still lose
+  what that first hop loses. Put the RELP sender (an rsyslog relay) as close to the
+  appliance as possible and qualify the first hop separately.
+- **Duplicates at the destination.** RELP removes pre-admission loss; Sentinel delivery
+  stays at-least-once. A collector crash between Sentinel ingestion and marking the row
+  delivered sends that batch again. Deduplicate in queries by `EventId` (R9).
+- **Identity collapse without timestamps.** RELP ids never include the receive time, so
+  two distinct, byte-identical, timestamp-less messages from one sender share one id.
+  Send RFC 5424 high-precision timestamps.
+
+## R2. Collector listener for RELP
+
+Use one RELP listener per trust zone, with mutual TLS. The listener reuses every TLS
+setting of `protocol: tls`: certificate and key, client CA, revocation lists and hot
+reload without dropping sessions ([syslog source](../deployment/syslog-source.md)).
+
+```json
+{
+  "apiVersion": "bower.security/v1",
+  "kind": "SyslogSource",
+  "listeners": [
+    {
+      "id": "firewall-relp",
+      "protocol": "relp",
+      "address": "0.0.0.0",
+      "port": 20514,
+      "allowedSenders": ["10.20.0.5", "10.20.0.6"],
+      "idleTimeoutSeconds": 0,
+      "frameTimeoutSeconds": 60,
+      "handshakeStartTimeoutSeconds": 60,
+      "maximumConnections": 64,
+      "tls": {
+        "certificateFile": "/etc/bower/syslog/server.pem",
+        "privateKeyFile": "/etc/bower/syslog/server-key.pem",
+        "clientCertificateAuthorityFile": "/etc/bower/syslog/senders-ca.pem"
+      },
+      "routes": [
+        { "appName": "kernel", "allowedSenders": ["10.20.0.5", "10.20.0.6"], "pack": "your-firewall-pack", "parser": 0 }
+      ]
+    }
+  ]
+}
+```
+
+| Setting | Value | Reason |
+|---|---|---|
+| `protocol` | `relp` | Acknowledgement after durable commit (R1). |
+| `port` | `20514` (any free port) | Conventional RELP port; keep 6514 for plain TLS syslog if you run both. The AWS lab used 6514 for RELP only so its existing fault rules applied unchanged. |
+| `tls` with `clientCertificateAuthorityFile` | required beyond loopback | RELP over mutual TLS: only senders with a certificate from your CA can open a session. Without `tls` a non-loopback RELP listener is refused unless `allowInsecureNonLoopback` is set. |
+| `idleTimeoutSeconds` | `0` | Keep healthy idle sessions. RELP survives idle closes (unanswered messages are resent), but every close costs a reconnect and a TLS handshake. Measured: 65-minute idle gaps with 0 missing (R10). |
+| `handshakeStartTimeoutSeconds` | `60` | Bounds the wait for the first TLS byte and, for RELP, for the `open` command. |
+| `frameTimeoutSeconds` | `60` | Bounds the TLS handshake, every frame once started, and every response write (a sender that stops reading its answers is closed). |
+| `maximumConnections` | at least 2 × senders + headroom | A reconnect can briefly overlap the old session until keepalive or `serverclose` ends it. |
+| `maximumMessageBytes` | 65536 (default) | Keep it at or above rsyslog's `maxMessageSize` (default 8 KiB). Larger messages are answered and counted as `oversized`, never resent forever. |
+
+Bower's RELP limits are fixed and not configurable: one transaction in progress per
+session, offers ≤ 4 KiB, frames ≤ `maximumMessageBytes` + 2 (oversized `syslog` frames up
+to 1 MiB are read past and answered), busy hold 30 s, stop drain 5 s per frame.
+
+The firewall pack decides the event id. The lab pack maps a stable synthetic key; a pack
+that maps `eventId` to the record `id` gets `syslog-` + SHA-256 over listener, sender
+address and message bytes, which is identical for every RELP resend.
+
+## R3. rsyslog `omrelp` sender configuration
+
+Tested with rsyslog 8.2204.0 on Amazon Linux 2023 and librelp 1.12.0 with OpenSSL. Amazon
+Linux 2023 ships neither `rsyslog-relp` nor `librelp`; the lab built both from upstream
+tarballs pinned by SHA-256 (R5.1). Debian, Ubuntu (`rsyslog-relp`), RHEL, Rocky and Alma
+(`rsyslog-relp`) package them; use the distribution package where it exists.
+
+`/etc/rsyslog.d/60-bower-relp.conf`:
+
+```
+module(load="omrelp" tls.tlslib="openssl")
+module(load="impstats" interval="60" severity="7" log.syslog="off"
+       log.file="/var/log/rsyslog-stats.log" format="json")
+
+# A full queue must block the input (the journal keeps the events) rather than drop.
+main_queue(queue.timeoutEnqueue="86400000")
+
+ruleset(name="bower") {
+  action(name="bower" type="omrelp" target="bower-collector.example.internal" port="20514"
+         template="RSYSLOG_SyslogProtocol23Format"
+         tls="on" tls.cacert="/etc/pki/bower/collector-ca.pem"
+         tls.mycert="/etc/pki/bower/sender.pem" tls.myprivkey="/etc/pki/bower/sender-key.pem"
+         tls.authmode="name" tls.permittedpeer=["bower-collector.example.internal"]
+         windowSize="128" timeout="90" conn.timeout="10" rebindInterval="0"
+         queue.type="LinkedList" queue.filename="bower_relp" queue.saveOnShutdown="on"
+         queue.size="200000" queue.highWatermark="150000" queue.lowWatermark="100000"
+         queue.maxDiskSpace="2g" queue.timeoutEnqueue="86400000"
+         queue.discardMark="200000" queue.discardSeverity="8"
+         queue.checkpointInterval="100" queue.syncQueueFiles="off"
+         action.resumeRetryCount="-1" action.resumeInterval="5" action.reportSuspension="on")
+}
+
+# Route only what the Bower pack parses; everything else stays local.
+if $programname == "kernel" and $msg contains "YOUR_DENY_PREFIX" then { call bower stop }
+```
+
+In `/etc/rsyslog.conf`, keep the journal input bounded and persistent:
+
+```
+module(load="imjournal" StateFile="imjournal.state" Ratelimit.Interval="600" Ratelimit.Burst="200000")
+```
+
+and in `/etc/systemd/journald.conf.d/60-bower.conf`:
+
+```ini
+[Journal]
+Storage=persistent
+SystemMaxUse=1G
+RuntimeMaxUse=256M
+RateLimitIntervalSec=30s
+RateLimitBurst=200000
+```
+
+| Setting | Why |
+|---|---|
+| `module(load="omrelp" tls.tlslib="openssl")` | librelp's OpenSSL backend (the lab build has no GnuTLS backend). With a distribution package, either backend works; keep the one it was built with. |
+| `type="omrelp"`, `port` | RELP to the Bower listener. |
+| `template="RSYSLOG_SyslogProtocol23Format"` | RFC 5424 with RFC 3339 timestamps (microseconds when high-precision timestamps are on, the default). Bower removes the template's trailing LF. A timestamp in every message keeps distinct events distinct; RELP ids never include the receive time. |
+| `tls="on"`, `tls.cacert`, `tls.mycert`, `tls.myprivkey` | Mutual TLS: validate the collector and present the sender certificate. |
+| `tls.authmode="name"`, `tls.permittedpeer` | Check the collector certificate name. Never use anonymous TLS. |
+| `windowSize="128"` | rsyslog's default: at most 128 unanswered messages. Larger windows raise throughput on high-latency links but also what a *sender* crash can lose. |
+| `timeout="90"` | Seconds librelp waits for an answer when the window is full (and for `open`/`close`). Must exceed Bower's 30 s busy hold, so Bower ends a refused session first. |
+| `conn.timeout="10"` | Connect timeout; a dead collector is detected quickly and the action suspends. |
+| `rebindInterval="0"` | One persistent session. Never reconnect per message. |
+| Disk-assisted `LinkedList` queue, `queue.filename`, `queue.saveOnShutdown="on"` | Holds messages while the collector is unreachable and across a sender restart or reboot. Messages already in the RELP window are not in this queue (see R1). |
+| `queue.size`, watermarks, `queue.maxDiskSpace` | Size the memory part for minutes of peak traffic and the disk part for your longest outage × peak rate × ~400 bytes. |
+| `queue.timeoutEnqueue="86400000"` (action and `main_queue`) | A full queue blocks the input instead of dropping after rsyslog's default 2 s. |
+| `queue.discardMark`, `queue.discardSeverity="8"` | Severity-based discarding stays off. |
+| `queue.checkpointInterval="100"`, `queue.syncQueueFiles="off"` | As tested; `syncQueueFiles="on"` survives power loss better at a throughput cost. |
+| `action.resumeRetryCount="-1"`, `action.resumeInterval="5"` | Retry forever every 5 s; a reconnect resends the unanswered window first. |
+| `action.reportSuspension="on"`, `impstats` | Suspension/resumption messages and queue counters for monitoring (R7). |
+| imjournal `Ratelimit.Burst`, journald `Storage=persistent` | The journal keeps events rsyslog has not read yet across a reboot; imjournal resumes from its saved cursor. |
+
+**Validate:** `rsyslogd -N1 && systemctl restart rsyslog`. Expected: no `omrelp` errors in
+`journalctl -u rsyslog`, and Bower's `activeConnections` for the listener becomes 1 after
+the first forwarded message (omrelp connects on first use).
+
+**syslog-ng** has no RELP destination. For syslog-ng or appliances, use the relay
+topology in R6.
+
+## R4. Certificates
+
+RELP over TLS uses exactly the certificates in [section 6](#6-certificates-for-the-listener-and-senders):
+a server certificate with the collector's DNS name in its SAN and `serverAuth`, and one
+client certificate per sender with `clientAuth`, both from your syslog CA. `omrelp` checks
+the collector name against `tls.permittedpeer`; Bower checks the sender certificate
+against `clientCertificateAuthorityFile` (and revocation lists when configured). Rotation
+needs no restart on the collector (files are reloaded); on the sender, replace the files
+and `systemctl restart rsyslog` (a graceful stop waits for answers, so nothing is lost).
+
+## R5. Step-by-step deployment by environment
+
+Every procedure below assumes the collector is installed and delivering
+([installers](../deployment/installers.md)), the firewall's signed pack is loaded and
+certificates exist (R4). Port 20514 is used throughout. In each case:
+
+**Pass:** the sender holds one session (`activeConnections` 1 per sender),
+`relpAcknowledged` rises with `queued + duplicates + notSelected + notRouted + …`,
+`framingErrors`, `tlsHandshakeFailures` and `relpBusyCloses` stay flat, and the R9
+reconciliation shows 0 missing. **Fail:** `relpAcknowledged` flat while the sender's
+queue grows, or any of the error counters rising (R8).
+
+### R5.1 Linux package (RPM/DEB, systemd)
+
+**Purpose:** a RELP listener on a Linux collector host, and an rsyslog RELP sender.
+**Prerequisites:** `bower-collector` package, certificates, `jq`.
+
+1. Write `/etc/bower/syslog.json` (R2), then
+   `chown root:bower /etc/bower/syslog.json && chmod 0640 /etc/bower/syslog.json`.
+2. Add `BOWER_SYSLOG_CONFIG=/etc/bower/syslog.json` to `/etc/bower/bower.env`.
+3. Open the port to senders only:
+   - firewalld: `firewall-cmd --permanent --new-zone=bower-relp && firewall-cmd --permanent --zone=bower-relp --add-source=10.20.0.5/32 && firewall-cmd --permanent --zone=bower-relp --add-port=20514/tcp && firewall-cmd --reload`
+   - nftables: `nft add rule inet filter input ip saddr { 10.20.0.5, 10.20.0.6 } tcp dport 20514 accept`
+   - ufw: `ufw allow from 10.20.0.5 to any port 20514 proto tcp`
+4. `systemctl restart bower`. Expected: `journalctl -u bower | grep "Syslog listener"` shows
+   `Syslog listener firewall-relp (relp) listening on 0.0.0.0:20514`.
+5. On each sender, install RELP support:
+   - Debian/Ubuntu: `apt-get install -y rsyslog-relp`
+   - RHEL/Rocky/Alma 9: `dnf install -y rsyslog-relp`
+   - Amazon Linux 2023 (no package; build `omrelp` for the installed rsyslog, as the lab did):
+
+     ```bash
+     dnf -y install gcc make pkgconf-pkg-config openssl-devel libestr-devel libfastjson-devel \
+       zlib-devel libuuid-devel libcurl-devel systemd-devel flex bison
+     curl -fsSLO https://download.rsyslog.com/librelp/librelp-1.12.0.tar.gz
+     curl -fsSLO https://www.rsyslog.com/files/download/rsyslog/rsyslog-8.2204.0.tar.gz
+     echo "e2e53a9812d06f95d0a311bbfafba78704835de6d7f0ea0fd9c0d94e8eae496a  librelp-1.12.0.tar.gz" | sha256sum -c
+     echo "7eb52db775f87f6975b70a5fbff982507c68ba3306ae05ff967443258442245d  rsyslog-8.2204.0.tar.gz" | sha256sum -c
+     tar xzf librelp-1.12.0.tar.gz && (cd librelp-1.12.0 && ./configure --prefix=/usr --libdir=/usr/lib64 \
+       --enable-tls-openssl --disable-tls && make -j2 && make install) && ldconfig
+     tar xzf rsyslog-8.2204.0.tar.gz && cd rsyslog-8.2204.0 && \
+       PKG_CONFIG_PATH=/usr/lib64/pkgconfig ./configure --prefix=/usr --libdir=/usr/lib64 \
+       --enable-relp --disable-libgcrypt --disable-generate-man-pages && make -j2 -C plugins/omrelp && \
+       install -m 0755 plugins/omrelp/.libs/omrelp.so /usr/lib64/rsyslog/omrelp.so
+     ```
+
+     The rsyslog source version must equal `rpm -q rsyslog`. This build is unsigned and
+     unsupported by the distribution; package it through your own build pipeline for
+     production.
+6. Install the sender certificates under `/etc/pki/bower/` (keys `0600 root`), write R3's
+   configuration, `rsyslogd -N1 && systemctl restart rsyslog`.
+
+**Verify (bash):**
+
+```bash
+token=$(sudo cat /etc/bower/secrets/token)
+curl -s -H "Authorization: Bearer $token" http://127.0.0.1:4319/v1/status |
+  jq '.syslog[] | select(.protocol=="relp") | {id, activeConnections, relpAcknowledged, queued, duplicates, relpBusyCloses, relpServerCloses, framingErrors, tlsHandshakeFailures}'
+```
+
+**Verify (PowerShell 7 on the collector or an admin host with access to the loopback API):**
+
+```powershell
+$token = Get-Content /etc/bower/secrets/token
+(Invoke-RestMethod -Headers @{ Authorization = "Bearer $token" } http://127.0.0.1:4319/v1/status).syslog |
+  Where-Object protocol -eq 'relp' |
+  Select-Object id, activeConnections, relpAcknowledged, queued, duplicates, relpBusyCloses, relpServerCloses, framingErrors, tlsHandshakeFailures
+```
+
+**Rollback:** point the sender back to the TLS listener (section 5.5 configuration) or
+remove the action; remove the RELP listener from `syslog.json` and restart Bower. The
+sender's disk queue keeps messages while no listener answers.
+
+### R5.2 Windows collector (MSI, Windows service)
+
+The RELP listener runs in the C# collector on Windows the same way. Add the listener to
+`C:\ProgramData\Bower\syslog.json`, set `BOWER_SYSLOG_CONFIG` in the service environment,
+and open the port:
+
+```powershell
+New-NetFirewallRule -DisplayName 'Bower RELP from firewalls' -Direction Inbound -Protocol TCP `
+  -LocalPort 20514 -RemoteAddress 10.20.0.5,10.20.0.6 -Action Allow
+Restart-Service Bower
+```
+
+Windows has no rsyslog; senders are Linux relays or appliances (R6). Windows collectors
+were not part of the RELP live qualification (record this as a limit before relying on it).
+
+### R5.3 Docker
+
+```yaml
+services:
+  bower:
+    image: ghcr.io/your-org/bower:VERSION
+    read_only: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    network_mode: host            # keeps the real sender address for allowedSenders
+    environment:
+      BOWER_SYSLOG_CONFIG: /etc/bower/syslog.json
+    volumes:
+      - ./syslog.json:/etc/bower/syslog.json:ro
+      - ./syslog-tls:/etc/bower/syslog:ro
+      - bower-data:/var/lib/bower
+```
+
+1. `chown -R 1654 syslog-tls && chmod 0640 syslog-tls/*-key.pem` (container user 1654).
+2. Start with an explicit context: `docker --context prod compose up -d`.
+3. Verify with `docker --context prod compose exec bower …` and the R5.1 status call.
+
+With a bridge network, Docker NATs the published port and Bower sees the bridge gateway
+as the sender; then rely on mutual TLS for identity and add the gateway to
+`allowedSenders`. `docker stop` gives Bower `stop_grace_period` to send `serverclose` and
+drain; `docker kill` is a crash, which RELP turns into a resend (R1). The TLS 1.3 ticket
+workaround of section 5.3 is not needed for RELP: librelp reads its socket.
+
+### R5.4 Kubernetes (Service with TLS passthrough)
+
+Add the port and configuration to `deploy/kubernetes`:
+
+```yaml
+ports:
+  - name: syslog-relp
+    containerPort: 20514
+env:
+  - name: BOWER_SYSLOG_CONFIG
+    value: /etc/bower/syslog/syslog.json
+volumeMounts:
+  - name: syslog
+    mountPath: /etc/bower/syslog
+    readOnly: true
+```
+
+Expose it as an internal TCP `LoadBalancer` with `externalTrafficPolicy: Local` and the
+same annotations as section 7.3, port `20514`. TLS terminates in Bower: never put an
+ingress controller that terminates TLS, or PROXY protocol, in front of RELP. Extend the
+`NetworkPolicy` with ingress TCP 20514 from the sender CIDR. Keep
+`terminationGracePeriodSeconds` ≥ 30 so a rollout's stop sends `serverclose` and drains.
+With `strategy: Recreate` and one replica, senders resend their window to the new pod.
+
+**Verify:** `kubectl --context CONTEXT -n NAMESPACE port-forward deploy/bower-collector 4319`
+then the R5.1 status call. Sender addresses in records must be the real sender addresses.
+
+### R5.5 AWS EC2 (security groups, NLB TCP passthrough)
+
+```bash
+aws ec2 authorize-security-group-ingress --group-id sg-COLLECTOR \
+  --ip-permissions 'IpProtocol=tcp,FromPort=20514,ToPort=20514,UserIdGroupPairs=[{GroupId=sg-SENDERS,Description="RELP from firewall relays"}]'
+```
+
+```powershell
+$perm = @{ IpProtocol='tcp'; FromPort=20514; ToPort=20514; UserIdGroupPairs=@(@{ GroupId='sg-SENDERS' }) }
+Grant-EC2SecurityGroupIngress -GroupId sg-COLLECTOR -IpPermission $perm
+```
+
+Through an NLB: TCP listener 20514 → TCP target group 20514, client IP preservation on, no
+PROXY protocol v2, TCP health check only (a TLS health check counts as handshake failures).
+The NLB idle timeout (350 s) is longer than Bower's 120 s keepalive. Keep section 5.2's
+egress rule so resets reach senders promptly. This is the tested environment (R10).
+**Rollback:** `aws ec2 revoke-security-group-ingress` with the same permission.
+
+### R5.6 Azure VM (NSG, Load Balancer)
+
+```bash
+az network nsg rule create -g RG --nsg-name NSG -n allow-relp --priority 205 \
+  --direction Inbound --access Allow --protocol Tcp --source-address-prefixes 10.20.0.0/24 \
+  --destination-port-ranges 20514
+```
+
+```powershell
+$nsg = Get-AzNetworkSecurityGroup -ResourceGroupName RG -Name NSG
+Add-AzNetworkSecurityRuleConfig -NetworkSecurityGroup $nsg -Name allow-relp -Priority 205 -Direction Inbound `
+  -Access Allow -Protocol Tcp -SourceAddressPrefix 10.20.0.0/24 -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 20514
+$nsg | Set-AzNetworkSecurityGroup
+```
+
+Internal Standard Load Balancer: TCP rule 20514→20514, floating IP off, TCP reset on idle
+on, idle timeout 30 minutes, TCP health probe. Not part of the live qualification.
+**Rollback:** `az network nsg rule delete -g RG --nsg-name NSG -n allow-relp`.
+
+### R5.7 On-premises
+
+1. Place the collector where the relays reach TCP 20514; allow collector-to-relay TCP for
+   resets (section 5.2) on any firewall in between.
+2. Middlebox idle timeouts above 10 minutes, or rely on keepalive (Bower 120 s).
+3. Use the relay topology (R6) for appliances that cannot run rsyslog.
+
+## R6. Firewalls that only speak syslog (TCP/UDP/TLS): the relay topology
+
+Most firewalls cannot speak RELP. Put an rsyslog relay next to the firewall and use RELP
+from the relay to Bower:
+
+```
+firewall ──UDP/TCP/TLS syslog (first hop, short, local)──▶ rsyslog relay (disk queue) ──RELP/mTLS──▶ Bower
+```
+
+Relay configuration (in addition to R3's action, ruleset `bower`):
+
+```
+module(load="imtcp" StreamDriver.Name="ossl" StreamDriver.Mode="1" StreamDriver.AuthMode="x509/name"
+       PermittedPeer=["fw01.example.internal"])
+input(type="imtcp" port="6514" ruleset="bower")
+# Or, for UDP-only appliances (best effort):
+# module(load="imudp")
+# input(type="imudp" port="514" ruleset="bower")
+```
+
+**Residual risk on the first hop, stated plainly:** the firewall → relay hop has the
+plain-syslog behaviour this document measured: UDP is best effort, TCP/TLS can lose what is
+in flight when the relay restarts or a connection resets. Keep that hop on the same
+network segment (no middlebox), run the relay on dedicated, monitored hardware or a VM
+with a disk-assisted queue, restart it only during maintenance, and reconcile the
+firewall's own forwarded/dropped counters against Bower (section 8). The RELP hop from the
+relay to Bower is then the one measured lossless across collector faults (R10).
+
+## R7. Monitoring RELP
+
+| Signal | Where | Alert when |
+|---|---|---|
+| `relpAcknowledged` | `/v1/status` → `syslog[]` | flat while the source is active |
+| `relpBusyCloses`, `retries` | same | any increase: the queue is refusing (full or gated); the sender is buffering |
+| `relpServerCloses` | same | increases outside planned stops, idle closes or busy closes |
+| `framingErrors`, `tlsHandshakeFailures`, `oversized` | same | any increase |
+| `activeConnections` vs relays | same | fewer sessions than relays for 5 minutes |
+| `queued + duplicates` vs relay forwarded count | daily reconciliation | any shortfall |
+| rsyslog `omrelp` suspension (`action 'bower' suspended`) and `librelp error` messages | relay journal | sustained |
+| rsyslog action queue `size`, `discarded.*` | impstats `bower queue`, `bower queue[DA]` | `size` growing for 10 minutes; any `discarded` |
+| imjournal `ratelimit_discarded_in_interval` | impstats | > 0 |
+
+## R8. Troubleshooting RELP
+
+| Symptom | Likely cause | Check | Fix |
+|---|---|---|---|
+| `omrelp: could not connect to remote server, librelp error 10014`; `tlsHandshakeFailures` rising | Certificate, name or CA mismatch | `openssl s_client -connect COLLECTOR:20514 -cert sender.pem -key sender-key.pem -CAfile collector-ca.pem -verify_hostname NAME` | Fix `tls.permittedpeer`, SAN or CA bundle |
+| Sessions open and close repeatedly; `framingErrors` rising | A non-RELP sender (plain syslog) pointed at the RELP port, or a proxy | Bower counters; relay config | Point plain syslog at a `tls` listener |
+| `relpBusyCloses` rising, relay queue growing | Bower queue full or storage limit | `/v1/status` `queue`, disk space | Restore delivery; raise `BOWER_QUEUE_MAX_BYTES` or free storage and restart; the relay resends |
+| `relpAcknowledged` flat, relay suspended | Listener down or blocked | `ss -tnlp '( sport = :20514 )'`, security groups | Restore the listener; the relay resends its window |
+| Duplicate rows in Sentinel | At-least-once delivery after a collector crash | R9 query | Expected; deduplicate by `EventId` |
+| `oversized` rising | rsyslog `maxMessageSize` above `maximumMessageBytes` | relay config | Align limits; oversized messages are dropped with an answer |
+| `librelp: error opening connection` after a collector reboot | Collector not ready yet | rsyslog journal | Expected; it retries every `action.resumeInterval` |
+
+## R9. Reconcile and deduplicate in Sentinel
+
+Count distinct identities, never `dcount` (approximate), and report duplicates separately:
+
+```kusto
+BowerSecurity_CL
+| where TimeGenerated between (datetime(START) .. datetime(END))
+| where CollectorId == "COLLECTOR-ID"
+| summarize Copies = count(), FirstIngested = min(ingestion_time()) by EventId
+| summarize Distinct = count(), DuplicateRows = sum(Copies - 1)
+```
+
+For analytics, collapse duplicates:
+
+```kusto
+BowerSecurity_CL
+| summarize arg_min(ingestion_time(), *) by EventId
+```
+
+## R10. How we tested RELP
+
+**Where and what.** AWS Sydney, account-scoped run `bower-fw-20261101-111911`: one Amazon
+Linux 2023 collector (t3.small) running the CI-built NativeAOT `linux-x64` collector of this
+branch, and one separate Amazon Linux 2023 sender (t3.small) with a real nftables rule that
+logs and drops UDP probes from a network namespace. Every probe carries a unique
+destination/source-port pair, so every kernel denial is a known identity. rsyslog reads them
+from the journal (`imjournal`) and forwards with `omrelp` over mutual TLS (name-checked) to
+listener `a13` (`protocol: relp`, port 6514). Bower parses them with a signed lab pack,
+redacts, queues and delivers to a real Log Analytics workspace with Sentinel enabled
+(repository Bicep, DCR, certificate-authenticated ingestion app). A separate verifier app
+with Log Analytics Reader on the workspace only queried Sentinel.
+
+**How each scenario was judged.** For each frozen plan: native denials (the nftables
+counter delta must equal the generated count, rate within 5 %), the exact set of identities
+in Bower's queue, and the exact set returned by the verifier's Sentinel query: distinct-id
+SHA-256 digests compared, missing and extra counted, duplicate destination rows counted
+separately (`identityComplete` = 0 missing and 0 extra at queue and Sentinel; the stricter
+`strictPass` also requires 0 duplicate rows). Duplicate rows are then collapsed with the R9
+query (`dedup-proof.json` per attempt). Faults were executed by the reviewed helper on the
+exact owned host and recorded with timestamps (PID killed, packets dropped or reset, boot
+identity).
+
+{{RESULTS_TABLE}}
+
+**The sender-reboot finding (and its fix).** On rsyslog 8.2204.0 (the Amazon Linux 2023
+package) the combined collector-stop/sender-reboot scenario lost **6 of 600** events, again
+before Bower: the six were the first events generated after the collector stopped. rsyslog's
+own log shows why. Its action worker had dequeued those six as a batch and was retrying them
+while the collector was down; at shutdown rsyslog persisted the queue (`queue files exist on
+disk, re-starting with 594 messages`) but dropped the in-flight batch. RELP and Bower never
+saw these events (the session was already closed). rsyslog fixed this upstream on
+2026-05-31 ("action: keep transactional queue batches on shutdown", first released in
+8.2606.0). With rsyslog 8.2610.0 built from the pinned upstream source, the same scenario
+delivered **600 of 600**. Sender reboot *alone* (collector up) passed on both versions,
+because a graceful rsyslog stop waits for the RELP answers. **Use rsyslog 8.2606.0 or later
+for any RELP sender that can restart while the collector is unreachable.** The 1 November
+plain-TLS loss of 2 events in the same scenario is consistent with the same rsyslog
+behaviour.
+
+**Duplicates.** RELP resends after a collector kill or reset are deduplicated in Bower's
+queue (`duplicates` counter). Sentinel can still receive a batch twice when the collector is
+killed after Azure accepted it and before the queue recorded the delivery (at-least-once
+delivery, unchanged by RELP). Those rows collapse with the R9 query; see the table.
+
+**Interop proof.** Unit tests cover the protocol in both runtimes with shared vectors; a
+local run of the real librelp 1.12.0 client (killed, refused and gracefully stopped
+collector) and this live campaign with rsyslog's `omrelp` (8.2204.0 and 8.2610.0, both built
+against librelp 1.12.0 with OpenSSL) are the interop proof. No Docker/CI rsyslog interop
+test exists yet.
+
+{{ATTEMPTS}}
+
+## R11. Known limits of the RELP path
+
+- **Sender-side memory.** librelp keeps unanswered messages in memory. A sender crash,
+  `kill -9` or power loss with an unanswered window loses that window. Not tested here.
+- **First hop.** Appliances that cannot run RELP keep plain-syslog behaviour to their relay
+  (R6). Not tested here with a real appliance.
+- **rsyslog version.** rsyslog before 8.2606.0 loses an in-flight batch when it shuts down
+  while the RELP action is suspended (measured: 6 of 600). Amazon Linux 2023 ships 8.2204.0
+  and no `rsyslog-relp`; the tested build is from pinned upstream sources and is not a
+  supported package.
+- **Environments.** Only Linux AWS EC2 collector and sender were tested live. Windows,
+  Docker, Kubernetes, Azure and on-premises procedures are documented but not qualified.
+- **Duplicates.** Delivery to Sentinel stays at-least-once; deduplicate by `EventId`.
+- **Identity.** RELP ids never include the receive time; send timestamps (R3).
+- **Rust collector.** The Rust port implements the same RELP listener with the same vectors
+  and tests and passed the local librelp interop runs; the live campaign ran the C#
+  collector only.
+- **No production claim.** This qualifies the RELP path for the tested topology, sender
+  versions and scenarios. It is not a production-readiness claim for the whole programme:
+  signing is deferred and the 24-hour soak has not run.
+
+---
+
+# Part 2 — plain TCP/TLS syslog (fallback and history)
+
+Use this part for senders that cannot speak RELP (and for the first hop of the R6 relay
+topology). Its measurements are history: they explain why RELP is the recommendation.
+
+## Status of the plain TCP/TLS path
+
 The [1 November final-candidate campaign](../evidence/ws6-20261101-final/README.md)
 retains a failed forced-kill test: all 6,000 synthetic firewall events were generated,
 but only 5,979 reached Bower's durable queue and Sentinel. The same 21 identities
@@ -42,27 +633,11 @@ syslog source runs. The measured boundary is **acceptance into the Bower queue**
 
 > **Read this first.** Syslog over TCP or TLS has **no application-level
 > acknowledgement**. A sender writes into a socket and assumes success. Nothing in
-> this document makes syslog exactly-once or lossless. The configuration below is
+> this part makes plain syslog exactly-once or lossless; use RELP (Part 1) where the
+> sender supports it. The configuration below is
 > a candidate for reducing loss; its final failure windows have not been qualified.
 > Measure loss for your own sender and failure scenarios before deciding whether it
 > is acceptable.
-
-## Contents
-
-1. [Summary of results](#1-summary-of-results)
-2. [What syslog delivery can and cannot guarantee](#2-what-syslog-delivery-can-and-cannot-guarantee)
-3. [Root causes of the pilot losses](#3-root-causes-of-the-pilot-losses)
-4. [What changed in Bower](#4-what-changed-in-bower)
-5. [Candidate configuration](#5-candidate-configuration)
-6. [Certificates for the listener and senders](#6-certificates-for-the-listener-and-senders)
-7. [Step-by-step deployment by environment](#7-step-by-step-deployment-by-environment)
-8. [Monitoring pre-acceptance loss](#8-monitoring-pre-acceptance-loss)
-9. [Qualifying your firewall or appliance](#9-qualifying-your-firewall-or-appliance)
-10. [Troubleshooting](#10-troubleshooting)
-11. [How we tested this](#11-how-we-tested-this)
-12. [Known limits](#12-known-limits)
-
----
 
 ## 1. Summary of results
 
@@ -784,10 +1359,16 @@ available in this test.
 
 ## 11. How we tested this
 
-The interrupted AWS run used separate sender and collector hosts and generated
-sequence-labelled synthetic messages. Local results are retained for review; the
-complete sanitized evidence and final artifact provenance have not yet been exported.
-No Sentinel delivery conclusion follows from this campaign.
+The 31 October run (`bower-ws1-20261031-075451`) used separate sender and collector hosts
+and sequence-labelled synthetic messages; its retained baseline artifacts are listed in
+[section 3](#3-root-causes-of-the-pilot-losses) with their
+[provenance](../evidence/ws1-20261031-075451/baseline-artifact-provenance.json). The 1 November final campaign
+reconciled the plain-TLS profile end to end against Sentinel
+([`ws6-20261101-final`](../evidence/ws6-20261101-final/README.md)): it passed restart,
+blackhole, collector reboot, sender stop-start, 5/30/65-minute idle gaps, burst and a
+one-hour destination outage, and failed SIGKILL (21 of 6,000 missing), TCP reset (4 of
+1,200) and collector stop plus sender reboot (2 of 600). Those failures remain recorded as
+failures. The RELP run that closes them is in [R10](#r10-how-we-tested-relp).
 
 ## 12. Known limits
 
