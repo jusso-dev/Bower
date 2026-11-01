@@ -75,16 +75,29 @@ public sealed class WindowsSettingsFileTests
             writableAncestor.AddAccessRule(new FileSystemAccessRule(users,
                 FileSystemRights.WriteAttributes | FileSystemRights.WriteExtendedAttributes, AccessControlType.Allow));
             new DirectoryInfo(outer).SetAccessControl(writableAncestor);
+            AssertUsersHaveRights(outer, users, FileSystemRights.WriteAttributes | FileSystemRights.WriteExtendedAttributes);
             Assert.Equal("none", CollectorSettingsFile.Load(path)!["BOWER_OUTPUT"]);
             // These same grants are unsafe on the immediate settings directory.
-            new DirectoryInfo(inner).SetAccessControl(writableAncestor);
+            // SetAccessControl consumes the descriptor's modification flags, so construct a
+            // fresh descriptor rather than reusing the one already persisted for outer.
+            DirectorySecurity writableImmediate = new();
+            Protect(writableImmediate);
+            writableImmediate.AddAccessRule(new FileSystemAccessRule(users,
+                FileSystemRights.WriteAttributes | FileSystemRights.WriteExtendedAttributes, AccessControlType.Allow));
+            new DirectoryInfo(inner).SetAccessControl(writableImmediate);
+            AssertUsersHaveRights(inner, users, FileSystemRights.WriteAttributes | FileSystemRights.WriteExtendedAttributes);
             Assert.Throws<InvalidOperationException>(() => CollectorSettingsFile.Load(path));
-            new DirectoryInfo(inner).SetAccessControl(directories);
+            DirectorySecurity restoredInner = new();
+            Protect(restoredInner);
+            new DirectoryInfo(inner).SetAccessControl(restoredInner);
             writableAncestor.AddAccessRule(new FileSystemAccessRule(users,
                 FileSystemRights.DeleteSubdirectoriesAndFiles, AccessControlType.Allow));
             new DirectoryInfo(outer).SetAccessControl(writableAncestor);
+            AssertUsersHaveRights(outer, users, FileSystemRights.DeleteSubdirectoriesAndFiles);
             Assert.Throws<InvalidOperationException>(() => CollectorSettingsFile.Load(path));
-            new DirectoryInfo(outer).SetAccessControl(directories);
+            DirectorySecurity restoredOuter = new();
+            Protect(restoredOuter);
+            new DirectoryInfo(outer).SetAccessControl(restoredOuter);
 
             // A locked handle to a junction/symlink is checked as a reparse point;
             // its trusted target must never turn an untrusted path into an accepted one.
@@ -110,6 +123,15 @@ public sealed class WindowsSettingsFileTests
             Assert.Equal("none", CollectorSettingsFile.Load(path)!["BOWER_OUTPUT"]);
         }
         finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void AssertUsersHaveRights(string path, SecurityIdentifier users, FileSystemRights rights)
+    {
+        DirectorySecurity actual = new DirectoryInfo(path).GetAccessControl(AccessControlSections.Access);
+        Assert.Contains(actual.GetAccessRules(includeExplicit: true, includeInherited: false, typeof(SecurityIdentifier))
+            .Cast<FileSystemAccessRule>(), rule => rule.IdentityReference.Equals(users)
+                && rule.AccessControlType == AccessControlType.Allow && (rule.FileSystemRights & rights) == rights);
     }
 
     [SupportedOSPlatform("windows")]
