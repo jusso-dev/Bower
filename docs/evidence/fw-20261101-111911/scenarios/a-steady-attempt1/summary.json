@@ -1,0 +1,59 @@
+{
+  "scenario": "a-steady",
+  "attempt": 1,
+  "runId": "bower-fw-20261101-111911",
+  "planSha256": "8cb7e9da7ba4ccc36526219645186151ded0ddce5c11754044589af674bcc579",
+  "startEpoch": 1793532797.832,
+  "expectedBlocks": [
+    "nft:A:200000:600"
+  ],
+  "steps": [
+    {
+      "host": "Sender",
+      "offsetSeconds": 0,
+      "exit": 0,
+      "output": null
+    }
+  ],
+  "collected": [
+    {
+      "kind": "native-generator-result",
+      "file": "00-native-generator-result.json",
+      "exit": 0
+    },
+    {
+      "kind": "queue-acceptance-only",
+      "file": "01-queue-acceptance-only.json",
+      "exit": 0
+    },
+    {
+      "kind": "collector-snapshot",
+      "file": "02-collector-snapshot.json",
+      "exit": 0
+    },
+    {
+      "kind": "sender-snapshot",
+      "file": "03-sender-snapshot.json",
+      "exit": 0
+    }
+  ],
+  "faults": [],
+  "queueExport": {
+    "key": "results/firewall/a-steady/8cb7e9da7ba4ccc36526219645186151ded0ddce5c11754044589af674bcc579/9b71d837acc54dfdb840fe9e9773e6f5.json",
+    "sha256": "c547dc83162c52fed5c54b04318c41f606e8a6ed4ee93d954755d05b62237532",
+    "bytes": 80855,
+    "rows": 600,
+    "malformedRows": 0,
+    "destinationQueryVerified": false
+  },
+  "queries": [
+    {
+      "query": 1,
+      "exit": 0,
+      "report": "reconciliation-1.json",
+      "strictPass": true,
+      "identityComplete": true
+    }
+  ],
+  "finishedAt": "2026-11-01T11:39:13.725161+00:00"
+}

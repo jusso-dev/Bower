@@ -88,16 +88,29 @@ def main():
         code, _ = aws("ec2", "describe-volumes", "--volume-ids", volume)
         check("EBS volume " + volume, code != 0)
     code, snapshots = aws("ec2", "describe-snapshots", "--owner-ids", "self", "--filters", "Name=tag:RunId,Values=" + run_id)
-    check("EBS snapshots tagged RunId", code == 0 and not snapshots["Snapshots"], None if code else "query failed")
+    check("EBS snapshots tagged RunId", code == 0 and not snapshots["Snapshots"], "query failed" if code else None)
     code, groups = aws("logs", "describe-log-groups", "--log-group-name-prefix", "/" + run_id)
     check("CloudWatch log groups with the run prefix", code == 0 and not groups["logGroups"])
     code, secrets = aws("secretsmanager", "list-secrets", "--filters", "Key=tag-value,Values=" + run_id)
     check("Secrets Manager secrets tagged RunId", code == 0 and not secrets["SecretList"])
     code, tagged = aws("resourcegroupstaggingapi", "get-resources", "--tag-filters", "Key=RunId,Values=" + run_id)
     remaining = [item["ResourceARN"] for item in (tagged or {}).get("ResourceTagMappingList", [])]
-    # The tagging API can list recently terminated instances; anything else is a failure.
-    live = [arn for arn in remaining if ":instance/" not in arn]
-    check("AWS resources tagged RunId (tagging API, region)", code == 0 and not live, remaining)
+
+    def gone(arn):
+        # The tagging API keeps deleted EC2 resources listed for a while: re-check each one
+        # with its own describe call; anything not confirmed gone stays a failure.
+        resource = arn.rsplit("/", 1)[-1]
+        if ":instance/" in arn:
+            status, data = aws("ec2", "describe-instances", "--instance-ids", resource)
+            return status != 0 or {item["State"]["Name"] for reservation in data["Reservations"]
+                                   for item in reservation["Instances"]} <= {"terminated"}
+        if ":volume/" in arn:
+            return aws("ec2", "describe-volumes", "--volume-ids", resource)[0] != 0
+        return False
+
+    live = [arn for arn in remaining if not gone(arn)]
+    check("AWS resources tagged RunId (tagging API, region; listed ARNs re-verified)", code == 0 and not live,
+          {"listedByTaggingApi": remaining, "notConfirmedGone": live})
 
     state = json.loads(args.azure_state.read_text())
     group, workspace = state["group"], state["workspaceName"]

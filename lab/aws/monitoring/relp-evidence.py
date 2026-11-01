@@ -18,7 +18,8 @@ import re
 import sys
 
 COPY = re.compile(r"\d{2}-(native-generator-result|queue-acceptance-only|collector-snapshot|sender-snapshot)\.json"
-                  r"|fault-[a-z-]+-\d+\.json|reconciliation-\d+\.json|summary\.json|destination-block-applied\.json|dedup-proof\.json")
+                  r"|fault-[a-z-]+-\d+\.json|reconciliation-\d+\.json|summary\.json|destination-block-(applied|restored)\.json|dedup-proof\.json"
+                  r"|mid-outage-snapshot\.json|health-records-during-refusal\.json")
 
 
 def sha(data):
@@ -114,8 +115,8 @@ def main():
         record["queries"] = summary.get("queries", [])
         record["faults"] = [{"action": fault["action"], "host": fault["host"], "record": fault["record"]}
                             for fault in summary.get("faults", [])]
-        snapshot = attempt / "02-collector-snapshot.json"
-        if snapshot.exists():
+        snapshot = next(iter(sorted(attempt.glob("*-collector-snapshot.json"))), None)
+        if snapshot is not None:
             status = json.loads(snapshot.read_text()).get("syslog", {}).get("a13", {})
             record["relpCountersSinceCollectorStart"] = {key: status.get(key) for key in (
                 "connectionsAccepted", "framesReceived", "queued", "duplicates", "relpAcknowledged",

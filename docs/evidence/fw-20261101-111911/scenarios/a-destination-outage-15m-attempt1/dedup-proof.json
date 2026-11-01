@@ -1,0 +1,13 @@
+{
+ "schemaVersion": 1,
+ "scenario": "a-destination-outage-15m",
+ "query": "let scoped = BowerSecurity_CL\n| where CollectorId == \"bower-fw-20261101-111911-linux\" and ApplicationName == \"nftables-firewall\"\n    and ApplicationEnvironment == \"validation\" and EventType == \"network_connection_denied\"\n| where TimeGenerated between (datetime(2026-11-01T16:06:18.677000+00:00) .. datetime(2026-11-01T16:21:25.677000+00:00));\nlet collapsed = scoped | summarize arg_min(ingestion_time(), *) by EventId;\nprint RawRows = toscalar(scoped | count), CollapsedRows = toscalar(collapsed | count),\n    DistinctIds = toscalar(scoped | summarize count() by EventId | count)",
+ "queriedAt": "2026-11-01T22:34:07.551498+00:00",
+ "workspaceId": "b41439ee-2723-4f42-ba8c-070677cc6226",
+ "verifierClientId": "cfa6ab6b-138f-4225-9795-29d3a9bb8515",
+ "RawRows": 9000,
+ "CollapsedRows": 9000,
+ "DistinctIds": 9000,
+ "duplicateRows": 0,
+ "collapses": true
+}

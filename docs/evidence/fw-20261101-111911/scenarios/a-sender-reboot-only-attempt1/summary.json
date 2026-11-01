@@ -1,0 +1,27 @@
+{
+  "scenario": "a-sender-reboot-only",
+  "runId": "bower-fw-20261101-111911",
+  "reconciliationRetries": [
+    "2026-11-01T12:53:43.089540+00:00"
+  ],
+  "queueExports": [
+    {
+      "key": "results/firewall/a-sender-reboot-only/96a90f30f50291aabc1f400db51f141c7c00446faf4665472aa9324c42857aba/6d4a4a6c620a4c2c9fc11c0800b4cffe.json",
+      "sha256": "74e967047c1e2d3483bfe13c2cca46761ebd2e705198e903fb8ceba49e2f639e",
+      "bytes": 80850,
+      "rows": 600,
+      "malformedRows": 0,
+      "destinationQueryVerified": false
+    }
+  ],
+  "queries": [
+    {
+      "query": 1,
+      "exit": 0,
+      "report": "reconciliation-1.json",
+      "strictPass": true,
+      "identityComplete": true
+    }
+  ],
+  "finishedAt": "2026-11-01T12:53:52.474221+00:00"
+}

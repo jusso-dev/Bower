@@ -1,0 +1,78 @@
+{
+  "scenario": "a-restart",
+  "attempt": 1,
+  "runId": "bower-fw-20261101-111911",
+  "planSha256": "6f54933d8afe1310599918fe2de91b3d04a07e446e62f7c22b148533596857e6",
+  "startEpoch": 1793539899.903,
+  "expectedBlocks": [
+    "nft:A:1120000:6000"
+  ],
+  "steps": [
+    {
+      "host": "Sender",
+      "offsetSeconds": 0,
+      "exit": 0,
+      "output": null
+    },
+    {
+      "host": "Linux",
+      "offsetSeconds": 20,
+      "exit": 0,
+      "output": null
+    }
+  ],
+  "collected": [
+    {
+      "kind": "native-generator-result",
+      "file": "00-native-generator-result.json",
+      "exit": 0
+    },
+    {
+      "kind": "queue-acceptance-only",
+      "file": "01-queue-acceptance-only.json",
+      "exit": 0
+    },
+    {
+      "kind": "collector-snapshot",
+      "file": "02-collector-snapshot.json",
+      "exit": 0
+    },
+    {
+      "kind": "sender-snapshot",
+      "file": "03-sender-snapshot.json",
+      "exit": 0
+    }
+  ],
+  "faults": [
+    {
+      "action": "restart",
+      "host": "Linux",
+      "record": {
+        "duration": 0,
+        "endedAt": "2026-11-01T13:32:05.144694+00:00",
+        "fault": "restart",
+        "startedAt": "2026-11-01T13:31:59.993465+00:00"
+      }
+    }
+  ],
+  "queueExports": [
+    {
+      "key": "results/firewall/a-restart/6f54933d8afe1310599918fe2de91b3d04a07e446e62f7c22b148533596857e6/81de280d888a4bab96fa343a3c3d6873.json",
+      "sha256": "874800d5d762dac07c58c43222f48ad5394edd2e01850f32590f6ea3c2eef6b8",
+      "bytes": 803925,
+      "rows": 6000,
+      "malformedRows": 0,
+      "destinationQueryVerified": false
+    }
+  ],
+  "queries": [
+    {
+      "query": 1,
+      "exit": 0,
+      "report": "reconciliation-1.json",
+      "strictPass": true,
+      "identityComplete": true
+    }
+  ],
+  "finishedAt": "2026-11-01T13:35:57.703527+00:00"
+}

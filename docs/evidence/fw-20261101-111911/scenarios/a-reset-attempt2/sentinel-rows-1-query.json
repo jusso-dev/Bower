@@ -1,0 +1,35 @@
+{
+ "schemaVersion": 1,
+ "recordType": "firewall-destination-query-evidence",
+ "runId": "bower-fw-20261101-111911",
+ "scenario": "a-reset",
+ "collectorId": "bower-fw-20261101-111911-linux",
+ "workspaceId": "b41439ee-2723-4f42-ba8c-070677cc6226",
+ "verifierClientId": "cfa6ab6b-138f-4225-9795-29d3a9bb8515",
+ "planSha256": "a05b8447b14e96771b88c47cdc69d880311abd66de5372ee896bd0aebffb89f2",
+ "packSha256": "44aa95145b1662dcca81c0f54f1c24dbc61bcaa832de3e4de14171d062636bc5",
+ "query": {
+  "text": "BowerSecurity_CL\n| where CollectorId == \"bower-fw-20261101-111911-linux\" and ApplicationName == \"nftables-firewall\"\n    and ApplicationEnvironment == \"validation\" and EventType == \"network_connection_denied\"\n| where TimeGenerated between (datetime(2026-11-01T13:24:02.720000+00:00) .. datetime(2026-11-01T13:26:14.720000+00:00))\n| where ingestion_time() <= datetime(2026-11-01T13:29:06.578723+00:00)\n| summarize Copies=count(), FirstGenerated=min(TimeGenerated), LastGenerated=max(TimeGenerated),\n    FirstIngested=min(ingestion_time()), LastIngested=max(ingestion_time()) by EventId\n| project EventId, Copies, FirstGenerated, LastGenerated, FirstIngested, LastIngested\n| take 200001",
+  "sha256": "7b728f9205b1473601a0456a933f8850b72c29ab81041bd18a09816344dea4f0",
+  "requestBodySha256": "1d9f2a5474860b8af12574ffdc6d36a7558634af088c9c214633422eafb4c1f8",
+  "cutoff": "2026-11-01T13:29:06.578723+00:00",
+  "generatedStart": "2026-11-01T13:24:02.720000+00:00",
+  "generatedEnd": "2026-11-01T13:26:14.720000+00:00",
+  "apiTimespan": null
+ },
+ "verifierSourceSha256": "f613d1d9839c74ca2834ceb0df0aaf6e11e38e66f9d483df21af771c09130dd4",
+ "queryResponseComplete": true,
+ "columns": [
+  "EventId",
+  "Copies",
+  "FirstGenerated",
+  "LastGenerated",
+  "FirstIngested",
+  "LastIngested"
+ ],
+ "distinctIdentities": 1200,
+ "identitySetSha256": "8cbb147eef3a710b32d8600817bb5f8e061f83db21fc5ddd43f6d2528f24321f",
+ "deliveryQualified": false,
+ "rowsFile": "sentinel-rows-1.jsonl",
+ "originalSha256": "106705522338f42ebb8d224af5f434eac82bb01f4f35e39b57858356aaed26d6"
+}

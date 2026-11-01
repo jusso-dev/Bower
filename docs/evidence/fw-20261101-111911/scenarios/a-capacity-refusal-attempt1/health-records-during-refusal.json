@@ -1,0 +1,139 @@
+{
+ "query": "BowerSecurity_CL\n| where CollectorId == \"bower-fw-20261101-111911-linux\" and EventType == \"collector_health\"\n| where TimeGenerated between (datetime(2026-11-01T16:30:00Z) .. datetime(2026-11-01T16:47:00Z))\n| extend a = todynamic(Attributes)\n| project TimeGenerated, Status = tostring(a.status), Problems = tostring(a.problems),\n    Undelivered = toint(a.queue.undelivered), Storage = tostring(a.storage),\n    Frames = toint(a.syslog[0].framesReceived), Queued = toint(a.syslog[0].queued), Retries = toint(a.syslog[0].retries),\n    Started = tostring(a.collectorStartedAt)\n| order by TimeGenerated asc",
+ "workspaceId": "b41439ee-2723-4f42-ba8c-070677cc6226",
+ "verifierClientId": "cfa6ab6b-138f-4225-9795-29d3a9bb8515",
+ "columns": [
+  "TimeGenerated",
+  "Status",
+  "Problems",
+  "Undelivered",
+  "Storage",
+  "Frames",
+  "Queued",
+  "Retries",
+  "Started"
+ ],
+ "rows": [
+  {
+   "TimeGenerated": "2026-11-01T16:30:14.1303591Z",
+   "Status": "healthy",
+   "Problems": "[]",
+   "Undelivered": 0,
+   "Storage": "{\"queueCapacityMiB\":118.7,\"undeliveredMiB\":0,\"storedMiB\":56.5,\"capacityUsedPercent\":0,\"queuePagesUsedMiB\":94.7,\"queueFreeListMiB\":0,\"queuePageLimitMiB\":122.7,\"queuePagesUsedPercent\":77.2}",
+   "Frames": 0,
+   "Queued": 0,
+   "Retries": 0,
+   "Started": "2026-11-01T16:29:14.0593601Z"
+  },
+  {
+   "TimeGenerated": "2026-11-01T16:31:14.1580427Z",
+   "Status": "healthy",
+   "Problems": "[]",
+   "Undelivered": 0,
+   "Storage": "{\"queueCapacityMiB\":118.7,\"undeliveredMiB\":0,\"storedMiB\":56.5,\"capacityUsedPercent\":0,\"queuePagesUsedMiB\":94.7,\"queueFreeListMiB\":0,\"queuePageLimitMiB\":122.7,\"queuePagesUsedPercent\":77.2}",
+   "Frames": 0,
+   "Queued": 0,
+   "Retries": 0,
+   "Started": "2026-11-01T16:29:14.0593601Z"
+  },
+  {
+   "TimeGenerated": "2026-11-01T16:32:14.1807412Z",
+   "Status": "healthy",
+   "Problems": "[]",
+   "Undelivered": 1,
+   "Storage": "{\"queueCapacityMiB\":118.7,\"undeliveredMiB\":0,\"storedMiB\":56.5,\"capacityUsedPercent\":0,\"queuePagesUsedMiB\":94.7,\"queueFreeListMiB\":0,\"queuePageLimitMiB\":122.7,\"queuePagesUsedPercent\":77.2}",
+   "Frames": 0,
+   "Queued": 0,
+   "Retries": 0,
+   "Started": "2026-11-01T16:29:14.0593601Z"
+  },
+  {
+   "TimeGenerated": "2026-11-01T16:33:14.2061125Z",
+   "Status": "healthy",
+   "Problems": "[]",
+   "Undelivered": 2411,
+   "Storage": "{\"queueCapacityMiB\":118.7,\"undeliveredMiB\":2.6,\"storedMiB\":59.1,\"capacityUsedPercent\":2.2,\"queuePagesUsedMiB\":99,\"queueFreeListMiB\":0,\"queuePageLimitMiB\":122.7,\"queuePagesUsedPercent\":80.7}",
+   "Frames": 2413,
+   "Queued": 2412,
+   "Retries": 0,
+   "Started": "2026-11-01T16:29:14.0593601Z"
+  },
+  {
+   "TimeGenerated": "2026-11-01T16:34:14.2441465Z",
+   "Status": "healthy",
+   "Problems": "[]",
+   "Undelivered": 8414,
+   "Storage": "{\"queueCapacityMiB\":118.7,\"undeliveredMiB\":9,\"storedMiB\":65.5,\"capacityUsedPercent\":7.6,\"queuePagesUsedMiB\":109.5,\"queueFreeListMiB\":0,\"queuePageLimitMiB\":122.7,\"queuePagesUsedPercent\":89.3}",
+   "Frames": 6004,
+   "Queued": 6004,
+   "Retries": 0,
+   "Started": "2026-11-01T16:29:14.0593601Z"
+  },
+  {
+   "TimeGenerated": "2026-11-01T16:35:14.28972Z",
+   "Status": "healthy",
+   "Problems": "[]",
+   "Undelivered": 14377,
+   "Storage": "{\"queueCapacityMiB\":118.7,\"undeliveredMiB\":15.4,\"storedMiB\":71.9,\"capacityUsedPercent\":13,\"queuePagesUsedMiB\":120.1,\"queueFreeListMiB\":0,\"queuePageLimitMiB\":122.7,\"queuePagesUsedPercent\":97.9}",
+   "Frames": 5961,
+   "Queued": 5961,
+   "Retries": 0,
+   "Started": "2026-11-01T16:29:14.0593601Z"
+  },
+  {
+   "TimeGenerated": "2026-11-01T16:36:14.3223057Z",
+   "Status": "critical",
+   "Problems": "[\"stalled\",\"retrying\",\"capacity-refusals\"]",
+   "Undelivered": 15874,
+   "Storage": "{\"queueCapacityMiB\":118.7,\"undeliveredMiB\":17,\"storedMiB\":73.5,\"capacityUsedPercent\":14.3,\"queuePagesUsedMiB\":122.7,\"queueFreeListMiB\":0,\"queuePageLimitMiB\":122.7,\"queuePagesUsedPercent\":100}",
+   "Frames": 1493,
+   "Queued": 1492,
+   "Retries": 45,
+   "Started": "2026-11-01T16:29:14.0593601Z"
+  },
+  {
+   "TimeGenerated": "2026-11-01T16:43:47.1649507Z",
+   "Status": "critical",
+   "Problems": "[\"stalled\",\"retrying\"]",
+   "Undelivered": 15875,
+   "Storage": "{\"queueCapacityMiB\":10240,\"undeliveredMiB\":17,\"storedMiB\":73.5,\"capacityUsedPercent\":0.2,\"queuePagesUsedMiB\":122.7,\"queueFreeListMiB\":0,\"queuePageLimitMiB\":10244,\"queuePagesUsedPercent\":1.2}",
+   "Frames": 0,
+   "Queued": 0,
+   "Retries": 0,
+   "Started": "2026-11-01T16:43:47.0989460Z"
+  },
+  {
+   "TimeGenerated": "2026-11-01T16:44:47.2495447Z",
+   "Status": "healthy",
+   "Problems": "[]",
+   "Undelivered": 0,
+   "Storage": "{\"queueCapacityMiB\":10240,\"undeliveredMiB\":0,\"storedMiB\":77.9,\"capacityUsedPercent\":0,\"queuePagesUsedMiB\":130.7,\"queueFreeListMiB\":0,\"queuePageLimitMiB\":10244,\"queuePagesUsedPercent\":1.3}",
+   "Frames": 4131,
+   "Queued": 4131,
+   "Retries": 0,
+   "Started": "2026-11-01T16:43:47.0989460Z"
+  },
+  {
+   "TimeGenerated": "2026-11-01T16:45:47.2767675Z",
+   "Status": "healthy",
+   "Problems": "[]",
+   "Undelivered": 0,
+   "Storage": "{\"queueCapacityMiB\":10240,\"undeliveredMiB\":0,\"storedMiB\":77.9,\"capacityUsedPercent\":0,\"queuePagesUsedMiB\":130.7,\"queueFreeListMiB\":0,\"queuePageLimitMiB\":10244,\"queuePagesUsedPercent\":1.3}",
+   "Frames": 0,
+   "Queued": 0,
+   "Retries": 0,
+   "Started": "2026-11-01T16:43:47.0989460Z"
+  },
+  {
+   "TimeGenerated": "2026-11-01T16:46:47.3092012Z",
+   "Status": "healthy",
+   "Problems": "[]",
+   "Undelivered": 0,
+   "Storage": "{\"queueCapacityMiB\":10240,\"undeliveredMiB\":0,\"storedMiB\":77.9,\"capacityUsedPercent\":0,\"queuePagesUsedMiB\":130.7,\"queueFreeListMiB\":0,\"queuePageLimitMiB\":10244,\"queuePagesUsedPercent\":1.3}",
+   "Frames": 0,
+   "Queued": 0,
+   "Retries": 0,
+   "Started": "2026-11-01T16:43:47.0989460Z"
+  }
+ ]
+}

@@ -1,0 +1,63 @@
+{
+ "listeners": {
+  "a13": {
+   "accepted": 594,
+   "deliveredToSpool": 594,
+   "expected": 600,
+   "malformedKeys": 0,
+   "missing": 6,
+   "missingSample": [
+    "a13-n4412x20000",
+    "a13-n4412x20001",
+    "a13-n4412x20002",
+    "a13-n4412x20003",
+    "a13-n4412x20004",
+    "a13-n4412x20005"
+   ],
+   "missingSha256": "0c03bed6eb35da4f7094df2793a06dc20de6b15fb3f983019eef5c8b76857718"
+  }
+ },
+ "measuredAt": "2026-11-01T12:12:50.687777+00:00",
+ "passed": false,
+ "scenario": "a-sender-reboot",
+ "syslog": {
+  "a13": {
+   "activeConnections": 0,
+   "bytesReceived": 149018,
+   "clientCertificateAuthorityNotAfter": "2026-11-04T11:22:55+00:00",
+   "clientRevocationListNextUpdate": null,
+   "connectionsAccepted": 1,
+   "connectionsRejected": 0,
+   "drainedFrames": 0,
+   "dropped": 0,
+   "duplicates": 1,
+   "framesReceived": 595,
+   "framingErrors": 0,
+   "halfCloses": 0,
+   "lastFrameAt": "2026-11-01T12:06:15.1744588+00:00",
+   "malformed": 0,
+   "notRouted": 0,
+   "notSelected": 0,
+   "oversized": 0,
+   "parserErrors": 0,
+   "peerResets": 0,
+   "queued": 594,
+   "receiveErrors": 0,
+   "rejected": 0,
+   "relpAcknowledged": 595,
+   "relpBusyCloses": 0,
+   "relpServerCloses": 0,
+   "retries": 0,
+   "sendersDenied": 0,
+   "serverCertificateNotAfter": "2026-11-03T11:22:55+00:00",
+   "submitFailures": 0,
+   "suppressed": 0,
+   "timeouts": 0,
+   "tlsHandshakeFailures": 0,
+   "tlsReloadFailures": 0,
+   "tlsReloads": 0,
+   "tlsRevoked": 0,
+   "tlsSessionsClosed": 0
+  }
+ }
+}

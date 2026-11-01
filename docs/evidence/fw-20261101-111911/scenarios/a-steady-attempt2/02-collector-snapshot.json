@@ -1,0 +1,56 @@
+{
+ "active": "active",
+ "at": "2026-11-01T14:13:38.175052+00:00",
+ "connections": 1,
+ "mainPid": "1901",
+ "process": {
+  "cpuSeconds": 39.04,
+  "hwmKiB": 72988,
+  "rssKiB": 68000
+ },
+ "queue": {
+  "events": 36755,
+  "undelivered": 0
+ },
+ "restarts": "0",
+ "syslog": {
+  "a13": {
+   "activeConnections": 1,
+   "bytesReceived": 3236144,
+   "clientCertificateAuthorityNotAfter": "2026-11-04T11:22:55+00:00",
+   "clientRevocationListNextUpdate": null,
+   "connectionsAccepted": 3,
+   "connectionsRejected": 0,
+   "drainedFrames": 0,
+   "dropped": 0,
+   "duplicates": 128,
+   "framesReceived": 12900,
+   "framingErrors": 0,
+   "halfCloses": 0,
+   "lastFrameAt": "2026-11-01T14:13:13.4086568+00:00",
+   "malformed": 0,
+   "notRouted": 0,
+   "notSelected": 0,
+   "oversized": 0,
+   "parserErrors": 0,
+   "peerResets": 0,
+   "queued": 12772,
+   "receiveErrors": 0,
+   "rejected": 0,
+   "relpAcknowledged": 12900,
+   "relpBusyCloses": 0,
+   "relpServerCloses": 0,
+   "retries": 0,
+   "sendersDenied": 0,
+   "serverCertificateNotAfter": "2026-11-03T11:22:55+00:00",
+   "submitFailures": 0,
+   "suppressed": 0,
+   "timeouts": 0,
+   "tlsHandshakeFailures": 0,
+   "tlsReloadFailures": 0,
+   "tlsReloads": 0,
+   "tlsRevoked": 0,
+   "tlsSessionsClosed": 0
+  }
+ }
+}

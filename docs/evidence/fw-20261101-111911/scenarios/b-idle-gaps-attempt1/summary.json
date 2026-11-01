@@ -1,0 +1,112 @@
+{
+  "scenario": "b-idle-gaps",
+  "attempt": 1,
+  "runId": "bower-fw-20261101-111911",
+  "planSha256": "e40fa074e46207cc886f889fcef91432190f11d774795747e4a39c7f01af7613",
+  "startEpoch": 1793542742.54,
+  "expectedBlocks": [
+    "nft:A:1500000:100",
+    "nft:A:1500100:100",
+    "nft:A:1500200:100",
+    "nft:A:1500300:6000"
+  ],
+  "steps": [
+    {
+      "host": "Sender",
+      "offsetSeconds": 0,
+      "exit": 0,
+      "output": null
+    },
+    {
+      "host": "Sender",
+      "offsetSeconds": 310,
+      "exit": 0,
+      "output": null
+    },
+    {
+      "host": "Sender",
+      "offsetSeconds": 2115,
+      "exit": 0,
+      "output": null
+    },
+    {
+      "host": "Sender",
+      "offsetSeconds": 6020,
+      "exit": 0,
+      "output": null
+    }
+  ],
+  "collected": [
+    {
+      "kind": "native-generator-result",
+      "file": "00-native-generator-result.json",
+      "exit": 0
+    },
+    {
+      "kind": "native-generator-result",
+      "file": "01-native-generator-result.json",
+      "exit": 0
+    },
+    {
+      "kind": "native-generator-result",
+      "file": "02-native-generator-result.json",
+      "exit": 0
+    },
+    {
+      "kind": "native-generator-result",
+      "file": "03-native-generator-result.json",
+      "exit": 0
+    },
+    {
+      "kind": "queue-acceptance-only",
+      "file": "04-queue-acceptance-only.json",
+      "exit": 0
+    },
+    {
+      "kind": "queue-acceptance-only",
+      "file": "05-queue-acceptance-only.json",
+      "exit": 0
+    },
+    {
+      "kind": "queue-acceptance-only",
+      "file": "06-queue-acceptance-only.json",
+      "exit": 0
+    },
+    {
+      "kind": "queue-acceptance-only",
+      "file": "07-queue-acceptance-only.json",
+      "exit": 0
+    },
+    {
+      "kind": "collector-snapshot",
+      "file": "08-collector-snapshot.json",
+      "exit": 0
+    },
+    {
+      "kind": "sender-snapshot",
+      "file": "09-sender-snapshot.json",
+      "exit": 0
+    }
+  ],
+  "faults": [],
+  "queueExports": [
+    {
+      "key": "results/firewall/b-idle-gaps/e40fa074e46207cc886f889fcef91432190f11d774795747e4a39c7f01af7613/4150361a691543fca7f37e5c56fca43c.json",
+      "sha256": "9884be7a15240af265b3086a962c8c9a3071a9d616bb5478fd41b8dbb5b2ed23",
+      "bytes": 844089,
+      "rows": 6300,
+      "malformedRows": 0,
+      "destinationQueryVerified": false
+    }
+  ],
+  "queries": [
+    {
+      "query": 1,
+      "exit": 0,
+      "report": "reconciliation-1.json",
+      "strictPass": true,
+      "identityComplete": true
+    }
+  ],
+  "finishedAt": "2026-11-01T16:03:50.616588+00:00"
+}

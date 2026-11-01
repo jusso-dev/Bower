@@ -1,0 +1,1 @@
+{"commandId": "a749a3be-4fe6-4178-90d8-5fcc565445f9", "instanceId": "i-09076358fe836a227", "host": "Linux", "script": "setup-firewall-collector.sh", "sha256": "4a1c74218a0a99a8e6a226783f5b93a99fcd39cc772e8da2b7ba40dc17d4af96", "sentAt": "2026-11-01T11:28:08Z", "status": "Success", "responseCode": 0}

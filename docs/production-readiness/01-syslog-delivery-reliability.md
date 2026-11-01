@@ -11,7 +11,23 @@ to Bower's queue and to Sentinel with 0 missing**, including the three scenarios
 events with plain syslog on 1 November: SIGKILL under load (21 of 6,000 lost before), TCP
 reset (4 of 1,200) and collector stop plus sender reboot (2 of 600).
 
-{{RESULTS_SUMMARY}}
+| Scenario | Plain TLS, 1 Nov | RELP, rsyslog 8.2204.0 | RELP, rsyslog 8.2610.0 (recommended) |
+|---|---|---|---|
+| SIGKILL under load, 6,000 at 100/s | 21 missing | 0 missing, 11 duplicate rows (collapse) | 0 missing, 21 duplicate rows (collapse) |
+| TCP reset, 1,200 at 10/s | 4 missing | 0 missing | 0 missing |
+| Collector stop + sender reboot, 600 | 2 missing | 6 missing | 0 missing |
+| Sender reboot alone, 600 at 100/s | not run | 0 missing | 0 missing |
+| Collector restart, 6,000 at 100/s | 0 missing | not run | 0 missing, 4 duplicate rows (collapse) |
+| Collector host reboot, 3,000 | 0 missing | not run | 0 missing |
+| Network blackhole 120 s, 1,800 | 0 missing | not run | 0 missing |
+| Sender stop-start 60 s, 1,800 | 0 missing | not run | 0 missing |
+| Burst, 6,000 at 100/s | 0 missing | not run | 0 missing |
+| Steady, 600 at 10/s | 0 missing | 0 missing | 0 missing |
+| Idle gaps 5/30/65 minutes, 6,300 | 0 missing | not run | 0 missing |
+| Destination outage (plain: 1 hour; RELP: 15 minutes, intake continuing) | 0 missing | not run | 0 missing |
+| Queue-capacity refusal and recovery, 20,000 | not run | not run | 0 missing |
+
+"Missing" counts identities absent from both Bower's queue and Sentinel; duplicate rows are at-least-once deliveries to Sentinel and collapse with the R9 query. Every attempt, including the failure, is in [R10](#r10-how-we-tested-relp).
 
 What this does **not** establish: a production firewall appliance (the lab sender is
 rsyslog on Linux with kernel nftables denials), the first hop from an appliance that cannot
@@ -531,7 +547,26 @@ query (`dedup-proof.json` per attempt). Faults were executed by the reviewed hel
 exact owned host and recorded with timestamps (PID killed, packets dropped or reset, boot
 identity).
 
-{{RESULTS_TABLE}}
+| Scenario | Attempt | Sender rsyslog | Native | Queue distinct (missing) | Sentinel distinct (missing) | Sentinel rows at reconciliation / final | Outcome |
+|---|---|---|---|---|---|---|---|
+| `a-steady` | 1 | 8.2204.0 | 600 | 600 (0) | 600 (0) | 600 / 600 | PASS (strict: 0 missing, 0 duplicate rows) |
+| `a-sigkill` | 1 | 8.2204.0 | 6000 | 6000 (0) | 6000 (0) | 6011 / 6011 | PASS: 0 missing; 11 duplicate Sentinel rows, collapse to 6000 |
+| `a-reset` | 1 | 8.2204.0 | 1200 | 1200 (0) | 1200 (0) | 1200 / 1200 | PASS (strict: 0 missing, 0 duplicate rows) |
+| `a-sender-reboot` | 1 | 8.2204.0 | 600 | 594 (6) | 594 (6) | 594 / 594 | **FAIL**: 6 missing at the queue, 6 at Sentinel |
+| `a-sender-reboot-only` | 1 | 8.2204.0 | 600 | 600 (0) | 600 (0) | 600 / 600 | PASS (strict: 0 missing, 0 duplicate rows) |
+| `a-sender-reboot` | 2 | 8.2610.0 | 600 | 600 (0) | 600 (0) | 600 / 600 | PASS (strict: 0 missing, 0 duplicate rows) |
+| `a-sender-reboot-only` | 2 | 8.2610.0 | 600 | 600 (0) | 600 (0) | 600 / 600 | PASS (strict: 0 missing, 0 duplicate rows) |
+| `a-sigkill` | 2 | 8.2610.0 | 6000 | 6000 (0) | 6000 (0) | 6000 / 6021 | PASS: 0 missing; 21 duplicate Sentinel rows, collapse to 6000 |
+| `a-reset` | 2 | 8.2610.0 | 1200 | 1200 (0) | 1200 (0) | 1200 / 1200 | PASS (strict: 0 missing, 0 duplicate rows) |
+| `a-restart` | 1 | 8.2610.0 | 6000 | 6000 (0) | 6000 (0) | 6000 / 6004 | PASS: 0 missing; 4 duplicate Sentinel rows, collapse to 6000 |
+| `a-collector-reboot` | 1 | 8.2610.0 | 3000 | 3000 (0) | 3000 (0) | 3000 / 3000 | PASS (strict: 0 missing, 0 duplicate rows) |
+| `a-blackhole` | 1 | 8.2610.0 | 1800 | 1800 (0) | 1800 (0) | 1800 / 1800 | PASS (strict: 0 missing, 0 duplicate rows) |
+| `a-sender-stop-start` | 1 | 8.2610.0 | 1800 | 1800 (0) | 1800 (0) | 1800 / 1800 | PASS (strict: 0 missing, 0 duplicate rows) |
+| `a-burst` | 1 | 8.2610.0 | 6000 | 6000 (0) | 6000 (0) | 6000 / 6000 | PASS (strict: 0 missing, 0 duplicate rows) |
+| `a-steady` | 2 | 8.2610.0 | 600 | 600 (0) | 600 (0) | 600 / 600 | PASS (strict: 0 missing, 0 duplicate rows) |
+| `b-idle-gaps` | 1 | 8.2610.0 | 6300 | 6300 (0) | 6300 (0) | 6300 / 6300 | PASS (strict: 0 missing, 0 duplicate rows) |
+| `a-destination-outage-15m` | 1 | 8.2610.0 | 9000 | 9000 (0) | 9000 (0) | 9000 / 9000 | PASS (strict: 0 missing, 0 duplicate rows) |
+| `a-capacity-refusal` | 1 | 8.2610.0 | 20000 | 20000 (0) | 20000 (0) | 20000 / 20000 | PASS (strict: 0 missing, 0 duplicate rows) |
 
 **The sender-reboot finding (and its fix).** On rsyslog 8.2204.0 (the Amazon Linux 2023
 package) the combined collector-stop/sender-reboot scenario lost **6 of 600** events, again
@@ -559,7 +594,28 @@ collector) and this live campaign with rsyslog's `omrelp` (8.2204.0 and 8.2610.0
 against librelp 1.12.0 with OpenSSL) are the interop proof. No Docker/CI rsyslog interop
 test exists yet.
 
-{{ATTEMPTS}}
+**Failed and repeated attempts, all preserved in the evidence.**
+
+- `a-sender-reboot` attempt 1 (rsyslog 8.2204.0): **failed, 6 of 600 missing** at the queue
+  and at Sentinel (the in-flight batch rsyslog dropped at shutdown, above). Attempt 2 on
+  8.2610.0 passed.
+- `a-sender-reboot-only` attempt 1: the first two Sentinel reconciliations were refused
+  (exit 2) by the harness's binding check, because the collector still had the original lab
+  helper while the plan recorded the revised helper (the one that builds rsyslog 8.2610.0).
+  The same reviewed helper was installed on the collector and the queue re-exported
+  (`queue-identities-2`): identical 600 rows, only the recorded helper hash changed; then it
+  reconciled.
+- Phase 1 (rsyslog 8.2204.0) attempts of `a-steady`, `a-sigkill`, `a-reset` and
+  `a-sender-reboot-only` passed and were all repeated in phase 2 (8.2610.0, sequence offset
+  900000) so every result in the recommended profile uses one sender build.
+- `a-destination-outage-15m`: the first Sentinel reconciliation was refused (exit 2) because
+  the reconciler's plan check rejected digits in scenario names (`15m`); the exporter had the
+  same bug. Both patterns were fixed (with a test) and the driver's next query passed.
+- Late duplicates: the reconciliation queries of `a-sigkill` attempt 2 and `a-restart` ran
+  before Bower redelivered batches whose delivery the collector had not recorded when it was
+  killed or restarted (lease expiry), so they showed 0 duplicate rows; the later
+  deduplication query found 21 and 4. Both counts are shown; all collapse to the exact set.
+
 
 ## R11. Known limits of the RELP path
 

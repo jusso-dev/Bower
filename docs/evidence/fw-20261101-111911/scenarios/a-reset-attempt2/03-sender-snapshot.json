@@ -1,0 +1,189 @@
+{
+ "at": "2026-11-01T13:26:44.552032+00:00",
+ "bootId": "7f3e6d0d-8433-4cdf-8758-5aace2d67581",
+ "impstats": {
+  "a13 queue/core.queue": {
+   "discarded.full": 0,
+   "discarded.nf": 0,
+   "enqueued": 7200,
+   "full": 0,
+   "maxqsize": 636,
+   "size": 0,
+   "size.enqueued": 1324611
+  },
+  "a13 queue[DA]/core.queue": {
+   "checkpoints": 0,
+   "corruption.bytes": 0,
+   "corruption.events": 0,
+   "corruption.records": 0,
+   "corruption.segments": 0,
+   "discarded.full": 0,
+   "discarded.nf": 0,
+   "disk.usage": 0,
+   "enqueued": 0,
+   "full": 0,
+   "maxqsize": 0,
+   "recovery.bytes": 0,
+   "recovery.pending": 0,
+   "recovery.records": 0,
+   "replayed": 0,
+   "retry.overage.bytes": 0,
+   "retry.overage.maxbytes": 0,
+   "segments": 0,
+   "size": 0,
+   "size.enqueued": 0,
+   "startup.payloadBytesRead": 0,
+   "startup.segmentFilesProbed": 0,
+   "state.forcedWrites": 0,
+   "state.writes": 0,
+   "store.idleCleanupFailures": 0,
+   "store.idleDematerializations": 0,
+   "store.materializations": 0,
+   "workers.current": 0
+  },
+  "a13/core.action": {
+   "batchesprocessed": 1393,
+   "failed": 0,
+   "processed": 7200,
+   "ratelimit.allowed": 0,
+   "ratelimit.dropped": 0,
+   "ratelimit.paced": 0,
+   "ratelimit.paced_usec": 0,
+   "resumed": 2,
+   "suspended": 0,
+   "suspended.duration": 0
+  },
+  "action-1-builtin:omfile/core.action": {
+   "batchesprocessed": 0,
+   "failed": 0,
+   "processed": 0,
+   "ratelimit.allowed": 0,
+   "ratelimit.dropped": 0,
+   "ratelimit.paced": 0,
+   "ratelimit.paced_usec": 0,
+   "resumed": 0,
+   "suspended": 0,
+   "suspended.duration": 0
+  },
+  "action-2-builtin:omfile/core.action": {
+   "batchesprocessed": 1652,
+   "failed": 0,
+   "processed": 1652,
+   "ratelimit.allowed": 0,
+   "ratelimit.dropped": 0,
+   "ratelimit.paced": 0,
+   "ratelimit.paced_usec": 0,
+   "resumed": 0,
+   "suspended": 0,
+   "suspended.duration": 0
+  },
+  "action-3-builtin:omfile/core.action": {
+   "batchesprocessed": 3,
+   "failed": 0,
+   "processed": 3,
+   "ratelimit.allowed": 0,
+   "ratelimit.dropped": 0,
+   "ratelimit.paced": 0,
+   "ratelimit.paced_usec": 0,
+   "resumed": 0,
+   "suspended": 0,
+   "suspended.duration": 0
+  },
+  "action-4-builtin:omfile/core.action": {
+   "batchesprocessed": 0,
+   "failed": 0,
+   "processed": 0,
+   "ratelimit.allowed": 0,
+   "ratelimit.dropped": 0,
+   "ratelimit.paced": 0,
+   "ratelimit.paced_usec": 0,
+   "resumed": 0,
+   "suspended": 0,
+   "suspended.duration": 0
+  },
+  "action-5-builtin:omfile/core.action": {
+   "batchesprocessed": 0,
+   "failed": 0,
+   "processed": 0,
+   "ratelimit.allowed": 0,
+   "ratelimit.dropped": 0,
+   "ratelimit.paced": 0,
+   "ratelimit.paced_usec": 0,
+   "resumed": 0,
+   "suspended": 0,
+   "suspended.duration": 0
+  },
+  "action-6-builtin:omusrmsg/core.action": {
+   "batchesprocessed": 0,
+   "failed": 0,
+   "processed": 0,
+   "ratelimit.allowed": 0,
+   "ratelimit.dropped": 0,
+   "ratelimit.paced": 0,
+   "ratelimit.paced_usec": 0,
+   "resumed": 0,
+   "suspended": 0,
+   "suspended.duration": 0
+  },
+  "action-7-builtin:omfile/core.action": {
+   "batchesprocessed": 0,
+   "failed": 0,
+   "processed": 0,
+   "ratelimit.allowed": 0,
+   "ratelimit.dropped": 0,
+   "ratelimit.paced": 0,
+   "ratelimit.paced_usec": 0,
+   "resumed": 0,
+   "suspended": 0,
+   "suspended.duration": 0
+  },
+  "action-8-builtin:omfile/core.action": {
+   "batchesprocessed": 0,
+   "failed": 0,
+   "processed": 0,
+   "ratelimit.allowed": 0,
+   "ratelimit.dropped": 0,
+   "ratelimit.paced": 0,
+   "ratelimit.paced_usec": 0,
+   "resumed": 0,
+   "suspended": 0,
+   "suspended.duration": 0
+  },
+  "imjournal/imjournal": {
+   "discarded": 0,
+   "disk_usage_bytes": 16781312,
+   "failed": 0,
+   "ratelimit_discarded_in_interval": 0,
+   "read": 8951,
+   "recovery_attempts": 0,
+   "rotations": 1,
+   "submitted": 8951
+  },
+  "main Q/core.queue": {
+   "discarded.full": 0,
+   "discarded.nf": 0,
+   "enqueued": 8951,
+   "full": 0,
+   "maxqsize": 229,
+   "size": 0,
+   "size.enqueued": 1461370
+  }
+ },
+ "nft": {
+  "A": 7200,
+  "B": 0
+ },
+ "queueFiles": {
+  "bower_a13.da-engine": 35
+ },
+ "rsyslog": "active",
+ "rsyslogDiagnostics": {},
+ "sockets": [
+  {
+   "port": 6514,
+   "recvQ": 5018,
+   "sendQ": 0,
+   "state": "ESTAB"
+  }
+ ]
+}

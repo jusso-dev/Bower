@@ -1,0 +1,982 @@
+{
+ "README.md": {
+  "bytes": 13480,
+  "sha256": "c36d33313addf94d2959fefa76cc95d5d6e443555310c3501f68c369274e2941"
+ },
+ "cleanup.json": {
+  "bytes": 3833,
+  "sha256": "c017c3648068ff99ec6ee6dc7b54124e8d87be32d3d17beffe0c8b3771a592b9"
+ },
+ "operations/a-sender-reboot-attempt1-diag.txt": {
+  "bytes": 18896,
+  "sha256": "b89012d7c234b78aee1bf944c5e9a8d7e71d275bf01b4f8c11877c072c694f0c"
+ },
+ "operations/cleanup-first-audit-run.txt": {
+  "bytes": 722,
+  "sha256": "40b283b2a81ec079d5f7b3993569330117781ee23fe29b17f6587f854a91920a"
+ },
+ "operations/collector-setup-ssm-record.json": {
+  "bytes": 301,
+  "sha256": "18a2eccd670a771f047a17a26405bfe6971816ee3e14d6302dc1863a0993d03f"
+ },
+ "operations/collector-setup.json": {
+  "bytes": 502,
+  "sha256": "0fc7f73b8c81574d56a3ef0f7f1b722ffed165830494a0cfaa8050a8fbbf992e"
+ },
+ "operations/driver-log.txt": {
+  "bytes": 6938,
+  "sha256": "4b2d3d8a07579bb71586c2319a68aca2d41d595396db613601261a9665eb387d"
+ },
+ "operations/queue-cap.json": {
+  "bytes": 98,
+  "sha256": "137e42945a757057304322ec4371541ab2f88503b53e07a9b4c63d61efe018db"
+ },
+ "operations/sender-rsyslog-8.2610-ssm-record.json": {
+  "bytes": 299,
+  "sha256": "3fcd811fc444aa5a6ca28d06c756b623afdb4c0005bf87a40ea3181af4324f3b"
+ },
+ "operations/sender-rsyslog-8.2610.json": {
+  "bytes": 427,
+  "sha256": "e94ce3a2481f480fb4827ae33d69e15f3009c242751e1ca30f06499ce8cff263"
+ },
+ "operations/sender-setup-ssm-record.json": {
+  "bytes": 299,
+  "sha256": "f19096f19803daffb4ada19bf9d496e770087e4c2bede56d19d794b0e1d3d4ca"
+ },
+ "operations/sender-setup.json": {
+  "bytes": 919,
+  "sha256": "2477c92b7f0a1f67c59c985c34939327742881df78de9caca5a8c0baf8833c13"
+ },
+ "results-table.md": {
+  "bytes": 2443,
+  "sha256": "3dfa03a402754ad2ca0942087322edccd27b16fab1236a9a1c9476614491715a"
+ },
+ "scenarios/a-blackhole-attempt1/00-native-generator-result.json": {
+  "bytes": 287,
+  "sha256": "75efc0ca8c9ee8d66812f4ca2c533e431137f2cce2666279aead9fb87e23384b"
+ },
+ "scenarios/a-blackhole-attempt1/01-queue-acceptance-only.json": {
+  "bytes": 1347,
+  "sha256": "5eeab65d0d42f5d8b4c1c20e60d2ce214bd76a27c4a4a3090a690c19057fb3f1"
+ },
+ "scenarios/a-blackhole-attempt1/02-collector-snapshot.json": {
+  "bytes": 1247,
+  "sha256": "938f2cbb62b3b61e655ac10c5f640bbc98530aeee0f0f0af3471b2caf2d356ba"
+ },
+ "scenarios/a-blackhole-attempt1/03-sender-snapshot.json": {
+  "bytes": 4192,
+  "sha256": "2fc078008dc4c1df02e76d01ee7a87d28ff0e7393e3e4f2ee9913285baa25f84"
+ },
+ "scenarios/a-blackhole-attempt1/dedup-proof.json": {
+  "bytes": 931,
+  "sha256": "73f7658a60d43bc99d70411c007ee259e04fdeedebdca1de7b9dc1d58d003c7a"
+ },
+ "scenarios/a-blackhole-attempt1/fault-blackhole-1793540967.json": {
+  "bytes": 158,
+  "sha256": "f23ec936a781c6b9e61333b35ee14182b71f07d3497568a4f18c9b03eafbfee9"
+ },
+ "scenarios/a-blackhole-attempt1/plan.json": {
+  "bytes": 6011,
+  "sha256": "d46d0e527129156ecc3f095280877be0da583e98b68e2487498b5dd2b61efaa0"
+ },
+ "scenarios/a-blackhole-attempt1/queue-identities.jsonl": {
+  "bytes": 167221,
+  "sha256": "1d6359f67472986374252f500e2959e27222d02a147be841a9326c438213a2d1"
+ },
+ "scenarios/a-blackhole-attempt1/reconciliation-1.json": {
+  "bytes": 2366,
+  "sha256": "f1d894d321359f59ec4cbbe55e83490a4147d27b24828aed8f8889a89b12299a"
+ },
+ "scenarios/a-blackhole-attempt1/sentinel-rows-1-query.json": {
+  "bytes": 2073,
+  "sha256": "a600a307b762d493bd3a620eb36581b91390cab06836e101f7ae574da20d877f"
+ },
+ "scenarios/a-blackhole-attempt1/sentinel-rows-1.jsonl": {
+  "bytes": 267556,
+  "sha256": "57d5bd5110265155cde6f2e4b7408bcedeaa53648625ee4edad00d2d09c76f1f"
+ },
+ "scenarios/a-blackhole-attempt1/summary.json": {
+  "bytes": 1834,
+  "sha256": "378c98e72785342f27ca0f1d6df496b883f34f58f3d749525d2fb145e29552ec"
+ },
+ "scenarios/a-burst-attempt1/00-native-generator-result.json": {
+  "bytes": 288,
+  "sha256": "e2dd3bd164c1e8f5edbe081df4fe0995d1a3beaa32a0c1abdf079bad0ab2e383"
+ },
+ "scenarios/a-burst-attempt1/01-queue-acceptance-only.json": {
+  "bytes": 1346,
+  "sha256": "e3d3792d76ef40ed9c886f5dc400410ae49622548bdcdb278b5f3326bf55040f"
+ },
+ "scenarios/a-burst-attempt1/02-collector-snapshot.json": {
+  "bytes": 1250,
+  "sha256": "93956ae8c73ec7ae917a5742573aeaeed6e4b8db6358686275153a5f5c220700"
+ },
+ "scenarios/a-burst-attempt1/03-sender-snapshot.json": {
+  "bytes": 4184,
+  "sha256": "4f094ab09cfb4d1340c723e753b5e66911f95938fc15b4147a84fe0a18970562"
+ },
+ "scenarios/a-burst-attempt1/dedup-proof.json": {
+  "bytes": 927,
+  "sha256": "c179024f37f4b0e53ae592b8b50e9e87f30d509d3ea038830824ea09df643468"
+ },
+ "scenarios/a-burst-attempt1/plan.json": {
+  "bytes": 5293,
+  "sha256": "3cefbf17040d84a4bdb55e93e980f1447e05d43be00dd5e9fd2fb27abf615752"
+ },
+ "scenarios/a-burst-attempt1/queue-identities.jsonl": {
+  "bytes": 557400,
+  "sha256": "b400ed5411661ec72cc74d81edeed9cabc4fcf4e82b71df5d1c2f51a6684ac38"
+ },
+ "scenarios/a-burst-attempt1/reconciliation-1.json": {
+  "bytes": 2362,
+  "sha256": "48c005a310de01bdf1a9de44df31c203fc0ce398d05dc0bd278044b997da9e97"
+ },
+ "scenarios/a-burst-attempt1/sentinel-rows-1-query.json": {
+  "bytes": 2069,
+  "sha256": "dc85f9b224f95c759df77d75f23bafc4ee7f166b81779a84e235753600ba5565"
+ },
+ "scenarios/a-burst-attempt1/sentinel-rows-1.jsonl": {
+  "bytes": 891586,
+  "sha256": "f79d5738149ae35a831f28adf63e41eb33f92cf2417f0ddc971d7a9bf682b7ec"
+ },
+ "scenarios/a-burst-attempt1/summary.json": {
+  "bytes": 1445,
+  "sha256": "c90d3c0a658354a41ff256a5db3824d77d09e813e572914574ac744a5bb63b75"
+ },
+ "scenarios/a-capacity-refusal-attempt1/00-native-generator-result.json": {
+  "bytes": 291,
+  "sha256": "ac1604a0685662db718eafec343c3b28a437c2f07ed279db1e5546b124a1b6d4"
+ },
+ "scenarios/a-capacity-refusal-attempt1/01-queue-acceptance-only.json": {
+  "bytes": 1355,
+  "sha256": "dec2b3336197c566608df05e91d39477f48a15e6543f5fbed29e668872f5171e"
+ },
+ "scenarios/a-capacity-refusal-attempt1/02-collector-snapshot.json": {
+  "bytes": 1246,
+  "sha256": "1284530762fc367ae82880335c8988ce6bcbb68c3f326765f25f58210ecb6f2d"
+ },
+ "scenarios/a-capacity-refusal-attempt1/03-sender-snapshot.json": {
+  "bytes": 4192,
+  "sha256": "dd429589832352347138b70fcaa96055e2a0a2920e311ba392929081687a3022"
+ },
+ "scenarios/a-capacity-refusal-attempt1/dedup-proof.json": {
+  "bytes": 941,
+  "sha256": "9b1dd395a2c7ac00d983002afbc2fe2bdfdf06d12833e2b8ee911d23f0c6ebf7"
+ },
+ "scenarios/a-capacity-refusal-attempt1/destination-block-applied.json": {
+  "bytes": 933,
+  "sha256": "e7bd2cf01f2d5a63ebe9628fd3c99e1466c0e20483fd648f7350c1241516a896"
+ },
+ "scenarios/a-capacity-refusal-attempt1/fault-raise-cap-1793551409.json": {
+  "bytes": 169,
+  "sha256": "604f527767a36aaa1747f5d7624633f31218fda07e6968df8ed2cadbc657519e"
+ },
+ "scenarios/a-capacity-refusal-attempt1/health-records-during-refusal.json": {
+  "bytes": 5899,
+  "sha256": "3e8d32cc7f992b6bf952b170c610e799e193d0ef3bd2270bb4a860a349f25759"
+ },
+ "scenarios/a-capacity-refusal-attempt1/plan.json": {
+  "bytes": 6828,
+  "sha256": "a02461667d5f7f1c79bc995d014be8cdb172c1ebe1393ab95c9c34a6b8b5dae0"
+ },
+ "scenarios/a-capacity-refusal-attempt1/queue-identities.jsonl": {
+  "bytes": 1857937,
+  "sha256": "88f0198bfaf48994122f7ed5db6d15f27791ba68f41676c859900be207e0b69e"
+ },
+ "scenarios/a-capacity-refusal-attempt1/reconciliation-1.json": {
+  "bytes": 2381,
+  "sha256": "9517bb6cfbf8388b8fed1e52c54afeb1a73ffbd2ddecbedf01eba64e93d13cd6"
+ },
+ "scenarios/a-capacity-refusal-attempt1/sentinel-rows-1-query.json": {
+  "bytes": 2081,
+  "sha256": "7b55c8f0faea2b5f1ab1106c4e7ccee6018930aedb0ee681474a08148e0853a3"
+ },
+ "scenarios/a-capacity-refusal-attempt1/sentinel-rows-1.jsonl": {
+  "bytes": 2971988,
+  "sha256": "68c29e4609a3ffdfba0123792ba631d7de65a3485e9e7a3b5b4a871adb150f1a"
+ },
+ "scenarios/a-capacity-refusal-attempt1/summary.json": {
+  "bytes": 2959,
+  "sha256": "2f5f5d7b15de219ff6e1b1feaaef50115e2f9d7bf8d1cc15a094f11cd8d0e78d"
+ },
+ "scenarios/a-collector-reboot-attempt1/00-native-generator-result.json": {
+  "bytes": 287,
+  "sha256": "07010993c82ca572dc2ebb98c8ca29c6b6c231b9d893ca45ff02148cd2deb977"
+ },
+ "scenarios/a-collector-reboot-attempt1/01-queue-acceptance-only.json": {
+  "bytes": 1353,
+  "sha256": "9bca99129860860e05c127dc31e6778af4695dc49df44e8b422593b923ab4364"
+ },
+ "scenarios/a-collector-reboot-attempt1/02-collector-snapshot.json": {
+  "bytes": 1245,
+  "sha256": "b120b5ac3ccd7d834b3daba915c714aec8576627d1cfd251612b0941b7167967"
+ },
+ "scenarios/a-collector-reboot-attempt1/03-sender-snapshot.json": {
+  "bytes": 4191,
+  "sha256": "11e7afbf160fb48f6115ad2d42fa7878b362417cff28fa481181d801c3c17fdb"
+ },
+ "scenarios/a-collector-reboot-attempt1/dedup-proof.json": {
+  "bytes": 938,
+  "sha256": "9f69739bfe6859e97126a3631af28c2fc773f60be00583226e34a2a06b6f4378"
+ },
+ "scenarios/a-collector-reboot-attempt1/fault-reboot-1793540337.json": {
+  "bytes": 137,
+  "sha256": "881d02fb8173323593f041043a833b24e44a7f7e11d6ad40da59ab9c7b57c680"
+ },
+ "scenarios/a-collector-reboot-attempt1/plan.json": {
+  "bytes": 5971,
+  "sha256": "aa2b46de26effc26f344ae27b2dd0435b3b2f1a0effbadfabe32df9b4fa3161f"
+ },
+ "scenarios/a-collector-reboot-attempt1/queue-identities.jsonl": {
+  "bytes": 278707,
+  "sha256": "79cc694c07d1f418278f57913df3788b52cf5c9cf6495b7ebd6c8d08ddcb8ac1"
+ },
+ "scenarios/a-collector-reboot-attempt1/reconciliation-1.json": {
+  "bytes": 2373,
+  "sha256": "3ce2996a62a6d46123eba0e98b0487ce396aeff4c6d483ebcde50dd5e2888c57"
+ },
+ "scenarios/a-collector-reboot-attempt1/sentinel-rows-1-query.json": {
+  "bytes": 2080,
+  "sha256": "20d928a0be60d3e217104b2a4c1c7362bee72a80970206f45c385862eca24783"
+ },
+ "scenarios/a-collector-reboot-attempt1/sentinel-rows-1.jsonl": {
+  "bytes": 445802,
+  "sha256": "8c2c43deb359f003ed02ffa28653eb9b9ba9f28cb30103eafecaab7f589f7c1e"
+ },
+ "scenarios/a-collector-reboot-attempt1/summary.json": {
+  "bytes": 1817,
+  "sha256": "5a3f4029d7c655bce1319251df3910fb86798386720d5e86b4ae0071a76fa61e"
+ },
+ "scenarios/a-destination-outage-15m-attempt1/00-native-generator-result.json": {
+  "bytes": 287,
+  "sha256": "ef3b45eaa61f1fe49a1bd7b4f86144326e32ea3ffbeae534498cb42519401d8c"
+ },
+ "scenarios/a-destination-outage-15m-attempt1/01-queue-acceptance-only.json": {
+  "bytes": 1363,
+  "sha256": "9126d8befcc8cf7bcffc83f94f029a174a5cdcec23ecb22879503ec986da542f"
+ },
+ "scenarios/a-destination-outage-15m-attempt1/02-collector-snapshot.json": {
+  "bytes": 1253,
+  "sha256": "c78065e5b448d409d0022fb9c93ccf28e71d464393352f6135be6a3e2a08431a"
+ },
+ "scenarios/a-destination-outage-15m-attempt1/03-sender-snapshot.json": {
+  "bytes": 4190,
+  "sha256": "fdcd001d1808471585b1e0f2b298465c9a0ecd1f0395d85ef526401babbf205e"
+ },
+ "scenarios/a-destination-outage-15m-attempt1/dedup-proof.json": {
+  "bytes": 944,
+  "sha256": "c0a4e07e90591bcfd158184eb4afad6658bd361699b8cd7d5233ba5841a36768"
+ },
+ "scenarios/a-destination-outage-15m-attempt1/destination-block-applied.json": {
+  "bytes": 938,
+  "sha256": "12a273dd50535ef6e6e4d53dab24fdfa45c27733ee5a4db75d32ff28a8563b94"
+ },
+ "scenarios/a-destination-outage-15m-attempt1/destination-block-restored.json": {
+  "bytes": 526,
+  "sha256": "1ad56cd5ac755f5727226756a613833e3d98ad446bda5e8458a5678d88242c84"
+ },
+ "scenarios/a-destination-outage-15m-attempt1/mid-outage-snapshot.json": {
+  "bytes": 276,
+  "sha256": "8e5d81b32ab86cffb259b43feb4bab6d26769ce22b5c383a512a598ed77e4e28"
+ },
+ "scenarios/a-destination-outage-15m-attempt1/plan.json": {
+  "bytes": 6169,
+  "sha256": "9b861160916058bb08e3529d59b2e5483e45a7c59b75911d21096bb9a50e218c"
+ },
+ "scenarios/a-destination-outage-15m-attempt1/queue-identities.jsonl": {
+  "bytes": 836053,
+  "sha256": "597a08e05522cb3b8f615c8479b1634873c82b677a3de956e2172f5dd298982c"
+ },
+ "scenarios/a-destination-outage-15m-attempt1/reconciliation-2.json": {
+  "bytes": 2380,
+  "sha256": "b6f6a3dbefe31e7545efe2a0f02e272aebaa72c6158601c7044bbf54da7ab606"
+ },
+ "scenarios/a-destination-outage-15m-attempt1/sentinel-rows-2-query.json": {
+  "bytes": 2086,
+  "sha256": "c91a92a881408c74be9e64daf515837e83a4bd2665f61dced25d24b3ee9af1c4"
+ },
+ "scenarios/a-destination-outage-15m-attempt1/sentinel-rows-2.jsonl": {
+  "bytes": 1338108,
+  "sha256": "77ed54ba61d20eb6eee72584398c24aa7a8c17ec23843d2a5d22b04bc6e8570b"
+ },
+ "scenarios/a-destination-outage-15m-attempt1/summary.json": {
+  "bytes": 2725,
+  "sha256": "e9aca40d1bd23a9170cf3ac9c8430d23c0d60fa4c0600e789441a5d45b426941"
+ },
+ "scenarios/a-reset-attempt1/00-native-generator-result.json": {
+  "bytes": 286,
+  "sha256": "34374f5a0e05b7c65988c1fe8cab06417de4763b434146090ef16e7618a3a3df"
+ },
+ "scenarios/a-reset-attempt1/01-queue-acceptance-only.json": {
+  "bytes": 1343,
+  "sha256": "e8499cbcdfb909e8881653989c2c084d50e59400b13fcd9588737e4accda5b24"
+ },
+ "scenarios/a-reset-attempt1/02-collector-snapshot.json": {
+  "bytes": 1246,
+  "sha256": "870d6acc58844ca9118ffb4648c2fc9b74bfad738e0de4d015bfb6f174a89bf6"
+ },
+ "scenarios/a-reset-attempt1/03-sender-snapshot.json": {
+  "bytes": 2301,
+  "sha256": "97fd01c5728094a4ae0e5fd9ddefdc6427fd19c7c92dab1b71baa9456eaad810"
+ },
+ "scenarios/a-reset-attempt1/dedup-proof.json": {
+  "bytes": 927,
+  "sha256": "91f19861fae88b6391314f050b96e3ad740ca121e0a44bbf6e7f61f8f487add3"
+ },
+ "scenarios/a-reset-attempt1/fault-reset-1793533920.json": {
+  "bytes": 152,
+  "sha256": "3d4d3a37da828b41e9e6ba362647c5211fdd5e79bb8e01d486b0de79325ef502"
+ },
+ "scenarios/a-reset-attempt1/plan.json": {
+  "bytes": 5969,
+  "sha256": "20cffcbe1550a435250a4de87fdf94a869fdf7a8a8f8b250fd7e2fb4c5e4c23f"
+ },
+ "scenarios/a-reset-attempt1/queue-identities.jsonl": {
+  "bytes": 111456,
+  "sha256": "c5eacc445f423e26a0ad7310f893f5b27928512ced5b67cde0cb512843a4f92d"
+ },
+ "scenarios/a-reset-attempt1/reconciliation-1.json": {
+  "bytes": 2362,
+  "sha256": "d28c3363333c5a302d3061b068556f089b9a0715e5144362dd4823caa8ecd1e0"
+ },
+ "scenarios/a-reset-attempt1/sentinel-rows-1-query.json": {
+  "bytes": 2069,
+  "sha256": "3d15f281de85bcae715775a9f416b6193517ce9ac424afe907260ccdb1fde6fc"
+ },
+ "scenarios/a-reset-attempt1/sentinel-rows-1.jsonl": {
+  "bytes": 178214,
+  "sha256": "d6af6b113a7626c1a8c2c8b26146ce303b9fb2b75bc4d4fd3543121b6b64c66c"
+ },
+ "scenarios/a-reset-attempt1/summary.json": {
+  "bytes": 1790,
+  "sha256": "5277e445d0b4655c6fc741e83a991aa49aec54e096db37849d91291ddf850adb"
+ },
+ "scenarios/a-reset-attempt2/00-native-generator-result.json": {
+  "bytes": 287,
+  "sha256": "7d556d3968e0e5eb366e41d2be687865a7b1848d49e7118815279894d63e4a29"
+ },
+ "scenarios/a-reset-attempt2/01-queue-acceptance-only.json": {
+  "bytes": 1343,
+  "sha256": "ed6a12329c6989d7d8b0b7538de3f0eab88d211777327dce0ccf3391f116bbbd"
+ },
+ "scenarios/a-reset-attempt2/02-collector-snapshot.json": {
+  "bytes": 1247,
+  "sha256": "6c7f3a427c9b16aca00c5c9815ce143c074d6d2a1a1703ef40056002eccf711d"
+ },
+ "scenarios/a-reset-attempt2/03-sender-snapshot.json": {
+  "bytes": 4185,
+  "sha256": "11c264d24342bd83f88b885346c858cade65cc099dc1db08a7cf32c4a1eb0200"
+ },
+ "scenarios/a-reset-attempt2/dedup-proof.json": {
+  "bytes": 927,
+  "sha256": "842b03e20819d45c8fad9f1638d813ec20f570fd10cdcb89375846c854fd3030"
+ },
+ "scenarios/a-reset-attempt2/fault-reset-1793539474.json": {
+  "bytes": 152,
+  "sha256": "69cf1cc6faf87292275802d5f0b45262c68590828bee7470d9448699cfaee94f"
+ },
+ "scenarios/a-reset-attempt2/plan.json": {
+  "bytes": 5975,
+  "sha256": "5a19c91662cbd1119a0b7c6e8d468cb60fcb081b8eb4bf21f55e7300c1437e3b"
+ },
+ "scenarios/a-reset-attempt2/queue-identities.jsonl": {
+  "bytes": 111493,
+  "sha256": "2d8d787ca867f3ca192bec84a3d9788a9a5b4e12f44a74c9df6032ce73b00e5c"
+ },
+ "scenarios/a-reset-attempt2/reconciliation-1.json": {
+  "bytes": 2362,
+  "sha256": "911645204c81e10edf6f46e3548fcea5be33bb2489a29dd354bb5f4a87bdcf4d"
+ },
+ "scenarios/a-reset-attempt2/sentinel-rows-1-query.json": {
+  "bytes": 2069,
+  "sha256": "7d3112dd67cbaea3f0297b2de8285ae07695b7744598597571c1905d05924abf"
+ },
+ "scenarios/a-reset-attempt2/sentinel-rows-1.jsonl": {
+  "bytes": 178320,
+  "sha256": "d630b27a7dfa71ad5fadb93693f9d97d968bb95a674a004e8babb97e3f25308e"
+ },
+ "scenarios/a-reset-attempt2/summary.json": {
+  "bytes": 1815,
+  "sha256": "9019d9822461f5149e8eb30f1870a073567eef1ffc4febc080e8c1e9210e3952"
+ },
+ "scenarios/a-restart-attempt1/00-native-generator-result.json": {
+  "bytes": 288,
+  "sha256": "ecd1b845a4c56003c2eb741487ab7f7181a0f643fcacaa1ded59d4682f2ca605"
+ },
+ "scenarios/a-restart-attempt1/01-queue-acceptance-only.json": {
+  "bytes": 1345,
+  "sha256": "d618e421140764c47734dca48e971cdffd6f42d7d335f417003bddc9c12d240c"
+ },
+ "scenarios/a-restart-attempt1/02-collector-snapshot.json": {
+  "bytes": 1247,
+  "sha256": "01b1c0e53c41e007ec0da0b0619fd2018eae364bfa900a6b000ee2a725545347"
+ },
+ "scenarios/a-restart-attempt1/03-sender-snapshot.json": {
+  "bytes": 4191,
+  "sha256": "68be952ec9999142f4dc97540b76f8f75d042d6e9373be877073606cebdec7d7"
+ },
+ "scenarios/a-restart-attempt1/dedup-proof.json": {
+  "bytes": 929,
+  "sha256": "3bc3faeb2d380faeb6bd7eb52ea8ad704644eb9aafc01e99cb7f5d993e4e921f"
+ },
+ "scenarios/a-restart-attempt1/fault-restart-1793539919.json": {
+  "bytes": 138,
+  "sha256": "6fc436e648739517a7363fbcbbaaa3fc6eb59323f880377e8fdaac9a6d32cc9c"
+ },
+ "scenarios/a-restart-attempt1/plan.json": {
+  "bytes": 5961,
+  "sha256": "a8e3769e816f8026b76d2e1eb5bbb299dfb77fdbc3670df040ea7ff66e5f575d"
+ },
+ "scenarios/a-restart-attempt1/queue-identities.jsonl": {
+  "bytes": 557407,
+  "sha256": "cd0f3dcddc6689560bb96268bd54cdf82bc752b93a02505fdfce88a00162de41"
+ },
+ "scenarios/a-restart-attempt1/reconciliation-1.json": {
+  "bytes": 2364,
+  "sha256": "975c6ef82e36e6dacc3758d1e223e1c351268723996822859a05ed977679effd"
+ },
+ "scenarios/a-restart-attempt1/sentinel-rows-1-query.json": {
+  "bytes": 2071,
+  "sha256": "2cb9fc0938b337dc3be0f1c859dd37795ed1593c5d41a593d7de0c2633f1970a"
+ },
+ "scenarios/a-restart-attempt1/sentinel-rows-1.jsonl": {
+  "bytes": 891222,
+  "sha256": "c85a8c87cded467721ffde2a8de9442bafd832a56c5fef63a8b64498c4b6b51f"
+ },
+ "scenarios/a-restart-attempt1/summary.json": {
+  "bytes": 1801,
+  "sha256": "f5a957b3f977d37de2942834cc40429abfd1a97d9e4bf6b6ad039d75c0c309ec"
+ },
+ "scenarios/a-sender-reboot-attempt1/00-native-generator-result.json": {
+  "bytes": 283,
+  "sha256": "2e56c397bafc1b31fb1d671c07425d453b73b353633be8a1ae7675dfe9ac91be"
+ },
+ "scenarios/a-sender-reboot-attempt1/01-queue-acceptance-only.json": {
+  "bytes": 1484,
+  "sha256": "d974cb811b1e9399a8d6ec43c023d8d3c5798b4f53866413309761567d289f12"
+ },
+ "scenarios/a-sender-reboot-attempt1/02-collector-snapshot.json": {
+  "bytes": 1240,
+  "sha256": "d61c74d2e6099ba2c27d2b688031f4705a8683b4365c1c833ac64379ef7bb1cd"
+ },
+ "scenarios/a-sender-reboot-attempt1/03-sender-snapshot.json": {
+  "bytes": 2267,
+  "sha256": "48eec53e3923ac3f36bd317bb10286624e14160c7c46fb6470841e909b79b516"
+ },
+ "scenarios/a-sender-reboot-attempt1/dedup-proof.json": {
+  "bytes": 933,
+  "sha256": "80a78ca5ba258c166700320108061995b3a7906a8c98da3ac5b9bd15f80d99f0"
+ },
+ "scenarios/a-sender-reboot-attempt1/fault-reboot-1793534604.json": {
+  "bytes": 137,
+  "sha256": "87227ac1c6fdad1bfacc6b811d542819bef868736ede255ebdefb755c0a9968a"
+ },
+ "scenarios/a-sender-reboot-attempt1/fault-stop-start-1793534524.json": {
+  "bytes": 143,
+  "sha256": "97ec0f6d38ece5ecd2cb25979a7034e76b3a020f6303e440d0cd74e05592177a"
+ },
+ "scenarios/a-sender-reboot-attempt1/plan.json": {
+  "bytes": 6668,
+  "sha256": "20ef16d49e8a157733488f056a722eb79282ba8f0f7d7a5beb329fd347fb0ad9"
+ },
+ "scenarios/a-sender-reboot-attempt1/queue-identities.jsonl": {
+  "bytes": 55184,
+  "sha256": "54d4a2bbd31915ad79198d81724dd71bbb1de615dd8400ad5f31e8ea8dc18313"
+ },
+ "scenarios/a-sender-reboot-attempt1/reconciliation-1.json": {
+  "bytes": 2365,
+  "sha256": "21cc36188710dd5780caa9399c234b8b9ab32c5ac69398fb7ab200c6a9841b91"
+ },
+ "scenarios/a-sender-reboot-attempt1/reconciliation-2.json": {
+  "bytes": 2365,
+  "sha256": "f916aaf73d82e67320f2080e7e187f533b3cf748280a20d8dcf818d3f88afd9c"
+ },
+ "scenarios/a-sender-reboot-attempt1/reconciliation-3.json": {
+  "bytes": 2365,
+  "sha256": "20b5808af24e2ecf1396f4a0cf4ba51afb8651e0de2ea9112dfa880396b944b4"
+ },
+ "scenarios/a-sender-reboot-attempt1/sentinel-rows-1-query.json": {
+  "bytes": 2076,
+  "sha256": "a352c26728a5a0fb7f9af5120a823b992d27f1127d1e410e71026c1b55d5b5cf"
+ },
+ "scenarios/a-sender-reboot-attempt1/sentinel-rows-1.jsonl": {
+  "bytes": 88256,
+  "sha256": "aad05809f2818a1924ef34a5642a06bd6914180f8728bede0f426c92f190ae9e"
+ },
+ "scenarios/a-sender-reboot-attempt1/sentinel-rows-2-query.json": {
+  "bytes": 2076,
+  "sha256": "a0e2e17c7f341be4de587df735313b8b2aa2071fbea27776de3e265c03023847"
+ },
+ "scenarios/a-sender-reboot-attempt1/sentinel-rows-2.jsonl": {
+  "bytes": 88256,
+  "sha256": "aad05809f2818a1924ef34a5642a06bd6914180f8728bede0f426c92f190ae9e"
+ },
+ "scenarios/a-sender-reboot-attempt1/sentinel-rows-3-query.json": {
+  "bytes": 2076,
+  "sha256": "3b1c561972977aa4f7cfbc675a8d2d7b7a3142450ffe9fb2f80500f09a646dce"
+ },
+ "scenarios/a-sender-reboot-attempt1/sentinel-rows-3.jsonl": {
+  "bytes": 88256,
+  "sha256": "aad05809f2818a1924ef34a5642a06bd6914180f8728bede0f426c92f190ae9e"
+ },
+ "scenarios/a-sender-reboot-attempt1/summary.json": {
+  "bytes": 2441,
+  "sha256": "16787a919442efa0b8d4f012fac7f6d4ba328704b715376212125e34d70f1afa"
+ },
+ "scenarios/a-sender-reboot-attempt2/00-native-generator-result.json": {
+  "bytes": 284,
+  "sha256": "afc0882d24b0f329a7a462339e01dff057c3eff2600dc30beb8e4f9a7e3f3ccc"
+ },
+ "scenarios/a-sender-reboot-attempt2/01-queue-acceptance-only.json": {
+  "bytes": 1342,
+  "sha256": "2e79ab10e8c458618afe4853046ccd1120177edec57bee5cd9930e092205d61a"
+ },
+ "scenarios/a-sender-reboot-attempt2/02-collector-snapshot.json": {
+  "bytes": 1240,
+  "sha256": "542a73f7aa7dd26490bd513f1d6b6fe7dfcff3b32d9e5ce010b34be103806c56"
+ },
+ "scenarios/a-sender-reboot-attempt2/03-sender-snapshot.json": {
+  "bytes": 4093,
+  "sha256": "a6de0632c73cb18125ec7a8b5b908ecebb3ead02a2bd22dc8b57dce676343985"
+ },
+ "scenarios/a-sender-reboot-attempt2/dedup-proof.json": {
+  "bytes": 932,
+  "sha256": "69c6bceb436f89b2550a3f02b97d4b7f42dcef6b27e0e0a12111e535c893e825"
+ },
+ "scenarios/a-sender-reboot-attempt2/fault-reboot-1793537879.json": {
+  "bytes": 137,
+  "sha256": "d81b14d81cca438ec932f3dbae790146cbe24431416d4f68a33b8ebbfd1d9132"
+ },
+ "scenarios/a-sender-reboot-attempt2/fault-stop-start-1793537799.json": {
+  "bytes": 143,
+  "sha256": "087232e97a3a4ea83697cfdb68caca6ec4bbae056e31fcf29ca921885d2da1c3"
+ },
+ "scenarios/a-sender-reboot-attempt2/plan.json": {
+  "bytes": 6677,
+  "sha256": "70c3eab3d1b9bcd3055b59b7255343879cab980192a6773956c8973757fbde79"
+ },
+ "scenarios/a-sender-reboot-attempt2/queue-identities.jsonl": {
+  "bytes": 55742,
+  "sha256": "76c0f544e62681aed59c2345399cc9dcd404760898d9a3656b6871c78c219130"
+ },
+ "scenarios/a-sender-reboot-attempt2/reconciliation-1.json": {
+  "bytes": 2362,
+  "sha256": "f08f58d9d7e4c3ae096082a8dc70d48c181dc9ce5be79b03a436c0c2e4e8d26d"
+ },
+ "scenarios/a-sender-reboot-attempt2/sentinel-rows-1-query.json": {
+  "bytes": 2076,
+  "sha256": "57b0477727211993f0c73a0574bf109f1a15d60fa18064d3b386d34f293cb7fb"
+ },
+ "scenarios/a-sender-reboot-attempt2/sentinel-rows-1.jsonl": {
+  "bytes": 89104,
+  "sha256": "dd144e499ea355f6dee71ab2181183f7865974273217d3671bed34bd517a7961"
+ },
+ "scenarios/a-sender-reboot-attempt2/summary.json": {
+  "bytes": 2169,
+  "sha256": "87a2b2b271aeb356bec945de6794d7fea054c6482426407e790ff9f7eb114b5d"
+ },
+ "scenarios/a-sender-reboot-only-attempt1/00-native-generator-result.json": {
+  "bytes": 284,
+  "sha256": "7deac0f945654fbc86e2930eb8983352fdadcc4bc45bbc2ea32cc573f14c2176"
+ },
+ "scenarios/a-sender-reboot-only-attempt1/01-queue-acceptance-only.json": {
+  "bytes": 1350,
+  "sha256": "00d0c5c530e5bb68970ff9492b0b662c14be01f5c4b5ba2a2f72c3bb06edda49"
+ },
+ "scenarios/a-sender-reboot-only-attempt1/02-collector-snapshot.json": {
+  "bytes": 1244,
+  "sha256": "42e579d02425db212300382eb564d05ce62e03822c0650f89cbe616a2243457c"
+ },
+ "scenarios/a-sender-reboot-only-attempt1/03-sender-snapshot.json": {
+  "bytes": 2209,
+  "sha256": "5e60f6de71ceeced7c02cda749803843a622b156d52d7b450fe104f5ebda1b11"
+ },
+ "scenarios/a-sender-reboot-only-attempt1/dedup-proof.json": {
+  "bytes": 937,
+  "sha256": "a49209b2fbac267e12e4e6fa278e0b620604b018beacc183739abf335c459869"
+ },
+ "scenarios/a-sender-reboot-only-attempt1/fault-reboot-1793536579.json": {
+  "bytes": 137,
+  "sha256": "8c2ccc8f5b54559f92c8d5f3c7d62e37424bf8221da6a19228ac84fc3cbcab0b"
+ },
+ "scenarios/a-sender-reboot-only-attempt1/plan.json": {
+  "bytes": 6024,
+  "sha256": "0d52c3da4fefe3284aa9b5fa2c7d80f979513330bb354c649d7987ee12847781"
+ },
+ "scenarios/a-sender-reboot-only-attempt1/queue-identities-2.jsonl": {
+  "bytes": 55721,
+  "sha256": "51205f17d59b363eb2a10de39f248f1693f18c079db7adcf311ff9c1aea7fc60"
+ },
+ "scenarios/a-sender-reboot-only-attempt1/queue-identities.jsonl": {
+  "bytes": 55721,
+  "sha256": "51205f17d59b363eb2a10de39f248f1693f18c079db7adcf311ff9c1aea7fc60"
+ },
+ "scenarios/a-sender-reboot-only-attempt1/reconciliation-1.json": {
+  "bytes": 2367,
+  "sha256": "8bd44935226b64f5e99e78d852d4a7cf67cd98f140af15fb251d2d6cc93f4b26"
+ },
+ "scenarios/a-sender-reboot-only-attempt1/sentinel-rows-1-query.json": {
+  "bytes": 2081,
+  "sha256": "555b8a0a62f01daf0f78caf12f24f02920f05e0ff43cbde43c9d10a636dd1054"
+ },
+ "scenarios/a-sender-reboot-only-attempt1/sentinel-rows-1.jsonl": {
+  "bytes": 89146,
+  "sha256": "b8d89553803a7684f30b44fd278a6bb7c7d9cbf49eef7d165dd758347545ed97"
+ },
+ "scenarios/a-sender-reboot-only-attempt1/summary.json": {
+  "bytes": 755,
+  "sha256": "75bf162968745c2f0dff9c62e4dac551cf690ec57650a733565618897a1aa58a"
+ },
+ "scenarios/a-sender-reboot-only-attempt2/00-native-generator-result.json": {
+  "bytes": 285,
+  "sha256": "5f94c79b3960d55cd226beaf8eb10835c7792b472f7b5a75ba9f54180376f175"
+ },
+ "scenarios/a-sender-reboot-only-attempt2/01-queue-acceptance-only.json": {
+  "bytes": 1350,
+  "sha256": "8abd51f37c3fc34589d64eebef1ca4b20a848990e20dc33b3b54ea24eef119f9"
+ },
+ "scenarios/a-sender-reboot-only-attempt2/02-collector-snapshot.json": {
+  "bytes": 1244,
+  "sha256": "9f6abc022ed8b9b133f086d9a4b18aeb0f7c445543d240e17a96fbca7b9fcb09"
+ },
+ "scenarios/a-sender-reboot-only-attempt2/03-sender-snapshot.json": {
+  "bytes": 4084,
+  "sha256": "261137c3874dc2fc3b4a3fefdc6d1fb7cade4d9bbd4d592c49c291304f01d42b"
+ },
+ "scenarios/a-sender-reboot-only-attempt2/dedup-proof.json": {
+  "bytes": 937,
+  "sha256": "e52052693b874eab67cff033812d24e9a53e5047db74ea1a9989f313b0221b7e"
+ },
+ "scenarios/a-sender-reboot-only-attempt2/fault-reboot-1793538481.json": {
+  "bytes": 137,
+  "sha256": "e8c5cc23a3d8352a3a156da9c42752b8d72fb82a066baa96a9236f1e3dfcad90"
+ },
+ "scenarios/a-sender-reboot-only-attempt2/plan.json": {
+  "bytes": 6033,
+  "sha256": "c4f395de428af413d996861c33d3e34df3a531c6417aa6ad3cd776ee7a466a06"
+ },
+ "scenarios/a-sender-reboot-only-attempt2/queue-identities.jsonl": {
+  "bytes": 55741,
+  "sha256": "29230608a4a95e9b5755c6aa91c857bedc0407c22d1ad4add90988e87ee4e770"
+ },
+ "scenarios/a-sender-reboot-only-attempt2/reconciliation-1.json": {
+  "bytes": 2367,
+  "sha256": "b6d626f44ae1a85d388264edc1f3891145ca34eb780042fc637f5a7a1d9885a2"
+ },
+ "scenarios/a-sender-reboot-only-attempt2/sentinel-rows-1-query.json": {
+  "bytes": 2081,
+  "sha256": "5294d6d8e32c2817c959433badc9c1f57ffa6f9cdb01e0578f648d30c598f385"
+ },
+ "scenarios/a-sender-reboot-only-attempt2/sentinel-rows-1.jsonl": {
+  "bytes": 89154,
+  "sha256": "2745b087345fea35b072db8a892d297d06dc22497ec31a102cab21e1b763a00f"
+ },
+ "scenarios/a-sender-reboot-only-attempt2/summary.json": {
+  "bytes": 1821,
+  "sha256": "c381240087d2056775b30a1c529322d24fda7771e2aaad5dba561c123110b7dc"
+ },
+ "scenarios/a-sender-stop-start-attempt1/00-native-generator-result.json": {
+  "bytes": 287,
+  "sha256": "80dc06bc387639d331fa4ba4812b418f4c2f0f9ba8bead77bc552ce3eb772e02"
+ },
+ "scenarios/a-sender-stop-start-attempt1/01-queue-acceptance-only.json": {
+  "bytes": 1355,
+  "sha256": "070a6886ede7ac79853b786a0347c96f971c5986799ca6e43f541bb2100d3042"
+ },
+ "scenarios/a-sender-stop-start-attempt1/02-collector-snapshot.json": {
+  "bytes": 1247,
+  "sha256": "492727e5941906d80ad6f27a500ef9eaadf011c4173f81589ed49db806ae1595"
+ },
+ "scenarios/a-sender-stop-start-attempt1/03-sender-snapshot.json": {
+  "bytes": 4179,
+  "sha256": "6bba9d8eb0267df2f1eb3c1dfd508cdfee6106376a4358f3df345b887de90bf7"
+ },
+ "scenarios/a-sender-stop-start-attempt1/dedup-proof.json": {
+  "bytes": 939,
+  "sha256": "0fbc2f399f5cbe7d3c09224df611691f4d9eed9de86e89258354bdf990cad5f6"
+ },
+ "scenarios/a-sender-stop-start-attempt1/fault-stop-start-1793541479.json": {
+  "bytes": 142,
+  "sha256": "7f853c63070847b477466363ee949cc61b136f4ba55bd88a7737e7ad02faeb48"
+ },
+ "scenarios/a-sender-stop-start-attempt1/plan.json": {
+  "bytes": 6030,
+  "sha256": "3fa4eef33b5df72116d23dbc3c1c492674d0fcefbbb1aa6fb5ddd5ff38f17465"
+ },
+ "scenarios/a-sender-stop-start-attempt1/queue-identities.jsonl": {
+  "bytes": 167214,
+  "sha256": "0b3ae39cf92596e059ddbcb1ff17274be0672406477f3c3a9b1835f740464f64"
+ },
+ "scenarios/a-sender-stop-start-attempt1/reconciliation-1.json": {
+  "bytes": 2374,
+  "sha256": "b7384af74b88e58fd0211802d6cbf0a219c477c304d3a26c69cbf831a9d7f8c4"
+ },
+ "scenarios/a-sender-stop-start-attempt1/sentinel-rows-1-query.json": {
+  "bytes": 2081,
+  "sha256": "635afd08c19081446091937241deb0303385b3850e24875374f98393518a94cc"
+ },
+ "scenarios/a-sender-stop-start-attempt1/sentinel-rows-1.jsonl": {
+  "bytes": 267612,
+  "sha256": "5577bd52c9591a19ae9f992a62da5a63f94c5f35f573484c5933c369e76ec6e9"
+ },
+ "scenarios/a-sender-stop-start-attempt1/summary.json": {
+  "bytes": 1830,
+  "sha256": "f5911c3c234b398efa2055778b7979a6fabbe00939b6bbc5d3a6f7c92f82400c"
+ },
+ "scenarios/a-sigkill-attempt1/00-native-generator-result.json": {
+  "bytes": 287,
+  "sha256": "5c470f58a313c854df08ae3c28ffa448b9028682ddc1b73e94accd430fe4662c"
+ },
+ "scenarios/a-sigkill-attempt1/01-queue-acceptance-only.json": {
+  "bytes": 1344,
+  "sha256": "66d31ff64ecfb994a96bf391962d3ba153c1109f5cdd7213290afe1917b1836d"
+ },
+ "scenarios/a-sigkill-attempt1/02-collector-snapshot.json": {
+  "bytes": 1246,
+  "sha256": "e9e8c10f9f31818bd7a8522a7ef78d6ef6fa2bffc3624f146f7363248a6a7cf5"
+ },
+ "scenarios/a-sigkill-attempt1/03-sender-snapshot.json": {
+  "bytes": 2300,
+  "sha256": "e4d3c0e19febf66e1185ea57c7173b748194d8bf4f76ddf702d6341d9a92d9af"
+ },
+ "scenarios/a-sigkill-attempt1/dedup-proof.json": {
+  "bytes": 930,
+  "sha256": "2bf8056f2c4b03c8fc588872650e07528bbdd33297d3a365f158497dbaf49849"
+ },
+ "scenarios/a-sigkill-attempt1/fault-kill-1793533339.json": {
+  "bytes": 155,
+  "sha256": "f5c49002d059db62c364e3976e0afbd72d130dc300fc6088b3e4f6e23c7dd530"
+ },
+ "scenarios/a-sigkill-attempt1/plan.json": {
+  "bytes": 5946,
+  "sha256": "58f3ada417ca6b4c420c0e0873227bd8921fc23ac075c5f7d05e5df95322f129"
+ },
+ "scenarios/a-sigkill-attempt1/queue-identities.jsonl": {
+  "bytes": 557193,
+  "sha256": "c2f690a3628ba0588ee57d7e1d34447b1038f81eeafcf7f450c5d9d1d6ada9cd"
+ },
+ "scenarios/a-sigkill-attempt1/reconciliation-1.json": {
+  "bytes": 2366,
+  "sha256": "37f96ce52fcd9f9c83edc1bb6c74b7c706aeab8861d4bd81f8a45cceac2befee"
+ },
+ "scenarios/a-sigkill-attempt1/sentinel-rows-1-query.json": {
+  "bytes": 2071,
+  "sha256": "df4cd0af3ecabbe25b29df5cd1e78ae8b68ee729f7afeca419bdecae77c1234c"
+ },
+ "scenarios/a-sigkill-attempt1/sentinel-rows-1.jsonl": {
+  "bytes": 891244,
+  "sha256": "4c37a1f01b078ac1c8a43075472ebf75284d4870bce32a9e91c7015f0926e137"
+ },
+ "scenarios/a-sigkill-attempt1/summary.json": {
+  "bytes": 1797,
+  "sha256": "36b0ce42caa916afa9a0f69ec7d8078c8421c4fe72e12a13b298dfc6087384af"
+ },
+ "scenarios/a-sigkill-attempt2/00-native-generator-result.json": {
+  "bytes": 288,
+  "sha256": "f2132f39044c702250ba8138e9f8378ae24cdf49a937bd0c25f8d918f07292da"
+ },
+ "scenarios/a-sigkill-attempt2/01-queue-acceptance-only.json": {
+  "bytes": 1343,
+  "sha256": "40529ab7f2a1213dec4437b66be59f63f0ae7af6fddcbc7577ccd09426f944d8"
+ },
+ "scenarios/a-sigkill-attempt2/02-collector-snapshot.json": {
+  "bytes": 1246,
+  "sha256": "920b33a5644faae471b6a86f46c41ba58556a51ec39446362e0c2c00631fa306"
+ },
+ "scenarios/a-sigkill-attempt2/03-sender-snapshot.json": {
+  "bytes": 4184,
+  "sha256": "49f6a8f30a2ef1c68d2f5afa56fd16effd4b0ae7014359e3cdc838b3ae5c7e53"
+ },
+ "scenarios/a-sigkill-attempt2/dedup-proof.json": {
+  "bytes": 930,
+  "sha256": "a52f47e3376fc6328ad1f2047084920cd7ba790d6c95c04374813dc5c5a7a95d"
+ },
+ "scenarios/a-sigkill-attempt2/fault-kill-1793539067.json": {
+  "bytes": 156,
+  "sha256": "40e4de140c41fa0025132780c2003106cd28d34ae222009b04cc823e86036322"
+ },
+ "scenarios/a-sigkill-attempt2/plan.json": {
+  "bytes": 5955,
+  "sha256": "3cf584b8bc775c372d785ecec33f71b72a2038205239918acd795f69ca0e52ec"
+ },
+ "scenarios/a-sigkill-attempt2/queue-identities.jsonl": {
+  "bytes": 557266,
+  "sha256": "9dc6c0d8c8e0c2b00fe2712dc7908f4ca4c057ec892cf3c44338faf3bd51e736"
+ },
+ "scenarios/a-sigkill-attempt2/reconciliation-1.json": {
+  "bytes": 2364,
+  "sha256": "ecf54bb099790729a73cff535f74ea91042270eec21d35d7a9562d38f3709584"
+ },
+ "scenarios/a-sigkill-attempt2/sentinel-rows-1-query.json": {
+  "bytes": 2071,
+  "sha256": "3283f6f893fa247ff983c4781004ae96643f7abb8877a5c575f3afb0514abce9"
+ },
+ "scenarios/a-sigkill-attempt2/sentinel-rows-1.jsonl": {
+  "bytes": 891024,
+  "sha256": "1b8cba698fc6244400aa01f94d6e47bdea2004c4e225c399dcd54972d4e2afb8"
+ },
+ "scenarios/a-sigkill-attempt2/summary.json": {
+  "bytes": 1823,
+  "sha256": "6812de594033e9374208286716c9d3ebe54462dfbb3651be1ab21bf80e4d2774"
+ },
+ "scenarios/a-steady-attempt1/00-native-generator-result.json": {
+  "bytes": 283,
+  "sha256": "147616215570f100b7b70e168fac4f2ad3200bf8afb290f6574812ddc1415a7d"
+ },
+ "scenarios/a-steady-attempt1/01-queue-acceptance-only.json": {
+  "bytes": 1335,
+  "sha256": "d9b4df6c947654711bd489c1c8b10caba32257c79e5a1fccd4bdae889125d093"
+ },
+ "scenarios/a-steady-attempt1/02-collector-snapshot.json": {
+  "bytes": 1238,
+  "sha256": "05bd864c42df8f73b78e3751960b17c8d3a17ec1153dba08fb232283990c184b"
+ },
+ "scenarios/a-steady-attempt1/03-sender-snapshot.json": {
+  "bytes": 2294,
+  "sha256": "3e91f1206f7b8d72dc413f859f3711a413f240a0e9fcaa437743a7d56e20bc15"
+ },
+ "scenarios/a-steady-attempt1/dedup-proof.json": {
+  "bytes": 925,
+  "sha256": "8d403d198e8c0f084366b2e03b143df9d797675b53dc72c523e6efbc7b3d1d3c"
+ },
+ "scenarios/a-steady-attempt1/plan.json": {
+  "bytes": 5281,
+  "sha256": "882fda2e3ce8c248bee1cbb241274cfcf6f1209bdd472b8838f92f8165724a5e"
+ },
+ "scenarios/a-steady-attempt1/queue-identities.jsonl": {
+  "bytes": 55738,
+  "sha256": "bd528ca3abf02661ac6b6a199c36bfd0292dd51d483e05df4092aa7425a6dc85"
+ },
+ "scenarios/a-steady-attempt1/reconciliation-1.json": {
+  "bytes": 2355,
+  "sha256": "c036a280c7485f7168395a79bc2ed55b674e1501809e9e479251ebfd0647ca3b"
+ },
+ "scenarios/a-steady-attempt1/sentinel-rows-1-query.json": {
+  "bytes": 2069,
+  "sha256": "4341abdb777b60b229d5a9fe2bc8290148727aa16b6e25ce176a92a27d5a78a8"
+ },
+ "scenarios/a-steady-attempt1/sentinel-rows-1.jsonl": {
+  "bytes": 89070,
+  "sha256": "e9fea0437a9eb3d9dc84660e23e382b04d7c23d4e8ea208e11a7ed2128c80daf"
+ },
+ "scenarios/a-steady-attempt1/summary.json": {
+  "bytes": 1416,
+  "sha256": "16b8e0c2b326478ee01773c83f8446da7d4122fee4e484b00267cd9d5dacf828"
+ },
+ "scenarios/a-steady-attempt2/00-native-generator-result.json": {
+  "bytes": 284,
+  "sha256": "2b01fd12633d1eaf092cd0990fa2e2a721a2d37f1db0a92b2e99cf3b97ce6009"
+ },
+ "scenarios/a-steady-attempt2/01-queue-acceptance-only.json": {
+  "bytes": 1344,
+  "sha256": "f41d61f544e42590c280ee3771584b95101da67b69f7d25ce08cf5efe637c3c0"
+ },
+ "scenarios/a-steady-attempt2/02-collector-snapshot.json": {
+  "bytes": 1250,
+  "sha256": "d01790101e8ea0ba7db6b7e7a464085e100a8bcb32d5f2958b1e9722399120c0"
+ },
+ "scenarios/a-steady-attempt2/03-sender-snapshot.json": {
+  "bytes": 4184,
+  "sha256": "6ab16470169148b3b9595e4a899a4e08c4cd4f9e48117e3c3e9209ff82a78f78"
+ },
+ "scenarios/a-steady-attempt2/dedup-proof.json": {
+  "bytes": 925,
+  "sha256": "63801520f7efe58a90e3bb0c81fe256e6175316d5f9604992791ec8da5b95be1"
+ },
+ "scenarios/a-steady-attempt2/plan.json": {
+  "bytes": 5290,
+  "sha256": "12826128a97e3f87bd23e9fd1dbe7c4c72b91c63a9d91bd50cd3c1a3a1361526"
+ },
+ "scenarios/a-steady-attempt2/queue-identities.jsonl": {
+  "bytes": 55741,
+  "sha256": "1410726eebbc8e6e22a41f11f560f2fd05ba2a1f305d87cc2855e752e96531ea"
+ },
+ "scenarios/a-steady-attempt2/reconciliation-1.json": {
+  "bytes": 2355,
+  "sha256": "38a5bae661decf5f65364d3b71c7aa80bb7b3e7c6a13aad1ec2d4230779c4393"
+ },
+ "scenarios/a-steady-attempt2/sentinel-rows-1-query.json": {
+  "bytes": 2069,
+  "sha256": "a8cc8b760b1e2f9dd5dd994191aa46c83fa462e10a5304fe5aef4110cf66654f"
+ },
+ "scenarios/a-steady-attempt2/sentinel-rows-1.jsonl": {
+  "bytes": 89176,
+  "sha256": "b06782a410fd8da4a5cb7f72277ed079ff1daaf8832f6d038e0488185f0346b7"
+ },
+ "scenarios/a-steady-attempt2/summary.json": {
+  "bytes": 1442,
+  "sha256": "00554358d37211948fd5ad4459d8d321debd0d4fa84cc95ac6d2d504e308b71c"
+ },
+ "scenarios/b-idle-gaps-attempt1/00-native-generator-result.json": {
+  "bytes": 284,
+  "sha256": "4559ddb7a5784ac6b14e4cdf176a9e28c42c7bdb0012a516c192ec2b7c97f613"
+ },
+ "scenarios/b-idle-gaps-attempt1/01-native-generator-result.json": {
+  "bytes": 285,
+  "sha256": "457fb5cbfcf8cae33e96c7b68587600c54a32c16a9ec08edf93a2459122c8225"
+ },
+ "scenarios/b-idle-gaps-attempt1/02-native-generator-result.json": {
+  "bytes": 285,
+  "sha256": "2ce7f386e2a70b69374f42bb635b4209203eae41882961af72d1e8f834c41326"
+ },
+ "scenarios/b-idle-gaps-attempt1/03-native-generator-result.json": {
+  "bytes": 288,
+  "sha256": "b56a202019069041cc809b87931b825184dc049ee2d577733533826f2b6a1f67"
+ },
+ "scenarios/b-idle-gaps-attempt1/04-queue-acceptance-only.json": {
+  "bytes": 1359,
+  "sha256": "584b11fd26a22ee38fcbebd97e62ee2198e193722a91b8eee933a2067d273dde"
+ },
+ "scenarios/b-idle-gaps-attempt1/05-queue-acceptance-only.json": {
+  "bytes": 1358,
+  "sha256": "a3dfec7752c0ab52c4fef739545962c55b5e3d0720598c9044cb18b413974a8c"
+ },
+ "scenarios/b-idle-gaps-attempt1/06-queue-acceptance-only.json": {
+  "bytes": 1359,
+  "sha256": "1982c7e9f74cd3e27e83826e927e00a86b44e8c8cce4ca9357d3f02ac0475eb4"
+ },
+ "scenarios/b-idle-gaps-attempt1/07-queue-acceptance-only.json": {
+  "bytes": 1368,
+  "sha256": "3f9506e1685de90bfea40cf53f2e6b2d93238921666d74f4638dca396dcbb35b"
+ },
+ "scenarios/b-idle-gaps-attempt1/08-collector-snapshot.json": {
+  "bytes": 1250,
+  "sha256": "267676153996872a8e496966fcbb5e59594f01c5dfda9531d171149a8f4bd142"
+ },
+ "scenarios/b-idle-gaps-attempt1/09-sender-snapshot.json": {
+  "bytes": 4189,
+  "sha256": "8c7788e792b3fd86f17a06e9bef0d347533442b7d22667a04584f07ab3af35d5"
+ },
+ "scenarios/b-idle-gaps-attempt1/dedup-proof.json": {
+  "bytes": 931,
+  "sha256": "9f998227961285d396bb6174e2bedd35b390ae58bb625aae26ec07ae26fdb386"
+ },
+ "scenarios/b-idle-gaps-attempt1/plan.json": {
+  "bytes": 11843,
+  "sha256": "dc09284e6aeb7818e5547993b17faccdd26aa61954c46fdae60131e86cb5c802"
+ },
+ "scenarios/b-idle-gaps-attempt1/queue-identities.jsonl": {
+  "bytes": 585271,
+  "sha256": "2a2d7ee8b0b0aa0c2d3bf9171818ac90833a7927ac569767d1a4b935897ecfa8"
+ },
+ "scenarios/b-idle-gaps-attempt1/reconciliation-1.json": {
+  "bytes": 2657,
+  "sha256": "472a264aa91d6491843333dce49145d7e855367b534b787ff3a8218f07b0c2c9"
+ },
+ "scenarios/b-idle-gaps-attempt1/sentinel-rows-1-query.json": {
+  "bytes": 2073,
+  "sha256": "1f78d634daa6af15266a13ae2049c07c80413cc5c4604dc9fb04fc768f213fa8"
+ },
+ "scenarios/b-idle-gaps-attempt1/sentinel-rows-1.jsonl": {
+  "bytes": 936132,
+  "sha256": "61db28d91c82fb5b603af2a609150a02fae199f6efee407961149ecef3e0fd2b"
+ },
+ "scenarios/b-idle-gaps-attempt1/summary.json": {
+  "bytes": 2538,
+  "sha256": "9210dfa636cd1cbb3aa0eb7534c22570850728c9e0da2c1d8d3580725f6cec30"
+ },
+ "summary.json": {
+  "bytes": 42023,
+  "sha256": "dc1e59e88705e21f555fedc3085aeabcb3098ef5126108f4ef6018cc62e55ffe"
+ }
+}

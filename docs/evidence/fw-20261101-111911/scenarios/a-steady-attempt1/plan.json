@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "scenario": "a-steady",
+  "mode": "plan-only",
+  "startEpoch": 1793532797.832,
+  "sequenceOffset": 0,
+  "collectNotBeforeEpoch": 1793532862.832,
+  "steps": [
+    {
+      "offsetSeconds": 0,
+      "host": "Sender",
+      "command": [
+        "/Library/Developer/CommandLineTools/usr/bin/python3",
+        "<operator-home>/.t3/worktrees/Bower/t3-b0e21826/lab/aws/monitoring/run.py",
+        "Sender",
+        "<operator-home>/.t3/worktrees/Bower/t3-b0e21826/lab/aws/scripts/syslog-host.sh",
+        "--state",
+        "<operator-home>/.bower-lab/bower-fw-20261101-111911/state.json",
+        "--timeout",
+        "900",
+        "--env",
+        "BOWER_LAB_HOST=SenderR",
+        "--env",
+        "BOWER_ARGS=generate --kind nft --track A --first 200000 --count 600 --rate 10 --label a-steady --at 1793532797.832",
+        "--env",
+        "BOWER_UNIT=a-steady"
+      ]
+    }
+  ],
+  "collect": [
+    {
+      "kind": "native-generator-result",
+      "command": [
+        "/Library/Developer/CommandLineTools/usr/bin/python3",
+        "<operator-home>/.t3/worktrees/Bower/t3-b0e21826/lab/aws/monitoring/run.py",
+        "Sender",
+        "<operator-home>/.t3/worktrees/Bower/t3-b0e21826/lab/aws/scripts/syslog-host.sh",
+        "--state",
+        "<operator-home>/.bower-lab/bower-fw-20261101-111911/state.json",
+        "--timeout",
+        "900",
+        "--env",
+        "BOWER_LAB_HOST=SenderR",
+        "--env",
+        "BOWER_ARGS=result --label generate-a-steady"
+      ]
+    },
+    {
+      "kind": "queue-acceptance-only",
+      "command": [
+        "/Library/Developer/CommandLineTools/usr/bin/python3",
+        "<operator-home>/.t3/worktrees/Bower/t3-b0e21826/lab/aws/monitoring/run.py",
+        "Linux",
+        "<operator-home>/.t3/worktrees/Bower/t3-b0e21826/lab/aws/scripts/syslog-host.sh",
+        "--state",
+        "<operator-home>/.bower-lab/bower-fw-20261101-111911/state.json",
+        "--timeout",
+        "660",
+        "--env",
+        "BOWER_LAB_HOST=CollectorA",
+        "--env",
+        "BOWER_ARGS=measure --scenario a-steady --listeners a13 --blocks nft:A:200000:600 --settle 60"
+      ]
+    },
+    {
+      "kind": "collector-snapshot",
+      "command": [
+        "/Library/Developer/CommandLineTools/usr/bin/python3",
+        "<operator-home>/.t3/worktrees/Bower/t3-b0e21826/lab/aws/monitoring/run.py",
+        "Linux",
+        "<operator-home>/.t3/worktrees/Bower/t3-b0e21826/lab/aws/scripts/syslog-host.sh",
+        "--state",
+        "<operator-home>/.bower-lab/bower-fw-20261101-111911/state.json",
+        "--timeout",
+        "900",
+        "--env",
+        "BOWER_LAB_HOST=CollectorA",
+        "--env",
+        "BOWER_ARGS=snapshot"
+      ]
+    },
+    {
+      "kind": "sender-snapshot",
+      "command": [
+        "/Library/Developer/CommandLineTools/usr/bin/python3",
+        "<operator-home>/.t3/worktrees/Bower/t3-b0e21826/lab/aws/monitoring/run.py",
+        "Sender",
+        "<operator-home>/.t3/worktrees/Bower/t3-b0e21826/lab/aws/scripts/syslog-host.sh",
+        "--state",
+        "<operator-home>/.bower-lab/bower-fw-20261101-111911/state.json",
+        "--timeout",
+        "900",
+        "--env",
+        "BOWER_LAB_HOST=SenderR",
+        "--env",
+        "BOWER_ARGS=sender-snapshot --since 11m"
+      ]
+    }
+  ],
+  "expectedBlocks": [
+    "nft:A:200000:600"
+  ],
+  "generations": [
+    {
+      "kind": "nft",
+      "track": "A",
+      "first": 200000,
+      "count": 600,
+      "rate": 10.0,
+      "label": "a-steady",
+      "startEpoch": 1793532797.832
+    }
+  ],
+  "listener": "a13",
+  "collectorIp": "172.31.61.34",
+  "senderIp": "172.31.61.65",
+  "sentinelQualified": false,
+  "destinationRequirement": "Independently query the exact expected EventId set in Sentinel; local delivered_at is not proof.",
+  "prerequisites": [
+    "EnableSyslogSender=true and exact run ownership checked by monitoring/run.py.",
+    "Reviewed syslog-host.py installed on Linux and Sender from their SHA-256-pinned qualification setup manifests.",
+    "Linux collector listens on TCP 6514 with mutual TLS, listener a13, idleTimeoutSeconds=0, and the signed syslog-reliability pack.",
+    "Use BOWER_QUEUE_PATH=/var/lib/bower/queue.db, the path inspected by the existing queue measurement helper.",
+    "Sender has the nftables fixture and rsyslog recommended profile forwarding only a13; qualify the actual TLS version/ticket configuration.",
+    "Keep the final Sentinel destination configuration; do not invoke the old configure-collector command, which selects ama-spool.",
+    "No other scenario runs concurrently; idle-gaps must remain free of unrelated events on this listener.",
+    "Retention must preserve all scoped queue identities until collection; preserve earlier evidence and use a disjoint sequence offset for a new candidate."
+  ],
+  "runId": "bower-fw-20261101-111911",
+  "collectorId": "bower-fw-20261101-111911-linux",
+  "sourceSha256": {
+    "syslog-campaign.py": "85b862a48f270837fe316e81f23b948c65cf9fee06e3439669f24228da37b97c",
+    "syslog-host.py": "d3498ab74e7a9cfab6e9e54afcc962dcfbacb0dc7ebb5d4f902cdbcbb09e5268",
+    "syslog-host.sh": "d72790c1c34cbf18059e35c3c6309215e1b64c84a1120c4185087fb53f0cdd27",
+    "syslog-lab.py": "f88b3807be1fc3a9dcd35c778da60e20b3170323c5505a2b708747726434b138"
+  }
+}

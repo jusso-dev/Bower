@@ -1,0 +1,106 @@
+{
+  "scenario": "a-sender-reboot",
+  "attempt": 1,
+  "runId": "bower-fw-20261101-111911",
+  "planSha256": "ea45bb298fa768d539236f5ee8923696635abb4ed4b4001df875d8b8d4b451ab",
+  "startEpoch": 1793534524.802,
+  "expectedBlocks": [
+    "nft:A:480000:600"
+  ],
+  "steps": [
+    {
+      "host": "Linux",
+      "offsetSeconds": 0,
+      "exit": 0,
+      "output": null
+    },
+    {
+      "host": "Sender",
+      "offsetSeconds": 5,
+      "exit": 0,
+      "output": null
+    },
+    {
+      "host": "Sender",
+      "offsetSeconds": 80,
+      "exit": 0,
+      "output": null
+    }
+  ],
+  "collected": [
+    {
+      "kind": "native-generator-result",
+      "file": "00-native-generator-result.json",
+      "exit": 0
+    },
+    {
+      "kind": "queue-acceptance-only",
+      "file": "01-queue-acceptance-only.json",
+      "exit": 0
+    },
+    {
+      "kind": "collector-snapshot",
+      "file": "02-collector-snapshot.json",
+      "exit": 0
+    },
+    {
+      "kind": "sender-snapshot",
+      "file": "03-sender-snapshot.json",
+      "exit": 0
+    }
+  ],
+  "faults": [
+    {
+      "action": "stop-start",
+      "host": "Linux",
+      "record": {
+        "duration": 240,
+        "endedAt": "2026-11-01T12:06:09.957209+00:00",
+        "fault": "stop-start",
+        "startedAt": "2026-11-01T12:02:04.823507+00:00"
+      }
+    },
+    {
+      "action": "reboot",
+      "host": "Sender",
+      "record": {
+        "duration": 0,
+        "endedAt": "2026-11-01T12:03:24.846182+00:00",
+        "fault": "reboot",
+        "startedAt": "2026-11-01T12:03:24.811630+00:00"
+      }
+    }
+  ],
+  "queueExport": {
+    "key": "results/firewall/a-sender-reboot/ea45bb298fa768d539236f5ee8923696635abb4ed4b4001df875d8b8d4b451ab/b6dc0dbdf1094aa28781cf672094744e.json",
+    "sha256": "ea8a2723782b04fa49ada8dfb3ab32ced5e9e28166e55f0637f84bf6303ca255",
+    "bytes": 80062,
+    "rows": 594,
+    "malformedRows": 0,
+    "destinationQueryVerified": false
+  },
+  "queries": [
+    {
+      "query": 1,
+      "exit": 1,
+      "report": "reconciliation-1.json",
+      "strictPass": false,
+      "identityComplete": false
+    },
+    {
+      "query": 2,
+      "exit": 1,
+      "report": "reconciliation-2.json",
+      "strictPass": false,
+      "identityComplete": false
+    },
+    {
+      "query": 3,
+      "exit": 1,
+      "report": "reconciliation-3.json",
+      "strictPass": false,
+      "identityComplete": false
+    }
+  ],
+  "finishedAt": "2026-11-01T12:33:41.185177+00:00"
+}

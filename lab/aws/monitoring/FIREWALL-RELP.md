@@ -83,6 +83,8 @@ restarts Bower, so the queue reaches its page limit during the block. The scenar
 - `relp-evidence.py <private-root> docs/evidence/fw-<run>` publishes sanitized copies: plans
   with operator paths replaced (original and public hashes recorded), reports, JSONL identity
   sidecars and `public-manifest.json`. It refuses any file still containing a local path.
+  After adding the README, `cleanup.json` and operational records, regenerate
+  `public-manifest.json` over every file so it covers them too.
 - `sender-shutdown-diag.sh` (read only) prints rsyslog's own service messages around the
   previous boot, the queue directory and the version; it located the 8.2204.0 shutdown loss.
 

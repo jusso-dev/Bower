@@ -1,0 +1,56 @@
+{
+ "listeners": {
+  "a13": {
+   "accepted": 100,
+   "deliveredToSpool": 100,
+   "expected": 100,
+   "malformedKeys": 0,
+   "missing": 0,
+   "missingSample": [],
+   "missingSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+ },
+ "measuredAt": "2026-11-01T16:00:59.681141+00:00",
+ "passed": true,
+ "scenario": "b-idle-gaps-before-gaps",
+ "syslog": {
+  "a13": {
+   "activeConnections": 1,
+   "bytesReceived": 4817444,
+   "clientCertificateAuthorityNotAfter": "2026-11-04T11:22:55+00:00",
+   "clientRevocationListNextUpdate": null,
+   "connectionsAccepted": 3,
+   "connectionsRejected": 0,
+   "drainedFrames": 0,
+   "dropped": 0,
+   "duplicates": 128,
+   "framesReceived": 19200,
+   "framingErrors": 0,
+   "halfCloses": 0,
+   "lastFrameAt": "2026-11-01T16:00:23.0059257+00:00",
+   "malformed": 0,
+   "notRouted": 0,
+   "notSelected": 0,
+   "oversized": 0,
+   "parserErrors": 0,
+   "peerResets": 0,
+   "queued": 19072,
+   "receiveErrors": 0,
+   "rejected": 0,
+   "relpAcknowledged": 19200,
+   "relpBusyCloses": 0,
+   "relpServerCloses": 0,
+   "retries": 0,
+   "sendersDenied": 0,
+   "serverCertificateNotAfter": "2026-11-03T11:22:55+00:00",
+   "submitFailures": 0,
+   "suppressed": 0,
+   "timeouts": 0,
+   "tlsHandshakeFailures": 0,
+   "tlsReloadFailures": 0,
+   "tlsReloads": 0,
+   "tlsRevoked": 0,
+   "tlsSessionsClosed": 0
+  }
+ }
+}

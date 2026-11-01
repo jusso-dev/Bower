@@ -1,0 +1,8 @@
+First run of relp-cleanup-audit.py (preserved; superseded by cleanup.json):
+34 checks, allAbsent=false, remaining: "AWS resources tagged RunId (tagging API, region)".
+The tagging API still listed i-0f41641df895c024c, i-09076358fe836a227, vol-0974ce026d279720e and
+vol-041433c14d4616ee5, while the exact-ID checks in the same run showed both instances
+terminated and both volumes absent (describe-volumes: not found). The audit now re-verifies every
+ARN the tagging API lists with its own describe call and fails on any not confirmed gone. The
+same first run also mislabelled the successful EBS-snapshot query as "query failed" (the check
+itself passed); the label logic was corrected. The second run passed all 34 checks.

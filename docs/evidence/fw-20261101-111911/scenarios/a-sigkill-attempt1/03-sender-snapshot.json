@@ -1,0 +1,119 @@
+{
+ "at": "2026-11-01T11:43:34.986409+00:00",
+ "bootId": "297743ac-e5ba-431f-bd14-16fb14eb82dc",
+ "impstats": {
+  "a13 queue/core.queue": {
+   "discarded.full": 0,
+   "discarded.nf": 0,
+   "enqueued": 6600,
+   "full": 0,
+   "maxqsize": 661,
+   "size": 0
+  },
+  "a13 queue[DA]/core.queue": {
+   "discarded.full": 0,
+   "discarded.nf": 0,
+   "enqueued": 0,
+   "full": 0,
+   "maxqsize": 0,
+   "size": 0
+  },
+  "a13/core.action": {
+   "failed": 0,
+   "processed": 6600,
+   "resumed": 1,
+   "suspended": 0,
+   "suspended.duration": 0
+  },
+  "action-1-builtin:omfile/core.action": {
+   "failed": 0,
+   "processed": 0,
+   "resumed": 0,
+   "suspended": 0,
+   "suspended.duration": 0
+  },
+  "action-2-builtin:omfile/core.action": {
+   "failed": 0,
+   "processed": 1713,
+   "resumed": 0,
+   "suspended": 0,
+   "suspended.duration": 0
+  },
+  "action-3-builtin:omfile/core.action": {
+   "failed": 0,
+   "processed": 16,
+   "resumed": 0,
+   "suspended": 0,
+   "suspended.duration": 0
+  },
+  "action-4-builtin:omfile/core.action": {
+   "failed": 0,
+   "processed": 0,
+   "resumed": 0,
+   "suspended": 0,
+   "suspended.duration": 0
+  },
+  "action-5-builtin:omfile/core.action": {
+   "failed": 0,
+   "processed": 0,
+   "resumed": 0,
+   "suspended": 0,
+   "suspended.duration": 0
+  },
+  "action-6-builtin:omusrmsg/core.action": {
+   "failed": 0,
+   "processed": 0,
+   "resumed": 0,
+   "suspended": 0,
+   "suspended.duration": 0
+  },
+  "action-7-builtin:omfile/core.action": {
+   "failed": 0,
+   "processed": 0,
+   "resumed": 0,
+   "suspended": 0,
+   "suspended.duration": 0
+  },
+  "action-8-builtin:omfile/core.action": {
+   "failed": 0,
+   "processed": 0,
+   "resumed": 0,
+   "suspended": 0,
+   "suspended.duration": 0
+  },
+  "imjournal/imjournal": {
+   "discarded": 0,
+   "disk_usage_bytes": 8388608,
+   "failed": 0,
+   "poll_failed": 0,
+   "ratelimit_discarded_in_interval": 0,
+   "read": 8431,
+   "recovery_attempts": 0,
+   "rotations": 1,
+   "submitted": 8431
+  },
+  "main Q/core.queue": {
+   "discarded.full": 0,
+   "discarded.nf": 0,
+   "enqueued": 8431,
+   "full": 0,
+   "maxqsize": 183,
+   "size": 0
+  }
+ },
+ "nft": {
+  "A": 6600,
+  "B": 0
+ },
+ "queueFiles": {},
+ "rsyslog": "active",
+ "rsyslogDiagnostics": {},
+ "sockets": [
+  {
+   "port": 6514,
+   "recvQ": 5120,
+   "sendQ": 0,
+   "state": "ESTAB"
+  }
+ ]
+}

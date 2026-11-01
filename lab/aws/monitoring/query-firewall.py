@@ -60,7 +60,7 @@ def digest(ids):
 def expected(plan):
     if (plan.get('schemaVersion') != 1 or not re.fullmatch(r'bower-(?:ws6|fw)-\d{8}-\d{6}', plan.get('runId', ''))
             or plan.get('collectorId') != plan['runId'] + '-linux' or plan.get('listener') != 'a13'
-            or not re.fullmatch(r'[ab]-[a-z-]+', plan.get('scenario', ''))):
+            or not re.fullmatch(r'[ab]-[a-z0-9-]+', plan.get('scenario', ''))):
         raise ValueError('Invalid plan ownership or scope')
     start, end = plan['startEpoch'], plan['collectNotBeforeEpoch']
     if not all(isinstance(x, (int, float)) and math.isfinite(x) for x in (start, end)) or not 0 < end - start <= 14400:
