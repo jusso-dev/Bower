@@ -1,0 +1,83 @@
+{
+ "destinationQueriedAt": "2026-10-31T09:37:06.314734+00:00",
+ "destinationQuery": "BowerSecurity_CL | where TimeGenerated > datetime(2026-10-31T08:00:00Z) | summarize rows=count() by CollectorId, EventId (independent verifier identity)",
+ "windows": {
+  "sourceOfTruth": "DC Security log 4625 (logon type 3, valid IP) since 2026-10-31T08:35:00Z, identities via the signed parser and default identity redaction",
+  "native": 13021,
+  "nativeIdentitySetSha256": "c8f08f12a89dd05a37a47f68060ceeb7754475686fc3e13284422a157ee4bc08",
+  "redactionChangedIds": 5,
+  "acceptedWecFinal": 8459,
+  "acceptedWec2Final": 12024,
+  "acceptedUnion": 13021,
+  "nativeNotAccepted": 0,
+  "destinationDistinct": 13021,
+  "destinationRows": 15699,
+  "destinationIdentitySetSha256": "c8f08f12a89dd05a37a47f68060ceeb7754475686fc3e13284422a157ee4bc08",
+  "nativeMissingAtDestination": 0,
+  "unexpectedAtDestination": 0,
+  "duplicateIds": 2678,
+  "extraRows": 2678,
+  "restoredBackupPendingRows": 2678,
+  "beforeRecoveredDisk": {
+   "destinationDistinct": 12959,
+   "nativeMissingAtDestination": 62,
+   "missingDcRecordRange": [
+    389184,
+    389309
+   ]
+  }
+ },
+ "linux": {
+  "collector": "linux-ws4",
+  "streams": [
+   {
+    "stream": "s1",
+    "firstSequence": 0,
+    "lastSequence": 15520,
+    "accepted": 15521,
+    "gapsInAccepted": 0,
+    "acceptedMissingAtDestination": 0,
+    "redactionChangedIds": 10,
+    "acceptedIdentitySetSha256": "30777e6c51ff01f886f9797db69673bf4a7ab3662d05b247415da09c3a8d05a1"
+   },
+   {
+    "stream": "s1b",
+    "firstSequence": 14319,
+    "lastSequence": 22524,
+    "accepted": 8206,
+    "gapsInAccepted": 0,
+    "acceptedMissingAtDestination": 0,
+    "redactionChangedIds": 3,
+    "acceptedIdentitySetSha256": "3995929e3665def5fe23fa5e74bfe2298bae30aa6b20507c7fc9561d6a5f5f27"
+   }
+  ],
+  "queueIdsUnexplained": 0,
+  "destinationDistinct": 23727,
+  "destinationRows": 25736,
+  "unexpectedAtDestination": 0,
+  "duplicateIds": 2009,
+  "extraRows": 2009,
+  "restoredBackupPendingRows": 2009,
+  "destinationIdentitySetSha256": "ea9bba2a994f70c11e6871096ca8f0b06ffa2db1ccf24fb51450073e89a84fd9"
+ },
+ "docker": {
+  "collector": "linux-docker-ws4",
+  "streams": [
+   {
+    "stream": "s2",
+    "firstSequence": 0,
+    "lastSequence": 6239,
+    "accepted": 6240,
+    "gapsInAccepted": 0,
+    "acceptedMissingAtDestination": 0,
+    "redactionChangedIds": 7,
+    "acceptedIdentitySetSha256": "983d72be079b87e5053e107f7b96948e5929381f3caf616b150abe792e7667a0"
+   }
+  ],
+  "queueIdsUnexplained": 0,
+  "destinationDistinct": 6240,
+  "destinationRows": 6240,
+  "unexpectedAtDestination": 0,
+  "duplicateIds": 0
+ }
+}

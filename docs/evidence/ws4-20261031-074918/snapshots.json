@@ -1,0 +1,6752 @@
+{
+ "d02-264-blocked": {
+  "capturedAt": "2026-10-31T09:12:11.549120+00:00",
+  "config": {
+   "bower.env": "1b7a94009494d1c512033657f74fa5a5c371e05aba3e2478821841ebbab5680c",
+   "ca": "18719919e1a93ecee35c13db950dd886009eee37b6a9215f98a5b591c9416340",
+   "pack": "1e7f68c126135812413e991bca41410035c0116b220306bfd4f9a8750caff0f0",
+   "serverCert": "9e35c04486aba75f54fb65ff9d1b816bbfe4a221bd846c04b19afb885b0a8411",
+   "syslog.json": "c0e8699ed9b83fa54201f32b6aebf192513fe07af36cf755d879ec971430049a",
+   "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca"
+  },
+  "executableSha256": "aa195614be72d65c7fc68a07bf1a26f6114145df29a3ac93426bd68c00b22c43",
+  "host": "ip-172-31-244-199.ap-southeast-2.compute.internal",
+  "label": "d02-264-blocked",
+  "package": "bower-collector-0.1.0~dev.277-1.x86_64",
+  "permissions": {
+   "/etc/bower": {
+    "mode": "0o755",
+    "owner": "root:root"
+   },
+   "/etc/bower/bower.env": {
+    "mode": "0o640",
+    "owner": "root:bower"
+   },
+   "/etc/bower/secrets": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/etc/bower/tls": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/var/lib/bower": {
+    "mode": "0o700",
+    "owner": "bower:bower"
+   },
+   "/var/lib/docker/volumes/bower-data/_data/queue.db": {
+    "mode": "0o600",
+    "owner": "UNKNOWN:UNKNOWN"
+   },
+   "/var/spool/bower": {
+    "mode": "0o750",
+    "owner": "bower:bower"
+   }
+  },
+  "queue": {
+   "attemptsAboveOne": 0,
+   "cursors": [],
+   "deadLettered": 0,
+   "delivered": 1072,
+   "files": {
+    "queue.db": 4952064,
+    "queue.db-shm": 32768,
+    "queue.db-wal": 86552
+   },
+   "identitySetSha256": "eae65e67b23fb2c8f623bb7b47e11093d95e4477495e76d23adf8eaf01554ded",
+   "integrity": "ok",
+   "ledgerHead": [
+    2122,
+    "f59a5909b49af7229cc334c70542acea1833ec507656463c96a489b0703f2908"
+   ],
+   "queued": 550,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 2122,
+   "uploading": 500
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "active": "inactive",
+   "activeEnter": "",
+   "mainPid": "0",
+   "nRestarts": "0",
+   "user": "bower"
+  },
+  "status": {
+   "delivery": {
+    "decreases": 1,
+    "inFlight": 1,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 85,
+    "latencySpikes": 0,
+    "limit": 2,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 1046,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 1
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 1072,
+    "oldestUndelivered": "2026-10-31T09:10:26.5809405+00:00",
+    "queued": 550,
+    "retrying": 0,
+    "totalBytes": 2437302,
+    "undeliveredBytes": 1205996,
+    "uploading": 500
+   },
+   "status": "healthy",
+   "syslog": [
+    {
+     "activeConnections": 1,
+     "bytesReceived": 357508,
+     "connectionsAccepted": 1,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 0,
+     "endpoint": "0.0.0.0:6514",
+     "framesReceived": 2122,
+     "framingErrors": 0,
+     "id": "firewall",
+     "lastFrameAt": "2026-10-31T09:12:11.4802753+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "protocol": "tls",
+     "queued": 2122,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 0,
+     "tlsHandshakeFailures": 0
+    }
+   ]
+  },
+  "unitSha256": "2dd1ff300cf261453c86caf3ed1bed7d7b1cd3a880d1ee0385e11c70b0fb47e4"
+ },
+ "d04-277-blocked": {
+  "capturedAt": "2026-10-31T09:12:38.738924+00:00",
+  "config": {
+   "bower.env": "1b7a94009494d1c512033657f74fa5a5c371e05aba3e2478821841ebbab5680c",
+   "ca": "18719919e1a93ecee35c13db950dd886009eee37b6a9215f98a5b591c9416340",
+   "pack": "1e7f68c126135812413e991bca41410035c0116b220306bfd4f9a8750caff0f0",
+   "serverCert": "9e35c04486aba75f54fb65ff9d1b816bbfe4a221bd846c04b19afb885b0a8411",
+   "syslog.json": "c0e8699ed9b83fa54201f32b6aebf192513fe07af36cf755d879ec971430049a",
+   "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca"
+  },
+  "executableSha256": "aa195614be72d65c7fc68a07bf1a26f6114145df29a3ac93426bd68c00b22c43",
+  "host": "ip-172-31-244-199.ap-southeast-2.compute.internal",
+  "label": "d04-277-blocked",
+  "package": "bower-collector-0.1.0~dev.277-1.x86_64",
+  "permissions": {
+   "/etc/bower": {
+    "mode": "0o755",
+    "owner": "root:root"
+   },
+   "/etc/bower/bower.env": {
+    "mode": "0o640",
+    "owner": "root:bower"
+   },
+   "/etc/bower/secrets": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/etc/bower/tls": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/var/lib/bower": {
+    "mode": "0o700",
+    "owner": "bower:bower"
+   },
+   "/var/lib/docker/volumes/bower-data/_data/queue.db": {
+    "mode": "0o600",
+    "owner": "UNKNOWN:UNKNOWN"
+   },
+   "/var/spool/bower": {
+    "mode": "0o750",
+    "owner": "bower:bower"
+   }
+  },
+  "queue": {
+   "attemptsAboveOne": 0,
+   "cursors": [],
+   "deadLettered": 0,
+   "delivered": 1072,
+   "files": {
+    "queue.db": 5468160,
+    "queue.db-shm": 32768,
+    "queue.db-wal": 49472
+   },
+   "identitySetSha256": "546c4ed79b1798353ecdf90dd8fcad3d5776c8cd83b04803dbc914106e84844b",
+   "integrity": "ok",
+   "ledgerHead": [
+    2393,
+    "2f5b81e3a98aea36c8b5d2bb870a1591d7e60f69ef8ca020c5d70de5f3372e2e"
+   ],
+   "queued": 321,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 2393,
+   "uploading": 1000
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "active": "inactive",
+   "activeEnter": "",
+   "mainPid": "0",
+   "nRestarts": "0",
+   "user": "bower"
+  },
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 1,
+    "increases": 0,
+    "latencyEwmaMilliseconds": null,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 0,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 1072,
+    "oldestUndelivered": "2026-10-31T09:10:26.5809405+00:00",
+    "queued": 321,
+    "retrying": 0,
+    "totalBytes": 2748640,
+    "undeliveredBytes": 1517334,
+    "uploading": 1000
+   },
+   "status": "healthy",
+   "syslog": [
+    {
+     "activeConnections": 1,
+     "bytesReceived": 233727,
+     "connectionsAccepted": 1,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 1199,
+     "endpoint": "0.0.0.0:6514",
+     "framesReceived": 1383,
+     "framingErrors": 0,
+     "id": "firewall",
+     "lastFrameAt": "2026-10-31T09:12:38.6802703+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "protocol": "tls",
+     "queued": 183,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 0,
+     "tlsHandshakeFailures": 0
+    }
+   ]
+  },
+  "unitSha256": "2dd1ff300cf261453c86caf3ed1bed7d7b1cd3a880d1ee0385e11c70b0fb47e4"
+ },
+ "d05-final": {
+  "capturedAt": "2026-10-31T09:21:00.560262+00:00",
+  "config": {
+   "bower.env": "1b7a94009494d1c512033657f74fa5a5c371e05aba3e2478821841ebbab5680c",
+   "ca": "18719919e1a93ecee35c13db950dd886009eee37b6a9215f98a5b591c9416340",
+   "pack": "1e7f68c126135812413e991bca41410035c0116b220306bfd4f9a8750caff0f0",
+   "serverCert": "9e35c04486aba75f54fb65ff9d1b816bbfe4a221bd846c04b19afb885b0a8411",
+   "syslog.json": "c0e8699ed9b83fa54201f32b6aebf192513fe07af36cf755d879ec971430049a",
+   "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca"
+  },
+  "executableSha256": "aa195614be72d65c7fc68a07bf1a26f6114145df29a3ac93426bd68c00b22c43",
+  "host": "ip-172-31-244-199.ap-southeast-2.compute.internal",
+  "label": "d05-final",
+  "package": "bower-collector-0.1.0~dev.277-1.x86_64",
+  "permissions": {
+   "/etc/bower": {
+    "mode": "0o755",
+    "owner": "root:root"
+   },
+   "/etc/bower/bower.env": {
+    "mode": "0o640",
+    "owner": "root:bower"
+   },
+   "/etc/bower/secrets": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/etc/bower/tls": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/var/lib/bower": {
+    "mode": "0o700",
+    "owner": "bower:bower"
+   },
+   "/var/lib/docker/volumes/bower-data/_data/queue.db": {
+    "mode": "0o600",
+    "owner": "UNKNOWN:UNKNOWN"
+   },
+   "/var/spool/bower": {
+    "mode": "0o750",
+    "owner": "bower:bower"
+   }
+  },
+  "queue": {
+   "attemptsAboveOne": 500,
+   "cursors": [],
+   "deadLettered": 0,
+   "delivered": 6240,
+   "files": {
+    "queue.db": 16510976,
+    "queue.db-shm": 32768,
+    "queue.db-wal": 4152
+   },
+   "identitySetSha256": "983d72be079b87e5053e107f7b96948e5929381f3caf616b150abe792e7667a0",
+   "integrity": "ok",
+   "ledgerHead": [
+    6240,
+    "7157761b484f3ac515f0eab6254547b171c01f6e69bd434ef6e7c43ebca557be"
+   ],
+   "queued": 0,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 6240,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "active": "inactive",
+   "activeEnter": "",
+   "mainPid": "0",
+   "nRestarts": "0",
+   "user": "bower"
+  },
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 81,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 3000,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 6240,
+    "oldestUndelivered": null,
+    "queued": 0,
+    "retrying": 0,
+    "totalBytes": 7167648,
+    "undeliveredBytes": 0,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "syslog": [
+    {
+     "activeConnections": 0,
+     "bytesReceived": 883701,
+     "connectionsAccepted": 1,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 1199,
+     "endpoint": "0.0.0.0:6514",
+     "framesReceived": 5229,
+     "framingErrors": 0,
+     "id": "firewall",
+     "lastFrameAt": "2026-10-31T09:19:03.2802414+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "protocol": "tls",
+     "queued": 4030,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 0,
+     "tlsHandshakeFailures": 0
+    }
+   ]
+  },
+  "unitSha256": "2dd1ff300cf261453c86caf3ed1bed7d7b1cd3a880d1ee0385e11c70b0fb47e4"
+ },
+ "l01-264-connected": {
+  "capturedAt": "2026-10-31T08:39:32.362582+00:00",
+  "config": {
+   "bower.env": "1b7a94009494d1c512033657f74fa5a5c371e05aba3e2478821841ebbab5680c",
+   "ca": "18719919e1a93ecee35c13db950dd886009eee37b6a9215f98a5b591c9416340",
+   "pack": "1e7f68c126135812413e991bca41410035c0116b220306bfd4f9a8750caff0f0",
+   "serverCert": "9e35c04486aba75f54fb65ff9d1b816bbfe4a221bd846c04b19afb885b0a8411",
+   "syslog.json": "c0e8699ed9b83fa54201f32b6aebf192513fe07af36cf755d879ec971430049a",
+   "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca"
+  },
+  "executableSha256": "d6229ee2b106ee9cd1fe615f4c9f15e3f5036bc26b0cad0aa04b62cf8424e977",
+  "host": "ip-172-31-244-199.ap-southeast-2.compute.internal",
+  "label": "l01-264-connected",
+  "package": "bower-collector-0.1.0~dev.264-1.x86_64",
+  "permissions": {
+   "/etc/bower": {
+    "mode": "0o755",
+    "owner": "root:root"
+   },
+   "/etc/bower/bower.env": {
+    "mode": "0o640",
+    "owner": "root:bower"
+   },
+   "/etc/bower/secrets": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/etc/bower/tls": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/var/lib/bower": {
+    "mode": "0o700",
+    "owner": "bower:bower"
+   },
+   "/var/lib/bower/queue.db": {
+    "mode": "0o600",
+    "owner": "bower:bower"
+   },
+   "/var/spool/bower": {
+    "mode": "0o750",
+    "owner": "bower:bower"
+   }
+  },
+  "queue": {
+   "attemptsAboveOne": 0,
+   "cursors": [],
+   "deadLettered": 0,
+   "delivered": 408,
+   "files": {
+    "queue.db": 1175552,
+    "queue.db-shm": 32768,
+    "queue.db-wal": 37112
+   },
+   "identitySetSha256": "4ef710580427874e0d7e312c71f64598d3fac914b90f0c4a79f2138fb9be9399",
+   "integrity": "ok",
+   "ledgerHead": [
+    410,
+    "417d1dcf0fce305981e5c2f244939d1298d327192d088f2ffe6222442b261810"
+   ],
+   "queued": 2,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 410,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "active": "active",
+   "activeEnter": "Sat 2026-10-31 08:28:53 UTC",
+   "mainPid": "31819",
+   "nRestarts": "9",
+   "user": "bower"
+  },
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 58,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 143,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 408,
+    "oldestUndelivered": "2026-10-31T08:39:32.1229597+00:00",
+    "queued": 2,
+    "retrying": 0,
+    "totalBytes": 468105,
+    "undeliveredBytes": 2284,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "syslog": [
+    {
+     "activeConnections": 1,
+     "bytesReceived": 68770,
+     "connectionsAccepted": 1,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 0,
+     "endpoint": "0.0.0.0:6514",
+     "framesReceived": 410,
+     "framingErrors": 0,
+     "id": "firewall",
+     "lastFrameAt": "2026-10-31T08:39:32.2236326+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "protocol": "tls",
+     "queued": 410,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 0,
+     "tlsHandshakeFailures": 0
+    }
+   ]
+  },
+  "unitSha256": "2dd1ff300cf261453c86caf3ed1bed7d7b1cd3a880d1ee0385e11c70b0fb47e4"
+ },
+ "l02-264-blocked": {
+  "capturedAt": "2026-10-31T08:41:49.896970+00:00",
+  "config": {
+   "bower.env": "1b7a94009494d1c512033657f74fa5a5c371e05aba3e2478821841ebbab5680c",
+   "ca": "18719919e1a93ecee35c13db950dd886009eee37b6a9215f98a5b591c9416340",
+   "pack": "1e7f68c126135812413e991bca41410035c0116b220306bfd4f9a8750caff0f0",
+   "serverCert": "9e35c04486aba75f54fb65ff9d1b816bbfe4a221bd846c04b19afb885b0a8411",
+   "syslog.json": "c0e8699ed9b83fa54201f32b6aebf192513fe07af36cf755d879ec971430049a",
+   "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca"
+  },
+  "executableSha256": "d6229ee2b106ee9cd1fe615f4c9f15e3f5036bc26b0cad0aa04b62cf8424e977",
+  "host": "ip-172-31-244-199.ap-southeast-2.compute.internal",
+  "label": "l02-264-blocked",
+  "package": "bower-collector-0.1.0~dev.264-1.x86_64",
+  "permissions": {
+   "/etc/bower": {
+    "mode": "0o755",
+    "owner": "root:root"
+   },
+   "/etc/bower/bower.env": {
+    "mode": "0o640",
+    "owner": "root:bower"
+   },
+   "/etc/bower/secrets": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/etc/bower/tls": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/var/lib/bower": {
+    "mode": "0o700",
+    "owner": "bower:bower"
+   },
+   "/var/lib/bower/queue.db": {
+    "mode": "0o600",
+    "owner": "bower:bower"
+   },
+   "/var/spool/bower": {
+    "mode": "0o750",
+    "owner": "bower:bower"
+   }
+  },
+  "queue": {
+   "attemptsAboveOne": 0,
+   "cursors": [],
+   "deadLettered": 0,
+   "delivered": 1237,
+   "files": {
+    "queue.db": 4427776,
+    "queue.db-shm": 32768,
+    "queue.db-wal": 53592
+   },
+   "identitySetSha256": "0e913c33f6628bee86b8c8da7129f3a7d02c4a197a477c4f48530fdb82277e84",
+   "integrity": "ok",
+   "ledgerHead": [
+    1786,
+    "53e15ce681ee33b45e867e9b28d93ead889cc3d8b794931efaf3d15c33871675"
+   ],
+   "queued": 539,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 1786,
+   "uploading": 10
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "active": "active",
+   "activeEnter": "Sat 2026-10-31 08:28:53 UTC",
+   "mainPid": "31819",
+   "nRestarts": "9",
+   "user": "bower"
+  },
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 1,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 60,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 414,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 1237,
+    "oldestUndelivered": "2026-10-31T08:40:55.0229779+00:00",
+    "queued": 539,
+    "retrying": 0,
+    "totalBytes": 2038988,
+    "undeliveredBytes": 626726,
+    "uploading": 10
+   },
+   "status": "healthy",
+   "syslog": [
+    {
+     "activeConnections": 1,
+     "bytesReceived": 300724,
+     "connectionsAccepted": 1,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 0,
+     "endpoint": "0.0.0.0:6514",
+     "framesReceived": 1786,
+     "framingErrors": 0,
+     "id": "firewall",
+     "lastFrameAt": "2026-10-31T08:41:49.822306+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "protocol": "tls",
+     "queued": 1786,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 0,
+     "tlsHandshakeFailures": 0
+    }
+   ]
+  },
+  "unitSha256": "2dd1ff300cf261453c86caf3ed1bed7d7b1cd3a880d1ee0385e11c70b0fb47e4"
+ },
+ "l04-270-blocked": {
+  "capturedAt": "2026-10-31T08:42:08.564744+00:00",
+  "config": {
+   "bower.env": "1b7a94009494d1c512033657f74fa5a5c371e05aba3e2478821841ebbab5680c",
+   "ca": "18719919e1a93ecee35c13db950dd886009eee37b6a9215f98a5b591c9416340",
+   "pack": "1e7f68c126135812413e991bca41410035c0116b220306bfd4f9a8750caff0f0",
+   "serverCert": "9e35c04486aba75f54fb65ff9d1b816bbfe4a221bd846c04b19afb885b0a8411",
+   "syslog.json": "c0e8699ed9b83fa54201f32b6aebf192513fe07af36cf755d879ec971430049a",
+   "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca"
+  },
+  "executableSha256": "676d426f7192f833396e8c689d260cac120a06b440a76bd0ea92c2f9a1ed498a",
+  "host": "ip-172-31-244-199.ap-southeast-2.compute.internal",
+  "label": "l04-270-blocked",
+  "package": "bower-collector-0.1.0~dev.270-1.x86_64",
+  "permissions": {
+   "/etc/bower": {
+    "mode": "0o755",
+    "owner": "root:root"
+   },
+   "/etc/bower/bower.env": {
+    "mode": "0o640",
+    "owner": "root:bower"
+   },
+   "/etc/bower/secrets": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/etc/bower/tls": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/var/lib/bower": {
+    "mode": "0o700",
+    "owner": "bower:bower"
+   },
+   "/var/lib/bower/queue.db": {
+    "mode": "0o600",
+    "owner": "bower:bower"
+   },
+   "/var/spool/bower": {
+    "mode": "0o750",
+    "owner": "bower:bower"
+   }
+  },
+  "queue": {
+   "attemptsAboveOne": 0,
+   "cursors": [],
+   "deadLettered": 0,
+   "delivered": 1237,
+   "files": {
+    "queue.db": 4771840,
+    "queue.db-shm": 32768,
+    "queue.db-wal": 53592
+   },
+   "identitySetSha256": "19684fe7c77a962eb745209f3c011a5eebb4e47e66d6ca04bbcb6af1c41eae38",
+   "integrity": "ok",
+   "ledgerHead": [
+    1973,
+    "9f114399d98658811d503a03b03765fae1f75a8c0f007c168f792e24d6317435"
+   ],
+   "queued": 726,
+   "retrying": 10,
+   "schemaVersion": 5,
+   "total": 1973,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "active": "active",
+   "activeEnter": "Sat 2026-10-31 08:42:00 UTC",
+   "mainPid": "32546",
+   "nRestarts": "0",
+   "user": "bower"
+  },
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": null,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 0,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 1237,
+    "oldestUndelivered": "2026-10-31T08:40:55.0229779+00:00",
+    "queued": 726,
+    "retrying": 10,
+    "totalBytes": 2252454,
+    "undeliveredBytes": 840192,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "syslog": [
+    {
+     "activeConnections": 1,
+     "bytesReceived": 215341,
+     "connectionsAccepted": 1,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 1199,
+     "endpoint": "0.0.0.0:6514",
+     "framesReceived": 1276,
+     "framingErrors": 0,
+     "id": "firewall",
+     "lastFrameAt": "2026-10-31T08:42:08.525783+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "protocol": "tls",
+     "queued": 77,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 0,
+     "tlsHandshakeFailures": 0
+    }
+   ]
+  },
+  "unitSha256": "2dd1ff300cf261453c86caf3ed1bed7d7b1cd3a880d1ee0385e11c70b0fb47e4"
+ },
+ "l05-270-pre-kill": {
+  "capturedAt": "2026-10-31T08:45:10.727211+00:00",
+  "config": {
+   "bower.env": "1b7a94009494d1c512033657f74fa5a5c371e05aba3e2478821841ebbab5680c",
+   "ca": "18719919e1a93ecee35c13db950dd886009eee37b6a9215f98a5b591c9416340",
+   "pack": "1e7f68c126135812413e991bca41410035c0116b220306bfd4f9a8750caff0f0",
+   "serverCert": "9e35c04486aba75f54fb65ff9d1b816bbfe4a221bd846c04b19afb885b0a8411",
+   "syslog.json": "c0e8699ed9b83fa54201f32b6aebf192513fe07af36cf755d879ec971430049a",
+   "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca"
+  },
+  "executableSha256": "676d426f7192f833396e8c689d260cac120a06b440a76bd0ea92c2f9a1ed498a",
+  "host": "ip-172-31-244-199.ap-southeast-2.compute.internal",
+  "label": "l05-270-pre-kill",
+  "package": "bower-collector-0.1.0~dev.270-1.x86_64",
+  "permissions": {
+   "/etc/bower": {
+    "mode": "0o755",
+    "owner": "root:root"
+   },
+   "/etc/bower/bower.env": {
+    "mode": "0o640",
+    "owner": "root:bower"
+   },
+   "/etc/bower/secrets": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/etc/bower/tls": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/var/lib/bower": {
+    "mode": "0o700",
+    "owner": "bower:bower"
+   },
+   "/var/lib/bower/queue.db": {
+    "mode": "0o600",
+    "owner": "bower:bower"
+   },
+   "/var/spool/bower": {
+    "mode": "0o750",
+    "owner": "bower:bower"
+   }
+  },
+  "queue": {
+   "attemptsAboveOne": 0,
+   "cursors": [],
+   "deadLettered": 0,
+   "delivered": 1237,
+   "files": {
+    "queue.db": 8589312,
+    "queue.db-shm": 32768,
+    "queue.db-wal": 49472
+   },
+   "identitySetSha256": "bb1f16e4c3662d5c19049cf170c5e68341b0d1f5711909676a5cec3f54f22e26",
+   "integrity": "ok",
+   "ledgerHead": [
+    3794,
+    "f86d1ba91ce056a46afa787ee50a9b72c2e13d04c0fb8cbbafb1d1bf10aea2c7"
+   ],
+   "queued": 2057,
+   "retrying": 500,
+   "schemaVersion": 5,
+   "total": 3794,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "active": "active",
+   "activeEnter": "Sat 2026-10-31 08:42:00 UTC",
+   "mainPid": "32546",
+   "nRestarts": "0",
+   "user": "bower"
+  },
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": null,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 0,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 1237,
+    "oldestUndelivered": "2026-10-31T08:40:55.0229779+00:00",
+    "queued": 2057,
+    "retrying": 500,
+    "totalBytes": 4331590,
+    "undeliveredBytes": 2919328,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "syslog": [
+    {
+     "activeConnections": 1,
+     "bytesReceived": 523090,
+     "connectionsAccepted": 1,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 1199,
+     "endpoint": "0.0.0.0:6514",
+     "framesReceived": 3097,
+     "framingErrors": 0,
+     "id": "firewall",
+     "lastFrameAt": "2026-10-31T08:45:10.6223301+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "protocol": "tls",
+     "queued": 1898,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 0,
+     "tlsHandshakeFailures": 0
+    }
+   ]
+  },
+  "unitSha256": "2dd1ff300cf261453c86caf3ed1bed7d7b1cd3a880d1ee0385e11c70b0fb47e4"
+ },
+ "l07-after-sigkill": {
+  "capturedAt": "2026-10-31T08:45:54.754366+00:00",
+  "config": {
+   "bower.env": "1b7a94009494d1c512033657f74fa5a5c371e05aba3e2478821841ebbab5680c",
+   "ca": "18719919e1a93ecee35c13db950dd886009eee37b6a9215f98a5b591c9416340",
+   "pack": "1e7f68c126135812413e991bca41410035c0116b220306bfd4f9a8750caff0f0",
+   "serverCert": "9e35c04486aba75f54fb65ff9d1b816bbfe4a221bd846c04b19afb885b0a8411",
+   "syslog.json": "c0e8699ed9b83fa54201f32b6aebf192513fe07af36cf755d879ec971430049a",
+   "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca"
+  },
+  "executableSha256": "676d426f7192f833396e8c689d260cac120a06b440a76bd0ea92c2f9a1ed498a",
+  "host": "ip-172-31-244-199.ap-southeast-2.compute.internal",
+  "label": "l07-after-sigkill",
+  "package": "bower-collector-0.1.0~dev.270-1.x86_64",
+  "permissions": {
+   "/etc/bower": {
+    "mode": "0o755",
+    "owner": "root:root"
+   },
+   "/etc/bower/bower.env": {
+    "mode": "0o640",
+    "owner": "root:bower"
+   },
+   "/etc/bower/secrets": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/etc/bower/tls": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/var/lib/bower": {
+    "mode": "0o700",
+    "owner": "bower:bower"
+   },
+   "/var/lib/bower/queue.db": {
+    "mode": "0o600",
+    "owner": "bower:bower"
+   },
+   "/var/spool/bower": {
+    "mode": "0o750",
+    "owner": "bower:bower"
+   }
+  },
+  "queue": {
+   "attemptsAboveOne": 0,
+   "cursors": [],
+   "deadLettered": 0,
+   "delivered": 4233,
+   "files": {
+    "queue.db": 11251712,
+    "queue.db-shm": 32768,
+    "queue.db-wal": 28872
+   },
+   "identitySetSha256": "c8f7b3eebc958a486390fe56d994a5e91666d1054ca84d485c61124d73dc188b",
+   "integrity": "ok",
+   "ledgerHead": [
+    4235,
+    "c4c40211edf00659bf009b0fd6d1cd041ae51c0807c2450d8d05cab8e3878fa4"
+   ],
+   "queued": 0,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 4234,
+   "uploading": 1
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "active": "active",
+   "activeEnter": "Sat 2026-10-31 08:45:28 UTC",
+   "mainPid": "32906",
+   "nRestarts": "1",
+   "user": "bower"
+  },
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 1,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 84,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 192,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 4233,
+    "oldestUndelivered": "2026-10-31T08:45:54.6231756+00:00",
+    "queued": 1,
+    "retrying": 0,
+    "totalBytes": 4835028,
+    "undeliveredBytes": 2284,
+    "uploading": 1
+   },
+   "status": "healthy",
+   "syslog": [
+    {
+     "activeConnections": 1,
+     "bytesReceived": 255190,
+     "connectionsAccepted": 1,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 1199,
+     "endpoint": "0.0.0.0:6514",
+     "framesReceived": 1510,
+     "framingErrors": 0,
+     "id": "firewall",
+     "lastFrameAt": "2026-10-31T08:45:54.7223285+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "protocol": "tls",
+     "queued": 311,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 0,
+     "tlsHandshakeFailures": 0
+    }
+   ]
+  },
+  "unitSha256": "2dd1ff300cf261453c86caf3ed1bed7d7b1cd3a880d1ee0385e11c70b0fb47e4"
+ },
+ "l08-pre-poweroff": {
+  "capturedAt": "2026-10-31T08:47:31.738320+00:00",
+  "config": {
+   "bower.env": "1b7a94009494d1c512033657f74fa5a5c371e05aba3e2478821841ebbab5680c",
+   "ca": "18719919e1a93ecee35c13db950dd886009eee37b6a9215f98a5b591c9416340",
+   "pack": "1e7f68c126135812413e991bca41410035c0116b220306bfd4f9a8750caff0f0",
+   "serverCert": "9e35c04486aba75f54fb65ff9d1b816bbfe4a221bd846c04b19afb885b0a8411",
+   "syslog.json": "c0e8699ed9b83fa54201f32b6aebf192513fe07af36cf755d879ec971430049a",
+   "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca"
+  },
+  "executableSha256": "676d426f7192f833396e8c689d260cac120a06b440a76bd0ea92c2f9a1ed498a",
+  "host": "ip-172-31-244-199.ap-southeast-2.compute.internal",
+  "label": "l08-pre-poweroff",
+  "package": "bower-collector-0.1.0~dev.270-1.x86_64",
+  "permissions": {
+   "/etc/bower": {
+    "mode": "0o755",
+    "owner": "root:root"
+   },
+   "/etc/bower/bower.env": {
+    "mode": "0o640",
+    "owner": "root:bower"
+   },
+   "/etc/bower/secrets": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/etc/bower/tls": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/var/lib/bower": {
+    "mode": "0o700",
+    "owner": "bower:bower"
+   },
+   "/var/lib/bower/queue.db": {
+    "mode": "0o600",
+    "owner": "bower:bower"
+   },
+   "/var/spool/bower": {
+    "mode": "0o750",
+    "owner": "bower:bower"
+   }
+  },
+  "queue": {
+   "attemptsAboveOne": 0,
+   "cursors": [],
+   "deadLettered": 0,
+   "delivered": 5203,
+   "files": {
+    "queue.db": 13824000,
+    "queue.db-shm": 32768,
+    "queue.db-wal": 28872
+   },
+   "identitySetSha256": "e9157c2e1b4a9a3e533c4b5e5f6a4a631e2a37a24ff72b1901f212065a5e28e3",
+   "integrity": "ok",
+   "ledgerHead": [
+    5204,
+    "26f926aefb77dbabb37dbd41b0929c7e63bc1c9f7cdd27d0164fd999b1dda7af"
+   ],
+   "queued": 1,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 5204,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "active": "active",
+   "activeEnter": "Sat 2026-10-31 08:45:28 UTC",
+   "mainPid": "32906",
+   "nRestarts": "1",
+   "user": "bower"
+  },
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 1,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 104,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 1009,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 5203,
+    "oldestUndelivered": "2026-10-31T08:47:31.6236287+00:00",
+    "queued": 0,
+    "retrying": 0,
+    "totalBytes": 5941180,
+    "undeliveredBytes": 1142,
+    "uploading": 1
+   },
+   "status": "healthy",
+   "syslog": [
+    {
+     "activeConnections": 1,
+     "bytesReceived": 419120,
+     "connectionsAccepted": 1,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 1199,
+     "endpoint": "0.0.0.0:6514",
+     "framesReceived": 2480,
+     "framingErrors": 0,
+     "id": "firewall",
+     "lastFrameAt": "2026-10-31T08:47:31.7222767+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "protocol": "tls",
+     "queued": 1280,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 0,
+     "tlsHandshakeFailures": 0
+    }
+   ]
+  },
+  "unitSha256": "2dd1ff300cf261453c86caf3ed1bed7d7b1cd3a880d1ee0385e11c70b0fb47e4"
+ },
+ "l09-after-poweron": {
+  "capturedAt": "2026-10-31T08:50:34.922834+00:00",
+  "config": {
+   "bower.env": "1b7a94009494d1c512033657f74fa5a5c371e05aba3e2478821841ebbab5680c",
+   "ca": "18719919e1a93ecee35c13db950dd886009eee37b6a9215f98a5b591c9416340",
+   "pack": "1e7f68c126135812413e991bca41410035c0116b220306bfd4f9a8750caff0f0",
+   "serverCert": "9e35c04486aba75f54fb65ff9d1b816bbfe4a221bd846c04b19afb885b0a8411",
+   "syslog.json": "c0e8699ed9b83fa54201f32b6aebf192513fe07af36cf755d879ec971430049a",
+   "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca"
+  },
+  "executableSha256": "676d426f7192f833396e8c689d260cac120a06b440a76bd0ea92c2f9a1ed498a",
+  "host": "ip-172-31-244-199.ap-southeast-2.compute.internal",
+  "label": "l09-after-poweron",
+  "package": "bower-collector-0.1.0~dev.270-1.x86_64",
+  "permissions": {
+   "/etc/bower": {
+    "mode": "0o755",
+    "owner": "root:root"
+   },
+   "/etc/bower/bower.env": {
+    "mode": "0o640",
+    "owner": "root:bower"
+   },
+   "/etc/bower/secrets": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/etc/bower/tls": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/var/lib/bower": {
+    "mode": "0o700",
+    "owner": "bower:bower"
+   },
+   "/var/lib/bower/queue.db": {
+    "mode": "0o600",
+    "owner": "bower:bower"
+   },
+   "/var/spool/bower": {
+    "mode": "0o750",
+    "owner": "bower:bower"
+   }
+  },
+  "queue": {
+   "attemptsAboveOne": 1,
+   "cursors": [],
+   "deadLettered": 0,
+   "delivered": 7022,
+   "files": {
+    "queue.db": 18628608,
+    "queue.db-shm": 32768,
+    "queue.db-wal": 78312
+   },
+   "identitySetSha256": "701d00ffc128d6ed2c7b509e3700f9704d5d3a2522e435a0132ea44684b13e7c",
+   "integrity": "ok",
+   "ledgerHead": [
+    7036,
+    "c7f3b9d82543f750207800370d65ecb7cdde8f3ea37fba6d757ab6026836886c"
+   ],
+   "queued": 4,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 7026,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "active": "active",
+   "activeEnter": "Sat 2026-10-31 08:48:22 UTC",
+   "mainPid": "1947",
+   "nRestarts": "0",
+   "user": "bower"
+  },
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 1,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 89,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 764,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 7034,
+    "oldestUndelivered": "2026-10-31T08:50:34.7230106+00:00",
+    "queued": 1,
+    "retrying": 0,
+    "totalBytes": 8032548,
+    "undeliveredBytes": 2284,
+    "uploading": 1
+   },
+   "status": "healthy",
+   "syslog": [
+    {
+     "activeConnections": 1,
+     "bytesReceived": 490945,
+     "connectionsAccepted": 1,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 1198,
+     "endpoint": "0.0.0.0:6514",
+     "framesReceived": 2905,
+     "framingErrors": 0,
+     "id": "firewall",
+     "lastFrameAt": "2026-10-31T08:50:34.82235+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "protocol": "tls",
+     "queued": 1707,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 0,
+     "tlsHandshakeFailures": 0
+    }
+   ]
+  },
+  "unitSha256": "2dd1ff300cf261453c86caf3ed1bed7d7b1cd3a880d1ee0385e11c70b0fb47e4"
+ },
+ "l10-blocked-pre-poweroff": {
+  "capturedAt": "2026-10-31T08:53:37.744835+00:00",
+  "config": {
+   "bower.env": "1b7a94009494d1c512033657f74fa5a5c371e05aba3e2478821841ebbab5680c",
+   "ca": "18719919e1a93ecee35c13db950dd886009eee37b6a9215f98a5b591c9416340",
+   "pack": "1e7f68c126135812413e991bca41410035c0116b220306bfd4f9a8750caff0f0",
+   "serverCert": "9e35c04486aba75f54fb65ff9d1b816bbfe4a221bd846c04b19afb885b0a8411",
+   "syslog.json": "c0e8699ed9b83fa54201f32b6aebf192513fe07af36cf755d879ec971430049a",
+   "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca"
+  },
+  "executableSha256": "676d426f7192f833396e8c689d260cac120a06b440a76bd0ea92c2f9a1ed498a",
+  "host": "ip-172-31-244-199.ap-southeast-2.compute.internal",
+  "label": "l10-blocked-pre-poweroff",
+  "package": "bower-collector-0.1.0~dev.270-1.x86_64",
+  "permissions": {
+   "/etc/bower": {
+    "mode": "0o755",
+    "owner": "root:root"
+   },
+   "/etc/bower/bower.env": {
+    "mode": "0o640",
+    "owner": "root:bower"
+   },
+   "/etc/bower/secrets": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/etc/bower/tls": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/var/lib/bower": {
+    "mode": "0o700",
+    "owner": "bower:bower"
+   },
+   "/var/lib/bower/queue.db": {
+    "mode": "0o600",
+    "owner": "bower:bower"
+   },
+   "/var/spool/bower": {
+    "mode": "0o750",
+    "owner": "bower:bower"
+   }
+  },
+  "queue": {
+   "attemptsAboveOne": 1,
+   "cursors": [],
+   "deadLettered": 0,
+   "delivered": 7456,
+   "files": {
+    "queue.db": 22446080,
+    "queue.db-shm": 32768,
+    "queue.db-wal": 49472
+   },
+   "identitySetSha256": "a8f27610b669acb0fed545bb254d40d8208027489adf6a2022a374cd3dce9a43",
+   "integrity": "ok",
+   "ledgerHead": [
+    8864,
+    "6b4bf0aa315709fe4a2d70e53338fe4f5fb71a7889319d1c76f9c38baa81f570"
+   ],
+   "queued": 907,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 8863,
+   "uploading": 500
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "active": "active",
+   "activeEnter": "Sat 2026-10-31 08:48:22 UTC",
+   "mainPid": "1947",
+   "nRestarts": "0",
+   "user": "bower"
+  },
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 1,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 82,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 890,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 7456,
+    "oldestUndelivered": "2026-10-31T08:51:16.9229517+00:00",
+    "queued": 908,
+    "retrying": 0,
+    "totalBytes": 10119518,
+    "undeliveredBytes": 1607504,
+    "uploading": 500
+   },
+   "status": "healthy",
+   "syslog": [
+    {
+     "activeConnections": 1,
+     "bytesReceived": 799877,
+     "connectionsAccepted": 1,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 1198,
+     "endpoint": "0.0.0.0:6514",
+     "framesReceived": 4733,
+     "framingErrors": 0,
+     "id": "firewall",
+     "lastFrameAt": "2026-10-31T08:53:37.6222697+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "protocol": "tls",
+     "queued": 3535,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 0,
+     "tlsHandshakeFailures": 0
+    }
+   ]
+  },
+  "unitSha256": "2dd1ff300cf261453c86caf3ed1bed7d7b1cd3a880d1ee0385e11c70b0fb47e4"
+ },
+ "l11-after-poweron-blocked": {
+  "capturedAt": "2026-10-31T08:56:23.823814+00:00",
+  "config": {
+   "bower.env": "1b7a94009494d1c512033657f74fa5a5c371e05aba3e2478821841ebbab5680c",
+   "ca": "18719919e1a93ecee35c13db950dd886009eee37b6a9215f98a5b591c9416340",
+   "pack": "1e7f68c126135812413e991bca41410035c0116b220306bfd4f9a8750caff0f0",
+   "serverCert": "9e35c04486aba75f54fb65ff9d1b816bbfe4a221bd846c04b19afb885b0a8411",
+   "syslog.json": "c0e8699ed9b83fa54201f32b6aebf192513fe07af36cf755d879ec971430049a",
+   "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca"
+  },
+  "executableSha256": "676d426f7192f833396e8c689d260cac120a06b440a76bd0ea92c2f9a1ed498a",
+  "host": "ip-172-31-244-199.ap-southeast-2.compute.internal",
+  "label": "l11-after-poweron-blocked",
+  "package": "bower-collector-0.1.0~dev.270-1.x86_64",
+  "permissions": {
+   "/etc/bower": {
+    "mode": "0o755",
+    "owner": "root:root"
+   },
+   "/etc/bower/bower.env": {
+    "mode": "0o640",
+    "owner": "root:bower"
+   },
+   "/etc/bower/secrets": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/etc/bower/tls": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/var/lib/bower": {
+    "mode": "0o700",
+    "owner": "bower:bower"
+   },
+   "/var/lib/bower/queue.db": {
+    "mode": "0o600",
+    "owner": "bower:bower"
+   },
+   "/var/spool/bower": {
+    "mode": "0o750",
+    "owner": "bower:bower"
+   }
+  },
+  "queue": {
+   "attemptsAboveOne": 1,
+   "cursors": [],
+   "deadLettered": 0,
+   "delivered": 10502,
+   "files": {
+    "queue.db": 27856896,
+    "queue.db-shm": 32768,
+    "queue.db-wal": 61832
+   },
+   "identitySetSha256": "a0570cdb44fbeb013ad8efe388ec36e45103eb85f65b52a190dc954e1d7336a3",
+   "integrity": "ok",
+   "ledgerHead": [
+    10525,
+    "915dd14eaa7736f01e9990075c1c93fd8656e781442677abc57fad9161e26e9e"
+   ],
+   "queued": 10,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 10512,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "active": "active",
+   "activeEnter": "Sat 2026-10-31 08:54:36 UTC",
+   "mainPid": "1953",
+   "nRestarts": "0",
+   "user": "bower"
+  },
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 93,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 334,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 10523,
+    "oldestUndelivered": "2026-10-31T08:56:23.6230345+00:00",
+    "queued": 1,
+    "retrying": 0,
+    "totalBytes": 12015672,
+    "undeliveredBytes": 2284,
+    "uploading": 1
+   },
+   "status": "healthy",
+   "syslog": [
+    {
+     "activeConnections": 1,
+     "bytesReceived": 457163,
+     "connectionsAccepted": 1,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 1199,
+     "endpoint": "0.0.0.0:6514",
+     "framesReceived": 2702,
+     "framingErrors": 0,
+     "id": "firewall",
+     "lastFrameAt": "2026-10-31T08:56:23.7222926+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "protocol": "tls",
+     "queued": 1503,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 0,
+     "tlsHandshakeFailures": 0
+    }
+   ]
+  },
+  "unitSha256": "2dd1ff300cf261453c86caf3ed1bed7d7b1cd3a880d1ee0385e11c70b0fb47e4"
+ },
+ "l12-270-pre-pr": {
+  "capturedAt": "2026-10-31T08:58:17.763717+00:00",
+  "config": {
+   "bower.env": "1b7a94009494d1c512033657f74fa5a5c371e05aba3e2478821841ebbab5680c",
+   "ca": "18719919e1a93ecee35c13db950dd886009eee37b6a9215f98a5b591c9416340",
+   "pack": "1e7f68c126135812413e991bca41410035c0116b220306bfd4f9a8750caff0f0",
+   "serverCert": "9e35c04486aba75f54fb65ff9d1b816bbfe4a221bd846c04b19afb885b0a8411",
+   "syslog.json": "c0e8699ed9b83fa54201f32b6aebf192513fe07af36cf755d879ec971430049a",
+   "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca"
+  },
+  "executableSha256": "676d426f7192f833396e8c689d260cac120a06b440a76bd0ea92c2f9a1ed498a",
+  "host": "ip-172-31-244-199.ap-southeast-2.compute.internal",
+  "label": "l12-270-pre-pr",
+  "package": "bower-collector-0.1.0~dev.270-1.x86_64",
+  "permissions": {
+   "/etc/bower": {
+    "mode": "0o755",
+    "owner": "root:root"
+   },
+   "/etc/bower/bower.env": {
+    "mode": "0o640",
+    "owner": "root:bower"
+   },
+   "/etc/bower/secrets": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/etc/bower/tls": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/var/lib/bower": {
+    "mode": "0o700",
+    "owner": "bower:bower"
+   },
+   "/var/lib/bower/queue.db": {
+    "mode": "0o600",
+    "owner": "bower:bower"
+   },
+   "/var/spool/bower": {
+    "mode": "0o750",
+    "owner": "bower:bower"
+   }
+  },
+  "queue": {
+   "attemptsAboveOne": 1,
+   "cursors": [],
+   "deadLettered": 0,
+   "delivered": 10879,
+   "files": {
+    "queue.db": 30269440,
+    "queue.db-shm": 32768,
+    "queue.db-wal": 90672
+   },
+   "identitySetSha256": "9a1f2bd5728c03826de8fd001665f170ad9fa24590ed8672d6af6d6581897dc9",
+   "integrity": "ok",
+   "ledgerHead": [
+    11665,
+    "8a47fb540e1044f2d9a37d67b0cfc450a0f9ed57c393d3a827f8b886c7f6f0e0"
+   ],
+   "queued": 784,
+   "retrying": 1,
+   "schemaVersion": 5,
+   "total": 11664,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "active": "active",
+   "activeEnter": "Sat 2026-10-31 08:54:36 UTC",
+   "mainPid": "1953",
+   "nRestarts": "0",
+   "user": "bower"
+  },
+  "status": {
+   "delivery": {
+    "decreases": 3,
+    "inFlight": 0,
+    "increases": 2,
+    "latencyEwmaMilliseconds": 88,
+    "latencySpikes": 2,
+    "limit": 2,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 432,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 1
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 10879,
+    "oldestUndelivered": "2026-10-31T08:56:59.2228953+00:00",
+    "queued": 785,
+    "retrying": 1,
+    "totalBytes": 13317052,
+    "undeliveredBytes": 897268,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "syslog": [
+    {
+     "activeConnections": 1,
+     "bytesReceived": 650963,
+     "connectionsAccepted": 1,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 1199,
+     "endpoint": "0.0.0.0:6514",
+     "framesReceived": 3842,
+     "framingErrors": 0,
+     "id": "firewall",
+     "lastFrameAt": "2026-10-31T08:58:17.7223375+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "protocol": "tls",
+     "queued": 2643,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 0,
+     "tlsHandshakeFailures": 0
+    }
+   ]
+  },
+  "unitSha256": "2dd1ff300cf261453c86caf3ed1bed7d7b1cd3a880d1ee0385e11c70b0fb47e4"
+ },
+ "l14-pr-blocked": {
+  "capturedAt": "2026-10-31T08:59:10.320702+00:00",
+  "config": {
+   "bower.env": "1b7a94009494d1c512033657f74fa5a5c371e05aba3e2478821841ebbab5680c",
+   "ca": "18719919e1a93ecee35c13db950dd886009eee37b6a9215f98a5b591c9416340",
+   "pack": "1e7f68c126135812413e991bca41410035c0116b220306bfd4f9a8750caff0f0",
+   "serverCert": "9e35c04486aba75f54fb65ff9d1b816bbfe4a221bd846c04b19afb885b0a8411",
+   "syslog.json": "c0e8699ed9b83fa54201f32b6aebf192513fe07af36cf755d879ec971430049a",
+   "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca"
+  },
+  "executableSha256": "aa195614be72d65c7fc68a07bf1a26f6114145df29a3ac93426bd68c00b22c43",
+  "host": "ip-172-31-244-199.ap-southeast-2.compute.internal",
+  "label": "l14-pr-blocked",
+  "package": "bower-collector-0.1.0~dev.277-1.x86_64",
+  "permissions": {
+   "/etc/bower": {
+    "mode": "0o755",
+    "owner": "root:root"
+   },
+   "/etc/bower/bower.env": {
+    "mode": "0o640",
+    "owner": "root:bower"
+   },
+   "/etc/bower/secrets": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/etc/bower/tls": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/var/lib/bower": {
+    "mode": "0o700",
+    "owner": "bower:bower"
+   },
+   "/var/lib/bower/queue.db": {
+    "mode": "0o600",
+    "owner": "bower:bower"
+   },
+   "/var/spool/bower": {
+    "mode": "0o750",
+    "owner": "bower:bower"
+   }
+  },
+  "queue": {
+   "attemptsAboveOne": 1,
+   "cursors": [],
+   "deadLettered": 0,
+   "delivered": 10879,
+   "files": {
+    "queue.db": 31277056,
+    "queue.db-shm": 32768,
+    "queue.db-wal": 41232
+   },
+   "identitySetSha256": "326dd1ddfe1f64da74f315cad16ae134a2ee850cee8fb1d7f29804bb4fd69f99",
+   "integrity": "ok",
+   "ledgerHead": [
+    12190,
+    "d7867073decc70ba6f935a29011f1ba34552710198abf7a68a9998c4b53db1c6"
+   ],
+   "queued": 338,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 12189,
+   "uploading": 972
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "active": "active",
+   "activeEnter": "Sat 2026-10-31 08:58:36 UTC",
+   "mainPid": "3384",
+   "nRestarts": "0",
+   "user": "bower"
+  },
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 1,
+    "increases": 0,
+    "latencyEwmaMilliseconds": null,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 0,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 10879,
+    "oldestUndelivered": "2026-10-31T08:56:59.2228953+00:00",
+    "queued": 339,
+    "retrying": 0,
+    "totalBytes": 13916461,
+    "undeliveredBytes": 1496677,
+    "uploading": 972
+   },
+   "status": "healthy",
+   "syslog": [
+    {
+     "activeConnections": 1,
+     "bytesReceived": 261460,
+     "connectionsAccepted": 1,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 1199,
+     "endpoint": "0.0.0.0:6514",
+     "framesReceived": 1538,
+     "framingErrors": 0,
+     "id": "firewall",
+     "lastFrameAt": "2026-10-31T08:59:10.2223484+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "protocol": "tls",
+     "queued": 339,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 0,
+     "tlsHandshakeFailures": 0
+    }
+   ]
+  },
+  "unitSha256": "2dd1ff300cf261453c86caf3ed1bed7d7b1cd3a880d1ee0385e11c70b0fb47e4"
+ },
+ "l15-final-before-loss": {
+  "capturedAt": "2026-10-31T09:04:51.950677+00:00",
+  "config": {
+   "bower.env": "1b7a94009494d1c512033657f74fa5a5c371e05aba3e2478821841ebbab5680c",
+   "ca": "18719919e1a93ecee35c13db950dd886009eee37b6a9215f98a5b591c9416340",
+   "pack": "1e7f68c126135812413e991bca41410035c0116b220306bfd4f9a8750caff0f0",
+   "serverCert": "9e35c04486aba75f54fb65ff9d1b816bbfe4a221bd846c04b19afb885b0a8411",
+   "syslog.json": "c0e8699ed9b83fa54201f32b6aebf192513fe07af36cf755d879ec971430049a",
+   "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca"
+  },
+  "executableSha256": "aa195614be72d65c7fc68a07bf1a26f6114145df29a3ac93426bd68c00b22c43",
+  "host": "ip-172-31-244-199.ap-southeast-2.compute.internal",
+  "label": "l15-final-before-loss",
+  "package": "bower-collector-0.1.0~dev.277-1.x86_64",
+  "permissions": {
+   "/etc/bower": {
+    "mode": "0o755",
+    "owner": "root:root"
+   },
+   "/etc/bower/bower.env": {
+    "mode": "0o640",
+    "owner": "root:bower"
+   },
+   "/etc/bower/secrets": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/etc/bower/tls": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/var/lib/bower": {
+    "mode": "0o700",
+    "owner": "bower:bower"
+   },
+   "/var/lib/bower/queue.db": {
+    "mode": "0o600",
+    "owner": "bower:bower"
+   },
+   "/var/spool/bower": {
+    "mode": "0o750",
+    "owner": "bower:bower"
+   }
+  },
+  "queue": {
+   "attemptsAboveOne": 501,
+   "cursors": [],
+   "deadLettered": 0,
+   "delivered": 15521,
+   "files": {
+    "queue.db": 40992768,
+    "queue.db-shm": 32768,
+    "queue.db-wal": 28872
+   },
+   "identitySetSha256": "30777e6c51ff01f886f9797db69673bf4a7ab3662d05b247415da09c3a8d05a1",
+   "integrity": "ok",
+   "ledgerHead": [
+    15521,
+    "aadff779ad547471aeaa1b6740d1bb2dce648b409ff1b82c0be2af6e8daf33ef"
+   ],
+   "queued": 0,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 15521,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "active": "active",
+   "activeEnter": "Sat 2026-10-31 08:58:36 UTC",
+   "mainPid": "3384",
+   "nRestarts": "0",
+   "user": "bower"
+  },
+  "status": {
+   "delivery": {
+    "decreases": 1,
+    "inFlight": 0,
+    "increases": 1,
+    "latencyEwmaMilliseconds": 82,
+    "latencySpikes": 1,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 1051,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 15521,
+    "oldestUndelivered": null,
+    "queued": 0,
+    "retrying": 0,
+    "totalBytes": 17719057,
+    "undeliveredBytes": 0,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "syslog": [
+    {
+     "activeConnections": 0,
+     "bytesReceived": 827730,
+     "connectionsAccepted": 1,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 1199,
+     "endpoint": "0.0.0.0:6514",
+     "framesReceived": 4869,
+     "framingErrors": 0,
+     "id": "firewall",
+     "lastFrameAt": "2026-10-31T09:04:43.3223922+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "protocol": "tls",
+     "queued": 3670,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 0,
+     "tlsHandshakeFailures": 0
+    }
+   ]
+  },
+  "unitSha256": "2dd1ff300cf261453c86caf3ed1bed7d7b1cd3a880d1ee0385e11c70b0fb47e4"
+ },
+ "w01-legacy-start": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T08:34:29.9993398+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_INGEST_TOKEN_FILE",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_OUTPUT",
+   "BOWER_AZURE_CREDENTIAL",
+   "BOWER_DCE_ENDPOINT",
+   "BOWER_DCR_ID",
+   "AZURE_TENANT_ID",
+   "AZURE_CLIENT_ID",
+   "AZURE_CLIENT_CERTIFICATE_PATH",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS",
+   "BOWER_PRIVACY_HMAC_KEY_FILE",
+   "BOWER_WINDOWS_EVENTLOG_CONFIG",
+   "BOWER_DELIVERY_LEASE_SECONDS",
+   "BOWER_DELIVERY_TIMEOUT_SECONDS"
+  ],
+  "environmentSha256": "011161c679ac1fee179a519da5a9849fc856ee7899f489479601e0a209701740",
+  "executableSha256": "baf238ef86217d5b6fc4da14e37eb35737245b3e56613a3da47e1e5542a621bb",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 1
+  },
+  "host": "BOWERWEC",
+  "label": "w01-legacy-start",
+  "native": null,
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.264",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T08:34:29.8328575+00:00",
+   "cursors": [],
+   "deadLettered": 0,
+   "delivered": 0,
+   "files": [
+    {
+     "bytes": 90112,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 16512,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "",
+   "ledgerHeadSequence": 0,
+   "queued": 0,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 0,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "C:\\BowerLab\\legacy\\Bower.Collector.exe",
+   "processId": 4412,
+   "processStart": "2026-10-31T08:34:03.6962168Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": null,
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": null,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 0,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 0,
+    "oldestUndelivered": null,
+    "queued": 0,
+    "retrying": 0,
+    "totalBytes": 0,
+    "undeliveredBytes": 0,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "windowsEventLog": [
+    {
+     "bookmarkRecordId": null,
+     "bytesRead": 0,
+     "channel": "ForwardedEvents",
+     "cursorConflicts": 0,
+     "duplicates": 0,
+     "eventsRead": 0,
+     "gaps": 0,
+     "id": "wec-security",
+     "lastEventAt": null,
+     "lastPollAt": "2026-10-31T08:34:20.5747244+00:00",
+     "malformed": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 0,
+     "readErrors": 4,
+     "rejected": 0,
+     "resets": 0,
+     "retries": 0,
+     "state": "winevt-read-failed",
+     "submitFailures": 0,
+     "suppressed": 0
+    }
+   ]
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "w02-legacy-running": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T08:37:04.4442315+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_INGEST_TOKEN_FILE",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_OUTPUT",
+   "BOWER_AZURE_CREDENTIAL",
+   "BOWER_DCE_ENDPOINT",
+   "BOWER_DCR_ID",
+   "AZURE_TENANT_ID",
+   "AZURE_CLIENT_ID",
+   "AZURE_CLIENT_CERTIFICATE_PATH",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS",
+   "BOWER_PRIVACY_HMAC_KEY_FILE",
+   "BOWER_WINDOWS_EVENTLOG_CONFIG",
+   "BOWER_DELIVERY_LEASE_SECONDS",
+   "BOWER_DELIVERY_TIMEOUT_SECONDS"
+  ],
+  "environmentSha256": "011161c679ac1fee179a519da5a9849fc856ee7899f489479601e0a209701740",
+  "executableSha256": "baf238ef86217d5b6fc4da14e37eb35737245b3e56613a3da47e1e5542a621bb",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 476
+  },
+  "host": "BOWERWEC",
+  "label": "w02-legacy-running",
+  "native": null,
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.264",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T08:37:04.3382878+00:00",
+   "cursors": [],
+   "deadLettered": 0,
+   "delivered": 0,
+   "files": [
+    {
+     "bytes": 90112,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 16512,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "",
+   "ledgerHeadSequence": 0,
+   "queued": 0,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 0,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "C:\\BowerLab\\legacy\\Bower.Collector.exe",
+   "processId": 4412,
+   "processStart": "2026-10-31T08:34:03.6962168Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": null,
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": null,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 0,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 0,
+    "oldestUndelivered": null,
+    "queued": 0,
+    "retrying": 0,
+    "totalBytes": 0,
+    "undeliveredBytes": 0,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "windowsEventLog": [
+    {
+     "bookmarkRecordId": null,
+     "bytesRead": 0,
+     "channel": "ForwardedEvents",
+     "cursorConflicts": 0,
+     "duplicates": 0,
+     "eventsRead": 0,
+     "gaps": 0,
+     "id": "wec-security",
+     "lastEventAt": null,
+     "lastPollAt": "2026-10-31T08:36:08.5893765+00:00",
+     "malformed": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 0,
+     "readErrors": 7,
+     "rejected": 0,
+     "resets": 0,
+     "retries": 0,
+     "state": "winevt-read-failed",
+     "submitFailures": 0,
+     "suppressed": 0
+    }
+   ]
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "w03-264-running": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T08:38:35.2707926+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_INGEST_TOKEN_FILE",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_OUTPUT",
+   "BOWER_AZURE_CREDENTIAL",
+   "BOWER_DCE_ENDPOINT",
+   "BOWER_DCR_ID",
+   "AZURE_TENANT_ID",
+   "AZURE_CLIENT_ID",
+   "AZURE_CLIENT_CERTIFICATE_PATH",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS",
+   "BOWER_PRIVACY_HMAC_KEY_FILE",
+   "BOWER_WINDOWS_EVENTLOG_CONFIG",
+   "BOWER_DELIVERY_LEASE_SECONDS",
+   "BOWER_DELIVERY_TIMEOUT_SECONDS"
+  ],
+  "environmentSha256": "011161c679ac1fee179a519da5a9849fc856ee7899f489479601e0a209701740",
+  "executableSha256": "b206caa79afd1b08086edaf6cbfa586b5d3fc5f1e2c78792291ef3bf3b43f6a7",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 929
+  },
+  "host": "BOWERWEC",
+  "label": "w03-264-running",
+  "native": null,
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.264",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T08:38:35.1593782+00:00",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "updatedAt": "2026-10-31 08:38:35.0160903+00:00",
+     "value": "{\"schemaVersion\":2,\"channel\":\"ForwardedEvents\",\"recordId\":929}",
+     "version": 30
+    }
+   ],
+   "deadLettered": 0,
+   "delivered": 922,
+   "files": [
+    {
+     "bytes": 2527232,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 41232,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "35a37221310c119b5f9c8f71e960775bb0a1847553adfbbfebf2d3b7fa3c76c7",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "8a6e06654e3ec8804dd6692389b24d9363f0eed70eecfefd139e28b28911a854",
+   "ledgerHeadSequence": 928,
+   "queued": 6,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 928,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "C:\\Program Files\\Bower\\Bower.Collector.exe",
+   "processId": 4912,
+   "processStart": "2026-10-31T08:37:49.0464172Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": null,
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 66,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 134,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 922,
+    "oldestUndelivered": "2026-10-31T08:38:34.8980968+00:00",
+    "queued": 6,
+    "retrying": 0,
+    "totalBytes": 1263588,
+    "undeliveredBytes": 8172,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "windowsEventLog": [
+    {
+     "bookmarkRecordId": 923,
+     "bytesRead": 1297344,
+     "channel": "ForwardedEvents",
+     "cursorConflicts": 0,
+     "duplicates": 0,
+     "eventsRead": 928,
+     "gaps": 0,
+     "id": "wec-security",
+     "lastEventAt": "2026-10-31T08:38:34.9974428+00:00",
+     "lastPollAt": "2026-10-31T08:38:34.8941441+00:00",
+     "malformed": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 927,
+     "readErrors": 0,
+     "rejected": 0,
+     "resets": 0,
+     "retries": 0,
+     "state": "running",
+     "submitFailures": 0,
+     "suppressed": 0
+    }
+   ]
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "w04-264-blocked": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T08:42:38.0049842+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_INGEST_TOKEN_FILE",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_OUTPUT",
+   "BOWER_AZURE_CREDENTIAL",
+   "BOWER_DCE_ENDPOINT",
+   "BOWER_DCR_ID",
+   "AZURE_TENANT_ID",
+   "AZURE_CLIENT_ID",
+   "AZURE_CLIENT_CERTIFICATE_PATH",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS",
+   "BOWER_PRIVACY_HMAC_KEY_FILE",
+   "BOWER_WINDOWS_EVENTLOG_CONFIG",
+   "BOWER_DELIVERY_LEASE_SECONDS",
+   "BOWER_DELIVERY_TIMEOUT_SECONDS"
+  ],
+  "environmentSha256": "011161c679ac1fee179a519da5a9849fc856ee7899f489479601e0a209701740",
+  "executableSha256": "b206caa79afd1b08086edaf6cbfa586b5d3fc5f1e2c78792291ef3bf3b43f6a7",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 2141
+  },
+  "host": "BOWERWEC",
+  "label": "w04-264-blocked",
+  "native": null,
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.264",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T08:42:37.8948654+00:00",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "updatedAt": "2026-10-31 08:42:36.746782+00:00",
+     "value": "{\"schemaVersion\":2,\"channel\":\"ForwardedEvents\",\"recordId\":2141}",
+     "version": 232
+    }
+   ],
+   "deadLettered": 0,
+   "delivered": 1574,
+   "files": [
+    {
+     "bytes": 5758976,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 41232,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "8fb8e8be5bcd2fe56953ceac1c64fa61acb027f06b918c9e3bc9e7fa0faf3241",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "b0a19ab9edd9aed475194312c30e7ac5ee7efc0240b86e1c222149544bfc68cf",
+   "ledgerHeadSequence": 2140,
+   "queued": 66,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 2140,
+   "uploading": 500
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "C:\\Program Files\\Bower\\Bower.Collector.exe",
+   "processId": 4912,
+   "processStart": "2026-10-31T08:37:49.0464172Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": null,
+  "status": {
+   "delivery": {
+    "decreases": 2,
+    "inFlight": 1,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 77,
+    "latencySpikes": 0,
+    "limit": 1,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 262,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 15
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 1574,
+    "oldestUndelivered": "2026-10-31T08:40:45.0557621+00:00",
+    "queued": 66,
+    "retrying": 0,
+    "totalBytes": 2914039,
+    "undeliveredBytes": 770774,
+    "uploading": 500
+   },
+   "status": "healthy",
+   "windowsEventLog": [
+    {
+     "bookmarkRecordId": 2141,
+     "bytesRead": 2991720,
+     "channel": "ForwardedEvents",
+     "cursorConflicts": 0,
+     "duplicates": 0,
+     "eventsRead": 2140,
+     "gaps": 0,
+     "id": "wec-security",
+     "lastEventAt": "2026-10-31T08:42:36.7285962+00:00",
+     "lastPollAt": "2026-10-31T08:42:36.557676+00:00",
+     "malformed": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 2140,
+     "readErrors": 0,
+     "rejected": 0,
+     "resets": 0,
+     "retries": 0,
+     "state": "running",
+     "submitFailures": 0,
+     "suppressed": 0
+    }
+   ]
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "w06-270-after-upgrade": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T08:42:55.7407453+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS"
+  ],
+  "environmentSha256": "7a0ac4eb01974a9df804cb12675ec6c5c7c0093b2ec6c432cc950efce8104968",
+  "executableSha256": "20490ec6a3ca50bf65ac2b77a68d6e9ac1c48e874b3c37fc33fc0745c21010ff",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 2231
+  },
+  "host": "BOWERWEC",
+  "label": "w06-270-after-upgrade",
+  "native": null,
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.270",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T08:42:55.6388337+00:00",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "updatedAt": "2026-10-31 08:42:45.8663564+00:00",
+     "value": "{\"schemaVersion\":2,\"channel\":\"ForwardedEvents\",\"recordId\":2183}",
+     "version": 238
+    }
+   ],
+   "deadLettered": 0,
+   "delivered": 1574,
+   "files": [
+    {
+     "bytes": 5840896,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 0,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "759a5a8ed93364f319cecf1c2481b174038b704cf195f67c9ba30ef397604cf7",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "1a0aad2fbcad017c186343094f0f879e62a1dac5f60f98e2298fe501ff59b2b7",
+   "ledgerHeadSequence": 2182,
+   "queued": 108,
+   "retrying": 500,
+   "schemaVersion": 5,
+   "total": 2182,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "\"C:\\Program Files\\Bower\\Bower.Collector.exe\"",
+   "processId": 3724,
+   "processStart": "2026-10-31T08:42:48.7271052Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": null,
+  "status": {
+   "delivery": null,
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 1574,
+    "oldestUndelivered": "2026-10-31T08:40:45.0557621+00:00",
+    "queued": 108,
+    "retrying": 500,
+    "totalBytes": 2971233,
+    "undeliveredBytes": 827968,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "windowsEventLog": null
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "w07-270-reapplied": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T08:43:55.9084029+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_INGEST_TOKEN_FILE",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_OUTPUT",
+   "BOWER_AZURE_CREDENTIAL",
+   "BOWER_DCE_ENDPOINT",
+   "BOWER_DCR_ID",
+   "AZURE_TENANT_ID",
+   "AZURE_CLIENT_ID",
+   "AZURE_CLIENT_CERTIFICATE_PATH",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS",
+   "BOWER_PRIVACY_HMAC_KEY_FILE",
+   "BOWER_WINDOWS_EVENTLOG_CONFIG",
+   "BOWER_DELIVERY_LEASE_SECONDS",
+   "BOWER_DELIVERY_TIMEOUT_SECONDS"
+  ],
+  "environmentSha256": "011161c679ac1fee179a519da5a9849fc856ee7899f489479601e0a209701740",
+  "executableSha256": "20490ec6a3ca50bf65ac2b77a68d6e9ac1c48e874b3c37fc33fc0745c21010ff",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 2533
+  },
+  "host": "BOWERWEC",
+  "label": "w07-270-reapplied",
+  "native": null,
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.270",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T08:43:55.8040423+00:00",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "updatedAt": "2026-10-31 08:43:54.2900859+00:00",
+     "value": "{\"schemaVersion\":2,\"channel\":\"ForwardedEvents\",\"recordId\":2527}",
+     "version": 265
+    }
+   ],
+   "deadLettered": 0,
+   "delivered": 1574,
+   "files": [
+    {
+     "bytes": 6721536,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 41232,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "0e9c680609921fa3b38ab0481d384b39e0feaad3984b52abea23707dbf88c1f4",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "16f8f0382150e5b2bf6ce0c0a6eff93a09e045ca8a2b4465d07a2e44146be8ea",
+   "ledgerHeadSequence": 2526,
+   "queued": 452,
+   "retrying": 500,
+   "schemaVersion": 5,
+   "total": 2526,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "\"C:\\Program Files\\Bower\\Bower.Collector.exe\"",
+   "processId": 2076,
+   "processStart": "2026-10-31T08:43:21.1650191Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": null,
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": null,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 0,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 1574,
+    "oldestUndelivered": "2026-10-31T08:40:45.0557621+00:00",
+    "queued": 452,
+    "retrying": 500,
+    "totalBytes": 3439633,
+    "undeliveredBytes": 1296368,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "windowsEventLog": [
+    {
+     "bookmarkRecordId": 2527,
+     "bytesRead": 480912,
+     "channel": "ForwardedEvents",
+     "cursorConflicts": 0,
+     "duplicates": 0,
+     "eventsRead": 344,
+     "gaps": 0,
+     "id": "wec-security",
+     "lastEventAt": "2026-10-31T08:43:54.2716559+00:00",
+     "lastPollAt": "2026-10-31T08:43:55.2935223+00:00",
+     "malformed": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 344,
+     "readErrors": 0,
+     "rejected": 0,
+     "resets": 0,
+     "retries": 0,
+     "state": "running",
+     "submitFailures": 0,
+     "suppressed": 0
+    }
+   ]
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "w08-270-pre-kill": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T08:46:12.2793962+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_INGEST_TOKEN_FILE",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_OUTPUT",
+   "BOWER_AZURE_CREDENTIAL",
+   "BOWER_DCE_ENDPOINT",
+   "BOWER_DCR_ID",
+   "AZURE_TENANT_ID",
+   "AZURE_CLIENT_ID",
+   "AZURE_CLIENT_CERTIFICATE_PATH",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS",
+   "BOWER_PRIVACY_HMAC_KEY_FILE",
+   "BOWER_WINDOWS_EVENTLOG_CONFIG",
+   "BOWER_DELIVERY_LEASE_SECONDS",
+   "BOWER_DELIVERY_TIMEOUT_SECONDS"
+  ],
+  "environmentSha256": "011161c679ac1fee179a519da5a9849fc856ee7899f489479601e0a209701740",
+  "executableSha256": "20490ec6a3ca50bf65ac2b77a68d6e9ac1c48e874b3c37fc33fc0745c21010ff",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 3212
+  },
+  "host": "BOWERWEC",
+  "label": "w08-270-pre-kill",
+  "native": null,
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.270",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T08:46:12.1704073+00:00",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "updatedAt": "2026-10-31 08:46:11.6743603+00:00",
+     "value": "{\"schemaVersion\":2,\"channel\":\"ForwardedEvents\",\"recordId\":3212}",
+     "version": 376
+    }
+   ],
+   "deadLettered": 0,
+   "delivered": 1574,
+   "files": [
+    {
+     "bytes": 8560640,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 49472,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "bc3fb49979a6014952719ce1f4c774c46d1a833ee81ca6dfbac6e218fc216d51",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "e6a93a9618a9e7e73a80ff86b4aa7d37bac3f1efd84c863c36021a68b5eb907d",
+   "ledgerHeadSequence": 3211,
+   "queued": 1137,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 3211,
+   "uploading": 500
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "\"C:\\Program Files\\Bower\\Bower.Collector.exe\"",
+   "processId": 2076,
+   "processStart": "2026-10-31T08:43:21.1650191Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": null,
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 1,
+    "increases": 0,
+    "latencyEwmaMilliseconds": null,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 0,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 1574,
+    "oldestUndelivered": "2026-10-31T08:40:45.0557621+00:00",
+    "queued": 1137,
+    "retrying": 0,
+    "totalBytes": 4372367,
+    "undeliveredBytes": 2229102,
+    "uploading": 500
+   },
+   "status": "healthy",
+   "windowsEventLog": [
+    {
+     "bookmarkRecordId": 3212,
+     "bytesRead": 1438542,
+     "channel": "ForwardedEvents",
+     "cursorConflicts": 0,
+     "duplicates": 0,
+     "eventsRead": 1029,
+     "gaps": 0,
+     "id": "wec-security",
+     "lastEventAt": "2026-10-31T08:46:11.6522892+00:00",
+     "lastPollAt": "2026-10-31T08:46:11.5496751+00:00",
+     "malformed": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 1029,
+     "readErrors": 0,
+     "rejected": 0,
+     "resets": 0,
+     "retries": 0,
+     "state": "running",
+     "submitFailures": 0,
+     "suppressed": 0
+    }
+   ]
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "w10-after-taskkill": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T08:47:01.8142582+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_INGEST_TOKEN_FILE",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_OUTPUT",
+   "BOWER_AZURE_CREDENTIAL",
+   "BOWER_DCE_ENDPOINT",
+   "BOWER_DCR_ID",
+   "AZURE_TENANT_ID",
+   "AZURE_CLIENT_ID",
+   "AZURE_CLIENT_CERTIFICATE_PATH",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS",
+   "BOWER_PRIVACY_HMAC_KEY_FILE",
+   "BOWER_WINDOWS_EVENTLOG_CONFIG",
+   "BOWER_DELIVERY_LEASE_SECONDS",
+   "BOWER_DELIVERY_TIMEOUT_SECONDS"
+  ],
+  "environmentSha256": "011161c679ac1fee179a519da5a9849fc856ee7899f489479601e0a209701740",
+  "executableSha256": "20490ec6a3ca50bf65ac2b77a68d6e9ac1c48e874b3c37fc33fc0745c21010ff",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 3464
+  },
+  "host": "BOWERWEC",
+  "label": "w10-after-taskkill",
+  "native": null,
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.270",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T08:47:01.6934476+00:00",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "updatedAt": "2026-10-31 08:47:01.4753266+00:00",
+     "value": "{\"schemaVersion\":2,\"channel\":\"ForwardedEvents\",\"recordId\":3458}",
+     "version": 414
+    }
+   ],
+   "deadLettered": 0,
+   "delivered": 3451,
+   "files": [
+    {
+     "bytes": 9203712,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 61832,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "882992fe71fb522f704f6aab6ca674c6232d1cbf0cec6487b518e91b13a19f06",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "c891469fbc68c46b423c14fc555f7d30945a3d0406083dfce945340710ce831b",
+   "ledgerHeadSequence": 3457,
+   "queued": 6,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 3457,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "\"C:\\Program Files\\Bower\\Bower.Collector.exe\"",
+   "processId": 1340,
+   "processStart": "2026-10-31T08:46:30.5814880Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": null,
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 75,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 26,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 3451,
+    "oldestUndelivered": "2026-10-31T08:47:01.3522441+00:00",
+    "queued": 6,
+    "retrying": 0,
+    "totalBytes": 4707326,
+    "undeliveredBytes": 8172,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "windowsEventLog": [
+    {
+     "bookmarkRecordId": 3452,
+     "bytesRead": 253038,
+     "channel": "ForwardedEvents",
+     "cursorConflicts": 0,
+     "duplicates": 0,
+     "eventsRead": 181,
+     "gaps": 0,
+     "id": "wec-security",
+     "lastEventAt": "2026-10-31T08:47:01.4531905+00:00",
+     "lastPollAt": "2026-10-31T08:47:01.3467647+00:00",
+     "malformed": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 181,
+     "readErrors": 0,
+     "rejected": 0,
+     "resets": 0,
+     "retries": 0,
+     "state": "running",
+     "submitFailures": 0,
+     "suppressed": 0
+    }
+   ]
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "w11-pre-poweroff": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T08:47:34.3907795+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_INGEST_TOKEN_FILE",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_OUTPUT",
+   "BOWER_AZURE_CREDENTIAL",
+   "BOWER_DCE_ENDPOINT",
+   "BOWER_DCR_ID",
+   "AZURE_TENANT_ID",
+   "AZURE_CLIENT_ID",
+   "AZURE_CLIENT_CERTIFICATE_PATH",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS",
+   "BOWER_PRIVACY_HMAC_KEY_FILE",
+   "BOWER_WINDOWS_EVENTLOG_CONFIG",
+   "BOWER_DELIVERY_LEASE_SECONDS",
+   "BOWER_DELIVERY_TIMEOUT_SECONDS"
+  ],
+  "environmentSha256": "011161c679ac1fee179a519da5a9849fc856ee7899f489479601e0a209701740",
+  "executableSha256": "20490ec6a3ca50bf65ac2b77a68d6e9ac1c48e874b3c37fc33fc0745c21010ff",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 3622
+  },
+  "host": "BOWERWEC",
+  "label": "w11-pre-poweroff",
+  "native": null,
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.270",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T08:47:34.2851295+00:00",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "updatedAt": "2026-10-31 08:47:33.638901+00:00",
+     "value": "{\"schemaVersion\":2,\"channel\":\"ForwardedEvents\",\"recordId\":3622}",
+     "version": 441
+    }
+   ],
+   "deadLettered": 0,
+   "delivered": 3621,
+   "files": [
+    {
+     "bytes": 9625600,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 53592,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "785d05843bd60c4d28a62bfa36e6fd085da625bc0e32901986266be2fb4651b7",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "e88c3ba4617de5ec3bc3a28f1c99a9adf7cf317c0030ec7c54daf005d1249d5a",
+   "ledgerHeadSequence": 3621,
+   "queued": 0,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 3621,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "\"C:\\Program Files\\Bower\\Bower.Collector.exe\"",
+   "processId": 1340,
+   "processStart": "2026-10-31T08:46:30.5814880Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": null,
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 78,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 54,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 3616,
+    "oldestUndelivered": "2026-10-31T08:47:33.5450495+00:00",
+    "queued": 0,
+    "retrying": 0,
+    "totalBytes": 4930643,
+    "undeliveredBytes": 6808,
+    "uploading": 5
+   },
+   "status": "healthy",
+   "windowsEventLog": [
+    {
+     "bookmarkRecordId": 3622,
+     "bytesRead": 482310,
+     "channel": "ForwardedEvents",
+     "cursorConflicts": 0,
+     "duplicates": 0,
+     "eventsRead": 345,
+     "gaps": 0,
+     "id": "wec-security",
+     "lastEventAt": "2026-10-31T08:47:33.6208525+00:00",
+     "lastPollAt": "2026-10-31T08:47:33.5409995+00:00",
+     "malformed": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 345,
+     "readErrors": 0,
+     "rejected": 0,
+     "resets": 0,
+     "retries": 0,
+     "state": "running",
+     "submitFailures": 0,
+     "suppressed": 0
+    }
+   ]
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "w12-after-poweron": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T08:50:51.0284209+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_INGEST_TOKEN_FILE",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_OUTPUT",
+   "BOWER_AZURE_CREDENTIAL",
+   "BOWER_DCE_ENDPOINT",
+   "BOWER_DCR_ID",
+   "AZURE_TENANT_ID",
+   "AZURE_CLIENT_ID",
+   "AZURE_CLIENT_CERTIFICATE_PATH",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS",
+   "BOWER_PRIVACY_HMAC_KEY_FILE",
+   "BOWER_WINDOWS_EVENTLOG_CONFIG",
+   "BOWER_DELIVERY_LEASE_SECONDS",
+   "BOWER_DELIVERY_TIMEOUT_SECONDS"
+  ],
+  "environmentSha256": "011161c679ac1fee179a519da5a9849fc856ee7899f489479601e0a209701740",
+  "executableSha256": "20490ec6a3ca50bf65ac2b77a68d6e9ac1c48e874b3c37fc33fc0745c21010ff",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 4613
+  },
+  "host": "BOWERWEC",
+  "label": "w12-after-poweron",
+  "native": null,
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.270",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T08:50:50.561287+00:00",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "updatedAt": "2026-10-31 08:50:50.3573231+00:00",
+     "value": "{\"schemaVersion\":2,\"channel\":\"ForwardedEvents\",\"recordId\":4609}",
+     "version": 572
+    }
+   ],
+   "deadLettered": 0,
+   "delivered": 4608,
+   "files": [
+    {
+     "bytes": 12111872,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 2772792,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "f0ae28765ecfdad57e2270b9e4f2610c6bc8948ca97ef30502d91818c2277c81",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "623b61e07cba56fc3962aeef312eece5967052e1bade85ddd59a56744238cbf3",
+   "ledgerHeadSequence": 4608,
+   "queued": 0,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 4608,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "\"C:\\Program Files\\Bower\\Bower.Collector.exe\"",
+   "processId": 3344,
+   "processStart": "2026-10-31T08:48:30.4096256Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": null,
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 71,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 151,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 4542,
+    "oldestUndelivered": "2026-10-31T08:50:39.6393662+00:00",
+    "queued": 6,
+    "retrying": 0,
+    "totalBytes": 6192886,
+    "undeliveredBytes": 8172,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "windowsEventLog": [
+    {
+     "bookmarkRecordId": 4549,
+     "bytesRead": 1140768,
+     "channel": "ForwardedEvents",
+     "cursorConflicts": 0,
+     "duplicates": 0,
+     "eventsRead": 816,
+     "gaps": 0,
+     "id": "wec-security",
+     "lastEventAt": "2026-10-31T08:50:39.7376701+00:00",
+     "lastPollAt": "2026-10-31T08:50:39.6357712+00:00",
+     "malformed": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 816,
+     "readErrors": 0,
+     "rejected": 0,
+     "resets": 0,
+     "retries": 0,
+     "state": "running",
+     "submitFailures": 0,
+     "suppressed": 0
+    }
+   ]
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "w13-blocked-pre-poweroff": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T08:53:40.5732835+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_INGEST_TOKEN_FILE",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_OUTPUT",
+   "BOWER_AZURE_CREDENTIAL",
+   "BOWER_DCE_ENDPOINT",
+   "BOWER_DCR_ID",
+   "AZURE_TENANT_ID",
+   "AZURE_CLIENT_ID",
+   "AZURE_CLIENT_CERTIFICATE_PATH",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS",
+   "BOWER_PRIVACY_HMAC_KEY_FILE",
+   "BOWER_WINDOWS_EVENTLOG_CONFIG",
+   "BOWER_DELIVERY_LEASE_SECONDS",
+   "BOWER_DELIVERY_TIMEOUT_SECONDS"
+  ],
+  "environmentSha256": "011161c679ac1fee179a519da5a9849fc856ee7899f489479601e0a209701740",
+  "executableSha256": "20490ec6a3ca50bf65ac2b77a68d6e9ac1c48e874b3c37fc33fc0745c21010ff",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 5454
+  },
+  "host": "BOWERWEC",
+  "label": "w13-blocked-pre-poweroff",
+  "native": null,
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.270",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T08:53:40.4598589+00:00",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "updatedAt": "2026-10-31 08:53:40.3985452+00:00",
+     "value": "{\"schemaVersion\":2,\"channel\":\"ForwardedEvents\",\"recordId\":5454}",
+     "version": 712
+    }
+   ],
+   "deadLettered": 0,
+   "delivered": 4784,
+   "files": [
+    {
+     "bytes": 14430208,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 304912,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "601b54ed7f6423d251f32bd30546875af7b1cb6876d7470ddaeab748af29b6da",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "d1dd26f9f5314758bf8bd5d9f5c6d6b1254d136e7378c43a8550150cd2ddb28d",
+   "ledgerHeadSequence": 5453,
+   "queued": 169,
+   "retrying": 500,
+   "schemaVersion": 5,
+   "total": 5453,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "\"C:\\Program Files\\Bower\\Bower.Collector.exe\"",
+   "processId": 3344,
+   "processStart": "2026-10-31T08:48:30.4096256Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": null,
+  "status": {
+   "delivery": {
+    "decreases": 2,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 70,
+    "latencySpikes": 0,
+    "limit": 1,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 214,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 16
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 4784,
+    "oldestUndelivered": "2026-10-31T08:51:27.4333194+00:00",
+    "queued": 163,
+    "retrying": 500,
+    "totalBytes": 7417051,
+    "undeliveredBytes": 902769,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "windowsEventLog": [
+    {
+     "bookmarkRecordId": 5448,
+     "bytesRead": 2397570,
+     "channel": "ForwardedEvents",
+     "cursorConflicts": 0,
+     "duplicates": 0,
+     "eventsRead": 1715,
+     "gaps": 0,
+     "id": "wec-security",
+     "lastEventAt": "2026-10-31T08:53:39.3292329+00:00",
+     "lastPollAt": "2026-10-31T08:53:39.1889136+00:00",
+     "malformed": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 1715,
+     "readErrors": 0,
+     "rejected": 0,
+     "resets": 0,
+     "retries": 0,
+     "state": "running",
+     "submitFailures": 0,
+     "suppressed": 0
+    }
+   ]
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "w14-after-poweron-blocked": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T08:56:30.9595519+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_INGEST_TOKEN_FILE",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_OUTPUT",
+   "BOWER_AZURE_CREDENTIAL",
+   "BOWER_DCE_ENDPOINT",
+   "BOWER_DCR_ID",
+   "AZURE_TENANT_ID",
+   "AZURE_CLIENT_ID",
+   "AZURE_CLIENT_CERTIFICATE_PATH",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS",
+   "BOWER_PRIVACY_HMAC_KEY_FILE",
+   "BOWER_WINDOWS_EVENTLOG_CONFIG",
+   "BOWER_DELIVERY_LEASE_SECONDS",
+   "BOWER_DELIVERY_TIMEOUT_SECONDS"
+  ],
+  "environmentSha256": "011161c679ac1fee179a519da5a9849fc856ee7899f489479601e0a209701740",
+  "executableSha256": "20490ec6a3ca50bf65ac2b77a68d6e9ac1c48e874b3c37fc33fc0745c21010ff",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 6307
+  },
+  "host": "BOWERWEC",
+  "label": "w14-after-poweron-blocked",
+  "native": null,
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.270",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T08:56:30.7184916+00:00",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "updatedAt": "2026-10-31 08:56:30.7074935+00:00",
+     "value": "{\"schemaVersion\":2,\"channel\":\"ForwardedEvents\",\"recordId\":6307}",
+     "version": 810
+    }
+   ],
+   "deadLettered": 0,
+   "delivered": 4784,
+   "files": [
+    {
+     "bytes": 16650240,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 329632,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "6f831031d4d18faf60ad8f7e5df377d355f40ab46932d6f567a39414ec61b67c",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "bca8a0a933ccb48b4ee3283490fb863e983673d697ea1557082edd9b2ab59ec1",
+   "ledgerHeadSequence": 6306,
+   "queued": 1016,
+   "retrying": 500,
+   "schemaVersion": 5,
+   "total": 6300,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "\"C:\\Program Files\\Bower\\Bower.Collector.exe\"",
+   "processId": 3324,
+   "processStart": "2026-10-31T08:54:45.9548660Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": null,
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": null,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 0,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 4784,
+    "oldestUndelivered": "2026-10-31T08:51:27.4333194+00:00",
+    "queued": 1005,
+    "retrying": 500,
+    "totalBytes": 8563562,
+    "undeliveredBytes": 2049280,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "windowsEventLog": [
+    {
+     "bookmarkRecordId": 6290,
+     "bytesRead": 971610,
+     "channel": "ForwardedEvents",
+     "cursorConflicts": 0,
+     "duplicates": 0,
+     "eventsRead": 695,
+     "gaps": 0,
+     "id": "wec-security",
+     "lastEventAt": "2026-10-31T08:56:26.3601007+00:00",
+     "lastPollAt": "2026-10-31T08:56:26.1745718+00:00",
+     "malformed": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 695,
+     "readErrors": 0,
+     "rejected": 0,
+     "resets": 0,
+     "retries": 0,
+     "state": "running",
+     "submitFailures": 0,
+     "suppressed": 0
+    }
+   ]
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "w15-270-pre-pr": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T08:58:20.7460707+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_INGEST_TOKEN_FILE",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_OUTPUT",
+   "BOWER_AZURE_CREDENTIAL",
+   "BOWER_DCE_ENDPOINT",
+   "BOWER_DCR_ID",
+   "AZURE_TENANT_ID",
+   "AZURE_CLIENT_ID",
+   "AZURE_CLIENT_CERTIFICATE_PATH",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS",
+   "BOWER_PRIVACY_HMAC_KEY_FILE",
+   "BOWER_WINDOWS_EVENTLOG_CONFIG",
+   "BOWER_DELIVERY_LEASE_SECONDS",
+   "BOWER_DELIVERY_TIMEOUT_SECONDS"
+  ],
+  "environmentSha256": "011161c679ac1fee179a519da5a9849fc856ee7899f489479601e0a209701740",
+  "executableSha256": "20490ec6a3ca50bf65ac2b77a68d6e9ac1c48e874b3c37fc33fc0745c21010ff",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 6861
+  },
+  "host": "BOWERWEC",
+  "label": "w15-270-pre-pr",
+  "native": null,
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.270",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T08:58:20.6383606+00:00",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "updatedAt": "2026-10-31 08:58:20.568739+00:00",
+     "value": "{\"schemaVersion\":2,\"channel\":\"ForwardedEvents\",\"recordId\":6861}",
+     "version": 899
+    }
+   ],
+   "deadLettered": 0,
+   "delivered": 4784,
+   "files": [
+    {
+     "bytes": 18145280,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 1532672,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "cbd8ff12ca8361ef6853290ce968a6828bb4e4e681306af3bd11a982f5869a15",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "22606ad79053af7e2c6e6f635140b5e9c14b9d822151641adc88529c6d1af108",
+   "ledgerHeadSequence": 6860,
+   "queued": 1576,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 6860,
+   "uploading": 500
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "\"C:\\Program Files\\Bower\\Bower.Collector.exe\"",
+   "processId": 3324,
+   "processStart": "2026-10-31T08:54:45.9548660Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": "82ca515c3420a5d8ce7d12f4051c83523a5a8a18e75f49eb62c12c097baed770",
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": null,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 0,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 4784,
+    "oldestUndelivered": "2026-10-31T08:51:27.4333194+00:00",
+    "queued": 1567,
+    "retrying": 500,
+    "totalBytes": 9328833,
+    "undeliveredBytes": 2814551,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "windowsEventLog": [
+    {
+     "bookmarkRecordId": 6851,
+     "bytesRead": 1757286,
+     "channel": "ForwardedEvents",
+     "cursorConflicts": 0,
+     "duplicates": 0,
+     "eventsRead": 1257,
+     "gaps": 0,
+     "id": "wec-security",
+     "lastEventAt": "2026-10-31T08:58:20.2786823+00:00",
+     "lastPollAt": "2026-10-31T08:58:20.2757246+00:00",
+     "malformed": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 1256,
+     "readErrors": 0,
+     "rejected": 0,
+     "resets": 0,
+     "retries": 0,
+     "state": "running",
+     "submitFailures": 0,
+     "suppressed": 0
+    }
+   ]
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "w17-pr-after-upgrade": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T08:59:13.8456234+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS",
+   "BOWER_SETTINGS_FILE"
+  ],
+  "environmentSha256": "91e49724f364b9c80e5ded307a880e55116f830bb624fc4a35477395f29c3506",
+  "executableSha256": "391883fb4ef93d2ffd5547220c6f1cbcade0ea8586b2c45f0d062ebc618329d7",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 7122
+  },
+  "host": "BOWERWEC",
+  "label": "w17-pr-after-upgrade",
+  "native": null,
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.277",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T08:59:13.7321879+00:00",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "updatedAt": "2026-10-31 08:59:13.0834696+00:00",
+     "value": "{\"schemaVersion\":2,\"channel\":\"ForwardedEvents\",\"recordId\":7116}",
+     "version": 942
+    }
+   ],
+   "deadLettered": 0,
+   "delivered": 4784,
+   "files": [
+    {
+     "bytes": 18792448,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 49472,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "ce3e7f6dc9a0aa2f27b2f987428b9ce5276c6868367ae7f93b5365c750164d69",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "a017e28c0792e5890db91e8dd662e6b1832c94d9b86c917117e1d7b6fd385432",
+   "ledgerHeadSequence": 7115,
+   "queued": 1831,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 7115,
+   "uploading": 500
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "\"C:\\Program Files\\Bower\\Bower.Collector.exe\"",
+   "processId": 1284,
+   "processStart": "2026-10-31T08:58:42.0826632Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": "82ca515c3420a5d8ce7d12f4051c83523a5a8a18e75f49eb62c12c097baed770",
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 1,
+    "increases": 0,
+    "latencyEwmaMilliseconds": null,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 0,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 4784,
+    "oldestUndelivered": "2026-10-31T08:51:27.4333194+00:00",
+    "queued": 1831,
+    "retrying": 0,
+    "totalBytes": 9688309,
+    "undeliveredBytes": 3174027,
+    "uploading": 500
+   },
+   "status": "healthy",
+   "windowsEventLog": [
+    {
+     "bookmarkRecordId": 7116,
+     "bytesRead": 232068,
+     "channel": "ForwardedEvents",
+     "cursorConflicts": 0,
+     "duplicates": 0,
+     "eventsRead": 166,
+     "gaps": 0,
+     "id": "wec-security",
+     "lastEventAt": "2026-10-31T08:59:13.0652791+00:00",
+     "lastPollAt": "2026-10-31T08:59:12.9815567+00:00",
+     "malformed": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 166,
+     "readErrors": 0,
+     "rejected": 0,
+     "resets": 0,
+     "retries": 0,
+     "state": "running",
+     "submitFailures": 0,
+     "suppressed": 0
+    }
+   ]
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "w18-final-before-loss": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T09:03:19.7897483+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS",
+   "BOWER_SETTINGS_FILE"
+  ],
+  "environmentSha256": "91e49724f364b9c80e5ded307a880e55116f830bb624fc4a35477395f29c3506",
+  "executableSha256": "391883fb4ef93d2ffd5547220c6f1cbcade0ea8586b2c45f0d062ebc618329d7",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 8355
+  },
+  "host": "BOWERWEC",
+  "label": "w18-final-before-loss",
+  "native": {
+   "capturedAt": "2026-10-31T09:03:19.7146593+00:00",
+   "channel": "ForwardedEvents",
+   "distinct": 8331,
+   "duplicateIdentities": 0,
+   "examined": 8331,
+   "identitySetSha256": "cf63756eec56c4c627ff2042b8a7779d1d8c873566504f9b3dd4d8819077d983",
+   "kind": "native",
+   "maxRecordId": 389050,
+   "minRecordId": 372016,
+   "redactionChangedIds": 3,
+   "selected": 8331,
+   "since": "2026-10-31T08:35:00+00:00",
+   "unselected": 0
+  },
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.277",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T09:03:15.3835109+00:00",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "updatedAt": "2026-10-31 09:03:15.3485577+00:00",
+     "value": "{\"schemaVersion\":2,\"channel\":\"ForwardedEvents\",\"recordId\":8332}",
+     "version": 1139
+    }
+   ],
+   "deadLettered": 0,
+   "delivered": 8325,
+   "files": [
+    {
+     "bytes": 22044672,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 350232,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "0a17f822675c704d232a61110329bd1581ef8a5b16edc363f3f98bea39e3c117",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "3fa367c05ba280c54e4665e7576df4cda82c5afbe419a3997cf485d9f4a7c609",
+   "ledgerHeadSequence": 8331,
+   "queued": 0,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 8325,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "\"C:\\Program Files\\Bower\\Bower.Collector.exe\"",
+   "processId": 1284,
+   "processStart": "2026-10-31T08:58:42.0826632Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": "82ca515c3420a5d8ce7d12f4051c83523a5a8a18e75f49eb62c12c097baed770",
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 70,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 111,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 8325,
+    "oldestUndelivered": null,
+    "queued": 0,
+    "retrying": 0,
+    "totalBytes": 11335906,
+    "undeliveredBytes": 0,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "windowsEventLog": [
+    {
+     "bookmarkRecordId": 8326,
+     "bytesRead": 1923648,
+     "channel": "ForwardedEvents",
+     "cursorConflicts": 0,
+     "duplicates": 0,
+     "eventsRead": 1376,
+     "gaps": 0,
+     "id": "wec-security",
+     "lastEventAt": "2026-10-31T09:03:14.292417+00:00",
+     "lastPollAt": "2026-10-31T09:03:14.1859795+00:00",
+     "malformed": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 1376,
+     "readErrors": 0,
+     "rejected": 0,
+     "resets": 0,
+     "retries": 0,
+     "state": "running",
+     "submitFailures": 0,
+     "suppressed": 0
+    }
+   ]
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "w19-recovered-disk": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T09:33:23.6344676+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS",
+   "BOWER_SETTINGS_FILE"
+  ],
+  "environmentSha256": "91e49724f364b9c80e5ded307a880e55116f830bb624fc4a35477395f29c3506",
+  "executableSha256": "391883fb4ef93d2ffd5547220c6f1cbcade0ea8586b2c45f0d062ebc618329d7",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 8460
+  },
+  "host": "BOWERWEC",
+  "label": "w19-recovered-disk",
+  "native": {
+   "capturedAt": "2026-10-31T09:33:23.5436782+00:00",
+   "channel": "ForwardedEvents",
+   "distinct": 8459,
+   "duplicateIdentities": 0,
+   "examined": 8459,
+   "identitySetSha256": "0d7961bf9e8b43c7478ebe5acf5c164075630710a927f3a75676596d82bc3bbd",
+   "kind": "native",
+   "maxRecordId": 389309,
+   "minRecordId": 372016,
+   "redactionChangedIds": 3,
+   "selected": 8459,
+   "since": "2026-10-31T08:35:00+00:00",
+   "unselected": 0
+  },
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.277",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T09:33:19.6749479+00:00",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "updatedAt": "2026-10-31 09:32:19.5951349+00:00",
+     "value": "{\"schemaVersion\":2,\"channel\":\"ForwardedEvents\",\"recordId\":8460}",
+     "version": 1152
+    }
+   ],
+   "deadLettered": 0,
+   "delivered": 8459,
+   "files": [
+    {
+     "bytes": 22409216,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 32992,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "0d7961bf9e8b43c7478ebe5acf5c164075630710a927f3a75676596d82bc3bbd",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "a711cdeef4ef2549b144e19e300973fb71c38ef5a5e809246b1b30f5a966bd67",
+   "ledgerHeadSequence": 8459,
+   "queued": 0,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 8459,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "\"C:\\Program Files\\Bower\\Bower.Collector.exe\"",
+   "processId": 5092,
+   "processStart": "2026-10-31T09:32:16.6490716Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": "82ca515c3420a5d8ce7d12f4051c83523a5a8a18e75f49eb62c12c097baed770",
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 58,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 14,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 8459,
+    "oldestUndelivered": null,
+    "queued": 0,
+    "retrying": 0,
+    "totalBytes": 11518360,
+    "undeliveredBytes": 0,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "windowsEventLog": [
+    {
+     "bookmarkRecordId": 8460,
+     "bytesRead": 78288,
+     "channel": "ForwardedEvents",
+     "cursorConflicts": 0,
+     "duplicates": 0,
+     "eventsRead": 56,
+     "gaps": 0,
+     "id": "wec-security",
+     "lastEventAt": "2026-10-31T09:32:19.5735661+00:00",
+     "lastPollAt": "2026-10-31T09:33:13.9547487+00:00",
+     "malformed": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 56,
+     "readErrors": 0,
+     "rejected": 0,
+     "resets": 0,
+     "retries": 0,
+     "state": "running",
+     "submitFailures": 0,
+     "suppressed": 0
+    }
+   ]
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "x01-restored-before-repoint": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T09:02:53.4495312+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS",
+   "BOWER_SETTINGS_FILE"
+  ],
+  "environmentSha256": "91e49724f364b9c80e5ded307a880e55116f830bb624fc4a35477395f29c3506",
+  "executableSha256": "391883fb4ef93d2ffd5547220c6f1cbcade0ea8586b2c45f0d062ebc618329d7",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 0
+  },
+  "host": "BOWERWEC2",
+  "label": "x01-restored-before-repoint",
+  "native": null,
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.277",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T09:02:53.3182264+00:00",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "updatedAt": "2026-10-31 09:02:22.663127+00:00",
+     "value": "{\"schemaVersion\":2,\"channel\":\"ForwardedEvents\",\"recordId\":0}",
+     "version": 1000
+    }
+   ],
+   "deadLettered": 0,
+   "delivered": 7462,
+   "files": [
+    {
+     "bytes": 19742720,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 494432,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "b34269c1f98f6f23acf19c2887dbfe7d2b67d1a0707ea65a9e3aa501e2ffddcd",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "67c8b0d9227bc6238570a60ba603527185f42a13e803f4e51cb519a913138543",
+   "ledgerHeadSequence": 7462,
+   "queued": 0,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 7462,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "\"C:\\Program Files\\Bower\\Bower.Collector.exe\"",
+   "processId": 3876,
+   "processStart": "2026-10-31T09:02:22.5541859Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": "57348e80678fa92c0a22d7af67a388426d04b60bbce105b3d37ffa55f46e0e0a",
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 83,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 6,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 7462,
+    "oldestUndelivered": null,
+    "queued": 0,
+    "retrying": 0,
+    "totalBytes": 10160791,
+    "undeliveredBytes": 0,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "windowsEventLog": [
+    {
+     "bookmarkRecordId": 0,
+     "bytesRead": 0,
+     "channel": "ForwardedEvents",
+     "cursorConflicts": 0,
+     "duplicates": 0,
+     "eventsRead": 0,
+     "gaps": 0,
+     "id": "wec-security",
+     "lastEventAt": null,
+     "lastPollAt": "2026-10-31T09:02:51.855775+00:00",
+     "malformed": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 0,
+     "readErrors": 0,
+     "rejected": 0,
+     "resets": 1,
+     "retries": 0,
+     "state": "running",
+     "submitFailures": 0,
+     "suppressed": 0
+    }
+   ]
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "x02-after-repoint": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T09:06:05.6557305+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS",
+   "BOWER_SETTINGS_FILE"
+  ],
+  "environmentSha256": "91e49724f364b9c80e5ded307a880e55116f830bb624fc4a35477395f29c3506",
+  "executableSha256": "391883fb4ef93d2ffd5547220c6f1cbcade0ea8586b2c45f0d062ebc618329d7",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 725
+  },
+  "host": "BOWERWEC2",
+  "label": "x02-after-repoint",
+  "native": null,
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.277",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T09:06:05.54525+00:00",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "updatedAt": "2026-10-31 09:06:05.3076467+00:00",
+     "value": "{\"schemaVersion\":2,\"channel\":\"ForwardedEvents\",\"recordId\":719}",
+     "version": 1121
+    }
+   ],
+   "deadLettered": 0,
+   "delivered": 8174,
+   "files": [
+    {
+     "bytes": 21684224,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 103032,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "65301606c42b3c78c8d18ed3010298e98aa61cacb328c2575118715401760a26",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "1e8a9794e04e1558c434a240d4d87eb748ae4f33dca8b8887653e0f6c7e7decc",
+   "ledgerHeadSequence": 8180,
+   "queued": 0,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 8180,
+   "uploading": 6
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "\"C:\\Program Files\\Bower\\Bower.Collector.exe\"",
+   "processId": 3876,
+   "processStart": "2026-10-31T09:02:22.5541859Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": "57348e80678fa92c0a22d7af67a388426d04b60bbce105b3d37ffa55f46e0e0a",
+  "status": {
+   "delivery": {
+    "decreases": 1,
+    "inFlight": 0,
+    "increases": 1,
+    "latencyEwmaMilliseconds": 69,
+    "latencySpikes": 1,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 131,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 8174,
+    "oldestUndelivered": "2026-10-31T09:06:05.1882063+00:00",
+    "queued": 5,
+    "retrying": 0,
+    "totalBytes": 11137098,
+    "undeliveredBytes": 6807,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "windowsEventLog": [
+    {
+     "bookmarkRecordId": 713,
+     "bytesRead": 1002366,
+     "channel": "ForwardedEvents",
+     "cursorConflicts": 0,
+     "duplicates": 0,
+     "eventsRead": 717,
+     "gaps": 0,
+     "id": "wec-security",
+     "lastEventAt": "2026-10-31T09:06:05.2693188+00:00",
+     "lastPollAt": "2026-10-31T09:06:05.1842363+00:00",
+     "malformed": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 716,
+     "readErrors": 0,
+     "rejected": 0,
+     "resets": 1,
+     "retries": 0,
+     "state": "running",
+     "submitFailures": 0,
+     "suppressed": 0
+    }
+   ]
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "x04-after-downgrade-attempt": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T09:15:13.9867264+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS"
+  ],
+  "environmentSha256": "7a0ac4eb01974a9df804cb12675ec6c5c7c0093b2ec6c432cc950efce8104968",
+  "executableSha256": "b206caa79afd1b08086edaf6cbfa586b5d3fc5f1e2c78792291ef3bf3b43f6a7",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 3465
+  },
+  "host": "BOWERWEC2",
+  "label": "x04-after-downgrade-attempt",
+  "native": null,
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.264",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T09:15:13.8795341+00:00",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "updatedAt": "2026-10-31 09:15:04.4917181+00:00",
+     "value": "{\"schemaVersion\":2,\"channel\":\"ForwardedEvents\",\"recordId\":3418}",
+     "version": 1571
+    }
+   ],
+   "deadLettered": 0,
+   "delivered": 10879,
+   "files": [
+    {
+     "bytes": 28717056,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 0,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "5ce4eea680b6110f95f22439ed9a9c8845fdba8b212ce7a6cf69d611302939dd",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "5d337e56bc34bf8939b58d290713700efbf58e1aaae067cd5efc11935493a0fa",
+   "ledgerHeadSequence": 10879,
+   "queued": 0,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 10879,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "\"C:\\Program Files\\Bower\\Bower.Collector.exe\"",
+   "processId": 1608,
+   "processStart": "2026-10-31T09:15:07.1330557Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": "57348e80678fa92c0a22d7af67a388426d04b60bbce105b3d37ffa55f46e0e0a",
+  "status": {
+   "delivery": null,
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 10879,
+    "oldestUndelivered": null,
+    "queued": 0,
+    "retrying": 0,
+    "totalBytes": 14813607,
+    "undeliveredBytes": 0,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "windowsEventLog": null
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "x06-pr-reinstalled": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T09:16:06.7263852+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS",
+   "BOWER_SETTINGS_FILE"
+  ],
+  "environmentSha256": "91e49724f364b9c80e5ded307a880e55116f830bb624fc4a35477395f29c3506",
+  "executableSha256": "391883fb4ef93d2ffd5547220c6f1cbcade0ea8586b2c45f0d062ebc618329d7",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 3733
+  },
+  "host": "BOWERWEC2",
+  "label": "x06-pr-reinstalled",
+  "native": null,
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.277",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T09:16:06.6007317+00:00",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "updatedAt": "2026-10-31 09:16:05.5584889+00:00",
+     "value": "{\"schemaVersion\":2,\"channel\":\"ForwardedEvents\",\"recordId\":3723}",
+     "version": 1588
+    }
+   ],
+   "deadLettered": 0,
+   "delivered": 11184,
+   "files": [
+    {
+     "bytes": 29564928,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 41232,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "e5cf8e9ac7a59b2163cf6d1e0cbd51e7383afb9e3a840e0d8812edb826b28bbb",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "b758584631bc2d5b4e78d77e1b33349fbe7d150587d5d080978f2ea7ae2bd10e",
+   "ledgerHeadSequence": 11188,
+   "queued": 0,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 11184,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "\"C:\\Program Files\\Bower\\Bower.Collector.exe\"",
+   "processId": 2164,
+   "processStart": "2026-10-31T09:15:43.5764563Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": "57348e80678fa92c0a22d7af67a388426d04b60bbce105b3d37ffa55f46e0e0a",
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 67,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 35,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 11184,
+    "oldestUndelivered": null,
+    "queued": 0,
+    "retrying": 0,
+    "totalBytes": 15228915,
+    "undeliveredBytes": 0,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "windowsEventLog": [
+    {
+     "bookmarkRecordId": 3723,
+     "bytesRead": 426390,
+     "channel": "ForwardedEvents",
+     "cursorConflicts": 0,
+     "duplicates": 0,
+     "eventsRead": 305,
+     "gaps": 0,
+     "id": "wec-security",
+     "lastEventAt": "2026-10-31T09:16:05.5398213+00:00",
+     "lastPollAt": "2026-10-31T09:16:05.4517207+00:00",
+     "malformed": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 305,
+     "readErrors": 0,
+     "rejected": 0,
+     "resets": 0,
+     "retries": 0,
+     "state": "running",
+     "submitFailures": 0,
+     "suppressed": 0
+    }
+   ]
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "x07-final": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T09:20:58.8364814+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS",
+   "BOWER_SETTINGS_FILE"
+  ],
+  "environmentSha256": "91e49724f364b9c80e5ded307a880e55116f830bb624fc4a35477395f29c3506",
+  "executableSha256": "391883fb4ef93d2ffd5547220c6f1cbcade0ea8586b2c45f0d062ebc618329d7",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 4563
+  },
+  "host": "BOWERWEC2",
+  "label": "x07-final",
+  "native": {
+   "capturedAt": "2026-10-31T09:20:58.7674174+00:00",
+   "channel": "ForwardedEvents",
+   "distinct": 4562,
+   "duplicateIdentities": 0,
+   "examined": 4562,
+   "identitySetSha256": "64acbf52d95fb200bb1b8a853a1baaa7ddede36463fad1aecb39c872c8723d36",
+   "kind": "native",
+   "maxRecordId": 398580,
+   "minRecordId": 389311,
+   "redactionChangedIds": 2,
+   "selected": 4562,
+   "since": "2026-10-31T08:35:00+00:00",
+   "unselected": 0
+  },
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.277",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T09:20:56.6753884+00:00",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "updatedAt": "2026-10-31 09:18:54.1942107+00:00",
+     "value": "{\"schemaVersion\":2,\"channel\":\"ForwardedEvents\",\"recordId\":4563}",
+     "version": 1734
+    }
+   ],
+   "deadLettered": 0,
+   "delivered": 12024,
+   "files": [
+    {
+     "bytes": 31805440,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 4152,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "f3e6baf0c26368e6e205d83ab9846e983adea30494982b88cb5f4be5e8ca520c",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "3939b10fef64af9829be0434c5dbc97dc0f3682acbf6c33197c49bd8b6932440",
+   "ledgerHeadSequence": 12024,
+   "queued": 0,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 12024,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "\"C:\\Program Files\\Bower\\Bower.Collector.exe\"",
+   "processId": 2164,
+   "processStart": "2026-10-31T09:15:43.5764563Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": "57348e80678fa92c0a22d7af67a388426d04b60bbce105b3d37ffa55f46e0e0a",
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 67,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 188,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 12024,
+    "oldestUndelivered": null,
+    "queued": 0,
+    "retrying": 0,
+    "totalBytes": 16372719,
+    "undeliveredBytes": 0,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "windowsEventLog": [
+    {
+     "bookmarkRecordId": 4563,
+     "bytesRead": 1600710,
+     "channel": "ForwardedEvents",
+     "cursorConflicts": 0,
+     "duplicates": 0,
+     "eventsRead": 1145,
+     "gaps": 0,
+     "id": "wec-security",
+     "lastEventAt": "2026-10-31T09:18:54.17506+00:00",
+     "lastPollAt": "2026-10-31T09:20:55.7644578+00:00",
+     "malformed": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 1145,
+     "readErrors": 0,
+     "rejected": 0,
+     "resets": 0,
+     "retries": 0,
+     "state": "running",
+     "submitFailures": 0,
+     "suppressed": 0
+    }
+   ]
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "x08-dr-subscription": {
+  "acl": {
+   "enrolment": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "keys": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "packs": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "policies": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "e71be05c134b9f60bd900c97fc8927cb04d75d4175aac4740861f31191b02960"
+   },
+   "root": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "secrets": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "cbba895494126840211c9f1a949f4623534159deb8c4e7fe680a7eade7059ffe"
+   },
+   "spool": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   },
+   "state": {
+    "owner": "NT AUTHORITY\\SYSTEM",
+    "sddlSha256": "1978e794ced80319c520f2d5a6c8ad6ef37a6abb8aacc99c3d75c8cedd2bcd23"
+   }
+  },
+  "capturedAt": "2026-10-31T09:28:50.9577622+00:00",
+  "environmentNames": [
+   "BOWER_LISTEN_URL",
+   "BOWER_QUEUE_PATH",
+   "BOWER_POLICY_DIRECTORY",
+   "BOWER_AMA_SPOOL_PATH",
+   "BOWER_COLLECTOR_ID",
+   "BOWER_ENVIRONMENT",
+   "BOWER_MANAGEMENT_ENDPOINT",
+   "BOWER_MANAGEMENT_AUTH",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE",
+   "BOWER_MANAGEMENT_ENROLMENT_TOKEN_REMOVE_AFTER_USE",
+   "BOWER_MANAGEMENT_COMMAND_TRUSTED_KEYS",
+   "BOWER_PACKS",
+   "BOWER_PACK_TRUSTED_KEYS",
+   "BOWER_SETTINGS_FILE"
+  ],
+  "environmentSha256": "91e49724f364b9c80e5ded307a880e55116f830bb624fc4a35477395f29c3506",
+  "executableSha256": "391883fb4ef93d2ffd5547220c6f1cbcade0ea8586b2c45f0d062ebc618329d7",
+  "forwardedEvents": {
+   "maximumBytes": 1073741824,
+   "records": 4564
+  },
+  "host": "BOWERWEC2",
+  "label": "x08-dr-subscription",
+  "native": null,
+  "packSha256": "06cc135e0c0d16eebdd5ba7978effdef0244f4f8a8dc9dbb2a52656aaa4a3b14",
+  "product": "0.1.0.277",
+  "queue": {
+   "attemptsAboveOne": 0,
+   "capturedAt": "2026-10-31T09:28:50.8495059+00:00",
+   "cursors": [
+    {
+     "sourceId": "windows-eventlog:wec-security",
+     "updatedAt": "2026-10-31 09:26:14.159126+00:00",
+     "value": "{\"schemaVersion\":2,\"channel\":\"ForwardedEvents\",\"recordId\":4564}",
+     "version": 1735
+    }
+   ],
+   "deadLettered": 0,
+   "delivered": 12024,
+   "files": [
+    {
+     "bytes": 31805440,
+     "name": "queue.db"
+    },
+    {
+     "bytes": 32768,
+     "name": "queue.db-shm"
+    },
+    {
+     "bytes": 4152,
+     "name": "queue.db-wal"
+    }
+   ],
+   "identitySetSha256": "f3e6baf0c26368e6e205d83ab9846e983adea30494982b88cb5f4be5e8ca520c",
+   "integrity": "ok",
+   "journal": "wal",
+   "kind": "queue",
+   "ledgerHeadHash": "3939b10fef64af9829be0434c5dbc97dc0f3682acbf6c33197c49bd8b6932440",
+   "ledgerHeadSequence": 12024,
+   "queued": 0,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 12024,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "account": "NT SERVICE\\Bower",
+   "pathName": "\"C:\\Program Files\\Bower\\Bower.Collector.exe\"",
+   "processId": 2164,
+   "processStart": "2026-10-31T09:15:43.5764563Z",
+   "startMode": "Auto",
+   "state": "Running"
+  },
+  "settingsFileSha256": "57348e80678fa92c0a22d7af67a388426d04b60bbce105b3d37ffa55f46e0e0a",
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 67,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 188,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 12024,
+    "oldestUndelivered": null,
+    "queued": 0,
+    "retrying": 0,
+    "totalBytes": 16372719,
+    "undeliveredBytes": 0,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "windowsEventLog": [
+    {
+     "bookmarkRecordId": 4564,
+     "bytesRead": 1600710,
+     "channel": "ForwardedEvents",
+     "cursorConflicts": 0,
+     "duplicates": 0,
+     "eventsRead": 1145,
+     "gaps": 0,
+     "id": "wec-security",
+     "lastEventAt": "2026-10-31T09:18:54.17506+00:00",
+     "lastPollAt": "2026-10-31T09:28:49.8766197+00:00",
+     "malformed": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "queued": 1145,
+     "readErrors": 0,
+     "rejected": 0,
+     "resets": 0,
+     "retries": 0,
+     "state": "running",
+     "submitFailures": 0,
+     "suppressed": 0
+    }
+   ]
+  },
+  "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca",
+  "windowsEventLogConfigSha256": "500f9afd0a3ba68be7f7b1b2f4a5e466392240576e9aea2aea3655109ed4272c"
+ },
+ "y01-restored-receiving": {
+  "capturedAt": "2026-10-31T09:05:55.395515+00:00",
+  "config": {
+   "bower.env": "1b7a94009494d1c512033657f74fa5a5c371e05aba3e2478821841ebbab5680c",
+   "ca": "18719919e1a93ecee35c13db950dd886009eee37b6a9215f98a5b591c9416340",
+   "pack": "1e7f68c126135812413e991bca41410035c0116b220306bfd4f9a8750caff0f0",
+   "serverCert": "9e35c04486aba75f54fb65ff9d1b816bbfe4a221bd846c04b19afb885b0a8411",
+   "syslog.json": "c0e8699ed9b83fa54201f32b6aebf192513fe07af36cf755d879ec971430049a",
+   "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca"
+  },
+  "executableSha256": "aa195614be72d65c7fc68a07bf1a26f6114145df29a3ac93426bd68c00b22c43",
+  "host": "ip-172-31-244-168.ap-southeast-2.compute.internal",
+  "label": "y01-restored-receiving",
+  "package": "bower-collector-0.1.0~dev.277-1.x86_64",
+  "permissions": {
+   "/etc/bower": {
+    "mode": "0o755",
+    "owner": "root:root"
+   },
+   "/etc/bower/bower.env": {
+    "mode": "0o640",
+    "owner": "root:bower"
+   },
+   "/etc/bower/secrets": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/etc/bower/tls": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/var/lib/bower": {
+    "mode": "0o700",
+    "owner": "bower:bower"
+   },
+   "/var/lib/bower/queue.db": {
+    "mode": "0o600",
+    "owner": "bower:bower"
+   },
+   "/var/spool/bower": {
+    "mode": "0o750",
+    "owner": "bower:bower"
+   }
+  },
+  "queue": {
+   "attemptsAboveOne": 501,
+   "cursors": [],
+   "deadLettered": 0,
+   "delivered": 13277,
+   "files": {
+    "queue.db": 35106816,
+    "queue.db-shm": 32768,
+    "queue.db-wal": 49472
+   },
+   "identitySetSha256": "22844374b6d221753668d062fc33592eb855904a30409f967543b1695cc322a4",
+   "integrity": "ok",
+   "ledgerHead": [
+    13281,
+    "1174bce1d30a9c958f9e9ded95650d1bb94bd2de7c56b6a8cc1eafe3a0eeda0c"
+   ],
+   "queued": 3,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 13280,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "active": "active",
+   "activeEnter": "Sat 2026-10-31 09:04:25 UTC",
+   "mainPid": "31271",
+   "nRestarts": "0",
+   "user": "bower"
+  },
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 83,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 120,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 13277,
+    "oldestUndelivered": "2026-10-31T09:05:55.0027841+00:00",
+    "queued": 4,
+    "retrying": 0,
+    "totalBytes": 15161919,
+    "undeliveredBytes": 4564,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "syslog": [
+    {
+     "activeConnections": 1,
+     "bytesReceived": 67203,
+     "connectionsAccepted": 1,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 0,
+     "endpoint": "0.0.0.0:6514",
+     "framesReceived": 393,
+     "framingErrors": 0,
+     "id": "firewall",
+     "lastFrameAt": "2026-10-31T09:05:55.3020246+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "protocol": "tls",
+     "queued": 393,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 0,
+     "tlsHandshakeFailures": 0
+    }
+   ]
+  },
+  "unitSha256": "2dd1ff300cf261453c86caf3ed1bed7d7b1cd3a880d1ee0385e11c70b0fb47e4"
+ },
+ "y02-pr-pre-downgrade": {
+  "capturedAt": "2026-10-31T09:13:11.827763+00:00",
+  "config": {
+   "bower.env": "1b7a94009494d1c512033657f74fa5a5c371e05aba3e2478821841ebbab5680c",
+   "ca": "18719919e1a93ecee35c13db950dd886009eee37b6a9215f98a5b591c9416340",
+   "pack": "1e7f68c126135812413e991bca41410035c0116b220306bfd4f9a8750caff0f0",
+   "serverCert": "9e35c04486aba75f54fb65ff9d1b816bbfe4a221bd846c04b19afb885b0a8411",
+   "syslog.json": "c0e8699ed9b83fa54201f32b6aebf192513fe07af36cf755d879ec971430049a",
+   "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca"
+  },
+  "executableSha256": "aa195614be72d65c7fc68a07bf1a26f6114145df29a3ac93426bd68c00b22c43",
+  "host": "ip-172-31-244-168.ap-southeast-2.compute.internal",
+  "label": "y02-pr-pre-downgrade",
+  "package": "bower-collector-0.1.0~dev.277-1.x86_64",
+  "permissions": {
+   "/etc/bower": {
+    "mode": "0o755",
+    "owner": "root:root"
+   },
+   "/etc/bower/bower.env": {
+    "mode": "0o640",
+    "owner": "root:bower"
+   },
+   "/etc/bower/secrets": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/etc/bower/tls": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/var/lib/bower": {
+    "mode": "0o700",
+    "owner": "bower:bower"
+   },
+   "/var/lib/bower/queue.db": {
+    "mode": "0o600",
+    "owner": "bower:bower"
+   },
+   "/var/spool/bower": {
+    "mode": "0o750",
+    "owner": "bower:bower"
+   }
+  },
+  "queue": {
+   "attemptsAboveOne": 501,
+   "cursors": [],
+   "deadLettered": 0,
+   "delivered": 17639,
+   "files": {
+    "queue.db": 46575616,
+    "queue.db-shm": 32768,
+    "queue.db-wal": 78312
+   },
+   "identitySetSha256": "51e528d988ab1a1dc5f8d45683064ac45a56a4c65a7de9e29003ba4aa53c1d29",
+   "integrity": "ok",
+   "ledgerHead": [
+    17645,
+    "2f11f5630407e66f01d01b0ed068cb943e5612903f694ee6f3c854d3c1dbf72a"
+   ],
+   "queued": 5,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 17644,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "active": "active",
+   "activeEnter": "Sat 2026-10-31 09:04:25 UTC",
+   "mainPid": "31271",
+   "nRestarts": "0",
+   "user": "bower"
+  },
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 85,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 1363,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 17639,
+    "oldestUndelivered": "2026-10-31T09:13:11.2029839+00:00",
+    "queued": 7,
+    "retrying": 0,
+    "totalBytes": 20144976,
+    "undeliveredBytes": 7992,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "syslog": [
+    {
+     "activeConnections": 1,
+     "bytesReceived": 813618,
+     "connectionsAccepted": 1,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 0,
+     "endpoint": "0.0.0.0:6514",
+     "framesReceived": 4758,
+     "framingErrors": 0,
+     "id": "firewall",
+     "lastFrameAt": "2026-10-31T09:13:11.8019438+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "protocol": "tls",
+     "queued": 4758,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 0,
+     "tlsHandshakeFailures": 0
+    }
+   ]
+  },
+  "unitSha256": "2dd1ff300cf261453c86caf3ed1bed7d7b1cd3a880d1ee0385e11c70b0fb47e4"
+ },
+ "y04-264-after-downgrade": {
+  "capturedAt": "2026-10-31T09:13:49.322800+00:00",
+  "config": {
+   "bower.env": "1b7a94009494d1c512033657f74fa5a5c371e05aba3e2478821841ebbab5680c",
+   "ca": "18719919e1a93ecee35c13db950dd886009eee37b6a9215f98a5b591c9416340",
+   "pack": "1e7f68c126135812413e991bca41410035c0116b220306bfd4f9a8750caff0f0",
+   "serverCert": "9e35c04486aba75f54fb65ff9d1b816bbfe4a221bd846c04b19afb885b0a8411",
+   "syslog.json": "c0e8699ed9b83fa54201f32b6aebf192513fe07af36cf755d879ec971430049a",
+   "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca"
+  },
+  "executableSha256": "d6229ee2b106ee9cd1fe615f4c9f15e3f5036bc26b0cad0aa04b62cf8424e977",
+  "host": "ip-172-31-244-168.ap-southeast-2.compute.internal",
+  "label": "y04-264-after-downgrade",
+  "package": "bower-collector-0.1.0~dev.264-1.x86_64",
+  "permissions": {
+   "/etc/bower": {
+    "mode": "0o755",
+    "owner": "root:root"
+   },
+   "/etc/bower/bower.env": {
+    "mode": "0o640",
+    "owner": "root:bower"
+   },
+   "/etc/bower/secrets": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/etc/bower/tls": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/var/lib/bower": {
+    "mode": "0o700",
+    "owner": "bower:bower"
+   },
+   "/var/lib/bower/queue.db": {
+    "mode": "0o600",
+    "owner": "bower:bower"
+   },
+   "/var/spool/bower": {
+    "mode": "0o750",
+    "owner": "bower:bower"
+   }
+  },
+  "queue": {
+   "attemptsAboveOne": 501,
+   "cursors": [],
+   "deadLettered": 0,
+   "delivered": 18014,
+   "files": {
+    "queue.db": 47579136,
+    "queue.db-shm": 32768,
+    "queue.db-wal": 78312
+   },
+   "identitySetSha256": "be95a696731d4216cf934a4dc3c8cf075dc10e62e26e3f87fd2f1318593a289e",
+   "integrity": "ok",
+   "ledgerHead": [
+    18020,
+    "f026ee8534ece93a8268ab553bdbb848406e81135c19ed650f70077bd9202abd"
+   ],
+   "queued": 5,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 18019,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "active": "active",
+   "activeEnter": "Sat 2026-10-31 09:13:22 UTC",
+   "mainPid": "31913",
+   "nRestarts": "0",
+   "user": "bower"
+  },
+  "status": {
+   "delivery": {
+    "decreases": 0,
+    "inFlight": 0,
+    "increases": 0,
+    "latencyEwmaMilliseconds": 83,
+    "latencySpikes": 0,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 57,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 18014,
+    "oldestUndelivered": "2026-10-31T09:13:48.702574+00:00",
+    "queued": 6,
+    "retrying": 0,
+    "totalBytes": 20572015,
+    "undeliveredBytes": 6848,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "syslog": [
+    {
+     "activeConnections": 1,
+     "bytesReceived": 250515,
+     "connectionsAccepted": 1,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 1199,
+     "endpoint": "0.0.0.0:6514",
+     "framesReceived": 1465,
+     "framingErrors": 0,
+     "id": "firewall",
+     "lastFrameAt": "2026-10-31T09:13:49.2019907+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "protocol": "tls",
+     "queued": 266,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 0,
+     "tlsHandshakeFailures": 0
+    }
+   ]
+  },
+  "unitSha256": "2dd1ff300cf261453c86caf3ed1bed7d7b1cd3a880d1ee0385e11c70b0fb47e4"
+ },
+ "y05-final": {
+  "capturedAt": "2026-10-31T09:20:58.700381+00:00",
+  "config": {
+   "bower.env": "1b7a94009494d1c512033657f74fa5a5c371e05aba3e2478821841ebbab5680c",
+   "ca": "18719919e1a93ecee35c13db950dd886009eee37b6a9215f98a5b591c9416340",
+   "pack": "1e7f68c126135812413e991bca41410035c0116b220306bfd4f9a8750caff0f0",
+   "serverCert": "9e35c04486aba75f54fb65ff9d1b816bbfe4a221bd846c04b19afb885b0a8411",
+   "syslog.json": "c0e8699ed9b83fa54201f32b6aebf192513fe07af36cf755d879ec971430049a",
+   "trustAnchorPemSha256": "8a26eb0336d6c9aa5db4837ffeb234105621c06b9199c8b31296cb9fc114dcca"
+  },
+  "executableSha256": "d6229ee2b106ee9cd1fe615f4c9f15e3f5036bc26b0cad0aa04b62cf8424e977",
+  "host": "ip-172-31-244-168.ap-southeast-2.compute.internal",
+  "label": "y05-final",
+  "package": "bower-collector-0.1.0~dev.264-1.x86_64",
+  "permissions": {
+   "/etc/bower": {
+    "mode": "0o755",
+    "owner": "root:root"
+   },
+   "/etc/bower/bower.env": {
+    "mode": "0o640",
+    "owner": "root:bower"
+   },
+   "/etc/bower/secrets": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/etc/bower/tls": {
+    "mode": "0o750",
+    "owner": "root:bower"
+   },
+   "/var/lib/bower": {
+    "mode": "0o700",
+    "owner": "bower:bower"
+   },
+   "/var/lib/bower/queue.db": {
+    "mode": "0o600",
+    "owner": "bower:bower"
+   },
+   "/var/spool/bower": {
+    "mode": "0o750",
+    "owner": "bower:bower"
+   }
+  },
+  "queue": {
+   "attemptsAboveOne": 501,
+   "cursors": [],
+   "deadLettered": 0,
+   "delivered": 21094,
+   "files": {
+    "queue.db": 55672832,
+    "queue.db-shm": 32768,
+    "queue.db-wal": 4152
+   },
+   "identitySetSha256": "b2503609b75a9e9356a9a068a7c99b997ce1df87dfd08ef87503dcb7c652ce26",
+   "integrity": "ok",
+   "ledgerHead": [
+    21094,
+    "ea8efdb360c7ff6fad92fd1324f3ebb51caa481c523575f756cbfb03e27baf3e"
+   ],
+   "queued": 0,
+   "retrying": 0,
+   "schemaVersion": 5,
+   "total": 21094,
+   "uploading": 0
+  },
+  "secretsPresent": [
+   "hmac.key",
+   "ingest.pem",
+   "token"
+  ],
+  "secretsUnchanged": true,
+  "service": {
+   "active": "active",
+   "activeEnter": "Sat 2026-10-31 09:13:22 UTC",
+   "mainPid": "31913",
+   "nRestarts": "0",
+   "user": "bower"
+  },
+  "status": {
+   "delivery": {
+    "decreases": 1,
+    "inFlight": 0,
+    "increases": 1,
+    "latencyEwmaMilliseconds": 82,
+    "latencySpikes": 1,
+    "limit": 4,
+    "maximumLimit": 4,
+    "minimumLimit": 1,
+    "outputId": "azure-logs-ingestion",
+    "pauses": 0,
+    "processLocalPausedUntil": null,
+    "requests": 945,
+    "serverErrors": 0,
+    "throttles": 0,
+    "timeouts": 0
+   },
+   "ledgerHead": null,
+   "packs": null,
+   "policyHash": null,
+   "queue": {
+    "deadLettered": 0,
+    "delivered": 21094,
+    "oldestUndelivered": null,
+    "queued": 0,
+    "retrying": 0,
+    "totalBytes": 24081256,
+    "undeliveredBytes": 0,
+    "uploading": 0
+   },
+   "status": "healthy",
+   "syslog": [
+    {
+     "activeConnections": 0,
+     "bytesReceived": 776169,
+     "connectionsAccepted": 1,
+     "connectionsRejected": 0,
+     "dropped": 0,
+     "duplicates": 1199,
+     "endpoint": "0.0.0.0:6514",
+     "framesReceived": 4539,
+     "framingErrors": 0,
+     "id": "firewall",
+     "lastFrameAt": "2026-10-31T09:18:56.601924+00:00",
+     "malformed": 0,
+     "notRouted": 0,
+     "notSelected": 0,
+     "oversized": 0,
+     "parserErrors": 0,
+     "protocol": "tls",
+     "queued": 3340,
+     "receiveErrors": 0,
+     "rejected": 0,
+     "retries": 0,
+     "sendersDenied": 0,
+     "submitFailures": 0,
+     "suppressed": 0,
+     "timeouts": 0,
+     "tlsHandshakeFailures": 0
+    }
+   ]
+  },
+  "unitSha256": "2dd1ff300cf261453c86caf3ed1bed7d7b1cd3a880d1ee0385e11c70b0fb47e4"
+ }
+}

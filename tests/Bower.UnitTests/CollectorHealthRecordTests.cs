@@ -10,6 +10,8 @@ using Bower.Source.Syslog;
 using Bower.Source.WindowsEventLog;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Bower.UnitTests;
@@ -535,6 +537,56 @@ public sealed class CollectorHealthRecordTests
             builder => builder.WebHost.UseTestServer()));
 
         Assert.Contains("no loaded policy accepts collector_health", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Reload_RefusesRebuiltHealthSettingsWithoutChangingTheRunningCollector(bool refusesDegraded)
+    {
+        using TemporaryDirectory directory = new();
+        CollectorSettings running = Settings(directory.Path);
+        await using WebApplication app = CollectorApplication.Build(running, builder => builder.WebHost.UseTestServer());
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        await CollectorApplication.InitializeAsync(app, cancellation);
+        await app.StartAsync(cancellation);
+        try
+        {
+            string candidatePolicies = PolicyDirectoryWithHealth(directory.Path);
+            string health = Path.Combine(candidatePolicies, "collector-health.yaml");
+            if (refusesDegraded)
+            {
+                File.WriteAllText(health, File.ReadAllText(health).Replace(
+                    "  eventActions:\n    - collector.health\n",
+                    "  eventActions:\n    - collector.health\n  eventSeverities:\n    - informational\n    - low\n    - medium\n",
+                    StringComparison.Ordinal));
+                Assert.Contains("eventSeverities", File.ReadAllText(health), StringComparison.Ordinal);
+            }
+            Dictionary<string, string> restart = new(StringComparer.Ordinal)
+            {
+                ["BOWER_QUEUE_PATH"] = running.QueuePath,
+                ["BOWER_COLLECTOR_ID"] = running.CollectorId,
+                ["BOWER_SINGLE_TRUST_DOMAIN"] = "true",
+                ["BOWER_POLICY_DIRECTORY"] = refusesDegraded ? candidatePolicies : running.PolicyDirectory,
+                ["BOWER_HEALTH_RECORD_INTERVAL_SECONDS"] = "300"
+            };
+
+            Assert.Null(ManagementCommandWorker.ReloadRefusal(running));
+            Assert.Equal(nameof(InvalidOperationException), ManagementCommandWorker.ReloadRefusal(
+                running, () => name => restart.GetValueOrDefault(name)));
+            Assert.Null(running.HealthRecordInterval);
+            Assert.False(app.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping.IsCancellationRequested);
+            using HttpClient client = app.GetTestClient();
+            using HttpResponseMessage response = await client.GetAsync("/health", cancellation);
+            response.EnsureSuccessStatusCode();
+
+            // A corrected candidate passes the same pre-check without changing current settings.
+            File.Copy(HealthPolicyFile, health, overwrite: true);
+            restart["BOWER_POLICY_DIRECTORY"] = candidatePolicies;
+            Assert.Null(ManagementCommandWorker.ReloadRefusal(running, () => name => restart.GetValueOrDefault(name)));
+            Assert.Null(running.HealthRecordInterval);
+        }
+        finally { await app.StopAsync(cancellation); }
     }
 
     [Theory]

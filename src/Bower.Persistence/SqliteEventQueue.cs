@@ -53,10 +53,16 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         this.clock = clock ?? TimeProvider.System;
     }
 
+    /// <summary>Queue schema version this build reads and writes.</summary>
+    public const int SchemaVersion = 5;
+
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
         await using SqliteCommand check = connection.CreateCommand();
+        // Before any DDL: an older build must never create, migrate or repair tables in a
+        // database a newer build has already moved to a schema it does not understand.
+        await RefuseNewerSchemaAsync(check, cancellationToken);
         check.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='queue_events_v5';";
         if (Convert.ToInt64(await check.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture) == 0)
         {
@@ -66,7 +72,7 @@ public sealed partial class SqliteEventStore : IDurableEventStore
             await migration.CommitAsync(cancellationToken);
         }
         check.CommandText = "SELECT MAX(version) FROM schema_history;";
-        if (Convert.ToInt64(await check.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture) != 5)
+        if (Convert.ToInt64(await check.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture) != SchemaVersion)
         {
             throw new InvalidOperationException("Unsupported queue schema version.");
         }
@@ -80,6 +86,22 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         await check.ExecuteNonQueryAsync(cancellationToken);
         await repair.CommitAsync(cancellationToken);
         ApplyRestrictivePermissions();
+    }
+
+    /// <summary>Read-only check: throws when schema_history records a version above <see cref="SchemaVersion"/>.</summary>
+    internal static async Task RefuseNewerSchemaAsync(SqliteCommand command, CancellationToken cancellationToken)
+    {
+        command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='schema_history';";
+        if (Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture) == 0)
+        {
+            return;
+        }
+        command.CommandText = "SELECT COALESCE(MAX(version), 0) FROM schema_history;";
+        long version = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+        if (version > SchemaVersion)
+        {
+            throw new UnsupportedQueueSchemaException(version, SchemaVersion);
+        }
     }
 
     private async Task InitializeLegacyAsync(CancellationToken cancellationToken = default)
@@ -1050,6 +1072,20 @@ public sealed class QueueCapacityExceededException(
     : Exception(
         $"Queue capacity exceeded. Maximum={maximumBytes}, Current={currentBytes}, Attempted={attemptedBytes}.")
 {
+}
+
+/// <summary>
+/// The queue was written by a newer Bower. Nothing was changed; run that version or restore
+/// a backup taken before the upgrade. Never edit schema_history to force an older build.
+/// </summary>
+public sealed class UnsupportedQueueSchemaException(long found, long supported)
+    : InvalidOperationException(
+        $"Queue schema version {found} is newer than this Bower build supports ({supported}). " +
+        "The database was not modified. Run the newer Bower version or restore a backup taken before the upgrade.")
+{
+    public long Found { get; } = found;
+
+    public long Supported { get; } = supported;
 }
 
 public sealed class InvalidQueueTransitionException(

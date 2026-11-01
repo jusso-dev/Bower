@@ -980,13 +980,24 @@ impl CommandProcessor {
 
 /// C# `ManagementCommandWorker.ReloadRefusal`: loads everything a restart loads from files,
 /// through the same code start-up runs (`bundle::load`, then `startup::load`). `None` when
-/// they load; otherwise the failure type only, never its message. Environment changes are
-/// not visible here.
+/// they load; otherwise the failure type only, never its message. The collector id a
+/// restart resolves (`collector_identity`, read without writing) is checked first, because
+/// a restart reads `collector-id` itself. Other environment changes are not visible here.
 pub fn reload_refusal(settings: &CollectorSettings) -> Option<&'static str> {
     let clock: Arc<dyn Clock> = Arc::new(bower_contracts::time::SystemClock);
-    match crate::bundle::load(settings) {
+    let collector_id = match crate::collector_identity::check(
+        std::env::var("BOWER_COLLECTOR_ID").ok(),
+        &settings.queue_path,
+        crate::settings::machine_name,
+    ) {
+        Ok(id) => id,
+        Err(error) => return Some(error.kind),
+    };
+    let mut restart = settings.clone();
+    restart.collector_id = collector_id;
+    match crate::bundle::load(&restart) {
         Err(error) => Some(error.kind),
-        Ok(bundle) => crate::startup::load(settings, &bundle.packs, clock)
+        Ok(bundle) => crate::startup::load(&restart, &bundle.packs, clock)
             .err()
             .map(|error| error.kind),
     }

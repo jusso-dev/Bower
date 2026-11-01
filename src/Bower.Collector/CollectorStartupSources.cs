@@ -15,9 +15,12 @@ namespace Bower.Collector;
 /// refused for exactly the files that would stop a restart.
 /// </summary>
 /// <remarks>
-/// Environment variables are read once when the process starts. A changed environment
-/// file (systemd <c>EnvironmentFile</c>, the Windows service environment) is not visible
-/// to the running process, so it is not checked here; apply it with a supervisor restart.
+/// Environment variables are read once when the process starts. A changed supervisor
+/// environment (systemd <c>EnvironmentFile</c>, the Windows service environment) is not
+/// visible to the running process, so it is not checked here; apply it with a supervisor
+/// restart. <c>BOWER_SETTINGS_FILE</c> and <c>collector-id</c> are read by the collector
+/// itself, so the reload pre-check rebuilds the settings from them first
+/// (<see cref="CollectorSettingsFile.RestartReader"/>).
 /// </remarks>
 public sealed record CollectorStartupSources(
     SourceExpectations? Expectations,

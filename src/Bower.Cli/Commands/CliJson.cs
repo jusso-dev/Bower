@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using Bower.Abstractions;
 using Bower.Evidence;
 using Bower.Packs;
+using Bower.Persistence;
 using Bower.Pipeline;
 
 namespace Bower.Cli.Commands;

@@ -307,7 +307,7 @@ public sealed partial class ManagementCommandWorker(
             return (ManagementCommandResults.Failed, ManagementCommandResults.ReloadRateLimited);
         }
 
-        if (ReloadRefusal(settings) is { } failure)
+        if (ReloadRefusal(settings, StartupEnvironment.Captured ? () => CollectorSettingsFile.RestartReader() : null) is { } failure)
         {
             // Keep running with the configuration already loaded: a restart that cannot load
             // its packs, trust keys or privacy key would stop collection altogether.
@@ -332,14 +332,25 @@ public sealed partial class ManagementCommandWorker(
     /// (<see cref="PolicyBundle.Load"/>), then <see cref="CollectorStartupSources.Load"/>
     /// (source configurations and routes, syslog TLS material, expectations, scopes and
     /// relay identities). Null when they load; otherwise the failure type only, never its
-    /// message (it can name file paths). Environment changes are not visible here.
+    /// message (it can name file paths). With <paramref name="restartEnvironment"/> (a
+    /// started collector) the settings are rebuilt first from the environment a restart will
+    /// see (<see cref="CollectorSettingsFile.RestartReader"/>): the settings file on disk now,
+    /// its trust checks and the collector id. Other environment changes are not visible here.
     /// </summary>
-    public static string? ReloadRefusal(CollectorSettings settings)
+    public static string? ReloadRefusal(CollectorSettings settings, Func<Func<string, string?>>? restartEnvironment = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         try
         {
-            _ = CollectorStartupSources.Load(settings, PolicyBundle.Load(settings.PolicySources()));
+            CollectorSettings restart = restartEnvironment is null
+                ? settings
+                : CollectorSettings.FromEnvironment(restartEnvironment());
+            PolicyBundle bundle = PolicyBundle.Load(restart.PolicySources());
+            _ = CollectorStartupSources.Load(restart, bundle);
+            if (restart.HealthRecordInterval is not null)
+            {
+                CollectorApplication.RequireHealthRecordPolicy(restart, bundle);
+            }
             return null;
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
