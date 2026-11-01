@@ -296,7 +296,12 @@ async fn start(directory: &Path, adjust: impl FnOnce(&mut CollectorSettings)) ->
 }
 
 fn new_id() -> String {
-    uuid::Uuid::new_v4().to_string()
+    // Random UUIDs can contain a checksum-valid TFN in their first group,
+    // causing the real privacy policy to reject the redacted event identity.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    assert!(sequence <= 0xffff_ffff_ffff);
+    format!("aaaaaaaa-aaaa-4aaa-8aaa-{sequence:012x}")
 }
 
 fn event(event_id: &str) -> SecurityEventEnvelope {
@@ -698,6 +703,30 @@ async fn stalled_response_releases_session_at_deadline_or_shutdown() {
         .expect("a stalled response held the tap session past its deadline");
         drop(response);
     }
+}
+
+#[tokio::test]
+async fn redacted_event_identity_still_fails_closed() {
+    let _serial = SERIAL.lock().await;
+    let directory = tempfile::tempdir().unwrap();
+    let collector = start(directory.path(), |_| {}).await;
+    // This UUID begins with a checksum-valid eight-digit TFN.
+    let candidate = event("12345681-abcd-4abc-8abc-abcdefabcdef");
+    let request = Request::post("/v1/events")
+        .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+        .body(Body::from(
+            bower_contracts::json::to_vec(&candidate).unwrap(),
+        ))
+        .unwrap();
+    let response = collector.router.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = axum::body::to_bytes(response.into_body(), 4096)
+        .await
+        .unwrap();
+    let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(result["reasons"], serde_json::json!(["event-id-redacted"]));
+    assert_eq!(result["queued"], false);
 }
 
 #[tokio::test]
