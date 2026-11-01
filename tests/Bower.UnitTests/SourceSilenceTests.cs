@@ -305,7 +305,7 @@ public sealed class SourceSilenceTests
         Assert.Empty(telemetry.TakeChangedSources());
         Assert.Equal((4L, 1L, 1L), (metrics.EventsIn, metrics.EventsQueued, metrics.Duplicates));
         Assert.Contains(metrics.Rows, row => row is { Stage: "policy", PolicyId: "BWR-POL-DEFAULT-DENY", Action: "reject" });
-        Assert.Contains(metrics.Rows, row => row is { Stage: "redaction", PolicyId: "-", Action: "quarantine" });
+        Assert.Contains(metrics.Rows, row => row is { Stage: "schema", PolicyId: "-", Action: "quarantine" });
         Assert.True(metrics.BytesQueued > 0);
     }
 }

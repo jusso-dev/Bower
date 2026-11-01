@@ -2,6 +2,12 @@
 //! only through a signed pack parser whose filter selects it, then redaction, policy and
 //! the durable queue, like `/v1/packs/.../events`. `Queued` means durably enqueued: the
 //! TCP acknowledgement point.
+//!
+//! If redaction changes the root event ID, TCP/TLS retain the current frame and retry
+//! while the connection remains open. The sender must retain and replay frames after
+//! connection loss; syslog has no application-level acknowledgement. UDP cannot retry
+//! a refused datagram, so the listener counts it as dropped. Correct the privacy policy
+//! and monitor the listener's retry/drop counters before resuming ingestion.
 
 use std::sync::Arc;
 
@@ -76,7 +82,11 @@ impl SyslogSink for CollectorSyslogSink {
             source_adapter: format!("syslog:{}:{}:{}", listener.id, route.pack, route.parser),
             ..self.identity.clone()
         };
-        match self.processor.process(&candidate, &identity) {
+        // Records come only from the syslog source, which computes the leading id.
+        let context = bower_contracts::RedactionContext {
+            generated_event_id: bower_contracts::generated_event_ids::from_source_record(record),
+        };
+        match self.processor.process_with(&candidate, &identity, &context) {
             Ok(result) => Ok(
                 if !matches!(
                     result.action,
@@ -91,7 +101,13 @@ impl SyslogSink for CollectorSyslogSink {
                     SubmitOutcome::Queued
                 },
             ),
-            Err(ProcessError::Store(StoreError::Full(_))) => Ok(SubmitOutcome::Unavailable),
+            // TCP/TLS hold the frame and stop reading until the identity can be
+            // processed safely. UDP has no retry channel and counts the datagram as dropped.
+            Err(
+                ProcessError::Store(StoreError::Full(_))
+                | ProcessError::EventIdRedacted
+                | ProcessError::RedactionUnavailable,
+            ) => Ok(SubmitOutcome::Unavailable),
             Err(_) => Err(SinkFailure),
         }
     }

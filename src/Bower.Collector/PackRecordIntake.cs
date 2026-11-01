@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Bower.Abstractions;
 using Bower.Contracts;
 using Bower.Core;
 using Bower.Packs;
@@ -94,10 +95,18 @@ internal sealed class PackRecordIntake(
             result = await processor.ProcessAsync(
                 JsonSerializer.Serialize(envelope, BowerJson.Envelope),
                 identity with { SourceAdapter = sourceAdapter },
+                // Records reach this class only from in-process sources, which compute the id.
+                new RedactionContext(GeneratedEventIds.FromSourceRecord(record)),
                 cancellationToken);
         }
         catch (QueueCapacityExceededException)
         {
+            return PackRecordOutcome.Unavailable;
+        }
+
+        if (result.RedactionRetryRequired)
+        {
+            // Never advance a WEC bookmark or treat a rejected stream frame as consumed.
             return PackRecordOutcome.Unavailable;
         }
 
@@ -110,4 +119,5 @@ internal sealed class PackRecordIntake(
             : result.Duplicate ? PackRecordOutcome.Duplicate
             : PackRecordOutcome.Queued;
     }
+
 }

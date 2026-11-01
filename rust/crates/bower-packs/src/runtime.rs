@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use bower_contracts::time::Timestamp;
 use bower_contracts::{
-    DecisionAction, EventRedactor, JsonElement, RedactionResult, SecurityEventEnvelope,
-    TelemetryPolicyEvaluator, json,
+    DecisionAction, EventRedactor, JsonElement, RedactionContext, RedactionResult,
+    SecurityEventEnvelope, TelemetryPolicyEvaluator, json,
 };
 use bower_detection::{DetectionEngine, DetectionRule};
 use bower_pipeline::custom_log::{
@@ -201,7 +201,12 @@ pub struct PackDetectionRedactor {
 
 impl EventRedactor for PackDetectionRedactor {
     fn redact(&self, candidate: &str) -> RedactionResult {
-        let mut result = self.inner.redact(candidate);
+        self.redact_with(candidate, &RedactionContext::default())
+    }
+
+    fn redact_with(&self, candidate: &str, context: &RedactionContext<'_>) -> RedactionResult {
+        let _sensitive = bower_contracts::panic_privacy::protect();
+        let mut result = self.inner.redact_with(candidate, context);
         if !result.succeeded {
             return result;
         }
@@ -209,7 +214,9 @@ impl EventRedactor for PackDetectionRedactor {
             return result;
         };
         let Ok(mut envelope) = json::from_str::<SecurityEventEnvelope>(text) else {
-            return RedactionResult::failed("pack-detection-failed");
+            // Let core distinguish a changed/missing root identity (retryable) from
+            // an otherwise invalid envelope, without exposing the original content.
+            return result;
         };
         if let Some(attributes) = envelope.attributes.as_mut() {
             attributes.retain(|key, _| !key.eq_ignore_ascii_case("bowerDetections"));

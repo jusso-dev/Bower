@@ -1,12 +1,15 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Bower.Abstractions;
 using Bower.Collector;
 using Bower.Contracts;
+using Bower.Core;
 using Bower.Integrity;
 using Bower.Packs;
 using Bower.Persistence;
+using Bower.PolicyEngine;
 using Bower.Source.WindowsEventLog;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -26,6 +29,57 @@ public sealed class WindowsEventLogCollectorTests
 {
     private const string Token = "windows-eventlog-collector-test-token-0123456789";
     private static string PackSource => Path.Combine(AppContext.BaseDirectory, "packs", "windows-security-logon");
+
+    [Theory]
+    [InlineData("mask")]
+    [InlineData("remove")]
+    public async Task RedactedIdentity_DoesNotAdvanceBookmarkOrQueueAnEvent(string identityAction)
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using SqliteTemporaryDirectory directory = new();
+        FakeWindowsEventChannelFactory channels = new();
+        channels["Security"].Add(WindowsEventFixtures.Read("security-4625.xml"));
+        await using WebApplication app = await Start(directory, channels, cancellation, identityAction: identityAction);
+        using EventTapSession tap = app.Services.GetRequiredService<EventTap>().TryOpen(
+            new EventTapRequest("test", TapPoint.Redacted, null, null, 2, TimeSpan.FromSeconds(30), 1))!;
+        WindowsEventLogSource source = app.Services.GetRequiredService<WindowsEventLogSource>();
+        WindowsEventSubscriptionStatus status = await WindowsEventLogSourceTests.WaitFor(
+            source, item => item.Retries >= 1, cancellation);
+        Assert.Equal(0, status.Queued);
+        Assert.True(status.BookmarkRecordId is null or < 184467);
+        IDurableEventStore store = app.Services.GetRequiredService<IDurableEventStore>();
+        Assert.Empty(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
+        EventTapRecord record = await tap.Reader.ReadAsync(cancellation).AsTask().WaitAsync(TimeSpan.FromSeconds(5), cancellation);
+        Assert.Contains("event-id-redacted", record.Reasons);
+        Assert.Null(record.Event);
+        Assert.DoesNotContain("deploy-admin", JsonSerializer.Serialize(record), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("throw")]
+    [InlineData("failure")]
+    [InlineData("missing")]
+    public async Task OperationalRedactionFailure_RetriesWithoutAdvancingBookmarkOrLeaking(string mode)
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using SqliteTemporaryDirectory directory = new();
+        FakeWindowsEventChannelFactory channels = new();
+        channels["Security"].Add(WindowsEventFixtures.Read("security-4625.xml"));
+        IEventRedactor redactor = new PackDetectionRedactor(new UnavailableTestRedactor(mode), new DeterministicPolicyEvaluator([]), []);
+        await using WebApplication app = await Start(directory, channels, cancellation, redactor: redactor);
+        using EventTapSession tap = app.Services.GetRequiredService<EventTap>().TryOpen(
+            new EventTapRequest("test", TapPoint.Redacted, null, null, 2, TimeSpan.FromSeconds(30), 1))!;
+        WindowsEventLogSource source = app.Services.GetRequiredService<WindowsEventLogSource>();
+        WindowsEventSubscriptionStatus status = await WindowsEventLogSourceTests.WaitFor(source, item => item.Retries >= 1, cancellation);
+        Assert.True(status.BookmarkRecordId is null or < 184467);
+        Assert.Empty(await app.Services.GetRequiredService<IDurableEventStore>().LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
+        EventTapRecord record = await tap.Reader.ReadAsync(cancellation).AsTask().WaitAsync(TimeSpan.FromSeconds(5), cancellation);
+        Assert.Contains("redaction-unavailable", record.Reasons);
+        Assert.Null(record.Event);
+        string metadata = JsonSerializer.Serialize(record);
+        Assert.DoesNotContain("deploy-admin", metadata, StringComparison.Ordinal);
+        Assert.DoesNotContain(UnavailableTestRedactor.SecretMarker, metadata, StringComparison.Ordinal);
+    }
 
     [Fact]
     public async Task ShutdownDeadlineBoundsAStalledChannelReadAndCleanupFinishesAfterRelease()
@@ -205,7 +259,9 @@ public sealed class WindowsEventLogCollectorTests
         SqliteTemporaryDirectory directory,
         IWindowsEventChannelFactory? channels,
         CancellationToken cancellation,
-        int parser = 0)
+        int parser = 0,
+        string? identityAction = null,
+        IEventRedactor? redactor = null)
     {
         string archive = Path.Combine(directory.Path, "pack");
         string trust = Path.Combine(directory.Path, "trusted.pem");
@@ -214,7 +270,26 @@ public sealed class WindowsEventLogCollectorTests
         {
             (string privateKey, string publicKey, _) = DetachedSigner.GenerateKeyPair();
             Directory.CreateDirectory(archive);
-            File.WriteAllText(Path.Combine(archive, "path.txt"), PackArchive.Build(PackSource, privateKey, archive));
+            string source = PackSource;
+            if (identityAction is not null)
+            {
+                source = Path.Combine(directory.Path, "source-pack");
+                foreach (string path in Directory.EnumerateFiles(PackSource, "*", SearchOption.AllDirectories))
+                {
+                    string target = Path.Combine(source, Path.GetRelativePath(PackSource, path));
+                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                    File.Copy(path, target);
+                }
+                string privacyPath = Path.Combine(source, "privacy.yaml");
+                File.WriteAllText(privacyPath, File.ReadAllText(privacyPath).Replace("fields:\n", $"fields:\n  - path: eventId\n    action: {identityAction}\n", StringComparison.Ordinal));
+                string samplePath = Path.Combine(source, "samples", "security-4625.jsonl");
+                JsonObject sample = JsonNode.Parse(File.ReadLines(samplePath).First())!.AsObject();
+                sample["expect"] = "quarantine";
+                sample.Remove("expectFields");
+                sample.Remove("expectedDetections");
+                File.WriteAllText(samplePath, sample.ToJsonString() + "\n");
+            }
+            File.WriteAllText(Path.Combine(archive, "path.txt"), PackArchive.Build(source, privateKey, archive));
             File.WriteAllText(trust, publicKey);
             File.WriteAllText(hmac, Convert.ToBase64String(new byte[32]));
         }
@@ -248,6 +323,7 @@ public sealed class WindowsEventLogCollectorTests
         }, builder =>
         {
             builder.WebHost.UseTestServer();
+            if (redactor is not null) builder.Services.AddSingleton(redactor);
             if (channels is not null)
             {
                 builder.Services.AddSingleton<IWindowsEventChannelFactory>(channels);

@@ -163,7 +163,8 @@ public sealed class PrivacyBypassTests
         QueueSnapshot snapshot = await store.GetSnapshotAsync(cancellationToken);
 
         Assert.Equal(DecisionAction.Quarantine, result.Action);
-        Assert.Contains("redaction-failed", result.Reasons);
+        Assert.Contains("redaction-unavailable", result.Reasons);
+        Assert.True(result.RedactionRetryRequired);
         Assert.Equal(0, snapshot.Queued);
     }
 
