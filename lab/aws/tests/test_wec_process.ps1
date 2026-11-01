@@ -59,7 +59,7 @@ try {
         [IO.File]::WriteAllText($diagnosticPath, $diagnostic)
         $diagnosed = Invoke-FakeWorker $diagnosticPath @($inputLine, 'connect', 'cancel', 'revert', 'close')
         $types = 'redacted'
-        if ($diagnosed.errorOutput.Length -le 512 -and $diagnosed.errorOutput -cmatch '^[A-Za-z.\r\n]*$') { $types = $diagnosed.errorOutput.Trim() }
+        if ($diagnosed.errorOutput.Length -le 512 -and $diagnosed.errorOutput -cmatch '^[A-Za-z0-9.\r\n]*$') { $types = $diagnosed.errorOutput.Trim() }
         $numeric = 'redacted'
         if ($diagnosed.output.Length -le 128 -and $diagnosed.output -cmatch '^[0-9\r\n-]*$') { $numeric = $diagnosed.output.Trim() }
         @{ fakeChildFailure = $true; engine = $PSVersionTable.PSVersion.ToString(); exitCode = $result.code; startupCategory = $startupCategory; exceptionTypes = $types; numericProtocol = $numeric } | ConvertTo-Json -Compress | Write-Output

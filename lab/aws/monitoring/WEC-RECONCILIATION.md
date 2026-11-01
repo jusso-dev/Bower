@@ -234,7 +234,7 @@ python3 lab/aws/monitoring/run.py Windows lab/aws/monitoring/wec-qualification.p
 python3 lab/aws/monitoring/run.py Windows lab/aws/monitoring/wec-qualification.ps1 \
   --state <owned-state.json> --timeout 600 \
   --env BOWER_WEC_ACTION=phase --env BOWER_WEC_PHASE=stable-burst-01 \
-  --env BOWER_WEC_PROFILE=phase-explicit --env BOWER_WEC_RATE=100 --env BOWER_WEC_SECONDS=10
+  --env BOWER_WEC_PROFILE=process-explicit --env BOWER_WEC_RATE=100 --env BOWER_WEC_SECONDS=10
 ```
 
 Require every actual native identity, matching forwarded and queue identities,
@@ -368,3 +368,178 @@ owned cleanups, native event counts/rates and destination identities remain
 mandatory. Local child-protocol tests inject a fake native class and are marked
 simulated; Windows CI additionally exercises the parent process transport with
 that same fake class, without making an SMB request.
+
+## Run the one-hour Windows destination outage
+
+Use this sequence only after the steady and 6,000-event burst have passed native
+and Sentinel identity reconciliation on the same pinned collector candidate.
+The fault blocks outbound TCP 443 only for
+`C:\Program Files\Bower\Bower.Collector.exe`; SSM and the native SMB generator
+remain reachable. The test is an isolated lab qualification, not a production
+firewall change.
+
+### Freeze the plan and establish the baseline
+
+Record the run ID, exact instance ID and tags, candidate executable/SQLite hashes,
+boot identity, helper hashes, expected **36,000 events at 10/sec for 3,600 seconds**,
+99% minimum observed rate, warm-up exclusion, and destination-query requirement.
+Verify the actual enabled instance-expiry schedule leaves enough time for the
+whole test, recovery, evidence download and teardown; a cached local state file
+can contain an earlier expiry. Use a fresh phase/sampler scope. Hash the complete
+plan before dispatch and pass that hash to the sampler.
+
+Use a 4,500-second (75-minute) resource series to cover baseline, the hour of
+buffering and recovery. Its expected full series is 301 samples at 15-second
+intervals. Start it before the firewall fault:
+
+```bash
+state=/private/tmp/bower-validation/state.json
+phase=wec-outage-01
+plan_sha256=REPLACE_WITH_THE_FROZEN_PLAN_SHA256
+
+python3 lab/aws/monitoring/run.py Windows lab/aws/monitoring/sample-resources-windows.ps1 \
+  --state "$state" --timeout 90 \
+  --env BOWER_SAMPLE_ACTION=start --env "BOWER_SAMPLE_SCOPE=$phase" \
+  --env "BOWER_PLAN_SHA256=$plan_sha256" --env BOWER_SAMPLE_SECONDS=4500
+
+python3 lab/aws/monitoring/run.py Windows lab/aws/monitoring/observe-wec-outage.ps1 \
+  --state "$state" --timeout 60 --env "BOWER_WEC_PHASE=$phase" \
+  > before-outage.json
+```
+
+Require a healthy source, no pending/dead-lettered events, no existing outage
+rule, and the intended boot/candidate before continuing. The observer is read
+only and projects counters and fixed failure metadata; it never reads queue
+payloads, emits credentials or changes a firewall rule. Its restore-readiness
+flag is an operational decision aid, not delivery or production qualification.
+
+### Apply the guarded fault, then generate the workload
+
+```bash
+python3 lab/aws/monitoring/run.py Windows lab/aws/monitoring/wec-destination-outage.ps1 \
+  --state "$state" --timeout 120 --env BOWER_WEC_OUTAGE_ACTION=on \
+  > outage-on.json
+
+python3 lab/aws/monitoring/run.py Windows lab/aws/monitoring/wec-qualification.ps1 \
+  --state "$state" --timeout 4800 --no-wait \
+  --env BOWER_WEC_ACTION=phase --env "BOWER_WEC_PHASE=$phase" \
+  --env BOWER_WEC_PROFILE=process-explicit \
+  --env BOWER_WEC_RATE=10 --env BOWER_WEC_SECONDS=3600 \
+  > generator-dispatch.json
+```
+
+The first command registers a SYSTEM restoration task before applying the
+app-scoped rule. That independent guard is scheduled about 70 minutes later and
+must remain enabled. Record its actual next-run time. The `on` response must
+confirm the rule is enabled; it does not claim the destination actually failed.
+Retain the exact SSM command ID from `generator-dispatch.json`.
+
+The generator performs its separate 100-event warm-up and identity drain before
+starting the measured hour. Those warm-up events can also be buffered during the
+fault, so total pending count can exceed 36,000. Do not include them in the
+measured identity set. The warm-up report's completion is a useful lower bound
+for the measured start; final generator timestamps remain authoritative.
+
+Within the first few minutes, run the observer again with the same phase and
+save a new output filename. Require `destinationFailureObserved=true`, a growing
+pending queue, unchanged source error counters and no unexpected successful
+delivery during the measured window. `generatorAvailable=false` is normal while
+the generator is still running. If generation fails, dead letters appear or the
+fault does not produce a real delivery failure, restore connectivity safely and
+retain the run as failed. Do not leave a failed test blocked just to reach an
+hour on the clock.
+
+### Restore after generation and durable admission
+
+Near the expected end of the measured hour, poll the observer and retain each
+observation. A full SSM command can still be `InProgress` after generation ends:
+reading and hashing 36,000 Security and ForwardedEvents records can take several
+minutes. The generator writes its checkpoint and initial phase report before
+those expensive reads.
+
+`readyForManualRestore=true` requires the complete 36,000-attempt checkpoint,
+correct generation duration/rate, native owned-session cleanup, exactly 36,000
+new source admissions, at least 36,000 pending events, no dead letters or new
+source errors, a real destination failure, no measured delivery success, the
+same boot and at least 3,600 monotonic seconds of blocking. Before restoration,
+capture a scoped, metadata-only Sentinel observation while the rule is still
+enabled. Use the verified warm-up completion UTC timestamp as the lower bound,
+which excludes the preparatory events:
+
+```bash
+python3 lab/aws/monitoring/query-wec-outage.py \
+  --plan <frozen-outage-plan.json> --since <verified-warmup-completion-UTC> \
+  --azure-state-dir <private-azure-state-directory> \
+  --output <evidence>/outage-before-restore-01.json
+```
+
+The plan must have `kind=native-windows-wec-destination-outage`,
+`status=frozen-before-dispatch`, the owned `runId`/`phase`, and a `measured` object
+with `rate=10`, `seconds=3600` and `expectedNativeCount=36000`. The helper uses the
+same isolated verifier identity and fixed subscription/tenant checks as the full
+reconciler. It queries only the selected Windows authentication population,
+records its event-time window and ingestion cutoff, and rejects partial,
+continued, malformed or changing-plan evidence. Exit 0 means no rows were
+visible at the cutoff; exit 1 retains a nonempty observation; exit 2 means the
+observation could not be validated. Reports are exclusive, private files.
+`destinationQueryVerified` and `deliveryQualified` remain false even for an empty
+observation. Retain the query, cutoff, completeness checks and count; this
+observation supplements the final identity proof.
+
+Restore promptly when the readiness checks pass, without waiting for full native
+reconciliation to finish:
+
+```bash
+python3 lab/aws/monitoring/run.py Windows lab/aws/monitoring/wec-destination-outage.ps1 \
+  --state "$state" --timeout 120 --env BOWER_WEC_OUTAGE_ACTION=off \
+  > outage-off.json
+```
+
+Require `removed=true` and `minimumDurationPassed=true`, with unchanged boot and
+clock frequency. If the independent guard already restored connectivity, the
+command reads that original restoration outcome and removes the owned scheduled
+task; it does not replace the actual restoration timestamp with a later manual
+one. An early or changed-boot restoration remains failed qualification even
+though connectivity is restored.
+
+### Prove recovery, export and clean up
+
+Poll the observer until pending count is zero, delivery succeeds again and no
+source errors or dead letters appear. After restoration,
+`readyForManualRestore=false` is expected because there is no longer an active
+fault. Retain that recovery timeline separately from the before-restore readiness
+record.
+
+Wait for the generator command to finish and require complete native/WEC/queue
+identity reconciliation. Export the phase and query Sentinel using the earlier
+sections of this guide. Require exactly 36,000 distinct identities and rows,
+zero missing/extra/duplicate rows, and inspect destination ingestion timestamps
+against the captured fault/restoration interval. The pre-restore zero-count
+observation alone cannot replace this final query, because destination indexing
+can be delayed.
+
+After the full 4,500-second sampling window, export the resource series with the
+same scope and plan hash:
+
+```bash
+python3 lab/aws/monitoring/run.py Windows lab/aws/monitoring/sample-resources-windows.ps1 \
+  --state "$state" --timeout 120 \
+  --env BOWER_SAMPLE_ACTION=export --env "BOWER_SAMPLE_SCOPE=$phase" \
+  --env "BOWER_PLAN_SHA256=$plan_sha256"
+```
+
+Require `samplingComplete=true`, 301 samples and no failed samples. Download all
+three resource files and verify their recorded byte sizes and SHA-256 hashes.
+Keep the full queue-growth/recovery series, source counters, CPU, resident memory
+and actual queue-volume free disk. Preserve the fault-on/off metadata, generator
+checkpoint, warm-up and phase identities, exact destination rows, failed attempts
+and sanitized screenshots. Only then tear down the run's AWS/Azure resources and
+private staging, and independently verify cleanup.
+
+Local observer and restoration tests make no firewall or cloud calls:
+
+```bash
+pwsh -NoProfile -File lab/aws/tests/test_wec_outage.ps1
+pwsh -NoProfile -File lab/aws/tests/test_wec_outage_observer.ps1
+python3 -m unittest discover -s lab/aws/tests -p test_wec_outage_query.py
+```
