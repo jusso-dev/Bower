@@ -140,6 +140,9 @@ try {
     $report.deliveryQualified=$false; $report | ConvertTo-Json -Depth 8 | Set-Content $warmPath
     'synthetic-secret' | Set-Content (Join-Path $root "$phase-warmup-native.ids")
     Assert-Rejected { Get-WecEvidenceExportPlan $root $run $phase }
+    # A rejected identity must release the file immediately, including PS5.1.
+    $exclusive = [IO.File]::Open((Join-Path $root "$phase-warmup-native.ids"), [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+    try { if (-not $exclusive.CanWrite) { throw 'rejected identity reader retained handle' }; $tests++ } finally { $exclusive.Dispose() }
     ('winevt-' + ('a' * 32)) | Set-Content (Join-Path $root "$phase-warmup-native.ids")
 
     $report.failure = @{ exceptionType='System.TimeoutException'; innerExceptionType=$null; hResult=-2146233083; category='OperationStopped'; scriptLine=180; staticCode='warmup-deadline'; compilerCodes=@() }

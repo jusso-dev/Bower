@@ -188,9 +188,13 @@ function Get-WecEvidenceExportPlan([string]$Root, [string]$RunId, [string]$Phase
         } elseif ($name -ceq "$Phase-warmup.json") {
             Assert-WecWarmupReport (Convert-WecEvidenceJson (Get-Content -LiteralPath $path -Raw))
         } elseif ($warmup -ccontains $name) {
-            foreach ($identity in [IO.File]::ReadLines($path)) {
-                if ($identity -cnotmatch '^winevt-[a-f0-9]{32}$') { throw 'warmup-identity-file' }
-            }
+            # Explicit disposal also covers rejected rows under Windows PowerShell 5.1.
+            $reader = [IO.File]::OpenText($path)
+            try {
+                while ($null -ne ($identity = $reader.ReadLine())) {
+                    if ($identity -cnotmatch '^winevt-[a-f0-9]{32}$') { throw 'warmup-identity-file' }
+                }
+            } finally { $reader.Dispose() }
         } elseif ($name -ceq "$Phase.json") {
             $report = Convert-WecEvidenceJson (Get-Content -LiteralPath $path -Raw)
             if ($report.runId -cne $RunId -or $report.phase -cne $Phase) { throw 'phase-report-scope' }
