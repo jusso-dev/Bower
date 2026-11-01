@@ -20,8 +20,8 @@ use bower_collector::management_commands::{
     results,
 };
 use bower_collector::shutdown::ApplicationLifetime;
-use bower_contracts::DurableEventStore;
 use bower_contracts::time::{Clock, Timestamp};
+use bower_contracts::{DurableEventStore, EventRedactor, RedactionContext, RedactionResult};
 use bower_core::{CollectorIdentity, PipelineTelemetry, SecurityEventProcessor};
 use serde_json::{Value, json};
 
@@ -499,6 +499,26 @@ struct Exchange {
     store: Arc<dyn DurableEventStore>,
 }
 
+struct CanaryContextRedactor(Arc<dyn EventRedactor>);
+
+impl EventRedactor for CanaryContextRedactor {
+    fn redact(&self, json: &str) -> RedactionResult {
+        self.0.redact(json)
+    }
+    fn redact_with(&self, json: &str, context: &RedactionContext<'_>) -> RedactionResult {
+        let value: Value = serde_json::from_str(json).unwrap();
+        if let Some(id) = value
+            .get("eventId")
+            .and_then(Value::as_str)
+            .filter(|id| id.starts_with("bower-canary-"))
+        {
+            assert_eq!(context.generated_event_id, Some(id));
+            assert!(bower_contracts::generated_event_ids::is_well_formed(id));
+        }
+        self.0.redact_with(json, context)
+    }
+}
+
 fn exchange(settings: &CollectorSettings) -> Exchange {
     std::fs::create_dir_all(settings.queue_path.parent().unwrap()).unwrap();
     let sqlite = Arc::new(
@@ -538,7 +558,7 @@ fn exchange(settings: &CollectorSettings) -> Exchange {
         ledger,
         triggers: JobTriggers::default(),
         processor: SecurityEventProcessor::new(
-            loaded.redactor,
+            Arc::new(CanaryContextRedactor(loaded.redactor)),
             loaded.evaluator,
             Arc::clone(&store),
             Arc::clone(&clock),

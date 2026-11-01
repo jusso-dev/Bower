@@ -132,6 +132,7 @@ fn malformed_claims_exempt_nothing() {
         "-dd97c1d25d12d2e202c1e010d70d55f4",
         "abcdefghijklmnopq-dd97c1d25d12d2e202c1e010d70d55f4",
         "win-evt-dd97c1d25d12d2e202c1e010d70d55f",
+        "bower-canaryx-0123456789abcdef0123456789abcdef",
         "",
     ] {
         assert!(!generated_event_ids::is_well_formed(claimed), "{claimed}");
@@ -155,6 +156,18 @@ fn is_well_formed_accepts_only_a_prefix_and_thirty_two_lowercase_hex_characters(
     ] {
         assert!(generated_event_ids::is_well_formed(id), "{id}");
     }
+}
+
+#[test]
+fn canary_id_requires_trusted_context_and_never_exempts_nested_copies() {
+    let id = "bower-canary-0123456789abcdef0123456789abcdef";
+    assert!(generated_event_ids::is_well_formed(id));
+    let input = format!(r#"{{"eventId":"{id}","attributes":{{"copy":"{id}"}}}}"#);
+    let trusted = redact(&input, Some(id));
+    let untrusted = redact(&input, None);
+    assert_eq!(trusted["eventId"], id);
+    assert_ne!(trusted["attributes"]["copy"], id);
+    assert_ne!(untrusted["eventId"], id);
 }
 
 #[test]

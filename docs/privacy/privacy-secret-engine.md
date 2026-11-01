@@ -214,7 +214,11 @@ also match; this avoids silently missing newly registered formats.
 Record ids that Bower's own syslog and Windows Event Log sources compute (`syslog-` or
 `winevt-` plus 32 lowercase hex characters of a SHA-256 digest) skip value detectors in
 the top-level `eventId` and `eventOriginalId`, when the value still equals the id the
-source computed. Numbers and all other values are still scanned, including values in
+source computed. Collector-generated `bower-canary-` IDs receive the same root-field
+protection when the management worker supplies its own ID. The generated-ID validator accepts any prefix of 1–16 lowercase
+letters, or the exact `bower-canary` prefix, a hyphen and 32 lowercase hexadecimal
+characters; trusted callers must
+still supply only IDs they actually generated. Numbers and all other values are still scanned, including values in
 records Bower builds itself. Field rules and length limits still apply; producer-supplied
 values and every other field are scanned as before. A changed event ID is never
 acknowledged: the source must retain and retry it after the privacy configuration
@@ -227,6 +231,13 @@ application-level acknowledgement, so senders must retain and replay after a los
 connection. A persistent privacy collision requires operator remediation; retries
 alone do not repair it. These refusals do not create a privacy alert event, so monitor
 source silence, retry and drop counters, and the authorized bounded operator tap.
+
+Proven invalid inputs, including duplicate object properties encountered during
+redaction and custom detector scan or match bounds, are quarantined with the bounded
+reason `redaction-invalid-input` and are not retried. Source adapters may advance or
+drop those records; monitor their rejection counters. Operational failures and
+failures without a proven origin remain retryable. A caught detector exception is
+operational even when it shares the same internal failure code as invalid input.
 
 `RedactionContext` is a public in-process API, not a security boundary against code
 running inside the collector. Only collector-owned source code may set the generated

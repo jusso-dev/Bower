@@ -37,7 +37,8 @@ public sealed record RedactionContext(string? GeneratedEventId = null)
 /// <summary>
 /// Event identifiers that Bower's in-process sources compute (<c>syslog-</c> and
 /// <c>winevt-</c> record ids): a lowercase prefix, a hyphen and 32 lowercase hex
-/// characters of a SHA-256 digest. Such a value carries no source text.
+/// characters of a SHA-256 digest. Collector canaries use <c>bower-canary-</c>
+/// followed by 32 lowercase hexadecimal UUID characters. These carry no source text.
 /// </summary>
 public static class GeneratedEventIds
 {
@@ -45,7 +46,8 @@ public static class GeneratedEventIds
 
     public static bool IsWellFormed(string? value)
     {
-        int hyphen = value?.IndexOf('-', StringComparison.Ordinal) ?? -1;
+        bool canary = value?.StartsWith("bower-canary-", StringComparison.Ordinal) == true;
+        int hyphen = canary ? "bower-canary".Length : value?.IndexOf('-', StringComparison.Ordinal) ?? -1;
         if (hyphen is < 1 or > 16 || value!.Length != hyphen + 1 + DigestLength)
         {
             return false;
@@ -54,7 +56,7 @@ public static class GeneratedEventIds
         for (int index = 0; index < value.Length; index++)
         {
             char c = value[index];
-            bool valid = index < hyphen ? c is >= 'a' and <= 'z'
+            bool valid = index < hyphen ? canary ? c is >= 'a' and <= 'z' or '-' : c is >= 'a' and <= 'z'
                 : index == hyphen || c is >= '0' and <= '9' or >= 'a' and <= 'f';
             if (!valid)
             {
@@ -87,6 +89,9 @@ public static class GeneratedEventIds
     }
 }
 
+/// <summary>Failure origin; unknown remains retryable to avoid losing events.</summary>
+public enum RedactionFailureOrigin { Unknown, InvalidInput, Operational }
+
 public sealed record RedactionResult(
     bool Succeeded,
     string? RedactedJson,
@@ -102,7 +107,8 @@ public sealed record RedactionResult(
     /// Per-detector action labels applied during privacy scan (e.g. Removed, SHA256).
     /// Never contains original sensitive values.
     /// </summary>
-    IReadOnlyDictionary<string, string>? PrivacyActions = null);
+    IReadOnlyDictionary<string, string>? PrivacyActions = null,
+    RedactionFailureOrigin FailureOrigin = RedactionFailureOrigin.Unknown);
 
 public interface ITelemetryPolicyEvaluator
 {

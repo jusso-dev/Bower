@@ -12,6 +12,35 @@ use bower_policy::DeterministicPolicyEvaluator;
 
 struct Fixed(RedactionResult);
 
+#[test]
+fn duplicate_nested_input_is_quarantined_without_retry_or_queueing() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = Arc::new(
+        SqliteEventStore::new(directory.path().join("queue.db"), 1_048_576, None).unwrap(),
+    );
+    store.initialize().unwrap();
+    let evaluator: Arc<dyn TelemetryPolicyEvaluator> =
+        Arc::new(DeterministicPolicyEvaluator::new([]));
+    let wrapper = PackDetectionRedactor {
+        inner: Arc::new(bower_redaction::JsonEventRedactor::new()),
+        evaluator: evaluator.clone(),
+        rules: vec![],
+    };
+    let processor = SecurityEventProcessor::new(
+        Arc::new(wrapper),
+        evaluator,
+        store.clone(),
+        Arc::new(bower_contracts::time::SystemClock),
+    );
+    let input = r#"{"schemaVersion":"1.0.0","eventId":"synthetic-id","timeGenerated":"2026-10-31T00:00:00Z","eventCategory":"authentication","eventType":"authentication_failure","eventAction":"authentication.attempt","eventResult":"failure","application":{"name":"test","environment":"test"},"attributes":{"duplicate":1,"duplicate":2}}"#;
+    let result = processor
+        .process(input, &CollectorIdentity::new("c", "1", "test", "h"))
+        .unwrap();
+    assert_eq!(result.action, bower_contracts::DecisionAction::Quarantine);
+    assert_eq!(result.reasons, ["redaction-invalid-input"]);
+    assert_eq!(store.snapshot().unwrap().queued, 0);
+}
+
 struct Panics;
 impl EventRedactor for Panics {
     fn redact(&self, _: &str) -> RedactionResult {

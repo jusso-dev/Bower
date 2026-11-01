@@ -104,6 +104,7 @@ public sealed class GeneratedEventIdRedactionTests
     [InlineData("-dd97c1d25d12d2e202c1e010d70d55f4")]
     [InlineData("abcdefghijklmnopq-dd97c1d25d12d2e202c1e010d70d55f4")]
     [InlineData("win-evt-dd97c1d25d12d2e202c1e010d70d55f")]
+    [InlineData("bower-canaryx-0123456789abcdef0123456789abcdef")]
     [InlineData("")]
     public void MalformedClaims_ExemptNothing(string claimed)
     {
@@ -117,8 +118,22 @@ public sealed class GeneratedEventIdRedactionTests
     [InlineData(IbanLikeId)]
     [InlineData(OtherIbanLikeId)]
     [InlineData("aws-0123456789abcdef0123456789abcdef")]
+    [InlineData("bower-canary-0123456789abcdef0123456789abcdef")]
     public void IsWellFormed_AcceptsOnlyAPrefixAndThirtyTwoLowercaseHexCharacters(string id) =>
         Assert.True(GeneratedEventIds.IsWellFormed(id));
+
+    [Fact]
+    public void CanaryId_RequiresTrustedContextAndDoesNotExemptNestedCopies()
+    {
+        const string id = "bower-canary-0123456789abcdef0123456789abcdef";
+        string input = new JsonObject { ["eventId"] = id, ["attributes"] = new JsonObject { ["copy"] = id } }.ToJsonString();
+        PrivacyEngine engine = new(HexDetectorPolicy);
+        JsonObject trusted = JsonNode.Parse(engine.RedactJson(input, new RedactionContext(id)).RedactedJson!)!.AsObject();
+        JsonObject untrusted = JsonNode.Parse(engine.RedactJson(input).RedactedJson!)!.AsObject();
+        Assert.Equal(id, trusted["eventId"]!.GetValue<string>());
+        Assert.NotEqual(id, trusted["attributes"]!["copy"]!.GetValue<string>());
+        Assert.NotEqual(id, untrusted["eventId"]!.GetValue<string>());
+    }
 
     [Fact]
     public void FieldRulesAndLengthLimits_StillApplyToAGeneratedId()

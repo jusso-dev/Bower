@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Bower.Abstractions;
 using Bower.Redaction.Detectors;
 using Bower.Redaction.Privacy;
 
@@ -101,6 +102,7 @@ public sealed class CustomRedactionHardeningTests
 
         Assert.True(Engine(body).RedactJson(atLimit).Succeeded);
         Assert.Equal("redaction-failed", Engine(body).RedactJson(overLimit).FailureCode);
+        Assert.Equal(RedactionFailureOrigin.InvalidInput, Engine(body).RedactJson(overLimit).FailureOrigin);
         Assert.Equal("redaction-failed", Engine(body).RedactJson(longKey).FailureCode);
         Assert.True(Engine(body + "disabled: [custom.d]\n").RedactJson(overLimit).Succeeded);
         Assert.True(new PrivacyEngine().RedactJson(overLimit).Succeeded);
@@ -118,6 +120,7 @@ public sealed class CustomRedactionHardeningTests
         // The limit is per event, across values (and keys, which are scanned too).
         Assert.True(engine.RedactJson($$"""{"x":"{{half}}","y":"{{half}}"}""").Succeeded);
         Assert.Equal("redaction-failed", engine.RedactJson($$"""{"x":"{{half}}","y":"{{half}}","a":1}""").FailureCode);
+        Assert.Equal(RedactionFailureOrigin.InvalidInput, engine.RedactJson($$"""{"x":"{{half}}","y":"{{half}}","a":1}""").FailureOrigin);
     }
 
     [Fact]

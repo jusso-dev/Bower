@@ -86,6 +86,7 @@ fn processor_output_matches_csharp_byte_for_byte() {
             removed_paths: strings(&scenario["removed"]),
             masked_paths: strings(&scenario["masked"]),
             failure_code: None,
+            failure_origin: Default::default(),
             privacy_detected: scenario["detected"]
                 .as_array()
                 .map(|_| strings(&scenario["detected"])),

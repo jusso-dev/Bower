@@ -181,6 +181,10 @@ fn values_longer_than_the_scan_limit_quarantine_while_custom_detectors_are_enabl
             engine(&body).redact_json(json).failure_code.as_deref(),
             Some("redaction-failed")
         );
+        assert_eq!(
+            engine(&body).redact_json(json).failure_origin,
+            bower_contracts::RedactionFailureOrigin::InvalidInput
+        );
     }
     assert!(
         engine(&format!("{body}disabled: [custom.d]\n"))
@@ -219,6 +223,12 @@ fn more_custom_matches_than_the_per_event_limit_quarantine() {
             .failure_code
             .as_deref(),
         Some("redaction-failed")
+    );
+    assert_eq!(
+        engine
+            .redact_json(&format!(r#"{{"x":"{half}","y":"{half}","a":1}}"#))
+            .failure_origin,
+        bower_contracts::RedactionFailureOrigin::InvalidInput
     );
 }
 

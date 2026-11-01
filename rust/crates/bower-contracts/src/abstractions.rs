@@ -12,6 +12,15 @@ use indexmap::IndexMap;
 use crate::envelope::{DecisionAction, SecurityEventEnvelope};
 use crate::time::Timestamp;
 
+/// Unknown failures remain retryable; only a proven input failure can be dropped.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RedactionFailureOrigin {
+    #[default]
+    Unknown,
+    InvalidInput,
+    Operational,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RedactionResult {
     pub succeeded: bool,
@@ -19,6 +28,7 @@ pub struct RedactionResult {
     pub removed_paths: Vec<String>,
     pub masked_paths: Vec<String>,
     pub failure_code: Option<String>,
+    pub failure_origin: RedactionFailureOrigin,
     /// Detector ids observed during the privacy scan. Never original values.
     pub privacy_detected: Option<Vec<String>>,
     /// Per-detector action labels. Never original values.
@@ -67,14 +77,22 @@ pub struct RedactionContext<'a> {
 pub mod generated_event_ids {
     pub const DIGEST_LENGTH: usize = 32;
 
-    /// A lowercase prefix of 1 to 16 letters, a hyphen and 32 lowercase hex characters.
+    /// A lowercase prefix of 1 to 16 letters, or `bower-canary`, followed by a hyphen
+    /// and 32 lowercase hex characters. Only collector-generated values may be claimed.
     pub fn is_well_formed(value: &str) -> bool {
-        let Some(hyphen) = value.find('-') else {
+        let canary = value.starts_with("bower-canary-");
+        let Some(hyphen) = (if canary {
+            Some("bower-canary".len())
+        } else {
+            value.find('-')
+        }) else {
             return false;
         };
         (1..=16).contains(&hyphen)
             && value.len() == hyphen + 1 + DIGEST_LENGTH
-            && value[..hyphen].bytes().all(|c| c.is_ascii_lowercase())
+            && value[..hyphen]
+                .bytes()
+                .all(|c| c.is_ascii_lowercase() || (canary && c == b'-'))
             && value[hyphen + 1..]
                 .bytes()
                 .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))

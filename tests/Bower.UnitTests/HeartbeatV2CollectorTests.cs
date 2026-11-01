@@ -255,6 +255,7 @@ public sealed class HeartbeatV2CollectorTests
         DateTimeOffset now = DateTimeOffset.UtcNow;
         string canaryId = new('c', 32);
         string forgedId = new('d', 32);
+        CanaryContextRedactor canaryRedactor = new();
         List<string> bodies = [];
         string? acknowledge = null;
         ManagementStub stub = new(request =>
@@ -286,6 +287,7 @@ public sealed class HeartbeatV2CollectorTests
             builder =>
             {
                 builder.WebHost.UseTestServer();
+                builder.Services.AddSingleton<IEventRedactor>(canaryRedactor);
                 builder.Services.AddHttpClient(ManagementHeartbeatJob.HttpClientName)
                     .ConfigurePrimaryHttpMessageHandler(() => stub);
             },
@@ -327,6 +329,8 @@ public sealed class HeartbeatV2CollectorTests
         Assert.Equal("rejected", forged["status"]!.GetValue<string>());
         Assert.Equal("untrusted-signature", forged["code"]!.GetValue<string>());
         Assert.Equal("queued", second["lastCanary"]!["outcome"]!.GetValue<string>());
+        Assert.Equal(second["lastCanary"]!["eventId"]!.GetValue<string>(), canaryRedactor.GeneratedId);
+        Assert.True(GeneratedEventIds.IsWellFormed(canaryRedactor.GeneratedId));
         Assert.Equal(canaryId, second["lastCanary"]!["commandId"]!.GetValue<string>());
         // The canary went through the normal pipeline into the durable queue.
         Assert.Equal(1, snapshot.Queued + snapshot.Uploading + snapshot.Retrying + snapshot.Delivered);
@@ -492,6 +496,18 @@ public sealed class HeartbeatV2CollectorTests
         public override void SetLength(long value) => throw new NotSupportedException();
 
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    private sealed class CanaryContextRedactor : IEventRedactor
+    {
+        private readonly Bower.Redaction.JsonEventRedactor inner = new();
+        public string? GeneratedId { get; private set; }
+        public RedactionResult Redact(string json) => inner.Redact(json);
+        public RedactionResult Redact(string json, RedactionContext context)
+        {
+            GeneratedId = context.GeneratedEventId;
+            return inner.Redact(json, context);
+        }
     }
 
     private sealed class ManagementStub(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler

@@ -12,6 +12,26 @@ namespace Bower.UnitTests;
 public sealed class SecurityEventProcessorTests
 {
     [Fact]
+    public async Task Process_DuplicateNestedPropertiesAreQuarantinedWithoutRetryOrPersistence()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = new(Path.Combine(directory.Path, "queue.db"), 10 * 1024 * 1024, clock);
+        await store.InitializeAsync(cancellation);
+        string valid = JsonSerializer.Serialize(TestEvents.AuthenticationFailure(clock.UtcNow) with { EventId = "synthetic-id" }, BowerJson.Envelope);
+        string candidate = valid[..^1] + ",\"attributes\":{\"duplicate\":1,\"duplicate\":2}}";
+        SecurityEventProcessor processor = new(new JsonEventRedactor(),
+            new DeterministicPolicyEvaluator([TestEvents.AuthenticationPolicy()]), store, clock);
+        ProcessingResult result = await processor.ProcessAsync(candidate,
+            new CollectorIdentity("collector-1", "0.1.0", "test", "sha256:configuration"), cancellation);
+        Assert.Equal(DecisionAction.Quarantine, result.Action);
+        Assert.False(result.RedactionRetryRequired);
+        Assert.Contains("redaction-invalid-input", result.Reasons);
+        Assert.Empty(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
+    }
+
+    [Fact]
     public void IdentityComparison_BoundsBothDocumentsByUtf8Bytes()
     {
         const string small = "{\"eventId\":\"synthetic-id\"}";
