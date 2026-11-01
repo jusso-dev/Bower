@@ -14,18 +14,50 @@ public sealed class PackDetectionRedactor(
 {
     public const string EvidenceAttribute = "bowerDetections";
 
-    public RedactionResult Redact(string json)
+    public RedactionResult Redact(string json) => Redact(json, RedactionContext.None);
+
+    public RedactionResult Redact(string json, RedactionContext context)
     {
-        RedactionResult result = inner.Redact(json);
+        RedactionResult result = inner.Redact(json, context);
         if (!result.Succeeded || result.RedactedJson is null)
         {
             return result;
         }
 
+        // The inner redactor can remove or change the ID, in which case deserializing
+        // before the processor would turn a retryable identity refusal into a permanent
+        // pack-detection failure. Never expose either ID or run detections on that event.
+        if (RedactedEventIdentity.Compare(json, result.RedactedJson) == RedactedEventIdentity.Comparison.Changed)
+        {
+            return new RedactionResult(false, null, [], [], RedactedEventIdentity.RetryReason);
+        }
+
+        SecurityEventEnvelope envelope;
         try
         {
-            SecurityEventEnvelope envelope = JsonSerializer.Deserialize(result.RedactedJson, BowerJson.Envelope)
+            envelope = JsonSerializer.Deserialize(result.RedactedJson, BowerJson.Envelope)
                 ?? throw new JsonException();
+        }
+        catch (JsonException)
+        {
+            // Distinguish a malformed original from a valid original damaged by redaction.
+            // The former reaches the processor's normal schema check; the latter must retry.
+            try
+            {
+                if (JsonSerializer.Deserialize(json, BowerJson.Envelope) is null)
+                {
+                    return result;
+                }
+            }
+            catch (JsonException)
+            {
+                return result;
+            }
+            return new RedactionResult(false, null, [], [], "pack-detection-failed");
+        }
+
+        try
+        {
             Dictionary<string, JsonElement> attributes = new(envelope.Attributes ?? new Dictionary<string, JsonElement>(), StringComparer.Ordinal);
             // Producers cannot forge local engine evidence. Also strip it when no rules are active.
             foreach (string key in attributes.Keys.Where(key => key.Equals(EvidenceAttribute, StringComparison.OrdinalIgnoreCase)).ToArray())

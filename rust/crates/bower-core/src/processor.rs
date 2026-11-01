@@ -1,5 +1,6 @@
 //! `Bower.Core.SecurityEventProcessor`: redact, deserialize, validate, evaluate
-//! policy, enqueue. Order is fixed; redaction failure quarantines without persisting.
+//! policy, enqueue. Order is fixed; operational redaction failures retain the source
+//! for retry without persisting its contents.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
@@ -12,8 +13,9 @@ use bower_contracts::envelope::{
 use bower_contracts::time::{Clock, Timestamp};
 use bower_contracts::types::{event_categories, event_types};
 use bower_contracts::{
-    DurableEventStore, EventRedactor, PolicyDecision, QueueState, QueuedEvent, RedactionResult,
-    StoreError, SuppressionRequest, TelemetryPolicyEvaluator, json,
+    DurableEventStore, EventRedactor, PolicyDecision, QueueState, QueuedEvent, RedactionContext,
+    RedactionFailureOrigin, RedactionResult, StoreError, SuppressionRequest,
+    TelemetryPolicyEvaluator, json,
 };
 use chrono::{Duration, Months};
 use indexmap::IndexMap;
@@ -21,6 +23,8 @@ use sha2::{Digest, Sha256};
 
 use crate::telemetry::PipelineTelemetry;
 use crate::{fingerprint, privacy, suppression};
+
+const MAX_IDENTITY_DOCUMENT_BYTES: usize = 1_048_576;
 
 /// Identity stamped into `collector` on every queued event.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -167,6 +171,12 @@ pub enum ProcessError {
     /// (C# `QueueCapacityExceededException`).
     #[error(transparent)]
     Store(#[from] StoreError),
+    /// Redaction changed a root identity; retry after the privacy configuration is fixed.
+    #[error("event-id-redacted")]
+    EventIdRedacted,
+    /// Privacy processing could not complete; retain the input and retry.
+    #[error("redaction-unavailable")]
+    RedactionUnavailable,
     #[error("event serialization failed: {0}")]
     Serialization(String),
 }
@@ -238,11 +248,24 @@ impl SecurityEventProcessor {
         candidate_json: &str,
         collector: &CollectorIdentity,
     ) -> Result<ProcessingResult, ProcessError> {
+        self.process_with(candidate_json, collector, &RedactionContext::default())
+    }
+
+    /// [`Self::process`] for a candidate that carries Bower-generated values: `context`
+    /// keeps them out of content detectors (see [`RedactionContext`]). Never describe
+    /// producer-supplied values with it.
+    pub fn process_with(
+        &self,
+        candidate_json: &str,
+        collector: &CollectorIdentity,
+        context: &RedactionContext<'_>,
+    ) -> Result<ProcessingResult, ProcessError> {
+        let _sensitive = bower_contracts::panic_privacy::protect();
         let bytes_in = i64::try_from(candidate_json.len()).unwrap_or(i64::MAX);
         if let Some(telemetry) = &self.telemetry {
             telemetry.record_attempt(bytes_in);
         }
-        self.process_core(candidate_json, collector, bytes_in)
+        self.process_core(candidate_json, collector, context, bytes_in)
     }
 
     /// Records the selection outcome once it is final: before any privacy alert enqueue,
@@ -268,6 +291,32 @@ impl SecurityEventProcessor {
             tap.publish(&result, subject, accepted_payload);
         }
         result
+    }
+
+    fn redaction_unavailable(
+        &self,
+        candidate_json: &str,
+        bytes_in: i64,
+    ) -> Result<ProcessingResult, ProcessError> {
+        if json::from_str::<SecurityEventEnvelope>(candidate_json).is_err() {
+            return Ok(self.decided(
+                ProcessingResult::failed_at(
+                    DecisionAction::Quarantine,
+                    "schema-invalid",
+                    ProcessingStage::Schema,
+                ),
+                bytes_in,
+            ));
+        }
+        self.decided(
+            ProcessingResult::failed_at(
+                DecisionAction::Quarantine,
+                "redaction-unavailable",
+                ProcessingStage::Redaction,
+            ),
+            bytes_in,
+        );
+        Err(ProcessError::RedactionUnavailable)
     }
 
     /// Closes ended suppression windows and queues one policy-approved summary for each
@@ -315,40 +364,11 @@ impl SecurityEventProcessor {
         &self,
         candidate_json: &str,
         collector: &CollectorIdentity,
+        context: &RedactionContext<'_>,
         bytes_in: i64,
     ) -> Result<ProcessingResult, ProcessError> {
-        // Redaction failure (including a panic) is a security failure: quarantine
-        // without persisting.
-        let Ok(redaction) = catch_unwind(AssertUnwindSafe(|| self.redactor.redact(candidate_json)))
-        else {
-            return Ok(self.decided(
-                ProcessingResult::failed_at(
-                    DecisionAction::Quarantine,
-                    "redaction-failed",
-                    ProcessingStage::Redaction,
-                ),
-                bytes_in,
-            ));
-        };
-
-        let redacted_json = match (&redaction.succeeded, &redaction.redacted_json) {
-            (true, Some(json)) => json,
-            _ => {
-                return Ok(self.decided(
-                    ProcessingResult::failed_at(
-                        DecisionAction::Quarantine,
-                        redaction
-                            .failure_code
-                            .clone()
-                            .unwrap_or_else(|| "redaction-failed".to_owned()),
-                        ProcessingStage::Redaction,
-                    ),
-                    bytes_in,
-                ));
-            }
-        };
-
-        let Ok(candidate) = json::from_str::<SecurityEventEnvelope>(redacted_json) else {
+        // Bound the input without parsing source content before redaction.
+        if candidate_json.len() > MAX_IDENTITY_DOCUMENT_BYTES {
             return Ok(self.decided(
                 ProcessingResult::failed_at(
                     DecisionAction::Quarantine,
@@ -357,6 +377,77 @@ impl SecurityEventProcessor {
                 ),
                 bytes_in,
             ));
+        }
+        // Redaction failure (including a panic) is a security failure: quarantine
+        // without persisting, and retry the original input when the failure is repaired.
+        let redaction_guard = bower_contracts::panic_privacy::protect();
+        let redaction = catch_unwind(AssertUnwindSafe(|| {
+            self.redactor.redact_with(candidate_json, context)
+        }))
+        .ok();
+        drop(redaction_guard);
+        let Some(redaction) = redaction else {
+            return self.redaction_unavailable(candidate_json, bytes_in);
+        };
+
+        let redacted_json = match (&redaction.succeeded, &redaction.redacted_json) {
+            (true, Some(json)) => json,
+            _ if !redaction.succeeded
+                && redaction.failure_origin == RedactionFailureOrigin::InvalidInput =>
+            {
+                if root_identity_changed(candidate_json, candidate_json).is_none()
+                    || json::from_str::<SecurityEventEnvelope>(candidate_json).is_err()
+                {
+                    return Ok(self.decided(
+                        ProcessingResult::failed_at(
+                            DecisionAction::Quarantine,
+                            "schema-invalid",
+                            ProcessingStage::Schema,
+                        ),
+                        bytes_in,
+                    ));
+                }
+                return Ok(self.decided(
+                    ProcessingResult::failed_at(
+                        DecisionAction::Quarantine,
+                        "redaction-invalid-input",
+                        ProcessingStage::Redaction,
+                    ),
+                    bytes_in,
+                ));
+            }
+            _ => {
+                return self.redaction_unavailable(candidate_json, bytes_in);
+            }
+        };
+
+        // A redacted identity cannot be acknowledged or used for idempotency: two
+        // distinct inputs could collapse into the same masked ID. Compare only the
+        // root properties, preserving duplicate keys, without logging their values.
+        let Some(identity_changed) = root_identity_changed(candidate_json, redacted_json) else {
+            return Ok(self.decided(
+                ProcessingResult::failed_at(
+                    DecisionAction::Quarantine,
+                    "schema-invalid",
+                    ProcessingStage::Schema,
+                ),
+                bytes_in,
+            ));
+        };
+        if identity_changed {
+            self.decided(
+                ProcessingResult::failed_at(
+                    DecisionAction::Quarantine,
+                    "event-id-redacted",
+                    ProcessingStage::Redaction,
+                ),
+                bytes_in,
+            );
+            return Err(ProcessError::EventIdRedacted);
+        }
+
+        let Ok(candidate) = json::from_str::<SecurityEventEnvelope>(redacted_json) else {
+            return self.redaction_unavailable(candidate_json, bytes_in);
         };
 
         let now = self.clock.utc_now();
@@ -679,6 +770,30 @@ impl SecurityEventProcessor {
         };
         Ok((enqueue.enqueued || enqueue.duplicate).then_some(arranged_alert.event_id))
     }
+}
+
+/// None means the original is malformed or has no single string root identity.
+fn root_identity_changed(original: &str, redacted: &str) -> Option<bool> {
+    use bower_contracts::JsonElement;
+    // Match the bounded collector/redactor payload size before parsing either document.
+    fn id(value: &JsonElement) -> Option<&str> {
+        let JsonElement::Object(fields) = value else {
+            return None;
+        };
+        let mut ids = fields.iter().filter(|(name, _)| name == "eventId");
+        let first = ids.next()?.1.as_str()?;
+        ids.next().is_none().then_some(first)
+    }
+    if original.len() > MAX_IDENTITY_DOCUMENT_BYTES {
+        return None;
+    }
+    let before = JsonElement::parse(original).ok()?;
+    let original_id = id(&before)?;
+    if redacted.len() > MAX_IDENTITY_DOCUMENT_BYTES {
+        return Some(true);
+    }
+    let after = JsonElement::parse(redacted).ok();
+    Some(after.as_ref().and_then(id) != Some(original_id))
 }
 
 /// The queued event and its UTF-8 payload byte count.

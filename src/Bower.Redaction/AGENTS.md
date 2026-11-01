@@ -14,6 +14,10 @@ arbitrary code from configuration.
   or constructor injection — do not hard-code detector lists inside `PrivacyEngine`.
 - Keep detectors independently enable/disable-able through `PrivacyPolicy`.
 - Opt-in detectors (IP, hostname, username, address, GPS, markings) stay off unless enabled.
+- The only value-detector exemption is a Bower-generated record id proven by the caller
+  (`IEventRedactor.Redact(json, RedactionContext)`, `GeneratedEventIds.IsWellFormed`), for
+  the root `eventId`/`eventOriginalId` only. Never extend it to producer-supplied values
+  or other fields; mirror any change in `rust/crates/bower-redaction` and both test suites.
 - Add unit tests for every new detector (positive + negative / invalid checksum).
 - Add or update micro-benchmarks when changing hot paths.
 - Custom detectors (`customDetectors:`) compile only the canonical pattern emitted by

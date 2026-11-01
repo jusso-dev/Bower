@@ -11,6 +11,77 @@ namespace Bower.Functions.Collector.Tests;
 
 public sealed class FunctionIngestTests
 {
+    [Theory]
+    [InlineData("throw")]
+    [InlineData("failure")]
+    [InlineData("missing")]
+    public async Task Operational_redaction_failure_is_retryable_without_delivery_or_leaks(string mode)
+    {
+        using Harness harness = new(redactor: new FailingRedactor(mode));
+        CollectorResponse response = await harness.PostAsync(Harness.Event(), harness.Entra.Token());
+        Assert.Equal(503, response.StatusCode);
+        Assert.Equal("10", response.Headers["Retry-After"]);
+        Assert.Contains("redaction-unavailable", response.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("redactor-private-marker", response.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("redactor-private-marker", harness.AllLogs, StringComparison.Ordinal);
+        Assert.Empty(harness.Fake.Batches);
+    }
+
+    private sealed class FailingRedactor(string mode) : IEventRedactor
+    {
+        public RedactionResult Redact(string json) => mode switch
+        {
+            "throw" => throw new InvalidOperationException("redactor-private-marker"),
+            "failure" => new RedactionResult(false, null, [], [], "redactor-private-marker"),
+            "missing" => new RedactionResult(true, null, [], [], "redactor-private-marker"),
+            _ => throw new ArgumentException("Unknown mode.")
+        };
+    }
+
+    [Theory]
+    [InlineData("mask")]
+    [InlineData("remove")]
+    public async Task Pack_detection_wrapper_preserves_retry_when_profile_changes_identity(string action)
+    {
+        using TemporaryDirectory directory = new();
+        string profile = Path.Combine(directory.Path, "profile.yaml");
+        File.WriteAllText(profile, $$"""
+            apiVersion: bower.security/v1
+            kind: PrivacyProfile
+            metadata:
+              id: identity-test
+              version: 1.0.0
+            fields:
+              - path: eventId
+                action: {{action}}
+            """);
+        using Harness harness = new(Harness.Settings(privacyProfile: profile));
+        JsonObject candidate = JsonNode.Parse(Harness.Event())!.AsObject();
+        candidate["eventId"] = "safe-synthetic-id";
+        CollectorResponse response = await harness.PostAsync(candidate.ToJsonString(), harness.Entra.Token());
+        Assert.Equal(503, response.StatusCode);
+        Assert.Equal("10", response.Headers["Retry-After"]);
+        Assert.Contains("event-id-redacted", response.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("safe-synthetic-id", response.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("safe-synthetic-id", harness.AllLogs, StringComparison.Ordinal);
+        Assert.Empty(harness.Fake.Batches);
+    }
+
+    [Fact]
+    public async Task Redacted_identity_is_retryable_and_never_delivered()
+    {
+        using Harness harness = new();
+        JsonObject candidate = JsonNode.Parse(Harness.Event())!.AsObject();
+        candidate["eventId"] = "10040680-c19c-4eec-8ca0-056e33f7f420";
+        CollectorResponse response = await harness.PostAsync(candidate.ToJsonString(), harness.Entra.Token());
+        Assert.Equal(503, response.StatusCode);
+        Assert.Equal("10", response.Headers["Retry-After"]);
+        Assert.Empty(harness.Fake.Batches);
+        Assert.Contains("event-id-redacted", response.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain(candidate["eventId"]!.GetValue<string>(), response.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain(candidate["eventId"]!.GetValue<string>(), harness.AllLogs, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Accepted_event_is_answered_only_after_destination_acknowledgement()
     {

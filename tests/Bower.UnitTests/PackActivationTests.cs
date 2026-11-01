@@ -46,6 +46,7 @@ public sealed class PackActivationTests
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", otherToken);
         using HttpResponseMessage response = await client.SendAsync(request, cancellation);
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Null(response.Headers.RetryAfter);
         string body = await response.Content.ReadAsStringAsync(cancellation);
         Assert.Contains("event-identity-conflict", body, StringComparison.Ordinal);
         Assert.Contains("Preserve the upstream event", body, StringComparison.Ordinal);
@@ -219,8 +220,10 @@ public sealed class PackActivationTests
         await using WebApplication app = await Start(directory, cancellation, redactor: new FailedRedactor());
         using HttpClient client = app.GetTestClient();
         using HttpResponseMessage response = await Send(client, Raw(), cancellation);
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.DoesNotContain("deploy-admin", await response.Content.ReadAsStringAsync(cancellation), StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        string body = await response.Content.ReadAsStringAsync(cancellation);
+        Assert.Contains("redaction-unavailable", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("deploy-admin", body, StringComparison.Ordinal);
         Assert.Equal(0, (await app.Services.GetRequiredService<IDurableEventStore>().GetSnapshotAsync(cancellation)).Queued);
     }
 
@@ -259,9 +262,9 @@ public sealed class PackActivationTests
             : envelope with { Attributes = metadata.ToDictionary(pair => pair.Key, pair => JsonSerializer.SerializeToElement(pair.Value)) };
 
         using HttpResponseMessage rejected = await Send(client, JsonSerializer.Serialize(envelope, BowerJson.Envelope), cancellation, endpoint: "/v1/events");
-        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, rejected.StatusCode);
         string response = await rejected.Content.ReadAsStringAsync(cancellation);
-        Assert.Contains("pack-detection-failed", response, StringComparison.Ordinal);
+        Assert.Contains("redaction-unavailable", response, StringComparison.Ordinal);
         Assert.Contains("quarantine", response, StringComparison.Ordinal);
         Assert.DoesNotContain(marker, response, StringComparison.Ordinal);
         IDurableEventStore store = app.Services.GetRequiredService<IDurableEventStore>();

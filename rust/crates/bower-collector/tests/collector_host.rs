@@ -244,7 +244,7 @@ async fn signed_pack_raw_events_queue_redacted_detection_evidence_and_survive_re
 }
 
 #[tokio::test]
-async fn detection_metadata_failure_quarantines_matching_event_without_persisting_source() {
+async fn detection_metadata_failure_is_retryable_without_persisting_source() {
     for field in ["labels", "attributes"] {
         for attack in ["collision", "count", "key"] {
             let directory = tempfile::tempdir().unwrap();
@@ -284,10 +284,21 @@ async fn detection_metadata_failure_quarantines_matching_event_without_persistin
                         .collect(),
                 );
             }
-            let (status, _, body) = send(&collector.router, post(&event, Some(TOKEN))).await;
-            assert_eq!(status, StatusCode::BAD_REQUEST, "{field}/{attack}: {body}");
-            assert!(body.contains("pack-detection-failed"));
-            assert!(body.contains("quarantine"));
+            let (status, headers, body) = send(&collector.router, post(&event, Some(TOKEN))).await;
+            assert_eq!(
+                status,
+                StatusCode::SERVICE_UNAVAILABLE,
+                "{field}/{attack}: {body}"
+            );
+            assert_eq!(headers[header::RETRY_AFTER], "60");
+            let answer: serde_json::Value = serde_json::from_str(&body).unwrap();
+            assert_eq!(
+                answer,
+                serde_json::json!({
+                    "eventId": null, "decision": "quarantine", "queued": false,
+                    "duplicate": false, "reasons": ["redaction-unavailable"], "policy": null
+                })
+            );
             assert!(!body.contains(marker));
             assert!(
                 collector
@@ -838,7 +849,20 @@ fn authentication_failure(event_id: &str) -> SecurityEventEnvelope {
 }
 
 fn new_id() -> String {
-    uuid::Uuid::new_v4().to_string()
+    // This fixture tests collector behavior, not privacy matching. Random UUIDs can
+    // happen to contain valid regulated identifiers and trigger a retryable refusal.
+    // An alphabetic counter stays unique across parallel tests without that chance.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let mut counter = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let mut suffix = String::new();
+    loop {
+        suffix.push(char::from(b'a' + (counter % 26) as u8));
+        counter /= 26;
+        if counter == 0 {
+            break;
+        }
+    }
+    format!("fixture-{suffix}")
 }
 
 fn post(candidate: &SecurityEventEnvelope, token: Option<&str>) -> Request<Body> {

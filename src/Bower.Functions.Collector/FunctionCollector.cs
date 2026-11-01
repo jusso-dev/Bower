@@ -161,13 +161,22 @@ public sealed partial class FunctionCollector(
                     result.PolicyDecision.PolicyHash,
                     result.PolicyDecision.Score),
             delivered);
-        int statusCode = result.Action switch
+        int statusCode = result.RedactionRetryRequired ? 503 : result.Action switch
         {
             DecisionAction.Accept or DecisionAction.RedactAndAccept => 202,
             DecisionAction.Reject => 422,
             _ => 400
         };
-        return Json(statusCode, response, FunctionJsonContext.Default.IngestResponse);
+        CollectorResponse completed = Json(statusCode, response, FunctionJsonContext.Default.IngestResponse);
+        return result.RedactionRetryRequired
+            ? completed with
+            {
+                Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Retry-After"] = DefaultRetryAfter.TotalSeconds.ToString("0", CultureInfo.InvariantCulture)
+                }
+            }
+            : completed;
     }
 
     /// <summary>Null when Logs Ingestion accepted every staged record; otherwise the retry response.</summary>

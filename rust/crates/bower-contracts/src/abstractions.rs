@@ -12,6 +12,15 @@ use indexmap::IndexMap;
 use crate::envelope::{DecisionAction, SecurityEventEnvelope};
 use crate::time::Timestamp;
 
+/// Unknown failures remain retryable; only a proven input failure can be dropped.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RedactionFailureOrigin {
+    #[default]
+    Unknown,
+    InvalidInput,
+    Operational,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RedactionResult {
     pub succeeded: bool,
@@ -19,6 +28,7 @@ pub struct RedactionResult {
     pub removed_paths: Vec<String>,
     pub masked_paths: Vec<String>,
     pub failure_code: Option<String>,
+    pub failure_origin: RedactionFailureOrigin,
     /// Detector ids observed during the privacy scan. Never original values.
     pub privacy_detected: Option<Vec<String>>,
     /// Per-detector action labels. Never original values.
@@ -37,6 +47,66 @@ impl RedactionResult {
 
 pub trait EventRedactor: Send + Sync {
     fn redact(&self, json: &str) -> RedactionResult;
+
+    /// Redacts an event that carries values Bower computed itself (see
+    /// [`RedactionContext`]), which then skip content detectors: they are digests,
+    /// not source text. Every other value is scanned. A redactor without the
+    /// exemption scans everything, which is always safe (C# `IEventRedactor.Redact(string,
+    /// RedactionContext)`).
+    fn redact_with(&self, json: &str, context: &RedactionContext<'_>) -> RedactionResult {
+        let _ = context;
+        self.redact(json)
+    }
+}
+
+/// Values in one candidate that Bower generated (C# `RedactionContext`). Only Bower code
+/// that built the values may set them; producer-supplied events use the default.
+/// This public in-process API is not a security boundary against arbitrary code in
+/// the collector process. Supplying a producer-controlled ID bypasses its value
+/// detector checks; only collector-owned source code may provide the context.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RedactionContext<'a> {
+    /// The record id an in-process source computed ([`generated_event_ids::from_source_record`]).
+    /// Exempts the root `eventId`/`eventOriginalId` only while they still equal it, and only
+    /// when it is well-formed.
+    pub generated_event_id: Option<&'a str>,
+}
+
+/// Event identifiers that Bower's in-process sources compute (`syslog-` and `winevt-`
+/// record ids), mirroring C# `GeneratedEventIds`.
+pub mod generated_event_ids {
+    pub const DIGEST_LENGTH: usize = 32;
+
+    /// A lowercase prefix of 1 to 16 letters, or `bower-canary`, followed by a hyphen
+    /// and 32 lowercase hex characters. Only collector-generated values may be claimed.
+    pub fn is_well_formed(value: &str) -> bool {
+        let canary = value.starts_with("bower-canary-");
+        let Some(hyphen) = (if canary {
+            Some("bower-canary".len())
+        } else {
+            value.find('-')
+        }) else {
+            return false;
+        };
+        (1..=16).contains(&hyphen)
+            && value.len() == hyphen + 1 + DIGEST_LENGTH
+            && value[..hyphen]
+                .bytes()
+                .all(|c| c.is_ascii_lowercase() || (canary && c == b'-'))
+            && value[hyphen + 1..]
+                .bytes()
+                .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+    }
+
+    /// The id an in-process source wrote first in its record (`{"id":"…"`), or `None`.
+    /// Call only for records Bower's own sources built, never producer-supplied ones.
+    pub fn from_source_record(record: &str) -> Option<&str> {
+        let rest = record.strip_prefix("{\"id\":\"")?;
+        let window = &rest.as_bytes()[..rest.len().min(64)];
+        let end = window.iter().position(|&byte| byte == b'"')?;
+        let id = &rest[..end];
+        is_well_formed(id).then_some(id)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

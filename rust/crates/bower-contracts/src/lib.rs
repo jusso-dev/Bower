@@ -8,6 +8,7 @@ pub mod abstractions;
 pub mod element;
 pub mod envelope;
 pub mod json;
+pub mod panic_privacy;
 pub mod time;
 pub mod types;
 

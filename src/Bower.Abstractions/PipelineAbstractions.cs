@@ -5,7 +5,92 @@ namespace Bower.Abstractions;
 public interface IEventRedactor
 {
     RedactionResult Redact(string json);
+
+    /// <summary>
+    /// Redacts an event that carries values Bower computed itself (see
+    /// <see cref="RedactionContext"/>), which then skip content detectors: they are digests,
+    /// not source text, and masking them breaks event identity. Every other value is scanned.
+    /// A redactor without the exemption scans
+    /// everything, which is always safe.
+    /// </summary>
+    RedactionResult Redact(string json, RedactionContext context) => Redact(json);
 }
+
+/// <summary>
+/// Values in one candidate that Bower generated, so content detectors cannot mistake them
+/// for personal data or secrets. Only Bower code that built the values may set them;
+/// producer-supplied events always use <see cref="None"/>. This public in-process
+/// API is not a security boundary against arbitrary code in the collector process:
+/// only collector-owned source code may provide a generated ID. Passing a value
+/// supplied by an untrusted producer bypasses its value-detector checks.
+/// </summary>
+/// <param name="GeneratedEventId">
+/// The record id an in-process source computed (<see cref="GeneratedEventIds.FromSourceRecord"/>).
+/// Exempts the root <c>eventId</c>/<c>eventOriginalId</c> only while they still equal it,
+/// and only when it is <see cref="GeneratedEventIds.IsWellFormed">well-formed</see>.
+/// </param>
+public sealed record RedactionContext(string? GeneratedEventId = null)
+{
+    public static RedactionContext None { get; } = new();
+}
+
+/// <summary>
+/// Event identifiers that Bower's in-process sources compute (<c>syslog-</c> and
+/// <c>winevt-</c> record ids): a lowercase prefix, a hyphen and 32 lowercase hex
+/// characters of a SHA-256 digest. Collector canaries use <c>bower-canary-</c>
+/// followed by 32 lowercase hexadecimal UUID characters. These carry no source text.
+/// </summary>
+public static class GeneratedEventIds
+{
+    public const int DigestLength = 32;
+
+    public static bool IsWellFormed(string? value)
+    {
+        bool canary = value?.StartsWith("bower-canary-", StringComparison.Ordinal) == true;
+        int hyphen = canary ? "bower-canary".Length : value?.IndexOf('-', StringComparison.Ordinal) ?? -1;
+        if (hyphen is < 1 or > 16 || value!.Length != hyphen + 1 + DigestLength)
+        {
+            return false;
+        }
+
+        for (int index = 0; index < value.Length; index++)
+        {
+            char c = value[index];
+            bool valid = index < hyphen ? canary ? c is >= 'a' and <= 'z' or '-' : c is >= 'a' and <= 'z'
+                : index == hyphen || c is >= '0' and <= '9' or >= 'a' and <= 'f';
+            if (!valid)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The id an in-process source wrote for its record, or null. <c>SyslogRecord.Build</c>
+    /// and <c>WindowsEventRecord.Build</c> (and the Rust syslog source) write it first,
+    /// without whitespace, so only that exact prefix counts. Call only for records Bower's
+    /// own sources built: a producer-supplied record is source data, never a generated id.
+    /// </summary>
+    public static string? FromSourceRecord(string record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        const string Prefix = "{\"id\":\"";
+        if (!record.StartsWith(Prefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        ReadOnlySpan<char> rest = record.AsSpan(Prefix.Length);
+        int end = rest[..Math.Min(rest.Length, 64)].IndexOf('"');
+        string? id = end < 0 ? null : rest[..end].ToString();
+        return IsWellFormed(id) ? id : null;
+    }
+}
+
+/// <summary>Failure origin; unknown remains retryable to avoid losing events.</summary>
+public enum RedactionFailureOrigin { Unknown, InvalidInput, Operational }
 
 public sealed record RedactionResult(
     bool Succeeded,
@@ -22,7 +107,8 @@ public sealed record RedactionResult(
     /// Per-detector action labels applied during privacy scan (e.g. Removed, SHA256).
     /// Never contains original sensitive values.
     /// </summary>
-    IReadOnlyDictionary<string, string>? PrivacyActions = null);
+    IReadOnlyDictionary<string, string>? PrivacyActions = null,
+    RedactionFailureOrigin FailureOrigin = RedactionFailureOrigin.Unknown);
 
 public interface ITelemetryPolicyEvaluator
 {

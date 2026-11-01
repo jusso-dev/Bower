@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Threading.Channels;
+using Bower.Abstractions;
 using Bower.Collector.Jobs;
 using Bower.Contracts;
 using Bower.Core;
@@ -366,6 +367,7 @@ public sealed partial class ManagementCommandWorker(
             ProcessingResult result = await processor.ProcessAsync(
                 CanaryJson(eventId, ranAt, settings.Environment, command.CommandId),
                 identity with { SourceAdapter = CanarySourceAdapter },
+                new RedactionContext(eventId),
                 cancellationToken);
             outcome = result switch
             {

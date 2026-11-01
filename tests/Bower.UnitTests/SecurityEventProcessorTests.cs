@@ -12,6 +12,157 @@ namespace Bower.UnitTests;
 public sealed class SecurityEventProcessorTests
 {
     [Fact]
+    public async Task Process_DuplicateNestedPropertiesAreQuarantinedWithoutRetryOrPersistence()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = new(Path.Combine(directory.Path, "queue.db"), 10 * 1024 * 1024, clock);
+        await store.InitializeAsync(cancellation);
+        string valid = JsonSerializer.Serialize(TestEvents.AuthenticationFailure(clock.UtcNow) with { EventId = "synthetic-id" }, BowerJson.Envelope);
+        string candidate = valid[..^1] + ",\"attributes\":{\"duplicate\":1,\"duplicate\":2}}";
+        SecurityEventProcessor processor = new(new JsonEventRedactor(),
+            new DeterministicPolicyEvaluator([TestEvents.AuthenticationPolicy()]), store, clock);
+        ProcessingResult result = await processor.ProcessAsync(candidate,
+            new CollectorIdentity("collector-1", "0.1.0", "test", "sha256:configuration"), cancellation);
+        Assert.Equal(DecisionAction.Quarantine, result.Action);
+        Assert.False(result.RedactionRetryRequired);
+        Assert.Contains("redaction-invalid-input", result.Reasons);
+        Assert.Empty(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
+    }
+
+    [Fact]
+    public void IdentityComparison_BoundsBothDocumentsByUtf8Bytes()
+    {
+        const string small = "{\"eventId\":\"synthetic-id\"}";
+        string oversized = "{\"eventId\":\"synthetic-id\",\"padding\":\"" + new string('é', 524_288) + "\"}";
+        Assert.Equal(RedactedEventIdentity.Comparison.InvalidOriginal, RedactedEventIdentity.Compare(oversized, small));
+        Assert.Equal(RedactedEventIdentity.Comparison.Changed, RedactedEventIdentity.Compare(small, oversized));
+    }
+
+    [Theory]
+    [InlineData("throw", false)]
+    [InlineData("throw", true)]
+    [InlineData("failure", false)]
+    [InlineData("failure", true)]
+    [InlineData("missing", false)]
+    [InlineData("missing", true)]
+    public async Task Process_RedactorFailureOnInvalidOriginalIsSchemaFailure(string mode, bool invalidEnum)
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = new(Path.Combine(directory.Path, "queue.db"), 10 * 1024 * 1024, clock);
+        await store.InitializeAsync(cancellation);
+        string valid = JsonSerializer.Serialize(TestEvents.AuthenticationFailure(clock.UtcNow) with { EventId = "synthetic-id" }, BowerJson.Envelope);
+        JsonObject original = invalidEnum ? JsonNode.Parse(valid)!.AsObject() : new JsonObject { ["eventId"] = "synthetic-id" };
+        if (invalidEnum) original["eventResult"] = "invalid-enum";
+        SecurityEventProcessor processor = new(new UnavailableTestRedactor(mode),
+            new DeterministicPolicyEvaluator([TestEvents.AuthenticationPolicy()]), store, clock);
+        ProcessingResult result = await processor.ProcessAsync(original.ToJsonString(),
+            new CollectorIdentity("collector-1", "0.1.0", "test", "sha256:configuration"), cancellation);
+        Assert.False(result.RedactionRetryRequired);
+        Assert.Equal(ProcessingStage.Schema, result.Stage);
+        Assert.Contains("schema-invalid", result.Reasons);
+        Assert.DoesNotContain(UnavailableTestRedactor.SecretMarker, string.Join(' ', result.Reasons), StringComparison.Ordinal);
+        Assert.Null(result.EventId);
+        Assert.Empty(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
+    }
+
+    [Theory]
+    [InlineData("{\"eventId\":\"x\",\"eventId\":\"y\"}")]
+    [InlineData("{\"eventId\":\"x\"")]
+    public async Task Process_AmbiguousOrMalformedOriginalDoesNotQueueEvenIfARedactorReturnsValidJson(string input)
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = new(Path.Combine(directory.Path, "queue.db"), 10 * 1024 * 1024, clock);
+        await store.InitializeAsync(cancellation);
+        string valid = JsonSerializer.Serialize(TestEvents.AuthenticationFailure(clock.UtcNow) with { EventId = "x" }, BowerJson.Envelope);
+        SecurityEventProcessor processor = new(new FixedJsonRedactor(valid),
+            new DeterministicPolicyEvaluator([TestEvents.AuthenticationPolicy()]), store, clock);
+        ProcessingResult result = await processor.ProcessAsync(input,
+            new CollectorIdentity("collector-1", "0.1.0", "test", "sha256:configuration"), cancellation);
+        Assert.Equal(DecisionAction.Quarantine, result.Action);
+        Assert.Contains("schema-invalid", result.Reasons);
+        Assert.Null(result.EventId);
+        Assert.Empty(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
+    }
+
+    private sealed class FixedJsonRedactor(string output) : IEventRedactor
+    {
+        public RedactionResult Redact(string json) => new(true, output, [], [], null);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Process_InvalidRedactedEnvelopeRetriesOnlyWhenOriginalIsValid(bool originalValid)
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = new(Path.Combine(directory.Path, "queue.db"), 10 * 1024 * 1024, clock);
+        await store.InitializeAsync(cancellation);
+        string valid = JsonSerializer.Serialize(TestEvents.AuthenticationFailure(clock.UtcNow) with { EventId = "synthetic-id" }, BowerJson.Envelope);
+        JsonObject invalid = JsonNode.Parse(valid)!.AsObject();
+        invalid["timeGenerated"] = "not-a-date";
+        string damaged = invalid.ToJsonString();
+        SecurityEventProcessor processor = new(new FixedJsonRedactor(damaged),
+            new DeterministicPolicyEvaluator([TestEvents.AuthenticationPolicy()]), store, clock);
+        ProcessingResult result = await processor.ProcessAsync(originalValid ? valid : damaged,
+            new CollectorIdentity("collector-1", "0.1.0", "test", "sha256:configuration"), cancellation);
+        Assert.Equal(originalValid, result.RedactionRetryRequired);
+        Assert.Contains(originalValid ? "redaction-unavailable" : "schema-invalid", result.Reasons);
+        Assert.Null(result.EventId);
+        Assert.Empty(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
+    }
+
+    [Theory]
+    [InlineData("{\"eventId\":\"x\",\"eventId\":\"y\"}")]
+    [InlineData("{\"eventId\":\"x\"")]
+    public async Task Process_AmbiguousOrMalformedRedactedOutputRequiresRetry(string output)
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = new(Path.Combine(directory.Path, "queue.db"), 10 * 1024 * 1024, clock);
+        await store.InitializeAsync(cancellation);
+        string input = JsonSerializer.Serialize(TestEvents.AuthenticationFailure(clock.UtcNow) with { EventId = "synthetic-id" }, BowerJson.Envelope);
+        SecurityEventProcessor processor = new(new FixedJsonRedactor(output),
+            new DeterministicPolicyEvaluator([TestEvents.AuthenticationPolicy()]), store, clock);
+        ProcessingResult result = await processor.ProcessAsync(input,
+            new CollectorIdentity("collector-1", "0.1.0", "test", "sha256:configuration"), cancellation);
+        Assert.True(result.RedactionRetryRequired);
+        Assert.Null(result.EventId);
+        Assert.Empty(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Process_RemovedOrNonStringRedactedIdRequiresRetryBeforeDeserialization(bool useNumber)
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = new(Path.Combine(directory.Path, "queue.db"), 10 * 1024 * 1024, clock);
+        await store.InitializeAsync(cancellation);
+        string input = JsonSerializer.Serialize(TestEvents.AuthenticationFailure(clock.UtcNow) with { EventId = "synthetic-id" }, BowerJson.Envelope);
+        JsonObject redacted = JsonNode.Parse(input)!.AsObject();
+        if (useNumber) redacted["eventId"] = 42;
+        else redacted.Remove("eventId");
+        SecurityEventProcessor processor = new(new FixedJsonRedactor(redacted.ToJsonString()),
+            new DeterministicPolicyEvaluator([TestEvents.AuthenticationPolicy()]), store, clock);
+        ProcessingResult result = await processor.ProcessAsync(input,
+            new CollectorIdentity("collector-1", "0.1.0", "test", "sha256:configuration"), cancellation);
+        Assert.True(result.RedactionRetryRequired);
+        Assert.Null(result.EventId);
+        Assert.Empty(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
+    }
+
+    [Fact]
     public async Task Process_RedactsBeforePersistenceAndExplainsAcceptance()
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;

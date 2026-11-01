@@ -16,15 +16,28 @@ public sealed class SecurityEventProcessor(
     PipelineTelemetry? telemetry = null,
     EventTap? tap = null)
 {
+    public Task<ProcessingResult> ProcessAsync(
+        string candidateJson,
+        CollectorIdentity collector,
+        CancellationToken cancellationToken = default) =>
+        ProcessAsync(candidateJson, collector, RedactionContext.None, cancellationToken);
+
+    /// <summary>
+    /// As <see cref="ProcessAsync(string, CollectorIdentity, CancellationToken)"/> for a
+    /// candidate that carries Bower-generated values: <paramref name="context"/> keeps them out
+    /// of content detectors (see <see cref="RedactionContext"/>). Never describe
+    /// producer-supplied values with it.
+    /// </summary>
     public async Task<ProcessingResult> ProcessAsync(
         string candidateJson,
         CollectorIdentity collector,
+        RedactionContext context,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(candidateJson);
         long bytesIn = Encoding.UTF8.GetByteCount(candidateJson);
         telemetry?.RecordAttempt(bytesIn);
-        return await ProcessCoreAsync(candidateJson, collector, bytesIn, cancellationToken);
+        return await ProcessCoreAsync(candidateJson, collector, context, bytesIn, cancellationToken);
     }
 
     /// <summary>
@@ -90,30 +103,46 @@ public sealed class SecurityEventProcessor(
     private async Task<ProcessingResult> ProcessCoreAsync(
         string candidateJson,
         CollectorIdentity collector,
+        RedactionContext context,
         long bytesIn,
         CancellationToken cancellationToken)
     {
         RedactionResult redaction;
         try
         {
-            redaction = redactor.Redact(candidateJson);
+            redaction = redactor.Redact(candidateJson, context);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            // Redaction failure is a security failure: quarantine without persisting.
-            return Decided(
-                ProcessingResult.Failed(DecisionAction.Quarantine, "redaction-failed", ProcessingStage.Redaction),
-                bytesIn);
+            return RedactionFailure(candidateJson, bytesIn, identityChanged: false);
         }
 
         if (!redaction.Succeeded || redaction.RedactedJson is null)
         {
-            return Decided(
-                ProcessingResult.Failed(
-                    DecisionAction.Quarantine,
-                    redaction.FailureCode ?? "redaction-failed",
-                    ProcessingStage.Redaction),
-                bytesIn);
+            if (!redaction.Succeeded && redaction.FailureOrigin == RedactionFailureOrigin.InvalidInput)
+            {
+                if (RedactedEventIdentity.Compare(candidateJson, candidateJson) == RedactedEventIdentity.Comparison.InvalidOriginal
+                    || !OriginalEnvelopeParses(candidateJson))
+                {
+                    return Decided(ProcessingResult.Failed(DecisionAction.Quarantine, "schema-invalid", ProcessingStage.Schema), bytesIn);
+                }
+                return Decided(ProcessingResult.Failed(DecisionAction.Quarantine, "redaction-invalid-input", ProcessingStage.Redaction), bytesIn);
+            }
+            return RedactionFailure(candidateJson, bytesIn,
+                identityChanged: string.Equals(redaction.FailureCode, ProcessingResult.EventIdRedacted, StringComparison.Ordinal));
+        }
+
+        // Check the root ID before deserializing the redacted envelope: a privacy rule may
+        // remove it or change its type, making deserialization fail before we can compare it.
+        // Only this field is examined in memory; neither value is returned or logged.
+        RedactedEventIdentity.Comparison comparison = RedactedEventIdentity.Compare(candidateJson, redaction.RedactedJson);
+        if (comparison == RedactedEventIdentity.Comparison.Changed)
+        {
+            return Decided(ProcessingResult.Failed(DecisionAction.Quarantine, ProcessingResult.EventIdRedacted, ProcessingStage.Redaction), bytesIn);
+        }
+        if (comparison == RedactedEventIdentity.Comparison.InvalidOriginal)
+        {
+            return Decided(ProcessingResult.Failed(DecisionAction.Quarantine, "schema-invalid", ProcessingStage.Schema), bytesIn);
         }
 
         SecurityEventEnvelope? candidate;
@@ -123,6 +152,12 @@ public sealed class SecurityEventProcessor(
         }
         catch (JsonException)
         {
+            // A valid original damaged in a non-ID field by a custom redactor is not a
+            // permanent source rejection. Inspect it only in memory and never log it.
+            if (OriginalEnvelopeParses(candidateJson))
+            {
+                return RedactionFailure(candidateJson, bytesIn, identityChanged: false);
+            }
             return Decided(
                 ProcessingResult.Failed(DecisionAction.Quarantine, "schema-invalid", ProcessingStage.Schema),
                 bytesIn);
@@ -297,6 +332,30 @@ public sealed class SecurityEventProcessor(
         }
 
         return committed with { Reasons = reasons, PrivacyAlertEventId = privacyAlertEventId };
+    }
+
+    private static bool OriginalEnvelopeParses(string json)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize(json, BowerJson.Envelope) is not null;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private ProcessingResult RedactionFailure(string original, long bytesIn, bool identityChanged)
+    {
+        if (RedactedEventIdentity.Compare(original, original) == RedactedEventIdentity.Comparison.InvalidOriginal
+            || !OriginalEnvelopeParses(original))
+        {
+            return Decided(ProcessingResult.Failed(DecisionAction.Quarantine, "schema-invalid", ProcessingStage.Schema), bytesIn);
+        }
+        return Decided(ProcessingResult.Failed(DecisionAction.Quarantine,
+            identityChanged ? ProcessingResult.EventIdRedacted : ProcessingResult.RedactionUnavailable,
+            ProcessingStage.Redaction), bytesIn);
     }
 
     private async Task<string?> TryEnqueuePrivacyAlertAsync(
@@ -548,6 +607,18 @@ public sealed record ProcessingResult(
     long QueuedBytes = 0,
     SourceKey? Source = null)
 {
+    /// <summary>A retryable identity collision risk; the raw identifier is never exposed.</summary>
+    public const string EventIdRedacted = RedactedEventIdentity.RetryReason;
+
+    /// <summary>Redaction or detection could not complete; the record was not persisted.</summary>
+    public const string RedactionUnavailable = "redaction-unavailable";
+
+    /// <summary>The caller must retain and retry the source record rather than acknowledge it.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool RedactionRetryRequired => Stage == ProcessingStage.Redaction
+        && (Reasons.Contains(EventIdRedacted, StringComparer.Ordinal)
+            || Reasons.Contains(RedactionUnavailable, StringComparer.Ordinal));
+
     public static ProcessingResult Failed(DecisionAction action, string reason) =>
         Failed(action, reason, ProcessingStage.Policy);
 

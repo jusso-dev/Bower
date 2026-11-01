@@ -1136,15 +1136,26 @@ impl CommandWorker {
             source_adapter: CANARY_SOURCE_ADAPTER.into(),
             ..self.identity.clone()
         };
-        let result = tokio::task::spawn_blocking(move || processor.process(&json, &identity))
-            .await
-            .map_err(|_| "JoinError")?;
+        let redaction_id = event_id.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            processor.process_with(
+                &json,
+                &identity,
+                &bower_contracts::RedactionContext {
+                    generated_event_id: Some(&redaction_id),
+                },
+            )
+        })
+        .await
+        .map_err(|_| "JoinError")?;
         let outcome = match result {
             Ok(result) if result.duplicate => "duplicate",
             Ok(result) if result.queued => "queued",
             Ok(result) if result.action == DecisionAction::Reject => "rejected",
             Ok(_) => "quarantined",
             Err(ProcessError::Store(StoreError::Full(_))) => "failed",
+            Err(ProcessError::EventIdRedacted) => "failed",
+            Err(ProcessError::RedactionUnavailable) => "failed",
             Err(ProcessError::Store(_)) => return Err("SqliteException"),
             Err(ProcessError::Serialization(_)) => return Err("JsonException"),
         };

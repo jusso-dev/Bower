@@ -1230,6 +1230,10 @@ fn panicking_detector_fails_closed() {
         Some("redaction-failed")
     );
     assert_eq!(
+        engine.redact_json(r#"{"a":"x"}"#).failure_origin,
+        bower_contracts::RedactionFailureOrigin::Operational
+    );
+    assert_eq!(
         engine.redact_text("x").failure_code.as_deref(),
         Some("redaction-failed")
     );

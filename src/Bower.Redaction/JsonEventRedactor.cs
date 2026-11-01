@@ -24,4 +24,6 @@ public sealed class JsonEventRedactor : IEventRedactor
     }
 
     public RedactionResult Redact(string json) => engine.Redact(json);
+
+    public RedactionResult Redact(string json, RedactionContext context) => engine.Redact(json, context);
 }
