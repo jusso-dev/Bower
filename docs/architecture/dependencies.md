@@ -218,6 +218,17 @@ with a clear error when absent:
 | `az`, `aws`, `terraform`, `bower` CLIs (optional) | `Bower.Deployment`, `Test-BowerPrivacyProfile`, `Bower.Policy` | The deployment commands wrap the existing templates with the tools those templates already require. Invoked with argument arrays through one mockable function. | Re-implementing what-if, change sets or plans. |
 | `Pester` 5.9, `PSScriptAnalyzer` 1.25 (development only) | `powershell/build.ps1`, CI | Standard PowerShell test framework and linter, both Microsoft/PowerShell-community maintained. Pinned in CI. | None comparable. |
 
+## Collector settings trust: operating-system APIs
+
+The C# settings loader uses the operating system's existing native libraries, with no
+additional package or runtime service. Linux uses `libc` `openat`/`statx` to verify and
+read the same objects. Windows uses `kernel32` handle APIs, `advapi32` security-descriptor
+queries, and `ntdll` `NtCreateFile` for directory-handle-relative opens with
+`OBJ_DONT_REPARSE`. Path-based ACL checks followed by another open permit substitution;
+rejecting every ancestor metadata-write grant also rejects normal ProgramData ACLs.
+Native calls are limited to read-only handles, bounded descriptors and fixed structures,
+and failures refuse startup. Dedicated native platform tests gate release qualification.
+
 ## Documentation website
 
 | Dependency | Scope | Reason and alternatives |

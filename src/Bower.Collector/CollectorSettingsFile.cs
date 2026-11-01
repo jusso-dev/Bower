@@ -232,10 +232,13 @@ public static partial class CollectorSettingsFile
             | FileSystemRights.WriteAttributes | FileSystemRights.Delete | FileSystemRights.DeleteSubdirectoriesAndFiles
             | FileSystemRights.ChangePermissions | FileSystemRights.TakeOwnership
             | (FileSystemRights)0x40000000 /* GENERIC_WRITE */ | (FileSystemRights)0x10000000 /* GENERIC_ALL */;
-        // Drive roots may permit new children. Each existing child is independently
-        // checked and locked against replacement; the immediate folder forbids all writes.
+        // Standard drive roots/ProgramData permit child creation and ordinary attribute
+        // writes. Descendants are opened relative to verified parent handles, never by
+        // following a mutable absolute ancestor path. Existing children are independently
+        // checked and locked; the immediate settings folder still forbids all writes.
         FileSystemRights rejectedRights = ancestor
-            ? WriteRights & ~(FileSystemRights.WriteData | FileSystemRights.AppendData)
+            ? WriteRights & ~(FileSystemRights.WriteData | FileSystemRights.AppendData
+                | FileSystemRights.WriteAttributes | FileSystemRights.WriteExtendedAttributes)
             : WriteRights;
         if (descriptor.DiscretionaryAcl is null)
         {
@@ -263,7 +266,7 @@ public static partial class CollectorSettingsFile
                 && !IsTrustedWindows(rule.SecurityIdentifier))
             {
                 throw new InvalidOperationException(
-                    $"{Variable}: {item} grants write access to {rule.SecurityIdentifier.Value}; only SYSTEM and Administrators may write it.");
+                    $"{Variable}: {item} grants unsafe write access (mask 0x{rule.AccessMask:X8}) to {rule.SecurityIdentifier.Value}; only SYSTEM and Administrators may write it.");
             }
         }
     }
