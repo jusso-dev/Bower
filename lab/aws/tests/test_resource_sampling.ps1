@@ -65,6 +65,12 @@ $rows = New-SampleRows; $rows[1].sequence = 7
 Assert-Rejected { Get-BowerSampleSummary $scope $rows $true 'boot' }
 $rows = New-SampleRows; $rows[1].monotonicSeconds = -1
 Assert-Rejected { Get-BowerSampleSummary $scope $rows $true 'boot' }
+function Assert-SampleFileReleased([string]$Path) {
+    # On Windows this immediately fails if a rejected lazy reader still owns
+    # the file. No GC, sleeps or cleanup retries may hide a leaked handle.
+    $exclusive = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+    try { Assert-Sample $exclusive.CanWrite 'sample reader retained file handle' } finally { $exclusive.Dispose() }
+}
 $directory = Join-Path ([IO.Path]::GetTempPath()) ('bower-sampler-test-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $directory | Out-Null
 try {
@@ -76,10 +82,16 @@ try {
     Assert-Sample ((Read-BowerSampleSet $directory).Count -eq 1) 'single JSONL shape'
     [IO.File]::WriteAllText($path, (($rows | ForEach-Object { $_ | ConvertTo-Json -Depth 8 -Compress }) -join "`n") + "`n")
     Assert-Sample ((Read-BowerSampleSet $directory).Count -eq 5) 'many JSONL shape'
+    Assert-SampleFileReleased $path
     [IO.File]::WriteAllText($path, ("{}`n" * 482))
     Assert-Rejected { Read-BowerSampleSet $directory }
+    Assert-SampleFileReleased $path
     [IO.File]::WriteAllText($path, (' ' * 8193) + "`n")
     Assert-Rejected { Read-BowerSampleSet $directory }
+    Assert-SampleFileReleased $path
+    [IO.File]::WriteAllText($path, '{invalid-json')
+    Assert-Rejected { Read-BowerSampleSet $directory }
+    Assert-SampleFileReleased $path
     Write-BowerSampleJson (Join-Path $directory 'summary.json') $report
     $saved = Get-Content (Join-Path $directory 'summary.json') -Raw | ConvertFrom-Json
     Assert-Sample ($saved.peakProcessResidentBytes -eq 900) 'summary serialization'

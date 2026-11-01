@@ -153,10 +153,15 @@ function Read-BowerSampleSet([string]$Root) {
     $path = Join-Path $Root 'samples.jsonl'
     if ((Get-Item -LiteralPath $path).Length -gt 4194304 -or ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'sample-file-bound' }
     $rows = New-Object 'System.Collections.Generic.List[object]'
-    foreach ($line in [IO.File]::ReadLines($path)) {
-        if ([Text.Encoding]::UTF8.GetByteCount($line) -gt 8192 -or $rows.Count -ge 481) { throw 'sample-row-bound' }
-        $rows.Add(($line | ConvertFrom-Json))
-    }
+    # Windows PowerShell 5.1 can retain File.ReadLines' lazy enumerator when
+    # validation throws. Always release the handle before returning or failing.
+    $reader = [IO.File]::OpenText($path)
+    try {
+        while ($null -ne ($line = $reader.ReadLine())) {
+            if ([Text.Encoding]::UTF8.GetByteCount($line) -gt 8192 -or $rows.Count -ge 481) { throw 'sample-row-bound' }
+            $rows.Add(($line | ConvertFrom-Json))
+        }
+    } finally { $reader.Dispose() }
     return ,$rows.ToArray()
 }
 
