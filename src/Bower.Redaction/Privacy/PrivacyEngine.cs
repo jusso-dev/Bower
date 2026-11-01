@@ -101,17 +101,18 @@ public sealed partial class PrivacyEngine : IEventRedactor
         ArgumentNullException.ThrowIfNull(context);
         if (string.IsNullOrWhiteSpace(json))
         {
-            return PrivacyScanResult.Fail("empty-payload");
+            return PrivacyScanResult.Fail("empty-payload", RedactionFailureOrigin.InvalidInput);
         }
 
         if (Encoding.UTF8.GetByteCount(json) > MaximumPayloadBytes)
         {
-            return PrivacyScanResult.Fail("payload-too-large");
+            return PrivacyScanResult.Fail("payload-too-large", RedactionFailureOrigin.InvalidInput);
         }
 
+        JsonNode? root;
         try
         {
-            JsonNode? root = JsonNode.Parse(
+            root = JsonNode.Parse(
                 json,
                 documentOptions: new JsonDocumentOptions
                 {
@@ -119,14 +120,25 @@ public sealed partial class PrivacyEngine : IEventRedactor
                     CommentHandling = JsonCommentHandling.Disallow,
                     MaxDepth = 32
                 });
-
+        }
+        catch (JsonException)
+        {
+            return PrivacyScanResult.Fail("invalid-json", RedactionFailureOrigin.InvalidInput);
+        }
+        catch (Exception)
+        {
+            return PrivacyScanResult.Fail("redaction-failed", RedactionFailureOrigin.Operational);
+        }
+        try
+        {
             if (root is not JsonObject rootObject)
             {
-                return PrivacyScanResult.Fail("root-must-be-object");
+                return PrivacyScanResult.Fail("root-must-be-object", RedactionFailureOrigin.InvalidInput);
             }
 
             List<AppliedFinding> findings = [];
-            SanitizeChange(rootObject, findings);
+            try { SanitizeChange(rootObject, findings); }
+            catch (ArgumentException) { throw new InvalidPrivacyInputException(); }
             Generated generated = new(
                 GeneratedEventIds.IsWellFormed(context.GeneratedEventId) ? context.GeneratedEventId : null);
             WalkObject(rootObject, "$", findings, new CustomScanBudget(), generated, root: true);
@@ -161,16 +173,16 @@ public sealed partial class PrivacyEngine : IEventRedactor
                 masked,
                 null);
         }
-        catch (JsonException)
+        catch (InvalidPrivacyInputException)
         {
-            return PrivacyScanResult.Fail("invalid-json");
+            return PrivacyScanResult.Fail("redaction-failed", RedactionFailureOrigin.InvalidInput);
         }
         catch (Exception)
         {
             // Detector timeouts, malformed structures (for example duplicate keys) and any
             // other failure are security failures: the payload must be quarantined, never
             // persisted, and the caller must never see an exception instead of a verdict.
-            return PrivacyScanResult.Fail("redaction-failed");
+            return PrivacyScanResult.Fail("redaction-failed", RedactionFailureOrigin.Operational);
         }
     }
 
@@ -211,7 +223,10 @@ public sealed partial class PrivacyEngine : IEventRedactor
     {
         int redactedKeyIndex = 0;
         string keyPath = $"{parentPath}.[key]";
-        foreach ((string originalName, JsonNode? originalChild) in value.ToArray())
+        KeyValuePair<string, JsonNode?>[] properties;
+        try { properties = value.ToArray(); }
+        catch (ArgumentException) { throw new InvalidPrivacyInputException(); }
+        foreach ((string originalName, JsonNode? originalChild) in properties)
         {
             string propertyName = originalName;
             JsonNode? child = originalChild;
@@ -751,13 +766,13 @@ internal sealed class CustomScanBudget
     {
         if (text.Length > CustomPatternDetector.MaximumScannedLength)
         {
-            throw new InvalidOperationException("Value exceeds the custom detector scan limit.");
+            throw new InvalidPrivacyInputException();
         }
 
         int before = matches.Count;
         if (!detector.Detect(text, matches, remaining))
         {
-            throw new InvalidOperationException("Custom detector match limit exceeded.");
+            throw new InvalidPrivacyInputException();
         }
 
         remaining -= matches.Count - before;
@@ -772,6 +787,8 @@ public sealed record AppliedFinding(
     bool Validated,
     string? SubKind);
 
+internal sealed class InvalidPrivacyInputException : Exception { }
+
 public sealed record PrivacyScanResult(
     bool Succeeded,
     string? RedactedJson,
@@ -779,10 +796,11 @@ public sealed record PrivacyScanResult(
     PrivacyMetadata Metadata,
     IReadOnlyList<string> RemovedPaths,
     IReadOnlyList<string> MaskedPaths,
-    string? FailureCode)
+    string? FailureCode,
+    RedactionFailureOrigin FailureOrigin = RedactionFailureOrigin.Unknown)
 {
-    public static PrivacyScanResult Fail(string code) =>
-        new(false, null, [], PrivacyMetadata.Empty, [], [], code);
+    public static PrivacyScanResult Fail(string code, RedactionFailureOrigin origin = RedactionFailureOrigin.Unknown) =>
+        new(false, null, [], PrivacyMetadata.Empty, [], [], code, origin);
 
     public RedactionResult ToRedactionResult() =>
         new(
@@ -792,7 +810,8 @@ public sealed record PrivacyScanResult(
             MaskedPaths,
             FailureCode,
             Metadata.Detected,
-            Metadata.Actions);
+            Metadata.Actions,
+            FailureOrigin);
 }
 
 public sealed record PrivacyTextResult(

@@ -70,6 +70,7 @@ impl EventRedactor for FieldRedactor {
             removed_paths: removed,
             masked_paths: masked,
             failure_code: None,
+            failure_origin: Default::default(),
             privacy_detected: Some(self.detected.iter().map(|id| (*id).to_owned()).collect()),
             privacy_actions: Some(actions),
         }

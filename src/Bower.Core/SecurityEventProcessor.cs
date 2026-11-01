@@ -133,6 +133,15 @@ public sealed class SecurityEventProcessor(
 
         if (!redaction.Succeeded || redaction.RedactedJson is null)
         {
+            if (!redaction.Succeeded && redaction.FailureOrigin == RedactionFailureOrigin.InvalidInput)
+            {
+                if (RedactedEventIdentity.Compare(candidateJson, candidateJson) == RedactedEventIdentity.Comparison.InvalidOriginal
+                    || !OriginalEnvelopeParses(candidateJson))
+                {
+                    return Decided(ProcessingResult.Failed(DecisionAction.Quarantine, "schema-invalid", ProcessingStage.Schema), bytesIn);
+                }
+                return Decided(ProcessingResult.Failed(DecisionAction.Quarantine, "redaction-invalid-input", ProcessingStage.Redaction), bytesIn);
+            }
             return RedactionFailure(candidateJson, bytesIn,
                 identityChanged: string.Equals(redaction.FailureCode, ProcessingResult.EventIdRedacted, StringComparison.Ordinal));
         }

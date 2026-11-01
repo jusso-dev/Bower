@@ -14,7 +14,8 @@ use bower_contracts::time::{Clock, Timestamp};
 use bower_contracts::types::{event_categories, event_types};
 use bower_contracts::{
     DurableEventStore, EventRedactor, PolicyDecision, QueueState, QueuedEvent, RedactionContext,
-    RedactionResult, StoreError, SuppressionRequest, TelemetryPolicyEvaluator, json,
+    RedactionFailureOrigin, RedactionResult, StoreError, SuppressionRequest,
+    TelemetryPolicyEvaluator, json,
 };
 use chrono::{Duration, Months};
 use indexmap::IndexMap;
@@ -391,6 +392,30 @@ impl SecurityEventProcessor {
 
         let redacted_json = match (&redaction.succeeded, &redaction.redacted_json) {
             (true, Some(json)) => json,
+            _ if !redaction.succeeded
+                && redaction.failure_origin == RedactionFailureOrigin::InvalidInput =>
+            {
+                if root_identity_changed(candidate_json, candidate_json).is_none()
+                    || json::from_str::<SecurityEventEnvelope>(candidate_json).is_err()
+                {
+                    return Ok(self.decided(
+                        ProcessingResult::failed_at(
+                            DecisionAction::Quarantine,
+                            "schema-invalid",
+                            ProcessingStage::Schema,
+                        ),
+                        bytes_in,
+                    ));
+                }
+                return Ok(self.decided(
+                    ProcessingResult::failed_at(
+                        DecisionAction::Quarantine,
+                        "redaction-invalid-input",
+                        ProcessingStage::Redaction,
+                    ),
+                    bytes_in,
+                ));
+            }
             _ => {
                 return self.redaction_unavailable(candidate_json, bytes_in);
             }

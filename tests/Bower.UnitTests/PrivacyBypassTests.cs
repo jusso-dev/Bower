@@ -289,10 +289,20 @@ public sealed class PrivacyBypassTests
 
         Assert.False(json.Succeeded);
         Assert.Equal("redaction-failed", json.FailureCode);
+        Assert.Equal(RedactionFailureOrigin.Operational, json.FailureOrigin);
         Assert.Null(json.RedactedJson);
         Assert.False(text.Succeeded);
         Assert.Equal("redaction-failed", text.FailureCode);
         Assert.Null(text.RedactedText);
+    }
+
+    [Fact]
+    public void DetectorJsonException_IsOperationalEvenWhenInputIsValid()
+    {
+        PrivacyScanResult result = new PrivacyEngine(detectors: [new JsonThrowingDetector()]).RedactJson("""{"a":"x"}""");
+        Assert.False(result.Succeeded);
+        Assert.Equal(RedactionFailureOrigin.Operational, result.FailureOrigin);
+        Assert.Null(result.RedactedJson);
     }
 
     [Fact]
@@ -376,6 +386,14 @@ public sealed class PrivacyBypassTests
 
         public void Detect(ReadOnlySpan<char> text, string path, ICollection<DetectionMatch> matches) =>
             throw new NotSupportedException("detector bug");
+    }
+
+    private sealed class JsonThrowingDetector : ISensitiveDetector
+    {
+        public string Id => "custom.json-throws";
+        public string Category => "custom";
+        public void Detect(ReadOnlySpan<char> text, string path, ICollection<DetectionMatch> matches) =>
+            throw new JsonException("detector failure");
     }
 
     private sealed class OutOfRangeDetector : ISensitiveDetector
