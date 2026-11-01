@@ -164,13 +164,15 @@ public sealed class SyslogCollectorTests
     }
 
     [Theory]
-    [InlineData("mask")]
-    [InlineData("remove")]
-    public async Task RedactedIdentity_RetriesTcpAndCountsUdpDropWithoutQueueing(string identityAction)
+    [InlineData("mask", false)]
+    [InlineData("mask", true)]
+    [InlineData("remove", false)]
+    [InlineData("remove", true)]
+    public async Task RedactedIdentity_RetriesTcpAndCountsUdpDropWithoutQueueing(string identityAction, bool crlf)
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
         using TemporaryDirectory directory = new();
-        await using WebApplication app = await Start(directory, cancellation, identityAction: identityAction);
+        await using WebApplication app = await Start(directory, cancellation, identityAction: identityAction, crlf: crlf);
         SyslogSource source = app.Services.GetRequiredService<SyslogSource>();
         IDurableEventStore store = app.Services.GetRequiredService<IDurableEventStore>();
         using TcpClient tcp = new(AddressFamily.InterNetwork);
@@ -333,7 +335,7 @@ public sealed class SyslogCollectorTests
     }
 
     private static async Task<WebApplication> Start(TemporaryDirectory directory, CancellationToken cancellation, int parser = 0,
-        string[]? transforms = null, string? identityAction = null)
+        string[]? transforms = null, string? identityAction = null, bool crlf = false)
     {
         string pack = Path.Combine(directory.Path, "syslog-pack");
         foreach (string path in Directory.EnumerateFiles(PackSource, "*", SearchOption.AllDirectories))
@@ -347,7 +349,15 @@ public sealed class SyslogCollectorTests
         if (identityAction is not null)
         {
             string privacyPath = Path.Combine(pack, "privacy.yaml");
-            File.WriteAllText(privacyPath, File.ReadAllText(privacyPath).Replace("fields:\n", $"fields:\n  - path: eventId\n    action: {identityAction}\n", StringComparison.Ordinal));
+            string privacy = File.ReadAllText(privacyPath).Replace("\r\n", "\n", StringComparison.Ordinal);
+            if (crlf)
+            {
+                // Exercise Windows checkout line endings before applying the same edit.
+                privacy = privacy.Replace("\n", "\r\n", StringComparison.Ordinal);
+            }
+            privacy = privacy.Replace("\r\n", "\n", StringComparison.Ordinal);
+            Assert.Contains("fields:\n", privacy, StringComparison.Ordinal);
+            File.WriteAllText(privacyPath, privacy.Replace("fields:\n", $"fields:\n  - path: eventId\n    action: {identityAction}\n", StringComparison.Ordinal));
         }
         File.AppendAllText(Path.Combine(pack, "privacy.yaml"), HexDigestDetector);
         string samples = Path.Combine(pack, "samples", "ssh.jsonl");
