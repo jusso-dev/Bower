@@ -190,6 +190,46 @@ def reconcile(plan, plan_hash, pack_hash, queue, native, sentinel, cutoff):
             'destinationQueryVerified': complete, 'queryRole': 'verifier', 'scope': 'identity reconciliation only; fault and topology evidence assessed separately'}
 
 
+def destination_evidence(plan, plan_hash, pack_hash, data, cutoff, workspace, verifier):
+    """Project only validated aggregate identities/times; never persist the HTTP envelope."""
+    expected(plan)
+    if not DIGEST.fullmatch(plan_hash) or not DIGEST.fullmatch(pack_hash):
+        raise ValueError('Invalid destination evidence provenance')
+    guid = r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
+    if not all(isinstance(value, str) and re.fullmatch(guid, value) for value in (workspace, verifier)):
+        raise ValueError('Invalid destination evidence identity')
+    found = sentinel_rows(data, plan['startEpoch'] - 2, plan['collectNotBeforeEpoch'], cutoff)
+    rows = []
+    for original in data['tables'][0]['rows']:
+        if original[1] > 9223372036854775807:
+            raise ValueError('Destination copy count exceeds signed long')
+        rows.append(list(original))
+    query = query_text(plan, cutoff)
+    return {'schemaVersion': 1, 'recordType': 'firewall-destination-query-evidence',
+            'runId': plan['runId'], 'scenario': plan['scenario'], 'collectorId': plan['collectorId'],
+            'workspaceId': workspace, 'verifierClientId': verifier,
+            'planSha256': plan_hash, 'packSha256': pack_hash,
+            'query': {'text': query, 'sha256': hashlib.sha256(query.encode()).hexdigest(),
+                      'requestBodySha256': hashlib.sha256(json.dumps({'query': query}).encode()).hexdigest(),
+                      'cutoff': iso(cutoff), 'generatedStart': iso(plan['startEpoch'] - 2),
+                      'generatedEnd': iso(plan['collectNotBeforeEpoch']), 'apiTimespan': None},
+            'verifierSourceSha256': sha(Path(__file__)), 'queryResponseComplete': True,
+            'columns': COLUMNS.copy(), 'rows': rows, 'distinctIdentities': len(found),
+            'identitySetSha256': digest(found), 'deliveryQualified': False}
+
+
+def write_destination_evidence(path, evidence):
+    content = (json.dumps(evidence, separators=(',', ':')) + '\n').encode('ascii')
+    if len(content) > MAX_BYTES:
+        raise ValueError('Oversized sanitized destination evidence')
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'wb') as stream:
+        stream.write(content)
+    return {'file': Path(path).name, 'bytes': len(content),
+            'sha256': hashlib.sha256(content).hexdigest(),
+            'distinctIdentities': evidence['distinctIdentities']}
+
+
 def query_text(plan, cutoff):
     expected(plan)  # Validates every interpolated value.
     return '''BowerSecurity_CL
@@ -274,7 +314,11 @@ def main():
     parser.add_argument('--pack-sha256', required=True)
     parser.add_argument('--azure-state-dir', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--destination-evidence', type=Path, help='Optional new sanitized query-envelope/aggregate-row evidence file')
     args = parser.parse_args()
+    if args.destination_evidence is not None:
+        if args.destination_evidence.resolve() == args.output.resolve() or any(os.path.lexists(path) for path in (args.output, args.destination_evidence)):
+            raise ValueError('Evidence outputs must be distinct new paths')
     if not DIGEST.fullmatch(args.pack_sha256):
         raise ValueError('Invalid signed-pack digest')
     plan, queue = read_json(args.plan), read_json(args.queue)
@@ -288,6 +332,9 @@ def main():
     report = reconcile(plan, sha(args.plan), args.pack_sha256, queue, native, data, cutoff)
     report.update(workspaceId=workspace, verifierClientId=verifier,
                   queueEvidenceSha256=sha(args.queue), nativeEvidenceSha256=[sha(path) for path in args.native])
+    if args.destination_evidence is not None:
+        evidence = destination_evidence(plan, sha(args.plan), args.pack_sha256, data, cutoff, workspace, verifier)
+        report['destinationEvidence'] = write_destination_evidence(args.destination_evidence, evidence)
     with args.output.open('x') as stream:
         json.dump(report, stream, indent=2)
         stream.write('\n')

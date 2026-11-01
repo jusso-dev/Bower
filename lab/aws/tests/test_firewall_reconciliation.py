@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import importlib.util
+import io
 import json
 from pathlib import Path
 import sqlite3
@@ -260,6 +261,89 @@ class FirewallReconciliationTests(unittest.TestCase):
                     query.query_live(Path('/private/fixture'), 'query', timespan_seconds=value)
             context.assert_not_called()
 
+
+    def test_optional_destination_evidence_preserves_only_validated_rows_and_provenance(self):
+        self.data['untrustedBody'] = 'synthetic-secret'
+        self.data['tables'][0]['untrustedMetadata'] = 'synthetic-secret'
+        result = query.destination_evidence(self.plan, 'a' * 64, 'c' * 64, self.data,
+                                            self.start + 120, '11111111-1111-1111-1111-111111111111',
+                                            '22222222-2222-2222-2222-222222222222')
+        self.assertNotIn('synthetic-secret', json.dumps(result))
+        self.assertEqual(self.data['tables'][0]['rows'], result['rows'])
+        self.assertEqual(query.digest(self.ids), result['identitySetSha256'])
+        self.assertEqual(hashlib.sha256(query.query_text(self.plan, self.start + 120).encode()).hexdigest(), result['query']['sha256'])
+        self.assertIsNone(result['query']['apiTimespan'])
+        self.assertFalse(result['deliveryQualified'])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'destination.json'
+            receipt = query.write_destination_evidence(path, result)
+            self.assertEqual(query.sha(path), receipt['sha256'])
+            self.assertEqual(path.stat().st_size, receipt['bytes'])
+            self.assertEqual(0o600, path.stat().st_mode & 0o777)
+            with self.assertRaises(FileExistsError):
+                query.write_destination_evidence(path, result)
+            oversized = Path(directory) / 'oversized.json'
+            with mock.patch.object(query, 'MAX_BYTES', 10), self.assertRaisesRegex(ValueError, 'Oversized'):
+                query.write_destination_evidence(oversized, result)
+            self.assertFalse(oversized.exists())
+
+    def test_optional_destination_evidence_rejects_unvalidated_payloads(self):
+        for mutation in ('payload', 'timestamp', 'partial', 'count'):
+            data = copy.deepcopy(self.data)
+            if mutation == 'payload':
+                data['tables'][0]['rows'][0].append('synthetic-secret')
+            elif mutation == 'timestamp':
+                data['tables'][0]['rows'][0][4] = 'synthetic-secret'
+            elif mutation == 'partial':
+                data['partialError'] = {'code': 'PartialQueryFailure'}
+            else:
+                data['tables'][0]['rows'][0][1] = 9223372036854775808
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                query.destination_evidence(self.plan, 'a' * 64, 'c' * 64, data,
+                                           self.start + 120, '11111111-1111-1111-1111-111111111111',
+                                           '22222222-2222-2222-2222-222222222222')
+
+    def test_destination_evidence_cli_is_opt_in_and_links_new_private_artifact(self):
+        cutoff = self.start + 120
+        class Clock(query.dt.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls.fromtimestamp(cutoff, tz)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan_path, queue_path, native_path = (root / name for name in ('plan.json', 'queue.json', 'native.json'))
+            plan_path.write_text(json.dumps(self.plan))
+            queue = dict(self.queue, planSha256=query.sha(plan_path))
+            queue_path.write_text(json.dumps(queue))
+            native_path.write_text(json.dumps(self.native[0]))
+            common = ['query-firewall.py', '--plan', str(plan_path), '--queue', str(queue_path),
+                      '--native', str(native_path), '--pack-sha256', 'c' * 64, '--azure-state-dir', str(root)]
+            for label, optional, missing in (('default', False, False), ('optional', True, False), ('missing', True, True)):
+                report = root / (label + '.json')
+                evidence = root / (label + '-destination.json')
+                query_data = copy.deepcopy(self.data)
+                if missing:
+                    query_data['tables'][0]['rows'].pop()
+                argv = common + ['--output', str(report)]
+                if optional:
+                    argv += ['--destination-evidence', str(evidence)]
+                with mock.patch.object(query.sys, 'argv', argv), mock.patch.object(query.dt, 'datetime', Clock), \
+                        mock.patch.object(query, 'query_live', return_value=(query_data, '11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222')), \
+                        mock.patch('sys.stdout', new=io.StringIO()):
+                    self.assertEqual(1 if missing else 0, query.main())
+                saved = json.loads(report.read_text())
+                self.assertEqual(optional, 'destinationEvidence' in saved)
+                self.assertEqual(not missing, saved['strictPass'])
+                if optional:
+                    self.assertEqual(query.sha(evidence), saved['destinationEvidence']['sha256'])
+                    self.assertEqual(9 if missing else 10, json.loads(evidence.read_text())['distinctIdentities'])
+                else:
+                    self.assertFalse(evidence.exists())
+            # Existing output must fail before another authentication/query attempt.
+            with mock.patch.object(query.sys, 'argv', argv), mock.patch.object(query, 'query_live') as live, \
+                    self.assertRaisesRegex(ValueError, 'distinct new paths'):
+                query.main()
+            live.assert_not_called()
 
 if __name__ == '__main__':
     unittest.main()

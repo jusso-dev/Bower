@@ -212,3 +212,23 @@ CLI token caches, ingestion environment files or TLS private keys as evidence.
 After the full testing session, use the owned AWS and Azure teardown procedures
 and verify absence of the run's resources, identities, storage and log workspaces.
 The expiry guard alone is not proof of full cleanup.
+
+### Retain sanitized destination identities
+
+Add `--destination-evidence <new-destination-evidence.json>` to the query command
+to retain the independently queried aggregate rows before private/cloud cleanup.
+Use a distinct, new filename beside the reconciliation report. Both paths must
+not exist; repeated delayed-ingestion queries need fresh filenames. Omitting
+this option preserves the original report-only behavior.
+
+The optional artifact retains the exact query text/hash and time bounds,
+workspace/verifier IDs, plan/pack/verifier hashes, fixed column names, and only
+validated synthetic EventId/copy-count/generation/ingestion timestamp rows. It
+never copies HTTP headers, tokens, response errors or arbitrary response fields.
+The same complete-response/schema/identity/time-window/row-count guards apply;
+its serialized size is capped at 64 MiB. The file is created privately (0600),
+without overwriting prior evidence, and its byte count/hash is linked from the
+reconciliation report. A retained query response does not itself claim delivery:
+use the separate reconciliation report's `strictPass` and keep failed attempts.
+Public reports may split these already sanitized rows into hashed JSONL sidecars
+and keep counts/hashes/query metadata in the readable summary.
