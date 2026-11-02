@@ -343,6 +343,11 @@ class MonitoringCoverageQueryTests(unittest.TestCase):
         self.assertIn('Source = "syslog:coverage-incomplete"', expiry)
         self.assertIn('Protocol !in ("tls", "tcp", "udp", "relp")', expiry)
         self.assertIn('Tls = Protocol == "tls" or (Protocol == "relp"', expiry)
+        # Unconfigured optional client CA / revocation list files are not unknown metadata;
+        # records without the flags (older collectors) still are.
+        self.assertIn("coalesce(tobool(Listener.clientCertificateAuthorityConfigured), true)", expiry)
+        self.assertIn("coalesce(tobool(Listener.clientRevocationListConfigured), true)", expiry)
+        self.assertIn("(RevocationListConfigured and isnull(RevocationListNextUpdate))", expiry)
         self.assertIn('coalesce(tobool(Listener.tls), isnotnull(ServerCertificateNotAfter))', expiry)
         self.assertIn("| where Tls\n", expiry)
         self.assertIn("coalesce(toint(Listener.relpBusyCloses), 0) > 0", transport)

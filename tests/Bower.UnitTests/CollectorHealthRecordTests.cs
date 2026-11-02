@@ -213,7 +213,9 @@ public sealed class CollectorHealthRecordTests
             RelpBusyCloses = 1,
             ServerCertificateNotAfter = TestEvents.Now.AddDays(10),
             ClientCertificateAuthorityNotAfter = TestEvents.Now.AddDays(300),
-            ClientRevocationListNextUpdate = TestEvents.Now.AddDays(1)
+            ClientRevocationListNextUpdate = TestEvents.Now.AddDays(1),
+            ClientCertificateAuthorityConfigured = true,
+            ClientRevocationListConfigured = true
         };
         CollectorHealthSample current = previous with { At = TestEvents.Now.AddMinutes(5), Sequence = 2, Syslog = [listener] };
 
@@ -226,9 +228,15 @@ public sealed class CollectorHealthRecordTests
         Assert.Equal(TestEvents.Now.AddDays(10), item.GetProperty("serverCertificateNotAfter").GetDateTimeOffset());
         Assert.Equal(TestEvents.Now.AddDays(1), item.GetProperty("clientRevocationListNextUpdate").GetDateTimeOffset());
         Assert.True(item.GetProperty("tls").GetBoolean());
+        Assert.True(item.GetProperty("clientCertificateAuthorityConfigured").GetBoolean());
+        Assert.True(item.GetProperty("clientRevocationListConfigured").GetBoolean());
         Assert.Equal((40, 2, 1), (item.GetProperty("relpAcknowledged").GetInt64(), item.GetProperty("relpServerCloses").GetInt64(),
             item.GetProperty("relpBusyCloses").GetInt64()));
-        Assert.False(CollectorHealthRecord.Create(previous, Identity.Id, "production", null).Attributes!["syslog"][0].GetProperty("tls").GetBoolean());
+        JsonElement plain = CollectorHealthRecord.Create(previous, Identity.Id, "production", null).Attributes!["syslog"][0];
+        Assert.False(plain.GetProperty("tls").GetBoolean());
+        // Unconfigured optional files are reported as such, so monitoring treats their missing dates as not applicable.
+        Assert.False(plain.GetProperty("clientCertificateAuthorityConfigured").GetBoolean());
+        Assert.False(plain.GetProperty("clientRevocationListConfigured").GetBoolean());
         Assert.Equal([CollectorHealthRecord.SyslogErrors], CollectorHealthRecord.Problems(current, previous));
         // A successful reload alone is not an error.
         Assert.Empty(CollectorHealthRecord.Problems(

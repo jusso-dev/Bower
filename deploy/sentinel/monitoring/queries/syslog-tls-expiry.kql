@@ -23,11 +23,17 @@ let expiry = listeners
     or RevocationListNextUpdate < now() + __CRL_HOURS__h
 | project CollectorId, Source = strcat("syslog:", tostring(Listener.id)), RecordAt = TimeGenerated,
     ServerCertificateNotAfter, ClientCaNotAfter, RevocationListNextUpdate, CoverageIncomplete = false, TlsMetadataIncomplete = false;
-// The current health schema does not say whether client CA/CRL files are configured.
-// Missing optional dates on TLS therefore mean unknown, not a proven expiry or a clean bill of health.
+// Health records say whether the optional client CA and revocation list files are configured
+// (clientCertificateAuthorityConfigured, clientRevocationListConfigured). A missing date for a file
+// that is not configured is not applicable. A missing date for a configured file, or a record from
+// an older collector without the flags, means unknown, not a proven expiry or a clean bill of health.
 let listenerUnknown = listeners
+| extend ClientCaConfigured = coalesce(tobool(Listener.clientCertificateAuthorityConfigured), true),
+    RevocationListConfigured = coalesce(tobool(Listener.clientRevocationListConfigured), true)
 | where Protocol !in ("tls", "tcp", "udp", "relp") or (Tls and
-    (isnull(ServerCertificateNotAfter) or isnull(ClientCaNotAfter) or isnull(RevocationListNextUpdate)))
+    (isnull(ServerCertificateNotAfter)
+        or (ClientCaConfigured and isnull(ClientCaNotAfter))
+        or (RevocationListConfigured and isnull(RevocationListNextUpdate))))
 | project CollectorId, Source = strcat("syslog:", tostring(Listener.id), ":tls-metadata-unknown"), RecordAt = TimeGenerated,
     ServerCertificateNotAfter, ClientCaNotAfter, RevocationListNextUpdate, CoverageIncomplete = false, TlsMetadataIncomplete = true;
 // Missing metadata is unknown, including for older collector versions.

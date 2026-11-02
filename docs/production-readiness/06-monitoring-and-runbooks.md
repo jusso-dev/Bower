@@ -153,7 +153,7 @@ health worker only reads metadata and enqueues its own record.
 | `intake.attemptedRequests`, `capacityRefusals`, `privacyAlertRefusals`, `lastRefusalAt`, `lastRefusalReason` | Intake in this window |
 | `pipeline.eventsIn`, `eventsQueued`, `duplicates`, `suppressed` | Selection in this window (includes the previous health record) |
 | `sources.configured`, `expected`, `active`, `pending`, `silent`, `neverSeen`, `overdue[]` | Source expectations; `overdue[]` lists up to 25 by `application`, `environment`, `state`, `silentSeconds`, `allowedSilenceSeconds`, `lastSeenAt` |
-| `syslog[]` | Per listener (up to 25): `protocol`, `tls` (true when the listener has TLS material: `tls`, or `relp` with `tls`), `activeConnections`, and window deltas of `connectionsAccepted`, `connectionsRejected`, `sendersDenied`, `tlsHandshakeFailures`, `framesReceived`, `queued`, `notRouted`, `parserErrors`, `malformed`, `oversized`, `framingErrors`, `timeouts`, `dropped`, `retries`, `submitFailures`, `receiveErrors`, `tlsReloads`, `tlsReloadFailures`, `tlsRevoked`, `tlsSessionsClosed`, `relpAcknowledged`, `relpServerCloses`, `relpBusyCloses` (`retries` counts every refused submission attempt for TCP, TLS and RELP; RELP sessions ended by a sustained refusal are `relpBusyCloses`); `serverCertificateNotAfter`, `clientCertificateAuthorityNotAfter`, `clientRevocationListNextUpdate`, `lastFrameAt` |
+| `syslog[]` | Per listener (up to 25): `protocol`, `tls` (true when the listener has TLS material: `tls`, or `relp` with `tls`), `activeConnections`, and window deltas of `connectionsAccepted`, `connectionsRejected`, `sendersDenied`, `tlsHandshakeFailures`, `framesReceived`, `queued`, `notRouted`, `parserErrors`, `malformed`, `oversized`, `framingErrors`, `timeouts`, `dropped`, `retries`, `submitFailures`, `receiveErrors`, `tlsReloads`, `tlsReloadFailures`, `tlsRevoked`, `tlsSessionsClosed`, `relpAcknowledged`, `relpServerCloses`, `relpBusyCloses` (`retries` counts every refused submission attempt for TCP, TLS and RELP; RELP sessions ended by a sustained refusal are `relpBusyCloses`); `serverCertificateNotAfter`, `clientCertificateAuthorityNotAfter`, `clientRevocationListNextUpdate`, `clientCertificateAuthorityConfigured`, `clientRevocationListConfigured`, `lastFrameAt` |
 | `windowsEventLog[]` | Per subscription (up to 25): `state`, window deltas of `eventsRead`, `queued`, `notSelected`, `parserErrors`, `malformed`, `oversized`, `readErrors`, `gaps`, `resets`, `retries`, `submitFailures`, `cursorConflicts`; `lastEventAt`, `lastPollAt` |
 
 Interpretation: a record's `TimeGenerated` is when it was written and `ingestion_time()`
@@ -209,9 +209,12 @@ not confirmed pressure. An empty backlog can legitimately have no oldest age.
 
 The TLS-expiry query excludes explicitly TCP/UDP listeners. A TLS listener with a
 missing or invalid certificate/CA/CRL date, or a listener with an unknown protocol,
-reports `TlsMetadataIncomplete`. The current health record does not say whether an
-optional client CA or CRL is configured, so an intentionally unconfigured CA/CRL
-also reports unknown; confirm listener configuration on the host before acting. The
+reports `TlsMetadataIncomplete`. Health records also carry
+`clientCertificateAuthorityConfigured` and `clientRevocationListConfigured`; a missing
+date for an optional file that is not configured is not applicable and does not alert.
+Records from older collectors without these flags still report unknown; confirm
+listener configuration on the host before acting. (The 24-hour soak found the earlier
+query alerting for its whole run on a RELP listener without a revocation list.) The
 revised queries have structural tests but have not been validated in Sentinel.
 
 ## Deploy 1: enable health records on every collector

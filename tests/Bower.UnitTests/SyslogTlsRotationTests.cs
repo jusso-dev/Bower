@@ -43,6 +43,9 @@ public sealed class SyslogTlsRotationTests
         pki.WriteServer(second);
         SyslogListenerStatus status = await WaitFor(source, value => value.TlsReloads == 1, cancellation);
         Assert.Equal(second.NotAfter.ToUniversalTime(), status.ServerCertificateNotAfter!.Value.UtcDateTime);
+        // Client CA configured, no revocation list: the health record can tell the list is not configured.
+        Assert.True(status.ClientCertificateAuthorityConfigured);
+        Assert.False(status.ClientRevocationListConfigured);
 
         Connection fresh = await Connection.OpenAsync(source, sender, cancellation);
         Assert.Equal(second.Thumbprint, fresh.ServerThumbprint);
@@ -181,6 +184,7 @@ public sealed class SyslogTlsRotationTests
         SyslogSourceTests.FakeSink sink = new();
         await using SyslogSource source = await Start(pki, sink, cancellation, revocationList: true);
         Assert.Equal(Now.AddDays(7).UtcDateTime, source.Snapshot()[0].ClientRevocationListNextUpdate!.Value.UtcDateTime, TimeSpan.FromSeconds(1));
+        Assert.True(source.Snapshot()[0].ClientRevocationListConfigured);
 
         Assert.False(await Connection.TryDeliverAsync(source, stolen, "revoked", cancellation));
         SyslogListenerStatus status = await WaitFor(source, value => value.TlsRevoked == 1, cancellation);
