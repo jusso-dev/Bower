@@ -1,0 +1,47 @@
+{
+ "runId": "bower-ws2-20261031-075516",
+ "baseCommit": "9d1bbcdf7db0b779846e13b0a79a6f0ac3b5cca1",
+ "note": "Collector built from the working tree on branch prod-readiness/02-replay-safe-detections (no data-plane source changes relative to the base commit); Release configuration, framework-dependent, run on macOS arm64 with .NET SDK 10.0.403.",
+ "collectorBinaries": {
+  "Bower.Collector.dll": "0dbb62e9c8a7e81a4787087f25f3c67f880cfc171135ee4ea035c3e03015d024",
+  "Bower.Output.AzureLogsIngestion.dll": "00107aa3261c82b3ed8ea36e2b4bddeef947a281f55f53f986bee78e53fc078a",
+  "Bower.Persistence.dll": "c4c1976418c6264282e39c7c97d5ea0f08e15d7a20d3030716353e0da5ad6ec5",
+  "Bower.Core.dll": "f750f38e6678f4b29ce38c3611afe81a8fd1c9d8dfb8a13d684c839abbcb4bcf"
+ },
+ "faultProxyAsRun": "7cb9bec048cec36de15f76a19c7e31612c42a851351ee594507f5f790a740884",
+ "deployBicep": "bd6512d218e28ddb2b99735ac2a6a0c63122863db7f11fbcfc99f94a7a63b441",
+ "testProfile": {
+  "frequencyMinutes": 5,
+  "settleDelayMinutes": 5,
+  "catchUpMinutes": 60,
+  "maxIngestionDelayMinutes": 120,
+  "bucketMinutes": 10,
+  "bruteForceThreshold": 10,
+  "firewallDenyThreshold": 20,
+  "queryPeriod": "PT205M",
+  "incidentGroupingLookback": "PT5H",
+  "reopenClosedIncidents": false
+ },
+ "collectorSettings": {
+  "BOWER_DELIVERY_LEASE_SECONDS": 90,
+  "BOWER_DELIVERY_TIMEOUT_SECONDS": 60,
+  "BOWER_COLLECTOR_ID": "ws2-collector-01",
+  "BOWER_OUTPUT": "azure-logs-ingestion",
+  "BOWER_AZURE_CREDENTIAL": "environment (client certificate, private key never left the run directory)",
+  "HTTPS_PROXY": "loopback fault proxy"
+ },
+ "releaseSigning": "Not signed. Signing is deferred; this run used a local build, not a release package.",
+ "contentFiles": {
+  "deploy/sentinel/analytics/README.md": "15ca48d544bca0836f8ac251fd9f3024770c0198498ca54194c00c3ed766bf21",
+  "deploy/sentinel/analytics/bower-security-events.kql": "87ee77f7dfb1821fdec455c3d6776f79d95474f635b6a65acf54e159f6bc13d6",
+  "deploy/sentinel/analytics/main.bicep": "8d8ec9ebf47531f07c56b13452733f596b3f44b0d2bf75e0fb58a059b1e9fbad",
+  "deploy/sentinel/analytics/rules/beyond-tolerance.kql": "2444222accf5c572ee0e9c29baf46d9f1cfca31523fa92505904b92c2fc80b21",
+  "deploy/sentinel/analytics/rules/firewall-deny.kql": "869595b40e6fb93428b0acb7a529407e1df2a4a9cf3f114406831d56dae8e6b7",
+  "deploy/sentinel/analytics/rules/wec-brute-force.kql": "39ad8f62536768101c5baf3af16f06c45fe67802a86e676a5baf0a66b0749902",
+  "deploy/sentinel/analytics/validation/drive.py": "ded7ff7162b92e5949be968ff671f3dbf86cc02e65c9779e59c852706ae6093d",
+  "deploy/sentinel/analytics/validation/fault_proxy.py": "b439dc43f5e9bd73c672f182dd6eb8428c9c629eabe44b77ebd5c7bc9b3e3414",
+  "deploy/sentinel/analytics/validation/test_fault_proxy.py": "9b04164693fe65ad93310a7e2fcc508d4ef10cf524e6772342497279362c4bc6",
+  "deploy/sentinel/analytics/validation/verify.py": "864937f5ec10d6d5a961883e3cc6efe64c9d685a2a813dfe7db7af87815ac7fd"
+ },
+ "contentNote": "SHA-256 of the committed files. main.bicep and the four KQL files are byte-identical to the third (final) deployment at 08:36:47 UTC; validation scripts were edited afterwards as recorded in the README."
+}

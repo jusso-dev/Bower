@@ -1,0 +1,49 @@
+{
+ "schemaVersion": 1,
+ "runId": "bower-ws2-20261031-075516",
+ "checkedAt": "2026-11-02T01:23:41.104134+00:00",
+ "azureSubscription": "945092a0-2500-4b25-85a4-99f1c3135906",
+ "awsResourcesUsed": false,
+ "checks": [
+  {
+   "check": "resource group rg-bower-ws2-20261031-075516",
+   "absent": true
+  },
+  {
+   "check": "resources tagged RunId=bower-ws2-20261031-075516",
+   "absent": true
+  },
+  {
+   "check": "workspace law-ws2",
+   "absent": true,
+   "errorCode": "ResourceGroupNotFound"
+  },
+  {
+   "check": "soft-deleted workspace law-ws2 in rg-bower-ws2-20261031-075516",
+   "absent": true
+  },
+  {
+   "check": "ingest application bower-ws2-20261031-075516-ingest",
+   "absent": true
+  },
+  {
+   "check": "ingest service principal bower-ws2-20261031-075516-ingest",
+   "absent": true
+  },
+  {
+   "check": "ingest deleted-items objectId e7a32c0e-a483-4d50-9f1b-a3c359b6757e",
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
+  },
+  {
+   "check": "ingest deleted-items principalId cb1a4873-f569-489a-aba9-f200f5cbe995",
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
+  },
+  {
+   "check": "ingest role assignments",
+   "absent": true
+  }
+ ],
+ "allAbsent": true
+}

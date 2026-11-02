@@ -1,0 +1,109 @@
+{
+ "faultEvents": [
+  {
+   "at": "2026-11-02T00:35:37.915380+00:00",
+   "event": "mode",
+   "mode": "drop-next",
+   "previous": "pass"
+  },
+  {
+   "at": "2026-11-02T00:35:38.567821+00:00",
+   "event": "response-dropped",
+   "mode": "drop-next"
+  },
+  {
+   "at": "2026-11-02T00:35:38.568048+00:00",
+   "event": "mode",
+   "mode": "pass",
+   "previous": "drop-next"
+  },
+  {
+   "at": "2026-11-02T00:37:09.291468+00:00",
+   "event": "mode",
+   "mode": "drop-next",
+   "previous": "pass"
+  },
+  {
+   "at": "2026-11-02T00:37:09.874130+00:00",
+   "event": "response-dropped",
+   "mode": "drop-next"
+  },
+  {
+   "at": "2026-11-02T00:37:09.874307+00:00",
+   "event": "mode",
+   "mode": "pass",
+   "previous": "drop-next"
+  },
+  {
+   "at": "2026-11-02T00:40:22.439303+00:00",
+   "event": "mode",
+   "mode": "drop-next-then-outage",
+   "previous": "pass"
+  },
+  {
+   "at": "2026-11-02T00:40:23.364295+00:00",
+   "event": "response-dropped",
+   "mode": "drop-next-then-outage"
+  },
+  {
+   "at": "2026-11-02T00:40:23.364477+00:00",
+   "event": "mode",
+   "mode": "outage",
+   "previous": "drop-next-then-outage"
+  },
+  {
+   "at": "2026-11-02T01:47:33.155840+00:00",
+   "event": "mode",
+   "mode": "pass",
+   "previous": "outage"
+  }
+ ],
+ "refusedTunnelsDuringOutage": 472,
+ "outage": {
+  "startedAt": "2026-11-02T00:40:23.364477+00:00",
+  "endedAt": "2026-11-02T01:47:33.155840+00:00",
+  "seconds": 4029.79
+ },
+ "collectorKilled": "2026-11-02T00:37:11.305Z (SIGKILL after response-dropped), restarted 00:37:21Z",
+ "firewallRuleDisabled": "2026-11-02T00:58:13Z to 01:20:37Z (scenario k)",
+ "backupRestore": [
+  "j: backup with pending rows 2026-11-02T01:47:32.3NZ pending=133",
+  "{\"mode\": \"pass\", \"openTunnels\": 0, \"responsesDropped\": 3}",
+  "restored 2026-11-02T01:47:33.3NZ",
+  "drained 2026-11-02T01:47:38.3NZ pending=0",
+  "stopped 2026-11-02T01:48:40.3NZ",
+  "restarted on backup 2026-11-02T01:48:48.3NZ {\"status\":\"healthy\"}",
+  "backup rows redelivered 2026-11-02T01:48:48.3NZ pending=0"
+ ],
+ "replays": [
+  "{\"scenario\": \"l-dead-letter-replay\", \"mode\": \"collector\", \"events\": 12, \"started",
+  "l: simulate dead letters of delivered rows 2026-11-02T01:49:49.3NZ",
+  "12",
+  "Returned 12 dead-lettered event(s) to the queue.",
+  "l: replayed 2026-11-02T01:49:59.3NZ",
+  "l: delivered 2026-11-02T01:50:00.3NZ pending=0",
+  "m: archive 2026-11-02T01:50:01.3NZ",
+  "{'verifiedEvents': None, 'headSequence': 351}",
+  "m: replay into the same collector id 2026-11-02T01:50:11.3NZ",
+  "{",
+  "  \"selected\": 37,",
+  "  \"dryRun\": false,",
+  "  \"responses\": {",
+  "    \"202\": 37",
+  "  }",
+  "}",
+  "exit=0",
+  "m: replay into another collector id 2026-11-02T01:50:13.3NZ",
+  "The replay collector's BOWER_COLLECTOR_ID differs from the archived events' collector; replay stopped.",
+  "{",
+  "  \"selected\": 1,",
+  "  \"dryRun\": false,",
+  "  \"responses\": {",
+  "    \"collector-mismatch\": 1",
+  "  }",
+  "}",
+  "exit=2",
+  "m: replay queue: 3|37",
+  "m: wrong-id queue rows: 0"
+ ]
+}

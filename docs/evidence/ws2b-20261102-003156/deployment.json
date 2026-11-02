@@ -1,0 +1,9 @@
+{
+  "period": "PT205M",
+  "rules": [
+    "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-ws2b-20261102-003156/providers/Microsoft.OperationalInsights/workspaces/law-ws2b/providers/Microsoft.SecurityInsights/alertRules/cb1d5158-4ad7-5692-9201-258fb1020ecb",
+    "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-ws2b-20261102-003156/providers/Microsoft.OperationalInsights/workspaces/law-ws2b/providers/Microsoft.SecurityInsights/alertRules/a32c17e7-5393-5e03-938d-137fc22a8c54",
+    "/subscriptions/945092a0-2500-4b25-85a4-99f1c3135906/resourceGroups/rg-bower-ws2b-20261102-003156/providers/Microsoft.OperationalInsights/workspaces/law-ws2b/providers/Microsoft.SecurityInsights/alertRules/1cb13f39-7cea-57b2-bf4a-d8c266114f39"
+  ],
+  "state": "Succeeded"
+}

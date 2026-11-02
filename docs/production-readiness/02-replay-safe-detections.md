@@ -777,7 +777,7 @@ every 5 minutes with `maxIngestionDelayMinutes=120`. Synthetic data only.
 | Missed events | 0 | 0 |
 | Duplicate alert keys | 2 | 0 |
 | Incidents per entity | 1 | 1 (18 addresses) plus 1 monitor incident |
-| Function check | not run | 631 raw rows, 351 identities, 351 function rows, 0 of 162 health rows |
+| Function check | not run | 631 raw rows, 351 identities, 351 function rows, 0 of 176 health rows |
 
 Sentinel behaviour both runs measured: in a scheduled run `now()` equals the alert's
 `EndTime` exactly, and the query executes about five minutes later. Alerts became

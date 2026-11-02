@@ -1,0 +1,26 @@
+[
+  {
+    "error": null,
+    "name": "bower-analytics-3",
+    "state": "Succeeded",
+    "ts": "2026-10-31T08:37:36.143016+00:00"
+  },
+  {
+    "error": null,
+    "name": "bower-analytics-2",
+    "state": "Succeeded",
+    "ts": "2026-10-31T08:24:08.468436+00:00"
+  },
+  {
+    "error": null,
+    "name": "bower-analytics",
+    "state": "Succeeded",
+    "ts": "2026-10-31T08:07:26.090395+00:00"
+  },
+  {
+    "error": null,
+    "name": "bower-dcr",
+    "state": "Succeeded",
+    "ts": "2026-10-31T07:57:07.314598+00:00"
+  }
+]

@@ -1,0 +1,68 @@
+[
+ {
+  "name": "1cb13f39-7cea-57b2-bf4a-d8c266114f39",
+  "displayName": "Bower: events arrived later than the replay-safe rules evaluate",
+  "enabled": true,
+  "queryFrequency": "PT1H",
+  "queryPeriod": "P2DT2H",
+  "suppressionEnabled": false,
+  "aggregationKind": "AlertPerResult",
+  "grouping": {
+   "enabled": true,
+   "groupByAlertDetails": [],
+   "groupByCustomDetails": [],
+   "groupByEntities": [
+    "Host"
+   ],
+   "lookbackDuration": "P1D",
+   "matchingMethod": "Selected",
+   "reopenClosedIncident": false
+  },
+  "querySha256": "2e9ddd119d9ad6c7ecf0e7b265b6d78ff2949ce5a515734757c4be0d5ce13eba",
+  "lastModifiedUtc": "2026-11-02T00:34:49.3792523Z"
+ },
+ {
+  "name": "cb1d5158-4ad7-5692-9201-258fb1020ecb",
+  "displayName": "Bower: Windows failed network logons from one address (replay-safe)",
+  "enabled": true,
+  "queryFrequency": "PT5M",
+  "queryPeriod": "PT3H25M",
+  "suppressionEnabled": false,
+  "aggregationKind": "AlertPerResult",
+  "grouping": {
+   "enabled": true,
+   "groupByAlertDetails": [],
+   "groupByCustomDetails": [],
+   "groupByEntities": [
+    "IP"
+   ],
+   "lookbackDuration": "PT5H",
+   "matchingMethod": "Selected",
+   "reopenClosedIncident": false
+  },
+  "querySha256": "828b15609f063349e2a8bda916d3ac86e58284535dabdf3772b5fd7b96aa84b3",
+  "lastModifiedUtc": "2026-11-02T00:34:49.6678076Z"
+ },
+ {
+  "name": "a32c17e7-5393-5e03-938d-137fc22a8c54",
+  "displayName": "Bower: repeated firewall denials from one address (replay-safe)",
+  "enabled": true,
+  "queryFrequency": "PT5M",
+  "queryPeriod": "PT3H25M",
+  "suppressionEnabled": false,
+  "aggregationKind": "AlertPerResult",
+  "grouping": {
+   "enabled": true,
+   "groupByAlertDetails": [],
+   "groupByCustomDetails": [],
+   "groupByEntities": [
+    "IP"
+   ],
+   "lookbackDuration": "PT5H",
+   "matchingMethod": "Selected",
+   "reopenClosedIncident": false
+  },
+  "querySha256": "11d7a9320fb8792e6873acff06f6e891d15e3087d5c6be088a9aaf10064a9319",
+  "lastModifiedUtc": "2026-11-02T01:20:37.8180934Z"
+ }
+]
