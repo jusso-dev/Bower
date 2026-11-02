@@ -18,8 +18,12 @@ case "$DRILL_ACTION" in
   start-replay-collector)
     install -d -m 0700 -o bower -g bower /var/lib/bower/replay
     grep -v '^BOWER_COLLECTOR_ID=\|^BOWER_SYSLOG_CONFIG=\|^BOWER_SOURCE_EXPECTATIONS=\|^BOWER_HEALTH_RECORD_INTERVAL_SECONDS=\|^BOWER_ARCHIVE_PATH=\|^BOWER_MANAGEMENT_\|^BOWER_PRODUCER_SCOPES_FILE=\|^BOWER_QUEUE_MAX_BYTES=' /etc/bower/bower.env > /etc/bower/replay.env
+    # The replay keeps its (CollectorId, EventId) only under the original id; a collector
+    # with another id refuses archive replays.
+    origin=$(sed -n 's/^BOWER_COLLECTOR_ID=//p' /etc/bower/bower.env)
+    [ -n "$origin" ] || origin=$(cat /var/lib/bower/collector-id)
+    echo "BOWER_COLLECTOR_ID=$origin" >> /etc/bower/replay.env
     cat >> /etc/bower/replay.env <<'ENV'
-BOWER_COLLECTOR_ID=ws6-linux-replay
 BOWER_LISTEN_URL=http://127.0.0.1:4329
 BOWER_QUEUE_PATH=/var/lib/bower/replay/queue.db
 BOWER_QUEUE_MAX_BYTES=67108864
@@ -56,7 +60,7 @@ import json, os, sys, datetime, uuid
 path, operator, change, start, end, head, dry = sys.argv[1:]
 record = {"schema_version": 1, "operation_id": str(uuid.uuid4()), "record_type": "intent", "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
           "operator": operator, "change_reference": change, "command": "archive replay --from --to --event-type network_connection_denied",
-          "from": start, "to": end, "target_collector": "ws6-linux-replay", "archive_verification": json.loads(head), "dry_run": json.loads(dry)}
+          "from": start, "to": end, "target_collector": "original-collector-id", "archive_verification": json.loads(head), "dry_run": json.loads(dry)}
 descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
 with os.fdopen(descriptor, "w") as target:
     json.dump(record, target, sort_keys=True); target.flush(); os.fsync(target.fileno())

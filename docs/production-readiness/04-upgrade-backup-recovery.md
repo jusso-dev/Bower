@@ -738,18 +738,20 @@ A restore rewinds the collector to the backup point. Measured outcomes:
 
 #### Destination-side deduplication
 
-At-least-once delivery means detections and queries must collapse replays. Use:
+At-least-once delivery means detections and queries must collapse replays. A restore
+re-sends exactly the rows that were pending in the backup; copies that had already reached
+Sentinel keep their `(CollectorId, EventId)`. Query through the
+[`BowerSecurityEvents` function](02-replay-safe-detections.md#the-parser-one-row-per-event),
+which keeps the first copy of each `(CollectorId, EventId)`:
 
 ```kusto
-BowerSecurity_CL
+BowerSecurityEvents
 | where TimeGenerated > ago(1d)
-| summarize arg_max(ingestion_time(), *) by CollectorId, EventId
 ```
 
 This works only while `CollectorId` and `EventId` stay stable, which is why the collector id
-must survive restores and container recreates. The production-readiness workstream on
-duplicate handling defines the full detection guidance. This guide only guarantees that
-replays carry the same identity.
+must survive restores and container recreates. Detection rules, tuning and the restore
+test result are in [replay-safe detections](02-replay-safe-detections.md).
 
 #### Windows Event Log and WEC restores
 

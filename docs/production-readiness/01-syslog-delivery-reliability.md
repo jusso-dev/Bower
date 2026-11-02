@@ -507,28 +507,28 @@ relay to Bower is then the one measured lossless across collector faults (R10).
 | Sessions open and close repeatedly; `framingErrors` rising | A non-RELP sender (plain syslog) pointed at the RELP port, or a proxy | Bower counters; relay config | Point plain syslog at a `tls` listener |
 | `relpBusyCloses` rising, relay queue growing | Bower queue full or storage limit | `/v1/status` `queue`, disk space | Restore delivery; raise `BOWER_QUEUE_MAX_BYTES` or free storage and restart; the relay resends |
 | `relpAcknowledged` flat, relay suspended | Listener down or blocked | `ss -tnlp '( sport = :20514 )'`, security groups | Restore the listener; the relay resends its window |
-| Duplicate rows in Sentinel | At-least-once delivery after a collector crash | R9 query | Expected; deduplicate by `EventId` |
+| Duplicate rows in Sentinel | At-least-once delivery after a collector crash | R9 query | Expected; query through `BowerSecurityEvents` (R9) |
 | `oversized` rising | rsyslog `maxMessageSize` above `maximumMessageBytes` | relay config (`global(maxMessageSize="64k")`) | Set `maxMessageSize` ≤ `maximumMessageBytes`; oversized messages are dropped with an answer, counted, never resent |
 | `librelp: error opening connection` after a collector reboot | Collector not ready yet | rsyslog journal | Expected; it retries every `action.resumeInterval` |
 
 ## R9. Reconcile and deduplicate in Sentinel
 
-Count distinct identities, never `dcount` (approximate), and report duplicates separately:
+Count distinct identities, never `dcount` (approximate), and report duplicates separately.
+The identity is `(CollectorId, EventId)`; within one collector (as here) that equals
+`EventId`, which is how the RELP campaign measured it:
 
 ```kusto
 BowerSecurity_CL
 | where TimeGenerated between (datetime(START) .. datetime(END))
 | where CollectorId == "COLLECTOR-ID"
-| summarize Copies = count(), FirstIngested = min(ingestion_time()) by EventId
+| summarize Copies = count(), FirstIngested = min(ingestion_time()) by CollectorId, EventId
 | summarize Distinct = count(), DuplicateRows = sum(Copies - 1)
 ```
 
-For analytics, collapse duplicates:
-
-```kusto
-BowerSecurity_CL
-| summarize arg_min(ingestion_time(), *) by EventId
-```
+For analytics, hunting and workbooks, query the
+[`BowerSecurityEvents` function](02-replay-safe-detections.md#the-parser-one-row-per-event)
+instead of the raw table; it keeps the first copy of each `(CollectorId, EventId)` and is
+what the replay-safe analytics rules use.
 
 ## R10. How we tested RELP
 

@@ -1,17 +1,18 @@
 # Replay-safe Sentinel queries and scheduled alerts
 
-**Status: not qualified.** A real Microsoft Sentinel test on 31 October 2026
-found duplicate alert keys after missed evaluations. The current rules contain
-an unverified mitigation; see [How we tested this](#how-we-tested-this). Keep
-these rules disabled until the current content is independently validated. The
-archive-replay origin labels are producer-controlled and must not be used as an
-identity. The current function uses the stamped collector identity; cross-collector
-archive replay remains an open deduplication gap. Restrict direct DCR ingestion
-permissions to approved collectors: a direct writer can forge `CollectorId`.
-This permission check alone does not bind an ingestion identity to a particular
-collector ID; a compromised approved writer can impersonate another collector.
-The revised query has not been validated against a live workspace. Bower
-releases and packages are still **unsigned**; this guide does not change that.
+**Status: qualified in a live Microsoft Sentinel workspace on 2 November 2026** for the
+content in [`deploy/sentinel/analytics`](../../deploy/sentinel/analytics/main.bicep) at
+commit `4dabe15` ([evidence](../evidence/ws2b-20261102-003156/README.md)). The run covered
+ambiguous-acknowledgement replays, a collector kill, a replay 68 minutes after its
+original, originals delayed up to 67 minutes by an outage, a restored queue backup, a
+dead-letter replay, an archive replay and a missed-run catch-up. It measured zero missed
+events, zero duplicate alert keys and one incident per entity. The
+[first run](../evidence/ws2-20261031-075516/README.md) failed on duplicate catch-up
+alerts, and that failure is retained. Rules ship **disabled**; enable them after the
+[validation](#9-validate-in-your-own-workspace) passes in your workspace. Restrict direct
+DCR ingestion to approved collectors: a direct writer chooses its own `CollectorId`, and
+the DCR role does not bind an identity to a collector id. Bower releases and packages
+are still **unsigned**; this guide does not change that.
 
 Bower delivers to Microsoft Sentinel **at least once**. It never deletes an event
 from its durable queue before the Logs Ingestion API acknowledges it. When an
@@ -108,25 +109,45 @@ expected, bounded property of at-least-once delivery, triggered by:
 | Delivered row purged by queue retention (`BOWER_QUEUE_RETENTION_HOURS`, default 168), then the same source record re-read | 2 | days |
 | Queue backup restored after some of its pending rows had reached Sentinel | 2 | time since the backup |
 | `bower queue replay` of dead letters that Azure had in fact accepted | 2 | time since the dead-letter |
-| `bower archive replay` of archived (delivered) events through another collector | 2 or more | time since the archive |
+| `bower archive replay` of archived (delivered) events through a replay collector | 2 or more | time since the archive |
+| RELP or TCP syslog resend after a collector kill or restart, a WEC re-read after a lost bookmark | 2 | seconds to the outage length |
 
-Every path except archive replay re-sends the stored queue row byte for byte, so the
-copies share `CollectorId` and `EventId`. Archive replay posts the archived envelope to
-another collector's `/v1/events`, and that collector stamps **its own** `CollectorId`
-(a producer cannot choose its collector identity). Keyed by `(CollectorId, EventId)`,
-those copies never collapse: an archive-replay drill found 238 rows for 119 events.
-The archive replay labels are producer-controlled hints, not authenticated provenance.
-The parser must not use them as identity. Cross-collector archive replay remains
-distinct until a separately authorized, verifiable provenance mechanism is available.
+Every queue path re-sends the stored queue row byte for byte, so the copies share the
+collector-stamped `CollectorId` and the source-computed `EventId`. A source resend gets
+the same `EventId` (it is a digest of the record, see
+[section 8](#8-keep-collectorid-stable-in-every-environment)) and, while the collector id is
+pinned or persisted, the same `CollectorId`.
+
+**Archive replay is the exception, and it is now enforced.** It posts the archived
+envelope to a replay collector's `/v1/events`, and that collector stamps **its own**
+`CollectorId`: a producer can never choose its collector identity. The ws6 monitoring drill
+ran its replay collector as `ws6-linux-replay`, so keyed by `(CollectorId, EventId)` its
+copies did not collapse (238 rows for 119 events; by `EventId` alone the count was exact).
+The fix keeps the trusted, collector-stamped identity and changes the procedure:
+
+1. The replay collector must run with the **original** `BOWER_COLLECTOR_ID` (its own empty
+   queue, loopback only, no management enrolment, no health records). Its replays then
+   carry the original `(CollectorId, EventId)` and collapse.
+2. `bower archive replay` labels each event with `bowerReplayCollectorId`, the
+   archived envelope's `collector.id`. A collector whose id differs quarantines the event
+   (`archive-replay-collector-mismatch`, nothing is stored), and the CLI stops with
+   `collector-mismatch` and exit code 2 (C# and Rust collectors and CLIs).
+3. The parser never reads labels. A label can only make a collector **refuse** an event;
+   it cannot change any identity, so forging it gains nothing.
+
+`EventId` alone is not a safe general key: different collectors can legitimately produce
+the same `EventId` (two WEC collectors receiving the same forwarded event, see
+[high-availability WEC](#8-keep-collectorid-stable-in-every-environment)), and an
+authenticated producer on one collector could reuse another collector's IDs.
 
 The queue already rejects a re-read source record while its delivered row is retained
 ([identity and replay](../operations/queue-v5-durability.md#identity-and-replay)).
 
 ### What to do about it
 
-Treat `(CollectorId, EventId)` as the event identity in every query. This does not
-collapse archive replays through another collector. Measure replays at the destination
-with the reconciliation query in [section 9](#9-validate-in-your-own-workspace).
+Treat `(CollectorId, EventId)` as the event identity in every query: use the
+`BowerSecurityEvents` function below, and the reconciliation query in
+[section 6](#6-hunting-workbooks-and-exports) to measure replays.
 
 ## 2. How the replay-safe pattern works
 
@@ -144,9 +165,14 @@ with the reconciliation query in [section 9](#9-validate-in-your-own-workspace).
 | `BowerTimeRewritten` | `true` when Azure Monitor rewrote `TimeGenerated` |
 
 The parser keeps the **first** copy (`arg_min`), not the latest. Replays are identical
-within one collector identity, so the earliest ingested row is retained. A producer
-that reuses an `EventId` can still cause distinct events to share a key. Archive
-replays through another collector retain that collector's identity and are not collapsed.
+within one collector identity, so the earliest ingested row is the original delivery,
+and a later row can never replace content that a rule already evaluated. A producer that
+reuses an `EventId` on the same collector still shares a key with the real event; the
+first one ingested wins.
+
+The parser drops `collector_health` and `collector_canary` rows. They are operational
+records in the same table (the [monitoring content](06-monitoring-and-runbooks.md) queries
+them directly), not security events, and must never count towards a detection.
 
 Azure Monitor replaces `TimeGenerated` with the receive time when it is more than two
 days before ingestion ([standard columns](https://learn.microsoft.com/azure/azure-monitor/logs/log-standard-columns#timegenerated),
@@ -190,16 +216,19 @@ Each detection rule:
    is already in `SecurityAlert`. Only even slots, because a run's own alerts are
    written after its window end (about five minutes later), so they are outside the
    next run's look-back: the next run cannot see them, the run after can. The first
-   live test retried in every slot and raised a **second alert** for both catch-up
-   crossings (one incident each, thanks to grouping). The even-slot rule is a
-   proposed mitigation and has not been qualified against the retained evidence.
+   live run retried in every slot and raised a **second alert** for both catch-up
+   crossings (one incident each, thanks to grouping). The second live run qualified the
+   even-slot rule: a crossing that arrived while the rule was disabled alerted once, on
+   the catch-up path, and later runs found its alert (see [How we tested this](#how-we-tested-this)).
 7. Raises one alert per result (`AlertPerResult`) with an `IP` entity. Alert grouping
    by IP (5 hours by default) is a final guard: even a duplicate alert joins the same
    incident.
 
-The rules never use **suppression**. Suppression stops the whole rule for every entity
-after an alert, so late events for other addresses would be skipped. Steps 4–6 aim
-to reduce repeat alerts but do not guarantee exactly-once evaluation.
+The rules never use Sentinel's **suppression** setting. Suppression stops the whole rule
+for every entity after an alert, so late events for other addresses would be skipped.
+Duplicate alerts are suppressed per detection instead: step 6's `BowerDetectionKey`
+check is the alert-level suppression, and step 7's IP grouping is the incident-level
+one. Exactly-once alerts still depend on the conditions in [known limits](#11-known-limits).
 
 ```text
 event time       ──[bucket 08:10–08:20]──────────────────────────────────────────▶
@@ -447,17 +476,18 @@ stamps its identity and stores it with the event ID **when the event is queued**
 queue always carries the original `CollectorId`, even after a rename. Deduplication
 breaks when the same source record is accepted again under a **different** collector ID,
 for example after a reinstall that lost the queue, or a container that got a new
-hostname and re-read its source. Pinning, persisting and restoring the collector ID
-across upgrades, reinstalls and host replacement requires a tested operational
-procedure; upgrade and recovery qualification remains open. This section covers what
-the ID means for Sentinel queries.
+hostname and re-read its source. Since [upgrade, backup and recovery](04-upgrade-backup-recovery.md),
+a collector without `BOWER_COLLECTOR_ID` writes the id it first used to `collector-id`
+beside `queue.db` and reads it back on every start, so container and pod recreation on
+the same volume keep the id; that guide covers pinning, persisting and restoring the id
+step by step. This section covers what the id means for Sentinel queries.
 
 **Restoring a queue backup replays exactly the rows that were pending in it.** Those
 rows keep their stamped `CollectorId` and `EventId`, so if some had already reached
-Sentinel before the failure, `BowerSecurityEvents` can collapse copies visible within
-the query's time range. Alert evaluations can still repeat; their handling remains
-unqualified. The upgrade and recovery campaign measured 2,678 such duplicates
-after a WEC restore. Restore under the **same** `CollectorId`.
+Sentinel before the failure, `BowerSecurityEvents` collapses them, and because the rules
+evaluate each event at its first ingestion the copies raise no new alert (tested live,
+see [How we tested this](#how-we-tested-this)). The upgrade and recovery campaign measured
+2,678 such duplicates after a WEC restore. Restore under the **same** `CollectorId`.
 
 `EventId` comes from the source record:
 
@@ -469,20 +499,32 @@ after a WEC restore. Restore under the **same** `CollectorId`.
 | Docker source | `docker-` + SHA-256 of container, log file fingerprint and offset |
 | AWS / GCP mappers | SHA-256 of source ID, kind, original ID and time |
 
-`CollectorId` is `BOWER_COLLECTOR_ID`, otherwise the machine name:
+`CollectorId` is `BOWER_COLLECTOR_ID`, otherwise the `collector-id` file beside `queue.db`,
+which the first start fills with the machine name:
 
 | Environment | Default | Stable? | What to do |
 | --- | --- | --- | --- |
 | Linux deb/rpm + systemd | Host name (`bower.env` leaves `BOWER_COLLECTOR_ID` commented out) | While the host name is unchanged. Uninstall deletes `bower.env`. | Set `BOWER_COLLECTOR_ID` in `/etc/bower/bower.env` and in your configuration management. |
 | Windows MSI + service (WEC hosts) | `COLLECTORID` property, default `[ComputerName]` (NetBIOS, upper case, 15 chars) | Remembered in `HKLM\SOFTWARE\Bower\Collector` for repair and upgrade. A full uninstall/reinstall falls back to the computer name. | Pass `COLLECTORID=` on every install, including reinstalls. |
-| Docker / Compose | Container hostname (the container ID): **changes every recreate** | No | Set `BOWER_COLLECTOR_ID` to a stable, unique value and verify it persists across recreation. |
-| Kubernetes | Pod hostname (`bower-collector-<hash>-<suffix>`): **changes on every rollout or reschedule** | No | Set `BOWER_COLLECTOR_ID` to a stable, unique value. For several replicas use a StatefulSet and `metadata.name` via the downward API, then test replacement and replay. |
+| Docker / Compose | `BOWER_COLLECTOR_ID` (`compose.yaml` requires it), otherwise the first container hostname saved in `collector-id` on the data volume | Yes while the volume is kept | Keep the required value stable; a new volume with no value takes the new container's hostname. |
+| Kubernetes | `BOWER_COLLECTOR_ID` (pinned in `deployment.yaml`), otherwise the first pod name saved in `collector-id` on the PVC | Yes while the PVC is kept | Replace the example value with a stable, unique id per collector. For several replicas use a StatefulSet with one PVC each. |
 | AWS EC2 | OS host name (`ip-10-0-1-23...`, cut at the first dot), which changes when an instance is replaced | Per instance | Set `BOWER_COLLECTOR_ID` to a role name (for example from a launch template tag), not the instance ID. |
 | Azure VM | OS computer name | While the VM keeps its name | Set `BOWER_COLLECTOR_ID`; for scale sets use a stable per-instance name. |
 | Azure Functions collector | `azure-function:<site>` (Bicep sets the app name) | Yes, shared by all instances | Nothing. |
 | AWS Lambda (Rust) | Function name; CloudFormation generates it and it changes if the function is replaced | Until replacement | Set `BOWER_COLLECTOR_ID`. |
 | Relay | Keeps the downstream collector's ID | Yes | Rename downstream collectors only together with their relay pin. |
 | On-premises | Host name | While unchanged | Set `BOWER_COLLECTOR_ID`. |
+
+**Archive replay** must run its replay collector with the same id (see
+[section 1](#what-bower-cannot-remove)); a collector with another id refuses it.
+
+| Environment | Replay or restore with the original identity |
+| --- | --- |
+| Linux packages | `sudo sed -n 's/^BOWER_COLLECTOR_ID=//p' /etc/bower/bower.env`, else `sudo cat /var/lib/bower/collector-id`; give that value to the replay collector's `bower.env` copy. |
+| Windows MSI (WEC) | `(Get-ItemProperty 'HKLM:\SOFTWARE\Bower\Collector').CollectorId`; restore or reinstall with `COLLECTORID=<value>`. |
+| Docker | `docker exec bower cat /var/lib/bower/collector-id` (or the compose value); run the replay container with `-e BOWER_COLLECTOR_ID=<value>` and its own volume. |
+| Kubernetes | read the pinned env value or `kubectl exec deploy/bower-collector -- cat /var/lib/bower/collector-id`; run the replay as a one-off pod with the same env value and an empty volume. |
+| AWS EC2 / Azure VM / on-premises | as Linux or Windows above; replacement hosts must be given the old id, not a new host name. |
 
 C# uses `Environment.MachineName`; the Rust collector reads the host name and cuts it
 at the first dot. On Windows the two can differ in case, so never switch runtimes on
@@ -544,6 +586,13 @@ never saw them. Numeric **source** fields (ports, byte counts in firewall events
 still scanned: a detection that compares an 8-digit or longer number from the source
 can see it masked. Pack privacy profiles do not change, so no pack version changes.
 
+Since the same change, a collector never stores an event whose root `eventId` redaction
+changed: it answers `event-id-redacted` and the source retains and retries it (HTTP 503,
+WEC keeps its bookmark, TCP/RELP syslog holds the frame) until the privacy configuration
+is corrected. Sentinel therefore never holds a masked dedup key; a stuck retry shows up
+in source silence and retry counters instead. See
+[privacy engine: Bower-generated identifiers](../privacy/privacy-secret-engine.md#bower-generated-identifiers-and-counters).
+
 **High-availability WEC.** Two WEC collectors that receive the same forwarded event
 produce the same `EventId` with different `CollectorId` values. They are two
 deliveries, not a replay, and the parser keeps both. If you run WEC subscriptions to
@@ -588,6 +637,9 @@ data only.
    | Replay after the window | arm `drop-next-then-outage`, send, keep the outage for at least 65 minutes, then `curl 127.0.0.1:8898/mode/pass` |
    | Late originals | during that outage, send more events with new addresses |
    | Beyond tolerance | `drive.py direct ... --age-minutes 150` (expect no detection, one monitor alert) |
+   | Missed runs | disable one rule, send a threshold's worth with a new address, re-enable it after at least `3 × frequency` (expect one `catch-up-N` alert) |
+   | Restored backup | during an outage, `sqlite3 queue.db ".backup backup.db"`; restore connectivity and let it drain; stop the collector, replace `queue.db` (remove `-wal`/`-shm`) with the backup, start it (expect `extraRows` equal to the pending rows, no new alert) |
+   | Archive replay | `bower archive create --archive DIR --database queue.db --collector-id <id>`, start a second collector on another port with its own queue and the **same** `BOWER_COLLECTOR_ID`, `bower archive replay --archive DIR --collector-url http://127.0.0.1:<port> --from … --to …` (expect the copies to collapse, no new alert); repeat into a collector with another id (expect exit 2 and `collector-mismatch`, nothing stored) |
 
    Repeat each with `--kind deny --count 25` for the firewall rule.
 4. Wait at least `settle + frequency + 10` minutes after the last event, then run:
@@ -607,7 +659,20 @@ fault really happened); every expected address has exactly the expected incident
 **Fail:** any missing event, any second alert for one key, any second incident for
 one address, or a replay scenario with `extraRows: 0` (the fault was not injected; repeat it).
 
-**Rollback:** delete the test resource group; the scripts keep no state elsewhere.
+**Clean up and audit.** Delete the resource group, force-delete the workspace so it does
+not linger soft-deleted, delete and purge the test app registration, then prove absence
+with exact not-found codes only:
+
+```bash
+az monitor log-analytics workspace delete -g "$RG" -n "$WS" --force --yes
+az group delete -n "$RG" --yes
+az ad app delete --id "$APP_ID"
+az rest --method delete --url "https://graph.microsoft.com/v1.0/directory/deletedItems/$APP_OBJECT_ID"
+python3 -I deploy/sentinel/analytics/validation/cleanup_audit.py --state azure-state.json \
+  --subscription "$SUBSCRIPTION" --output cleanup.json      # exit 0 only when every check is absent
+```
+
+**Rollback:** the same clean-up; the scripts keep no state elsewhere.
 
 ## 10. Troubleshooting
 
@@ -664,15 +729,18 @@ evidence of lossless UDP or of a completed Sentinel alert qualification.
 
 ## 11. Known limits
 
-- At-least-once delivery remains. The parser aims to deduplicate counts; the current
-  rules have not established exact alert or incident counts. Exports and raw-table
-  queries still see replays.
+- At-least-once delivery remains. The function makes counts exact, and the rules made
+  alerts and incidents exact in the tested conditions. Exports and raw-table queries
+  still see replays.
+- Archive replay keeps its identity only through a replay collector with the original
+  `BOWER_COLLECTOR_ID`; Bower refuses other ids but cannot stop an operator from
+  replaying old data into a fresh workspace.
 - Exactly-once alerts on the catch-up path assume that an alert is queryable in
   `SecurityAlert` within two rule runs of its window end (10 minutes by default;
   measured at most 2.1 minutes after creation). If Sentinel writes it later, a
   second alert can appear; grouping by IP still keeps one incident.
 - Owned windows tile only while Sentinel keeps a rule's schedule. Redeploying or
-  re-enabling a rule can move its schedule (observed twice in the test); a crossing in
+  re-enabling a rule can move its schedule (observed in both live runs); a crossing in
   a resulting overlap can alert twice before `SecurityAlert` shows the first alert.
   Grouping keeps one incident.
 - Missed runs are recovered for up to `catchUpMinutes − 2 × frequencyMinutes`, at the next even slot.
@@ -691,12 +759,28 @@ evidence of lossless UDP or of a completed Sentinel alert qualification.
 
 ## How we tested this
 
-The retained `report-1044.json` from 31 October 2026 failed the
-`noDuplicateAlertKeys` check: WEC and firewall threshold crossings generated two
-alerts each after missed rule evaluations. Sentinel grouped each pair into one
-incident; grouping did not prevent duplicate alerts. An earlier report passed a
-smaller set of scenarios. The current even-slot mitigation has different KQL
-hashes from the recorded deployment, so neither report proves it works. Re-run
-the full validation against the exact proposed rule hashes, including skipped
-evaluations and delayed `SecurityAlert` visibility, and retain both alert and
-incident counts before changing this status. Until then, this gate remains open.
+Two live runs used a real Sentinel workspace deployed with the repository's Bicep, a real
+Bower collector built from the branch, a loopback fault proxy and the
+[validation scripts](../../deploy/sentinel/analytics/validation/drive.py). The rules ran
+every 5 minutes with `maxIngestionDelayMinutes=120`. Synthetic data only.
+
+| | [First run, 31 Oct](../evidence/ws2-20261031-075516/README.md) | [Second run, 2 Nov](../evidence/ws2b-20261102-003156/README.md) |
+| --- | --- | --- |
+| Content | before the even-slot fix | commit `4dabe15` (this guide) |
+| Destination outage | 4,241.7 s | 4,029.8 s |
+| Late originals, first-ingestion delay | 2,402–4,249 s | up to 4,039 s |
+| Late replays | 4,245.6 s (ambiguous ack at outage start); exact copies 78–83 min later | 4,099 s; exact copies 75 min later; 133-row backup restore |
+| Kill mid-delivery | replayed after 90.5 s | replayed after 94.7 s |
+| Archive replay | not run | same id collapsed; other id refused (exit 2, nothing stored) |
+| Dead-letter replay | not reported | 12 replayed, no extra alert |
+| Missed runs | rules disabled 16.8 min: **2 alerts per key (failed)**, 1 incident | rule disabled 22.4 min: 1 `catch-up-2` alert, 1 incident |
+| Missed events | 0 | 0 |
+| Duplicate alert keys | 2 | 0 |
+| Incidents per entity | 1 | 1 (18 addresses) plus 1 monitor incident |
+| Function check | not run | 631 raw rows, 351 identities, 351 function rows, 0 of 162 health rows |
+
+Sentinel behaviour both runs measured: in a scheduled run `now()` equals the alert's
+`EndTime` exactly, and the query executes about five minutes later. Alerts became
+queryable in `SecurityAlert` within 2.1 minutes. Redeploying or re-enabling a rule can
+move its schedule. A row older than two days arrived with `TimeGenerated` rewritten,
+while `RawEnvelope.timeGenerated` kept the original.

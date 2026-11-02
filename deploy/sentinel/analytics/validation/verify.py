@@ -83,6 +83,18 @@ ALERTS = """SecurityAlert
     Distinct, Entities"""
 
 
+# The deployed function, checked against the raw rows: exact counts, never dcount().
+PARSER = """let raw = BowerSecurity_CL | where EventId startswith "ws2";
+let parsed = BowerSecurityEvents | where EventId startswith "ws2";
+print RawRows = toscalar(raw | count),
+    RawIdentities = toscalar(raw | summarize by CollectorId, EventId | count),
+    RawEventIds = toscalar(raw | summarize by EventId | count),
+    ParserEvents = toscalar(parsed | count), ParserCopies = toscalar(parsed | summarize sum(BowerCopies)),
+    ParserCollectors = toscalar(parsed | summarize make_set(CollectorId)),
+    HealthRowsRaw = toscalar(BowerSecurity_CL | where EventType == "collector_health" | count),
+    HealthRowsInParser = toscalar(BowerSecurityEvents | where EventType == "collector_health" | count)"""
+
+
 def report(args):
     manifest = [json.loads(line) for line in open(args.manifest, encoding="utf-8")]
     expected = collections.defaultdict(set)
@@ -110,6 +122,7 @@ def report(args):
             "methods": sorted({item["method"] for item in manifest if item["scenario"] == scenario}),
         }
     unexpected = sorted(set(by_id) - {e for ids in expected.values() for e in ids})
+    parser = query(args.workspace_id, PARSER)[0]
     alerts = query(args.workspace_id, ALERTS)
     keys = collections.Counter(alert["Key"] for alert in alerts if alert["Key"])
     found_incidents = incidents(args.workspace_resource)
@@ -122,7 +135,7 @@ def report(args):
             per_host[host] += 1
     result = {
         "generatedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "scenarios": scenarios, "unexpectedEventIds": len(unexpected),
+        "scenarios": scenarios, "unexpectedEventIds": len(unexpected), "parser": parser,
         "alerts": alerts, "alertsPerDetectionKey": dict(sorted(keys.items())),
         "duplicateAlertKeys": sorted(key for key, count in keys.items() if count > 1),
         "incidents": found_incidents, "incidentsPerAddress": dict(sorted(per_address.items())),
@@ -147,6 +160,12 @@ def report(args):
         for key_prefix, count in expect.get("alertsPerKeyPrefix", {}).items():
             checks[f"alerts:{key_prefix}"] = sum(v for k, v in keys.items() if k.startswith(key_prefix)) == count
         checks["noMissingEvents"] = all(s["missing"] == 0 for s in scenarios.values())
+        # One parser row per (CollectorId, EventId), every raw row accounted for as a copy.
+        checks["parserCollapsesEveryReplay"] = (parser["ParserEvents"] == parser["RawIdentities"]
+                                                and parser["ParserCopies"] == parser["RawRows"])
+        if expect.get("singleIdentityPerEventId"):
+            checks["identityEqualsEventId"] = parser["RawIdentities"] == parser["RawEventIds"]
+        checks["parserExcludesHealthRecords"] = parser["HealthRowsRaw"] > 0 and parser["HealthRowsInParser"] == 0
         checks["noDuplicateAlertKeys"] = not result["duplicateAlertKeys"]
         checks["noUnexpectedEvents"] = not unexpected
         result["checks"] = checks
