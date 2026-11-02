@@ -89,6 +89,17 @@ public sealed record SyslogListenerStatus(
 
     public DateTimeOffset? ClientRevocationListNextUpdate { get; init; }
 
+    /// <summary>
+    /// Whether a client CA file is configured. Health records only: it lets monitoring tell an
+    /// unconfigured optional file from missing metadata. Not part of the status response.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool ClientCertificateAuthorityConfigured { get; init; }
+
+    /// <summary>Whether a client revocation list file is configured. Health records only, as above.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool ClientRevocationListConfigured { get; init; }
+
     /// <summary>Connections Bower half-closed (idle timeout or stop) instead of resetting them.</summary>
     public long HalfCloses { get; init; }
 
@@ -1301,6 +1312,8 @@ public sealed class SyslogSource : IAsyncDisposable
                 ServerCertificateNotAfter = material?.ServerCertificateNotAfter,
                 ClientCertificateAuthorityNotAfter = material?.ClientCertificateAuthorityNotAfter,
                 ClientRevocationListNextUpdate = material?.ClientRevocationListNextUpdate,
+                ClientCertificateAuthorityConfigured = Options.Tls?.ClientCertificateAuthorityFile is not null,
+                ClientRevocationListConfigured = Options.Tls?.ClientCertificateRevocationListFile is not null,
                 HalfCloses = Interlocked.Read(ref Counters.HalfCloses),
                 DrainedFrames = Interlocked.Read(ref Counters.DrainedFrames),
                 PeerResets = Interlocked.Read(ref Counters.PeerResets),

@@ -438,6 +438,10 @@ public static class CollectorHealthRecord
             WriteTime(writer, "serverCertificateNotAfter", item.ServerCertificateNotAfter);
             WriteTime(writer, "clientCertificateAuthorityNotAfter", item.ClientCertificateAuthorityNotAfter);
             WriteTime(writer, "clientRevocationListNextUpdate", item.ClientRevocationListNextUpdate);
+            // Optional client CA and revocation list files: false means not configured, so a
+            // missing date is not applicable rather than unknown.
+            writer.WriteBoolean("clientCertificateAuthorityConfigured", item.ClientCertificateAuthorityConfigured);
+            writer.WriteBoolean("clientRevocationListConfigured", item.ClientRevocationListConfigured);
             WriteTime(writer, "lastFrameAt", item.LastFrameAt);
             writer.WriteEndObject();
         }
