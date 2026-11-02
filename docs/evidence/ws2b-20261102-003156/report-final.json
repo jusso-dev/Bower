@@ -1,0 +1,1084 @@
+{
+ "alerts": [
+  {
+   "AlertName": "Bower: failed network logons from 192.0.2.31",
+   "Crossed": "2026-11-02T00:40:25.3763133Z",
+   "Distinct": "12",
+   "EndTime": "2026-11-02T00:49:57.5305711Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"192.0.2.31\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-02T00:49:57.5305711Z",
+   "Key": "bower-wec-brute-force|192.0.2.31|2026-11-02T00:40:00.0000000Z",
+   "Late": "0",
+   "Path": "owned-window",
+   "Replayed": "0",
+   "StartTime": "2026-11-01T21:24:57.5305711Z",
+   "SystemAlertId": "2c42adf1-58b8-2cec-a167-0c44dd9adeb7",
+   "TimeGenerated": "2026-11-02T00:55:01.7598075Z"
+  },
+  {
+   "AlertName": "Bower: failed network logons from 192.0.2.61",
+   "Crossed": "2026-11-02T00:40:50.1672292Z",
+   "Distinct": "12",
+   "EndTime": "2026-11-02T00:49:57.5305711Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"192.0.2.61\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-02T00:49:57.5305711Z",
+   "Key": "bower-wec-brute-force|192.0.2.61|2026-11-02T00:40:00.0000000Z",
+   "Late": "0",
+   "Path": "owned-window",
+   "Replayed": "0",
+   "StartTime": "2026-11-01T21:24:57.5305711Z",
+   "SystemAlertId": "70674a04-88bc-9b02-3563-20f5474b0ebe",
+   "TimeGenerated": "2026-11-02T00:55:01.7810965Z"
+  },
+  {
+   "AlertName": "Bower: repeated firewall denials from 198.51.100.31",
+   "Crossed": "2026-11-02T00:40:25.3763133Z",
+   "Distinct": "25",
+   "EndTime": "2026-11-02T00:49:57.5518861Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"198.51.100.31\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-02T00:49:57.5518861Z",
+   "Key": "bower-firewall-deny|198.51.100.31|2026-11-02T00:40:00.0000000Z",
+   "Late": "0",
+   "Path": "owned-window",
+   "Replayed": "0",
+   "StartTime": "2026-11-01T21:24:57.5518861Z",
+   "SystemAlertId": "85826650-2e82-8da5-7095-a69fa5124f43",
+   "TimeGenerated": "2026-11-02T00:55:02.6294733Z"
+  },
+  {
+   "AlertName": "Bower: failed network logons from 192.0.2.22",
+   "Crossed": "2026-11-02T00:38:44.7488704Z",
+   "Distinct": "12",
+   "EndTime": "2026-11-02T00:44:57.5305711Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"192.0.2.22\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-02T00:44:57.5305711Z",
+   "Key": "bower-wec-brute-force|192.0.2.22|2026-11-02T00:30:00.0000000Z",
+   "Late": "0",
+   "Path": "owned-window",
+   "Replayed": "12",
+   "StartTime": "2026-11-01T21:19:57.5305711Z",
+   "SystemAlertId": "eb68bfd8-1548-0e61-a6b5-db819c997149",
+   "TimeGenerated": "2026-11-02T00:50:02.1754528Z"
+  },
+  {
+   "AlertName": "Bower: repeated firewall denials from 198.51.100.61",
+   "Crossed": "2026-11-02T00:40:49.1739716Z",
+   "Distinct": "25",
+   "EndTime": "2026-11-02T00:49:57.5518861Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"198.51.100.61\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-02T00:49:57.5518861Z",
+   "Key": "bower-firewall-deny|198.51.100.61|2026-11-02T00:40:00.0000000Z",
+   "Late": "0",
+   "Path": "owned-window",
+   "Replayed": "0",
+   "StartTime": "2026-11-01T21:24:57.5518861Z",
+   "SystemAlertId": "c9fb9ce4-4e4a-a691-9906-978c9deaa8b0",
+   "TimeGenerated": "2026-11-02T00:55:02.6516991Z"
+  },
+  {
+   "AlertName": "Bower: failed network logons from 192.0.2.23",
+   "Crossed": "2026-11-02T00:40:19.4105064Z",
+   "Distinct": "12",
+   "EndTime": "2026-11-02T00:49:57.5305711Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"192.0.2.23\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-02T00:49:57.5305711Z",
+   "Key": "bower-wec-brute-force|192.0.2.23|2026-11-02T00:30:00.0000000Z",
+   "Late": "0",
+   "Path": "owned-window",
+   "Replayed": "12",
+   "StartTime": "2026-11-01T21:24:57.5305711Z",
+   "SystemAlertId": "a11b8244-6001-d0e4-625b-3133e31c74dd",
+   "TimeGenerated": "2026-11-02T00:55:01.7351199Z"
+  },
+  {
+   "AlertName": "Bower: failed network logons from 192.0.2.41",
+   "Crossed": "2026-11-02T01:47:43.2710306Z",
+   "Distinct": "12",
+   "EndTime": "2026-11-02T01:54:57.5305711Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"192.0.2.41\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-02T01:54:57.5305711Z",
+   "Key": "bower-wec-brute-force|192.0.2.41|2026-11-02T00:40:00.0000000Z",
+   "Late": "12",
+   "Path": "owned-window",
+   "Replayed": "12",
+   "StartTime": "2026-11-01T22:29:57.5305711Z",
+   "SystemAlertId": "1e79bbef-3bf6-00c8-a535-587a2b583d53",
+   "TimeGenerated": "2026-11-02T02:00:02.1170289Z"
+  },
+  {
+   "AlertName": "Bower: failed network logons from 192.0.2.43",
+   "Crossed": "2026-11-02T01:47:43.2710306Z",
+   "Distinct": "12",
+   "EndTime": "2026-11-02T01:54:57.5305711Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"192.0.2.43\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-02T01:54:57.5305711Z",
+   "Key": "bower-wec-brute-force|192.0.2.43|2026-11-02T01:10:00.0000000Z",
+   "Late": "12",
+   "Path": "owned-window",
+   "Replayed": "12",
+   "StartTime": "2026-11-01T22:29:57.5305711Z",
+   "SystemAlertId": "8e2b6f1b-f2dd-4587-22b9-399fc9361a70",
+   "TimeGenerated": "2026-11-02T02:00:02.1599254Z"
+  },
+  {
+   "AlertName": "Bower: failed network logons from 192.0.2.42",
+   "Crossed": "2026-11-02T01:47:43.2710306Z",
+   "Distinct": "12",
+   "EndTime": "2026-11-02T01:54:57.5305711Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"192.0.2.42\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-02T01:54:57.5305711Z",
+   "Key": "bower-wec-brute-force|192.0.2.42|2026-11-02T00:40:00.0000000Z",
+   "Late": "7",
+   "Path": "owned-window",
+   "Replayed": "7",
+   "StartTime": "2026-11-01T22:29:57.5305711Z",
+   "SystemAlertId": "1aa3a52d-3f4a-e440-ecac-509bf6945f41",
+   "TimeGenerated": "2026-11-02T02:00:02.1378377Z"
+  },
+  {
+   "AlertName": "Bower: repeated firewall denials from 198.51.100.43",
+   "Crossed": "2026-11-02T01:47:43.2710306Z",
+   "Distinct": "25",
+   "EndTime": "2026-11-02T01:55:52.6905146Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"198.51.100.43\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-02T01:55:52.6905146Z",
+   "Key": "bower-firewall-deny|198.51.100.43|2026-11-02T01:10:00.0000000Z",
+   "Late": "25",
+   "Path": "owned-window",
+   "Replayed": "25",
+   "StartTime": "2026-11-01T22:30:52.6905146Z",
+   "SystemAlertId": "e6e7c6e4-278c-c81e-74ad-03b8cc9b75bb",
+   "TimeGenerated": "2026-11-02T02:00:56.74307Z"
+  },
+  {
+   "AlertName": "Bower: repeated firewall denials from 198.51.100.41",
+   "Crossed": "2026-11-02T01:47:43.2710306Z",
+   "Distinct": "25",
+   "EndTime": "2026-11-02T01:55:52.6905146Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"198.51.100.41\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-02T01:55:52.6905146Z",
+   "Key": "bower-firewall-deny|198.51.100.41|2026-11-02T00:40:00.0000000Z",
+   "Late": "25",
+   "Path": "owned-window",
+   "Replayed": "25",
+   "StartTime": "2026-11-01T22:30:52.6905146Z",
+   "SystemAlertId": "6681a792-b52d-e5a4-fff6-bd520d4dc764",
+   "TimeGenerated": "2026-11-02T02:00:56.652883Z"
+  },
+  {
+   "AlertName": "Bower: failed network logons from 192.0.2.10",
+   "Crossed": "2026-11-02T00:40:19.4105064Z",
+   "Distinct": "12",
+   "EndTime": "2026-11-02T00:49:57.5305711Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"192.0.2.10\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-02T00:49:57.5305711Z",
+   "Key": "bower-wec-brute-force|192.0.2.10|2026-11-02T00:30:00.0000000Z",
+   "Late": "0",
+   "Path": "owned-window",
+   "Replayed": "0",
+   "StartTime": "2026-11-01T21:24:57.5305711Z",
+   "SystemAlertId": "f1b3f287-b032-33c8-bd61-e446e8f1631c",
+   "TimeGenerated": "2026-11-02T00:55:01.7125583Z"
+  },
+  {
+   "AlertName": "Bower: events arrived later than the replay-safe rules evaluate",
+   "Crossed": "",
+   "Distinct": "",
+   "EndTime": "2026-11-02T01:29:57.5286878Z",
+   "Entities": "[{\"$id\":\"3\",\"HostName\":\"ws2b-direct\",\"Type\":\"host\"}]",
+   "Evaluated": "",
+   "Key": "",
+   "Late": "15",
+   "Path": "",
+   "Replayed": "",
+   "StartTime": "2026-10-30T23:29:57.5286878Z",
+   "SystemAlertId": "31c185b7-b7b3-1737-01ca-7f63d92c45a5",
+   "TimeGenerated": "2026-11-02T01:35:02.8810167Z"
+  },
+  {
+   "AlertName": "Bower: failed network logons from 192.0.2.131",
+   "Crossed": "2026-11-02T01:49:23.0787964Z",
+   "Distinct": "12",
+   "EndTime": "2026-11-02T01:54:57.5305711Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"192.0.2.131\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-02T01:54:57.5305711Z",
+   "Key": "bower-wec-brute-force|192.0.2.131|2026-11-02T01:40:00.0000000Z",
+   "Late": "0",
+   "Path": "owned-window",
+   "Replayed": "12",
+   "StartTime": "2026-11-01T22:29:57.5305711Z",
+   "SystemAlertId": "30228598-1648-7d23-b47f-7a1b0fcd37a3",
+   "TimeGenerated": "2026-11-02T02:00:02.0947668Z"
+  },
+  {
+   "AlertName": "Bower: repeated firewall denials from 198.51.100.42",
+   "Crossed": "2026-11-02T01:47:43.2710306Z",
+   "Distinct": "25",
+   "EndTime": "2026-11-02T01:55:52.6905146Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"198.51.100.42\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-02T01:55:52.6905146Z",
+   "Key": "bower-firewall-deny|198.51.100.42|2026-11-02T00:40:00.0000000Z",
+   "Late": "15",
+   "Path": "owned-window",
+   "Replayed": "15",
+   "StartTime": "2026-11-01T22:30:52.6905146Z",
+   "SystemAlertId": "6d1d467b-0e17-cd24-5a54-fd5496992d15",
+   "TimeGenerated": "2026-11-02T02:00:56.6828522Z"
+  },
+  {
+   "AlertName": "Bower: repeated firewall denials from 198.51.100.111",
+   "Crossed": "2026-11-02T00:58:29.2895543Z",
+   "Distinct": "25",
+   "EndTime": "2026-11-02T01:15:52.6905146Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"198.51.100.111\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-02T01:15:52.6905146Z",
+   "Key": "bower-firewall-deny|198.51.100.111|2026-11-02T00:50:00.0000000Z",
+   "Late": "0",
+   "Path": "catch-up-2",
+   "Replayed": "0",
+   "StartTime": "2026-11-01T21:50:52.6905146Z",
+   "SystemAlertId": "8d0c3de9-cfbc-e249-cb20-2074e5dffa42",
+   "TimeGenerated": "2026-11-02T01:20:57.5832416Z"
+  },
+  {
+   "AlertName": "Bower: repeated firewall denials from 198.51.100.10",
+   "Crossed": "2026-11-02T00:40:19.4105064Z",
+   "Distinct": "25",
+   "EndTime": "2026-11-02T00:49:57.5518861Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"198.51.100.10\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-02T00:49:57.5518861Z",
+   "Key": "bower-firewall-deny|198.51.100.10|2026-11-02T00:30:00.0000000Z",
+   "Late": "0",
+   "Path": "owned-window",
+   "Replayed": "0",
+   "StartTime": "2026-11-01T21:24:57.5518861Z",
+   "SystemAlertId": "efbffce2-a8a2-0329-bda1-02a0092bc6c7",
+   "TimeGenerated": "2026-11-02T00:55:02.5621237Z"
+  },
+  {
+   "AlertName": "Bower: repeated firewall denials from 198.51.100.23",
+   "Crossed": "2026-11-02T00:40:19.4105064Z",
+   "Distinct": "25",
+   "EndTime": "2026-11-02T00:49:57.5518861Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"198.51.100.23\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-02T00:49:57.5518861Z",
+   "Key": "bower-firewall-deny|198.51.100.23|2026-11-02T00:30:00.0000000Z",
+   "Late": "0",
+   "Path": "owned-window",
+   "Replayed": "0",
+   "StartTime": "2026-11-01T21:24:57.5518861Z",
+   "SystemAlertId": "a3a5f8e4-fa07-972c-3974-177b9fe57c3c",
+   "TimeGenerated": "2026-11-02T00:55:02.6057989Z"
+  },
+  {
+   "AlertName": "Bower: repeated firewall denials from 198.51.100.22",
+   "Crossed": "2026-11-02T00:40:19.4105064Z",
+   "Distinct": "25",
+   "EndTime": "2026-11-02T00:49:57.5518861Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"198.51.100.22\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-02T00:49:57.5518861Z",
+   "Key": "bower-firewall-deny|198.51.100.22|2026-11-02T00:30:00.0000000Z",
+   "Late": "0",
+   "Path": "owned-window",
+   "Replayed": "0",
+   "StartTime": "2026-11-01T21:24:57.5518861Z",
+   "SystemAlertId": "30f3a38f-8c0a-c28c-9a56-dfd1fbc08de5",
+   "TimeGenerated": "2026-11-02T00:55:02.5839974Z"
+  }
+ ],
+ "alertsPerDetectionKey": {
+  "bower-firewall-deny|198.51.100.10|2026-11-02T00:30:00.0000000Z": 1,
+  "bower-firewall-deny|198.51.100.111|2026-11-02T00:50:00.0000000Z": 1,
+  "bower-firewall-deny|198.51.100.22|2026-11-02T00:30:00.0000000Z": 1,
+  "bower-firewall-deny|198.51.100.23|2026-11-02T00:30:00.0000000Z": 1,
+  "bower-firewall-deny|198.51.100.31|2026-11-02T00:40:00.0000000Z": 1,
+  "bower-firewall-deny|198.51.100.41|2026-11-02T00:40:00.0000000Z": 1,
+  "bower-firewall-deny|198.51.100.42|2026-11-02T00:40:00.0000000Z": 1,
+  "bower-firewall-deny|198.51.100.43|2026-11-02T01:10:00.0000000Z": 1,
+  "bower-firewall-deny|198.51.100.61|2026-11-02T00:40:00.0000000Z": 1,
+  "bower-wec-brute-force|192.0.2.10|2026-11-02T00:30:00.0000000Z": 1,
+  "bower-wec-brute-force|192.0.2.131|2026-11-02T01:40:00.0000000Z": 1,
+  "bower-wec-brute-force|192.0.2.22|2026-11-02T00:30:00.0000000Z": 1,
+  "bower-wec-brute-force|192.0.2.23|2026-11-02T00:30:00.0000000Z": 1,
+  "bower-wec-brute-force|192.0.2.31|2026-11-02T00:40:00.0000000Z": 1,
+  "bower-wec-brute-force|192.0.2.41|2026-11-02T00:40:00.0000000Z": 1,
+  "bower-wec-brute-force|192.0.2.42|2026-11-02T00:40:00.0000000Z": 1,
+  "bower-wec-brute-force|192.0.2.43|2026-11-02T01:10:00.0000000Z": 1,
+  "bower-wec-brute-force|192.0.2.61|2026-11-02T00:40:00.0000000Z": 1
+ },
+ "checks": {
+  "alerts:bower-firewall-deny|198.51.100.10|": true,
+  "alerts:bower-firewall-deny|198.51.100.111|": true,
+  "alerts:bower-firewall-deny|198.51.100.22|": true,
+  "alerts:bower-firewall-deny|198.51.100.23|": true,
+  "alerts:bower-firewall-deny|198.51.100.31|": true,
+  "alerts:bower-firewall-deny|198.51.100.41|": true,
+  "alerts:bower-firewall-deny|198.51.100.42|": true,
+  "alerts:bower-firewall-deny|198.51.100.43|": true,
+  "alerts:bower-firewall-deny|198.51.100.61|": true,
+  "alerts:bower-wec-brute-force|192.0.2.10|": true,
+  "alerts:bower-wec-brute-force|192.0.2.131|": true,
+  "alerts:bower-wec-brute-force|192.0.2.22|": true,
+  "alerts:bower-wec-brute-force|192.0.2.23|": true,
+  "alerts:bower-wec-brute-force|192.0.2.250|": true,
+  "alerts:bower-wec-brute-force|192.0.2.31|": true,
+  "alerts:bower-wec-brute-force|192.0.2.41|": true,
+  "alerts:bower-wec-brute-force|192.0.2.42|": true,
+  "alerts:bower-wec-brute-force|192.0.2.43|": true,
+  "alerts:bower-wec-brute-force|192.0.2.51|": true,
+  "alerts:bower-wec-brute-force|192.0.2.52|": true,
+  "alerts:bower-wec-brute-force|192.0.2.61|": true,
+  "delayed:d1-delayed-originals": true,
+  "delayed:d3-delayed-originals": true,
+  "identityEqualsEventId": true,
+  "incidents:192.0.2.10": true,
+  "incidents:192.0.2.131": true,
+  "incidents:192.0.2.22": true,
+  "incidents:192.0.2.23": true,
+  "incidents:192.0.2.250": true,
+  "incidents:192.0.2.31": true,
+  "incidents:192.0.2.41": true,
+  "incidents:192.0.2.42": true,
+  "incidents:192.0.2.43": true,
+  "incidents:192.0.2.51": true,
+  "incidents:192.0.2.52": true,
+  "incidents:192.0.2.61": true,
+  "incidents:198.51.100.10": true,
+  "incidents:198.51.100.111": true,
+  "incidents:198.51.100.22": true,
+  "incidents:198.51.100.23": true,
+  "incidents:198.51.100.31": true,
+  "incidents:198.51.100.41": true,
+  "incidents:198.51.100.42": true,
+  "incidents:198.51.100.43": true,
+  "incidents:198.51.100.61": true,
+  "incidents:host:ws2b-direct": true,
+  "noDuplicateAlertKeys": true,
+  "noMissingEvents": true,
+  "noUnexpectedEvents": true,
+  "parserCollapsesEveryReplay": true,
+  "parserExcludesHealthRecords": true,
+  "replayGap:c-replay-after-outage": true,
+  "replayGap:f-direct-replay": true,
+  "replayGap:m-archive-replay-of-a": true,
+  "replayed:b1-ambiguous-ack": true,
+  "replayed:b2-kill-mid-delivery": true,
+  "replayed:c-replay-after-outage": true,
+  "replayed:f-direct-replay": true,
+  "replayed:j-restored-backup": true,
+  "replayed:l-dead-letter-replay": true,
+  "replayed:m-archive-replay-of-a": true
+ },
+ "duplicateAlertKeys": [],
+ "generatedAt": "2026-11-02T02:22:50.335171+00:00",
+ "incidents": [
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "eb68bfd8-1548-0e61-a6b5-db819c997149"
+   ],
+   "createdTimeUtc": "2026-11-02T00:50:17.33Z",
+   "hosts": [],
+   "incidentNumber": 1,
+   "ipAddresses": [
+    "192.0.2.22"
+   ],
+   "status": "New",
+   "title": "Bower: failed network logons from 192.0.2.22"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "a11b8244-6001-d0e4-625b-3133e31c74dd"
+   ],
+   "createdTimeUtc": "2026-11-02T00:55:06.6866667Z",
+   "hosts": [],
+   "incidentNumber": 2,
+   "ipAddresses": [
+    "192.0.2.23"
+   ],
+   "status": "New",
+   "title": "Bower: failed network logons from 192.0.2.23"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "f1b3f287-b032-33c8-bd61-e446e8f1631c"
+   ],
+   "createdTimeUtc": "2026-11-02T00:55:06.8533333Z",
+   "hosts": [],
+   "incidentNumber": 3,
+   "ipAddresses": [
+    "192.0.2.10"
+   ],
+   "status": "New",
+   "title": "Bower: failed network logons from 192.0.2.10"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "70674a04-88bc-9b02-3563-20f5474b0ebe"
+   ],
+   "createdTimeUtc": "2026-11-02T00:55:13.0766667Z",
+   "hosts": [],
+   "incidentNumber": 4,
+   "ipAddresses": [
+    "192.0.2.61"
+   ],
+   "status": "New",
+   "title": "Bower: failed network logons from 192.0.2.61"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "a3a5f8e4-fa07-972c-3974-177b9fe57c3c"
+   ],
+   "createdTimeUtc": "2026-11-02T00:55:12.2866667Z",
+   "hosts": [],
+   "incidentNumber": 5,
+   "ipAddresses": [
+    "198.51.100.23"
+   ],
+   "status": "New",
+   "title": "Bower: repeated firewall denials from 198.51.100.23"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "c9fb9ce4-4e4a-a691-9906-978c9deaa8b0"
+   ],
+   "createdTimeUtc": "2026-11-02T00:55:18.7033333Z",
+   "hosts": [],
+   "incidentNumber": 6,
+   "ipAddresses": [
+    "198.51.100.61"
+   ],
+   "status": "New",
+   "title": "Bower: repeated firewall denials from 198.51.100.61"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "30f3a38f-8c0a-c28c-9a56-dfd1fbc08de5"
+   ],
+   "createdTimeUtc": "2026-11-02T00:55:16.8266667Z",
+   "hosts": [],
+   "incidentNumber": 7,
+   "ipAddresses": [
+    "198.51.100.22"
+   ],
+   "status": "New",
+   "title": "Bower: repeated firewall denials from 198.51.100.22"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "85826650-2e82-8da5-7095-a69fa5124f43"
+   ],
+   "createdTimeUtc": "2026-11-02T00:55:20.55Z",
+   "hosts": [],
+   "incidentNumber": 8,
+   "ipAddresses": [
+    "198.51.100.31"
+   ],
+   "status": "New",
+   "title": "Bower: repeated firewall denials from 198.51.100.31"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "2c42adf1-58b8-2cec-a167-0c44dd9adeb7"
+   ],
+   "createdTimeUtc": "2026-11-02T00:55:21.9666667Z",
+   "hosts": [],
+   "incidentNumber": 9,
+   "ipAddresses": [
+    "192.0.2.31"
+   ],
+   "status": "New",
+   "title": "Bower: failed network logons from 192.0.2.31"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "efbffce2-a8a2-0329-bda1-02a0092bc6c7"
+   ],
+   "createdTimeUtc": "2026-11-02T00:55:19.32Z",
+   "hosts": [],
+   "incidentNumber": 10,
+   "ipAddresses": [
+    "198.51.100.10"
+   ],
+   "status": "New",
+   "title": "Bower: repeated firewall denials from 198.51.100.10"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "8d0c3de9-cfbc-e249-cb20-2074e5dffa42"
+   ],
+   "createdTimeUtc": "2026-11-02T01:21:02.82Z",
+   "hosts": [],
+   "incidentNumber": 11,
+   "ipAddresses": [
+    "198.51.100.111"
+   ],
+   "status": "New",
+   "title": "Bower: repeated firewall denials from 198.51.100.111"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "31c185b7-b7b3-1737-01ca-7f63d92c45a5"
+   ],
+   "createdTimeUtc": "2026-11-02T01:35:20.8666667Z",
+   "hosts": [
+    "ws2b-direct"
+   ],
+   "incidentNumber": 12,
+   "ipAddresses": [],
+   "status": "New",
+   "title": "Bower: events arrived later than the replay-safe rules evaluate"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "8e2b6f1b-f2dd-4587-22b9-399fc9361a70"
+   ],
+   "createdTimeUtc": "2026-11-02T02:00:05.6833333Z",
+   "hosts": [],
+   "incidentNumber": 13,
+   "ipAddresses": [
+    "192.0.2.43"
+   ],
+   "status": "New",
+   "title": "Bower: failed network logons from 192.0.2.43"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "30228598-1648-7d23-b47f-7a1b0fcd37a3"
+   ],
+   "createdTimeUtc": "2026-11-02T02:00:12.78Z",
+   "hosts": [],
+   "incidentNumber": 14,
+   "ipAddresses": [
+    "192.0.2.131"
+   ],
+   "status": "New",
+   "title": "Bower: failed network logons from 192.0.2.131"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "1e79bbef-3bf6-00c8-a535-587a2b583d53"
+   ],
+   "createdTimeUtc": "2026-11-02T02:00:12.9366667Z",
+   "hosts": [],
+   "incidentNumber": 15,
+   "ipAddresses": [
+    "192.0.2.41"
+   ],
+   "status": "New",
+   "title": "Bower: failed network logons from 192.0.2.41"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "1aa3a52d-3f4a-e440-ecac-509bf6945f41"
+   ],
+   "createdTimeUtc": "2026-11-02T02:00:12.6633333Z",
+   "hosts": [],
+   "incidentNumber": 16,
+   "ipAddresses": [
+    "192.0.2.42"
+   ],
+   "status": "New",
+   "title": "Bower: failed network logons from 192.0.2.42"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "6d1d467b-0e17-cd24-5a54-fd5496992d15"
+   ],
+   "createdTimeUtc": "2026-11-02T02:01:12.2433333Z",
+   "hosts": [],
+   "incidentNumber": 17,
+   "ipAddresses": [
+    "198.51.100.42"
+   ],
+   "status": "New",
+   "title": "Bower: repeated firewall denials from 198.51.100.42"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "e6e7c6e4-278c-c81e-74ad-03b8cc9b75bb"
+   ],
+   "createdTimeUtc": "2026-11-02T02:01:12.2633333Z",
+   "hosts": [],
+   "incidentNumber": 18,
+   "ipAddresses": [
+    "198.51.100.43"
+   ],
+   "status": "New",
+   "title": "Bower: repeated firewall denials from 198.51.100.43"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "6681a792-b52d-e5a4-fff6-bd520d4dc764"
+   ],
+   "createdTimeUtc": "2026-11-02T02:01:12.2833333Z",
+   "hosts": [],
+   "incidentNumber": 19,
+   "ipAddresses": [
+    "198.51.100.41"
+   ],
+   "status": "New",
+   "title": "Bower: repeated firewall denials from 198.51.100.41"
+  }
+ ],
+ "incidentsPerAddress": {
+  "192.0.2.10": 1,
+  "192.0.2.131": 1,
+  "192.0.2.22": 1,
+  "192.0.2.23": 1,
+  "192.0.2.31": 1,
+  "192.0.2.41": 1,
+  "192.0.2.42": 1,
+  "192.0.2.43": 1,
+  "192.0.2.61": 1,
+  "198.51.100.10": 1,
+  "198.51.100.111": 1,
+  "198.51.100.22": 1,
+  "198.51.100.23": 1,
+  "198.51.100.31": 1,
+  "198.51.100.41": 1,
+  "198.51.100.42": 1,
+  "198.51.100.43": 1,
+  "198.51.100.61": 1
+ },
+ "incidentsPerHost": {
+  "ws2b-direct": 1
+ },
+ "parser": {
+  "HealthRowsInParser": 0,
+  "HealthRowsRaw": 176,
+  "ParserCollectors": "[\"ws2b-collector-01\",\"ws2b-direct\"]",
+  "ParserCopies": 631,
+  "ParserEvents": 351,
+  "RawEventIds": 351,
+  "RawIdentities": 351,
+  "RawRows": 631
+ },
+ "passed": true,
+ "scenarios": {
+  "a-clean": {
+   "addresses": [
+    "192.0.2.10",
+    "198.51.100.10"
+   ],
+   "copiesHistogram": {
+    "2": 37
+   },
+   "expectedDistinct": 37,
+   "extraRows": 37,
+   "firstIngestionDelaySeconds": {
+    "max": 285.884061,
+    "min": 285.59665
+   },
+   "methods": [
+    "collector"
+   ],
+   "missing": 0,
+   "presentDistinct": 37,
+   "replayGapSeconds": {
+    "max": 4201.143675,
+    "min": 4201.143675
+   },
+   "rows": 74
+  },
+  "b1-ambiguous-ack": {
+   "addresses": [
+    "192.0.2.23",
+    "198.51.100.23"
+   ],
+   "copiesHistogram": {
+    "1": 25,
+    "2": 12
+   },
+   "expectedDistinct": 37,
+   "extraRows": 12,
+   "firstIngestionDelaySeconds": {
+    "max": 281.217613,
+    "min": 280.91544
+   },
+   "methods": [
+    "collector"
+   ],
+   "missing": 0,
+   "presentDistinct": 37,
+   "replayGapSeconds": {
+    "max": 0.0,
+    "min": 0.0
+   },
+   "rows": 49
+  },
+  "b2-kill-mid-delivery": {
+   "addresses": [
+    "192.0.2.22",
+    "198.51.100.22"
+   ],
+   "copiesHistogram": {
+    "1": 25,
+    "2": 12
+   },
+   "expectedDistinct": 37,
+   "extraRows": 12,
+   "firstIngestionDelaySeconds": {
+    "max": 189.515728,
+    "min": 95.148344
+   },
+   "methods": [
+    "collector"
+   ],
+   "missing": 0,
+   "presentDistinct": 37,
+   "replayGapSeconds": {
+    "max": 94.661636,
+    "min": 94.661636
+   },
+   "rows": 49
+  },
+  "c-replay-after-outage": {
+   "addresses": [
+    "192.0.2.31",
+    "198.51.100.31"
+   ],
+   "copiesHistogram": {
+    "3": 37
+   },
+   "expectedDistinct": 37,
+   "extraRows": 74,
+   "firstIngestionDelaySeconds": {
+    "max": 2.709525,
+    "min": 2.421009
+   },
+   "methods": [
+    "collector"
+   ],
+   "missing": 0,
+   "presentDistinct": 37,
+   "replayGapSeconds": {
+    "max": 4098.979424,
+    "min": 4098.979424
+   },
+   "rows": 111
+  },
+  "d1-delayed-originals": {
+   "addresses": [
+    "192.0.2.41",
+    "198.51.100.41"
+   ],
+   "copiesHistogram": {
+    "2": 37
+   },
+   "expectedDistinct": 37,
+   "extraRows": 37,
+   "firstIngestionDelaySeconds": {
+    "max": 3760.603693,
+    "min": 3760.40867
+   },
+   "methods": [
+    "collector"
+   ],
+   "missing": 0,
+   "presentDistinct": 37,
+   "replayGapSeconds": {
+    "max": 61.084707,
+    "min": 61.084707
+   },
+   "rows": 74
+  },
+  "d2-split-bucket": {
+   "addresses": [
+    "192.0.2.42",
+    "198.51.100.42"
+   ],
+   "copiesHistogram": {
+    "1": 15,
+    "2": 22
+   },
+   "expectedDistinct": 37,
+   "extraRows": 22,
+   "firstIngestionDelaySeconds": {
+    "max": 4039.494872,
+    "min": 2.875005
+   },
+   "methods": [
+    "collector"
+   ],
+   "missing": 0,
+   "presentDistinct": 37,
+   "replayGapSeconds": {
+    "max": 61.084707,
+    "min": 61.084707
+   },
+   "rows": 59
+  },
+  "d3-delayed-originals": {
+   "addresses": [
+    "192.0.2.43",
+    "198.51.100.43"
+   ],
+   "copiesHistogram": {
+    "2": 37
+   },
+   "expectedDistinct": 37,
+   "extraRows": 37,
+   "firstIngestionDelaySeconds": {
+    "max": 2261.482372,
+    "min": 2259.339323
+   },
+   "methods": [
+    "collector"
+   ],
+   "missing": 0,
+   "presentDistinct": 37,
+   "replayGapSeconds": {
+    "max": 61.084707,
+    "min": 61.084707
+   },
+   "rows": 74
+  },
+  "e-beyond-tolerance": {
+   "addresses": [
+    "192.0.2.51"
+   ],
+   "copiesHistogram": {
+    "1": 12
+   },
+   "expectedDistinct": 12,
+   "extraRows": 0,
+   "firstIngestionDelaySeconds": {
+    "max": 9004.576469,
+    "min": 9004.565469
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 12,
+   "replayGapSeconds": {
+    "max": null,
+    "min": null
+   },
+   "rows": 12
+  },
+  "e-rewritten-time": {
+   "addresses": [
+    "192.0.2.52"
+   ],
+   "copiesHistogram": {
+    "1": 3
+   },
+   "expectedDistinct": 3,
+   "extraRows": 0,
+   "firstIngestionDelaySeconds": {
+    "max": 259202.117733,
+    "min": 259202.115733
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 3,
+   "replayGapSeconds": {
+    "max": null,
+    "min": null
+   },
+   "rows": 3
+  },
+  "f-direct-replay": {
+   "addresses": [
+    "192.0.2.61",
+    "198.51.100.61"
+   ],
+   "copiesHistogram": {
+    "2": 37
+   },
+   "expectedDistinct": 37,
+   "extraRows": 37,
+   "firstIngestionDelaySeconds": {
+    "max": 5.24711,
+    "min": 3.495479
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 37,
+   "replayGapSeconds": {
+    "max": 4523.368665,
+    "min": 4520.381899
+   },
+   "rows": 74
+  },
+  "f2-direct-replay-of-f": {
+   "addresses": [
+    "192.0.2.61",
+    "198.51.100.61"
+   ],
+   "copiesHistogram": {
+    "2": 37
+   },
+   "expectedDistinct": 37,
+   "extraRows": 37,
+   "firstIngestionDelaySeconds": {
+    "max": 5.24711,
+    "min": 3.495479
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 37,
+   "replayGapSeconds": {
+    "max": 4523.368665,
+    "min": 4520.381899
+   },
+   "rows": 74
+  },
+  "j-restored-backup": {
+   "addresses": [
+    "192.0.2.31",
+    "192.0.2.41",
+    "192.0.2.42",
+    "192.0.2.43",
+    "198.51.100.31",
+    "198.51.100.41",
+    "198.51.100.42",
+    "198.51.100.43"
+   ],
+   "copiesHistogram": {
+    "2": 96,
+    "3": 37
+   },
+   "expectedDistinct": 133,
+   "extraRows": 170,
+   "firstIngestionDelaySeconds": {
+    "max": 4039.494872,
+    "min": 2.421009
+   },
+   "methods": [
+    "queue-backup-restore"
+   ],
+   "missing": 0,
+   "presentDistinct": 133,
+   "replayGapSeconds": {
+    "max": 4098.979424,
+    "min": 61.084707
+   },
+   "rows": 303
+  },
+  "k-catch-up": {
+   "addresses": [
+    "198.51.100.111"
+   ],
+   "copiesHistogram": {
+    "1": 25
+   },
+   "expectedDistinct": 25,
+   "extraRows": 0,
+   "firstIngestionDelaySeconds": {
+    "max": 4.869023,
+    "min": 4.845023
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 25,
+   "replayGapSeconds": {
+    "max": null,
+    "min": null
+   },
+   "rows": 25
+  },
+  "l-dead-letter-replay": {
+   "addresses": [
+    "192.0.2.131"
+   ],
+   "copiesHistogram": {
+    "2": 12
+   },
+   "expectedDistinct": 12,
+   "extraRows": 12,
+   "firstIngestionDelaySeconds": {
+    "max": 6.109781,
+    "min": 6.098781
+   },
+   "methods": [
+    "collector"
+   ],
+   "missing": 0,
+   "presentDistinct": 12,
+   "replayGapSeconds": {
+    "max": 43.64472,
+    "min": 43.64472
+   },
+   "rows": 24
+  },
+  "m-archive-replay-of-a": {
+   "addresses": [
+    "192.0.2.10",
+    "198.51.100.10"
+   ],
+   "copiesHistogram": {
+    "2": 37
+   },
+   "expectedDistinct": 37,
+   "extraRows": 37,
+   "firstIngestionDelaySeconds": {
+    "max": 285.884061,
+    "min": 285.59665
+   },
+   "methods": [
+    "archive-replay"
+   ],
+   "missing": 0,
+   "presentDistinct": 37,
+   "replayGapSeconds": {
+    "max": 4201.143675,
+    "min": 4201.143675
+   },
+   "rows": 74
+  },
+  "warmup": {
+   "addresses": [
+    "192.0.2.250"
+   ],
+   "copiesHistogram": {
+    "1": 3
+   },
+   "expectedDistinct": 3,
+   "extraRows": 0,
+   "firstIngestionDelaySeconds": {
+    "max": 337.925583,
+    "min": 337.923583
+   },
+   "methods": [
+    "collector"
+   ],
+   "missing": 0,
+   "presentDistinct": 3,
+   "replayGapSeconds": {
+    "max": null,
+    "min": null
+   },
+   "rows": 3
+  }
+ },
+ "unexpectedEventIds": 0
+}

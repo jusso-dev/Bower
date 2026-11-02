@@ -37,8 +37,8 @@ def select(paths, full=False):
             "rust/Dockerfile", ".dockerignore", "docker-compose.yml", "compose.yml",
         }:
             selected.update(("dotnet", "rust", "ui", "containers"))
-        elif path.startswith(("deploy/bicep/", "deploy/azure-function/")):
-            # C# contract tests check deployed Sentinel schemas and function config.
+        elif path.startswith(("deploy/bicep/", "deploy/azure-function/", "deploy/sentinel/")):
+            # C# contract tests check deployed Sentinel schemas, analytics content and function config.
             selected.update(("infrastructure", "dotnet"))
         elif path.startswith("deploy/"):
             selected.add("infrastructure")

@@ -1,0 +1,38 @@
+{
+ "runId": "bower-ws2b-20261102-003156",
+ "commitDeployed": "4dabe1557cf385ddcc6d3bf53b9afefdc619dbb6",
+ "note": "Collector and CLI built from commit 4dabe15 (Release, framework-dependent, macOS arm64, .NET SDK 10.0.403). Not signed: release signing is deferred.",
+ "binaries": {
+  "Bower.Collector.dll": "fbd0612b62f118e1e68a421c637eb904a24d3810d5c60fd3f69013acc04f3838",
+  "bower.dll (CLI)": "a2923fb8570362e0de87c72f754a4eadafd8d98930574b78228e58cfdf3bf7bc"
+ },
+ "contentFilesAtCommit": {
+  "deploy/sentinel/analytics/bower-security-events.kql": "56eab1d9b4d882348ee51b06f4661b8d0d61b9e5c5f6635f4840d42080fa3947",
+  "deploy/sentinel/analytics/main.bicep": "8d8ec9ebf47531f07c56b13452733f596b3f44b0d2bf75e0fb58a059b1e9fbad",
+  "deploy/sentinel/analytics/rules/beyond-tolerance.kql": "2444222accf5c572ee0e9c29baf46d9f1cfca31523fa92505904b92c2fc80b21",
+  "deploy/sentinel/analytics/rules/firewall-deny.kql": "73b0cf560d0fb93c24f4e08abd88f1fe1915ce80d6390a2d2b03954c0d91e79d",
+  "deploy/sentinel/analytics/rules/wec-brute-force.kql": "ba41bcf05587242e2963a574045d296a6335a193a40d38659da6a04c403b8f2f"
+ },
+ "testProfile": {
+  "frequencyMinutes": 5,
+  "settleDelayMinutes": 5,
+  "catchUpMinutes": 60,
+  "maxIngestionDelayMinutes": 120,
+  "bucketMinutes": 10,
+  "bruteForceThreshold": 10,
+  "firewallDenyThreshold": 20,
+  "queryPeriod": "PT205M"
+ },
+ "collectorSettings": {
+  "BOWER_COLLECTOR_ID": "ws2b-collector-01",
+  "BOWER_DELIVERY_LEASE_SECONDS": 90,
+  "BOWER_DELIVERY_TIMEOUT_SECONDS": 60,
+  "BOWER_HEALTH_RECORD_INTERVAL_SECONDS": 60,
+  "credential": "environment (client certificate; key stayed in the run directory and was deleted)",
+  "proxy": "loopback fault proxy"
+ },
+ "replayCollectors": {
+  "same id": "ws2b-collector-01 on 127.0.0.1:4329, own queue, no proxy, no health records",
+  "other id": "ws2b-replay-other on 127.0.0.1:4339, own queue"
+ }
+}

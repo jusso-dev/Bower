@@ -378,6 +378,8 @@ impl SecurityEventProcessor {
                 bytes_in,
             ));
         }
+        // Captured before redaction, never persisted; see is_archive_replay_from_another_collector.
+        let replay_origin = archive_replay_origin(candidate_json);
         // Redaction failure (including a panic) is a security failure: quarantine
         // without persisting, and retry the original input when the failure is repaired.
         let redaction_guard = bower_contracts::panic_privacy::protect();
@@ -457,6 +459,17 @@ impl SecurityEventProcessor {
                 ProcessingResult::failed_at(
                     DecisionAction::Quarantine,
                     "reserved-event-type",
+                    ProcessingStage::Validation,
+                ),
+                bytes_in,
+            ));
+        }
+
+        if is_archive_replay_from_another_collector(replay_origin.as_deref(), collector) {
+            return Ok(self.decided(
+                ProcessingResult::failed_at(
+                    DecisionAction::Quarantine,
+                    ARCHIVE_REPLAY_COLLECTOR_MISMATCH,
                     ProcessingStage::Validation,
                 ),
                 bytes_in,
@@ -888,6 +901,52 @@ fn is_within_accepted_window(value: Timestamp, now: Timestamp) -> bool {
     // DateTimeOffset.AddYears(-5): calendar years, Feb 29 clamps to Feb 28.
     let lower = now.checked_sub_months(Months::new(60)).unwrap_or(now);
     !is_default(value) && value <= upper && value >= lower
+}
+
+/// Quarantine reason for an archive replay sent to a collector with another id.
+pub const ARCHIVE_REPLAY_COLLECTOR_MISMATCH: &str = "archive-replay-collector-mismatch";
+
+/// Sentinel identifies an event by the collector-stamped `(CollectorId, EventId)`.
+/// `bower archive replay` labels each event with the collector that first accepted it;
+/// replayed through a collector with another id it would land as a second, different
+/// event, so it is refused (C# `IsArchiveReplayFromAnotherCollector`). Labels only refuse
+/// here: they never set the identity. The labels are read before redaction (in memory
+/// only): a privacy rule may remove labels, or a detector may mask a collector id inside
+/// one, and neither may change the replay check.
+fn is_archive_replay_from_another_collector(
+    replay_origin: Option<&str>,
+    collector: &CollectorIdentity,
+) -> bool {
+    replay_origin.is_some_and(|origin| origin != collector.id)
+}
+
+/// The unredacted `labels.bowerReplayCollectorId` of an archive replay
+/// (`labels.bowerReplay == "archive"`), or `None` (C# `ArchiveReplayOrigin`). Bounded like
+/// the identity check; a candidate that does not parse is left to redaction, which refuses
+/// it, as it refuses duplicate property names.
+fn archive_replay_origin(candidate_json: &str) -> Option<String> {
+    use bower_contracts::JsonElement;
+    fn field<'a>(value: &'a JsonElement, name: &str) -> Option<&'a JsonElement> {
+        let JsonElement::Object(fields) = value else {
+            return None;
+        };
+        fields
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value)
+    }
+    if candidate_json.len() > MAX_IDENTITY_DOCUMENT_BYTES {
+        return None;
+    }
+    let root = JsonElement::parse(candidate_json).ok()?;
+    let labels = field(&root, "labels")?;
+    (field(labels, "bowerReplay")?.as_str()? == "archive")
+        .then(|| {
+            field(labels, "bowerReplayCollectorId")?
+                .as_str()
+                .map(str::to_owned)
+        })
+        .flatten()
 }
 
 fn validate(candidate: &SecurityEventEnvelope, now: Timestamp) -> Vec<String> {

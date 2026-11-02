@@ -1,0 +1,18 @@
+[
+ {
+  "Type": "authentication_failure",
+  "Typed": 18,
+  "Canonical": 17,
+  "SameFirstCopyAndCopies": 17,
+  "TypedOnly": "ws2-q-cross-deny-0000-087d2939cde4",
+  "CanonicalOnly": ""
+ },
+ {
+  "Type": "network_connection_denied",
+  "Typed": 43,
+  "Canonical": 44,
+  "SameFirstCopyAndCopies": 43,
+  "TypedOnly": "",
+  "CanonicalOnly": "ws2-q-cross-deny-0000-087d2939cde4"
+ }
+]

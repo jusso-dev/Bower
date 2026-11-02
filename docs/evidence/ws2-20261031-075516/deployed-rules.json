@@ -1,0 +1,129 @@
+[
+ {
+  "name": "f1674488-fc2d-5b11-94b6-15b4ebc12f67",
+  "displayName": "Bower: events arrived later than the replay-safe rules evaluate",
+  "enabled": true,
+  "queryFrequency": "PT1H",
+  "queryPeriod": "P2DT2H",
+  "suppressionEnabled": false,
+  "aggregationKind": "AlertPerResult",
+  "grouping": {
+   "enabled": true,
+   "groupByAlertDetails": [],
+   "groupByCustomDetails": [],
+   "groupByEntities": [
+    "Host"
+   ],
+   "lookbackDuration": "P1D",
+   "matchingMethod": "Selected",
+   "reopenClosedIncident": false
+  },
+  "entityMappings": [
+   {
+    "entityType": "Host",
+    "fieldMappings": [
+     {
+      "columnName": "CollectorId",
+      "identifier": "HostName"
+     }
+    ]
+   }
+  ],
+  "customDetails": [
+   "LateEvents",
+   "MaxDeliveryDelay",
+   "OldestEvent",
+   "RewrittenTimes"
+  ],
+  "querySha256": "2e9ddd119d9ad6c7ecf0e7b265b6d78ff2949ce5a515734757c4be0d5ce13eba",
+  "lastModifiedUtc": "2026-10-31T08:36:54.5194176Z"
+ },
+ {
+  "name": "8258f198-ec48-58ad-bd00-912120057d7a",
+  "displayName": "Bower: repeated firewall denials from one address (replay-safe)",
+  "enabled": true,
+  "queryFrequency": "PT5M",
+  "queryPeriod": "PT3H25M",
+  "suppressionEnabled": false,
+  "aggregationKind": "AlertPerResult",
+  "grouping": {
+   "enabled": true,
+   "groupByAlertDetails": [],
+   "groupByCustomDetails": [],
+   "groupByEntities": [
+    "IP"
+   ],
+   "lookbackDuration": "PT5H",
+   "matchingMethod": "Selected",
+   "reopenClosedIncident": false
+  },
+  "entityMappings": [
+   {
+    "entityType": "IP",
+    "fieldMappings": [
+     {
+      "columnName": "SourceIpAddress",
+      "identifier": "Address"
+     }
+    ]
+   }
+  ],
+  "customDetails": [
+   "BowerDetectionKey",
+   "BucketStart",
+   "CrossedAt",
+   "DistinctEvents",
+   "EvaluatedAt",
+   "EvaluationPath",
+   "LateEvents",
+   "MaxDeliveryDelay",
+   "ReplayedRows"
+  ],
+  "querySha256": "f2c699215eaa5a5fe8f455b413dea77ffb4fc8782883a17918d624da0e889820",
+  "lastModifiedUtc": "2026-10-31T08:36:54.5170594Z"
+ },
+ {
+  "name": "b8c14079-2d30-5572-888c-ccbbd911b8a5",
+  "displayName": "Bower: Windows failed network logons from one address (replay-safe)",
+  "enabled": true,
+  "queryFrequency": "PT5M",
+  "queryPeriod": "PT3H25M",
+  "suppressionEnabled": false,
+  "aggregationKind": "AlertPerResult",
+  "grouping": {
+   "enabled": true,
+   "groupByAlertDetails": [],
+   "groupByCustomDetails": [],
+   "groupByEntities": [
+    "IP"
+   ],
+   "lookbackDuration": "PT5H",
+   "matchingMethod": "Selected",
+   "reopenClosedIncident": false
+  },
+  "entityMappings": [
+   {
+    "entityType": "IP",
+    "fieldMappings": [
+     {
+      "columnName": "SourceIpAddress",
+      "identifier": "Address"
+     }
+    ]
+   }
+  ],
+  "customDetails": [
+   "BowerDetectionKey",
+   "BucketStart",
+   "CrossedAt",
+   "DistinctEvents",
+   "EvaluatedAt",
+   "EvaluationPath",
+   "LateEvents",
+   "MaxDeliveryDelay",
+   "ReplayedRows"
+  ],
+  "querySha256": "cf6e291b6f33c1185eed4819162494a1c02da7862793434b796fb8fbbf002ce9",
+  "lastModifiedUtc": "2026-10-31T08:36:54.2971155Z"
+ }
+]

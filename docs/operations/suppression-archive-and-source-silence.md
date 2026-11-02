@@ -270,10 +270,22 @@ example for a records-authority period such as AFDA Express v2.
 - Bower never deletes or rewrites committed archive segments. Put the directory on
   write-once storage and manage retention there.
 - `bower archive replay --archive DIR --collector-url URL [--from ISO] [--to ISO]
-  [--event-type TYPE]... [--dry-run]` verifies the archive, then posts each selected
-  event through a collector's full intake, labelled `bowerReplay: archive`, with
-  `BOWER_INGEST_TOKEN`. Replay into a collector with its own queue; the original
-  queue reports replayed events as duplicates. Events older than five years fail
+  [--event-type TYPE]... [--collector-id ID] [--dry-run]` verifies the archive, then posts each selected
+  event through a collector's full intake, labelled `bowerReplay: archive` and
+  `bowerReplayCollectorId` (the archived envelope's collector), with
+  `BOWER_INGEST_TOKEN`. Replay into a collector with its own queue (the original
+  queue reports replayed events as duplicates) and the **original
+  `BOWER_COLLECTOR_ID`**, so Sentinel keeps one `(CollectorId, EventId)` identity per
+  event ([replay-safe detections](../production-readiness/02-replay-safe-detections.md)).
+  This holds only for archived envelopes with a stamped `collector.id`. An envelope
+  without one is replayed without an origin label and accepted by any collector, which
+  stamps its own id, so its `(CollectorId, EventId)` is not the original identity:
+  treat such events as a separate migration path.
+  The origin label is always the archived envelope's stamped `collector.id` (a label
+  the producer set is replaced). A collector with another id quarantines the event as
+  `archive-replay-collector-mismatch`; the CLI counts it as `collector-mismatch`,
+  continues and exits 2. `--collector-id ID` replays only that collector's events, so
+  an archive that spans an id change is replayed one slice per matching collector. Events older than five years fail
   `timeGenerated` validation. `--from` and `--to` take the same strict format as
   `policy diff --at` (`YYYY-MM-DDTHH:MM[:SS[.FFFFFFF]]` with `Z` or an offset); other
   forms, including date-only values, exit 1.

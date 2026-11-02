@@ -1,0 +1,91 @@
+{
+ "proxyScript": "deploy/sentinel/analytics/validation/fault_proxy.py (live run used the version before the client-EOF close change; sha256 7cb9bec048cec36de15f76a19c7e31612c42a851351ee594507f5f790a740884)",
+ "faultEvents": [
+  {
+   "at": "2026-10-31T08:05:20.906474+00:00",
+   "event": "started",
+   "mode": "pass"
+  },
+  {
+   "at": "2026-10-31T08:14:29.224036+00:00",
+   "event": "mode",
+   "mode": "drop-next",
+   "previous": "pass"
+  },
+  {
+   "at": "2026-10-31T08:15:00.266497+00:00",
+   "event": "started",
+   "mode": "pass"
+  },
+  {
+   "at": "2026-10-31T08:15:13.524600+00:00",
+   "event": "mode",
+   "mode": "drop-next",
+   "previous": "pass"
+  },
+  {
+   "at": "2026-10-31T08:15:15.417425+00:00",
+   "event": "response-dropped",
+   "mode": "drop-next",
+   "requestBytes": 3379,
+   "host": "bowerws2-dce-aet2.australiaeast-1.ingest.monitor.azure.com"
+  },
+  {
+   "at": "2026-10-31T08:15:15.426461+00:00",
+   "event": "mode",
+   "mode": "pass",
+   "previous": "drop-next"
+  },
+  {
+   "at": "2026-10-31T08:17:45.377909+00:00",
+   "event": "mode",
+   "mode": "drop-next",
+   "previous": "pass"
+  },
+  {
+   "at": "2026-10-31T08:17:46.618325+00:00",
+   "event": "response-dropped",
+   "mode": "drop-next",
+   "requestBytes": 4413,
+   "host": "bowerws2-dce-aet2.australiaeast-1.ingest.monitor.azure.com"
+  },
+  {
+   "at": "2026-10-31T08:17:46.618424+00:00",
+   "event": "mode",
+   "mode": "pass",
+   "previous": "drop-next"
+  },
+  {
+   "at": "2026-10-31T08:19:18.086566+00:00",
+   "event": "mode",
+   "mode": "drop-next-then-outage",
+   "previous": "pass"
+  },
+  {
+   "at": "2026-10-31T08:19:19.314980+00:00",
+   "event": "response-dropped",
+   "mode": "drop-next-then-outage",
+   "requestBytes": 4418,
+   "host": "bowerws2-dce-aet2.australiaeast-1.ingest.monitor.azure.com"
+  },
+  {
+   "at": "2026-10-31T08:19:19.315057+00:00",
+   "event": "mode",
+   "mode": "outage",
+   "previous": "drop-next-then-outage"
+  },
+  {
+   "at": "2026-10-31T09:30:01.061033+00:00",
+   "event": "mode",
+   "mode": "pass",
+   "previous": "outage"
+  }
+ ],
+ "refusedTunnelsDuringOutage": 503,
+ "outage": {
+  "startedAt": "2026-10-31T08:19:19.315057+00:00",
+  "endedAt": "2026-10-31T09:30:01.061033+00:00",
+  "seconds": 4241.746
+ },
+ "note": "Proxy log restarted at 08:15:00 after the first drop-next attempt did not trigger (8,192-byte request threshold above the compressed request size); the log is appended across restarts."
+}

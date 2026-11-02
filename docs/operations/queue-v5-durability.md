@@ -147,7 +147,8 @@ a blocked filesystem or an adapter that ignores the token cannot be made respons
 by this setting. A request may reach the destination before its response is lost or
 cancelled: replay remains at least once, not exactly once. Reconcile by event identity
 and measure duplicates at the destination; lease fencing protects queue state, not
-external side effects.
+external side effects. Sentinel queries and rules should use the replay-safe
+[`BowerSecurityEvents` parser and rules](../production-readiness/02-replay-safe-detections.md).
 
 For qualification of the 120-second crash-recovery target, the candidate profile is
 a 90-second lease and 60-second output timeout. Set **both** environment variables.

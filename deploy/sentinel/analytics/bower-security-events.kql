@@ -1,0 +1,33 @@
+// BowerSecurityEvents: one row per Bower security event, with delivery replays collapsed.
+// Bower delivers at least once. Every replay path re-sends the stored queue row, so the
+// copies share the collector-stamped (CollectorId, EventId): an ambiguous Logs Ingestion
+// acknowledgement (accepted, response lost), a crash before the acknowledgement commit,
+// a restored queue backup and a dead-letter replay. A source resend (RELP or TCP syslog
+// after a collector restart, a WEC re-read) of a record whose queue row was lost or
+// purged gets the same source-computed EventId. `bower archive replay` must go through a collector with
+// the original BOWER_COLLECTOR_ID (a collector with another id refuses it), so it keeps
+// the same identity too. Labels never change the identity: producers control them.
+// The first copy is kept, so a later row (replayed, or sent by a producer that reused an
+// EventId) never replaces content that detections already evaluated.
+//   BowerFirstIngested  ingestion_time() of the first copy. Detections use it to evaluate
+//                       a late event once, when it first arrived.
+//   BowerLastIngested   ingestion_time() of the latest copy.
+//   BowerCopies         rows that share the identity (1 = no replay).
+//   BowerEventTime      the event time Bower sent. Azure Monitor rewrites TimeGenerated
+//                       to the receive time when it is more than two days old; the
+//                       original survives in RawEnvelope.timeGenerated.
+//   BowerTimeRewritten  true when TimeGenerated no longer equals the sent event time.
+// Collector health records and synthetic canaries are operational signals, not security
+// events: deploy/sentinel/monitoring queries them from BowerSecurity_CL directly.
+// The caller's time range still filters TimeGenerated. All copies of an event share
+// TimeGenerated unless Azure rewrote it, so a range keeps or drops them together.
+// Count events with count() after this function, never dcount() on the raw table:
+// dcount() is an estimate.
+BowerSecurity_CL
+| where EventType !in ("collector_health", "collector_canary")
+| extend BowerIngested = ingestion_time()
+| summarize arg_min(BowerIngested, *), BowerLastIngested = max(BowerIngested), BowerCopies = count()
+    by CollectorId, EventId
+| project-rename BowerFirstIngested = BowerIngested
+| extend BowerEventTime = coalesce(todatetime(RawEnvelope.timeGenerated), TimeGenerated)
+| extend BowerTimeRewritten = BowerEventTime != TimeGenerated

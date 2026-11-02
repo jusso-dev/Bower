@@ -296,7 +296,7 @@ static int WriteHelp()
           bower archive create --archive DIR [--database FILE] [--collector-id ID]
           bower archive verify --archive DIR [--anchor SEQUENCE:HASH]
           bower archive replay --archive DIR --collector-url URL [--from ISO] [--to ISO]
-                               [--event-type TYPE]... [--dry-run]
+                               [--event-type TYPE]... [--collector-id ID] [--dry-run]
           bower sources check --expectations FILE [--database FILE]
           bower tap [--collector URL] [--stage redacted|decided|queued] [--source APP] [--event-type TYPE]
                     [--limit N] [--duration SECONDS] [--sample N]   (post-redaction JSON lines on stdout)

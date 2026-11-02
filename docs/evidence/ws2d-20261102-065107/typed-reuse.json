@@ -1,0 +1,42 @@
+[
+ {
+  "Check": "auth: canonical rows",
+  "N": 17
+ },
+ {
+  "Check": "auth: typed rows",
+  "N": 18
+ },
+ {
+  "Check": "auth: typed rows differing from canonical",
+  "N": 18
+ },
+ {
+  "Check": "deny: typed rows differing from canonical",
+  "N": 44
+ },
+ {
+  "Check": "reused id as auth: canonical",
+  "N": 0
+ },
+ {
+  "Check": "reused id as auth: typed (head)",
+  "N": 0
+ },
+ {
+  "Check": "reused id as auth: typed (previous, filter first)",
+  "N": 1
+ },
+ {
+  "Check": "reused id as deny: canonical copies",
+  "N": 2
+ },
+ {
+  "Check": "reused id as deny: typed (head) copies",
+  "N": 2
+ },
+ {
+  "Check": "reused id as deny: typed (previous) copies",
+  "N": 1
+ }
+]

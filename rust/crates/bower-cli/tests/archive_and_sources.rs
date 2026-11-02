@@ -408,6 +408,8 @@ fn archive_replay_posts_labelled_events_and_stops_on_refusal() {
         request.contains(r#""labels":{"team":"a","bowerReplay":"archive"}"#),
         "{request}"
     );
+    // No collector block in the archived envelope: no origin is invented.
+    assert!(!request.contains("bowerReplayCollectorId"), "{request}");
     assert!(!run.stdout.contains("payload-"));
 
     let unreachable = bower(&[
@@ -552,4 +554,187 @@ fn help_lists_new_commands() {
         run.stdout
             .contains("  bower sources check --expectations FILE [--database FILE]\n")
     );
+}
+
+/// Answers `count` requests: 202 when the replay label names `edge-a` or is absent,
+/// otherwise 400 with the collector's mismatch reason. Returns the request bodies.
+fn replay_collector(count: usize) -> (String, std::thread::JoinHandle<Vec<String>>) {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = format!("http://{}", listener.local_addr().unwrap());
+    let handle = std::thread::spawn(move || {
+        let mut bodies = Vec::new();
+        for _ in 0..count {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0u8; 8192];
+            let body = loop {
+                let read = stream.read(&mut buffer).unwrap();
+                request.extend_from_slice(&buffer[..read]);
+                let text = String::from_utf8_lossy(&request).into_owned();
+                if let Some(split) = text.find("\r\n\r\n") {
+                    let length = text[..split]
+                        .lines()
+                        .find_map(|line| {
+                            let (name, value) = line.split_once(':')?;
+                            name.eq_ignore_ascii_case("content-length")
+                                .then(|| value.trim().parse::<usize>().ok())?
+                        })
+                        .unwrap_or(0);
+                    if request.len() >= split + 4 + length {
+                        break text[split + 4..].to_owned();
+                    }
+                }
+            };
+            let refused = body.contains("bowerReplayCollectorId")
+                && !body.contains(r#""bowerReplayCollectorId":"edge-a""#);
+            let (status, reply) = if refused {
+                (
+                    "400 Bad Request",
+                    r#"{"reasons":["archive-replay-collector-mismatch"]}"#,
+                )
+            } else {
+                ("202 Accepted", r#"{"decision":"accept"}"#)
+            };
+            write!(
+                stream,
+                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                reply.len()
+            )
+            .unwrap();
+            bodies.push(body);
+        }
+        bodies
+    });
+    (address, handle)
+}
+
+fn archive_with_collectors(directory: &Path) -> String {
+    let database = directory.join("queue.db");
+    let store = SqliteEventStore::new(&database, 10 * 1024 * 1024, None).unwrap();
+    store.initialize().unwrap();
+    // e0: stamped edge-a with a forged origin label; e1: stamped edge-b; e2: no collector
+    // block but a forged label.
+    for (index, collector, labels) in [
+        (
+            0,
+            r#","collector":{"id":"edge-a"}"#,
+            r#"{"bowerReplayCollectorId":"attacker"}"#,
+        ),
+        (1, r#","collector":{"id":"edge-b"}"#, r#"{"team":"b"}"#),
+        (2, "", r#"{"bowerReplayCollectorId":"forged"}"#),
+    ] {
+        let id = format!("c{index}");
+        store
+            .enqueue(&QueuedEvent {
+                event_id: id.clone(),
+                fingerprint: format!("fp-{id}"),
+                payload: format!(
+                    r#"{{"schemaVersion":"1.0.0","eventId":"{id}","timeGenerated":"2026-05-01T10:2{index}:00+00:00","eventType":"authentication_failure","labels":{labels}{collector}}}"#
+                ),
+                received_at: bower_contracts::time::parse("2026-05-01T10:20:30+00:00").unwrap(),
+                state: QueueState::Queued,
+                delivery_attempts: 0,
+                lease_token: None,
+                suppression: None,
+            })
+            .unwrap();
+    }
+    let archive = directory.join("archive").to_str().unwrap().to_owned();
+    let create = bower(&[
+        "archive",
+        "create",
+        "--archive",
+        &archive,
+        "--database",
+        database.to_str().unwrap(),
+    ]);
+    assert_eq!(create.code, 0, "{}", create.stderr);
+    archive
+}
+
+#[test]
+fn archive_replay_labels_the_stamped_collector_and_skips_mismatches_per_event() {
+    // Port of ArchiveReplay_LabelsTheStampedCollectorAndSkipsMismatchesPerEvent.
+    let directory = tempfile::tempdir().unwrap();
+    let archive = archive_with_collectors(directory.path());
+    let (address, server) = replay_collector(3);
+    let run = bower(&[
+        "archive",
+        "replay",
+        "--archive",
+        &archive,
+        "--collector-url",
+        &address,
+    ]);
+    let bodies = server.join().unwrap();
+
+    // A refused event is skipped, the replay goes on, and the exit code reports it.
+    assert_eq!(run.code, 2, "{}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "{\n  \"selected\": 3,\n  \"dryRun\": false,\n  \"responses\": {\n    \"202\": 2,\n    \"collector-mismatch\": 1\n  }\n}\n"
+    );
+    assert!(run.stderr.contains("1 event(s) skipped"), "{}", run.stderr);
+    // The forged label is replaced by the stamped id, or removed without one.
+    assert!(
+        bodies[0].contains(r#""bowerReplayCollectorId":"edge-a""#),
+        "{}",
+        bodies[0]
+    );
+    assert!(!bodies[0].contains("attacker"));
+    assert!(
+        bodies[1].contains(r#""bowerReplayCollectorId":"edge-b""#),
+        "{}",
+        bodies[1]
+    );
+    assert!(
+        !bodies[2].contains("bowerReplayCollectorId"),
+        "{}",
+        bodies[2]
+    );
+    assert!(
+        bodies
+            .iter()
+            .all(|body| body.contains(r#""bowerReplay":"archive""#))
+    );
+}
+
+#[test]
+fn archive_replay_collector_id_selects_one_collectors_slice() {
+    // Port of ArchiveReplay_CollectorIdSelectsOneCollectorsSlice.
+    let directory = tempfile::tempdir().unwrap();
+    let archive = archive_with_collectors(directory.path());
+    let dry = bower(&[
+        "archive",
+        "replay",
+        "--archive",
+        &archive,
+        "--collector-url",
+        "http://127.0.0.1:9",
+        "--collector-id",
+        "edge-b",
+        "--dry-run",
+    ]);
+    assert_eq!(dry.code, 0, "{}", dry.stderr);
+    assert!(dry.stdout.contains("\"selected\": 1"), "{}", dry.stdout);
+
+    let (address, server) = replay_collector(1);
+    let run = bower(&[
+        "archive",
+        "replay",
+        "--archive",
+        &archive,
+        "--collector-url",
+        &address,
+        "--collector-id",
+        "edge-a",
+    ]);
+    let bodies = server.join().unwrap();
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        "{\n  \"selected\": 1,\n  \"dryRun\": false,\n  \"responses\": {\n    \"202\": 1\n  }\n}\n"
+    );
+    assert!(bodies[0].contains(r#""eventId":"c0""#));
 }

@@ -798,28 +798,67 @@ BowerSecurity_CL
 When destination data was lost or a workspace restored, replay from the
 [verified archive](../operations/suppression-archive-and-source-silence.md#archive-and-replay)
 through a **separate, loopback-only replay collector with its own queue** (the original
-queue would answer duplicates). Each replayed event carries `Labels.bowerReplay = "archive"`
-and the replay collector's `CollectorId`.
+queue would answer duplicates) and **the original collector's `BOWER_COLLECTOR_ID`**. Each
+replayed event carries `Labels.bowerReplay = "archive"`, `Labels.bowerReplayCollectorId`
+(the archived envelope's collector) and the original `CollectorId`, so
+[`BowerSecurityEvents`](02-replay-safe-detections.md) collapses it with the original
+delivery. A collector with another id refuses that event (`archive-replay-collector-mismatch`,
+nothing stored); `bower archive replay` counts it as `collector-mismatch`, continues with
+the remaining events and exits 2 at the end.
 
 1. Record intent: operator, change reference, window, event types, `bower archive verify`
    output (head sequence and hash), and a `--dry-run` count.
-2. Start the replay collector (`BOWER_COLLECTOR_ID=<id>-replay`, `BOWER_LISTEN_URL=http://127.0.0.1:4329`,
-   its own `BOWER_QUEUE_PATH`, the same output and packs, `BOWER_SINGLE_TRUST_DOMAIN=true`
-   on loopback only).
+2. Start the replay collector with the **same** id as the archived collector
+   (`BOWER_COLLECTOR_ID` from `bower.env`, otherwise the `collector-id` file beside the
+   original `queue.db`), `BOWER_LISTEN_URL=http://127.0.0.1:4329`, its own
+   `BOWER_QUEUE_PATH`, the same output and packs, `BOWER_SINGLE_TRUST_DOMAIN=true` on
+   loopback only, no management enrolment and no health records
+   (`BOWER_HEALTH_RECORD_INTERVAL_SECONDS` unset), so fleet views see one collector.
 3. Inject the collector token through your approved secret mechanism, then run
-   `bower archive replay --archive <dir> --collector-url http://127.0.0.1:4329 --from <ISO> --to <ISO> --event-type <type>`.
+   `bower archive replay --archive <dir> --collector-url http://127.0.0.1:4329 --from <ISO> --to <ISO> --event-type <type> --collector-id <original id>`.
+   `--collector-id` excludes events stamped by other collectors during selection, so they
+   are not posted and never count as `collector-mismatch`; replay each id's slice through
+   a replay collector with that id. Without `--collector-id`, an event from another
+   collector is refused by the replay collector, skipped as `collector-mismatch`, and the
+   CLI exits 2 after finishing. To test that path, replay without `--collector-id`
+   through a collector configured with a different id.
 4. Record the outcome (CLI summary: `selected`, responses by status code). Stop the replay
    collector when its queue is empty.
-5. Verify original and replayed identities against the audit manifest. The replayed copy
-   has a different `CollectorId`, so `by CollectorId, EventId` does not collapse it
-   (measured: 238 rows instead of 119). `EventId` alone is also unsafe as a general
-   deduplication key because different collectors can use the same ID. Keep these copies
-   visible until a trusted origin-aware replay identity has been designed and qualified.
+5. Verify every replayed identity from the audit manifest individually: each
+   `(CollectorId, EventId)` must be present in `BowerSecurityEvents`. Require
+   `BowerCopies = 2` only for identities whose original row is still in the workspace;
+   after a data loss the replay is the only copy and `BowerCopies = 1` is the success
+   case. `EventId` alone is unsafe as a general deduplication key because different
+   collectors can use the same ID.
+
+   ```kusto
+   let replayed = datatable(CollectorId: string, EventId: string) [ /* from the audit manifest */ ];
+   let replayStarted = datetime(/* when the replay began */);
+   replayed
+   | join kind=leftouter (BowerSecurityEvents
+       | where BowerLastIngested >= replayStarted
+       | project CollectorId, EventId, BowerCopies) on CollectorId, EventId
+   | extend Present = isnotempty(EventId1)
+   | summarize Replayed = count(), Missing = countif(not(Present)), WithOriginal = countif(BowerCopies >= 2)
+   ```
+
+   Filter on `BowerLastIngested` (the replay's arrival), never on `TimeGenerated`: the
+   function keeps the original's `TimeGenerated`, which can be far older than the
+   replay. Set the query's time range (the portal time picker or the API `timespan`) to
+   start at or before the replay's `--from` (the oldest replayed event time) and end
+   now; the function only sees rows whose `TimeGenerated` is inside that range, so a
+   shorter range hides both the original and the replay.
+
+   Pass: `Missing == 0`, and `WithOriginal` equals the number of replayed identities
+   whose original you expected to survive.
 
 Drill result: 119 events selected and accepted (HTTP 202), all delivered; every `EventId`
 had exactly 2 rows (original and replay), the two identity sets had the same SHA-256
-digest. Grouping by `EventId` returned 119 for this isolated fixture only; it does not
-establish cross-collector uniqueness. Replay labels are producer-supplied and can be
+digest. That drill ran the replay collector as `ws6-linux-replay`, so grouping by
+`CollectorId, EventId` returned 238 instead of 119; that is why the replay collector now
+must keep the original id and refuses otherwise. The replay-safe detections campaign
+re-tested archive replay with the original id: the copies collapsed exactly
+([evidence](02-replay-safe-detections.md#how-we-tested-this)). Replay labels are producer-supplied and can be
 forged; direct DCR writers can also forge `CollectorId`. Restrict DCR writers and do not
 treat labels or collector IDs as authenticated origin proof. The freshness rule currently
 excludes records marked `Labels.bowerReplay`; a forged label can hide a source from that

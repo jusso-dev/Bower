@@ -1,0 +1,21 @@
+// BowerSecurityEventsOfType(eventTypes: dynamic): BowerSecurityEvents for the listed event
+// types, for scheduled rules. The first copy is chosen exactly as BowerSecurityEvents
+// chooses it: over every row of the identity (CollectorId, EventId), whatever its type,
+// so an EventId reused with another event type picks the same winner; only then are the
+// winners filtered by type. To stay cheap it collapses only identities that have a row of
+// a listed type, and drops the large dynamic columns (RawEnvelope, Attributes, Target,
+// Change, Labels, PrivacyDetected) first; BowerEventTime is read from RawEnvelope before.
+let identities = BowerSecurity_CL
+    | where EventType in (eventTypes)
+    | distinct CollectorId, EventId;
+// ingestion_time() is read before the join: it is null on a join's output rows.
+BowerSecurity_CL
+| where EventType !in ("collector_health", "collector_canary")
+| extend BowerIngested = ingestion_time(), BowerEventTime = coalesce(todatetime(RawEnvelope.timeGenerated), TimeGenerated)
+| project-away RawEnvelope, Attributes, Target, Change, Labels, PrivacyDetected
+| join kind=leftsemi identities on CollectorId, EventId
+| summarize arg_min(BowerIngested, *), BowerLastIngested = max(BowerIngested), BowerCopies = count()
+    by CollectorId, EventId
+| where EventType in (eventTypes)
+| project-rename BowerFirstIngested = BowerIngested
+| extend BowerTimeRewritten = BowerEventTime != TimeGenerated

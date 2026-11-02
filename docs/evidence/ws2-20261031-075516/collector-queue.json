@@ -1,0 +1,39 @@
+{
+ "collectorStatus": {
+  "status": "healthy",
+  "queue": {
+   "queued": 0,
+   "retrying": 0,
+   "uploading": 0,
+   "delivered": 300,
+   "deadLettered": 0,
+   "totalBytes": 344489,
+   "undeliveredBytes": 0,
+   "oldestUndelivered": null
+  },
+  "delivery": {
+   "outputId": "azure-logs-ingestion",
+   "limit": 2,
+   "minimumLimit": 1,
+   "maximumLimit": 4,
+   "inFlight": 0,
+   "latencyEwmaMilliseconds": 184,
+   "requests": 392,
+   "throttles": 0,
+   "serverErrors": 0,
+   "timeouts": 388,
+   "latencySpikes": 0,
+   "decreases": 2,
+   "increases": 1,
+   "pauses": 0,
+   "processLocalPausedUntil": null
+  }
+ },
+ "queueStates": [
+  {
+   "state": 3,
+   "events": 300,
+   "withFailureCode": 0
+  }
+ ]
+}

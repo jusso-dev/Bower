@@ -1,0 +1,12 @@
+[
+ {
+  "CollectorId": "ws2c-direct",
+  "LateEvents": 5,
+  "RewrittenTimes": 2,
+  "OldestEvent": "2026-10-30T02:47:42.353173Z",
+  "MaxDeliveryDelay": "3.00:06:19.1434394",
+  "EventTypes": "[\"authentication_failure\"]",
+  "WindowStart": "2026-11-02T01:55:00Z",
+  "WindowEnd": "2026-11-02T02:55:00Z"
+ }
+]
