@@ -115,6 +115,23 @@ class FaultProxyTests(unittest.IsolatedAsyncioTestCase):
         writer.close()
         other_writer.close()
 
+    async def test_outage_starting_while_connecting_refuses_the_tunnel(self):
+        original = fault_proxy.asyncio.open_connection
+
+        async def connect_during_outage(*args, **kwargs):
+            # The outage begins while this tunnel connects and is not yet registered.
+            self.proxy.set_mode("outage")
+            return await original(*args, **kwargs)
+
+        fault_proxy.asyncio.open_connection = connect_during_outage
+        try:
+            _, writer, status = await self.tunnel()
+        finally:
+            fault_proxy.asyncio.open_connection = original
+        self.assertIn(b"503", status)
+        self.assertEqual(0, self.received)
+        writer.close()
+
 
 if __name__ == "__main__":
     unittest.main()

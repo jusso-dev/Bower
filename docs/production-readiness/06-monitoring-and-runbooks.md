@@ -816,8 +816,12 @@ the remaining events and exits 2 at the end.
    (`BOWER_HEALTH_RECORD_INTERVAL_SECONDS` unset), so fleet views see one collector.
 3. Inject the collector token through your approved secret mechanism, then run
    `bower archive replay --archive <dir> --collector-url http://127.0.0.1:4329 --from <ISO> --to <ISO> --event-type <type> --collector-id <original id>`.
-   An event from another collector is skipped as `collector-mismatch` (exit 2); replay
-   each id's slice through a replay collector with that id.
+   `--collector-id` excludes events stamped by other collectors during selection, so they
+   are not posted and never count as `collector-mismatch`; replay each id's slice through
+   a replay collector with that id. Without `--collector-id`, an event from another
+   collector is refused by the replay collector, skipped as `collector-mismatch`, and the
+   CLI exits 2 after finishing. To test that path, replay without `--collector-id`
+   through a collector configured with a different id.
 4. Record the outcome (CLI summary: `selected`, responses by status code). Stop the replay
    collector when its queue is empty.
 5. Verify every replayed identity from the audit manifest individually: each

@@ -82,6 +82,14 @@ class Proxy:
             writer.write(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
             writer.close()
             return
+        # An outage may have started while connecting; this tunnel was not yet registered,
+        # so the outage transition could not close it.
+        if self.mode == "outage":
+            upstream_writer.close()
+            self.record("refused", tunnel=number, host=host)
+            writer.write(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n")
+            writer.close()
+            return
         writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         await writer.drain()
         ingestion = host.endswith(self.suffix)

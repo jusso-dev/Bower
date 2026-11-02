@@ -19,8 +19,9 @@ let late = BowerSecurity_CL
     | extend BowerIngested = ingestion_time()
     | where BowerIngested >= windowStart and BowerIngested < windowEnd
     | extend BowerEventTime = coalesce(todatetime(RawEnvelope.timeGenerated), TimeGenerated)
-    | where BowerIngested - BowerEventTime > maxDelay or BowerEventTime != TimeGenerated
-    | summarize arg_min(BowerIngested, BowerEventTime, TimeGenerated, EventType) by CollectorId, EventId;
+    // Collapse first: an on-time first copy in the slot must not hide behind a late replay.
+    | summarize arg_min(BowerIngested, BowerEventTime, TimeGenerated, EventType) by CollectorId, EventId
+    | where BowerIngested - BowerEventTime > maxDelay or BowerEventTime != TimeGenerated;
 // A copy ingested before the slot means the candidate is a replay, not a late event,
 // even when Azure rewrote the replay's TimeGenerated and the original keeps an old one.
 // The rule looks back 14 days (the Sentinel maximum) for that copy.
