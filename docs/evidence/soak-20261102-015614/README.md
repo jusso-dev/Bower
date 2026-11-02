@@ -43,3 +43,15 @@ emits the original id (column 4), and it was redeployed to the DC before the soa
 Alert state at smoke: `syslog-tls-expiry` fired at 02:36:41Z, before the soak and before any
 traffic. It was evaluated on health records that still carried the 2-day lab certificates
 replaced at 02:32Z. It is tracked separately and is not hidden.
+
+## Finding during the soak: the shipped TLS-expiry alert fires on a RELP listener without a CRL
+
+`bower-soak-20261102-015614-syslog-tls-expiry` fired at 02:36:41Z, before the smoke. It was
+still `Fired` at 04:08Z with valid 30-day certificates. Run read-only with the verifier at 04:08Z,
+the rule query returns `syslog:a13:tls-metadata-unknown` for the Linux collector:
+server certificate `2026-12-02T02:32:26Z`, client CA `2026-12-03T02:32:26Z`,
+`RevocationListNextUpdate` null. The qualified RELP profile configures no client revocation
+list. The query reads that missing optional date as unknown TLS metadata and alerts for as long as
+the listener runs. The health record does not say whether a CRL is configured. Criterion 5
+(no alerts) therefore cannot pass with the alert set as shipped. This is reported as found;
+the collector was not reconfigured mid-soak, which would have restarted it.
