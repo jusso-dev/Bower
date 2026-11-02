@@ -87,7 +87,7 @@ def main():
     plan_hash = os.environ['BOWER_PLAN_SHA256']
     start = float(os.environ['BOWER_SCOPE_START_EPOCH'])
     end = float(os.environ['BOWER_SCOPE_END_EPOCH'])
-    if (not re.fullmatch(r'bower-(?:ws6|fw)-\d{8}-\d{6}', run)
+    if (not re.fullmatch(r'bower-(?:ws6|fw|soak)-\d{8}-\d{6}', run)
             or not re.fullmatch(r'[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]', bucket)
             or not re.fullmatch(r'[ab]-[a-z0-9-]+', scenario)
             or not re.fullmatch(r'[0-9a-f]{64}', plan_hash)

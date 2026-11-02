@@ -53,7 +53,7 @@ def fetch_artifacts(role, required):
     run = os.environ["BOWER_LAB_RUN"]
     bucket = os.environ["BOWER_LAB_BUCKET"]
     expected_manifest = os.environ["BOWER_ARTIFACT_MANIFEST_SHA256"]
-    if os.geteuid() != 0 or not re.fullmatch(r"bower-(?:ws6|fw)-\d{8}-\d{6}", run):
+    if os.geteuid() != 0 or not re.fullmatch(r"bower-(?:ws6|fw|soak)-\d{8}-\d{6}", run):
         fail("not-an-owned-root-drill")
     if not re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", bucket):
         fail("invalid-artifact-bucket")

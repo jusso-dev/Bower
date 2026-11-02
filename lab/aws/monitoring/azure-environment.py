@@ -26,7 +26,7 @@ READER_ROLE = '73c42c96-874c-492b-b04d-ab87d138a893'
 ROLES = ('ingest', 'verifier')
 GRAPH_DELETED = 'https://graph.microsoft.com/v1.0/directory/deletedItems/'
 # A generated name, or the owning AWS run's id so Azure resources share its RunId.
-RUN_PATTERN = r'bower-val-\d{12}-[0-9a-f]{8}|bower-(?:ws6|fw)-\d{8}-\d{6}'
+RUN_PATTERN = r'bower-val-\d{12}-[0-9a-f]{8}|bower-(?:ws6|fw|soak)-\d{8}-\d{6}'
 
 
 class NotFoundError(RuntimeError):

@@ -53,7 +53,7 @@ def fetch_artifacts(role, required):
     run = os.environ["BOWER_LAB_RUN"]
     bucket = os.environ["BOWER_LAB_BUCKET"]
     expected_manifest = os.environ["BOWER_ARTIFACT_MANIFEST_SHA256"]
-    if os.geteuid() != 0 or not re.fullmatch(r"bower-(?:ws6|fw)-\d{8}-\d{6}", run):
+    if os.geteuid() != 0 or not re.fullmatch(r"bower-(?:ws6|fw|soak)-\d{8}-\d{6}", run):
         fail("not-an-owned-root-drill")
     if not re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", bucket):
         fail("invalid-artifact-bucket")
@@ -228,6 +228,13 @@ def wait_for_collector():
         time.sleep(2)
     fail("collector-health-not-ready")
 
+# tarball (default): the native publish output under /opt/bower/releases with a lab unit.
+# rpm: the CI-built package and its packaged bower.service (the soak installs from main).
+package = os.environ.get("BOWER_COLLECTOR_PACKAGE", "tarball")
+if package not in ("tarball", "rpm"):
+    fail("unsupported-collector-package")
+if package == "rpm":
+    REQUIRED["collector.rpm"] = REQUIRED.pop("collector.tar.gz")
 stage, run, manifest_hash = fetch_artifacts("collector", REQUIRED)
 peer = private_ip(os.environ["BOWER_SYSLOG_SENDER_IP"])
 # tls (default) or relp: the same mutual-TLS material on listener a13, port 6514.
@@ -238,6 +245,10 @@ if protocol not in ("tls", "relp"):
 queue_cap = os.environ.get("BOWER_QUEUE_MAX_BYTES", "")
 if queue_cap and (not re.fullmatch(r"[0-9]{8,10}", queue_cap) or not 16777216 <= int(queue_cap) <= 1073741824):
     fail("invalid-queue-cap")
+# Optional acknowledged-event retention (hours) so the hourly retention job prunes in long runs.
+retention = os.environ.get("BOWER_QUEUE_RETENTION_HOURS", "")
+if retention and (not re.fullmatch(r"[0-9]{1,4}", retention) or not 1 <= int(retention) <= 2160):
+    fail("invalid-queue-retention")
 destination = destination_environment((stage / "sentinel.env").read_text())
 existing_env = Path("/etc/bower/bower.env")
 if existing_env.exists():
@@ -246,21 +257,27 @@ if existing_env.exists():
         if key in existing and existing[key] != destination.get(key):
             fail("refusing-to-change-existing-sentinel-destination")
 verify_certificate(stage, "server.pem", "server-key.pem", "sslserver", "collector-a.bower.lab")
-validate_archive(stage / "collector.tar.gz")
+if package == "tarball":
+    validate_archive(stage / "collector.tar.gz")
 verify_run_marker(run, "collector")
 command("dnf", "-y", "-q", "install", "libicu", "nftables", "tar", "gzip")
-if subprocess.run(["id", "bower"], capture_output=True).returncode:
-    command("useradd", "--system", "--home-dir", "/var/lib/bower", "--shell", "/sbin/nologin", "bower")
-for directory in ("/opt/bower", "/opt/bower/releases"):
-    Path(directory).mkdir(parents=True, exist_ok=True)
-    os.chmod(directory, 0o755)
-release = Path(tempfile.mkdtemp(prefix=run + "-" + manifest_hash[:16] + "-", dir="/opt/bower/releases"))
-os.chmod(release, 0o755)
-command("tar", "--extract", "--gzip", "--file", str(stage / "collector.tar.gz"), "--directory", str(release),
-        "--strip-components=1", "--no-same-owner", "--no-same-permissions")
-for path in release.rglob("*"):
-    os.chmod(path, 0o755 if path.is_dir() else 0o644)
-os.chmod(release / "Bower.Collector", 0o755)
+if package == "rpm":
+    # The package creates the bower user, the directories and enables bower.service.
+    command("dnf", "-y", "-q", "install", str(stage / "collector.rpm"))
+    release = Path("/opt/bower")
+else:
+    if subprocess.run(["id", "bower"], capture_output=True).returncode:
+        command("useradd", "--system", "--home-dir", "/var/lib/bower", "--shell", "/sbin/nologin", "bower")
+    for directory in ("/opt/bower", "/opt/bower/releases"):
+        Path(directory).mkdir(parents=True, exist_ok=True)
+        os.chmod(directory, 0o755)
+    release = Path(tempfile.mkdtemp(prefix=run + "-" + manifest_hash[:16] + "-", dir="/opt/bower/releases"))
+    os.chmod(release, 0o755)
+    command("tar", "--extract", "--gzip", "--file", str(stage / "collector.tar.gz"), "--directory", str(release),
+            "--strip-components=1", "--no-same-owner", "--no-same-permissions")
+    for path in release.rglob("*"):
+        os.chmod(path, 0o755 if path.is_dir() else 0o644)
+    os.chmod(release / "Bower.Collector", 0o755)
 loaded = subprocess.run(["systemctl", "show", "bower.service", "--property=LoadState", "--value"],
                         capture_output=True, text=True)
 if loaded.stdout.strip() != "not-found":
@@ -301,6 +318,8 @@ destination.update({
     "BOWER_HEALTH_RECORD_INTERVAL_SECONDS": "60"})
 if queue_cap:
     destination["BOWER_QUEUE_MAX_BYTES"] = queue_cap
+if retention:
+    destination["BOWER_QUEUE_RETENTION_HOURS"] = retention
 (stage / "bower.env").write_text("".join(key + "=" + value + "\n" for key, value in sorted(destination.items())))
 install_file(stage / "bower.env", existing_env, 0o640, "bower")
 unit = """[Unit]
@@ -337,8 +356,9 @@ ReadWritePaths=/var/lib/bower /var/spool/bower
 [Install]
 WantedBy=multi-user.target
 """.format(release=release)
-(stage / "bower.service").write_text(unit)
-install_file(stage / "bower.service", "/etc/systemd/system/bower.service", 0o644)
+if package == "tarball":
+    (stage / "bower.service").write_text(unit)
+    install_file(stage / "bower.service", "/etc/systemd/system/bower.service", 0o644)
 tool = install_tool(stage)
 with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
     tool.collector_tickets(SimpleNamespace(mode="disable"))
@@ -350,6 +370,8 @@ print(json.dumps({"phase": "firewall-collector-setup", "runId": run, "manifestSh
                   "collectorSha256": hashlib.sha256((release / "Bower.Collector").read_bytes()).hexdigest(),
                   "syslogConfigSha256": hashlib.sha256(Path("/etc/bower/syslog.json").read_bytes()).hexdigest(),
                   "listener": "a13", "protocol": protocol, "port": 6514, "queueMaxBytes": queue_cap or None,
+                  "package": package, "packageVersion": command("rpm", "-q", "bower-collector") if package == "rpm" else None,
+                  "queueRetentionHours": retention or None,
                   "output": "azure-logs-ingestion", "tls13Tickets": 0,
                   "destinationQueryVerified": False}))
 
