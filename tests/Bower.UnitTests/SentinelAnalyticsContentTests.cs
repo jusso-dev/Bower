@@ -244,9 +244,10 @@ public sealed class SentinelAnalyticsContentTests
         Assert.Equal(3, Regex.Count(bicep, "aggregationKind: 'AlertPerResult'"));
         Assert.Contains("groupByEntities: ['IP']", bicep, StringComparison.Ordinal);
         Assert.Contains("param enableRules bool = false", bicep, StringComparison.Ordinal);
-        // The TimeGenerated look-back covers the oldest evaluated bucket of a catch-up run.
+        // The TimeGenerated look-back covers the oldest evaluated bucket of a catch-up run,
+        // including the up-to-one-frequency offset of the grid-anchored window end.
         Assert.Contains(
-            "var queryPeriodMinutes = maxIngestionDelayMinutes + bucketMinutes + catchUpMinutesChecked + settleDelayMinutes + 10",
+            "var queryPeriodMinutes = maxIngestionDelayMinutes + bucketMinutes + catchUpMinutesChecked + settleDelayMinutes + frequencyMinutes + 10",
             bicep,
             StringComparison.Ordinal);
         // Azure Monitor rewrites event times older than two days; the tolerance stays below it.

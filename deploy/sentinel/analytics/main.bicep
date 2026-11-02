@@ -101,9 +101,11 @@ var catchUpMinutesChecked = catchUpMinutes >= (alertVisibilityRuns + 1) * freque
   ? catchUpMinutes
   : fail('catchUpMinutes must be at least (alertVisibilityRuns + 1) x frequencyMinutes, or missed crossings are never retried.')
 
-// TimeGenerated look-back: the oldest bucket a run evaluates, plus settle, catch-up and
-// Sentinel's five-minute scheduling delay with five minutes of margin.
-var queryPeriodMinutes = maxIngestionDelayMinutes + bucketMinutes + catchUpMinutesChecked + settleDelayMinutes + 10
+// TimeGenerated look-back: the oldest bucket a run evaluates, plus settle and catch-up. The
+// window ends on a frequency grid (bin(now() - settle, frequency)), up to one frequency before
+// now() - settle, so the look-back adds one frequency; 10 minutes of margin cover Sentinel's
+// five-minute scheduling delay.
+var queryPeriodMinutes = maxIngestionDelayMinutes + bucketMinutes + catchUpMinutesChecked + settleDelayMinutes + frequencyMinutes + 10
 
 // Each anchor is the rule file's default line; a unit test keeps them present.
 func tune(query string, rule string, scope string, defaultThreshold int, threshold int, frequency int, settle int, catchUp int, maxDelay int, bucket int, spacing int) string =>

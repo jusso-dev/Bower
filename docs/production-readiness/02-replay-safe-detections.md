@@ -283,13 +283,16 @@ All values are `main.bicep` parameters. Each rule file carries the same defaults
 The template derives the **rule look-back** (Sentinel *Lookup data from the last*):
 
 ```text
-queryPeriod = maxDelay + bucket + catchUp + settle + 10 minutes
-            = 360 + 10 + 60 + 5 + 10 = 445 minutes (PT445M) by default
+queryPeriod = maxDelay + bucket + catchUp + settle + frequency + 10 minutes
+            = 360 + 10 + 60 + 5 + 5 + 10 = 450 minutes (PT450M) by default
 ```
 
-The 10 minutes cover Sentinel's built-in five-minute scheduling delay
+The window ends on a frequency grid (`bin(now() - settle, frequency)`), which can be up to
+one `frequency` before `now() - settle`, so the look-back includes one `frequency`. The 10
+minutes cover Sentinel's built-in five-minute scheduling delay
 ([query scheduling](https://learn.microsoft.com/azure/sentinel/scheduled-rules-overview#query-scheduling))
-plus margin.
+plus margin. Without the `frequency` term a rule running every 30 or 60 minutes could miss
+the oldest rows of a retried late bucket.
 
 **The beyond-tolerance monitor** evaluates one non-overlapping slot of first ingestion
 per run (`toleranceFrequencyMinutes`), so each late event is reported once. Its
@@ -390,10 +393,10 @@ its type and payload, so the identity, first copy and copy count are the same as
 
 | Declared outage SLO | Suggested `maxIngestionDelayMinutes` | Resulting `queryPeriod` |
 | --- | --- | --- |
-| 1 hour | 120 | 205 minutes |
-| 4 hours | 360 (default) | 445 minutes |
-| 12 hours | 900 | 985 minutes |
-| 24 hours | 1,680 | 1,765 minutes |
+| 1 hour | 120 | 210 minutes |
+| 4 hours | 360 (default) | 450 minutes |
+| 12 hours | 900 | 990 minutes |
+| 24 hours | 1,680 | 1,770 minutes |
 | More than 47 hours | Not supported: event times are rewritten. Hunt manually after recovery. | n/a |
 
 Collector-side outages count too: a collector that is down while its source keeps
