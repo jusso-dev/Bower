@@ -302,6 +302,39 @@ public sealed class SyslogCollectorTests
     }
 
     [Fact]
+    public async Task Relp_ACriticalVolumeIsNeverAcknowledgedAndTheResendIsQueuedOnceSpaceReturns()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        const long GiB = 1024L * 1024 * 1024;
+        FakeDiskSpaceProbe disk = new(100L * 1024 * 1024, 20 * GiB);
+        await using WebApplication app = await Start(directory, cancellation, disk: disk);
+        SyslogSource source = app.Services.GetRequiredService<SyslogSource>();
+        IDurableEventStore store = app.Services.GetRequiredService<IDurableEventStore>();
+        string frame = Frame("failure", "relp-volume");
+        await using (SyslogRelpTests.Client refused = await SyslogRelpTests.Client.ConnectAsync(source.Endpoints["edge-relp"], cancellation))
+        {
+            await refused.OpenAsync(cancellation);
+            await refused.SendAsync(2, frame, cancellation);
+            // No "2 rsp 200": the sender keeps the message and resends it.
+            Assert.Equal("0 serverclose 0\n", await refused.ReadFrameAsync(cancellation));
+            Assert.Null(await refused.ReadFrameAsync(cancellation));
+        }
+
+        SyslogListenerStatus busy = await WaitFor(source, value => value.RelpBusyCloses == 1, cancellation, "edge-relp");
+        Assert.Equal((0L, 0L), (busy.Queued, busy.RelpAcknowledged));
+        Assert.Equal(0, (await store.GetSnapshotAsync(cancellation)).Queued);
+
+        disk.FreeBytes = 10 * GiB;
+        await Task.Delay(TimeSpan.FromMilliseconds(1_100), cancellation);
+        await using SyslogRelpTests.Client resend = await SyslogRelpTests.Client.ConnectAsync(source.Endpoints["edge-relp"], cancellation);
+        await resend.OpenAsync(cancellation);
+        await resend.SendAsync(2, frame, cancellation);
+        Assert.Equal("2 rsp 6 200 OK\n", await resend.ReadFrameAsync(cancellation));
+        Assert.Equal(1, (await store.GetSnapshotAsync(cancellation)).Queued);
+    }
+
+    [Fact]
     public async Task CriticalFreeSpace_HoldsTheTcpFrameReportsItAndResumesWhenSpaceReturns()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;

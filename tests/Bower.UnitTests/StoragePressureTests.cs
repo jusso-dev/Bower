@@ -655,6 +655,52 @@ public sealed class StoragePressureTests
         return Convert.ToInt64(await command.ExecuteScalarAsync(Cancellation), System.Globalization.CultureInfo.InvariantCulture);
     }
 
+    /// <summary>
+    /// The collector's own health record uses the settlement reserve and is not refused by
+    /// the critical watermark, so storage alerts see a full or critical queue (workstream 6's
+    /// D4 drill: the queue-storage alert stayed silent because records were refused).
+    /// </summary>
+    [Fact]
+    public async Task HealthRecord_IsQueuedWhenNewEventsAreRefusedByTheVolumeOrThePageLimit()
+    {
+        using SqliteTemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        FakeDiskSpaceProbe probe = new(MiB, 20 * GiB);
+        string path = Path.Combine(directory.Path, "queue.db");
+        SqliteEventStore store = new(path, MiB, clock, new StorageGuard(path, new(), probe, clock));
+        await store.InitializeAsync(Cancellation);
+        QueueCapacityExceededException critical = await Assert.ThrowsAsync<QueueCapacityExceededException>(
+            () => store.EnqueueAsync(Event("ordinary"), Cancellation));
+        Assert.Equal(QueueCapacityReasons.StorageCritical, critical.Reason);
+        Assert.True((await store.EnqueueAsync(Event("health-1") with { UsesStorageReserve = true }, Cancellation)).Enqueued);
+
+        probe.FreeBytes = 10 * GiB;
+        clock.Advance(TimeSpan.FromSeconds(1));
+        int index = 0;
+        while (true)
+        {
+            try
+            {
+                await store.EnqueueAsync(Event($"fill-{index++}", 2_000), Cancellation);
+            }
+            catch (QueueCapacityExceededException exception)
+            {
+                Assert.Equal(QueueCapacityReasons.Queue, exception.Reason);
+                break;
+            }
+        }
+
+        Assert.True((await store.EnqueueAsync(Event("health-2") with { UsesStorageReserve = true }, Cancellation)).Enqueued);
+        // The record still leaves room to lease and acknowledge the whole backlog.
+        while (await store.LeaseAsync(500, TimeSpan.FromMinutes(1), Cancellation) is { Count: > 0 } batch)
+        {
+            Assert.Empty(await store.MarkDeliveredBatchAsync(
+                [.. batch.Select(item => item.EventId)], "ack", batch.ToDictionary(item => item.EventId, item => item.LeaseToken!), Cancellation));
+        }
+
+        Assert.Equal(index + 1, (await store.GetSnapshotAsync(Cancellation)).Delivered);
+    }
+
     [Fact]
     public async Task PressureRetention_KeepsAcknowledgementsInsideTheFloor()
     {

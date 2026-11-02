@@ -84,8 +84,11 @@ public sealed partial class ManagementHeartbeatJob(
         DateTimeOffset now = DateTimeOffset.UtcNow;
         QueueStorageStatus? storage = await QueueStorageStatus.CaptureAsync(
             eventStore, snapshot, storagePressure, telemetry, now, cancellationToken);
+        double? pagesUsedPercent = eventStore is Bower.Persistence.IQueuePageUsageSource pageSource
+            ? (await pageSource.GetPageUsageAsync(cancellationToken)).UsedPercent
+            : null;
         string deliveryStatus = DeliveryHealth.Evaluate(settings.OutputType, snapshot,
-            settings.MaximumQueueBytes, now, storage?.IntakePaused ?? false);
+            settings.MaximumQueueBytes, now, storage?.IntakePaused ?? false, pagesUsedPercent);
         // Finished command results stay pending until management acknowledges them.
         IReadOnlyList<CommandResultReport> results = commands?.Ledger.PendingResults() ?? [];
         // Expected applications report as sources so silent ones show in the console.

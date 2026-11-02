@@ -250,30 +250,36 @@ public sealed class StorageGuard
 }
 
 /// <summary>
-/// Physical queue files and SQLite page use. New events stop once pages in use reach
-/// <see cref="IntakeLimitPages"/>; settlement (lease, acknowledgement, retry) may grow the
-/// file up to <see cref="CeilingPages"/> (<c>max_page_count</c>). Retained acknowledged
-/// rows count against both until retention removes them.
+/// Physical queue files and SQLite page use (<see cref="QueuePageUsage"/>). New events stop
+/// once pages in use reach <see cref="IntakeLimitPages"/>; settlement (lease,
+/// acknowledgement, retry) may grow the file up to <see cref="CeilingPages"/>. Retained
+/// acknowledged rows count against both until retention removes them.
 /// </summary>
 public sealed record QueueStorageSnapshot(
     long DatabaseBytes,
     long WalBytes,
     long SharedMemoryBytes,
-    long PageSize,
-    long PageCount,
-    long FreePages,
-    long IntakeLimitPages,
-    long CeilingPages,
+    QueuePageUsage Pages,
     long MaximumUndeliveredBytes,
     long MaximumStorageBytes)
 {
     public long FileBytes => DatabaseBytes + WalBytes + SharedMemoryBytes;
 
+    public long PageSize => Pages.PageSize;
+
+    public long PageCount => Pages.PageCount;
+
+    public long FreePages => Pages.FreeListPages;
+
+    public long IntakeLimitPages => Pages.PageLimit;
+
+    public long CeilingPages => Pages.CeilingPages;
+
     public long UsedPages => Math.Max(0, PageCount - FreePages);
 
     /// <summary>Free pages inside the file: reused by new rows, or released by incremental vacuum.</summary>
-    public long FreeBytes => FreePages * PageSize;
+    public long FreeBytes => Pages.FreeListBytes;
 
-    /// <summary>Pages in use as a share of the intake limit: at 100 new events are refused.</summary>
-    public double PageUtilisationPercent => IntakeLimitPages <= 0 ? 0 : Math.Round(UsedPages * 100.0 / IntakeLimitPages, 2);
+    /// <summary>Pages in use as a share of the intake limit (<see cref="QueuePageUsage.UsedPercent"/>): at 100 new events are refused.</summary>
+    public double PageUtilisationPercent => Pages.UsedPercent;
 }

@@ -27,7 +27,8 @@ public sealed partial class CollectorHealthWorker(
     ILogger<CollectorHealthWorker> logger,
     SyslogSource? syslog = null,
     WindowsEventLogSource? windowsEventLog = null,
-    ManagedPrivacyProfileState? managedPrivacy = null) : BackgroundService
+    ManagedPrivacyProfileState? managedPrivacy = null,
+    QueueStoragePressure? storagePressure = null) : BackgroundService
 {
     private CollectorHealthSample? previous;
     private long sequence;
@@ -78,13 +79,16 @@ public sealed partial class CollectorHealthWorker(
 
         QueueSnapshot snapshot = await queue.GetSnapshotAsync(cancellationToken);
         DateTimeOffset now = clock.GetUtcNow();
+        QueuePageUsage? pages = await QueuePagesAsync(cancellationToken);
+        QueueStorageStatus? storage = await StorageAsync(snapshot, now, cancellationToken);
         CollectorHealthSample sample = new(
             now,
             telemetry.StartedAt,
             ++sequence,
             interval,
             settings.OutputType,
-            DeliveryHealth.Evaluate(settings.OutputType, snapshot, settings.MaximumQueueBytes, now),
+            DeliveryHealth.Evaluate(settings.OutputType, snapshot, settings.MaximumQueueBytes, now,
+                storage?.IntakePaused ?? false, pages?.UsedPercent),
             deliveryActivity.LastSuccessfulDeliveryAt,
             snapshot,
             settings.MaximumQueueBytes,
@@ -94,8 +98,9 @@ public sealed partial class CollectorHealthWorker(
             sourceHealth.Evaluate(),
             syslog?.Snapshot(),
             windowsEventLog?.Snapshot(),
-            await QueuePagesAsync(cancellationToken),
-            deliveryActivity.LastFailure);
+            pages,
+            deliveryActivity.LastFailure,
+            storage);
         string record = CollectorHealthRecord.CreateJson(sample, identity.Id, settings.Environment, previous);
         try
         {
@@ -122,6 +127,18 @@ public sealed partial class CollectorHealthWorker(
         {
             // Capacity refusals are counted in intake metrics; the next record reports them.
             LogRecordRefused(logger);
+            return null;
+        }
+    }
+
+    private async Task<QueueStorageStatus?> StorageAsync(QueueSnapshot snapshot, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await QueueStorageStatus.CaptureAsync(queue, snapshot, storagePressure, telemetry, now, cancellationToken);
+        }
+        catch (Exception exception) when (exception is SqliteException or QueueCapacityExceededException or IOException)
+        {
             return null;
         }
     }

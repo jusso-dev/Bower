@@ -146,7 +146,7 @@ function Sample {
     if ($status) {
         $subscription = @($status.windowsEventLog)[0]
         $row.health = $status.status; $row.storageState = $status.storage.state; $row.intakePaused = $status.storage.intakePaused
-        $row.queueFileBytes = $status.storage.queueFileBytes; $row.pageUtilisation = $status.storage.queuePageUtilisationPercent
+        $row.queueFileBytes = $status.storage.queueFileBytes; $row.pageUtilisation = $status.queuePages.usedPercent
         $row.oldestPendingAge = $status.storage.oldestPendingAgeSeconds; $row.storageRefusals = $status.storage.storageRefusals
         $row.pressurePurged = $status.storage.pressurePurgedEvents; $row.capacityRefusals = $status.intake.capacityRefusals
         $row.queued = $status.queue.queued; $row.uploading = $status.queue.uploading; $row.retrying = $status.queue.retrying

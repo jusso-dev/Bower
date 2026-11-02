@@ -71,8 +71,9 @@ internal sealed record StatusResponse(
     public IReadOnlyList<Bower.Source.WindowsEventLog.WindowsEventSubscriptionStatus>? WindowsEventLog { get; init; }
 
     /// <summary>
-    /// Queue database pages against their limit: in-use bytes, free-list bytes and the page
-    /// limit, so host checks never recompute the limit. Omitted when it cannot be read.
+    /// Queue database pages against the limit at which new events are refused: in-use bytes,
+    /// free-list bytes, the limit and the settlement ceiling, so host checks never recompute
+    /// them. Omitted when it cannot be read.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public StatusQueuePagesResponse? QueuePages { get; init; }
@@ -152,8 +153,14 @@ internal sealed record StatusQueuePagesResponse(
     long FreeListBytes,
     double UsedPercent)
 {
+    /// <summary>Largest size the database may reach while settling a backlog (SQLite max_page_count).</summary>
+    public long CeilingBytes { get; init; }
+
     public static StatusQueuePagesResponse From(Bower.Persistence.QueuePageUsage usage) =>
-        new(usage.PageSize, usage.PageLimitBytes, usage.UsedBytes, usage.FreeListBytes, usage.UsedPercent);
+        new(usage.PageSize, usage.PageLimitBytes, usage.UsedBytes, usage.FreeListBytes, usage.UsedPercent)
+        {
+            CeilingBytes = usage.CeilingBytes
+        };
 }
 
 internal sealed record CollectorRegistration(

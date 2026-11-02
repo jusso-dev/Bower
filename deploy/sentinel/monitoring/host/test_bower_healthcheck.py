@@ -166,6 +166,26 @@ class EvaluateTests(unittest.TestCase):
         verdict, findings, metrics, _ = healthcheck.evaluate({"status": "healthy"}, status(), None, options(), {}, NOW)
         self.assertNotIn("bower_queue_pages_used_percent", metrics)
 
+    def test_queue_volume_watermarks_come_from_the_collector(self):
+        critical = status(storage={"state": "critical", "intakePaused": True, "freeBytes": 104857600,
+                                   "totalBytes": 1073741824, "freePercent": 9.77, "storageRefusals": 12})
+        verdict, findings, metrics, _ = healthcheck.evaluate({"status": "degraded"}, critical, None, options(), {}, NOW)
+        self.assertEqual(healthcheck.CRITICAL, verdict)
+        self.assertIn("queue-volume", codes(findings))
+        self.assertEqual(1, metrics["bower_queue_volume_critical"])
+        self.assertEqual(12, metrics["bower_storage_refusals_total"])
+        warning = status(storage={"state": "warning", "intakePaused": False, "freeBytes": 1, "totalBytes": 2})
+        verdict, findings, _, _ = healthcheck.evaluate({"status": "healthy"}, warning, None, options(), {}, NOW)
+        self.assertEqual(healthcheck.WARNING, verdict)
+        self.assertEqual(["queue-volume"], codes(findings))
+        unknown = status(storage={"state": "unknown", "intakePaused": False})
+        verdict, findings, _, _ = healthcheck.evaluate({"status": "healthy"}, unknown, None, options(), {}, NOW)
+        self.assertEqual(["queue-volume"], codes(findings))
+        normal = status(storage={"state": "normal", "intakePaused": False, "freeBytes": 9, "totalBytes": 10})
+        verdict, findings, metrics, _ = healthcheck.evaluate({"status": "healthy"}, normal, None, options(), {}, NOW)
+        self.assertEqual(healthcheck.OK, verdict)
+        self.assertEqual(0, metrics["bower_queue_volume_critical"])
+
     def test_credential_failure_is_distinct_from_an_unreachable_destination(self):
         failing = status(deliveryActivity={"lastSuccessfulDeliveryAt": "2026-10-31T08:50:00Z",
                                            "lastFailureCode": "destination-azure-credential-failed",

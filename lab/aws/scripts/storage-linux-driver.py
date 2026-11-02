@@ -217,7 +217,7 @@ class Recorder:
             queue = s.get("queue") or {}
             row.update({
                 "storageState": storage.get("state"), "intakePaused": storage.get("intakePaused"),
-                "queueFileBytes": storage.get("queueFileBytes"), "pageUtilisation": storage.get("queuePageUtilisationPercent"),
+                "queueFileBytes": storage.get("queueFileBytes"), "pageUtilisation": (s.get("queuePages") or {}).get("usedPercent"),
                 "queueUtilisation": storage.get("queueUtilisationPercent"), "oldestPendingAge": storage.get("oldestPendingAgeSeconds"),
                 "storageRefusals": storage.get("storageRefusals"), "pressurePurged": storage.get("pressurePurgedEvents"),
                 "capacityRefusals": (s.get("intake") or {}).get("capacityRefusals"),

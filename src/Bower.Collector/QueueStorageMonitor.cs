@@ -39,8 +39,10 @@ public sealed class QueueStoragePressure
 }
 
 /// <summary>
-/// Queue storage for <c>/v1/status</c> and the management heartbeat. Metadata only: sizes,
-/// ratios, ages, states and counters; never paths, payloads or event ids.
+/// Queue volume watermarks, queue files and storage refusals for <c>/v1/status</c>
+/// (<c>storage</c>), the management heartbeat and the <c>collector_health</c> record. Page
+/// use is reported once, in <c>queuePages</c> (<see cref="QueuePageUsage"/>). Metadata only:
+/// sizes, ratios, ages, states and counters; never paths, payloads or event ids.
 /// </summary>
 /// <param name="State"><c>normal</c>, <c>warning</c>, <c>critical</c> or <c>unknown</c> (free space unmeasurable).</param>
 /// <param name="IntakePaused">True while the critical watermark refuses new events.</param>
@@ -59,11 +61,9 @@ public sealed record QueueStorageStatus(
     long QueueFileBytes,
     long QueueDatabaseBytes,
     long QueueWalBytes,
-    long QueueFreePageBytes,
     long QueueMaximumBytes,
     long QueueUndeliveredBytes,
     double QueueUtilisationPercent,
-    double QueuePageUtilisationPercent,
     long? OldestPendingAgeSeconds,
     long PressurePurgedEvents,
     DateTimeOffset? LastPressurePurgeAt,
@@ -104,11 +104,9 @@ public sealed record QueueStorageStatus(
             files.FileBytes,
             files.DatabaseBytes,
             files.WalBytes,
-            files.FreeBytes,
             maximum,
             snapshot.UndeliveredBytes,
             Math.Round(snapshot.UndeliveredBytes * 100.0 / maximum, 2),
-            files.PageUtilisationPercent,
             snapshot.OldestUndelivered is { } oldest ? Math.Max(0, (long)(now - oldest).TotalSeconds) : null,
             pressure?.PurgedEvents ?? 0,
             pressure?.LastPurgeAt,

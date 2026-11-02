@@ -235,6 +235,7 @@ try {
                 queue = @{ queued = 5; retrying = 0; uploading = 0; deadLettered = 2; undeliveredBytes = 100; oldestUndelivered = [datetime]::UtcNow.AddMinutes(-20).ToString('o') }
                 sources = @(@{ application = 'windows-security'; environment = 'production'; state = 'silent' })
                 queuePages = @{ pageSize = 4096; pageLimitBytes = 8388608; usedBytes = 7549747; freeListBytes = 0; usedPercent = 90.0 }
+                storage = @{ state = 'critical'; intakePaused = $true; freeBytes = 104857600; totalBytes = 1073741824; freePercent = 9.77; storageRefusals = 3 }
             }
             $result = Invoke-Check $Shell $collector.Url
         }
@@ -246,6 +247,8 @@ try {
         @($report.findings.code) | Should -Contain 'backlog'
         @($report.findings.code) | Should -Contain 'source-overdue'
         @($report.findings.code) | Should -Contain 'queue-pages'
+        @($report.findings.code) | Should -Contain 'queue-volume'
+        $report.metrics.bower_queue_volume_critical | Should -Be 1
         $report.metrics.bower_queue_undelivered_events | Should -Be 5
     }
 

@@ -305,8 +305,12 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         int payloadBytes = System.Text.Encoding.UTF8.GetByteCount(candidate.Payload);
         CheckStorage();
         // After the duplicate check, so an exact replay is still answered as a duplicate.
-        storage?.ThrowIfCritical();
-        await CheckIntakePagesAsync(connection, transaction, payloadBytes, cancellationToken);
+        if (!candidate.UsesStorageReserve)
+        {
+            storage?.ThrowIfCritical();
+        }
+
+        await CheckIntakePagesAsync(connection, transaction, payloadBytes, candidate.UsesStorageReserve, cancellationToken);
         long currentBytes = await GetUndeliveredBytesAsync(connection, transaction, cancellationToken);
         if (payloadBytes > maximumBytes - currentBytes)
         {
@@ -1015,29 +1019,15 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         return selected.Count;
     }
 
-    /// <summary>Physical queue files and page use. Read-only; never takes the write lock.</summary>
-    public async Task<QueueStorageSnapshot> GetStorageSnapshotAsync(CancellationToken cancellationToken = default)
-    {
-        await using SqliteConnection connection = await OpenAsync(cancellationToken);
-        await using SqliteCommand command = connection.CreateCommand();
-        command.CommandText = "PRAGMA page_size;";
-        long pageSize = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
-        command.CommandText = "PRAGMA page_count;";
-        long pageCount = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
-        command.CommandText = "PRAGMA freelist_count;";
-        long freePages = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
-        return new QueueStorageSnapshot(
+    /// <summary>Physical queue files and page use (<see cref="GetPageUsageAsync"/>). Read-only.</summary>
+    public async Task<QueueStorageSnapshot> GetStorageSnapshotAsync(CancellationToken cancellationToken = default) =>
+        new(
             FileLength(databasePath),
             FileLength(databasePath + "-wal"),
             FileLength(databasePath + "-shm"),
-            pageSize,
-            pageCount,
-            freePages,
-            IntakePageLimit(MaximumStorageBytes / 4 / pageSize, pageSize),
-            SettlementCeilingPages(pageSize),
+            await GetPageUsageAsync(cancellationToken),
             maximumBytes,
             MaximumStorageBytes);
-    }
 
     /// <summary>
     /// Returns up to <paramref name="maximumPages"/> free pages to the file system
@@ -1232,6 +1222,7 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         SqliteConnection connection,
         SqliteTransaction transaction,
         int payloadBytes,
+        bool reserve,
         CancellationToken cancellationToken)
     {
         await using SqliteCommand command = connection.CreateCommand();
@@ -1241,7 +1232,9 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         await reader.ReadAsync(cancellationToken);
         long pageSize = reader.GetInt64(0);
         long used = reader.GetInt64(1) - reader.GetInt64(2);
-        long limit = IntakePageLimit(MaximumStorageBytes / 4 / pageSize, pageSize);
+        long intakeLimit = IntakePageLimit(MaximumStorageBytes / 4 / pageSize, pageSize);
+        // Health records may use the settlement reserve, leaving a quarter of it for settlement.
+        long limit = reserve ? intakeLimit + (SettlementCeilingPages(pageSize) - intakeLimit) * 3 / 4 : intakeLimit;
         // The payload (overflow pages for large events) plus its row, ledger and index entries.
         long needed = (payloadBytes / pageSize) + 8;
         if (used + needed > limit)

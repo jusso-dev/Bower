@@ -4,16 +4,21 @@ using Microsoft.Data.Sqlite;
 namespace Bower.Persistence;
 
 /// <summary>
-/// Read-only page accounting of the queue database. The database cannot grow past
-/// <see cref="PageLimit"/> pages (SQLite <c>max_page_count</c>), so in-use pages, not the
-/// file length, show how close the queue is to "database or disk is full". The file never
-/// shrinks (no vacuum): pages freed by delivery and retention stay in the free list and are
-/// reused first.
+/// Read-only page accounting of the queue database. New events are refused once in-use
+/// pages reach <see cref="PageLimit"/> (85% of <c>BOWER_QUEUE_MAX_BYTES</c> + 4 MiB); the
+/// rest, up to <see cref="CeilingPages"/> (SQLite <c>max_page_count</c>), is kept for
+/// leasing, acknowledgement and retries, which enlarge rows. In-use pages, not the file
+/// length, show how close the queue is to refusing events: pages freed by delivery and
+/// retention stay in the free list and are reused first (or, for queues created with
+/// incremental vacuum, returned to the file system under pressure).
 /// </summary>
-public sealed record QueuePageUsage(long PageSize, long PageCount, long FreeListPages, long PageLimit)
+public sealed record QueuePageUsage(long PageSize, long PageCount, long FreeListPages, long PageLimit, long CeilingPages = 0)
 {
-    /// <summary>Largest size the database file may reach.</summary>
+    /// <summary>In-use bytes at which new events are refused.</summary>
     public long PageLimitBytes => PageLimit * PageSize;
+
+    /// <summary>Largest size the database file may reach (settlement only).</summary>
+    public long CeilingBytes => (CeilingPages > 0 ? CeilingPages : PageLimit) * PageSize;
 
     /// <summary>Pages holding rows, indexes and the ledger.</summary>
     public long UsedBytes => Math.Max(0, PageCount - FreeListPages) * PageSize;
@@ -21,7 +26,7 @@ public sealed record QueuePageUsage(long PageSize, long PageCount, long FreeList
     /// <summary>Free pages inside the file, available for reuse.</summary>
     public long FreeListBytes => FreeListPages * PageSize;
 
-    /// <summary>In-use pages as a share of the page limit, 0-100, one decimal.</summary>
+    /// <summary>In-use pages as a share of <see cref="PageLimit"/>, 0-100, one decimal: at 100 new events are refused.</summary>
     public double UsedPercent => PageLimit <= 0
         ? 0
         : Math.Min(100.0, Math.Round(100.0 * Math.Max(0, PageCount - FreeListPages) / PageLimit, 1));
@@ -36,9 +41,9 @@ public interface IQueuePageUsageSource
 public sealed partial class SqliteEventStore : IQueuePageUsageSource
 {
     /// <summary>
-    /// Reads page size, page count, free-list pages and the effective page limit from SQLite
-    /// on its own connection. Never writes and never takes the write lock; the limit is the
-    /// one the store applies to every connection, so it is read rather than recomputed.
+    /// Reads page size, page count, free-list pages and the effective ceiling from SQLite on
+    /// its own connection; the intake limit is the one every insert checks. Never writes and
+    /// never takes the write lock.
     /// </summary>
     public async Task<QueuePageUsage> GetPageUsageAsync(CancellationToken cancellationToken = default)
     {
@@ -53,7 +58,7 @@ public sealed partial class SqliteEventStore : IQueuePageUsageSource
         long pageSize = await PragmaAsync("page_size");
         long pageCount = await PragmaAsync("page_count");
         long freeList = await PragmaAsync("freelist_count");
-        long limit = await PragmaAsync("max_page_count");
-        return new QueuePageUsage(pageSize, pageCount, freeList, limit);
+        long ceiling = await PragmaAsync("max_page_count");
+        return new QueuePageUsage(pageSize, pageCount, freeList, IntakePageLimit(MaximumStorageBytes / 4 / pageSize, pageSize), ceiling);
     }
 }

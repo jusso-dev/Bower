@@ -275,7 +275,10 @@ public sealed class SecurityEventProcessor(
             now,
             Suppression: decision.Suppression is { } directive
                 ? Suppression.CreateRequest(arranged, decision, directive)
-                : null);
+                : null)
+        {
+            UsesStorageReserve = internalHealth
+        };
         EnqueueResult enqueue;
         try
         {

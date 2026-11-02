@@ -30,7 +30,8 @@ public sealed record CollectorHealthSample(
     IReadOnlyList<SyslogListenerStatus>? Syslog,
     IReadOnlyList<WindowsEventSubscriptionStatus>? WindowsEventLog,
     QueuePageUsage? QueuePages = null,
-    DeliveryFailureActivity? LastDeliveryFailure = null);
+    DeliveryFailureActivity? LastDeliveryFailure = null,
+    QueueStorageStatus? Storage = null);
 
 /// <summary>
 /// Builds the periodic <c>collector_health</c> record. It travels through the same redaction,
@@ -68,6 +69,12 @@ public static class CollectorHealthRecord
     public const string SyslogErrors = "syslog-errors";
     public const string WindowsEventLogErrors = "windows-event-log-errors";
 
+    /// <summary>The queue volume is below its critical free-space watermark: new events are refused.</summary>
+    public const string StorageCritical = "storage-critical";
+
+    /// <summary>The queue volume is below its warning free-space watermark.</summary>
+    public const string StorageLow = "storage-low";
+
     /// <summary>
     /// The destination refused this collector's identity: the credential failed
     /// (<c>destination-azure-credential-failed</c>) or the role is missing (HTTP 401/403).
@@ -85,8 +92,8 @@ public static class CollectorHealthRecord
     /// </summary>
     public static EventSeverity SeverityOf(string problem) => problem switch
     {
-        Backpressure or Stalled or CapacityRefusals or DestinationCredential => EventSeverity.High,
-        DeadLetters or SourceOverdue or WindowsEventLogErrors => EventSeverity.Medium,
+        Backpressure or Stalled or CapacityRefusals or DestinationCredential or StorageCritical => EventSeverity.High,
+        DeadLetters or SourceOverdue or WindowsEventLogErrors or StorageLow => EventSeverity.Medium,
         _ => EventSeverity.Low
     };
 
@@ -168,7 +175,8 @@ public static class CollectorHealthRecord
         List<string> problems = [];
         if (!string.Equals(sample.OutputType, "none", StringComparison.OrdinalIgnoreCase))
         {
-            problems.AddRange(DeliveryHealth.Conditions(sample.Queue, sample.QueueCapacityBytes, sample.At));
+            problems.AddRange(DeliveryHealth.Conditions(
+                sample.Queue, sample.QueueCapacityBytes, sample.At, sample.Storage?.IntakePaused ?? false, sample.QueuePages?.UsedPercent));
             // A credential failure in this window that no acknowledgement has followed.
             if (sample.LastDeliveryFailure is { } failure
                 && CredentialFailureCodes.Any(code => failure.Code.StartsWith(code, StringComparison.Ordinal))
@@ -185,6 +193,8 @@ public static class CollectorHealthRecord
             problems.Add(CapacityRefusals);
         }
 
+        if (sample.Storage?.IntakePaused == true) problems.Add(StorageCritical);
+        else if (sample.Storage?.State == "warning") problems.Add(StorageLow);
         if (sample.Sources.Any(source => source.IsOverdue)) problems.Add(SourceOverdue);
         if ((sample.Syslog ?? []).Any(item => SyslogErrorCount(item, Match(baseline?.Syslog, item.Id)) > 0))
         {
@@ -310,6 +320,22 @@ public static class CollectorHealthRecord
                 Mebibytes(writer, "queueFreeListMiB", pages.FreeListBytes);
                 Mebibytes(writer, "queuePageLimitMiB", pages.PageLimitBytes);
                 writer.WriteNumber("queuePagesUsedPercent", pages.UsedPercent);
+                Mebibytes(writer, "queueCeilingMiB", pages.CeilingBytes);
+            }
+
+            // Queue volume free-space watermarks (C# collector). volumeState is normal, warning,
+            // critical or unknown; intakePaused is true while critical refuses new events.
+            if (sample.Storage is { } volume)
+            {
+                writer.WriteString("volumeState", volume.State);
+                writer.WriteBoolean("intakePaused", volume.IntakePaused);
+                if (volume.FreeBytes is { } free) Mebibytes(writer, "volumeFreeMiB", free);
+                if (volume.FreePercent is { } freePercent) writer.WriteNumber("volumeFreePercent", Math.Round(freePercent, 1));
+                if (volume.WarningFreeBytes is { } warning) Mebibytes(writer, "volumeWarningFreeMiB", warning);
+                if (volume.CriticalFreeBytes is { } critical) Mebibytes(writer, "volumeCriticalFreeMiB", critical);
+                Mebibytes(writer, "queueWalMiB", volume.QueueWalBytes);
+                Number(writer, "storageRefusals", Delta(volume.StorageRefusals, baseline?.Storage?.StorageRefusals));
+                Number(writer, "pressurePurgedEvents", Delta(volume.PressurePurgedEvents, baseline?.Storage?.PressurePurgedEvents));
             }
 
             writer.WriteEndObject();

@@ -1,29 +1,41 @@
 // Bower: queue storage pressure. Fires when a collector's newest health record shows the queue
-// database's in-use pages at or above __PAGES_PERCENT__% of its page limit, undelivered data at or above
-// __STORAGE_PERCENT__% of BOWER_QUEUE_MAX_BYTES, delivery backpressure, or any record in the window
-// reports intake refused for queue capacity (HTTP 503; syslog and Windows sources stop reading).
-// The page limit is reached first (about cap + 4 MiB of rows, indexes, ledger and retained
-// acknowledged rows). In-use pages can fall after delivery and retention free them; the
-// file may retain free pages. A full queue cannot queue health records: collector-health-missing
-// covers a queue that is already full.
-// EXTENSION POINT (storage): when collectors report free disk/watermarks under Attributes.storage,
-// add them to StorageSignal below, reporting unavailable values as incomplete coverage.
+// database's in-use pages at or above __PAGES_PERCENT__% of the limit at which new events are
+// refused, undelivered data at or above __STORAGE_PERCENT__% of BOWER_QUEUE_MAX_BYTES, delivery
+// backpressure, the queue volume below its warning or critical free-space watermark, or any
+// record in the window reports intake refused for queue capacity or free space (HTTP 503;
+// syslog TCP/TLS stops reading, RELP withholds acknowledgements, Windows sources keep the
+// bookmark).
+// The page limit (85% of cap + 4 MiB) is reached first: rows, indexes, ledger and retained
+// acknowledged rows all use pages. In-use pages fall after delivery and retention free them.
+// Collectors that report storage (C#, from workstream 3) queue their health record from a
+// reserve even while new events are refused, so a full or critical queue is visible here;
+// older collectors and the Rust collector cannot, and collector-health-missing covers them.
+// A volume whose free space cannot be measured (volumeState "unknown") is incomplete coverage;
+// a collector that does not report volumeState at all is shown as not reported.
 let usedPercent = __STORAGE_PERCENT__;
 let pagesPercent = __PAGES_PERCENT__;
 BowerSecurity_CL
 | where EventType == "collector_health"
 | extend Refusals = coalesce(toint(Attributes.intake.capacityRefusals), 0) + coalesce(toint(Attributes.intake.privacyAlertRefusals), 0)
+    + coalesce(toint(Attributes.storage.storageRefusals), 0)
 | summarize arg_max(TimeGenerated, Attributes), RefusalsInWindow = sum(Refusals) by CollectorId
 | extend CapacityUsedPercent = todouble(Attributes.storage.capacityUsedPercent),
     QueuePagesUsedPercent = todouble(Attributes.storage.queuePagesUsedPercent),
     UndeliveredMiB = todouble(Attributes.storage.undeliveredMiB),
     QueuePagesUsedMiB = todouble(Attributes.storage.queuePagesUsedMiB),
+    VolumeState = tostring(Attributes.storage.volumeState),
+    VolumeFreeMiB = todouble(Attributes.storage.volumeFreeMiB),
+    VolumeFreePercent = todouble(Attributes.storage.volumeFreePercent),
+    IntakePaused = coalesce(tobool(Attributes.storage.intakePaused), false),
     DeliveryStatus = tostring(Attributes.delivery.status)
+| extend VolumeCoverage = iff(isempty(VolumeState), "not-reported", "reported")
 | extend StorageMetricsIncomplete = isnull(QueuePagesUsedPercent) or isnull(CapacityUsedPercent)
     or not(isfinite(QueuePagesUsedPercent)) or not(isfinite(CapacityUsedPercent))
     or QueuePagesUsedPercent < 0.0 or CapacityUsedPercent < 0.0
+    or VolumeState == "unknown"
 | extend StorageSignal = StorageMetricsIncomplete or QueuePagesUsedPercent >= pagesPercent
     or CapacityUsedPercent >= usedPercent
+    or VolumeState in ("warning", "critical") or IntakePaused
     or DeliveryStatus == "backpressure" or RefusalsInWindow > 0
 | where StorageSignal
-| project CollectorId, RecordAt = TimeGenerated, QueuePagesUsedPercent, QueuePagesUsedMiB, CapacityUsedPercent, UndeliveredMiB, RefusalsInWindow, DeliveryStatus, StorageMetricsIncomplete
+| project CollectorId, RecordAt = TimeGenerated, VolumeState, IntakePaused, VolumeFreeMiB, VolumeFreePercent, VolumeCoverage, QueuePagesUsedPercent, QueuePagesUsedMiB, CapacityUsedPercent, UndeliveredMiB, RefusalsInWindow, DeliveryStatus, StorageMetricsIncomplete

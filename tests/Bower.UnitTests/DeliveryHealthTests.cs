@@ -34,4 +34,14 @@ public sealed class DeliveryHealthTests
         Assert.Equal("idle", DeliveryHealth.Evaluate("azure-logs-ingestion",
             snapshot with { Queued = 0, OldestUndelivered = null }, 1000, TestEvents.Now));
     }
+
+    [Fact]
+    public void Page_limit_and_a_critical_volume_are_backpressure_before_the_logical_cap()
+    {
+        QueueSnapshot snapshot = new(1, 0, 0, 0, 0, 100, null, 100);
+        Assert.Equal("pending", DeliveryHealth.Evaluate("azure-logs-ingestion", snapshot, 1000, TestEvents.Now, pagesUsedPercent: 94.9));
+        Assert.Equal("backpressure", DeliveryHealth.Evaluate("azure-logs-ingestion", snapshot, 1000, TestEvents.Now, pagesUsedPercent: 95));
+        Assert.Equal("backpressure", DeliveryHealth.Evaluate("azure-logs-ingestion", snapshot, 1000, TestEvents.Now, intakePaused: true));
+        Assert.Contains(DeliveryHealth.Backpressure, DeliveryHealth.Conditions(snapshot, 1000, TestEvents.Now, pagesUsedPercent: 100));
+    }
 }

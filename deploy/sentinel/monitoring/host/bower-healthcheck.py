@@ -216,6 +216,22 @@ def evaluate(health, status, disk, options, previous, now):
             elif pages_percent >= options.pages_warning_percent:
                 find(WARNING, "queue-pages", f"Queue database pages are {pages_percent:.1f}% of the page limit.")
 
+        # Queue volume free-space watermarks, as the collector itself evaluates them (C#
+        # collector, workstream 3). Absent on collectors that do not report them.
+        volume = status.get("storage") or {}
+        if volume.get("state"):
+            metrics["bower_queue_volume_free_bytes"] = int(volume.get("freeBytes") or 0)
+            metrics["bower_queue_volume_total_bytes"] = int(volume.get("totalBytes") or 0)
+            metrics["bower_queue_volume_critical"] = int(volume["state"] == "critical")
+            metrics["bower_storage_refusals_total"] = int(volume.get("storageRefusals") or 0)
+            free = volume.get("freePercent")
+            if volume.get("intakePaused") or volume["state"] == "critical":
+                find(CRITICAL, "queue-volume", f"Queue volume is below its critical free-space watermark ({free}% free); new events are refused.")
+            elif volume["state"] == "warning":
+                find(WARNING, "queue-volume", f"Queue volume is below its warning free-space watermark ({free}% free).")
+            elif volume["state"] == "unknown":
+                find(WARNING, "queue-volume", "Queue volume free space cannot be measured; watermarks are not enforced.")
+
         activity = status.get("deliveryActivity") or {}
         code = activity.get("lastFailureCode")
         failed_at = parse_time(activity.get("lastFailureAt"))
