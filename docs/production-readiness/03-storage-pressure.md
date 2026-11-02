@@ -744,13 +744,27 @@ Remove-Item C:\ProgramData\Bower\state\filler
 
 ## 10. How we tested this
 
-The interrupted AWS campaign retained preliminary reports. One Windows queue-cap
-attempt did not drain within 30 minutes; a later attempt reported drain 165.7 seconds
-after restoration. Linux reports include queue-cap drain and warning/critical
-watermark recovery. These are measurements, not final qualification: exact binary
-provenance, source-to-destination identity reconciliation, real disk-full coverage,
-and an independently verified cleanup audit remain to be completed. Preserve both
-failed and successful attempts in the eventual evidence package.
+Two AWS runs, both preserved. The [first run](../evidence/ws3-20261031-081023/README.md)
+found the drain deadlock, the WAL over budget, intake stuck after a drain and the syslog
+restart loss, and tested the fixes in place. The
+[final run](../evidence/ws3b-20261102-005001/README.md) used one CI build (`261f61a`,
+unsigned) on a 1 GiB Linux volume and a 2 GiB Windows volume mounted at the MSI state
+folder, with sequence-numbered input reconciled in Sentinel by a separate verifier:
+
+| Scenario | Linux syslog | Windows WEC |
+| --- | --- | --- |
+| ws6 stall, retained acknowledgements fill the page limit (16 MiB cap, 60-min floor) | Intake reopened 50 s after the first refusal; no restart | Reopened 42 s after |
+| ws6 stall, backlog fills the page limit, destination restored | Delivery resumed 6 s after restore, intake 46 s | 15 s and 72 s |
+| Watermarks: warning, critical, space freed | Intake resumed 6 s after freeing | 1 s |
+| Volume completely full, destination restored while full, restart while full | Answering 6 s after restart; intake 6 s after freeing | At once; 6 s |
+| Accepted events in Sentinel | **83,725 of 83,725**, 0 duplicates | **74,415 of 74,415**, 1,008 duplicate rows |
+| Lost before acceptance | **7,109** frames in socket buffers at the restart while full | 0 (bookmark) |
+
+Health records written while intake was refused arrived after restore with
+`storage-critical`, `intakePaused` and `backpressure`, and the `queue-storage` alert
+fired for both collectors. Payloads averaged 1,208 and 1,369 bytes; `ForwardedEvents`
+at 64 MiB held 30,705 forwarded events. Not run within the time box: a
+`ForwardedEvents` wrap loss, RELP under the watermark live, UDP and long soaks.
 
 Unit and integration tests (`StoragePressureTests`, plus additions to
 `SyslogCollectorTests`, `WindowsEventLogCollectorTests` and
@@ -769,9 +783,9 @@ fields.
 - **Syslog socket-buffer loss on restart or reset while backpressured** (measured
   above). Bower does not implement RELP or any application acknowledgement; qualify
   each sender's retention and replay. UDP is best effort.
-- **Real disk-full during commit** remains unqualified for the final candidate;
-  unit tests cover the page-limit and restart paths but cannot produce ENOSPC
-  portably.
+- **Real disk-full** is qualified on AWS volumes (xfs and NTFS filled to 20 KB and 0
+  bytes free, with a restart while full); unit tests cover the page-limit and
+  restart-while-critical paths but cannot produce ENOSPC portably.
 - **Existing queue files** created without SQLite incremental auto-vacuum do not
   return freed pages to the filesystem through the new incremental-vacuum path.
   Freed pages can be reused inside the database, but that does not recover volume
