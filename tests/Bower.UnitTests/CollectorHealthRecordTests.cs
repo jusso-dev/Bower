@@ -389,6 +389,10 @@ public sealed class CollectorHealthRecordTests
         await store.EnqueueAsync(
             new QueuedEvent("filler", "sha256:filler", new string('x', 1_048_000), clock.UtcNow),
             cancellationToken);
+        // Health records may use a small reserve past the cap; fill that too.
+        await store.EnqueueAsync(
+            new QueuedEvent("reserve-filler", "sha256:reserve-filler", new string('x', 66_000), clock.UtcNow) { UsesStorageReserve = true },
+            cancellationToken);
         PipelineTelemetry telemetry = new(clock);
         SecurityEventProcessor processor = new(
             new JsonEventRedactor(),
@@ -408,9 +412,12 @@ public sealed class CollectorHealthRecordTests
         Assert.Null(await worker.RecordAsync(TimeSpan.FromMinutes(1), cancellationToken));
         Assert.Equal(1, telemetry.IntakeSnapshot().CapacityRefusals);
 
-        // Room again (the filler was delivered): the next record carries the refusal.
-        QueuedEvent filler = Assert.Single(await store.LeaseAsync(1, TimeSpan.FromMinutes(1), cancellationToken));
-        await store.MarkDeliveredAsync(filler.EventId, "test", filler.LeaseToken, cancellationToken);
+        // Room again (the fillers were delivered): the next record carries the refusal.
+        foreach (QueuedEvent filler in await store.LeaseAsync(2, TimeSpan.FromMinutes(1), cancellationToken))
+        {
+            await store.MarkDeliveredAsync(filler.EventId, "test", filler.LeaseToken, cancellationToken);
+        }
+
         clock.Advance(TimeSpan.FromMinutes(1));
         ProcessingResult? queued = await worker.RecordAsync(TimeSpan.FromMinutes(1), cancellationToken);
 
@@ -422,6 +429,72 @@ public sealed class CollectorHealthRecordTests
         Assert.Contains(
             CollectorHealthRecord.CapacityRefusals,
             envelope.Attributes["problems"].EnumerateArray().Select(item => item.GetString()));
+    }
+
+    /// <summary>
+    /// Large events can fill the logical byte cap while most pages are free. The record still
+    /// goes in from its small reserve and reports the saturation (council round 1).
+    /// </summary>
+    [Fact]
+    public async Task Worker_RecordIsQueuedAndReportsBackpressureWhenLargeEventsFillTheByteCap()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = new(Path.Combine(directory.Path, "queue.db"), 1_048_576, clock);
+        await store.InitializeAsync(cancellationToken);
+        int index = 0;
+        foreach (int size in new[] { 100_000, 1_000, 10 })
+        {
+            while (true)
+            {
+                try
+                {
+                    await store.EnqueueAsync(new QueuedEvent($"large-{index}", $"sha256:large-{index}", new string('x', size), clock.UtcNow), cancellationToken);
+                    index++;
+                }
+                catch (QueueCapacityExceededException exception)
+                {
+                    Assert.Equal(QueueCapacityReasons.Queue, exception.Reason);
+                    break;
+                }
+            }
+        }
+
+        QueuePageUsage pages = await store.GetPageUsageAsync(cancellationToken);
+        Assert.True(pages.UsedPercent < 60, $"pages {pages.UsedPercent}%");
+        Assert.True((await store.GetSnapshotAsync(cancellationToken)).UndeliveredBytes > 1_048_576 - 20);
+        PipelineTelemetry telemetry = new(clock);
+        SecurityEventProcessor processor = new(
+            new JsonEventRedactor(),
+            new DeterministicPolicyEvaluator([PolicyLoader.LoadFile(HealthPolicyFile)]),
+            store,
+            clock,
+            telemetry);
+        CollectorSettings settings = Settings(directory.Path) with
+        {
+            MaximumQueueBytes = 1_048_576,
+            OutputType = "azure-logs-ingestion",
+            HealthRecordInterval = TimeSpan.FromMinutes(1)
+        };
+        CollectorHealthWorker worker = new(
+            processor, Identity, store, telemetry, new SourceHealth(null, telemetry, clock), new DeliveryActivity(),
+            settings, clock, NullLogger<CollectorHealthWorker>.Instance);
+
+        ProcessingResult? result = await worker.RecordAsync(TimeSpan.FromMinutes(1), cancellationToken);
+
+        Assert.True(result?.Queued);
+        QueuedEvent record = (await store.LeaseAsync(10_000, TimeSpan.FromMinutes(1), cancellationToken))
+            .Single(item => item.EventId.StartsWith("collector-health-", StringComparison.Ordinal));
+        SecurityEventEnvelope envelope = JsonSerializer.Deserialize(record.Payload, BowerJson.Envelope)!;
+        Assert.Contains(
+            CollectorHealthRecord.Backpressure,
+            envelope.Attributes!["problems"].EnumerateArray().Select(item => item.GetString()));
+        Assert.True(envelope.Attributes["storage"].GetProperty("capacityUsedPercent").GetDouble() >= 99);
+        // The reserve is bounded: ordinary events stay refused, and records stop at the reserve.
+        Assert.True((await store.GetSnapshotAsync(cancellationToken)).UndeliveredBytes <= 1_048_576 + store.HealthRecordReserveBytes);
+        await Assert.ThrowsAsync<QueueCapacityExceededException>(() => store.EnqueueAsync(
+            new QueuedEvent("ordinary", "sha256:ordinary", "x", clock.UtcNow), cancellationToken));
     }
 
     [Fact]

@@ -588,7 +588,8 @@ public sealed class StoragePressureTests
             .RunAsync(Cancellation);
         long shrunk = new FileInfo(path).Length;
         Assert.True(shrunk < grown / 4, $"database {grown} -> {shrunk} bytes");
-        Assert.Equal(0, (await store.GetStorageSnapshotAsync(Cancellation)).FreePages);
+        // Only the small reserve kept for settlement remains free (no backlog).
+        Assert.InRange((await store.GetStorageSnapshotAsync(Cancellation)).FreePages, 0, QueueRetentionJob.SettlementReservePages(0, 4_096));
         Assert.True((await store.VerifyLedgerAsync(Cancellation)).Intact);
         Assert.True((await store.EnqueueAsync(Event("after-release"), Cancellation)).Enqueued);
     }
@@ -909,24 +910,76 @@ public sealed class StoragePressureTests
             .SampleAsync(Cancellation);
         Assert.Equal(QueueRetentionJob.Id, Assert.Single(jobs.ClaimDue(clock.UtcNow)).Id);
 
+        long acknowledged = (await store.GetSnapshotAsync(Cancellation)).Delivered;
         QueueStoragePressure pressure = new();
         RecordingLogger<QueueRetentionJob> logger = new();
         await new QueueRetentionJob(store, clock, Settings(), logger, null, pressure).RunAsync(Cancellation);
         Assert.True(pressure.PurgedEvents > 0);
-        Assert.Contains(logger.Messages, message => message.Contains("intake-blocked", StringComparison.Ordinal));
+        Assert.Contains(logger.Messages, message => message.Contains("large-event", StringComparison.Ordinal));
         Assert.Equal(0, store.RefusedIntakePages);
         Assert.True((await store.EnqueueAsync(candidate, Cancellation)).Enqueued);
         QueueSnapshot snapshot = await store.GetSnapshotAsync(Cancellation);
         Assert.Equal(2, snapshot.Queued + snapshot.Uploading);
+        // Only about the pages the event needed: most recent acknowledgements keep detecting duplicates.
+        Assert.True(snapshot.Delivered > acknowledged / 2, $"{snapshot.Delivered} of {acknowledged} kept");
+        Assert.True((await store.EnqueueAsync(Event($"ack-{acknowledged - 1}", 4_000), Cancellation)).Duplicate);
         Assert.True((await store.VerifyLedgerAsync(Cancellation)).Intact);
     }
 
     /// <summary>
-    /// Free pages are not released while a backlog settles: its acknowledgements reuse them,
-    /// and releasing them only regrows the file. Once drained, they are released.
+    /// Under disk pressure free pages go back to the file system even while a backlog waits
+    /// for the destination; only a reserve for those rows to settle stays (council round 1:
+    /// a stuck backlog of 5 kept every free page and the volume stayed critical).
     /// </summary>
     [Fact]
-    public async Task Retention_KeepsFreePagesWhileABacklogSettlesAndReleasesThemOnceDrained()
+    public async Task Retention_ReleasesFreePagesOnALowDiskDespiteASmallStuckBacklog()
+    {
+        using SqliteTemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        string path = Path.Combine(directory.Path, "queue.db");
+        FakeDiskSpaceProbe probe = new(10 * GiB, 20 * GiB);
+        SqliteEventStore store = new(path, 64 * MiB, clock, new StorageGuard(path, new(), probe, clock));
+        await store.InitializeAsync(Cancellation);
+        for (int index = 0; index < 3_000; index++)
+        {
+            await store.EnqueueAsync(Event($"delivered-{index}", 2_000), Cancellation);
+        }
+
+        while (await store.LeaseAsync(500, TimeSpan.FromMinutes(1), Cancellation) is { Count: > 0 } batch)
+        {
+            await store.MarkDeliveredBatchAsync(
+                [.. batch.Select(item => item.EventId)], "ack", batch.ToDictionary(item => item.EventId, item => item.LeaseToken!), Cancellation);
+        }
+
+        // The destination is now down: five events wait, never acknowledged.
+        for (int index = 0; index < 5; index++)
+        {
+            await store.EnqueueAsync(Event($"stuck-{index}", 2_000), Cancellation);
+        }
+
+        await store.MaintainAsync(Cancellation);
+        long grown = new FileInfo(path).Length;
+        clock.Advance(TimeSpan.FromHours(2));
+        probe.FreeBytes = 100 * MiB;
+        await new QueueRetentionJob(store, clock, Settings(), new RecordingLogger<QueueRetentionJob>(), null, new QueueStoragePressure())
+            .RunAsync(Cancellation);
+
+        QueueStorageSnapshot after = await store.GetStorageSnapshotAsync(Cancellation);
+        long shrunk = new FileInfo(path).Length;
+        Assert.True(shrunk < grown / 4, $"database {grown} -> {shrunk} bytes");
+        long reserve = QueueRetentionJob.SettlementReservePages((await store.GetSnapshotAsync(Cancellation)).UndeliveredBytes, after.PageSize);
+        Assert.InRange(after.FreePages, 1, reserve);
+        Assert.Equal(5, (await store.GetSnapshotAsync(Cancellation)).Queued);
+        Assert.True((await store.VerifyLedgerAsync(Cancellation)).Intact);
+    }
+
+    /// <summary>
+    /// A large backlog keeps a free-page reserve sized for its rows to settle, so its
+    /// acknowledgements reuse pages instead of regrowing the file; the rest is released.
+    /// Once drained, the reserve goes too.
+    /// </summary>
+    [Fact]
+    public async Task Retention_KeepsAReserveSizedForTheBacklogAndReleasesTheRest()
     {
         using SqliteTemporaryDirectory directory = new();
         FakeClock clock = new(TestEvents.Now);
@@ -938,11 +991,13 @@ public sealed class StoragePressureTests
             await store.EnqueueAsync(Event($"backlog-{index}", 2_000), Cancellation);
         }
 
-        await CreateFreePagesAsync(path, 4 * MiB);
-        long free = (await store.GetStorageSnapshotAsync(Cancellation)).FreePages;
+        await CreateFreePagesAsync(path, 8 * MiB);
+        QueueStorageSnapshot before = await store.GetStorageSnapshotAsync(Cancellation);
+        long reserve = QueueRetentionJob.SettlementReservePages((await store.GetSnapshotAsync(Cancellation)).UndeliveredBytes, before.PageSize);
+        Assert.True(before.FreePages > reserve);
         QueueRetentionJob retention = new(store, clock, Settings(), new RecordingLogger<QueueRetentionJob>(), null, new QueueStoragePressure());
         await retention.RunAsync(Cancellation);
-        Assert.Equal(free, (await store.GetStorageSnapshotAsync(Cancellation)).FreePages);
+        Assert.Equal(reserve, (await store.GetStorageSnapshotAsync(Cancellation)).FreePages);
 
         while (await store.LeaseAsync(500, TimeSpan.FromMinutes(1), Cancellation) is { Count: > 0 } batch)
         {
@@ -952,7 +1007,7 @@ public sealed class StoragePressureTests
 
         clock.Advance(TimeSpan.FromHours(2));
         await retention.RunAsync(Cancellation);
-        Assert.Equal(0, (await store.GetStorageSnapshotAsync(Cancellation)).FreePages);
+        Assert.InRange((await store.GetStorageSnapshotAsync(Cancellation)).FreePages, 0, QueueRetentionJob.SettlementReservePages(0, before.PageSize));
         Assert.True((await store.VerifyLedgerAsync(Cancellation)).Intact);
     }
 
@@ -979,7 +1034,8 @@ public sealed class StoragePressureTests
 
         Assert.Contains(logger.Messages, message => message.Contains("archive coverage is not verified", StringComparison.Ordinal));
         Assert.Equal(1, (await store.GetSnapshotAsync(Cancellation)).Delivered);
-        Assert.Equal(0, (await store.GetStorageSnapshotAsync(Cancellation)).FreePages);
+        // Only the small reserve kept for settlement remains free (no backlog).
+        Assert.InRange((await store.GetStorageSnapshotAsync(Cancellation)).FreePages, 0, QueueRetentionJob.SettlementReservePages(0, 4_096));
     }
 
     /// <summary>Status, heartbeats and health records omit storage instead of failing when the queue cannot be read.</summary>

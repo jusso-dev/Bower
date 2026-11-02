@@ -871,6 +871,13 @@ Known limits:
   is shared). The Rust collector does not read `BOWER_SETTINGS_FILE`; on Linux, use systemd
   `EnvironmentFile`. Both runtimes implement the newer-schema refusal and the persisted
   `collector-id`.
+- **Rust after #161: earlier refusals.** Upgrading a Rust collector to #161 or later
+  brings the 85% intake page limit but not C#'s pressure retention. Acknowledged rows
+  kept for duplicate detection hold the remaining room until the hourly age purge, so a
+  Rust queue refuses new events about 15% earlier than before. Check
+  `BOWER_QUEUE_MAX_BYTES` against the backlog plus retained acknowledgements before
+  upgrading, or lower `BOWER_QUEUE_RETENTION_HOURS`
+  (see [storage pressure known limits](03-storage-pressure.md#known-limits)).
 - **Lab coverage of later changes.** The AWS run used build `4c30b2a`. Review fixes made
   afterwards were covered by unit, CI install and local tests only, not re-run on AWS:
   - owner-only temporary copies, busy retry, damaged-queue backups and the restore result

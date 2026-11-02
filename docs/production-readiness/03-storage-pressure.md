@@ -144,9 +144,9 @@ On AWS, a 19-minute queue-full run logged 45 lines (7.4 KB) in total.
 | `storage` block in `/v1/status` and the management heartbeat; `/health` `degraded` when critical; `deliveryStatus` `backpressure` when the volume is critical or pages reach 95% | Early warning, metadata only |
 | `queuePages` (workstream 6's page snapshot) now reports the limit at which new events are refused, plus `ceilingBytes` | One page computation for status, health records, alerts and host checks |
 | `collector_health` `storage` gains volume state, free space, thresholds, WAL size, storage refusals and pressure purges; problem codes `storage-critical` and `storage-low` | The `queue-storage` alert and host checks see the volume (see [monitoring](06-monitoring-and-runbooks.md)) |
-| The collector's own health record uses the settlement reserve and skips the critical watermark | **Defect fixed (workstream 6):** the storage alert could not see a full queue because its records were refused |
+| The collector's own health record uses the settlement reserve, skips the critical watermark and may use a small logical reserve past `BOWER_QUEUE_MAX_BYTES` (a sixteenth of it, at most 1 MiB) | **Defect fixed (workstream 6):** the storage alert could not see a full queue because its records were refused, including when large events filled the byte cap with pages to spare |
 | A large event refused by the page limit triggers retention at any page use | **Defect fixed:** an event needing more pages than remained was refused below the 80% trigger, and its source retried it forever |
-| New queues use incremental auto-vacuum; retention returns free pages to the file system in 8 MiB steps under pressure, at most 10 seconds per run with one checkpoint at the end; not while a backlog settles (more undelivered than acknowledged rows, or pages in use past the intake limit) | Pruning reclaims disk, not only pages (existing queues keep reusing free pages); releasing pages a draining backlog reuses only regrows the file. Also runs when archive coverage refuses purging |
+| New queues use incremental auto-vacuum; retention returns free pages to the file system in 8 MiB steps under pressure, at most 10 seconds per run with one checkpoint at the end. It keeps a reserve of free pages for the undelivered rows to settle (about twice their payload, plus 64 pages) and releases the rest, even while a backlog waits for the destination. Without disk pressure it waits until pages in use are back within the intake limit | Pruning reclaims disk, not only pages (existing queues keep reusing free pages); the reserve lets a draining backlog reuse pages instead of regrowing the file. Also runs when archive coverage refuses purging |
 | Rust queue: same intake limit and settlement ceiling | Either runtime opens and drains a queue the other grew while settling |
 | Archive-backed retention purges only the archive-verified sequences | A concurrent purge could shift a verified batch onto unverified rows |
 | Bounded storage logs; delivery-loop failure logs throttled | A full disk must not also fill the journal |
@@ -228,7 +228,7 @@ apply to the C# collector only.
 | Variable | Default | Range | Meaning |
 | --- | --- | --- | --- |
 | `BOWER_QUEUE_PATH` | `/var/lib/bower/queue.db` (packages) | path | Queue database. Put its directory on the dedicated volume |
-| `BOWER_QUEUE_MAX_BYTES` | `10737418240` (10 GiB) | ≥ 1 MiB | `M` above. Raising it later is safe; lowering it below the current database is refused at start |
+| `BOWER_QUEUE_MAX_BYTES` | `10737418240` (10 GiB) | ≥ 1 MiB | `M` above. Raising it later is safe; lowering it below the current database is refused at start. The collector's own health records may exceed it by min(M/16, 1 MiB) |
 | `BOWER_QUEUE_RETENTION_HOURS` | `168` | 1–2160 | Acknowledged rows kept for duplicate detection |
 | `BOWER_QUEUE_PRESSURE_RETENTION_MINUTES` | `60` | 1 to the retention | Acknowledged rows younger than this survive pressure retention (unless intake is blocked) |
 | `BOWER_STORAGE_WARNING_FREE_BYTES` | `1073741824` (1 GiB) | ≥ critical bytes | Warning when free space is below max(bytes, percent) |
@@ -793,9 +793,15 @@ fields.
 
 ## Known limits
 
-- **Syslog socket-buffer loss on restart or reset while backpressured** (measured
-  above). Bower does not implement RELP or any application acknowledgement; qualify
-  each sender's retention and replay. UDP is best effort.
+- **Plain TCP and TLS syslog: socket-buffer loss on restart or reset while
+  backpressured** (measured above). These transports have no application
+  acknowledgement, so frames the kernel accepted but Bower had not queued are lost;
+  qualify each sender's retention and replay. RELP (from #168) is different: Bower
+  acknowledges a message only after it is durably queued, withholds the acknowledgement
+  while intake is refused, and closes the session after 30 seconds of refusals
+  (`relpBusyCloses`); the sender keeps and resends every unacknowledged message, so
+  nothing is lost but resends can arrive as duplicates. RELP under the watermark is
+  unit-tested only. UDP is best effort.
 - **Real disk-full** is qualified on AWS volumes (xfs and NTFS filled to 20 KB and 0
   bytes free, with a restart while full); unit tests cover the page-limit and
   restart-while-critical paths but cannot produce ENOSPC portably.
@@ -812,6 +818,11 @@ fields.
   pressure retention, the large-event reclaim, incremental vacuum and the `storage`
   status are **not** ported: Rust has no free-space watermark, and only
   age retention frees pages. A C# to Rust switch with a grown queue was not run live.
+  **A Rust collector refuses new events about 15% earlier in practice:** it stops at the
+  same 85% intake limit, but without pressure retention the acknowledged rows kept for
+  duplicate detection (`BOWER_QUEUE_RETENTION_HOURS`) hold that room until the hourly
+  age purge removes them. Size Rust queues for the backlog plus the retained
+  acknowledgements, or lower the retention.
 - **Rollback to builds without the settlement ceiling** (C# before this change, Rust
   before the port): they refuse to open a database larger than `M + 4 MiB`. Follow the
   [downgrade procedure](04-upgrade-backup-recovery.md#rollback-after-settlement-growth)
@@ -824,8 +835,9 @@ fields.
   `storage-full` refusals (handled as backpressure).
 - **Large events below the pressure trigger:** a large event can need more pages than
   remain below the intake limit, so it is refused well below 80%. The refusal now
-  triggers retention, which removes acknowledged rows (ignoring the floor, as when
-  intake is blocked) until the event fits; unacknowledged rows are never touched. An
+  triggers retention, which removes only as many of the oldest acknowledged rows as the
+  event needs (at any age, in batches of 50), so the rest keep detecting duplicates;
+  unacknowledged rows are never touched. An
   event larger than the whole intake limit is refused permanently. Not for archived
   queues (next item): there the source retries until age retention or the 80%/95%
   triggers free enough pages. Unit-tested only.

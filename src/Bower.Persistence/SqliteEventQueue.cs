@@ -95,6 +95,13 @@ public sealed partial class SqliteEventStore : IDurableEventStore
     public StorageGuard? Storage => storage;
 
     /// <summary>
+    /// Undelivered bytes past <see cref="MaximumUndeliveredBytes"/> that only the collector's
+    /// own health records (<see cref="QueuedEvent.UsesStorageReserve"/>) may use: a sixteenth
+    /// of the cap, at most 1 MiB (about 300 records).
+    /// </summary>
+    public long HealthRecordReserveBytes => Math.Min(maximumBytes / 16, 1_048_576);
+
+    /// <summary>
     /// Pages the largest new event refused by the page limit needed since retention last
     /// took it (0 when none). A large event can be refused well below the pressure trigger;
     /// retention reclaims acknowledged rows for it instead of leaving it refused forever.
@@ -323,9 +330,12 @@ public sealed partial class SqliteEventStore : IDurableEventStore
 
         await CheckIntakePagesAsync(connection, transaction, payloadBytes, candidate.UsesStorageReserve, cancellationToken);
         long currentBytes = await GetUndeliveredBytesAsync(connection, transaction, cancellationToken);
-        if (payloadBytes > maximumBytes - currentBytes)
+        // Health records may also use a small reserve past the cap, so a backlog of large
+        // events at the cap cannot silence them; the total stays bounded by the reserve.
+        long allowedBytes = candidate.UsesStorageReserve ? maximumBytes + HealthRecordReserveBytes : maximumBytes;
+        if (payloadBytes > allowedBytes - currentBytes)
         {
-            throw new QueueCapacityExceededException(maximumBytes, currentBytes, payloadBytes);
+            throw new QueueCapacityExceededException(allowedBytes, currentBytes, payloadBytes);
         }
 
         // Plain INSERT: duplicates were ruled out under the write lock, so any constraint

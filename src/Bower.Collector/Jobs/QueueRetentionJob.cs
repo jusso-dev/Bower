@@ -12,8 +12,10 @@ namespace Bower.Collector.Jobs;
 /// Under storage pressure (queue pages at <see cref="QueueStorageMonitor.PagePressurePercent"/>
 /// of the ceiling, or the volume below its warning watermark) it also removes acknowledged
 /// events older than <see cref="CollectorSettings.PressureRetentionFloor"/>, oldest first, so retained
-/// acknowledgements cannot refuse new events. That shortens duplicate detection, never
-/// delivery: only acknowledged rows are eligible.
+/// acknowledgements cannot refuse new events. A new event the page limit refused below
+/// that trigger (a large event) removes only as many of the oldest acknowledgements as it
+/// needs, at any age. That shortens duplicate detection, never delivery: only acknowledged
+/// rows are eligible.
 /// </para>
 /// </summary>
 public sealed partial class QueueRetentionJob(
@@ -30,6 +32,9 @@ public sealed partial class QueueRetentionJob(
 
     // Smaller batches under page pressure, so purging stops close to the target.
     private const int PressureBatchSize = 500;
+
+    // Smaller still for a refused large event, so only about the pages it needs are purged.
+    private const int RefusalBatchSize = 50;
 
     /// <summary>Page use the pressure purge brings the queue down to once it starts.</summary>
     public const double PressureTargetPercent = 70;
@@ -64,29 +69,41 @@ public sealed partial class QueueRetentionJob(
     public static readonly TimeSpan MaximumReleaseDuration = TimeSpan.FromSeconds(10);
 
     /// <summary>
+    /// Free pages kept for undelivered rows to settle: about twice their payload (a row takes
+    /// about 2.2 times its payload in pages, and acknowledging it rewrites it), plus 64 pages.
+    /// </summary>
+    public static long SettlementReservePages(long undeliveredBytes, long pageSize) =>
+        (undeliveredBytes * 2 + pageSize - 1) / pageSize + 64;
+
+    /// <summary>
     /// Shrinks the database by releasing free pages when the volume is short of space or the
-    /// file grew past the intake limit (after settling a large backlog). Not while a backlog
-    /// is still settling: undelivered rows dominate, or the pages in use are still past the
-    /// intake limit. Those rows' acknowledgements reuse the free pages, and releasing them
-    /// only makes the file grow again. Bounded in steps and time, one checkpoint at the end.
+    /// file grew past the intake limit (after settling a large backlog). It keeps
+    /// <see cref="SettlementReservePages"/> free for the undelivered rows, which their
+    /// acknowledgements reuse instead of regrowing the file, and releases the rest. Without
+    /// disk pressure it waits until the pages in use are back within the intake limit (only
+    /// settlement puts them past it). Bounded in steps and time, one checkpoint at the end.
     /// </summary>
     private async Task ReleaseFreePagesAsync(SqliteEventStore store, CancellationToken cancellationToken)
     {
         QueueStorageSnapshot files = await store.GetStorageSnapshotAsync(cancellationToken);
         StorageState disk = store.Storage?.Evaluate().State ?? StorageState.Normal;
-        bool needed = disk is StorageState.Warning or StorageState.Critical || files.PageCount > files.IntakeLimitPages;
-        if (!needed || files.FreePages == 0 || await SettlingAsync(store, files, cancellationToken))
+        bool diskPressure = disk is StorageState.Warning or StorageState.Critical;
+        bool grown = files.PageCount > files.IntakeLimitPages && files.UsedPages <= files.IntakeLimitPages;
+        if ((!diskPressure && !grown) || files.FreePages == 0)
         {
             return;
         }
 
+        long undelivered = (await store.GetSnapshotAsync(cancellationToken)).UndeliveredBytes;
+        long surplus = files.FreePages - SettlementReservePages(undelivered, files.PageSize);
         long released = 0;
         long started = clock.GetTimestamp();
-        for (int step = 0; step < MaximumReleaseSteps && !cancellationToken.IsCancellationRequested; step++)
+        for (int step = 0; step < MaximumReleaseSteps && released < surplus && !cancellationToken.IsCancellationRequested; step++)
         {
-            long pages = await store.ReleaseFreePagesAsync(ReleaseStepPages, checkpoint: false, cancellationToken);
+            int wanted = (int)Math.Min(ReleaseStepPages, surplus - released);
+            long pages = await store.ReleaseFreePagesAsync(wanted, checkpoint: false, cancellationToken);
             released += pages;
-            if (pages < ReleaseStepPages || clock.GetElapsedTime(started) >= MaximumReleaseDuration)
+            if (pages < wanted || clock.GetElapsedTime(started) >= MaximumReleaseDuration)
             {
                 break;
             }
@@ -98,21 +115,6 @@ public sealed partial class QueueRetentionJob(
             long databaseBytes = (await store.GetStorageSnapshotAsync(cancellationToken)).DatabaseBytes;
             LogPagesReleased(logger, released * files.PageSize, databaseBytes);
         }
-    }
-
-    /// <summary>
-    /// True while a backlog is settling: pages in use past the intake limit (only
-    /// settlement can put them there), or more undelivered rows than acknowledged ones.
-    /// </summary>
-    private static async Task<bool> SettlingAsync(SqliteEventStore store, QueueStorageSnapshot files, CancellationToken cancellationToken)
-    {
-        if (files.UsedPages > files.IntakeLimitPages)
-        {
-            return true;
-        }
-
-        QueueSnapshot rows = await store.GetSnapshotAsync(cancellationToken);
-        return rows.Queued + rows.Retrying + rows.Uploading > rows.Delivered;
     }
 
     private async Task ReclaimUnderPressureAsync(SqliteEventStore store, DateTimeOffset now, CancellationToken cancellationToken)
@@ -130,32 +132,49 @@ public sealed partial class QueueRetentionJob(
             refusedPages = 0;
         }
 
-        if (!diskPressure && refusedPages == 0 && files.PageUtilisationPercent < QueueStorageMonitor.PagePressurePercent)
+        bool pagePressure = files.PageUtilisationPercent >= QueueStorageMonitor.PagePressurePercent;
+        if (diskPressure || pagePressure)
         {
-            return;
+            // Low disk: reclaim every eligible row, so new events reuse freed pages instead of
+            // growing the file. Page pressure alone: stop once use is back at the target. Once
+            // new events are refused, intake outranks duplicate detection: the floor no longer
+            // protects acknowledged rows (after a large drain they are all recent).
+            bool intakeBlocked = files.PageUtilisationPercent >= DeliveryHealth.PageBackpressurePercent;
+            double targetPages = files.IntakeLimitPages * PressureTargetPercent / 100;
+            int purged = await PurgeAsync(
+                intakeBlocked ? now.AddSeconds(1) : now - settings.PressureRetentionFloor,
+                diskPressure ? BatchSize : PressureBatchSize,
+                async token => diskPressure || (await store.GetStorageSnapshotAsync(token)).UsedPages > targetPages,
+                cancellationToken);
+            await RecordAsync(purged, diskPressure ? "low-disk" : intakeBlocked ? "intake-blocked" : "queue-pages");
         }
 
-        // Low disk: reclaim every eligible row, so new events reuse freed pages instead of
-        // growing the file. Page pressure alone: stop once use, counting the refused event,
-        // is back at the target. Once new events are refused, intake outranks duplicate
-        // detection: the floor no longer protects acknowledged rows (after a large drain
-        // they are all recent).
-        bool intakeBlocked = refusedPages > 0 || files.PageUtilisationPercent >= DeliveryHealth.PageBackpressurePercent;
-        double targetPages = files.IntakeLimitPages * PressureTargetPercent / 100;
-        int purged = await PurgeAsync(
-            intakeBlocked ? now.AddSeconds(1) : now - settings.PressureRetentionFloor,
-            diskPressure ? BatchSize : PressureBatchSize,
-            async token => diskPressure
-                || (await store.GetStorageSnapshotAsync(token)).UsedPages + refusedPages > targetPages,
-            cancellationToken);
-        if (purged > 0)
+        if (refusedPages > 0)
         {
+            // Only as many of the oldest acknowledgements as the refused event needs, at any
+            // age: duplicate detection keeps everything else.
+            long limit = files.IntakeLimitPages;
+            int purged = await PurgeAsync(
+                now.AddSeconds(1),
+                RefusalBatchSize,
+                async token => (await store.GetStorageSnapshotAsync(token)).UsedPages + refusedPages > limit,
+                cancellationToken);
+            await RecordAsync(purged, "large-event");
+        }
+
+        async Task RecordAsync(int purged, string trigger)
+        {
+            if (purged <= 0)
+            {
+                return;
+            }
+
             pressure?.RecordPurge(purged, clock.GetUtcNow());
             QueueStorageSnapshot after = await store.GetStorageSnapshotAsync(cancellationToken);
             LogPressurePurged(
                 logger,
                 purged,
-                diskPressure ? "low-disk" : intakeBlocked ? "intake-blocked" : "queue-pages",
+                trigger,
                 files.PageUtilisationPercent,
                 after.PageUtilisationPercent,
                 (long)settings.PressureRetentionFloor.TotalSeconds);
@@ -239,7 +258,7 @@ public sealed partial class QueueRetentionJob(
     [LoggerMessage(
         EventId = 1506,
         Level = LogLevel.Warning,
-        Message = "Queue retention removed {Count} acknowledged event(s) early under storage pressure ({Trigger}); queue pages {BeforePercent}% -> {AfterPercent}% of the ceiling. Acknowledged events younger than {FloorSeconds} seconds are kept unless intake was blocked.")]
+        Message = "Queue retention removed {Count} acknowledged event(s) early under storage pressure ({Trigger}); queue pages {BeforePercent}% -> {AfterPercent}% of the ceiling. Acknowledged events younger than {FloorSeconds} seconds are kept unless intake was blocked or a refused event needed their pages.")]
     private static partial void LogPressurePurged(
         ILogger logger, int count, string trigger, double beforePercent, double afterPercent, long floorSeconds);
 
