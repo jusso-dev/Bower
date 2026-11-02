@@ -31,6 +31,11 @@ param catchUpMinutes int = 60
 @maxValue(12)
 param alertVisibilityRuns int = 2
 
+@description('Scopes detection keys and rule names to this deployment. Use a distinct value for each deployment of this content in one workspace, so they never suppress each other\'s alerts. Lowercase letters, digits and hyphens.')
+@minLength(1)
+@maxLength(32)
+param detectionKeyScope string = 'default'
+
 @description('Minutes between runs of the beyond-tolerance monitor; each run evaluates exactly the first ingestions of the last interval.')
 @minValue(60)
 @maxValue(1440)
@@ -101,8 +106,9 @@ var catchUpMinutesChecked = catchUpMinutes >= (alertVisibilityRuns + 1) * freque
 var queryPeriodMinutes = maxIngestionDelayMinutes + bucketMinutes + catchUpMinutesChecked + settleDelayMinutes + 10
 
 // Each anchor is the rule file's default line; a unit test keeps them present.
-func tune(query string, defaultThreshold int, threshold int, frequency int, settle int, catchUp int, maxDelay int, bucket int, spacing int) string =>
-  replace(replace(replace(replace(replace(replace(replace(query,
+func tune(query string, rule string, scope string, defaultThreshold int, threshold int, frequency int, settle int, catchUp int, maxDelay int, bucket int, spacing int) string =>
+  replace(replace(replace(replace(replace(replace(replace(replace(query,
+    'let ruleKey = "${rule}:default";', 'let ruleKey = "${rule}:${scope}";'),
     'let threshold = ${defaultThreshold};', 'let threshold = ${threshold};'),
     'let bucketSize = 10m;', 'let bucketSize = ${bucket}m;'),
     'let settleDelay = 5m;', 'let settleDelay = ${settle}m;'),
@@ -111,14 +117,17 @@ func tune(query string, defaultThreshold int, threshold int, frequency int, sett
     'let maxDelay = 360m;', 'let maxDelay = ${maxDelay}m;'),
     'let retrySpacing = 2;', 'let retrySpacing = ${spacing};')
 
-var bruteForceQuery = tune(loadTextContent('rules/wec-brute-force.kql'), 10, bruteForceThreshold,
+var bruteForceQuery = tune(loadTextContent('rules/wec-brute-force.kql'), 'bower-wec-brute-force', detectionKeyScope, 10, bruteForceThreshold,
   frequencyMinutes, settleDelayMinutes, catchUpMinutesChecked, maxIngestionDelayMinutes, bucketMinutes, alertVisibilityRuns)
-var firewallQuery = tune(loadTextContent('rules/firewall-deny.kql'), 20, firewallDenyThreshold,
+var firewallQuery = tune(loadTextContent('rules/firewall-deny.kql'), 'bower-firewall-deny', detectionKeyScope, 20, firewallDenyThreshold,
   frequencyMinutes, settleDelayMinutes, catchUpMinutesChecked, maxIngestionDelayMinutes, bucketMinutes, alertVisibilityRuns)
 var toleranceQuery = replace(replace(replace(loadTextContent('rules/beyond-tolerance.kql'),
   'let maxDelay = 360m;', 'let maxDelay = ${maxIngestionDelayMinutes}m;'),
   'let settleDelay = 5m;', 'let settleDelay = ${settleDelayMinutes}m;'),
   'let frequency = 60m;', 'let frequency = ${toleranceFrequencyMinutes}m;')
+
+// Rule display names must be unique per workspace.
+var nameSuffix = detectionKeyScope == 'default' ? '' : ' [${detectionKeyScope}]'
 
 var detectionDetails = {
   BowerDetectionKey: 'BowerDetectionKey'
@@ -147,10 +156,10 @@ var ipGrouping = {
 
 resource bruteForce 'Microsoft.SecurityInsights/alertRules@2025-09-01' = {
   scope: workspace
-  name: guid(workspace.id, 'bower-wec-brute-force')
+  name: guid(workspace.id, 'bower-wec-brute-force', detectionKeyScope)
   kind: 'Scheduled'
   properties: {
-    displayName: 'Bower: Windows failed network logons from one address (replay-safe)'
+    displayName: 'Bower: Windows failed network logons from one address (replay-safe)${nameSuffix}'
     description: 'At least ${bruteForceThreshold} distinct Windows 4625 network logon failures from one source address in a ${bucketMinutes}-minute event-time bucket. Replayed Bower rows are collapsed by BowerSecurityEvents and late events are evaluated once, at first ingestion, up to ${maxIngestionDelayMinutes} minutes late.'
     enabled: enableRules
     severity: 'Medium'
@@ -180,10 +189,10 @@ resource bruteForce 'Microsoft.SecurityInsights/alertRules@2025-09-01' = {
 
 resource firewallDeny 'Microsoft.SecurityInsights/alertRules@2025-09-01' = {
   scope: workspace
-  name: guid(workspace.id, 'bower-firewall-deny')
+  name: guid(workspace.id, 'bower-firewall-deny', detectionKeyScope)
   kind: 'Scheduled'
   properties: {
-    displayName: 'Bower: repeated firewall denials from one address (replay-safe)'
+    displayName: 'Bower: repeated firewall denials from one address (replay-safe)${nameSuffix}'
     description: 'At least ${firewallDenyThreshold} distinct firewall denials from one source address in a ${bucketMinutes}-minute event-time bucket. Replayed Bower rows are collapsed by BowerSecurityEvents and late events are evaluated once, at first ingestion, up to ${maxIngestionDelayMinutes} minutes late.'
     enabled: enableRules
     severity: 'Low'
@@ -212,10 +221,10 @@ resource firewallDeny 'Microsoft.SecurityInsights/alertRules@2025-09-01' = {
 
 resource beyondTolerance 'Microsoft.SecurityInsights/alertRules@2025-09-01' = {
   scope: workspace
-  name: guid(workspace.id, 'bower-beyond-tolerance')
+  name: guid(workspace.id, 'bower-beyond-tolerance', detectionKeyScope)
   kind: 'Scheduled'
   properties: {
-    displayName: 'Bower: events arrived later than the replay-safe rules evaluate'
+    displayName: 'Bower: events arrived later than the replay-safe rules evaluate${nameSuffix}'
     description: 'Bower events first ingested more than ${maxIngestionDelayMinutes} minutes after their event time, or whose TimeGenerated Azure Monitor rewrote. The replay-safe rules did not evaluate them; investigate the outage and hunt manually.'
     enabled: enableRules
     severity: 'Informational'

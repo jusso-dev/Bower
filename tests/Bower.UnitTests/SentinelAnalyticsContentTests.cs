@@ -99,8 +99,14 @@ public sealed class SentinelAnalyticsContentTests
 
         Assert.Contains($"let threshold = {Default("bruteForceThreshold")};", Read("rules", "wec-brute-force.kql"), StringComparison.Ordinal);
         Assert.Contains($"let threshold = {Default("firewallDenyThreshold")};", Read("rules", "firewall-deny.kql"), StringComparison.Ordinal);
-        Assert.Contains($"tune(loadTextContent('rules/wec-brute-force.kql'), {Default("bruteForceThreshold")},", bicep, StringComparison.Ordinal);
-        Assert.Contains($"tune(loadTextContent('rules/firewall-deny.kql'), {Default("firewallDenyThreshold")},", bicep, StringComparison.Ordinal);
+        Assert.Contains($"tune(loadTextContent('rules/wec-brute-force.kql'), 'bower-wec-brute-force', detectionKeyScope, {Default("bruteForceThreshold")},", bicep, StringComparison.Ordinal);
+        Assert.Contains($"tune(loadTextContent('rules/firewall-deny.kql'), 'bower-firewall-deny', detectionKeyScope, {Default("firewallDenyThreshold")},", bicep, StringComparison.Ordinal);
+        // Detection keys and rule names are scoped per deployment.
+        Assert.Contains("let ruleKey = \"bower-wec-brute-force:default\";", Read("rules", "wec-brute-force.kql"), StringComparison.Ordinal);
+        Assert.Contains("let ruleKey = \"bower-firewall-deny:default\";", Read("rules", "firewall-deny.kql"), StringComparison.Ordinal);
+        Assert.Contains("'let ruleKey = \"${rule}:default\";', 'let ruleKey = \"${rule}:${scope}\";'", bicep, StringComparison.Ordinal);
+        Assert.Equal(3, Regex.Count(bicep, @"name: guid\(workspace\.id, 'bower-[a-z-]+', detectionKeyScope\)"));
+        Assert.Contains("param detectionKeyScope string = 'default'", bicep, StringComparison.Ordinal);
         string tolerance = Read("rules", "beyond-tolerance.kql");
         Assert.Contains($"let maxDelay = {Default("maxIngestionDelayMinutes")}m;", tolerance, StringComparison.Ordinal);
         Assert.Contains($"let settleDelay = {Default("settleDelayMinutes")}m;", tolerance, StringComparison.Ordinal);
@@ -108,6 +114,65 @@ public sealed class SentinelAnalyticsContentTests
         Assert.Contains("'let frequency = 60m;', 'let frequency = ${toleranceFrequencyMinutes}m;'", bicep, StringComparison.Ordinal);
         Assert.Contains("queryFrequency: 'PT${toleranceFrequencyMinutes}M'", bicep, StringComparison.Ordinal);
         Assert.Contains("'let retrySpacing = 2;', 'let retrySpacing = ${spacing};'", bicep, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("wec-brute-force.kql")]
+    [InlineData("firewall-deny.kql")]
+    public void DetectionRules_RankOnlyBucketsThatReachTheThreshold(string file)
+    {
+        string query = Code(Read("rules", file));
+
+        // Same candidate rows for counting and ranking; only buckets at or above the
+        // threshold are joined back, and the final threshold filter is unchanged.
+        Assert.Contains("let candidates = materialize(BowerSecurityEventsOfType(", query, StringComparison.Ordinal);
+        Assert.Matches(@"let crossedBuckets = candidates\s*\|\s*summarize BucketEvents = count\(\) by SourceIpAddress, BucketStart\s*\|\s*where BucketEvents >= threshold", query);
+        int join = query.IndexOf("candidates\n| join kind=inner crossedBuckets on SourceIpAddress, BucketStart", StringComparison.Ordinal);
+        int sort = query.IndexOf("| sort by SourceIpAddress asc, BucketStart asc, BowerFirstIngested asc", StringComparison.Ordinal);
+        Assert.True(join >= 0 && join < sort);
+        Assert.Contains("| where DistinctEvents >= threshold", query, StringComparison.Ordinal);
+        // Every filter on the events sits inside `candidates`, before the bucket count.
+        string candidates = query[query.IndexOf("let candidates", StringComparison.Ordinal)..query.IndexOf("let crossedBuckets", StringComparison.Ordinal)];
+        foreach (string filter in new[] { "isnotempty(SourceIpAddress)", "BowerFirstIngested < windowEnd", "<= maxDelay", "bin(BowerEventTime, bucketSize)" })
+        {
+            Assert.Contains(filter, candidates, StringComparison.Ordinal);
+        }
+    }
+
+    [Theory]
+    [InlineData("wec-brute-force.kql")]
+    [InlineData("firewall-deny.kql")]
+    [InlineData("beyond-tolerance.kql")]
+    public void Rules_AnchorWindowsToAFixedGrid(string file) =>
+        Assert.Contains("let windowEnd = bin(now() - settleDelay, frequency);", Read("rules", file), StringComparison.Ordinal);
+
+    [Fact]
+    public void GridWindows_TileForEveryScheduleAndNeverPartlyOverlapAfterAShift()
+    {
+        // Mirrors `windowEnd = bin(now() - settleDelay, frequency)`, owned window
+        // [windowEnd - frequency, windowEnd), for runs at any phase of the schedule.
+        TimeSpan frequency = TimeSpan.FromMinutes(5), settle = TimeSpan.FromMinutes(5);
+        DateTimeOffset origin = new(2026, 11, 2, 0, 0, 0, TimeSpan.Zero);
+        DateTimeOffset End(DateTimeOffset now) =>
+            new((now - settle).UtcTicks / frequency.Ticks * frequency.Ticks, TimeSpan.Zero);
+        foreach (int phaseSeconds in new[] { 0, 1, 137, 299 })
+        {
+            DateTimeOffset previous = End(origin.AddSeconds(phaseSeconds));
+            for (int run = 1; run < 50; run++)
+            {
+                DateTimeOffset end = End(origin.AddSeconds(phaseSeconds) + (run * frequency));
+                Assert.Equal(previous + frequency, end); // contiguous, no gap, no overlap
+                previous = end;
+            }
+        }
+
+        // A schedule moved by any offset: each pair of windows is identical or disjoint.
+        foreach (int shiftSeconds in new[] { 1, 59, 150, 299, 301, 977 })
+        {
+            DateTimeOffset before = End(origin.AddMinutes(7).AddSeconds(13));
+            DateTimeOffset after = End(origin.AddMinutes(7).AddSeconds(13 + shiftSeconds));
+            Assert.True(after == before || after - before >= frequency || before - after >= frequency);
+        }
     }
 
     [Fact]
@@ -120,12 +185,19 @@ public sealed class SentinelAnalyticsContentTests
         // Same first copy, last ingestion and copy count per (CollectorId, EventId).
         Assert.NotEmpty(Collapse(full));
         Assert.Equal(Collapse(full), Collapse(typed));
-        int filter = typed.IndexOf("where EventType in (eventTypes)", StringComparison.Ordinal);
+        int identities = typed.IndexOf("| join kind=leftsemi identities on CollectorId, EventId", StringComparison.Ordinal);
         int dropped = typed.IndexOf("project-away RawEnvelope", StringComparison.Ordinal);
         int collapse = typed.IndexOf("summarize arg_min", StringComparison.Ordinal);
-        Assert.True(filter >= 0 && filter < dropped && dropped < collapse);
+        int typeFilter = typed.LastIndexOf("| where EventType in (eventTypes)", StringComparison.Ordinal);
+        // Identities with a row of a listed type are collapsed over all their rows (any
+        // type), so an EventId reused with another type picks the canonical winner; the
+        // winners are filtered by type only after the collapse.
+        Assert.True(dropped < identities && identities < collapse && collapse < typeFilter);
+        // ingestion_time() is null on a join's output rows (found live): read it first.
+        Assert.True(typed.IndexOf("BowerIngested = ingestion_time()", StringComparison.Ordinal) < identities);
+        Assert.Contains("| where EventType in (eventTypes)\n    | distinct CollectorId, EventId;", typed, StringComparison.Ordinal);
         // The event time is read from RawEnvelope before it is dropped.
-        Assert.True(typed.IndexOf("BowerEventTime = coalesce(todatetime(RawEnvelope.timeGenerated)", StringComparison.Ordinal) < dropped);
+        Assert.True(typed.IndexOf("BowerEventTime = coalesce(todatetime(RawEnvelope.timeGenerated)", StringComparison.Ordinal) is >= 0 and var read && read < dropped);
         Assert.Contains("functionParameters: 'eventTypes:dynamic'", Read("main.bicep"), StringComparison.Ordinal);
         // Columns the detection rules read are kept.
         string projectAway = typed[dropped..typed.IndexOf('\n', dropped)];

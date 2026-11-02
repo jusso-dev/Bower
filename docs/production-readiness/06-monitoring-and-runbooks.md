@@ -802,8 +802,9 @@ queue would answer duplicates) and **the original collector's `BOWER_COLLECTOR_I
 replayed event carries `Labels.bowerReplay = "archive"`, `Labels.bowerReplayCollectorId`
 (the archived envelope's collector) and the original `CollectorId`, so
 [`BowerSecurityEvents`](02-replay-safe-detections.md) collapses it with the original
-delivery. A collector with another id refuses the replay (`archive-replay-collector-mismatch`)
-and `bower archive replay` stops with `collector-mismatch` and exit code 2.
+delivery. A collector with another id refuses that event (`archive-replay-collector-mismatch`,
+nothing stored); `bower archive replay` counts it as `collector-mismatch`, continues with
+the remaining events and exits 2 at the end.
 
 1. Record intent: operator, change reference, window, event types, `bower archive verify`
    output (head sequence and hash), and a `--dry-run` count.
@@ -828,12 +829,21 @@ and `bower archive replay` stops with `collector-mismatch` and exit code 2.
 
    ```kusto
    let replayed = datatable(CollectorId: string, EventId: string) [ /* from the audit manifest */ ];
+   let replayStarted = datetime(/* when the replay began */);
    replayed
-   | join kind=leftouter (BowerSecurityEvents | where TimeGenerated > ago(14d)
+   | join kind=leftouter (BowerSecurityEvents
+       | where BowerLastIngested >= replayStarted
        | project CollectorId, EventId, BowerCopies) on CollectorId, EventId
    | extend Present = isnotempty(EventId1)
    | summarize Replayed = count(), Missing = countif(not(Present)), WithOriginal = countif(BowerCopies >= 2)
    ```
+
+   Filter on `BowerLastIngested` (the replay's arrival), never on `TimeGenerated`: the
+   function keeps the original's `TimeGenerated`, which can be far older than the
+   replay. Set the query's time range (the portal time picker or the API `timespan`) to
+   start at or before the replay's `--from` (the oldest replayed event time) and end
+   now; the function only sees rows whose `TimeGenerated` is inside that range, so a
+   shorter range hides both the original and the replay.
 
    Pass: `Missing == 0`, and `WithOriginal` equals the number of replayed identities
    whose original you expected to survive.

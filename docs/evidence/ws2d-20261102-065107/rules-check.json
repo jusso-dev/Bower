@@ -1,0 +1,144 @@
+[
+ {
+  "rule": "wec-brute-force",
+  "now": "2026-11-02T07:05:00Z",
+  "identical": true,
+  "results": [
+   {
+    "BowerDetectionKey": "bower-wec-brute-force:default|192.0.2.211|2026-11-02T06:50:00.0000000Z",
+    "DistinctEvents": 12,
+    "CrossedAt": "2026-11-02T06:59:17.8780574Z",
+    "EvaluationPath": "owned-window"
+   }
+  ]
+ },
+ {
+  "rule": "wec-brute-force",
+  "now": "2026-11-02T07:07:30Z",
+  "identical": true,
+  "results": [
+   {
+    "BowerDetectionKey": "bower-wec-brute-force:default|192.0.2.211|2026-11-02T06:50:00.0000000Z",
+    "DistinctEvents": 12,
+    "CrossedAt": "2026-11-02T06:59:17.8780574Z",
+    "EvaluationPath": "owned-window"
+   }
+  ]
+ },
+ {
+  "rule": "wec-brute-force",
+  "now": "2026-11-02T07:09:59Z",
+  "identical": true,
+  "results": [
+   {
+    "BowerDetectionKey": "bower-wec-brute-force:default|192.0.2.211|2026-11-02T06:50:00.0000000Z",
+    "DistinctEvents": 12,
+    "CrossedAt": "2026-11-02T06:59:17.8780574Z",
+    "EvaluationPath": "owned-window"
+   }
+  ]
+ },
+ {
+  "rule": "wec-brute-force",
+  "now": "2026-11-02T07:10:00Z",
+  "identical": true,
+  "results": []
+ },
+ {
+  "rule": "wec-brute-force",
+  "now": "2026-11-02T07:15:00Z",
+  "identical": true,
+  "results": [
+   {
+    "BowerDetectionKey": "bower-wec-brute-force:default|192.0.2.211|2026-11-02T06:50:00.0000000Z",
+    "DistinctEvents": 12,
+    "CrossedAt": "2026-11-02T06:59:17.8780574Z",
+    "EvaluationPath": "catch-up-2"
+   }
+  ]
+ },
+ {
+  "rule": "wec-brute-force",
+  "now": "2026-11-02T07:17:31Z",
+  "identical": true,
+  "results": [
+   {
+    "BowerDetectionKey": "bower-wec-brute-force:default|192.0.2.211|2026-11-02T06:50:00.0000000Z",
+    "DistinctEvents": 12,
+    "CrossedAt": "2026-11-02T06:59:17.8780574Z",
+    "EvaluationPath": "catch-up-2"
+   }
+  ]
+ },
+ {
+  "rule": "firewall-deny",
+  "now": "2026-11-02T07:05:00Z",
+  "identical": true,
+  "results": [
+   {
+    "BowerDetectionKey": "bower-firewall-deny:default|198.51.100.211|2026-11-02T06:50:00.0000000Z",
+    "DistinctEvents": 24,
+    "CrossedAt": "2026-11-02T06:59:17.8780574Z",
+    "EvaluationPath": "owned-window"
+   }
+  ]
+ },
+ {
+  "rule": "firewall-deny",
+  "now": "2026-11-02T07:07:30Z",
+  "identical": true,
+  "results": [
+   {
+    "BowerDetectionKey": "bower-firewall-deny:default|198.51.100.211|2026-11-02T06:50:00.0000000Z",
+    "DistinctEvents": 24,
+    "CrossedAt": "2026-11-02T06:59:17.8780574Z",
+    "EvaluationPath": "owned-window"
+   }
+  ]
+ },
+ {
+  "rule": "firewall-deny",
+  "now": "2026-11-02T07:09:59Z",
+  "identical": true,
+  "results": [
+   {
+    "BowerDetectionKey": "bower-firewall-deny:default|198.51.100.211|2026-11-02T06:50:00.0000000Z",
+    "DistinctEvents": 24,
+    "CrossedAt": "2026-11-02T06:59:17.8780574Z",
+    "EvaluationPath": "owned-window"
+   }
+  ]
+ },
+ {
+  "rule": "firewall-deny",
+  "now": "2026-11-02T07:10:00Z",
+  "identical": true,
+  "results": []
+ },
+ {
+  "rule": "firewall-deny",
+  "now": "2026-11-02T07:15:00Z",
+  "identical": true,
+  "results": [
+   {
+    "BowerDetectionKey": "bower-firewall-deny:default|198.51.100.211|2026-11-02T06:50:00.0000000Z",
+    "DistinctEvents": 24,
+    "CrossedAt": "2026-11-02T06:59:17.8780574Z",
+    "EvaluationPath": "catch-up-2"
+   }
+  ]
+ },
+ {
+  "rule": "firewall-deny",
+  "now": "2026-11-02T07:17:31Z",
+  "identical": true,
+  "results": [
+   {
+    "BowerDetectionKey": "bower-firewall-deny:default|198.51.100.211|2026-11-02T06:50:00.0000000Z",
+    "DistinctEvents": 24,
+    "CrossedAt": "2026-11-02T06:59:17.8780574Z",
+    "EvaluationPath": "catch-up-2"
+   }
+  ]
+ }
+]

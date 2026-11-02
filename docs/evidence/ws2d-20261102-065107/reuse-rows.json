@@ -1,0 +1,26 @@
+[
+ {
+  "EventId": "ws2-q-cross-deny-0000-087d2939cde4",
+  "EventType": "network_connection_denied",
+  "SourceIpAddress": "198.51.100.211",
+  "Ingested": "2026-11-02T06:59:17.8780574Z"
+ },
+ {
+  "EventId": "ws2-q-cross-deny-0000-087d2939cde4",
+  "EventType": "authentication_failure",
+  "SourceIpAddress": "192.0.2.213",
+  "Ingested": "2026-11-02T06:59:17.8780574Z"
+ },
+ {
+  "EventId": "ws2-q-below-deny-0000-b48f00b6f16e",
+  "EventType": "authentication_failure",
+  "SourceIpAddress": "192.0.2.214",
+  "Ingested": "2026-11-02T06:59:47.1991602Z"
+ },
+ {
+  "EventId": "ws2-q-below-deny-0000-b48f00b6f16e",
+  "EventType": "network_connection_denied",
+  "SourceIpAddress": "198.51.100.212",
+  "Ingested": "2026-11-02T06:59:17.8780574Z"
+ }
+]

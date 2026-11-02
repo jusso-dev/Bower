@@ -74,6 +74,49 @@ public sealed class SecurityEventProcessorTests
     }
 
     [Fact]
+    public async Task Process_ArchiveReplayCheckUsesTheLabelsAsReceivedNotAsRedacted()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = new(Path.Combine(directory.Path, "queue.db"), 10 * 1024 * 1024, clock);
+        await store.InitializeAsync(cancellation);
+        string Candidate(string id, string origin) => JsonSerializer.Serialize(
+            TestEvents.AuthenticationFailure(clock.UtcNow) with
+            {
+                EventId = id,
+                Labels = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["bowerReplay"] = "archive",
+                    ["bowerReplayCollectorId"] = origin
+                }
+            },
+            BowerJson.Envelope);
+        DeterministicPolicyEvaluator policy = new([TestEvents.AuthenticationPolicy()]);
+
+        // A supported privacy rule removes every label: the replay from another collector
+        // is still refused instead of landing under this collector's identity.
+        JsonEventRedactor removesLabels = new(new Bower.Redaction.Privacy.PrivacyPolicy
+        {
+            FieldRules = [new Bower.Redaction.Privacy.PrivacyFieldRule("labels.*", Bower.Redaction.Privacy.PrivacyAction.Remove)]
+        });
+        Assert.DoesNotContain("bowerReplay", removesLabels.Redact(Candidate("removed", "edge-a")).RedactedJson, StringComparison.Ordinal);
+        ProcessingResult removed = await new SecurityEventProcessor(removesLabels, policy, store, clock).ProcessAsync(
+            Candidate("removed", "edge-a"), new CollectorIdentity("edge-b", "0.1.0", "local-http:replay", "sha256:configuration"), cancellation);
+        Assert.Equal([SecurityEventProcessor.ArchiveReplayCollectorMismatch], removed.Reasons);
+        Assert.False(removed.Queued);
+
+        // The default TFN detector masks a collector id inside the label: the collector
+        // with that id still accepts its own replay.
+        const string Collector = "edge-123456782";
+        JsonEventRedactor defaults = new();
+        Assert.DoesNotContain(Collector, defaults.Redact(Candidate("masked", Collector)).RedactedJson, StringComparison.Ordinal);
+        ProcessingResult masked = await new SecurityEventProcessor(defaults, policy, store, clock).ProcessAsync(
+            Candidate("masked", Collector), new CollectorIdentity(Collector, "0.1.0", "local-http:replay", "sha256:configuration"), cancellation);
+        Assert.True(masked.Queued);
+    }
+
+    [Fact]
     public void IdentityComparison_BoundsBothDocumentsByUtf8Bytes()
     {
         const string small = "{\"eventId\":\"synthetic-id\"}";

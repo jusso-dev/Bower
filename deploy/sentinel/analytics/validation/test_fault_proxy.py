@@ -17,9 +17,12 @@ class FaultProxyTests(unittest.IsolatedAsyncioTestCase):
         self.log = os.path.join(self.directory.name, "proxy.jsonl")
         self.proxy = fault_proxy.Proxy("127.0.0.1", 2048, self.log)
 
+        self.received = 0
+
         async def upstream(reader, writer):
             # Answer every client write, like a TLS handshake and an HTTP response.
             while data := await reader.read(65536):
+                self.received += len(data)
                 writer.write(b"reply:%d" % len(data))
                 await writer.drain()
             writer.close()
@@ -80,6 +83,19 @@ class FaultProxyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(b"reply:1500", await self.exchange(reader, writer, 1500))
         # ...so the response once the upload passes --request-bytes is dropped.
         self.assertIsNone(await self.exchange(reader, writer, 1500))
+        self.assertEqual(1, self.proxy.poisoned)
+        writer.close()
+
+    async def test_the_whole_upload_reaches_the_server_after_its_response_is_dropped(self):
+        reader, writer, _ = await self.tunnel()
+        self.assertEqual(b"reply:300", await self.exchange(reader, writer, 300))
+        self.proxy.set_mode("drop-next")
+        # The server answers part-way through the upload, above --request-bytes: that
+        # answer is dropped, and the rest of the upload must still be forwarded.
+        self.assertIsNone(await self.exchange(reader, writer, 3000))
+        self.assertIsNone(await self.exchange(reader, writer, 1300))
+        await asyncio.sleep(0.2)
+        self.assertEqual(300 + 3000 + 1300, self.received)
         self.assertEqual(1, self.proxy.poisoned)
         writer.close()
 

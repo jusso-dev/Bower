@@ -104,6 +104,45 @@ fn archive_replay_is_accepted_only_by_the_original_collector_id() {
 }
 
 #[test]
+fn archive_replay_check_uses_the_labels_as_received_not_as_redacted() {
+    // Port of Process_ArchiveReplayCheckUsesTheLabelsAsReceivedNotAsRedacted.
+    let labelled = |origin: &str| {
+        authentication_failure_json(&format!(
+            r#"{{}},"labels":{{"bowerReplay":"archive","bowerReplayCollectorId":"{origin}"}}"#
+        ))
+    };
+    // A privacy rule removed the labels: a replay from another collector is still refused.
+    let store = Arc::new(MemoryStore::default());
+    let input = labelled("other-collector");
+    let removed = FixedRedactor(RedactionResult {
+        succeeded: true,
+        redacted_json: Some(authentication_failure_json("{}")),
+        ..RedactionResult::default()
+    });
+    let result = processor(removed, &store)
+        .process(&input, &identity())
+        .unwrap();
+    assert_eq!(
+        result.reasons,
+        [bower_core::ARCHIVE_REPLAY_COLLECTOR_MISMATCH]
+    );
+    assert!(store.items().is_empty());
+
+    // A detector masked the collector id in the label: its own replay is still accepted.
+    let store = Arc::new(MemoryStore::default());
+    let input = labelled("collector-1");
+    let masked = FixedRedactor(RedactionResult {
+        succeeded: true,
+        redacted_json: Some(labelled("co*********-1")),
+        ..RedactionResult::default()
+    });
+    let result = processor(masked, &store)
+        .process(&input, &identity())
+        .unwrap();
+    assert!(result.queued, "{:?}", result.reasons);
+}
+
+#[test]
 fn process_redacts_before_persistence_and_explains_acceptance() {
     let store = Arc::new(MemoryStore::default());
     let redactor = FieldRedactor {

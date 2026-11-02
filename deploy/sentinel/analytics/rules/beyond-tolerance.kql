@@ -7,8 +7,9 @@
 let maxDelay = 360m;
 let settleDelay = 5m;
 let frequency = 60m;
-// One non-overlapping slot of first ingestion per run, so each late event alerts once.
-let windowEnd = now() - settleDelay;
+// One non-overlapping slot of first ingestion per run, on a fixed grid of `frequency`,
+// so each late event alerts once even after the schedule moves.
+let windowEnd = bin(now() - settleDelay, frequency);
 let windowStart = windowEnd - frequency;
 // Candidates: rows ingested in the slot. Their TimeGenerated is at most two days before
 // ingestion (Azure Monitor rewrites older values), so this bound keeps every candidate.

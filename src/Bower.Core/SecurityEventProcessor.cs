@@ -121,13 +121,43 @@ public sealed class SecurityEventProcessor(
     /// <c>bower archive replay</c> labels each event with the collector that first accepted it;
     /// replayed through a collector with another id it would land as a second, different
     /// event, so it is refused. Labels only refuse here: they never set the identity.
+    /// The labels are read from the candidate <b>before</b> redaction (and kept only in
+    /// memory): a privacy rule may remove labels, or a detector may mask a collector id
+    /// inside one, and neither may change the replay check.
     /// </summary>
-    internal static bool IsArchiveReplayFromAnotherCollector(SecurityEventEnvelope candidate, CollectorIdentity collector) =>
-        candidate.Labels is { } labels
-        && labels.TryGetValue("bowerReplay", out string? replay)
-        && string.Equals(replay, "archive", StringComparison.Ordinal)
-        && labels.TryGetValue("bowerReplayCollectorId", out string? origin)
-        && !string.Equals(origin, collector.Id, StringComparison.Ordinal);
+    internal static bool IsArchiveReplayFromAnotherCollector(string? replayOrigin, CollectorIdentity collector) =>
+        replayOrigin is not null && !string.Equals(replayOrigin, collector.Id, StringComparison.Ordinal);
+
+    /// <summary>
+    /// The unredacted <c>labels.bowerReplayCollectorId</c> of an archive replay
+    /// (<c>labels.bowerReplay == "archive"</c>), or null. Bounded like the identity check;
+    /// a candidate that does not parse is left to redaction, which refuses it.
+    /// </summary>
+    internal static string? ArchiveReplayOrigin(string candidateJson)
+    {
+        if (Encoding.UTF8.GetByteCount(candidateJson) > RedactedEventIdentity.MaximumDocumentBytes)
+        {
+            return null;
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(candidateJson, new JsonDocumentOptions { MaxDepth = 32 });
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("labels", out JsonElement labels)
+                && labels.ValueKind == JsonValueKind.Object
+                && labels.TryGetProperty("bowerReplay", out JsonElement replay)
+                && replay.ValueKind == JsonValueKind.String && replay.ValueEquals("archive")
+                && labels.TryGetProperty("bowerReplayCollectorId", out JsonElement origin)
+                && origin.ValueKind == JsonValueKind.String
+                    ? origin.GetString()
+                    : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     private async Task<ProcessingResult> ProcessCoreAsync(
         string candidateJson,
@@ -137,6 +167,8 @@ public sealed class SecurityEventProcessor(
         bool internalHealth,
         CancellationToken cancellationToken)
     {
+        // Captured before redaction, never persisted; see IsArchiveReplayFromAnotherCollector.
+        string? replayOrigin = ArchiveReplayOrigin(candidateJson);
         RedactionResult redaction;
         try
         {
@@ -207,7 +239,7 @@ public sealed class SecurityEventProcessor(
                 bytesIn);
         }
 
-        if (IsArchiveReplayFromAnotherCollector(candidate, collector))
+        if (IsArchiveReplayFromAnotherCollector(replayOrigin, collector))
         {
             return Decided(
                 ProcessingResult.Failed(DecisionAction.Quarantine, ArchiveReplayCollectorMismatch, ProcessingStage.Validation),

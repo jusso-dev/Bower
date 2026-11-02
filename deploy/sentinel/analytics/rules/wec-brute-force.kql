@@ -13,9 +13,13 @@ let maxDelay = 360m;
 // Runs between retries of a missed crossing: a run's alerts must be queryable in
 // SecurityAlert by the run that many runs later (alertVisibilityRuns in main.bicep).
 let retrySpacing = 2;
-let ruleKey = "bower-wec-brute-force";
-// In a scheduled run now() is the end of the run's query window.
-let windowEnd = now() - settleDelay;
+// Detection keys are scoped per deployment (detectionKeyScope in main.bicep), so two
+// deployments in one workspace never suppress each other's alerts.
+let ruleKey = "bower-wec-brute-force:default";
+// In a scheduled run now() is the end of the run's query window. Windows sit on a fixed
+// grid of `frequency`, so a redeploy or re-enable that moves the schedule cannot create
+// partly overlapping windows.
+let windowEnd = bin(now() - settleDelay, frequency);
 let catchUpStart = windowEnd - catchUp;
 let horizon = bin(catchUpStart - maxDelay, bucketSize);
 let alerted = SecurityAlert
@@ -23,12 +27,21 @@ let alerted = SecurityAlert
     | extend BowerDetectionKey = tostring(todynamic(tostring(todynamic(ExtendedProperties)["Custom Details"])).BowerDetectionKey[0])
     | where BowerDetectionKey startswith strcat(ruleKey, "|")
     | distinct BowerDetectionKey;
-BowerSecurityEventsOfType(dynamic(["authentication_failure"]))
-| where EventType == "authentication_failure" and ApplicationName == "windows-security"
-| where isnotempty(SourceIpAddress)
-| where BowerEventTime >= horizon and BowerFirstIngested < windowEnd
-| where BowerFirstIngested - BowerEventTime <= maxDelay
-| extend BucketStart = bin(BowerEventTime, bucketSize)
+let candidates = materialize(BowerSecurityEventsOfType(dynamic(["authentication_failure"]))
+    | where EventType == "authentication_failure" and ApplicationName == "windows-security"
+    | where isnotempty(SourceIpAddress)
+    | where BowerEventTime >= horizon and BowerFirstIngested < windowEnd
+    | where BowerFirstIngested - BowerEventTime <= maxDelay
+    | extend BucketStart = bin(BowerEventTime, bucketSize));
+// Rank only buckets that reach the threshold: the ranking and every aggregate below see
+// exactly the same rows per bucket as ranking all buckets, and a bucket below the
+// threshold is dropped by `DistinctEvents >= threshold` either way.
+let crossedBuckets = candidates
+    | summarize BucketEvents = count() by SourceIpAddress, BucketStart
+    | where BucketEvents >= threshold
+    | project SourceIpAddress, BucketStart;
+candidates
+| join kind=inner crossedBuckets on SourceIpAddress, BucketStart
 | sort by SourceIpAddress asc, BucketStart asc, BowerFirstIngested asc, CollectorId asc, EventId asc
 | extend Rank = row_number(1, prev(SourceIpAddress) != SourceIpAddress or prev(BucketStart) != BucketStart)
 | summarize CrossedAt = minif(BowerFirstIngested, Rank == threshold), DistinctEvents = count(),

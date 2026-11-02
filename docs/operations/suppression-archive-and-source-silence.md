@@ -277,6 +277,10 @@ example for a records-authority period such as AFDA Express v2.
   queue reports replayed events as duplicates) and the **original
   `BOWER_COLLECTOR_ID`**, so Sentinel keeps one `(CollectorId, EventId)` identity per
   event ([replay-safe detections](../production-readiness/02-replay-safe-detections.md)).
+  This holds only for archived envelopes with a stamped `collector.id`. An envelope
+  without one is replayed without an origin label and accepted by any collector, which
+  stamps its own id, so its `(CollectorId, EventId)` is not the original identity:
+  treat such events as a separate migration path.
   The origin label is always the archived envelope's stamped `collector.id` (a label
   the producer set is replaced). A collector with another id quarantines the event as
   `archive-replay-collector-mismatch`; the CLI counts it as `collector-mismatch`,

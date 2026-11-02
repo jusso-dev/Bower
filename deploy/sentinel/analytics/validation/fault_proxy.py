@@ -102,9 +102,10 @@ class Proxy:
         async def client_to_server():
             while data := await reader.read(65536):
                 state["up"] += len(data)
-                if not state["poisoned"]:
-                    upstream_writer.write(data)
-                    await upstream_writer.drain()
+                # Always forwarded, also after poisoning: Azure must receive the whole
+                # upload, or the fault is a truncated request instead of a lost answer.
+                upstream_writer.write(data)
+                await upstream_writer.drain()
             # The client gave up (for example its delivery deadline): end the tunnel.
             close()
 
