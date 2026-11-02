@@ -55,3 +55,26 @@ list. The query reads that missing optional date as unknown TLS metadata and ale
 the listener runs. The health record does not say whether a CRL is configured. Criterion 5
 (no alerts) therefore cannot pass with the alert set as shipped. This is reported as found;
 the collector was not reconfigured mid-soak, which would have restarted it.
+
+## Interim reconciliation (first hour, 03:35:00Z to 04:35:00Z; run at 04:48Z)
+
+[`interim/interim-h00.json`](interim/interim-h00.json). Both collectors match exactly with 0
+duplicate rows and 0 extras:
+
+| Collector | Native | Accepted | Sentinel distinct | Sentinel rows | p50 / p95 / p99 latency |
+|---|---|---|---|---|---|
+| Firewall (RPM, RELP) | 36,000 (first-hour sequence ids 100,000 to 135,999 of the running segment; its nftables counter is checked when the segment ends) | 36,000 | 36,000 | 36,000 | 3.9 / 6.6 / 9.0 s |
+| WEC (MSI) | 35,990 (DC Security 4625s with event time in the hour, hourly export `h00`) | 35,990 | 35,990 | 35,990 | 6.8 / 9.7 / 12.4 s |
+
+Privacy markers: 0 of 36,062 and 36,052 rows. Health: 60 `healthy` records per collector,
+largest gap 61 s. Timer jobs ran: `queue-retention` at 03:00Z and 04:00Z, `queue-maintenance`
+at 03:00Z on both collectors. The WEC process was unchanged in every sample (CPU p50 14.4% of one
+core). The only alert is the pre-soak `syslog-tls-expiry` (above). There were no Sentinel incidents.
+
+**Harness defect found at the interim (preserved):** from 03:40Z to 04:45Z the Linux sampler
+lost the status part of 18 samples. A non-null `oldestUndelivered` carries .NET's seven
+fractional digits, which Python 3.9's `fromisoformat` rejects (`ValueError`). Process
+metrics (PID, CPU, RSS, threads, FDs, `NRestarts`), disk and queue file sizes are intact in
+those samples because they are read first. The worker was fixed and redeployed at 04:48Z.
+That changed only the timer's script, not Bower. `reconcile.py` reports `samplesWithoutStatus`
+separately.

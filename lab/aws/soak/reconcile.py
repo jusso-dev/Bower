@@ -265,7 +265,9 @@ def resources(results, host, start, end):
     path = results / 'hosts' / ('linux' if host == 'linux' else 'wec') / 'samples.jsonl'
     rows = [json.loads(line) for line in path.read_text(encoding='utf-8-sig').splitlines() if line.strip()] if path.exists() else []
     rows = [r for r in rows if start <= stamp(r['at']) < end]
-    good = [r for r in rows if not r.get('error') and r.get('process')]
+    # Process metrics come first in a sample; a later status failure keeps them (error recorded).
+    good = [r for r in rows if r.get('process')]
+    status_rows = [r for r in good if r.get('queue')]
     def series(get, warm=3):
         return slope([((stamp(r['at']) - start) / 3600, get(r)) for r in good if (stamp(r['at']) - start) / 3600 >= warm])
     pids = sorted({(r['process']['pid'], r['process'].get('startTicks') or r['process'].get('startedAt')) for r in good}, key=str)
@@ -283,24 +285,25 @@ def resources(results, host, start, end):
         if gap > 0 and a['process']['pid'] == b['process']['pid']:
             cpu.append(100 * (b['process']['cpuSeconds'] - a['process']['cpuSeconds']) / gap)
     jobs = {}
-    for r in good:
+    for r in status_rows:
         for job, value in (r.get('jobs') or {}).items():
             if value and value.get('lastRunAt'):
                 jobs.setdefault(job, set()).add((value['lastRunAt'], value['lastState']))
     return {
-        'samples': len(rows), 'failedSamples': len(rows) - len(good), 'processIdentities': len(pids), 'bootIds': len(boots),
+        'samples': len(rows), 'samplesWithoutProcess': len(rows) - len(good), 'samplesWithoutStatus': len(rows) - len(status_rows),
+        'sampleErrors': sorted({r.get('error') for r in rows if r.get('error')}), 'processIdentities': len(pids), 'bootIds': len(boots),
         'serviceRestartCounter': restarts,
         'maximumSampleGapSeconds': max((stamp(b['at']) - stamp(a['at']) for a, b in zip(rows, rows[1:])), default=None),
         'memoryBytes': series(mem), 'memoryBytesFromStart': series(mem, 0),
         'handlesOrFds': series(handles), 'threads': series(lambda r: r['process']['threads']),
         'queueDbPlusWalBytes': series(store), 'walBytes': series(lambda r: r['files'].get('queue.db-wal', 0)),
         'cpuPercentOfOneCore': quantiles(cpu),
-        'peakPending': max((r['queue']['pending'] for r in good), default=None),
-        'peakOldestUndeliveredAgeSeconds': max((r['queue']['oldestAgeSeconds'] for r in good), default=None),
+        'peakPending': max((r['queue']['pending'] for r in status_rows), default=None),
+        'peakOldestUndeliveredAgeSeconds': max((r['queue']['oldestAgeSeconds'] for r in status_rows), default=None),
         'minimumDiskAvailableBytes': min((r['disk']['availableBytes'] for r in good), default=None),
-        'statuses': sorted({r.get('status') for r in good}, key=str),
+        'statuses': sorted({r.get('status') for r in status_rows}, key=str),
         'jobRuns': {job: {'runs': len(v), 'states': sorted({s for _, s in v}, key=str), 'last': max(v)[0]} for job, v in jobs.items()},
-        'deliveryFailureCodes': sorted({(r.get('delivery') or {}).get('lastFailureCode') for r in good}, key=str),
+        'deliveryFailureCodes': sorted({(r.get('delivery') or {}).get('lastFailureCode') for r in status_rows}, key=str),
     }
 
 
@@ -344,13 +347,14 @@ def main():
               'latencyP99LimitSeconds': LATENCY_P99_LIMIT, 'collectors': {}}
     for host, (collector, event_type) in COLLECTORS.items():
         if host == 'linux':
-            native, native_meta = firewall_native(results, label, cutoff if args.action == 'interim' else end)
+            # Interim: exactly the first hour's scheduled identities (the running segment's prefix).
+            native, native_meta = firewall_native(results, label, SOAK_START + 3630 if args.action == 'interim' else end)
             low, high = (0, 9000) if label == 'smoke' else (100000, 100000 + 896400)
             queue = {i for i in accepted(results, host) if re.fullmatch(r'a13-n\d{4}x\d{5}', i) and low <= index(i) < high}
         else:
             native, native_meta = windows_native(results, windows)
             queue = accepted(results, host)
-        query_end = end if args.action != 'interim' else SOAK_START + 3600
+        query_end = end if args.action != 'interim' else SOAK_START + 3600 + (300 if host == 'linux' else 0)
         query_start = start - 120
         rows, hours, latency, hashes = sentinel(verifier, collector, event_type, query_start, query_end, cutoff)
         if host == 'linux':

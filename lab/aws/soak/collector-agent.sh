@@ -70,6 +70,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
 import subprocess
 import sys
@@ -125,6 +126,8 @@ def sample():
         queue = s['queue']
         oldest = queue.get('oldestUndelivered')
         queue['pending'] = queue['queued'] + queue['retrying'] + queue['uploading']
+        # .NET writes seven fractional digits; Python 3.9 parses at most six.
+        oldest = re.sub(r'\.(\d{6})\d+', r'.\1', oldest) if oldest else None
         queue['oldestAgeSeconds'] = (at - dt.datetime.fromisoformat(oldest)).total_seconds() if oldest else 0
         row['queue'] = queue
         row['status'] = s['status']
