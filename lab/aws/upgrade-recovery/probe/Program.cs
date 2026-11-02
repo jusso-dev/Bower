@@ -9,7 +9,8 @@ using Microsoft.Data.Sqlite;
 
 // ws4 lab probe: metadata and synthetic identities only, never payloads.
 //   queue  DB OUT       read-only queue snapshot (+ OUT.ids: eventId<TAB>state)
-//   native CHANNEL SINCE OUT [UNTIL]   4625 identities (+ OUT.ids: expectedId<TAB>recordId<TAB>originRecordId);
+//   native CHANNEL SINCE OUT [UNTIL]   4625 identities (+ OUT.ids: expectedId<TAB>recordId<TAB>originRecordId<TAB>originalId);
+//          originalId is the unredacted id: collectors whose privacy profile keeps ids compare against it
 //          UNTIL (exclusive) bounds the native query to one window, as the soak exports hourly
 //   queue-union DB UNION OUT   adds the queue's current identities to UNION (eventId<TAB>firstSeenAt),
 //          so events later purged by retention stay accounted for (soak, every 30 minutes)
@@ -141,7 +142,7 @@ if (args is ["native", string channel, string sinceText, string nativeOutput, ..
             selected++;
             long position = record.RecordId ?? -1;
             minRecord = Math.Min(minRecord, position); maxRecord = Math.Max(maxRecord, position);
-            lines.Append(id).Append('\t').Append(position).Append('\t').Append(parsed.RecordId).Append('\n');
+            lines.Append(id).Append('\t').Append(position).Append('\t').Append(parsed.RecordId).Append('\t').Append(originalId).Append('\n');
         }
     }
     File.WriteAllText(nativeOutput + ".ids", lines.ToString());

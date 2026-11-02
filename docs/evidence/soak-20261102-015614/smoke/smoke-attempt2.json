@@ -1,0 +1,265 @@
+{
+ "runId": "bower-soak-20261102-015614",
+ "scope": "smoke",
+ "generatedAt": "2026-11-02T03:12:02.724688Z",
+ "window": [
+  "2026-11-02T02:50:00.000000Z",
+  "2026-11-02T03:06:00.000000Z"
+ ],
+ "ingestionCutoff": "2026-11-02T03:11:56.723852Z",
+ "verifierAppId": "0046b34f-2550-4204-8506-5857d18c6333",
+ "latencyP99LimitSeconds": {
+  "linux": 13.3,
+  "windows": 18.16
+ },
+ "collectors": {
+  "linux": {
+   "native": 9000,
+   "accepted": 9000,
+   "sentinelDistinct": 9000,
+   "sentinelRows": 9000,
+   "duplicateRows": 0,
+   "missingAtAccepted": 0,
+   "missingAtSentinel": 0,
+   "extraAtSentinel": 0,
+   "nativeSha256": "bb7d1ac35c7b548259e864edad887a088c864b13cb008fae405e354def84f6a0",
+   "acceptedSha256": "bb7d1ac35c7b548259e864edad887a088c864b13cb008fae405e354def84f6a0",
+   "sentinelSha256": "bb7d1ac35c7b548259e864edad887a088c864b13cb008fae405e354def84f6a0",
+   "exact": true,
+   "nativeDetail": {
+    "segments": [
+     {
+      "segment": 1,
+      "first": 0,
+      "count": 9000,
+      "rate": 10,
+      "sent": 9000,
+      "nftCounterDelta": 9000,
+      "actualRate": 9.999928231281745,
+      "plannedStart": 1793587800,
+      "startedAt": "2026-11-02T02:50:00.076619+00:00",
+      "endedAt": "2026-11-02T03:05:00.083093+00:00",
+      "lateSeconds": 0,
+      "exact": true
+     }
+    ],
+    "finishedSegments": 1,
+    "scheduledPrefixFromRunningSegment": 0,
+    "allFinishedSegmentsExact": true,
+    "expected": 9000
+   },
+   "hours": [
+    {
+     "from": "2026-11-02T02:48:00.000000Z",
+     "to": "2026-11-02T03:06:00.000000Z",
+     "distinct": 9000,
+     "rows": 9000,
+     "latencySeconds": {
+      "count": 9000,
+      "p50": 4.028,
+      "p95": 6.659,
+      "p99": 10.44,
+      "max": 32.727
+     }
+    }
+   ],
+   "latencySeconds": {
+    "count": 9000,
+    "p50": 4.028,
+    "p95": 6.659,
+    "p99": 10.44,
+    "max": 32.727
+   },
+   "queryHashes": [
+    "83dc0d364977f234d3b8ae9d593c6bbfac65cb3f39d2aedd7ac1323117f0c6a2"
+   ],
+   "latencyWithinLimit": true,
+   "hoursAboveLatencyLimit": [],
+   "resources": {
+    "samples": 4,
+    "failedSamples": 4,
+    "processIdentities": 0,
+    "bootIds": 1,
+    "serviceRestartCounter": [],
+    "maximumSampleGapSeconds": 300.0672650337219,
+    "memoryBytes": null,
+    "memoryBytesFromStart": null,
+    "handlesOrFds": null,
+    "threads": null,
+    "queueDbPlusWalBytes": null,
+    "walBytes": null,
+    "cpuPercentOfOneCore": {
+     "count": 0,
+     "p50": null,
+     "p95": null,
+     "p99": null,
+     "max": null
+    },
+    "peakPending": null,
+    "peakOldestUndeliveredAgeSeconds": null,
+    "minimumDiskAvailableBytes": null,
+    "statuses": [],
+    "jobRuns": {},
+    "deliveryFailureCodes": []
+   }
+  },
+  "windows": {
+   "native": 9000,
+   "accepted": 9000,
+   "sentinelDistinct": 9000,
+   "sentinelRows": 9000,
+   "duplicateRows": 0,
+   "missingAtAccepted": 0,
+   "missingAtSentinel": 0,
+   "extraAtSentinel": 0,
+   "nativeSha256": "b255edeb881fd18b19db643a9f96090cd4cb8a82af2728df89ab24faa416ea8b",
+   "acceptedSha256": "b255edeb881fd18b19db643a9f96090cd4cb8a82af2728df89ab24faa416ea8b",
+   "sentinelSha256": "b255edeb881fd18b19db643a9f96090cd4cb8a82af2728df89ab24faa416ea8b",
+   "exact": true,
+   "nativeDetail": {
+    "windows": [
+     {
+      "window": "smoke2",
+      "since": "2026-11-02T02:50:00+00:00",
+      "until": "2026-11-02T03:07:00+00:00",
+      "selected": 9000,
+      "distinct": 9000,
+      "redactionChangedIds": 2,
+      "identitySetSha256": "1a957e05d002ad0ee90566d5f657da02a9d75ce525225517ccb419813b540de5"
+     }
+    ],
+    "expected": 9000,
+    "crossWindowOrInWindowDuplicates": 0
+   },
+   "hours": [
+    {
+     "from": "2026-11-02T02:48:00.000000Z",
+     "to": "2026-11-02T03:06:00.000000Z",
+     "distinct": 9000,
+     "rows": 9000,
+     "latencySeconds": {
+      "count": 9000,
+      "p50": 6.697,
+      "p95": 9.829,
+      "p99": 12.706,
+      "max": 28.73
+     }
+    }
+   ],
+   "latencySeconds": {
+    "count": 9000,
+    "p50": 6.697,
+    "p95": 9.829,
+    "p99": 12.706,
+    "max": 28.73
+   },
+   "queryHashes": [
+    "c8222d8403ea2bd8dd287b5a00b00a1ade6635160aa42ccc518b474202d528cf"
+   ],
+   "latencyWithinLimit": true,
+   "hoursAboveLatencyLimit": [],
+   "resources": {
+    "samples": 4,
+    "failedSamples": 0,
+    "processIdentities": 1,
+    "bootIds": 1,
+    "serviceRestartCounter": null,
+    "maximumSampleGapSeconds": 301.85840106010437,
+    "memoryBytes": null,
+    "memoryBytesFromStart": {
+     "samples": 4,
+     "mean": 30090240.0,
+     "slopePerHour": 558129.497,
+     "thirtyDayProjectionPercentOfMean": 1335.49,
+     "min": 24940544,
+     "max": 33841152
+    },
+    "handlesOrFds": null,
+    "threads": null,
+    "queueDbPlusWalBytes": null,
+    "walBytes": null,
+    "cpuPercentOfOneCore": {
+     "count": 3,
+     "p50": 3.986,
+     "p95": 7.471,
+     "p99": 7.471,
+     "max": 7.471
+    },
+    "peakPending": 3,
+    "peakOldestUndeliveredAgeSeconds": 0,
+    "minimumDiskAvailableBytes": 20943069184,
+    "statuses": [
+     "healthy"
+    ],
+    "jobRuns": {
+     "source-activity": {
+      "runs": 4,
+      "states": [
+       "Succeeded"
+      ],
+      "last": "2026-11-02T03:05:00.8065329+00:00"
+     },
+     "queue-maintenance": {
+      "runs": 1,
+      "states": [
+       "Succeeded"
+      ],
+      "last": "2026-11-02T03:00:00.8144388+00:00"
+     },
+     "queue-retention": {
+      "runs": 1,
+      "states": [
+       "Succeeded"
+      ],
+      "last": "2026-11-02T03:00:00.8144388+00:00"
+     }
+    },
+    "deliveryFailureCodes": [
+     null
+    ]
+   }
+  }
+ },
+ "health": [
+  {
+   "CollectorId": "bower-soak-20261102-015614-linux",
+   "Outcome": "Collector health: healthy",
+   "Records": 16,
+   "Earliest": "2026-11-02T02:50:51.7075411Z",
+   "Latest": "2026-11-02T03:05:51.8992308Z",
+   "MaxGapSeconds": 60
+  },
+  {
+   "CollectorId": "bower-soak-20261102-015614-windows",
+   "Outcome": "Collector health: healthy",
+   "Records": 16,
+   "Earliest": "2026-11-02T02:50:34.8202275Z",
+   "Latest": "2026-11-02T03:05:35.2644239Z",
+   "MaxGapSeconds": 61
+  }
+ ],
+ "healthQueryHash": "3192d3bf5d35cb62a20120eba57f657df6e038a9fe36fd4b5003e2d47cabbd31",
+ "privacy": [
+  {
+   "CollectorId": "bower-soak-20261102-015614-windows",
+   "Rows": 9018,
+   "Matches": 0
+  },
+  {
+   "CollectorId": "bower-soak-20261102-015614-linux",
+   "Rows": 9018,
+   "Matches": 0
+  }
+ ],
+ "privacyQueryHash": "f088895eb17acb173e3c5922914ce21fe1584eb548513de1b81aa959c9440fb0",
+ "alerts": {
+  "alerts": [
+   {
+    "name": "bower-soak-20261102-015614-syslog-tls-expiry",
+    "state": "Fired",
+    "startedAt": "2026-11-02T02:36:41.4375267Z"
+   }
+  ],
+  "incidents": []
+ }
+}

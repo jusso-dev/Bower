@@ -114,7 +114,9 @@ def windows_native(results, windows):
         report = json.loads(path.read_text(encoding='utf-8-sig'))
         ids_path = path.with_name(name + '.ids') if path.parent.name == 'native' else path.with_name(name + '.json.ids')
         lines = ids_path.read_text(encoding='utf-8-sig').splitlines()
-        window_ids = {line.split('\t')[0] for line in lines if line}
+        # The collector keeps the original winevt- id (its privacy profile does not redact ids);
+        # the probe's default-detector form (column 1) masked some as false positives.
+        window_ids = {line.split('\t')[3] if line.count('\t') >= 3 else line.split('\t')[0] for line in lines if line}
         duplicates += len(window_ids & ids) + report['duplicateIdentities']
         ids |= window_ids
         meta.append({'window': name, 'since': report['since'], 'until': report['until'], 'selected': report['selected'],
@@ -319,6 +321,7 @@ def main():
     parser.add_argument('--lab-dir', type=Path, required=True)
     parser.add_argument('--out', type=Path)
     parser.add_argument('--cutoff', type=float, help='ingestion cutoff epoch (default now)')
+    parser.add_argument('--native-windows', help='comma-separated DC export names (default per scope)')
     args = parser.parse_args()
     lab = args.lab_dir.resolve()
     if args.action == 'fetch':
@@ -334,6 +337,8 @@ def main():
     else:
         start, end, label = SOAK_START, SOAK_START + SOAK_SECONDS + 3600, 'soak'
         windows = ['h%02d' % k for k in range(25)]
+    if args.native_windows:
+        windows = args.native_windows.split(',')
     report = {'runId': RUN, 'scope': args.action, 'generatedAt': iso(dt.datetime.now(dt.timezone.utc).timestamp()),
               'window': [iso(start), iso(end)], 'ingestionCutoff': iso(cutoff), 'verifierAppId': verifier.verifier['appId'],
               'latencyP99LimitSeconds': LATENCY_P99_LIMIT, 'collectors': {}}
