@@ -348,6 +348,8 @@ class MonitoringCoverageQueryTests(unittest.TestCase):
         self.assertIn("coalesce(tobool(Listener.clientCertificateAuthorityConfigured), true)", expiry)
         self.assertIn("coalesce(tobool(Listener.clientRevocationListConfigured), true)", expiry)
         self.assertIn("(RevocationListConfigured and isnull(RevocationListNextUpdate))", expiry)
+        self.assertIn("(ClientCaConfigured and isnull(ClientCaNotAfter))", expiry)
+        self.assertIn("isnull(ServerCertificateNotAfter)", expiry)
         self.assertIn('coalesce(tobool(Listener.tls), isnotnull(ServerCertificateNotAfter))', expiry)
         self.assertIn("| where Tls\n", expiry)
         self.assertIn("coalesce(toint(Listener.relpBusyCloses), 0) > 0", transport)

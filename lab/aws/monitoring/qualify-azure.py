@@ -170,7 +170,18 @@ def qualify(state, evidence):
     far_expiry = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=30)).isoformat()
     pressure['syslog'] = [{'id': 'a13', 'protocol': 'tls', 'tlsHandshakeFailures': 2, 'connectionsAccepted': 1,
                           'serverCertificateNotAfter': expiry, 'clientCertificateAuthorityNotAfter': far_expiry,
-                          'clientRevocationListNextUpdate': far_expiry}]
+                          'clientRevocationListNextUpdate': far_expiry},
+                         # No revocation list configured: its missing date is not applicable.
+                         {'id': 'relp-no-crl', 'protocol': 'relp', 'tls': True,
+                          'serverCertificateNotAfter': far_expiry, 'clientCertificateAuthorityNotAfter': far_expiry,
+                          'clientCertificateAuthorityConfigured': True, 'clientRevocationListConfigured': False},
+                         # Older collector without the flags: a missing date stays unknown.
+                         {'id': 'legacy-no-flags', 'protocol': 'relp', 'tls': True,
+                          'serverCertificateNotAfter': far_expiry, 'clientCertificateAuthorityNotAfter': far_expiry},
+                         # Configured revocation list without a date: unknown.
+                         {'id': 'crl-missing', 'protocol': 'tls', 'tls': True,
+                          'serverCertificateNotAfter': far_expiry, 'clientCertificateAuthorityNotAfter': far_expiry,
+                          'clientCertificateAuthorityConfigured': True, 'clientRevocationListConfigured': True}]
     pressure['windowsEventLog'] = [{'id': 'wec', 'state': 'failed', 'readErrors': 1}]
     pressure['problems'] = ['destination-credential']
     pressure['delivery']['lastFailureCode'] = 'destination-azure-http-403'
@@ -186,8 +197,12 @@ def qualify(state, evidence):
     for name in ('source-transport-errors', 'destination-credential', 'syslog-tls-expiry'):
         results[name] = rule(state, name)
         assert {r['CollectorId'] for r in results[name]} == {'qualification-pressure'}, name
-    assert all(not r['TlsMetadataIncomplete'] and not r['CoverageIncomplete']
-               for r in results['syslog-tls-expiry'])
+    tls_rows = {r['Source']: r for r in results['syslog-tls-expiry']}
+    assert set(tls_rows) == {'syslog:a13', 'syslog:legacy-no-flags:tls-metadata-unknown',
+                             'syslog:crl-missing:tls-metadata-unknown'}, sorted(tls_rows)
+    assert not tls_rows['syslog:a13']['TlsMetadataIncomplete']
+    assert all(r['TlsMetadataIncomplete'] for source, r in tls_rows.items() if source != 'syslog:a13')
+    assert not any(r['CoverageIncomplete'] for r in tls_rows.values())
     save(evidence / 'query-results.json', results)
     print('Pressure queries passed; checking recovery', flush=True)
     ingest(state, [record('qualification-pressure', 'collector_health', healthy)])
