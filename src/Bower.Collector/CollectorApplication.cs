@@ -81,11 +81,19 @@ public static partial class CollectorApplication
         builder.Services.AddSingleton<IEventRedactor>(new PackDetectionRedactor(
             new JsonEventRedactor(bundle.Privacy), new DeterministicPolicyEvaluator(bundle.Policies),
             bundle.LoadedPacks.SelectMany(pack => pack.Detections).ToArray()));
+        // Free-space watermarks for the queue volume. Tests may supply an IDiskSpaceProbe.
+        builder.Services.AddSingleton(services => new StorageGuard(
+            settings.QueuePath,
+            settings.StorageWatermarks,
+            services.GetService<IDiskSpaceProbe>(),
+            services.GetRequiredService<TimeProvider>()));
+        builder.Services.AddSingleton<QueueStoragePressure>();
         builder.Services.AddSingleton<IDurableEventStore>(services =>
             new SqliteEventStore(
                 settings.QueuePath,
                 settings.MaximumQueueBytes,
-                services.GetRequiredService<TimeProvider>()));
+                services.GetRequiredService<TimeProvider>(),
+                services.GetRequiredService<StorageGuard>()));
         builder.Services.AddSingleton<ITelemetryPolicyEvaluator>(new DeterministicPolicyEvaluator(bundle.Policies));
         builder.Services.AddSingleton<PipelineTelemetry>();
         // Live post-redaction tap (bower tap). In memory only; never persisted.
@@ -114,8 +122,10 @@ public static partial class CollectorApplication
                 services.GetRequiredService<ILogger<CollectorHealthWorker>>(),
                 services.GetService<SyslogSource>(),
                 services.GetService<WindowsEventLogSource>(),
-                services.GetRequiredService<ManagedPrivacyProfileState>()));
+                services.GetRequiredService<ManagedPrivacyProfileState>(),
+                services.GetRequiredService<QueueStoragePressure>()));
         }
+        builder.Services.AddHostedService<QueueStorageMonitor>();
         if (sources.Syslog is { } syslog)
         {
             builder.Services.AddSingleton(services => new SyslogSource(
@@ -423,10 +433,12 @@ public static partial class CollectorApplication
         // Readiness and status for probes: status only, no queue metadata without a token.
         app.MapGet(
             "/health",
-            async (IDurableEventStore eventQueue, SourceHealth sources, CancellationToken cancellationToken) =>
+            async (IDurableEventStore eventQueue, SourceHealth sources, StorageGuard storage, CancellationToken cancellationToken) =>
             {
                 QueueSnapshot snapshot = await eventQueue.GetSnapshotAsync(cancellationToken);
-                return Results.Json(new HealthResponse(Status(snapshot, sources.Evaluate())), CollectorJsonContext.Default.HealthResponse);
+                return Results.Json(
+                    new HealthResponse(Status(snapshot, sources.Evaluate(), storage.Evaluate().State)),
+                    CollectorJsonContext.Default.HealthResponse);
             });
 
         app.MapGet(
@@ -440,6 +452,9 @@ public static partial class CollectorApplication
                     CollectorSettings settings,
                     PipelineTelemetry telemetry,
                     SourceHealth sourceHealth,
+                    StorageGuard storage,
+                    QueueStoragePressure pressure,
+                    TimeProvider clock,
                     HttpContext context,
                     CancellationToken cancellationToken) =>
                 {
@@ -448,8 +463,10 @@ public static partial class CollectorApplication
                     IReadOnlyList<SourceSilenceStatus> sources = sourceHealth.Evaluate();
                     DeliveryActivity activity = context.RequestServices.GetRequiredService<DeliveryActivity>();
                     DeliveryFailureActivity? lastFailure = activity.LastFailure;
+                    // Read once: queuePages and the storage block report the same page use.
+                    QueuePageUsage? pages = await QueueStorageStatus.TryReadPagesAsync(eventQueue, cancellationToken);
                     StatusResponse status = new(
-                        Status(snapshot, sources),
+                        Status(snapshot, sources, storage.Evaluate().State),
                         new StatusPolicyResponse(
                             bundle.Hash,
                             [.. bundle.Policies.Select(item => new StatusPolicyItem(
@@ -489,9 +506,11 @@ public static partial class CollectorApplication
                         Activity = telemetry.BusiestSources(),
                         Tap = context.RequestServices.GetRequiredService<EventTap>().Snapshot(),
                         WindowsEventLog = context.RequestServices.GetService<WindowsEventLogSource>()?.Snapshot(),
-                        QueuePages = await QueuePagesAsync(eventQueue, cancellationToken),
+                        QueuePages = pages is null ? null : StatusQueuePagesResponse.From(pages),
                         DeliveryActivity = new StatusDeliveryActivityResponse(
-                            activity.LastSuccessfulDeliveryAt, lastFailure?.Code, lastFailure?.At)
+                            activity.LastSuccessfulDeliveryAt, lastFailure?.Code, lastFailure?.At),
+                        Storage = await QueueStorageStatus.TryCaptureAsync(
+                            eventQueue, snapshot, pressure, telemetry, clock.GetUtcNow(), pages, cancellationToken)
                     };
                     return Results.Json(status, CollectorJsonContext.Default.StatusResponse);
                 })
@@ -544,27 +563,10 @@ public static partial class CollectorApplication
         }
     }
 
-    private static async Task<StatusQueuePagesResponse?> QueuePagesAsync(
-        IDurableEventStore queue,
-        CancellationToken cancellationToken)
-    {
-        if (queue is not IQueuePageUsageSource source)
-        {
-            return null;
-        }
-
-        try
-        {
-            return StatusQueuePagesResponse.From(await source.GetPageUsageAsync(cancellationToken));
-        }
-        catch (Exception exception) when (exception is Microsoft.Data.Sqlite.SqliteException or QueueCapacityExceededException or IOException)
-        {
-            return null;
-        }
-    }
-
-    private static string Status(QueueSnapshot snapshot, IReadOnlyList<SourceSilenceStatus> sources) =>
-        snapshot.DeadLettered > 0 || sources.Any(source => source.IsOverdue) ? "degraded" : "healthy";
+    private static string Status(QueueSnapshot snapshot, IReadOnlyList<SourceSilenceStatus> sources, StorageState storage) =>
+        snapshot.DeadLettered > 0 || sources.Any(source => source.IsOverdue) || storage == StorageState.Critical
+            ? "degraded"
+            : "healthy";
 
     private static IOutputAdapter? CreateOutput(CollectorSettings settings, TokenCredential? credential, RelayHttp? relay)
     {

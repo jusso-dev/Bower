@@ -1,0 +1,18 @@
+{
+  "runId": "bower-ws3b-20261102-005001",
+  "signing": "CI development packages, unsigned (release signing is deferred). Lab packs signed with an ephemeral lab key that was deleted after the run.",
+  "build": {"commit": "261f61ac30fd833d6047ed8ce2c849bfc27d463e", "ciRun": 41368830338, "version": "0.1.0-dev.335",
+    "rpmSha256": "307b51fc1afccbb19b1c584b101fc3f1bdab7a5ae732f1034a2e7132ec15ba97",
+    "msiSha256": "1e2eea29fe6d555433344951c2d604c3b58c763d5f2efb54536e2227f273a3c0",
+    "laterCommits": "455e4b0 changed only tests (ample test disk probe), the queue-storage KQL refusal sum, docs and lab tooling; no collector product code."},
+  "packs": {"storage-pressure-validation-1.0.0.bowerpack": "cca5c5b9c907f2ca0bf5e7f3c93afd09b000df4acd4e0d76b5408298e0a318bf",
+    "windows-security-logon-1.0.2.bowerpack": "e695c485817f9f53eb4cd5f947d1b6e846740d4ddc89487c452a960fb5a5794d",
+    "labTrustedPublicKeySha256": "69ca72fbe43dcdda08d1993e8f10e65cb290c73be9e51f9a63d2845ef4e7e2f5"},
+  "drivers": {"storage-linux-driver.py": "38c60606d6cb13f0255f2914c62848f2a5602de083cb8884586ddcf0fc3d4d00",
+    "storage-wec-driver.ps1": "17195bdc634bfad81572e3bda2766bb8e6afae8510433db8c392a0d5144fa801"},
+  "hosts": {"linux": "Amazon Linux 2023 ami-062900c135ab91582, t3.small, 1 GiB encrypted gp3 xfs at /var/lib/bower with RequiresMountsFor",
+    "windowsDc": "Windows Server 2022 ami-086db0bc6076e24da, t3.medium, domain controller and WEF source",
+    "windowsWec": "Windows Server 2022, t3.medium, WEC and collector; 2 GiB encrypted gp3 NTFS volume mounted at C:\\ProgramData\\Bower\\state (MSI default queue path)"},
+  "azure": {"subscription": "945092a0-2500-4b25-85a4-99f1c3135906", "region": "australiaeast", "resourceGroup": "rg-bower-ws3b-20261102-005001",
+    "identities": "separate publisher (certificate; Monitoring Metrics Publisher on the DCR) and verifier (Log Analytics Reader on the workspace); queries used the verifier in an isolated Azure CLI cache"}
+}

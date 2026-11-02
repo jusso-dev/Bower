@@ -1,0 +1,29 @@
+{
+ "phase": "destination-query",
+ "queriedAt": "2026-11-02T01:27:03.554500+00:00",
+ "queryRole": "verifier",
+ "collector": "ws3-linux",
+ "since": "2026-11-02T00:50:00+00:00",
+ "rows": 31176,
+ "rowsByEventType": {
+  "collector_health": 27,
+  "network_connection_denied": 31149
+ },
+ "eventRows": 31149,
+ "distinctEventIds": 31149,
+ "duplicateRows": 0,
+ "expectedSequences": 31149,
+ "distinctSequences": 31149,
+ "missingSequences": 0,
+ "missingSample": [],
+ "unexpectedSequences": 0,
+ "sequencesWithSeveralEventIds": 0,
+ "expectedDigest": "232871ad9210358a5ceed9003ce9655911bdc51f1138add68b28fb0d691ad470",
+ "destinationDigest": "232871ad9210358a5ceed9003ce9655911bdc51f1138add68b28fb0d691ad470",
+ "ingestionLatencySeconds": {
+  "p50": 217.916772,
+  "p95": 375.607066,
+  "p99": 378.126439,
+  "maximum": 381.055481
+ }
+}

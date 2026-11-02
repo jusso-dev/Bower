@@ -41,11 +41,12 @@ public sealed class QueuePageUsageTests
         Assert.Equal(1_500, await store.PurgeDeliveredAsync(clock.UtcNow, 10_000, cancellationToken));
         QueuePageUsage drained = await store.GetPageUsageAsync(cancellationToken);
 
-        // The limit is the store's own max_page_count: (4 x cap + 16 MiB) / 4.
-        Assert.Equal((4_194_304L * 4 + 16_777_216) / 4, full.PageLimitBytes);
+        // New events stop at 85% of (cap + 4 MiB); settlement may grow to SQLite's max_page_count, 1.75 times that.
+        Assert.Equal(SqliteEventStore.IntakePageLimit((4_194_304L * 4 + 16_777_216) / 4 / 4_096, 4_096) * 4_096, full.PageLimitBytes);
+        Assert.Equal((4_194_304L * 4 + 16_777_216) / 4 * 7 / 4, full.CeilingBytes);
         Assert.Equal(full.PageLimitBytes, drained.PageLimitBytes);
         Assert.True(full.UsedBytes > 1_500_000, $"{full.UsedBytes}");
-        // No vacuum: the file does not shrink, but the freed pages are on the free list.
+        // Without pressure nothing is vacuumed: the file keeps its size and the freed pages are on the free list.
         Assert.True(new FileInfo(path).Length >= fileBefore);
         Assert.True(drained.FreeListBytes > 1_000_000, $"{drained.FreeListBytes}");
         Assert.True(drained.UsedBytes < full.UsedBytes / 2, $"{drained.UsedBytes} vs {full.UsedBytes}");
@@ -88,7 +89,8 @@ public sealed class QueuePageUsageTests
         using HttpResponseMessage status = await client.SendAsync(request, cancellationToken);
         using JsonDocument body = JsonDocument.Parse(await status.Content.ReadAsStringAsync(cancellationToken));
         JsonElement pages = body.RootElement.GetProperty("queuePages");
-        Assert.Equal(8_388_608, pages.GetProperty("pageLimitBytes").GetInt64());
+        Assert.Equal(SqliteEventStore.IntakePageLimit(8_388_608 / 4_096, 4_096) * 4_096, pages.GetProperty("pageLimitBytes").GetInt64());
+        Assert.Equal(8_388_608L * 7 / 4, pages.GetProperty("ceilingBytes").GetInt64());
         Assert.True(pages.GetProperty("usedBytes").GetInt64() > 0);
         Assert.True(pages.GetProperty("freeListBytes").GetInt64() >= 0);
         Assert.True(pages.GetProperty("usedPercent").GetDouble() is > 0 and < 100);

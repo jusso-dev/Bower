@@ -53,7 +53,7 @@ notification path independently, especially when a host or Azure ingestion is un
 | Delivery to Sentinel fails: network or destination | `collector-health-missing`; DCR metrics and `dcr-errors` | `destination-failing`, `backlog` | "Can't deliver to Sentinel" |
 | Delivery to Sentinel fails: credential or role | `collector-health-missing` live; `destination-credential` once records arrive | `destination-credential` (CRITICAL); log event 1008 `destination-azure-credential-failed` / `http-403` | "Can't deliver to Sentinel" |
 | Old queued events | `queue-backlog` (while delivery is slow, or after recovery) | `backlog` | "Events waiting more than 15 minutes" |
-| Storage pressure | `queue-storage` (before the queue is full) | `queue-pages`, `queue-storage`, `capacity-refusals`, `disk-free` | not reported today |
+| Storage pressure | `queue-storage` (before the queue is full, and while it is full or the volume is critical) | `queue-volume`, `queue-pages`, `queue-storage`, `capacity-refusals`, `disk-free` | not reported today |
 | Collector or host down | `collector-health-missing`; `table-no-ingestion` (unqualified event-time silence) | `collector-unreachable`; systemd/SCM restart | "Not heard from recently" (amber after minutes, red after 15) |
 | Loss before acceptance | `source-transport-errors` (syslog, Windows) | `syslog-errors`, `syslog-churn`, `wec-subscription`, `wec-source` | not reported |
 | Syslog TLS material expiring or failing to reload | `syslog-tls-expiry`; `source-transport-errors` (reload, revocation) | `syslog-certificate`, `syslog-crl`, `syslog-errors` | not reported |
@@ -145,11 +145,12 @@ health worker only reads metadata and enqueues its own record.
 | Field (`Attributes.…`) | Meaning |
 |---|---|
 | `recordVersion`, `intervalSeconds`, `sequence`, `collectorStartedAt`, `countersSince` | Record series and the start of this record's counter window |
-| `status`, `problems[]` | Every applicable code, each judged on its own: `dead-letters`, `backpressure`, `stalled`, `retrying`, `destination-credential`, `capacity-refusals`, `source-overdue`, `syslog-errors`, `windows-event-log-errors`. `status` is the worst: `healthy`, `warning` (low: retries, syslog errors), `degraded` (medium: dead letters, silent source, Windows errors) or `critical` (high: backpressure, stall, capacity refusals, credential); `EventSeverity` matches (Informational/Low/Medium/High) |
+| `status`, `problems[]` | Every applicable code, each judged on its own: `dead-letters`, `backpressure`, `stalled`, `retrying`, `destination-credential`, `capacity-refusals`, `storage-critical`, `storage-low`, `source-overdue`, `syslog-errors`, `windows-event-log-errors`. `status` is the worst: `healthy`, `warning` (low: retries, syslog errors), `degraded` (medium: dead letters, silent source, Windows errors, queue volume below its warning watermark) or `critical` (high: backpressure, stall, capacity refusals, credential, queue volume below its critical watermark); `EventSeverity` matches (Informational/Low/Medium/High). `backpressure` also applies when in-use pages reach 95% of the page limit or the volume is critical |
 | `delivery.output`, `delivery.status`, `delivery.lastSuccessfulDeliveryAt`, `delivery.lastFailureCode`, `delivery.lastFailureAt` | Output type; the heartbeat's single delivery state (`idle`, `waiting`, `pending`, `retrying`, `stalled`, `backpressure`, `degraded`, `disabled`, first match only); the last acknowledgement and the most recent failure code (fixed text, for example `destination-azure-credential-failed`) |
 | `queue.queued`, `retrying`, `uploading`, `undelivered`, `deadLettered`, `oldestUndeliveredAt`, `oldestUndeliveredAgeSeconds` | Queue state when the record was written |
 | `storage.queueCapacityMiB`, `undeliveredMiB`, `storedMiB`, `capacityUsedPercent` | Undelivered payload against `BOWER_QUEUE_MAX_BYTES` |
-| `storage.queuePagesUsedMiB`, `queueFreeListMiB`, `queuePageLimitMiB`, `queuePagesUsedPercent` | Queue database **in-use pages** (page count minus free list) against the page limit SQLite enforces (`max_page_count`, read from the store, not recomputed). Freed pages can remain in the free list, so in-use pages can fall while file length does not (see [defects](#known-defects-found-by-this-work)). **Extension point:** free disk and watermark fields join `storage` additively |
+| `storage.queuePagesUsedMiB`, `queueFreeListMiB`, `queuePageLimitMiB`, `queuePagesUsedPercent`, `queueCeilingMiB` | Queue database **in-use pages** (page count minus free list) against the page limit at which new events are refused (85% of `BOWER_QUEUE_MAX_BYTES` + 4 MiB); `queueCeilingMiB` is SQLite's `max_page_count`, 1.75 times `cap + 4 MiB`, which only leasing, acknowledgement and retries may use. Freed pages stay in the free list (or, for queues created by this version, are returned to the file system under pressure), so in-use pages can fall while file length does not. See [storage pressure](03-storage-pressure.md) |
+| `storage.volumeState`, `intakePaused`, `volumeFreeMiB`, `volumeFreePercent`, `volumeWarningFreeMiB`, `volumeCriticalFreeMiB`, `queueWalMiB`, `storageRefusals`, `pressurePurgedEvents` | Queue **volume** free-space watermarks as the collector evaluates them: `normal`, `warning`, `critical` or `unknown` (not measurable); `intakePaused` while critical refuses new events; free space and both thresholds in MiB; the WAL size; and window deltas of events refused for free space and of acknowledged rows retention removed early under pressure. Absent on collectors without watermarks |
 | `intake.attemptedRequests`, `capacityRefusals`, `privacyAlertRefusals`, `lastRefusalAt`, `lastRefusalReason` | Intake in this window |
 | `pipeline.eventsIn`, `eventsQueued`, `duplicates`, `suppressed` | Selection in this window (includes the previous health record) |
 | `sources.configured`, `expected`, `active`, `pending`, `silent`, `neverSeen`, `overdue[]` | Source expectations; `overdue[]` lists up to 25 by `application`, `environment`, `state`, `silentSeconds`, `allowedSilenceSeconds`, `lastSeenAt` |
@@ -202,7 +203,11 @@ thresholds; production defaults are in the threshold column.
 | F1 | Fleet check | `/api/fleet` light per collector | amber → 1, red → 2 | — | Management view: not heard from, cannot deliver, quiet source, set aside | Collectors awaiting approval (ignore that state if needed) | Amber at 7 min, red at 15.4 min after a stop |
 
 The current queue-storage query reports `StorageMetricsIncomplete` when either page
-or logical-capacity percentage is missing, invalid or negative. Queue-backlog reports
+or logical-capacity percentage is missing, invalid or negative, or the collector cannot
+measure its queue volume (`volumeState` `unknown`). A collector that reports no volume
+fields (older versions, the Rust collector) shows `VolumeCoverage` `not-reported`. The
+collector queues its own health record from a reserve even while new events are refused
+for pages or free space, so A4 sees a full or critical queue. Queue-backlog reports
 `BacklogMetricsIncomplete` when backlog count or ingestion lag is unavailable, or
 when a nonempty backlog has no usable oldest age. These results mean **unknown**,
 not confirmed pressure. An empty backlog can legitimately have no oldest age.
@@ -440,7 +445,8 @@ limit of 20 per 10 minutes.
 | `dead-letters` | WARNING | any |
 | `backlog` | WARNING / CRITICAL | 900 s / 3600 s |
 | `queue-storage` | WARNING / CRITICAL | 40 % / 60 % of `BOWER_QUEUE_MAX_BYTES` |
-| `queue-file` | WARNING / CRITICAL | 70 % / 85 % of the page limit `(4 × cap + 16 MiB) / 4` |
+| `queue-pages` | WARNING / CRITICAL | 70 % / 85 % of the page limit at which new events are refused (`queuePages.usedPercent`) |
+| `queue-volume` | WARNING / CRITICAL | volume below the collector's warning / critical free-space watermark (`storage.state`); WARNING when it cannot be measured |
 | `capacity-refusals` | CRITICAL | a refusal in the last 900 s |
 | `source-overdue` | WARNING | per expectation |
 | `syslog-errors`, `syslog-churn` | WARNING | new errors; more than 5 new connections per run |
@@ -641,20 +647,28 @@ throttled delivery, or a stuck lease.
 5. Scheduled detections that ran during the outage missed the late events: rerun them over
    the outage window (with the dedup query below).
 
-### R5 Storage pressure (A4, host `queue-file`/`queue-storage`/`capacity-refusals`/`disk-free`)
+### R5 Storage pressure (A4, host `queue-volume`/`queue-pages`/`queue-storage`/`capacity-refusals`/`disk-free`)
 
-**Impact:** at the limit, intake is refused (HTTP 503; syslog TCP and Windows Event Log stop
-reading and retry, UDP drops). **Known defect:** when the queue *file* reaches its page
-limit, delivery can stall too ([details](#known-defects-found-by-this-work)).
+**Impact:** new events are refused (HTTP 503; syslog TCP/TLS stops reading, RELP withholds
+acknowledgements, Windows Event Log keeps its bookmark; UDP drops). Delivery and
+acknowledgement continue, so the queue drains on its own once the destination answers.
+Full procedure, sizing and measurements: [storage pressure](03-storage-pressure.md#8-recovery-runbook).
 
-1. Host check or health record: which signal? `queue-file` (file against page limit),
-   `queue-storage` (undelivered against the cap), `disk-free` (volume).
-2. Delivery stalled (1002 `SqliteException` every 5 s, `uploading` stuck, refusals with zero
-   undelivered)? Apply the **verified recovery**: raise the cap, which raises the page limit,
-   and restart. Nothing is deleted:
+1. Which signal? `queue-volume` / `volumeState` (free disk on the queue volume),
+   `queue-pages` / `queuePagesUsedPercent` (rows against the page limit), `queue-storage`
+   (undelivered against the cap).
+2. **Volume warning or critical:** free space or grow the volume. Do not restart the
+   collector; intake resumes within seconds of space returning (measured 2 s).
+3. **Pages at the limit with the destination down:** nothing to do; after delivery
+   resumes, retention removes acknowledged rows (log 1506, `intake-blocked`) and intake
+   reopens without a restart.
+4. **Pages high with no backlog:** retained acknowledged rows. Lower
+   `BOWER_QUEUE_RETENTION_HOURS` or raise the cap at the next maintenance window; size the
+   volume for `1.75 × (cap + 4 MiB)` plus the watermark.
+5. **Collector older than the storage-pressure change, delivery stalled** (1002
+   `SqliteException` every 5 s, `uploading` stuck): upgrade, or raise the cap and restart:
 
    ```bash
-   # Linux: double the cap (bytes); keep it within the volume's free space
    sudo sed -i 's/^BOWER_QUEUE_MAX_BYTES=.*/BOWER_QUEUE_MAX_BYTES=<new bytes>/' /etc/bower/bower.env
    grep -q '^BOWER_QUEUE_MAX_BYTES=' /etc/bower/bower.env || echo 'BOWER_QUEUE_MAX_BYTES=<new bytes>' | sudo tee -a /etc/bower/bower.env
    sudo systemctl restart bower
@@ -667,17 +681,12 @@ limit, delivery can stall too ([details](#known-defects-found-by-this-work)).
    Restart-Service Bower
    ```
 
-   Measured: a stalled 2,479-event backlog drained 4.3 s after the restart; a queue that
-   refused every event with zero backlog accepted again immediately.
-3. No stall yet: find what fills the file. Retained acknowledged rows count against the page
-   limit for `BOWER_QUEUE_RETENTION_HOURS` (default 168). At 10 events/s that is several
-   GiB a week. Lower the retention (keeping your replay needs) or raise the cap, and size
-   the volume for `4 × cap + 16 MiB`.
-4. Undelivered data high: R1/R4 first (the cause is usually delivery).
-5. Disk low: free space on the volume; never delete `queue.db*` files.
+   A restart while a syslog TCP/TLS sender is backpressured loses the frames held in socket
+   buffers (RELP senders resend). Never delete `queue.db*` files.
+6. Undelivered data high: R1/R4 first (the cause is usually delivery).
 
-**Verify:** `queueFileUsedPercent` and `capacityUsedPercent` fall below the thresholds;
-`intake.capacityRefusals` stays 0; A4 resolves (measured 830 s).
+**Verify:** `volumeState` `normal`, `queuePagesUsedPercent` and `capacityUsedPercent` below
+the thresholds, `intake.capacityRefusals` and `storage.storageRefusals` stay 0, A4 resolves.
 
 ### R6 Source silent (A5, A6, S2)
 
@@ -837,7 +846,7 @@ detection rerun was needed.
 2. No fired or unresolved Bower alerts older than a week (`az monitor alert` / Alerts blade);
    review every alert of the week against its runbook.
 3. Dead letters: zero, or each one documented with a decision.
-4. Storage: `queueFileUsedPercent` peak under 50 % and `capacityUsedPercent` under 20 %
+4. Storage: `queuePagesUsedPercent` peak under 70 %, `volumeState` `normal`, and `capacityUsedPercent` under 20 %
    for each collector; disk free over 30 %.
 5. Delivery delay: p95 of `ingestion_time() - TimeGenerated` for health records under
    2 minutes outside known outages.
@@ -863,7 +872,8 @@ BowerSecurity_CL
 | project CollectorId, LastRecord = TimeGenerated, Status = tostring(Attributes.status),
     Problems = tostring(Attributes.problems), Delivery = tostring(Attributes.delivery.status),
     Undelivered = toint(Attributes.queue.undelivered), OldestAge = toint(Attributes.queue.oldestUndeliveredAgeSeconds),
-    QueueFilePercent = todouble(Attributes.storage.queueFileUsedPercent), DeadLettered = toint(Attributes.queue.deadLettered)
+    QueuePagesPercent = todouble(Attributes.storage.queuePagesUsedPercent), VolumeState = tostring(Attributes.storage.volumeState),
+    VolumeFreePercent = todouble(Attributes.storage.volumeFreePercent), DeadLettered = toint(Attributes.queue.deadLettered)
 ```
 
 ```kusto
@@ -912,8 +922,12 @@ self-contained publish, not Native AOT, unsigned).
 
 ## Known defects found by this work
 
-1. **Queue page ceiling stalls delivery (C# persistence; reported to the storage
-   workstream).** `SqliteEventStore` sets `PRAGMA max_page_count` to
+1. **Queue page ceiling stalls delivery (C# persistence). Fixed by the
+   [storage-pressure work](03-storage-pressure.md):** new events stop at 85% of the page
+   budget, settlement may grow the file to 1.75 times it, and retention reclaims
+   acknowledged rows when intake is blocked. Regression test
+   `Workstream6PageCeiling_DeliveryResumesSurvivesACrashAndIntakeReopens`; live proof in
+   the [storage evidence](../evidence/ws3b-20261102-005001/README.md). Original finding: `SqliteEventStore` sets `PRAGMA max_page_count` to
    `(4 × BOWER_QUEUE_MAX_BYTES + 16 MiB) / 4`, about the logical cap plus 4 MiB, while the
    file also holds indexes, the ledger and acknowledged rows retained for
    `BOWER_QUEUE_RETENTION_HOURS`. Measured overhead was 1.6–1.9 × payload, so the file
@@ -926,8 +940,10 @@ self-contained publish, not Native AOT, unsigned).
    ([evidence](../evidence/ws6-20261031-074751/README.md#queue-page-ceiling-defect)).
    Workaround: raise the cap and restart (R5). Fix belongs with the queue/storage work:
    reserve page headroom for delivery state transitions and count retained rows.
-2. **The Azure storage alert cannot see a full queue.** Health records are refused like any
-   event at capacity. A1 can detect missing health records for explicitly expected
+2. **The Azure storage alert cannot see a full queue. Fixed for C# collectors by the
+   storage-pressure work:** the health record now uses the queue's settlement reserve and
+   is not refused by the free-space watermark. Original finding: health records were
+   refused like any event at capacity. A1 can detect missing health records for explicitly expected
    collectors or collectors still visible in its look-back; configure expected IDs so
    long-silent collectors do not disappear. A4 is an early warning.
 3. **Archive replays are not collapsed by `by CollectorId, EventId`.** In this drill,
@@ -961,12 +977,11 @@ self-contained publish, not Native AOT, unsigned).
   the threshold itself; auto-resolution took 12–20 minutes (about three healthy
   evaluations), and 30 minutes for windowed rules. Azure cannot alert faster than this.
 - A new DCR or table took 6.5 minutes to make the first rows queryable.
-- Queue page metrics now use in-use pages rather than file length, but the revised
-  calculation and alerts have not been qualified against the storage-pressure changes.
-  Revalidate thresholds when that workstream is integrated.
-- The revised Windows host check asks Windows for free space on the queue directory,
-  including an NTFS mounted folder. Its mounted-volume behavior has not been tested on
-  Windows; verify it against independently measured queue-volume free space before use.
+- Queue page metrics use in-use pages against the limit at which new events are refused
+  (integrated with the storage-pressure work); see that guide's evidence for live results.
+- The collector's own volume probe follows an NTFS mounted folder (verified on AWS: a
+  2 GiB volume mounted at `%ProgramData%\Bower\state` reported 2,130,636,800 bytes, not
+  `C:`). The host check's separate `disk-free` probe is not independently verified there.
 - WEC subscription health is host-side only: Bower reads `ForwardedEvents` and cannot see
   the subscription's own state. Per-device (per firewall or per WEF source) silence needs
   one syslog listener per device or a pack field that maps the device; this work does not

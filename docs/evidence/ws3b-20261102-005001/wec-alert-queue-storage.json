@@ -1,0 +1,26 @@
+{
+ "phase": "alert-query",
+ "query": "queue-storage.kql",
+ "queriedAt": "2026-11-02T01:39:47.915391+00:00",
+ "windowMinutes": 20,
+ "collector": "ws3-wec",
+ "fired": true,
+ "rows": [
+  {
+   "CollectorId": "ws3-wec",
+   "RecordAt": "2026-11-02T01:39:27.5687387Z",
+   "VolumeState": "normal",
+   "IntakePaused": false,
+   "VolumeFreeMiB": 1999,
+   "VolumeFreePercent": 98.4,
+   "VolumeCoverage": "reported",
+   "QueuePagesUsedPercent": 67,
+   "QueuePagesUsedMiB": 11.4,
+   "CapacityUsedPercent": 0,
+   "UndeliveredMiB": 0,
+   "RefusalsInWindow": 171,
+   "DeliveryStatus": "idle",
+   "StorageMetricsIncomplete": false
+  }
+ ]
+}

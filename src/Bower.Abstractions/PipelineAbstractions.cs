@@ -342,7 +342,15 @@ public sealed record QueuedEvent(
     QueueState State = QueueState.Queued,
     int DeliveryAttempts = 0,
     string? LeaseToken = null,
-    SuppressionRequest? Suppression = null);
+    SuppressionRequest? Suppression = null)
+{
+    /// <summary>
+    /// The collector's own periodic health record: it may use the queue's settlement reserve
+    /// and is not refused by the free-space critical watermark, so storage alerts still see
+    /// a full or critical queue. Set only by collector code, never from submitted input.
+    /// </summary>
+    public bool UsesStorageReserve { get; init; }
+}
 
 public sealed record EnqueueResult(bool Enqueued, bool Duplicate, string EventId, bool Suppressed = false);
 

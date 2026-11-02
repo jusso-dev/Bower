@@ -1,0 +1,139 @@
+{
+ "journal": "disk-full.jsonl",
+ "runs": [
+  {
+   "startedAt": "2026-11-02T01:40:57.515Z",
+   "endedAt": "2026-11-02T01:46:28.147Z",
+   "events": [
+    {
+     "at": "2026-11-02T01:40:57.515Z",
+     "event": "generating",
+     "rate": 50
+    },
+    {
+     "at": "2026-11-02T01:41:17.536Z",
+     "event": "destination-blocked"
+    },
+    {
+     "at": "2026-11-02T01:41:47.629Z",
+     "event": "volume-full",
+     "fillerBytes": 832200704,
+     "freeBytes": 20480
+    },
+    {
+     "at": "2026-11-02T01:41:49.629Z",
+     "event": "critical-reported",
+     "met": true
+    },
+    {
+     "at": "2026-11-02T01:41:49.660Z",
+     "event": "destination-restored-while-full"
+    },
+    {
+     "at": "2026-11-02T01:44:09.924Z",
+     "event": "service-restarted-while-full"
+    },
+    {
+     "at": "2026-11-02T01:44:15.931Z",
+     "event": "service-answering-while-full",
+     "met": true
+    },
+    {
+     "at": "2026-11-02T01:44:15.962Z",
+     "event": "restart-observation",
+     "answered": true,
+     "journal": {
+      "lines": 21,
+      "bytes": 2411,
+      "byEvent": {
+       "Bower.Collector.QueueDeliveryWorker[1002]": 2,
+       "other": 6,
+       "Microsoft.Hosting.Lifetime[0]": 4,
+       "Bower.Collector.QueueStorageMonitor[1504]": 2,
+       "Bower.Collector[1290]": 1,
+       "Bower.Collector[1291]": 1,
+       "Bower.Collector.QueueStorageMonitor[1500]": 1,
+       "Bower.Collector.SyslogIntakeService[1100]": 1,
+       "Microsoft.Hosting.Lifetime[14]": 1,
+       "Bower.Jobs.RecurringJobScheduler[3001]": 1,
+       "Bower.Collector.CollectorHealthWorker[1330]": 1
+      }
+     },
+     "activeState": "active",
+     "restarts": "0"
+    },
+    {
+     "at": "2026-11-02T01:45:16.020Z",
+     "event": "space-freed"
+    },
+    {
+     "at": "2026-11-02T01:45:22.026Z",
+     "event": "intake-resumed",
+     "met": true
+    },
+    {
+     "at": "2026-11-02T01:46:22.096Z",
+     "event": "generator-stopped",
+     "nextSeq": 90835
+    },
+    {
+     "at": "2026-11-02T01:46:28.147Z",
+     "event": "drained",
+     "met": true
+    }
+   ],
+   "samples": 66,
+   "firstRefusalAt": "2026-11-02T01:41:48.113Z",
+   "firstWarningAt": "2026-11-02T01:41:48.113Z",
+   "firstCriticalAt": "2026-11-02T01:41:48.113Z",
+   "secondsBlockedToRefusal": 30.6,
+   "maximumPageUtilisation": 32.8,
+   "maximumUndeliveredBytes": 2302128,
+   "maximumQueueFileBytes": 151057808,
+   "minimumFreeBytes": 20480,
+   "maximumOldestPendingAge": 242,
+   "maximumSenderQueue": 2,
+   "maximumForwardedLag": null,
+   "refusals": -59,
+   "drained": true,
+   "secondsRestoredToDrained": 278.5,
+   "statusUnavailableSamples": 4,
+   "final": {
+    "kind": "sample",
+    "at": "2026-11-02T01:46:28.147Z",
+    "phase": "drained",
+    "freeBytes": 814571520,
+    "totalBytes": 1006632960,
+    "fillerBytes": 0,
+    "destinationBlocked": false,
+    "health": "healthy",
+    "generatorNext": 90835,
+    "storageState": "normal",
+    "intakePaused": false,
+    "queueFileBytes": 150966496,
+    "pageUtilisation": 32.8,
+    "queueUtilisation": 0,
+    "oldestPendingAge": null,
+    "storageRefusals": 67,
+    "pressurePurged": 0,
+    "capacityRefusals": 67,
+    "queued": 0,
+    "uploading": 0,
+    "retrying": 0,
+    "delivered": 56712,
+    "deadLettered": 0,
+    "undeliveredBytes": 0,
+    "listenerQueued": 6614,
+    "listenerRetries": 65,
+    "listenerSubmitFailures": 0,
+    "listenerDropped": 0,
+    "listenerConnections": 1,
+    "senderQueue": 0,
+    "senderDiscarded": 0
+   },
+   "listenerSubmitFailures": 0,
+   "listenerDropped": 0,
+   "senderDiscarded": 0
+  }
+ ]
+}

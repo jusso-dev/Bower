@@ -275,7 +275,10 @@ public sealed class SecurityEventProcessor(
             now,
             Suppression: decision.Suppression is { } directive
                 ? Suppression.CreateRequest(arranged, decision, directive)
-                : null);
+                : null)
+        {
+            UsesStorageReserve = internalHealth
+        };
         EnqueueResult enqueue;
         try
         {
@@ -289,10 +292,10 @@ public sealed class SecurityEventProcessor(
                 bytesIn,
                 arranged);
         }
-        catch (QueueCapacityExceededException)
+        catch (QueueCapacityExceededException exception)
         {
             // Nothing was committed for this attempt.
-            telemetry?.RecordCapacityRefusal(bytesIn);
+            telemetry?.RecordCapacityRefusal(bytesIn, exception.Reason);
             throw;
         }
 
@@ -519,10 +522,10 @@ public sealed class SecurityEventProcessor(
         {
             enqueue = await queue.EnqueueAsync(queued, cancellationToken);
         }
-        catch (QueueCapacityExceededException)
+        catch (QueueCapacityExceededException exception)
         {
             // The source outcome is already recorded (and the source event may be queued).
-            telemetry?.RecordPrivacyAlertRefusal(bytesIn);
+            telemetry?.RecordPrivacyAlertRefusal(bytesIn, exception.Reason);
             throw;
         }
 

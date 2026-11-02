@@ -1,0 +1,115 @@
+{
+ "journal": "watermarks.jsonl",
+ "runs": [
+  {
+   "startedAt": "2026-11-02T01:27:44.878Z",
+   "endedAt": "2026-11-02T01:36:55.568Z",
+   "events": [
+    {
+     "at": "2026-11-02T01:27:44.878Z",
+     "event": "generating",
+     "rate": 100
+    },
+    {
+     "at": "2026-11-02T01:28:04.895Z",
+     "event": "destination-blocked"
+    },
+    {
+     "at": "2026-11-02T01:28:05.004Z",
+     "event": "filled-below-warning",
+     "fillerBytes": 712773632
+    },
+    {
+     "at": "2026-11-02T01:28:11.009Z",
+     "event": "warning-reported",
+     "met": true
+    },
+    {
+     "at": "2026-11-02T01:29:11.074Z",
+     "event": "filled-near-critical",
+     "fillerBytes": 772448256
+    },
+    {
+     "at": "2026-11-02T01:30:53.171Z",
+     "event": "critical-reported",
+     "met": true
+    },
+    {
+     "at": "2026-11-02T01:32:53.258Z",
+     "event": "space-freed"
+    },
+    {
+     "at": "2026-11-02T01:32:59.263Z",
+     "event": "intake-resumed",
+     "met": true
+    },
+    {
+     "at": "2026-11-02T01:33:59.350Z",
+     "event": "destination-restored"
+    },
+    {
+     "at": "2026-11-02T01:34:59.419Z",
+     "event": "generator-stopped",
+     "nextSeq": 74605
+    },
+    {
+     "at": "2026-11-02T01:36:55.568Z",
+     "event": "drained",
+     "met": true
+    }
+   ],
+   "samples": 110,
+   "firstRefusalAt": "2026-11-02T01:30:51.229Z",
+   "firstWarningAt": "2026-11-02T01:28:10.007Z",
+   "firstCriticalAt": "2026-11-02T01:30:51.229Z",
+   "secondsBlockedToRefusal": 166.3,
+   "maximumPageUtilisation": 27.5,
+   "maximumUndeliveredBytes": 27425414,
+   "maximumQueueFileBytes": 126652904,
+   "minimumFreeBytes": 110620672,
+   "maximumOldestPendingAge": 358,
+   "maximumSenderQueue": 1,
+   "maximumForwardedLag": null,
+   "refusals": 124,
+   "drained": true,
+   "secondsRestoredToDrained": 176.2,
+   "statusUnavailableSamples": 0,
+   "final": {
+    "kind": "sample",
+    "at": "2026-11-02T01:36:55.568Z",
+    "phase": "drained",
+    "freeBytes": 838836224,
+    "totalBytes": 1006632960,
+    "fillerBytes": 0,
+    "destinationBlocked": false,
+    "health": "healthy",
+    "generatorNext": 74605,
+    "storageState": "normal",
+    "intakePaused": false,
+    "queueFileBytes": 126652904,
+    "pageUtilisation": 27.5,
+    "queueUtilisation": 0,
+    "oldestPendingAge": null,
+    "storageRefusals": 124,
+    "pressurePurged": 0,
+    "capacityRefusals": 124,
+    "queued": 0,
+    "uploading": 0,
+    "retrying": 0,
+    "delivered": 47585,
+    "deadLettered": 0,
+    "undeliveredBytes": 0,
+    "listenerQueued": 43455,
+    "listenerRetries": 124,
+    "listenerSubmitFailures": 0,
+    "listenerDropped": 0,
+    "listenerConnections": 1,
+    "senderQueue": 0,
+    "senderDiscarded": 0
+   },
+   "listenerSubmitFailures": 0,
+   "listenerDropped": 0,
+   "senderDiscarded": 0
+  }
+ ]
+}

@@ -68,7 +68,7 @@ param deliveryLagMinutes int = 15
 @maxValue(100)
 param storageUsedPercent int = 40
 
-@description('Queue database in-use pages as a percentage of its SQLite page limit that counts as storage pressure.')
+@description('Queue database in-use pages as a percentage of the page limit at which new events are refused (85% of cap + 4 MiB) that counts as storage pressure.')
 @minValue(1)
 @maxValue(100)
 param queuePagesUsedPercent int = 70
@@ -158,7 +158,7 @@ var healthRules = [
   {
     name: 'queue-storage'
     displayName: 'Bower queue storage pressure'
-    description: 'Queue database pages near their limit, undelivered data near BOWER_QUEUE_MAX_BYTES, delivery backpressure, or intake refused for capacity. Runbook: R5.'
+    description: 'Queue database pages near their limit, undelivered data near BOWER_QUEUE_MAX_BYTES, queue volume below its free-space watermark, delivery backpressure, or intake refused for capacity or free space. Runbook: R5.'
     severity: 2
     windowSize: healthWindow
     dimensions: ['CollectorId']

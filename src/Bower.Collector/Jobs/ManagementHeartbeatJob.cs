@@ -26,7 +26,8 @@ public sealed partial class ManagementHeartbeatJob(
     DeliveryActivity? deliveryActivity = null,
     TimeSpan? exchangeTimeout = null,
     ManagementEnrolment? enrolment = null,
-    PipelineTelemetry? telemetry = null)
+    PipelineTelemetry? telemetry = null,
+    QueueStoragePressure? storagePressure = null)
 {
     public const string Id = "management-heartbeat";
     public const string HttpClientName = "bower-management";
@@ -81,8 +82,12 @@ public sealed partial class ManagementHeartbeatJob(
 
         QueueSnapshot snapshot = await eventStore.GetSnapshotAsync(cancellationToken);
         DateTimeOffset now = DateTimeOffset.UtcNow;
+        // A busy or full volume omits the storage block instead of failing the heartbeat.
+        Bower.Persistence.QueuePageUsage? pages = await QueueStorageStatus.TryReadPagesAsync(eventStore, cancellationToken);
+        QueueStorageStatus? storage = await QueueStorageStatus.TryCaptureAsync(
+            eventStore, snapshot, storagePressure, telemetry, now, pages, cancellationToken);
         string deliveryStatus = DeliveryHealth.Evaluate(settings.OutputType, snapshot,
-            settings.MaximumQueueBytes, now);
+            settings.MaximumQueueBytes, now, storage?.IntakePaused ?? false, pages?.UsedPercent);
         // Finished command results stay pending until management acknowledges them.
         IReadOnlyList<CommandResultReport> results = commands?.Ledger.PendingResults() ?? [];
         // Expected applications report as sources so silent ones show in the console.
@@ -151,7 +156,8 @@ public sealed partial class ManagementHeartbeatJob(
                     LastCanary = commands?.Ledger.LastCanary,
                     CommandCapabilities = commands?.Capabilities ?? [],
                     CommandResults = results,
-                    Redactions = telemetry?.RedactionSnapshot()
+                    Redactions = telemetry?.RedactionSnapshot(),
+                    Storage = storage
                 },
                 CollectorJsonContext.Default.CollectorHeartbeat));
         // One budget for the whole exchange, body included: a stalled body cannot hold the

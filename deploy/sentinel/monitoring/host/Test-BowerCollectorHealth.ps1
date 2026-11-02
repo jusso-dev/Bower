@@ -248,6 +248,23 @@ if ($statusValid) {
         elseif ($pagesPercent -ge $PagesWarningPercent) { Add-Finding 1 'queue-pages' ('Queue database pages are {0:N1}% of the page limit.' -f $pagesPercent) }
     }
 
+    # Queue volume free-space watermarks as the collector evaluates them (C# collector,
+    # workstream 3). Absent on collectors that do not report them.
+    $volume = Get-Text $status 'storage'
+    $volumeState = [string](Get-Text $volume 'state')
+    if ($volumeState) {
+        $metrics['bower_queue_volume_free_bytes'] = Get-Number $volume 'freeBytes'
+        $metrics['bower_queue_volume_total_bytes'] = Get-Number $volume 'totalBytes'
+        $metrics['bower_queue_volume_critical'] = [int]($volumeState -eq 'critical')
+        $metrics['bower_storage_refusals_total'] = Get-Number $volume 'storageRefusals'
+        $freePercent = Get-Text $volume 'freePercent'
+        if ((Get-Text $volume 'intakePaused') -eq $true -or $volumeState -eq 'critical') {
+            Add-Finding 2 'queue-volume' "Queue volume is below its critical free-space watermark ($freePercent% free); new events are refused."
+        }
+        elseif ($volumeState -eq 'warning') { Add-Finding 1 'queue-volume' "Queue volume is below its warning free-space watermark ($freePercent% free)." }
+        elseif ($volumeState -eq 'unknown') { Add-Finding 1 'queue-volume' 'Queue volume free space cannot be measured; watermarks are not enforced.' }
+    }
+
     $activity = Get-Text $status 'deliveryActivity'
     $failureCode = [string](Get-Text $activity 'lastFailureCode')
     $failedAt = Get-Time (Get-Text $activity 'lastFailureAt')

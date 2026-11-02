@@ -25,6 +25,48 @@ internal sealed class TemporaryDirectory : IDisposable
     }
 }
 
+/// <summary>
+/// Collectors built by tests see an ample queue volume unless a test supplies its own probe:
+/// the default watermarks (critical below 5%) would otherwise refuse intake on a nearly full
+/// development disk. <see cref="Bower.Persistence.SystemDiskSpaceProbe"/> stays tested directly.
+/// </summary>
+internal static class AmpleTestDisk
+{
+    [System.Runtime.CompilerServices.ModuleInitializer]
+    internal static void Install() =>
+        Bower.Persistence.StorageGuard.DefaultProbe = new FakeDiskSpaceProbe(500L * 1024 * 1024 * 1024, 1024L * 1024 * 1024 * 1024);
+}
+
+/// <summary>Scripted free space for the queue volume.</summary>
+internal sealed class FakeDiskSpaceProbe(long freeBytes, long totalBytes) : Bower.Persistence.IDiskSpaceProbe
+{
+    private long free = freeBytes;
+    private int calls;
+
+    public long FreeBytes
+    {
+        get => Interlocked.Read(ref free);
+        set => Interlocked.Exchange(ref free, value);
+    }
+
+    public long TotalBytes { get; } = totalBytes;
+
+    public bool Fails { get; set; }
+
+    public int Calls => Volatile.Read(ref calls);
+
+    /// <summary>Runs after each measurement with the call count, so a test can change the volume between inserts.</summary>
+    public Action<int>? AfterMeasure { get; set; }
+
+    public Bower.Persistence.DiskSpace? Measure(string directory)
+    {
+        int call = Interlocked.Increment(ref calls);
+        Bower.Persistence.DiskSpace? space = Fails ? null : new Bower.Persistence.DiskSpace(FreeBytes, TotalBytes);
+        AfterMeasure?.Invoke(call);
+        return space;
+    }
+}
+
 internal sealed class FakeClock(DateTimeOffset value) : TimeProvider
 {
     public DateTimeOffset UtcNow { get; private set; } = value;

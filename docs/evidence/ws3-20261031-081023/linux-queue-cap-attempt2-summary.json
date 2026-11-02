@@ -1,0 +1,98 @@
+{
+ "phase": "linux-queue-cap",
+ "startedAt": "2026-10-31T09:12:08.141Z",
+ "endedAt": "2026-10-31T09:31:17.366Z",
+ "events": [
+  {
+   "at": "2026-10-31T09:12:08.164Z",
+   "event": "generating",
+   "rate": 100
+  },
+  {
+   "at": "2026-10-31T09:12:38.196Z",
+   "event": "destination-blocked"
+  },
+  {
+   "at": "2026-10-31T09:16:46.428Z",
+   "event": "queue-cap-refusing",
+   "met": true
+  },
+  {
+   "at": "2026-10-31T09:18:46.590Z",
+   "event": "destination-restored"
+  },
+  {
+   "at": "2026-10-31T09:20:46.695Z",
+   "event": "generator-stopped",
+   "nextSeq": 55161
+  },
+  {
+   "at": "2026-10-31T09:31:17.329Z",
+   "event": "drained",
+   "met": true
+  }
+ ],
+ "generated": {
+  "firstSeq": 3307,
+  "nextSeq": 55161,
+  "count": 51854,
+  "rate": 100,
+  "maximumSendLagSeconds": 0.022
+ },
+ "firstWarningAt": null,
+ "firstCriticalAt": null,
+ "firstRefusalAt": "2026-10-31T09:16:45.161Z",
+ "maximumSenderQueue": 1,
+ "maximumUndeliveredBytes": 32866497,
+ "minimumFreeBytes": 855560192,
+ "maximumQueueFileBytes": 75357088,
+ "senderDiscarded": 0,
+ "listenerSubmitFailures": 0,
+ "listenerDropped": 0,
+ "samples": 231,
+ "final": {
+  "at": "2026-10-31T09:31:17.329Z",
+  "phase": "drained",
+  "freeBytes": 891088896,
+  "totalBytes": 1006632960,
+  "fillerBytes": 0,
+  "destinationBlocked": false,
+  "health": "healthy",
+  "generatorNext": 55161,
+  "storageState": "normal",
+  "intakePaused": false,
+  "queueFileBytes": 73537232,
+  "pageUtilisation": 69.14,
+  "queueUtilisation": 0,
+  "oldestPendingAge": null,
+  "storageRefusals": 0,
+  "pressurePurged": 0,
+  "capacityRefusals": 0,
+  "queued": 0,
+  "uploading": 0,
+  "retrying": 0,
+  "delivered": 27374,
+  "deadLettered": 0,
+  "undeliveredBytes": 0,
+  "listenerQueued": 0,
+  "listenerRetries": 0,
+  "listenerSubmitFailures": 0,
+  "listenerDropped": 0,
+  "listenerConnections": 0,
+  "senderQueue": 0,
+  "senderDiscarded": 0
+ },
+ "journal": {
+  "lines": 45,
+  "bytes": 7411,
+  "byEvent": {
+   "Bower.Collector.Jobs.QueueRetentionJob[1506]": 3,
+   "Bower.Collector.QueueStorageMonitor[1504]": 15,
+   "Bower.Collector.QueueDeliveryWorker[1002]": 15,
+   "other": 6,
+   "Microsoft.Hosting.Lifetime[0]": 4,
+   "Bower.Collector.SyslogIntakeService[1100]": 1,
+   "Microsoft.Hosting.Lifetime[14]": 1
+  }
+ }
+}

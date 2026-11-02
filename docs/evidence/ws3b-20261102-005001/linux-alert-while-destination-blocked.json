@@ -1,0 +1,9 @@
+{
+ "phase": "alert-query",
+ "query": "queue-storage.kql",
+ "queriedAt": "2026-11-02T01:32:41.106293+00:00",
+ "windowMinutes": 10,
+ "collector": "ws3-linux",
+ "fired": false,
+ "rows": []
+}

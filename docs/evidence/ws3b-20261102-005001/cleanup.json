@@ -1,0 +1,180 @@
+{
+ "schemaVersion": 1,
+ "runId": "bower-ws3b-20261102-005001",
+ "checkedAt": "2026-11-02T02:35:12.406866+00:00",
+ "accountId": "959038055523",
+ "region": "ap-southeast-2",
+ "azureSubscription": "945092a0-2500-4b25-85a4-99f1c3135906",
+ "checks": [
+  {
+   "check": "cloudformation stack bower-ws3b-20261102-005001",
+   "absent": true
+  },
+  {
+   "check": "instance i-0af7ad0ef00b148c0 (terminated)",
+   "absent": true
+  },
+  {
+   "check": "IAM role bower-ws3b-20261102-005001-ExpiryRole-UjGaJBviQelT",
+   "absent": true,
+   "errorCode": "NoSuchEntity"
+  },
+  {
+   "check": "expiry schedule bower-ws3b-20261102-005001-ExpirySchedule-1JD6QN6U56VUE",
+   "absent": true,
+   "errorCode": "ResourceNotFoundException"
+  },
+  {
+   "check": "expiry state machine ExpiryWorker-S8Oujlfs9h05",
+   "absent": true,
+   "errorCode": "StateMachineDoesNotExist"
+  },
+  {
+   "check": "IAM role bower-ws3b-20261102-005001-ExpiryWorkerRole-XSGUd0QJ8pS9",
+   "absent": true,
+   "errorCode": "NoSuchEntity"
+  },
+  {
+   "check": "instance profile bower-ws3b-20261102-005001-HostProfile-JLvEG1JN1c3o",
+   "absent": true,
+   "errorCode": "NoSuchEntity"
+  },
+  {
+   "check": "IAM role bower-ws3b-20261102-005001-HostRole-oTzWZprXkkED",
+   "absent": true,
+   "errorCode": "NoSuchEntity"
+  },
+  {
+   "check": "security group sg-0729110547c3716e5",
+   "absent": true,
+   "errorCode": "InvalidGroup.NotFound"
+  },
+  {
+   "check": "instance i-0d256bab2c182d218 (terminated)",
+   "absent": true
+  },
+  {
+   "check": "route table rtb-06a8915c7e5a0c82c",
+   "absent": true,
+   "errorCode": "InvalidRouteTableID.NotFound"
+  },
+  {
+   "check": "subnet subnet-07cf57ff14b2afee1",
+   "absent": true,
+   "errorCode": "InvalidSubnetID.NotFound"
+  },
+  {
+   "check": "instance i-09db6817b10ff66a5 (terminated)",
+   "absent": true
+  },
+  {
+   "check": "EBS volume vol-01319f60e64c0a5b7",
+   "absent": true,
+   "errorCode": "InvalidVolume.NotFound"
+  },
+  {
+   "check": "EBS volume vol-020521745ec9f4832",
+   "absent": true,
+   "errorCode": "InvalidVolume.NotFound"
+  },
+  {
+   "check": "EBS volume vol-03d75538b7614b7f9",
+   "absent": true,
+   "errorCode": "InvalidVolume.NotFound"
+  },
+  {
+   "check": "EBS volume vol-0805a066a435519eb",
+   "absent": true,
+   "errorCode": "InvalidVolume.NotFound"
+  },
+  {
+   "check": "EBS volume vol-0c706a27c82dbc216",
+   "absent": true,
+   "errorCode": "InvalidVolume.NotFound"
+  },
+  {
+   "check": "S3 bucket bower-lab-ws3b-20261102-005001-959038055523",
+   "absent": true,
+   "errorCode": "404"
+  },
+  {
+   "check": "EBS snapshots tagged RunId",
+   "absent": true
+  },
+  {
+   "check": "Secrets Manager secrets tagged RunId",
+   "absent": true
+  },
+  {
+   "check": "CloudWatch log groups with the run prefix",
+   "absent": true
+  },
+  {
+   "check": "AWS resources tagged RunId (tagging API, region; listed ARNs re-verified)",
+   "absent": true,
+   "listedByTaggingApi": [
+    "arn:aws:ec2:ap-southeast-2:959038055523:instance/i-0af7ad0ef00b148c0",
+    "arn:aws:ec2:ap-southeast-2:959038055523:instance/i-09db6817b10ff66a5",
+    "arn:aws:ec2:ap-southeast-2:959038055523:instance/i-0d256bab2c182d218"
+   ],
+   "notConfirmedGone": []
+  },
+  {
+   "check": "Azure resource group rg-bower-ws3b-20261102-005001",
+   "absent": true
+  },
+  {
+   "check": "Azure resources tagged RunId",
+   "absent": true
+  },
+  {
+   "check": "soft-deleted workspace law-bower-ws3b-20261102-005001",
+   "absent": true
+  },
+  {
+   "check": "Entra application bower-ws3b-20261102-005001-publisher",
+   "absent": true
+  },
+  {
+   "check": "service principal of bower-ws3b-20261102-005001-publisher",
+   "absent": true
+  },
+  {
+   "check": "deleted-items application 837f5908-2892-4f5b-b5de-a5e507225bdb",
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
+  },
+  {
+   "check": "deleted-items service principal c84cda10-5c5b-401b-a111-9f893d18f90a",
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
+  },
+  {
+   "check": "role assignments of bower-ws3b-20261102-005001-publisher",
+   "absent": true
+  },
+  {
+   "check": "Entra application bower-ws3b-20261102-005001-verifier",
+   "absent": true
+  },
+  {
+   "check": "service principal of bower-ws3b-20261102-005001-verifier",
+   "absent": true
+  },
+  {
+   "check": "deleted-items application 9dccbfe1-22ff-4938-8bba-d9ed866f35f6",
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
+  },
+  {
+   "check": "deleted-items service principal 326af8d9-ebc8-4645-aa38-e818f9a765a5",
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
+  },
+  {
+   "check": "role assignments of bower-ws3b-20261102-005001-verifier",
+   "absent": true
+  }
+ ],
+ "allAbsent": true
+}

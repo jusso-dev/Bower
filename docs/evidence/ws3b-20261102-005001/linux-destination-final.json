@@ -1,0 +1,50 @@
+{
+ "phase": "destination-query",
+ "queriedAt": "2026-11-02T02:13:05.016487+00:00",
+ "queryRole": "verifier",
+ "collector": "ws3-linux",
+ "since": "2026-11-02T00:50:00+00:00",
+ "rows": 83795,
+ "rowsByEventType": {
+  "collector_health": 70,
+  "network_connection_denied": 83725
+ },
+ "eventRows": 83725,
+ "distinctEventIds": 83725,
+ "duplicateRows": 0,
+ "expectedSequences": 90834,
+ "distinctSequences": 83725,
+ "missingSequences": 7109,
+ "missingSample": [
+  "ws3l0077112",
+  "ws3l0077113",
+  "ws3l0077114",
+  "ws3l0077115",
+  "ws3l0077116",
+  "ws3l0077117",
+  "ws3l0077118",
+  "ws3l0077119",
+  "ws3l0077120",
+  "ws3l0077121",
+  "ws3l0077122",
+  "ws3l0077123",
+  "ws3l0077124",
+  "ws3l0077125",
+  "ws3l0077126",
+  "ws3l0077127",
+  "ws3l0077128",
+  "ws3l0077129",
+  "ws3l0077130",
+  "ws3l0077131"
+ ],
+ "unexpectedSequences": 0,
+ "sequencesWithSeveralEventIds": 0,
+ "expectedDigest": "32c77a9eef8a945ad017b2ed3588b62de57f126c36610e79e802ccc44c017bc2",
+ "destinationDigest": "35f8da8083ba80c8e3ede91371b5ff9288796a375c5ddc121bba3f2320a0bc1d",
+ "ingestionLatencySeconds": {
+  "p50": 182.016446,
+  "p95": 348.128219,
+  "p99": 376.769842,
+  "maximum": 381.055481
+ }
+}

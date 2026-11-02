@@ -192,24 +192,40 @@ whole database can rewrite local evidence. Continue independent external head
 witnessing; do not infer destination delivery from local acknowledgement or hashes.
 
 For configured logical payload limit `M`, the physical DB+WAL ceiling is
-`4 * M + 16 MiB`. SQLite database pages are capped at one quarter of that ceiling.
-Every write reserves two capped database sizes plus WAL frame/header allowance
-before starting mutations: one for the WAL transaction and one for database growth
-during checkpoint. Cache spill is disabled, WAL autocheckpoint runs after each
+`4 * M + 16 MiB`. Every write reserves two capped database sizes plus WAL frame/header
+allowance before starting mutations: one for the WAL transaction and one for database
+growth during checkpoint. Cache spill is disabled, WAL autocheckpoint runs after each
 commit and retained WAL size is zero after a successful reset. Accepted data is
 never deleted to satisfy the limit. A pinned reader can prevent checkpointing;
-writers then report capacity/backpressure until the reader closes and maintenance
-checkpoints the WAL. A database already larger than its page allowance is refused;
-configure an adequate limit before migration. Database free pages are reused.
+writers then report capacity/backpressure until the reader closes. In the C#
+collector the next write over budget truncates the WAL itself (at most every 10
+seconds) instead of waiting for maintenance. A database already larger than its page
+allowance is refused; configure an adequate limit before migration. Database free
+pages are reused.
+
+Both collectors: new events stop once database pages **in use** reach 85% of one quarter
+of that ceiling (`M + 4 MiB`), while leasing, acknowledgement, retry and dead-letter
+writes may grow the file to 1.75 × (`M + 4 MiB`) (the SQLite `max_page_count`).
+Settlement enlarges rows and splits packed pages; without that room a backlog that
+filled the pages could never be acknowledged (seen on AWS, see
+[storage pressure](../production-readiness/03-storage-pressure.md)). A queued row
+takes about 2.2 times its payload, so the page limit binds before `M`. Builds before
+this change (C#, and Rust before the port) keep the single `M + 4 MiB` page ceiling and
+refuse a database grown past it; see the
+[rollback procedure](../production-readiness/04-upgrade-backup-recovery.md#rollback-after-settlement-growth).
 
 The physical cap includes retained delivered payloads, ledger/checkpoint pages and
-indexes; it can reject new events before the logical undelivered payload limit.
+indexes; it can reject new events before the logical undelivered payload limit. The
+C# collector's retention job reclaims acknowledged rows early under page or disk
+pressure (`BOWER_QUEUE_PRESSURE_RETENTION_MINUTES`), and of any age once new events
+are refused; undelivered, retrying and dead-lettered rows are never removed.
 SQLite `FULL` is surfaced as capacity, not duplicate success. Exact replay still
 wins over normal admission backpressure. A suppressed event commits a counter
 change, so it takes the same physical check after the duplicate lookup: when the
 budget is spent it is refused with capacity, its window counts stay unchanged and
 it is not reported as suppressed. This limit covers the queue DB and WAL,
-not unrelated disk users, output spool directories or filesystem failure. SQLite's
+not unrelated disk users, output spool directories or filesystem failure; the C#
+collector's free-space watermarks (`BOWER_STORAGE_*`) cover the volume itself. SQLite's
 small shared-memory file and transient memory are additional overhead. All writers
 must use the supported APIs and matching limits; raw administrative SQL is outside
 this enforcement boundary.

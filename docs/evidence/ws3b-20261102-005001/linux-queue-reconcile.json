@@ -1,0 +1,74 @@
+{
+ "phase": "linux-reconcile",
+ "at": "2026-11-02T01:26:41.309Z",
+ "generated": 31149,
+ "queuedIdentities": 4105,
+ "missingFromQueue": 27044,
+ "missingSample": [
+  "ws3l0000001",
+  "ws3l0000002",
+  "ws3l0000003",
+  "ws3l0000004",
+  "ws3l0000005",
+  "ws3l0000006",
+  "ws3l0000007",
+  "ws3l0000008",
+  "ws3l0000009",
+  "ws3l0000010",
+  "ws3l0000011",
+  "ws3l0000012",
+  "ws3l0000013",
+  "ws3l0000014",
+  "ws3l0000015",
+  "ws3l0000016",
+  "ws3l0000017",
+  "ws3l0000018",
+  "ws3l0000019",
+  "ws3l0000020"
+ ],
+ "unexpected": 0,
+ "duplicateSequences": 0,
+ "deliveredInQueue": 4105,
+ "queueRows": 4119,
+ "rowsByEventType": {
+  "network_connection_denied": 4105,
+  "collector_health": 14
+ },
+ "averagePayloadBytes": 1208,
+ "generatedDigest": "232871ad9210358a5ceed9003ce9655911bdc51f1138add68b28fb0d691ad470",
+ "queuedDigest": "8d493fff97875947becac8626b0658c1f7c85f3ad986939bf6e6c58bb96fada7",
+ "sqliteIntegrity": "ok",
+ "ledgerPurgedRows": 0,
+ "rsyslog": {
+  "bower queue[DA]": {
+   "size": 0,
+   "maxqsize": 0,
+   "enqueued": 0,
+   "discarded.full": 0,
+   "discarded.nf": 0,
+   "full": 0
+  },
+  "bower queue": {
+   "size": 0,
+   "maxqsize": 4,
+   "enqueued": 30847,
+   "discarded.full": 0,
+   "discarded.nf": 0,
+   "full": 0
+  },
+  "ws3": {
+   "size": 0,
+   "maxqsize": 4,
+   "enqueued": 30847,
+   "discarded.full": 0,
+   "discarded.nf": 0,
+   "full": 0
+  },
+  "bower": {
+   "processed": 30847,
+   "failed": 0,
+   "suspended": 0,
+   "resumed": 0
+  }
+ }
+}

@@ -302,6 +302,92 @@ public sealed class SyslogCollectorTests
     }
 
     [Fact]
+    public async Task Relp_ACriticalVolumeIsNeverAcknowledgedAndTheResendIsQueuedOnceSpaceReturns()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        const long GiB = 1024L * 1024 * 1024;
+        FakeDiskSpaceProbe disk = new(100L * 1024 * 1024, 20 * GiB);
+        await using WebApplication app = await Start(directory, cancellation, disk: disk);
+        SyslogSource source = app.Services.GetRequiredService<SyslogSource>();
+        IDurableEventStore store = app.Services.GetRequiredService<IDurableEventStore>();
+        string frame = Frame("failure", "relp-volume");
+        await using (SyslogRelpTests.Client refused = await SyslogRelpTests.Client.ConnectAsync(source.Endpoints["edge-relp"], cancellation))
+        {
+            await refused.OpenAsync(cancellation);
+            await refused.SendAsync(2, frame, cancellation);
+            // No "2 rsp 200": the sender keeps the message and resends it.
+            Assert.Equal("0 serverclose 0\n", await refused.ReadFrameAsync(cancellation));
+            Assert.Null(await refused.ReadFrameAsync(cancellation));
+        }
+
+        SyslogListenerStatus busy = await WaitFor(source, value => value.RelpBusyCloses == 1, cancellation, "edge-relp");
+        Assert.Equal((0L, 0L), (busy.Queued, busy.RelpAcknowledged));
+        Assert.Equal(0, (await store.GetSnapshotAsync(cancellation)).Queued);
+
+        disk.FreeBytes = 10 * GiB;
+        await Task.Delay(TimeSpan.FromMilliseconds(1_100), cancellation);
+        await using SyslogRelpTests.Client resend = await SyslogRelpTests.Client.ConnectAsync(source.Endpoints["edge-relp"], cancellation);
+        await resend.OpenAsync(cancellation);
+        await resend.SendAsync(2, frame, cancellation);
+        Assert.Equal("2 rsp 6 200 OK\n", await resend.ReadFrameAsync(cancellation));
+        Assert.Equal(1, (await store.GetSnapshotAsync(cancellation)).Queued);
+    }
+
+    [Fact]
+    public async Task CriticalFreeSpace_HoldsTheTcpFrameReportsItAndResumesWhenSpaceReturns()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        const long GiB = 1024L * 1024 * 1024;
+        FakeDiskSpaceProbe disk = new(100L * 1024 * 1024, 20 * GiB);
+        await using WebApplication app = await Start(directory, cancellation, disk: disk);
+        SyslogSource source = app.Services.GetRequiredService<SyslogSource>();
+        IDurableEventStore store = app.Services.GetRequiredService<IDurableEventStore>();
+
+        using TcpClient client = new(AddressFamily.InterNetwork);
+        await client.ConnectAsync(source.Endpoints["edge"], cancellation);
+        NetworkStream stream = client.GetStream();
+        await Send(stream, Frame("failure"), cancellation);
+        // Pipelined behind the held frame: never read, so never lost, while space is low.
+        await Send(stream, Frame("failure", "second-user"), cancellation);
+        SyslogListenerStatus held = await WaitFor(source, status => status.Retries >= 2, cancellation);
+        Assert.Equal((0L, 0L, 0L, 1L), (held.Queued, held.SubmitFailures, held.Dropped, held.ActiveConnections));
+        Assert.Equal(0, (await store.GetSnapshotAsync(cancellation)).Queued);
+
+        using HttpClient http = app.GetTestClient();
+        using (HttpResponseMessage health = await http.GetAsync(new Uri("/health", UriKind.Relative), cancellation))
+        {
+            Assert.Contains("degraded", await health.Content.ReadAsStringAsync(cancellation), StringComparison.Ordinal);
+        }
+
+        using (HttpRequestMessage request = new(HttpMethod.Get, "/v1/status"))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Token);
+            using HttpResponseMessage response = await http.SendAsync(request, cancellation);
+            string body = await response.Content.ReadAsStringAsync(cancellation);
+            using JsonDocument status = JsonDocument.Parse(body);
+            JsonElement storage = status.RootElement.GetProperty("storage");
+            Assert.Equal("critical", storage.GetProperty("state").GetString());
+            Assert.True(storage.GetProperty("intakePaused").GetBoolean());
+            Assert.Equal(100L * 1024 * 1024, storage.GetProperty("freeBytes").GetInt64());
+            Assert.Equal(1024L * 1024 * 1024, storage.GetProperty("criticalFreeBytes").GetInt64());
+            Assert.Equal(1_048_576, storage.GetProperty("queueMaximumBytes").GetInt64());
+            Assert.True(storage.GetProperty("queueFileBytes").GetInt64() > 0);
+            Assert.True(storage.GetProperty("storageRefusals").GetInt64() >= 2);
+            Assert.Equal("storage-critical", storage.GetProperty("lastStorageRefusalReason").GetString());
+            Assert.True(status.RootElement.GetProperty("intake").GetProperty("capacityRefusals").GetInt64() >= 2);
+            Assert.DoesNotContain(directory.Path, body, StringComparison.Ordinal);
+            Assert.DoesNotContain("deploy-admin", body, StringComparison.Ordinal);
+        }
+
+        disk.FreeBytes = 10 * GiB;
+        SyslogListenerStatus resumed = await WaitFor(source, status => status.Queued == 2, cancellation);
+        Assert.Equal(0, resumed.SubmitFailures);
+        Assert.Equal(2, (await store.GetSnapshotAsync(cancellation)).Queued);
+    }
+
+    [Fact]
     public async Task TransformFailure_QuarantinesWithoutPersistingAndKeepsTheConnectionOpen()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
@@ -409,7 +495,8 @@ public sealed class SyslogCollectorTests
     }
 
     private static async Task<WebApplication> Start(TemporaryDirectory directory, CancellationToken cancellation, int parser = 0,
-        string[]? transforms = null, string? identityAction = null, bool crlf = false, string? queuePath = null)
+        string[]? transforms = null, string? identityAction = null, bool crlf = false, string? queuePath = null,
+        Bower.Persistence.IDiskSpaceProbe? disk = null)
     {
         string pack = Path.Combine(directory.Path, "syslog-pack");
         foreach (string path in Directory.EnumerateFiles(PackSource, "*", SearchOption.AllDirectories))
@@ -481,7 +568,14 @@ public sealed class SyslogCollectorTests
             SingleTrustDomain = true,
             SyslogConfigPath = syslog,
             SourceExpectationsPath = expectations
-        }, builder => builder.WebHost.UseTestServer());
+        }, builder =>
+        {
+            builder.WebHost.UseTestServer();
+            if (disk is not null)
+            {
+                builder.Services.AddSingleton(disk);
+            }
+        });
         await CollectorApplication.InitializeAsync(app, cancellation);
         await app.StartAsync(cancellation);
         // Short retry delay and RELP busy limit so the backpressure tests do not wait seconds per attempt.

@@ -1,0 +1,106 @@
+{
+ "phase": "wec-watermarks",
+ "startedAt": "2026-11-02T01:42:53.4207521+00:00",
+ "endedAt": "2026-11-02T01:55:46.4607680+00:00",
+ "events": [
+  {
+   "at": "2026-11-02T01:43:24.7588956+00:00",
+   "event": "generating",
+   "rate": 50
+  },
+  {
+   "at": "2026-11-02T01:43:56.1101539+00:00",
+   "event": "destination-blocked"
+  },
+  {
+   "at": "2026-11-02T01:43:56.2820144+00:00",
+   "event": "filled-below-warning",
+   "fillerBytes": 1592680448
+  },
+  {
+   "at": "2026-11-02T01:43:56.8134907+00:00",
+   "event": "warning-reported",
+   "met": true
+  },
+  {
+   "at": "2026-11-02T01:44:59.1649652+00:00",
+   "event": "filled-near-critical",
+   "fillerBytes": 1797652480
+  },
+  {
+   "at": "2026-11-02T01:48:16.2275647+00:00",
+   "event": "critical-reported",
+   "met": true
+  },
+  {
+   "at": "2026-11-02T01:50:19.7990996+00:00",
+   "event": "space-freed"
+  },
+  {
+   "at": "2026-11-02T01:50:20.0178408+00:00",
+   "event": "intake-resumed",
+   "met": true
+  },
+  {
+   "at": "2026-11-02T01:51:22.4684263+00:00",
+   "event": "destination-restored"
+  },
+  {
+   "at": "2026-11-02T01:53:26.6657059+00:00",
+   "event": "generator-stopped",
+   "unexpectedSuccess": 0,
+   "failedBinds": 0,
+   "nextSeq": 51515
+  },
+  {
+   "at": "2026-11-02T01:55:46.4607680+00:00",
+   "event": "drained",
+   "met": true
+  }
+ ],
+ "generated": {
+  "failedBinds": 0,
+  "rate": 50,
+  "firstSeq": 21418,
+  "nextSeq": 51515,
+  "count": 30097,
+  "maximumLagSeconds": 1.039
+ },
+ "samples": 148,
+ "final": {
+  "at": "2026-11-02T01:55:46.3353766+00:00",
+  "phase": "generator-stopped",
+  "freeBytes": 2022141952,
+  "totalBytes": 2130636800,
+  "fillerBytes": 0,
+  "destinationBlocked": false,
+  "service": "Running",
+  "generatorNext": 51515,
+  "forwardedRecords": 30694,
+  "forwardedIsFull": false,
+  "forwardedFileBytes": 67112960,
+  "forwardedMaximumBytes": 67108864,
+  "health": "healthy",
+  "storageState": "normal",
+  "intakePaused": false,
+  "queueFileBytes": 91754912,
+  "pageUtilisation": 19.9,
+  "oldestPendingAge": null,
+  "storageRefusals": 122,
+  "pressurePurged": 0,
+  "capacityRefusals": 122,
+  "queued": 0,
+  "uploading": 0,
+  "retrying": 0,
+  "delivered": 34388,
+  "deadLettered": 0,
+  "undeliveredBytes": 0,
+  "subscriptionState": "running",
+  "bookmarkRecordId": 51515,
+  "sourceQueued": 30097,
+  "sourceRetries": 122,
+  "sourceSubmitFailures": 0,
+  "sourceGaps": 0,
+  "sourceReadErrors": 0
+ }
+}

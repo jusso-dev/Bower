@@ -397,6 +397,10 @@ public sealed class CollectorHealthRecordTests
         await store.EnqueueAsync(
             new QueuedEvent("filler", "sha256:filler", new string('x', 1_048_000), clock.UtcNow),
             cancellationToken);
+        // Health records may use a small reserve past the cap; fill that too.
+        await store.EnqueueAsync(
+            new QueuedEvent("reserve-filler", "sha256:reserve-filler", new string('x', 66_000), clock.UtcNow) { UsesStorageReserve = true },
+            cancellationToken);
         PipelineTelemetry telemetry = new(clock);
         SecurityEventProcessor processor = new(
             new JsonEventRedactor(),
@@ -416,9 +420,12 @@ public sealed class CollectorHealthRecordTests
         Assert.Null(await worker.RecordAsync(TimeSpan.FromMinutes(1), cancellationToken));
         Assert.Equal(1, telemetry.IntakeSnapshot().CapacityRefusals);
 
-        // Room again (the filler was delivered): the next record carries the refusal.
-        QueuedEvent filler = Assert.Single(await store.LeaseAsync(1, TimeSpan.FromMinutes(1), cancellationToken));
-        await store.MarkDeliveredAsync(filler.EventId, "test", filler.LeaseToken, cancellationToken);
+        // Room again (the fillers were delivered): the next record carries the refusal.
+        foreach (QueuedEvent filler in await store.LeaseAsync(2, TimeSpan.FromMinutes(1), cancellationToken))
+        {
+            await store.MarkDeliveredAsync(filler.EventId, "test", filler.LeaseToken, cancellationToken);
+        }
+
         clock.Advance(TimeSpan.FromMinutes(1));
         ProcessingResult? queued = await worker.RecordAsync(TimeSpan.FromMinutes(1), cancellationToken);
 
@@ -430,6 +437,72 @@ public sealed class CollectorHealthRecordTests
         Assert.Contains(
             CollectorHealthRecord.CapacityRefusals,
             envelope.Attributes["problems"].EnumerateArray().Select(item => item.GetString()));
+    }
+
+    /// <summary>
+    /// Large events can fill the logical byte cap while most pages are free. The record still
+    /// goes in from its small reserve and reports the saturation (council round 1).
+    /// </summary>
+    [Fact]
+    public async Task Worker_RecordIsQueuedAndReportsBackpressureWhenLargeEventsFillTheByteCap()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = new(Path.Combine(directory.Path, "queue.db"), 1_048_576, clock);
+        await store.InitializeAsync(cancellationToken);
+        int index = 0;
+        foreach (int size in new[] { 100_000, 1_000, 10 })
+        {
+            while (true)
+            {
+                try
+                {
+                    await store.EnqueueAsync(new QueuedEvent($"large-{index}", $"sha256:large-{index}", new string('x', size), clock.UtcNow), cancellationToken);
+                    index++;
+                }
+                catch (QueueCapacityExceededException exception)
+                {
+                    Assert.Equal(QueueCapacityReasons.Queue, exception.Reason);
+                    break;
+                }
+            }
+        }
+
+        QueuePageUsage pages = await store.GetPageUsageAsync(cancellationToken);
+        Assert.True(pages.UsedPercent < 60, $"pages {pages.UsedPercent}%");
+        Assert.True((await store.GetSnapshotAsync(cancellationToken)).UndeliveredBytes > 1_048_576 - 20);
+        PipelineTelemetry telemetry = new(clock);
+        SecurityEventProcessor processor = new(
+            new JsonEventRedactor(),
+            new DeterministicPolicyEvaluator([PolicyLoader.LoadFile(HealthPolicyFile)]),
+            store,
+            clock,
+            telemetry);
+        CollectorSettings settings = Settings(directory.Path) with
+        {
+            MaximumQueueBytes = 1_048_576,
+            OutputType = "azure-logs-ingestion",
+            HealthRecordInterval = TimeSpan.FromMinutes(1)
+        };
+        CollectorHealthWorker worker = new(
+            processor, Identity, store, telemetry, new SourceHealth(null, telemetry, clock), new DeliveryActivity(),
+            settings, clock, NullLogger<CollectorHealthWorker>.Instance);
+
+        ProcessingResult? result = await worker.RecordAsync(TimeSpan.FromMinutes(1), cancellationToken);
+
+        Assert.True(result?.Queued);
+        QueuedEvent record = (await store.LeaseAsync(10_000, TimeSpan.FromMinutes(1), cancellationToken))
+            .Single(item => item.EventId.StartsWith("collector-health-", StringComparison.Ordinal));
+        SecurityEventEnvelope envelope = JsonSerializer.Deserialize(record.Payload, BowerJson.Envelope)!;
+        Assert.Contains(
+            CollectorHealthRecord.Backpressure,
+            envelope.Attributes!["problems"].EnumerateArray().Select(item => item.GetString()));
+        Assert.True(envelope.Attributes["storage"].GetProperty("capacityUsedPercent").GetDouble() >= 99);
+        // The reserve is bounded: ordinary events stay refused, and records stop at the reserve.
+        Assert.True((await store.GetSnapshotAsync(cancellationToken)).UndeliveredBytes <= 1_048_576 + store.HealthRecordReserveBytes);
+        await Assert.ThrowsAsync<QueueCapacityExceededException>(() => store.EnqueueAsync(
+            new QueuedEvent("ordinary", "sha256:ordinary", "x", clock.UtcNow), cancellationToken));
     }
 
     [Fact]
@@ -514,9 +587,15 @@ public sealed class CollectorHealthRecordTests
         Assert.Equal(60, envelope.Attributes!["intervalSeconds"].GetInt64());
         Assert.Equal("none", envelope.Attributes["delivery"].GetProperty("output").GetString());
         Assert.Equal("BWR-POL-COLLECTOR-HEALTH", envelope.Security!.PolicyId);
-        // Read from the store (SQLite max_page_count), not recomputed.
+        // The limit at which new events are refused, and the settlement ceiling SQLite enforces.
         JsonElement storage = envelope.Attributes["storage"];
-        Assert.Equal(Math.Round((10L * 1024 * 1024 * 1024 * 4 + 16_777_216) / 4 / 1_048_576.0, 1), storage.GetProperty("queuePageLimitMiB").GetDouble());
+        long basePages = (10L * 1024 * 1024 * 1024 * 4 + 16_777_216) / 4 / 4_096;
+        Assert.Equal(Math.Round(SqliteEventStore.IntakePageLimit(basePages, 4_096) * 4_096 / 1_048_576.0, 1), storage.GetProperty("queuePageLimitMiB").GetDouble());
+        Assert.Equal(Math.Round(basePages * 7 / 4 * 4_096 / 1_048_576.0, 1), storage.GetProperty("queueCeilingMiB").GetDouble());
+        // The test host's real volume: any measured state, with free space in MiB.
+        Assert.Matches("^(normal|warning|critical|unknown)$", storage.GetProperty("volumeState").GetString()!);
+        Assert.True(storage.GetProperty("intakePaused").ValueKind is JsonValueKind.True or JsonValueKind.False);
+        Assert.True(storage.GetProperty("volumeFreeMiB").GetDouble() > 0);
         Assert.True(storage.GetProperty("queuePagesUsedMiB").GetDouble() > 0);
         Assert.True(storage.GetProperty("queuePagesUsedPercent").GetDouble() < 1);
         await app.StopAsync(cancellationToken);
@@ -673,6 +752,80 @@ public sealed class CollectorHealthRecordTests
             CollectorId = "collector-test",
             SingleTrustDomain = true
         };
+
+    [Fact]
+    public void Create_ReportsQueueVolumeWatermarksAsMebibytesAndStorageProblems()
+    {
+        CollectorHealthSample first = Sample(TestEvents.Now, sequence: 1) with
+        {
+            OutputType = "azure-logs-ingestion",
+            QueuePages = new QueuePageUsage(4_096, 2_000, 0, 2_000, 3_500),
+            Storage = Volume("warning", intakePaused: false, freeBytes: 900L * 1_048_576, refusals: 2, purged: 10)
+        };
+        CollectorHealthSample second = Sample(TestEvents.Now.AddMinutes(5), sequence: 2) with
+        {
+            CollectorStartedAt = first.CollectorStartedAt,
+            OutputType = "azure-logs-ingestion",
+            QueuePages = first.QueuePages,
+            Storage = Volume("critical", intakePaused: true, freeBytes: 100L * 1_048_576, refusals: 7, purged: 40)
+        };
+
+        Assert.Contains(CollectorHealthRecord.StorageLow, CollectorHealthRecord.Problems(first, null));
+        IReadOnlyList<string> problems = CollectorHealthRecord.Problems(second, first);
+        Assert.Contains(CollectorHealthRecord.StorageCritical, problems);
+        // Pages at the intake limit and a paused volume are backpressure, as for a full queue.
+        Assert.Contains(CollectorHealthRecord.Backpressure, problems);
+        SecurityEventEnvelope record = CollectorHealthRecord.Create(second, Identity.Id, "production", first);
+        Assert.Equal(EventSeverity.High, record.EventSeverity);
+        JsonElement storage = record.Attributes!["storage"];
+        Assert.Equal("critical", storage.GetProperty("volumeState").GetString());
+        Assert.True(storage.GetProperty("intakePaused").GetBoolean());
+        Assert.Equal(100.0, storage.GetProperty("volumeFreeMiB").GetDouble());
+        Assert.Equal(4.9, storage.GetProperty("volumeFreePercent").GetDouble());
+        Assert.Equal(1_024.0, storage.GetProperty("volumeWarningFreeMiB").GetDouble());
+        Assert.Equal(256.0, storage.GetProperty("volumeCriticalFreeMiB").GetDouble());
+        Assert.Equal(13.7, storage.GetProperty("queueCeilingMiB").GetDouble());
+        // Counters are deltas since the previous record, like every other counter.
+        Assert.Equal(5, storage.GetProperty("storageRefusals").GetInt64());
+        Assert.Equal(30, storage.GetProperty("pressurePurgedEvents").GetInt64());
+        Assert.All(storage.EnumerateObject().Where(item => item.Value.ValueKind == JsonValueKind.Number),
+            item => Assert.InRange(item.Value.GetDouble(), 0, CollectorHealthRecord.MaximumReportedValue));
+    }
+
+    [Fact]
+    public void NextBaseline_KeepsTheLastReportedStorageWhenARecordHadNone()
+    {
+        CollectorHealthSample first = Sample(TestEvents.Now, sequence: 1) with
+        {
+            Storage = Volume("critical", intakePaused: true, freeBytes: 100L * 1_048_576, refusals: 5, purged: 10)
+        };
+        // The volume could not be read for the second record, which was still queued.
+        CollectorHealthSample second = Sample(TestEvents.Now.AddMinutes(5), sequence: 2) with
+        {
+            CollectorStartedAt = first.CollectorStartedAt,
+            Storage = null
+        };
+        CollectorHealthSample third = Sample(TestEvents.Now.AddMinutes(10), sequence: 3) with
+        {
+            CollectorStartedAt = first.CollectorStartedAt,
+            Storage = Volume("critical", intakePaused: true, freeBytes: 100L * 1_048_576, refusals: 7, purged: 12)
+        };
+
+        CollectorHealthSample baseline = CollectorHealthRecord.NextBaseline(second, CollectorHealthRecord.NextBaseline(first, null));
+        JsonElement storage = CollectorHealthRecord.Create(third, Identity.Id, "production", baseline).Attributes!["storage"];
+
+        // Deltas since the last reported storage, not since process start (7 and 12).
+        Assert.Equal(2, storage.GetProperty("storageRefusals").GetInt64());
+        Assert.Equal(2, storage.GetProperty("pressurePurgedEvents").GetInt64());
+        Assert.Equal(second.At, baseline.At);
+        Assert.Same(third, CollectorHealthRecord.NextBaseline(third, baseline));
+    }
+
+    private static QueueStorageStatus Volume(string state, bool intakePaused, long freeBytes, long refusals, long purged) =>
+        new(state, intakePaused, TestEvents.Now, freeBytes, 2_048L * 1_048_576, Math.Round(freeBytes * 100.0 / (2_048L * 1_048_576), 2),
+            1_024L * 1_048_576, 256L * 1_048_576, TestEvents.Now, 1, intakePaused ? 1 : 0,
+            8L * 1_048_576, 7L * 1_048_576, 1_048_576, 64L * 1_048_576, 1_000, 0.1, 30, purged, null,
+            refusals, refusals * 1_000, null, intakePaused ? "storage-critical" : null);
 
     private static CollectorHealthSample Sample(DateTimeOffset at, long sequence) =>
         new(

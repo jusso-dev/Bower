@@ -246,7 +246,12 @@ Strict and fail closed, with stable codes:
   is enqueued or definitively dropped. When the queue is full (or a management-mode
   collector is waiting for its privacy profile) the connection stops reading and
   retries the same frame every second, so TCP flow control pushes back on the sender.
-  A storage error closes the connection.
+  A queue volume below its critical free-space watermark, or SQLite reporting the
+  volume full, is the same backpressure (the frame is held and the connection kept);
+  any other storage error closes the connection. Until the window closes, the kernel
+  socket buffers keep accepting frames Bower has not read: on AWS about 21,500
+  frames (about 4 MB) were held this way and were lost when the collector restarted
+  while backpressured. See [storage pressure](../production-readiness/03-storage-pressure.md).
 - **UDP is best effort.** Datagrams wait in a buffer of 256 per listener; when it is
   full, or the queue is at capacity, they are dropped and counted. There is no way to
   push back on a UDP sender.

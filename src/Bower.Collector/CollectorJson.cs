@@ -71,14 +71,19 @@ internal sealed record StatusResponse(
     public IReadOnlyList<Bower.Source.WindowsEventLog.WindowsEventSubscriptionStatus>? WindowsEventLog { get; init; }
 
     /// <summary>
-    /// Queue database pages against their limit: in-use bytes, free-list bytes and the page
-    /// limit, so host checks never recompute the limit. Omitted when it cannot be read.
+    /// Queue database pages against the limit at which new events are refused: in-use bytes,
+    /// free-list bytes, the limit and the settlement ceiling, so host checks never recompute
+    /// them. Omitted when it cannot be read.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public StatusQueuePagesResponse? QueuePages { get; init; }
 
     /// <summary>Last acknowledgement and last delivery failure code since start-up. Metadata only.</summary>
     public StatusDeliveryActivityResponse? DeliveryActivity { get; init; }
+
+    /// <summary>Queue volume watermarks, queue files and page use. Metadata only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public QueueStorageStatus? Storage { get; init; }
 }
 
 /// <summary>First server-sent event of a tap session: its effective filters and caps.</summary>
@@ -148,8 +153,14 @@ internal sealed record StatusQueuePagesResponse(
     long FreeListBytes,
     double UsedPercent)
 {
+    /// <summary>Largest size the database may reach while settling a backlog (SQLite max_page_count).</summary>
+    public long CeilingBytes { get; init; }
+
     public static StatusQueuePagesResponse From(Bower.Persistence.QueuePageUsage usage) =>
-        new(usage.PageSize, usage.PageLimitBytes, usage.UsedBytes, usage.FreeListBytes, usage.UsedPercent);
+        new(usage.PageSize, usage.PageLimitBytes, usage.UsedBytes, usage.FreeListBytes, usage.UsedPercent)
+        {
+            CeilingBytes = usage.CeilingBytes
+        };
 }
 
 internal sealed record CollectorRegistration(
@@ -192,6 +203,10 @@ internal sealed record CollectorHeartbeat(
 
     /// <summary>Queued events per redacted detector type since process start. Counts only.</summary>
     public RedactionSnapshot? Redactions { get; init; }
+
+    /// <summary>Queue volume watermarks and queue use (additive; older management ignores it). Metadata only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public QueueStorageStatus? Storage { get; init; }
 }
 
 /// <summary>
