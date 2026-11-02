@@ -1,0 +1,187 @@
+{
+ "journal": "queue-cap.jsonl",
+ "runs": [
+  {
+   "startedAt": "2026-10-31T09:05:02.4723884+00:00",
+   "endedAt": "2026-10-31T10:34:42.9848710+00:00",
+   "events": [
+    {
+     "at": "2026-10-31T09:05:02.4723884+00:00",
+     "event": "generating",
+     "rate": 50
+    },
+    {
+     "at": "2026-10-31T09:05:33.5884303+00:00",
+     "event": "destination-blocked"
+    },
+    {
+     "at": "2026-10-31T09:15:19.3151858+00:00",
+     "event": "queue-cap-refusing",
+     "met": true
+    },
+    {
+     "at": "2026-10-31T09:17:23.1648409+00:00",
+     "event": "destination-restored"
+    },
+    {
+     "at": "2026-10-31T09:19:26.9532296+00:00",
+     "event": "generator-stopped",
+     "unexpectedSuccess": 0,
+     "failedBinds": 0,
+     "nextSeq": 43858
+    },
+    {
+     "at": "2026-10-31T09:49:28.4622154+00:00",
+     "event": "drained",
+     "met": false
+    }
+   ],
+   "samples": 519,
+   "firstRefusalAt": "2026-10-31T09:15:19.1902371+00:00",
+   "firstWarningAt": null,
+   "firstCriticalAt": null,
+   "secondsBlockedToRefusal": 585.6,
+   "maximumPageUtilisation": 100,
+   "maximumUndeliveredBytes": 37562135,
+   "maximumQueueFileBytes": 144057320,
+   "minimumFreeBytes": 1969881088,
+   "maximumOldestPendingAge": 2507,
+   "maximumSenderQueue": null,
+   "maximumForwardedLag": 2176,
+   "refusals": 0,
+   "drained": false,
+   "secondsRestoredToDrained": 1925.3,
+   "statusUnavailableSamples": 0,
+   "final": {
+    "kind": "sample",
+    "at": "2026-10-31T10:34:42.9848710+00:00",
+    "phase": "start",
+    "freeBytes": 2042322944,
+    "totalBytes": 2130636800,
+    "fillerBytes": 0,
+    "destinationBlocked": false,
+    "service": "Running",
+    "generatorNext": 43858,
+    "forwardedRecords": 30717,
+    "forwardedIsFull": false,
+    "forwardedFileBytes": 67112960,
+    "forwardedMaximumBytes": 67108864,
+    "health": "healthy",
+    "storageState": "normal",
+    "intakePaused": false,
+    "queueFileBytes": 71438392,
+    "pageUtilisation": 68.97,
+    "oldestPendingAge": null,
+    "storageRefusals": 0,
+    "pressurePurged": 10500,
+    "capacityRefusals": 0,
+    "queued": 0,
+    "uploading": 0,
+    "retrying": 0,
+    "delivered": 15062,
+    "deadLettered": 0,
+    "undeliveredBytes": 0,
+    "subscriptionState": "running",
+    "bookmarkRecordId": 43858,
+    "sourceQueued": 8260,
+    "sourceRetries": 0,
+    "sourceSubmitFailures": 0,
+    "sourceGaps": 0,
+    "sourceReadErrors": 0
+   },
+   "sourceSubmitFailures": 0,
+   "sourceGaps": 0
+  },
+  {
+   "startedAt": "2026-10-31T10:35:04.4919581+00:00",
+   "endedAt": "2026-10-31T10:48:27.8222978+00:00",
+   "events": [
+    {
+     "at": "2026-10-31T10:35:04.4919581+00:00",
+     "event": "generating",
+     "rate": 50
+    },
+    {
+     "at": "2026-10-31T10:35:36.0332957+00:00",
+     "event": "destination-blocked"
+    },
+    {
+     "at": "2026-10-31T10:43:38.3508852+00:00",
+     "event": "queue-cap-refusing",
+     "met": true
+    },
+    {
+     "at": "2026-10-31T10:45:42.2640200+00:00",
+     "event": "destination-restored"
+    },
+    {
+     "at": "2026-10-31T10:47:46.1994010+00:00",
+     "event": "generator-stopped",
+     "unexpectedSuccess": 0,
+     "failedBinds": 0,
+     "nextSeq": 81945
+    },
+    {
+     "at": "2026-10-31T10:48:27.9473111+00:00",
+     "event": "drained",
+     "met": true
+    }
+   ],
+   "samples": 157,
+   "firstRefusalAt": "2026-10-31T10:43:38.2258712+00:00",
+   "firstWarningAt": null,
+   "firstCriticalAt": null,
+   "secondsBlockedToRefusal": 482.2,
+   "maximumPageUtilisation": 101.66,
+   "maximumUndeliveredBytes": 31670931,
+   "maximumQueueFileBytes": 143249800,
+   "minimumFreeBytes": 1970667520,
+   "maximumOldestPendingAge": 616,
+   "maximumSenderQueue": null,
+   "maximumForwardedLag": -13141,
+   "refusals": 200,
+   "drained": true,
+   "secondsRestoredToDrained": 165.7,
+   "statusUnavailableSamples": 0,
+   "final": {
+    "kind": "sample",
+    "at": "2026-10-31T10:48:27.8222978+00:00",
+    "phase": "generator-stopped",
+    "freeBytes": 2042167296,
+    "totalBytes": 2130636800,
+    "fillerBytes": 0,
+    "destinationBlocked": false,
+    "service": "Running",
+    "generatorNext": 81945,
+    "forwardedRecords": 30704,
+    "forwardedIsFull": false,
+    "forwardedFileBytes": 67112960,
+    "forwardedMaximumBytes": 67108864,
+    "health": "healthy",
+    "storageState": "normal",
+    "intakePaused": false,
+    "queueFileBytes": 71759560,
+    "pageUtilisation": 99.95,
+    "oldestPendingAge": null,
+    "storageRefusals": 0,
+    "pressurePurged": 26820,
+    "capacityRefusals": 200,
+    "queued": 0,
+    "uploading": 0,
+    "retrying": 0,
+    "delivered": 22708,
+    "deadLettered": 0,
+    "undeliveredBytes": 0,
+    "subscriptionState": "backpressure",
+    "bookmarkRecordId": 73305,
+    "sourceQueued": 37707,
+    "sourceRetries": 200,
+    "sourceSubmitFailures": 0,
+    "sourceGaps": 0,
+    "sourceReadErrors": 0
+   },
+   "sourceSubmitFailures": 0,
+   "sourceGaps": 0
+  }
+ ]
+}

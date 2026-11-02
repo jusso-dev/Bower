@@ -1,0 +1,28 @@
+{
+  "runId": "bower-ws3-20261031-081023",
+  "signing": "Packages are CI development artifacts and are unsigned (release signing is deferred). Lab packs were signed with an ephemeral lab key, deleted after the run.",
+  "builds": [
+    {"commit": "243c10b399635708823f5461b253636115587eda", "ciRun": 41184210025, "version": "0.1.0-dev.276",
+     "rpmSha256": "708579fec4276ed0cf0741466d4c4cf0630983fdc4d72e4877f78c0ea2b4a717",
+     "msiSha256": "e36b72dc0c19c29a5db0c68cb6ce452bfaf17ac6414f0faf5b9750413637d93f",
+     "note": "Watermarks and pressure retention; before the drain-deadlock fix. Smoke and the queue-cap attempts that found the deadlock."},
+    {"commit": "b14f14992ef4d6a2e0d7d28a8bead721520729e9", "ciRun": 41189692816, "version": "0.1.0-dev.280",
+     "rpmSha256": "1f2eddd75347ede7cd641ac50decc1fc5dc0da295a2fadd8f55bd105cdd71789",
+     "msiSha256": "5970b2270d4c5346d1d7fb5c592dcb5e9c561fedc1923dbd59796b1f15232a1f",
+     "note": "Settlement room. In-place upgrade of the stuck Windows collector."},
+    {"commit": "131b37e5709a43e51afaad402a452fe337cbb5c1", "ciRun": 41191775237, "version": "0.1.0-dev.284",
+     "rpmSha256": "4e5d94ccb9e1d4620cefee90ce902600a0bc19aaaee4bd7f8473fd8d6057426b",
+     "msiSha256": "0d66c2d659342e9c7ea1068279fe64c7a36f36813215c6cebcd7b4db4d79c925",
+     "note": "Intake-blocked reclaim and WAL self-heal. Final queue-cap runs, Linux watermarks."}
+  ],
+  "packs": {
+    "storage-pressure-validation-1.0.0.bowerpack": "6d2de24cc72e9a125ee44432a81ef62ca34fa69fae74f58b61b4d815584a0f93",
+    "windows-security-logon-1.0.2.bowerpack": "83b76bfc5a6621e080e003e7b59fbdee49f94628b34cb371d3c0769aa0830ce0",
+    "labTrustedPublicKeySha256": "8fb6264d3cb2ec0e887cb694bc7b8fdf9e01f78fec0e665608fe2171745145f1"
+  },
+  "hosts": {
+    "linux": "Amazon Linux 2023 (ami-062900c135ab91582), t3.small, 1 GiB encrypted gp3 xfs queue volume at /var/lib/bower",
+    "windowsDc": "Windows Server 2022 (ami-086db0bc6076e24da), t3.medium, domain controller and WEF source",
+    "windowsWec": "Windows Server 2022, t3.medium, WEC plus collector, 2 GiB encrypted gp3 NTFS queue volume (Q:, later mounted at C:\\ProgramData\\Bower\\state)"
+  }
+}

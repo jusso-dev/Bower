@@ -1,0 +1,121 @@
+{
+ "at": "2026-10-31T09:44:19.0944789+00:00",
+ "queue": {
+  "queued": 19872,
+  "retrying": 0,
+  "uploading": 1000,
+  "delivered": 2500,
+  "deadLettered": 0,
+  "totalBytes": 31995278,
+  "undeliveredBytes": 28572746,
+  "oldestUndelivered": "2026-10-31T09:07:35.4652433+00:00"
+ },
+ "storage": {
+  "state": "normal",
+  "intakePaused": false,
+  "observedAt": "2026-10-31T09:44:18.9243139+00:00",
+  "freeBytes": 1969881088,
+  "totalBytes": 2130636800,
+  "freePercent": 92.46,
+  "warningFreeBytes": 536870912,
+  "criticalFreeBytes": 268435456,
+  "stateChangedAt": "2026-10-31T09:03:19.1914772+00:00",
+  "warningTransitions": 0,
+  "criticalTransitions": 0,
+  "queueFileBytes": 144057320,
+  "queueDatabaseBytes": 71303168,
+  "queueWalBytes": 72590312,
+  "queueMaximumBytes": 67108864,
+  "queueUndeliveredBytes": 28572746,
+  "queueUtilisationPercent": 42.58,
+  "queuePageUtilisationPercent": 86.58,
+  "oldestPendingAgeSeconds": 2203,
+  "pressurePurgedEvents": 2321,
+  "lastPressurePurgeAt": "2026-10-31T09:23:36.4310477+00:00",
+  "storageRefusals": 0,
+  "storageRefusedBytes": 0,
+  "lastStorageRefusalAt": null,
+  "lastStorageRefusalReason": null
+ },
+ "intake": {
+  "observedSince": "2026-10-31T09:03:19.1803332+00:00",
+  "attemptedRequests": 31235,
+  "attemptedBytes": 16957278,
+  "capacityRefusals": 1691,
+  "capacityRefusedBytes": 918213,
+  "privacyAlertRefusals": 0,
+  "privacyAlertRefusedBytes": 0,
+  "lastRefusalAt": "2026-10-31T09:44:18.4845466+00:00",
+  "lastRefusalReason": "queue-capacity"
+ },
+ "windowsEventLog": [
+  {
+   "id": "forwarded-security",
+   "channel": "ForwardedEvents",
+   "state": "backpressure",
+   "bookmarkRecordId": 30177,
+   "eventsRead": 31235,
+   "bytesRead": 43666530,
+   "queued": 29544,
+   "duplicates": 0,
+   "suppressed": 0,
+   "notSelected": 0,
+   "rejected": 0,
+   "parserErrors": 0,
+   "malformed": 0,
+   "oversized": 0,
+   "retries": 1691,
+   "submitFailures": 0,
+   "readErrors": 0,
+   "gaps": 0,
+   "resets": 0,
+   "cursorConflicts": 0,
+   "lastEventAt": "2026-10-31T09:44:18.4830514+00:00",
+   "lastPollAt": "2026-10-31T09:44:18.4560313+00:00"
+  }
+ ],
+ "applicationLog": [
+  {
+   "id": "3001",
+   "count": 49
+  },
+  {
+   "id": "1002",
+   "count": 30
+  },
+  {
+   "id": "1504",
+   "count": 29
+  },
+  {
+   "id": "1506",
+   "count": 2
+  },
+  {
+   "id": "0",
+   "count": 5
+  },
+  {
+   "id": "14",
+   "count": 3
+  },
+  {
+   "id": "1110",
+   "count": 2
+  }
+ ],
+ "files": [
+  {
+   "Name": "queue.db",
+   "Length": 71303168
+  },
+  {
+   "Name": "queue.db-shm",
+   "Length": 163840
+  },
+  {
+   "Name": "queue.db-wal",
+   "Length": 72590312
+  }
+ ]
+}

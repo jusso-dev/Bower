@@ -1,0 +1,245 @@
+{
+ "journal": "queue-cap.jsonl",
+ "runs": [
+  {
+   "startedAt": "2026-10-31T09:02:28.994Z",
+   "endedAt": "2026-10-31T09:12:08.141Z",
+   "events": [
+    {
+     "at": "2026-10-31T09:02:28.994Z",
+     "event": "generating",
+     "rate": 100
+    },
+    {
+     "at": "2026-10-31T09:02:59.035Z",
+     "event": "generator-stopped",
+     "nextSeq": 3307
+    }
+   ],
+   "samples": 6,
+   "firstRefusalAt": null,
+   "firstWarningAt": null,
+   "firstCriticalAt": null,
+   "secondsBlockedToRefusal": null,
+   "maximumPageUtilisation": 12.32,
+   "maximumUndeliveredBytes": 15600,
+   "maximumQueueFileBytes": 8822840,
+   "minimumFreeBytes": 956723200,
+   "maximumOldestPendingAge": 0,
+   "maximumSenderQueue": 1,
+   "maximumForwardedLag": null,
+   "refusals": 0,
+   "drained": false,
+   "secondsRestoredToDrained": null,
+   "statusUnavailableSamples": 0,
+   "final": {
+    "kind": "sample",
+    "at": "2026-10-31T09:12:08.141Z",
+    "phase": "start",
+    "freeBytes": 956723200,
+    "totalBytes": 1006632960,
+    "fillerBytes": 0,
+    "destinationBlocked": false,
+    "health": "healthy",
+    "generatorNext": 3307,
+    "storageState": "normal",
+    "intakePaused": false,
+    "queueFileBytes": 8822840,
+    "pageUtilisation": 12.32,
+    "queueUtilisation": 0,
+    "oldestPendingAge": null,
+    "storageRefusals": 0,
+    "pressurePurged": 0,
+    "capacityRefusals": 0,
+    "queued": 0,
+    "uploading": 0,
+    "retrying": 0,
+    "delivered": 3309,
+    "deadLettered": 0,
+    "undeliveredBytes": 0,
+    "listenerQueued": 3306,
+    "listenerRetries": 0,
+    "listenerSubmitFailures": 0,
+    "listenerDropped": 0,
+    "listenerConnections": 1,
+    "senderQueue": 0,
+    "senderDiscarded": 0
+   },
+   "listenerSubmitFailures": 0,
+   "listenerDropped": 0,
+   "senderDiscarded": 0
+  },
+  {
+   "startedAt": "2026-10-31T09:12:08.164Z",
+   "endedAt": "2026-10-31T10:33:45.799Z",
+   "events": [
+    {
+     "at": "2026-10-31T09:12:08.164Z",
+     "event": "generating",
+     "rate": 100
+    },
+    {
+     "at": "2026-10-31T09:12:38.196Z",
+     "event": "destination-blocked"
+    },
+    {
+     "at": "2026-10-31T09:16:46.428Z",
+     "event": "queue-cap-refusing",
+     "met": true
+    },
+    {
+     "at": "2026-10-31T09:18:46.590Z",
+     "event": "destination-restored"
+    },
+    {
+     "at": "2026-10-31T09:20:46.695Z",
+     "event": "generator-stopped",
+     "nextSeq": 55161
+    },
+    {
+     "at": "2026-10-31T09:31:17.329Z",
+     "event": "drained",
+     "met": true
+    }
+   ],
+   "samples": 231,
+   "firstRefusalAt": "2026-10-31T09:16:45.161Z",
+   "firstWarningAt": null,
+   "firstCriticalAt": null,
+   "secondsBlockedToRefusal": 247.0,
+   "maximumPageUtilisation": 100,
+   "maximumUndeliveredBytes": 32866497,
+   "maximumQueueFileBytes": 76573672,
+   "minimumFreeBytes": 855560192,
+   "maximumOldestPendingAge": 1104,
+   "maximumSenderQueue": 1,
+   "maximumForwardedLag": null,
+   "refusals": 0,
+   "drained": true,
+   "secondsRestoredToDrained": 750.7,
+   "statusUnavailableSamples": 1,
+   "final": {
+    "kind": "sample",
+    "at": "2026-10-31T10:33:45.799Z",
+    "phase": "start",
+    "freeBytes": 888975360,
+    "totalBytes": 1006632960,
+    "fillerBytes": 0,
+    "destinationBlocked": false,
+    "health": "healthy",
+    "generatorNext": 55161,
+    "storageState": "normal",
+    "intakePaused": false,
+    "queueFileBytes": 76573672,
+    "pageUtilisation": 68.78,
+    "queueUtilisation": 0,
+    "oldestPendingAge": null,
+    "storageRefusals": 0,
+    "pressurePurged": 8000,
+    "capacityRefusals": 0,
+    "queued": 0,
+    "uploading": 0,
+    "retrying": 0,
+    "delivered": 14874,
+    "deadLettered": 0,
+    "undeliveredBytes": 0,
+    "listenerQueued": 0,
+    "listenerRetries": 0,
+    "listenerSubmitFailures": 0,
+    "listenerDropped": 0,
+    "listenerConnections": 0,
+    "senderQueue": 0,
+    "senderDiscarded": 0
+   },
+   "listenerSubmitFailures": 0,
+   "listenerDropped": 0,
+   "senderDiscarded": 0
+  },
+  {
+   "startedAt": "2026-10-31T10:33:45.829Z",
+   "endedAt": "2026-10-31T10:43:40.422Z",
+   "events": [
+    {
+     "at": "2026-10-31T10:33:45.829Z",
+     "event": "generating",
+     "rate": 100
+    },
+    {
+     "at": "2026-10-31T10:34:15.857Z",
+     "event": "destination-blocked"
+    },
+    {
+     "at": "2026-10-31T10:38:12.090Z",
+     "event": "queue-cap-refusing",
+     "met": true
+    },
+    {
+     "at": "2026-10-31T10:40:12.190Z",
+     "event": "destination-restored"
+    },
+    {
+     "at": "2026-10-31T10:42:12.300Z",
+     "event": "generator-stopped",
+     "nextSeq": 105809
+    },
+    {
+     "at": "2026-10-31T10:43:40.422Z",
+     "event": "drained",
+     "met": true
+    }
+   ],
+   "samples": 119,
+   "firstRefusalAt": "2026-10-31T10:38:10.800Z",
+   "firstWarningAt": null,
+   "firstCriticalAt": null,
+   "secondsBlockedToRefusal": 234.9,
+   "maximumPageUtilisation": 101.6,
+   "maximumUndeliveredBytes": 27681770,
+   "maximumQueueFileBytes": 111160688,
+   "minimumFreeBytes": 826130432,
+   "maximumOldestPendingAge": 361,
+   "maximumSenderQueue": 1,
+   "maximumForwardedLag": null,
+   "refusals": 151,
+   "drained": true,
+   "secondsRestoredToDrained": 208.2,
+   "statusUnavailableSamples": 0,
+   "final": {
+    "kind": "sample",
+    "at": "2026-10-31T10:43:40.422Z",
+    "phase": "drained",
+    "freeBytes": 892854272,
+    "totalBytes": 1006632960,
+    "fillerBytes": 0,
+    "destinationBlocked": false,
+    "health": "healthy",
+    "generatorNext": 105809,
+    "storageState": "normal",
+    "intakePaused": false,
+    "queueFileBytes": 72659288,
+    "pageUtilisation": 99.97,
+    "queueUtilisation": 0,
+    "oldestPendingAge": null,
+    "storageRefusals": 0,
+    "pressurePurged": 48328,
+    "capacityRefusals": 151,
+    "queued": 0,
+    "uploading": 0,
+    "retrying": 0,
+    "delivered": 22709,
+    "deadLettered": 0,
+    "undeliveredBytes": 0,
+    "listenerQueued": 48136,
+    "listenerRetries": 151,
+    "listenerSubmitFailures": 0,
+    "listenerDropped": 0,
+    "listenerConnections": 1,
+    "senderQueue": 0,
+    "senderDiscarded": 0
+   },
+   "listenerSubmitFailures": 0,
+   "listenerDropped": 0,
+   "senderDiscarded": 0
+  }
+ ]
+}

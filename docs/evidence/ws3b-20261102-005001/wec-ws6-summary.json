@@ -1,0 +1,102 @@
+{
+ "phase": "wec-ws6",
+ "startedAt": "2026-11-02T01:26:39.0921924+00:00",
+ "endedAt": "2026-11-02T01:37:00.8813616+00:00",
+ "events": [
+  {
+   "at": "2026-11-02T01:27:08.9968611+00:00",
+   "event": "generating",
+   "rate": 50
+  },
+  {
+   "at": "2026-11-02T01:29:18.7291650+00:00",
+   "event": "acknowledged-rows-at-page-limit",
+   "met": true
+  },
+  {
+   "at": "2026-11-02T01:30:00.5701663+00:00",
+   "event": "intake-reopened-without-restart",
+   "met": true
+  },
+  {
+   "at": "2026-11-02T01:30:00.8045522+00:00",
+   "event": "destination-blocked"
+  },
+  {
+   "at": "2026-11-02T01:30:47.8237997+00:00",
+   "event": "backlog-at-page-limit",
+   "met": true
+  },
+  {
+   "at": "2026-11-02T01:32:52.0684478+00:00",
+   "event": "destination-restored"
+  },
+  {
+   "at": "2026-11-02T01:33:07.8481962+00:00",
+   "event": "delivery-resumed-without-restart",
+   "met": true
+  },
+  {
+   "at": "2026-11-02T01:34:04.7390121+00:00",
+   "event": "intake-resumed-after-drain",
+   "met": true
+  },
+  {
+   "at": "2026-11-02T01:34:04.7858859+00:00",
+   "event": "generator-stopped",
+   "unexpectedSuccess": 0,
+   "failedBinds": 0,
+   "nextSeq": 21418
+  },
+  {
+   "at": "2026-11-02T01:37:00.8657335+00:00",
+   "event": "drained",
+   "met": true
+  }
+ ],
+ "generated": {
+  "failedBinds": 0,
+  "rate": 50,
+  "firstSeq": 628,
+  "nextSeq": 21418,
+  "count": 20790,
+  "maximumLagSeconds": 1.197
+ },
+ "samples": 124,
+ "final": {
+  "at": "2026-11-02T01:37:00.7720103+00:00",
+  "phase": "generator-stopped",
+  "freeBytes": 2096119808,
+  "totalBytes": 2130636800,
+  "fillerBytes": 0,
+  "destinationBlocked": false,
+  "service": "Running",
+  "generatorNext": 21418,
+  "forwardedRecords": 21418,
+  "forwardedIsFull": false,
+  "forwardedFileBytes": 47255552,
+  "forwardedMaximumBytes": 67108864,
+  "health": "healthy",
+  "storageState": "normal",
+  "intakePaused": false,
+  "queueFileBytes": 17842232,
+  "pageUtilisation": 66.9,
+  "oldestPendingAge": null,
+  "storageRefusals": 0,
+  "pressurePurged": 17161,
+  "capacityRefusals": 171,
+  "queued": 0,
+  "uploading": 0,
+  "retrying": 0,
+  "delivered": 4272,
+  "deadLettered": 0,
+  "undeliveredBytes": 0,
+  "subscriptionState": "running",
+  "bookmarkRecordId": 21418,
+  "sourceQueued": 21417,
+  "sourceRetries": 171,
+  "sourceSubmitFailures": 0,
+  "sourceGaps": 0,
+  "sourceReadErrors": 0
+ }
+}

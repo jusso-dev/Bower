@@ -1,0 +1,29 @@
+{
+ "phase": "destination-query",
+ "queriedAt": "2026-11-02T02:28:46.762933+00:00",
+ "queryRole": "verifier",
+ "collector": "ws3-wec",
+ "since": "2026-11-02T00:50:00+00:00",
+ "rows": 75493,
+ "rowsByEventType": {
+  "authentication_failure": 75423,
+  "collector_health": 70
+ },
+ "eventRows": 75423,
+ "distinctEventIds": 74415,
+ "duplicateRows": 1008,
+ "expectedSequences": 74415,
+ "distinctSequences": 74415,
+ "missingSequences": 0,
+ "missingSample": [],
+ "unexpectedSequences": 0,
+ "sequencesWithSeveralEventIds": 0,
+ "expectedDigest": "cd4ba1c9b4955111e309e882294ea5e1eb63a64aaeaa5495ddfa3c184bf101e9",
+ "destinationDigest": "cd4ba1c9b4955111e309e882294ea5e1eb63a64aaeaa5495ddfa3c184bf101e9",
+ "ingestionLatencySeconds": {
+  "p50": 185.568029,
+  "p95": 406.357124,
+  "p99": 468.805563,
+  "maximum": 480.976492
+ }
+}

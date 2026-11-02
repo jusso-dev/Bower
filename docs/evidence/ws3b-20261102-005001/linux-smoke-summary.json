@@ -1,0 +1,77 @@
+{
+ "phase": "linux-smoke",
+ "startedAt": "2026-11-02T01:01:10.321Z",
+ "endedAt": "2026-11-02T01:01:50.545Z",
+ "events": [
+  {
+   "at": "2026-11-02T01:01:10.390Z",
+   "event": "generating",
+   "rate": 10
+  },
+  {
+   "at": "2026-11-02T01:01:40.492Z",
+   "event": "generator-stopped",
+   "nextSeq": 303
+  },
+  {
+   "at": "2026-11-02T01:01:50.529Z",
+   "event": "drained",
+   "met": true
+  }
+ ],
+ "generated": {
+  "firstSeq": 1,
+  "nextSeq": 303,
+  "count": 302,
+  "rate": 10,
+  "maximumSendLagSeconds": 0.0
+ },
+ "firstWarningAt": null,
+ "firstCriticalAt": null,
+ "firstRefusalAt": null,
+ "maximumSenderQueue": 0,
+ "maximumUndeliveredBytes": 14399,
+ "minimumFreeBytes": 964562944,
+ "maximumQueueFileBytes": 975168,
+ "senderDiscarded": 0,
+ "listenerSubmitFailures": 0,
+ "listenerDropped": 0,
+ "samples": 10,
+ "final": {
+  "at": "2026-11-02T01:01:50.533Z",
+  "phase": "drained",
+  "freeBytes": 964575232,
+  "totalBytes": 1006632960,
+  "fillerBytes": 0,
+  "destinationBlocked": false,
+  "health": "healthy",
+  "generatorNext": 303,
+  "storageState": "normal",
+  "intakePaused": false,
+  "queueFileBytes": 962760,
+  "pageUtilisation": 1.5,
+  "queueUtilisation": 0,
+  "oldestPendingAge": null,
+  "storageRefusals": 0,
+  "pressurePurged": 0,
+  "capacityRefusals": 0,
+  "queued": 0,
+  "uploading": 0,
+  "retrying": 0,
+  "delivered": 304,
+  "deadLettered": 0,
+  "undeliveredBytes": 0,
+  "listenerQueued": 302,
+  "listenerRetries": 0,
+  "listenerSubmitFailures": 0,
+  "listenerDropped": 0,
+  "listenerConnections": 1,
+  "senderQueue": 0,
+  "senderDiscarded": 0
+ },
+ "journal": {
+  "lines": 0,
+  "bytes": 0,
+  "byEvent": {}
+ }
+}

@@ -1,0 +1,82 @@
+[
+ {
+  "type": "AWS::EC2::Instance",
+  "logical": "Dc",
+  "physical": "i-0af7ad0ef00b148c0"
+ },
+ {
+  "type": "AWS::EC2::Route",
+  "logical": "EgressRoute",
+  "physical": "rtb-06a8915c7e5a0c82c|0.0.0.0/0"
+ },
+ {
+  "type": "AWS::IAM::Role",
+  "logical": "ExpiryRole",
+  "physical": "bower-ws3b-20261102-005001-ExpiryRole-UjGaJBviQelT"
+ },
+ {
+  "type": "AWS::Scheduler::Schedule",
+  "logical": "ExpirySchedule",
+  "physical": "bower-ws3b-20261102-005001-ExpirySchedule-1JD6QN6U56VUE"
+ },
+ {
+  "type": "AWS::StepFunctions::StateMachine",
+  "logical": "ExpiryWorker",
+  "physical": "arn:aws:states:ap-southeast-2:959038055523:stateMachine:ExpiryWorker-S8Oujlfs9h05"
+ },
+ {
+  "type": "AWS::IAM::Role",
+  "logical": "ExpiryWorkerRole",
+  "physical": "bower-ws3b-20261102-005001-ExpiryWorkerRole-XSGUd0QJ8pS9"
+ },
+ {
+  "type": "AWS::IAM::InstanceProfile",
+  "logical": "HostProfile",
+  "physical": "bower-ws3b-20261102-005001-HostProfile-JLvEG1JN1c3o"
+ },
+ {
+  "type": "AWS::IAM::Role",
+  "logical": "HostRole",
+  "physical": "bower-ws3b-20261102-005001-HostRole-oTzWZprXkkED"
+ },
+ {
+  "type": "AWS::EC2::SecurityGroup",
+  "logical": "Hosts",
+  "physical": "sg-0729110547c3716e5"
+ },
+ {
+  "type": "AWS::EC2::Instance",
+  "logical": "Linux",
+  "physical": "i-0d256bab2c182d218"
+ },
+ {
+  "type": "AWS::EC2::SecurityGroupEgress",
+  "logical": "MemberEgress",
+  "physical": "sgr-0c3e1ac52cd8d3b59"
+ },
+ {
+  "type": "AWS::EC2::SecurityGroupIngress",
+  "logical": "MemberIngress",
+  "physical": "sgr-0d2ab85d32e347fe7"
+ },
+ {
+  "type": "AWS::EC2::RouteTable",
+  "logical": "Routes",
+  "physical": "rtb-06a8915c7e5a0c82c"
+ },
+ {
+  "type": "AWS::EC2::SubnetRouteTableAssociation",
+  "logical": "RoutesAssociation",
+  "physical": "rtbassoc-0ceb0190c3162eda9"
+ },
+ {
+  "type": "AWS::EC2::Subnet",
+  "logical": "Subnet",
+  "physical": "subnet-07cf57ff14b2afee1"
+ },
+ {
+  "type": "AWS::EC2::Instance",
+  "logical": "Wec",
+  "physical": "i-09db6817b10ff66a5"
+ }
+]

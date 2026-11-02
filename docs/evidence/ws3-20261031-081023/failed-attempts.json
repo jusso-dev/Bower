@@ -1,0 +1,29 @@
+{
+  "runId": "bower-ws3-20261031-081023",
+  "productDefects": [
+    {"id": "drain-deadlock", "build": "243c10b", "where": "Linux and Windows queue-cap",
+     "observed": "After the destination returned, nothing was delivered: every lease and acknowledgement failed with SQLITE_FULL (log 1002 repeated). Linux: 26,374 queued, 0 delivered for 15 minutes. Windows: 2,500 delivered in 25 minutes.",
+     "cause": "Intake and settlement shared one page ceiling (cap + 4 MiB); intake filled it and settlement enlarges rows.",
+     "fix": "b14f149 (intake page limit 85%, settlement ceiling 1.75x).",
+     "evidence": ["linux-queue-cap-attempt2-summary.json", "wec-stuck-status-old-build.json", "linux-recovery-raise-cap.json", "wec-after-upgrade-60s.json"]},
+    {"id": "wal-over-budget", "build": "243c10b", "where": "Windows queue-cap",
+     "observed": "WAL 72.6 MB beside a 71.3 MB database exceeded the pre-write budget (about 140 MB for a 64 MiB cap), refusing every write including acknowledgements; background retention failed (log 3001 x49).",
+     "fix": "131b37e (truncate checkpoint before refusing a write, at most every 10 s)."},
+    {"id": "intake-blocked-after-drain", "build": "b14f149", "where": "Windows after upgrade",
+     "observed": "After 22,516 events drained, pages were 99.95% of the intake limit, all fresh acknowledgements; the retention floor kept them, so intake stayed refused.",
+     "fix": "131b37e (reclaim acknowledged rows of any age once intake is blocked)."},
+    {"id": "syslog-restart-loss", "build": "243c10b", "where": "Linux recovery restart (raise cap)",
+     "observed": "21,494 sequence numbers (ws3l0033667-ws3l0055160) handed to TCP by rsyslog but not yet read by Bower were lost when the collector restarted while backpressured; rsyslog counted them processed. Destination: 33,666 distinct, 3,992 duplicate rows (replays after ambiguous acknowledgements during the stall).",
+     "cause": "Plain syslog over TCP has no application acknowledgement; kernel socket buffers held about 4 MB.",
+     "fix": "Not a queue defect. The drain fix removes the need for the restart; RELP (merged separately, #168) withholds acknowledgements. Documented.",
+     "evidence": ["linux-reconcile-after-attempt2.json", "linux-destination-after-attempt2.json"]}
+  ],
+  "harnessFailures": [
+    {"id": "nft-syntax", "observed": "Linux queue-cap attempt 1 stopped after 30 s: the one-line nftables rule needed separators. 3,306 sequence numbers were generated and later delivered normally."},
+    {"id": "windows-mounted-acl", "observed": "After mounting the queue volume at the state folder, ACLs set on the mount point applied to the reparse point; the service could not write the WAL and hung at start (SCM 7009). A recursive icacls /inheritance:r /T then left queue files with empty ACLs; repaired with takeown and icacls /reset. No data was lost. Documented in the Windows procedure."},
+    {"id": "linux-filler-grow", "observed": "Linux watermarks attempt 1: growing one preallocated filler by about 700 MB failed on xfs after the warning stage. Fixed with bounded 64 MiB chunks."},
+    {"id": "windows-summary", "observed": "Windows queue-cap and watermarks summaries failed (Measure-Object on hashtable rows). The queue-cap journal was recovered and summarised offline (wec-queue-cap-runs.json); the watermarks journal was lost with the host. Windows watermarks are therefore proven only in run bower-ws3b."},
+    {"id": "linux-disk-full", "observed": "Linux disk-full stopped when closing the filler raised ENOSPC; the run was not completed. Proven in run bower-ws3b."},
+    {"id": "dev-full-unit-test", "observed": "A unit test redirecting the WAL to /dev/full failed in CI with SQLITE_CANTOPEN; replaced by portable page-limit and restart-while-critical tests. Real ENOSPC is proven on AWS volumes."}
+  ]
+}

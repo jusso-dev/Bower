@@ -1,0 +1,121 @@
+{
+ "phase": "linux-watermarks",
+ "startedAt": "2026-11-02T01:27:44.854Z",
+ "endedAt": "2026-11-02T01:36:55.618Z",
+ "events": [
+  {
+   "at": "2026-11-02T01:27:44.878Z",
+   "event": "generating",
+   "rate": 100
+  },
+  {
+   "at": "2026-11-02T01:28:04.895Z",
+   "event": "destination-blocked"
+  },
+  {
+   "at": "2026-11-02T01:28:05.004Z",
+   "event": "filled-below-warning",
+   "fillerBytes": 712773632
+  },
+  {
+   "at": "2026-11-02T01:28:11.009Z",
+   "event": "warning-reported",
+   "met": true
+  },
+  {
+   "at": "2026-11-02T01:29:11.074Z",
+   "event": "filled-near-critical",
+   "fillerBytes": 772448256
+  },
+  {
+   "at": "2026-11-02T01:30:53.171Z",
+   "event": "critical-reported",
+   "met": true
+  },
+  {
+   "at": "2026-11-02T01:32:53.258Z",
+   "event": "space-freed"
+  },
+  {
+   "at": "2026-11-02T01:32:59.263Z",
+   "event": "intake-resumed",
+   "met": true
+  },
+  {
+   "at": "2026-11-02T01:33:59.350Z",
+   "event": "destination-restored"
+  },
+  {
+   "at": "2026-11-02T01:34:59.419Z",
+   "event": "generator-stopped",
+   "nextSeq": 74605
+  },
+  {
+   "at": "2026-11-02T01:36:55.568Z",
+   "event": "drained",
+   "met": true
+  }
+ ],
+ "generated": {
+  "firstSeq": 31150,
+  "nextSeq": 74605,
+  "count": 43455,
+  "rate": 100,
+  "maximumSendLagSeconds": 0.012
+ },
+ "firstWarningAt": "2026-11-02T01:28:10.007Z",
+ "firstCriticalAt": "2026-11-02T01:30:51.229Z",
+ "firstRefusalAt": "2026-11-02T01:30:51.229Z",
+ "maximumSenderQueue": 1,
+ "maximumUndeliveredBytes": 27425414,
+ "minimumFreeBytes": 110620672,
+ "maximumQueueFileBytes": 126652904,
+ "senderDiscarded": 0,
+ "listenerSubmitFailures": 0,
+ "listenerDropped": 0,
+ "samples": 111,
+ "final": {
+  "at": "2026-11-02T01:36:55.568Z",
+  "phase": "drained",
+  "freeBytes": 838836224,
+  "totalBytes": 1006632960,
+  "fillerBytes": 0,
+  "destinationBlocked": false,
+  "health": "healthy",
+  "generatorNext": 74605,
+  "storageState": "normal",
+  "intakePaused": false,
+  "queueFileBytes": 126652904,
+  "pageUtilisation": 27.5,
+  "queueUtilisation": 0,
+  "oldestPendingAge": null,
+  "storageRefusals": 124,
+  "pressurePurged": 0,
+  "capacityRefusals": 124,
+  "queued": 0,
+  "uploading": 0,
+  "retrying": 0,
+  "delivered": 47585,
+  "deadLettered": 0,
+  "undeliveredBytes": 0,
+  "listenerQueued": 43455,
+  "listenerRetries": 124,
+  "listenerSubmitFailures": 0,
+  "listenerDropped": 0,
+  "listenerConnections": 1,
+  "senderQueue": 0,
+  "senderDiscarded": 0
+ },
+ "journal": {
+  "lines": 20,
+  "bytes": 3712,
+  "byEvent": {
+   "Bower.Collector.QueueStorageMonitor[1501]": 1,
+   "Bower.Collector.Jobs.QueueRetentionJob[1507]": 3,
+   "Bower.Collector.QueueDeliveryWorker[1008]": 10,
+   "Bower.Collector.QueueStorageMonitor[1500]": 1,
+   "Bower.Collector.QueueStorageMonitor[1504]": 4,
+   "Bower.Collector.QueueStorageMonitor[1502]": 1
+  }
+ }
+}

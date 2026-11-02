@@ -1,0 +1,14 @@
+{
+ "query": "duplicate destination rows by collector",
+ "rows": [
+  {
+   "CollectorId": "ws3-wec",
+   "DuplicatedEvents": 1008,
+   "ExtraRows": 1008,
+   "GeneratedFrom": "2026-11-02T01:29:19.499902Z",
+   "GeneratedTo": "2026-11-02T02:13:51.184376Z",
+   "FirstCopyIngested": "2026-11-02T01:30:03.3781697Z",
+   "LastCopyIngested": "2026-11-02T02:18:13.3757702Z"
+  }
+ ]
+}

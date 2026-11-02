@@ -1,0 +1,126 @@
+{
+ "phase": "wec-disk-full",
+ "startedAt": "2026-11-02T02:12:35.0037106+00:00",
+ "endedAt": "2026-11-02T02:23:46.2427732+00:00",
+ "events": [
+  {
+   "at": "2026-11-02T02:13:06.2464389+00:00",
+   "event": "generating",
+   "rate": 50
+  },
+  {
+   "at": "2026-11-02T02:13:37.8662586+00:00",
+   "event": "destination-blocked"
+  },
+  {
+   "at": "2026-11-02T02:14:24.1288785+00:00",
+   "event": "volume-full",
+   "fillerBytes": 2013986816,
+   "freeBytes": 0
+  },
+  {
+   "at": "2026-11-02T02:14:24.3320201+00:00",
+   "event": "critical-reported",
+   "met": true
+  },
+  {
+   "at": "2026-11-02T02:14:24.5820284+00:00",
+   "event": "destination-restored-while-full"
+  },
+  {
+   "at": "2026-11-02T02:16:29.5067385+00:00",
+   "event": "service-restarted-while-full"
+  },
+  {
+   "at": "2026-11-02T02:16:29.8348621+00:00",
+   "event": "service-answering-while-full",
+   "met": true
+  },
+  {
+   "at": "2026-11-02T02:16:30.0379802+00:00",
+   "event": "restart-observation",
+   "answered": true,
+   "applicationLogIds": [
+    "1002x1",
+    "0x2",
+    "14x1",
+    "1500x1",
+    "1110x1",
+    "1291x1",
+    "1290x1"
+   ],
+   "applicationLogEntries": 8,
+   "service": "Running"
+  },
+  {
+   "at": "2026-11-02T02:17:31.9642800+00:00",
+   "event": "space-freed"
+  },
+  {
+   "at": "2026-11-02T02:17:37.3403896+00:00",
+   "event": "intake-resumed",
+   "met": true
+  },
+  {
+   "at": "2026-11-02T02:18:39.6555142+00:00",
+   "event": "destination-restored"
+  },
+  {
+   "at": "2026-11-02T02:20:44.2436678+00:00",
+   "event": "generator-stopped",
+   "unexpectedSuccess": 0,
+   "failedBinds": 0,
+   "nextSeq": 74416
+  },
+  {
+   "at": "2026-11-02T02:23:46.2427732+00:00",
+   "event": "drained",
+   "met": true
+  }
+ ],
+ "generated": {
+  "failedBinds": 0,
+  "rate": 50,
+  "firstSeq": 51515,
+  "nextSeq": 74416,
+  "count": 22901,
+  "maximumLagSeconds": 0.804
+ },
+ "samples": 125,
+ "final": {
+  "at": "2026-11-02T02:23:46.1021298+00:00",
+  "phase": "generator-stopped",
+  "freeBytes": 1961336832,
+  "totalBytes": 2130636800,
+  "fillerBytes": 0,
+  "destinationBlocked": false,
+  "service": "Running",
+  "generatorNext": 74416,
+  "forwardedRecords": 30705,
+  "forwardedIsFull": false,
+  "forwardedFileBytes": 67112960,
+  "forwardedMaximumBytes": 67108864,
+  "health": "healthy",
+  "storageState": "normal",
+  "intakePaused": false,
+  "queueFileBytes": 152551816,
+  "pageUtilisation": 33.1,
+  "oldestPendingAge": null,
+  "storageRefusals": 61,
+  "pressurePurged": 0,
+  "capacityRefusals": 61,
+  "queued": 0,
+  "uploading": 0,
+  "retrying": 0,
+  "delivered": 57318,
+  "deadLettered": 0,
+  "undeliveredBytes": 0,
+  "subscriptionState": "running",
+  "bookmarkRecordId": 74416,
+  "sourceQueued": 20207,
+  "sourceRetries": 61,
+  "sourceSubmitFailures": 0,
+  "sourceGaps": 0,
+  "sourceReadErrors": 0
+ }
+}
