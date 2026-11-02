@@ -8,7 +8,10 @@ original, originals delayed up to 67 minutes by an outage, a restored queue back
 dead-letter replay, an archive replay and a missed-run catch-up. It measured zero missed
 events, zero duplicate alert keys and one incident per entity. The
 [first run](../evidence/ws2-20261031-075516/README.md) failed on duplicate catch-up
-alerts, and that failure is retained. Rules ship **disabled**; enable them after the
+alerts, and that failure is retained. The review fixes since then (type-filtered
+function, configurable retry spacing, catch-up deployment guard, single-slot late-event
+monitor that ignores replays) were checked in a targeted live validation
+([evidence](../evidence/ws2c-20261102-024502/README.md)). Rules ship **disabled**; enable them after the
 [validation](#9-validate-in-your-own-workspace) passes in your workspace. Restrict direct
 DCR ingestion to approved collectors: a direct writer chooses its own `CollectorId`, and
 the DCR role does not bind an identity to a collector id. Bower releases and packages
@@ -128,12 +131,19 @@ The fix keeps the trusted, collector-stamped identity and changes the procedure:
 1. The replay collector must run with the **original** `BOWER_COLLECTOR_ID` (its own empty
    queue, loopback only, no management enrolment, no health records). Its replays then
    carry the original `(CollectorId, EventId)` and collapse.
-2. `bower archive replay` labels each event with `bowerReplayCollectorId`, the
-   archived envelope's `collector.id`. A collector whose id differs quarantines the event
-   (`archive-replay-collector-mismatch`, nothing is stored), and the CLI stops with
-   `collector-mismatch` and exit code 2 (C# and Rust collectors and CLIs).
+2. `bower archive replay` labels each event with `bowerReplayCollectorId`, always the
+   archived envelope's collector-stamped `collector.id`; a label a producer set on the
+   original event is replaced (or removed when the envelope has no stamped collector),
+   so it can neither block nor redirect recovery. A collector whose id differs
+   quarantines the event (`archive-replay-collector-mismatch`, nothing is stored); the
+   CLI counts it as `collector-mismatch`, continues with the rest and exits 2. An archive
+   that spans a collector-id change is replayed one slice at a time:
+   `--collector-id <id>` selects that collector's events, each through a replay
+   collector with that id (C# and Rust collectors and CLIs).
 3. The parser never reads labels. A label can only make a collector **refuse** an event;
-   it cannot change any identity, so forging it gains nothing.
+   it cannot change any identity. Collectors do not strip `bowerReplay*` labels at
+   intake, because archive replay itself arrives through the producer intake; a producer
+   that sets them on its own events can only get those events refused.
 
 `EventId` alone is not a safe general key: different collectors can legitimately produce
 the same `EventId` (two WEC collectors receiving the same forwarded event, see
@@ -195,7 +205,7 @@ That still fires again for a replay, because the replay has a new `ingestion_tim
 
 Each detection rule:
 
-1. Reads `BowerSecurityEvents`, so a replay adds no row and never changes a count.
+1. Reads `BowerSecurityEventsOfType` (the same collapse as `BowerSecurityEvents`, for its own event type), so a replay adds no row and never changes a count.
 2. Keeps events within the tolerated delay: `BowerFirstIngested - BowerEventTime <= maxDelay`.
    Later events are reported by the beyond-tolerance monitor instead.
 3. Buckets events by **event time** (`bin(BowerEventTime, bucketSize)`) and entity
@@ -211,7 +221,7 @@ Each detection rule:
    runs' slot 0 (the **owned window**, `[now() - settle - frequency, now() - settle)`)
    therefore tile time without gaps or overlaps, and slot 0 alerts each crossing once.
 6. Retries a crossing that slot 0 did not alert (a skipped or disabled run, or a row
-   that became queryable late) in **even catch-up slots** 2, 4, … up to `catchUp`, and
+   that became queryable late) in **catch-up slots** `alertVisibilityRuns`, `2 × alertVisibilityRuns`, … (2, 4, … by default) up to `catchUp`, and
    drops any result whose deterministic `BowerDetectionKey` (`rule|address|bucket start`)
    is already in `SecurityAlert`. Only even slots, because a run's own alerts are
    written after its window end (about five minutes later), so they are outside the
@@ -248,7 +258,9 @@ All values are `main.bicep` parameters. Each rule file carries the same defaults
 | --- | --- | --- |
 | `frequencyMinutes` | 5 | How often each rule runs (Sentinel minimum 5). Shorter: alerts sooner, more query cost. |
 | `settleDelayMinutes` | 5 | Rows ingested in the last `settle` minutes wait for the next run, so they are queryable when read. Raise it if `ingestion_time()` rows appear late in queries. |
-| `catchUpMinutes` | 60 | How far back a run re-checks crossings without an alert (every second run). Covers missed runs up to `catchUp − 2 × frequency`. |
+| `catchUpMinutes` | 60 | How far back a run re-checks crossings without an alert. Must be at least `(alertVisibilityRuns + 1) × frequencyMinutes`, otherwise no retry slot exists; the deployment fails with that message instead of silently never retrying. |
+| `alertVisibilityRuns` | 2 | Runs between retries of a missed crossing. A run's alerts must be queryable in `SecurityAlert` by the run this many runs later; see [the assumption](#the-alert-visibility-assumption). |
+| `toleranceFrequencyMinutes` | 60 | How often the beyond-tolerance monitor runs; each run evaluates exactly the last interval of first ingestions. |
 | `maxIngestionDelayMinutes` | 360 | Longest event-time-to-first-ingestion delay evaluated. Set it to your outage SLO plus backlog drain plus margin. Maximum 2,820 (47 hours) because Azure Monitor rewrites event times older than two days. |
 | `bucketMinutes` | 10 | Event-time bucket for the threshold. |
 | `bruteForceThreshold` | 10 | Distinct 4625 failures from one address per bucket. |
@@ -265,8 +277,34 @@ queryPeriod = maxDelay + bucket + catchUp + settle + 10 minutes
 
 The 10 minutes cover Sentinel's built-in five-minute scheduling delay
 ([query scheduling](https://learn.microsoft.com/azure/sentinel/scheduled-rules-overview#query-scheduling))
-plus margin. The beyond-tolerance monitor runs hourly over 50 hours, past the
-two-day rewrite limit.
+plus margin.
+
+**The beyond-tolerance monitor** evaluates one non-overlapping slot of first ingestion
+per run (`toleranceFrequencyMinutes`), so each late event is reported once. Its
+candidates are rows ingested in the slot (their `TimeGenerated` is at most two days old,
+or rewritten). A candidate with an earlier copy is a replay, not a late event, even when
+Azure rewrote the replay's `TimeGenerated` and the original keeps an older one, so the
+monitor looks back 14 days (the Sentinel maximum) for earlier copies. A replay of an
+event whose original arrived more than 14 days before is reported as late. A skipped
+monitor run leaves its slot unreported; the detection rules are unaffected.
+
+#### The alert-visibility assumption
+
+A run's alerts are written about five minutes after its window end, so the next run's
+look-back never contains them. A crossing that slot 0 missed is therefore retried only
+in slots `alertVisibilityRuns`, `2 × alertVisibilityRuns`, …, and each retry first
+checks `SecurityAlert` for its `BowerDetectionKey`. This is exact as long as an alert is
+queryable within `(alertVisibilityRuns − 1) × frequencyMinutes` of being raised (5
+minutes by default; both live runs measured at most 2.1 minutes). If Sentinel writes
+alerts later than that, a retry can raise a second alert for the same key; incident
+grouping by IP still joins it to the first incident. Raise `alertVisibilityRuns` (and
+`catchUpMinutes` with it) if your workspace shows slower `SecurityAlert` ingestion:
+
+```kusto
+SecurityAlert
+| where ProviderName == "ASI Scheduled Alerts" and AlertName startswith "Bower:"
+| summarize p99 = percentile(ingestion_time() - TimeGenerated, 99), maximum = max(ingestion_time() - TimeGenerated)
+```
 
 **Detection latency.** A crossing that is not delayed alerts within
 `settle + frequency + 5 minutes (Sentinel delay)`, about 15 minutes by default. A
@@ -276,6 +314,12 @@ ingested. Missed runs add up to one more catch-up cycle.
 **Cost.** Every run reads `queryPeriod` of `BowerSecurity_CL` and `SecurityAlert`.
 The parser summarises over all Bower rows in that period. At large volumes, raise
 `frequencyMinutes` or lower `maxIngestionDelayMinutes` to what your SLO really needs.
+
+**Cost.** The detection rules read `BowerSecurityEventsOfType`, which keeps only their
+event types and drops the large dynamic columns (`RawEnvelope`, `Attributes`, `Target`,
+`Change`, `Labels`, `PrivacyDetected`) before collapsing. Every copy of an event shares
+its type and payload, so the identity, first copy and copy count are the same as
+`BowerSecurityEvents`.
 
 **Tuning for an outage SLO.** Use the measured drain rate (the pilot drained a one-hour,
 45,090-event backlog in 55.8 seconds) and your longest tolerated destination outage:
@@ -361,21 +405,31 @@ New-AzResourceGroupDeployment -ResourceGroupName 'rg-sentinel' -Name bower-analy
 Without a template (for example to review each piece):
 
 1. **Log Analytics workspace → Logs**. Paste `bower-security-events.kql`, run it, then
-   **Save → Save as function**: name `BowerSecurityEvents`, category `Bower`. Do not
-   add parameters.
+   **Save → Save as function**: name `BowerSecurityEvents`, category `Bower`, no
+   parameters. Then save `bower-security-events-of-type.kql` the same way as
+   `BowerSecurityEventsOfType` with one parameter: name `eventTypes`, type `dynamic`,
+   no default. The detection rules call the second function.
 2. **Microsoft Sentinel → Analytics → Create → Scheduled query rule**. Use the values in
    [`main.bicep`](../../deploy/sentinel/analytics/main.bicep) for the chosen rule:
-   paste the rule file (edit its `let` values to your parameters), *Run query every* =
-   `frequencyMinutes`, *Lookup data from the last* = the `queryPeriod` above,
-   *Generate alert when number of query results* is greater than 0, *Event grouping*:
-   **Trigger an alert for each event**, *Suppression*: **Off**.
-3. Entity mapping: **IP → Address = `SourceIpAddress`**. Custom details: map
-   `BowerDetectionKey`, `BucketStart`, `DistinctEvents`, `CrossedAt`, `EvaluationPath`,
-   `EvaluatedAt`, `ReplayedRows`, `LateEvents` and `MaxDeliveryDelay` to the columns of
-   the same names. **`BowerDetectionKey` is required**; without it the alert
-   deduplication in step 6 of the rule logic cannot work.
+   paste the rule file (edit its `let` values to your parameters), *Generate alert when
+   number of query results* is greater than 0, *Event grouping*: **Trigger an alert for
+   each event**, *Suppression*: **Off**. Scheduling:
+
+   | Rule | *Run query every* | *Lookup data from the last* |
+   | --- | --- | --- |
+   | Brute force, firewall deny | `frequencyMinutes` | the `queryPeriod` above |
+   | Beyond-tolerance monitor | `toleranceFrequencyMinutes` (the file's `let frequency`) | 14 days |
+
+3. Entity mapping and custom details differ per rule:
+
+   | Rule | Entity mapping | Custom details (each mapped to the column of the same name) |
+   | --- | --- | --- |
+   | Brute force, firewall deny | **IP → Address = `SourceIpAddress`** | `BowerDetectionKey`, `BucketStart`, `DistinctEvents`, `CrossedAt`, `EvaluationPath`, `EvaluatedAt`, `ReplayedRows`, `LateEvents`, `MaxDeliveryDelay`. **`BowerDetectionKey` is required**: without it the alert deduplication in step 6 of the rule logic cannot work. |
+   | Beyond-tolerance monitor | **Host → HostName = `CollectorId`** | `LateEvents`, `RewrittenTimes`, `OldestEvent`, `MaxDeliveryDelay` |
+
 4. Incident settings: **Group related alerts** on, *Group alerts into a single incident
-   if the selected entity types and details match*: **IP**, time frame 5 hours.
+   if the selected entity types and details match*: **IP** with time frame 5 hours for
+   the two detection rules, **Host** with 24 hours for the monitor.
 
 ### Verify the deployment
 
@@ -420,7 +474,7 @@ again on every run (long look-back). Convert it step by step:
 3. **Bound the tolerated delay.** Add `| where BowerFirstIngested - BowerEventTime <= maxDelay`.
 4. **Bucket by event time and entity**, ordered by first ingestion, and compute
    `CrossedAt` with `row_number()` and `minif()`, as in `rules/wec-brute-force.kql`.
-5. **Choose the window by `CrossedAt`**: slot 0 (the owned window) plus even catch-up slots.
+5. **Choose the window by `CrossedAt`**: slot 0 (the owned window) plus the catch-up slots.
 6. **Add a `BowerDetectionKey`** built only from values that never change for that
    detection (rule name, entity, bucket start), map it as a custom detail and exclude
    keys already in `SecurityAlert`.
@@ -682,7 +736,7 @@ python3 -I deploy/sentinel/analytics/validation/cleanup_audit.py --state azure-s
 | Deployment fails: `SEM0255 format_datetime()` or other semantic errors | Rule edited by hand with an unsupported format | Use the shipped rule files; `tostring()` keeps ISO 8601 |
 | Rule never alerts | Rule disabled (default), threshold not reached, or crossing older than `catchUp` when first visible | Enable it; run the rule file in Logs; raise `catchUpMinutes` |
 | Alert expected after an outage, none raised | Events exceeded `maxIngestionDelayMinutes` | Check the beyond-tolerance incident; raise the tolerance to your real outage SLO |
-| Two alerts with the same `BowerDetectionKey` | `BowerDetectionKey` custom detail missing; a hand-edited rule that retries in every catch-up slot (the next run cannot see the previous run's alerts); a schedule move after redeploying or re-enabling; or `SecurityAlert` written more than two runs late | Map the custom detail; keep the even-slot filter; avoid redeploying during incidents; raise `frequencyMinutes` if alert latency exceeds it. Grouping still keeps one incident. |
+| Two alerts with the same `BowerDetectionKey` | `BowerDetectionKey` custom detail missing; a hand-edited rule that retries in every catch-up slot (the next run cannot see the previous run's alerts); a schedule move after redeploying or re-enabling; or `SecurityAlert` written more than two runs late | Map the custom detail; keep the retry-spacing filter; avoid redeploying during incidents; raise `alertVisibilityRuns` if alert latency exceeds `(alertVisibilityRuns − 1) × frequencyMinutes`. Grouping still keeps one incident. |
 | Two incidents for one address | Grouping disabled, grouping window shorter than the attack, or closed incident with `reopenClosedIncidents=false` | Enable grouping by IP; lengthen `incidentGroupingLookback` |
 | `BowerCopies` > 1 on many events | Repeated ambiguous acknowledgements: unstable network, too short a delivery deadline, or crash loops | Check collector logs for `exceeded its delivery timeout`; fix the network or deadline |
 | Same `EventId` with two `CollectorId` values | Collector ID changed, or two WEC collectors on purpose | See [section 8](#8-keep-collectorid-stable-in-every-environment) |
@@ -736,14 +790,15 @@ evidence of lossless UDP or of a completed Sentinel alert qualification.
   `BOWER_COLLECTOR_ID`; Bower refuses other ids but cannot stop an operator from
   replaying old data into a fresh workspace.
 - Exactly-once alerts on the catch-up path assume that an alert is queryable in
-  `SecurityAlert` within two rule runs of its window end (10 minutes by default;
-  measured at most 2.1 minutes after creation). If Sentinel writes it later, a
-  second alert can appear; grouping by IP still keeps one incident.
+  `SecurityAlert` within `(alertVisibilityRuns − 1) × frequencyMinutes` of being raised
+  (5 minutes by default; measured at most 2.1 minutes). If Sentinel writes it later, a
+  second alert can appear; grouping by IP still keeps one incident. See
+  [the alert-visibility assumption](#the-alert-visibility-assumption).
 - Owned windows tile only while Sentinel keeps a rule's schedule. Redeploying or
   re-enabling a rule can move its schedule (observed in both live runs); a crossing in
   a resulting overlap can alert twice before `SecurityAlert` shows the first alert.
   Grouping keeps one incident.
-- Missed runs are recovered for up to `catchUpMinutes − 2 × frequencyMinutes`, at the next even slot.
+- Missed runs are recovered for up to `catchUpMinutes − alertVisibilityRuns × frequencyMinutes`, at the next retry slot.
   A longer Sentinel scheduling gap needs manual hunting.
 - Events delayed more than `maxIngestionDelayMinutes` are not evaluated; the monitor
   reports them. Delays over two days lose the original `TimeGenerated` (the parser

@@ -3,13 +3,16 @@
 // Alerts once per (SourceIpAddress, event-time bucket) when the bucket first reaches
 // the threshold. Replayed rows never change the count; late events are counted in the
 // run that first sees them. See docs/production-readiness/02-replay-safe-detections.md.
-// The main.bicep parameters replace the next six values; keep them on one line each.
+// The main.bicep parameters replace the next seven values; keep them on one line each.
 let threshold = 10;
 let bucketSize = 10m;
 let settleDelay = 5m;
 let frequency = 5m;
 let catchUp = 60m;
 let maxDelay = 360m;
+// Runs between retries of a missed crossing: a run's alerts must be queryable in
+// SecurityAlert by the run that many runs later (alertVisibilityRuns in main.bicep).
+let retrySpacing = 2;
 let ruleKey = "bower-wec-brute-force";
 // In a scheduled run now() is the end of the run's query window.
 let windowEnd = now() - settleDelay;
@@ -20,7 +23,7 @@ let alerted = SecurityAlert
     | extend BowerDetectionKey = tostring(todynamic(tostring(todynamic(ExtendedProperties)["Custom Details"])).BowerDetectionKey[0])
     | where BowerDetectionKey startswith strcat(ruleKey, "|")
     | distinct BowerDetectionKey;
-BowerSecurityEvents
+BowerSecurityEventsOfType(dynamic(["authentication_failure"]))
 | where EventType == "authentication_failure" and ApplicationName == "windows-security"
 | where isnotempty(SourceIpAddress)
 | where BowerEventTime >= horizon and BowerFirstIngested < windowEnd
@@ -36,11 +39,10 @@ BowerSecurityEvents
 | where DistinctEvents >= threshold
 | where CrossedAt >= catchUpStart and CrossedAt < windowEnd
 // Slot 0 is this run's own window; runs tile it. A crossing missed there (skipped run,
-// late-queryable row) is retried in even slots only: a run's alerts have TimeGenerated
-// after its window end, so they are outside the next run's look-back and first visible
-// to the run after that.
+// late-queryable row) is retried every retrySpacing runs only: a run's alerts have
+// TimeGenerated after its window end, so they are outside the next run's look-back.
 | extend Slot = toint((windowEnd - CrossedAt) / frequency)
-| where Slot == 0 or (Slot >= 2 and Slot % 2 == 0)
+| where Slot == 0 or (Slot >= retrySpacing and Slot % retrySpacing == 0)
 | extend BowerDetectionKey = strcat(ruleKey, "|", SourceIpAddress, "|", tostring(BucketStart))
 | where BowerDetectionKey !in (alerted)
 | extend EvaluationPath = iff(Slot == 0, "owned-window", strcat("catch-up-", Slot)), EvaluatedAt = now()

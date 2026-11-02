@@ -171,6 +171,8 @@ def report(args):
         result["checks"] = checks
         result["passed"] = all(checks.values())
     print(json.dumps(result, indent=1, sort_keys=True))
+    # A failed expectation must fail the command, not only say so in the report.
+    return 1 if args.expect and not result["passed"] else 0
 
 
 def _time(value):
@@ -195,8 +197,9 @@ def main(argv):
     if args.command == "query":
         print(json.dumps(query(args.workspace_id, args.kql, args.timespan), indent=1))
     else:
-        report(args)
+        return report(args)
+    return 0
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    sys.exit(main(sys.argv[1:]))

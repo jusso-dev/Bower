@@ -21,10 +21,20 @@ param frequencyMinutes int = 5
 @maxValue(60)
 param settleDelayMinutes int = 5
 
-@description('Minutes of first-ingestion history re-checked for crossings that a missed or late run did not alert.')
+@description('Minutes of first-ingestion history re-checked for crossings that a missed or late run did not alert. Must be at least (alertVisibilityRuns + 1) x frequencyMinutes, or no retry slot exists; deployment fails otherwise.')
 @minValue(15)
 @maxValue(1440)
 param catchUpMinutes int = 60
+
+@description('Runs after which a rule run\'s alerts are queryable in SecurityAlert. A missed crossing is retried only every this many runs, so a retry never runs before the previous attempt\'s alert is visible. Raise it if SecurityAlert ingestion is slower than (alertVisibilityRuns - 1) x frequencyMinutes; too low a value can raise a second alert (grouping still keeps one incident).')
+@minValue(2)
+@maxValue(12)
+param alertVisibilityRuns int = 2
+
+@description('Minutes between runs of the beyond-tolerance monitor; each run evaluates exactly the first ingestions of the last interval.')
+@minValue(60)
+@maxValue(1440)
+param toleranceFrequencyMinutes int = 60
 
 @description('Longest delay between event time and first ingestion that the rules evaluate (outage SLO plus drain). Azure Monitor rewrites event times older than two days.')
 @minValue(30)
@@ -66,26 +76,49 @@ resource parser 'Microsoft.OperationalInsights/workspaces/savedSearches@2025-07-
   }
 }
 
+// Same collapse for chosen event types, without the large dynamic columns: the rules use it.
+resource typedParser 'Microsoft.OperationalInsights/workspaces/savedSearches@2025-07-01' = {
+  parent: workspace
+  name: 'bower-security-events-of-type'
+  properties: {
+    category: 'Bower'
+    displayName: 'BowerSecurityEventsOfType: replay-collapsed Bower events of given types'
+    functionAlias: 'BowerSecurityEventsOfType'
+    functionParameters: 'eventTypes:dynamic'
+    query: loadTextContent('bower-security-events-of-type.kql')
+    version: 2
+  }
+}
+
+// Catch-up retries in slots alertVisibilityRuns, 2 x alertVisibilityRuns, ...: without room
+// for the first one a missed crossing would never be retried.
+var catchUpMinutesChecked = catchUpMinutes >= (alertVisibilityRuns + 1) * frequencyMinutes
+  ? catchUpMinutes
+  : fail('catchUpMinutes must be at least (alertVisibilityRuns + 1) x frequencyMinutes, or missed crossings are never retried.')
+
 // TimeGenerated look-back: the oldest bucket a run evaluates, plus settle, catch-up and
 // Sentinel's five-minute scheduling delay with five minutes of margin.
-var queryPeriodMinutes = maxIngestionDelayMinutes + bucketMinutes + catchUpMinutes + settleDelayMinutes + 10
+var queryPeriodMinutes = maxIngestionDelayMinutes + bucketMinutes + catchUpMinutesChecked + settleDelayMinutes + 10
 
 // Each anchor is the rule file's default line; a unit test keeps them present.
-func tune(query string, defaultThreshold int, threshold int, frequency int, settle int, catchUp int, maxDelay int, bucket int) string =>
-  replace(replace(replace(replace(replace(replace(query,
+func tune(query string, defaultThreshold int, threshold int, frequency int, settle int, catchUp int, maxDelay int, bucket int, spacing int) string =>
+  replace(replace(replace(replace(replace(replace(replace(query,
     'let threshold = ${defaultThreshold};', 'let threshold = ${threshold};'),
     'let bucketSize = 10m;', 'let bucketSize = ${bucket}m;'),
     'let settleDelay = 5m;', 'let settleDelay = ${settle}m;'),
     'let frequency = 5m;', 'let frequency = ${frequency}m;'),
     'let catchUp = 60m;', 'let catchUp = ${catchUp}m;'),
-    'let maxDelay = 360m;', 'let maxDelay = ${maxDelay}m;')
+    'let maxDelay = 360m;', 'let maxDelay = ${maxDelay}m;'),
+    'let retrySpacing = 2;', 'let retrySpacing = ${spacing};')
 
 var bruteForceQuery = tune(loadTextContent('rules/wec-brute-force.kql'), 10, bruteForceThreshold,
-  frequencyMinutes, settleDelayMinutes, catchUpMinutes, maxIngestionDelayMinutes, bucketMinutes)
-var firewallQuery = tune(loadTextContent('rules/firewall-deny.kql'), 20, firewallDenyThreshold, frequencyMinutes, settleDelayMinutes, catchUpMinutes, maxIngestionDelayMinutes, bucketMinutes)
-var toleranceQuery = replace(replace(loadTextContent('rules/beyond-tolerance.kql'),
+  frequencyMinutes, settleDelayMinutes, catchUpMinutesChecked, maxIngestionDelayMinutes, bucketMinutes, alertVisibilityRuns)
+var firewallQuery = tune(loadTextContent('rules/firewall-deny.kql'), 20, firewallDenyThreshold,
+  frequencyMinutes, settleDelayMinutes, catchUpMinutesChecked, maxIngestionDelayMinutes, bucketMinutes, alertVisibilityRuns)
+var toleranceQuery = replace(replace(replace(loadTextContent('rules/beyond-tolerance.kql'),
   'let maxDelay = 360m;', 'let maxDelay = ${maxIngestionDelayMinutes}m;'),
-  'let settleDelay = 5m;', 'let settleDelay = ${settleDelayMinutes}m;')
+  'let settleDelay = 5m;', 'let settleDelay = ${settleDelayMinutes}m;'),
+  'let frequency = 60m;', 'let frequency = ${toleranceFrequencyMinutes}m;')
 
 var detectionDetails = {
   BowerDetectionKey: 'BowerDetectionKey'
@@ -142,7 +175,7 @@ resource bruteForce 'Microsoft.SecurityInsights/alertRules@2025-09-01' = {
     }
     incidentConfiguration: ipGrouping
   }
-  dependsOn: [parser]
+  dependsOn: [parser, typedParser]
 }
 
 resource firewallDeny 'Microsoft.SecurityInsights/alertRules@2025-09-01' = {
@@ -174,7 +207,7 @@ resource firewallDeny 'Microsoft.SecurityInsights/alertRules@2025-09-01' = {
     }
     incidentConfiguration: ipGrouping
   }
-  dependsOn: [parser]
+  dependsOn: [parser, typedParser]
 }
 
 resource beyondTolerance 'Microsoft.SecurityInsights/alertRules@2025-09-01' = {
@@ -187,9 +220,10 @@ resource beyondTolerance 'Microsoft.SecurityInsights/alertRules@2025-09-01' = {
     enabled: enableRules
     severity: 'Informational'
     query: toleranceQuery
-    queryFrequency: 'PT1H'
-    // Azure Monitor keeps event times up to two days old; look back past that.
-    queryPeriod: 'PT50H'
+    queryFrequency: 'PT${toleranceFrequencyMinutes}M'
+    // Candidates are bounded to two days in the query; the 14-day look-back (the maximum)
+    // finds an earlier copy of a replay whose own TimeGenerated Azure rewrote.
+    queryPeriod: 'P14D'
     triggerOperator: 'GreaterThan'
     triggerThreshold: 0
     suppressionEnabled: false
@@ -219,7 +253,7 @@ resource beyondTolerance 'Microsoft.SecurityInsights/alertRules@2025-09-01' = {
       }
     }
   }
-  dependsOn: [parser]
+  dependsOn: [parser, typedParser]
 }
 
 output parserFunction string = parser.properties.functionAlias

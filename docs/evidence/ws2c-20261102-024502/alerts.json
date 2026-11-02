@@ -1,0 +1,10 @@
+[
+ {
+  "TimeGenerated": "2026-11-02T03:08:55.3455815Z",
+  "EndTime": "2026-11-02T03:03:11.4533585Z",
+  "AlertName": "Bower: failed network logons from 192.0.2.203",
+  "Key": "bower-wec-brute-force|192.0.2.203|2026-11-02T02:40:00.0000000Z",
+  "Path": "owned-window",
+  "Late": "0"
+ }
+]

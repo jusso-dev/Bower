@@ -814,14 +814,29 @@ and `bower archive replay` stops with `collector-mismatch` and exit code 2.
    loopback only, no management enrolment and no health records
    (`BOWER_HEALTH_RECORD_INTERVAL_SECONDS` unset), so fleet views see one collector.
 3. Inject the collector token through your approved secret mechanism, then run
-   `bower archive replay --archive <dir> --collector-url http://127.0.0.1:4329 --from <ISO> --to <ISO> --event-type <type>`.
+   `bower archive replay --archive <dir> --collector-url http://127.0.0.1:4329 --from <ISO> --to <ISO> --event-type <type> --collector-id <original id>`.
+   An event from another collector is skipped as `collector-mismatch` (exit 2); replay
+   each id's slice through a replay collector with that id.
 4. Record the outcome (CLI summary: `selected`, responses by status code). Stop the replay
    collector when its queue is empty.
-5. Verify original and replayed identities against the audit manifest with the
-   [canonical reconciliation query](02-replay-safe-detections.md#6-hunting-workbooks-and-exports):
-   every replayed event has `BowerCopies = 2` under `(CollectorId, EventId)`. `EventId`
-   alone is unsafe as a general deduplication key because different collectors can use
-   the same ID.
+5. Verify every replayed identity from the audit manifest individually: each
+   `(CollectorId, EventId)` must be present in `BowerSecurityEvents`. Require
+   `BowerCopies = 2` only for identities whose original row is still in the workspace;
+   after a data loss the replay is the only copy and `BowerCopies = 1` is the success
+   case. `EventId` alone is unsafe as a general deduplication key because different
+   collectors can use the same ID.
+
+   ```kusto
+   let replayed = datatable(CollectorId: string, EventId: string) [ /* from the audit manifest */ ];
+   replayed
+   | join kind=leftouter (BowerSecurityEvents | where TimeGenerated > ago(14d)
+       | project CollectorId, EventId, BowerCopies) on CollectorId, EventId
+   | extend Present = isnotempty(EventId1)
+   | summarize Replayed = count(), Missing = countif(not(Present)), WithOriginal = countif(BowerCopies >= 2)
+   ```
+
+   Pass: `Missing == 0`, and `WithOriginal` equals the number of replayed identities
+   whose original you expected to survive.
 
 Drill result: 119 events selected and accepted (HTTP 202), all delivered; every `EventId`
 had exactly 2 rows (original and replay), the two identity sets had the same SHA-256

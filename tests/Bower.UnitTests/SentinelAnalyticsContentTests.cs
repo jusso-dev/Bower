@@ -65,7 +65,8 @@ public sealed class SentinelAnalyticsContentTests
         Assert.Contains("BowerDetectionKey !in (alerted)", query, StringComparison.Ordinal);
         // Catch-up retries only every second run: a run cannot see the previous run's alerts
         // (their TimeGenerated is after its window end); live run ws2 found duplicates otherwise.
-        Assert.Contains("| where Slot == 0 or (Slot >= 2 and Slot % 2 == 0)", query, StringComparison.Ordinal);
+        Assert.Contains("| where Slot == 0 or (Slot >= retrySpacing and Slot % retrySpacing == 0)", query, StringComparison.Ordinal);
+        Assert.Matches(@"BowerSecurityEventsOfType\(dynamic\(\[""[a-z_]+""\]\)\)", query);
         Assert.Contains("bin(BowerEventTime, bucketSize)", query, StringComparison.Ordinal);
         HashSet<string> columns = TableColumns();
         foreach (string column in usedColumns)
@@ -93,6 +94,7 @@ public sealed class SentinelAnalyticsContentTests
             Assert.Contains($"let catchUp = {Default("catchUpMinutes")}m;", query, StringComparison.Ordinal);
             Assert.Contains($"let maxDelay = {Default("maxIngestionDelayMinutes")}m;", query, StringComparison.Ordinal);
             Assert.Contains($"let bucketSize = {Default("bucketMinutes")}m;", query, StringComparison.Ordinal);
+            Assert.Contains($"let retrySpacing = {Default("alertVisibilityRuns")};", query, StringComparison.Ordinal);
         }
 
         Assert.Contains($"let threshold = {Default("bruteForceThreshold")};", Read("rules", "wec-brute-force.kql"), StringComparison.Ordinal);
@@ -102,6 +104,61 @@ public sealed class SentinelAnalyticsContentTests
         string tolerance = Read("rules", "beyond-tolerance.kql");
         Assert.Contains($"let maxDelay = {Default("maxIngestionDelayMinutes")}m;", tolerance, StringComparison.Ordinal);
         Assert.Contains($"let settleDelay = {Default("settleDelayMinutes")}m;", tolerance, StringComparison.Ordinal);
+        Assert.Contains($"let frequency = {Default("toleranceFrequencyMinutes")}m;", tolerance, StringComparison.Ordinal);
+        Assert.Contains("'let frequency = 60m;', 'let frequency = ${toleranceFrequencyMinutes}m;'", bicep, StringComparison.Ordinal);
+        Assert.Contains("queryFrequency: 'PT${toleranceFrequencyMinutes}M'", bicep, StringComparison.Ordinal);
+        Assert.Contains("'let retrySpacing = 2;', 'let retrySpacing = ${spacing};'", bicep, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TypedParser_FiltersBeforeCollapsingWithTheSameIdentityAndCopies()
+    {
+        string full = Code(Read("bower-security-events.kql"));
+        string typed = Code(Read("bower-security-events-of-type.kql"));
+        string Collapse(string query) => Regex.Match(query, @"\| summarize arg_min.*?by CollectorId, EventId", RegexOptions.Singleline).Value;
+
+        // Same first copy, last ingestion and copy count per (CollectorId, EventId).
+        Assert.NotEmpty(Collapse(full));
+        Assert.Equal(Collapse(full), Collapse(typed));
+        int filter = typed.IndexOf("where EventType in (eventTypes)", StringComparison.Ordinal);
+        int dropped = typed.IndexOf("project-away RawEnvelope", StringComparison.Ordinal);
+        int collapse = typed.IndexOf("summarize arg_min", StringComparison.Ordinal);
+        Assert.True(filter >= 0 && filter < dropped && dropped < collapse);
+        // The event time is read from RawEnvelope before it is dropped.
+        Assert.True(typed.IndexOf("BowerEventTime = coalesce(todatetime(RawEnvelope.timeGenerated)", StringComparison.Ordinal) < dropped);
+        Assert.Contains("functionParameters: 'eventTypes:dynamic'", Read("main.bicep"), StringComparison.Ordinal);
+        // Columns the detection rules read are kept.
+        string projectAway = typed[dropped..typed.IndexOf('\n', dropped)];
+        foreach (string column in new[] { "EventType", "EventResult", "ApplicationName", "SourceIpAddress", "ActorUsername", "TimeGenerated" })
+        {
+            Assert.DoesNotContain(column, projectAway, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void Bicep_FailsWhenCatchUpLeavesNoRetrySlot()
+    {
+        string bicep = Read("main.bicep").ReplaceLineEndings("\n");
+
+        // Retries run in slots alertVisibilityRuns, 2 x alertVisibilityRuns, ...
+        Assert.Contains("catchUpMinutes >= (alertVisibilityRuns + 1) * frequencyMinutes", bicep, StringComparison.Ordinal);
+        Assert.Contains(": fail('catchUpMinutes must be at least (alertVisibilityRuns + 1) x frequencyMinutes", bicep, StringComparison.Ordinal);
+        Assert.DoesNotContain("catchUpMinutes, maxIngestionDelayMinutes", bicep, StringComparison.Ordinal);
+        Assert.Equal(2, Regex.Count(bicep, "catchUpMinutesChecked, maxIngestionDelayMinutes, bucketMinutes, alertVisibilityRuns"));
+    }
+
+    [Fact]
+    public void ToleranceMonitor_AlertsOnceAndIgnoresReplaysOfOldEvents()
+    {
+        string query = Code(Read("rules", "beyond-tolerance.kql"));
+
+        // One non-overlapping first-ingestion slot per run.
+        Assert.Contains("let windowStart = windowEnd - frequency;", query, StringComparison.Ordinal);
+        Assert.Contains("where BowerIngested >= windowStart and BowerIngested < windowEnd", query, StringComparison.Ordinal);
+        // A row with an earlier copy is a replay, even when its TimeGenerated was rewritten.
+        Assert.Contains("| where ingestion_time() < windowStart", query, StringComparison.Ordinal);
+        Assert.Contains("| join kind=leftanti earlier on CollectorId, EventId", query, StringComparison.Ordinal);
+        Assert.Contains("queryPeriod: 'P14D'", Read("main.bicep"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -117,7 +174,7 @@ public sealed class SentinelAnalyticsContentTests
         Assert.Contains("param enableRules bool = false", bicep, StringComparison.Ordinal);
         // The TimeGenerated look-back covers the oldest evaluated bucket of a catch-up run.
         Assert.Contains(
-            "var queryPeriodMinutes = maxIngestionDelayMinutes + bucketMinutes + catchUpMinutes + settleDelayMinutes + 10",
+            "var queryPeriodMinutes = maxIngestionDelayMinutes + bucketMinutes + catchUpMinutesChecked + settleDelayMinutes + 10",
             bicep,
             StringComparison.Ordinal);
         // Azure Monitor rewrites event times older than two days; the tolerance stays below it.

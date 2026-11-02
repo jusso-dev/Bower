@@ -1,0 +1,14 @@
+// BowerSecurityEventsOfType(eventTypes: dynamic): BowerSecurityEvents for the listed event
+// types, for scheduled rules. It filters by type and drops the large dynamic columns
+// before collapsing. Every copy of an event has the same EventType and payload, so the
+// identity (CollectorId, EventId), the first copy and BowerCopies equal BowerSecurityEvents
+// for those types. Columns dropped: RawEnvelope, Attributes, Target, Change, Labels and
+// PrivacyDetected; BowerEventTime is read from RawEnvelope first.
+BowerSecurity_CL
+| where EventType in (eventTypes) and EventType !in ("collector_health", "collector_canary")
+| extend BowerIngested = ingestion_time(), BowerEventTime = coalesce(todatetime(RawEnvelope.timeGenerated), TimeGenerated)
+| project-away RawEnvelope, Attributes, Target, Change, Labels, PrivacyDetected
+| summarize arg_min(BowerIngested, *), BowerLastIngested = max(BowerIngested), BowerCopies = count()
+    by CollectorId, EventId
+| project-rename BowerFirstIngested = BowerIngested
+| extend BowerTimeRewritten = BowerEventTime != TimeGenerated

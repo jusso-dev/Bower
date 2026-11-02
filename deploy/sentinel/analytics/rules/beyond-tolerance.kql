@@ -1,20 +1,36 @@
 // Bower detection-tolerance monitor: events that first arrived later than the
 // replay-safe rules' maximum tolerated delay. Those rules never evaluate such events,
 // so each result is a detection gap to investigate, not a threat. It also reports
-// rows whose TimeGenerated Azure Monitor rewrote (event time more than two days old).
-// Each hourly run looks back two hours, so a skipped or rescheduled run (for example
-// after a redeployment) loses nothing; incident grouping by host merges the repeats.
-// The main.bicep parameters replace the next three values; keep them on one line each.
+// events whose TimeGenerated Azure Monitor rewrote (event time more than two days old).
+// The main.bicep parameters replace maxDelay, settleDelay and frequency (which is the
+// rule's queryFrequency); keep them on one line each.
 let maxDelay = 360m;
 let settleDelay = 5m;
 let frequency = 60m;
+// One non-overlapping slot of first ingestion per run, so each late event alerts once.
 let windowEnd = now() - settleDelay;
-let windowStart = windowEnd - 2 * frequency;
-BowerSecurityEvents
-| where BowerFirstIngested >= windowStart and BowerFirstIngested < windowEnd
-| where BowerFirstIngested - BowerEventTime > maxDelay or BowerTimeRewritten
-| summarize LateEvents = count(), RewrittenTimes = countif(BowerTimeRewritten),
-    OldestEvent = min(BowerEventTime), MaxDeliveryDelay = max(BowerFirstIngested - BowerEventTime),
+let windowStart = windowEnd - frequency;
+// Candidates: rows ingested in the slot. Their TimeGenerated is at most two days before
+// ingestion (Azure Monitor rewrites older values), so this bound keeps every candidate.
+let late = BowerSecurity_CL
+    | where TimeGenerated >= windowStart - 50h
+    | where EventType !in ("collector_health", "collector_canary")
+    | extend BowerIngested = ingestion_time()
+    | where BowerIngested >= windowStart and BowerIngested < windowEnd
+    | extend BowerEventTime = coalesce(todatetime(RawEnvelope.timeGenerated), TimeGenerated)
+    | where BowerIngested - BowerEventTime > maxDelay or BowerEventTime != TimeGenerated
+    | summarize arg_min(BowerIngested, BowerEventTime, TimeGenerated, EventType) by CollectorId, EventId;
+// A copy ingested before the slot means the candidate is a replay, not a late event,
+// even when Azure rewrote the replay's TimeGenerated and the original keeps an old one.
+// The rule looks back 14 days (the Sentinel maximum) for that copy.
+let earlier = BowerSecurity_CL
+    | where EventId in ((late | project EventId))
+    | where ingestion_time() < windowStart
+    | distinct CollectorId, EventId;
+late
+| join kind=leftanti earlier on CollectorId, EventId
+| summarize LateEvents = count(), RewrittenTimes = countif(BowerEventTime != TimeGenerated),
+    OldestEvent = min(BowerEventTime), MaxDeliveryDelay = max(BowerIngested - BowerEventTime),
     EventTypes = make_set(EventType, 20)
     by CollectorId
 | extend WindowStart = windowStart, WindowEnd = windowEnd

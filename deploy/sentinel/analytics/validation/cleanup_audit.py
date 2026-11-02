@@ -69,8 +69,9 @@ def main(argv):
             lambda data: not [item for item in data or []
                               if item.get("name") == workspace and f"/resourceGroups/{group}/".lower() in item.get("id", "").lower()])
     for role, identity in state["identities"].items():
+        # `--display-name` matches by prefix: only an exact name counts as this run's app.
         listing(f"{role} application {identity['name']}", az("ad", "app", "list", "--display-name", identity["name"]),
-                lambda data: not data)
+                lambda data: not [item for item in data or [] if item.get("displayName") == identity["name"]])
         listing(f"{role} service principal {identity['name']}", az("ad", "sp", "list", "--display-name", identity["name"]),
                 lambda data: not [item for item in data or [] if item.get("displayName") == identity["name"]])
         for kind in ("objectId", "principalId"):

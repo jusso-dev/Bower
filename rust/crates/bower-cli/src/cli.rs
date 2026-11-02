@@ -231,6 +231,9 @@ pub struct ArchiveReplayArgs {
     /// Event type to replay (repeatable).
     #[arg(long = "event-type", value_name = "TYPE")]
     pub event_types: Vec<String>,
+    /// Replay only events whose stamped collector.id is this id.
+    #[arg(long = "collector-id", value_name = "ID")]
+    pub collector_id: Option<String>,
     /// Count the selection without sending.
     #[arg(long = "dry-run")]
     pub dry_run: bool,

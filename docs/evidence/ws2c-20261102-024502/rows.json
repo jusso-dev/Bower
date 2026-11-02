@@ -1,0 +1,258 @@
+[
+ {
+  "EventId": "ws2-p-crossing-logon-0011-1314ff477b19",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:43.008176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:43.0081760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0011-1314ff477b19",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:43.008176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:43.0081760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0010-289f3853195b",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:43.007176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:43.0071760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0010-289f3853195b",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:43.007176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:43.0071760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0009-8b713481eae6",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:43.006176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:43.0061760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0009-8b713481eae6",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:43.006176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:43.0061760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0008-b43156005744",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:43.005176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:43.0051760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0008-b43156005744",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:43.005176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:43.0051760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0007-c7d488f7678d",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:43.004176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:43.0041760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0007-c7d488f7678d",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:43.004176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:43.0041760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0006-bfaebc480390",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:43.003176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:43.0031760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0006-bfaebc480390",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:43.003176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:43.0031760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0005-b5938cc66c51",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:43.002176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:43.0021760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0005-b5938cc66c51",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:43.002176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:43.0021760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0004-3c68448d7942",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:43.001176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:43.0011760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0004-3c68448d7942",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:43.001176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:43.0011760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0003-8885bde310a5",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:43.000176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:43.0001760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0003-8885bde310a5",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:43.000176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:43.0001760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0002-9d7b8d81b2ff",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:42.999176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:42.9991760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0002-9d7b8d81b2ff",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:42.999176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:42.9991760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0001-048d9cf84d59",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:42.998176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:42.9981760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0001-048d9cf84d59",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:42.998176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:42.9981760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0000-e1855cdef8a9",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:42.997176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:42.9971760Z"
+ },
+ {
+  "EventId": "ws2-p-crossing-logon-0000-e1855cdef8a9",
+  "SourceIpAddress": "192.0.2.203",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:42.997176Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-11-02T02:47:42.9971760Z"
+ },
+ {
+  "EventId": "ws2-o-3day-no-original-logon-0001-3b1d2df2cbcd",
+  "SourceIpAddress": "192.0.2.202",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:42.8947892Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-10-30T02:47:42.3541730Z"
+ },
+ {
+  "EventId": "ws2-o-3day-no-original-logon-0000-76d79aaca61c",
+  "SourceIpAddress": "192.0.2.202",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:47:42.8947892Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-10-30T02:47:42.3531730Z"
+ },
+ {
+  "EventId": "ws2-n-original-47h52m-logon-0002-7522d8f0ce82",
+  "SourceIpAddress": "192.0.2.201",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:58:04.6153287Z",
+  "Ingested": "2026-11-02T02:58:08.2524652Z",
+  "SentTime": "2026-10-31T02:55:40.0145320Z"
+ },
+ {
+  "EventId": "ws2-n-original-47h52m-logon-0002-7522d8f0ce82",
+  "SourceIpAddress": "192.0.2.201",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-10-31T02:55:40.014532Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-10-31T02:55:40.0145320Z"
+ },
+ {
+  "EventId": "ws2-n-original-47h52m-logon-0001-6f4d79172a9b",
+  "SourceIpAddress": "192.0.2.201",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:58:04.6153287Z",
+  "Ingested": "2026-11-02T02:58:08.2524652Z",
+  "SentTime": "2026-10-31T02:55:40.0135320Z"
+ },
+ {
+  "EventId": "ws2-n-original-47h52m-logon-0001-6f4d79172a9b",
+  "SourceIpAddress": "192.0.2.201",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-10-31T02:55:40.013532Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-10-31T02:55:40.0135320Z"
+ },
+ {
+  "EventId": "ws2-n-original-47h52m-logon-0000-4670f97c5be1",
+  "SourceIpAddress": "192.0.2.201",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-11-02T02:58:04.6153287Z",
+  "Ingested": "2026-11-02T02:58:08.2524652Z",
+  "SentTime": "2026-10-31T02:55:40.0125320Z"
+ },
+ {
+  "EventId": "ws2-n-original-47h52m-logon-0000-4670f97c5be1",
+  "SourceIpAddress": "192.0.2.201",
+  "CollectorId": "ws2c-direct",
+  "TimeGenerated": "2026-10-31T02:55:40.012532Z",
+  "Ingested": "2026-11-02T02:54:01.4966124Z",
+  "SentTime": "2026-10-31T02:55:40.0125320Z"
+ }
+]

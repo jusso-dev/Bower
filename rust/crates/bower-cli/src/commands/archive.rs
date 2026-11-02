@@ -100,20 +100,39 @@ pub fn parse_anchor(value: Option<&str>) -> CliResult<Option<LedgerHead>> {
         .ok_or_else(|| CliError::new("--anchor must be SEQUENCE:HASH (64 lower-case hex digits)."))
 }
 
+/// Per-event outcome for a replay a collector with another id refused (counted, not a stop).
+pub const COLLECTOR_MISMATCH: &str = "collector-mismatch";
+
 fn is_stop(outcome: &str) -> bool {
-    matches!(
-        outcome,
-        "unreachable" | "401" | "403" | "429" | "collector-mismatch"
-    ) || outcome.starts_with('5')
+    matches!(outcome, "unreachable" | "401" | "403" | "429") || outcome.starts_with('5')
+}
+
+/// The archived envelope's collector-stamped `collector.id`, if any.
+fn stamped_collector(envelope: &[(String, JsonElement)]) -> Option<String> {
+    envelope
+        .iter()
+        .find_map(|(key, value)| match (key.as_str(), value) {
+            ("collector", JsonElement::Object(collector)) => {
+                collector
+                    .iter()
+                    .find_map(|(name, id)| match (name.as_str(), id) {
+                        ("id", JsonElement::String(id)) if !id.is_empty() => Some(id.clone()),
+                        _ => None,
+                    })
+            }
+            _ => None,
+        })
 }
 
 /// `bower archive replay --archive DIR --collector-url URL [--from ISO] [--to ISO]
-/// [--event-type TYPE]... [--dry-run]`: verifies the archive, then posts selected
-/// events through a collector's full intake labelled `bowerReplay: archive` and
-/// `bowerReplayCollectorId` (the original collector id); a collector with another
-/// `BOWER_COLLECTOR_ID` refuses it (`collector-mismatch`, exit 2). Sends
+/// [--event-type TYPE]... [--collector-id ID] [--dry-run]`: verifies the archive, then
+/// posts selected events through a collector's full intake labelled `bowerReplay:
+/// archive` and `bowerReplayCollectorId`, always the archived envelope's stamped
+/// `collector.id` (a label the producer set is replaced). A collector with another
+/// `BOWER_COLLECTOR_ID` refuses an event: it is counted as `collector-mismatch` and the
+/// replay continues. `--collector-id` selects one collector's events. Sends
 /// `BOWER_INGEST_TOKEN` when set. Exit 3 when the archive fails verification, 2 when
-/// the collector refused or was unreachable.
+/// the collector refused, was unreachable or skipped any event as `collector-mismatch`.
 pub fn replay(args: &ArchiveReplayArgs) -> CliResult {
     let archive = QueueArchive::new(
         required(args.archive.as_deref(), "--archive")?,
@@ -170,9 +189,14 @@ pub fn replay(args: &ArchiveReplayArgs) -> CliResult {
                 CliError::new("String '' was not recognized as a valid DateTime.")
             })?;
             let event_type = text("eventType");
+            let origin = stamped_collector(&envelope);
             if from.is_some_and(|from| generated < from)
                 || to.is_some_and(|to| generated >= to)
                 || (!args.event_types.is_empty() && !args.event_types.contains(&event_type))
+                || args
+                    .collector_id
+                    .as_ref()
+                    .is_some_and(|wanted| origin.as_ref() != Some(wanted))
             {
                 continue;
             }
@@ -201,27 +225,11 @@ pub fn replay(args: &ArchiveReplayArgs) -> CliResult {
                 None => labels.push(("bowerReplay".into(), JsonElement::String("archive".into()))),
             }
             // The receiving collector stamps its own id and refuses the replay unless it
-            // equals this one, so the replay keeps the original (CollectorId, EventId).
-            let origin = envelope
-                .iter()
-                .find_map(|(key, value)| match (key.as_str(), value) {
-                    ("collector", JsonElement::Object(collector)) => {
-                        collector
-                            .iter()
-                            .find_map(|(name, id)| match (name.as_str(), id) {
-                                ("id", JsonElement::String(id)) if !id.is_empty() => {
-                                    Some(id.clone())
-                                }
-                                _ => None,
-                            })
-                    }
-                    _ => None,
-                });
-            if let Some(origin) = origin
-                && !labels
-                    .iter()
-                    .any(|(key, _)| key == "bowerReplayCollectorId")
-            {
+            // equals the stamped origin, so the replay keeps the original (CollectorId,
+            // EventId). Only the collector-stamped value counts: any label a producer set is
+            // replaced, or removed when the envelope has no stamped collector.
+            labels.retain(|(key, _)| key != "bowerReplayCollectorId");
+            if let Some(origin) = origin {
                 labels.push(("bowerReplayCollectorId".into(), JsonElement::String(origin)));
             }
             envelope.push(("labels".into(), JsonElement::Object(labels)));
@@ -239,7 +247,7 @@ pub fn replay(args: &ArchiveReplayArgs) -> CliResult {
                 Ok(response) if response.status().as_u16() == 400 => {
                     let body = response.text().await.unwrap_or_default();
                     if body.contains("archive-replay-collector-mismatch") {
-                        "collector-mismatch".to_owned()
+                        COLLECTOR_MISMATCH.to_owned()
                     } else {
                         "400".to_owned()
                     }
@@ -252,18 +260,14 @@ pub fn replay(args: &ArchiveReplayArgs) -> CliResult {
             };
             *responses.entry(outcome.clone()).or_default() += 1;
             if is_stop(&outcome) {
-                if outcome == "collector-mismatch" {
-                    eprintln!(
-                        "The replay collector's BOWER_COLLECTOR_ID differs from the archived events' collector; replay stopped."
-                    );
-                }
                 break;
             }
         }
         Ok((selected, responses))
     })?;
 
-    let failed = responses.keys().any(|code| is_stop(code));
+    let skipped = responses.get(COLLECTOR_MISMATCH).copied().unwrap_or(0);
+    let failed = skipped > 0 || responses.keys().any(|code| is_stop(code));
     println!(
         "{}",
         Json::object([
@@ -281,6 +285,11 @@ pub fn replay(args: &ArchiveReplayArgs) -> CliResult {
         ])
         .to_indented()
     );
+    if skipped > 0 {
+        eprintln!(
+            "{skipped} event(s) skipped: their collector differs from the replay collector's BOWER_COLLECTOR_ID. Replay each collector's events with --collector-id through a collector with that id."
+        );
+    }
     Ok(if failed { 2 } else { 0 })
 }
 

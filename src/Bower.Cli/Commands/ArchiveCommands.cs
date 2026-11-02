@@ -35,31 +35,37 @@ internal static class ArchiveCommands
 
     /// <summary>
     /// bower archive replay --archive DIR --collector-url URL [--from ISO] [--to ISO]
-    ///   [--event-type TYPE]... [--dry-run]
+    ///   [--event-type TYPE]... [--collector-id ID] [--dry-run]
     /// Verifies the archive, then posts selected events through a collector's full intake
-    /// labelled <c>bowerReplay: archive</c> and <c>bowerReplayCollectorId</c> (the original
-    /// collector id). Sends BOWER_INGEST_TOKEN when set. Use a replay collector with its own
-    /// queue (the original queue reports replayed events as duplicates) and the original
-    /// BOWER_COLLECTOR_ID: Sentinel identifies events by (CollectorId, EventId), and a
-    /// collector with another id refuses the replay (<c>collector-mismatch</c>, exit 2).
+    /// labelled <c>bowerReplay: archive</c> and <c>bowerReplayCollectorId</c>, always the
+    /// archived envelope's stamped <c>collector.id</c> (a label the producer set is replaced).
+    /// Sends BOWER_INGEST_TOKEN when set. Use a replay collector with its own queue (the
+    /// original queue reports replayed events as duplicates) and the original
+    /// BOWER_COLLECTOR_ID: Sentinel identifies events by (CollectorId, EventId). A collector
+    /// with another id refuses an event; it is counted as <c>collector-mismatch</c>, the replay
+    /// continues, and the exit code is 2. <c>--collector-id</c> selects one collector's events,
+    /// so an archive spanning an id change is replayed one slice per matching collector.
     /// </summary>
-    public static async Task<int> ReplayAsync(string[] args)
+    public static Task<int> ReplayAsync(string[] args) => ReplayAsync(args, null, Console.Out, Console.Error);
+
+    internal static async Task<int> ReplayAsync(string[] args, HttpMessageHandler? handler, TextWriter output, TextWriter error)
     {
         QueueArchive archive = new(CliOptions.Required(args, "--archive"), "replay");
         ArchiveVerification verification = await archive.VerifyAsync();
         if (!verification.Intact)
         {
-            Console.WriteLine(JsonSerializer.Serialize(ArchiveVerifyOutput.From(verification), CliJsonContext.Default.ArchiveVerifyOutput));
-            Console.Error.WriteLine("Archive failed verification; replay refused.");
+            output.WriteLine(JsonSerializer.Serialize(ArchiveVerifyOutput.From(verification), CliJsonContext.Default.ArchiveVerifyOutput));
+            error.WriteLine("Archive failed verification; replay refused.");
             return 3;
         }
 
         DateTimeOffset? from = CliOptions.Timestamp(CliOptions.Get(args, "--from"), "--from");
         DateTimeOffset? to = CliOptions.Timestamp(CliOptions.Get(args, "--to"), "--to");
         HashSet<string> eventTypes = CliOptions.All(args, "--event-type").ToHashSet(StringComparer.Ordinal);
+        string? collectorId = CliOptions.Get(args, "--collector-id");
         bool dryRun = CliOptions.Has(args, "--dry-run");
         string collector = CliOptions.Required(args, "--collector-url");
-        using HttpClient client = new()
+        using HttpClient client = new(handler ?? new HttpClientHandler(), disposeHandler: true)
         {
             BaseAddress = new Uri(collector.EndsWith('/') ? collector : collector + "/"),
             Timeout = TimeSpan.FromSeconds(30)
@@ -80,9 +86,12 @@ internal static class ArchiveCommands
                 CultureInfo.InvariantCulture,
                 DateTimeStyles.RoundtripKind);
             string eventType = envelope["eventType"]?.GetValue<string>() ?? string.Empty;
+            string? origin = (envelope["collector"] as JsonObject)?["id"] is JsonValue stamped
+                && stamped.TryGetValue(out string? stampedId) && stampedId.Length > 0 ? stampedId : null;
             if ((from is not null && generated < from)
                 || (to is not null && generated >= to)
-                || (eventTypes.Count > 0 && !eventTypes.Contains(eventType)))
+                || (eventTypes.Count > 0 && !eventTypes.Contains(eventType))
+                || (collectorId is not null && !string.Equals(origin, collectorId, StringComparison.Ordinal)))
             {
                 continue;
             }
@@ -96,12 +105,13 @@ internal static class ArchiveCommands
             JsonObject labels = envelope["labels"] as JsonObject ?? [];
             labels["bowerReplay"] = "archive";
             // The receiving collector stamps its own id and refuses the replay unless it
-            // equals this one, so the replay keeps the original (CollectorId, EventId).
-            if (labels["bowerReplayCollectorId"] is null
-                && (envelope["collector"] as JsonObject)?["id"] is JsonValue origin
-                && origin.TryGetValue(out string? originId) && originId.Length > 0)
+            // equals the stamped origin, so the replay keeps the original (CollectorId,
+            // EventId). Only the collector-stamped value counts: any label a producer set is
+            // replaced, or removed when the envelope has no stamped collector.
+            labels.Remove("bowerReplayCollectorId");
+            if (origin is not null)
             {
-                labels["bowerReplayCollectorId"] = originId;
+                labels["bowerReplayCollectorId"] = origin;
             }
             envelope["labels"] = labels;
             using StringContent content = new(envelope.ToJsonString(), Encoding.UTF8, "application/json");
@@ -113,7 +123,7 @@ internal static class ArchiveCommands
                 if (outcome == "400" && (await response.Content.ReadAsStringAsync()).Contains(
                     "archive-replay-collector-mismatch", StringComparison.Ordinal))
                 {
-                    outcome = "collector-mismatch";
+                    outcome = CollectorMismatch;
                 }
             }
             catch (HttpRequestException)
@@ -124,23 +134,26 @@ internal static class ArchiveCommands
             responses[outcome] = responses.GetValueOrDefault(outcome) + 1;
             if (IsStop(outcome))
             {
-                if (outcome == "collector-mismatch")
-                {
-                    Console.Error.WriteLine("The replay collector's BOWER_COLLECTOR_ID differs from the archived events' collector; replay stopped.");
-                }
-
                 break;
             }
         }
 
-        Console.WriteLine(JsonSerializer.Serialize(
+        output.WriteLine(JsonSerializer.Serialize(
             new ArchiveReplayOutput(selected, dryRun, responses),
             CliJsonContext.Default.ArchiveReplayOutput));
-        return responses.Keys.Any(IsStop) ? 2 : 0;
+        if (responses.GetValueOrDefault(CollectorMismatch) is > 0 and long skipped)
+        {
+            error.WriteLine($"{skipped.ToString(CultureInfo.InvariantCulture)} event(s) skipped: their collector differs from the replay collector's BOWER_COLLECTOR_ID. Replay each collector's events with --collector-id through a collector with that id.");
+        }
+
+        return responses.Keys.Any(code => IsStop(code) || code == CollectorMismatch) ? 2 : 0;
     }
 
+    /// <summary>Per-event outcome for a replay a collector with another id refused.</summary>
+    internal const string CollectorMismatch = "collector-mismatch";
+
     private static bool IsStop(string outcome) =>
-        outcome is "unreachable" or "401" or "403" or "429" or "collector-mismatch" || outcome.StartsWith('5');
+        outcome is "unreachable" or "401" or "403" or "429" || outcome.StartsWith('5');
 
     internal static LedgerHead? ParseAnchor(string? value)
     {

@@ -7,9 +7,9 @@ never logs payloads, headers or credentials.
 
 Modes (set with GET http://127.0.0.1:<control>/mode/<name>):
   pass                   forward everything.
-  drop-next              on the next established ingestion tunnel that has sent a
-                         request of at least --request-bytes since its last response
-                         bytes (an upload with its bearer token and body), discard
+  drop-next              on the next established ingestion tunnel that has sent at
+                         least --request-bytes since arming (an upload with its
+                         bearer token and body), discard
                          the response (the upload reached Azure; the acknowledgement
                          never reaches Bower), then return to pass. The tunnel stays
                          open, so the collector waits for its own delivery deadline.
@@ -47,6 +47,11 @@ class Proxy:
     def set_mode(self, mode):
         previous, self.mode = self.mode, mode
         self.record("mode", previous=previous)
+        if mode.startswith("drop-next"):
+            # Arming: only requests sent from now on can be dropped.
+            for tunnel in self.tunnels.values():
+                if tunnel["baseline"] is not None:
+                    tunnel["baseline"] = tunnel["up"]
         if mode == "outage":
             for tunnel in list(self.tunnels.values()):
                 if not tunnel["poisoned"]:
@@ -80,7 +85,10 @@ class Proxy:
         writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         await writer.drain()
         ingestion = host.endswith(self.suffix)
-        state = {"poisoned": False, "up": 0, "down": 0, "upSinceDown": 0, "close": None}
+        # baseline: upstream bytes already answered when this tunnel's handshake completed or
+        # when drop-next was armed. Only bytes sent after it count as the request, and mid-
+        # upload downstream data (TLS tickets, HTTP/2 frames) never resets it.
+        state = {"poisoned": False, "up": 0, "down": 0, "baseline": None, "close": None}
 
         def close():
             for stream in (writer, upstream_writer):
@@ -94,7 +102,6 @@ class Proxy:
         async def client_to_server():
             while data := await reader.read(65536):
                 state["up"] += len(data)
-                state["upSinceDown"] += len(data)
                 if not state["poisoned"]:
                     upstream_writer.write(data)
                     await upstream_writer.drain()
@@ -103,14 +110,16 @@ class Proxy:
 
         async def server_to_client():
             while data := await upstream_reader.read(65536):
-                # down > 0: the TLS handshake is complete, so this is a response.
-                if (ingestion and not state["poisoned"] and self.mode.startswith("drop-next")
-                        and state["down"] > 0 and state["upSinceDown"] >= self.request_bytes):
+                # The first downstream data is the handshake reply: never dropped, and the
+                # request count starts after it.
+                if state["baseline"] is None:
+                    state["baseline"] = state["up"]
+                elif (ingestion and not state["poisoned"] and self.mode.startswith("drop-next")
+                        and state["up"] - state["baseline"] >= self.request_bytes):
                     state["poisoned"] = True
                     self.poisoned += 1
-                    self.record("response-dropped", tunnel=number, host=host, requestBytes=state["upSinceDown"])
+                    self.record("response-dropped", tunnel=number, host=host, requestBytes=state["up"] - state["baseline"])
                     self.set_mode("outage" if self.mode == "drop-next-then-outage" else "pass")
-                state["upSinceDown"] = 0
                 if state["poisoned"]:
                     continue
                 state["down"] += len(data)

@@ -71,6 +71,18 @@ class FaultProxyTests(unittest.IsolatedAsyncioTestCase):
         events = [json.loads(line)["event"] for line in open(self.log, encoding="utf-8")]
         self.assertEqual(1, events.count("response-dropped"))
 
+    async def test_mid_upload_downstream_data_does_not_defeat_the_injection(self):
+        reader, writer, _ = await self.tunnel()
+        self.assertEqual(b"reply:300", await self.exchange(reader, writer, 300))
+        self.proxy.set_mode("drop-next")
+        # Downstream data in the middle of an upload (a TLS ticket, an HTTP/2 window
+        # update) is forwarded and does not restart the request count...
+        self.assertEqual(b"reply:1500", await self.exchange(reader, writer, 1500))
+        # ...so the response once the upload passes --request-bytes is dropped.
+        self.assertIsNone(await self.exchange(reader, writer, 1500))
+        self.assertEqual(1, self.proxy.poisoned)
+        writer.close()
+
     async def test_drop_then_outage_refuses_new_tunnels(self):
         reader, writer, _ = await self.tunnel()
         self.assertEqual(b"reply:300", await self.exchange(reader, writer, 300))

@@ -287,6 +287,7 @@ pub fn parse(args: &[String]) -> Option<Command> {
             from: o.get("--from"),
             to: o.get("--to"),
             event_types: o.all("--event-type"),
+            collector_id: o.get("--collector-id"),
             dry_run: o.has("--dry-run"),
         })),
         ["tap"] => Command::Tap(TapArgs {
