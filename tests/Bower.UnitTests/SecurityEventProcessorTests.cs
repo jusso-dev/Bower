@@ -31,6 +31,48 @@ public sealed class SecurityEventProcessorTests
         Assert.Empty(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
     }
 
+    [Theory]
+    // An archive replay keeps its (CollectorId, EventId) only through a collector with the
+    // original id; otherwise Sentinel would hold it as a second, different event.
+    [InlineData("archive", "other-collector", false)]
+    [InlineData("archive", "collector-1", true)]
+    [InlineData("archive", null, true)]
+    [InlineData("manual", "other-collector", true)]
+    public async Task Process_ArchiveReplayIsAcceptedOnlyByTheOriginalCollectorId(string replay, string? origin, bool accepted)
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = new(Path.Combine(directory.Path, "queue.db"), 10 * 1024 * 1024, clock);
+        await store.InitializeAsync(cancellation);
+        Dictionary<string, string> labels = new(StringComparer.Ordinal) { ["bowerReplay"] = replay };
+        if (origin is not null)
+        {
+            labels["bowerReplayCollectorId"] = origin;
+        }
+
+        string candidate = JsonSerializer.Serialize(
+            TestEvents.AuthenticationFailure(clock.UtcNow) with { EventId = "replayed-id", Labels = labels }, BowerJson.Envelope);
+        SecurityEventProcessor processor = new(new JsonEventRedactor(),
+            new DeterministicPolicyEvaluator([TestEvents.AuthenticationPolicy()]), store, clock);
+        ProcessingResult result = await processor.ProcessAsync(candidate,
+            new CollectorIdentity("collector-1", "0.1.0", "local-http:replay", "sha256:configuration"), cancellation);
+
+        Assert.Equal(accepted, result.Queued);
+        if (!accepted)
+        {
+            Assert.Equal(DecisionAction.Quarantine, result.Action);
+            Assert.Equal([SecurityEventProcessor.ArchiveReplayCollectorMismatch], result.Reasons);
+            Assert.Empty(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
+        }
+        else
+        {
+            QueuedEvent row = Assert.Single(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
+            // The stamped identity is always the receiving collector's, never a label.
+            Assert.Equal("collector-1", JsonSerializer.Deserialize(row.Payload, BowerJson.Envelope)!.Collector!.Id);
+        }
+    }
+
     [Fact]
     public void IdentityComparison_BoundsBothDocumentsByUtf8Bytes()
     {

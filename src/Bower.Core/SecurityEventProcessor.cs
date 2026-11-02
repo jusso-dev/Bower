@@ -113,6 +113,22 @@ public sealed class SecurityEventProcessor(
             cancellationToken);
     }
 
+    /// <summary>Quarantine reason for an archive replay sent to a collector with another id.</summary>
+    public const string ArchiveReplayCollectorMismatch = "archive-replay-collector-mismatch";
+
+    /// <summary>
+    /// Sentinel identifies an event by the collector-stamped <c>(CollectorId, EventId)</c>.
+    /// <c>bower archive replay</c> labels each event with the collector that first accepted it;
+    /// replayed through a collector with another id it would land as a second, different
+    /// event, so it is refused. Labels only refuse here: they never set the identity.
+    /// </summary>
+    internal static bool IsArchiveReplayFromAnotherCollector(SecurityEventEnvelope candidate, CollectorIdentity collector) =>
+        candidate.Labels is { } labels
+        && labels.TryGetValue("bowerReplay", out string? replay)
+        && string.Equals(replay, "archive", StringComparison.Ordinal)
+        && labels.TryGetValue("bowerReplayCollectorId", out string? origin)
+        && !string.Equals(origin, collector.Id, StringComparison.Ordinal);
+
     private async Task<ProcessingResult> ProcessCoreAsync(
         string candidateJson,
         CollectorIdentity collector,
@@ -188,6 +204,13 @@ public sealed class SecurityEventProcessor(
         {
             return Decided(
                 ProcessingResult.Failed(DecisionAction.Quarantine, "reserved-event-type", ProcessingStage.Validation),
+                bytesIn);
+        }
+
+        if (IsArchiveReplayFromAnotherCollector(candidate, collector))
+        {
+            return Decided(
+                ProcessingResult.Failed(DecisionAction.Quarantine, ArchiveReplayCollectorMismatch, ProcessingStage.Validation),
                 bytesIn);
         }
 

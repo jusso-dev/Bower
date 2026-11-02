@@ -38,8 +38,10 @@ internal static class ArchiveCommands
     ///   [--event-type TYPE]... [--dry-run]
     /// Verifies the archive, then posts selected events through a collector's full intake
     /// labelled <c>bowerReplay: archive</c> and <c>bowerReplayCollectorId</c> (the original
-    /// collector id). Sends BOWER_INGEST_TOKEN when set. Use a collector
-    /// with its own queue: the original queue reports replayed events as duplicates.
+    /// collector id). Sends BOWER_INGEST_TOKEN when set. Use a replay collector with its own
+    /// queue (the original queue reports replayed events as duplicates) and the original
+    /// BOWER_COLLECTOR_ID: Sentinel identifies events by (CollectorId, EventId), and a
+    /// collector with another id refuses the replay (<c>collector-mismatch</c>, exit 2).
     /// </summary>
     public static async Task<int> ReplayAsync(string[] args)
     {
@@ -93,8 +95,8 @@ internal static class ArchiveCommands
 
             JsonObject labels = envelope["labels"] as JsonObject ?? [];
             labels["bowerReplay"] = "archive";
-            // The receiving collector stamps its own id. Keep the first collector's, so
-            // BowerSecurityEvents collapses the replay with the original delivery.
+            // The receiving collector stamps its own id and refuses the replay unless it
+            // equals this one, so the replay keeps the original (CollectorId, EventId).
             if (labels["bowerReplayCollectorId"] is null
                 && (envelope["collector"] as JsonObject)?["id"] is JsonValue origin
                 && origin.TryGetValue(out string? originId) && originId.Length > 0)
@@ -108,6 +110,11 @@ internal static class ArchiveCommands
             {
                 using HttpResponseMessage response = await client.PostAsync("v1/events", content);
                 outcome = ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture);
+                if (outcome == "400" && (await response.Content.ReadAsStringAsync()).Contains(
+                    "archive-replay-collector-mismatch", StringComparison.Ordinal))
+                {
+                    outcome = "collector-mismatch";
+                }
             }
             catch (HttpRequestException)
             {
@@ -115,8 +122,13 @@ internal static class ArchiveCommands
             }
 
             responses[outcome] = responses.GetValueOrDefault(outcome) + 1;
-            if (outcome is "unreachable" or "401" or "403" or "429" || outcome.StartsWith('5'))
+            if (IsStop(outcome))
             {
+                if (outcome == "collector-mismatch")
+                {
+                    Console.Error.WriteLine("The replay collector's BOWER_COLLECTOR_ID differs from the archived events' collector; replay stopped.");
+                }
+
                 break;
             }
         }
@@ -124,8 +136,11 @@ internal static class ArchiveCommands
         Console.WriteLine(JsonSerializer.Serialize(
             new ArchiveReplayOutput(selected, dryRun, responses),
             CliJsonContext.Default.ArchiveReplayOutput));
-        return responses.Keys.Any(code => code is "unreachable" or "401" or "403" or "429" || code.StartsWith('5')) ? 2 : 0;
+        return responses.Keys.Any(IsStop) ? 2 : 0;
     }
+
+    private static bool IsStop(string outcome) =>
+        outcome is "unreachable" or "401" or "403" or "429" or "collector-mismatch" || outcome.StartsWith('5');
 
     internal static LedgerHead? ParseAnchor(string? value)
     {

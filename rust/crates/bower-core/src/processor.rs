@@ -463,6 +463,17 @@ impl SecurityEventProcessor {
             ));
         }
 
+        if is_archive_replay_from_another_collector(&candidate, collector) {
+            return Ok(self.decided(
+                ProcessingResult::failed_at(
+                    DecisionAction::Quarantine,
+                    ARCHIVE_REPLAY_COLLECTOR_MISMATCH,
+                    ProcessingStage::Validation,
+                ),
+                bytes_in,
+            ));
+        }
+
         let now = self.clock.utc_now();
         let validation_failures = validate(&candidate, now);
         if !validation_failures.is_empty() {
@@ -888,6 +899,26 @@ fn is_within_accepted_window(value: Timestamp, now: Timestamp) -> bool {
     // DateTimeOffset.AddYears(-5): calendar years, Feb 29 clamps to Feb 28.
     let lower = now.checked_sub_months(Months::new(60)).unwrap_or(now);
     !is_default(value) && value <= upper && value >= lower
+}
+
+/// Quarantine reason for an archive replay sent to a collector with another id.
+pub const ARCHIVE_REPLAY_COLLECTOR_MISMATCH: &str = "archive-replay-collector-mismatch";
+
+/// Sentinel identifies an event by the collector-stamped `(CollectorId, EventId)`.
+/// `bower archive replay` labels each event with the collector that first accepted it;
+/// replayed through a collector with another id it would land as a second, different
+/// event, so it is refused (C# `IsArchiveReplayFromAnotherCollector`). Labels only refuse
+/// here: they never set the identity.
+fn is_archive_replay_from_another_collector(
+    candidate: &SecurityEventEnvelope,
+    collector: &CollectorIdentity,
+) -> bool {
+    candidate.labels.as_ref().is_some_and(|labels| {
+        labels.get("bowerReplay").map(String::as_str) == Some("archive")
+            && labels
+                .get("bowerReplayCollectorId")
+                .is_some_and(|origin| origin != &collector.id)
+    })
 }
 
 fn validate(candidate: &SecurityEventEnvelope, now: Timestamp) -> Vec<String> {

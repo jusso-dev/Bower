@@ -101,13 +101,17 @@ pub fn parse_anchor(value: Option<&str>) -> CliResult<Option<LedgerHead>> {
 }
 
 fn is_stop(outcome: &str) -> bool {
-    matches!(outcome, "unreachable" | "401" | "403" | "429") || outcome.starts_with('5')
+    matches!(
+        outcome,
+        "unreachable" | "401" | "403" | "429" | "collector-mismatch"
+    ) || outcome.starts_with('5')
 }
 
 /// `bower archive replay --archive DIR --collector-url URL [--from ISO] [--to ISO]
 /// [--event-type TYPE]... [--dry-run]`: verifies the archive, then posts selected
 /// events through a collector's full intake labelled `bowerReplay: archive` and
-/// `bowerReplayCollectorId` (the original collector id). Sends
+/// `bowerReplayCollectorId` (the original collector id); a collector with another
+/// `BOWER_COLLECTOR_ID` refuses it (`collector-mismatch`, exit 2). Sends
 /// `BOWER_INGEST_TOKEN` when set. Exit 3 when the archive fails verification, 2 when
 /// the collector refused or was unreachable.
 pub fn replay(args: &ArchiveReplayArgs) -> CliResult {
@@ -196,8 +200,8 @@ pub fn replay(args: &ArchiveReplayArgs) -> CliResult {
                 Some(entry) => entry.1 = JsonElement::String("archive".into()),
                 None => labels.push(("bowerReplay".into(), JsonElement::String("archive".into()))),
             }
-            // The receiving collector stamps its own id. Keep the first collector's, so
-            // BowerSecurityEvents collapses the replay with the original delivery.
+            // The receiving collector stamps its own id and refuses the replay unless it
+            // equals this one, so the replay keeps the original (CollectorId, EventId).
             let origin = envelope
                 .iter()
                 .find_map(|(key, value)| match (key.as_str(), value) {
@@ -232,6 +236,14 @@ pub fn replay(args: &ArchiveReplayArgs) -> CliResult {
                 request = request.bearer_auth(token);
             }
             let outcome = match request.send().await {
+                Ok(response) if response.status().as_u16() == 400 => {
+                    let body = response.text().await.unwrap_or_default();
+                    if body.contains("archive-replay-collector-mismatch") {
+                        "collector-mismatch".to_owned()
+                    } else {
+                        "400".to_owned()
+                    }
+                }
                 Ok(response) => response.status().as_u16().to_string(),
                 Err(error) if error.is_timeout() => {
                     return Err(CliError(timeout_message(REPLAY_TIMEOUT)));
@@ -240,6 +252,11 @@ pub fn replay(args: &ArchiveReplayArgs) -> CliResult {
             };
             *responses.entry(outcome.clone()).or_default() += 1;
             if is_stop(&outcome) {
+                if outcome == "collector-mismatch" {
+                    eprintln!(
+                        "The replay collector's BOWER_COLLECTOR_ID differs from the archived events' collector; replay stopped."
+                    );
+                }
                 break;
             }
         }

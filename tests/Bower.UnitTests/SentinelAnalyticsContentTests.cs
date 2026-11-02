@@ -5,8 +5,8 @@ namespace Bower.UnitTests;
 
 /// <summary>
 /// Static checks for the replay-safe Sentinel content in deploy/sentinel/analytics.
-/// These checks do not execute Kusto or prove alert behaviour. Live validation of the
-/// current query and its replay, outage and incident behaviour remains open.
+/// These checks do not execute Kusto or prove alert behaviour; the live Sentinel campaign
+/// in docs/evidence/ws2b-* does (see docs/production-readiness/02-replay-safe-detections.md).
 /// </summary>
 public sealed class SentinelAnalyticsContentTests
 {
@@ -26,7 +26,7 @@ public sealed class SentinelAnalyticsContentTests
         Assert.StartsWith("BowerSecurity_CL", Code(parser), StringComparison.Ordinal);
         Assert.Contains("extend BowerIngested = ingestion_time()", parser, StringComparison.Ordinal);
         // Copies delivered by the same collector collapse to the earliest row.
-        Assert.Matches(@"\ABowerSecurity_CL\s*\|\s*extend BowerIngested = ingestion_time\(\)\s*\|\s*summarize arg_min\(BowerIngested, \*\), BowerLastIngested = max\(BowerIngested\), BowerCopies = count\(\)\s+by CollectorId, EventId\b", Code(parser));
+        Assert.Matches(@"\ABowerSecurity_CL\s*\|\s*where EventType !in \(""collector_health"", ""collector_canary""\)\s*\|\s*extend BowerIngested = ingestion_time\(\)\s*\|\s*summarize arg_min\(BowerIngested, \*\), BowerLastIngested = max\(BowerIngested\), BowerCopies = count\(\)\s+by CollectorId, EventId\b", Code(parser));
         Assert.Contains("todatetime(RawEnvelope.timeGenerated)", parser, StringComparison.Ordinal);
         HashSet<string> columns = TableColumns();
         foreach (string column in new[] { "CollectorId", "EventId", "TimeGenerated", "RawEnvelope", "Labels" })
@@ -63,8 +63,8 @@ public sealed class SentinelAnalyticsContentTests
         // Late events are evaluated by first ingestion; replays never move a crossing.
         Assert.Contains("CrossedAt = minif(BowerFirstIngested, Rank == threshold)", query, StringComparison.Ordinal);
         Assert.Contains("BowerDetectionKey !in (alerted)", query, StringComparison.Ordinal);
-        // The proposed mitigation retries only every second run; its live behaviour
-        // remains unverified after a prior test found duplicate alerts.
+        // Catch-up retries only every second run: a run cannot see the previous run's alerts
+        // (their TimeGenerated is after its window end); live run ws2 found duplicates otherwise.
         Assert.Contains("| where Slot == 0 or (Slot >= 2 and Slot % 2 == 0)", query, StringComparison.Ordinal);
         Assert.Contains("bin(BowerEventTime, bucketSize)", query, StringComparison.Ordinal);
         HashSet<string> columns = TableColumns();
