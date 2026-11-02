@@ -40,6 +40,12 @@ spec:
             # BOWER_COLLECTOR_ID is optional: without it the first start persists the pod name
             # to /var/lib/bower/collector-id on the PVC and later pods reuse it. Set it
             # explicitly (unique per collector) to choose the id.
+            # Size the cap below the PVC: settling a full backlog can grow the database to
+            # 1.75 x (cap + 4 MiB), and free space must stay above the warning watermark
+            # (max(1 GiB, 10%)). 5 GiB fits the 10Gi claim below. See
+            # docs/production-readiness/03-storage-pressure.md.
+            - name: BOWER_QUEUE_MAX_BYTES
+              value: "5368709120"
             - name: BOWER_POLICY_DIRECTORY
               value: /app/policies/default
             - name: BOWER_OUTPUT
@@ -79,9 +85,12 @@ spec:
             requests:
               cpu: 50m
               memory: 128Mi
+              # Container logs only: the root file system is read-only and the queue is on the PVC.
+              ephemeral-storage: 64Mi
             limits:
               cpu: "1"
               memory: 512Mi
+              ephemeral-storage: 512Mi
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

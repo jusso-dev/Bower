@@ -25,6 +25,31 @@ internal sealed class TemporaryDirectory : IDisposable
     }
 }
 
+/// <summary>Scripted free space for the queue volume.</summary>
+internal sealed class FakeDiskSpaceProbe(long freeBytes, long totalBytes) : Bower.Persistence.IDiskSpaceProbe
+{
+    private long free = freeBytes;
+    private int calls;
+
+    public long FreeBytes
+    {
+        get => Interlocked.Read(ref free);
+        set => Interlocked.Exchange(ref free, value);
+    }
+
+    public long TotalBytes { get; } = totalBytes;
+
+    public bool Fails { get; set; }
+
+    public int Calls => Volatile.Read(ref calls);
+
+    public Bower.Persistence.DiskSpace? Measure(string directory)
+    {
+        Interlocked.Increment(ref calls);
+        return Fails ? null : new Bower.Persistence.DiskSpace(FreeBytes, TotalBytes);
+    }
+}
+
 internal sealed class FakeClock(DateTimeOffset value) : TimeProvider
 {
     public DateTimeOffset UtcNow { get; private set; } = value;

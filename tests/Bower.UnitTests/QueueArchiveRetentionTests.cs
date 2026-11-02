@@ -14,6 +14,36 @@ namespace Bower.UnitTests;
 public sealed class QueueArchiveRetentionTests
 {
     [Fact]
+    public async Task VerifiedBatchDoesNotShiftToCorruptedSegmentAfterConcurrentPurge()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = await CreateStoreAsync(directory, clock, cancellationToken);
+        QueueArchive archive = new(ArchivePath(directory), "collector-1", clock);
+        await ArchiveDeliveredAsync(store, archive, 1, 1, clock, cancellationToken);
+        await ArchiveDeliveredAsync(store, archive, 2, 2, clock, cancellationToken);
+        clock.Advance(TimeSpan.FromDays(10));
+        DateTimeOffset cutoff = clock.UtcNow;
+        ArchiveCoverage coverage = await archive.VerifyCoverageAsync(store, cancellationToken);
+        Assert.True(coverage.Verified);
+        IReadOnlyList<long> selected = await store.ReadPurgeCandidateSequencesAsync(cutoff, 1, coverage.ThroughSequence, cancellationToken);
+        Assert.Null(await archive.VerifySegmentsForPurgeAsync(selected, cancellationToken));
+
+        // Another purger removes the checked row; the next segment then becomes corrupt.
+        Assert.Equal(1, await store.PurgeDeliveredAsync(cutoff, 1, coverage.ThroughSequence, cancellationToken));
+        string segment = Path.Combine(ArchivePath(directory), "segment-000000000002.jsonl.gz");
+        string[] lines = ReadSegment(segment);
+        lines[0] = lines[0].Replace("event-2", "forged2", StringComparison.Ordinal);
+        WriteSegment(segment, lines);
+        Assert.Equal(0, await store.PurgeVerifiedDeliveredAsync(cutoff, selected, cancellationToken));
+        IReadOnlyList<long> remaining = await store.ReadPurgeCandidateSequencesAsync(cutoff, 1, coverage.ThroughSequence, cancellationToken);
+        Assert.NotNull(await archive.VerifySegmentsForPurgeAsync(remaining, cancellationToken));
+        Assert.Equal(1, (await store.GetSnapshotAsync(cancellationToken)).Delivered);
+        Assert.True((await store.VerifyLedgerAsync(cancellationToken)).Intact);
+    }
+
+    [Fact]
     public async Task Retention_KeepsRowsWhenASegmentIsDeleted()
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;

@@ -79,6 +79,10 @@ internal sealed record StatusResponse(
 
     /// <summary>Last acknowledgement and last delivery failure code since start-up. Metadata only.</summary>
     public StatusDeliveryActivityResponse? DeliveryActivity { get; init; }
+
+    /// <summary>Queue volume watermarks, queue files and page use. Metadata only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public QueueStorageStatus? Storage { get; init; }
 }
 
 /// <summary>First server-sent event of a tap session: its effective filters and caps.</summary>
@@ -192,6 +196,10 @@ internal sealed record CollectorHeartbeat(
 
     /// <summary>Queued events per redacted detector type since process start. Counts only.</summary>
     public RedactionSnapshot? Redactions { get; init; }
+
+    /// <summary>Queue volume watermarks and queue use (additive; older management ignores it). Metadata only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public QueueStorageStatus? Storage { get; init; }
 }
 
 /// <summary>

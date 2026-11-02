@@ -28,6 +28,16 @@ public sealed class PipelineTelemetry(TimeProvider clock)
     /// </summary>
     public const string PrivacyAlertCapacityReason = "privacy-alert-capacity";
 
+    /// <summary>
+    /// Storage refusal reason: the queue volume is below the critical free-space watermark.
+    /// Reported in <see cref="StorageRefusalSnapshot"/>; <see cref="IntakeSnapshot"/> counts it
+    /// as <see cref="QueueCapacityReason"/>, its shape being shared with the Rust collector.
+    /// </summary>
+    public const string StorageCriticalReason = "storage-critical";
+
+    /// <summary>Storage refusal reason: SQLite reported the queue volume full.</summary>
+    public const string StorageFullReason = "storage-full";
+
     /// <summary>Most detector types counted by name; later new types count as <see cref="OtherRedactionType"/>.</summary>
     public const int MaximumRedactionTypes = 64;
 
@@ -49,6 +59,11 @@ public sealed class PipelineTelemetry(TimeProvider clock)
 
     // UtcTicks * 2 + reason bit (0 queue, 1 privacy alert); 0 before any refusal.
     private long lastRefusal;
+    private long storageRefusals;
+    private long storageRefusedBytes;
+
+    // UtcTicks * 2 + reason bit (0 storage critical, 1 storage full); 0 before any.
+    private long lastStorageRefusal;
 
     public DateTimeOffset StartedAt => startedAt;
 
@@ -60,17 +75,41 @@ public sealed class PipelineTelemetry(TimeProvider clock)
     }
 
     /// <summary>Counts one attempt whose event the queue refused for capacity (HTTP 503).</summary>
-    public void RecordCapacityRefusal(long bytesIn)
+    /// <param name="reason">
+    /// <see cref="StorageCriticalReason"/> or <see cref="StorageFullReason"/> when free disk
+    /// space caused it: also counted in <see cref="StorageRefusalSnapshot"/>.
+    /// </param>
+    public void RecordCapacityRefusal(long bytesIn, string? reason = null)
     {
-        MarkRefusal(0);
+        MarkRefusal(ref lastRefusal, 0);
         Interlocked.Add(ref capacityRefusedBytes, bytesIn);
         Interlocked.Increment(ref capacityRefusals);
+        if (reason is StorageCriticalReason or StorageFullReason)
+        {
+            MarkRefusal(ref lastStorageRefusal, reason == StorageFullReason ? 1 : 0);
+            Interlocked.Add(ref storageRefusedBytes, bytesIn);
+            Interlocked.Increment(ref storageRefusals);
+        }
+    }
+
+    /// <summary>Capacity refusals caused by free disk space, since start. A subset of capacity refusals.</summary>
+    public StorageRefusalSnapshot StorageRefusalSnapshot()
+    {
+        // Reverse of write order, as in IntakeSnapshot.
+        long refusals = Interlocked.Read(ref storageRefusals);
+        long refusedBytes = Interlocked.Read(ref storageRefusedBytes);
+        long last = Interlocked.Read(ref lastStorageRefusal);
+        return new StorageRefusalSnapshot(
+            refusals,
+            refusedBytes,
+            last == 0 ? null : new DateTimeOffset(last >> 1, TimeSpan.Zero),
+            last == 0 ? null : (last & 1) == 0 ? StorageCriticalReason : StorageFullReason);
     }
 
     /// <summary>Counts one attempt whose privacy alert the queue refused for capacity (HTTP 503).</summary>
     public void RecordPrivacyAlertRefusal(long bytesIn)
     {
-        MarkRefusal(1);
+        MarkRefusal(ref lastRefusal, 1);
         Interlocked.Add(ref privacyAlertRefusedBytes, bytesIn);
         Interlocked.Increment(ref privacyAlertRefusals);
     }
@@ -98,13 +137,13 @@ public sealed class PipelineTelemetry(TimeProvider clock)
     }
 
     // Forward only, so concurrent refusals keep the latest time and its reason.
-    private void MarkRefusal(long reasonBit)
+    private void MarkRefusal(ref long target, long reasonBit)
     {
         long value = (clock.GetUtcNow().UtcTicks << 1) | reasonBit;
-        long seen = Interlocked.Read(ref lastRefusal);
+        long seen = Interlocked.Read(ref target);
         while (value > seen)
         {
-            long previous = Interlocked.CompareExchange(ref lastRefusal, value, seen);
+            long previous = Interlocked.CompareExchange(ref target, value, seen);
             if (previous == seen)
             {
                 break;
@@ -378,6 +417,16 @@ public sealed record IntakeMetricsSnapshot(
     long CapacityRefusedBytes,
     long PrivacyAlertRefusals,
     long PrivacyAlertRefusedBytes,
+    DateTimeOffset? LastRefusalAt,
+    string? LastRefusalReason);
+
+/// <summary>
+/// Capacity refusals caused by free disk space on the queue volume since process start
+/// (critical watermark or SQLite reporting the volume full). Metadata only.
+/// </summary>
+public sealed record StorageRefusalSnapshot(
+    long Refusals,
+    long RefusedBytes,
     DateTimeOffset? LastRefusalAt,
     string? LastRefusalReason);
 

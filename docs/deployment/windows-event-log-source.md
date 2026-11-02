@@ -181,7 +181,10 @@ one host's log: for restores onto another WEC host, follow the order in
 - **Backpressure.** When the queue is full (or a management-mode collector is waiting
   for its privacy profile), the subscription stops reading and retries the same event
   every second. Events wait in the channel, not in memory. Make sure the channel's
-  maximum size covers the longest outage you expect.
+  maximum size covers the longest outage you expect: a forwarded 4625 took about
+  2.2 KB of `ForwardedEvents`, so the 20 MiB default holds only about 9,500 events.
+  Sizing and the stall budget are in
+  [storage pressure](../production-readiness/03-storage-pressure.md).
 - **Cleared or recreated log.** When the channel's newest record id is below the
   bookmark, the log was cleared or recreated: the subscription reads it from the start
   and counts `resets`.

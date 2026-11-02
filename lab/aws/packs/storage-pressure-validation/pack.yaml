@@ -1,0 +1,16 @@
+apiVersion: bower.security/v1
+kind: Pack
+metadata:
+  id: storage-pressure-validation
+  version: 1.0.0
+  name: Storage-pressure sequence validation
+  description: Sequence-numbered synthetic syslog for the disposable storage-pressure lab.
+  owner: Security Operations
+policies:
+  - policy.yaml
+privacyProfile: privacy.yaml
+parsers:
+  - parser.json
+samples:
+  - samples.jsonl
+dcr: true

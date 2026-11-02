@@ -10,11 +10,13 @@ public static class DeliveryHealth
     public const string Stalled = "stalled";
     public const string Retrying = "retrying";
 
-    public static string Evaluate(string outputType, QueueSnapshot snapshot, long capacityBytes, DateTimeOffset now)
+    /// <param name="intakePaused">The queue volume is below its critical free-space watermark.</param>
+    public static string Evaluate(
+        string outputType, QueueSnapshot snapshot, long capacityBytes, DateTimeOffset now, bool intakePaused = false)
     {
         if (string.Equals(outputType, "none", StringComparison.OrdinalIgnoreCase)) return "disabled";
         if (HasDeadLetters(snapshot)) return "degraded";
-        if (IsBackpressure(snapshot, capacityBytes)) return "backpressure";
+        if (intakePaused || IsBackpressure(snapshot, capacityBytes)) return "backpressure";
         if (IsStalled(snapshot, now)) return "stalled";
         if (IsRetrying(snapshot)) return "retrying";
         if (snapshot.Uploading > 0 || snapshot.Queued > 0) return "pending";
