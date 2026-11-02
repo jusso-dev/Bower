@@ -1,0 +1,20 @@
+// Bower detection-tolerance monitor: events that first arrived later than the
+// replay-safe rules' maximum tolerated delay. Those rules never evaluate such events,
+// so each result is a detection gap to investigate, not a threat. It also reports
+// rows whose TimeGenerated Azure Monitor rewrote (event time more than two days old).
+// Each hourly run looks back two hours, so a skipped or rescheduled run (for example
+// after a redeployment) loses nothing; incident grouping by host merges the repeats.
+// The main.bicep parameters replace the next three values; keep them on one line each.
+let maxDelay = 360m;
+let settleDelay = 5m;
+let frequency = 60m;
+let windowEnd = now() - settleDelay;
+let windowStart = windowEnd - 2 * frequency;
+BowerSecurityEvents
+| where BowerFirstIngested >= windowStart and BowerFirstIngested < windowEnd
+| where BowerFirstIngested - BowerEventTime > maxDelay or BowerTimeRewritten
+| summarize LateEvents = count(), RewrittenTimes = countif(BowerTimeRewritten),
+    OldestEvent = min(BowerEventTime), MaxDeliveryDelay = max(BowerFirstIngested - BowerEventTime),
+    EventTypes = make_set(EventType, 20)
+    by CollectorId
+| extend WindowStart = windowStart, WindowEnd = windowEnd

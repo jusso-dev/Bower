@@ -1,0 +1,48 @@
+// Bower replay-safe detection: firewall denials (for example nftables or appliance
+// syslog over mutual TLS) from one source address.
+// Alerts once per (SourceIpAddress, event-time bucket) when the bucket first reaches
+// the threshold. Replayed rows never change the count; late events are counted in the
+// run that first sees them. See docs/production-readiness/02-replay-safe-detections.md.
+// The main.bicep parameters replace the next six values; keep them on one line each.
+let threshold = 20;
+let bucketSize = 10m;
+let settleDelay = 5m;
+let frequency = 5m;
+let catchUp = 60m;
+let maxDelay = 360m;
+let ruleKey = "bower-firewall-deny";
+// In a scheduled run now() is the end of the run's query window.
+let windowEnd = now() - settleDelay;
+let catchUpStart = windowEnd - catchUp;
+let horizon = bin(catchUpStart - maxDelay, bucketSize);
+let alerted = SecurityAlert
+    | where ProviderName == "ASI Scheduled Alerts"
+    | extend BowerDetectionKey = tostring(todynamic(tostring(todynamic(ExtendedProperties)["Custom Details"])).BowerDetectionKey[0])
+    | where BowerDetectionKey startswith strcat(ruleKey, "|")
+    | distinct BowerDetectionKey;
+BowerSecurityEvents
+| where EventType == "network_connection_denied" and EventResult == "denied"
+| where isnotempty(SourceIpAddress)
+| where BowerEventTime >= horizon and BowerFirstIngested < windowEnd
+| where BowerFirstIngested - BowerEventTime <= maxDelay
+| extend BucketStart = bin(BowerEventTime, bucketSize)
+| sort by SourceIpAddress asc, BucketStart asc, BowerFirstIngested asc, CollectorId asc, EventId asc
+| extend Rank = row_number(1, prev(SourceIpAddress) != SourceIpAddress or prev(BucketStart) != BucketStart)
+| summarize CrossedAt = minif(BowerFirstIngested, Rank == threshold), DistinctEvents = count(),
+    ReplayedRows = sum(BowerCopies - 1), LateEvents = countif(BowerFirstIngested - BowerEventTime > settleDelay + frequency),
+    MaxDeliveryDelay = max(BowerFirstIngested - BowerEventTime), Collectors = make_set(CollectorId, 10),
+    Applications = make_set(ApplicationName, 10), FirstEvent = min(BowerEventTime), LastEvent = max(BowerEventTime)
+    by SourceIpAddress, BucketStart
+| where DistinctEvents >= threshold
+| where CrossedAt >= catchUpStart and CrossedAt < windowEnd
+// Slot 0 is this run's own window; runs tile it. A crossing missed there (skipped run,
+// late-queryable row) is retried in even slots only: a run's alerts have TimeGenerated
+// after its window end, so they are outside the next run's look-back and first visible
+// to the run after that.
+| extend Slot = toint((windowEnd - CrossedAt) / frequency)
+| where Slot == 0 or (Slot >= 2 and Slot % 2 == 0)
+| extend BowerDetectionKey = strcat(ruleKey, "|", SourceIpAddress, "|", tostring(BucketStart))
+| where BowerDetectionKey !in (alerted)
+| extend EvaluationPath = iff(Slot == 0, "owned-window", strcat("catch-up-", Slot)), EvaluatedAt = now()
+| project BowerDetectionKey, SourceIpAddress, BucketStart, DistinctEvents, CrossedAt, EvaluationPath, EvaluatedAt,
+    ReplayedRows, LateEvents, MaxDeliveryDelay, Collectors, Applications, FirstEvent, LastEvent

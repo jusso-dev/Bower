@@ -1,0 +1,28 @@
+// BowerSecurityEvents: one row per Bower event, with delivery replays collapsed.
+// Bower delivers at least once. An ambiguous Logs Ingestion acknowledgement (the upload
+// was accepted but the response was lost), a restored queue backup or a dead-letter
+// replay re-sends the queued row unchanged, so BowerSecurity_CL holds more than one row
+// for the same (CollectorId, EventId). Archive replay through another collector
+// receives that collector's ID and is counted separately. Replay labels are
+// producer-controlled and must not change the identity used by detections.
+// The first copy is kept within each stamped collector and event identity.
+//   BowerFirstIngested      ingestion_time() of the first copy. Detections use it to
+//                           identify when a late event first arrived; scheduled alerts
+//                           may still repeat when evaluations or alert visibility lag.
+//   BowerLastIngested       ingestion_time() of the latest copy.
+//   BowerCopies             rows that share the identity (1 = no replay).
+//   BowerEventTime          the event time Bower sent. Azure Monitor rewrites TimeGenerated
+//                           to the receive time when it is more than two days old; the
+//                           original survives in RawEnvelope.timeGenerated.
+//   BowerTimeRewritten      true when TimeGenerated no longer equals the sent event time.
+// The caller's time range still filters TimeGenerated. All copies of an event share
+// TimeGenerated unless Azure rewrote it, so a range keeps or drops them together.
+// Count events with count() after this function, never dcount() on the raw table:
+// dcount() is an estimate.
+BowerSecurity_CL
+| extend BowerIngested = ingestion_time()
+| summarize arg_min(BowerIngested, *), BowerLastIngested = max(BowerIngested), BowerCopies = count()
+    by CollectorId, EventId
+| project-rename BowerFirstIngested = BowerIngested
+| extend BowerEventTime = coalesce(todatetime(RawEnvelope.timeGenerated), TimeGenerated)
+| extend BowerTimeRewritten = BowerEventTime != TimeGenerated

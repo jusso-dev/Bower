@@ -217,6 +217,8 @@ jobs:
           python3 -m compileall -q lab/aws/monitoring
           for script in lab/aws/scripts/*.sh; do bash -n "$script"; done
           python3 lab/aws/scripts/template.py "$RUNNER_TEMP/bower-lab.json"
+      - name: Test Sentinel analytics validation harness
+        run: python3 -m unittest discover -s deploy/sentinel/analytics/validation -v
       - name: Check Windows lab script syntax
         shell: pwsh
         run: |

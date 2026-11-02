@@ -62,6 +62,7 @@ class SelectionTests(unittest.TestCase):
 
     def test_azure_templates_keep_contract_checks(self):
         self.assertEqual({"dotnet", "infrastructure"}, self.enabled(["deploy/bicep/main.bicep"]))
+        self.assertEqual({"dotnet", "infrastructure"}, self.enabled(["deploy/sentinel/analytics/rules/firewall-deny.kql"]))
 
     def test_unknown_and_workflow_inputs_fail_safe(self):
         for path in ("global.json", "Directory.Build.props", "new-tool/config.json",

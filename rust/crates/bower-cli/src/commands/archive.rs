@@ -106,7 +106,8 @@ fn is_stop(outcome: &str) -> bool {
 
 /// `bower archive replay --archive DIR --collector-url URL [--from ISO] [--to ISO]
 /// [--event-type TYPE]... [--dry-run]`: verifies the archive, then posts selected
-/// events through a collector's full intake labelled `bowerReplay: archive`. Sends
+/// events through a collector's full intake labelled `bowerReplay: archive` and
+/// `bowerReplayCollectorId` (the original collector id). Sends
 /// `BOWER_INGEST_TOKEN` when set. Exit 3 when the archive fails verification, 2 when
 /// the collector refused or was unreachable.
 pub fn replay(args: &ArchiveReplayArgs) -> CliResult {
@@ -194,6 +195,30 @@ pub fn replay(args: &ArchiveReplayArgs) -> CliResult {
             match labels.iter_mut().find(|(key, _)| key == "bowerReplay") {
                 Some(entry) => entry.1 = JsonElement::String("archive".into()),
                 None => labels.push(("bowerReplay".into(), JsonElement::String("archive".into()))),
+            }
+            // The receiving collector stamps its own id. Keep the first collector's, so
+            // BowerSecurityEvents collapses the replay with the original delivery.
+            let origin = envelope
+                .iter()
+                .find_map(|(key, value)| match (key.as_str(), value) {
+                    ("collector", JsonElement::Object(collector)) => {
+                        collector
+                            .iter()
+                            .find_map(|(name, id)| match (name.as_str(), id) {
+                                ("id", JsonElement::String(id)) if !id.is_empty() => {
+                                    Some(id.clone())
+                                }
+                                _ => None,
+                            })
+                    }
+                    _ => None,
+                });
+            if let Some(origin) = origin
+                && !labels
+                    .iter()
+                    .any(|(key, _)| key == "bowerReplayCollectorId")
+            {
+                labels.push(("bowerReplayCollectorId".into(), JsonElement::String(origin)));
             }
             envelope.push(("labels".into(), JsonElement::Object(labels)));
             let body = bower_contracts::json::to_string(&JsonElement::Object(envelope))

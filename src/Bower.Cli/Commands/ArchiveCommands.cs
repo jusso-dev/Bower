@@ -37,7 +37,8 @@ internal static class ArchiveCommands
     /// bower archive replay --archive DIR --collector-url URL [--from ISO] [--to ISO]
     ///   [--event-type TYPE]... [--dry-run]
     /// Verifies the archive, then posts selected events through a collector's full intake
-    /// labelled <c>bowerReplay: archive</c>. Sends BOWER_INGEST_TOKEN when set. Use a collector
+    /// labelled <c>bowerReplay: archive</c> and <c>bowerReplayCollectorId</c> (the original
+    /// collector id). Sends BOWER_INGEST_TOKEN when set. Use a collector
     /// with its own queue: the original queue reports replayed events as duplicates.
     /// </summary>
     public static async Task<int> ReplayAsync(string[] args)
@@ -92,6 +93,14 @@ internal static class ArchiveCommands
 
             JsonObject labels = envelope["labels"] as JsonObject ?? [];
             labels["bowerReplay"] = "archive";
+            // The receiving collector stamps its own id. Keep the first collector's, so
+            // BowerSecurityEvents collapses the replay with the original delivery.
+            if (labels["bowerReplayCollectorId"] is null
+                && (envelope["collector"] as JsonObject)?["id"] is JsonValue origin
+                && origin.TryGetValue(out string? originId) && originId.Length > 0)
+            {
+                labels["bowerReplayCollectorId"] = originId;
+            }
             envelope["labels"] = labels;
             using StringContent content = new(envelope.ToJsonString(), Encoding.UTF8, "application/json");
             string outcome;

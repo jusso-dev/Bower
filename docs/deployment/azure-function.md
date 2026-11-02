@@ -194,6 +194,10 @@ BowerSecurity_CL
 | summarize arg_min(ingestion_time(), *) by EventId
 ```
 
+For scheduled analytics rules and workbooks, use the
+[replay-safe parser and rules](../production-readiness/02-replay-safe-detections.md),
+which collapse by `(CollectorId, EventId)`; the function's `CollectorId` is stable.
+
 Logs Ingestion limits are enforced by the existing output unchanged: 1 MiB per
 upload, schema preflight (lengths, types), owned batches and Retry-After handling.
 Adaptive request concurrency is per request (`ConcurrencyScope.Delivery`): one

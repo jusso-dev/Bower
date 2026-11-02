@@ -408,6 +408,8 @@ fn archive_replay_posts_labelled_events_and_stops_on_refusal() {
         request.contains(r#""labels":{"team":"a","bowerReplay":"archive"}"#),
         "{request}"
     );
+    // No collector block in the archived envelope: no origin is invented.
+    assert!(!request.contains("bowerReplayCollectorId"), "{request}");
     assert!(!run.stdout.contains("payload-"));
 
     let unreachable = bower(&[
