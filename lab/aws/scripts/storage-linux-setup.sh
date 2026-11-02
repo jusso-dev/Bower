@@ -7,7 +7,7 @@ set -euo pipefail
 trap 'echo "failed at line $LINENO" >&2' ERR
 umask 077
 : "${BOWER_LAB_RUN:?}" "${BOWER_LAB_BUCKET:?}" "${BOWER_DCE:?}" "${BOWER_DCR:?}" "${BOWER_TENANT:?}" "${BOWER_PUBLISHER:?}"
-[[ "$BOWER_LAB_RUN" =~ ^bower-ws3-[0-9]{8}-[0-9]{6}$ ]]
+[[ "$BOWER_LAB_RUN" =~ ^bower-ws3b?-[0-9]{8}-[0-9]{6}$ ]]
 [ "$(id -u)" = 0 ]
 artifacts=/root/ws3-artifacts
 mkdir -p "$artifacts"
@@ -36,6 +36,8 @@ chown bower:bower /var/lib/bower && chmod 0700 /var/lib/bower
 install -d -m 0750 -o root -g bower /etc/bower/secrets /etc/bower/syslog /etc/bower/packs /etc/bower/keys
 install -m 0640 -o root -g bower "$artifacts/storage-pressure-validation-1.0.0.bowerpack" /etc/bower/packs/
 install -m 0640 -o root -g bower "$artifacts/lab.pub.pem" /etc/bower/keys/pack-trusted.pem
+install -d -m 0755 /etc/bower/policies
+install -m 0644 "$artifacts/collector-health.yaml" /etc/bower/policies/collector-health.yaml
 aws secretsmanager get-secret-value --secret-id "bower-lab/$BOWER_LAB_RUN/publisher" \
   --query SecretString --output text > /etc/bower/secrets/azure-publisher.pem
 chown root:bower /etc/bower/secrets/azure-publisher.pem && chmod 0640 /etc/bower/secrets/azure-publisher.pem
@@ -89,6 +91,7 @@ BOWER_AZURE_CREDENTIAL=environment
 AZURE_TENANT_ID=$BOWER_TENANT
 AZURE_CLIENT_ID=$BOWER_PUBLISHER
 AZURE_CLIENT_CERTIFICATE_PATH=/etc/bower/secrets/azure-publisher.pem
+BOWER_HEALTH_RECORD_INTERVAL_SECONDS=60
 BOWER_DELIVERY_LEASE_SECONDS=90
 BOWER_DELIVERY_TIMEOUT_SECONDS=60
 BOWER_QUEUE_MAX_BYTES=${BOWER_QUEUE_MAX_BYTES:-67108864}
@@ -96,7 +99,7 @@ BOWER_STORAGE_WARNING_FREE_BYTES=${BOWER_WARNING_BYTES:-268435456}
 BOWER_STORAGE_WARNING_FREE_PERCENT=0
 BOWER_STORAGE_CRITICAL_FREE_BYTES=${BOWER_CRITICAL_BYTES:-134217728}
 BOWER_STORAGE_CRITICAL_FREE_PERCENT=0
-BOWER_QUEUE_PRESSURE_RETENTION_MINUTES=${BOWER_PRESSURE_MINUTES:-5}
+BOWER_QUEUE_PRESSURE_RETENTION_MINUTES=${BOWER_PRESSURE_MINUTES:-60}
 ENV
 chown root:bower /etc/bower/bower.env && chmod 0640 /etc/bower/bower.env
 

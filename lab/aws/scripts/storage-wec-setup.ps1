@@ -1,7 +1,7 @@
 # Storage-pressure lab: WEC + Bower collector on a dedicated 2 GiB queue volume (Q:).
 # Run through storage-lab.py after the domain join. Prints metadata only.
 $ErrorActionPreference = 'Stop'
-if ($env:BOWER_LAB_RUN -notmatch '^bower-ws3-\d{8}-\d{6}$') { throw 'Unexpected run id' }
+if ($env:BOWER_LAB_RUN -notmatch '^bower-ws3b?-\d{8}-\d{6}$') { throw 'Unexpected run id' }
 foreach ($name in 'BOWER_DCE','BOWER_DCR','BOWER_TENANT','BOWER_PUBLISHER') {
     if (-not [Environment]::GetEnvironmentVariable($name)) { throw "$name is required" }
 }
@@ -35,6 +35,7 @@ Stop-Service Bower -ErrorAction SilentlyContinue
 $data = 'C:\ProgramData\Bower'
 Copy-Item "$artifacts\windows-security-logon-1.0.2.bowerpack" "$data\packs\" -Force
 Copy-Item "$artifacts\lab.pub.pem" "$data\keys\pack-trusted.pem" -Force
+Copy-Item "$artifacts\collector-health.yaml" "$data\policies\collector-health.yaml" -Force
 $secrets = "$data\secrets"
 (Get-SECSecretValue -SecretId "bower-lab/$env:BOWER_LAB_RUN/publisher").SecretString | Set-Content -NoNewline -Encoding ascii "$secrets\azure-publisher.pem"
 if (-not (Test-Path "$secrets\hmac.key")) {
@@ -100,11 +101,11 @@ $environment = @(
     'BOWER_OUTPUT=azure-logs-ingestion', "BOWER_DCE_ENDPOINT=$env:BOWER_DCE", "BOWER_DCR_ID=$env:BOWER_DCR",
     'BOWER_AZURE_CREDENTIAL=environment', "AZURE_TENANT_ID=$env:BOWER_TENANT", "AZURE_CLIENT_ID=$env:BOWER_PUBLISHER",
     "AZURE_CLIENT_CERTIFICATE_PATH=$secrets\azure-publisher.pem",
-    'BOWER_DELIVERY_LEASE_SECONDS=90', 'BOWER_DELIVERY_TIMEOUT_SECONDS=60',
+    'BOWER_HEALTH_RECORD_INTERVAL_SECONDS=60', 'BOWER_DELIVERY_LEASE_SECONDS=90', 'BOWER_DELIVERY_TIMEOUT_SECONDS=60',
     "BOWER_QUEUE_MAX_BYTES=$(if ($env:BOWER_QUEUE_MAX_BYTES) { $env:BOWER_QUEUE_MAX_BYTES } else { '268435456' })",
     'BOWER_STORAGE_WARNING_FREE_BYTES=536870912', 'BOWER_STORAGE_WARNING_FREE_PERCENT=0',
     'BOWER_STORAGE_CRITICAL_FREE_BYTES=268435456', 'BOWER_STORAGE_CRITICAL_FREE_PERCENT=0',
-    'BOWER_QUEUE_PRESSURE_RETENTION_MINUTES=5')
+    "BOWER_QUEUE_PRESSURE_RETENTION_MINUTES=$(if ($env:BOWER_PRESSURE_MINUTES) { $env:BOWER_PRESSURE_MINUTES } else { '60' })")
 Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\Bower' -Name Environment -Type MultiString -Value $environment
 sc.exe config Bower start= auto | Out-Null
 Remove-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\Bower' -Name DelayedAutostart -ErrorAction SilentlyContinue

@@ -5,7 +5,7 @@
 # HTTPS, fills the dedicated Q: volume with a bounded filler, restarts the service and
 # samples metadata every five seconds. Output: counters, sizes, states, times and digests.
 param(
-    [Parameter(Mandatory = $true)][ValidateSet('smoke', 'queue-cap', 'watermarks', 'disk-full', 'wrap', 'reconcile', 'probe')][string]$Scenario,
+    [Parameter(Mandatory = $true)][ValidateSet('smoke', 'ws6', 'queue-cap', 'watermarks', 'disk-full', 'wrap', 'reconcile', 'probe')][string]$Scenario,
     [ValidateRange(1, 100)][int]$Rate = 50,
     [ValidateRange(10, 1800)][int]$Hold = 120,
     [ValidateRange(60, 7200)][int]$Limit = 3600,
@@ -122,7 +122,8 @@ function Set-Filler([long]$freeTarget) {
 function Fill-Completely {
     $free = (Get-Free)[0]
     Remove-Item $filler -Force -ErrorAction SilentlyContinue
-    fsutil file createnew $filler ([Math]::Max(0, $free + 0 - 1MB)) | Out-Null
+    fsutil file createnew $filler ([Math]::Max(0, $free - 1MB)) | Out-Null
+    if (-not (Test-Path $filler)) { New-Item -ItemType File $filler | Out-Null }
     $stream = [IO.File]::Open($filler, 'Append', 'Write', 'None')
     try { foreach ($size in 65536, 4096, 512) { $chunk = New-Object byte[] $size; try { while ($true) { $stream.Write($chunk, 0, $size); $stream.Flush($true) } } catch { } } } finally { try { $stream.Dispose() } catch { } }
     (Get-Item $filler).Length
@@ -249,9 +250,29 @@ $script:generator.Start()
 try {
     Mark 'generating' @{ rate = $Rate }
     Hold 30
-    if ($Scenario -ne 'smoke') { Block; Mark 'destination-blocked' }
+    if ($Scenario -notin 'smoke', 'ws6') { Block; Mark 'destination-blocked' }
     switch ($Scenario) {
         'smoke' { Hold $Hold }
+        'ws6' {
+            # Workstream 6's stall. Phase 1: destination up, acknowledged rows fill the page
+            # limit under the default 60-minute floor. Phase 2: the backlog fills it with the
+            # destination blocked, then the destination returns. No cap change or restart.
+            $start = Sample
+            $first = Wait-Until { param($r) $r.capacityRefusals -gt $start.capacityRefusals } $Limit 'acknowledged-rows-at-page-limit'
+            if ($first) {
+                $queued = $first.sourceQueued
+                [void](Wait-Until { param($r) $r.sourceQueued -gt ($queued + 200) -and $r.pressurePurged -gt 0 } 600 'intake-reopened-without-restart')
+            }
+            Block; Mark 'destination-blocked'
+            $baseline = Sample
+            $full = Wait-Until { param($r) $r.capacityRefusals -gt $baseline.capacityRefusals -and $r.undeliveredBytes -gt 0 } $Limit 'backlog-at-page-limit'
+            if ($full) { Hold $Hold }
+            Unblock; Mark 'destination-restored'
+            $restored = Sample
+            [void](Wait-Until { param($r) $r.delivered -gt ($restored.delivered + 1000) } 600 'delivery-resumed-without-restart')
+            $queued = $samples[-1].sourceQueued
+            [void](Wait-Until { param($r) $r.sourceQueued -gt ($queued + 500) } 600 'intake-resumed-after-drain')
+        }
         'queue-cap' {
             [void](Wait-Until { param($r) $r.capacityRefusals -gt 0 -and $r.sourceRetries -gt 0 } $Limit 'queue-cap-refusing')
             Hold $Hold
@@ -286,24 +307,17 @@ try {
             Hold 60
         }
     }
-    if ($Scenario -ne 'smoke') { Unblock; Mark 'destination-restored'; Hold 120 }
+    if ($Scenario -notin 'smoke', 'ws6') { Unblock; Mark 'destination-restored'; Hold 120 }
 } finally {
     $script:generator.Stop(); Mark 'generator-stopped' @{ nextSeq = $script:generator.Next; failedBinds = $script:generator.Failed; unexpectedSuccess = $script:generator.Unexpected }
     Unblock; Remove-Item $filler -Force -ErrorAction SilentlyContinue
 }
 [void](Wait-Until { param($r) Test-Drained $r } 1800 'drained')
-$first = { param($predicate) ($samples | Where-Object { & $predicate $_ } | Select-Object -First 1).at }
+# Metrics are computed from the journal by storage-summarise.py (hashtable rows have no
+# properties for Measure-Object, which failed the first run's summaries).
 $summary = [ordered]@{ phase = "wec-$Scenario"; startedAt = $started; endedAt = (Now); events = $events
     generated = @{ firstSeq = $script:generator.First; nextSeq = $script:generator.Next; count = $script:generator.Next - $script:generator.First
         rate = $Rate; maximumLagSeconds = [Math]::Round($script:generator.MaximumLagSeconds, 3); failedBinds = $script:generator.Failed }
-    firstWarningAt = (& $first { param($r) $r.storageState -in 'warning', 'critical' })
-    firstCriticalAt = (& $first { param($r) $r.storageState -eq 'critical' })
-    firstRefusalAt = (& $first { param($r) $r.sourceRetries -gt $samples[0].sourceRetries })
-    maximumForwardedLag = ($samples | ForEach-Object { if ($_.bookmarkRecordId) { $_.forwardedRecords - $_.bookmarkRecordId } else { 0 } } | Measure-Object -Maximum).Maximum
-    maximumUndeliveredBytes = ($samples | Where-Object { $null -ne $_.undeliveredBytes } | Measure-Object undeliveredBytes -Maximum).Maximum
-    minimumFreeBytes = ($samples | Measure-Object freeBytes -Minimum).Minimum
-    maximumQueueFileBytes = ($samples | Where-Object { $null -ne $_.queueFileBytes } | Measure-Object queueFileBytes -Maximum).Maximum
-    sourceGaps = $samples[-1].sourceGaps; sourceSubmitFailures = $samples[-1].sourceSubmitFailures
     samples = $samples.Count; final = $samples[-1] }
 $text = $summary | ConvertTo-Json -Depth 6 -Compress
 $text | Set-Content -Encoding utf8 "$logs\$Scenario-summary.json"

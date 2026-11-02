@@ -4,7 +4,7 @@
 set -euo pipefail
 trap 'echo "failed at line $LINENO" >&2' ERR
 : "${BOWER_LAB_RUN:?}" "${BOWER_LAB_BUCKET:?}" "${BOWER_SCENARIO:?}"
-[[ "$BOWER_SCENARIO" =~ ^(smoke|queue-cap|watermarks|disk-full|reconcile|probe)$ ]]
+[[ "$BOWER_SCENARIO" =~ ^(smoke|ws6|queue-cap|watermarks|disk-full|reconcile|probe)$ ]]
 artifacts=/root/ws3-artifacts
 mkdir -p "$artifacts"
 aws s3 cp --quiet "s3://$BOWER_LAB_BUCKET/$BOWER_LAB_RUN/artifacts/linux/SHA256SUMS" "$artifacts/SHA256SUMS"

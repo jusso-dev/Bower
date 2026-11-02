@@ -16,9 +16,11 @@ let usedPercent = __STORAGE_PERCENT__;
 let pagesPercent = __PAGES_PERCENT__;
 BowerSecurity_CL
 | where EventType == "collector_health"
-| extend Refusals = coalesce(toint(Attributes.intake.capacityRefusals), 0) + coalesce(toint(Attributes.intake.privacyAlertRefusals), 0)
-    + coalesce(toint(Attributes.storage.storageRefusals), 0)
-| summarize arg_max(TimeGenerated, Attributes), RefusalsInWindow = sum(Refusals) by CollectorId
+| extend Refusals = coalesce(toint(Attributes.intake.capacityRefusals), 0) + coalesce(toint(Attributes.intake.privacyAlertRefusals), 0),
+    StorageRefusals = coalesce(toint(Attributes.storage.storageRefusals), 0)
+// storageRefusals (free space) is a subset of capacityRefusals: shown, never added.
+| summarize arg_max(TimeGenerated, Attributes), RefusalsInWindow = sum(Refusals), StorageRefusalsInWindow = sum(StorageRefusals),
+    CriticalRecordsInWindow = countif(tostring(Attributes.storage.volumeState) == "critical") by CollectorId
 | extend CapacityUsedPercent = todouble(Attributes.storage.capacityUsedPercent),
     QueuePagesUsedPercent = todouble(Attributes.storage.queuePagesUsedPercent),
     UndeliveredMiB = todouble(Attributes.storage.undeliveredMiB),
@@ -35,7 +37,7 @@ BowerSecurity_CL
     or VolumeState == "unknown"
 | extend StorageSignal = StorageMetricsIncomplete or QueuePagesUsedPercent >= pagesPercent
     or CapacityUsedPercent >= usedPercent
-    or VolumeState in ("warning", "critical") or IntakePaused
+    or VolumeState in ("warning", "critical") or IntakePaused or CriticalRecordsInWindow > 0
     or DeliveryStatus == "backpressure" or RefusalsInWindow > 0
 | where StorageSignal
-| project CollectorId, RecordAt = TimeGenerated, VolumeState, IntakePaused, VolumeFreeMiB, VolumeFreePercent, VolumeCoverage, QueuePagesUsedPercent, QueuePagesUsedMiB, CapacityUsedPercent, UndeliveredMiB, RefusalsInWindow, DeliveryStatus, StorageMetricsIncomplete
+| project CollectorId, RecordAt = TimeGenerated, VolumeState, IntakePaused, VolumeFreeMiB, VolumeFreePercent, VolumeCoverage, QueuePagesUsedPercent, QueuePagesUsedMiB, CapacityUsedPercent, UndeliveredMiB, RefusalsInWindow, StorageRefusalsInWindow, CriticalRecordsInWindow, DeliveryStatus, StorageMetricsIncomplete

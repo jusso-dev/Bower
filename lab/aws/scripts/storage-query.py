@@ -63,7 +63,11 @@ def main():
     parser.add_argument("--expected", type=int, required=True, help="Sequence numbers 1..N were generated")
     parser.add_argument("--mapping", type=Path, help="Windows: JSON {hmac-hex: ws3wNNNNNNN}")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--alert", type=Path, help="Run this deployed alert query (queue-storage.kql) over --window-minutes instead")
+    parser.add_argument("--window-minutes", type=int, default=15)
     args = parser.parse_args()
+    if args.alert:
+        return alert(args)
     if Path.home() / ".azure" == args.azure_config_dir.resolve():
         raise SystemExit("Refusing the operator's default Azure CLI cache")
     since = dt.datetime.fromisoformat(args.since.replace("Z", "+00:00"))
@@ -105,6 +109,20 @@ BowerSecurity_CL
     }
     args.output.write_text(json.dumps(report, indent=1) + "\n")
     print(json.dumps({key: report[key] for key in ("rows", "eventRows", "duplicateRows", "distinctSequences", "missingSequences", "unexpectedSequences")}))
+
+
+def alert(args):
+    """Runs the deployed queue-storage alert query unchanged (default bicep thresholds),
+    scoped to the alert's evaluation window, and records its result rows (metadata only)."""
+    text = args.alert.read_text().replace("__STORAGE_PERCENT__", "40").replace("__PAGES_PERCENT__", "70")
+    text = text.replace("BowerSecurity_CL\n", f"BowerSecurity_CL\n| where TimeGenerated > ago({args.window_minutes}m)\n", 1)
+    rows = query(args.workspace_id, token(args.azure_config_dir, args.verifier_client_id), text)
+    rows = [row for row in rows if row.get("CollectorId") == args.collector]
+    report = {"phase": "alert-query", "query": args.alert.name, "queriedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
+              "windowMinutes": args.window_minutes, "collector": args.collector, "fired": bool(rows), "rows": rows}
+    args.output.write_text(json.dumps(report, indent=1) + "\n")
+    print(json.dumps({"fired": bool(rows), "rows": rows}, default=str)[:1500])
+    return 0
 
 
 if __name__ == "__main__":

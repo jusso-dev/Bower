@@ -124,18 +124,23 @@ def fill_to(free_target):
 
 
 def fill_completely():
-    """Allocates every remaining block in chunks, then writes until ENOSPC."""
+    """Allocates every remaining block in chunks, then writes until ENOSPC (even on close)."""
     fill_to(4 * MIB)
     chunk = b"\0" * 65536
-    with (QUEUE_DIR / "ws3-filler-last").open("ab") as stream:
+    descriptor = os.open(QUEUE_DIR / "ws3-filler-last", os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    try:
         for size in (65536, 4096, 512):
             try:
                 while True:
-                    stream.write(chunk[:size])
-                    stream.flush()
-                    os.fsync(stream.fileno())
+                    os.write(descriptor, chunk[:size])
             except OSError:
                 pass
+        try:
+            os.fsync(descriptor)
+        except OSError:
+            pass
+    finally:
+        os.close(descriptor)
     return filler_bytes()
 
 
@@ -295,6 +300,35 @@ def summarise(recorder, started, generator):
     }
 
 
+def scenario_ws6(recorder, generator, args):
+    """Workstream 6's stall. Phase 1: destination up, acknowledged rows fill the page limit
+    under the default 60-minute floor (D4b). Phase 2: destination blocked, the backlog fills
+    the page limit, the destination returns (D4). Delivery and intake must resume without a
+    cap change or restart."""
+    recorder.mark("generating", rate=generator.rate)
+    start = recorder.sample()
+    first = recorder.wait(lambda row: (row.get("capacityRefusals") or 0) > (start.get("capacityRefusals") or 0),
+                          args.limit, "acknowledged-rows-at-page-limit")
+    if first:
+        queued = first.get("listenerQueued") or 0
+        recorder.wait(lambda row: (row.get("listenerQueued") or 0) > queued + 200 and (row.get("pressurePurged") or 0) > 0,
+                      600, "intake-reopened-without-restart")
+    block()
+    recorder.mark("destination-blocked")
+    baseline = recorder.sample()
+    refused = recorder.wait(lambda row: (row.get("capacityRefusals") or 0) > (baseline.get("capacityRefusals") or 0)
+                            and (row.get("undeliveredBytes") or 0) > 0, args.limit, "backlog-at-page-limit")
+    if refused:
+        time.sleep(args.hold)
+    unblock()
+    recorder.mark("destination-restored")
+    restored = recorder.sample()
+    recorder.wait(lambda row: (row.get("delivered") or 0) > (restored.get("delivered") or 0) + 1000,
+                  600, "delivery-resumed-without-restart")
+    queued = recorder.samples[-1].get("listenerQueued") or 0
+    recorder.wait(lambda row: (row.get("listenerQueued") or 0) > queued + 500, 600, "intake-resumed-after-drain")
+
+
 def scenario_queue_cap(recorder, generator, args):
     recorder.mark("generating", rate=generator.rate)
     time.sleep(30)
@@ -401,7 +435,7 @@ def reconcile():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("scenario", choices=["smoke", "queue-cap", "watermarks", "disk-full", "reconcile", "probe"])
+    parser.add_argument("scenario", choices=["smoke", "ws6", "queue-cap", "watermarks", "disk-full", "reconcile", "probe"])
     parser.add_argument("--rate", type=int, default=100)
     parser.add_argument("--hold", type=int, default=120)
     parser.add_argument("--limit", type=int, default=3600)
@@ -421,7 +455,7 @@ def main():
     recorder.thread.start()
     generator.start()
     try:
-        {"smoke": scenario_smoke, "queue-cap": scenario_queue_cap, "watermarks": scenario_watermarks,
+        {"smoke": scenario_smoke, "ws6": scenario_ws6, "queue-cap": scenario_queue_cap, "watermarks": scenario_watermarks,
          "disk-full": scenario_disk_full}[args.scenario](recorder, generator, args)
     finally:
         generator.stop()

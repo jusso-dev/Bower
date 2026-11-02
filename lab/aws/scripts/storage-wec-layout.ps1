@@ -2,7 +2,7 @@
 # The dedicated volume is mounted at %ProgramData%\Bower\state, so the MSI's default
 # BOWER_QUEUE_PATH (rewritten on every upgrade) stays on the dedicated volume.
 $ErrorActionPreference = 'Stop'
-if ($env:BOWER_LAB_RUN -notmatch '^bower-ws3-\d{8}-\d{6}$') { throw 'Unexpected run id' }
+if ($env:BOWER_LAB_RUN -notmatch '^bower-ws3b?-\d{8}-\d{6}$') { throw 'Unexpected run id' }
 $state = 'C:\ProgramData\Bower\state'
 $partition = Get-Partition -DriveLetter Q
 if ($partition.AccessPaths -notcontains "$state\") {

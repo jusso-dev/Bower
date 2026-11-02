@@ -8,13 +8,16 @@ syslog (RFC 5424 over mutual TLS) to the C# Bower collector to Microsoft Sentine
 (Logs Ingestion API). Releases and packages are **unsigned** at the moment (signing
 is deferred); Bower still refuses unsigned or untrusted packs.
 
-**Status: qualification incomplete.** The candidate changes address four observed
-storage defects and add free-space watermarks, storage status and bounded logging.
-AWS trials on 1 GiB and 2 GiB queue volumes include failures and later drain
-observations, but the retained reports have not yet established independent
-end-to-end reconciliation for the final candidate binaries. The evidence package
-and cleanup audit remain to be completed. Read [what is still open](#known-limits)
-before rollout.
+**Status: qualified on AWS for the scoped rollout, with the limits below.** Four
+storage defects found on AWS (including the page-ceiling stall workstream 6 also
+reported) are fixed. Free-space watermarks, storage status, `collector_health`
+storage fields, the `queue-storage` alert and host checks are in place. A final run on
+1 GiB (Linux) and 2 GiB (Windows) queue volumes reconciled every accepted
+sequence-numbered event in Sentinel through queue saturation, the watermarks, a
+completely full volume and a restart while full. Plain syslog over TCP still loses
+frames held in socket buffers if the collector restarts while backpressured (measured;
+RELP senders do not). Releases are unsigned. See [how we tested this](#10-how-we-tested-this)
+and [known limits](#known-limits).
 
 Contents:
 
@@ -86,6 +89,7 @@ space or the reader to be released before writes can resume:
 | --- | --- | --- | --- |
 | HTTP `POST /v1/events`, pack endpoints, relay intake | HTTP 503; nothing committed | The producer, which must retry | None if the producer retries |
 | Syslog TCP/TLS | Holds the frame, **stops reading**, keeps the connection, retries every second (`retries` counter) | Kernel socket buffers, then the sender's queue | **Frames in kernel buffers are lost if the collector restarts or the connection resets** (measured below) |
+| Syslog RELP | Withholds the acknowledgement; after 30 seconds of refusals closes the session (`relpBusyCloses`) | The sender, which resends unacknowledged messages | None for a RELP sender that resends |
 | Syslog UDP | Drops and counts (`dropped`) | Nobody | Every refused datagram |
 | Windows Event Log / WEC `ForwardedEvents` | Stops reading; the bookmark stays before the first unread event; subscription `state` is `backpressure` | The event log channel | Events overwritten when the channel wraps (`gaps` counter) |
 
@@ -137,9 +141,14 @@ On AWS, a 19-minute queue-full run logged 45 lines (7.4 KB) in total.
 | Intake-blocked reclaim ignores the retention floor | **Defect fixed:** after a full backlog drained, every page held a fresh acknowledgement and intake stayed refused for the floor duration |
 | WAL truncate before refusing a write | **Defect fixed:** a WAL that checkpoints could not reset exceeded the write budget and refused acknowledgements (72.6 MB WAL on the Windows collector) |
 | `SQLITE_FULL` and disk-full I/O errors on intake are backpressure | Syslog keeps the frame and the connection; WEC keeps the bookmark |
-| `storage` block in `/v1/status` and the management heartbeat; `/health` `degraded` when critical; heartbeat `deliveryStatus` `backpressure` when critical | Early warning, metadata only |
+| `storage` block in `/v1/status` and the management heartbeat; `/health` `degraded` when critical; `deliveryStatus` `backpressure` when the volume is critical or pages reach 95% | Early warning, metadata only |
+| `queuePages` (workstream 6's page snapshot) now reports the limit at which new events are refused, plus `ceilingBytes` | One page computation for status, health records, alerts and host checks |
+| `collector_health` `storage` gains volume state, free space, thresholds, WAL size, storage refusals and pressure purges; problem codes `storage-critical` and `storage-low` | The `queue-storage` alert and host checks see the volume (see [monitoring](06-monitoring-and-runbooks.md)) |
+| The collector's own health record uses the settlement reserve and skips the critical watermark | **Defect fixed (workstream 6):** the storage alert could not see a full queue because its records were refused |
+| New queues use incremental auto-vacuum; retention returns free pages to the file system in 8 MiB steps under pressure | Pruning reclaims disk, not only pages (existing queues keep reusing free pages) |
+| Archive-backed retention purges only the archive-verified sequences | A concurrent purge could shift a verified batch onto unverified rows |
 | Bounded storage logs; delivery-loop failure logs throttled | A full disk must not also fill the journal |
-| Kubernetes manifest sets `BOWER_QUEUE_MAX_BYTES` and ephemeral-storage | The 10 GiB default could exceed the 10Gi claim |
+| Kubernetes manifest sets `BOWER_QUEUE_MAX_BYTES` (5 GiB) and ephemeral-storage | The 10 GiB default, and settlement growth, could exceed the 10Gi claim |
 
 The Rust collector (`bower-collector-rs`) is **not** changed and keeps the original
 behaviour, including the drain deadlock and the absence of watermarks; see
@@ -237,11 +246,15 @@ large enough for a retention purge's WAL burst and settlement growth: at least
 
 ## 5. Early-warning signals
 
-`GET /v1/status` (bearer token) has a `storage` object; the management heartbeat
-carries the same object as `storage` (management servers that predate it ignore it).
-Metadata only.
+`GET /v1/status` (bearer token) reports metadata only:
 
-| Field | Meaning | Suggested alert |
+- `queuePages`: `pageSize`, `pageLimitBytes` (in-use bytes at which new events are
+  refused), `usedBytes`, `freeListBytes`, `usedPercent` (100 = refused) and
+  `ceilingBytes` (largest size settlement may reach).
+- `storage`: the queue volume and storage refusals (below). The management heartbeat
+  carries the same object (older management servers ignore it).
+
+| `storage` field | Meaning | Suggested alert |
 | --- | --- | --- |
 | `state` | `normal`, `warning`, `critical`, `unknown` | Page on `critical`; ticket on `warning` or `unknown` for 15 minutes |
 | `intakePaused` | True while the critical watermark refuses new events | Page |
@@ -250,19 +263,36 @@ Metadata only.
 | `stateChangedAt`, `warningTransitions`, `criticalTransitions` | Since start | Flapping: more than 3 transitions an hour |
 | `queueFileBytes`, `queueDatabaseBytes`, `queueWalBytes` | Physical queue files | WAL above 10% of the database for 30 minutes |
 | `queueMaximumBytes`, `queueUndeliveredBytes`, `queueUtilisationPercent` | Logical cap and use | Informational (the page limit binds first) |
-| `queuePageUtilisationPercent` | Pages in use as a share of the intake limit (100 = new events refused) | Ticket at 80; page at 95 |
 | `oldestPendingAgeSeconds` | Age of the oldest undelivered event | Page above 15 minutes (or your SLA) |
 | `pressurePurgedEvents`, `lastPressurePurgeAt` | Acknowledged rows removed early since start | Ticket on any increase: retention is undersized |
-| `storageRefusals`, `storageRefusedBytes`, `lastStorageRefusalAt`, `lastStorageRefusalReason` | Refusals caused by free space (`storage-critical`, `storage-full`) | Page on any increase |
+| `storageRefusals`, `storageRefusedBytes`, `lastStorageRefusalAt`, `lastStorageRefusalReason` | Refusals caused by free space (`storage-critical`, `storage-full`); a subset of `intake.capacityRefusals` | Page on any increase |
 
 Existing signals that matter here: `intake.capacityRefusals` and `lastRefusalReason`
 (all refusals, shape shared with the Rust collector), `queue.oldestUndelivered`,
-`syslog[].retries` and `dropped`, `windowsEventLog[].state` (`backpressure`), `gaps`
-and `bookmarkRecordId`, `/health` (`degraded` when critical, dead-lettered or a
-source is overdue), and the heartbeat `deliveryStatus` (`backpressure` when the volume
-is critical or undelivered bytes pass 90% of the cap).
+`syslog[].retries`, `dropped` and `relpBusyCloses`, `windowsEventLog[].state`
+(`backpressure`), `gaps` and `bookmarkRecordId`, `/health` (`degraded` when critical,
+dead-lettered or a source is overdue), and the heartbeat `deliveryStatus`.
 
-Workstream 6 (monitoring) builds the alert rules on these fields.
+### In Sentinel and on the host
+
+With `BOWER_HEALTH_RECORD_INTERVAL_SECONDS` set ([monitoring](06-monitoring-and-runbooks.md#the-collector-health-record)),
+each `collector_health` record carries, under `Attributes.storage`, MiB and percent
+values only: `queuePagesUsedPercent`, `queuePagesUsedMiB`, `queueFreeListMiB`,
+`queuePageLimitMiB`, `queueCeilingMiB`, `volumeState`, `intakePaused`, `volumeFreeMiB`,
+`volumeFreePercent`, `volumeWarningFreeMiB`, `volumeCriticalFreeMiB`, `queueWalMiB`,
+and window deltas `storageRefusals` and `pressurePurgedEvents`. Problem codes
+`storage-low` (medium) and `storage-critical` (high) join `problems[]`; `backpressure`
+also applies at 95% page use or a critical volume. The record is queued from the
+settlement reserve, so it still arrives while new events are refused (measured below).
+
+The [`queue-storage` alert](../../deploy/sentinel/monitoring/queries/queue-storage.kql)
+fires on page use, undelivered bytes, `volumeState` warning or critical,
+`intakePaused`, a critical record in the window, backpressure, or refusals in the
+window; `volumeState` `unknown` is incomplete coverage. The host checks
+([Linux](../../deploy/sentinel/monitoring/host/bower-healthcheck.py),
+[Windows](../../deploy/sentinel/monitoring/host/Test-BowerCollectorHealth.ps1)) report
+`queue-volume` WARNING/CRITICAL from `storage.state` and `queue-pages` from
+`queuePages.usedPercent`. Runbook R5 in the monitoring guide links back to section 8.
 
 ---
 
@@ -346,7 +376,7 @@ with watermarks and journald limits.
 
    ```bash
    TOKEN=$(sudo cat /etc/bower/secrets/ingest-token)
-   curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:4319/v1/status | jq '.storage | {state, freeBytes, totalBytes, warningFreeBytes, criticalFreeBytes, queueMaximumBytes, queuePageUtilisationPercent}'
+   curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:4319/v1/status | jq '{volume: (.storage | {state, freeBytes, totalBytes, warningFreeBytes, criticalFreeBytes, queueMaximumBytes}), pages: .queuePages.usedPercent}'
    findmnt /var/lib/bower
    systemctl show bower -p RequiresMountsFor
    ```
@@ -429,7 +459,7 @@ orphaned. Mount the volume **at** the state folder instead.
    ```powershell
    $token = (Get-Content C:\ProgramData\Bower\secrets\ingest-token -Raw).Trim()
    (Invoke-RestMethod http://127.0.0.1:4319/v1/status -Headers @{Authorization = "Bearer $token"}).storage |
-     Select-Object state, freeBytes, totalBytes, queueMaximumBytes, queuePageUtilisationPercent
+     Select-Object state, freeBytes, totalBytes, queueMaximumBytes
    Get-Partition -DiskNumber $disk | Select-Object AccessPaths
    ```
 
@@ -477,7 +507,7 @@ volume, start with the previous mount.
 ### 6.4 Kubernetes (`deploy/kubernetes`)
 
 The [manifest](../../deploy/kubernetes/deployment.yaml) now sets
-`BOWER_QUEUE_MAX_BYTES=6442450944` (6 GiB) for its `10Gi` claim, and an
+`BOWER_QUEUE_MAX_BYTES=5368709120` (5 GiB, so `1.75 × (5 GiB + 4 MiB)` plus the warning watermark fits) for its `10Gi` claim, and an
 `ephemeral-storage` request of 64Mi and limit of 512Mi (logs only; the root filesystem
 is read-only).
 
@@ -629,7 +659,7 @@ or SQL against a running queue.
 ### 8.3 Queue full (page limit)
 
 1. Confirm: `intake.lastRefusalReason` = `queue-capacity`,
-   `storage.queuePageUtilisationPercent` ≥ 95.
+   `queuePages.usedPercent` ≥ 95.
 2. Restore the destination and monitor backlog age, settlement errors and free
    disk space. Retention may reclaim acknowledged rows (log `1506`, trigger
    `intake-blocked`) and reopen intake. A full volume, pinned WAL or insufficient
@@ -701,7 +731,7 @@ Remove-Item C:\ProgramData\Bower\state\filler
 | --- | --- | --- |
 | `storage.state` = `unknown`, log `1503` | The queue directory's volume cannot be measured (permissions, unusual filesystem) | Check the service can stat the directory; watermarks are off until it can |
 | `totalBytes` is the root or `C:` volume | Queue not on the dedicated volume (mount missing, Windows path not mounted) | Fix the mount; on Linux confirm `RequiresMountsFor` |
-| Refusals with `queuePageUtilisationPercent` near 100 and low `queueUtilisationPercent` | Normal: pages bind before the logical cap | Size by section 3 |
+| Refusals with `queuePages.usedPercent` near 100 and low `storage.queueUtilisationPercent` | Normal: pages bind before the logical cap | Size by section 3 |
 | `pressurePurgedEvents` keeps growing | Retention or the queue is too small for the rate | Raise `BOWER_QUEUE_MAX_BYTES` or lower `BOWER_QUEUE_RETENTION_HOURS` |
 | Destination up, nothing delivered, log `1002` repeating | Old collector stuck at the page ceiling | 8.4 |
 | `queueWalBytes` large for a long time | A reader pins the WAL (backup tool, `sqlite3` shell, probe) | Close the reader; the next write truncates the WAL |

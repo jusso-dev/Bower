@@ -1,7 +1,7 @@
 # Storage-pressure lab: promote the disposable domain controller (ws3.lab). Run through
 # storage-lab.py only. The administrator password is fetched on the host and never printed.
 $ErrorActionPreference = 'Stop'
-if ($env:BOWER_LAB_RUN -notmatch '^bower-ws3-\d{8}-\d{6}$') { throw 'Unexpected run id' }
+if ($env:BOWER_LAB_RUN -notmatch '^bower-ws3b?-\d{8}-\d{6}$') { throw 'Unexpected run id' }
 if ((Get-CimInstance Win32_ComputerSystem).PartOfDomain) { @{phase='dc-setup'; state='already-domain-controller'} | ConvertTo-Json -Compress; exit 0 }
 Import-Module AWSPowerShell
 $secret = (Get-SECSecretValue -SecretId "bower-lab/$env:BOWER_LAB_RUN/dc-admin").SecretString

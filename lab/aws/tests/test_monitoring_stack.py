@@ -361,7 +361,9 @@ class MonitoringCoverageQueryTests(unittest.TestCase):
         # Free-disk watermarks (workstream 3): unknown is incomplete, warning/critical signal.
         self.assertIn('or VolumeState == "unknown"', storage)
         self.assertIn('VolumeState in ("warning", "critical") or IntakePaused', storage)
-        self.assertIn("coalesce(toint(Attributes.storage.storageRefusals), 0)", storage)
+        self.assertIn("StorageRefusals = coalesce(toint(Attributes.storage.storageRefusals), 0)", storage)
+        self.assertNotIn("+ coalesce(toint(Attributes.storage.storageRefusals)", storage)
+        self.assertIn("CriticalRecordsInWindow > 0", storage)
         self.assertIn("isnull(Undelivered) or Undelivered < 0", backlog)
         self.assertIn("Undelivered > 0 and (isnull(OldestUndeliveredAgeSeconds)", backlog)
         self.assertIn("where BacklogMetricsIncomplete or", backlog)

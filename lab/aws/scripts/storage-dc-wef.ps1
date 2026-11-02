@@ -1,6 +1,6 @@
 # Storage-pressure lab: make the domain controller a WEF source for WEC (Security 4625 only).
 $ErrorActionPreference = 'Stop'
-if ($env:BOWER_LAB_RUN -notmatch '^bower-ws3-\d{8}-\d{6}$') { throw 'Unexpected run id' }
+if ($env:BOWER_LAB_RUN -notmatch '^bower-ws3b?-\d{8}-\d{6}$') { throw 'Unexpected run id' }
 winrm quickconfig -quiet | Out-Null
 auditpol /set /subcategory:"Logon" /failure:enable | Out-Null
 auditpol /set /subcategory:"Credential Validation" /failure:enable | Out-Null

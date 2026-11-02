@@ -1,6 +1,6 @@
 # Storage-pressure lab: join the WEC/collector host to ws3.lab. Run through storage-lab.py.
 $ErrorActionPreference = 'Stop'
-if ($env:BOWER_LAB_RUN -notmatch '^bower-ws3-\d{8}-\d{6}$') { throw 'Unexpected run id' }
+if ($env:BOWER_LAB_RUN -notmatch '^bower-ws3b?-\d{8}-\d{6}$') { throw 'Unexpected run id' }
 if ($env:BOWER_DC_IP -notmatch '^172\.31\.233\.\d{1,3}$') { throw 'Unexpected domain controller address' }
 if ((Get-CimInstance Win32_ComputerSystem).PartOfDomain) { @{phase='wec-join'; state='joined'} | ConvertTo-Json -Compress; exit 0 }
 Import-Module AWSPowerShell

@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 
 HOSTS = {"Linux": "linux-collector", "Dc": "windows-dc", "Wec": "windows-wec"}
-RUN_PATTERN = r"bower-ws3-\d{8}-\d{6}"
+RUN_PATTERN = r"bower-ws3b?-\d{8}-\d{6}"
 MAXIMUM_HOURS = 12
 
 
