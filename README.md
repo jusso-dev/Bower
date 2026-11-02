@@ -479,8 +479,11 @@ Neither has been exercised against a live tenant or account yet.
 | `BOWER_ALLOW_UNAUTHENTICATED_INGEST` | `false` | Explicit opt-out for isolated networks only. |
 | `BOWER_INGEST_RATE_PER_SECOND` | `500` | Token-bucket limit (burst 2×); excess returns HTTP 429. |
 | `BOWER_QUEUE_PATH` | `./data/bower.db` | SQLite queue. |
-| `BOWER_QUEUE_MAX_BYTES` | 10 GiB | Cap on **undelivered** bytes; excess returns HTTP 503. |
+| `BOWER_QUEUE_MAX_BYTES` | 10 GiB | Cap on **undelivered** bytes; excess returns HTTP 503. The database file can reach 1.75 × (cap + 4 MiB) while a full backlog settles; size the volume for it ([sizing](docs/production-readiness/03-storage-pressure.md#3-capacity-planning)). |
 | `BOWER_QUEUE_RETENTION_HOURS` | `168` | How long acknowledged events stay for duplicate detection. |
+| `BOWER_QUEUE_PRESSURE_RETENTION_MINUTES` | `60` | C#: acknowledged events younger than this survive early purging under storage pressure, unless new events are refused. [Details](docs/production-readiness/03-storage-pressure.md#4-configuration-reference) |
+| `BOWER_STORAGE_WARNING_FREE_BYTES` / `BOWER_STORAGE_WARNING_FREE_PERCENT` | 1 GiB / `10` | C#: queue volume warning below max(bytes, percent) free; retention reclaims acknowledged events early. |
+| `BOWER_STORAGE_CRITICAL_FREE_BYTES` / `BOWER_STORAGE_CRITICAL_FREE_PERCENT` | 256 MiB / `5` | C#: below max(bytes, percent) free, new events are refused (HTTP 503) while delivery and acknowledgement continue. [Details](docs/production-readiness/03-storage-pressure.md) |
 | `BOWER_MAX_DELIVERY_ATTEMPTS` | `20` | Retryable failures dead-letter after this many leases. |
 | `BOWER_DELIVERY_LEASE_SECONDS` | `300` | C# delivery lease (31–3600 seconds); live leases are never reset on restart. |
 | `BOWER_DELIVERY_TIMEOUT_SECONDS` | `240` | C# output cancellation deadline; at least 1 second and at least 30 seconds below the lease. Destination timeouts retain events for retry. |

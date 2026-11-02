@@ -18,7 +18,7 @@ BowerSecurity_CL
 | where EventType == "collector_health"
 | extend Refusals = coalesce(toint(Attributes.intake.capacityRefusals), 0) + coalesce(toint(Attributes.intake.privacyAlertRefusals), 0),
     StorageRefusals = coalesce(toint(Attributes.storage.storageRefusals), 0)
-// storageRefusals (free space) is a subset of capacityRefusals: shown, never added.
+// storageRefusals (free space) is a subset of the refusals above: shown, never added.
 | summarize arg_max(TimeGenerated, Attributes), RefusalsInWindow = sum(Refusals), StorageRefusalsInWindow = sum(StorageRefusals),
     CriticalRecordsInWindow = countif(tostring(Attributes.storage.volumeState) == "critical") by CollectorId
 | extend CapacityUsedPercent = todouble(Attributes.storage.capacityUsedPercent),

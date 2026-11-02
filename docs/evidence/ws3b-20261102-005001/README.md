@@ -28,7 +28,10 @@ Guide: [Full queues and low disk space](../../production-readiness/03-storage-pr
   from `deploy/bicep/main.bicep`, certificate publisher identity, separate Log Analytics
   Reader verifier in an isolated Azure CLI cache.
 - Build `261f61a`, CI run 41368830338, unsigned ([manifest](artifact-manifest.json)).
-  The pushed head differs only in tests, the alert query and documentation.
+  Review fixes made after this run are unit-tested only, not run on AWS: the Rust page
+  model, large-event reclaim, free-page release during a drain and under refused archive
+  coverage, guarded storage capture, privacy-alert storage refusals, the health-record
+  storage baseline and the Kubernetes claim size.
 - Input: sequence-numbered RFC 5424 frames (`ws3lNNNNNNN`) through a local rsyslog sender
   (disk-assisted queue, mutual TLS); real NTLM LDAP failures for nonexistent `ws3wNNNNNNN`
   accounts on the DC, forwarded by WEF into `ForwardedEvents`. Destination blocked by a

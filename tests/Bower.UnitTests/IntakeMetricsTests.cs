@@ -136,6 +136,35 @@ public sealed class IntakeMetricsTests
     }
 
     [Fact]
+    public async Task Process_AlertRefusedByTheVolumeIsCountedAsAStorageRefusalWithItsReason()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        string candidate = TfnCandidate(clock);
+        long bytes = Encoding.UTF8.GetByteCount(candidate);
+        string path = Path.Combine(directory.Path, "queue.db");
+        // The event's insert sees free space; the volume crosses the critical watermark before its alert.
+        FakeDiskSpaceProbe probe = new(10L * 1024 * 1_048_576, 20L * 1024 * 1_048_576);
+        SqliteEventStore store = new(path, 10 * 1_048_576, clock,
+            new StorageGuard(path, new(), probe, clock) { SampleInterval = TimeSpan.Zero });
+        await store.InitializeAsync(cancellationToken);
+        probe.AfterMeasure = _ => probe.FreeBytes = 1_048_576;
+        PipelineTelemetry telemetry = new(clock);
+
+        await Assert.ThrowsAsync<QueueCapacityExceededException>(
+            () => PrivacyProcessor(store, clock, telemetry).ProcessAsync(candidate, Identity, cancellationToken));
+
+        Assert.Equal(1, (await store.GetSnapshotAsync(cancellationToken)).Queued);
+        IntakeMetricsSnapshot intake = telemetry.IntakeSnapshot();
+        Assert.Equal((0, 1), (intake.CapacityRefusals, intake.PrivacyAlertRefusals));
+        Assert.Equal(PipelineTelemetry.PrivacyAlertCapacityReason, intake.LastRefusalReason);
+        StorageRefusalSnapshot storage = telemetry.StorageRefusalSnapshot();
+        Assert.Equal((1, bytes), (storage.Refusals, storage.RefusedBytes));
+        Assert.Equal(PipelineTelemetry.StorageCriticalReason, storage.LastRefusalReason);
+    }
+
+    [Fact]
     public async Task Process_AlertRefusedForInvalidOrRejectedEventKeepsTheirSelectionOutcome()
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;

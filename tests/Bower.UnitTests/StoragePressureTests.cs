@@ -416,7 +416,7 @@ public sealed class StoragePressureTests
             await store.MarkDeliveredAsync(lease.EventId, "ack", lease.LeaseToken, Cancellation);
         }
 
-        Assert.True((await store.GetStorageSnapshotAsync(Cancellation)).PageUtilisationPercent >= QueueRetentionJob.IntakeBlockedPercent);
+        Assert.True((await store.GetStorageSnapshotAsync(Cancellation)).PageUtilisationPercent >= DeliveryHealth.PageBackpressurePercent);
         QueueStoragePressure pressure = new();
         RecordingLogger<QueueRetentionJob> logger = new();
         await new QueueRetentionJob(store, clock, Settings(), logger, null, pressure).RunAsync(Cancellation);
@@ -874,8 +874,13 @@ public sealed class StoragePressureTests
         Assert.True((await restarted.VerifyLedgerAsync(Cancellation)).Intact);
     }
 
+    /// <summary>
+    /// A large event needs more pages than the gap below the intake limit, so it is refused
+    /// below the pressure trigger. The refusal itself triggers retention, which reclaims
+    /// acknowledged rows until it fits; otherwise the source would retry it forever.
+    /// </summary>
     [Fact]
-    public async Task LargeEventCanBeRefusedBelowPressureTriggerDespiteReclaimableAcknowledgements()
+    public async Task LargeEventRefusedBelowThePressureTrigger_ReclaimsAcknowledgementsAndIsAccepted()
     {
         using SqliteTemporaryDirectory directory = new();
         FakeClock clock = new(TestEvents.Now);
@@ -883,7 +888,7 @@ public sealed class StoragePressureTests
         SqliteEventStore store = new(path, MiB, clock, new StorageGuard(path, new(), new FakeDiskSpaceProbe(10 * GiB, 20 * GiB), clock));
         await store.InitializeAsync(Cancellation);
         await store.EnqueueAsync(Event("pending"), Cancellation);
-        for (int index = 0; (await store.GetStorageSnapshotAsync(Cancellation)).PageUtilisationPercent < 77; index++)
+        for (int index = 0; (await store.GetStorageSnapshotAsync(Cancellation)).PageUtilisationPercent < 75; index++)
         {
             await store.EnqueueAsync(Event($"ack-{index}", 4_000), Cancellation);
             QueuedEvent lease = (await store.LeaseAsync(100, TimeSpan.FromMinutes(1), Cancellation))
@@ -891,19 +896,186 @@ public sealed class StoragePressureTests
             await store.MarkDeliveredAsync(lease.EventId, "ack", lease.LeaseToken, Cancellation);
         }
 
-        QueueStorageSnapshot before = await store.GetStorageSnapshotAsync(Cancellation);
-        Assert.True(before.PageUtilisationPercent < QueueStorageMonitor.PagePressurePercent);
+        Assert.True((await store.GetStorageSnapshotAsync(Cancellation)).PageUtilisationPercent < QueueStorageMonitor.PagePressurePercent);
         QueuedEvent candidate = Event("large", 1_000_000);
         await Assert.ThrowsAsync<QueueCapacityExceededException>(() => store.EnqueueAsync(candidate, Cancellation));
-        QueueSnapshot snapshot = await store.GetSnapshotAsync(Cancellation);
-        await new QueueRetentionJob(store, clock, Settings(), new RecordingLogger<QueueRetentionJob>()).RunAsync(Cancellation);
-        Assert.Equal(snapshot, await store.GetSnapshotAsync(Cancellation));
+        Assert.True(store.RefusedIntakePages > 0);
 
-        // Reclaim only acknowledgements to demonstrate capacity was recoverable.
-        Assert.True(await store.PurgeDeliveredAsync(clock.UtcNow.AddSeconds(1), 100_000, Cancellation) > 0);
+        // The monitor triggers retention for the refusal alone.
+        Bower.Jobs.RecurringJobRegistry jobs = new(clock);
+        jobs.AddOrUpdate<QueueRetentionJob>(QueueRetentionJob.Id, (job, token) => job.RunAsync(token), Bower.Jobs.Cron.Hourly());
+        Assert.Empty(jobs.ClaimDue(clock.UtcNow));
+        await new QueueStorageMonitor(store, new PipelineTelemetry(clock), jobs, clock, new RecordingLogger<QueueStorageMonitor>())
+            .SampleAsync(Cancellation);
+        Assert.Equal(QueueRetentionJob.Id, Assert.Single(jobs.ClaimDue(clock.UtcNow)).Id);
+
+        QueueStoragePressure pressure = new();
+        RecordingLogger<QueueRetentionJob> logger = new();
+        await new QueueRetentionJob(store, clock, Settings(), logger, null, pressure).RunAsync(Cancellation);
+        Assert.True(pressure.PurgedEvents > 0);
+        Assert.Contains(logger.Messages, message => message.Contains("intake-blocked", StringComparison.Ordinal));
+        Assert.Equal(0, store.RefusedIntakePages);
         Assert.True((await store.EnqueueAsync(candidate, Cancellation)).Enqueued);
-        Assert.Equal(1, (await store.GetSnapshotAsync(Cancellation)).Uploading);
+        QueueSnapshot snapshot = await store.GetSnapshotAsync(Cancellation);
+        Assert.Equal(2, snapshot.Queued + snapshot.Uploading);
         Assert.True((await store.VerifyLedgerAsync(Cancellation)).Intact);
+    }
+
+    /// <summary>
+    /// Free pages are not released while a backlog settles: its acknowledgements reuse them,
+    /// and releasing them only regrows the file. Once drained, they are released.
+    /// </summary>
+    [Fact]
+    public async Task Retention_KeepsFreePagesWhileABacklogSettlesAndReleasesThemOnceDrained()
+    {
+        using SqliteTemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        string path = Path.Combine(directory.Path, "queue.db");
+        SqliteEventStore store = new(path, 64 * MiB, clock, new StorageGuard(path, new(), new FakeDiskSpaceProbe(1536 * MiB, 20 * GiB), clock));
+        await store.InitializeAsync(Cancellation);
+        for (int index = 0; index < 500; index++)
+        {
+            await store.EnqueueAsync(Event($"backlog-{index}", 2_000), Cancellation);
+        }
+
+        await CreateFreePagesAsync(path, 4 * MiB);
+        long free = (await store.GetStorageSnapshotAsync(Cancellation)).FreePages;
+        QueueRetentionJob retention = new(store, clock, Settings(), new RecordingLogger<QueueRetentionJob>(), null, new QueueStoragePressure());
+        await retention.RunAsync(Cancellation);
+        Assert.Equal(free, (await store.GetStorageSnapshotAsync(Cancellation)).FreePages);
+
+        while (await store.LeaseAsync(500, TimeSpan.FromMinutes(1), Cancellation) is { Count: > 0 } batch)
+        {
+            await store.MarkDeliveredBatchAsync(
+                [.. batch.Select(item => item.EventId)], "ack", batch.ToDictionary(item => item.EventId, item => item.LeaseToken!), Cancellation);
+        }
+
+        clock.Advance(TimeSpan.FromHours(2));
+        await retention.RunAsync(Cancellation);
+        Assert.Equal(0, (await store.GetStorageSnapshotAsync(Cancellation)).FreePages);
+        Assert.True((await store.VerifyLedgerAsync(Cancellation)).Intact);
+    }
+
+    /// <summary>Unverified archive coverage purges nothing, but pages already free still go back.</summary>
+    [Fact]
+    public async Task Retention_ReleasesFreePagesWhenArchiveCoverageIsRefused()
+    {
+        using SqliteTemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        string path = Path.Combine(directory.Path, "queue.db");
+        SqliteEventStore store = new(path, 64 * MiB, clock, new StorageGuard(path, new(), new FakeDiskSpaceProbe(1536 * MiB, 20 * GiB), clock));
+        await store.InitializeAsync(Cancellation);
+        await store.EnqueueAsync(Event("delivered"), Cancellation);
+        QueuedEvent lease = Assert.Single(await store.LeaseAsync(1, TimeSpan.FromMinutes(1), Cancellation));
+        await store.MarkDeliveredAsync(lease.EventId, "ack", lease.LeaseToken, Cancellation);
+        await CreateFreePagesAsync(path, 4 * MiB);
+        string archivePath = Path.Combine(directory.Path, "archive");
+        Directory.CreateDirectory(archivePath);
+        clock.Advance(TimeSpan.FromDays(10));
+        RecordingLogger<QueueRetentionJob> logger = new();
+
+        await new QueueRetentionJob(store, clock, Settings(), logger, new QueueArchive(archivePath, "collector-1", clock), new QueueStoragePressure())
+            .RunAsync(Cancellation);
+
+        Assert.Contains(logger.Messages, message => message.Contains("archive coverage is not verified", StringComparison.Ordinal));
+        Assert.Equal(1, (await store.GetSnapshotAsync(Cancellation)).Delivered);
+        Assert.Equal(0, (await store.GetStorageSnapshotAsync(Cancellation)).FreePages);
+    }
+
+    /// <summary>Status, heartbeats and health records omit storage instead of failing when the queue cannot be read.</summary>
+    [Fact]
+    public async Task StorageCapture_IsOmittedWhenTheQueueCannotBeRead()
+    {
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        string queueDirectory = Path.Combine(directory.Path, "state");
+        Directory.CreateDirectory(queueDirectory);
+        string path = Path.Combine(queueDirectory, "queue.db");
+        SqliteEventStore store = new(path, 10 * MiB, clock, new StorageGuard(path, new(), new FakeDiskSpaceProbe(10 * GiB, 20 * GiB), clock));
+        await store.InitializeAsync(Cancellation);
+        QueueSnapshot snapshot = await store.GetSnapshotAsync(Cancellation);
+        QueuePageUsage? pages = await QueueStorageStatus.TryReadPagesAsync(store, Cancellation);
+        Assert.NotNull(pages);
+        Assert.NotNull(await QueueStorageStatus.TryCaptureAsync(store, snapshot, null, null, clock.UtcNow, pages, Cancellation));
+
+        SqliteConnection.ClearAllPools();
+        Directory.Delete(queueDirectory, recursive: true);
+
+        Assert.Null(await QueueStorageStatus.TryReadPagesAsync(store, Cancellation));
+        Assert.Null(await QueueStorageStatus.TryCaptureAsync(store, snapshot, null, null, clock.UtcNow, null, Cancellation));
+    }
+
+    /// <summary>
+    /// Builds before the settlement ceiling cap the file at M + 4 MiB and refuse to open a
+    /// larger one. The documented rollback recovery: drain, purge acknowledged rows and
+    /// <c>VACUUM</c> with the collector stopped, until the file is below that ceiling.
+    /// </summary>
+    [Fact]
+    public async Task Rollback_GrownQueueOpensInAnOlderBuildAfterDrainPurgeAndVacuum()
+    {
+        using SqliteTemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        string path = Path.Combine(directory.Path, "queue.db");
+        SqliteEventStore store = new(path, MiB, clock);
+        await store.InitializeAsync(Cancellation);
+        await store.EnqueueAsync(Event("undelivered", 2_000), Cancellation);
+        for (int index = 0; index < 200; index++)
+        {
+            await store.EnqueueAsync(Event($"acknowledged-{index}", 4_000), Cancellation);
+        }
+
+        IReadOnlyList<QueuedEvent> leases = await store.LeaseAsync(500, TimeSpan.FromMinutes(1), Cancellation);
+        foreach (QueuedEvent lease in leases.Where(item => item.EventId != "undelivered"))
+        {
+            await store.MarkDeliveredAsync(lease.EventId, "ack", lease.LeaseToken, Cancellation);
+        }
+
+        // Settlement growth past the old ceiling (M + 4 MiB = 5 MiB here), below the new one.
+        await CreateFreePagesAsync(path, 6 * MiB);
+        SqliteConnection.ClearAllPools();
+        Assert.False(await OlderBuildOpensAsync(path, MiB));
+
+        // Drain, purge acknowledged rows, then VACUUM with the collector stopped.
+        QueuedEvent pending = leases.Single(item => item.EventId == "undelivered");
+        await store.MarkDeliveredAsync(pending.EventId, "ack", pending.LeaseToken, Cancellation);
+        await store.PurgeDeliveredAsync(clock.UtcNow.AddSeconds(1), 10_000, Cancellation);
+        await store.EnqueueAsync(Event("kept"), Cancellation);
+        SqliteConnection.ClearAllPools();
+        await using (SqliteConnection connection = new($"Data Source={path};Pooling=False"))
+        {
+            await connection.OpenAsync(Cancellation);
+            await using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);";
+            await command.ExecuteNonQueryAsync(Cancellation);
+        }
+
+        Assert.True(await OlderBuildOpensAsync(path, MiB));
+        SqliteEventStore reopened = new(path, MiB, clock);
+        await reopened.InitializeAsync(Cancellation);
+        Assert.Equal(1, (await reopened.GetSnapshotAsync(Cancellation)).Queued);
+        Assert.True((await reopened.VerifyLedgerAsync(Cancellation)).Intact);
+    }
+
+    // The open check of builds before the settlement ceiling: max_page_count = (M + 4 MiB) / page size.
+    private static async Task<bool> OlderBuildOpensAsync(string path, long maximumBytes)
+    {
+        await using SqliteConnection connection = new($"Data Source={path};Pooling=False");
+        await connection.OpenAsync(Cancellation);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "PRAGMA page_size;";
+        long pageSize = Convert.ToInt64(await command.ExecuteScalarAsync(Cancellation), System.Globalization.CultureInfo.InvariantCulture);
+        long requested = (maximumBytes * 4 + 16 * MiB) / 4 / pageSize;
+        command.CommandText = $"PRAGMA max_page_count = {requested};";
+        return Convert.ToInt64(await command.ExecuteScalarAsync(Cancellation), System.Globalization.CultureInfo.InvariantCulture) <= requested;
+    }
+
+    private static async Task CreateFreePagesAsync(string path, long bytes)
+    {
+        await using SqliteConnection connection = new($"Data Source={path};Pooling=False");
+        await connection.OpenAsync(Cancellation);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = $"CREATE TABLE free_pages (payload BLOB); INSERT INTO free_pages VALUES (zeroblob({bytes})); DROP TABLE free_pages;";
+        await command.ExecuteNonQueryAsync(Cancellation);
     }
 
     [Fact]

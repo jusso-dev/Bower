@@ -522,10 +522,10 @@ public sealed class SecurityEventProcessor(
         {
             enqueue = await queue.EnqueueAsync(queued, cancellationToken);
         }
-        catch (QueueCapacityExceededException)
+        catch (QueueCapacityExceededException exception)
         {
             // The source outcome is already recorded (and the source event may be queued).
-            telemetry?.RecordPrivacyAlertRefusal(bytesIn);
+            telemetry?.RecordPrivacyAlertRefusal(bytesIn, exception.Reason);
             throw;
         }
 

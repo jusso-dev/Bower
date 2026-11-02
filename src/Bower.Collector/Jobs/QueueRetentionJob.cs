@@ -34,18 +34,10 @@ public sealed partial class QueueRetentionJob(
     /// <summary>Page use the pressure purge brings the queue down to once it starts.</summary>
     public const double PressureTargetPercent = 70;
 
-    /// <summary>Page use (of the intake limit) at which new events are effectively refused.</summary>
-    public const double IntakeBlockedPercent = 95;
-
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         DateTimeOffset now = clock.GetUtcNow();
         int total = await PurgeAsync(now - settings.DeliveredRetention, BatchSize, _ => Task.FromResult(true), cancellationToken);
-        if (total < 0)
-        {
-            return;
-        }
-
         if (total > 0)
         {
             LogPurged(logger, total);
@@ -53,7 +45,12 @@ public sealed partial class QueueRetentionJob(
 
         if (queue is SqliteEventStore store)
         {
-            await ReclaimUnderPressureAsync(store, now, cancellationToken);
+            // Unverified archive coverage purges nothing, but pages already free still go back.
+            if (total >= 0)
+            {
+                await ReclaimUnderPressureAsync(store, now, cancellationToken);
+            }
+
             await ReleaseFreePagesAsync(store, cancellationToken);
         }
     }
@@ -63,26 +60,33 @@ public sealed partial class QueueRetentionJob(
 
     private const int MaximumReleaseSteps = 64;
 
+    /// <summary>Longest one run spends releasing free pages; the rest waits for the next run.</summary>
+    public static readonly TimeSpan MaximumReleaseDuration = TimeSpan.FromSeconds(10);
+
     /// <summary>
     /// Shrinks the database by releasing free pages when the volume is short of space or the
-    /// file grew past the intake limit (after settling a large backlog). Bounded steps.
+    /// file grew past the intake limit (after settling a large backlog). Not while a backlog
+    /// is still settling: undelivered rows dominate, or the pages in use are still past the
+    /// intake limit. Those rows' acknowledgements reuse the free pages, and releasing them
+    /// only makes the file grow again. Bounded in steps and time, one checkpoint at the end.
     /// </summary>
     private async Task ReleaseFreePagesAsync(SqliteEventStore store, CancellationToken cancellationToken)
     {
         QueueStorageSnapshot files = await store.GetStorageSnapshotAsync(cancellationToken);
         StorageState disk = store.Storage?.Evaluate().State ?? StorageState.Normal;
         bool needed = disk is StorageState.Warning or StorageState.Critical || files.PageCount > files.IntakeLimitPages;
-        if (!needed || files.FreePages == 0)
+        if (!needed || files.FreePages == 0 || await SettlingAsync(store, files, cancellationToken))
         {
             return;
         }
 
         long released = 0;
+        long started = clock.GetTimestamp();
         for (int step = 0; step < MaximumReleaseSteps && !cancellationToken.IsCancellationRequested; step++)
         {
-            long pages = await store.ReleaseFreePagesAsync(ReleaseStepPages, cancellationToken);
+            long pages = await store.ReleaseFreePagesAsync(ReleaseStepPages, checkpoint: false, cancellationToken);
             released += pages;
-            if (pages < ReleaseStepPages)
+            if (pages < ReleaseStepPages || clock.GetElapsedTime(started) >= MaximumReleaseDuration)
             {
                 break;
             }
@@ -90,9 +94,25 @@ public sealed partial class QueueRetentionJob(
 
         if (released > 0)
         {
+            await store.TruncateWalAsync(cancellationToken);
             long databaseBytes = (await store.GetStorageSnapshotAsync(cancellationToken)).DatabaseBytes;
             LogPagesReleased(logger, released * files.PageSize, databaseBytes);
         }
+    }
+
+    /// <summary>
+    /// True while a backlog is settling: pages in use past the intake limit (only
+    /// settlement can put them there), or more undelivered rows than acknowledged ones.
+    /// </summary>
+    private static async Task<bool> SettlingAsync(SqliteEventStore store, QueueStorageSnapshot files, CancellationToken cancellationToken)
+    {
+        if (files.UsedPages > files.IntakeLimitPages)
+        {
+            return true;
+        }
+
+        QueueSnapshot rows = await store.GetSnapshotAsync(cancellationToken);
+        return rows.Queued + rows.Retrying + rows.Uploading > rows.Delivered;
     }
 
     private async Task ReclaimUnderPressureAsync(SqliteEventStore store, DateTimeOffset now, CancellationToken cancellationToken)
@@ -100,21 +120,33 @@ public sealed partial class QueueRetentionJob(
         StorageState disk = store.Storage?.Evaluate(force: true).State ?? StorageState.Normal;
         bool diskPressure = disk is StorageState.Warning or StorageState.Critical;
         QueueStorageSnapshot files = await store.GetStorageSnapshotAsync(cancellationToken);
-        if (!diskPressure && files.PageUtilisationPercent < QueueStorageMonitor.PagePressurePercent)
+
+        // A new event the page limit refused, however far below the trigger: a large event
+        // can need more pages than the gap, and sources retry it until it fits. Not for
+        // archived queues: a verified segment can still change before its row is deleted.
+        long refusedPages = store.TakeRefusedIntakePages();
+        if (archive is not null)
+        {
+            refusedPages = 0;
+        }
+
+        if (!diskPressure && refusedPages == 0 && files.PageUtilisationPercent < QueueStorageMonitor.PagePressurePercent)
         {
             return;
         }
 
         // Low disk: reclaim every eligible row, so new events reuse freed pages instead of
-        // growing the file. Page pressure alone: stop once use is back at the target. Once
-        // new events are refused, intake outranks duplicate detection: the floor no longer
-        // protects acknowledged rows (after a large drain they are all recent).
-        bool intakeBlocked = files.PageUtilisationPercent >= IntakeBlockedPercent;
+        // growing the file. Page pressure alone: stop once use, counting the refused event,
+        // is back at the target. Once new events are refused, intake outranks duplicate
+        // detection: the floor no longer protects acknowledged rows (after a large drain
+        // they are all recent).
+        bool intakeBlocked = refusedPages > 0 || files.PageUtilisationPercent >= DeliveryHealth.PageBackpressurePercent;
+        double targetPages = files.IntakeLimitPages * PressureTargetPercent / 100;
         int purged = await PurgeAsync(
             intakeBlocked ? now.AddSeconds(1) : now - settings.PressureRetentionFloor,
             diskPressure ? BatchSize : PressureBatchSize,
             async token => diskPressure
-                || (await store.GetStorageSnapshotAsync(token)).PageUtilisationPercent > PressureTargetPercent,
+                || (await store.GetStorageSnapshotAsync(token)).UsedPages + refusedPages > targetPages,
             cancellationToken);
         if (purged > 0)
         {

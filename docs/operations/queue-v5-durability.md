@@ -203,15 +203,16 @@ seconds) instead of waiting for maintenance. A database already larger than its 
 allowance is refused; configure an adequate limit before migration. Database free
 pages are reused.
 
-C# collector: new events stop once database pages **in use** reach 85% of one quarter
+Both collectors: new events stop once database pages **in use** reach 85% of one quarter
 of that ceiling (`M + 4 MiB`), while leasing, acknowledgement, retry and dead-letter
 writes may grow the file to 1.75 × (`M + 4 MiB`) (the SQLite `max_page_count`).
 Settlement enlarges rows and splits packed pages; without that room a backlog that
 filled the pages could never be acknowledged (seen on AWS, see
 [storage pressure](../production-readiness/03-storage-pressure.md)). A queued row
-takes about 2.2 times its payload, so the page limit binds before `M`. The Rust
-collector keeps the single `M + 4 MiB` page ceiling and refuses a database a C#
-collector grew past it.
+takes about 2.2 times its payload, so the page limit binds before `M`. Builds before
+this change (C#, and Rust before the port) keep the single `M + 4 MiB` page ceiling and
+refuse a database grown past it; see the
+[rollback procedure](../production-readiness/04-upgrade-backup-recovery.md#rollback-after-settlement-growth).
 
 The physical cap includes retained delivered payloads, ledger/checkpoint pages and
 indexes; it can reject new events before the logical undelivered payload limit. The

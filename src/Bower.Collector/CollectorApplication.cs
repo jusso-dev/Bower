@@ -463,6 +463,8 @@ public static partial class CollectorApplication
                     IReadOnlyList<SourceSilenceStatus> sources = sourceHealth.Evaluate();
                     DeliveryActivity activity = context.RequestServices.GetRequiredService<DeliveryActivity>();
                     DeliveryFailureActivity? lastFailure = activity.LastFailure;
+                    // Read once: queuePages and the storage block report the same page use.
+                    QueuePageUsage? pages = await QueueStorageStatus.TryReadPagesAsync(eventQueue, cancellationToken);
                     StatusResponse status = new(
                         Status(snapshot, sources, storage.Evaluate().State),
                         new StatusPolicyResponse(
@@ -504,11 +506,11 @@ public static partial class CollectorApplication
                         Activity = telemetry.BusiestSources(),
                         Tap = context.RequestServices.GetRequiredService<EventTap>().Snapshot(),
                         WindowsEventLog = context.RequestServices.GetService<WindowsEventLogSource>()?.Snapshot(),
-                        QueuePages = await QueuePagesAsync(eventQueue, cancellationToken),
+                        QueuePages = pages is null ? null : StatusQueuePagesResponse.From(pages),
                         DeliveryActivity = new StatusDeliveryActivityResponse(
                             activity.LastSuccessfulDeliveryAt, lastFailure?.Code, lastFailure?.At),
-                        Storage = await QueueStorageStatus.CaptureAsync(
-                            eventQueue, snapshot, pressure, telemetry, clock.GetUtcNow(), cancellationToken)
+                        Storage = await QueueStorageStatus.TryCaptureAsync(
+                            eventQueue, snapshot, pressure, telemetry, clock.GetUtcNow(), pages, cancellationToken)
                     };
                     return Results.Json(status, CollectorJsonContext.Default.StatusResponse);
                 })
@@ -558,25 +560,6 @@ public static partial class CollectorApplication
                     $"(decision {PipelineTelemetry.ActionName(decision.Action)}). Add " +
                     "examples/policies/collector-health/collector-health.yaml to the policy directory or set the interval to 0.");
             }
-        }
-    }
-
-    private static async Task<StatusQueuePagesResponse?> QueuePagesAsync(
-        IDurableEventStore queue,
-        CancellationToken cancellationToken)
-    {
-        if (queue is not IQueuePageUsageSource source)
-        {
-            return null;
-        }
-
-        try
-        {
-            return StatusQueuePagesResponse.From(await source.GetPageUsageAsync(cancellationToken));
-        }
-        catch (Exception exception) when (exception is Microsoft.Data.Sqlite.SqliteException or QueueCapacityExceededException or IOException)
-        {
-            return null;
         }
     }
 

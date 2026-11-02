@@ -711,6 +711,35 @@ public sealed class CollectorHealthRecordTests
             item => Assert.InRange(item.Value.GetDouble(), 0, CollectorHealthRecord.MaximumReportedValue));
     }
 
+    [Fact]
+    public void NextBaseline_KeepsTheLastReportedStorageWhenARecordHadNone()
+    {
+        CollectorHealthSample first = Sample(TestEvents.Now, sequence: 1) with
+        {
+            Storage = Volume("critical", intakePaused: true, freeBytes: 100L * 1_048_576, refusals: 5, purged: 10)
+        };
+        // The volume could not be read for the second record, which was still queued.
+        CollectorHealthSample second = Sample(TestEvents.Now.AddMinutes(5), sequence: 2) with
+        {
+            CollectorStartedAt = first.CollectorStartedAt,
+            Storage = null
+        };
+        CollectorHealthSample third = Sample(TestEvents.Now.AddMinutes(10), sequence: 3) with
+        {
+            CollectorStartedAt = first.CollectorStartedAt,
+            Storage = Volume("critical", intakePaused: true, freeBytes: 100L * 1_048_576, refusals: 7, purged: 12)
+        };
+
+        CollectorHealthSample baseline = CollectorHealthRecord.NextBaseline(second, CollectorHealthRecord.NextBaseline(first, null));
+        JsonElement storage = CollectorHealthRecord.Create(third, Identity.Id, "production", baseline).Attributes!["storage"];
+
+        // Deltas since the last reported storage, not since process start (7 and 12).
+        Assert.Equal(2, storage.GetProperty("storageRefusals").GetInt64());
+        Assert.Equal(2, storage.GetProperty("pressurePurgedEvents").GetInt64());
+        Assert.Equal(second.At, baseline.At);
+        Assert.Same(third, CollectorHealthRecord.NextBaseline(third, baseline));
+    }
+
     private static QueueStorageStatus Volume(string state, bool intakePaused, long freeBytes, long refusals, long purged) =>
         new(state, intakePaused, TestEvents.Now, freeBytes, 2_048L * 1_048_576, Math.Round(freeBytes * 100.0 / (2_048L * 1_048_576), 2),
             1_024L * 1_048_576, 256L * 1_048_576, TestEvents.Now, 1, intakePaused ? 1 : 0,

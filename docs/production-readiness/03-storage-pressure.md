@@ -145,14 +145,18 @@ On AWS, a 19-minute queue-full run logged 45 lines (7.4 KB) in total.
 | `queuePages` (workstream 6's page snapshot) now reports the limit at which new events are refused, plus `ceilingBytes` | One page computation for status, health records, alerts and host checks |
 | `collector_health` `storage` gains volume state, free space, thresholds, WAL size, storage refusals and pressure purges; problem codes `storage-critical` and `storage-low` | The `queue-storage` alert and host checks see the volume (see [monitoring](06-monitoring-and-runbooks.md)) |
 | The collector's own health record uses the settlement reserve and skips the critical watermark | **Defect fixed (workstream 6):** the storage alert could not see a full queue because its records were refused |
-| New queues use incremental auto-vacuum; retention returns free pages to the file system in 8 MiB steps under pressure | Pruning reclaims disk, not only pages (existing queues keep reusing free pages) |
+| A large event refused by the page limit triggers retention at any page use | **Defect fixed:** an event needing more pages than remained was refused below the 80% trigger, and its source retried it forever |
+| New queues use incremental auto-vacuum; retention returns free pages to the file system in 8 MiB steps under pressure, at most 10 seconds per run with one checkpoint at the end; not while a backlog settles (more undelivered than acknowledged rows, or pages in use past the intake limit) | Pruning reclaims disk, not only pages (existing queues keep reusing free pages); releasing pages a draining backlog reuses only regrows the file. Also runs when archive coverage refuses purging |
+| Rust queue: same intake limit and settlement ceiling | Either runtime opens and drains a queue the other grew while settling |
 | Archive-backed retention purges only the archive-verified sequences | A concurrent purge could shift a verified batch onto unverified rows |
 | Bounded storage logs; delivery-loop failure logs throttled | A full disk must not also fill the journal |
-| Kubernetes manifest sets `BOWER_QUEUE_MAX_BYTES` (5 GiB) and ephemeral-storage | The 10 GiB default, and settlement growth, could exceed the 10Gi claim |
+| Kubernetes manifest sets `BOWER_QUEUE_MAX_BYTES` (5 GiB), a 16Gi claim and ephemeral-storage | The 10 GiB default, and settlement growth, could exceed the old 10Gi claim |
 
-The Rust collector (`bower-collector-rs`) is **not** changed and keeps the original
-behaviour, including the drain deadlock and the absence of watermarks; see
-[known limits](#known-limits). The Sentinel schema, DCR and table are unchanged.
+The Rust collector (`bower-collector-rs`) now shares the page model: the same 85%
+intake limit and 1.75× settlement ceiling, so either runtime opens and drains a queue
+the other grew while settling. It has no watermarks, pressure retention, incremental
+vacuum or `storage` status; see [known limits](#known-limits). The Sentinel schema, DCR
+and table are unchanged.
 
 ---
 
@@ -180,10 +184,14 @@ count, and `queue.undeliveredBytes` by the same count.
 2. **Queue cap:** `M ≥ N × F / 0.85 − 4 MiB`. Round up. The logical rule
    `M ≥ R × T × P` is then always met because `F > P`.
 3. **Database ceiling on disk:** `D = 1.75 × (M + 4 MiB)`.
-4. **Queue volume:** `V ≥ max(D + 128 MiB + 1 GiB, (D + 128 MiB) / 0.9)` with the
-   default watermarks (warning below max(1 GiB, 10%)). The 128 MiB covers WAL bursts
-   (a 5,000-row retention purge wrote up to 72 MB of WAL on AWS, truncated within
-   5 seconds) and shared memory. Add archive and spool space if they share the volume.
+4. **Queue volume:** `V ≥ max((D + 128 MiB + 1 GiB) / (1 − r), (D + 128 MiB) / (0.9 − r))`
+   with the default watermarks (warning below max(1 GiB, 10%) of the filesystem). `r` is
+   the share reserved for root, which the service cannot use: 0 for xfs and for ext4
+   created with `-m 0`, 0.05 for ext4 defaults. `V` is the filesystem size; a disk or
+   claim of that size formats to about 2% less on ext4 (inode tables and journal), so
+   request `V / 0.98`. The 128 MiB covers WAL bursts (a 5,000-row retention purge wrote
+   up to 72 MB of WAL on AWS, truncated within 5 seconds) and shared memory. Add archive
+   and spool space if they share the volume.
 5. **`ForwardedEvents`:** `S ≥ R × E × T_stall × 1.2`, where `T_stall` is the longest
    time Bower itself may stop reading (service down, queue full, volume critical). A
    destination outage alone does not use this budget while Bower's queue has room.
@@ -192,7 +200,7 @@ count, and `queue.undeliveredBytes` by the same count.
    18 GB. Either budget it, or lower the retention (for example 24 hours) and let
    pressure retention trim it under load.
 
-### Worked examples (F = 3 KB, E = 2.2 KB, 1-hour floor)
+### Worked examples (F = 3 KB, E = 2.2 KB, 1-hour floor, xfs: r = 0)
 
 | Rate | Outage | Events | `BOWER_QUEUE_MAX_BYTES` (M) | Database ceiling 1.75 × (M + 4 MiB) | Queue volume | `ForwardedEvents` for the same stall |
 | --- | --- | ---: | --- | --- | ---: | --- |
@@ -265,7 +273,7 @@ large enough for a retention purge's WAL burst and settlement growth: at least
 | `queueMaximumBytes`, `queueUndeliveredBytes`, `queueUtilisationPercent` | Logical cap and use | Informational (the page limit binds first) |
 | `oldestPendingAgeSeconds` | Age of the oldest undelivered event | Page above 15 minutes (or your SLA) |
 | `pressurePurgedEvents`, `lastPressurePurgeAt` | Acknowledged rows removed early since start | Ticket on any increase: retention is undersized |
-| `storageRefusals`, `storageRefusedBytes`, `lastStorageRefusalAt`, `lastStorageRefusalReason` | Refusals caused by free space (`storage-critical`, `storage-full`); a subset of `intake.capacityRefusals` | Page on any increase |
+| `storageRefusals`, `storageRefusedBytes`, `lastStorageRefusalAt`, `lastStorageRefusalReason` | Refusals caused by free space (`storage-critical`, `storage-full`); a subset of `intake.capacityRefusals` plus `intake.privacyAlertRefusals` | Page on any increase |
 
 Existing signals that matter here: `intake.capacityRefusals` and `lastRefusalReason`
 (all refusals, shape shared with the Rust collector), `queue.oldestUndelivered`,
@@ -507,9 +515,14 @@ volume, start with the previous mount.
 ### 6.4 Kubernetes (`deploy/kubernetes`)
 
 The [manifest](../../deploy/kubernetes/deployment.yaml) now sets
-`BOWER_QUEUE_MAX_BYTES=5368709120` (5 GiB, so `1.75 × (5 GiB + 4 MiB)` plus the warning watermark fits) for its `10Gi` claim, and an
+`BOWER_QUEUE_MAX_BYTES=5368709120` (5 GiB) with a `16Gi` claim, and an
 `ephemeral-storage` request of 64Mi and limit of 512Mi (logs only; the root filesystem
-is read-only).
+is read-only). The claim follows section 3 for a typical ext4 storage class (`r` =
+0.05): `D = 1.75 × (5 GiB + 4 MiB)` = 8.8 GiB needs `V` = 10.4 GiB, requested as about
+10.7 GiB. The earlier `10Gi` claim was too small: at the settlement ceiling it left
+less free space than the warning watermark. A claim that cannot be expanded keeps
+`10Gi` with `BOWER_QUEUE_MAX_BYTES=4294967296` (4 GiB, `D` = 7.0 GiB, about 8.7 GiB
+needed).
 
 1. Size the claim from section 3 (`V`), and `BOWER_QUEUE_MAX_BYTES` to match. Use a
    storage class that supports expansion (`allowVolumeExpansion: true`).
@@ -789,34 +802,33 @@ fields.
 - **Existing queue files** created without SQLite incremental auto-vacuum do not
   return freed pages to the filesystem through the new incremental-vacuum path.
   Freed pages can be reused inside the database, but that does not recover volume
-  free space. Qualify a supported migration or use additional disk capacity.
-- **Rust collector and rollback:** none of these changes are ported. `bower-collector-rs`
-  retains the drain deadlock at the page ceiling and has no watermarks or `storage`
-  status. Switching a grown C# queue to Rust, or rolling back to a version with the old
-  page ceiling, is unsupported: a database whose page count exceeds that ceiling can be
-  refused even when it contains free pages. Increasing `BOWER_QUEUE_MAX_BYTES` alone
-  is not a qualified recovery procedure and changes the storage budget.
-  Keep this transition gate open until both runtimes have compatible admission and
-  settlement reserves and tests exercise C# to Rust and the reverse with a grown queue,
-  retained acknowledgements, pending events, restart and interrupted settlement.
-  Evidence must show all accepted pending events remain durable and drain, duplicate
-  handling remains correct, and the physical storage limit is respected in both
-  directions. Existing queues without incremental auto-vacuum also need a tested
-  migration or recovery procedure.
+  free space. An offline `VACUUM` (as in the
+  [rollback procedure](04-upgrade-backup-recovery.md#rollback-after-settlement-growth))
+  returns it but does not switch the file to incremental auto-vacuum; use additional disk
+  capacity until a migration is qualified.
+- **Rust collector:** the intake limit and settlement ceiling are ported (tests open a
+  queue grown past the intake ceiling, refuse intake at the limit while a backlog still
+  leases and acknowledges, and refuse a file past the settlement ceiling). Watermarks,
+  pressure retention, the large-event reclaim, incremental vacuum and the `storage`
+  status are **not** ported: Rust has no free-space watermark, and only
+  age retention frees pages. A C# to Rust switch with a grown queue was not run live.
+- **Rollback to builds without the settlement ceiling** (C# before this change, Rust
+  before the port): they refuse to open a database larger than `M + 4 MiB`. Follow the
+  [downgrade procedure](04-upgrade-backup-recovery.md#rollback-after-settlement-growth)
+  (drain, purge, `VACUUM`) before rolling back. Raising `BOWER_QUEUE_MAX_BYTES` on the
+  older build is not a qualified recovery and changes the storage budget.
 - **Management** accepts the heartbeat `storage` object but does not store or display
   it yet (workstream 6).
 - Free space is sampled once a second on the insert path and every 5 seconds by the
   monitor; a writer that fills the volume faster than that can still cause
   `storage-full` refusals (handled as backpressure).
-- **Page-pressure recovery for large events is unqualified.** Admission reserves pages
-  for the incoming event, so it can refuse a large event before the monitor reaches its
-  80% page-pressure trigger, even when acknowledged rows could be reclaimed. Recent
-  acknowledgements are also protected by the retention floor below 95%. The source must
-  retain and retry the event; recovery may require the retention window to expire or
-  operator intervention. Before qualification, distinguish page-limit refusals from
-  logical-capacity and intrinsically oversized events, then test bounded, archive-safe
-  reclaim on a page-limit refusal without deleting unacknowledged rows or relaxing the
-  physical cap.
+- **Large events below the pressure trigger:** a large event can need more pages than
+  remain below the intake limit, so it is refused well below 80%. The refusal now
+  triggers retention, which removes acknowledged rows (ignoring the floor, as when
+  intake is blocked) until the event fits; unacknowledged rows are never touched. An
+  event larger than the whole intake limit is refused permanently. Not for archived
+  queues (next item): there the source retries until age retention or the 80%/95%
+  triggers free enough pages. Unit-tested only.
 - **Archive-backed retention:** retention now deletes only the sequence set whose
   archive segments it re-hashed, and rechecks acknowledgement and cutoff in the write
   transaction. Interleaved purge and corrupted-segment regressions cover the previously

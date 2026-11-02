@@ -84,6 +84,11 @@ public sealed class PipelineTelemetry(TimeProvider clock)
         MarkRefusal(ref lastRefusal, 0);
         Interlocked.Add(ref capacityRefusedBytes, bytesIn);
         Interlocked.Increment(ref capacityRefusals);
+        RecordStorageRefusal(bytesIn, reason);
+    }
+
+    private void RecordStorageRefusal(long bytesIn, string? reason)
+    {
         if (reason is StorageCriticalReason or StorageFullReason)
         {
             MarkRefusal(ref lastStorageRefusal, reason == StorageFullReason ? 1 : 0);
@@ -92,7 +97,10 @@ public sealed class PipelineTelemetry(TimeProvider clock)
         }
     }
 
-    /// <summary>Capacity refusals caused by free disk space, since start. A subset of capacity refusals.</summary>
+    /// <summary>
+    /// Refusals caused by free disk space, since start: a subset of capacity and
+    /// privacy-alert refusals.
+    /// </summary>
     public StorageRefusalSnapshot StorageRefusalSnapshot()
     {
         // Reverse of write order, as in IntakeSnapshot.
@@ -107,11 +115,12 @@ public sealed class PipelineTelemetry(TimeProvider clock)
     }
 
     /// <summary>Counts one attempt whose privacy alert the queue refused for capacity (HTTP 503).</summary>
-    public void RecordPrivacyAlertRefusal(long bytesIn)
+    public void RecordPrivacyAlertRefusal(long bytesIn, string? reason = null)
     {
         MarkRefusal(ref lastRefusal, 1);
         Interlocked.Add(ref privacyAlertRefusedBytes, bytesIn);
         Interlocked.Increment(ref privacyAlertRefusals);
+        RecordStorageRefusal(bytesIn, reason);
     }
 
     public IntakeMetricsSnapshot IntakeSnapshot()

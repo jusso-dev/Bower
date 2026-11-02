@@ -72,13 +72,58 @@ public sealed record QueueStorageStatus(
     DateTimeOffset? LastStorageRefusalAt,
     string? LastStorageRefusalReason)
 {
+    /// <summary>
+    /// Page use, or null when the queue cannot report it or reading failed (busy, full or
+    /// unreadable volume): status and health records must still be produced.
+    /// </summary>
+    public static async Task<QueuePageUsage?> TryReadPagesAsync(IDurableEventStore queue, CancellationToken cancellationToken)
+    {
+        if (queue is not IQueuePageUsageSource source)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await source.GetPageUsageAsync(cancellationToken);
+        }
+        catch (Exception exception) when (IsStorageFailure(exception))
+        {
+            return null;
+        }
+    }
+
+    /// <summary><see cref="CaptureAsync"/>, or null (the storage block is omitted) when the volume or queue cannot be read.</summary>
+    public static async Task<QueueStorageStatus?> TryCaptureAsync(
+        IDurableEventStore queue,
+        QueueSnapshot snapshot,
+        QueueStoragePressure? pressure,
+        PipelineTelemetry? telemetry,
+        DateTimeOffset now,
+        QueuePageUsage? pages,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await CaptureAsync(queue, snapshot, pressure, telemetry, now, cancellationToken, pages);
+        }
+        catch (Exception exception) when (IsStorageFailure(exception))
+        {
+            return null;
+        }
+    }
+
+    private static bool IsStorageFailure(Exception exception) =>
+        exception is Microsoft.Data.Sqlite.SqliteException or QueueCapacityExceededException or IOException;
+
     public static async Task<QueueStorageStatus?> CaptureAsync(
         IDurableEventStore queue,
         QueueSnapshot snapshot,
         QueueStoragePressure? pressure,
         PipelineTelemetry? telemetry,
         DateTimeOffset now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        QueuePageUsage? pages = null)
     {
         if (queue is not SqliteEventStore store || store.Storage is not { } guard)
         {
@@ -86,7 +131,10 @@ public sealed record QueueStorageStatus(
         }
 
         StorageWatermarkSnapshot disk = guard.Evaluate();
-        QueueStorageSnapshot files = await store.GetStorageSnapshotAsync(cancellationToken);
+        // Callers that already read page use pass it, so it is read once per status or record.
+        QueueStorageSnapshot files = pages is null
+            ? await store.GetStorageSnapshotAsync(cancellationToken)
+            : store.GetStorageSnapshot(pages);
         long maximum = store.MaximumUndeliveredBytes;
         StorageRefusalSnapshot refusals = telemetry?.StorageRefusalSnapshot() ?? new StorageRefusalSnapshot(0, 0, null, null);
         return new QueueStorageStatus(
@@ -211,8 +259,10 @@ public sealed partial class QueueStorageMonitor(
         }
 
         QueueStorageSnapshot files = await store.GetStorageSnapshotAsync(cancellationToken);
+        // A new event the page limit refused counts at any page use (a large event).
         bool pressure = disk.State is StorageState.Warning or StorageState.Critical
-            || files.PageUtilisationPercent >= PagePressurePercent;
+            || files.PageUtilisationPercent >= PagePressurePercent
+            || store.RefusedIntakePages > 0;
         if (pressure && now >= nextTrigger && jobs.Trigger(QueueRetentionJob.Id))
         {
             nextTrigger = now + RepeatInterval;

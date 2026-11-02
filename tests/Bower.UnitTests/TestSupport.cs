@@ -55,10 +55,15 @@ internal sealed class FakeDiskSpaceProbe(long freeBytes, long totalBytes) : Bowe
 
     public int Calls => Volatile.Read(ref calls);
 
+    /// <summary>Runs after each measurement with the call count, so a test can change the volume between inserts.</summary>
+    public Action<int>? AfterMeasure { get; set; }
+
     public Bower.Persistence.DiskSpace? Measure(string directory)
     {
-        Interlocked.Increment(ref calls);
-        return Fails ? null : new Bower.Persistence.DiskSpace(FreeBytes, TotalBytes);
+        int call = Interlocked.Increment(ref calls);
+        Bower.Persistence.DiskSpace? space = Fails ? null : new Bower.Persistence.DiskSpace(FreeBytes, TotalBytes);
+        AfterMeasure?.Invoke(call);
+        return space;
     }
 }
 

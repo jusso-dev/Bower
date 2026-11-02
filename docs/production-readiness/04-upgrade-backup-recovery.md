@@ -819,9 +819,45 @@ back and Bower read past its bookmark. Mitigations, in order of preference:
 | Pre-#157 (v1 bookmark) → current | Unchanged | v1 → v2: one full channel re-read with deduplication | As above | Yes | Re-read volume is the whole channel; replays older than retention are re-delivered |
 | v1–v4 queue → v5 | Automatic migration | — | — | Yes, after a backup | [Queue durability](../operations/queue-v5-durability.md) |
 | Newer v5 → older v5 (downgrade) | Same | v2 → v2 | The older build may not read `bower.env` | Works; test first | RPM measured. MSI does not block it for dev builds. |
+| Settlement ceiling (#161) → earlier C# build, or Rust before #161 | Same schema, but the file can be up to 1.75 × (M + 4 MiB) | v2 → v2 | — | Only after [compaction](#rollback-after-settlement-growth) | Earlier builds refuse to open a database larger than `M + 4 MiB` (`QueueCapacityExceededException` at start). Unit-tested, not run live |
 | Current → pre-#157 | Same | v2 refused (`winevt-bookmark-invalid`) | — | **No** | WEC cannot read `ForwardedEvents` at all on pre-#157 |
 | Future schema (6+) → this release | Refused, unchanged | — | — | **No** (fails closed) | Older dev builds could write into a future database |
 | Queue backup → older or newer release | Restore requires schema 5 | — | — | Same schema only | `bower queue restore` refuses a newer manifest |
+
+### Rollback after settlement growth
+
+From [#161](03-storage-pressure.md) a queue settling a full backlog may grow the
+database to 1.75 × (M + 4 MiB), where M is `BOWER_QUEUE_MAX_BYTES`. Earlier C# builds,
+and the Rust collector before #161, refuse to open a database larger than `M + 4 MiB`.
+Before rolling back to one of them:
+
+1. On the current build, restore delivery and let the backlog drain: in `/v1/status`,
+   `queue.queued + queue.retrying + queue.uploading` is 0, or small.
+2. Let retention remove acknowledged rows: `queuePages.usedBytes` must be well below
+   `M + 4 MiB`. Pressure retention brings it to 70% of `queuePages.pageLimitBytes`;
+   otherwise lower `BOWER_QUEUE_RETENTION_HOURS` for one hourly run.
+3. Stop the collector and take a backup (`bower queue backup`). The backup copies pages
+   as they are; it does not compact.
+4. Compact as the service account, with free space on the volume of at least the
+   database size:
+
+   ```bash
+   sudo -u bower sqlite3 /var/lib/bower/queue.db 'PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);'
+   ```
+
+   On Windows run `sqlite3.exe` (from sqlite.org) with the same statements as an
+   administrator, against `C:\ProgramData\Bower\state\queue.db`, with the service
+   stopped.
+5. Check that the database file is at most `M + 4 MiB` bytes (`stat -c %s`, or
+   `(Get-Item queue.db).Length`) and that no `queue.db-wal` remains with content. If it is
+   still larger, more acknowledged rows must go first (step 2).
+6. Install the earlier build and start it. Pending events remain and drain.
+
+`StoragePressureTests.Rollback_GrownQueueOpensInAnOlderBuildAfterDrainPurgeAndVacuum`
+grows a queue past the old ceiling, shows the old open check refuses it, and shows it
+opens after these steps with the pending event and an intact ledger. Not run on a live
+host. Raising `BOWER_QUEUE_MAX_BYTES` on the older build instead is not qualified and
+changes the storage budget.
 
 Known limits:
 

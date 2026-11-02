@@ -210,6 +210,16 @@ public static class CollectorHealthRecord
         return problems;
     }
 
+    /// <summary>
+    /// The baseline for the next record once <paramref name="queued"/> was queued. A sample
+    /// whose storage could not be read keeps the last storage that was reported, so the next
+    /// storage deltas count from it instead of from process start (double counting).
+    /// </summary>
+    public static CollectorHealthSample NextBaseline(CollectorHealthSample queued, CollectorHealthSample? previous) =>
+        queued.Storage is null && Baseline(queued, previous)?.Storage is { } last
+            ? queued with { Storage = last }
+            : queued;
+
     // Counters reset on restart; only a sample of the same process is a baseline.
     private static CollectorHealthSample? Baseline(CollectorHealthSample sample, CollectorHealthSample? previous) =>
         previous is not null && previous.CollectorStartedAt == sample.CollectorStartedAt && previous.At <= sample.At

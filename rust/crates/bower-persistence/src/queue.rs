@@ -151,6 +151,12 @@ fn validate_candidate(candidate: &QueuedEvent) -> StoreResult<()> {
     Err(StoreError::Invalid(message.into()))
 }
 
+/// Share of the intake page ceiling new events cannot use (C# `SettlementReservePercent`).
+pub const SETTLEMENT_RESERVE_PERCENT: i64 = 15;
+const SETTLEMENT_RESERVE_MINIMUM_BYTES: i64 = 2 * 1_048_576;
+/// The database may grow to this many quarters of the intake ceiling, for settlement only.
+const SETTLEMENT_CEILING_QUARTERS: i64 = 7;
+
 fn capacity_error(maximum: i64, current: i64, attempted: i64) -> StoreError {
     StoreError::Full(format!(
         "Queue capacity exceeded. Maximum={maximum}, Current={current}, Attempted={attempted}."
@@ -190,11 +196,35 @@ impl SqliteEventStore {
         maximum / 2 + maximum / 128 + 65_536
     }
 
+    /// Pages of the intake ceiling: one quarter of `maximum_storage_bytes` (C# `MaximumStorageBytes / 4`).
+    fn intake_ceiling_pages(&self, page_size: i64) -> i64 {
+        self.maximum_storage_bytes() / 4 / page_size
+    }
+
+    /// The hard page limit SQLite enforces on every connection: 1.75 times the intake
+    /// ceiling, room that only leasing, acknowledgement and retries may use (C#
+    /// `SettlementCeilingPages`). Settling a full backlog enlarges rows and splits pages;
+    /// without the room the queue could never drain. Both runtimes must agree so either
+    /// can open a queue the other grew while settling.
+    fn settlement_ceiling_pages(&self, page_size: i64) -> i64 {
+        self.intake_ceiling_pages(page_size) * SETTLEMENT_CEILING_QUARTERS / 4
+    }
+
+    /// Pages new events may use: the intake ceiling minus the settlement reserve (C#
+    /// `IntakePageLimit`).
+    pub fn intake_page_limit(maximum_pages: i64, page_size: i64) -> i64 {
+        maximum_pages
+            - (maximum_pages / 2).min(
+                (maximum_pages * SETTLEMENT_RESERVE_PERCENT / 100)
+                    .max(SETTLEMENT_RESERVE_MINIMUM_BYTES / page_size),
+            )
+    }
+
     fn configure_budget(&self, connection: &Connection) -> StoreResult<()> {
         let page_size: i64 = connection
             .query_row("PRAGMA page_size;", [], |row| row.get(0))
             .map_err(storage)?;
-        let requested = self.maximum_storage_bytes() / 4 / page_size;
+        let requested = self.settlement_ceiling_pages(page_size);
         let actual: i64 = connection
             .query_row(
                 &format!("PRAGMA max_page_count = {requested};"),
@@ -207,6 +237,30 @@ impl SqliteEventStore {
                 self.maximum_storage_bytes(),
                 actual.saturating_mul(page_size),
                 0,
+            ));
+        }
+        Ok(())
+    }
+
+    /// Refuses a new event that would take pages from the settlement reserve. Pages in
+    /// use exclude the free list, so pages freed by retention are reused first.
+    fn check_intake_pages(&self, transaction: &Connection, payload_bytes: i64) -> StoreResult<()> {
+        let (page_size, page_count, free): (i64, i64, i64) = transaction
+            .query_row(
+                "SELECT page_size, page_count, freelist_count FROM pragma_page_size, pragma_page_count, pragma_freelist_count;",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .map_err(storage)?;
+        let used = page_count - free;
+        let limit = Self::intake_page_limit(self.intake_ceiling_pages(page_size), page_size);
+        // The payload (overflow pages for large events) plus its row, ledger and index entries.
+        let needed = payload_bytes / page_size + 8;
+        if used + needed > limit {
+            return Err(capacity_error(
+                limit.saturating_mul(page_size),
+                used.saturating_mul(page_size),
+                payload_bytes,
             ));
         }
         Ok(())
@@ -293,6 +347,7 @@ WHERE state IN (?1, ?2, ?3, ?4);",
         let payload_bytes = i64::try_from(candidate.payload.len()).unwrap_or(i64::MAX);
         let received_at = stored(&candidate.received_at);
         self.check_storage()?;
+        self.check_intake_pages(transaction, payload_bytes)?;
         let current = Self::undelivered_bytes(transaction)?;
         if current.saturating_add(payload_bytes) > self.maximum_bytes {
             return Err(capacity_error(self.maximum_bytes, current, payload_bytes));

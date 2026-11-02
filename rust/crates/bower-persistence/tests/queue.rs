@@ -1291,3 +1291,110 @@ fn replay_filters_by_ids_prefix_and_maximum() {
     assert_eq!(remaining, ["c"]);
     assert_eq!(store.snapshot().unwrap().queued, 3);
 }
+
+/// Grows the file with a scratch table and drops it, leaving free pages a settling
+/// queue would have left (C# `Workstream6PageCeiling_*`).
+fn grow_queue_file(path: &std::path::Path, bytes: usize) -> i64 {
+    let connection = raw(path);
+    connection
+        .execute_batch("CREATE TABLE scratch (data BLOB NOT NULL);")
+        .unwrap();
+    connection
+        .execute("INSERT INTO scratch VALUES (zeroblob(?1));", [bytes as i64])
+        .unwrap();
+    connection.execute_batch("DROP TABLE scratch;").unwrap();
+    connection
+        .query_row("PRAGMA page_count;", [], |row| row.get(0))
+        .unwrap()
+}
+
+/// The settlement ceiling is shared with C#: a queue C# grew past the intake ceiling
+/// while settling opens and runs here, and only a file past 1.75 times it is refused.
+#[test]
+fn opens_a_queue_grown_by_settlement_and_refuses_one_past_the_settlement_ceiling() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    // 1 MiB cap: intake ceiling (cap * 4 + 16 MiB) / 4 = 5 MiB, settlement ceiling 8.75 MiB.
+    drop(store(directory.path(), ONE_MEBIBYTE, &clock));
+    let pages = grow_queue_file(&queue_path(directory.path()), 7 * ONE_MEBIBYTE as usize);
+    assert!(pages * 4096 > 5 * ONE_MEBIBYTE, "{pages}");
+
+    let reopened = store(directory.path(), ONE_MEBIBYTE, &clock);
+    assert!(enqueue(&reopened, &clock, "after-growth").enqueued);
+    assert_eq!(reopened.lease(1, Duration::from_secs(60)).unwrap().len(), 1);
+    drop(reopened);
+
+    let other = tempfile::tempdir().unwrap();
+    drop(store(other.path(), ONE_MEBIBYTE, &clock));
+    grow_queue_file(&queue_path(other.path()), 10 * ONE_MEBIBYTE as usize);
+    let oversized =
+        SqliteEventStore::new(queue_path(other.path()), ONE_MEBIBYTE, Some(clock.clone())).unwrap();
+    assert!(matches!(
+        oversized.enqueue(&event("late", "sha256:late", "{}", clock.now())),
+        Err(StoreError::Full(_))
+    ));
+}
+
+/// New events stop at 85% of the intake ceiling, counted in pages so retained
+/// acknowledged rows count; the backlog still leases and acknowledges in the
+/// settlement room, and pages retention frees reopen intake.
+#[test]
+fn page_limit_refuses_intake_while_the_backlog_settles_and_purging_reopens_it() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    let store = store(directory.path(), ONE_MEBIBYTE, &clock);
+    let payload = format!("{{\"v\":\"{}\"}}", "x".repeat(16 * 1024));
+    let mut accepted = 0;
+    let refusal = loop {
+        let id = format!("e{accepted}");
+        match store.enqueue(&event(&id, &format!("sha256:{id}"), &payload, clock.now())) {
+            Ok(_) => accepted += 1,
+            Err(error) => break error,
+        }
+        // Keep at most 20 undelivered so only the page limit can refuse.
+        if accepted >= 20 {
+            let settled = format!("e{}", accepted - 20);
+            store.lease(1, Duration::from_secs(60)).unwrap();
+            store
+                .mark_delivered(&settled, "ack", claim(&store, &settled).as_deref())
+                .unwrap();
+        }
+    };
+    assert!(matches!(&refusal, StoreError::Full(_)), "{refusal}");
+    let used: i64 = raw(&queue_path(directory.path()))
+        .query_row(
+            "SELECT page_count - freelist_count FROM pragma_page_count, pragma_freelist_count;",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(used * 4096 <= 3 * ONE_MEBIBYTE, "{used}");
+    assert!(store.snapshot().unwrap().undelivered_bytes < ONE_MEBIBYTE);
+
+    let backlog = store.lease(100, Duration::from_secs(60)).unwrap();
+    assert_eq!(backlog.len(), 19);
+    for leased in &backlog {
+        store
+            .mark_delivered(&leased.event_id, "ack", leased.lease_token.as_deref())
+            .unwrap();
+    }
+    assert_eq!(store.snapshot().unwrap().undelivered_bytes, 0);
+    assert!(matches!(
+        store.enqueue(&event(
+            "still-full",
+            "sha256:still-full",
+            &payload,
+            clock.now()
+        )),
+        Err(StoreError::Full(_))
+    ));
+
+    clock.advance(Span::minutes(1));
+    store.purge_delivered(clock.now(), 10_000).unwrap();
+    assert!(
+        store
+            .enqueue(&event("reopened", "sha256:reopened", &payload, clock.now()))
+            .unwrap()
+            .enqueued
+    );
+}

@@ -40,6 +40,7 @@ public sealed partial class SqliteEventStore : IDurableEventStore
 
     private static readonly TimeSpan WalTruncateInterval = TimeSpan.FromSeconds(10);
     private long nextWalTruncateTicks;
+    private long refusedIntakePages;
     private readonly TimeProvider clock;
     private readonly StorageGuard? storage;
 
@@ -92,6 +93,16 @@ public sealed partial class SqliteEventStore : IDurableEventStore
     public long MaximumUndeliveredBytes => maximumBytes;
 
     public StorageGuard? Storage => storage;
+
+    /// <summary>
+    /// Pages the largest new event refused by the page limit needed since retention last
+    /// took it (0 when none). A large event can be refused well below the pressure trigger;
+    /// retention reclaims acknowledged rows for it instead of leaving it refused forever.
+    /// </summary>
+    public long RefusedIntakePages => Interlocked.Read(ref refusedIntakePages);
+
+    /// <summary>Returns and clears <see cref="RefusedIntakePages"/>.</summary>
+    public long TakeRefusedIntakePages() => Interlocked.Exchange(ref refusedIntakePages, 0);
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -1021,11 +1032,15 @@ public sealed partial class SqliteEventStore : IDurableEventStore
 
     /// <summary>Physical queue files and page use (<see cref="GetPageUsageAsync"/>). Read-only.</summary>
     public async Task<QueueStorageSnapshot> GetStorageSnapshotAsync(CancellationToken cancellationToken = default) =>
+        GetStorageSnapshot(await GetPageUsageAsync(cancellationToken));
+
+    /// <summary>Physical queue files with page use the caller already read.</summary>
+    public QueueStorageSnapshot GetStorageSnapshot(QueuePageUsage pages) =>
         new(
             FileLength(databasePath),
             FileLength(databasePath + "-wal"),
             FileLength(databasePath + "-shm"),
-            await GetPageUsageAsync(cancellationToken),
+            pages,
             maximumBytes,
             MaximumStorageBytes);
 
@@ -1035,7 +1050,15 @@ public sealed partial class SqliteEventStore : IDurableEventStore
     /// incremental auto-vacuum can; others return 0 and keep reusing free pages. Never
     /// touches rows: it only moves pages already freed by retention.
     /// </summary>
-    public async Task<long> ReleaseFreePagesAsync(int maximumPages, CancellationToken cancellationToken = default)
+    public async Task<long> ReleaseFreePagesAsync(int maximumPages, CancellationToken cancellationToken = default) =>
+        await ReleaseFreePagesAsync(maximumPages, checkpoint: true, cancellationToken);
+
+    /// <summary>
+    /// <see cref="ReleaseFreePagesAsync(int, CancellationToken)"/>; a caller releasing in
+    /// several steps passes <paramref name="checkpoint"/> false and checkpoints once with
+    /// <see cref="TruncateWalAsync"/>.
+    /// </summary>
+    public async Task<long> ReleaseFreePagesAsync(int maximumPages, bool checkpoint, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maximumPages, 1);
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
@@ -1071,10 +1094,23 @@ public sealed partial class SqliteEventStore : IDurableEventStore
             await transaction.CommitAsync(cancellationToken);
         }
 
-        command.Transaction = null;
+        if (checkpoint)
+        {
+            command.Transaction = null;
+            command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        return released;
+    }
+
+    /// <summary>Checkpoints and truncates the WAL so released pages leave the file.</summary>
+    public async Task TruncateWalAsync(CancellationToken cancellationToken = default)
+    {
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
         command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
         await command.ExecuteNonQueryAsync(cancellationToken);
-        return released;
     }
 
     private static long FileLength(string path)
@@ -1239,6 +1275,15 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         long needed = (payloadBytes / pageSize) + 8;
         if (used + needed > limit)
         {
+            if (!reserve)
+            {
+                long recorded = Interlocked.Read(ref refusedIntakePages);
+                while (needed > recorded && Interlocked.CompareExchange(ref refusedIntakePages, needed, recorded) != recorded)
+                {
+                    recorded = Interlocked.Read(ref refusedIntakePages);
+                }
+            }
+
             throw new QueueCapacityExceededException(limit * pageSize, used * pageSize, payloadBytes);
         }
     }
