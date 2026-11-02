@@ -25,6 +25,18 @@ internal sealed class TemporaryDirectory : IDisposable
     }
 }
 
+/// <summary>
+/// Collectors built by tests see an ample queue volume unless a test supplies its own probe:
+/// the default watermarks (critical below 5%) would otherwise refuse intake on a nearly full
+/// development disk. <see cref="Bower.Persistence.SystemDiskSpaceProbe"/> stays tested directly.
+/// </summary>
+internal static class AmpleTestDisk
+{
+    [System.Runtime.CompilerServices.ModuleInitializer]
+    internal static void Install() =>
+        Bower.Persistence.StorageGuard.DefaultProbe = new FakeDiskSpaceProbe(500L * 1024 * 1024 * 1024, 1024L * 1024 * 1024 * 1024);
+}
+
 /// <summary>Scripted free space for the queue volume.</summary>
 internal sealed class FakeDiskSpaceProbe(long freeBytes, long totalBytes) : Bower.Persistence.IDiskSpaceProbe
 {

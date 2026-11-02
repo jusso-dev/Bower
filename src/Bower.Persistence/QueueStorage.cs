@@ -175,12 +175,18 @@ public sealed class StorageGuard
         ArgumentNullException.ThrowIfNull(options);
         Options = options.Validate();
         directory = Path.GetDirectoryName(Path.GetFullPath(queuePath)) ?? Path.GetFullPath(".");
-        this.probe = probe ?? SystemDiskSpaceProbe.Instance;
+        this.probe = probe ?? DefaultProbe;
         this.clock = clock ?? TimeProvider.System;
         current = new StorageWatermarkSnapshot(StorageState.Unknown, this.clock.GetUtcNow(), null, null, null, null, null, 0, 0);
     }
 
     public StorageWatermarkOptions Options { get; }
+
+    /// <summary>
+    /// Probe used when none is supplied: the real volume. Test assemblies replace it so
+    /// results do not depend on the free space of the machine running them.
+    /// </summary>
+    internal static IDiskSpaceProbe DefaultProbe { get; set; } = SystemDiskSpaceProbe.Instance;
 
     public TimeSpan SampleInterval { get; init; } = TimeSpan.FromSeconds(1);
 

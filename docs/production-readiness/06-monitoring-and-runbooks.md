@@ -924,7 +924,7 @@ self-contained publish, not Native AOT, unsigned).
    budget, settlement may grow the file to 1.75 times it, and retention reclaims
    acknowledged rows when intake is blocked. Regression test
    `Workstream6PageCeiling_DeliveryResumesSurvivesACrashAndIntakeReopens`; live proof in
-   the [storage evidence](../evidence/ws3b-20261102/README.md). Original finding: `SqliteEventStore` sets `PRAGMA max_page_count` to
+   the [storage evidence](../evidence/ws3b-20261102-005001/README.md). Original finding: `SqliteEventStore` sets `PRAGMA max_page_count` to
    `(4 × BOWER_QUEUE_MAX_BYTES + 16 MiB) / 4`, about the logical cap plus 4 MiB, while the
    file also holds indexes, the ledger and acknowledged rows retained for
    `BOWER_QUEUE_RETENTION_HOURS`. Measured overhead was 1.6–1.9 × payload, so the file
