@@ -154,7 +154,8 @@ public sealed record QueueStorageStatus(
             files.WalBytes,
             maximum,
             snapshot.UndeliveredBytes,
-            Math.Round(snapshot.UndeliveredBytes * 100.0 / maximum, 2),
+            // Health records may use a small reserve above the cap; report at most 100 like the health record.
+            Math.Min(100, Math.Round(snapshot.UndeliveredBytes * 100.0 / maximum, 2)),
             snapshot.OldestUndelivered is { } oldest ? Math.Max(0, (long)(now - oldest).TotalSeconds) : null,
             pressure?.PurgedEvents ?? 0,
             pressure?.LastPurgeAt,

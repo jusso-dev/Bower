@@ -789,6 +789,11 @@ refusal with crash/recovery, restart while critical, syslog frames held without
 dropping or closing the connection, WEC bookmarks held, status, health and heartbeat
 fields.
 
+> **Lab coverage of later changes.** The AWS runs used build `261f61a`. Review fixes made
+> afterwards were covered by unit and local tests only, not re-run on AWS: the Rust
+> settlement ceiling and 85% intake limit, the page-based free-page release reserve, the
+> health-record byte reserve and the bounded large-event purge (`3d73c90`, `547d175`).
+
 ---
 
 ## Known limits
