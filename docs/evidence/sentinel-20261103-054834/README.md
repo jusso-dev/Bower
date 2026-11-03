@@ -82,8 +82,9 @@ would have been enough. Scheduled-rule queries did not appear in
    not freeze `SecurityAlert`. The scheduled run had alerted all three.
 2. **Load generator token expiry.** The first trickle died at 06:56 with HTTP 401 after
    33,900 rows. `load.py` reused an Azure CLI token for 20 minutes, and the CLI can hand
-   back a cached token with only minutes left. Fixed: refresh from `expires_on` with a
-   10-minute margin, and once on 401 (`test_load.py`). The second trickle ran 54.5 minutes
+   back a cached token with only minutes left. Fixed during the run: refresh from `expires_on`
+   with a 10-minute margin, and once on 401 (`test_load.py`). After review the margin is
+   4 minutes, below the CLI's 5-minute cached-token refresh point. The second trickle ran 54.5 minutes
    without a retry. The gap from 07:04:49 to 07:55:37 with no ingestion is the one A9
    detected.
 3. **Verifier crash on Python 3.9.** `verify.py` failed on `2026-11-03T06:11:40.84127Z`:

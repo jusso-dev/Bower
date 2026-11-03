@@ -25,8 +25,9 @@ SentinelHealth
 // 3. The corrected guide query as run at about 08:21 UTC (timespan P1D): the same 11 rows, with
 //    Reason, Issue (QueryGeneralError for the three first runs, ReferencedTableNotFound for the
 //    probe) and WindowEnd. Its output was read in the session, not saved. The guide adds
-//    `| where ingestion_time() > ago(15m)` for use as a scheduled rule; that line was not run
-//    live (it would have returned only rows ingested in the 15 minutes before the query).
+//    a closed ingestion slot, `| where ingestion_time() > ago(15m) and ingestion_time() <= now()`,
+//    for use as a scheduled rule (after review; first published as `> ago(15m)` only). That line
+//    was not run live (it returns only rows ingested in the 15 minutes before the query).
 SentinelHealth
 | where SentinelResourceType == "Analytics Rule" and SentinelResourceName startswith "Bower:"
 | where Status != "Success"

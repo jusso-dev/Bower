@@ -375,9 +375,11 @@ az monitor diagnostic-settings create --name sentinel-health \
 SentinelHealth
 | where SentinelResourceType == "Analytics Rule" and SentinelResourceName startswith "Bower:"
 | where Status != "Success"
-// As a scheduled rule: only rows that became queryable since the previous run, so each
-// failed window alerts once although the look-back is much longer than the frequency.
-| where ingestion_time() > ago(15m)
+// As a scheduled rule: only rows that became queryable in this run's 15-minute slot. The
+// closed slot (> ago(15m), <= now()) tiles consecutive runs, so each failed window alerts
+// once although the look-back is much longer than the frequency. now() is the run's
+// logical time; a row ingested after it but before the run executes falls in the next slot.
+| where ingestion_time() > ago(15m) and ingestion_time() <= now()
 | project TimeGenerated, SentinelResourceName, Status, Reason, Issue = tostring(ExtendedProperties.Issues[0].Code),
     WindowEnd = todatetime(ExtendedProperties.QueryEndTimeUTC)
 ```
@@ -390,12 +392,14 @@ through catch-up, the monitor does not.
 **Rule-health latency.** In the live run every `SentinelHealth` row had `TimeGenerated`
 exactly 90 minutes after its window end (`QueryEndTimeUTC`; all 74 rows, 5,400.1 to
 5,400.7 s). Rule-health detection therefore lags a failed run by **at least 90 minutes**.
-The scheduled rule's look-back filters `TimeGenerated`, so set it to frequency + that
-lag + margin, for example **2 hours** for a rule that runs every 15 minutes (15 + 90 + 15),
-and keep the `ingestion_time() > ago(<frequency>)` line (or enable suppression for the
-frequency) so the longer look-back does not raise the same failure in every run. How long
-after `TimeGenerated` the rows become queryable (`ingestion_time()`) was not measured; if
-it exceeds the 15-minute margin, lengthen the look-back by the difference. In the
+The 90 minutes are already inside `TimeGenerated`, so the look-back (which filters
+`TimeGenerated`) only has to reach a row from the run in which it becomes queryable:
+set it to frequency + (`ingestion_time()` − `TimeGenerated`) + margin. That ingestion
+gap was not measured; **2 hours** for a rule that runs every 15 minutes leaves wide
+headroom. Keep the closed `ingestion_time()` slot (or enable suppression for the
+frequency) so the longer look-back does not raise the same failure in every run. The slot
+assumes runs on their schedule: a skipped run leaves its slot unevaluated, so if you need
+every failure alerted even across skipped runs, prefer suppression with a wider slot. In the
 [monitoring workbook](06-monitoring-and-runbooks.md), drop the `ingestion_time()` line
 and pick a time range of a day or more. Measured live (see
 [How we tested this](#how-we-tested-this); the queries run are in the
@@ -481,8 +485,8 @@ receives `BowerSecurity_CL`.
   11+ and the Bicep CLI on `PATH`.
 - At least one Bower event already ingested **and queryable** (the
   [verify query](#verify-the-deployment) returns `Events` of at least 1). In the live run
-  the first upload to a new table was at 05:51:35 UTC and every row uploaded before 05:57
-  (the last at 05:54:30) has `ingestion_time()` 05:57:56. The rules, deployed at 05:52:24,
+  every row uploaded before 05:57 has `ingestion_time()` 05:57:56
+  ([table volume](../evidence/sentinel-20261103-054834/table-volume.json)). The rules, deployed at 05:52:24,
   ran their first window before that and it failed (`QueryGeneralError`) and was skipped.
 
 Following [deploy/AGENTS.md](../../deploy/AGENTS.md), the rules are created **disabled**

@@ -203,7 +203,7 @@ def main(argv):
         raise SystemExit(f"up to {bound} events per address and bucket would reach the threshold {args.threshold}: "
                          "use more --addresses")
 
-    # Open the summary before sending anything: the event id prefix is recorded only there.
+    # Open the summary before sending anything, so an unwritable path fails before any upload.
     with open(args.summary, "w", encoding="utf-8") as output:
         summary = run(args, bound)
         output.write(json.dumps(summary, indent=1) + "\n")

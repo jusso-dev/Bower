@@ -70,6 +70,6 @@
   "log": "upload refused with HTTP 401",
   "rowsIngested": 33900,
   "lastIngested": "2026-11-03T06:56:28.7918182Z",
-  "cause": "load.py reused a cached Azure CLI token for 20 minutes; the CLI had returned one close to expiry. Fixed: refresh from expires_on with a 10-minute margin and once on 401 (test_load.py)."
+  "cause": "load.py reused a cached Azure CLI token for 20 minutes; the CLI had returned one close to expiry. Fixed during the run: refresh from expires_on with a 10-minute margin and once on 401 (test_load.py); after review the margin is 4 minutes."
  }
 }
