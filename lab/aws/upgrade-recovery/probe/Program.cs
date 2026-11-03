@@ -12,7 +12,7 @@ using Microsoft.Data.Sqlite;
 //   native CHANNEL SINCE OUT [UNTIL]   4625 identities (+ OUT.ids: expectedId<TAB>recordId<TAB>originRecordId<TAB>originalId);
 //          originalId is the unredacted id: collectors whose privacy profile keeps ids compare against it
 //          UNTIL (exclusive) bounds the native query to one window, as the soak exports hourly
-//   queue-union DB UNION OUT   adds the queue's current identities to UNION (eventId<TAB>firstSeenAt),
+//   queue-union DB UNION OUT   adds the queue's current identities to UNION (eventId<TAB>firstSeenAt<TAB>receivedAt),
 //          so events later purged by retention stay accounted for (soak, every 30 minutes)
 const int MaximumRecords = 400_000;
 string Digest(IEnumerable<string> values) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', values))));
@@ -76,7 +76,7 @@ if (args is ["queue-union", string unionDb, string unionPath, string unionOutput
         {
             if (union.Count >= MaximumUnion) throw new InvalidDataException("union limit");
             int tab = line.IndexOf('\t');
-            union[line[..tab]] = line[(tab + 1)..];
+            union[line[..tab]] = line[(tab + 1)..];  // firstSeenAt, then receivedAt when recorded
         }
     }
     int before = union.Count, inQueue = 0;
@@ -86,13 +86,14 @@ if (args is ["queue-union", string unionDb, string unionPath, string unionOutput
     {
         connection.Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT event_id, state FROM queue_events_v5;";
+        cmd.CommandText = "SELECT event_id, state, received_at FROM queue_events_v5;";
         using var reader = cmd.ExecuteReader();
         while (reader.Read())
         {
             if (++inQueue > MaximumRecords) throw new InvalidDataException("queue limit");
             states[reader.GetInt64(1)]++;
-            union.TryAdd(reader.GetString(0), seen);
+            // receivedAt scopes accepted ids to a soak window without trusting the union's clock.
+            union.TryAdd(reader.GetString(0), seen + "\t" + reader.GetString(2));
         }
     }
     if (union.Count > MaximumUnion) throw new InvalidDataException("union limit");

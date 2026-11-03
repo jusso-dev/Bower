@@ -9,22 +9,27 @@ RELP with mutual TLS, to the C# Bower collector, to Microsoft Sentinel (Logs Ing
 Releases and packages are **unsigned** (signing is deferred). Bower still refuses unsigned or
 untrusted packs.
 
-**Status: the soak was run and FAILED three of six criteria.** Every one of 896,400 events
-per collector reached Sentinel exactly (native = accepted = distinct Sentinel, SHA-256
-identical, duplicates counted separately), with no process restarts and no privacy-marker
-matches. It failed on:
+**Status: the soak was run and FAILED.** Neither collector met all six criteria, so the
+release check for the soak (check 7) stays open. Firewall: criteria 1, 2, 4 and 6 met, 3 and 5
+failed. WEC: criteria 2 and 6 met, 3, 4 and 5 failed; criterion 1 met for delivery (no event
+missing at the queue or at Sentinel, no extra Sentinel id) but its accepted-stage extras were
+not checked (section 6). Every one of 896,400 events per collector reached Sentinel, with no
+process restarts and no privacy-marker matches. The failures:
 
 - **WEC latency.** p99 reached 882 s. The Windows Event Log reader's CPU cost grows with the
-  size of `ForwardedEvents`, so on a CPU-credit-limited host the reader fell up to about 12
-  minutes behind.
+  size of `ForwardedEvents`, so on a CPU-credit-limited host the reader fell up to 8,950
+  events (about 15 minutes at 10/sec) behind.
 - **Alerts.** The TLS-expiry false positive fired all run (fixed afterwards on main by #171),
   and the source-transport alert fired twice, correctly, when the WEC source failed during the
   hourly queue retention.
-- **Growth.** The pre-registered slope threshold failed for memory and handles on both
-  collectors over 24 hours.
+- **Growth.** The registered slope threshold (hours 3–24, 30-day projection under 10% of the
+  mean) failed for memory, handles or FDs and the queue file on both collectors, and for
+  threads on the WEC.
 
-The firewall path is ready on this evidence. **The WEC path is not ready** until the reader
-cost is fixed and the soak is repeated. See [results](#6-results-of-the-soak) and the
+**Neither path is production-ready on this soak.** Check 7 stays open until a re-soak passes all
+six criteria on a build that includes #171 (the TLS-expiry fix) and a fix for the WEC reader
+cost. The firewall's remaining failure is growth: small (RSS 80–100 MB over the workload) but
+above the registered threshold, so the re-soak must settle it. See [results](#6-results-of-the-soak) and the
 [evidence](../evidence/soak-20261102-015614/README.md).
 
 The soak ran main at **`1a4c4c2`**. Later merges are not covered by it and rely on their own
@@ -40,7 +45,7 @@ Contents:
 2. [Pass criteria](#2-pass-criteria)
 3. [The soak method (all environments)](#3-the-soak-method-all-environments)
 4. [Step by step, per environment](#4-step-by-step-per-environment)
-5. [Release checklist (gaps 1 to 7)](#5-release-checklist-gaps-1-to-7)
+5. [Release checklist (CI, gaps 1 to 7, pilot)](#5-release-checklist-ci-gaps-1-to-7-pilot)
 6. [Results of the soak](#6-results-of-the-soak)
 7. [Troubleshooting](#7-troubleshooting)
 8. [How we tested this](#8-how-we-tested-this)
@@ -69,10 +74,15 @@ of them hold for **every** collector.
 |---|---|---|---|
 | 1 | Exact delivery | Native, accepted and distinct Sentinel identity sets, compared by SHA-256 of the sorted ids joined by newline | All three equal, 0 missing, 0 extra. Duplicate rows are counted and reported separately; they are allowed (at-least-once) if they collapse with the documented `arg_min(ingestion_time(), *) by EventId` query |
 | 2 | No restarts | Collector PID and start time in every sample; systemd `NRestarts`; container `RestartCount`; pod `restartCount`; boot ID | One process identity for the whole run |
-| 3 | No unbounded growth | Least-squares slope over hours 3–24 of memory (RSS / private bytes), FDs / handles, threads and queue DB + WAL bytes, plus **CPU seconds per hour at constant rate** | The slope × 720 h is under 10% of the mean, and CPU per event does not trend upwards |
+| 3 | No unbounded growth | Least-squares slope over hours 3–24 of the workload (not the drain after it) of memory (RSS / private bytes), FDs / handles, threads and queue DB + WAL bytes | The slope × 720 h is under 10% of the mean (a falling series passes) |
 | 4 | Latency | First `ingestion_time()` minus event time, per hour and overall | Whole-run p99 at most twice the pilot's connected p99 (13.3 s firewall, 18.16 s WEC; [pilot](../evidence/pilot-native-20261030/README.md)). Every hour above the limit is listed |
 | 5 | No alerts | Azure Monitor alert instances and Sentinel incidents from the [monitoring rules](06-monitoring-and-runbooks.md) | None fired during the run |
 | 6 | Privacy | `tostring(pack_all())` of every destination row searched for the synthetic markers (the synthetic user name, raw kernel prefix, synthetic password prefix) | 0 matches |
+
+**Recommended for future runs (added after this soak; not part of its registered criterion 3):**
+record CPU seconds per hour at the constant rate and fail when CPU per event trends upwards.
+This soak's WEC result shows that memory and handle slopes alone can miss a cost that grows
+with input size. Register it before the next run if it is to be used as a gate.
 
 Natural events that must occur and be recorded: hourly retention purging rows (set
 `BOWER_QUEUE_RETENTION_HOURS` below the run length, for example 2), the daily maintenance job,
@@ -140,10 +150,9 @@ same steps for each supported environment.
    the soak settings:
 
    ```bash
-   sudo tee -a /etc/bower/bower.env >/dev/null <<'ENV'
-   BOWER_HEALTH_RECORD_INTERVAL_SECONDS=60
-   BOWER_QUEUE_RETENTION_HOURS=2
-   ENV
+   # The leading newline guards against a file whose last line has no newline.
+   printf '\nBOWER_HEALTH_RECORD_INTERVAL_SECONDS=60\nBOWER_QUEUE_RETENTION_HOURS=2\n' |
+     sudo tee -a /etc/bower/bower.env >/dev/null
    sudo systemctl restart bower && systemctl is-active bower
    ```
 
@@ -165,8 +174,9 @@ same steps for each supported environment.
    awk '{print "cpu_ticks="$14+$15, "threads="$20, "rss_pages="$24}' /proc/$pid/stat
    ls /proc/$pid/fd | wc -l
    stat -c '%n %s' /var/lib/bower/queue.db*
-   curl -fsS -H "Authorization: Bearer $(sudo cat /etc/bower/secrets/ingest-token)" \
-     http://127.0.0.1:4319/v1/status | jq -c '{status, queue, jobs, deliveryActivity}'
+   # The header goes to curl on stdin (-K -), never in its argument list (visible in ps).
+   sudo cat /etc/bower/secrets/ingest-token | sed 's/^/header = "Authorization: Bearer /; s/$/"/' |
+     curl -fsS -K - http://127.0.0.1:4319/v1/status | jq -c '{status, queue, jobs, deliveryActivity}'
    ```
 
    The lab version is `lab/aws/soak/collector-agent.sh` (`BOWER_SOAK_ACTION=install`). .NET
@@ -193,7 +203,8 @@ same steps for each supported environment.
 
    ```powershell
    msiexec /i bower-collector-<version>-x64.msi /qn /norestart COLLECTORID=wec-soak-01 BOWERENVIRONMENT=soak
-   Add-Content C:\ProgramData\Bower\bower.env "BOWER_HEALTH_RECORD_INTERVAL_SECONDS=60`r`nBOWER_QUEUE_RETENTION_HOURS=2"
+   # The leading line break guards against a file whose last line has no line break.
+   Add-Content C:\ProgramData\Bower\bower.env "`r`nBOWER_HEALTH_RECORD_INTERVAL_SECONDS=60`r`nBOWER_QUEUE_RETENTION_HOURS=2"
    Restart-Service Bower; (Get-Service Bower).Status
    ```
 
@@ -324,7 +335,7 @@ Compare the full sets with the native and accepted sets (SHA-256), count `Copies
 duplicates, compute latency from `FirstIngested - Generated`, then run the health, privacy and
 alert checks. The lab does all of this with `lab/aws/soak/reconcile.py final`.
 
-## 5. Release checklist (gaps 1 to 7)
+## 5. Release checklist (CI, gaps 1 to 7, pilot)
 
 Tick every line for the exact candidate commit before calling a release production-ready for the
 scoped rollout. "Evidence" means a run on that commit, or a documented reason why an earlier run
@@ -345,11 +356,12 @@ still applies.
 
 **Current state (2026-11-03).**
 
-- **Firewall over RELP:** every check has evidence. The soak firewall path met criteria 1, 2, 4
-  and 6. Its alert failure was the TLS-expiry false positive, fixed by #171. Its growth
-  failure is small: RSS 80 to 107 MB, and the queue file was flat after hour 12. It needs a
-  longer run to settle.
-- **WEC:** not ready. Check 7 failed on reader latency and CPU growth.
+- **Firewall over RELP:** checks 0–6 and 8 have evidence. Check 7 is **open**: the firewall
+  met criteria 1, 2, 4 and 6 and failed 3 (growth above the registered threshold) and 5 (the
+  TLS-expiry false positive, fixed by #171 after the soak). It needs a re-soak on a build with
+  #171 that passes all six.
+- **WEC:** check 7 is **open**. It failed criteria 3, 4 and 5 on reader latency, CPU growth and
+  retention contention. It needs the reader fix and a re-soak.
 - **Releases:** unsigned until signing is enabled.
 
 ## 6. Results of the soak
@@ -360,12 +372,27 @@ Run `bower-soak-20261102-015614`, 2026-11-02T03:35:00Z to 2026-11-03T03:35:00Z, 
 
 | # | Criterion | Firewall (RPM, RELP) | WEC (MSI) |
 |---|---|---|---|
-| 1 | Exact delivery | **PASS**: 896,400 = 896,400 = 896,400; 54 duplicate rows | **PASS**: 896,400 = 896,400 = 896,400; 101 duplicate rows |
+| 1 | Exact delivery | **PASS**: native 896,400 = accepted 896,400 = distinct Sentinel 896,400; 54 duplicate rows | **PASS for delivery, accepted extras not verified**: native 896,400 records, none missing at the queue or Sentinel, 0 extra Sentinel ids; 101 duplicate rows |
 | 2 | No restarts | **PASS** | **PASS** (the source restarted in-process twice) |
-| 3 | No unbounded growth | **FAIL**: RSS +165 KB/h, FDs 23→28 | **FAIL**: private bytes 31→73 MB, handles 403→426, CPU per hour ×5.6 |
+| 3 | No unbounded growth (hours 3–24) | **FAIL**: RSS +75 KB/h (61%), FDs +0.055/h (166%), queue +106 KB/h (36%); threads falling (flat) | **FAIL**: private bytes +461 KB/h (735%), handles +0.54/h (93%), threads +0.12/h (527%), queue +73 KB/h (17%) |
 | 4 | p99 latency | **PASS**: 8.7 s (limit 13.3 s); 3 hours above | **FAIL**: 881.8 s (limit 18.16 s); 23 of 25 hours above |
 | 5 | No alerts | **FAIL**: `syslog-tls-expiry` all run (false positive, #171) | **FAIL**: `source-transport-errors` twice (true positive) |
 | 6 | Privacy | **PASS**: 0 matches | **PASS**: 0 matches |
+
+Criterion 1 detail. The run's reconciler counted accepted ids as `queue ∩ native`, so
+accepted ids that are not native ids were not reported. That defect is fixed after the run:
+`reconcile.py` now scopes accepted ids by source and window and reports `extraAtAccepted`.
+The identity lists were deleted with the lab, so the comparison cannot be re-run:
+
+- Firewall: the accepted scope is the sequence range 100,000–996,399, which is exactly the
+  native range, so an accepted extra in scope is impossible. The result stands.
+- WEC: accepted extras were not checked and cannot be now. Missing-at-queue, missing-at-Sentinel
+  and extra-at-Sentinel were computed against the full sets and were all 0.
+
+Criterion 3 numbers are recomputed from the committed sample series over the workload hours
+3–24 ([resource-trends-recomputed.json](../evidence/soak-20261102-015614/final/resource-trends-recomputed.json)).
+The figures first published (RSS +165 KB/h, private bytes +486 KB/h) used samples up to
+hour 25, including the drain, and are superseded. The verdict is unchanged.
 
 What else the run showed:
 
@@ -410,8 +437,9 @@ independently (37 of 37 checks absent).
 1. **Windows Event Log reader cost grows with channel size** (open). At a constant 10
    events/sec, CPU per hour went from about 450 s to about 2,500 s as `ForwardedEvents` grew to
    900,000 records. `WindowsEventLogChannel.Read` builds a new filtered `EventLogQuery` and
-   seeks to the bookmark on every 1-second poll. Once CPU was capped, the reader fell about
-   7,000 records (about 12 minutes) behind. This needs a fix (for example a long-lived reader or
+   seeks to the bookmark on every 1-second poll; that is consistent with the measurements, not
+   profiled. After every burst the reader fell behind (2,786, 3,124 and 3,673 events after the
+   first three); once CPU was capped it fell up to 8,950 events (about 15 minutes) behind. This needs a fix (for example a long-lived reader or
    subscription that is not re-seeked every poll), unit or benchmark coverage, and a re-soak.
 2. **Hourly retention contends with queue writers on Windows** (open). The source failed
    in-process twice and the delivery loop logged `SqliteException` three times, each while

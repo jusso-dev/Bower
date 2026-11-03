@@ -1,22 +1,25 @@
 # 24-hour soak: `bower-soak-20261102-015614`
 
-**Result: the soak FAILED overall.** Every event was delivered exactly, but three of the six
-pre-registered criteria failed. Soak window: 2026-11-02T03:35:00Z to 2026-11-03T03:35:00Z,
-main `1a4c4c2`.
+**Result: the soak FAILED.** Neither collector met all six pre-registered criteria. The
+firewall failed criteria 3 and 5; the WEC failed 3, 4 and 5. No event was missing at the queue
+or at Sentinel on either collector. Soak window: 2026-11-02T03:35:00Z to 2026-11-03T03:35:00Z,
+main `1a4c4c2`. This file was corrected after review on 2026-11-03 (see
+[Corrections after review](#corrections-after-review)); superseded figures stay visible there.
 
 | # | Criterion | Firewall (RPM, RELP) | WEC (MSI) |
 |---|---|---|---|
-| 1 | Native = accepted = distinct Sentinel, exactly | **PASS**: 896,400 = 896,400 = 896,400; 54 duplicate rows | **PASS**: 896,400 = 896,400 = 896,400; 101 duplicate rows |
+| 1 | Native = accepted = distinct Sentinel, exactly | **PASS**: 896,400 = 896,400 = 896,400; 54 duplicate rows | **PASS for delivery; accepted extras not verified**: 896,400 native records, 0 missing at the queue, 0 missing and 0 extra at Sentinel; 101 duplicate rows |
 | 2 | No process restarts | **PASS**: one PID for the whole soak, `NRestarts` 0, one boot | **PASS**: one PID, one boot. The source restarted in-process twice (below) |
-| 3 | No unbounded growth (30-day projection of the hours 3–24 slope under 10% of the mean) | **FAIL**: RSS 80→107 MB (+165 KB/h), FDs 23–28; the queue file stops growing after hour 12 | **FAIL**: private bytes 31→73 MB, handles 403–426, threads 15–18; **CPU per hour rose 5.6×** |
+| 3 | No unbounded growth (30-day projection of the hours 3–24 slope under 10% of the mean) | **FAIL**: RSS +75 KB/h (61%), FDs +0.055/h (166%), queue +106 KB/h (36%); threads falling | **FAIL**: private bytes +461 KB/h (735%), handles +0.54/h (93%), threads +0.12/h (527%), queue +73 KB/h (17%) |
 | 4 | p99 latency ≤ 2× the pilot's connected p99 | **PASS**: 8.68 s ≤ 13.3 s. Three hours were above the limit (10:33, 00:33, 02:33) | **FAIL**: 881.8 s against 18.16 s; 23 of 25 hours were above the limit |
 | 5 | No alerts | **FAIL**: `syslog-tls-expiry` fired for the whole run (a false positive, fixed on main by #171) | **FAIL**: `source-transport-errors` fired twice and resolved (12:02Z, 17:02Z) |
 | 6 | 0 privacy-marker matches | **PASS**: 0 of 897,940 rows | **PASS**: 0 of 897,977 rows |
 
-Exact identity digests (SHA-256 of the sorted ids joined by newline):
+Identity digests (SHA-256 of the sorted ids joined by newline), as computed at the run:
 firewall `ea5daf5b618ff8a3f6aa6399ec9b2509a91c4005cd5b89bf6069921b209b936e`,
-WEC `d65064b301a6a951636072af79d44bfaba585c458fe58c9407faec9aa7a9089a`. In each case the native,
-accepted and Sentinel digests are identical.
+WEC `d65064b301a6a951636072af79d44bfaba585c458fe58c9407faec9aa7a9089a`. The native and
+Sentinel digests are full-set digests. The **accepted** digest was taken over
+`accepted ∩ native`, which cannot show accepted extras (see corrections).
 Source: [`final/final-reconciliation.json`](final/final-reconciliation.json).
 
 ## What ran, where
@@ -34,16 +37,24 @@ Source: [`final/final-reconciliation.json`](final/final-reconciliation.json).
 
 ## Results in detail
 
-### 1. Exact delivery (both PASS)
+### 1. Exact delivery (firewall PASS; WEC PASS for delivery, accepted extras not verified)
 
 - **Firewall.** 18 generator segments sent 896,400. The nftables counter delta was 896,400,
   every segment exact ([`generators/sender/segments.jsonl`](generators/sender/segments.jsonl)).
   The accepted union of the queue (exported every 30 minutes, so rows purged by the 2-hour
   retention are still counted) held all 896,400. Sentinel held 896,400 distinct ids in 896,454 rows.
-- **WEC.** The DC Security log held 896,400 distinct 4625 records in 25 hourly windows:
-  24 scheduled (`native-windows/scheduled/`) plus `h24` (31 events, exported on demand). That equals
-  the 896,400 attempts in `generators/dc/` (`generators/dc/`). Accepted: 896,400. Sentinel:
-  896,400 distinct in 896,501 rows.
+  The accepted scope (sequence range 100,000–996,399) is exactly the native range, so no accepted
+  id in scope can be extra.
+- **WEC.** The DC Security log held 896,400 4625 records in 25 hourly windows: 24 scheduled
+  (`native-windows/scheduled/`) plus `h24` (31 events, exported on demand). That equals the
+  896,400 attempts in `generators/dc/`. These counts are recomputable from the committed
+  metadata. At the run, the reconciler counted 896,400 distinct **original** ids (probe
+  column 4). The committed metadata holds only the probe's **redacted**-id counts: 896,399
+  distinct, because two ids in `h23` collapse to one masked form (`duplicateIdentities: 1`). That
+  is a redaction collision, not a native duplicate. The original-id count cannot be recomputed:
+  the identity lists were deleted with the lab. Accepted: all 896,400 native ids were in the
+  accepted union; whether the union also held extra soak-window `winevt-` ids was not checked
+  and cannot be now. Sentinel: 896,400 distinct in 896,501 rows, 0 extra (a full-set comparison).
 - **Duplicate rows.** Firewall 54 (45 in the 10:33 hour, 9 in 00:33); WEC 101 (51, 10, 40 in
   10:33, 15:33 and 00:33). Both collectors duplicated in the same two hours, and those hours also
   had latency spikes on both. Neither collector logged a delivery failure in those hours. The
@@ -61,25 +72,35 @@ records show `winevt-source-failed` at 12:00:46Z and 17:00:28Z. In both cases th
 `SqliteException` (event 1002, retried after back-off) at 16:00:44Z, 22:00:44Z and 02:00:44Z,
 also at retention time. Nothing was lost. The Linux collector logged no warnings.
 
-### 3. Resource trends (both FAIL the pre-registered threshold)
+### 3. Resource trends (both FAIL the registered threshold)
 
-Slopes are least squares over hours 3–24 of the soak's 5-minute samples
-(`series/` (`series/`)). The "30-day projection" column is the slope × 720 h as a percentage of
-the mean. The threshold was 10%.
+Slopes are least squares over hours 3–24 of the **workload** (03:35Z to 03:35Z the next day),
+taken from the committed 5-minute samples (`series/`), 252 samples per collector. The delivery
+drain after the workload is reported separately. Recomputed with
+`reconcile.py series --series-dir series/` into
+[`final/resource-trends-recomputed.json`](final/resource-trends-recomputed.json). The "30-day %"
+column is the slope × 720 h as a percentage of the mean. The registered threshold is under 10%;
+a falling series passes.
 
 | Series | Firewall slope/h | 30-day % | Range | WEC slope/h | 30-day % | Range |
 |---|---|---|---|---|---|---|
-| Memory (RSS / private bytes) | +165 KB | 133% | 80.4–106.9 MB | +486 KB | 771% | 31.0–73.3 MB |
-| FDs / handles | +0.05 | 163% | 23–28 | +0.47 | 82% | 403–426 |
-| Threads | −0.01 | −35% | 17–20 | +0.11 | 473% | 15–18 |
-| Queue DB + WAL | +100 KB | 34% | 186–215 MB | +84 KB | 20% | 262–327 MB |
+| Memory (RSS / private bytes) | +75 KB | 61% fail | 80.4–100.0 MB | +461 KB | 735% fail | 31.0–73.3 MB |
+| FDs / handles | +0.055 | 166% fail | 23–28 | +0.54 | 93% fail | 403–426 |
+| Threads | −0.008 | −32% flat | 17–20 | +0.12 | 527% fail | 15–18 |
+| Queue DB + WAL | +106 KB | 36% fail | 186–215 MB | +73 KB | 17% fail | 262–327 MB |
+
+The first published table (RSS +165 KB/h, 133%; private bytes +486 KB/h, 771%; FDs 163%; handles
+82%; threads 473%; queue 34% and 20%) used samples up to hour 25, including the drain. It is
+superseded. The verdict for each series is unchanged except firewall threads, which are falling
+and pass under the registered rule.
 
 The absolute changes are small. One day cannot separate .NET warm-up from a slow leak, and the
 second half behaves differently. Over hours 12–24 the firewall queue file is flat (+1.8 KB/h,
 0.6%), and the WEC private-byte slope turns negative. These are reported as failures because that
 was the rule set in advance. A longer run is needed to settle them.
 
-**WEC CPU is the real growth.** At a constant 10 events/s, the collector's CPU seconds per hour went
+**WEC CPU is the real growth** (an observation; CPU was not part of the registered criterion 3 and
+is recommended as a gate for future runs). At a constant 10 events/s, the collector's CPU seconds per hour went
 450, 808, 1,308 … 2,049 (hour 12) … 2,503 (hour 21). The curve flattened only when the instance ran out
 of CPU credits. `CPUCreditBalance` was 0 from about 15:00Z. The firewall collector used 3.2% of one
 core (p50) all day.
@@ -121,9 +142,12 @@ Whole soak: firewall p50/p95/p99 3.9/6.4/8.7 s, max 151 s; WEC 11.7/771.8/881.8 
 
 **Why the WEC fell behind (finding).** Bower's own queue never backed up: pending stayed at 36
 or fewer, and the oldest undelivered age stayed at 7 s or less in every sample. The lag was
-ForwardedEvents records that Bower's Windows Event Log reader had not yet read. That gap was
-about 20 records for the first 14 hours, then 1,500 (18:30Z) and 7,000 (02:30Z, about
-12 minutes at 10/s). The reader's CPU per hour grew with the number of records in ForwardedEvents:
+ForwardedEvents records that Bower's Windows Event Log reader had not yet read
+(`forwardedEvents.records` minus `windowsEventLog.eventsRead` in `series/wec-samples.jsonl`).
+Between bursts it was tens of records, but every burst left a backlog: 2,786 at 05:40Z, 3,124 at
+09:40Z and 3,673 at 13:40Z, each drained within 5–15 minutes. Once CPU was capped, the backlogs
+stopped draining: 5,063 at 17:40Z, 5,495 at 22:00Z, and a maximum of 8,950 at 03:05Z on 3 Nov
+(about 15 minutes at 10/s). The reader's CPU per hour grew with the number of records in ForwardedEvents:
 about 450 s at 42,000 records and about 2,500 s at 860,000. `WindowsEventLogChannel.Read`
 builds a new filtered `EventLogQuery` and seeks to the bookmark on every 1-second poll, so the
 Event Log service's work per poll grows with the size of the channel. That is consistent with the
@@ -245,3 +269,25 @@ Audit inputs: `operations/` (`operations/`). The shared VPC, NAT gateway and eve
 pre-existing resource were untouched. The local private staging directory (keys, certificates,
 tokens, Azure identity files and caches) was deleted. The 30-hour expiry schedule was not
 relied on: it was deleted with the stack before it fired.
+
+## Corrections after review
+
+Council round 1 on PR #170 found defects in the reconciler and the write-up. They were fixed on
+2026-11-03, after the lab and its identity lists had been deleted, so only conclusions
+derivable from the committed evidence were recomputed. Nothing below changes a pass into a fail
+or a fail into a pass, except where stated.
+
+| Issue | What the run did | Now |
+|---|---|---|
+| Native completeness was not enforced | `final` could report `exact: true` with partial or empty native input | `reconcile.py` requires the profile: 18 generator segments with exact counters, 896,400 planned events, all 25 native windows, original-id columns, and native = DC attempts. Fixture tests cover missing, extra, duplicate and empty inputs. Re-run on the committed evidence: the firewall meets every gate (18 segments, 896,400 ids, every counter exact). The WEC meets the window, record and generator gates (25 windows, 896,400 records = 896,400 attempts, all LDAP result 49). Its original-id gates (ids files, original-id count, duplicates) need the deleted lists and report incomplete |
+| Accepted extras were hidden | Accepted counts and digest were taken over `queue ∩ native` | Accepted ids are scoped by source and window and compared as full sets (`extraAtAccepted`). Firewall: no change possible (scope = native range). WEC: **accepted extras not verified**; cannot be recomputed |
+| Growth included the drain | Resource slopes used samples to hour 25 | Hours 3–24 of the workload only, recomputed from `series/` ([resource-trends-recomputed.json](final/resource-trends-recomputed.json)); drain reported separately. Both collectors still fail; firewall threads now pass (falling) |
+| Mixed identity forms | `crossWindowOrInWindowDuplicates: 1` in `final-reconciliation.json` | That was the probe's redacted-id collision in `h23`. Native counts and duplicates now use original ids; redacted counts are labelled `probeRedacted*` |
+| CPU added to criterion 3 after registration | The guide's criterion 3 said "CPU per event does not trend upwards" | Moved to a recommendation for future runs; the WEC CPU growth is an observation, not a criterion-3 result |
+| Latency comment | `reconcile.py` said the gate applied to every hour | The registered rule is the whole-run p99; hours above are listed |
+| WEC backlog understated | "About 20 records for the first 14 hours" | 2,786, 3,124 and 3,673 after the first three bursts; maximum 8,950 |
+| Alerts read | First page only, failures recorded as an error object | Paginated, fail closed, and each alert is marked active or not during the run. This run's list (`monitoring/alerts-final.json`) was captured with one request returning three items; whether a further page existed was not checked |
+| Line endings | 25 Windows-origin JSON files had CRLF | Normalised to LF (content otherwise unchanged) |
+
+`final/final-reconciliation.json` and the two smoke and interim reports are the reports as
+produced at the run and are kept unchanged; read their accepted figures with the caveat above.

@@ -35,7 +35,8 @@ SMOKE_SECONDS = 900
 COLLECTORS = {'linux': (RUN + '-linux', 'network_connection_denied'),
               'windows': (RUN + '-windows', 'authentication_failure')}
 # Pre-registered latency gate: the pilot's connected-steady p99 (firewall 6.65 s, WEC 9.08 s,
-# docs/evidence/pilot-native-20261030) times two, for the whole soak and for every hour.
+# docs/evidence/pilot-native-20261030) times two, applied to the whole-soak p99. Hours above the
+# limit are listed, not gated.
 LATENCY_P99_LIMIT = {'linux': 13.3, 'windows': 18.16}
 PRIVACY_MARKERS = ('bower-probe', 'BOWER_DENY', 'synthetic-invalid')
 
@@ -66,6 +67,30 @@ def fetch(lab):
     print(json.dumps({'fetched': sorted(str(p.relative_to(out)) for p in out.rglob('*') if p.is_file())[:60]}))
 
 
+def schedule(seconds, smoke=False):
+    """The generators' segment schedule (sender-generator.sh, generator-windows.ps1):
+    (offset, seconds, rate), 10/sec with a 60 s 100/sec burst at +2 h and every 4 h after,
+    steady chunks of at most two hours."""
+    bursts = [] if smoke else list(range(7200, seconds - 59, 14400))
+    edges = sorted({0, seconds, *bursts, *(b + 60 for b in bursts)})
+    segments = []
+    for begin, end in zip(edges, edges[1:]):
+        rate = 100 if begin in bursts else 10
+        for at in range(begin, end, 7200):
+            segments.append((at, min(7200, end - at), rate))
+    return segments
+
+
+def profile(label):
+    """What a complete run of LABEL must contain: generator segments, events and native windows."""
+    smoke = label == 'smoke'
+    seconds = SMOKE_SECONDS if smoke else SOAK_SECONDS
+    segments = schedule(seconds, smoke)
+    windows = ['smoke'] if smoke else ['h%02d' % k for k in range(seconds // 3600 + 1)]
+    return {'segments': segments, 'events': sum(n * r for _, n, r in segments),
+            'first': 0 if smoke else 100000, 'windows': windows}
+
+
 def firewall_ids(first, count):
     return {'a13-n{}x{}'.format(4400 + n // 40000, 20000 + n % 40000) for n in range(first, first + count)}
 
@@ -92,47 +117,124 @@ def firewall_native(results, label, cutoff):
     partial = 0
     start = SMOKE_START if label == 'smoke' else SOAK_START
     total = SMOKE_SECONDS if label == 'smoke' else SOAK_SECONDS
-    if cutoff < start + total and label == 'soak':
+    expected = profile(label)
+    problems = []
+    planned = [(expected['first'] + sum(n * r for _, n, r in expected['segments'][:k]), n * r, r)
+               for k, (_, n, r) in enumerate(expected['segments'])]
+    actual = [(s['first'], s['count'], s['rate']) for s in segments]
+    if actual != planned[:len(actual)]:
+        problems.append('segments-differ-from-profile')
+    if not counter_ok:
+        problems.append('native-counter-or-sent-mismatch')
+    running = cutoff < start + total and label == 'soak'
+    if not running and len(actual) != len(planned):
+        problems.append('finished-segments-%d-of-%d' % (len(actual), len(planned)))
+    if running:
         # Scheduled prefix of the running segment, 30 s behind the cutoff.
         offset = (segments[-1]['plannedStart'] - start + segments[-1]['count'] / segments[-1]['rate']) if segments else 0
         seconds = max(0, int(cutoff - 30 - (start + offset)))
         partial = seconds * 10  # the first soak segments are steady 10/sec until +2 h
         ids |= firewall_ids(next_first, partial)
-    return ids, {'segments': records, 'finishedSegments': len(records), 'scheduledPrefixFromRunningSegment': partial,
-                 'allFinishedSegmentsExact': counter_ok, 'expected': len(ids)}
+    if not running and len(ids) != expected['events']:
+        problems.append('native-%d-of-%d-planned-events' % (len(ids), expected['events']))
+    return ids, {'segments': records, 'finishedSegments': len(records), 'plannedSegments': len(planned),
+                 'plannedEvents': expected['events'], 'scheduledPrefixFromRunningSegment': partial,
+                 'allFinishedSegmentsExact': counter_ok, 'expected': len(ids), 'problems': problems,
+                 'complete': not problems and bool(ids)}
 
 
-def windows_native(results, windows):
-    ids, meta = set(), []
+def dc_generator(results, label):
+    """DC generator records: attempts per segment, all of which must fail with LDAP result 49."""
+    records = [json.loads(path.read_text(encoding='utf-8-sig'))
+               for path in sorted((results / 'hosts' / 'dc' / 'gen' / label).glob('segment-*.json'))]
+    codes = {}
+    for r in records:
+        for code, count in r['ldapResultCodes'].items():
+            codes[code] = codes.get(code, 0) + count
+    clean = (all(r['allCallsCompleted'] and r['completed'] == r['attempted'] and not r['unexpectedSuccessfulLogons']
+                 for r in records) and set(codes) <= {'49'})
+    return {'segments': len(records), 'attempted': sum(r['attempted'] for r in records), 'ldapResultCodes': codes,
+            'allSegmentsClean': clean}
+
+
+def windows_native(results, windows, attempts=None):
+    """Native 4625 identities from the DC's window exports. Identity is the ORIGINAL winevt- id
+    (probe column 4), which the collector keeps. Column 1 is the probe's default-detector form:
+    it masks some ids and can collide, so its counts are reported only as probeRedacted*. A
+    missing window, an ids file that is short or lacks the original-id column, a duplicate
+    original id, or a total that differs from ATTEMPTS makes the native set incomplete."""
+    ids, meta, problems = set(), [], []
     duplicates = 0
     for name in windows:
         # Scheduled hourly export, else the on-demand export of the same window (dc-native-window.ps1).
-        path = next((p for p in (results / 'hosts' / 'dc' / sub / (name + '.json') for sub in ('native', 'manual')) if p.exists()), None)
+        path = next((p for p in (results / 'hosts' / 'dc' / sub / (name + '.json') for sub in ('native', 'manual'))
+                     if p.exists()), None)
         if path is None:
             meta.append({'window': name, 'missing': True})
+            problems.append('missing-window-' + name)
             continue
         report = json.loads(path.read_text(encoding='utf-8-sig'))
         ids_path = path.with_name(name + '.ids') if path.parent.name == 'native' else path.with_name(name + '.json.ids')
-        lines = ids_path.read_text(encoding='utf-8-sig').splitlines()
-        # The collector keeps the original winevt- id (its privacy profile does not redact ids);
-        # the probe's default-detector form (column 1) masked some as false positives.
-        window_ids = {line.split('\t')[3] if line.count('\t') >= 3 else line.split('\t')[0] for line in lines if line}
-        duplicates += len(window_ids & ids) + report['duplicateIdentities']
-        ids |= window_ids
-        meta.append({'window': name, 'since': report['since'], 'until': report['until'], 'selected': report['selected'],
-                     'distinct': report['distinct'], 'redactionChangedIds': report['redactionChangedIds'],
-                     'identitySetSha256': report['identitySetSha256']})
-    return ids, {'windows': meta, 'expected': len(ids), 'crossWindowOrInWindowDuplicates': duplicates}
+        lines = [line for line in ids_path.read_text(encoding='utf-8-sig').splitlines() if line] if ids_path.exists() else []
+        if len(lines) != report['selected']:
+            problems.append('ids-file-incomplete-' + name)
+        if any(line.count('\t') < 3 for line in lines):
+            problems.append('no-original-id-column-' + name)
+        window_ids = [line.split('\t')[3] for line in lines if line.count('\t') >= 3]
+        distinct = set(window_ids)
+        duplicates += len(window_ids) - len(distinct) + len(distinct & ids)
+        ids |= distinct
+        meta.append({'window': name, 'since': report['since'], 'until': report.get('until'), 'records': report['selected'],
+                     'distinctOriginalIds': len(distinct), 'originalIdSetSha256': digest(distinct),
+                     'probeRedactedDistinct': report['distinct'], 'probeRedactedDuplicates': report['duplicateIdentities'],
+                     'probeRedactionChangedIds': report['redactionChangedIds'],
+                     'probeRedactedSetSha256': report['identitySetSha256']})
+    if duplicates:
+        problems.append('duplicate-original-ids')
+    if attempts is not None and len(ids) != attempts:
+        problems.append('native-%d-differs-from-%d-attempts' % (len(ids), attempts))
+    return ids, {'windows': meta, 'expected': len(ids), 'originalIdDuplicates': duplicates, 'problems': problems,
+                 'complete': not problems and bool(ids)}
 
 
 def accepted(results, host):
+    """Accepted union as {event id: time}. Linux records the queue's received_at. The WEC union
+    records the time the union first saw the id (column 2, within 30 minutes of acceptance), or
+    receivedAt in column 3 from probe revisions after this soak."""
     if host == 'linux':
         path = results / 'hosts' / 'linux' / 'accepted.tsv.gz'
         lines = gzip.open(path, 'rt').read().splitlines() if path.exists() else []
     else:
         path = results / 'hosts' / 'wec' / 'accepted.tsv'
         lines = path.read_text(encoding='utf-8-sig').splitlines() if path.exists() else []
-    return {line.split('\t')[0] for line in lines if line}
+    result = {}
+    for line in lines:
+        if line:
+            parts = line.split('\t')
+            result[parts[0]] = parts[2] if len(parts) > 2 and parts[2] else (parts[1] if len(parts) > 1 else '')
+    return result
+
+
+def scope_accepted(host, union, label, last_index=None):
+    """The accepted ids that belong to LABEL, chosen by source and window, never by the native
+    set: firewall by sequence range (cut at LAST_INDEX for the interim), WEC by winevt- prefix
+    and acceptance time (smoke before the soak start, soak from it)."""
+    if host == 'linux':
+        expected = profile(label)
+        low, high = expected['first'], expected['first'] + expected['events']
+        if last_index is not None:
+            high = min(high, last_index + 1)
+        return {i for i in union if re.fullmatch(r'a13-n\d{4}x\d{5}', i) and low <= index(i) < high}
+    low, high = (SMOKE_START, SOAK_START) if label == 'smoke' else (SOAK_START, float('inf'))
+    return {i for i, at in union.items() if i.startswith('winevt-') and at and low <= stamp_any(at) < high}
+
+
+def stamp_any(value):
+    """SQLite 'YYYY-MM-DD HH:MM:SS[.f]' (UTC) or ISO 8601 with an offset."""
+    value = value.strip()
+    if re.fullmatch(r'\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?', value):
+        value += 'Z'
+    return qf.stamp(value.replace(' ', 'T', 1))
 
 
 class Verifier:
@@ -197,13 +299,18 @@ def sentinel(verifier, collector, event_type, start, end, cutoff, chunk=3600):
         latencies = []
         for row in result:
             if row['EventId'] in rows:
-                rows[row['EventId']]['Copies'] += row['Copies']  # an id spanning two chunks
+                # An id whose copies span two chunks: one identity, all copies, earliest times.
+                kept = rows[row['EventId']]
+                kept['Copies'] += row['Copies']
+                kept['Generated'] = min(kept['Generated'], row['Generated'], key=stamp)
+                kept['FirstIngested'] = min(kept['FirstIngested'], row['FirstIngested'], key=stamp)
                 continue
             rows[row['EventId']] = row
             latencies.append(stamp(row['FirstIngested']) - stamp(row['Generated']))
         hours.append({'from': iso(t), 'to': iso(u), 'distinct': len(result), 'rows': sum(r['Copies'] for r in result),
                       'latencySeconds': quantiles(latencies)})
         t = u
+    # Recomputed after merging, so an id spanning two chunks uses its earliest times once.
     all_latencies = [stamp(r['FirstIngested']) - stamp(r['Generated']) for r in rows.values()]
     return rows, hours, quantiles(all_latencies), hashes
 
@@ -225,24 +332,48 @@ def privacy(verifier, start, end):
     return verifier.query(text)
 
 
-def alerts(state, start):
-    """Azure Monitor alert instances and Sentinel incidents in the run's resource group (operator read)."""
+def arm_list(url, runner=None):
+    """Every item of an ARM list, following nextLink. Any failure raises: an unread page must
+    never read as 'no alerts'."""
+    runner = runner or (lambda u: subprocess.run(['az', 'rest', '--method', 'get', '--url', u, '--only-show-errors',
+                                                  '--output', 'json'], capture_output=True, text=True, timeout=120))
+    items, pages = [], 0
+    while url:
+        pages += 1
+        if pages > 100:
+            raise RuntimeError('Too many alert pages')
+        result = runner(url)
+        if result.returncode:
+            raise RuntimeError('Alert or incident query failed; output suppressed')
+        page = json.loads(result.stdout)
+        items.extend(page.get('value', []))
+        url = page.get('nextLink')
+    return items
+
+
+def alerts(state, start, end, runner=None):
+    """Azure Monitor alert instances and Sentinel incidents in the run's resource group (operator
+    read). Each item records whether it was active at any time inside [start, end)."""
     base = 'https://management.azure.com/subscriptions/' + qf.SUBSCRIPTION
     out = {}
     for name, url in (('alerts', base + '/providers/Microsoft.AlertsManagement/alerts?api-version=2019-05-05-preview'
                        '&targetResourceGroup=' + state['group'] + '&timeRange=30d'),
                       ('incidents', 'https://management.azure.com' + state['workspaceResourceId']
                        + '/providers/Microsoft.SecurityInsights/incidents?api-version=2024-03-01')):
-        result = subprocess.run(['az', 'rest', '--method', 'get', '--url', url, '--only-show-errors', '--output', 'json'],
-                                capture_output=True, text=True, timeout=120)
-        if result.returncode:
-            out[name] = {'error': 'query-failed'}
-            continue
-        items = json.loads(result.stdout).get('value', [])
-        out[name] = [{'name': (i.get('properties', {}).get('essentials', {}) or {}).get('alertRule', i.get('name', '')).split('/')[-1],
-                      'state': (i.get('properties', {}).get('essentials', {}) or {}).get('monitorCondition') or i.get('properties', {}).get('status'),
-                      'startedAt': (i.get('properties', {}).get('essentials', {}) or {}).get('startDateTime') or i.get('properties', {}).get('createdTimeUtc')}
-                     for i in items]
+        listed = []
+        for item in arm_list(url, runner):
+            props = item.get('properties', {})
+            essentials = props.get('essentials') or {}
+            started = essentials.get('startDateTime') or props.get('createdTimeUtc')
+            resolved = essentials.get('monitorConditionResolvedDateTime') or props.get('closedTimeUtc')
+            began = stamp(started) if started else None
+            stopped = stamp(resolved) if resolved else None
+            listed.append({'name': (essentials.get('alertRule') or item.get('name', '')).split('/')[-1],
+                           'state': essentials.get('monitorCondition') or props.get('status'),
+                           'startedAt': started, 'resolvedAt': resolved,
+                           'activeDuringRun': began is not None and began < end and (stopped is None or stopped >= start)})
+        out[name] = listed
+    out['activeDuringRun'] = sum(item['activeDuringRun'] for kind in ('alerts', 'incidents') for item in out[kind])
     return out
 
 
@@ -261,15 +392,25 @@ def slope(points):
             'min': min(y for _, y in points), 'max': max(y for _, y in points)}
 
 
-def resources(results, host, start, end):
-    path = results / 'hosts' / ('linux' if host == 'linux' else 'wec') / 'samples.jsonl'
-    rows = [json.loads(line) for line in path.read_text(encoding='utf-8-sig').splitlines() if line.strip()] if path.exists() else []
-    rows = [r for r in rows if start <= stamp(r['at']) < end]
+GROWTH_FROM_HOUR, GROWTH_TO_HOUR, GROWTH_LIMIT_PERCENT = 3, 24, 10
+
+
+def load_samples(path):
+    path = Path(path)
+    return [json.loads(line) for line in path.read_text(encoding='utf-8-sig').splitlines() if line.strip()] if path.exists() else []
+
+
+def resources(samples, host, start, end):
+    """Resource analysis of the samples in [start, end). Criterion 3 as registered before the run:
+    least-squares slopes over hours 3 to 24 of the workload, flat when the 30-day projection is
+    under 10% of the mean. Pass the workload window; analyse the delivery drain separately."""
+    rows = [r for r in samples if start <= stamp(r['at']) < end]
     # Process metrics come first in a sample; a later status failure keeps them (error recorded).
     good = [r for r in rows if r.get('process')]
     status_rows = [r for r in good if r.get('queue')]
-    def series(get, warm=3):
-        return slope([((stamp(r['at']) - start) / 3600, get(r)) for r in good if (stamp(r['at']) - start) / 3600 >= warm])
+    def series(get, warm=GROWTH_FROM_HOUR):
+        return slope([((stamp(r['at']) - start) / 3600, get(r)) for r in good
+                      if warm <= (stamp(r['at']) - start) / 3600 < GROWTH_TO_HOUR])
     pids = sorted({(r['process']['pid'], r['process'].get('startTicks') or r['process'].get('startedAt')) for r in good}, key=str)
     boots = sorted({r.get('bootId') or r.get('bootAt') for r in rows})
     if host == 'linux':
@@ -289,14 +430,24 @@ def resources(results, host, start, end):
         for job, value in (r.get('jobs') or {}).items():
             if value and value.get('lastRunAt'):
                 jobs.setdefault(job, set()).add((value['lastRunAt'], value['lastState']))
+    growth = {'memoryBytes': series(mem), 'handlesOrFds': series(handles),
+              'threads': series(lambda r: r['process']['threads']), 'queueDbPlusWalBytes': series(store)}
+    # Registered rule: the 30-day projection is under 10% of the mean. A falling series is not growth.
+    flat = {k: v is not None and v['thirtyDayProjectionPercentOfMean'] is not None
+            and v['thirtyDayProjectionPercentOfMean'] < GROWTH_LIMIT_PERCENT for k, v in growth.items()}
+    hourly = {}
+    for r in good:
+        hourly.setdefault(int((stamp(r['at']) - start) // 3600), []).append(r['process']['cpuSeconds'])
     return {
+        'window': [iso(start), iso(end)], 'growthHours': [GROWTH_FROM_HOUR, GROWTH_TO_HOUR],
+        'criterion3': {'flat': flat, 'pass': bool(good) and all(flat.values())},
+        'cpuSecondsPerHour': [round(max(v) - min(v), 1) for _, v in sorted(hourly.items())],
         'samples': len(rows), 'samplesWithoutProcess': len(rows) - len(good), 'samplesWithoutStatus': len(rows) - len(status_rows),
         'sampleErrors': sorted({r.get('error') for r in rows if r.get('error')}), 'processIdentities': len(pids), 'bootIds': len(boots),
         'serviceRestartCounter': restarts,
         'maximumSampleGapSeconds': max((stamp(b['at']) - stamp(a['at']) for a, b in zip(rows, rows[1:])), default=None),
-        'memoryBytes': series(mem), 'memoryBytesFromStart': series(mem, 0),
-        'handlesOrFds': series(handles), 'threads': series(lambda r: r['process']['threads']),
-        'queueDbPlusWalBytes': series(store), 'walBytes': series(lambda r: r['files'].get('queue.db-wal', 0)),
+        **growth, 'memoryBytesFromStart': series(mem, 0),
+        'walBytes': series(lambda r: r['files'].get('queue.db-wal', 0)),
         'cpuPercentOfOneCore': quantiles(cpu),
         'peakPending': max((r['queue']['pending'] for r in status_rows), default=None),
         'peakOldestUndeliveredAgeSeconds': max((r['queue']['oldestAgeSeconds'] for r in status_rows), default=None),
@@ -307,25 +458,51 @@ def resources(results, host, start, end):
     }
 
 
-def compare(native, queue, rows):
+def compare(native, queue, rows, native_complete=True):
+    """Exact only when the native set is complete and non-empty and the independently scoped
+    accepted and Sentinel sets both equal it: nothing missing and nothing extra at either stage.
+    Duplicate Sentinel rows are counted, not failed (at-least-once)."""
     destination = set(rows)
     copies = sum(r['Copies'] for r in rows.values())
-    return {'native': len(native), 'accepted': len(queue & native), 'sentinelDistinct': len(destination & native),
+    return {'native': len(native), 'accepted': len(queue), 'sentinelDistinct': len(destination),
             'sentinelRows': copies, 'duplicateRows': copies - len(destination),
-            'missingAtAccepted': len(native - queue), 'missingAtSentinel': len(native - destination),
-            'extraAtSentinel': len(destination - native),
-            'nativeSha256': digest(native), 'acceptedSha256': digest(queue & native), 'sentinelSha256': digest(destination & native),
-            'exact': native == (queue & native) == (destination & native) and not (destination - native)}
+            'missingAtAccepted': len(native - queue), 'extraAtAccepted': len(queue - native),
+            'missingAtSentinel': len(native - destination), 'extraAtSentinel': len(destination - native),
+            'nativeComplete': native_complete,
+            'nativeSha256': digest(native), 'acceptedSha256': digest(queue), 'sentinelSha256': digest(destination),
+            'exact': bool(native) and native_complete and native == queue == destination}
+
+
+def analyse_series(series_dir):
+    """Resource results recomputed from committed evidence series (no identity lists needed):
+    the workload window [start, start + 24 h) and, separately, the delivery drain (+1 h)."""
+    out = {'growthRule': {'hours': [GROWTH_FROM_HOUR, GROWTH_TO_HOUR], 'thirtyDayProjectionPercentOfMeanBelow': GROWTH_LIMIT_PERCENT}}
+    for host, name in (('linux', 'linux-samples.jsonl'), ('windows', 'wec-samples.jsonl')):
+        samples = load_samples(Path(series_dir) / name)
+        drain = resources(samples, host, SOAK_START + SOAK_SECONDS, SOAK_START + SOAK_SECONDS + 3600)
+        # The drain hour has no hours-3-to-24 series; report its metrics without a growth verdict.
+        for key in ('criterion3', 'growthHours', 'memoryBytes', 'handlesOrFds', 'threads', 'queueDbPlusWalBytes',
+                    'memoryBytesFromStart', 'walBytes'):
+            drain.pop(key, None)
+        out[host] = {'workload': resources(samples, host, SOAK_START, SOAK_START + SOAK_SECONDS), 'drain': drain}
+    return out
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('action', choices=('fetch', 'smoke', 'interim', 'final'))
-    parser.add_argument('--lab-dir', type=Path, required=True)
+    parser.add_argument('action', choices=('fetch', 'smoke', 'interim', 'final', 'series'))
+    parser.add_argument('--lab-dir', type=Path)
+    parser.add_argument('--series-dir', type=Path, help='series: the committed evidence series directory')
     parser.add_argument('--out', type=Path)
     parser.add_argument('--cutoff', type=float, help='ingestion cutoff epoch (default now)')
     parser.add_argument('--native-windows', help='comma-separated DC export names (default per scope)')
     args = parser.parse_args()
+    if args.action == 'series':
+        text = json.dumps(analyse_series(args.series_dir), indent=1)
+        if args.out:
+            args.out.write_text(text + '\n')
+        print(text)
+        return
     lab = args.lab_dir.resolve()
     if args.action == 'fetch':
         return fetch(lab)
@@ -339,7 +516,7 @@ def main():
         windows = ['h00']
     else:
         start, end, label = SOAK_START, SOAK_START + SOAK_SECONDS + 3600, 'soak'
-        windows = ['h%02d' % k for k in range(25)]
+        windows = profile('soak')['windows']
     if args.native_windows:
         windows = args.native_windows.split(',')
     report = {'runId': RUN, 'scope': args.action, 'generatedAt': iso(dt.datetime.now(dt.timezone.utc).timestamp()),
@@ -349,11 +526,23 @@ def main():
         if host == 'linux':
             # Interim: exactly the first hour's scheduled identities (the running segment's prefix).
             native, native_meta = firewall_native(results, label, SOAK_START + 3630 if args.action == 'interim' else end)
-            low, high = (0, 9000) if label == 'smoke' else (100000, 100000 + 896400)
-            queue = {i for i in accepted(results, host) if re.fullmatch(r'a13-n\d{4}x\d{5}', i) and low <= index(i) < high}
+            prefix = max((index(i) for i in native), default=-1) if args.action == 'interim' else None
+            queue = scope_accepted(host, accepted(results, host), label, prefix)
+            low, high = profile(label)['first'], profile(label)['first'] + profile(label)['events']
         else:
-            native, native_meta = windows_native(results, windows)
-            queue = accepted(results, host)
+            generator = dc_generator(results, label)
+            final = args.action != 'interim'
+            native, native_meta = windows_native(results, windows, generator['attempted'] if final else None)
+            native_meta['generator'] = generator
+            if final and (generator['segments'] != len(profile(label)['segments'])
+                          or generator['attempted'] != profile(label)['events'] or not generator['allSegmentsClean']):
+                native_meta['problems'].append('dc-generator-differs-from-profile')
+                native_meta['complete'] = False
+            union = accepted(results, host)
+            queue = scope_accepted(host, union, label)
+            if not final:
+                # Accepted within the first hour plus one union interval.
+                queue = {i for i in queue if stamp_any(union[i]) < SOAK_START + 3600 + 1800}
         query_end = end if args.action != 'interim' else SOAK_START + 3600 + (300 if host == 'linux' else 0)
         query_start = start - 120
         rows, hours, latency, hashes = sentinel(verifier, collector, event_type, query_start, query_end, cutoff)
@@ -363,25 +552,24 @@ def main():
                 # Later identities of the running segment are not in the interim expected prefix.
                 limit = max((index(i) for i in native), default=-1)
                 rows = {k: v for k, v in rows.items() if index(k) <= limit}
-                queue = {i for i in queue if index(i) <= limit}
-        else:
-            # Windows identities are scoped by the DC's native windows; extra rows are kept as extras.
-            pass
-        result = compare(native, queue, rows)
+        # The interim compares a running prefix; completeness gates smoke and final only.
+        result = compare(native, queue, rows, native_meta['complete'] or args.action == 'interim')
         limit = LATENCY_P99_LIMIT[host]
         result.update(nativeDetail=native_meta, hours=hours, latencySeconds=latency, queryHashes=hashes,
                       latencyWithinLimit=bool(latency['p99'] is not None and latency['p99'] <= limit),
                       hoursAboveLatencyLimit=[h['from'] for h in hours if h['latencySeconds']['p99'] and h['latencySeconds']['p99'] > limit],
-                      resources=resources(results, host, start, end))
+                      resources=resources(load_samples(results / 'hosts' / ('linux' if host == 'linux' else 'wec') / 'samples.jsonl'),
+                                          host, start, SOAK_START + SOAK_SECONDS if args.action == 'final' else end))
         report['collectors'][host] = result
     report['health'], report['healthQueryHash'] = health(verifier, start, end)
     report['privacy'], report['privacyQueryHash'] = privacy(verifier, start - 120, end)
-    report['alerts'] = alerts(verifier.state, start)
+    report['alerts'] = alerts(verifier.state, start, end)
     text = json.dumps(report, indent=1, default=str)
     if args.out:
         args.out.write_text(text + '\n')
     summary = {h: {k: v for k, v in c.items() if k in ('native', 'accepted', 'sentinelDistinct', 'sentinelRows', 'duplicateRows',
-                                                       'missingAtAccepted', 'missingAtSentinel', 'extraAtSentinel', 'exact', 'latencySeconds')}
+                                                       'missingAtAccepted', 'extraAtAccepted', 'missingAtSentinel',
+                                                       'extraAtSentinel', 'nativeComplete', 'exact', 'latencySeconds')}
                for h, c in report['collectors'].items()}
     print(json.dumps({'scope': args.action, 'summary': summary, 'privacy': report['privacy'], 'health': report['health'],
                       'alerts': report['alerts']}, indent=1, default=str))

@@ -1,0 +1,419 @@
+{
+ "growthRule": {
+  "hours": [
+   3,
+   24
+  ],
+  "thirtyDayProjectionPercentOfMeanBelow": 10
+ },
+ "linux": {
+  "workload": {
+   "window": [
+    "2026-11-02T03:35:00.000000Z",
+    "2026-11-03T03:35:00.000000Z"
+   ],
+   "growthHours": [
+    3,
+    24
+   ],
+   "criterion3": {
+    "flat": {
+     "memoryBytes": false,
+     "handlesOrFds": false,
+     "threads": true,
+     "queueDbPlusWalBytes": false
+    },
+    "pass": false
+   },
+   "cpuSecondsPerHour": [
+    104.2,
+    107.5,
+    123.7,
+    113.2,
+    114.0,
+    113.3,
+    126.8,
+    111.6,
+    110.5,
+    109.4,
+    122.8,
+    111.0,
+    111.3,
+    111.0,
+    121.4,
+    110.3,
+    110.9,
+    116.7,
+    135.0,
+    120.3,
+    122.4,
+    119.2,
+    132.2,
+    120.3
+   ],
+   "samples": 289,
+   "samplesWithoutProcess": 0,
+   "samplesWithoutStatus": 20,
+   "sampleErrors": [
+    "ValueError"
+   ],
+   "processIdentities": 1,
+   "bootIds": 1,
+   "serviceRestartCounter": [
+    0
+   ],
+   "maximumSampleGapSeconds": 300.3132200241089,
+   "memoryBytes": {
+    "samples": 252,
+    "mean": 88920421.587,
+    "slopePerHour": 75427.158,
+    "thirtyDayProjectionPercentOfMean": 61.07,
+    "min": 80441344,
+    "max": 99999744
+   },
+   "handlesOrFds": {
+    "samples": 252,
+    "mean": 23.675,
+    "slopePerHour": 0.055,
+    "thirtyDayProjectionPercentOfMean": 166.2,
+    "min": 23,
+    "max": 28
+   },
+   "threads": {
+    "samples": 252,
+    "mean": 17.183,
+    "slopePerHour": -0.008,
+    "thirtyDayProjectionPercentOfMean": -31.86,
+    "min": 17,
+    "max": 20
+   },
+   "queueDbPlusWalBytes": {
+    "samples": 252,
+    "mean": 214274816.095,
+    "slopePerHour": 106170.77,
+    "thirtyDayProjectionPercentOfMean": 35.68,
+    "min": 186003776,
+    "max": 214758464
+   },
+   "memoryBytesFromStart": {
+    "samples": 289,
+    "mean": 88090092.512,
+    "slopePerHour": 242386.006,
+    "thirtyDayProjectionPercentOfMean": 198.11,
+    "min": 67506176,
+    "max": 99999744
+   },
+   "walBytes": {
+    "samples": 252,
+    "mean": 42687.079,
+    "slopePerHour": -1270.384,
+    "thirtyDayProjectionPercentOfMean": -2142.75,
+    "min": 4152,
+    "max": 181312
+   },
+   "cpuPercentOfOneCore": {
+    "count": 288,
+    "p50": 3.213,
+    "p95": 5.677,
+    "p99": 7.633,
+    "max": 7.859
+   },
+   "peakPending": 12,
+   "peakOldestUndeliveredAgeSeconds": 1.008754,
+   "minimumDiskAvailableBytes": 29635297280,
+   "statuses": [
+    "healthy"
+   ],
+   "jobRuns": {
+    "queue-maintenance": {
+     "runs": 2,
+     "states": [
+      "Succeeded"
+     ],
+     "last": "2026-11-03T03:00:00.5094606+00:00"
+    },
+    "queue-retention": {
+     "runs": 45,
+     "states": [
+      "Processing",
+      "Succeeded"
+     ],
+     "last": "2026-11-03T03:00:00.5094606+00:00"
+    },
+    "source-activity": {
+     "runs": 269,
+     "states": [
+      "Enqueued",
+      "Processing",
+      "Succeeded"
+     ],
+     "last": "2026-11-03T03:30:00.517685+00:00"
+    }
+   },
+   "deliveryFailureCodes": [
+    null
+   ]
+  },
+  "drain": {
+   "window": [
+    "2026-11-03T03:35:00.000000Z",
+    "2026-11-03T04:35:00.000000Z"
+   ],
+   "cpuSecondsPerHour": [
+    21.9
+   ],
+   "samples": 8,
+   "samplesWithoutProcess": 0,
+   "samplesWithoutStatus": 0,
+   "sampleErrors": [],
+   "processIdentities": 1,
+   "bootIds": 1,
+   "serviceRestartCounter": [
+    0
+   ],
+   "maximumSampleGapSeconds": 300.0707800388336,
+   "cpuPercentOfOneCore": {
+    "count": 7,
+    "p50": 0.773,
+    "p95": 31.369,
+    "p99": 31.369,
+    "max": 31.369
+   },
+   "peakPending": 3,
+   "peakOldestUndeliveredAgeSeconds": 0.239388,
+   "minimumDiskAvailableBytes": 29641166848,
+   "statuses": [
+    "healthy"
+   ],
+   "jobRuns": {
+    "queue-maintenance": {
+     "runs": 1,
+     "states": [
+      "Succeeded"
+     ],
+     "last": "2026-11-03T03:00:00.5094606+00:00"
+    },
+    "queue-retention": {
+     "runs": 3,
+     "states": [
+      "Processing",
+      "Succeeded"
+     ],
+     "last": "2026-11-03T04:00:00.5174368+00:00"
+    },
+    "source-activity": {
+     "runs": 7,
+     "states": [
+      "Processing",
+      "Succeeded"
+     ],
+     "last": "2026-11-03T04:05:00.5131396+00:00"
+    }
+   },
+   "deliveryFailureCodes": [
+    null
+   ]
+  }
+ },
+ "windows": {
+  "workload": {
+   "window": [
+    "2026-11-02T03:35:00.000000Z",
+    "2026-11-03T03:35:00.000000Z"
+   ],
+   "growthHours": [
+    3,
+    24
+   ],
+   "criterion3": {
+    "flat": {
+     "memoryBytes": false,
+     "handlesOrFds": false,
+     "threads": false,
+     "queueDbPlusWalBytes": false
+    },
+    "pass": false
+   },
+   "cpuSecondsPerHour": [
+    450.3,
+    807.5,
+    1308.3,
+    1250.4,
+    1220.6,
+    1206.3,
+    1441.3,
+    1312.1,
+    1281.8,
+    1314.9,
+    1636.9,
+    1450.8,
+    2049.5,
+    2047.3,
+    2429.1,
+    2423.2,
+    2334.1,
+    2220.5,
+    2460.0,
+    2457.5,
+    2502.9,
+    2513.2,
+    2502.2,
+    2465.6
+   ],
+   "samples": 288,
+   "samplesWithoutProcess": 0,
+   "samplesWithoutStatus": 0,
+   "sampleErrors": [],
+   "processIdentities": 1,
+   "bootIds": 1,
+   "serviceRestartCounter": null,
+   "maximumSampleGapSeconds": 305.5063319206238,
+   "memoryBytes": {
+    "samples": 252,
+    "mean": 45143950.222,
+    "slopePerHour": 460620.578,
+    "thirtyDayProjectionPercentOfMean": 734.64,
+    "min": 31006720,
+    "max": 73347072
+   },
+   "handlesOrFds": {
+    "samples": 252,
+    "mean": 416.147,
+    "slopePerHour": 0.538,
+    "thirtyDayProjectionPercentOfMean": 93.11,
+    "min": 403,
+    "max": 426
+   },
+   "threads": {
+    "samples": 252,
+    "mean": 16.25,
+    "slopePerHour": 0.119,
+    "thirtyDayProjectionPercentOfMean": 527.17,
+    "min": 15,
+    "max": 18
+   },
+   "queueDbPlusWalBytes": {
+    "samples": 252,
+    "mean": 303524184.063,
+    "slopePerHour": 73368.912,
+    "thirtyDayProjectionPercentOfMean": 17.4,
+    "min": 262267752,
+    "max": 326942024
+   },
+   "memoryBytesFromStart": {
+    "samples": 288,
+    "mean": 44000568.889,
+    "slopePerHour": 565530.147,
+    "thirtyDayProjectionPercentOfMean": 925.4,
+    "min": 29335552,
+    "max": 73347072
+   },
+   "walBytes": {
+    "samples": 252,
+    "mean": 1599409.46,
+    "slopePerHour": -73645.521,
+    "thirtyDayProjectionPercentOfMean": -3315.27,
+    "min": 4152,
+    "max": 24485192
+   },
+   "cpuPercentOfOneCore": {
+    "count": 287,
+    "p50": 59.333,
+    "p95": 78.046,
+    "p99": 79.736,
+    "max": 84.477
+   },
+   "peakPending": 36,
+   "peakOldestUndeliveredAgeSeconds": 6.885804599999999,
+   "minimumDiskAvailableBytes": 18503798784,
+   "statuses": [
+    "healthy"
+   ],
+   "jobRuns": {
+    "queue-maintenance": {
+     "runs": 2,
+     "states": [
+      "Succeeded"
+     ],
+     "last": "2026-11-03T03:00:00.3378607+00:00"
+    },
+    "queue-retention": {
+     "runs": 48,
+     "states": [
+      "Processing",
+      "Succeeded"
+     ],
+     "last": "2026-11-03T03:00:00.3378607+00:00"
+    },
+    "source-activity": {
+     "runs": 288,
+     "states": [
+      "Processing",
+      "Succeeded"
+     ],
+     "last": "2026-11-03T03:30:00.470716+00:00"
+    }
+   },
+   "deliveryFailureCodes": [
+    null
+   ]
+  },
+  "drain": {
+   "window": [
+    "2026-11-03T03:35:00.000000Z",
+    "2026-11-03T04:35:00.000000Z"
+   ],
+   "cpuSecondsPerHour": [
+    1188.9
+   ],
+   "samples": 7,
+   "samplesWithoutProcess": 0,
+   "samplesWithoutStatus": 0,
+   "sampleErrors": [],
+   "processIdentities": 1,
+   "bootIds": 1,
+   "serviceRestartCounter": null,
+   "maximumSampleGapSeconds": 785.9481329917908,
+   "cpuPercentOfOneCore": {
+    "count": 6,
+    "p50": 52.459,
+    "p95": 77.79,
+    "p99": 77.79,
+    "max": 77.79
+   },
+   "peakPending": 4,
+   "peakOldestUndeliveredAgeSeconds": 1.2570930999999999,
+   "minimumDiskAvailableBytes": 18468392960,
+   "statuses": [
+    "healthy"
+   ],
+   "jobRuns": {
+    "queue-maintenance": {
+     "runs": 1,
+     "states": [
+      "Succeeded"
+     ],
+     "last": "2026-11-03T03:00:00.3378607+00:00"
+    },
+    "queue-retention": {
+     "runs": 3,
+     "states": [
+      "Processing",
+      "Succeeded"
+     ],
+     "last": "2026-11-03T04:00:00.4565171+00:00"
+    },
+    "source-activity": {
+     "runs": 7,
+     "states": [
+      "Succeeded"
+     ],
+     "last": "2026-11-03T04:13:00.5989427+00:00"
+    }
+   },
+   "deliveryFailureCodes": [
+    null
+   ]
+  }
+ }
+}
