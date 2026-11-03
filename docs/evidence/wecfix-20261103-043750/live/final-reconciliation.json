@@ -1,0 +1,711 @@
+{
+  "run": "bower-wecfix-20261103-043750",
+  "start": "2026-11-03T05:17:00Z",
+  "end": "2026-11-03T09:47:00Z",
+  "native": {
+    "distinct": 293400,
+    "sha256": "ec573d33b880181cc43c21b2ee5e09c231155ce43cdab7bd4c0900b74e4606d3",
+    "windows": [
+      {
+        "name": "w1",
+        "since": "2026-11-03T05:17:00+00:00",
+        "until": "2026-11-03T06:17:00+00:00",
+        "selected": 83416,
+        "distinct": 83416
+      },
+      {
+        "name": "w2",
+        "since": "2026-11-03T06:17:00+00:00",
+        "until": "2026-11-03T07:17:00+00:00",
+        "selected": 78582,
+        "distinct": 78582
+      },
+      {
+        "name": "w3",
+        "since": "2026-11-03T07:17:00+00:00",
+        "until": "2026-11-03T08:17:00+00:00",
+        "selected": 95400,
+        "distinct": 95400
+      },
+      {
+        "name": "w4",
+        "since": "2026-11-03T08:17:00+00:00",
+        "until": "2026-11-03T09:17:00+00:00",
+        "selected": 36001,
+        "distinct": 36001
+      },
+      {
+        "name": "w5",
+        "since": "2026-11-03T09:17:00+00:00",
+        "until": "2026-11-03T09:47:00+00:00",
+        "selected": 1,
+        "distinct": 1
+      }
+    ]
+  },
+  "pilotWecP99LimitSeconds": 18.16,
+  "collectors": {
+    "Wec": {
+      "collectorId": "bower-wecfix-20261103-043750-Wec",
+      "accepted": {
+        "distinct": 293400,
+        "sha256": "ec573d33b880181cc43c21b2ee5e09c231155ce43cdab7bd4c0900b74e4606d3",
+        "outsideWindow": 0
+      },
+      "sentinel": {
+        "distinct": 293400,
+        "rows": 293400,
+        "duplicateRows": 0,
+        "sha256": "ec573d33b880181cc43c21b2ee5e09c231155ce43cdab7bd4c0900b74e4606d3",
+        "queryHashes": [
+          "132f0aef27a59917ed0a8240746a8608cfc0f41f9498d9f2f5ab342f9a06f9c3",
+          "5693cfa471514eeaa03912eb548f2d54d1f16b32ac67d9b086a14b3c92ffa157",
+          "a86bbbeb74d8b793d2f593f88edaaaef9e494e83915086eaa408c5632b1dec83",
+          "80892d0f01fd30be5bec258aa21139d2011f8b63ce0d52b2f03606e15d244f61",
+          "b69ca195a15d1d3036790936938d3d6316486fe4b90360f767919ef6f1d827f6",
+          "34a3dcb5d11f2d6a43f41e6860f6132e4e5dcb9dc630e5e074184f4ef61f399d",
+          "df15d2beb3b3505b36f3588dc1987f61bd39b1bbe160e2d1916e75cb6bc044c2",
+          "c23154464041e381204376dc43cc4e59f30c832482e2f1a2f1feba1b8943fd3d",
+          "1f28bd9436ae6e5fa5179c43b607c7a33663978a2d5b40a6c73bcd9b981146ee"
+        ]
+      },
+      "exact": true,
+      "missingFromAccepted": 0,
+      "extraInAccepted": 0,
+      "missingFromSentinel": 0,
+      "extraInSentinel": 0,
+      "latencySeconds": {
+        "count": 293400,
+        "p50": 7.707,
+        "p95": 1102.924,
+        "p99": 1229.076,
+        "max": 1262.157
+      },
+      "latencyPassesPilotLimit": false,
+      "latencyByWindow": [
+        {
+          "from": "2026-11-03T05:17:00Z",
+          "to": "2026-11-03T05:47:00Z",
+          "distinct": 17998,
+          "rows": 17998,
+          "latencySeconds": {
+            "count": 17998,
+            "p50": 6.448,
+            "p95": 8.851,
+            "p99": 9.916,
+            "max": 17.556
+          }
+        },
+        {
+          "from": "2026-11-03T05:47:00Z",
+          "to": "2026-11-03T06:17:00Z",
+          "distinct": 65418,
+          "rows": 65418,
+          "latencySeconds": {
+            "count": 65418,
+            "p50": 256.627,
+            "p95": 620.579,
+            "p99": 653.334,
+            "max": 662.575
+          }
+        },
+        {
+          "from": "2026-11-03T06:17:00Z",
+          "to": "2026-11-03T06:47:00Z",
+          "distinct": 60582,
+          "rows": 60582,
+          "latencySeconds": {
+            "count": 60582,
+            "p50": 933.875,
+            "p95": 1228.255,
+            "p99": 1252.828,
+            "max": 1262.157
+          }
+        },
+        {
+          "from": "2026-11-03T06:47:00Z",
+          "to": "2026-11-03T07:17:00Z",
+          "distinct": 18000,
+          "rows": 18000,
+          "latencySeconds": {
+            "count": 18000,
+            "p50": 6.782,
+            "p95": 164.765,
+            "p99": 220.817,
+            "max": 233.728
+          }
+        },
+        {
+          "from": "2026-11-03T07:17:00Z",
+          "to": "2026-11-03T07:47:00Z",
+          "distinct": 77400,
+          "rows": 77400,
+          "latencySeconds": {
+            "count": 77400,
+            "p50": 5.59,
+            "p95": 7.979,
+            "p99": 8.883,
+            "max": 11.778
+          }
+        },
+        {
+          "from": "2026-11-03T07:47:00Z",
+          "to": "2026-11-03T08:17:00Z",
+          "distinct": 18000,
+          "rows": 18000,
+          "latencySeconds": {
+            "count": 18000,
+            "p50": 6.88,
+            "p95": 12.135,
+            "p99": 15.0,
+            "max": 18.311
+          }
+        },
+        {
+          "from": "2026-11-03T08:17:00Z",
+          "to": "2026-11-03T08:47:00Z",
+          "distinct": 18000,
+          "rows": 18000,
+          "latencySeconds": {
+            "count": 18000,
+            "p50": 6.501,
+            "p95": 8.947,
+            "p99": 10.133,
+            "max": 20.946
+          }
+        },
+        {
+          "from": "2026-11-03T08:47:00Z",
+          "to": "2026-11-03T09:17:00Z",
+          "distinct": 18001,
+          "rows": 18001,
+          "latencySeconds": {
+            "count": 18001,
+            "p50": 6.743,
+            "p95": 12.708,
+            "p99": 30.411,
+            "max": 39.207
+          }
+        },
+        {
+          "from": "2026-11-03T09:17:00Z",
+          "to": "2026-11-03T09:47:00Z",
+          "distinct": 1,
+          "rows": 1,
+          "latencySeconds": {
+            "count": 1,
+            "p50": 5.778,
+            "p95": 5.778,
+            "p99": 5.778,
+            "max": 5.778
+          }
+        }
+      ],
+      "latencyByNamedWindow": {
+        "bothOld_steady_0517_0605": {
+          "count": 16798,
+          "p50": 6.441,
+          "p95": 8.846,
+          "p99": 9.934,
+          "max": 17.556
+        },
+        "afterUpgrade_0703_0947": {
+          "count": 139802,
+          "p50": 6.021,
+          "p95": 9.074,
+          "p99": 13.303,
+          "max": 39.207
+        },
+        "burst100_0717_0720": {
+          "count": 7200,
+          "p50": 5.616,
+          "p95": 8.151,
+          "p99": 9.069,
+          "max": 11.397
+        },
+        "sustained_0721_0732": {
+          "count": 60600,
+          "p50": 5.453,
+          "p95": 7.695,
+          "p99": 8.473,
+          "max": 9.936
+        },
+        "retention0800_0800_0810": {
+          "count": 6000,
+          "p50": 8.306,
+          "p95": 14.297,
+          "p99": 16.21,
+          "max": 18.311
+        },
+        "steady_0817_0847": {
+          "count": 18000,
+          "p50": 6.501,
+          "p95": 8.947,
+          "p99": 10.133,
+          "max": 20.946
+        },
+        "retention0900_0900_0910": {
+          "count": 6000,
+          "p50": 7.722,
+          "p95": 21.897,
+          "p99": 35.714,
+          "max": 39.207
+        }
+      },
+      "resources": {
+        "hours": [
+          {
+            "from": "2026-11-03T05:17:00Z",
+            "to": "2026-11-03T06:17:00Z",
+            "samples": 60,
+            "cpuSecondsPerHour": 129.6,
+            "userSecondsPerHour": 61.7,
+            "kernelSecondsPerHour": 68.0,
+            "eventLogServiceCpuSecondsPerHour": 2.7,
+            "readerLagRecords": {
+              "max": 26318,
+              "p50": 11
+            },
+            "queueRowsMax": 51481,
+            "forwardedEventsRecords": 1117613,
+            "states": [
+              "running"
+            ],
+            "pids": [
+              2108,
+              2136
+            ]
+          },
+          {
+            "from": "2026-11-03T06:17:00Z",
+            "to": "2026-11-03T07:17:00Z",
+            "samples": 60,
+            "cpuSecondsPerHour": 299.6,
+            "userSecondsPerHour": 145.4,
+            "kernelSecondsPerHour": 154.2,
+            "eventLogServiceCpuSecondsPerHour": 3.8,
+            "readerLagRecords": {
+              "max": 55456,
+              "p50": 12238
+            },
+            "queueRowsMax": 161503,
+            "forwardedEventsRecords": 1201399,
+            "states": [
+              "running"
+            ],
+            "pids": [
+              2136,
+              2600
+            ]
+          },
+          {
+            "from": "2026-11-03T07:17:00Z",
+            "to": "2026-11-03T08:17:00Z",
+            "samples": 60,
+            "cpuSecondsPerHour": 153.3,
+            "userSecondsPerHour": 90.6,
+            "kernelSecondsPerHour": 62.8,
+            "eventLogServiceCpuSecondsPerHour": 3.1,
+            "readerLagRecords": {
+              "max": 402,
+              "p50": 11
+            },
+            "queueRowsMax": 246758,
+            "forwardedEventsRecords": 1296800,
+            "states": [
+              "running"
+            ],
+            "pids": [
+              2600
+            ]
+          },
+          {
+            "from": "2026-11-03T08:17:00Z",
+            "to": "2026-11-03T09:17:00Z",
+            "samples": 60,
+            "cpuSecondsPerHour": 54.8,
+            "userSecondsPerHour": 26.2,
+            "kernelSecondsPerHour": 28.6,
+            "eventLogServiceCpuSecondsPerHour": 0.4,
+            "readerLagRecords": {
+              "max": 95,
+              "p50": 10
+            },
+            "queueRowsMax": 130936,
+            "forwardedEventsRecords": 1332798,
+            "states": [
+              "running"
+            ],
+            "pids": [
+              2600
+            ]
+          },
+          {
+            "from": "2026-11-03T09:17:00Z",
+            "to": "2026-11-03T09:47:00Z",
+            "samples": 2,
+            "cpuSecondsPerHour": 119.5,
+            "userSecondsPerHour": 119.5,
+            "kernelSecondsPerHour": 0.0,
+            "eventLogServiceCpuSecondsPerHour": 0.0,
+            "readerLagRecords": {
+              "max": 14,
+              "p50": 14
+            },
+            "queueRowsMax": 46308,
+            "forwardedEventsRecords": 1333401,
+            "states": [
+              "running"
+            ],
+            "pids": [
+              2600
+            ]
+          }
+        ],
+        "finalSourceCounters": {
+          "eventsRead": 140164,
+          "queued": 140164,
+          "duplicates": 0,
+          "retries": 0,
+          "submitFailures": 0,
+          "readErrors": 0,
+          "gaps": 0,
+          "resets": 0,
+          "cursorConflicts": 0
+        },
+        "upgradeAt": "2026-11-03T07:02:17Z"
+      }
+    },
+    "Wec2": {
+      "collectorId": "bower-wecfix-20261103-043750-Wec2",
+      "accepted": {
+        "distinct": 293400,
+        "sha256": "ec573d33b880181cc43c21b2ee5e09c231155ce43cdab7bd4c0900b74e4606d3",
+        "outsideWindow": 0
+      },
+      "sentinel": {
+        "distinct": 293400,
+        "rows": 293400,
+        "duplicateRows": 0,
+        "sha256": "ec573d33b880181cc43c21b2ee5e09c231155ce43cdab7bd4c0900b74e4606d3",
+        "queryHashes": [
+          "e45afbbbc7dd7e0e9921c1d113948e9c150625395d4e2f296fda2b6503cb4586",
+          "33c7626c5014e1b4c8de2560fa1215dddef5387599b235a1d34e8b554eb39b2e",
+          "fc96aa4515a44780bc6490d4791f09bd14a40a4ba927503920ef6a11b5a1b429",
+          "d50a871cb9163cd901d8c7af805a9e668cd44d45c9fd1a5c4b3be9990ab80887",
+          "84adbd59d2f0757995b90df3a054d4b8b65a5686d65c1ff20ed451d0e3823a8f",
+          "ac13d83dfa3fc74d4dbc43bf07da2fea4d2cb20770533a2ee9f4296a60b18fff",
+          "e1e7ecad43a105aff877643bc5dfc31767691a803f8d4e2ddeaef65a5e97e223",
+          "d5678088f8e0b5a4bb23ba4f0ba8e748c1f97934a529b7bf89a8a9f60e0c48d7",
+          "80990309c2d101a1cda96853de9320369f940fec2b1627b50c255df07a215b10"
+        ]
+      },
+      "exact": true,
+      "missingFromAccepted": 0,
+      "extraInAccepted": 0,
+      "missingFromSentinel": 0,
+      "extraInSentinel": 0,
+      "latencySeconds": {
+        "count": 293400,
+        "p50": 216.104,
+        "p95": 1105.979,
+        "p99": 1228.746,
+        "max": 1261.904
+      },
+      "latencyPassesPilotLimit": false,
+      "latencyByWindow": [
+        {
+          "from": "2026-11-03T05:17:00Z",
+          "to": "2026-11-03T05:47:00Z",
+          "distinct": 17998,
+          "rows": 17998,
+          "latencySeconds": {
+            "count": 17998,
+            "p50": 6.4,
+            "p95": 8.8,
+            "p99": 9.952,
+            "max": 117.532
+          }
+        },
+        {
+          "from": "2026-11-03T05:47:00Z",
+          "to": "2026-11-03T06:17:00Z",
+          "distinct": 65418,
+          "rows": 65418,
+          "latencySeconds": {
+            "count": 65418,
+            "p50": 257.621,
+            "p95": 618.048,
+            "p99": 652.259,
+            "max": 661.975
+          }
+        },
+        {
+          "from": "2026-11-03T06:17:00Z",
+          "to": "2026-11-03T06:47:00Z",
+          "distinct": 60582,
+          "rows": 60582,
+          "latencySeconds": {
+            "count": 60582,
+            "p50": 938.145,
+            "p95": 1227.849,
+            "p99": 1253.07,
+            "max": 1261.904
+          }
+        },
+        {
+          "from": "2026-11-03T06:47:00Z",
+          "to": "2026-11-03T07:17:00Z",
+          "distinct": 18000,
+          "rows": 18000,
+          "latencySeconds": {
+            "count": 18000,
+            "p50": 6.679,
+            "p95": 163.455,
+            "p99": 221.105,
+            "max": 234.453
+          }
+        },
+        {
+          "from": "2026-11-03T07:17:00Z",
+          "to": "2026-11-03T07:47:00Z",
+          "distinct": 77400,
+          "rows": 77400,
+          "latencySeconds": {
+            "count": 77400,
+            "p50": 329.264,
+            "p95": 701.125,
+            "p99": 735.737,
+            "max": 746.154
+          }
+        },
+        {
+          "from": "2026-11-03T07:47:00Z",
+          "to": "2026-11-03T08:17:00Z",
+          "distinct": 18000,
+          "rows": 18000,
+          "latencySeconds": {
+            "count": 18000,
+            "p50": 6.493,
+            "p95": 93.745,
+            "p99": 148.234,
+            "max": 162.757
+          }
+        },
+        {
+          "from": "2026-11-03T08:17:00Z",
+          "to": "2026-11-03T08:47:00Z",
+          "distinct": 18000,
+          "rows": 18000,
+          "latencySeconds": {
+            "count": 18000,
+            "p50": 6.505,
+            "p95": 9.022,
+            "p99": 10.621,
+            "max": 20.357
+          }
+        },
+        {
+          "from": "2026-11-03T08:47:00Z",
+          "to": "2026-11-03T09:17:00Z",
+          "distinct": 18001,
+          "rows": 18001,
+          "latencySeconds": {
+            "count": 18001,
+            "p50": 6.664,
+            "p95": 27.721,
+            "p99": 70.298,
+            "max": 84.698
+          }
+        },
+        {
+          "from": "2026-11-03T09:17:00Z",
+          "to": "2026-11-03T09:47:00Z",
+          "distinct": 1,
+          "rows": 1,
+          "latencySeconds": {
+            "count": 1,
+            "p50": 4.153,
+            "p95": 4.153,
+            "p99": 4.153,
+            "max": 4.153
+          }
+        }
+      ],
+      "latencyByNamedWindow": {
+        "bothOld_steady_0517_0605": {
+          "count": 16798,
+          "p50": 6.427,
+          "p95": 8.816,
+          "p99": 9.968,
+          "max": 117.532
+        },
+        "afterUpgrade_0703_0947": {
+          "count": 139802,
+          "p50": 51.159,
+          "p95": 667.424,
+          "p99": 728.46,
+          "max": 746.154
+        },
+        "burst100_0717_0720": {
+          "count": 7200,
+          "p50": 42.079,
+          "p95": 76.346,
+          "p99": 79.844,
+          "max": 82.22
+        },
+        "sustained_0721_0732": {
+          "count": 60600,
+          "p50": 373.304,
+          "p95": 710.7,
+          "p99": 738.175,
+          "max": 746.154
+        },
+        "retention0800_0800_0810": {
+          "count": 6000,
+          "p50": 7.308,
+          "p95": 139.75,
+          "p99": 158.026,
+          "max": 162.757
+        },
+        "steady_0817_0847": {
+          "count": 18000,
+          "p50": 6.505,
+          "p95": 9.022,
+          "p99": 10.621,
+          "max": 20.357
+        },
+        "retention0900_0900_0910": {
+          "count": 6000,
+          "p50": 7.483,
+          "p95": 62.749,
+          "p99": 79.987,
+          "max": 84.698
+        }
+      },
+      "resources": {
+        "hours": [
+          {
+            "from": "2026-11-03T05:17:00Z",
+            "to": "2026-11-03T06:17:00Z",
+            "samples": 60,
+            "cpuSecondsPerHour": 120.3,
+            "userSecondsPerHour": 57.1,
+            "kernelSecondsPerHour": 63.2,
+            "eventLogServiceCpuSecondsPerHour": 2.5,
+            "readerLagRecords": {
+              "max": 26304,
+              "p50": 10
+            },
+            "queueRowsMax": 51424,
+            "forwardedEventsRecords": 1117609,
+            "states": [
+              "running"
+            ],
+            "pids": [
+              2876,
+              4852
+            ]
+          },
+          {
+            "from": "2026-11-03T06:17:00Z",
+            "to": "2026-11-03T07:17:00Z",
+            "samples": 60,
+            "cpuSecondsPerHour": 285.5,
+            "userSecondsPerHour": 133.6,
+            "kernelSecondsPerHour": 151.9,
+            "eventLogServiceCpuSecondsPerHour": 3.1,
+            "readerLagRecords": {
+              "max": 55169,
+              "p50": 12228
+            },
+            "queueRowsMax": 161501,
+            "forwardedEventsRecords": 1201399,
+            "states": [
+              "running"
+            ],
+            "pids": [
+              2080,
+              4852
+            ]
+          },
+          {
+            "from": "2026-11-03T07:17:00Z",
+            "to": "2026-11-03T08:17:00Z",
+            "samples": 60,
+            "cpuSecondsPerHour": 297.4,
+            "userSecondsPerHour": 148.6,
+            "kernelSecondsPerHour": 148.8,
+            "eventLogServiceCpuSecondsPerHour": 4.4,
+            "readerLagRecords": {
+              "max": 32699,
+              "p50": 638
+            },
+            "queueRowsMax": 246756,
+            "forwardedEventsRecords": 1296800,
+            "states": [
+              "running"
+            ],
+            "pids": [
+              2080
+            ]
+          },
+          {
+            "from": "2026-11-03T08:17:00Z",
+            "to": "2026-11-03T09:17:00Z",
+            "samples": 60,
+            "cpuSecondsPerHour": 112.7,
+            "userSecondsPerHour": 58.0,
+            "kernelSecondsPerHour": 54.7,
+            "eventLogServiceCpuSecondsPerHour": 0.4,
+            "readerLagRecords": {
+              "max": 641,
+              "p50": 10
+            },
+            "queueRowsMax": 130937,
+            "forwardedEventsRecords": 1332798,
+            "states": [
+              "running"
+            ],
+            "pids": [
+              2080
+            ]
+          },
+          {
+            "from": "2026-11-03T09:17:00Z",
+            "to": "2026-11-03T09:47:00Z",
+            "samples": 2,
+            "cpuSecondsPerHour": 237.1,
+            "userSecondsPerHour": 118.5,
+            "kernelSecondsPerHour": 118.5,
+            "eventLogServiceCpuSecondsPerHour": 118.5,
+            "readerLagRecords": {
+              "max": 14,
+              "p50": 14
+            },
+            "queueRowsMax": 46304,
+            "forwardedEventsRecords": 1333401,
+            "states": [
+              "running"
+            ],
+            "pids": [
+              2080
+            ]
+          }
+        ],
+        "finalSourceCounters": {
+          "eventsRead": 140126,
+          "queued": 140125,
+          "duplicates": 0,
+          "retries": 0,
+          "submitFailures": 0,
+          "readErrors": 0,
+          "gaps": 0,
+          "resets": 0,
+          "cursorConflicts": 0
+        },
+        "upgradeAt": null
+      }
+    }
+  }
+}

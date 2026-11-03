@@ -1,0 +1,82 @@
+[
+ {
+  "type": "AWS::S3::Bucket",
+  "logical": "Artifacts",
+  "physical": "bower-wecfix-20261103-043750-artifacts-u6sp6igvnacr"
+ },
+ {
+  "type": "AWS::S3::BucketPolicy",
+  "logical": "BucketPolicy",
+  "physical": "bower-wecfix-20261103-043750-artifacts-u6sp6igvnacr"
+ },
+ {
+  "type": "AWS::EC2::Instance",
+  "logical": "Dc",
+  "physical": "i-03ebc18d432f5f3a4"
+ },
+ {
+  "type": "AWS::EC2::Route",
+  "logical": "DefaultRoute",
+  "physical": "rtb-09d4434f58ac3b092|0.0.0.0/0"
+ },
+ {
+  "type": "AWS::Scheduler::Schedule",
+  "logical": "Expiry",
+  "physical": "bower-wecfix-20261103-043750-expiry"
+ },
+ {
+  "type": "AWS::IAM::Role",
+  "logical": "ExpiryRole",
+  "physical": "bower-wecfix-20261103-043750-ExpiryRole-qclD7pZdDqcH"
+ },
+ {
+  "type": "AWS::EC2::SecurityGroup",
+  "logical": "Group",
+  "physical": "sg-08e8737fb3010e756"
+ },
+ {
+  "type": "AWS::IAM::InstanceProfile",
+  "logical": "HostProfile",
+  "physical": "bower-wecfix-20261103-043750-HostProfile-2XKQAmIubP5Q"
+ },
+ {
+  "type": "AWS::IAM::Role",
+  "logical": "HostRole",
+  "physical": "bower-wecfix-20261103-043750-HostRole-bsrEUWUsHGXE"
+ },
+ {
+  "type": "AWS::EC2::SecurityGroupIngress",
+  "logical": "Internal",
+  "physical": "sgr-0e1f723339eb0662b"
+ },
+ {
+  "type": "AWS::EC2::SubnetRouteTableAssociation",
+  "logical": "RouteAssociation",
+  "physical": "rtbassoc-0def7d95a57eadee8"
+ },
+ {
+  "type": "AWS::EC2::RouteTable",
+  "logical": "Routes",
+  "physical": "rtb-09d4434f58ac3b092"
+ },
+ {
+  "type": "AWS::SecretsManager::Secret",
+  "logical": "Secret",
+  "physical": "arn:aws:secretsmanager:ap-southeast-2:959038055523:secret:Secret-nJCZrbJMFnRV-SwxD9j"
+ },
+ {
+  "type": "AWS::EC2::Subnet",
+  "logical": "Subnet",
+  "physical": "subnet-0f7d2f976ebe03148"
+ },
+ {
+  "type": "AWS::EC2::Instance",
+  "logical": "Wec",
+  "physical": "i-046eb54c452b8e50b"
+ },
+ {
+  "type": "AWS::EC2::Instance",
+  "logical": "Wec2",
+  "physical": "i-0aa3aee4e7558febd"
+ }
+]

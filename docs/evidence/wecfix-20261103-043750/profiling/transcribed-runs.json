@@ -1,0 +1,39 @@
+{
+  "note": "Outputs of lab/aws/wecfix/bench runs printed to the operator console during this run and transcribed here verbatim (numbers only); the raw files were not kept.",
+  "queueCostVsDatabaseFileSize": {
+    "host": "BOWERWEC2 (m6i.large, gp3), bench5 'queue' mode, before the collector was installed",
+    "method": "real SqliteEventStore: 300 events, one enqueue each plus lease/settle per 10; database grown with an unrelated padding table",
+    "rows": [
+      {"databaseMb": 31, "wallMsPerEvent": 14.455, "userCpuMsPerEvent": 1.875, "kernelCpuMsPerEvent": 1.354},
+      {"databaseMb": 103, "wallMsPerEvent": 17.49, "userCpuMsPerEvent": 0.312, "kernelCpuMsPerEvent": 1.406},
+      {"databaseMb": 307, "wallMsPerEvent": 16.783, "userCpuMsPerEvent": 0.573, "kernelCpuMsPerEvent": 0.99},
+      {"databaseMb": 605, "wallMsPerEvent": 18.307, "userCpuMsPerEvent": 0.26, "kernelCpuMsPerEvent": 1.458},
+      {"databaseMb": 1202, "wallMsPerEvent": 18.647, "userCpuMsPerEvent": 0.365, "kernelCpuMsPerEvent": 1.51}
+    ]
+  },
+  "queueCostVsRetainedRowsMac": {
+    "host": "operator Mac (APFS), bench 'rows' mode, SQLite 3.53.4",
+    "headPlan": "MERGE (UNION ALL) | LEFT | SCAN queue_ledger | RIGHT | SCAN queue_ledger_segments | USE TEMP B-TREE FOR ORDER BY",
+    "rows": [
+      {"retainedRows": 1300, "cpuMsPerEvent": 0.781},
+      {"retainedRows": 25300, "cpuMsPerEvent": 0.246},
+      {"retainedRows": 50300, "cpuMsPerEvent": 0.252},
+      {"retainedRows": 100300, "cpuMsPerEvent": 0.288}
+    ]
+  },
+  "readerOneSessionManyPolls": {
+    "host": "BOWERWEC2, bench3 'source' mode, interval 0, 120 s",
+    "forwardedEventsRecords": 172658,
+    "polls": 140514,
+    "clientCpuMsPerPollByDecile": [0.250, 0.201, 0.189, 0.204, 0.216, 0.200, 0.200, 0.206, 0.196, 0.205],
+    "serviceCpuMsPerPollByDecile": [0.658, 0.641, 0.653, 0.631, 0.626, 0.632, 0.632, 0.628, 0.643, 0.645]
+  },
+  "readerAt700kWithInflow": {
+    "host": "BOWERWEC, bench3 'source' mode, interval 0, 30 s, during the WEF pre-fill",
+    "forwardedEventsRecords": 700121,
+    "polls": 18173, "eventsReturned": 131240, "wallMsMedian": 0.833, "wallMsP95": 6.263,
+    "clientCpuMsTotal": 10640.625, "serviceCpuMsTotal": 25046.875
+  },
+  "leasePlanAt100kRows": "MULTI-INDEX OR (3 x SEARCH queue_events_v5 USING INDEX ix_queue_events_state_bytes (state=?)) | SCALAR SUBQUERY: SEARCH USING INDEX ix_queue_events_delivery | USE TEMP B-TREE FOR ORDER BY",
+  "snapshotPlanAt100kRows": "SCAN queue_events_v5 USING COVERING INDEX ix_queue_events_state_bytes"
+}

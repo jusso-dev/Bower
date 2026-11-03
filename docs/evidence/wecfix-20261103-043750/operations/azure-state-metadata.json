@@ -1,0 +1,13 @@
+{
+ "run": "bower-wecfix-20261103-043750",
+ "group": "rg-bower-wecfix-20261103-043750",
+ "workspaceName": "bower-wecfix-20261103-043750-logs",
+ "region": "australiaeast",
+ "createdAt": "2026-11-03T04:41:12.988948+00:00",
+ "cleanupCheckedAt": "2026-11-03T09:29:59.673728+00:00",
+ "cleanupErrors": [],
+ "outputs": {
+  "streamName": "Custom-BowerSecurity",
+  "tableName": "BowerSecurity_CL"
+ }
+}

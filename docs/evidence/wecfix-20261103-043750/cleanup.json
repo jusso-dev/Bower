@@ -1,0 +1,168 @@
+{
+ "schemaVersion": 1,
+ "runId": "bower-wecfix-20261103-043750",
+ "checkedAt": "2026-11-03T09:30:46.953335+00:00",
+ "accountId": "959038055523",
+ "region": "ap-southeast-2",
+ "azureSubscription": "945092a0-2500-4b25-85a4-99f1c3135906",
+ "checks": [
+  {
+   "check": "cloudformation stack bower-wecfix-20261103-043750",
+   "absent": true
+  },
+  {
+   "check": "S3 bucket bower-wecfix-20261103-043750-artifacts-u6sp6igvnacr",
+   "absent": true,
+   "errorCode": "404"
+  },
+  {
+   "check": "instance i-03ebc18d432f5f3a4 (terminated)",
+   "absent": true
+  },
+  {
+   "check": "expiry schedule bower-wecfix-20261103-043750-expiry",
+   "absent": true,
+   "errorCode": "ResourceNotFoundException"
+  },
+  {
+   "check": "IAM role bower-wecfix-20261103-043750-ExpiryRole-qclD7pZdDqcH",
+   "absent": true,
+   "errorCode": "NoSuchEntity"
+  },
+  {
+   "check": "security group sg-08e8737fb3010e756",
+   "absent": true,
+   "errorCode": "InvalidGroup.NotFound"
+  },
+  {
+   "check": "instance profile bower-wecfix-20261103-043750-HostProfile-2XKQAmIubP5Q",
+   "absent": true,
+   "errorCode": "NoSuchEntity"
+  },
+  {
+   "check": "IAM role bower-wecfix-20261103-043750-HostRole-bsrEUWUsHGXE",
+   "absent": true,
+   "errorCode": "NoSuchEntity"
+  },
+  {
+   "check": "route table rtb-09d4434f58ac3b092",
+   "absent": true,
+   "errorCode": "InvalidRouteTableID.NotFound"
+  },
+  {
+   "check": "secret arn:aws:secretsmanager:ap-southeast-2:959038055523:secret:Secret-nJCZrbJMFnRV-SwxD9j",
+   "absent": true,
+   "errorCode": "ResourceNotFoundException"
+  },
+  {
+   "check": "subnet subnet-0f7d2f976ebe03148",
+   "absent": true,
+   "errorCode": "InvalidSubnetID.NotFound"
+  },
+  {
+   "check": "instance i-046eb54c452b8e50b (terminated)",
+   "absent": true
+  },
+  {
+   "check": "instance i-0aa3aee4e7558febd (terminated)",
+   "absent": true
+  },
+  {
+   "check": "EBS volume vol-099dc1948b3d811eb",
+   "absent": true,
+   "errorCode": "InvalidVolume.NotFound"
+  },
+  {
+   "check": "EBS volume vol-0bab5c7bda5acbdc5",
+   "absent": true,
+   "errorCode": "InvalidVolume.NotFound"
+  },
+  {
+   "check": "EBS volume vol-05f871f19b543ed20",
+   "absent": true,
+   "errorCode": "InvalidVolume.NotFound"
+  },
+  {
+   "check": "EBS snapshots tagged RunId",
+   "absent": true
+  },
+  {
+   "check": "CloudWatch log groups with the run prefix",
+   "absent": true
+  },
+  {
+   "check": "Secrets Manager secrets tagged RunId",
+   "absent": true
+  },
+  {
+   "check": "AWS resources tagged RunId (tagging API, region; listed ARNs re-verified)",
+   "absent": true,
+   "listedByTaggingApi": [
+    "arn:aws:ec2:ap-southeast-2:959038055523:instance/i-03ebc18d432f5f3a4",
+    "arn:aws:ec2:ap-southeast-2:959038055523:volume/vol-099dc1948b3d811eb",
+    "arn:aws:ec2:ap-southeast-2:959038055523:volume/vol-05f871f19b543ed20",
+    "arn:aws:ec2:ap-southeast-2:959038055523:instance/i-0aa3aee4e7558febd",
+    "arn:aws:ec2:ap-southeast-2:959038055523:volume/vol-0bab5c7bda5acbdc5",
+    "arn:aws:ec2:ap-southeast-2:959038055523:instance/i-046eb54c452b8e50b"
+   ],
+   "notConfirmedGone": []
+  },
+  {
+   "check": "Azure resource group rg-bower-wecfix-20261103-043750",
+   "absent": true
+  },
+  {
+   "check": "Azure resources tagged RunId",
+   "absent": true
+  },
+  {
+   "check": "soft-deleted workspace bower-wecfix-20261103-043750-logs",
+   "absent": true
+  },
+  {
+   "check": "Entra application bower-wecfix-20261103-043750-ingest",
+   "absent": true
+  },
+  {
+   "check": "service principal of bower-wecfix-20261103-043750-ingest",
+   "absent": true
+  },
+  {
+   "check": "deleted-items application 12cdf278-61f5-4038-800b-42491009324f",
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
+  },
+  {
+   "check": "deleted-items service principal 38200a97-1167-4504-b290-7adb09caa808",
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
+  },
+  {
+   "check": "role assignments of bower-wecfix-20261103-043750-ingest",
+   "absent": true
+  },
+  {
+   "check": "Entra application bower-wecfix-20261103-043750-verifier",
+   "absent": true
+  },
+  {
+   "check": "service principal of bower-wecfix-20261103-043750-verifier",
+   "absent": true
+  },
+  {
+   "check": "deleted-items application 3b824290-29ce-4e98-9df7-fc32d8843e26",
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
+  },
+  {
+   "check": "deleted-items service principal 85d596d4-d2ea-4792-b8bb-12ba189868e7",
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
+  },
+  {
+   "check": "role assignments of bower-wecfix-20261103-043750-verifier",
+   "absent": true
+  }
+ ],
+ "allAbsent": true
+}

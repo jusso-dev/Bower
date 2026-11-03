@@ -1,0 +1,58 @@
+{
+ "afterEof": "bookmark",
+ "info": {
+  "channel": "ForwardedEvents",
+  "recordCount": 1265876,
+  "fileSize": 3017871360,
+  "oldestRecordNumber": 1,
+  "isLogFull": false,
+  "oldestPosition": 1,
+  "newestPosition": 1265876
+ },
+ "rounds": [
+  {
+   "round": 0,
+   "outcome": "ok",
+   "returned": 0,
+   "staleOrRepeated": 0,
+   "eof": true,
+   "lastPosition": 1265083,
+   "wallMs": 0.45,
+   "clientCpuMs": 0,
+   "serviceCpuMs": 0
+  },
+  {
+   "round": 1,
+   "outcome": "ok",
+   "returned": 0,
+   "staleOrRepeated": 0,
+   "eof": true,
+   "lastPosition": 1265083,
+   "wallMs": 0.425,
+   "clientCpuMs": 0,
+   "serviceCpuMs": 0
+  },
+  {
+   "round": 2,
+   "outcome": "ok",
+   "returned": 0,
+   "staleOrRepeated": 0,
+   "eof": true,
+   "lastPosition": 1265083,
+   "wallMs": 0.342,
+   "clientCpuMs": 0,
+   "serviceCpuMs": 0
+  },
+  {
+   "round": 3,
+   "outcome": "ok",
+   "returned": 0,
+   "staleOrRepeated": 0,
+   "eof": true,
+   "lastPosition": 1265083,
+   "wallMs": 0.353,
+   "clientCpuMs": 0,
+   "serviceCpuMs": 0
+  }
+ ]
+}

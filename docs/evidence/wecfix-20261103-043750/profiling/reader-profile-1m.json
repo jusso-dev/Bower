@@ -1,0 +1,80 @@
+{
+ "info": {
+  "channel": "ForwardedEvents",
+  "recordCount": 1040001,
+  "fileSize": 2525040640,
+  "oldestRecordNumber": 1,
+  "isLogFull": false,
+  "oldestPosition": 1,
+  "newestPosition": 1040001
+ },
+ "xpath": "*[System[(EventID=4625) and (Provider[@Name='Microsoft-Windows-Security-Auditing'])]]",
+ "results": [
+  {
+   "strategy": "range-only (2 boundary queries)",
+   "polls": 200,
+   "eventsReturned": 0,
+   "wallMsMedian": 0.637,
+   "wallMsMax": 0.857,
+   "clientCpuMsMedian": 0,
+   "clientCpuMsTotal": 46.875,
+   "serviceCpuMsMedian": 0,
+   "serviceCpuMsTotal": 78.125
+  },
+  {
+   "strategy": "filtered query + seek to newest",
+   "polls": 200,
+   "eventsReturned": 0,
+   "wallMsMedian": 0.29,
+   "wallMsMax": 2.779,
+   "clientCpuMsMedian": 0,
+   "clientCpuMsTotal": 46.875,
+   "serviceCpuMsMedian": 0,
+   "serviceCpuMsTotal": 15.625
+  },
+  {
+   "strategy": "unfiltered query + seek to newest",
+   "polls": 200,
+   "eventsReturned": 0,
+   "wallMsMedian": 0.241,
+   "wallMsMax": 0.735,
+   "clientCpuMsMedian": 0,
+   "clientCpuMsTotal": 15.625,
+   "serviceCpuMsMedian": 0,
+   "serviceCpuMsTotal": 46.875
+  },
+  {
+   "strategy": "filtered query, no seek, first record",
+   "polls": 200,
+   "eventsReturned": 200,
+   "wallMsMedian": 0.382,
+   "wallMsMax": 0.548,
+   "clientCpuMsMedian": 0,
+   "clientCpuMsTotal": 0,
+   "serviceCpuMsMedian": 0,
+   "serviceCpuMsTotal": 93.75
+  },
+  {
+   "strategy": "filtered query + seek to oldest + 1",
+   "polls": 200,
+   "eventsReturned": 200,
+   "wallMsMedian": 1.069,
+   "wallMsMax": 1.949,
+   "clientCpuMsMedian": 0,
+   "clientCpuMsTotal": 78.125,
+   "serviceCpuMsMedian": 0,
+   "serviceCpuMsTotal": 156.25
+  },
+  {
+   "strategy": "channel.GetRange + channel.Read at newest (one poll)",
+   "polls": 200,
+   "eventsReturned": 0,
+   "wallMsMedian": 0.911,
+   "wallMsMax": 3.487,
+   "clientCpuMsMedian": 0,
+   "clientCpuMsTotal": 31.25,
+   "serviceCpuMsMedian": 0,
+   "serviceCpuMsTotal": 171.875
+  }
+ ]
+}

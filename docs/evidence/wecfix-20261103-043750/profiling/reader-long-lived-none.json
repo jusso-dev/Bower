@@ -1,0 +1,58 @@
+{
+ "afterEof": "none",
+ "info": {
+  "channel": "ForwardedEvents",
+  "recordCount": 1263074,
+  "fileSize": 3012628480,
+  "oldestRecordNumber": 1,
+  "isLogFull": false,
+  "oldestPosition": 1,
+  "newestPosition": 1263074
+ },
+ "rounds": [
+  {
+   "round": 0,
+   "outcome": "ok",
+   "returned": 0,
+   "staleOrRepeated": 0,
+   "eof": true,
+   "lastPosition": 1262262,
+   "wallMs": 0.458,
+   "clientCpuMs": 0,
+   "serviceCpuMs": 0
+  },
+  {
+   "round": 1,
+   "outcome": "InvalidOperationException:0x80131509",
+   "returned": 0,
+   "staleOrRepeated": 0,
+   "eof": false,
+   "lastPosition": 1262262,
+   "wallMs": 0,
+   "clientCpuMs": 0,
+   "serviceCpuMs": 0
+  },
+  {
+   "round": 2,
+   "outcome": "InvalidOperationException:0x80131509",
+   "returned": 0,
+   "staleOrRepeated": 0,
+   "eof": false,
+   "lastPosition": 1262262,
+   "wallMs": 0,
+   "clientCpuMs": 0,
+   "serviceCpuMs": 0
+  },
+  {
+   "round": 3,
+   "outcome": "InvalidOperationException:0x80131509",
+   "returned": 0,
+   "staleOrRepeated": 0,
+   "eof": false,
+   "lastPosition": 1262262,
+   "wallMs": 0,
+   "clientCpuMs": 0,
+   "serviceCpuMs": 0
+  }
+ ]
+}
