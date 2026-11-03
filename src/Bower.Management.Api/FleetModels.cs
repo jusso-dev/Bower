@@ -72,7 +72,9 @@ public sealed record FleetSiteCount(string Name, int Collectors);
 /// <summary>
 /// The plain-English fleet view, computed server side at query time from collector records,
 /// heartbeat v2 connectivity and credential state. Collectors are sorted most urgent first.
-/// <see cref="NewestVersion"/> is the newest stable Bower version a recently connected collector reports.
+/// <see cref="NewestVersion"/> is the newest stable Bower version a recently connected collector
+/// reports, or the newest pre-release when none reports a release (semantic-version order:
+/// <c>dev.N</c> &lt; <c>rc.N</c> &lt; release).
 /// </summary>
 public sealed record FleetRecord(
     DateTimeOffset GeneratedAt,

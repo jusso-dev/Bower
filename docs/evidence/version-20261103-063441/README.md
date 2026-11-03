@@ -39,6 +39,43 @@ jobs of the PR's CI run are the proof for upgrade, refused downgrade, explicit r
 same-version reinstall. Their results are in the PR checks; a result not shown there as
 passed is **not passed**.
 
+## CI results, first head (`16c7cc2`, run 369)
+
+CI run [41590823537](https://github.com/jusso-dev/Bower/actions/runs/41590823537): every job
+passed. From the job logs:
+
+- `install-linux`, Ubuntu (deb): upgrade `0.1.0-dev.0` → `0.1.0-dev.369`; package, CLI,
+  collector and `/v1/status` all reported `0.1.0-dev.369`. `dpkg -i` and
+  `apt-get install --allow-downgrades` were refused with `bower-collector: refusing to downgrade
+  from 0.1.0-dev.369 to 0.1.0-dev.0. …`; package, PID, settings and queue unchanged; explicit
+  rollback and same-version reinstall passed.
+- `install-linux`, Rocky Linux 9 (rpm): `rpm -U` refused natively (`… which is newer than …
+  is already installed`); `rpm -U --oldpackage` and `dnf downgrade` refused by the guard; state
+  unchanged; rollback and reinstall passed.
+- `install-windows`, Windows Server: upgrade to ProductVersion `0.1.369`; registry, CLI,
+  collector and `/v1/status` reported `0.1.0-dev.369`. The older MSI exited `1603` with
+  `Product: Bower Collector -- A newer Bower Collector is already installed, so this older
+  version (0.1.0-dev.0) was not installed. …`; state unchanged; the same MSI again was a no-op
+  (same PID); `BOWERALLOWDOWNGRADE=1` rolled back keeping `bower.env`, the secret and the queue.
+
+## Council round 1 fixes (second head)
+
+- `VERSION` is `0.1.1`, above the `0.1.0` that pre-scheme builds hard-code; the fleet console
+  orders versions semantically (dev < rc < release, numeric N).
+- The MSI decides downgrades semantically with the installed `VersionKey`; CI adds a fixture
+  built "later" (ProductVersion `MAJOR.MINOR.65535`) but semantically older, which must be
+  refused. `tools/ci/test_version.py` proves the key order and that `build.ps1` and
+  `version.py` compute the same keys.
+- `:latest` only for final release tags; images use build number 0; `version` fails non-tag
+  builds after `v<VERSION>` is tagged; the Rust job runs the version test against the stamped
+  version (locally: stamped run passes, a mismatched expectation fails); the Functions
+  collector reports the build version.
+
+Local checks on the second head: `dotnet test` 2,214 total, 0 failed, 2 Windows-only skips;
+`cargo test --workspace` unstamped and stamped (`BOWER_VERSION=0.1.1-dev.5`) pass;
+`tools/ci` tests pass; strict docs build and link check (109 pages), actionlint, zizmor,
+shellcheck and PSScriptAnalyzer clean. CI results for that head are in the PR checks.
+
 ## Limits
 
 - Kubernetes, AWS EC2 and Azure VM hosts use the same packages and images; they were not run

@@ -269,13 +269,56 @@ public sealed class FleetApiTests
     [InlineData("0.1.0", "0.2.0", true)]
     [InlineData("1.10.0", "1.9.9", false)]
     [InlineData("2.0.0-rc.1", "2.0.0", true)]
-    [InlineData("2.0.0-rc.1", "2.0.0-rc.2", false)]
+    [InlineData("2.0.0-rc.1", "2.0.0-rc.2", true)]
+    [InlineData("2.0.0-rc.2", "2.0.0-rc.1", false)]
     [InlineData("2.0.0+build.5", "2.0.0", false)]
+    // Bower's scheme (docs/operations/release-versioning.md): dev.N < rc.N < release, N numeric.
+    [InlineData("0.1.1-dev.9", "0.1.1-dev.10", true)]
+    [InlineData("0.1.1-dev.10", "0.1.1-dev.9", false)]
+    [InlineData("0.1.1-dev.400", "0.1.1-rc.1", true)]
+    [InlineData("0.1.1-rc.1", "0.1.1-dev.401", false)]
+    [InlineData("0.1.1-rc.1", "0.1.1", true)]
+    // A preview build never makes a release old.
+    [InlineData("0.1.1", "0.1.2-dev.1", false)]
+    [InlineData("0.1.1-dev.362", "0.1.1-dev.362", false)]
     public void Fleet_ComparesVersionNumbersAndStableReleases(string installed, string other, bool outdated)
     {
         FleetRecord fleet = FleetStatus.Evaluate([Record("installed", installed), Record("other", other)], new HashSet<string>(), Now);
         Assert.Equal(outdated ? FleetStates.OldVersion : FleetStates.Healthy,
             fleet.Collectors.Single(item => item.Id == "installed").State);
+    }
+
+    [Fact]
+    public void Fleet_DuringARolloutUpgradedCollectorsAreNeverCalledOld()
+    {
+        // Builds before the release-versioning scheme report a hard-coded 0.1.0 (a "release");
+        // every new build is 0.1.1-dev.N or later, so it sorts above that legacy label and the
+        // console never marks an upgraded collector old while legacy ones remain.
+        FleetRecord fleet = FleetStatus.Evaluate(
+            [Record("legacy", "0.1.0"), Record("upgraded-a", "0.1.1-dev.362"), Record("upgraded-b", "0.1.1-dev.363")],
+            new HashSet<string>(), Now);
+
+        Assert.Equal("0.1.0", fleet.NewestVersion);
+        Assert.All(fleet.Collectors, item => Assert.Equal(FleetStates.Healthy, item.State));
+
+        // Once the legacy collector is gone, the pre-release fleet shows drift again.
+        FleetRecord upgraded = FleetStatus.Evaluate(
+            [Record("upgraded-a", "0.1.1-dev.362"), Record("upgraded-b", "0.1.1-dev.363")], new HashSet<string>(), Now);
+        Assert.Equal("0.1.1-dev.363", upgraded.NewestVersion);
+        Assert.Equal(FleetStates.OldVersion, upgraded.Collectors.Single(item => item.Id == "upgraded-a").State);
+    }
+
+    [Fact]
+    public void Fleet_DevAndRcOnlyFleetStillReportsDrift()
+    {
+        FleetRecord fleet = FleetStatus.Evaluate(
+            [Record("dev", "0.2.0-dev.401"), Record("rc", "0.2.0-rc.1"), Record("older-rc", "0.2.0-rc.0")],
+            new HashSet<string>(), Now);
+
+        Assert.Equal("0.2.0-rc.1", fleet.NewestVersion);
+        Assert.Equal(FleetStates.OldVersion, fleet.Collectors.Single(item => item.Id == "dev").State);
+        Assert.Equal(FleetStates.OldVersion, fleet.Collectors.Single(item => item.Id == "older-rc").State);
+        Assert.Equal(FleetStates.Healthy, fleet.Collectors.Single(item => item.Id == "rc").State);
     }
 
     [Theory]

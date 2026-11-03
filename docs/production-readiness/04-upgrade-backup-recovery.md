@@ -441,11 +441,13 @@ power-off with no gap.
 
 ### Rollback
 
-**The MSI refuses a downgrade by default.** The ProductVersion is `MAJOR.MINOR.BUILD`, with
-the CI build number as the third field, so every build is newer than the one before
-([release versioning](../operations/release-versioning.md)). Installing an older MSI fails with
-exit code `1603` and, in the msiexec log, `A newer Bower Collector is already installed, so
-this older version (<version>) was not installed.` Nothing changes. Dev MSIs built before the
+**The MSI refuses a downgrade by default.** It decides by semantic version, the same order
+deb and rpm use (dev < rc < release), not by build order: the installed product's
+`VersionKey` registry value is compared with the new MSI's
+([release versioning](../operations/release-versioning.md)). Installing an older version, even
+one built later (for example a dev build made after an rc), fails with exit code `1603` and, in
+the msiexec log, `A newer Bower Collector is already installed (<installed>), so this older
+version (<version>) was not installed.` Nothing changes. Dev MSIs built before the
 scheme (`0.1.0.N`, compared as `0.1.0`) should also refuse to replace a newer build, because
 their own `MajorUpgrade` detects it (by design; not tested). A rollback to a release **without** `BOWER_SETTINGS_FILE` also loses the settings
 file wiring.

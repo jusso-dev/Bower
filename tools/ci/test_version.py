@@ -1,8 +1,11 @@
 """The release version computation and the package downgrade guard."""
 
+import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -11,6 +14,8 @@ import version
 
 REPO = Path(__file__).resolve().parents[2]
 PREINSTALL = REPO / "deploy/installers/linux/scripts/preinstall.sh"
+# Without GITHUB_OUTPUT, so a CLI run in a test never writes to the job's outputs.
+CLEAN_ENV = {key: value for key, value in os.environ.items() if key != "GITHUB_OUTPUT"}
 
 
 class VersionTests(unittest.TestCase):
@@ -39,6 +44,31 @@ class VersionTests(unittest.TestCase):
             with self.subTest(tag=tag), self.assertRaises(version.VersionError):
                 version.compute("0.2.0", "tag", tag, 400)
 
+    def test_development_builds_fail_once_the_version_is_released(self):
+        with self.assertRaisesRegex(version.VersionError, "already released: bump VERSION"):
+            version.compute("0.2.0", "branch", "main", 500, released=True)
+        # The release tag build itself, and builds before the tag, still work.
+        self.assertEqual(version.compute("0.2.0", "tag", "v0.2.0", 500, released=True)["version"], "0.2.0")
+        self.assertEqual(version.compute("0.2.0", "branch", "main", 500)["version"], "0.2.0-dev.500")
+
+    def test_check_released_reads_the_git_tags(self):
+        with tempfile.TemporaryDirectory() as directory:
+            def git(*args):
+                subprocess.run(["git", *args], cwd=directory, check=True, capture_output=True)
+            git("init", "-q")
+            git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x")
+            Path(directory, "VERSION").write_text("0.2.0\n", encoding="utf-8")
+            command = [sys.executable, str(Path(version.__file__).resolve()), "--version-file", "VERSION",
+                       "--build-number", "7", "--check-released"]
+            ok = subprocess.run(command, cwd=directory, capture_output=True, text=True, env=CLEAN_ENV)
+            self.assertEqual(ok.returncode, 0, ok.stderr)
+            git("tag", "v0.2.0-rc.1")
+            self.assertEqual(subprocess.run(command, cwd=directory, capture_output=True, env=CLEAN_ENV).returncode, 0)
+            git("tag", "v0.2.0")
+            refused = subprocess.run(command, cwd=directory, capture_output=True, text=True, env=CLEAN_ENV)
+            self.assertEqual(refused.returncode, 2)
+            self.assertIn("v0.2.0 is already released", refused.stderr)
+
     def test_build_number_fits_the_msi_build_field(self):
         for number in (-1, 65536):
             with self.subTest(number=number), self.assertRaises(version.VersionError):
@@ -65,6 +95,74 @@ class VersionTests(unittest.TestCase):
                     version.read_core(path)
             path.write_text("0.2.0\n", encoding="utf-8")
             self.assertEqual(version.read_core(path), "0.2.0")
+
+
+class VersionKeyTests(unittest.TestCase):
+    """The Windows MSI decides downgrades by comparing version keys as text."""
+
+    ORDERED = ["0.1.0-dev.0", "0.1.0-dev.9", "0.1.0-dev.10", "0.1.0-dev.65535", "0.1.0-rc.1",
+               "0.1.0-rc.10", "0.1.0", "0.1.1-dev.1", "0.1.1", "0.1.10-dev.1", "0.2.0-rc.1",
+               "0.2.0-dev.401", "0.2.0", "0.10.0", "1.0.0", "255.255.65535"]
+
+    def test_text_order_of_keys_is_semantic_version_order(self):
+        semantic = sorted(self.ORDERED, key=version.parse)
+        self.assertEqual(sorted(self.ORDERED, key=version.key), semantic)
+        self.assertEqual(version.key("0.2.0-rc.1"), "000.002.00000.1.00001")
+
+    def test_cross_stage_and_cross_patch_cases_from_review(self):
+        # rc then a later dev build: MSI 0.2.400 -> 0.2.401 looks like an upgrade, but is not.
+        rc = version.compute("0.2.0", "tag", "v0.2.0-rc.1", 400)
+        dev = version.compute("0.2.0", "branch", "main", 401)
+        self.assertLess(int(rc["msi_version"].split(".")[2]), int(dev["msi_version"].split(".")[2]))
+        self.assertGreater(rc["version_key"], dev["version_key"])
+        # An older patch rebuilt later than a newer patch.
+        later_old_patch = version.compute("0.2.0", "tag", "v0.2.0", 600)
+        newer_patch = version.compute("0.2.1", "tag", "v0.2.1", 500)
+        self.assertGreater(newer_patch["version_key"], later_old_patch["version_key"])
+
+    def test_build_ps1_computes_the_same_key(self):
+        pwsh = shutil.which("pwsh")
+        if not pwsh:
+            self.skipTest("pwsh is not installed")
+        script = REPO / "deploy/installers/windows/build.ps1"
+        command = (
+            "$ast = [System.Management.Automation.Language.Parser]::ParseFile($env:BUILD_SCRIPT, [ref]$null, [ref]$null);"
+            "$f = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst]"
+            " -and $n.Name -eq 'Get-BowerVersionKey' }, $true);"
+            ". ([scriptblock]::Create($f.Extent.Text));"
+            "$env:VERSIONS.Split(' ') | ForEach-Object { Get-BowerVersionKey -Value $_ }")
+        environment = {**os.environ, "BUILD_SCRIPT": str(script), "VERSIONS": " ".join(self.ORDERED)}
+        result = subprocess.run([pwsh, "-NoProfile", "-NonInteractive", "-Command", command], env=environment,
+                                capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout.split(), [version.key(value) for value in self.ORDERED])
+
+
+class ImageTagTests(unittest.TestCase):
+    """images.yml moves :latest only for a final release tag."""
+
+    def tags(self, ref_type, ref_name):
+        # Dry run of the images.yml metadata: docker/metadata-action applies type=semver
+        # {{major}}.{{minor}} to releases only, and adds latest when the flavor says so.
+        result = version.compute("0.2.0", ref_type, ref_name, 0)
+        tags = ["sha-5b7ded8"]
+        if ref_type == "tag":
+            tags.append(result["version"])
+            if result["prerelease"] == "false":
+                tags.append("0.2")
+        if result["latest"] == "true":
+            tags.append("latest")
+        return tags
+
+    def test_rc_tags_never_move_latest(self):
+        self.assertEqual(self.tags("tag", "v0.2.0-rc.1"), ["sha-5b7ded8", "0.2.0-rc.1"])
+        self.assertEqual(self.tags("tag", "v0.2.0"), ["sha-5b7ded8", "0.2.0", "0.2", "latest"])
+        self.assertEqual(self.tags("branch", "main"), ["sha-5b7ded8"])
+
+    def test_images_workflow_uses_the_computed_latest_flag(self):
+        workflow = (REPO / ".github/workflows/images.yml").read_text(encoding="utf-8")
+        self.assertIn("latest=${{ steps.version.outputs.latest }}", workflow)
+        self.assertNotIn("latest=${{ startsWith(", workflow)
+        self.assertIn("--build-number 0", workflow)
 
 
 class PackageDowngradeGuardTests(unittest.TestCase):

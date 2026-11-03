@@ -115,6 +115,7 @@ function Get-InstalledState {
     [pscustomobject]@{
         DisplayVersion = $product[0].DisplayVersion
         Version        = (Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Bower\Collector').Version
+        VersionKey     = (Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Bower\Collector').VersionKey
         ProcessId      = (Get-CimInstance Win32_Service -Filter "Name='Bower'").ProcessId
         Settings       = (Get-FileHash -LiteralPath (Join-Path $data 'bower.env') -Algorithm SHA256).Hash
         Queue          = (Get-Item -LiteralPath (Join-Path $data 'state\queue.db')).CreationTimeUtc.Ticks
@@ -145,6 +146,7 @@ function Test-Versioning([string] $Older, [string] $Newer, [string] $Version) {
     Wait-Healthy
     $installed = Get-InstalledState | ConvertFrom-Json
     Assert-That ($installed.Version -eq $Version) "registry records $($installed.Version), expected $Version"
+    Assert-That ($installed.VersionKey -match '^\d{3}\.\d{3}\.\d{5}\.[012]\.\d{5}$') "registry VersionKey is $($installed.VersionKey)"
     Assert-That ($installed.DisplayVersion -match ($msiPrefix + '[1-9]\d*$')) "ProductVersion $($installed.DisplayVersion) is not MAJOR.MINOR.BUILD"
     $cli = & (Join-Path $env:ProgramFiles 'Bower\bower.exe') --version
     Assert-That ($cli -eq "bower $Version") "bower --version printed $cli"
@@ -162,6 +164,17 @@ function Test-Versioning([string] $Older, [string] $Newer, [string] $Version) {
     Assert-That ((Get-InstalledState) -eq $before) 'a refused downgrade changed the product, service, settings or queue'
     Assert-That ((& $status) -eq $Version) 'status changed after a refused downgrade'
     Write-Information "refused (exit 1603): $(($log -split "`r?`n" | Select-String -SimpleMatch 'A newer Bower Collector' | Select-Object -First 1).Line.Trim())" -InformationAction Continue
+
+    # Semantically older but built later: its ProductVersion (MAJOR.MINOR.65535) is above this
+    # build's, as a dev build made after an rc is. The installed VersionKey still refuses it.
+    $later = @(Get-ChildItem -LiteralPath (Join-Path (Split-Path $Older) 'later-build') -Filter 'bower-collector-*-x64.msi' -File)
+    Assert-That ($later.Count -eq 1) 'expected one later-build fixture MSI'
+    $code = Invoke-Msi @('/i', ('"{0}"' -f $later[0].FullName)) 'semantic-downgrade.log'
+    $log = Get-Content -LiteralPath (Join-Path $work 'semantic-downgrade.log') -Raw
+    Assert-That ($code -eq 1603) "semantic downgrade with a higher ProductVersion exited with $code, expected 1603"
+    Assert-That ($log.Contains("A newer Bower Collector is already installed ($Version)")) 'the msiexec log does not explain the refused semantic downgrade'
+    Assert-That ((Get-InstalledState) -eq $before) 'a refused semantic downgrade changed the product, service, settings or queue'
+    Write-Information 'refused (exit 1603): a later build of an older version' -InformationAction Continue
 
     Write-Information '== Windows: the same MSI again is a no-op' -InformationAction Continue
     Assert-That ((Invoke-Msi @('/i', ('"{0}"' -f $Newer)) 'reinstall.log') -eq 0) 'same-version reinstall failed'

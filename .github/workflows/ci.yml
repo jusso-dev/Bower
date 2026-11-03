@@ -55,6 +55,7 @@ jobs:
     # v<VERSION> or v<VERSION>-rc.N for a release tag, otherwise <VERSION>-dev.<run number>.
     # The run number is the build number: the MSI's third field and the file version's fourth.
     runs-on: ubuntu-latest
+    # A non-tag build fails once v<VERSION> is tagged, which enforces the VERSION bump after a release.
     outputs:
       version: ${{ steps.compute.outputs.version }}
       build: ${{ steps.compute.outputs.build }}
@@ -63,13 +64,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-tags: true
       - id: compute
         env:
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
           RUN_NUMBER: ${{ github.run_number }}
         run: |
-          python3 tools/ci/version.py --ref-type "$REF_TYPE" --ref-name "$REF_NAME" --build-number "$RUN_NUMBER"
+          python3 tools/ci/version.py --ref-type "$REF_TYPE" --ref-name "$REF_NAME" --build-number "$RUN_NUMBER" --check-released
 
   workflow-lint:
     # Static analysis of the workflows themselves (unpinned actions, injection,
@@ -193,6 +195,10 @@ jobs:
         working-directory: rust
     env:
       CARGO_TERM_COLOR: always
+      # Every build, test and binary in this job carries this run's version; the
+      # bower_contracts::version test asserts it equals BOWER_EXPECTED_VERSION.
+      BOWER_VERSION: ${{ needs.version.outputs.version }}
+      BOWER_EXPECTED_VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -214,10 +220,7 @@ jobs:
       - run: cargo build --locked -p bower-collector -p bower-cli
       # The binaries report the version CI stamped in at compile time (BOWER_VERSION).
       - name: Check the stamped version
-        env:
-          BOWER_VERSION: ${{ needs.version.outputs.version }}
         run: |
-          cargo build --locked -p bower-collector -p bower-cli
           test "$(target/debug/bower --version)" = "bower $BOWER_VERSION"
           test "$(target/debug/bower version)" = "bower $BOWER_VERSION"
           test "$(target/debug/bower-collector --version)" = "bower-collector $BOWER_VERSION"
@@ -675,6 +678,10 @@ jobs:
           $env:BOWER_SIGN_PFX_FILE = ''
           ./deploy/installers/windows/build.ps1 -ArtefactDirectory artefacts/bower-win-x64 `
             -Architecture x64 -Version "$env:BOWER_CORE-dev.0" -BuildNumber 0 -OutputDirectory dist-upgrade-test
+          # The same, built "later" (ProductVersion MAJOR.MINOR.65535, above this build): the MSI
+          # must still refuse it, because it is semantically older (as an rc -> later dev build).
+          ./deploy/installers/windows/build.ps1 -ArtefactDirectory artefacts/bower-win-x64 `
+            -Architecture x64 -Version "$env:BOWER_CORE-dev.0" -BuildNumber 65535 -OutputDirectory dist-upgrade-test/later-build
       - name: Remove the signing certificate
         if: always()
         run: Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'signing.pfx') -Force -ErrorAction SilentlyContinue

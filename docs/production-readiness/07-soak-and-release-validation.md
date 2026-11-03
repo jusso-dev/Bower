@@ -376,8 +376,9 @@ Then check on every collector in the rollout that the reported version is the re
 
 ```bash
 bower --version                                   # bower 0.2.0-rc.1
-curl -fsS -H "Authorization: Bearer $(sudo cat /etc/bower/secrets/ingest-token)" \
-  http://127.0.0.1:4319/v1/status | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])'
+# The header goes to curl on stdin (-K -), never in its argument list (visible in ps).
+sudo cat /etc/bower/secrets/ingest-token | sed 's/^/header = "Authorization: Bearer /; s/$/"/' |
+  curl -fsS -K - http://127.0.0.1:4319/v1/status | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])'
 ```
 
 ```powershell

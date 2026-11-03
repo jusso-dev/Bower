@@ -51,9 +51,28 @@ $out = (Resolve-Path $OutputDirectory).Path
 
 # MSI ProductVersion is MAJOR.MINOR.BUILD (major and minor at most 255): Windows Installer
 # ignores a fourth field, so the build number takes the third and orders every build.
+function Get-BowerVersionKey {
+    <# The fixed-width, text-sortable key of a Bower version, as tools/ci/version.py key():
+       MMM.mmm.PPPPP.S.NNNNN with S = 0 dev, 1 rc, 2 release. The MSI compares it as text to
+       refuse a semantic downgrade whatever the build numbers say. tools/ci/test_version.py
+       checks both agree. #>
+    param([Parameter(Mandatory)][string] $Value)
+    $core, $pre = $Value.Split('-', 2)
+    $parts = $core.Split('.') | ForEach-Object { [int] $_ }
+    $stage = 2
+    $number = 0
+    if ($pre) {
+        $label, $text = $pre.Split('.')
+        $stage = if ($label -eq 'dev') { 0 } else { 1 }
+        $number = [int] $text
+    }
+    '{0:D3}.{1:D3}.{2:D5}.{3}.{4:D5}' -f $parts[0], $parts[1], $parts[2], $stage, $number
+}
+
 $fields = $Version.Split('-')[0].Split('.') | ForEach-Object { [int] $_ }
 if ($fields[0] -gt 255 -or $fields[1] -gt 255) { throw "MAJOR and MINOR must be at most 255 for an MSI: $Version" }
 $msiVersion = "$($fields[0]).$($fields[1]).$BuildNumber"
+$versionKey = Get-BowerVersionKey -Value $Version
 
 function Invoke-Signing {
     param([string] $Tool, [string] $Thumbprint, [string[]] $Path)
@@ -85,7 +104,7 @@ if ($signing) {
 }
 
 $msi = Join-Path $out "bower-collector-$Version-$Architecture.msi"
-& wix build -ext WixToolset.Util.wixext -arch $Architecture -d "Version=$msiVersion" -d "BowerVersion=$Version" -d "Dist=$dist" `
+& wix build -ext WixToolset.Util.wixext -arch $Architecture -d "Version=$msiVersion" -d "BowerVersion=$Version" -d "VersionKey=$versionKey" -d "Dist=$dist" `
     -d "Policies=$(Join-Path $repo 'policies\default')" -o $msi (Join-Path $here 'Bower.wxs')
 if ($LASTEXITCODE -ne 0) { throw "wix build failed with $LASTEXITCODE." }
 if ($signing) {

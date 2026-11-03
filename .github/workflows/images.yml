@@ -83,14 +83,12 @@ jobs:
       - id: version
         # A release tag must match VERSION (docs/operations/release-versioning.md). A manual
         # publication of main is an unnumbered development build, <VERSION>-dev.0: identify it
-        # by its sha- tag and org.opencontainers.image.revision.
+        # by its sha- tag and org.opencontainers.image.revision. Images use build number 0:
+        # the build counter is the CI workflow's, and only the MSI and file versions use it.
         env:
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
-          RUN_NUMBER: ${{ github.run_number }}
-        run: |
-          if [ "$REF_TYPE" = tag ]; then build="$RUN_NUMBER"; else build=0; fi
-          python3 tools/ci/version.py --ref-type "$REF_TYPE" --ref-name "$REF_NAME" --build-number "$build"
+        run: python3 tools/ci/version.py --ref-type "$REF_TYPE" --ref-name "$REF_NAME" --build-number 0
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -109,8 +107,9 @@ jobs:
             type=raw,value=sha-${{ steps.commit.outputs.short }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+          # :latest only for a final release tag (v0.2.0), never for v0.2.0-rc.1 (version.py).
           flavor: |
-            latest=${{ startsWith(github.ref, 'refs/tags/v') }}
+            latest=${{ steps.version.outputs.latest }}
           labels: |
             org.opencontainers.image.title=${{ matrix.image }}
             org.opencontainers.image.description=${{ matrix.description }}
