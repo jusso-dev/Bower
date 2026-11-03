@@ -241,13 +241,16 @@ A refused downgrade changes nothing: the package, the running service (same PID)
 settings and the queue are untouched. On deb the old package's maintainer scripts are not
 run at all on the refusal path beyond the no-op `prerm upgrade`; `postinst abort-upgrade`
 does nothing. On rpm the transaction element fails in `%pre`, before files are touched.
+If `/usr/share/bower/version` is present but does not hold a Bower version (for example a
+corrupted or hand-edited marker), the package is refused the same way, because a newer
+install cannot be ruled out.
 
 A rollback is sometimes needed (a bad release). Allow it explicitly, and only after these
 checks:
 
 1. Read the target's release notes: the queue schema and Windows bookmark version must be
-   supported by the target. If not, the target collector refuses to start with
-   `UnsupportedQueueSchemaException` and changes nothing; follow
+   supported by the target. If not, the target collector (targets with the pre-check, #163
+   and later) refuses to start with `UnsupportedQueueSchemaException` and changes nothing; follow
    [04 rollback](../production-readiness/04-upgrade-backup-recovery.md#rollback) instead.
 2. Take a backup: `bower queue backup` (see
    [04 backup](../production-readiness/04-upgrade-backup-recovery.md#back-up-a-live-collector)).
@@ -278,6 +281,7 @@ dpkg/rpm, `100` for apt, `1603` for msiexec), and the installed version, service
 | CI `version` job fails: `tag vX does not match VERSION Y` | Tag pushed before `VERSION` was bumped | Delete the tag, bump `VERSION`, tag again |
 | `test_rust_workspace_version_matches_the_version_file` fails | `VERSION` and `rust/Cargo.toml` differ | Change both |
 | `bower-collector: refusing to downgrade from X to Y.` | Installing an older package | Use the newer package, or roll back on purpose (above) |
+| `bower-collector: refusing to install X: /usr/share/bower/version does not hold a Bower version` | The marker is corrupted or was edited by hand | Check what is installed (`dpkg -s bower-collector` or `rpm -q bower-collector`), back up the queue (`bower queue backup`), then rerun the install with `BOWER_ALLOW_DOWNGRADE=1` |
 | msiexec `1603`, log `A newer Bower Collector is already installed (X)` | Installing an older version, even one built later | Use the newer MSI, or roll back with `BOWERALLOWDOWNGRADE=1` |
 | CI `version` job fails: `vX is already released: bump VERSION` | A non-tag build after the release tag | Bump `VERSION` and `rust/Cargo.toml` |
 | An older dev MSI upgrades over a newer one | Both are pre-scheme `0.1.0.N` MSIs | Install a build made with this scheme first |

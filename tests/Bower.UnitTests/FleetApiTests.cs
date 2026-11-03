@@ -341,11 +341,27 @@ public sealed class FleetApiTests
     [InlineData("1.2.3+meta+extra")]
     [InlineData("1.2.3-rc..1")]
     [InlineData("1.2.3-01")]
+    [InlineData("1.0.0-rc.01")]
+    [InlineData("9.0.0-rc.01")]
     [InlineData("1.2.3-<script>")]
     public void Fleet_DoesNotCompareMalformedVersions(string value)
     {
         FleetRecord fleet = FleetStatus.Evaluate([Record("unknown", value), Record("known", "1.0.0")], new HashSet<string>(), Now);
         Assert.Equal("1.0.0", fleet.NewestVersion);
+        Assert.All(fleet.Collectors, item => Assert.Equal(FleetStates.Healthy, item.State));
+    }
+
+    [Theory]
+    [InlineData("1.0.0-rc.01", "1.0.0-rc.1")]
+    [InlineData("9.0.0-rc.01", "1.0.0-rc.1")]
+    [InlineData("1.0.0-dev.01", "1.0.0-dev.2")]
+    public void Fleet_LeadingZeroPreReleaseIsNeverOldNorNewest(string malformed, string valid)
+    {
+        // In a pre-release-only fleet the newest is a pre-release: a leading-zero identifier
+        // (not a semantic version) must neither win it nor be called old.
+        FleetRecord fleet = FleetStatus.Evaluate([Record("malformed", malformed), Record("valid", valid)], new HashSet<string>(), Now);
+
+        Assert.Equal(valid, fleet.NewestVersion);
         Assert.All(fleet.Collectors, item => Assert.Equal(FleetStates.Healthy, item.State));
     }
 

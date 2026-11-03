@@ -10,22 +10,33 @@ package_version='${BOWER_VERSION}'
 installed_version_file=/usr/share/bower/version
 
 # begin version functions (tools/ci/test_version.py runs these)
-# Bower versions are MAJOR.MINOR.PATCH with an optional -dev.N or -rc.N
-# (docs/operations/release-versioning.md). Prints "MAJOR MINOR PATCH STAGE N", where
-# STAGE orders dev (0) < rc (1) < release (2); fails for anything else.
-version_fields() {
+# Bower versions are MAJOR.MINOR.PATCH with one optional -dev.N or -rc.N, exactly the
+# grammar and limits of tools/ci/version.py and build.sh (docs/operations/release-versioning.md):
+# no leading zeros, MAJOR and MINOR at most 255, PATCH and N at most 65535.
+
+# Succeeds when $1 is a canonical decimal from 0 to $2.
+version_number() {
   case "$1" in
-    *-dev.*) stage=0 number=${1#*-dev.} ;;
-    *-rc.*) stage=1 number=${1#*-rc.} ;;
-    *-*) return 1 ;;
-    *) stage=2 number=0 ;;
+    '' | *[!0-9]*) return 1 ;;
+    0) return 0 ;;
+    0*) return 1 ;;
   esac
+  [ "${#1}" -le 5 ] && [ "$1" -le "$2" ]
+}
+
+# Prints "MAJOR MINOR PATCH STAGE N", where STAGE orders dev (0) < rc (1) < release (2);
+# fails for anything that is not a Bower version.
+version_fields() {
   core=${1%%-*}
+  suffix=${1#"$core"}
+  case "$suffix" in
+    '') stage=2 number=0 ;;
+    -dev.*) stage=0 number=${suffix#-dev.} ;;
+    -rc.*) stage=1 number=${suffix#-rc.} ;;
+    *) return 1 ;;
+  esac
   case "$core" in
     *[!0-9.]* | .* | *. | *..*) return 1 ;;
-  esac
-  case "$number" in
-    '' | *[!0-9]*) return 1 ;;
   esac
   old_ifs=$IFS
   IFS=.
@@ -33,9 +44,8 @@ version_fields() {
   set -- $core
   IFS=$old_ifs
   [ "$#" -eq 3 ] || return 1
-  for field in "$1" "$2" "$3" "$number"; do
-    [ "${#field}" -le 9 ] || return 1
-  done
+  version_number "$1" 255 && version_number "$2" 255 && version_number "$3" 65535 \
+    && version_number "$number" 65535 || return 1
   echo "$1 $2 $3 $stage $number"
 }
 
@@ -64,7 +74,7 @@ version_older() {
 # The installed package wrote its version here; packages older than the guard did not.
 if [ -r "$installed_version_file" ]; then
   installed_version=$(head -n 1 "$installed_version_file" | cut -c1-64)
-  # A marker that is present but unreadable fails closed: it could hide a newer install.
+  # A marker that is present but not a Bower version fails closed: it could hide a newer install.
   if ! version_fields "$installed_version" >/dev/null; then
     if [ "${BOWER_ALLOW_DOWNGRADE:-}" = 1 ]; then
       echo "bower-collector: installing $package_version over an unrecognised installed version (BOWER_ALLOW_DOWNGRADE=1)." >&2
