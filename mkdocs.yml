@@ -108,6 +108,15 @@ nav:
           - Custom redaction: privacy/custom-redaction-rules.md
           - Managed profiles: privacy/managed-privacy-profiles.md
           - Signed packs: deployment/packs.md
+  - Production readiness:
+      - production-readiness/index.md
+      - 1. Syslog delivery: production-readiness/01-syslog-delivery-reliability.md
+      - 2. Replay-safe detections: production-readiness/02-replay-safe-detections.md
+      - 3. Storage pressure: production-readiness/03-storage-pressure.md
+      - 4. Upgrade and recovery: production-readiness/04-upgrade-backup-recovery.md
+      - 5. Credentials and security failures: production-readiness/05-credential-rotation-and-security-failures.md
+      - 6. Monitoring and runbooks: production-readiness/06-monitoring-and-runbooks.md
+      - 7. Soak and release validation: production-readiness/07-soak-and-release-validation.md
   - Operations:
       - operations/index.md
       - Live pipeline inspection: operations/tap-and-top.md

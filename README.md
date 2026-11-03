@@ -467,6 +467,8 @@ Neither has been exercised against a live tenant or account yet.
 | Variable | Default | Purpose |
 |---|---|---|
 | `BOWER_LISTEN_URL` | `http://127.0.0.1:4319` | HTTP listener. Non-loopback requires a token. |
+| `BOWER_SETTINGS_FILE` | MSI: `%ProgramData%\Bower\bower.env` | C#: `KEY=VALUE` file (`BOWER_*` and `AZURE_*` only; other keys stop startup) that installer upgrades keep; its values override the service environment. Windows: only SYSTEM, Administrators or TrustedInstaller may own or write it. Linux: owned by root or the collector account, not group- or world-writable. An untrusted file stops startup. [Details](docs/deployment/installers.md) |
+| `BOWER_COLLECTOR_ID` | `collector-id` file beside the queue, else the host name | Stable collector identity; Sentinel deduplication keys on `(CollectorId, EventId)`. When unset, the first start records the host name in `collector-id` beside the queue and later starts reuse it, so a recreated container keeps its id if the data volume persists. [Details](docs/production-readiness/04-upgrade-backup-recovery.md) |
 | `BOWER_INGEST_TOKEN` / `BOWER_INGEST_TOKEN_FILE` | — | Shared bearer token (≥ 32 characters) for `/v1/events` and `/v1/status`. |
 | `BOWER_INGEST_TOKENS_FILE` | — | Per-producer revocable credentials (`<producer> sha256:<hex>` lines, hot reloaded). |
 | `BOWER_PRODUCER_SCOPES_FILE` | — | Exact per-producer application/environment/tenant/instance/source tuples; restart to reload. Missing scope denies ingest. |
@@ -487,6 +489,7 @@ Neither has been exercised against a live tenant or account yet.
 | `BOWER_MAX_DELIVERY_ATTEMPTS` | `20` | Retryable failures dead-letter after this many leases. |
 | `BOWER_DELIVERY_LEASE_SECONDS` | `300` | C# delivery lease (31–3600 seconds); live leases are never reset on restart. |
 | `BOWER_DELIVERY_TIMEOUT_SECONDS` | `240` | C# output cancellation deadline; at least 1 second and at least 30 seconds below the lease. Destination timeouts retain events for retry. |
+| `BOWER_HEALTH_RECORD_INTERVAL_SECONDS` | unset (off) | C#: queue a metadata-only `collector_health` record at startup and then every 60–3600 seconds, through the configured output, for destination-side monitoring. Startup fails unless the loaded policy accepts the record. [Details](docs/production-readiness/06-monitoring-and-runbooks.md#the-collector-health-record) |
 | `BOWER_POLICY_DIRECTORY` | `./policies/default` | Versioned policy YAML. |
 | `BOWER_OUTPUT` | `none` | `none`, `ama-spool`, `azure-logs-ingestion` or `relay` (deliver through a relay collector). |
 | `BOWER_RELAY_URL` / `BOWER_RELAY_CLIENT_CERTIFICATE_FILE` / `BOWER_RELAY_CLIENT_KEY_FILE` / `BOWER_RELAY_CA_BUNDLE` | — | Downstream of a relay (`BOWER_OUTPUT=relay`): the relay's https URL and the mutual TLS client certificate. [Relay mode](docs/deployment/relay.md) |

@@ -4,6 +4,16 @@ Status: **not production-ready**. This is a release qualification record, not a
 certificate. A successful unit test, HTTP upload or local spool write cannot close
 a real destination or operating-system validation gate.
 
+> **Current status (3 November 2026).** The [production-readiness index](../production-readiness/index.md)
+> is the current summary of all seven gaps and what is still open. This page keeps the
+> history. Since it was first written, firewall delivery over RELP (rsyslog 8.2610.0 as
+> the tested sender) closed the forced-kill, reset and collector-stop-plus-sender-reboot
+> losses listed under Evidence and blockers ([gap 1](../production-readiness/01-syslog-delivery-reliability.md)).
+> Plain TCP/TLS syslog is still not crash-lossless, and other losses recorded on this page
+> stand. Storage pressure, upgrades, credential rotation, monitoring and replay-safe
+> detections have live evidence with the limits listed in the index. The 24-hour soak
+> [failed on both collectors](../production-readiness/07-soak-and-release-validation.md).
+
 ## First release candidate
 
 The initial qualification scope is the C# collector on Windows Server 2022
