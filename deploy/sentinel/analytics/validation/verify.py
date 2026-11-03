@@ -41,7 +41,20 @@ def query(workspace, kql, timespan="P3D"):
     return [dict(zip(names, row)) for row in table["rows"]]
 
 
-def incidents(resource):
+def alert_entities(workspace, alert_ids):
+    # Fallback when the incident entities API fails: the incident's alerts carry the same
+    # mapped entities in SecurityAlert.Entities.
+    ids = ", ".join(json.dumps(alert_id) for alert_id in alert_ids)
+    rows = query(workspace, f"""SecurityAlert
+| where SystemAlertId in ({ids})
+| mv-expand Entity = todynamic(Entities)
+| project Kind = tolower(tostring(Entity.Type)), Address = tostring(Entity.Address), HostName = tostring(Entity.HostName)""")
+    kinds = {"ip": "Ip", "host": "Host"}
+    return [{"kind": kinds.get(row["Kind"], row["Kind"]),
+             "properties": {"address": row["Address"] or None, "hostName": row["HostName"] or None}} for row in rows]
+
+
+def incidents(resource, workspace):
     url = f"https://management.azure.com{resource}/providers/Microsoft.SecurityInsights/incidents?api-version={SENTINEL_API}"
     items = []
     while url:
@@ -51,13 +64,19 @@ def incidents(resource):
     found = []
     for item in items:
         alerts = az_rest("post", f"https://management.azure.com{item['id']}/alerts?api-version={SENTINEL_API}").get("value", [])
-        entities = az_rest("post", f"https://management.azure.com{item['id']}/entities?api-version={SENTINEL_API}").get("entities", [])
+        alert_ids = sorted(alert["properties"].get("systemAlertId") for alert in alerts)
+        source = "incident-entities-api"
+        try:
+            entities = az_rest("post", f"https://management.azure.com{item['id']}/entities?api-version={SENTINEL_API}").get("entities", [])
+        except subprocess.CalledProcessError:
+            # Seen live: HTTP 500 on every call for incidents managed by Microsoft Defender XDR.
+            entities, source = alert_entities(workspace, alert_ids), "SecurityAlert.Entities"
         properties = item["properties"]
         found.append({
             "incidentNumber": properties.get("incidentNumber"), "title": properties.get("title"),
             "createdTimeUtc": properties.get("createdTimeUtc"), "status": properties.get("status"),
             "alertCount": properties.get("additionalData", {}).get("alertsCount"),
-            "alertIds": sorted(alert["properties"].get("systemAlertId") for alert in alerts),
+            "alertIds": alert_ids, "entitySource": source,
             "ipAddresses": sorted({entity["properties"].get("address") for entity in entities
                                    if entity.get("kind") == "Ip"} - {None}),
             "hosts": sorted({entity["properties"].get("hostName") for entity in entities
@@ -108,9 +127,10 @@ def report(args):
     for scenario, ids in sorted(expected.items()):
         present = [event_id for event_id in ids if event_id in by_id]
         copies = collections.Counter(len(by_id[event_id]) for event_id in present)
-        delays = [(_time(min(r["Ingested"] for r in by_id[e])) - _time(by_id[e][0]["SentTime"] or by_id[e][0]["TimeGenerated"])).total_seconds()
+        # Compare parsed times: Log Analytics trims trailing zeros, so the strings differ in length.
+        delays = [(min(_time(r["Ingested"]) for r in by_id[e]) - _time(by_id[e][0]["SentTime"] or by_id[e][0]["TimeGenerated"])).total_seconds()
                   for e in present]
-        replay_gaps = [(_time(max(r["Ingested"] for r in by_id[e])) - _time(min(r["Ingested"] for r in by_id[e]))).total_seconds()
+        replay_gaps = [(max(_time(r["Ingested"]) for r in by_id[e]) - min(_time(r["Ingested"]) for r in by_id[e])).total_seconds()
                        for e in present if len(by_id[e]) > 1]
         scenarios[scenario] = {
             "expectedDistinct": len(ids), "presentDistinct": len(present), "missing": len(ids) - len(present),
@@ -125,7 +145,7 @@ def report(args):
     parser = query(args.workspace_id, PARSER)[0]
     alerts = query(args.workspace_id, ALERTS)
     keys = collections.Counter(alert["Key"] for alert in alerts if alert["Key"])
-    found_incidents = incidents(args.workspace_resource)
+    found_incidents = incidents(args.workspace_resource, args.workspace_id)
     per_address = collections.defaultdict(int)
     per_host = collections.defaultdict(int)
     for incident in found_incidents:
@@ -176,8 +196,9 @@ def report(args):
 
 
 def _time(value):
-    # Log Analytics returns 100 ns precision; fromisoformat accepts at most microseconds.
-    value = re.sub(r"(\.\d{6})\d+", r"\1", value.replace("Z", "+00:00"))
+    # Log Analytics returns up to 100 ns precision with trailing zeros trimmed; Python 3.9's
+    # fromisoformat accepts exactly three or six fractional digits.
+    value = re.sub(r"\.(\d+)", lambda m: "." + (m.group(1) + "000000")[:6], value.replace("Z", "+00:00"))
     return datetime.datetime.fromisoformat(value)
 
 

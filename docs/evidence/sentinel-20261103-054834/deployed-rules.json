@@ -1,0 +1,88 @@
+[
+ {
+  "name": "b73c86ac-03c1-5137-a011-ec7a3227fae8",
+  "displayName": "Bower: repeated firewall denials from one address (replay-safe)",
+  "enabled": true,
+  "queryFrequency": "PT5M",
+  "queryPeriod": "PT7H30M",
+  "suppressionEnabled": false,
+  "aggregationKind": "AlertPerResult",
+  "grouping": {
+   "enabled": true,
+   "groupByAlertDetails": [],
+   "groupByCustomDetails": [],
+   "groupByEntities": [
+    "IP"
+   ],
+   "lookbackDuration": "PT5H",
+   "matchingMethod": "Selected",
+   "reopenClosedIncident": false
+  },
+  "querySha256": "91d53c4bf0ee846305f2f10350aff478881df4786f4dc5416a70e4e12f2e4447",
+  "lastModifiedUtc": "2026-11-03T06:55:57.0809656Z"
+ },
+ {
+  "name": "2023ed17-6c55-5d90-ba41-4102992e6fc0",
+  "displayName": "Bower: Windows failed network logons from one address (replay-safe)",
+  "enabled": true,
+  "queryFrequency": "PT5M",
+  "queryPeriod": "PT7H30M",
+  "suppressionEnabled": false,
+  "aggregationKind": "AlertPerResult",
+  "grouping": {
+   "enabled": true,
+   "groupByAlertDetails": [],
+   "groupByCustomDetails": [],
+   "groupByEntities": [
+    "IP"
+   ],
+   "lookbackDuration": "PT5H",
+   "matchingMethod": "Selected",
+   "reopenClosedIncident": false
+  },
+  "querySha256": "48c4a9177cb9e327af12fc4b9427d0cba57ef1d485abed14baeada889429b959",
+  "lastModifiedUtc": "2026-11-03T05:52:24.2802703Z"
+ },
+ {
+  "name": "142f89a1-a8d9-56e5-83f1-465e09e171df",
+  "displayName": "Bower: events arrived later than the replay-safe rules evaluate",
+  "enabled": true,
+  "queryFrequency": "PT1H",
+  "queryPeriod": "P14D",
+  "suppressionEnabled": false,
+  "aggregationKind": "AlertPerResult",
+  "grouping": {
+   "enabled": true,
+   "groupByAlertDetails": [],
+   "groupByCustomDetails": [],
+   "groupByEntities": [
+    "Host"
+   ],
+   "lookbackDuration": "P1D",
+   "matchingMethod": "Selected",
+   "reopenClosedIncident": false
+  },
+  "querySha256": "37b38337b96904fae5c4925ab9cad3ba14617b4a9bd03a2767685fbd8608c45d",
+  "lastModifiedUtc": "2026-11-03T05:52:24.2896252Z"
+ },
+ {
+  "name": "bower-health-probe",
+  "displayName": "Bower: health probe (deliberately failing)",
+  "enabled": true,
+  "queryFrequency": "PT5M",
+  "queryPeriod": "PT5M",
+  "suppressionEnabled": false,
+  "aggregationKind": "SingleAlert",
+  "grouping": {
+   "enabled": false,
+   "groupByAlertDetails": [],
+   "groupByCustomDetails": [],
+   "groupByEntities": [],
+   "lookbackDuration": "PT5H",
+   "matchingMethod": "AllEntities",
+   "reopenClosedIncident": false
+  },
+  "querySha256": "f97bb7c4bf824c5a7c51361db1b68c1cc73d6ba940919e7c583819ac9dac837b",
+  "lastModifiedUtc": "2026-11-03T06:01:58.9151853Z"
+ }
+]

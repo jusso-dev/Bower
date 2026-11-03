@@ -1,0 +1,32 @@
+[
+ {
+  "DataType": "BowerSecurity_CL",
+  "IsBillable": true,
+  "MB": 601.9542580000001
+ },
+ {
+  "DataType": "LAQueryLogs",
+  "IsBillable": true,
+  "MB": 0.20294099999999998
+ },
+ {
+  "DataType": "SentinelAudit",
+  "IsBillable": true,
+  "MB": 0.018963
+ },
+ {
+  "DataType": "SecurityAlert",
+  "IsBillable": false,
+  "MB": 0.058077000000000004
+ },
+ {
+  "DataType": "SecurityIncident",
+  "IsBillable": false,
+  "MB": 0.011051
+ },
+ {
+  "DataType": "SentinelHealth",
+  "IsBillable": false,
+  "MB": 0.037934
+ }
+]

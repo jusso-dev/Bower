@@ -1,0 +1,27 @@
+{
+ "runId": "bower-sentinel-20261103-054834",
+ "commitDeployed": "5b7ded871a5c51ce3dc3f77471261ddaec37b89c",
+ "contentUnchangedSince": "d7ddc555c361eed6f8843be7d2b0c022042c37d1",
+ "note": "No collector binary was used: all rows were uploaded directly to the DCR stream. Releases remain unsigned.",
+ "contentFilesAtCommit": {
+  "deploy/sentinel/analytics/main.bicep": "c86c68538eeaae7c227f3c60374a14b03b19097631f08d57a0603d5d176667ce",
+  "deploy/sentinel/analytics/bower-security-events.kql": "56eab1d9b4d882348ee51b06f4661b8d0d61b9e5c5f6635f4840d42080fa3947",
+  "deploy/sentinel/analytics/bower-security-events-of-type.kql": "7d6263c2a897e0bc761b8a35b3b52737e70f50e590200ca6f6fce193679c5dfc",
+  "deploy/sentinel/analytics/rules/firewall-deny.kql": "91d53c4bf0ee846305f2f10350aff478881df4786f4dc5416a70e4e12f2e4447",
+  "deploy/sentinel/analytics/rules/wec-brute-force.kql": "48c4a9177cb9e327af12fc4b9427d0cba57ef1d485abed14baeada889429b959",
+  "deploy/sentinel/analytics/rules/beyond-tolerance.kql": "37b38337b96904fae5c4925ab9cad3ba14617b4a9bd03a2767685fbd8608c45d",
+  "deploy/sentinel/monitoring/monitoring.bicep": "2c4dff1848a0f6046b1d6735cf3922b2b02c61739bbf3713b60e7a5e273f59b0",
+  "deploy/bicep/main.bicep": "bd6512d218e28ddb2b99735ac2a6a0c63122863db7f11fbcfc99f94a7a63b441",
+  "deploy/sentinel/monitoring/queries/collector-health-missing.kql": "ba740c2c64a70321ba812feef9062a44a2251fdfc354db3106046be81aa74537",
+  "deploy/sentinel/monitoring/queries/dcr-errors.kql": "8f856811510b56c1cc25864563dd665beed688894f73c8264dd1bee3428663ff",
+  "deploy/sentinel/monitoring/queries/dead-letters.kql": "8f9d122c39d0277db66d1009f9dd6084dac4550c15c32148f9bfcb796f08de6e",
+  "deploy/sentinel/monitoring/queries/destination-credential.kql": "5e8e18dd3397a55e8a830ce33211c962365cb246e1ccfa4eec8c642b2e50de9a",
+  "deploy/sentinel/monitoring/queries/destination-freshness.kql": "e6ccba6a382a038e9d8aad436b6b89ecddb4b4d32e047e4b1c66dadbdc0d0492",
+  "deploy/sentinel/monitoring/queries/queue-backlog.kql": "813e3d628c861b6b727e06cde6c35a3b3949c37998016b80d6f334f88654c106",
+  "deploy/sentinel/monitoring/queries/queue-storage.kql": "7fa8ec471d7e498ed3da4d8ba0aa7ba6e3b1b9e9e68d5ee9cbcc75b42fcaa2d9",
+  "deploy/sentinel/monitoring/queries/source-overdue.kql": "be879b01e8adee74554d6eb230a306e5369a195713f4dfd234563f6187516127",
+  "deploy/sentinel/monitoring/queries/source-transport-errors.kql": "b24fd8fd6da539052676bf32c73c07eef07a63aca5627086787e96c6dc1f087d",
+  "deploy/sentinel/monitoring/queries/syslog-tls-expiry.kql": "d5d38329f3c36afd2736c03c039435e2f31d9a7ab1ae9442a24b6b61033cf7eb",
+  "deploy/sentinel/monitoring/queries/table-no-ingestion.kql": "3c106c8e59dd593636c15b65ede33cd046c277b92a1baf63ec275677c85cfaf4"
+ }
+}

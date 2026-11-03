@@ -1,0 +1,1016 @@
+{
+ "alerts": [
+  {
+   "AlertName": "Bower: failed network logons from 192.0.2.10",
+   "Crossed": "2026-11-03T06:00:46.5653505Z",
+   "Distinct": "12",
+   "EndTime": "2026-11-03T06:12:32.7626977Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"192.0.2.10\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-03T06:12:32.7626977Z",
+   "Key": "bower-wec-brute-force:default|192.0.2.10|2026-11-03T06:00:00.0000000Z",
+   "Late": "0",
+   "Path": "owned-window",
+   "Replayed": "0",
+   "StartTime": "2026-11-02T22:42:32.7626977Z",
+   "SystemAlertId": "54e3849d-436d-1b0a-9fff-dce3437c705f",
+   "TimeGenerated": "2026-11-03T06:17:39.0852104Z"
+  },
+  {
+   "AlertName": "Bower: repeated firewall denials from 198.51.100.10",
+   "Crossed": "2026-11-03T06:00:36.6006581Z",
+   "Distinct": "25",
+   "EndTime": "2026-11-03T06:12:32.7740501Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"198.51.100.10\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-03T06:12:32.7740501Z",
+   "Key": "bower-firewall-deny:default|198.51.100.10|2026-11-03T06:00:00.0000000Z",
+   "Late": "0",
+   "Path": "owned-window",
+   "Replayed": "0",
+   "StartTime": "2026-11-02T22:42:32.7740501Z",
+   "SystemAlertId": "615c641a-7a5e-7af3-951f-a28b5ab0bb1b",
+   "TimeGenerated": "2026-11-03T06:17:43.3349148Z"
+  },
+  {
+   "AlertName": "Bower: repeated firewall denials from 198.51.100.12",
+   "Crossed": "2026-11-03T06:00:44.5949553Z",
+   "Distinct": "25",
+   "EndTime": "2026-11-03T06:12:32.7740501Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"198.51.100.12\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-03T06:12:32.7740501Z",
+   "Key": "bower-firewall-deny:default|198.51.100.12|2026-11-03T05:10:00.0000000Z",
+   "Late": "25",
+   "Path": "owned-window",
+   "Replayed": "0",
+   "StartTime": "2026-11-02T22:42:32.7740501Z",
+   "SystemAlertId": "fb81af0b-d3e1-4b77-d904-861a8749c591",
+   "TimeGenerated": "2026-11-03T06:17:43.3803309Z"
+  },
+  {
+   "AlertName": "Bower: repeated firewall denials from 198.51.100.11",
+   "Crossed": "2026-11-03T06:00:41.7291415Z",
+   "Distinct": "25",
+   "EndTime": "2026-11-03T06:12:32.7740501Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"198.51.100.11\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-03T06:12:32.7740501Z",
+   "Key": "bower-firewall-deny:default|198.51.100.11|2026-11-03T06:00:00.0000000Z",
+   "Late": "0",
+   "Path": "owned-window",
+   "Replayed": "0",
+   "StartTime": "2026-11-02T22:42:32.7740501Z",
+   "SystemAlertId": "36a2f5fc-2e6e-88cd-09b7-b6aaabd625e1",
+   "TimeGenerated": "2026-11-03T06:17:43.3588419Z"
+  },
+  {
+   "AlertName": "Bower: repeated firewall denials from 198.51.100.10",
+   "Crossed": "2026-11-03T06:11:40.8412700Z",
+   "Distinct": "25",
+   "EndTime": "2026-11-03T06:22:32.7740501Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"198.51.100.10\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-03T06:22:32.7740501Z",
+   "Key": "bower-firewall-deny:default|198.51.100.10|2026-11-03T06:10:00.0000000Z",
+   "Late": "0",
+   "Path": "owned-window",
+   "Replayed": "0",
+   "StartTime": "2026-11-02T22:52:32.7740501Z",
+   "SystemAlertId": "3b3ffac2-b1a1-5e73-2793-358e2d8a4e85",
+   "TimeGenerated": "2026-11-03T06:27:42.6966814Z"
+  },
+  {
+   "AlertName": "Bower: events arrived later than the replay-safe rules evaluate",
+   "Crossed": "",
+   "Distinct": "",
+   "EndTime": "2026-11-03T06:47:32.7672503Z",
+   "Entities": "[{\"$id\":\"3\",\"HostName\":\"sentinel-direct\",\"Type\":\"host\"}]",
+   "Evaluated": "",
+   "Key": "",
+   "Late": "6",
+   "Path": "",
+   "Replayed": "",
+   "StartTime": "2026-10-20T06:47:32.7672503Z",
+   "SystemAlertId": "94a9b1d2-8b40-eaa1-a572-0db58c9235fd",
+   "TimeGenerated": "2026-11-03T06:52:35.9331708Z"
+  },
+  {
+   "AlertName": "Bower: repeated firewall denials from 198.51.100.20",
+   "Crossed": "2026-11-03T06:30:29.1222305Z",
+   "Distinct": "25",
+   "EndTime": "2026-11-03T06:51:06.6742989Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"198.51.100.20\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-03T06:51:06.6742989Z",
+   "Key": "bower-firewall-deny:default|198.51.100.20|2026-11-03T06:30:00.0000000Z",
+   "Late": "0",
+   "Path": "catch-up-2",
+   "Replayed": "0",
+   "StartTime": "2026-11-02T23:21:06.6742989Z",
+   "SystemAlertId": "957851aa-b527-a603-1b98-273e9542d26a",
+   "TimeGenerated": "2026-11-03T06:56:17.02158Z"
+  },
+  {
+   "AlertName": "Bower: repeated firewall denials from 198.51.100.21",
+   "Crossed": "2026-11-03T06:36:04.7004382Z",
+   "Distinct": "25",
+   "EndTime": "2026-11-03T06:56:06.6742989Z",
+   "Entities": "[{\"$id\":\"3\",\"Address\":\"198.51.100.21\",\"Type\":\"ip\"}]",
+   "Evaluated": "2026-11-03T06:56:06.6742989Z",
+   "Key": "bower-firewall-deny:default|198.51.100.21|2026-11-03T06:30:00.0000000Z",
+   "Late": "0",
+   "Path": "catch-up-2",
+   "Replayed": "0",
+   "StartTime": "2026-11-02T23:26:06.6742989Z",
+   "SystemAlertId": "fa99ccab-b462-bdc0-eb4b-2897f15bbbfc",
+   "TimeGenerated": "2026-11-03T07:01:15.496725Z"
+  },
+  {
+   "AlertName": "Bower: events arrived later than the replay-safe rules evaluate",
+   "Crossed": "",
+   "Distinct": "",
+   "EndTime": "2026-11-03T07:47:32.7672503Z",
+   "Entities": "[{\"$id\":\"3\",\"HostName\":\"sentinel-direct\",\"Type\":\"host\"}]",
+   "Evaluated": "",
+   "Key": "",
+   "Late": "3",
+   "Path": "",
+   "Replayed": "",
+   "StartTime": "2026-10-20T07:47:32.7672503Z",
+   "SystemAlertId": "33f73ad3-934a-106e-77d9-b65ffebc6aae",
+   "TimeGenerated": "2026-11-03T07:52:44.1103118Z"
+  },
+  {
+   "AlertName": "Bower: events arrived later than the replay-safe rules evaluate",
+   "Crossed": "",
+   "Distinct": "",
+   "EndTime": "2026-11-03T08:47:32.7672503Z",
+   "Entities": "[{\"$id\":\"3\",\"HostName\":\"sentinel-direct\",\"Type\":\"host\"}]",
+   "Evaluated": "",
+   "Key": "",
+   "Late": "2",
+   "Path": "",
+   "Replayed": "",
+   "StartTime": "2026-10-20T08:47:32.7672503Z",
+   "SystemAlertId": "8f219149-2a90-aedd-5d2d-6964c32b4244",
+   "TimeGenerated": "2026-11-03T08:52:38.5730682Z"
+  }
+ ],
+ "alertsPerDetectionKey": {
+  "bower-firewall-deny:default|198.51.100.10|2026-11-03T06:00:00.0000000Z": 1,
+  "bower-firewall-deny:default|198.51.100.10|2026-11-03T06:10:00.0000000Z": 1,
+  "bower-firewall-deny:default|198.51.100.11|2026-11-03T06:00:00.0000000Z": 1,
+  "bower-firewall-deny:default|198.51.100.12|2026-11-03T05:10:00.0000000Z": 1,
+  "bower-firewall-deny:default|198.51.100.20|2026-11-03T06:30:00.0000000Z": 1,
+  "bower-firewall-deny:default|198.51.100.21|2026-11-03T06:30:00.0000000Z": 1,
+  "bower-wec-brute-force:default|192.0.2.10|2026-11-03T06:00:00.0000000Z": 1
+ },
+ "checks": {
+  "alerts:bower-firewall-deny:default|198.51.100.10|": true,
+  "alerts:bower-firewall-deny:default|198.51.100.11|": true,
+  "alerts:bower-firewall-deny:default|198.51.100.12|": true,
+  "alerts:bower-firewall-deny:default|198.51.100.20|": true,
+  "alerts:bower-firewall-deny:default|198.51.100.21|": true,
+  "alerts:bower-firewall-deny:default|203.0.113.": true,
+  "alerts:bower-wec-brute-force:default|192.0.2.10|": true,
+  "alerts:bower-wec-brute-force:default|203.0.113.": true,
+  "delayed:f3-late-originals": true,
+  "delayed:m1-late": true,
+  "delayed:m1-rewritten": true,
+  "delayed:m2-late": true,
+  "delayed:m3-late": true,
+  "identityEqualsEventId": true,
+  "incidents:192.0.2.10": true,
+  "incidents:198.51.100.10": true,
+  "incidents:198.51.100.11": true,
+  "incidents:198.51.100.12": true,
+  "incidents:198.51.100.20": true,
+  "incidents:198.51.100.21": true,
+  "incidents:203.0.113.31": true,
+  "incidents:203.0.113.32": true,
+  "incidents:203.0.113.41": true,
+  "incidents:203.0.113.42": true,
+  "incidents:203.0.113.51": true,
+  "incidents:host:sentinel-direct": true,
+  "noDuplicateAlertKeys": true,
+  "noMissingEvents": true,
+  "noUnexpectedEvents": true,
+  "parserCollapsesEveryReplay": true,
+  "parserExcludesHealthRecords": true,
+  "replayed:b1-clean": true,
+  "replayed:c1-while-disabled": true,
+  "replayed:c2-while-disabled": true,
+  "replayed:f1-clean": true,
+  "replayed:f1b-second-bucket": true,
+  "replayed:f2-clean": true,
+  "replayed:f3-late-originals": true,
+  "replayed:m1-late": true,
+  "replayed:m1-rewritten": true,
+  "replayed:m2-late": true,
+  "replayed:m2-ontime-original": true
+ },
+ "duplicateAlertKeys": [],
+ "generatedAt": "2026-11-03T09:24:49.795065+00:00",
+ "incidents": [
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "54e3849d-436d-1b0a-9fff-dce3437c705f"
+   ],
+   "createdTimeUtc": "2026-11-03T06:17:52.4566667Z",
+   "entitySource": "SecurityAlert.Entities",
+   "hosts": [],
+   "incidentNumber": 1,
+   "ipAddresses": [
+    "192.0.2.10"
+   ],
+   "status": "New",
+   "title": "Bower: failed network logons from 192.0.2.10"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "36a2f5fc-2e6e-88cd-09b7-b6aaabd625e1"
+   ],
+   "createdTimeUtc": "2026-11-03T06:17:52.46Z",
+   "entitySource": "SecurityAlert.Entities",
+   "hosts": [],
+   "incidentNumber": 2,
+   "ipAddresses": [
+    "198.51.100.11"
+   ],
+   "status": "New",
+   "title": "Bower: repeated firewall denials from 198.51.100.11"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "fb81af0b-d3e1-4b77-d904-861a8749c591"
+   ],
+   "createdTimeUtc": "2026-11-03T06:18:02.5933333Z",
+   "entitySource": "SecurityAlert.Entities",
+   "hosts": [],
+   "incidentNumber": 3,
+   "ipAddresses": [
+    "198.51.100.12"
+   ],
+   "status": "New",
+   "title": "Bower: repeated firewall denials from 198.51.100.12"
+  },
+  {
+   "alertCount": 2,
+   "alertIds": [
+    "3b3ffac2-b1a1-5e73-2793-358e2d8a4e85",
+    "615c641a-7a5e-7af3-951f-a28b5ab0bb1b"
+   ],
+   "createdTimeUtc": "2026-11-03T06:17:59.1133333Z",
+   "entitySource": "SecurityAlert.Entities",
+   "hosts": [],
+   "incidentNumber": 4,
+   "ipAddresses": [
+    "198.51.100.10"
+   ],
+   "status": "New",
+   "title": "Bower: repeated firewall denials from 198.51.100.10"
+  },
+  {
+   "alertCount": 3,
+   "alertIds": [
+    "33f73ad3-934a-106e-77d9-b65ffebc6aae",
+    "8f219149-2a90-aedd-5d2d-6964c32b4244",
+    "94a9b1d2-8b40-eaa1-a572-0db58c9235fd"
+   ],
+   "createdTimeUtc": "2026-11-03T06:52:39.43Z",
+   "entitySource": "SecurityAlert.Entities",
+   "hosts": [
+    "sentinel-direct"
+   ],
+   "incidentNumber": 5,
+   "ipAddresses": [],
+   "status": "New",
+   "title": "Bower: events arrived later than the replay-safe rules evaluate"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "957851aa-b527-a603-1b98-273e9542d26a"
+   ],
+   "createdTimeUtc": "2026-11-03T06:56:24.85Z",
+   "entitySource": "SecurityAlert.Entities",
+   "hosts": [],
+   "incidentNumber": 6,
+   "ipAddresses": [
+    "198.51.100.20"
+   ],
+   "status": "New",
+   "title": "Bower: repeated firewall denials from 198.51.100.20"
+  },
+  {
+   "alertCount": 1,
+   "alertIds": [
+    "fa99ccab-b462-bdc0-eb4b-2897f15bbbfc"
+   ],
+   "createdTimeUtc": "2026-11-03T07:01:16.9Z",
+   "entitySource": "SecurityAlert.Entities",
+   "hosts": [],
+   "incidentNumber": 7,
+   "ipAddresses": [
+    "198.51.100.21"
+   ],
+   "status": "New",
+   "title": "Bower: repeated firewall denials from 198.51.100.21"
+  }
+ ],
+ "incidentsPerAddress": {
+  "192.0.2.10": 1,
+  "198.51.100.10": 1,
+  "198.51.100.11": 1,
+  "198.51.100.12": 1,
+  "198.51.100.20": 1,
+  "198.51.100.21": 1
+ },
+ "incidentsPerHost": {
+  "sentinel-direct": 1
+ },
+ "parser": {
+  "HealthRowsInParser": 0,
+  "HealthRowsRaw": 8,
+  "ParserCollectors": "[\"sentinel-direct\"]",
+  "ParserCopies": 438,
+  "ParserEvents": 177,
+  "RawEventIds": 177,
+  "RawIdentities": 177,
+  "RawRows": 438
+ },
+ "passed": true,
+ "scenarios": {
+  "b1-clean": {
+   "addresses": [
+    "192.0.2.10"
+   ],
+   "copiesHistogram": {
+    "3": 12
+   },
+   "expectedDistinct": 12,
+   "extraRows": 24,
+   "firstIngestionDelaySeconds": {
+    "max": 5.588398,
+    "min": 5.577398
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 12,
+   "replayGapSeconds": {
+    "max": 3843.010476,
+    "min": 3843.010476
+   },
+   "rows": 36
+  },
+  "c1-while-disabled": {
+   "addresses": [
+    "198.51.100.20"
+   ],
+   "copiesHistogram": {
+    "2": 25
+   },
+   "expectedDistinct": 25,
+   "extraRows": 25,
+   "firstIngestionDelaySeconds": {
+    "max": 6.685341,
+    "min": 6.661341
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 25,
+   "replayGapSeconds": {
+    "max": 2058.06672,
+    "min": 2058.06672
+   },
+   "rows": 50
+  },
+  "c2-while-disabled": {
+   "addresses": [
+    "198.51.100.21"
+   ],
+   "copiesHistogram": {
+    "2": 25
+   },
+   "expectedDistinct": 25,
+   "extraRows": 25,
+   "firstIngestionDelaySeconds": {
+    "max": 8.447038,
+    "min": 8.423038
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 25,
+   "replayGapSeconds": {
+    "max": 1721.348451,
+    "min": 1721.348451
+   },
+   "rows": 50
+  },
+  "f1-clean": {
+   "addresses": [
+    "198.51.100.10"
+   ],
+   "copiesHistogram": {
+    "3": 25
+   },
+   "expectedDistinct": 25,
+   "extraRows": 50,
+   "firstIngestionDelaySeconds": {
+    "max": 4.694403,
+    "min": 4.670403
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 25,
+   "replayGapSeconds": {
+    "max": 3848.341392,
+    "min": 3848.341392
+   },
+   "rows": 75
+  },
+  "f1b-second-bucket": {
+   "addresses": [
+    "198.51.100.10"
+   ],
+   "copiesHistogram": {
+    "2": 25
+   },
+   "expectedDistinct": 25,
+   "extraRows": 25,
+   "firstIngestionDelaySeconds": {
+    "max": 6.049931,
+    "min": 6.025931
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 25,
+   "replayGapSeconds": {
+    "max": 3186.006064,
+    "min": 3186.006064
+   },
+   "rows": 50
+  },
+  "f2-clean": {
+   "addresses": [
+    "198.51.100.11"
+   ],
+   "copiesHistogram": {
+    "3": 25
+   },
+   "expectedDistinct": 25,
+   "extraRows": 50,
+   "firstIngestionDelaySeconds": {
+    "max": 7.727863,
+    "min": 7.703863
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 25,
+   "replayGapSeconds": {
+    "max": 3840.916595,
+    "min": 3840.916595
+   },
+   "rows": 75
+  },
+  "f3-late-originals": {
+   "addresses": [
+    "198.51.100.12"
+   ],
+   "copiesHistogram": {
+    "3": 25
+   },
+   "expectedDistinct": 25,
+   "extraRows": 50,
+   "firstIngestionDelaySeconds": {
+    "max": 2706.10323,
+    "min": 2706.07923
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 25,
+   "replayGapSeconds": {
+    "max": 3841.453934,
+    "min": 3841.453934
+   },
+   "rows": 75
+  },
+  "m1-late": {
+   "addresses": [
+    "203.0.113.31"
+   ],
+   "copiesHistogram": {
+    "2": 4
+   },
+   "expectedDistinct": 4,
+   "extraRows": 4,
+   "firstIngestionDelaySeconds": {
+    "max": 24366.61506,
+    "min": 24366.61206
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 4,
+   "replayGapSeconds": {
+    "max": 271.681205,
+    "min": 271.681205
+   },
+   "rows": 8
+  },
+  "m1-rewritten": {
+   "addresses": [
+    "203.0.113.32"
+   ],
+   "copiesHistogram": {
+    "2": 2
+   },
+   "expectedDistinct": 2,
+   "extraRows": 2,
+   "firstIngestionDelaySeconds": {
+    "max": 259563.739287,
+    "min": 259563.738287
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 2,
+   "replayGapSeconds": {
+    "max": 290.697989,
+    "min": 290.697989
+   },
+   "rows": 4
+  },
+  "m2-late": {
+   "addresses": [
+    "203.0.113.41"
+   ],
+   "copiesHistogram": {
+    "2": 3
+   },
+   "expectedDistinct": 3,
+   "extraRows": 3,
+   "firstIngestionDelaySeconds": {
+    "max": 24007.227652,
+    "min": 24007.225652
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 3,
+   "replayGapSeconds": {
+    "max": 3732.80154,
+    "min": 3732.80154
+   },
+   "rows": 6
+  },
+  "m2-late-replay-of-ontime": {
+   "addresses": [
+    "203.0.113.42"
+   ],
+   "copiesHistogram": {
+    "2": 3
+   },
+   "expectedDistinct": 3,
+   "extraRows": 3,
+   "firstIngestionDelaySeconds": {
+    "max": 21006.674817,
+    "min": 21006.672817
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 3,
+   "replayGapSeconds": {
+    "max": 1207.778485,
+    "min": 1207.778485
+   },
+   "rows": 6
+  },
+  "m2-ontime-original": {
+   "addresses": [
+    "203.0.113.42"
+   ],
+   "copiesHistogram": {
+    "2": 3
+   },
+   "expectedDistinct": 3,
+   "extraRows": 3,
+   "firstIngestionDelaySeconds": {
+    "max": 21006.674817,
+    "min": 21006.672817
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 3,
+   "replayGapSeconds": {
+    "max": 1207.778485,
+    "min": 1207.778485
+   },
+   "rows": 6
+  },
+  "m2-replay-of-m1": {
+   "addresses": [
+    "203.0.113.31"
+   ],
+   "copiesHistogram": {
+    "2": 4
+   },
+   "expectedDistinct": 4,
+   "extraRows": 4,
+   "firstIngestionDelaySeconds": {
+    "max": 24366.61506,
+    "min": 24366.61206
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 4,
+   "replayGapSeconds": {
+    "max": 271.681205,
+    "min": 271.681205
+   },
+   "rows": 8
+  },
+  "m2-replay-of-m1-rewritten": {
+   "addresses": [
+    "203.0.113.32"
+   ],
+   "copiesHistogram": {
+    "2": 2
+   },
+   "expectedDistinct": 2,
+   "extraRows": 2,
+   "firstIngestionDelaySeconds": {
+    "max": 259563.739287,
+    "min": 259563.738287
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 2,
+   "replayGapSeconds": {
+    "max": 290.697989,
+    "min": 290.697989
+   },
+   "rows": 4
+  },
+  "m3-late": {
+   "addresses": [
+    "203.0.113.51"
+   ],
+   "copiesHistogram": {
+    "1": 2
+   },
+   "expectedDistinct": 2,
+   "extraRows": 0,
+   "firstIngestionDelaySeconds": {
+    "max": 25202.666011,
+    "min": 25202.665011
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 2,
+   "replayGapSeconds": {
+    "max": null,
+    "min": null
+   },
+   "rows": 2
+  },
+  "m3-replay-of-m2-late": {
+   "addresses": [
+    "203.0.113.41"
+   ],
+   "copiesHistogram": {
+    "2": 3
+   },
+   "expectedDistinct": 3,
+   "extraRows": 3,
+   "firstIngestionDelaySeconds": {
+    "max": 24007.227652,
+    "min": 24007.225652
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 3,
+   "replayGapSeconds": {
+    "max": 3732.80154,
+    "min": 3732.80154
+   },
+   "rows": 6
+  },
+  "r1-replay-of-b1-clean": {
+   "addresses": [
+    "192.0.2.10"
+   ],
+   "copiesHistogram": {
+    "3": 12
+   },
+   "expectedDistinct": 12,
+   "extraRows": 24,
+   "firstIngestionDelaySeconds": {
+    "max": 5.588398,
+    "min": 5.577398
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 12,
+   "replayGapSeconds": {
+    "max": 3843.010476,
+    "min": 3843.010476
+   },
+   "rows": 36
+  },
+  "r1-replay-of-f1-clean": {
+   "addresses": [
+    "198.51.100.10"
+   ],
+   "copiesHistogram": {
+    "3": 25
+   },
+   "expectedDistinct": 25,
+   "extraRows": 50,
+   "firstIngestionDelaySeconds": {
+    "max": 4.694403,
+    "min": 4.670403
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 25,
+   "replayGapSeconds": {
+    "max": 3848.341392,
+    "min": 3848.341392
+   },
+   "rows": 75
+  },
+  "r1-replay-of-f2-clean": {
+   "addresses": [
+    "198.51.100.11"
+   ],
+   "copiesHistogram": {
+    "3": 25
+   },
+   "expectedDistinct": 25,
+   "extraRows": 50,
+   "firstIngestionDelaySeconds": {
+    "max": 7.727863,
+    "min": 7.703863
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 25,
+   "replayGapSeconds": {
+    "max": 3840.916595,
+    "min": 3840.916595
+   },
+   "rows": 75
+  },
+  "r1-replay-of-f3-late-originals": {
+   "addresses": [
+    "198.51.100.12"
+   ],
+   "copiesHistogram": {
+    "3": 25
+   },
+   "expectedDistinct": 25,
+   "extraRows": 50,
+   "firstIngestionDelaySeconds": {
+    "max": 2706.10323,
+    "min": 2706.07923
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 25,
+   "replayGapSeconds": {
+    "max": 3841.453934,
+    "min": 3841.453934
+   },
+   "rows": 75
+  },
+  "r2-replay-of-b1-clean": {
+   "addresses": [
+    "192.0.2.10"
+   ],
+   "copiesHistogram": {
+    "3": 12
+   },
+   "expectedDistinct": 12,
+   "extraRows": 24,
+   "firstIngestionDelaySeconds": {
+    "max": 5.588398,
+    "min": 5.577398
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 12,
+   "replayGapSeconds": {
+    "max": 3843.010476,
+    "min": 3843.010476
+   },
+   "rows": 36
+  },
+  "r2-replay-of-c1-while-disabled": {
+   "addresses": [
+    "198.51.100.20"
+   ],
+   "copiesHistogram": {
+    "2": 25
+   },
+   "expectedDistinct": 25,
+   "extraRows": 25,
+   "firstIngestionDelaySeconds": {
+    "max": 6.685341,
+    "min": 6.661341
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 25,
+   "replayGapSeconds": {
+    "max": 2058.06672,
+    "min": 2058.06672
+   },
+   "rows": 50
+  },
+  "r2-replay-of-c2-while-disabled": {
+   "addresses": [
+    "198.51.100.21"
+   ],
+   "copiesHistogram": {
+    "2": 25
+   },
+   "expectedDistinct": 25,
+   "extraRows": 25,
+   "firstIngestionDelaySeconds": {
+    "max": 8.447038,
+    "min": 8.423038
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 25,
+   "replayGapSeconds": {
+    "max": 1721.348451,
+    "min": 1721.348451
+   },
+   "rows": 50
+  },
+  "r2-replay-of-f1-clean": {
+   "addresses": [
+    "198.51.100.10"
+   ],
+   "copiesHistogram": {
+    "3": 25
+   },
+   "expectedDistinct": 25,
+   "extraRows": 50,
+   "firstIngestionDelaySeconds": {
+    "max": 4.694403,
+    "min": 4.670403
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 25,
+   "replayGapSeconds": {
+    "max": 3848.341392,
+    "min": 3848.341392
+   },
+   "rows": 75
+  },
+  "r2-replay-of-f1b-second-bucket": {
+   "addresses": [
+    "198.51.100.10"
+   ],
+   "copiesHistogram": {
+    "2": 25
+   },
+   "expectedDistinct": 25,
+   "extraRows": 25,
+   "firstIngestionDelaySeconds": {
+    "max": 6.049931,
+    "min": 6.025931
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 25,
+   "replayGapSeconds": {
+    "max": 3186.006064,
+    "min": 3186.006064
+   },
+   "rows": 50
+  },
+  "r2-replay-of-f2-clean": {
+   "addresses": [
+    "198.51.100.11"
+   ],
+   "copiesHistogram": {
+    "3": 25
+   },
+   "expectedDistinct": 25,
+   "extraRows": 50,
+   "firstIngestionDelaySeconds": {
+    "max": 7.727863,
+    "min": 7.703863
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 25,
+   "replayGapSeconds": {
+    "max": 3840.916595,
+    "min": 3840.916595
+   },
+   "rows": 75
+  },
+  "r2-replay-of-f3-late-originals": {
+   "addresses": [
+    "198.51.100.12"
+   ],
+   "copiesHistogram": {
+    "3": 25
+   },
+   "expectedDistinct": 25,
+   "extraRows": 50,
+   "firstIngestionDelaySeconds": {
+    "max": 2706.10323,
+    "min": 2706.07923
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 25,
+   "replayGapSeconds": {
+    "max": 3841.453934,
+    "min": 3841.453934
+   },
+   "rows": 75
+  },
+  "seed": {
+   "addresses": [
+    "203.0.113.250"
+   ],
+   "copiesHistogram": {
+    "1": 1
+   },
+   "expectedDistinct": 1,
+   "extraRows": 0,
+   "firstIngestionDelaySeconds": {
+    "max": 385.491276,
+    "min": 385.491276
+   },
+   "methods": [
+    "direct"
+   ],
+   "missing": 0,
+   "presentDistinct": 1,
+   "replayGapSeconds": {
+    "max": null,
+    "min": null
+   },
+   "rows": 1
+  }
+ },
+ "unexpectedEventIds": 0
+}

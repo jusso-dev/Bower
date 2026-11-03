@@ -1,0 +1,497 @@
+[
+ {
+  "collectorId": "smoke-storage",
+  "preset": "storage-high",
+  "timeGenerated": "2026-11-03T06:00:57.627502Z",
+  "attributes": {
+   "status": "healthy",
+   "problems": [],
+   "delivery": {
+    "status": "delivering",
+    "lastFailureCode": null
+   },
+   "queue": {
+    "queued": 0,
+    "retrying": 0,
+    "uploading": 0,
+    "undelivered": 0,
+    "deadLettered": 0,
+    "oldestUndeliveredAgeSeconds": 0
+   },
+   "storage": {
+    "queueCapacityMiB": 1024,
+    "undeliveredMiB": 1,
+    "capacityUsedPercent": 0.1,
+    "queuePagesUsedMiB": 720,
+    "queuePagesUsedPercent": 82.5,
+    "volumeState": "normal",
+    "intakePaused": false,
+    "volumeFreeMiB": 50000,
+    "volumeFreePercent": 60
+   },
+   "intake": {
+    "attemptedRequests": 10,
+    "capacityRefusals": 0,
+    "privacyAlertRefusals": 0
+   },
+   "sources": {
+    "configured": 0,
+    "expected": 0,
+    "overdue": []
+   },
+   "monitoringCoverage": {
+    "syslogComplete": true,
+    "windowsEventLogComplete": true
+   },
+   "syslog": [],
+   "windowsEventLog": []
+  }
+ },
+ {
+  "collectorId": "smoke-transport",
+  "preset": "transport-errors",
+  "timeGenerated": "2026-11-03T06:01:05.167536Z",
+  "attributes": {
+   "status": "healthy",
+   "problems": [],
+   "delivery": {
+    "status": "delivering",
+    "lastFailureCode": null
+   },
+   "queue": {
+    "queued": 0,
+    "retrying": 0,
+    "uploading": 0,
+    "undelivered": 0,
+    "deadLettered": 0,
+    "oldestUndeliveredAgeSeconds": 0
+   },
+   "storage": {
+    "queueCapacityMiB": 1024,
+    "undeliveredMiB": 1,
+    "capacityUsedPercent": 0.1,
+    "queuePagesUsedMiB": 20,
+    "queuePagesUsedPercent": 2.3,
+    "volumeState": "normal",
+    "intakePaused": false,
+    "volumeFreeMiB": 50000,
+    "volumeFreePercent": 60
+   },
+   "intake": {
+    "attemptedRequests": 10,
+    "capacityRefusals": 0,
+    "privacyAlertRefusals": 0
+   },
+   "sources": {
+    "configured": 0,
+    "expected": 0,
+    "overdue": []
+   },
+   "monitoringCoverage": {
+    "syslogComplete": true,
+    "windowsEventLogComplete": true
+   },
+   "syslog": [
+    {
+     "id": "tls-6514",
+     "protocol": "tls",
+     "tls": true,
+     "activeConnections": 1,
+     "connectionsAccepted": 1,
+     "tlsRevoked": 1,
+     "tlsSessionsClosed": 1,
+     "serverCertificateNotAfter": "2027-05-22T06:01:05.167950Z",
+     "clientCertificateAuthorityNotAfter": "2027-08-30T06:01:05.167960Z",
+     "clientRevocationListNextUpdate": "2026-11-08T06:01:05.167964Z",
+     "clientCertificateAuthorityConfigured": true,
+     "clientRevocationListConfigured": true
+    },
+    {
+     "id": "relp-2514",
+     "protocol": "relp",
+     "tls": true,
+     "activeConnections": 1,
+     "connectionsAccepted": 1,
+     "retries": 3,
+     "relpBusyCloses": 1,
+     "serverCertificateNotAfter": "2027-05-22T06:01:05.167973Z",
+     "clientCertificateAuthorityNotAfter": "2027-08-30T06:01:05.167976Z",
+     "clientRevocationListNextUpdate": "2026-11-08T06:01:05.167979Z",
+     "clientCertificateAuthorityConfigured": true,
+     "clientRevocationListConfigured": true
+    }
+   ],
+   "windowsEventLog": [
+    {
+     "id": "wec-forwarded",
+     "state": "running",
+     "eventsRead": 5,
+     "cursorConflicts": 1
+    }
+   ]
+  }
+ },
+ {
+  "collectorId": "smoke-credential",
+  "preset": "credential",
+  "timeGenerated": "2026-11-03T06:01:12.058374Z",
+  "attributes": {
+   "status": "critical",
+   "problems": [
+    "destination-credential"
+   ],
+   "delivery": {
+    "status": "failing",
+    "lastFailureCode": "destination-azure-credential-failed"
+   },
+   "queue": {
+    "queued": 0,
+    "retrying": 0,
+    "uploading": 0,
+    "undelivered": 0,
+    "deadLettered": 0,
+    "oldestUndeliveredAgeSeconds": 0
+   },
+   "storage": {
+    "queueCapacityMiB": 1024,
+    "undeliveredMiB": 1,
+    "capacityUsedPercent": 0.1,
+    "queuePagesUsedMiB": 20,
+    "queuePagesUsedPercent": 2.3,
+    "volumeState": "normal",
+    "intakePaused": false,
+    "volumeFreeMiB": 50000,
+    "volumeFreePercent": 60
+   },
+   "intake": {
+    "attemptedRequests": 10,
+    "capacityRefusals": 0,
+    "privacyAlertRefusals": 0
+   },
+   "sources": {
+    "configured": 0,
+    "expected": 0,
+    "overdue": []
+   },
+   "monitoringCoverage": {
+    "syslogComplete": true,
+    "windowsEventLogComplete": true
+   },
+   "syslog": [],
+   "windowsEventLog": []
+  }
+ },
+ {
+  "collectorId": "smoke-tls",
+  "preset": "tls-expiring",
+  "timeGenerated": "2026-11-03T06:01:18.597374Z",
+  "attributes": {
+   "status": "healthy",
+   "problems": [],
+   "delivery": {
+    "status": "delivering",
+    "lastFailureCode": null
+   },
+   "queue": {
+    "queued": 0,
+    "retrying": 0,
+    "uploading": 0,
+    "undelivered": 0,
+    "deadLettered": 0,
+    "oldestUndeliveredAgeSeconds": 0
+   },
+   "storage": {
+    "queueCapacityMiB": 1024,
+    "undeliveredMiB": 1,
+    "capacityUsedPercent": 0.1,
+    "queuePagesUsedMiB": 20,
+    "queuePagesUsedPercent": 2.3,
+    "volumeState": "normal",
+    "intakePaused": false,
+    "volumeFreeMiB": 50000,
+    "volumeFreePercent": 60
+   },
+   "intake": {
+    "attemptedRequests": 10,
+    "capacityRefusals": 0,
+    "privacyAlertRefusals": 0
+   },
+   "sources": {
+    "configured": 0,
+    "expected": 0,
+    "overdue": []
+   },
+   "monitoringCoverage": {
+    "syslogComplete": true,
+    "windowsEventLogComplete": true
+   },
+   "syslog": [
+    {
+     "id": "relp-6514",
+     "protocol": "relp",
+     "tls": true,
+     "activeConnections": 1,
+     "connectionsAccepted": 1,
+     "serverCertificateNotAfter": "2026-11-08T06:01:18.597825Z",
+     "clientCertificateAuthorityNotAfter": "2027-08-30T06:01:18.597837Z",
+     "clientRevocationListNextUpdate": "2026-11-03T12:01:18.597842Z",
+     "clientCertificateAuthorityConfigured": true,
+     "clientRevocationListConfigured": true
+    },
+    {
+     "id": "tcp-514",
+     "protocol": "tcp",
+     "tls": false,
+     "activeConnections": 1,
+     "connectionsAccepted": 1
+    }
+   ],
+   "windowsEventLog": []
+  }
+ },
+ {
+  "collectorId": "smoke-transport",
+  "preset": "relp-retry",
+  "timeGenerated": "2026-11-03T06:01:51.111332Z",
+  "attributes": {
+   "status": "healthy",
+   "problems": [],
+   "delivery": {
+    "status": "delivering",
+    "lastFailureCode": null
+   },
+   "queue": {
+    "queued": 0,
+    "retrying": 0,
+    "uploading": 0,
+    "undelivered": 0,
+    "deadLettered": 0,
+    "oldestUndeliveredAgeSeconds": 0
+   },
+   "storage": {
+    "queueCapacityMiB": 1024,
+    "undeliveredMiB": 1,
+    "capacityUsedPercent": 0.1,
+    "queuePagesUsedMiB": 20,
+    "queuePagesUsedPercent": 2.3,
+    "volumeState": "normal",
+    "intakePaused": false,
+    "volumeFreeMiB": 50000,
+    "volumeFreePercent": 60
+   },
+   "intake": {
+    "attemptedRequests": 10,
+    "capacityRefusals": 0,
+    "privacyAlertRefusals": 0
+   },
+   "sources": {
+    "configured": 0,
+    "expected": 0,
+    "overdue": []
+   },
+   "monitoringCoverage": {
+    "syslogComplete": true,
+    "windowsEventLogComplete": true
+   },
+   "syslog": [
+    {
+     "id": "relp-2514",
+     "protocol": "relp",
+     "tls": true,
+     "activeConnections": 1,
+     "connectionsAccepted": 1,
+     "retries": 2,
+     "serverCertificateNotAfter": "2027-05-22T06:01:51.111887Z",
+     "clientCertificateAuthorityNotAfter": "2027-08-30T06:01:51.111894Z",
+     "clientRevocationListNextUpdate": "2026-11-08T06:01:51.111898Z",
+     "clientCertificateAuthorityConfigured": true,
+     "clientRevocationListConfigured": true
+    }
+   ],
+   "windowsEventLog": []
+  }
+ },
+ {
+  "collectorId": "smoke-storage",
+  "preset": "storage-normal",
+  "timeGenerated": "2026-11-03T06:37:09.911973Z",
+  "attributes": {
+   "status": "healthy",
+   "problems": [],
+   "delivery": {
+    "status": "delivering",
+    "lastFailureCode": null
+   },
+   "queue": {
+    "queued": 0,
+    "retrying": 0,
+    "uploading": 0,
+    "undelivered": 0,
+    "deadLettered": 0,
+    "oldestUndeliveredAgeSeconds": 0
+   },
+   "storage": {
+    "queueCapacityMiB": 1024,
+    "undeliveredMiB": 1,
+    "capacityUsedPercent": 0.1,
+    "queuePagesUsedMiB": 20,
+    "queuePagesUsedPercent": 2.3,
+    "volumeState": "normal",
+    "intakePaused": false,
+    "volumeFreeMiB": 50000,
+    "volumeFreePercent": 60
+   },
+   "intake": {
+    "attemptedRequests": 10,
+    "capacityRefusals": 0,
+    "privacyAlertRefusals": 0
+   },
+   "sources": {
+    "configured": 0,
+    "expected": 0,
+    "overdue": []
+   },
+   "monitoringCoverage": {
+    "syslogComplete": true,
+    "windowsEventLogComplete": true
+   },
+   "syslog": [],
+   "windowsEventLog": []
+  }
+ },
+ {
+  "collectorId": "smoke-tls",
+  "preset": "tls-renewed",
+  "timeGenerated": "2026-11-03T06:37:11.224044Z",
+  "attributes": {
+   "status": "healthy",
+   "problems": [],
+   "delivery": {
+    "status": "delivering",
+    "lastFailureCode": null
+   },
+   "queue": {
+    "queued": 0,
+    "retrying": 0,
+    "uploading": 0,
+    "undelivered": 0,
+    "deadLettered": 0,
+    "oldestUndeliveredAgeSeconds": 0
+   },
+   "storage": {
+    "queueCapacityMiB": 1024,
+    "undeliveredMiB": 1,
+    "capacityUsedPercent": 0.1,
+    "queuePagesUsedMiB": 20,
+    "queuePagesUsedPercent": 2.3,
+    "volumeState": "normal",
+    "intakePaused": false,
+    "volumeFreeMiB": 50000,
+    "volumeFreePercent": 60
+   },
+   "intake": {
+    "attemptedRequests": 10,
+    "capacityRefusals": 0,
+    "privacyAlertRefusals": 0
+   },
+   "sources": {
+    "configured": 0,
+    "expected": 0,
+    "overdue": []
+   },
+   "monitoringCoverage": {
+    "syslogComplete": true,
+    "windowsEventLogComplete": true
+   },
+   "syslog": [
+    {
+     "id": "relp-6514",
+     "protocol": "relp",
+     "tls": true,
+     "activeConnections": 1,
+     "connectionsAccepted": 1,
+     "serverCertificateNotAfter": "2027-12-08T06:37:11.224918Z",
+     "clientCertificateAuthorityNotAfter": "2027-08-30T06:37:11.224925Z",
+     "clientRevocationListNextUpdate": "2026-11-09T06:37:11.224929Z",
+     "clientCertificateAuthorityConfigured": true,
+     "clientRevocationListConfigured": true
+    },
+    {
+     "id": "tcp-514",
+     "protocol": "tcp",
+     "tls": false,
+     "activeConnections": 1,
+     "connectionsAccepted": 1
+    }
+   ],
+   "windowsEventLog": []
+  }
+ },
+ {
+  "collectorId": "smoke-transport",
+  "preset": "transport-clean",
+  "timeGenerated": "2026-11-03T06:37:12.096438Z",
+  "attributes": {
+   "status": "healthy",
+   "problems": [],
+   "delivery": {
+    "status": "delivering",
+    "lastFailureCode": null
+   },
+   "queue": {
+    "queued": 0,
+    "retrying": 0,
+    "uploading": 0,
+    "undelivered": 0,
+    "deadLettered": 0,
+    "oldestUndeliveredAgeSeconds": 0
+   },
+   "storage": {
+    "queueCapacityMiB": 1024,
+    "undeliveredMiB": 1,
+    "capacityUsedPercent": 0.1,
+    "queuePagesUsedMiB": 20,
+    "queuePagesUsedPercent": 2.3,
+    "volumeState": "normal",
+    "intakePaused": false,
+    "volumeFreeMiB": 50000,
+    "volumeFreePercent": 60
+   },
+   "intake": {
+    "attemptedRequests": 10,
+    "capacityRefusals": 0,
+    "privacyAlertRefusals": 0
+   },
+   "sources": {
+    "configured": 0,
+    "expected": 0,
+    "overdue": []
+   },
+   "monitoringCoverage": {
+    "syslogComplete": true,
+    "windowsEventLogComplete": true
+   },
+   "syslog": [
+    {
+     "id": "tls-6514",
+     "protocol": "tls",
+     "tls": true,
+     "activeConnections": 1,
+     "connectionsAccepted": 1,
+     "serverCertificateNotAfter": "2027-05-22T06:37:12.096863Z",
+     "clientCertificateAuthorityNotAfter": "2027-08-30T06:37:12.096870Z",
+     "clientRevocationListNextUpdate": "2026-11-08T06:37:12.096873Z",
+     "clientCertificateAuthorityConfigured": true,
+     "clientRevocationListConfigured": true
+    }
+   ],
+   "windowsEventLog": [
+    {
+     "id": "wec-forwarded",
+     "state": "running",
+     "eventsRead": 5
+    }
+   ]
+  }
+ }
+]

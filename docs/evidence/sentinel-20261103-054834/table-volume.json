@@ -1,0 +1,34 @@
+[
+ {
+  "Source": "scenarios",
+  "Rows": 438,
+  "BilledBytes": 453290,
+  "AvgBilledBytes": 1034.9086757990867,
+  "FirstIngested": "2026-11-03T05:57:56.1526344Z",
+  "LastIngested": "2026-11-03T07:04:49.575826Z"
+ },
+ {
+  "Source": "load-trickle",
+  "Rows": 66600,
+  "BilledBytes": 62664300,
+  "AvgBilledBytes": 940.9054054054054,
+  "FirstIngested": "2026-11-03T06:00:27.4739509Z",
+  "LastIngested": "2026-11-03T08:49:40.6895022Z"
+ },
+ {
+  "Source": "collector_health",
+  "Rows": 8,
+  "BilledBytes": 27352,
+  "AvgBilledBytes": 3419,
+  "FirstIngested": "2026-11-03T06:01:05.2867617Z",
+  "LastIngested": "2026-11-03T06:37:15.9076008Z"
+ },
+ {
+  "Source": "load-backfill",
+  "Rows": 602000,
+  "BilledBytes": 567037216,
+  "AvgBilledBytes": 941.9222857142857,
+  "FirstIngested": "2026-11-03T05:57:56.1526344Z",
+  "LastIngested": "2026-11-03T06:00:21.9716732Z"
+ }
+]

@@ -1,0 +1,75 @@
+{
+ "load-probe": {
+  "mode": "backfill",
+  "eventIdPrefix": "load-backfill-87c3f828",
+  "collectorId": "sentinel-load",
+  "startedAt": "2026-11-03T05:54:26.646030Z",
+  "finishedAt": "2026-11-03T05:54:30.968255Z",
+  "seconds": 4.3,
+  "addresses": 8192,
+  "addressOffset": 0,
+  "maxEventsPerAddressAndBucket": 2,
+  "spanMinutes": 120.0,
+  "ratePerSecond": null,
+  "requests": 1,
+  "rows": 2000,
+  "uncompressedBytes": 985729,
+  "compressedBytes": 20015,
+  "retries": 0,
+  "statuses": {
+   "204": 1
+  },
+  "maxRequestSeconds": 0.419
+ },
+ "load-backfill": {
+  "mode": "backfill",
+  "eventIdPrefix": "load-backfill-9021bdac",
+  "collectorId": "sentinel-load",
+  "startedAt": "2026-11-03T06:00:00.663246Z",
+  "finishedAt": "2026-11-03T06:00:15.799657Z",
+  "seconds": 15.1,
+  "addresses": 8192,
+  "addressOffset": 0,
+  "maxEventsPerAddressAndBucket": 8,
+  "spanMinutes": 120.0,
+  "ratePerSecond": null,
+  "requests": 316,
+  "rows": 600000,
+  "uncompressedBytes": 296079196,
+  "compressedBytes": 6240854,
+  "retries": 0,
+  "statuses": {
+   "204": 316
+  },
+  "maxRequestSeconds": 0.907
+ },
+ "load-trickle-2": {
+  "mode": "trickle",
+  "eventIdPrefix": "load-trickle-5a6ce4cd",
+  "collectorId": "sentinel-load",
+  "startedAt": "2026-11-03T07:55:34.074159Z",
+  "finishedAt": "2026-11-03T08:50:04.726857Z",
+  "seconds": 3270.7,
+  "addresses": 8192,
+  "addressOffset": 16384,
+  "maxEventsPerAddressAndBucket": 2,
+  "spanMinutes": null,
+  "ratePerSecond": 10.0,
+  "requests": 109,
+  "rows": 32700,
+  "uncompressedBytes": 16121209,
+  "compressedBytes": 273002,
+  "retries": 0,
+  "statuses": {
+   "204": 109
+  },
+  "maxRequestSeconds": 0.302
+ },
+ "load-trickle-1": {
+  "result": "failed",
+  "log": "upload refused with HTTP 401",
+  "rowsIngested": 33900,
+  "lastIngested": "2026-11-03T06:56:28.7918182Z",
+  "cause": "load.py reused a cached Azure CLI token for 20 minutes; the CLI had returned one close to expiry. Fixed: refresh from expires_on with a 10-minute margin and once on 401 (test_load.py)."
+ }
+}

@@ -1,0 +1,28 @@
+{
+ "slot": "2026-11-03T06:00Z-07:00Z",
+ "substitutedNow": "2026-11-03T07:47:32Z",
+ "currentQuery": [
+  {
+   "CollectorId": "sentinel-direct",
+   "LateEvents": 3,
+   "RewrittenTimes": 0,
+   "OldestEvent": "2026-11-02T23:22:11.697946Z",
+   "MaxDeliveryDelay": "06:40:07.2276528",
+   "EventTypes": "[\"network_connection_denied\"]",
+   "WindowStart": "2026-11-03T06:00:00Z",
+   "WindowEnd": "2026-11-03T07:00:00Z"
+  }
+ ],
+ "preFixQuery_e12afe5_parent": [
+  {
+   "CollectorId": "sentinel-direct",
+   "LateEvents": 6,
+   "RewrittenTimes": 0,
+   "OldestEvent": "2026-11-02T23:22:11.697946Z",
+   "MaxDeliveryDelay": "06:40:07.2276528",
+   "EventTypes": "[\"network_connection_denied\"]",
+   "WindowStart": "2026-11-03T06:00:00Z",
+   "WindowEnd": "2026-11-03T07:00:00Z"
+  }
+ ]
+}

@@ -1,0 +1,16 @@
+{
+ "names": [
+  "bower-collector-health-missing",
+  "bower-dead-letters",
+  "bower-queue-backlog",
+  "bower-queue-storage",
+  "bower-source-overdue",
+  "bower-destination-freshness",
+  "bower-source-transport-errors",
+  "bower-destination-credential",
+  "bower-syslog-tls-expiry",
+  "bower-table-no-ingestion"
+ ],
+ "state": "Succeeded",
+ "timestamp": "2026-11-03T05:55:55.717597+00:00"
+}
