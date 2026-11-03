@@ -29,7 +29,7 @@ Source: [`final/final-reconciliation.json`](final/final-reconciliation.json).
 | Collector settings | Both: Sentinel Logs Ingestion API with a certificate credential, `BOWER_HEALTH_RECORD_INTERVAL_SECONDS=60`, `BOWER_QUEUE_RETENTION_HOURS=2`, lease 90 s, output deadline 60 s, the `collector-health` policy. Linux: packaged `bower.service`, RELP listener `a13` with mutual TLS on 6514. Windows: `%ProgramData%\Bower\bower.env`, `BOWER_QUEUE_MAX_BYTES=4294967296`, ForwardedEvents 4625 subscription (poll 1 s, batch 256), per-minute `Test-BowerCollectorHealth.ps1` task. Linux: `bower-healthcheck.timer` |
 | Packs | Signed with a run-generated key (public key `2619e966a7d5e063f4830bf69e00ce8f48a1b42a0103301025fea84ae0d9af29`): `syslog-reliability-1.0.0` `3afe4ee7…0a64`, `windows-security-logon-1.0.2` `aeee20de…98bc`; all pack samples pass |
 | Sender | rsyslog 8.2610.0 built from pinned source (`7bdf95e8…404b`); `rsyslogd` `b9707a54…a8dc`, `omrelp` `3e3def05…da0e`, librelp 1.12.0; `imjournal` to a disk-assisted queue to `omrelp` over mutual TLS (`windowSize=128`, `timeout=90`). This is the [RELP profile](../fw-20261101-111911/README.md) |
-| Azure | `rg-bower-soak-20261102-015614` (australiaeast): workspace and Sentinel; repository Bicep DCE, DCR and table; ingestion app `…-ingest`; verifier app `…-verifier` (Log Analytics Reader on the workspace only); [11 log and 4 metric alert rules](monitoring/) from `deploy/sentinel/monitoring/monitoring.bicep`, enabled, both collectors expected, DCR error logs on |
+| Azure | `rg-bower-soak-20261102-015614` (australiaeast): workspace and Sentinel; repository Bicep DCE, DCR and table; ingestion app `…-ingest`; verifier app `…-verifier` (Log Analytics Reader on the workspace only); 11 log and 4 metric alert rules (`monitoring/`) from `deploy/sentinel/monitoring/monitoring.bicep`, enabled, both collectors expected, DCR error logs on |
 | Load | 10/s per collector, plus 60 s at 100/s at +2 h, +6 h … +22 h: 896,400 events per collector. Firewall identities are sequence numbers 100,000 to 996,399. Windows: 896,400 NTLM LDAP binds to the DC, all returning LDAP result 49 (0 successful logons) |
 
 ## Results in detail
@@ -41,8 +41,8 @@ Source: [`final/final-reconciliation.json`](final/final-reconciliation.json).
   The accepted union of the queue (exported every 30 minutes, so rows purged by the 2-hour
   retention are still counted) held all 896,400. Sentinel held 896,400 distinct ids in 896,454 rows.
 - **WEC.** The DC Security log held 896,400 distinct 4625 records in 25 hourly windows:
-  [24 scheduled](native-windows/scheduled/) plus `h24` (31 events, exported on demand). That equals
-  the 896,400 attempts in [`generators/dc/`](generators/dc/). Accepted: 896,400. Sentinel:
+  24 scheduled (`native-windows/scheduled/`) plus `h24` (31 events, exported on demand). That equals
+  the 896,400 attempts in `generators/dc/` (`generators/dc/`). Accepted: 896,400. Sentinel:
   896,400 distinct in 896,501 rows.
 - **Duplicate rows.** Firewall 54 (45 in the 10:33 hour, 9 in 00:33); WEC 101 (51, 10, 40 in
   10:33, 15:33 and 00:33). Both collectors duplicated in the same two hours, and those hours also
@@ -64,7 +64,7 @@ also at retention time. Nothing was lost. The Linux collector logged no warnings
 ### 3. Resource trends (both FAIL the pre-registered threshold)
 
 Slopes are least squares over hours 3–24 of the soak's 5-minute samples
-([`series/`](series/)). The "30-day projection" column is the slope × 720 h as a percentage of
+(`series/` (`series/`)). The "30-day projection" column is the slope × 720 h as a percentage of
 the mean. The threshold was 10%.
 
 | Series | Firewall slope/h | 30-day % | Range | WEC slope/h | 30-day % | Range |
@@ -241,7 +241,7 @@ Every check is proven by one of:
   display names, role assignments;
 - a `terminated` instance state for the four instances.
 
-Audit inputs: [`operations/`](operations/). The shared VPC, NAT gateway and every other
+Audit inputs: `operations/` (`operations/`). The shared VPC, NAT gateway and every other
 pre-existing resource were untouched. The local private staging directory (keys, certificates,
 tokens, Azure identity files and caches) was deleted. The 30-hour expiry schedule was not
 relied on: it was deleted with the stack before it fired.

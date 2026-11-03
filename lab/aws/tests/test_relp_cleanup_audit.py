@@ -20,6 +20,9 @@ class RelpCleanupAuditTests(unittest.TestCase):
             ('ERROR: Not Found({"error":{"code":"Request_ResourceNotFound"}})', ("Request_ResourceNotFound",), True),
             ('ERROR: Forbidden({"error":{"code":"Authorization_RequestDenied"}})', ("Request_ResourceNotFound",), False),
             ("Could not connect to the endpoint URL", ("InvalidGroup.NotFound",), False),
+            # Secrets: only not-found proves deletion; a scheduled deletion still describes.
+            ("An error occurred (ResourceNotFoundException) when calling the DescribeSecret operation", ("ResourceNotFoundException",), True),
+            ("An error occurred (AccessDeniedException) when calling the DescribeSecret operation", ("ResourceNotFoundException",), False),
         ]
         for err, codes, absent in cases:
             with self.subTest(err=err):
