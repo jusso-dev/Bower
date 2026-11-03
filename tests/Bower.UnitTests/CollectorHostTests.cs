@@ -209,6 +209,9 @@ public sealed class CollectorHostTests
         Assert.Equal("""{"status":"healthy"}""", health);
         Assert.Equal(HttpStatusCode.Unauthorized, anonymousStatus.StatusCode);
         Assert.Equal(HttpStatusCode.OK, status.StatusCode);
+        // The installed build, right after the status (as the Rust collector).
+        Assert.StartsWith($$"""{"status":"healthy","version":"{{BowerVersion.Current}}",""", statusBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("version", health, StringComparison.Ordinal);
         Assert.Contains("queue-retention", statusBody, StringComparison.Ordinal);
         Assert.Contains("queue-maintenance", statusBody, StringComparison.Ordinal);
     }

@@ -467,6 +467,7 @@ public static partial class CollectorApplication
                     QueuePageUsage? pages = await QueueStorageStatus.TryReadPagesAsync(eventQueue, cancellationToken);
                     StatusResponse status = new(
                         Status(snapshot, sources, storage.Evaluate().State),
+                        settings.Version,
                         new StatusPolicyResponse(
                             bundle.Hash,
                             [.. bundle.Policies.Select(item => new StatusPolicyItem(

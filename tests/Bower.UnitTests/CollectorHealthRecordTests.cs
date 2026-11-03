@@ -583,6 +583,8 @@ public sealed class CollectorHealthRecordTests
         SecurityEventEnvelope envelope = JsonSerializer.Deserialize(delivered.Payload, BowerJson.Envelope)!;
         Assert.Equal(SecurityEventTypes.CollectorHealth, envelope.EventType);
         Assert.Equal("collector-test", envelope.Collector!.Id);
+        // The build that wrote the record (BowerVersion), not a hard-coded 0.1.0.
+        Assert.Equal(BowerVersion.Current, envelope.Collector.Version);
         Assert.Equal("production", envelope.Application!.Environment);
         Assert.Equal(60, envelope.Attributes!["intervalSeconds"].GetInt64());
         Assert.Equal("none", envelope.Attributes["delivery"].GetProperty("output").GetString());

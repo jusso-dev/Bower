@@ -80,6 +80,18 @@ jobs:
         # Tag images with the commit actually built.
         run: echo "short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
 
+      - id: version
+        # A release tag must match VERSION (docs/operations/release-versioning.md). A manual
+        # publication of main is an unnumbered development build, <VERSION>-dev.0: identify it
+        # by its sha- tag and org.opencontainers.image.revision.
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          if [ "$REF_TYPE" = tag ]; then build="$RUN_NUMBER"; else build=0; fi
+          python3 tools/ci/version.py --ref-type "$REF_TYPE" --ref-name "$REF_NAME" --build-number "$build"
+
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
@@ -103,6 +115,7 @@ jobs:
             org.opencontainers.image.title=${{ matrix.image }}
             org.opencontainers.image.description=${{ matrix.description }}
             org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
           annotations: |
             org.opencontainers.image.description=${{ matrix.description }}
 
@@ -116,6 +129,9 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
+          build-args: |
+            BOWER_VERSION=${{ steps.version.outputs.version }}
+            BOWER_BUILD_NUMBER=${{ steps.version.outputs.build }}
           provenance: mode=max
           sbom: true
           cache-from: type=gha,scope=${{ matrix.image }}

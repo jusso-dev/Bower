@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using Bower.Contracts;
 using Bower.Core;
 using Bower.Packs;
 using Bower.Redaction.Privacy;
@@ -22,7 +23,7 @@ public sealed record CollectorSettings
 
     public required string CollectorId { get; init; }
 
-    public string Version { get; init; } = "0.1.0";
+    public string Version { get; init; } = BowerVersion.Current;
 
     public string Environment { get; init; } = "unknown";
 

@@ -19,8 +19,11 @@ RUN sh /usr/local/bin/aot-cross-deps.sh "$BUILDARCH" "$TARGETARCH"
 WORKDIR /src
 COPY . .
 RUN dotnet restore src/Bower.Agent.Docker/Bower.Agent.Docker.csproj --locked-mode
+# Release version (docs/operations/release-versioning.md); unset builds are <VERSION>-dev.0.
+ARG BOWER_VERSION=
+ARG BOWER_BUILD_NUMBER=
 RUN RID="linux-$([ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64)" \
-    && dotnet publish src/Bower.Agent.Docker/Bower.Agent.Docker.csproj \
+    && BowerVersion="$BOWER_VERSION" BowerBuildNumber="$BOWER_BUILD_NUMBER" dotnet publish src/Bower.Agent.Docker/Bower.Agent.Docker.csproj \
         --configuration Release \
         --no-restore \
         --runtime "$RID" \
@@ -33,6 +36,8 @@ RUN apt-get update \
     && mkdir -p /state
 
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0.14-noble-chiseled AS runtime
+ARG BOWER_VERSION=
+LABEL org.opencontainers.image.version="${BOWER_VERSION}"
 WORKDIR /app
 COPY --from=build /app .
 COPY --from=build --chown=1654:1654 /state /var/lib/bower-sidecar

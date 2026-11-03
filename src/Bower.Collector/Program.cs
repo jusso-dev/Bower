@@ -1,4 +1,12 @@
 using Bower.Collector;
+using Bower.Contracts;
+
+// The installed build, without reading settings or opening the queue.
+if (args is ["--version"])
+{
+    Console.WriteLine($"bower-collector {BowerVersion.Current}");
+    return 0;
+}
 
 try
 {

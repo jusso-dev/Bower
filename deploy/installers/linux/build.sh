@@ -18,8 +18,11 @@ arch="$2"
 version="$3"
 out="$4"
 case "$arch" in amd64|arm64) ;; *) echo "unsupported architecture: $arch" >&2; exit 2 ;; esac
-if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
-  echo "version must be semantic (1.2.3 or 1.2.3-dev.4): $version" >&2
+# The Bower version scheme (docs/operations/release-versioning.md); tools/ci/version.py
+# computes it in CI from the VERSION file.
+version_number='(0|[1-9][0-9]{0,4})'
+if ! [[ "$version" =~ ^$version_number\.$version_number\.$version_number(-(dev|rc)\.$version_number)?$ ]]; then
+  echo "version must be MAJOR.MINOR.PATCH[-dev.N|-rc.N] (1.2.3 or 1.2.3-dev.4): $version" >&2
   exit 2
 fi
 for file in collector/Bower.Collector collector/libe_sqlite3.so cli/bower; do
@@ -34,15 +37,21 @@ done
 mkdir -p "$out"
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
-# nfpm does not expand variables in every field, so render the placeholders here.
-sed -e "s|\${BOWER_DIST}|$dist|g" -e "s|\${BOWER_ARCH}|$arch|g" \
-  -e "s|\${BOWER_VERSION}|$version|g" -e "s|\${BOWER_GPG_KEY_FILE}|$key_file|g" \
-  deploy/installers/linux/nfpm.yaml >"$stage/nfpm.yaml"
-# shellcheck disable=SC2016 # a literal placeholder, not an expansion
-if grep -qF '${BOWER_' "$stage/nfpm.yaml"; then
-  echo "unrendered placeholder in nfpm.yaml" >&2
-  exit 1
-fi
+# nfpm does not expand variables in every field, so render the placeholders here. The
+# preinstall script embeds the package version for its downgrade guard, and the package
+# installs the version as /usr/share/bower/version for the next package's guard.
+render() {
+  sed -e "s|\${BOWER_DIST}|$dist|g" -e "s|\${BOWER_ARCH}|$arch|g" -e "s|\${BOWER_STAGE}|$stage|g" \
+    -e "s|\${BOWER_VERSION}|$version|g" -e "s|\${BOWER_GPG_KEY_FILE}|$key_file|g" "$1" >"$2"
+  # shellcheck disable=SC2016 # a literal placeholder, not an expansion
+  if grep -qE '\$\{BOWER_(DIST|ARCH|STAGE|VERSION|GPG_KEY_FILE)\}' "$2"; then
+    echo "unrendered placeholder in $1" >&2
+    exit 1
+  fi
+}
+render deploy/installers/linux/nfpm.yaml "$stage/nfpm.yaml"
+render deploy/installers/linux/scripts/preinstall.sh "$stage/preinstall.sh"
+printf '%s\n' "$version" >"$stage/version"
 nfpm package --config "$stage/nfpm.yaml" --packager deb --target "$out/"
 nfpm package --config "$stage/nfpm.yaml" --packager rpm --target "$out/"
 

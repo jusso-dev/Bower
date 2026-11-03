@@ -11,8 +11,11 @@ WORKDIR /src
 COPY . .
 RUN dotnet restore src/Bower.Collector/Bower.Collector.csproj --locked-mode
 # RID follows the target platform so the native binary and SQLite match the runtime image.
+# Release version (docs/operations/release-versioning.md); unset builds are <VERSION>-dev.0.
+ARG BOWER_VERSION=
+ARG BOWER_BUILD_NUMBER=
 RUN RID="linux-$([ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64)" \
-    && dotnet publish src/Bower.Collector/Bower.Collector.csproj \
+    && BowerVersion="$BOWER_VERSION" BowerBuildNumber="$BOWER_BUILD_NUMBER" dotnet publish src/Bower.Collector/Bower.Collector.csproj \
         --configuration Release \
         --no-restore \
         --runtime "$RID" \
@@ -22,6 +25,8 @@ RUN RID="linux-$([ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64)" \
 
 # Chiseled runtime-deps: no shell, no package manager, no ICU (InvariantGlobalization).
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0.14-noble-chiseled AS runtime
+ARG BOWER_VERSION=
+LABEL org.opencontainers.image.version="${BOWER_VERSION}"
 WORKDIR /app
 COPY --from=build /app .
 COPY policies ./policies

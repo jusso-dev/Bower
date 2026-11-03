@@ -191,7 +191,7 @@ impl CollectorSettings {
             queue_path: queue_path.into(),
             policy_directory: policy_directory.into(),
             collector_id: collector_id.into(),
-            version: "0.1.0".into(),
+            version: bower_contracts::version::CURRENT.into(),
             environment: "unknown".into(),
             maximum_queue_bytes: 10 * 1024 * 1024 * 1024,
             delivered_retention: Duration::from_secs(7 * 24 * 3600),
@@ -301,7 +301,7 @@ impl CollectorSettings {
                         .join("default")
                 }),
             collector_id: read("BOWER_COLLECTOR_ID").unwrap_or_else(machine_name),
-            version: "0.1.0".into(),
+            version: bower_contracts::version::CURRENT.into(),
             environment: read("BOWER_ENVIRONMENT").unwrap_or_else(|| "unknown".into()),
             maximum_queue_bytes: read_i64(&read, "BOWER_QUEUE_MAX_BYTES", 10 * 1024 * 1024 * 1024)?,
             delivered_retention: hours(retention_hours),

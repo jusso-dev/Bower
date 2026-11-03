@@ -10,6 +10,11 @@ use tracing::info;
 
 fn main() -> ExitCode {
     bower_contracts::panic_privacy::install();
+    // The installed build, without reading settings or opening the queue (as C#).
+    if std::env::args().skip(1).eq(["--version".to_string()]) {
+        println!("bower-collector {}", bower_contracts::version::CURRENT);
+        return ExitCode::SUCCESS;
+    }
     if std::env::args()
         .skip(1)
         .any(|argument| argument == "--healthcheck")

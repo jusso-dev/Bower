@@ -11,6 +11,7 @@ pub mod json;
 pub mod panic_privacy;
 pub mod time;
 pub mod types;
+pub mod version;
 
 pub use abstractions::*;
 pub use element::JsonElement;

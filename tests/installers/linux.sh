@@ -7,11 +7,21 @@
 #    key joins Pending; remove leaves no secret; purge leaves nothing.
 # 2. Ubuntu, Ansible role (deb): the same through deploy/ansible.
 # 3. Rocky Linux 9 container with systemd, offline bundle (rpm): the same with dnf remove.
+# 4. Ubuntu (deb) and Rocky Linux 9 (rpm), when an upgrade-test directory and the expected
+#    version are given: upgrade-linux.sh installs the older test package (<core>-dev.0),
+#    upgrades to this build, checks the reported versions and proves downgrades are
+#    refused (docs/operations/release-versioning.md).
 #
 # Tokens are written only to files under a private work directory; none is printed.
 set -euo pipefail
 
 packages="$(cd "${1:?packages directory}" && pwd)"
+upgrade="${2:+$(cd "$2" && pwd)}"
+expected_version="${3:-}"
+if [ -n "$upgrade" ] && [ -z "$expected_version" ]; then
+  echo "usage: $0 <packages-dir> [<upgrade-test-dir> <expected-version>]" >&2
+  exit 2
+fi
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
 base=http://127.0.0.1:4320
@@ -105,6 +115,13 @@ sudo bash "$here/assert-linux.sh" removed
 "${ansible[@]}" -e "@$work/vars.json" -e bower_state=absent -e bower_purge=true "$here/ansible-playbook.yml"
 sudo apt-get purge -y bower-collector >/dev/null 2>&1 || true
 
+if [ -n "$upgrade" ]; then
+  echo "== Ubuntu: upgrade, refused downgrade and explicit rollback (deb)"
+  sudo bash "$here/upgrade-linux.sh" "$(ls "$upgrade"/bower-collector_*_amd64.deb)" \
+    "$(ls "$packages"/bower-collector_*_amd64.deb)" "$expected_version"
+  sudo apt-get purge -y bower-collector >/dev/null
+fi
+
 echo "== Rocky Linux 9 (systemd container): offline bundle (rpm)"
 mkdir "$work/rpm"
 bundle="$(prepare_bundle rocky-offline "$work/rpm")"
@@ -124,5 +141,14 @@ docker exec bower-rocky install -o root -g bower -m 0640 /dev/null /etc/bower/se
 docker exec bower-rocky bash /root/assert-linux.sh installed /root/secrets
 docker exec bower-rocky dnf remove -y bower-collector >/dev/null
 docker exec bower-rocky bash /root/assert-linux.sh removed
+
+if [ -n "$upgrade" ]; then
+  echo "== Rocky Linux 9: upgrade, refused downgrade and explicit rollback (rpm)"
+  docker cp "$here/upgrade-linux.sh" bower-rocky:/root/upgrade-linux.sh
+  docker cp "$(ls "$upgrade"/bower-collector-*.x86_64.rpm)" bower-rocky:/root/older.rpm
+  docker cp "$(ls "$packages"/bower-collector-*.x86_64.rpm)" bower-rocky:/root/newer.rpm
+  docker exec bower-rocky bash /root/upgrade-linux.sh /root/older.rpm /root/newer.rpm "$expected_version"
+  docker exec bower-rocky dnf remove -y bower-collector >/dev/null
+fi
 
 echo "Linux installer tests passed: Ubuntu deb (offline bundle and Ansible) and Rocky Linux 9 rpm."

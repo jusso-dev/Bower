@@ -315,6 +315,7 @@ public sealed class HeartbeatV2CollectorTests
         Assert.Equal(3, bodies.Count);
         JsonObject first = JsonNode.Parse(bodies[0])!.AsObject();
         Assert.Equal(2, first["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(Bower.Contracts.BowerVersion.Current, first["version"]!.GetValue<string>());
         Assert.Equal(60, first["heartbeatIntervalSeconds"]!.GetValue<int>());
         Assert.Equal(["run-canary", "reload"], first["commandCapabilities"]!.AsArray().Select(item => item!.GetValue<string>()));
         Assert.Empty(first["commandResults"]!.AsArray());

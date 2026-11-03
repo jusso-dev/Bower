@@ -19,14 +19,22 @@ fn help_matches_csharp_text_for_all_entry_forms() {
                 .starts_with("Bower security telemetry\n\nCommands:\n  bower validate"),
             "{args:?}"
         );
-        assert!(run.stdout.ends_with("  bower version\n"));
+        assert!(run.stdout.ends_with("  bower version | bower --version\n"));
     }
 }
 
 #[test]
-fn version_prints_csharp_version() {
-    let run = bower(&["version"]);
-    assert_eq!((run.code, run.stdout.as_str()), (0, "bower 0.1.0\n"));
+fn version_prints_the_stamped_release_version() {
+    let expected = format!("bower {}\n", bower_contracts::version::CURRENT);
+    for args in [&["version"][..], &["--version"][..]] {
+        let run = bower(args);
+        assert_eq!(
+            (run.code, run.stdout.as_str()),
+            (0, expected.as_str()),
+            "{args:?}"
+        );
+    }
+    assert!(expected.starts_with(&format!("bower {}", env!("CARGO_PKG_VERSION"))));
 }
 
 #[test]

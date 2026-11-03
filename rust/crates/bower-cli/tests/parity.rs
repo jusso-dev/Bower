@@ -36,7 +36,7 @@ fn csharp() -> Option<PathBuf> {
         .output()
         .ok()?
         .into();
-    if run.stdout == "bower 0.1.0\n" {
+    if run.code == 0 && run.stdout.starts_with("bower ") {
         Some(binary)
     } else {
         eprintln!(
