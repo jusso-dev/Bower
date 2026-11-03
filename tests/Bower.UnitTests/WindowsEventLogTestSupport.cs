@@ -175,6 +175,35 @@ internal sealed class CrashingCursorStore(ISourceCursorStore inner) : ISourceCur
     }
 }
 
+/// <summary>Cursor store whose database reports SQLITE_BUSY for the next reads and commits.</summary>
+internal sealed class BusyCursorStore(ISourceCursorStore inner) : ISourceCursorStore
+{
+    public int BusyReads;
+
+    public int BusyCommits;
+
+    public Task<SourceCursorSnapshot?> ReadAsync(string sourceId, CancellationToken cancellationToken = default) =>
+        Take(ref BusyReads) ? throw new SqliteException("database is locked", 5) : inner.ReadAsync(sourceId, cancellationToken);
+
+    public Task<bool> TryAdvanceAsync(string sourceId, long expectedVersion, string value, DateTimeOffset updatedAt,
+        CancellationToken cancellationToken = default) =>
+        Take(ref BusyCommits)
+            ? throw new SqliteException("database is locked", 5)
+            : inner.TryAdvanceAsync(sourceId, expectedVersion, value, updatedAt, cancellationToken);
+
+    // One subscription loop calls these, one at a time.
+    private static bool Take(ref int remaining)
+    {
+        if (remaining <= 0)
+        {
+            return false;
+        }
+
+        remaining--;
+        return true;
+    }
+}
+
 /// <summary>
 /// Temporary directory holding a SQLite database. Pooled connections keep the file open,
 /// which on Windows blocks deleting it, so the pools are cleared first.

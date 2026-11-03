@@ -27,7 +27,11 @@ pub const MANAGEMENT_HEARTBEAT_JOB_ID: &str = "management-heartbeat";
 pub const MANAGED_PRIVACY_PROFILE_JOB_ID: &str = "managed-privacy-profile";
 pub const SOURCE_ACTIVITY_JOB_ID: &str = "source-activity";
 pub const QUEUE_ARCHIVE_JOB_ID: &str = "queue-archive";
-const RETENTION_BATCH_SIZE: usize = 5_000;
+/// Rows per purge transaction (C# `QueueRetentionJob.BatchSize`): each batch is a short
+/// write transaction, so sources and delivery never wait near the busy timeout.
+const RETENTION_BATCH_SIZE: usize = 1_000;
+/// Pause between purge batches (C# `QueueRetentionJob.BatchPause`).
+const RETENTION_BATCH_PAUSE: std::time::Duration = std::time::Duration::from_millis(100);
 
 /// UTC schedules used by the collector (Hangfire `Cron.*` helpers).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -366,6 +370,8 @@ pub async fn run_queue_retention(
             if purged != RETENTION_BATCH_SIZE {
                 return Ok::<Option<usize>, &'static str>(Some(total));
             }
+            // Blocking thread: yield the write lock to waiting writers in real time.
+            std::thread::sleep(RETENTION_BATCH_PAUSE);
         }
     })
     .await

@@ -160,22 +160,27 @@ ORDER BY e.received_at ASC, e.event_id ASC;",
 }
 
 /// Must run inside the purge transaction so retention is distinguishable from tampering.
+/// Returns the highest ledger sequence marked, or 0 when none was (C# `MarkPurgedAsync`).
 pub(crate) fn mark_purged(
     connection: &Connection,
     event_ids: &[String],
     purged_at: &str,
-) -> StoreResult<()> {
+) -> StoreResult<i64> {
     let mut update = connection
         .prepare(
-            "UPDATE queue_ledger SET purged_at = ?1 WHERE event_id = ?2 AND purged_at IS NULL;",
+            "UPDATE queue_ledger SET purged_at = ?1 WHERE event_id = ?2 AND purged_at IS NULL RETURNING sequence;",
         )
         .map_err(storage)?;
+    let mut through = 0;
     for event_id in event_ids {
-        update
-            .execute(params![purged_at, event_id])
+        let mut rows = update
+            .query(params![purged_at, event_id])
             .map_err(storage)?;
+        while let Some(row) = rows.next().map_err(storage)? {
+            through = through.max(row.get::<_, i64>(0).map_err(storage)?);
+        }
     }
-    Ok(())
+    Ok(through)
 }
 
 fn checkpoint_hash(start: i64, end: i64, previous: &str, hash: &str) -> String {
@@ -184,17 +189,35 @@ fn checkpoint_hash(start: i64, end: i64, previous: &str, hash: &str) -> String {
     ))
 }
 
-/// Compact purged runs even behind unresolved events, preserving the chain head.
-pub(crate) fn compact(transaction: &Connection, _now: &str) -> StoreResult<usize> {
+/// Compact purged runs up to and including `through` (or the last compacted segment, if
+/// later; with nothing just purged, also the last purged entry left by an interrupted or
+/// older purge), even behind unresolved events, verifying the chain over that range and
+/// preserving the chain head. Bounded by the purge, not the ledger (C# `CompactAsync`):
+/// entries after it wait for a later purge, which merges a run split there.
+pub(crate) fn compact(transaction: &Connection, _now: &str, through: i64) -> StoreResult<usize> {
+    let last: i64 = transaction
+        .query_row(
+            if through > 0 {
+                "SELECT COALESCE(MAX(end_sequence), 0) FROM queue_ledger_segments;"
+            } else {
+                "SELECT COALESCE(MAX(value), 0) FROM (
+    SELECT MAX(end_sequence) AS value FROM queue_ledger_segments
+    UNION ALL SELECT MAX(sequence) FROM queue_ledger WHERE purged_at IS NOT NULL);"
+            },
+            [],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    let through = through.max(last);
     let (anchor, mut previous) = anchor(transaction)?;
     let mut expected = anchor + 1;
     let mut runs: Vec<(i64, i64, String, String)> = Vec::new();
     let mut run: Option<(i64, i64, String, String)> = None;
     {
-        let mut select = transaction.prepare("SELECT sequence, sequence, chain_hash, purged_at IS NOT NULL, event_id, payload_sha256, received_at, NULL, NULL FROM queue_ledger
-UNION ALL SELECT start_sequence, end_sequence, chain_hash, 1, '', '', '', previous_hash, checkpoint_hash FROM queue_ledger_segments ORDER BY 1;").map_err(storage)?;
+        let mut select = transaction.prepare("SELECT sequence, sequence, chain_hash, purged_at IS NOT NULL, event_id, payload_sha256, received_at, NULL, NULL FROM queue_ledger WHERE sequence <= ?1
+UNION ALL SELECT start_sequence, end_sequence, chain_hash, 1, '', '', '', previous_hash, checkpoint_hash FROM queue_ledger_segments WHERE start_sequence <= ?1 ORDER BY 1;").map_err(storage)?;
         let rows = select
-            .query_map([], |row| {
+            .query_map([through], |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
                     row.get::<_, i64>(1)?,

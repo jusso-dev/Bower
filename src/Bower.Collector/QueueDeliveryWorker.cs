@@ -1,4 +1,5 @@
 using Bower.Abstractions;
+using Bower.Persistence;
 
 namespace Bower.Collector;
 
@@ -64,6 +65,15 @@ public sealed record QueueDeliveryOptions
 
     public TimeSpan ErrorDelay { get; init; } = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// Wait after the queue database was busy (another writer held it past the busy timeout,
+    /// for example a retention batch). A back-off, not a loop failure.
+    /// </summary>
+    public TimeSpan BusyDelay { get; init; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>Settlement attempts while the queue database is busy, so an acknowledged batch is not redelivered after its lease expires.</summary>
+    public int SettlementAttempts { get; init; } = 5;
+
     /// <summary>Retryable failures dead-letter once an event has been leased this many times.</summary>
     public int MaximumDeliveryAttempts { get; init; } = 20;
 
@@ -106,12 +116,14 @@ public sealed partial class QueueDeliveryWorker(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         long consecutiveFailures = 0;
+        long consecutiveBusy = 0;
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 int leased = await DeliverOnceAsync(stoppingToken);
                 consecutiveFailures = 0;
+                consecutiveBusy = 0;
                 if (leased == 0)
                 {
                     await Task.Delay(deliveryOptions.IdleDelay, clock, stoppingToken);
@@ -120,6 +132,19 @@ public sealed partial class QueueDeliveryWorker(
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 break;
+            }
+            catch (Exception exception) when (QueueStorageErrors.IsBusy(exception))
+            {
+                // Busy is contention, not a failure: nothing was written, leased events stay
+                // leased, and the next attempt follows a short back-off. Logged at most once
+                // per LoopFailureLogInterval busy attempts.
+                consecutiveBusy++;
+                if (consecutiveBusy == 1 || consecutiveBusy % LoopFailureLogInterval == 0)
+                {
+                    LogQueueBusy(logger, consecutiveBusy);
+                }
+
+                await Task.Delay(deliveryOptions.BusyDelay, clock, stoppingToken);
             }
             catch (Exception exception)
             {
@@ -202,10 +227,9 @@ public sealed partial class QueueDeliveryWorker(
         if (delivered.Count > 0)
         {
             // One queue transaction for every acknowledged event in the batch.
-            IReadOnlyList<string> reclaimed = await queue.MarkDeliveredBatchAsync(
-                delivered,
-                acknowledgement,
-                events.ToDictionary(item => item.EventId, item => item.LeaseToken!, StringComparer.Ordinal),
+            Dictionary<string, string> tokens = events.ToDictionary(item => item.EventId, item => item.LeaseToken!, StringComparer.Ordinal);
+            IReadOnlyList<string> reclaimed = await SettleAsync(
+                token => queue.MarkDeliveredBatchAsync(delivered, acknowledgement, tokens, token),
                 cancellationToken);
             for (int index = 0; index < reclaimed.Count; index++)
             {
@@ -258,7 +282,9 @@ public sealed partial class QueueDeliveryWorker(
         {
             // One queue transaction for every retrying and dead-lettered event in the batch.
             // On error nothing is settled and the events are redelivered after lease expiry.
-            IReadOnlyList<string> reclaimed = await queue.MarkFailedBatchAsync(failed, cancellationToken);
+            IReadOnlyList<string> reclaimed = await SettleAsync(
+                token => queue.MarkFailedBatchAsync(failed, token),
+                cancellationToken);
             for (int index = 0; index < reclaimed.Count; index++)
             {
                 // The lease expired and the event was reclaimed; the newer lease owns it now.
@@ -267,6 +293,27 @@ public sealed partial class QueueDeliveryWorker(
         }
 
         return events.Count;
+    }
+
+    /// <summary>
+    /// One settlement transaction, retried while the queue database is busy. Settlement is
+    /// guarded by lease tokens, so a retry after a busy refusal (nothing written) is exact.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> SettleAsync(
+        Func<CancellationToken, Task<IReadOnlyList<string>>> settle,
+        CancellationToken cancellationToken)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await settle(cancellationToken);
+            }
+            catch (Exception exception) when (QueueStorageErrors.IsBusy(exception) && attempt < deliveryOptions.SettlementAttempts)
+            {
+                await Task.Delay(deliveryOptions.BusyDelay, clock, cancellationToken);
+            }
+        }
     }
 
     private static bool IsCredentialFailure(string code) => code is
@@ -392,6 +439,12 @@ public sealed partial class QueueDeliveryWorker(
         Level = LogLevel.Warning,
         Message = "Output adapter {OutputId} exhausted {Attempts} delivery attempts; event dead-lettered.")]
     private static partial void LogAttemptsExhausted(ILogger logger, string outputId, int attempts);
+
+    [LoggerMessage(
+        EventId = 1009,
+        Level = LogLevel.Information,
+        Message = "Queue database busy ({ConsecutiveAttempts} consecutive); delivery retries after a short back-off.")]
+    private static partial void LogQueueBusy(ILogger logger, long consecutiveAttempts);
 
     [LoggerMessage(
         EventId = 1005,

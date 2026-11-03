@@ -14,6 +14,10 @@ target Windows: `bower-collector` refuses `BOWER_WINDOWS_EVENTLOG_CONFIG` at sta
 (fail closed). Port it only together with a Windows build and CI job.
 Periodic `collector_health` records (`CollectorHealthWorker`) are also C#-only for now:
 `bower-collector` refuses `BOWER_HEALTH_RECORD_INTERVAL_SECONDS` other than `0` (fail closed).
+Known gaps from wecfix: the queue's group commit (`QueueEnqueueBatch`) exists only for the
+C# Windows source; the C# delivery loop and pack-record intake treat SQLite busy/locked as
+a quiet back-off (log 1009, intake `Unavailable`), while `bower-collector` still reports it
+as a loop failure. Retention batching and bounded ledger compaction are ported.
 
 ## Parity rules
 

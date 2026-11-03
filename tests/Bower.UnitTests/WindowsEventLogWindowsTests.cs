@@ -124,6 +124,82 @@ public sealed class WindowsEventLogWindowsTests
         }
     }
 
+    [Fact]
+    public void RealEventLog_PollCostDoesNotGrowWithChannelSize()
+    {
+        if (OperatingSystem.IsWindows() && IsAdministrator())
+        {
+            PollCostAtTwoSizes();
+            return;
+        }
+
+        Assert.False(
+            Environment.GetEnvironmentVariable("BOWER_REQUIRE_WINDOWS_EVENTLOG_TESTS") == "1",
+            "The Windows Event Log tests must run (Windows, administrator) in this job.");
+        Assert.Skip("Needs Windows and administrator rights to create a test event source.");
+    }
+
+    /// <summary>
+    /// One idle poll (boundary range, then the allow-listed query resumed from a bookmark at
+    /// the newest record) at 200 and at 20,200 records. The wecfix profile measured 0.8-0.9 ms
+    /// per poll from 10,000 to 1,040,000 ForwardedEvents records; the bound here is generous
+    /// so a slow runner cannot fail it, while a per-poll scan of the channel would.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    private static void PollCostAtTwoSizes()
+    {
+        const string scaleLog = "BowerCiScale";
+        const string scaleSource = "BowerCiScaleSource";
+        if (!EventLog.SourceExists(scaleSource))
+        {
+            EventLog.CreateEventSource(new EventSourceCreationData(scaleSource, scaleLog));
+        }
+
+        using EventLog log = new(scaleLog) { Source = scaleSource };
+        try
+        {
+            log.Clear();
+            log.MaximumKilobytes = 256 * 1024;
+            Write(log, 200);
+            double small = MedianPollMilliseconds(scaleLog, scaleSource);
+            Write(log, 20_000);
+            double large = MedianPollMilliseconds(scaleLog, scaleSource);
+            Assert.True(large <= small * 5 + 5, $"median poll {small:F3} ms at 200 records, {large:F3} ms at 20,200");
+        }
+        finally
+        {
+            EventLog.DeleteEventSource(scaleSource);
+            EventLog.Delete(scaleLog);
+        }
+
+        static void Write(EventLog log, int count)
+        {
+            for (int index = 0; index < count; index++)
+            {
+                // Mostly not allow-listed, as on a WEC: the service filters them out.
+                log.WriteEntry("scale", EventLogEntryType.Information, index % 10 == 0 ? 1000 : 1001);
+            }
+        }
+
+        static double MedianPollMilliseconds(string channel, string provider)
+        {
+            using IWindowsEventChannel reader = new WindowsEventLogChannelFactory().Open(channel);
+            long newest = reader.GetRange().NewestRecordId;
+            WindowsEventQuery query = new(channel, [1000], [provider], newest);
+            double[] samples = new double[41];
+            for (int index = 0; index < samples.Length; index++)
+            {
+                long started = Stopwatch.GetTimestamp();
+                Assert.Equal(newest, reader.GetRange().NewestRecordId);
+                Assert.Empty(reader.Read(query, 256, includeMessage: false, CancellationToken.None));
+                samples[index] = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            }
+
+            Array.Sort(samples);
+            return samples[samples.Length / 2];
+        }
+    }
+
     private static async Task PollUntil(WindowsEventLogSource source, RecordingWindowsEventSink sink, int records, CancellationToken cancellation)
     {
         using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);

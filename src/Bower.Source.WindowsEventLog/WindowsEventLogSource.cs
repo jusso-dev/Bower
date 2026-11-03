@@ -34,6 +34,29 @@ public interface IWindowsEventSink
         CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// Optional group commit: the events of one read become durable together, instead of one
+/// durable commit per event (which bounds a WEC to the disk's flush latency). Nothing a batch
+/// queued is durable before <see cref="IWindowsEventBatch.CommitAsync"/>, so the bookmark only
+/// moves after it.
+/// </summary>
+public interface IWindowsEventBatchSink
+{
+    ValueTask<IWindowsEventBatch> BeginBatchAsync(CancellationToken cancellationToken);
+}
+
+/// <summary>One read's submissions; disposing without committing rolls them back.</summary>
+public interface IWindowsEventBatch : IAsyncDisposable
+{
+    /// <summary>
+    /// Routes the calling flow's submissions into this batch. Call it directly from the reading
+    /// method (it sets async-local state that flows only to calls made after it).
+    /// </summary>
+    void Join();
+
+    Task CommitAsync(CancellationToken cancellationToken);
+}
+
 /// <summary>One event as the Windows event log service returned it for a subscription query.</summary>
 /// <param name="Message">Publisher message string, when requested and the publisher could render it.</param>
 public sealed record WindowsRawEvent(long RecordId, string Xml, string? Message);
@@ -114,7 +137,9 @@ public sealed record WindowsEventPollResult(int Read, bool Backpressure, bool Mo
 /// optional providers, records after the bookmark), so the event log service returns
 /// only allow-listed events. Events are handled one at a time: the bookmark moves past an
 /// event only once it is durably enqueued or definitively dropped, and is committed to the
-/// queue database after each batch. A crash between enqueue and commit re-reads those
+/// queue database after each batch. A sink that supports <see cref="IWindowsEventBatchSink"/>
+/// makes one read's events durable in one commit (group commit); the bookmark then moves only
+/// after that commit, and a failure before it rolls the whole read back to be read again. A crash between enqueue and commit re-reads those
 /// events; their deterministic event ids make the queue drop them as duplicates, so a
 /// restart neither loses nor duplicates events. A full queue stops reading (the events
 /// stay in the channel) instead of buffering or dropping.
@@ -158,6 +183,13 @@ public sealed class WindowsEventLogSource : IAsyncDisposable
 
     /// <summary>Longest wait between attempts after repeated channel or storage failures.</summary>
     public TimeSpan MaximumBackoff { get; init; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// Recognises contention on the bookmark and queue store (the collector supplies SQLite
+    /// busy/locked). Such a poll is retried after <see cref="RetryDelay"/> as backpressure,
+    /// not reported as a source failure; the bookmark is unchanged, so nothing is skipped.
+    /// </summary>
+    public Func<Exception, bool> IsTransientStorageFailure { get; init; } = static _ => false;
 
     /// <summary>Starts one reader loop per subscription. Failures are retried with backoff and reported in <see cref="Snapshot"/>.</summary>
     public Task StartAsync(CancellationToken cancellationToken)
@@ -254,6 +286,13 @@ public sealed class WindowsEventLogSource : IAsyncDisposable
             {
                 break;
             }
+            catch (Exception exception) when (IsTransientStorageFailure(exception))
+            {
+                subscription.State = "backpressure";
+                Interlocked.Increment(ref subscription.Counters.Retries);
+                failures = 0;
+                wait = RetryDelay;
+            }
             catch (Exception exception)
             {
                 // Channel missing, access denied, storage or sink failure: keep the bookmark,
@@ -340,8 +379,12 @@ public sealed class WindowsEventLogSource : IAsyncDisposable
         }
 
         long start = bookmark?.RecordId ?? position;
+        // Durable position: every event up to it is in the queue or definitively dropped. With a
+        // batch, events become durable only when the batch commits, so it lags the read position.
+        long durable = position;
         IReadOnlyList<WindowsRawEvent> events = [];
         bool backpressure = false;
+        IWindowsEventBatch? batch = null;
         try
         {
             events = subscription.Channel.Read(
@@ -349,6 +392,13 @@ public sealed class WindowsEventLogSource : IAsyncDisposable
                 options.BatchSize,
                 options.IncludeMessage,
                 cancellationToken);
+            if (sink is IWindowsEventBatchSink batching && events.Any(raw => raw.RecordId > position))
+            {
+                // Opened only when there is something to write: an idle poll takes no write lock.
+                batch = await batching.BeginBatchAsync(cancellationToken);
+                batch.Join();
+            }
+
             foreach (WindowsRawEvent raw in events)
             {
                 if (raw.RecordId <= position)
@@ -363,6 +413,16 @@ public sealed class WindowsEventLogSource : IAsyncDisposable
                 }
 
                 position = raw.RecordId;
+                if (batch is null)
+                {
+                    durable = position;
+                }
+            }
+
+            if (batch is not null)
+            {
+                await batch.CommitAsync(cancellationToken);
+                durable = position;
             }
 
             if (!backpressure && events.Count < options.BatchSize && range.NewestRecordId > position)
@@ -371,15 +431,22 @@ public sealed class WindowsEventLogSource : IAsyncDisposable
                 // the channel had before it ran, so nothing at or below it is left to read.
                 // Keeping the bookmark near the head makes gap and reset detection exact.
                 position = range.NewestRecordId;
+                durable = position;
             }
         }
         finally
         {
-            if (position != start || bookmark?.SchemaVersion == 1)
+            if (batch is not null)
             {
-                // Committed even when stopping or failing mid-batch (and after a reset or gap
-                // even if the read failed), so handled events are not re-read.
-                await CommitAsync(subscription, version, position);
+                // Rolls back whatever the batch did not commit; those events are read again.
+                await batch.DisposeAsync();
+            }
+
+            if (durable != start || bookmark?.SchemaVersion == 1)
+            {
+                // Committed even when stopping or failing mid-read (and after a reset or gap
+                // even if the read failed), so durable events are not re-read.
+                await CommitAsync(subscription, version, durable);
             }
         }
 

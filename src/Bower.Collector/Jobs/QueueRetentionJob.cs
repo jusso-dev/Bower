@@ -28,7 +28,16 @@ public sealed partial class QueueRetentionJob(
 {
     public const string Id = "queue-retention";
     public const int RetryAttempts = 3;
-    private const int BatchSize = 5_000;
+
+    /// <summary>
+    /// Rows per purge transaction. Each batch is its own short write transaction (the ledger
+    /// compaction in it is bounded by the batch), so sources and delivery never wait near
+    /// the 5-second busy timeout behind retention.
+    /// </summary>
+    public const int BatchSize = 1_000;
+
+    /// <summary>Pause between purge batches, so waiting writers take the write lock in between.</summary>
+    public static readonly TimeSpan BatchPause = TimeSpan.FromMilliseconds(100);
 
     // Smaller batches under page pressure, so purging stops close to the target.
     private const int PressureBatchSize = 500;
@@ -237,6 +246,11 @@ public sealed partial class QueueRetentionJob(
             }
 
             total += purged;
+            if (purged == batchSize)
+            {
+                // Wall-clock, not the injected clock: this yields the write lock in real time.
+                await Task.Delay(BatchPause, cancellationToken);
+            }
         }
         while (purged == batchSize && !cancellationToken.IsCancellationRequested);
 

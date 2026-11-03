@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Bower.Persistence;
 using Bower.Source.WindowsEventLog;
+using Microsoft.Data.Sqlite;
 
 namespace Bower.UnitTests;
 
@@ -641,6 +642,47 @@ public sealed class WindowsEventLogSourceTests
         WindowsEventSubscriptionStatus recovered = await WaitFor(source, status => status.Queued == 1 && status.State == "running", cancellation);
         Assert.NotNull(recovered.LastEventAt);
         Assert.NotNull(recovered.LastPollAt);
+    }
+
+    [Fact]
+    public async Task BusyQueueDatabase_IsBackpressureNotASourceFailure()
+    {
+        // The soak's hourly retention held the queue database past the busy timeout and the
+        // source reported winevt-source-failed. Busy is contention: retry after RetryDelay,
+        // keep the bookmark, and never count it as a read or submit failure.
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using SqliteTemporaryDirectory directory = new();
+        BusyCursorStore cursors = new(await Cursors(directory)) { BusyReads = 3, BusyCommits = 2 };
+        FakeWindowsEventChannelFactory channels = new();
+        channels["Application"].Add(WindowsEventFixtures.Event(1, 1000));
+        channels["Application"].Add(WindowsEventFixtures.Event(2, 1000));
+        RecordingWindowsEventSink sink = new();
+        await using WindowsEventLogSource source = new(Configuration(readExisting: true, pollIntervalSeconds: 1), sink, cursors, channels)
+        {
+            RetryDelay = TimeSpan.FromMilliseconds(20),
+            IsTransientStorageFailure = QueueStorageErrors.IsBusy
+        };
+
+        await source.StartAsync(cancellation);
+        WindowsEventSubscriptionStatus done = await WaitFor(source, status => status.BookmarkRecordId == 2 && status.State == "running", cancellation);
+        Assert.Equal((0L, 0L, 0L), (done.ReadErrors, done.SubmitFailures, done.CursorConflicts));
+        Assert.True(done.Retries >= 5);
+        // A commit refused as busy re-reads its events; the queue's deduplication keeps one copy.
+        Assert.Equal(2, sink.Queued.Count);
+        Assert.Equal(0, cursors.BusyReads + cursors.BusyCommits);
+    }
+
+    [Fact]
+    public void QueueStorageErrors_RecogniseOnlyBusyAndLocked()
+    {
+        Assert.True(QueueStorageErrors.IsBusy(new SqliteException("database is locked", 5)));
+        Assert.True(QueueStorageErrors.IsBusy(new SqliteException("database table is locked", 6)));
+        Assert.True(QueueStorageErrors.IsBusy(new WindowsEventChannelException(
+            WindowsEventChannelFailures.SubmitFailed, new SqliteException("database is locked", 5))));
+        Assert.False(QueueStorageErrors.IsBusy(new SqliteException("constraint", 19)));
+        Assert.False(QueueStorageErrors.IsBusy(new SqliteException("disk full", 13)));
+        Assert.False(QueueStorageErrors.IsBusy(new IOException("busy")));
+        Assert.False(QueueStorageErrors.IsBusy(null));
     }
 
     [Fact]

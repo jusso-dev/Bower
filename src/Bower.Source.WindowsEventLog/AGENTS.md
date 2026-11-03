@@ -16,7 +16,9 @@ C#-only: the Rust collector refuses `BOWER_WINDOWS_EVENTLOG_CONFIG` (see `rust/A
   not a configurable intake query; content intake still uses the generated allow-list.
 - Bookmarks live in the queue database's `source_cursors` table. Move the bookmark past
   an event only once it is durably enqueued or definitively dropped; a full queue stops
-  reading. Event ids derive from channel, computer, record id and creation time so a
+  reading. With a batching sink (`IWindowsEventBatchSink`, group commit) "durable" means
+  the read's batch committed: never commit a bookmark past events of an uncommitted batch.
+  Open a batch only when a read returned new events. Event ids derive from channel, computer, record id and creation time so a
   re-read deduplicates; change them only with a migration note.
 - Bound everything: 64 KiB event XML, no DTD or resolver, 64 record fields, 2048-character
   values, batch size and poll interval.

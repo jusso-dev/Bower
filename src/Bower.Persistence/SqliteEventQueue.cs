@@ -243,6 +243,11 @@ public sealed partial class SqliteEventStore : IDurableEventStore
 
     public async Task<EnqueueResult> EnqueueAsync(QueuedEvent candidate, CancellationToken cancellationToken = default)
     {
+        if (QueueEnqueueBatch.Current(this) is { } batch)
+        {
+            return await batch.EnqueueAsync(candidate, cancellationToken);
+        }
+
         try
         {
             return await EnqueueCoreAsync(candidate, cancellationToken);
@@ -282,6 +287,46 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         // concurrent enqueues cannot both pass them and insert or overshoot the limit.
         await using SqliteTransaction transaction =
             await BeginWriteAsync(connection, false, cancellationToken);
+        EnqueueResult result = await EnqueueInTransactionAsync(connection, transaction, candidate, cancellationToken);
+        if (result.Enqueued || result.Suppressed)
+        {
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Opens a group commit for one source read: every <see cref="EnqueueAsync"/> from the
+    /// flow that calls <see cref="QueueEnqueueBatch.Join"/> runs in this one write transaction
+    /// (a savepoint each) and becomes durable together at <see cref="QueueEnqueueBatch.CommitAsync"/>;
+    /// disposing without committing rolls all of it back. Holds the write lock until then, so
+    /// callers keep batches short (one read of a bounded batch).
+    /// </summary>
+    public async Task<QueueEnqueueBatch> BeginEnqueueBatchAsync(CancellationToken cancellationToken = default)
+    {
+        SqliteConnection connection = await OpenAsync(cancellationToken);
+        try
+        {
+            SqliteTransaction transaction = await BeginWriteAsync(connection, false, cancellationToken);
+            return new QueueEnqueueBatch(this, connection, transaction);
+        }
+        catch
+        {
+            await connection.DisposeAsync();
+            throw;
+        }
+    }
+
+    /// <summary>Duplicate, suppression and capacity checks, insert and ledger append; the caller commits.</summary>
+    internal async Task<EnqueueResult> EnqueueInTransactionAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        QueuedEvent candidate,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        ValidateCandidate(candidate);
 
         // Idempotency wins over backpressure: a re-sent event is a duplicate even when the
         // queue is full.
@@ -300,15 +345,23 @@ public sealed partial class SqliteEventStore : IDurableEventStore
             storage?.ThrowIfCritical();
             if (!await AdmitAsync(connection, transaction, suppression, candidate.ReceivedAt, cancellationToken))
             {
-                await transaction.CommitAsync(cancellationToken);
                 return new EnqueueResult(false, false, candidate.EventId, Suppressed: true);
             }
         }
 
         await InsertAsync(connection, transaction, candidate, cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
         return new EnqueueResult(true, false, candidate.EventId);
     }
+
+    /// <summary>SQLITE_FULL, or an I/O error with the volume critically low, as the capacity refusal sources retry.</summary>
+    internal QueueCapacityExceededException? AsCapacityRefusal(SqliteException exception) => exception.SqliteErrorCode switch
+    {
+        SqliteFull => new QueueCapacityExceededException(
+            MaximumStorageBytes, MaximumStorageBytes, 0, VolumeCritical() ? QueueCapacityReasons.StorageFull : QueueCapacityReasons.Queue),
+        SqliteIoError when VolumeCritical() => new QueueCapacityExceededException(
+            MaximumStorageBytes, MaximumStorageBytes, 0, QueueCapacityReasons.StorageFull),
+        _ => null
+    };
 
     /// <summary>
     /// Capacity check, insert and ledger append for a candidate already proven new under
@@ -929,7 +982,7 @@ public sealed partial class SqliteEventStore : IDurableEventStore
 
         // Record the purge in the ledger in the same transaction so verification can tell
         // retention from tampering.
-        await QueueLedger.MarkPurgedAsync(
+        long through = await QueueLedger.MarkPurgedAsync(
             connection,
             transaction,
             eventIds,
@@ -939,6 +992,7 @@ public sealed partial class SqliteEventStore : IDurableEventStore
             connection,
             transaction,
             clock.GetUtcNow().ToString(TimestampFormat, CultureInfo.InvariantCulture),
+            through,
             cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return eventIds.Count;

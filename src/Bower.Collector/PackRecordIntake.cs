@@ -103,6 +103,12 @@ internal sealed class PackRecordIntake(
         {
             return PackRecordOutcome.Unavailable;
         }
+        catch (Exception exception) when (QueueStorageErrors.IsBusy(exception))
+        {
+            // Queue database busy (for example a retention batch): nothing was enqueued, so
+            // the source retries the same record, exactly as for a full queue.
+            return PackRecordOutcome.Unavailable;
+        }
 
         if (result.RedactionRetryRequired)
         {

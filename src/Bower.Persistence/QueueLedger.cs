@@ -164,7 +164,8 @@ internal static class QueueLedger
 
     }
 
-    internal static async Task MarkPurgedAsync(
+    /// <returns>The highest ledger sequence marked, or 0 when none was.</returns>
+    internal static async Task<long> MarkPurgedAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
         IReadOnlyCollection<string> eventIds,
@@ -174,24 +175,52 @@ internal static class QueueLedger
         await using SqliteCommand command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText =
-            "UPDATE queue_ledger SET purged_at = $purged_at WHERE event_id = $event_id AND purged_at IS NULL;";
+            "UPDATE queue_ledger SET purged_at = $purged_at WHERE event_id = $event_id AND purged_at IS NULL RETURNING sequence;";
         command.Parameters.AddWithValue("$purged_at", purgedAt);
         SqliteParameter purgedEventId = command.Parameters.Add("$event_id", SqliteType.Text);
+        long through = 0;
         foreach (string eventId in eventIds)
         {
             purgedEventId.Value = eventId;
-            await command.ExecuteNonQueryAsync(cancellationToken);
+            if (await command.ExecuteScalarAsync(cancellationToken) is long sequence)
+            {
+                through = Math.Max(through, sequence);
+            }
         }
+
+        return through;
     }
 
     internal static string CheckpointHash(long start, long end, string previous, string hash) =>
         PayloadHash(string.Join('\u001f', "bower-ledger-segment-v1",
             start.ToString(CultureInfo.InvariantCulture), end.ToString(CultureInfo.InvariantCulture), previous, hash));
 
-    /// <summary>Coalesces purged runs, including runs behind unresolved events.</summary>
-    internal static async Task<int> CompactAsync(SqliteConnection connection, SqliteTransaction transaction, string now, CancellationToken cancellationToken)
+    /// <summary>
+    /// Coalesces purged runs up to and including <paramref name="through"/> (or the last
+    /// compacted segment, if later; with nothing just purged, also the last purged entry
+    /// left by an interrupted or older purge), including runs behind unresolved events, and
+    /// verifies the chain over that range so a corrupt ledger is never folded into a checkpoint.
+    /// Bounded by the purge, not the ledger: retention purges the oldest acknowledgements
+    /// first, so the scan from the anchor covers about one batch plus the segments and
+    /// unresolved rows before it. Entries after it are left for a later purge; a run split
+    /// there is merged when that purge scans it.
+    /// </summary>
+    internal static async Task<int> CompactAsync(SqliteConnection connection, SqliteTransaction transaction, string now, long through, CancellationToken cancellationToken)
     {
         _ = now;
+        await using (SqliteCommand last = connection.CreateCommand())
+        {
+            last.Transaction = transaction;
+            last.CommandText = through > 0
+                ? "SELECT COALESCE(MAX(end_sequence), 0) FROM queue_ledger_segments;"
+                : """
+                  SELECT COALESCE(MAX(value), 0) FROM (
+                      SELECT MAX(end_sequence) AS value FROM queue_ledger_segments
+                      UNION ALL SELECT MAX(sequence) FROM queue_ledger WHERE purged_at IS NOT NULL);
+                  """;
+            through = Math.Max(through, Convert.ToInt64(await last.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture));
+        }
+
         List<(long Start, long End, string Previous, string Hash)> runs = [];
         (long anchor, string previous) = await AnchorAsync(connection, transaction, cancellationToken);
         long expected = anchor + 1;
@@ -205,10 +234,13 @@ internal static class QueueLedger
             select.CommandText = """
                 SELECT sequence, sequence, chain_hash, purged_at IS NOT NULL,
                     event_id, payload_sha256, received_at, NULL, NULL FROM queue_ledger
+                WHERE sequence <= $through
                 UNION ALL SELECT start_sequence, end_sequence, chain_hash, 1,
                     '', '', '', previous_hash, checkpoint_hash FROM queue_ledger_segments
+                WHERE start_sequence <= $through
                 ORDER BY 1;
                 """;
+            select.Parameters.AddWithValue("$through", through);
             await using SqliteDataReader reader = await select.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
