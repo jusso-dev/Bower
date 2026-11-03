@@ -1,27 +1,29 @@
 # Replay-safe Sentinel queries and scheduled alerts
 
-**Status: qualified in a live Microsoft Sentinel workspace on 2 November 2026** for the
-content in [`deploy/sentinel/analytics`](../../deploy/sentinel/analytics/main.bicep) **as
-it was at commit `4dabe15`** ([evidence](../evidence/ws2b-20261102-003156/README.md)), not
-for the current content. The run covered
-ambiguous-acknowledgement replays, a collector kill, a replay 68 minutes after its
-original, originals delayed up to 67 minutes by an outage, a restored queue backup, a
-dead-letter replay, an archive replay and a missed-run catch-up. It measured zero missed
-events, zero duplicate alert keys and one incident per entity. The
+**Status: the current content is qualified as real scheduled rules in a live Microsoft
+Sentinel workspace (3 November 2026,
+[evidence](../evidence/sentinel-20261103-054834/README.md)).** The content in
+[`deploy/sentinel/analytics`](../../deploy/sentinel/analytics/main.bicep) has not changed
+since commit `d7ddc55`. It was deployed with the template defaults (5-minute rules,
+`PT450M` look-back, hourly monitor) and `enableRules=true`, beside about 640,000
+synthetic firewall-deny rows. With the rules running on their own schedule, the run
+measured the following. The firewall rule alerted once per crossing and kept one
+incident per address, and two sets of exact copies raised nothing. A crossing made while
+the rule was disabled alerted once on the catch-up path, with no second alert in later
+retry slots. The monitor reported each late event once over three hourly runs and did
+not report an on-time event whose late replay arrived in the same slot (the pre-fix
+query reports it). `SentinelHealth` recorded the rule runs, including failed ones. The
+earlier full campaign ([ws2b](../evidence/ws2b-20261102-003156/README.md), content at
+`4dabe15`) still covers the collector replay paths (ambiguous acknowledgements, a
+collector kill, a restored queue backup, dead-letter and archive replay). The
 [first run](../evidence/ws2-20261031-075516/README.md) failed on duplicate catch-up
-alerts, and that failure is retained. The changes since then were checked only in
-parts. A targeted validation ([ws2c](../evidence/ws2c-20261102-024502/README.md)) checked
-the type-filtered function, the catch-up deployment guard, the monitor's replay
-exclusion (queries with a substituted `now()`) and one live owned-window alert of the
-brute-force rule. A second one ([ws2d](../evidence/ws2d-20261102-065107/README.md)) ran
-the current rule queries with a substituted `now()` and rules disabled: pre-aggregation,
-fixed-grid windows, the type collapse and per-deployment key scopes. On the current
-content, the firewall rule, the catch-up path and the scheduled monitor have **not** run
-as scheduled rules. Rules ship **disabled**; enable them after the
-[validation](#9-validate-in-your-own-workspace) passes in your workspace. Restrict direct
-DCR ingestion to approved collectors: a direct writer chooses its own `CollectorId`, and
-the DCR role does not bind an identity to a collector id. Bower releases and packages
-are still **unsigned**; this guide does not change that.
+alerts, and that failure is retained. Rules ship **disabled**; enable them after the
+[validation](#9-validate-in-your-own-workspace) passes in your workspace, and only after
+the first Bower rows are queryable (a run before that fails, see
+[rule health](#the-alert-visibility-assumption)). Restrict direct DCR ingestion to
+approved collectors: a direct writer chooses its own `CollectorId`, and the DCR role does
+not bind an identity to a collector id. Bower releases and packages are still
+**unsigned**; this guide does not change that.
 
 Bower delivers to Microsoft Sentinel **at least once**. It never deletes an event
 from its durable queue before the Logs Ingestion API acknowledges it. When an
@@ -44,7 +46,7 @@ This guide ships and explains that content:
 | [`rules/firewall-deny.kql`](../../deploy/sentinel/analytics/rules/firewall-deny.kql) | Repeated firewall denials from one address (syslog over mutual TLS) |
 | [`rules/beyond-tolerance.kql`](../../deploy/sentinel/analytics/rules/beyond-tolerance.kql) | Informational monitor: events later than the rules evaluate |
 | [`main.bicep`](../../deploy/sentinel/analytics/main.bicep) | Deploys the function and the three scheduled rules (disabled by default) |
-| [`validation/`](../../deploy/sentinel/analytics/validation/fault_proxy.py) | The fault-injection proxy, event driver and verifier used for the test procedure |
+| [`validation/`](../../deploy/sentinel/analytics/validation/fault_proxy.py) | The fault-injection proxy, event driver, query-cost load generator, verifier and cleanup audit used for the test procedure |
 
 Nothing here changes `BowerSecurity_CL`, the DCR, the stream or `SentinelSchema.Default`.
 
@@ -324,7 +326,8 @@ BowerSecurityEvents
 
 An hourly slot (with the default `toleranceFrequencyMinutes`) that has late events but
 no `Bower: events arrived later than the replay-safe rules evaluate` alert with that
-`WindowStart` was missed; review its events by hand. This query is not live-tested.
+`WindowStart` was missed; review its events by hand. In the live run its counts per slot
+(6, 3 and 2) matched the monitor's three alerts exactly.
 
 #### The alert-visibility assumption
 
@@ -339,9 +342,11 @@ N + `alertVisibilityRuns` only if both hold:
   `alertVisibilityRuns × frequencyMinutes` (10 minutes by default); and
 - it is queryable by then (`ingestion_time()`).
 
-The live runs measured `TimeGenerated − EndTime` of 5 min 2 s to 5 min 44 s (the last in
-the review-fix check), and `ingestion_time() − EndTime` of up to about 7 min 20 s, against
-the 10-minute default budget. If Sentinel is slower, a retry can raise a second alert
+The live runs measured `TimeGenerated − EndTime` of 5 min 2 s to 5 min 44 s, and
+`ingestion_time() − EndTime` of up to 8 min 7 s (the 3 November run, which is the
+slowest so far; earlier runs up to about 7 min 20 s), against the 10-minute default
+budget. The margin is under two minutes, so measure your own workspace. If Sentinel is
+slower, a retry can raise a second alert
 for the same key; incident grouping by IP still joins it to the first incident. Measure
 your workspace and keep both values below `alertVisibilityRuns × frequencyMinutes`;
 otherwise raise `alertVisibilityRuns` (and `catchUpMinutes` with it):
@@ -354,20 +359,61 @@ SecurityAlert
 ```
 
 **Rule health.** A rule that fails or is auto-disabled raises nothing, so watch the runs
-themselves. With [Sentinel health monitoring](https://learn.microsoft.com/azure/sentinel/monitor-analytics-rule-integrity)
-enabled (`SentinelHealth` table), alert on any failed Bower run:
+themselves. Turn on [Sentinel health monitoring](https://learn.microsoft.com/azure/sentinel/enable-monitoring)
+(**Settings → Auditing and health monitoring → Enable**, or a diagnostic setting on
+`<workspace id>/providers/Microsoft.SecurityInsights/settings/SentinelHealth` with the
+**`allLogs`** category group, which the live run used). Then alert on any failed Bower run:
+
+```bash
+WSRID=$(az monitor log-analytics workspace show -g "$RG" -n "$WS" --query id -o tsv)
+az monitor diagnostic-settings create --name sentinel-health \
+  --resource "$WSRID/providers/Microsoft.SecurityInsights/settings/SentinelHealth" \
+  --workspace "$WSRID" --logs '[{"categoryGroup":"allLogs","enabled":true}]'
+```
 
 ```kusto
 SentinelHealth
 | where SentinelResourceType == "Analytics Rule" and SentinelResourceName startswith "Bower:"
 | where Status != "Success"
-| project TimeGenerated, SentinelResourceName, Status, Description, Reason = tostring(ExtendedProperties.Reason)
+// As a scheduled rule: only rows that became queryable in this run's 15-minute slot. The
+// closed slot (> ago(15m), <= now()) tiles consecutive runs, so each failed window alerts
+// once although the look-back is much longer than the frequency. now() is the run's
+// logical time; a row ingested after it but before the run executes falls in the next slot.
+| where ingestion_time() > ago(15m) and ingestion_time() <= now()
+| project TimeGenerated, SentinelResourceName, Status, Reason, Issue = tostring(ExtendedProperties.Issues[0].Code),
+    WindowEnd = todatetime(ExtendedProperties.QueryEndTimeUTC)
 ```
 
-Run it as a scheduled rule (every 15 minutes, look back 1 hour, alert when results > 0)
-or in the [monitoring workbook](06-monitoring-and-runbooks.md). No live run collected
-`SentinelHealth` rows (the diagnostic setting was created, no rows arrived within the
-runs), so this query is not live-tested.
+`Reason` is a column of its own; the issue code (for example `QueryGeneralError`,
+`ReferencedTableNotFound`) is in `ExtendedProperties.Issues`. One row reports a window
+whose retries all failed, and that window is skipped: the detection rules recover it
+through catch-up, the monitor does not.
+
+**Rule-health latency.** In the live run every `SentinelHealth` row had `TimeGenerated`
+exactly 90 minutes after its window end (`QueryEndTimeUTC`; all 74 rows, 5,400.1 to
+5,400.7 s). Rule-health detection therefore lags a failed run by **at least 90 minutes**.
+The 90 minutes are already inside `TimeGenerated`, so the look-back (which filters
+`TimeGenerated`) only has to reach a row from the run in which it becomes queryable:
+set it to frequency + (`ingestion_time()` − `TimeGenerated`) + margin. That ingestion
+gap was not measured; **2 hours** for a rule that runs every 15 minutes leaves wide
+headroom. Keep the closed `ingestion_time()` slot (or enable suppression for the
+frequency) so the longer look-back does not raise the same failure in every run. The slot
+assumes runs on their schedule: a skipped run leaves its slot unevaluated, so if you need
+every failure alerted even across skipped runs, prefer suppression with a wider slot. In the
+[monitoring workbook](06-monitoring-and-runbooks.md), drop the `ingestion_time()` line
+and pick a time range of a day or more. Measured live (see
+[How we tested this](#how-we-tested-this); the queries run are in the
+[evidence](../evidence/sentinel-20261103-054834/sentinel-health.kql)):
+
+- every run of the three rules whose window ended by 07:52 UTC wrote a row, with
+  `QueryResultAmount`, `AlertsGeneratedAmount` and `QueryPerformanceIndicators` (CPU and
+  data used); rows for later runs had not arrived when collection ended (09:22) and
+  were not collected;
+- a probe rule whose function was deleted wrote one `Failure` row per window
+  (`ReferencedTableNotFound`) and was still enabled an hour after its first failure;
+- each Bower rule's **first** run failed (`QueryGeneralError`) because it ran before the
+  first rows in the new table were queryable. Deploy or enable the rules only after
+  [the deployment check](#verify-the-deployment) returns `Events` of at least 1.
 
 **Detection latency.** A crossing that is not delayed alerts within
 `settle + 2 × frequency + 5 minutes (Sentinel delay)`, about 20 minutes by default:
@@ -387,6 +433,26 @@ event types and drops the large dynamic columns (`RawEnvelope`, `Attributes`, `T
 `Change`, `Labels`, `PrivacyDetected`) before collapsing. Every copy of an event shares
 its type and payload, so the identity, first copy and copy count are the same as
 `BowerSecurityEvents`.
+
+**Measured cost.** With about 640,000 Bower rows in the `PT450M` look-back (synthetic
+firewall denials, none reaching the threshold), each query ran once through the query API
+with statistics. Per load, from the [load summary](../evidence/sentinel-20261103-054834/load.json):
+the 600,000-row backfill and the 2,000-row probe used 8,192 addresses (slots 0–8,191), the
+first trickle (33,900 rows) 8,192 more (slots 8,192–16,383, taken from its command line
+because it died before writing a summary), and the second trickle (32,700 rows) slots
+16,384–24,575. The first measurement therefore saw 16,384 addresses and the second 24,576.
+
+| Query | Execution | CPU | Peak memory per node |
+| --- | --- | --- | --- |
+| Firewall deny (all rows are its type) | 2.4–2.5 s | 2.6–2.8 s | 2.1 GB |
+| Brute force (no rows of its type in the load) | 0.6 s | 0.8–0.9 s | 0.6–1.1 GB |
+| Monitor, hour slot holding 634,172 ingested rows | 2.5 s | 3.3 s | 0.7 GB |
+
+Every scheduled run with the load in its look-back whose window ended by 07:52 UTC
+succeeded (`SentinelHealth`; rows for later runs were not collected), and no throttling or
+resource-limit failure was reported. Cost grows with the rows in the look-back, so
+extrapolate from these numbers and measure in your workspace before raising volume by
+an order of magnitude; the firewall rule's peak memory is the figure to watch.
 
 **Tuning for an outage SLO.** Use the measured drain rate (the pilot drained a one-hour,
 45,090-event backlog in 55.8 seconds) and your longest tolerated destination outage:
@@ -417,7 +483,11 @@ receives `BowerSecurity_CL`.
   needs nothing new.
 - Azure CLI 2.60+ with Bicep (`az bicep version`), or PowerShell 7.4 with `Az.Resources`
   11+ and the Bicep CLI on `PATH`.
-- At least one Bower event already ingested, so the table is queryable.
+- At least one Bower event already ingested **and queryable** (the
+  [verify query](#verify-the-deployment) returns `Events` of at least 1). In the live run
+  the first rows in the new table became queryable at 05:57:56 (`FirstIngested`,
+  [table volume](../evidence/sentinel-20261103-054834/table-volume.json)). The rules, deployed at 05:52:24,
+  ran their first window before that and it failed (`QueryGeneralError`) and was skipped.
 
 Following [deploy/AGENTS.md](../../deploy/AGENTS.md), the rules are created **disabled**
 (`enableRules=false`). Enable them after the [validation](#9-validate-in-your-own-workspace) passes.
@@ -508,8 +578,11 @@ az rest --method get --url "https://management.azure.com$(az monitor log-analyti
   --query "value[?starts_with(properties.displayName,'Bower')].{name:properties.displayName,enabled:properties.enabled,every:properties.queryFrequency,lookBack:properties.queryPeriod}" -o table
 ```
 
-**Expected:** one row with `Rows >= Events`, and three Bower rules with the frequency
-and look-back you chose. **Pass:** the function returns rows and the rules exist.
+**Expected:** one row with `Events` of at least 1 and `Rows >= Events`, and three Bower
+rules with the frequency and look-back you chose. The query always returns one row (an
+empty table gives `Events=0`), so check `Events`, not the row count. **Pass:** `Events`
+is at least 1 and the rules exist. **Fail:** `Events=0`: wait for the first rows before
+enabling the rules.
 **Fail:** `Failed to resolve table or column expression named 'BowerSecurityEvents'`
 (see [troubleshooting](#10-troubleshooting)).
 
@@ -774,6 +847,21 @@ data only.
    `expect.json` lists the incidents expected per address, for example
    `{"incidentsPerAddress": {"192.0.2.10": 1}, "alertsPerKeyPrefix": {"bower-wec-brute-force|192.0.2.10|": 1}}`.
 
+5. Optional, to measure query cost at your volume: upload a synthetic firewall-deny load
+   (IPv6 documentation addresses, kept below the threshold; the command refuses a load
+   that could cross it). Pass your deployment's `firewallDenyThreshold` and
+   `bucketMinutes`; the check covers one invocation, so give loads whose event times can
+   share a bucket disjoint `--address-offset` ranges. Then run each rule query once
+   through the query API with statistics (`Prefer: include-statistics=true`) and read `SentinelHealth`
+   `QueryPerformanceIndicators` for the scheduled runs. Each row is billed (about 940
+   bytes in the live run), so size the load to your budget.
+
+   ```bash
+   AZURE_CONFIG_DIR="$INGEST_PROFILE" python3 -I deploy/sentinel/analytics/validation/load.py backfill \
+     --endpoint "$DCE" --dcr "$DCR_IMMUTABLE_ID" --rows 600000 --span-minutes 120 \
+     --threshold 20 --bucket-minutes 10 --summary load.json
+   ```
+
 **Pass:** every scenario has `missing: 0`; replay scenarios show `extraRows > 0` (the
 fault really happened); every expected address has exactly the expected incidents and
 `duplicateAlertKeys` is empty; beyond-tolerance addresses have no detection incident.
@@ -859,7 +947,7 @@ evidence of lossless UDP or of a completed Sentinel alert qualification.
 - Exactly-once alerts on the catch-up path assume that an alert's `TimeGenerated` and
   its `ingestion_time()` both fall within `alertVisibilityRuns × frequencyMinutes` of
   the first run's window end (10 minutes by default; measured at most 5 min 44 s and
-  about 7 min 20 s). If Sentinel writes it later, a
+  8 min 7 s). If Sentinel writes it later, a
   second alert can appear; grouping by IP still keeps one incident. See
   [the alert-visibility assumption](#the-alert-visibility-assumption).
 - Windows sit on a fixed `frequency` grid, so a moved schedule (redeploy or re-enable,
@@ -910,18 +998,40 @@ every 5 minutes with `maxIngestionDelayMinutes=120`. Synthetic data only.
 | Function check | not run | 631 raw rows, 351 identities, 351 function rows, 0 of 176 health rows |
 
 Both runs used earlier content: the second run's is commit `4dabe15`. The later changes
-were checked in two targeted validations with direct uploads and no collector:
+were first checked in two targeted validations with direct uploads and no collector:
 [ws2c](../evidence/ws2c-20261102-024502/README.md) (catch-up guard, type-filtered
 function, monitor replay exclusion by query, one live owned-window alert) and
 [ws2d](../evidence/ws2d-20261102-065107/README.md) (current rule queries with a
 substituted `now()` and rules disabled: pre-aggregation identical to full ranking,
-fixed-grid windows, changed-type id reuse, two key scopes side by side). The firewall
-rule, the catch-up path and the scheduled monitor have not run as scheduled rules on the
-current content.
+fixed-grid windows, changed-type id reuse, two key scopes side by side).
 
-Sentinel behaviour both runs measured: in a scheduled run `now()` equals the alert's
+### The current content as scheduled rules (3 November 2026)
+
+The [final run](../evidence/sentinel-20261103-054834/README.md) deployed the content as it
+is now (unchanged since `d7ddc55`) with **the template defaults** (5-minute rules,
+`PT450M` look-back, `maxIngestionDelayMinutes=360`, hourly monitor) and `enableRules=true`.
+It ran for three hours, with direct uploads to the DCR and about 640,000 synthetic
+firewall denials in the look-back. Every result below comes from the rules' own
+scheduled runs. The verifier passed 42 of 42 checks.
+
+| Test | Measured | Result |
+| --- | --- | --- |
+| Firewall rule, on-time and 45-minute-late crossings | One `owned-window` alert per crossing; a second crossing for the same address in the next bucket alerted under its own key and joined the same incident | Passed |
+| Exact copies 22 and 64 minutes later | 2 extra rows for every event; no alert | Passed |
+| Catch-up: rule disabled 25.7 minutes over two crossings | One `catch-up-2` alert each (one in the first run after re-enabling, one a run later, because its slot was odd); none in the next 11 runs, through every retry slot | Passed |
+| Monitor, three hourly runs | 6, 3 and 2 late events: each reported once; replays (including rewritten-time replays) excluded; an event first ingested on time with a late replay in the same slot not reported (the pre-fix query reports it) | Passed |
+| `SentinelHealth` | A row for every run whose window ended by 07:52 UTC (later runs not collected; rows arrive 90 minutes after the window); a deliberately failing probe rule wrote `Failure` rows; each Bower rule's first run, before the table had queryable rows, failed | Passed; guide query corrected |
+| Alert visibility | `TimeGenerated − EndTime` at most 5 min 11 s; `ingestion_time() − EndTime` at most 8 min 7 s, against 10 min | Passed, 1 min 53 s margin |
+| Query cost with about 640,000 rows | Firewall rule 2.4–2.5 s and 2.1 GB peak memory per node; brute force 0.6 s; monitor 2.5 s on a slot of 634,172 rows; no throttling; every run whose window ended by 07:52 UTC succeeded (later runs not collected) | Passed |
+| Incidents | 7: one per address (6) and one monitor incident holding its three alerts | Passed |
+
+Limits of that run: direct uploads only (the collector paths are covered by the
+2 November run above), a load well below several million rows, and no multi-day soak.
+
+Sentinel behaviour the live runs measured: in a scheduled run `now()` equals the alert's
 `EndTime` exactly, and the query executes about five minutes later. Alerts became
-queryable in `SecurityAlert` about 2 minutes after their `TimeGenerated`, which itself was
+queryable in `SecurityAlert` up to about 3 minutes after their `TimeGenerated`, which itself was
 5 min 2 s to 5 min 44 s after the run's `EndTime`. Redeploying or re-enabling a rule can
-move its schedule. A row older than two days arrived with `TimeGenerated` rewritten,
+move its schedule: disabling cancels any window not yet executed, and re-enabling starts
+with a window that ends about five minutes before the re-enable. A row older than two days arrived with `TimeGenerated` rewritten,
 while `RawEnvelope.timeGenerated` kept the original.

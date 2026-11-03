@@ -1,0 +1,49 @@
+{
+ "schemaVersion": 1,
+ "runId": "bower-sentinel-20261103-054834",
+ "checkedAt": "2026-11-03T09:28:47.316988+00:00",
+ "azureSubscription": "<subscription>",
+ "awsResourcesUsed": false,
+ "checks": [
+  {
+   "check": "resource group rg-bower-sentinel-20261103-054834",
+   "absent": true
+  },
+  {
+   "check": "resources tagged RunId=bower-sentinel-20261103-054834",
+   "absent": true
+  },
+  {
+   "check": "workspace law-sentinel",
+   "absent": true,
+   "errorCode": "ResourceGroupNotFound"
+  },
+  {
+   "check": "soft-deleted workspace law-sentinel in rg-bower-sentinel-20261103-054834",
+   "absent": true
+  },
+  {
+   "check": "ingest application bower-sentinel-20261103-054834-ingest",
+   "absent": true
+  },
+  {
+   "check": "ingest service principal bower-sentinel-20261103-054834-ingest",
+   "absent": true
+  },
+  {
+   "check": "ingest deleted-items objectId <app-object-id>",
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
+  },
+  {
+   "check": "ingest deleted-items principalId <service-principal-object-id>",
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
+  },
+  {
+   "check": "ingest role assignments",
+   "absent": true
+  }
+ ],
+ "allAbsent": true
+}

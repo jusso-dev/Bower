@@ -1,0 +1,222 @@
+{
+ "manual": [
+  {
+   "rowsInLookback": {
+    "Rows": 624779,
+    "Load": 624500
+   },
+   "runs": [
+    {
+     "rule": "firewall-deny",
+     "run": 1,
+     "at": "2026-11-03T06:37:33Z",
+     "resultRows": 0,
+     "executionTimeSeconds": 2.389,
+     "totalCpu": "00:00:02.8281250",
+     "memoryPeakBytes": 2119478944,
+     "datasetRows": {
+      "scanned": 9,
+      "scannedMaxDatetime": "2026-11-03T06:20:39.8504677Z",
+      "scannedMinDatetime": "2026-11-03T05:57:56.1503719Z",
+      "total": 38
+     },
+     "scannedExtents": 9
+    },
+    {
+     "rule": "firewall-deny",
+     "run": 2,
+     "at": "2026-11-03T06:37:34Z",
+     "resultRows": 0,
+     "executionTimeSeconds": 2.389,
+     "totalCpu": "00:00:02.8281250",
+     "memoryPeakBytes": 2119478944,
+     "datasetRows": {
+      "scanned": 9,
+      "scannedMaxDatetime": "2026-11-03T06:20:39.8504677Z",
+      "scannedMinDatetime": "2026-11-03T05:57:56.1503719Z",
+      "total": 38
+     },
+     "scannedExtents": 9
+    },
+    {
+     "rule": "firewall-deny",
+     "run": 3,
+     "at": "2026-11-03T06:37:34Z",
+     "resultRows": 0,
+     "executionTimeSeconds": 2.389,
+     "totalCpu": "00:00:02.8281250",
+     "memoryPeakBytes": 2119478944,
+     "datasetRows": {
+      "scanned": 9,
+      "scannedMaxDatetime": "2026-11-03T06:20:39.8504677Z",
+      "scannedMinDatetime": "2026-11-03T05:57:56.1503719Z",
+      "total": 38
+     },
+     "scannedExtents": 9
+    },
+    {
+     "rule": "wec-brute-force",
+     "run": 1,
+     "at": "2026-11-03T06:37:36Z",
+     "resultRows": 0,
+     "executionTimeSeconds": 0.601,
+     "totalCpu": "00:00:00.8593750",
+     "memoryPeakBytes": 1053560864,
+     "datasetRows": {
+      "scanned": 7,
+      "scannedMaxDatetime": "2026-11-03T06:20:39.8504677Z",
+      "scannedMinDatetime": "2026-11-03T05:57:56.1503719Z",
+      "total": 38
+     },
+     "scannedExtents": 7
+    },
+    {
+     "rule": "wec-brute-force",
+     "run": 2,
+     "at": "2026-11-03T06:37:36Z",
+     "resultRows": 0,
+     "executionTimeSeconds": 0.601,
+     "totalCpu": "00:00:00.8593750",
+     "memoryPeakBytes": 1053560864,
+     "datasetRows": {
+      "scanned": 7,
+      "scannedMaxDatetime": "2026-11-03T06:20:39.8504677Z",
+      "scannedMinDatetime": "2026-11-03T05:57:56.1503719Z",
+      "total": 38
+     },
+     "scannedExtents": 7
+    },
+    {
+     "rule": "wec-brute-force",
+     "run": 3,
+     "at": "2026-11-03T06:37:36Z",
+     "resultRows": 0,
+     "executionTimeSeconds": 0.601,
+     "totalCpu": "00:00:00.8593750",
+     "memoryPeakBytes": 1053560864,
+     "datasetRows": {
+      "scanned": 7,
+      "scannedMaxDatetime": "2026-11-03T06:20:39.8504677Z",
+      "scannedMinDatetime": "2026-11-03T05:57:56.1503719Z",
+      "total": 38
+     },
+     "scannedExtents": 7
+    },
+    {
+     "rule": "beyond-tolerance",
+     "run": 1,
+     "at": "2026-11-03T06:37:37Z",
+     "resultRows": 1,
+     "executionTimeSeconds": 0.059,
+     "totalCpu": "00:00:00.0625000",
+     "memoryPeakBytes": 46897904,
+     "datasetRows": {
+      "scanned": 2,
+      "scannedMaxDatetime": "2026-11-03T05:57:56.1503719Z",
+      "scannedMinDatetime": "2026-11-03T05:57:56.1503719Z",
+      "total": 6
+     },
+     "scannedExtents": 2
+    },
+    {
+     "rule": "beyond-tolerance",
+     "run": 2,
+     "at": "2026-11-03T06:37:38Z",
+     "resultRows": 1,
+     "executionTimeSeconds": 0.059,
+     "totalCpu": "00:00:00.0625000",
+     "memoryPeakBytes": 46897904,
+     "datasetRows": {
+      "scanned": 2,
+      "scannedMaxDatetime": "2026-11-03T05:57:56.1503719Z",
+      "scannedMinDatetime": "2026-11-03T05:57:56.1503719Z",
+      "total": 6
+     },
+     "scannedExtents": 2
+    },
+    {
+     "rule": "beyond-tolerance",
+     "run": 3,
+     "at": "2026-11-03T06:37:39Z",
+     "resultRows": 1,
+     "executionTimeSeconds": 0.059,
+     "totalCpu": "00:00:00.0625000",
+     "memoryPeakBytes": 46897904,
+     "datasetRows": {
+      "scanned": 2,
+      "scannedMaxDatetime": "2026-11-03T05:57:56.1503719Z",
+      "scannedMinDatetime": "2026-11-03T05:57:56.1503719Z",
+      "total": 6
+     },
+     "scannedExtents": 2
+    }
+   ]
+  },
+  {
+   "rowsInLookback": {
+    "Rows": 646824,
+    "Load": 646400
+   },
+   "runs": [
+    {
+     "rule": "firewall-deny",
+     "run": 1,
+     "at": "2026-11-03T08:13:05Z",
+     "resultRows": 0,
+     "executionTimeSeconds": 2.488,
+     "totalCpu": "00:00:02.5937500",
+     "memoryPeakBytes": 2139907104,
+     "datasetRows": {
+      "scanned": 5,
+      "scannedMaxDatetime": "2026-11-03T06:20:39.8504677Z",
+      "scannedMinDatetime": "2026-11-03T06:00:30.0165515Z",
+      "total": 33
+     },
+     "scannedExtents": 5
+    },
+    {
+     "rule": "wec-brute-force",
+     "run": 1,
+     "at": "2026-11-03T08:13:07Z",
+     "resultRows": 0,
+     "executionTimeSeconds": 0.622,
+     "totalCpu": "00:00:00.8437500",
+     "memoryPeakBytes": 632526800,
+     "datasetRows": {
+      "scanned": 5,
+      "scannedMaxDatetime": "2026-11-03T06:20:39.8504677Z",
+      "scannedMinDatetime": "2026-11-03T06:00:30.0165515Z",
+      "total": 33
+     },
+     "scannedExtents": 5
+    },
+    {
+     "rule": "beyond-tolerance",
+     "run": 1,
+     "at": "2026-11-03T08:13:08Z",
+     "resultRows": 1,
+     "executionTimeSeconds": 0.085,
+     "totalCpu": "00:00:00.1093750",
+     "memoryPeakBytes": 73946928,
+     "datasetRows": {
+      "scanned": 1,
+      "scannedMaxDatetime": "2026-11-03T06:00:30.0165515Z",
+      "scannedMinDatetime": "2026-11-03T06:00:30.0165515Z",
+      "total": 3
+     },
+     "scannedExtents": 1
+    }
+   ]
+  }
+ ],
+ "monitorLoadedSlot": {
+  "rule": "beyond-tolerance",
+  "substitutedNow": "2026-11-03T07:47:32Z",
+  "slot": "06:00-07:00",
+  "executionTimeSeconds": 2.503,
+  "totalCpu": "00:00:03.2500000",
+  "memoryPeakBytes": 729183920,
+  "resultRows": 1
+ },
+ "note": "query-cost-manual-1 runs 2 and 3 of each query were answered from the results cache (identical statistics); only run 1 is a measurement."
+}

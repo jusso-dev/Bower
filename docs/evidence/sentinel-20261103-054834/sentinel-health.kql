@@ -1,0 +1,35 @@
+// Queries run against SentinelHealth in run bower-sentinel-20261103-054834.
+//
+// 1. Evidence collection: produced sentinel-health.json (run at about 09:22 UTC, timespan P1D).
+//    This is not the guide's alert query: it keeps Success rows, has no "Bower:" name filter
+//    (every analytics rule in the workspace was a Bower rule or the Bower probe) and adds
+//    WindowStart, Results, Alerts, TotalCpu and DataUsed. The guide's query applied to these
+//    rows is the 25 rows with Status != "Success".
+SentinelHealth
+| where SentinelResourceType == "Analytics Rule"
+| extend P = todynamic(ExtendedProperties)
+| project TimeGenerated, SentinelResourceName, Status, Reason, Issue = tostring(P.Issues[0].Code),
+    WindowStart = todatetime(P.QueryStartTimeUTC), WindowEnd = todatetime(P.QueryEndTimeUTC), Results = toint(P.QueryResultAmount),
+    Alerts = toint(P.AlertsGeneratedAmount), TotalCpu = tostring(P.QueryPerformanceIndicators.TotalCpu),
+    DataUsed = tolong(P.QueryPerformanceIndicators.DataUsedForQueryProcessing)
+| order by SentinelResourceName asc, WindowEnd asc
+
+// 2. The previous guide query, run as published at about 08:20 UTC (timespan P1D): it returned
+//    the 11 failure rows that had arrived by then, every one with an empty Reason, because
+//    ExtendedProperties has no Reason key.
+SentinelHealth
+| where SentinelResourceType == "Analytics Rule" and SentinelResourceName startswith "Bower:"
+| where Status != "Success"
+| project TimeGenerated, SentinelResourceName, Status, Description, Reason = tostring(ExtendedProperties.Reason)
+
+// 3. The corrected guide query as run at about 08:21 UTC (timespan P1D): the same 11 rows, with
+//    Reason, Issue (QueryGeneralError for the three first runs, ReferencedTableNotFound for the
+//    probe) and WindowEnd. Its output was read in the session, not saved. The guide adds
+//    a closed ingestion slot, `| where ingestion_time() > ago(15m) and ingestion_time() <= now()`,
+//    for use as a scheduled rule (after review; first published as `> ago(15m)` only). That line
+//    was not run live (it returns only rows ingested in the 15 minutes before the query).
+SentinelHealth
+| where SentinelResourceType == "Analytics Rule" and SentinelResourceName startswith "Bower:"
+| where Status != "Success"
+| project TimeGenerated, SentinelResourceName, Status, Reason, Issue = tostring(ExtendedProperties.Issues[0].Code),
+    WindowEnd = todatetime(ExtendedProperties.QueryEndTimeUTC)

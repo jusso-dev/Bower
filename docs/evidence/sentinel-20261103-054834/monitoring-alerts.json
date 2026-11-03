@@ -1,0 +1,174 @@
+[
+ {
+  "rule": "bower-syslog-tls-expiry",
+  "dimensions": [
+   "CollectorId=smoke-tls",
+   "Source=syslog:relp-6514"
+  ],
+  "monitorCondition": "Resolved",
+  "fired": "2026-11-03T06:02:01.6456801Z",
+  "resolved": "2026-11-03T06:43:02.2436125Z",
+  "severity": "Sev2"
+ },
+ {
+  "rule": "bower-destination-credential",
+  "dimensions": [
+   "CollectorId=smoke-credential"
+  ],
+  "monitorCondition": "Fired",
+  "fired": "2026-11-03T06:02:48.7899479Z",
+  "resolved": null,
+  "severity": "Sev1"
+ },
+ {
+  "rule": "bower-queue-storage",
+  "dimensions": [
+   "CollectorId=smoke-storage"
+  ],
+  "monitorCondition": "Resolved",
+  "fired": "2026-11-03T06:05:19.6013023Z",
+  "resolved": "2026-11-03T06:46:17.942731Z",
+  "severity": "Sev2"
+ },
+ {
+  "rule": "bower-source-transport-errors",
+  "dimensions": [
+   "CollectorId=smoke-transport",
+   "Source=syslog:tls-6514"
+  ],
+  "monitorCondition": "Resolved",
+  "fired": "2026-11-03T06:06:05.8643468Z",
+  "resolved": "2026-11-03T06:47:06.7161428Z",
+  "severity": "Sev3"
+ },
+ {
+  "rule": "bower-source-transport-errors",
+  "dimensions": [
+   "CollectorId=smoke-transport",
+   "Source=winevt:wec-forwarded"
+  ],
+  "monitorCondition": "Resolved",
+  "fired": "2026-11-03T06:06:05.9366423Z",
+  "resolved": "2026-11-03T06:47:06.763833Z",
+  "severity": "Sev3"
+ },
+ {
+  "rule": "bower-source-transport-errors",
+  "dimensions": [
+   "CollectorId=smoke-transport",
+   "Source=syslog:relp-2514"
+  ],
+  "monitorCondition": "Resolved",
+  "fired": "2026-11-03T06:06:05.9820417Z",
+  "resolved": "2026-11-03T06:47:06.812823Z",
+  "severity": "Sev3"
+ },
+ {
+  "rule": "bower-collector-health-missing",
+  "dimensions": [
+   "CollectorId=smoke-storage"
+  ],
+  "monitorCondition": "Resolved",
+  "fired": "2026-11-03T06:17:08.3012014Z",
+  "resolved": "2026-11-03T06:53:09.6218819Z",
+  "severity": "Sev1"
+ },
+ {
+  "rule": "bower-collector-health-missing",
+  "dimensions": [
+   "CollectorId=smoke-tls"
+  ],
+  "monitorCondition": "Resolved",
+  "fired": "2026-11-03T06:17:08.3606059Z",
+  "resolved": "2026-11-03T06:53:09.660852Z",
+  "severity": "Sev1"
+ },
+ {
+  "rule": "bower-collector-health-missing",
+  "dimensions": [
+   "CollectorId=smoke-credential"
+  ],
+  "monitorCondition": "Fired",
+  "fired": "2026-11-03T06:17:08.4076573Z",
+  "resolved": null,
+  "severity": "Sev1"
+ },
+ {
+  "rule": "bower-collector-health-missing",
+  "dimensions": [
+   "CollectorId=smoke-transport"
+  ],
+  "monitorCondition": "Resolved",
+  "fired": "2026-11-03T06:22:09.9467083Z",
+  "resolved": "2026-11-03T06:53:09.7046931Z",
+  "severity": "Sev1"
+ },
+ {
+  "rule": "bower-collector-health-missing",
+  "dimensions": [
+   "CollectorId=smoke-storage"
+  ],
+  "monitorCondition": "Fired",
+  "fired": "2026-11-03T06:57:06.8534581Z",
+  "resolved": null,
+  "severity": "Sev1"
+ },
+ {
+  "rule": "bower-collector-health-missing",
+  "dimensions": [
+   "CollectorId=smoke-tls"
+  ],
+  "monitorCondition": "Fired",
+  "fired": "2026-11-03T06:57:06.9001386Z",
+  "resolved": null,
+  "severity": "Sev1"
+ },
+ {
+  "rule": "bower-collector-health-missing",
+  "dimensions": [
+   "CollectorId=smoke-transport"
+  ],
+  "monitorCondition": "Fired",
+  "fired": "2026-11-03T06:57:06.9450382Z",
+  "resolved": null,
+  "severity": "Sev1"
+ },
+ {
+  "rule": "bower-table-no-ingestion",
+  "dimensions": [],
+  "monitorCondition": "Resolved",
+  "fired": "2026-11-03T07:15:46.3453515Z",
+  "resolved": "2026-11-03T08:11:49.8221969Z",
+  "severity": "Sev1"
+ },
+ {
+  "rule": "bower-destination-freshness",
+  "dimensions": [
+   "CollectorId=sentinel-direct",
+   "Source=windows-security/validation"
+  ],
+  "monitorCondition": "Fired",
+  "fired": "2026-11-03T08:08:20.9388291Z",
+  "resolved": null,
+  "severity": "Sev2"
+ },
+ {
+  "rule": "bower-destination-freshness",
+  "dimensions": [
+   "CollectorId=sentinel-direct",
+   "Source=nftables-firewall/validation"
+  ],
+  "monitorCondition": "Fired",
+  "fired": "2026-11-03T08:08:20.9998864Z",
+  "resolved": null,
+  "severity": "Sev2"
+ },
+ {
+  "rule": "bower-table-no-ingestion",
+  "dimensions": [],
+  "monitorCondition": "Fired",
+  "fired": "2026-11-03T09:00:47.1834208Z",
+  "resolved": null,
+  "severity": "Sev1"
+ }
+]

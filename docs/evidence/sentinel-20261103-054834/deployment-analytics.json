@@ -1,0 +1,22 @@
+{
+ "outputs": {
+  "parserFunction": {
+   "type": "String",
+   "value": "BowerSecurityEvents"
+  },
+  "queryPeriod": {
+   "type": "String",
+   "value": "PT450M"
+  },
+  "ruleIds": {
+   "type": "Array",
+   "value": [
+    "/subscriptions/<subscription>/resourceGroups/rg-bower-sentinel-20261103-054834/providers/Microsoft.OperationalInsights/workspaces/law-sentinel/providers/Microsoft.SecurityInsights/alertRules/2023ed17-6c55-5d90-ba41-4102992e6fc0",
+    "/subscriptions/<subscription>/resourceGroups/rg-bower-sentinel-20261103-054834/providers/Microsoft.OperationalInsights/workspaces/law-sentinel/providers/Microsoft.SecurityInsights/alertRules/b73c86ac-03c1-5137-a011-ec7a3227fae8",
+    "/subscriptions/<subscription>/resourceGroups/rg-bower-sentinel-20261103-054834/providers/Microsoft.OperationalInsights/workspaces/law-sentinel/providers/Microsoft.SecurityInsights/alertRules/142f89a1-a8d9-56e5-83f1-465e09e171df"
+   ]
+  }
+ },
+ "state": "Succeeded",
+ "timestamp": "2026-11-03T05:52:27.422361+00:00"
+}

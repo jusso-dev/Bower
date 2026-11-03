@@ -11,7 +11,7 @@ content that counts each event once and alerts once:
 | `rules/firewall-deny.kql` | Repeated firewall denials from one address |
 | `rules/beyond-tolerance.kql` | Informational: events later than the rules evaluate |
 | `main.bicep` | Deploys the function and the three rules, **disabled by default** |
-| `validation/` | Fault-injection proxy, synthetic event driver, verifier and strict cleanup audit for the test procedure (standard-library Python, synthetic data only) |
+| `validation/` | Fault-injection proxy, synthetic event driver, query-cost load generator, verifier and strict cleanup audit for the test procedure (standard-library Python, synthetic data only) |
 
 Deploy (plan first, then apply):
 
