@@ -288,6 +288,8 @@ or a fail into a pass, except where stated.
 | WEC backlog understated | "About 20 records for the first 14 hours" | 2,786, 3,124 and 3,673 after the first three bursts; maximum 8,950 |
 | Alerts read | First page only, failures recorded as an error object | Paginated, fail closed, and each alert is marked active or not during the run. This run's list (`monitoring/alerts-final.json`) was captured with one request returning three items; whether a further page existed was not checked |
 | Line endings | 25 Windows-origin JSON files had CRLF | Normalised to LF (content otherwise unchanged) |
+| Interim latency set | The interim firewall latency used every row the padded query returned: 39,000 rows against 36,000 reconciled ids (the extra 3,000 are 04:35Z to 04:40Z) | `sentinel()` applies the identity scope before any count or latency. The published interim p99 (8.97 s) includes those rows and cannot be recomputed without the deleted lists. The final reconciliation is not affected: its firewall latency count is exactly the 896,400 reconciled ids |
+| Final-export retry | The Linux agent wrote `final.json` before uploading, the WEC agent gated on `final.json`, and the DC exporter skipped a window once exported, so a failed upload was never retried | Completion markers are written only after the uploads succeed (`final.json` after data on Linux, `published.json` on the WEC, `<window>.json.uploaded` on the DC). In this run, the WEC final export was completed by hand, as recorded above |
 
 `final/final-reconciliation.json` and the two smoke and interim reports are the reports as
 produced at the run and are kept unchanged; read their accepted figures with the caveat above.

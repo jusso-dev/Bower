@@ -55,12 +55,17 @@ if ($Action -eq 'tick') {
     $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
     foreach ($w in $windows) {
         $out = "$dir\native\$($w[0]).json"
-        if ((Test-Path $out) -or $now -lt $w[2] + 300) { continue }
-        $from = [DateTimeOffset]::FromUnixTimeSeconds($w[1]).ToString('o'); $to = [DateTimeOffset]::FromUnixTimeSeconds($w[2]).ToString('o')
-        & "$dir\probe.exe" native Security $from "$out.tmp" $to
-        if ($LASTEXITCODE -ne 0) { Add-Content "$dir\errors.log" "$([DateTimeOffset]::UtcNow.ToString('o')) native $($w[0]) exit $LASTEXITCODE"; continue }
-        Move-Item "$out.tmp.ids" "$out.ids" -Force; Move-Item "$out.tmp" $out -Force
+        # A window is done only once both uploads succeeded (.uploaded); an exported window
+        # whose upload failed is uploaded again on the next tick without re-exporting.
+        if ((Test-Path "$out.uploaded") -or $now -lt $w[2] + 300) { continue }
+        if (-not (Test-Path $out)) {
+            $from = [DateTimeOffset]::FromUnixTimeSeconds($w[1]).ToString('o'); $to = [DateTimeOffset]::FromUnixTimeSeconds($w[2]).ToString('o')
+            & "$dir\probe.exe" native Security $from "$out.tmp" $to
+            if ($LASTEXITCODE -ne 0) { Add-Content "$dir\errors.log" "$([DateTimeOffset]::UtcNow.ToString('o')) native $($w[0]) exit $LASTEXITCODE"; continue }
+            Move-Item "$out.tmp.ids" "$out.ids" -Force; Move-Item "$out.tmp" $out -Force
+        }
         Put $out "native/$($w[0]).json"; Put "$out.ids" "native/$($w[0]).ids"
+        Set-Content "$out.uploaded" ([DateTimeOffset]::UtcNow.ToString('o'))
     }
     Get-ChildItem "$dir\gen" -Recurse -Filter *.json -ErrorAction SilentlyContinue | ForEach-Object { Put $_.FullName ("gen/" + $_.Directory.Name + "/" + $_.Name) }
     $security = Get-WinEvent -ListLog Security

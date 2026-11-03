@@ -20,15 +20,20 @@ if [ "${BOWER_SOAK_ACTION:-status}" = status ]; then
   exit 0
 fi
 : "${BOWER_SOAK_START:?}" "${BOWER_SOAK_SECONDS:?}" "${BOWER_SOAK_FIRST:?}"
+# Non-negative integers only: a negative FIRST maps to ports outside the Track A rule.
+[[ "$BOWER_SOAK_START" =~ ^[0-9]+$ && "$BOWER_SOAK_SECONDS" =~ ^[0-9]+$ && "$BOWER_SOAK_FIRST" =~ ^[0-9]+$ ]] ||
+  { echo '{"error":"start, seconds and first must be non-negative integers"}'; exit 1; }
 [ ! -e "$dir" ] || { echo '{"error":"label already used"}'; exit 1; }
 mkdir -p "$dir"
-sed -n '/^# WORKER$/,$p' "$0" | tail -n +2 > "$dir/worker.py"
+sed -n '/^# WORKER$/,/^WORKER$/p' "$0" | sed '1d;$d' > "$dir/worker.py"
 systemd-run --quiet --unit="bower-soak-gen-$BOWER_SOAK_LABEL" --property=Type=exec \
   --setenv=BOWER_LAB_BUCKET="$BOWER_LAB_BUCKET" --setenv=BOWER_LAB_RUN="$BOWER_LAB_RUN" --setenv=BOWER_LAB_HOST=SenderR \
   --setenv=AWS_DEFAULT_REGION=ap-southeast-2 \
   /usr/bin/python3 "$dir/worker.py" "$dir" "$BOWER_SOAK_LABEL" "$BOWER_SOAK_START" "$BOWER_SOAK_SECONDS" "$BOWER_SOAK_FIRST" "${BOWER_SOAK_SMOKE:-0}"
 echo "{\"started\":\"bower-soak-gen-$BOWER_SOAK_LABEL\",\"workerSha256\":\"$(sha256sum "$dir/worker.py" | cut -c1-64)\"}"
 exit 0
+# The worker below is data for bash (a quoted here-document), extracted by the sed above.
+: <<'WORKER'
 # WORKER
 import json
 import os
@@ -45,6 +50,9 @@ for begin, end in zip(edges, edges[1:]):
     rate = 100 if begin in bursts else 10
     for at in range(begin, end, 7200):
         segments.append((at, min(7200, end - at), rate))
+# The Track A nftables rule logs ports 4400..4449, 40,000 identities each: indices 0..1,999,999.
+if not 0 <= first or first + sum(n * r for _, n, r in segments) > 2000000:
+    raise SystemExit('identity range outside the Track A rule (0..1,999,999)')
 (directory / 'plan.json').write_text(json.dumps({'label': label, 'start': start, 'seconds': seconds, 'first': first,
                                                  'segments': segments, 'total': sum(s * r for _, s, r in segments)}))
 index = first
@@ -72,3 +80,4 @@ for number, (offset, length, rate) in enumerate(segments, 1):
 (directory / 'done.json').write_text(json.dumps({'label': label, 'last': index - 1, 'finishedAt': time.time()}))
 subprocess.run(['aws', 's3', 'cp', '--only-show-errors', '--sse', 'AES256', str(directory / 'done.json'),
                 's3://%s/results/sender/soak/%s/%s/done.json' % (os.environ['BOWER_LAB_BUCKET'], os.environ['BOWER_LAB_RUN'], label)], timeout=120)
+WORKER

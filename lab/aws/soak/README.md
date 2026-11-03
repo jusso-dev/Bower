@@ -39,8 +39,9 @@ segment starts late rather than being skipped, and its actual start is recorded.
 The agents export by themselves at end + 30 minutes. Two lessons from the first run:
 
 - The WEC's scheduled final tick did not write `final.json` (probably the task's 10-minute limit
-  with two unions of about 900k ids). Run `agent.ps1 final` through SSM if `final.json` is
-  missing.
+  with two unions of about 900k ids). Every tick after the deadline now retries until
+  `published.json` exists, which is written only after the upload succeeded. If it is still
+  missing, run `agent.ps1 final` through SSM, which has no 10-minute limit.
 - Segment starts drift late (about 1 s per segment on the sender, about 3 s in total on the DC),
   so the last events can land in the window after the end. Export it on demand
   (`dc-native-window.ps1 NAME=h24 FROM=<end> TO=<end+3600>`) before the final reconciliation.

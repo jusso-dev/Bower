@@ -174,6 +174,12 @@ def windows_native(results, windows, attempts=None):
             problems.append('missing-window-' + name)
             continue
         report = json.loads(path.read_text(encoding='utf-8-sig'))
+        if re.fullmatch(r'h\d{2}', name):
+            # An hourly export must cover exactly its hour; an empty or shifted window is not complete.
+            since = SOAK_START + int(name[1:]) * 3600
+            if (not report.get('since') or not report.get('until') or stamp_any(report['since']) != since
+                    or stamp_any(report['until']) != since + 3600):
+                problems.append('window-bounds-' + name)
         ids_path = path.with_name(name + '.ids') if path.parent.name == 'native' else path.with_name(name + '.json.ids')
         lines = [line for line in ids_path.read_text(encoding='utf-8-sig').splitlines() if line] if ids_path.exists() else []
         if len(lines) != report['selected']:
@@ -282,8 +288,10 @@ def stamp(value):
     return qf.stamp(value)
 
 
-def sentinel(verifier, collector, event_type, start, end, cutoff, chunk=3600):
-    """Every row of the collector's event type with TimeGenerated in [start, end), per chunk."""
+def sentinel(verifier, collector, event_type, start, end, cutoff, chunk=3600, keep=None):
+    """Every row of the collector's event type with TimeGenerated in [start, end), per chunk.
+    KEEP selects the reported identities before any count or latency is computed, so hourly and
+    overall statistics describe exactly the reconciled set (the query bounds stay padded)."""
     rows, hours, hashes = {}, [], []
     t = start
     while t < end:
@@ -296,6 +304,8 @@ def sentinel(verifier, collector, event_type, start, end, cutoff, chunk=3600):
         if len(result) > 400000:
             raise ValueError('Chunk too large; reduce the chunk')
         hashes.append(query_hash)
+        if keep is not None:
+            result = [row for row in result if keep(row['EventId'])]
         latencies = []
         for row in result:
             if row['EventId'] in rows:
@@ -545,13 +555,13 @@ def main():
                 queue = {i for i in queue if stamp_any(union[i]) < SOAK_START + 3600 + 1800}
         query_end = end if args.action != 'interim' else SOAK_START + 3600 + (300 if host == 'linux' else 0)
         query_start = start - 120
-        rows, hours, latency, hashes = sentinel(verifier, collector, event_type, query_start, query_end, cutoff)
+        keep = None
         if host == 'linux':
-            rows = {k: v for k, v in rows.items() if re.fullmatch(r'a13-n\d{4}x\d{5}', k) and low <= index(k) < high}
-            if args.action == 'interim':
-                # Later identities of the running segment are not in the interim expected prefix.
-                limit = max((index(i) for i in native), default=-1)
-                rows = {k: v for k, v in rows.items() if index(k) <= limit}
+            # The scoped sequence range, cut at the interim prefix: later identities of the
+            # running segment are neither expected nor counted in latency.
+            top = high if args.action != 'interim' else min(high, max((index(i) for i in native), default=-1) + 1)
+            keep = lambda k, low=low, top=top: bool(re.fullmatch(r'a13-n\d{4}x\d{5}', k)) and low <= index(k) < top
+        rows, hours, latency, hashes = sentinel(verifier, collector, event_type, query_start, query_end, cutoff, keep=keep)
         # The interim compares a running prefix; completeness gates smoke and final only.
         result = compare(native, queue, rows, native_meta['complete'] or args.action == 'interim')
         limit = LATENCY_P99_LIMIT[host]

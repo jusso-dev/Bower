@@ -69,7 +69,9 @@ if ($Action -eq 'install') {
     exit 0
 }
 if ($Action -eq 'tick') {
-    if (Test-Path "$dir\final.json") { exit 0 }
+    # published.json is written only after the final upload succeeded; until then every tick
+    # after the deadline retries the final export.
+    if (Test-Path "$dir\published.json") { exit 0 }
     $now = [DateTimeOffset]::UtcNow
     Sample
     if ($now.Minute % 30 -lt 5) { Union }
@@ -80,6 +82,8 @@ if ($Action -eq 'final') {
     Sample; Union
     @{ runId = $run; finalAt = [DateTimeOffset]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content "$dir\final.json"
     Upload
+    @{ runId = $run; publishedAt = [DateTimeOffset]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content "$dir\published.json"
+    Put 'published.json'
     Disable-ScheduledTask -TaskName 'BowerSoakAgent' | Out-Null
     Get-Content "$dir\union-last.json"
     exit 0

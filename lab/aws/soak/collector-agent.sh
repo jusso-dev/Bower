@@ -16,7 +16,7 @@ mkdir -p "$dir"
 action=${BOWER_SOAK_ACTION:-status}
 if [ "$action" = update ]; then
   [ -e "$dir/agent.env" ]
-  sed -n '/^# WORKER$/,$p' "$0" | tail -n +2 > /opt/bower-lab/soak-agent.py
+  sed -n '/^# WORKER$/,/^WORKER$/p' "$0" | sed '1d;$d' > /opt/bower-lab/soak-agent.py
   set -a; . "$dir/agent.env"; set +a
   python3 /opt/bower-lab/soak-agent.py tick
   echo "{\"updated\":true,\"agentSha256\":\"$(sha256sum /opt/bower-lab/soak-agent.py | cut -c1-64)\"}"
@@ -25,7 +25,7 @@ fi
 if [ "$action" = install ]; then
   : "${BOWER_SOAK_START:?}" "${BOWER_SOAK_SECONDS:?}"
   [ ! -e "$dir/agent.env" ] || { echo '{"error":"agent already installed"}'; exit 1; }
-  sed -n '/^# WORKER$/,$p' "$0" | tail -n +2 > /opt/bower-lab/soak-agent.py
+  sed -n '/^# WORKER$/,/^WORKER$/p' "$0" | sed '1d;$d' > /opt/bower-lab/soak-agent.py
   printf 'BOWER_LAB_BUCKET=%s\nBOWER_LAB_RUN=%s\nBOWER_SOAK_START=%s\nBOWER_SOAK_SECONDS=%s\nAWS_DEFAULT_REGION=ap-southeast-2\n' \
     "$BOWER_LAB_BUCKET" "$BOWER_LAB_RUN" "$BOWER_SOAK_START" "$BOWER_SOAK_SECONDS" > "$dir/agent.env"
   cat > /etc/systemd/system/bower-soak-agent.service <<'UNIT'
@@ -63,6 +63,8 @@ UNIT
 fi
 set -a; . "$dir/agent.env"; set +a
 exec python3 /opt/bower-lab/soak-agent.py "$action"
+# The worker below is data for bash (a quoted here-document), extracted by the sed above.
+: <<'WORKER'
 # WORKER
 import datetime as dt
 import gzip
@@ -158,13 +160,13 @@ def union():
     return record
 
 
-def upload(final=False):
-    db = sqlite3.connect('file:' + str(DIR / 'accepted.db') + '?mode=ro', uri=True)
-    ids = [row[0] + '\t' + (row[1] or '') for row in db.execute('SELECT event_id, received_at FROM ids ORDER BY event_id')]
-    db.close()
-    with gzip.open(DIR / 'accepted.tsv.gz', 'wt') as stream:
-        stream.write('\n'.join(ids) + '\n')
-    names = ['samples.jsonl', 'union.jsonl', 'accepted.tsv.gz'] + (['final.json'] if final else [])
+def upload(names=('samples.jsonl', 'union.jsonl', 'accepted.tsv.gz')):
+    if 'accepted.tsv.gz' in names:
+        db = sqlite3.connect('file:' + str(DIR / 'accepted.db') + '?mode=ro', uri=True)
+        ids = [row[0] + '\t' + (row[1] or '') for row in db.execute('SELECT event_id, received_at FROM ids ORDER BY event_id')]
+        db.close()
+        with gzip.open(DIR / 'accepted.tsv.gz', 'wt') as stream:
+            stream.write('\n'.join(ids) + '\n')
     files = {}
     for name in names:
         path = DIR / name
@@ -191,8 +193,11 @@ def main(action):
             main('final')
     elif action == 'final':
         record = {'finalAt': now().isoformat(), 'sample': sample(), 'union': union(), 'runId': RUN}
+        # Publish the data first. final.json stops further ticks, so it is written only after
+        # the data uploads succeed; a failed upload leaves the tick retry path active.
+        record['uploaded'] = upload()
         (DIR / 'final.json').write_text(json.dumps(record))
-        record['uploaded'] = upload(final=True)
+        record['uploaded'].update(upload(names=('final.json',)))
         subprocess.run(['systemctl', 'disable', '--now', 'bower-soak-agent.timer'], timeout=30)
         print(json.dumps(record))
     elif action == 'upload':
@@ -205,3 +210,4 @@ def main(action):
 
 
 main(sys.argv[1])
+WORKER

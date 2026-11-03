@@ -113,6 +113,12 @@ if (args is ["native", string channel, string sinceText, string nativeOutput, ..
 {
     DateTimeOffset since = DateTimeOffset.Parse(sinceText, System.Globalization.CultureInfo.InvariantCulture);
     DateTimeOffset? until = args.Length == 5 ? DateTimeOffset.Parse(args[4], System.Globalization.CultureInfo.InvariantCulture) : null;
+    if (until <= since)
+    {
+        // An empty window would export 'selected: 0' that reads as a complete window.
+        Console.Error.WriteLine("UNTIL must be later than SINCE");
+        return 2;
+    }
     string window = until is null ? "" : string.Create(System.Globalization.CultureInfo.InvariantCulture,
         $" and TimeCreated[@SystemTime>='{since.UtcDateTime:yyyy-MM-ddTHH:mm:ss.fffZ}' and @SystemTime<'{until.Value.UtcDateTime:yyyy-MM-ddTHH:mm:ss.fffZ}']");
     var redactor = new JsonEventRedactor();

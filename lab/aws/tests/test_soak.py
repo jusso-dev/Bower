@@ -2,6 +2,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -18,12 +19,12 @@ def load(name, path):
     return module
 
 
-def sender_segments(seconds, smoke=False):
-    """Runs only the schedule part of the sender worker, as the host does."""
+def sender_segments(seconds, smoke=False, first=0):
+    """Runs only the schedule and identity-range check of the sender worker, as the host does."""
     source = (ROOT / 'soak' / 'sender-generator.sh').read_text().split('# WORKER\n', 1)[1]
     schedule = source.split("(directory / 'plan.json')", 1)[0]
     scope = {}
-    with mock.patch.object(sys, 'argv', ['w', '/tmp/x', 'label', '0', str(seconds), '0', '1' if smoke else '0']):
+    with mock.patch.object(sys, 'argv', ['w', '/tmp/x', 'label', '0', str(seconds), str(first), '1' if smoke else '0']):
         exec(schedule, scope)
     return scope['segments']
 
@@ -37,11 +38,44 @@ class SoakTests(unittest.TestCase):
         self.assertEqual(sum(length for _, length, _ in segments), 86400)
         self.assertEqual(sender_segments(900, smoke=True), [(0, 900, 10)])
 
-    def test_windows_generator_uses_the_same_schedule(self):
+    def test_sender_refuses_identities_outside_the_track_a_rule(self):
+        self.assertEqual(len(sender_segments(86400, first=100000)), 18)
+        self.assertEqual(len(sender_segments(86400, first=2000000 - 896400)), 18)
+        for first in (-1, 2000000 - 896400 + 1):
+            with self.assertRaises(SystemExit):
+                sender_segments(86400, first=first)
+        script = (ROOT / 'soak' / 'sender-generator.sh').read_text()
+        self.assertIn('"$BOWER_SOAK_FIRST" =~ ^[0-9]+$', script)
+
+    @unittest.skipUnless(shutil.which('pwsh'), 'pwsh is not installed')
+    def test_windows_generator_runs_the_same_schedule(self):
+        """Runs Get-Segments from generator-windows.ps1 and compares it with the sender's schedule."""
         text = (ROOT / 'soak' / 'generator-windows.ps1').read_text()
-        self.assertIn('for ($b = 7200; $b + 60 -le $total; $b += 14400)', text)
-        self.assertIn('$at += 7200', text)
-        self.assertIn('return ,$segments', text)
+        function = text[text.index('function Get-Segments'):text.index('$dir = ')]
+        for seconds, smoke in ((86400, False), (900, True), (30000, False), (7260, False)):
+            command = (function + '\n$s = Get-Segments %d $%s\n' % (seconds, 'true' if smoke else 'false')
+                       + "($s | ForEach-Object { '{0},{1},{2}' -f $_[0], $_[1], $_[2] }) -join ';'")
+            result = subprocess.run(['pwsh', '-NoProfile', '-NonInteractive', '-Command', command],
+                                    capture_output=True, text=True, timeout=120)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            windows = [tuple(map(int, item.split(','))) for item in result.stdout.strip().split(';')]
+            with self.subTest(seconds=seconds, smoke=smoke):
+                self.assertEqual(windows, sender_segments(seconds, smoke))
+
+    @unittest.skipUnless(shutil.which('pwsh'), 'pwsh is not installed')
+    def test_soak_powershell_scripts_parse_unrendered(self):
+        for path in sorted((ROOT / 'soak').glob('*.ps1')):
+            command = ("$t=$null;$e=$null;[System.Management.Automation.Language.Parser]::ParseFile('%s',[ref]$t,[ref]$e)"
+                       "|Out-Null; exit $e.Count" % path)
+            result = subprocess.run(['pwsh', '-NoProfile', '-NonInteractive', '-Command', command],
+                                    capture_output=True, text=True, timeout=120)
+            with self.subTest(script=path.name):
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_soak_shell_scripts_pass_bash_syntax_check(self):
+        for path in sorted((ROOT / 'soak').glob('*.sh')):
+            with self.subTest(script=path.name):
+                self.assertEqual(subprocess.run(['bash', '-n', str(path)], capture_output=True).returncode, 0)
 
     def test_firewall_identity_index_round_trips(self):
         reconcile = load('soak_reconcile', ROOT / 'soak' / 'reconcile.py')
@@ -110,7 +144,7 @@ class ReconcileGateTests(unittest.TestCase):
         self.assertFalse(compare(set(), set(), {})['exact'])                               # empty input
         self.assertFalse(compare(native, set(native), self.rows(native), native_complete=False)['exact'])
 
-    def write_window(self, root, name, ids, selected=None, columns=4, sub='native'):
+    def write_window(self, root, name, ids, selected=None, columns=4, sub='native', bounds=None):
         directory = root / 'hosts' / 'dc' / sub
         directory.mkdir(parents=True, exist_ok=True)
         lines = []
@@ -118,8 +152,11 @@ class ReconcileGateTests(unittest.TestCase):
             fields = ['redacted-' + identity, str(n), str(n), identity][:columns]
             lines.append('\t'.join(fields))
         (directory / (name + ('.ids' if sub == 'native' else '.json.ids'))).write_text('\n'.join(lines) + '\n')
+        if bounds is None:
+            since = self.r.SOAK_START + int(name[1:]) * 3600
+            bounds = (since, since + 3600)
         (directory / (name + '.json')).write_text(json.dumps({
-            'since': '2026-11-02T03:35:00+00:00', 'until': '2026-11-02T04:35:00+00:00',
+            'since': self.r.iso(bounds[0]), 'until': self.r.iso(bounds[1]),
             'selected': len(ids) if selected is None else selected, 'distinct': len(set(ids)),
             'duplicateIdentities': 0, 'redactionChangedIds': 0, 'identitySetSha256': '0' * 64}))
 
@@ -147,6 +184,12 @@ class ReconcileGateTests(unittest.TestCase):
             self.assertIn('ids-file-incomplete-h04', truncated['problems'])
             _, empty = self.r.windows_native(root, [], attempts=0)
             self.assertFalse(empty['complete'])
+            # An export whose UNTIL is not after SINCE, or that covers another hour, is not the window.
+            start = self.r.SOAK_START + 5 * 3600
+            self.write_window(root, 'h05', [], bounds=(start, start))
+            self.assertIn('window-bounds-h05', self.r.windows_native(root, ['h05'])[1]['problems'])
+            self.write_window(root, 'h06', ['winevt-6'], bounds=(start, start + 3600))
+            self.assertIn('window-bounds-h06', self.r.windows_native(root, ['h06'], attempts=1)[1]['problems'])
 
     def write_segments(self, root, segments):
         directory = root / 'sender' / 'soak'
@@ -254,3 +297,76 @@ class ReconcileGateTests(unittest.TestCase):
         self.assertTrue(result['criterion3']['flat']['threads'])   # falling is not growth
         self.assertTrue(result['criterion3']['pass'])
         self.assertFalse(self.r.resources([], 'linux', start, start + 86400)['criterion3']['pass'])
+
+
+class ReviewFixTests(unittest.TestCase):
+    """CodeRabbit round on PR #170: latency over the reported set, CIDR guard, final-export order."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.r = load('soak_reconcile_review', ROOT / 'soak' / 'reconcile.py')
+
+    def test_sentinel_counts_and_latency_only_for_kept_ids(self):
+        chunk = [{'EventId': 'a13-n4402x20000', 'Copies': 1, 'Generated': '2026-11-02T04:34:00Z', 'FirstIngested': '2026-11-02T04:34:05Z'},
+                 {'EventId': 'a13-n4402x20001', 'Copies': 2, 'Generated': '2026-11-02T04:36:00Z', 'FirstIngested': '2026-11-02T04:46:00Z'}]
+
+        class Verifier:
+            def query(self, text):
+                return list(chunk), 'hash'
+
+        keep = lambda k: self.r.index(k) < 80001
+        start = self.r.SOAK_START
+        rows, hours, latency, _ = self.r.sentinel(Verifier(), 'c', 't', start, start + 3600, start + 7200, keep=keep)
+        self.assertEqual(set(rows), {'a13-n4402x20000'})
+        self.assertEqual((hours[0]['distinct'], hours[0]['rows']), (1, 1))
+        self.assertEqual((latency['count'], latency['p99']), (1, 5.0))
+
+    def test_lab_refuses_a_subnet_outside_the_generator_guard(self):
+        for profile, run, cidr in (('soak', 'bower-soak-20261102-015614', '172.31.233.0/24'),
+                                   ('ws4', 'bower-ws4-20261102-015614', '172.31.247.0/24')):
+            env = {**os.environ, 'BOWER_LAB_RUN_ID': run, 'BOWER_LAB_PROFILE': profile, 'BOWER_LAB_DIR': '/tmp',
+                   'BOWER_LAB_CIDR': cidr}
+            result = subprocess.run([sys.executable, str(ROOT / 'upgrade-recovery' / 'lab.py'), 'status'],
+                                    env=env, capture_output=True, text=True)
+            with self.subTest(profile=profile):
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('generator guard', result.stderr)
+
+    def collector_worker(self, directory):
+        text = (ROOT / 'soak' / 'collector-agent.sh').read_text()
+        source = text.split('\n# WORKER\n', 1)[1].rsplit('\nWORKER\n', 1)[0]
+        source = source.rsplit('\nmain(sys.argv[1])', 1)[0]
+        env = {'BOWER_LAB_RUN': 'bower-soak-20261102-015614', 'BOWER_LAB_BUCKET': 'b',
+               'BOWER_SOAK_START': '1793590500', 'BOWER_SOAK_SECONDS': '86400'}
+        scope = {'__name__': 'collector_worker'}
+        with mock.patch.dict(os.environ, env):
+            exec(source, scope)
+        scope['DIR'] = Path(directory)
+        scope['sample'] = lambda: {}
+        scope['union'] = lambda: {}
+        scope['print'] = lambda *args, **kwargs: None
+        return scope
+
+    def test_collector_final_marker_only_after_the_data_upload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            worker = self.collector_worker(directory)
+            worker['upload'] = mock.Mock(side_effect=RuntimeError('s3 down'))
+            with self.assertRaises(RuntimeError):
+                worker['main']('final')
+            self.assertFalse((Path(directory) / 'final.json').exists())  # the next tick retries
+            calls = []
+            worker['upload'] = lambda names=('samples.jsonl', 'union.jsonl', 'accepted.tsv.gz'): (
+                calls.append((tuple(names), (Path(directory) / 'final.json').exists())) or {})
+            with mock.patch.object(worker['subprocess'], 'run'):
+                worker['main']('final')
+            self.assertEqual(calls, [(('samples.jsonl', 'union.jsonl', 'accepted.tsv.gz'), False), (('final.json',), True)])
+
+    def test_windows_agents_mark_completion_after_upload(self):
+        wec = (ROOT / 'soak' / 'wec-agent.ps1').read_text()
+        final = wec[wec.index("if ($Action -eq 'final')"):]
+        self.assertIn('Test-Path "$dir\\published.json"', wec)
+        self.assertLess(final.index('Upload'), final.index('published.json'))
+        dc = (ROOT / 'soak' / 'dc-agent.ps1').read_text()
+        tick = dc[dc.index("if ($Action -eq 'tick')"):]
+        self.assertIn('Test-Path "$out.uploaded"', tick)
+        self.assertLess(tick.index('Put "$out.ids"'), tick.index('Set-Content "$out.uploaded"'))

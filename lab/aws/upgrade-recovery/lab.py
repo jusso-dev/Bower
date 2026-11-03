@@ -25,7 +25,13 @@ NAT = 'nat-016cf975ae7ffe691'
 PROFILE = os.environ.get('BOWER_LAB_PROFILE', 'ws4')
 if PROFILE not in ('ws4', 'soak') or not __import__('re').fullmatch(r'bower-' + PROFILE + r'-\d{8}-\d{6}', RUN):
     raise SystemExit('BOWER_LAB_RUN_ID does not match BOWER_LAB_PROFILE')
-CIDR = os.environ.get('BOWER_LAB_CIDR', '172.31.244.0/24')
+# The Windows generators only target a DC inside their profile's subnet (generator.ps1:
+# 172.31.244., soak/generator-windows.ps1: 172.31.247.); refuse any other subnet before create.
+GENERATOR_SUBNET = {'ws4': '172.31.244.0/24', 'soak': '172.31.247.0/24'}[PROFILE]
+CIDR = os.environ.get('BOWER_LAB_CIDR', GENERATOR_SUBNET)
+if CIDR != GENERATOR_SUBNET:
+    raise SystemExit('BOWER_LAB_CIDR must be ' + GENERATOR_SUBNET + ' for profile ' + PROFILE
+                     + ': the DC generator guard accepts only that subnet')
 WINDOWS = ['Dc', 'Wec', 'Wec2'] if PROFILE == 'ws4' else ['Dc', 'Wec']
 LINUX = ['Linux', 'Linux2'] if PROFILE == 'ws4' else ['Linux', 'Sender']
 HOSTS = WINDOWS + LINUX

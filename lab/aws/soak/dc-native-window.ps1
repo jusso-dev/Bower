@@ -7,7 +7,7 @@ $dir = 'C:\BowerLab\soak\manual'
 New-Item -ItemType Directory -Force $dir | Out-Null
 $out = "$dir\{{NAME}}.json"
 if (Test-Path $out) { throw 'name already used' }
-$from = [DateTimeOffset]::FromUnixTimeSeconds({{FROM}}).ToString('o'); $to = [DateTimeOffset]::FromUnixTimeSeconds({{TO}}).ToString('o')
+$from = [DateTimeOffset]::FromUnixTimeSeconds([long]'{{FROM}}').ToString('o'); $to = [DateTimeOffset]::FromUnixTimeSeconds([long]'{{TO}}').ToString('o')
 & C:\BowerLab\soak\probe.exe native Security $from $out $to
 if ($LASTEXITCODE -ne 0) { throw "probe exit $LASTEXITCODE" }
 foreach ($f in $out, "$out.ids") {
