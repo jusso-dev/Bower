@@ -290,4 +290,6 @@ change to the installers, packaging or workflows.
   prove nothing changed, reinstall the same version, roll back with the override, upgrade
   again.
 
-The CI runs for the change that introduced this scheme are linked from its pull request.
+Local results, failed attempts and the CI jobs that prove it are recorded in the
+[evidence](../evidence/version-20261103-063441/README.md) for
+[PR #175](https://github.com/jusso-dev/Bower/pull/175).
