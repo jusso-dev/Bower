@@ -1,0 +1,1581 @@
+{
+ "runId": "bower-soak-20261102-015614",
+ "scope": "final",
+ "generatedAt": "2026-11-03T04:18:45.670672Z",
+ "window": [
+  "2026-11-02T03:35:00.000000Z",
+  "2026-11-03T04:35:00.000000Z"
+ ],
+ "ingestionCutoff": "2026-11-03T04:18:44.537320Z",
+ "verifierAppId": "0046b34f-2550-4204-8506-5857d18c6333",
+ "latencyP99LimitSeconds": {
+  "linux": 13.3,
+  "windows": 18.16
+ },
+ "collectors": {
+  "linux": {
+   "native": 896400,
+   "accepted": 896400,
+   "sentinelDistinct": 896400,
+   "sentinelRows": 896454,
+   "duplicateRows": 54,
+   "missingAtAccepted": 0,
+   "missingAtSentinel": 0,
+   "extraAtSentinel": 0,
+   "nativeSha256": "ea5daf5b618ff8a3f6aa6399ec9b2509a91c4005cd5b89bf6069921b209b936e",
+   "acceptedSha256": "ea5daf5b618ff8a3f6aa6399ec9b2509a91c4005cd5b89bf6069921b209b936e",
+   "sentinelSha256": "ea5daf5b618ff8a3f6aa6399ec9b2509a91c4005cd5b89bf6069921b209b936e",
+   "exact": true,
+   "nativeDetail": {
+    "segments": [
+     {
+      "segment": 1,
+      "first": 100000,
+      "count": 72000,
+      "rate": 10,
+      "sent": 72000,
+      "nftCounterDelta": 72000,
+      "actualRate": 9.999989237931027,
+      "plannedStart": 1793590500,
+      "startedAt": "2026-11-02T03:35:00.066941+00:00",
+      "endedAt": "2026-11-02T05:35:00.074706+00:00",
+      "lateSeconds": 0,
+      "exact": true
+     },
+     {
+      "segment": 2,
+      "first": 172000,
+      "count": 6000,
+      "rate": 100,
+      "sent": 6000,
+      "nftCounterDelta": 6000,
+      "actualRate": 99.9745561622036,
+      "plannedStart": 1793597700,
+      "startedAt": "2026-11-02T05:35:01.765794+00:00",
+      "endedAt": "2026-11-02T05:36:01.781078+00:00",
+      "lateSeconds": 1.765,
+      "exact": true
+     },
+     {
+      "segment": 3,
+      "first": 178000,
+      "count": 72000,
+      "rate": 10,
+      "sent": 72000,
+      "nftCounterDelta": 72000,
+      "actualRate": 9.999992664973437,
+      "plannedStart": 1793597760,
+      "startedAt": "2026-11-02T05:36:03.680769+00:00",
+      "endedAt": "2026-11-02T07:36:03.686061+00:00",
+      "lateSeconds": 3.68,
+      "exact": true
+     },
+     {
+      "segment": 4,
+      "first": 250000,
+      "count": 71400,
+      "rate": 10,
+      "sent": 71400,
+      "nftCounterDelta": 71400,
+      "actualRate": 9.9999925601652,
+      "plannedStart": 1793604960,
+      "startedAt": "2026-11-02T07:36:05.421949+00:00",
+      "endedAt": "2026-11-02T09:35:05.427267+00:00",
+      "lateSeconds": 5.421,
+      "exact": true
+     },
+     {
+      "segment": 5,
+      "first": 321400,
+      "count": 6000,
+      "rate": 100,
+      "sent": 6000,
+      "nftCounterDelta": 6000,
+      "actualRate": 99.99153999244244,
+      "plannedStart": 1793612100,
+      "startedAt": "2026-11-02T09:35:07.111006+00:00",
+      "endedAt": "2026-11-02T09:36:07.116096+00:00",
+      "lateSeconds": 7.11,
+      "exact": true
+     },
+     {
+      "segment": 6,
+      "first": 327400,
+      "count": 72000,
+      "rate": 10,
+      "sent": 72000,
+      "nftCounterDelta": 72000,
+      "actualRate": 9.999992786163542,
+      "plannedStart": 1793612160,
+      "startedAt": "2026-11-02T09:36:08.853218+00:00",
+      "endedAt": "2026-11-02T11:36:08.858422+00:00",
+      "lateSeconds": 8.852,
+      "exact": true
+     },
+     {
+      "segment": 7,
+      "first": 399400,
+      "count": 71400,
+      "rate": 10,
+      "sent": 71400,
+      "nftCounterDelta": 71400,
+      "actualRate": 9.999992348783165,
+      "plannedStart": 1793619360,
+      "startedAt": "2026-11-02T11:36:10.596797+00:00",
+      "endedAt": "2026-11-02T13:35:10.602269+00:00",
+      "lateSeconds": 10.596,
+      "exact": true
+     },
+     {
+      "segment": 8,
+      "first": 470800,
+      "count": 6000,
+      "rate": 100,
+      "sent": 6000,
+      "nftCounterDelta": 6000,
+      "actualRate": 99.99116395249165,
+      "plannedStart": 1793626500,
+      "startedAt": "2026-11-02T13:35:12.286353+00:00",
+      "endedAt": "2026-11-02T13:36:12.291668+00:00",
+      "lateSeconds": 12.285,
+      "exact": true
+     },
+     {
+      "segment": 9,
+      "first": 476800,
+      "count": 72000,
+      "rate": 10,
+      "sent": 72000,
+      "nftCounterDelta": 72000,
+      "actualRate": 9.999992487916758,
+      "plannedStart": 1793626560,
+      "startedAt": "2026-11-02T13:36:14.031806+00:00",
+      "endedAt": "2026-11-02T15:36:14.037228+00:00",
+      "lateSeconds": 14.031,
+      "exact": true
+     },
+     {
+      "segment": 10,
+      "first": 548800,
+      "count": 71400,
+      "rate": 10,
+      "sent": 71400,
+      "nftCounterDelta": 71400,
+      "actualRate": 9.999992562499932,
+      "plannedStart": 1793633760,
+      "startedAt": "2026-11-02T15:36:15.771846+00:00",
+      "endedAt": "2026-11-02T17:35:15.777166+00:00",
+      "lateSeconds": 15.771,
+      "exact": true
+     },
+     {
+      "segment": 11,
+      "first": 620200,
+      "count": 6000,
+      "rate": 100,
+      "sent": 6000,
+      "nftCounterDelta": 6000,
+      "actualRate": 99.9909908200509,
+      "plannedStart": 1793640900,
+      "startedAt": "2026-11-02T17:35:17.460613+00:00",
+      "endedAt": "2026-11-02T17:36:17.466033+00:00",
+      "lateSeconds": 17.46,
+      "exact": true
+     },
+     {
+      "segment": 12,
+      "first": 626200,
+      "count": 72000,
+      "rate": 10,
+      "sent": 72000,
+      "nftCounterDelta": 72000,
+      "actualRate": 9.999992544594443,
+      "plannedStart": 1793640960,
+      "startedAt": "2026-11-02T17:36:19.204240+00:00",
+      "endedAt": "2026-11-02T19:36:19.209621+00:00",
+      "lateSeconds": 19.203,
+      "exact": true
+     },
+     {
+      "segment": 13,
+      "first": 698200,
+      "count": 71400,
+      "rate": 10,
+      "sent": 71400,
+      "nftCounterDelta": 71400,
+      "actualRate": 9.99999276466911,
+      "plannedStart": 1793648160,
+      "startedAt": "2026-11-02T19:36:20.947961+00:00",
+      "endedAt": "2026-11-02T21:35:20.953139+00:00",
+      "lateSeconds": 20.947,
+      "exact": true
+     },
+     {
+      "segment": 14,
+      "first": 769600,
+      "count": 6000,
+      "rate": 100,
+      "sent": 6000,
+      "nftCounterDelta": 6000,
+      "actualRate": 99.99160583967944,
+      "plannedStart": 1793655300,
+      "startedAt": "2026-11-02T21:35:22.636938+00:00",
+      "endedAt": "2026-11-02T21:36:22.641982+00:00",
+      "lateSeconds": 22.636,
+      "exact": true
+     },
+     {
+      "segment": 15,
+      "first": 775600,
+      "count": 72000,
+      "rate": 10,
+      "sent": 72000,
+      "nftCounterDelta": 72000,
+      "actualRate": 9.999992087813204,
+      "plannedStart": 1793655360,
+      "startedAt": "2026-11-02T21:36:24.426538+00:00",
+      "endedAt": "2026-11-02T23:36:24.432249+00:00",
+      "lateSeconds": 24.426,
+      "exact": true
+     },
+     {
+      "segment": 16,
+      "first": 847600,
+      "count": 71400,
+      "rate": 10,
+      "sent": 71400,
+      "nftCounterDelta": 71400,
+      "actualRate": 9.999991784436718,
+      "plannedStart": 1793662560,
+      "startedAt": "2026-11-02T23:36:26.222131+00:00",
+      "endedAt": "2026-11-03T01:35:26.228007+00:00",
+      "lateSeconds": 26.221,
+      "exact": true
+     },
+     {
+      "segment": 17,
+      "first": 919000,
+      "count": 6000,
+      "rate": 100,
+      "sent": 6000,
+      "nftCounterDelta": 6000,
+      "actualRate": 99.99098101683501,
+      "plannedStart": 1793669700,
+      "startedAt": "2026-11-03T01:35:28.012392+00:00",
+      "endedAt": "2026-11-03T01:36:28.017816+00:00",
+      "lateSeconds": 28.011,
+      "exact": true
+     },
+     {
+      "segment": 18,
+      "first": 925000,
+      "count": 71400,
+      "rate": 10,
+      "sent": 71400,
+      "nftCounterDelta": 71400,
+      "actualRate": 9.999985650127035,
+      "plannedStart": 1793669760,
+      "startedAt": "2026-11-03T01:36:29.811808+00:00",
+      "endedAt": "2026-11-03T03:35:29.822066+00:00",
+      "lateSeconds": 29.811,
+      "exact": true
+     }
+    ],
+    "finishedSegments": 18,
+    "scheduledPrefixFromRunningSegment": 0,
+    "allFinishedSegmentsExact": true,
+    "expected": 896400
+   },
+   "hours": [
+    {
+     "from": "2026-11-02T03:33:00.000000Z",
+     "to": "2026-11-02T04:33:00.000000Z",
+     "distinct": 34800,
+     "rows": 34800,
+     "latencySeconds": {
+      "count": 34800,
+      "p50": 3.885,
+      "p95": 6.633,
+      "p99": 9.076,
+      "max": 113.129
+     }
+    },
+    {
+     "from": "2026-11-02T04:33:00.000000Z",
+     "to": "2026-11-02T05:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36000,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 3.814,
+      "p95": 6.259,
+      "p99": 8.219,
+      "max": 151.237
+     }
+    },
+    {
+     "from": "2026-11-02T05:33:00.000000Z",
+     "to": "2026-11-02T06:33:00.000000Z",
+     "distinct": 41364,
+     "rows": 41364,
+     "latencySeconds": {
+      "count": 41364,
+      "p50": 3.764,
+      "p95": 6.216,
+      "p99": 8.112,
+      "max": 21.1
+     }
+    },
+    {
+     "from": "2026-11-02T06:33:00.000000Z",
+     "to": "2026-11-02T07:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36000,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 3.836,
+      "p95": 6.105,
+      "p99": 8.113,
+      "max": 23.05
+     }
+    },
+    {
+     "from": "2026-11-02T07:33:00.000000Z",
+     "to": "2026-11-02T08:33:00.000000Z",
+     "distinct": 35982,
+     "rows": 35982,
+     "latencySeconds": {
+      "count": 35982,
+      "p50": 3.885,
+      "p95": 6.323,
+      "p99": 11.114,
+      "max": 40.172
+     }
+    },
+    {
+     "from": "2026-11-02T08:33:00.000000Z",
+     "to": "2026-11-02T09:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36000,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 3.837,
+      "p95": 6.088,
+      "p99": 7.617,
+      "max": 14.543
+     }
+    },
+    {
+     "from": "2026-11-02T09:33:00.000000Z",
+     "to": "2026-11-02T10:33:00.000000Z",
+     "distinct": 41366,
+     "rows": 41366,
+     "latencySeconds": {
+      "count": 41366,
+      "p50": 3.851,
+      "p95": 6.139,
+      "p99": 8.213,
+      "max": 16.329
+     }
+    },
+    {
+     "from": "2026-11-02T10:33:00.000000Z",
+     "to": "2026-11-02T11:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36045,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 3.819,
+      "p95": 6.218,
+      "p99": 43.114,
+      "max": 90.616
+     }
+    },
+    {
+     "from": "2026-11-02T11:33:00.000000Z",
+     "to": "2026-11-02T12:33:00.000000Z",
+     "distinct": 35982,
+     "rows": 35982,
+     "latencySeconds": {
+      "count": 35982,
+      "p50": 3.879,
+      "p95": 6.015,
+      "p99": 7.228,
+      "max": 14.892
+     }
+    },
+    {
+     "from": "2026-11-02T12:33:00.000000Z",
+     "to": "2026-11-02T13:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36000,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 3.819,
+      "p95": 5.981,
+      "p99": 7.129,
+      "max": 13.916
+     }
+    },
+    {
+     "from": "2026-11-02T13:33:00.000000Z",
+     "to": "2026-11-02T14:33:00.000000Z",
+     "distinct": 41366,
+     "rows": 41366,
+     "latencySeconds": {
+      "count": 41366,
+      "p50": 3.787,
+      "p95": 5.96,
+      "p99": 7.403,
+      "max": 18.899
+     }
+    },
+    {
+     "from": "2026-11-02T14:33:00.000000Z",
+     "to": "2026-11-02T15:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36000,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 3.823,
+      "p95": 6.021,
+      "p99": 7.113,
+      "max": 12.754
+     }
+    },
+    {
+     "from": "2026-11-02T15:33:00.000000Z",
+     "to": "2026-11-02T16:33:00.000000Z",
+     "distinct": 35983,
+     "rows": 35983,
+     "latencySeconds": {
+      "count": 35983,
+      "p50": 3.927,
+      "p95": 6.021,
+      "p99": 7.113,
+      "max": 14.435
+     }
+    },
+    {
+     "from": "2026-11-02T16:33:00.000000Z",
+     "to": "2026-11-02T17:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36000,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 3.856,
+      "p95": 6.098,
+      "p99": 7.615,
+      "max": 13.221
+     }
+    },
+    {
+     "from": "2026-11-02T17:33:00.000000Z",
+     "to": "2026-11-02T18:33:00.000000Z",
+     "distinct": 41365,
+     "rows": 41365,
+     "latencySeconds": {
+      "count": 41365,
+      "p50": 3.936,
+      "p95": 6.258,
+      "p99": 7.621,
+      "max": 12.91
+     }
+    },
+    {
+     "from": "2026-11-02T18:33:00.000000Z",
+     "to": "2026-11-02T19:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36000,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 4.229,
+      "p95": 7.053,
+      "p99": 8.617,
+      "max": 49.729
+     }
+    },
+    {
+     "from": "2026-11-02T19:33:00.000000Z",
+     "to": "2026-11-02T20:33:00.000000Z",
+     "distinct": 35983,
+     "rows": 35983,
+     "latencySeconds": {
+      "count": 35983,
+      "p50": 4.247,
+      "p95": 7.043,
+      "p99": 8.947,
+      "max": 22.806
+     }
+    },
+    {
+     "from": "2026-11-02T20:33:00.000000Z",
+     "to": "2026-11-02T21:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36000,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 4.098,
+      "p95": 6.998,
+      "p99": 8.413,
+      "max": 13.829
+     }
+    },
+    {
+     "from": "2026-11-02T21:33:00.000000Z",
+     "to": "2026-11-02T22:33:00.000000Z",
+     "distinct": 41365,
+     "rows": 41365,
+     "latencySeconds": {
+      "count": 41365,
+      "p50": 4.041,
+      "p95": 7.288,
+      "p99": 8.778,
+      "max": 18.1
+     }
+    },
+    {
+     "from": "2026-11-02T22:33:00.000000Z",
+     "to": "2026-11-02T23:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36000,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 4.047,
+      "p95": 7.235,
+      "p99": 9.29,
+      "max": 15.848
+     }
+    },
+    {
+     "from": "2026-11-02T23:33:00.000000Z",
+     "to": "2026-11-03T00:33:00.000000Z",
+     "distinct": 35982,
+     "rows": 35982,
+     "latencySeconds": {
+      "count": 35982,
+      "p50": 3.941,
+      "p95": 6.7,
+      "p99": 9.082,
+      "max": 23.733
+     }
+    },
+    {
+     "from": "2026-11-03T00:33:00.000000Z",
+     "to": "2026-11-03T01:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36009,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 3.959,
+      "p95": 7.452,
+      "p99": 30.888,
+      "max": 73.199
+     }
+    },
+    {
+     "from": "2026-11-03T01:33:00.000000Z",
+     "to": "2026-11-03T02:33:00.000000Z",
+     "distinct": 41364,
+     "rows": 41364,
+     "latencySeconds": {
+      "count": 41364,
+      "p50": 3.846,
+      "p95": 6.39,
+      "p99": 8.162,
+      "max": 69.92
+     }
+    },
+    {
+     "from": "2026-11-03T02:33:00.000000Z",
+     "to": "2026-11-03T03:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36000,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 3.875,
+      "p95": 6.98,
+      "p99": 13.781,
+      "max": 22.317
+     }
+    },
+    {
+     "from": "2026-11-03T03:33:00.000000Z",
+     "to": "2026-11-03T04:33:00.000000Z",
+     "distinct": 1498,
+     "rows": 1498,
+     "latencySeconds": {
+      "count": 1498,
+      "p50": 3.679,
+      "p95": 5.875,
+      "p99": 7.621,
+      "max": 8.5
+     }
+    },
+    {
+     "from": "2026-11-03T04:33:00.000000Z",
+     "to": "2026-11-03T04:35:00.000000Z",
+     "distinct": 0,
+     "rows": 0,
+     "latencySeconds": {
+      "count": 0,
+      "p50": null,
+      "p95": null,
+      "p99": null,
+      "max": null
+     }
+    }
+   ],
+   "latencySeconds": {
+    "count": 896400,
+    "p50": 3.912,
+    "p95": 6.437,
+    "p99": 8.683,
+    "max": 151.237
+   },
+   "queryHashes": [
+    "2db45b605ee9876e36dba962ec99db4c1f8a117abbc7db3bfcad7d71424e42ec",
+    "51836cb27d40fadaae4257b1125727e281a1928cb83ed21b8ced9beda0eb5cd2",
+    "b0dea7d49adbe3fcc9d76aa79dc33175932a75b6759605cffb094cd2d8249b78",
+    "50cd6a090453a0f7f46418f2479929bbc3d5529486ce45e075b105981bf489d0",
+    "413dc191f6c0c3f1e624197eccfb410324c63c850c817831491ded8f23ed267d",
+    "351c8ccfe10527b4bc476019aeb4e386a071f8da41b3cee71b1f38e54c8174c8",
+    "b7bae9441b5b4b3f988c5054f19454349779fe7d2bf27ce15a44c847ee5b8e9b",
+    "1b943f795f360e34722e96e9eaf71dbab78c9244dcdcd2d57e6e0b1e095ba732",
+    "129665af5c6c085bb7ea74b1ce28ea34da003f5ea13de6fe88d91b4c3e5f71b4",
+    "754aeb48d602c0e34db96c36ccd2bc1a11f425aadbb3b00c6a3c717065bda9f3",
+    "07941afd68e26f902eb2135e727fc2962e992346c828d3a0ae2492b49cd799f6",
+    "b35aa5d20fd2631f9bfe406cc96644ecb852e391976f52277c29a513719dc1d7",
+    "9950232664268ad05b3ebe21cf78332df5824bfcafc188331675f55e33be82c7",
+    "25cb638261925b26e9aad341faa48e443a3a588f1e74dcdc2e956ee83c28ad42",
+    "756ac87735e34687ebb9bc6baec2fcc1de8198c396d72a2c9d140325d82e3c0e",
+    "9a361a56c8aeaaddf499fa0fad6be64652e27f131d331fa2ced598e366eaf10c",
+    "68e54cdfe1cc79844892d613d424ddc7bbff89c1d993eb8f486398cecd41110a",
+    "3ffe00355f196f048b8ddbb2aa607c217ddcf8293d3935ec4aba2ca45c5cebca",
+    "824977e38bf096b9e761169e0989bf0fe2238d8c9c1f958ee9243ff3e018a042",
+    "f64d56cab8e347c3b5f6efe22eb863feb924eedf645f5aac88401a6f467658d7",
+    "7ee767722421ceb9a73760216ef33e8caa7c3aeb53c41c12ff12d25b11a091c3",
+    "afc4527debb35c330d367e3e793a43c1ef0ddbfb0f5b98fa50f3b0d0c88af971",
+    "fa6c7992c8f87833009ccd5ca824e0587c7d6d356ae53afc3b89d30f27c5ca62",
+    "2aa754bfdc5d2a98eba0435fe27f314b20141b5d8116cbefed56f843a3fc973b",
+    "7a0ba26c1499a499b5dc7e968e48dbb05ca540e8c50d3c856be285c01e02df24",
+    "bbafca8e10e4737d18a4819df77df9e6390aebf86151a37e9a090ebbced06fb2"
+   ],
+   "latencyWithinLimit": true,
+   "hoursAboveLatencyLimit": [
+    "2026-11-02T10:33:00.000000Z",
+    "2026-11-03T00:33:00.000000Z",
+    "2026-11-03T02:33:00.000000Z"
+   ],
+   "resources": {
+    "samples": 297,
+    "samplesWithoutProcess": 0,
+    "samplesWithoutStatus": 20,
+    "sampleErrors": [
+     "ValueError"
+    ],
+    "processIdentities": 1,
+    "bootIds": 1,
+    "serviceRestartCounter": [
+     0
+    ],
+    "maximumSampleGapSeconds": 300.3132200241089,
+    "memoryBytes": {
+     "samples": 260,
+     "mean": 89277061.908,
+     "slopePerHour": 164953.685,
+     "thirtyDayProjectionPercentOfMean": 133.03,
+     "min": 80441344,
+     "max": 106905600
+    },
+    "memoryBytesFromStart": {
+     "samples": 297,
+     "mean": 88424668.66,
+     "slopePerHour": 302742.135,
+     "thirtyDayProjectionPercentOfMean": 246.51,
+     "min": 67506176,
+     "max": 106905600
+    },
+    "handlesOrFds": {
+     "samples": 260,
+     "mean": 23.688,
+     "slopePerHour": 0.054,
+     "thirtyDayProjectionPercentOfMean": 162.75,
+     "min": 23,
+     "max": 28
+    },
+    "threads": {
+     "samples": 260,
+     "mean": 17.177,
+     "slopePerHour": -0.008,
+     "thirtyDayProjectionPercentOfMean": -35.34,
+     "min": 17,
+     "max": 20
+    },
+    "queueDbPlusWalBytes": {
+     "samples": 260,
+     "mean": 214286628.185,
+     "slopePerHour": 99853.242,
+     "thirtyDayProjectionPercentOfMean": 33.55,
+     "min": 186003776,
+     "max": 214758464
+    },
+    "walBytes": {
+     "samples": 260,
+     "mean": 41992.615,
+     "slopePerHour": -1343.637,
+     "thirtyDayProjectionPercentOfMean": -2303.78,
+     "min": 4152,
+     "max": 181312
+    },
+    "cpuPercentOfOneCore": {
+     "count": 296,
+     "p50": 3.213,
+     "p95": 5.741,
+     "p99": 7.825,
+     "max": 31.369
+    },
+    "peakPending": 12,
+    "peakOldestUndeliveredAgeSeconds": 1.008754,
+    "minimumDiskAvailableBytes": 29635297280,
+    "statuses": [
+     "healthy"
+    ],
+    "jobRuns": {
+     "queue-maintenance": {
+      "runs": 2,
+      "states": [
+       "Succeeded"
+      ],
+      "last": "2026-11-03T03:00:00.5094606+00:00"
+     },
+     "queue-retention": {
+      "runs": 47,
+      "states": [
+       "Processing",
+       "Succeeded"
+      ],
+      "last": "2026-11-03T04:00:00.5174368+00:00"
+     },
+     "source-activity": {
+      "runs": 276,
+      "states": [
+       "Enqueued",
+       "Processing",
+       "Succeeded"
+      ],
+      "last": "2026-11-03T04:05:00.5131396+00:00"
+     }
+    },
+    "deliveryFailureCodes": [
+     null
+    ]
+   }
+  },
+  "windows": {
+   "native": 896400,
+   "accepted": 896400,
+   "sentinelDistinct": 896400,
+   "sentinelRows": 896501,
+   "duplicateRows": 101,
+   "missingAtAccepted": 0,
+   "missingAtSentinel": 0,
+   "extraAtSentinel": 0,
+   "nativeSha256": "d65064b301a6a951636072af79d44bfaba585c458fe58c9407faec9aa7a9089a",
+   "acceptedSha256": "d65064b301a6a951636072af79d44bfaba585c458fe58c9407faec9aa7a9089a",
+   "sentinelSha256": "d65064b301a6a951636072af79d44bfaba585c458fe58c9407faec9aa7a9089a",
+   "exact": true,
+   "nativeDetail": {
+    "windows": [
+     {
+      "window": "h00",
+      "since": "2026-11-02T03:35:00+00:00",
+      "until": "2026-11-02T04:35:00+00:00",
+      "selected": 35990,
+      "distinct": 35990,
+      "redactionChangedIds": 20,
+      "identitySetSha256": "86cc6e6ad4da82c17242301b2c341cd968bc5b95779986ac7368071112b8560b"
+     },
+     {
+      "window": "h01",
+      "since": "2026-11-02T04:35:00+00:00",
+      "until": "2026-11-02T05:35:00+00:00",
+      "selected": 36000,
+      "distinct": 36000,
+      "redactionChangedIds": 13,
+      "identitySetSha256": "147e7c8916ec318939f36ab1f9a2061bc5581ab7350ca70bfc28d3b38c27efc0"
+     },
+     {
+      "window": "h02",
+      "since": "2026-11-02T05:35:00+00:00",
+      "until": "2026-11-02T06:35:00+00:00",
+      "selected": 41397,
+      "distinct": 41397,
+      "redactionChangedIds": 20,
+      "identitySetSha256": "f51780694280d6c1473559b25c7c5a157dbb3a867614c01cf9f79941feb6b8d0"
+     },
+     {
+      "window": "h03",
+      "since": "2026-11-02T06:35:00+00:00",
+      "until": "2026-11-02T07:35:00+00:00",
+      "selected": 36000,
+      "distinct": 36000,
+      "redactionChangedIds": 27,
+      "identitySetSha256": "db657e1ca927255f283f79dd50c3c13d824956d0da8ab24e5f2b1e6d1b47408c"
+     },
+     {
+      "window": "h04",
+      "since": "2026-11-02T07:35:00+00:00",
+      "until": "2026-11-02T08:35:00+00:00",
+      "selected": 35999,
+      "distinct": 35999,
+      "redactionChangedIds": 17,
+      "identitySetSha256": "9b5a48e84e003737db84cc57a92fe4c5f53156b94a646458ae5ff1552a9f7579"
+     },
+     {
+      "window": "h05",
+      "since": "2026-11-02T08:35:00+00:00",
+      "until": "2026-11-02T09:35:00+00:00",
+      "selected": 35999,
+      "distinct": 35999,
+      "redactionChangedIds": 21,
+      "identitySetSha256": "f8d039093975d1248ba32f55181aa8db292c32d71f1366411095631cc2889eec"
+     },
+     {
+      "window": "h06",
+      "since": "2026-11-02T09:35:00+00:00",
+      "until": "2026-11-02T10:35:00+00:00",
+      "selected": 41401,
+      "distinct": 41401,
+      "redactionChangedIds": 19,
+      "identitySetSha256": "5a81a7a3d5a49a72d01b5f97417acc2ba3764289692eb1a69260d4b3345fe5f1"
+     },
+     {
+      "window": "h07",
+      "since": "2026-11-02T10:35:00+00:00",
+      "until": "2026-11-02T11:35:00+00:00",
+      "selected": 35999,
+      "distinct": 35999,
+      "redactionChangedIds": 23,
+      "identitySetSha256": "65cf28295ff6da227c2df6efeeb2e3f8a6d1e37d55ecbdf9dd270c8a66e473b3"
+     },
+     {
+      "window": "h08",
+      "since": "2026-11-02T11:35:00+00:00",
+      "until": "2026-11-02T12:35:00+00:00",
+      "selected": 36000,
+      "distinct": 36000,
+      "redactionChangedIds": 15,
+      "identitySetSha256": "db2d3b0981d42008e832afd3a3720e2b7254f01670602b48b382db5bd76c8006"
+     },
+     {
+      "window": "h09",
+      "since": "2026-11-02T12:35:00+00:00",
+      "until": "2026-11-02T13:35:00+00:00",
+      "selected": 35999,
+      "distinct": 35999,
+      "redactionChangedIds": 15,
+      "identitySetSha256": "7acd5974b151d9cd1a0ae95744135b37db3cb30723a6b532dd7551d7cc079f34"
+     },
+     {
+      "window": "h10",
+      "since": "2026-11-02T13:35:00+00:00",
+      "until": "2026-11-02T14:35:00+00:00",
+      "selected": 41397,
+      "distinct": 41397,
+      "redactionChangedIds": 28,
+      "identitySetSha256": "f6aec7643e02f2b9654efd93c68fb12ec957550d7fa020922d49812594733189"
+     },
+     {
+      "window": "h11",
+      "since": "2026-11-02T14:35:00+00:00",
+      "until": "2026-11-02T15:35:00+00:00",
+      "selected": 36000,
+      "distinct": 36000,
+      "redactionChangedIds": 22,
+      "identitySetSha256": "d44dfb027d11f29e870aa3794867ed19e8ebab47c0e9a6c2dc21367198cdfe26"
+     },
+     {
+      "window": "h12",
+      "since": "2026-11-02T15:35:00+00:00",
+      "until": "2026-11-02T16:35:00+00:00",
+      "selected": 35999,
+      "distinct": 35999,
+      "redactionChangedIds": 22,
+      "identitySetSha256": "f3da3d2026bfa8f5e15a1c2ee27af7ca2f3bb3e79102a004a30c37e216b8b673"
+     },
+     {
+      "window": "h13",
+      "since": "2026-11-02T16:35:00+00:00",
+      "until": "2026-11-02T17:35:00+00:00",
+      "selected": 36000,
+      "distinct": 36000,
+      "redactionChangedIds": 18,
+      "identitySetSha256": "7d13d8e6b95a0d892781bb85f2ae7193934f810787fa6f98c389b2891965ecd0"
+     },
+     {
+      "window": "h14",
+      "since": "2026-11-02T17:35:00+00:00",
+      "until": "2026-11-02T18:35:00+00:00",
+      "selected": 41398,
+      "distinct": 41398,
+      "redactionChangedIds": 20,
+      "identitySetSha256": "c18c09ab223dc82a459bf1091e5ae00e268db681e3d9c4e211c072b023f8ace4"
+     },
+     {
+      "window": "h15",
+      "since": "2026-11-02T18:35:00+00:00",
+      "until": "2026-11-02T19:35:00+00:00",
+      "selected": 36000,
+      "distinct": 36000,
+      "redactionChangedIds": 22,
+      "identitySetSha256": "2715dc47dc956554890c6a30ea1af7d1f28a0df61133b2828bf0fb29be5f50ee"
+     },
+     {
+      "window": "h16",
+      "since": "2026-11-02T19:35:00+00:00",
+      "until": "2026-11-02T20:35:00+00:00",
+      "selected": 36000,
+      "distinct": 36000,
+      "redactionChangedIds": 21,
+      "identitySetSha256": "d5ddc60691dc06268d84b042defcee6824f6adb57e274bf623a687d84eadb8f1"
+     },
+     {
+      "window": "h17",
+      "since": "2026-11-02T20:35:00+00:00",
+      "until": "2026-11-02T21:35:00+00:00",
+      "selected": 35999,
+      "distinct": 35999,
+      "redactionChangedIds": 14,
+      "identitySetSha256": "3e387a293c154e8e9e3557e73a03eecdd77cb37fdb4783be5d33085bb6600a43"
+     },
+     {
+      "window": "h18",
+      "since": "2026-11-02T21:35:00+00:00",
+      "until": "2026-11-02T22:35:00+00:00",
+      "selected": 41400,
+      "distinct": 41400,
+      "redactionChangedIds": 25,
+      "identitySetSha256": "74d8ea5a10787a11e3ebf4464f1591ba9786d1592d23cc9061e7ee6a4d64c7f5"
+     },
+     {
+      "window": "h19",
+      "since": "2026-11-02T22:35:00+00:00",
+      "until": "2026-11-02T23:35:00+00:00",
+      "selected": 36000,
+      "distinct": 36000,
+      "redactionChangedIds": 28,
+      "identitySetSha256": "9f75e43e53fc05f0ce75b08287c60e69a428fb65fb82d2a2b2a6a6cd4e95c57b"
+     },
+     {
+      "window": "h20",
+      "since": "2026-11-02T23:35:00+00:00",
+      "until": "2026-11-03T00:35:00+00:00",
+      "selected": 35999,
+      "distinct": 35999,
+      "redactionChangedIds": 28,
+      "identitySetSha256": "9cec7d10cababb355ea1a8557274754c372d2dc4a6b853843801eb2655c37b1f"
+     },
+     {
+      "window": "h21",
+      "since": "2026-11-03T00:35:00+00:00",
+      "until": "2026-11-03T01:35:00+00:00",
+      "selected": 36000,
+      "distinct": 36000,
+      "redactionChangedIds": 14,
+      "identitySetSha256": "4bdd162763413b62f9d5662ed3caac053d0b7820711addc8825f5546e177211d"
+     },
+     {
+      "window": "h22",
+      "since": "2026-11-03T01:35:00+00:00",
+      "until": "2026-11-03T02:35:00+00:00",
+      "selected": 41394,
+      "distinct": 41394,
+      "redactionChangedIds": 27,
+      "identitySetSha256": "e4b7b1b51cd8051cb8657f7eb208d37dccf7b87d053e4ddc4e5b4f96f3e806b5"
+     },
+     {
+      "window": "h23",
+      "since": "2026-11-03T02:35:00+00:00",
+      "until": "2026-11-03T03:35:00+00:00",
+      "selected": 35999,
+      "distinct": 35998,
+      "redactionChangedIds": 24,
+      "identitySetSha256": "3b69e3a163000cbab35b0c510fb005fd3ec004613ff0eaf7ff122108d168acf0"
+     },
+     {
+      "window": "h24",
+      "since": "2026-11-03T03:35:00+00:00",
+      "until": "2026-11-03T04:35:00+00:00",
+      "selected": 31,
+      "distinct": 31,
+      "redactionChangedIds": 0,
+      "identitySetSha256": "a573f32d2adaf9789459de9ce4014e8da3b0559978af6ec32859a98d09335720"
+     }
+    ],
+    "expected": 896400,
+    "crossWindowOrInWindowDuplicates": 1
+   },
+   "hours": [
+    {
+     "from": "2026-11-02T03:33:00.000000Z",
+     "to": "2026-11-02T04:33:00.000000Z",
+     "distinct": 34790,
+     "rows": 34790,
+     "latencySeconds": {
+      "count": 34790,
+      "p50": 6.778,
+      "p95": 9.737,
+      "p99": 12.473,
+      "max": 162.728
+     }
+    },
+    {
+     "from": "2026-11-02T04:33:00.000000Z",
+     "to": "2026-11-02T05:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36000,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 6.934,
+      "p95": 9.6,
+      "p99": 11.555,
+      "max": 150.514
+     }
+    },
+    {
+     "from": "2026-11-02T05:33:00.000000Z",
+     "to": "2026-11-02T06:33:00.000000Z",
+     "distinct": 41397,
+     "rows": 41397,
+     "latencySeconds": {
+      "count": 41397,
+      "p50": 7.983,
+      "p95": 218.725,
+      "p99": 257.558,
+      "max": 268.338
+     }
+    },
+    {
+     "from": "2026-11-02T06:33:00.000000Z",
+     "to": "2026-11-02T07:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36000,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 7.413,
+      "p95": 10.481,
+      "p99": 22.882,
+      "max": 38.885
+     }
+    },
+    {
+     "from": "2026-11-02T07:33:00.000000Z",
+     "to": "2026-11-02T08:33:00.000000Z",
+     "distinct": 35999,
+     "rows": 35999,
+     "latencySeconds": {
+      "count": 35999,
+      "p50": 7.353,
+      "p95": 11.197,
+      "p99": 29.991,
+      "max": 44.473
+     }
+    },
+    {
+     "from": "2026-11-02T08:33:00.000000Z",
+     "to": "2026-11-02T09:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36000,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 7.331,
+      "p95": 10.595,
+      "p99": 27.796,
+      "max": 45.804
+     }
+    },
+    {
+     "from": "2026-11-02T09:33:00.000000Z",
+     "to": "2026-11-02T10:33:00.000000Z",
+     "distinct": 41400,
+     "rows": 41400,
+     "latencySeconds": {
+      "count": 41400,
+      "p50": 8.535,
+      "p95": 240.428,
+      "p99": 276.255,
+      "max": 287.596
+     }
+    },
+    {
+     "from": "2026-11-02T10:33:00.000000Z",
+     "to": "2026-11-02T11:33:00.000000Z",
+     "distinct": 35999,
+     "rows": 36050,
+     "latencySeconds": {
+      "count": 35999,
+      "p50": 7.565,
+      "p95": 11.185,
+      "p99": 42.33,
+      "max": 84.375
+     }
+    },
+    {
+     "from": "2026-11-02T11:33:00.000000Z",
+     "to": "2026-11-02T12:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36000,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 7.46,
+      "p95": 10.345,
+      "p99": 32.574,
+      "max": 47.896
+     }
+    },
+    {
+     "from": "2026-11-02T12:33:00.000000Z",
+     "to": "2026-11-02T13:33:00.000000Z",
+     "distinct": 35999,
+     "rows": 35999,
+     "latencySeconds": {
+      "count": 35999,
+      "p50": 7.489,
+      "p95": 10.546,
+      "p99": 30.265,
+      "max": 44.56
+     }
+    },
+    {
+     "from": "2026-11-02T13:33:00.000000Z",
+     "to": "2026-11-02T14:33:00.000000Z",
+     "distinct": 41397,
+     "rows": 41397,
+     "latencySeconds": {
+      "count": 41397,
+      "p50": 9.31,
+      "p95": 294.037,
+      "p99": 326.522,
+      "max": 336.844
+     }
+    },
+    {
+     "from": "2026-11-02T14:33:00.000000Z",
+     "to": "2026-11-02T15:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36000,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 7.783,
+      "p95": 16.987,
+      "p99": 27.781,
+      "max": 41.15
+     }
+    },
+    {
+     "from": "2026-11-02T15:33:00.000000Z",
+     "to": "2026-11-02T16:33:00.000000Z",
+     "distinct": 35999,
+     "rows": 36009,
+     "latencySeconds": {
+      "count": 35999,
+      "p50": 11.562,
+      "p95": 61.941,
+      "p99": 88.508,
+      "max": 96.169
+     }
+    },
+    {
+     "from": "2026-11-02T16:33:00.000000Z",
+     "to": "2026-11-02T17:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36000,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 12.015,
+      "p95": 36.515,
+      "p99": 74.065,
+      "max": 82.058
+     }
+    },
+    {
+     "from": "2026-11-02T17:33:00.000000Z",
+     "to": "2026-11-02T18:33:00.000000Z",
+     "distinct": 41398,
+     "rows": 41398,
+     "latencySeconds": {
+      "count": 41398,
+      "p50": 325.056,
+      "p95": 485.926,
+      "p99": 497.074,
+      "max": 504.964
+     }
+    },
+    {
+     "from": "2026-11-02T18:33:00.000000Z",
+     "to": "2026-11-02T19:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36000,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 134.309,
+      "p95": 200.809,
+      "p99": 213.121,
+      "max": 225.759
+     }
+    },
+    {
+     "from": "2026-11-02T19:33:00.000000Z",
+     "to": "2026-11-02T20:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36000,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 42.659,
+      "p95": 107.06,
+      "p99": 130.475,
+      "max": 140.67
+     }
+    },
+    {
+     "from": "2026-11-02T20:33:00.000000Z",
+     "to": "2026-11-02T21:33:00.000000Z",
+     "distinct": 35999,
+     "rows": 35999,
+     "latencySeconds": {
+      "count": 35999,
+      "p50": 16.401,
+      "p95": 49.652,
+      "p99": 78.249,
+      "max": 86.096
+     }
+    },
+    {
+     "from": "2026-11-02T21:33:00.000000Z",
+     "to": "2026-11-02T22:33:00.000000Z",
+     "distinct": 41400,
+     "rows": 41400,
+     "latencySeconds": {
+      "count": 41400,
+      "p50": 442.168,
+      "p95": 573.078,
+      "p99": 608.846,
+      "max": 621.212
+     }
+    },
+    {
+     "from": "2026-11-02T22:33:00.000000Z",
+     "to": "2026-11-02T23:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36000,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 344.681,
+      "p95": 448.261,
+      "p99": 487.375,
+      "max": 497.084
+     }
+    },
+    {
+     "from": "2026-11-02T23:33:00.000000Z",
+     "to": "2026-11-03T00:33:00.000000Z",
+     "distinct": 35999,
+     "rows": 35999,
+     "latencySeconds": {
+      "count": 35999,
+      "p50": 261.226,
+      "p95": 349.056,
+      "p99": 370.86,
+      "max": 381.158
+     }
+    },
+    {
+     "from": "2026-11-03T00:33:00.000000Z",
+     "to": "2026-11-03T01:33:00.000000Z",
+     "distinct": 36000,
+     "rows": 36040,
+     "latencySeconds": {
+      "count": 36000,
+      "p50": 223.229,
+      "p95": 314.207,
+      "p99": 339.661,
+      "max": 346.295
+     }
+    },
+    {
+     "from": "2026-11-03T01:33:00.000000Z",
+     "to": "2026-11-03T02:33:00.000000Z",
+     "distinct": 41394,
+     "rows": 41394,
+     "latencySeconds": {
+      "count": 41394,
+      "p50": 803.383,
+      "p95": 883.859,
+      "p99": 913.655,
+      "max": 925.832
+     }
+    },
+    {
+     "from": "2026-11-03T02:33:00.000000Z",
+     "to": "2026-11-03T03:33:00.000000Z",
+     "distinct": 35999,
+     "rows": 35999,
+     "latencySeconds": {
+      "count": 35999,
+      "p50": 782.087,
+      "p95": 925.123,
+      "p99": 955.15,
+      "max": 969.28
+     }
+    },
+    {
+     "from": "2026-11-03T03:33:00.000000Z",
+     "to": "2026-11-03T04:33:00.000000Z",
+     "distinct": 1231,
+     "rows": 1231,
+     "latencySeconds": {
+      "count": 1231,
+      "p50": 770.185,
+      "p95": 776.926,
+      "p99": 779.955,
+      "max": 780.679
+     }
+    },
+    {
+     "from": "2026-11-03T04:33:00.000000Z",
+     "to": "2026-11-03T04:35:00.000000Z",
+     "distinct": 0,
+     "rows": 0,
+     "latencySeconds": {
+      "count": 0,
+      "p50": null,
+      "p95": null,
+      "p99": null,
+      "max": null
+     }
+    }
+   ],
+   "latencySeconds": {
+    "count": 896400,
+    "p50": 11.682,
+    "p95": 771.842,
+    "p99": 881.783,
+    "max": 969.28
+   },
+   "queryHashes": [
+    "5fb227ed567deae8c7fc9e78dce82fe5d61955b4d69c9e5e43c5c921fe77701e",
+    "2c1c2723df10548236b2c5ed738e6880c1ca49087fbfc5ceab31c52dd13c310e",
+    "efc8c764acd31981cd787fbc83887471da11f86ee415b7d74198f322742cd24d",
+    "9eff6cef75de377f020f70a23003b33c17df334a1c6f0cad3543996349bf7022",
+    "3d5294f336500768a6279e6a0ba60f032e23ecc8e54f95a4035f23ff32ad8b72",
+    "2f75e8c369720fe202ff8ede4600d326baf390040065cabc24935d9c72bd7121",
+    "407433e708757d834603c8e07dd6ce5c3bbf53bdbe86df0997aa60216c97dc18",
+    "29df9e6461d37c7a91ff1c5cf5c7ac1e1d4e870bccc233bc1d72791322127e3d",
+    "2be33fd48475b38f1bfa9f375c8fbd9ea1fb9f09737b3f4c0c2d1dfa0beffdac",
+    "13b9c8268beb8604ea4cf04a6d33f4372d9f9957650379035172fea34387f632",
+    "acb72d6d07c5d068ddffbe08bdc3a8760b44f247c84f2a12e9bd118933831bdd",
+    "445906b56bd6e5d8d14ae8b86164499b7b72a12e85d4328768f4bf913bee8b76",
+    "a7e366fd19e2c2e8bc728df5b662d9f5b8d7fc4cd090225a887217849ad4d4ad",
+    "e8ee90e16510908870f43477a092609db32d23e74181dce3150fb5ace971302b",
+    "5fe0f4e1d20f18835a144f60d41af51560c030ba48a2b7e76b8456cc0f676395",
+    "f373cece9979197e99abc546f8ab605facec9da722be7e940c21ecf9119a46ad",
+    "e3a3d09d393a70dd4d322ee4a65d50ded3dceb9818f88b1362780117a0e271d1",
+    "03221d4a88b376569038f7e091620f7165ed8e009ec50782effab0641f06edf3",
+    "e7de14242c250a841f0f7b94de4ed2da4a37946f3db5f58f2687b8bf81453926",
+    "11bb6dbab5d7cba6cf2bc6293c475aaa1728b76fcaba579a1bedb23a93f0b76c",
+    "e48766e0985236d147b7a690514e09c465405ae890a50a3fb9d5b64f8015bbb7",
+    "4597fa0f8d52ccd6ebd4ada745fba16031fcf4d788fcadf657acf95ef2c586ad",
+    "e198c1898076f5e7ca97958b5a60566db128ee5b16c0c0af3f3dde8700dc0b8d",
+    "5918fc9b5d20728c0a64f69d8b76527bda0daa700954ccb0741ddb3e41f6fd92",
+    "d82676e10ac56a5833b1bb6ed823e596f44ed53481c16be836ef5a7bcd9d8981",
+    "1437bdde69905b4c15e05ea4af12dd729d1cd50a9b7da7130d31b25ba6ae0bfa"
+   ],
+   "latencyWithinLimit": false,
+   "hoursAboveLatencyLimit": [
+    "2026-11-02T05:33:00.000000Z",
+    "2026-11-02T06:33:00.000000Z",
+    "2026-11-02T07:33:00.000000Z",
+    "2026-11-02T08:33:00.000000Z",
+    "2026-11-02T09:33:00.000000Z",
+    "2026-11-02T10:33:00.000000Z",
+    "2026-11-02T11:33:00.000000Z",
+    "2026-11-02T12:33:00.000000Z",
+    "2026-11-02T13:33:00.000000Z",
+    "2026-11-02T14:33:00.000000Z",
+    "2026-11-02T15:33:00.000000Z",
+    "2026-11-02T16:33:00.000000Z",
+    "2026-11-02T17:33:00.000000Z",
+    "2026-11-02T18:33:00.000000Z",
+    "2026-11-02T19:33:00.000000Z",
+    "2026-11-02T20:33:00.000000Z",
+    "2026-11-02T21:33:00.000000Z",
+    "2026-11-02T22:33:00.000000Z",
+    "2026-11-02T23:33:00.000000Z",
+    "2026-11-03T00:33:00.000000Z",
+    "2026-11-03T01:33:00.000000Z",
+    "2026-11-03T02:33:00.000000Z",
+    "2026-11-03T03:33:00.000000Z"
+   ],
+   "resources": {
+    "samples": 295,
+    "samplesWithoutProcess": 0,
+    "samplesWithoutStatus": 0,
+    "sampleErrors": [],
+    "processIdentities": 1,
+    "bootIds": 1,
+    "serviceRestartCounter": null,
+    "maximumSampleGapSeconds": 785.9481329917908,
+    "memoryBytes": {
+     "samples": 259,
+     "mean": 45368134.178,
+     "slopePerHour": 485750.281,
+     "thirtyDayProjectionPercentOfMean": 770.89,
+     "min": 31006720,
+     "max": 73347072
+    },
+    "memoryBytesFromStart": {
+     "samples": 295,
+     "mean": 44224525.885,
+     "slopePerHour": 580127.756,
+     "thirtyDayProjectionPercentOfMean": 944.48,
+     "min": 29335552,
+     "max": 73347072
+    },
+    "handlesOrFds": {
+     "samples": 259,
+     "mean": 416.066,
+     "slopePerHour": 0.473,
+     "thirtyDayProjectionPercentOfMean": 81.9,
+     "min": 403,
+     "max": 426
+    },
+    "threads": {
+     "samples": 259,
+     "mean": 16.239,
+     "slopePerHour": 0.107,
+     "thirtyDayProjectionPercentOfMean": 472.97,
+     "min": 15,
+     "max": 18
+    },
+    "queueDbPlusWalBytes": {
+     "samples": 259,
+     "mean": 303585229.931,
+     "slopePerHour": 84429.123,
+     "thirtyDayProjectionPercentOfMean": 20.02,
+     "min": 262267752,
+     "max": 326942024
+    },
+    "walBytes": {
+     "samples": 259,
+     "mean": 1646075.398,
+     "slopePerHour": -54840.401,
+     "thirtyDayProjectionPercentOfMean": -2398.74,
+     "min": 4152,
+     "max": 24485192
+    },
+    "cpuPercentOfOneCore": {
+     "count": 294,
+     "p50": 58.705,
+     "p95": 78.07,
+     "p99": 79.736,
+     "max": 84.477
+    },
+    "peakPending": 36,
+    "peakOldestUndeliveredAgeSeconds": 6.885804599999999,
+    "minimumDiskAvailableBytes": 18468392960,
+    "statuses": [
+     "healthy"
+    ],
+    "jobRuns": {
+     "queue-maintenance": {
+      "runs": 2,
+      "states": [
+       "Succeeded"
+      ],
+      "last": "2026-11-03T03:00:00.3378607+00:00"
+     },
+     "queue-retention": {
+      "runs": 50,
+      "states": [
+       "Processing",
+       "Succeeded"
+      ],
+      "last": "2026-11-03T04:00:00.4565171+00:00"
+     },
+     "source-activity": {
+      "runs": 295,
+      "states": [
+       "Processing",
+       "Succeeded"
+      ],
+      "last": "2026-11-03T04:13:00.5989427+00:00"
+     }
+    },
+    "deliveryFailureCodes": [
+     null
+    ]
+   }
+  }
+ },
+ "health": [
+  {
+   "CollectorId": "bower-soak-20261102-015614-linux",
+   "Outcome": "Collector health: healthy",
+   "Records": 1484,
+   "Earliest": "2026-11-02T03:35:52.2387092Z",
+   "Latest": "2026-11-03T04:19:59.7252866Z",
+   "MaxGapSeconds": 63
+  },
+  {
+   "CollectorId": "bower-soak-20261102-015614-windows",
+   "Outcome": "Collector health: healthy",
+   "Records": 1472,
+   "Earliest": "2026-11-02T03:35:36.0008606Z",
+   "Latest": "2026-11-03T04:19:32.0419214Z",
+   "MaxGapSeconds": 95
+  },
+  {
+   "CollectorId": "bower-soak-20261102-015614-windows",
+   "Outcome": "Collector health: windows-event-log-errors",
+   "Records": 2,
+   "Earliest": "2026-11-02T12:00:46.5154512Z",
+   "Latest": "2026-11-02T17:00:28.4637614Z",
+   "MaxGapSeconds": 63
+  }
+ ],
+ "healthQueryHash": "7c02892d6530799a088e839ae05a58b3e9a6cc9d83cbc4b426762610b52eb833",
+ "privacy": [
+  {
+   "CollectorId": "bower-soak-20261102-015614-windows",
+   "Rows": 897977,
+   "Matches": 0
+  },
+  {
+   "CollectorId": "bower-soak-20261102-015614-linux",
+   "Rows": 897940,
+   "Matches": 0
+  }
+ ],
+ "privacyQueryHash": "fb65b2956c02ed74f878132822db54f6c3b6db64e2b96f00c5507d104ebd9899",
+ "alerts": {
+  "alerts": [
+   {
+    "name": "bower-soak-20261102-015614-source-transport-errors",
+    "state": "Resolved",
+    "startedAt": "2026-11-02T17:02:39.852743Z"
+   },
+   {
+    "name": "bower-soak-20261102-015614-source-transport-errors",
+    "state": "Resolved",
+    "startedAt": "2026-11-02T12:02:37.8847569Z"
+   },
+   {
+    "name": "bower-soak-20261102-015614-syslog-tls-expiry",
+    "state": "Fired",
+    "startedAt": "2026-11-02T02:36:41.4375267Z"
+   }
+  ],
+  "incidents": []
+ }
+}

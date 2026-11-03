@@ -1,0 +1,20 @@
+{
+    "attempted":  72000,
+    "completed":  72000,
+    "allCallsCompleted":  true,
+    "seconds":  7200.0017259999995,
+    "actualRate":  9.9999975998616879,
+    "maximumConcurrentCalls":  2,
+    "unexpectedSuccessfulLogons":  0,
+    "ldapResultCodes":  {
+                            "49":  72000
+                        },
+    "label":  "soak",
+    "segment":  15,
+    "offsetSeconds":  64860,
+    "rate":  10,
+    "plannedSeconds":  7200,
+    "scheduledAt":  "2026-11-02T21:36:00.0000000+00:00",
+    "startedAt":  "2026-11-02T21:36:02.3297172+00:00",
+    "finishedAt":  "2026-11-02T23:36:02.3820954+00:00"
+}

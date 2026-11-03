@@ -1,0 +1,189 @@
+{
+ "schemaVersion": 1,
+ "runId": "bower-soak-20261102-015614",
+ "checkedAt": "2026-11-03T04:26:04.572882+00:00",
+ "accountId": "959038055523",
+ "region": "ap-southeast-2",
+ "azureSubscription": "945092a0-2500-4b25-85a4-99f1c3135906",
+ "checks": [
+  {
+   "check": "cloudformation stack bower-soak-20261102-015614",
+   "absent": true
+  },
+  {
+   "check": "S3 bucket bower-soak-20261102-015614-artifacts-t833llw1ynbd",
+   "absent": true,
+   "errorCode": "404"
+  },
+  {
+   "check": "instance i-0bb64b393e2c1ee08 (terminated)",
+   "absent": true
+  },
+  {
+   "check": "expiry schedule bower-soak-20261102-015614-expiry",
+   "absent": true,
+   "errorCode": "ResourceNotFoundException"
+  },
+  {
+   "check": "IAM role bower-soak-20261102-015614-ExpiryRole-9yFyoXhU48Ve",
+   "absent": true,
+   "errorCode": "NoSuchEntity"
+  },
+  {
+   "check": "security group sg-0c1b151451eadcae8",
+   "absent": true,
+   "errorCode": "InvalidGroup.NotFound"
+  },
+  {
+   "check": "instance profile bower-soak-20261102-015614-HostProfile-AABBppcqfiSd",
+   "absent": true,
+   "errorCode": "NoSuchEntity"
+  },
+  {
+   "check": "IAM role bower-soak-20261102-015614-HostRole-MgSL6xoy68d5",
+   "absent": true,
+   "errorCode": "NoSuchEntity"
+  },
+  {
+   "check": "instance i-04f5e969087d4662f (terminated)",
+   "absent": true
+  },
+  {
+   "check": "route table rtb-0e124480894aee1d9",
+   "absent": true,
+   "errorCode": "InvalidRouteTableID.NotFound"
+  },
+  {
+   "check": "secret arn:aws:secretsmanager:ap-southeast-2:959038055523:secret:Secret-Xyv3WnA04etP-6YDY5f",
+   "absent": true,
+   "errorCode": "ResourceNotFoundException"
+  },
+  {
+   "check": "instance i-0a9d2278779b53a80 (terminated)",
+   "absent": true
+  },
+  {
+   "check": "instance profile bower-soak-20261102-015614-SenderProfile-NiShxntErvJJ",
+   "absent": true,
+   "errorCode": "NoSuchEntity"
+  },
+  {
+   "check": "IAM role bower-soak-20261102-015614-SenderRole-Xc881z6q7xPA",
+   "absent": true,
+   "errorCode": "NoSuchEntity"
+  },
+  {
+   "check": "subnet subnet-0ba3f6815026f3ee0",
+   "absent": true,
+   "errorCode": "InvalidSubnetID.NotFound"
+  },
+  {
+   "check": "instance i-045feea6c5bbec8f9 (terminated)",
+   "absent": true
+  },
+  {
+   "check": "EBS volume vol-0cfe0d339c728ed9c",
+   "absent": true,
+   "errorCode": "InvalidVolume.NotFound"
+  },
+  {
+   "check": "EBS volume vol-09545ba448ca4beba",
+   "absent": true,
+   "errorCode": "InvalidVolume.NotFound"
+  },
+  {
+   "check": "EBS volume vol-0d966dba502846e3f",
+   "absent": true,
+   "errorCode": "InvalidVolume.NotFound"
+  },
+  {
+   "check": "EBS volume vol-08fa043e1bd8fe4ac",
+   "absent": true,
+   "errorCode": "InvalidVolume.NotFound"
+  },
+  {
+   "check": "EBS snapshots tagged RunId",
+   "absent": true
+  },
+  {
+   "check": "CloudWatch log groups with the run prefix",
+   "absent": true
+  },
+  {
+   "check": "Secrets Manager secrets tagged RunId",
+   "absent": true
+  },
+  {
+   "check": "AWS resources tagged RunId (tagging API, region; listed ARNs re-verified)",
+   "absent": true,
+   "listedByTaggingApi": [
+    "arn:aws:ec2:ap-southeast-2:959038055523:instance/i-045feea6c5bbec8f9",
+    "arn:aws:ec2:ap-southeast-2:959038055523:instance/i-0bb64b393e2c1ee08",
+    "arn:aws:ec2:ap-southeast-2:959038055523:volume/vol-08fa043e1bd8fe4ac",
+    "arn:aws:ec2:ap-southeast-2:959038055523:volume/vol-0d966dba502846e3f",
+    "arn:aws:ec2:ap-southeast-2:959038055523:instance/i-04f5e969087d4662f",
+    "arn:aws:ec2:ap-southeast-2:959038055523:instance/i-0a9d2278779b53a80",
+    "arn:aws:ec2:ap-southeast-2:959038055523:volume/vol-09545ba448ca4beba",
+    "arn:aws:ec2:ap-southeast-2:959038055523:volume/vol-0cfe0d339c728ed9c"
+   ],
+   "notConfirmedGone": []
+  },
+  {
+   "check": "Azure resource group rg-bower-soak-20261102-015614",
+   "absent": true
+  },
+  {
+   "check": "Azure resources tagged RunId",
+   "absent": true
+  },
+  {
+   "check": "soft-deleted workspace bower-soak-20261102-015614-logs",
+   "absent": true
+  },
+  {
+   "check": "Entra application bower-soak-20261102-015614-ingest",
+   "absent": true
+  },
+  {
+   "check": "service principal of bower-soak-20261102-015614-ingest",
+   "absent": true
+  },
+  {
+   "check": "deleted-items application 267965d3-f4e8-4fa4-becf-e5fc5699e133",
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
+  },
+  {
+   "check": "deleted-items service principal 1ae2930e-dcaf-4d21-8be6-05ba002e3a18",
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
+  },
+  {
+   "check": "role assignments of bower-soak-20261102-015614-ingest",
+   "absent": true
+  },
+  {
+   "check": "Entra application bower-soak-20261102-015614-verifier",
+   "absent": true
+  },
+  {
+   "check": "service principal of bower-soak-20261102-015614-verifier",
+   "absent": true
+  },
+  {
+   "check": "deleted-items application a2d49abf-bd86-4fd4-8e54-2895710eb316",
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
+  },
+  {
+   "check": "deleted-items service principal 7b1247e5-56ee-403f-8140-bf20fec43777",
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
+  },
+  {
+   "check": "role assignments of bower-soak-20261102-015614-verifier",
+   "absent": true
+  }
+ ],
+ "allAbsent": true
+}

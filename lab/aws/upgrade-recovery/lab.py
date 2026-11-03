@@ -17,13 +17,25 @@ STATE = ROOT / 'state.json'
 ACCOUNT = '959038055523'
 REGION = 'ap-southeast-2'
 PROJECT = 'bower-lab'
-RUN = os.environ['BOWER_LAB_RUN_ID']  # bower-ws4-UTCyyyymmdd-HHMMSS
+RUN = os.environ['BOWER_LAB_RUN_ID']  # bower-ws4-UTCyyyymmdd-HHMMSS or bower-soak-UTCyyyymmdd-HHMMSS
 VPC = 'vpc-0386855f644985706'
 NAT = 'nat-016cf975ae7ffe691'
-CIDR = '172.31.244.0/24'
-WINDOWS = ['Dc', 'Wec', 'Wec2']
-LINUX = ['Linux', 'Linux2']
+# ws4 (default): upgrade/recovery. soak: the 24-hour soak (gap 7): Dc, Wec, the RPM collector
+# Linux and the rsyslog/RELP Sender, which gets its own role limited to its artifact prefix.
+PROFILE = os.environ.get('BOWER_LAB_PROFILE', 'ws4')
+if PROFILE not in ('ws4', 'soak') or not __import__('re').fullmatch(r'bower-' + PROFILE + r'-\d{8}-\d{6}', RUN):
+    raise SystemExit('BOWER_LAB_RUN_ID does not match BOWER_LAB_PROFILE')
+# The Windows generators only target a DC inside their profile's subnet (generator.ps1:
+# 172.31.244., soak/generator-windows.ps1: 172.31.247.); refuse any other subnet before create.
+GENERATOR_SUBNET = {'ws4': '172.31.244.0/24', 'soak': '172.31.247.0/24'}[PROFILE]
+CIDR = os.environ.get('BOWER_LAB_CIDR', GENERATOR_SUBNET)
+if CIDR != GENERATOR_SUBNET:
+    raise SystemExit('BOWER_LAB_CIDR must be ' + GENERATOR_SUBNET + ' for profile ' + PROFILE
+                     + ': the DC generator guard accepts only that subnet')
+WINDOWS = ['Dc', 'Wec', 'Wec2'] if PROFILE == 'ws4' else ['Dc', 'Wec']
+LINUX = ['Linux', 'Linux2'] if PROFILE == 'ws4' else ['Linux', 'Sender']
 HOSTS = WINDOWS + LINUX
+EXPIRY_HOURS = 10 if PROFILE == 'ws4' else 30
 
 
 def aws(*args, raw=False):
@@ -84,11 +96,23 @@ def build(expiry):
         ManagedPolicyArns=['arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'],
         Policies=[{'PolicyName': 'LabArtifacts', 'PolicyDocument': {'Version': '2012-10-17', 'Statement': statements}}], Tags=tags)
     r['HostProfile'] = res('AWS::IAM::InstanceProfile', Roles=[ref('HostRole')])
-    sizes = {'Dc': 't3.medium', 'Wec': 't3.medium', 'Wec2': 't3.medium', 'Linux': 't3.medium', 'Linux2': 't3.small'}
+    if 'Sender' in HOSTS:
+        # The sender must not read collector or Azure ingestion private keys.
+        r['SenderRole'] = res('AWS::IAM::Role', AssumeRolePolicyDocument={'Version': '2012-10-17', 'Statement': [
+            {'Effect': 'Allow', 'Principal': {'Service': 'ec2.amazonaws.com'}, 'Action': 'sts:AssumeRole'}]},
+            ManagedPolicyArns=['arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'],
+            Policies=[{'PolicyName': 'OnlySenderArtifacts', 'PolicyDocument': {'Version': '2012-10-17', 'Statement': [
+                {'Effect': 'Allow', 'Action': 's3:GetObject', 'Resource': sub('${Artifacts.Arn}/artifacts/qualification/' + RUN + '/sender/*')},
+                {'Effect': 'Allow', 'Action': 's3:PutObject', 'Resource': sub('${Artifacts.Arn}/results/sender/*')}]}}], Tags=tags)
+        r['SenderProfile'] = res('AWS::IAM::InstanceProfile', Roles=[ref('SenderRole')])
+    sizes = {'Dc': 't3.medium', 'Wec': 't3.medium', 'Wec2': 't3.medium', 'Linux': 't3.medium', 'Linux2': 't3.small',
+             'Sender': 't3.small'}
+    if PROFILE == 'soak':
+        sizes['Linux'] = 't3.small'
     for name in HOSTS:
         win = name in WINDOWS
         r[name] = res('AWS::EC2::Instance', ImageId=win_ami if win else lin_ami, InstanceType=sizes[name],
-                      IamInstanceProfile=ref('HostProfile'),
+                      IamInstanceProfile=ref('SenderProfile' if name == 'Sender' else 'HostProfile'),
                       MetadataOptions={'HttpTokens': 'required', 'HttpPutResponseHopLimit': 1},
                       CreditSpecification={'CPUCredits': 'standard'},
                       InstanceInitiatedShutdownBehavior='stop',
@@ -110,9 +134,10 @@ def build(expiry):
                       ScheduleExpressionTimezone='UTC', FlexibleTimeWindow={'Mode': 'OFF'},
                       Target={'Arn': 'arn:aws:scheduler:::aws-sdk:ec2:terminateInstances', 'RoleArn': att('ExpiryRole', 'Arn'),
                               'Input': sub('{"InstanceIds":[' + ','.join('"${' + n + '}"' for n in HOSTS) + ']}')})
-    outputs = {n: {'Value': ref(n)} for n in HOSTS + ['Artifacts', 'Secret', 'Group', 'Subnet', 'Routes', 'HostRole', 'HostProfile', 'ExpiryRole', 'Expiry']}
+    extra_outputs = ['SenderRole', 'SenderProfile'] if 'Sender' in HOSTS else []
+    outputs = {n: {'Value': ref(n)} for n in HOSTS + ['Artifacts', 'Secret', 'Group', 'Subnet', 'Routes', 'HostRole', 'HostProfile', 'ExpiryRole', 'Expiry'] + extra_outputs}
     outputs.update({n + 'Ip': {'Value': att(n, 'PrivateIp')} for n in HOSTS})
-    return {'AWSTemplateFormatVersion': '2010-09-09', 'Description': 'Bower ws4 upgrade/recovery lab ' + RUN,
+    return {'AWSTemplateFormatVersion': '2010-09-09', 'Description': 'Bower ' + PROFILE + ' lab ' + RUN,
             'Resources': r, 'Outputs': outputs}
 
 
@@ -143,7 +168,7 @@ def main():
     if action == 'plan':
         if STATE.exists() and json.loads(STATE.read_text()).get('stackId'):
             raise RuntimeError('Stack already created')
-        expiry = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=10)).strftime('%Y-%m-%dT%H:%M:%S')
+        expiry = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=EXPIRY_HOURS)).strftime('%Y-%m-%dT%H:%M:%S')
         path = ROOT / 'template.json'
         path.write_text(json.dumps(build(expiry), indent=2) + '\n')
         aws('cloudformation', 'validate-template', '--template-body', 'file://' + str(path))
@@ -177,10 +202,25 @@ def main():
         print(json.dumps({'status': state['status'], 'ssm': info}))
     elif action == 'run':
         # run HOST SCRIPT [KEY=VALUE ...] ; values are non-secret placeholders only.
+        # env:NAME=VALUE items instead export public variables for the monitoring/ scripts,
+        # which read BOWER_LAB_BUCKET/BOWER_LAB_RUN from the environment, not placeholders.
         host, script = sys.argv[2:4]
-        extra = dict(item.split('=', 1) for item in sys.argv[4:])
+        items = sys.argv[4:]
+        env = dict(item[4:].split('=', 1) for item in items if item.startswith('env:'))
+        extra = dict(item.split('=', 1) for item in items if not item.startswith('env:'))
         instance = check_instance(state, host)
-        body = render(state, host, script, extra)
+        if env:
+            if extra or any(not __import__('re').fullmatch(r'[A-Z][A-Z0-9_]*', k) for k in env):
+                raise RuntimeError('Mixing placeholders and env:, or an invalid name')
+            env = {'BOWER_LAB_BUCKET': state['outputs']['Artifacts'], 'BOWER_LAB_RUN': RUN, 'AWS_DEFAULT_REGION': REGION, **env}
+            if host in LINUX:
+                prefix = '\n'.join('export ' + k + '=' + __import__('shlex').quote(v) for k, v in env.items())
+            else:
+                prefix = '\n'.join('$env:' + k + "='" + v.replace("'", "''") + "'" for k, v in env.items())
+            body = prefix + '\n' + Path(script).read_text()
+            extra = env
+        else:
+            body = render(state, host, script, extra)
         params = ROOT / 'parameters' / (host + '.json')
         params.parent.mkdir(exist_ok=True)
         params.write_text(json.dumps({'commands': [body], 'executionTimeout': ['10800']}))

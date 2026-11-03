@@ -1,0 +1,90 @@
+[
+  {
+    "autoMitigate": true,
+    "enabled": true,
+    "frequency": "0:05:00",
+    "name": "bower-soak-20261102-015614-destination-credential",
+    "severity": 1,
+    "window": "2 days, 0:00:00"
+  },
+  {
+    "autoMitigate": true,
+    "enabled": true,
+    "frequency": "0:05:00",
+    "name": "bower-soak-20261102-015614-destination-freshness",
+    "severity": 2,
+    "window": "2 days, 0:00:00"
+  },
+  {
+    "autoMitigate": true,
+    "enabled": true,
+    "frequency": "0:05:00",
+    "name": "bower-soak-20261102-015614-source-overdue",
+    "severity": 2,
+    "window": "0:30:00"
+  },
+  {
+    "autoMitigate": true,
+    "enabled": true,
+    "frequency": "0:05:00",
+    "name": "bower-soak-20261102-015614-dcr-errors",
+    "severity": 2,
+    "window": "0:30:00"
+  },
+  {
+    "autoMitigate": true,
+    "enabled": true,
+    "frequency": "0:05:00",
+    "name": "bower-soak-20261102-015614-collector-health-missing",
+    "severity": 1,
+    "window": "2 days, 0:00:00"
+  },
+  {
+    "autoMitigate": true,
+    "enabled": true,
+    "frequency": "0:05:00",
+    "name": "bower-soak-20261102-015614-source-transport-errors",
+    "severity": 3,
+    "window": "0:30:00"
+  },
+  {
+    "autoMitigate": true,
+    "enabled": true,
+    "frequency": "0:05:00",
+    "name": "bower-soak-20261102-015614-syslog-tls-expiry",
+    "severity": 2,
+    "window": "0:30:00"
+  },
+  {
+    "autoMitigate": true,
+    "enabled": true,
+    "frequency": "0:05:00",
+    "name": "bower-soak-20261102-015614-queue-storage",
+    "severity": 2,
+    "window": "0:30:00"
+  },
+  {
+    "autoMitigate": true,
+    "enabled": true,
+    "frequency": "0:05:00",
+    "name": "bower-soak-20261102-015614-table-no-ingestion",
+    "severity": 1,
+    "window": "2 days, 0:00:00"
+  },
+  {
+    "autoMitigate": true,
+    "enabled": true,
+    "frequency": "0:05:00",
+    "name": "bower-soak-20261102-015614-dead-letters",
+    "severity": 2,
+    "window": "0:30:00"
+  },
+  {
+    "autoMitigate": true,
+    "enabled": true,
+    "frequency": "0:05:00",
+    "name": "bower-soak-20261102-015614-queue-backlog",
+    "severity": 2,
+    "window": "0:30:00"
+  }
+]

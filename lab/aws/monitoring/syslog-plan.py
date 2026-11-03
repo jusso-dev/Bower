@@ -226,7 +226,7 @@ def main():
         parser.error("Monitoring state is oversized")
     state = json.loads(state_path.read_text())
     run_id = state.get("runId", "")
-    if not re.fullmatch(r"bower-(?:ws6|fw)-\d{8}-\d{6}", run_id):
+    if not re.fullmatch(r"bower-(?:ws6|fw|soak)-\d{8}-\d{6}", run_id):
         parser.error("Invalid monitoring run ID")
     if state.get("outputs", {}).get("LinuxIp") != args.collector_ip or state.get("outputs", {}).get("SenderIp") != args.sender_ip:
         parser.error("Plan addresses must match the owned monitoring state")

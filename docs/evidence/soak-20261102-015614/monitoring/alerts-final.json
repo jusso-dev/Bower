@@ -1,0 +1,26 @@
+[
+  {
+    "condition": "Resolved",
+    "lastModified": "2026-11-02T17:43:40.3875217Z",
+    "resolved": "2026-11-02T17:43:40.4177357Z",
+    "rule": "bower-soak-20261102-015614-source-transport-errors",
+    "severity": "Sev3",
+    "started": "2026-11-02T17:02:39.852743Z"
+  },
+  {
+    "condition": "Resolved",
+    "lastModified": "2026-11-02T12:43:38.7100269Z",
+    "resolved": "2026-11-02T12:43:38.755245Z",
+    "rule": "bower-soak-20261102-015614-source-transport-errors",
+    "severity": "Sev3",
+    "started": "2026-11-02T12:02:37.8847569Z"
+  },
+  {
+    "condition": "Fired",
+    "lastModified": "2026-11-02T02:36:41.4375267Z",
+    "resolved": null,
+    "rule": "bower-soak-20261102-015614-syslog-tls-expiry",
+    "severity": "Sev2",
+    "started": "2026-11-02T02:36:41.4375267Z"
+  }
+]

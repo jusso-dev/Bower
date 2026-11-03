@@ -1,0 +1,278 @@
+{
+ "runId": "bower-soak-20261102-015614",
+ "scope": "interim",
+ "generatedAt": "2026-11-02T04:48:13.716468Z",
+ "window": [
+  "2026-11-02T03:35:00.000000Z",
+  "2026-11-02T04:35:00.000000Z"
+ ],
+ "ingestionCutoff": "2026-11-02T04:48:12.704333Z",
+ "verifierAppId": "0046b34f-2550-4204-8506-5857d18c6333",
+ "latencyP99LimitSeconds": {
+  "linux": 13.3,
+  "windows": 18.16
+ },
+ "collectors": {
+  "linux": {
+   "native": 36000,
+   "accepted": 36000,
+   "sentinelDistinct": 36000,
+   "sentinelRows": 36000,
+   "duplicateRows": 0,
+   "missingAtAccepted": 0,
+   "missingAtSentinel": 0,
+   "extraAtSentinel": 0,
+   "nativeSha256": "a4ac3dfe0044ced34aa67a537d3e37ccb7112681ce8961e15d279761cd7b8247",
+   "acceptedSha256": "a4ac3dfe0044ced34aa67a537d3e37ccb7112681ce8961e15d279761cd7b8247",
+   "sentinelSha256": "a4ac3dfe0044ced34aa67a537d3e37ccb7112681ce8961e15d279761cd7b8247",
+   "exact": true,
+   "nativeDetail": {
+    "segments": [],
+    "finishedSegments": 0,
+    "scheduledPrefixFromRunningSegment": 36000,
+    "allFinishedSegmentsExact": true,
+    "expected": 36000
+   },
+   "hours": [
+    {
+     "from": "2026-11-02T03:33:00.000000Z",
+     "to": "2026-11-02T04:33:00.000000Z",
+     "distinct": 34800,
+     "rows": 34800,
+     "latencySeconds": {
+      "count": 34800,
+      "p50": 3.885,
+      "p95": 6.633,
+      "p99": 9.076,
+      "max": 113.129
+     }
+    },
+    {
+     "from": "2026-11-02T04:33:00.000000Z",
+     "to": "2026-11-02T04:40:00.000000Z",
+     "distinct": 4200,
+     "rows": 4200,
+     "latencySeconds": {
+      "count": 4200,
+      "p50": 3.803,
+      "p95": 6.688,
+      "p99": 8.606,
+      "max": 13.548
+     }
+    }
+   ],
+   "latencySeconds": {
+    "count": 39000,
+    "p50": 3.878,
+    "p95": 6.636,
+    "p99": 8.971,
+    "max": 113.129
+   },
+   "queryHashes": [
+    "70182fe29aa8b5f7ee9571ade447c97f41fef2bb982c8940b6b5b8c1f51bac26",
+    "1d445c1f6a42e66db86ca67c909c892f861f6eb92d5e4872fca9d8f1a9678bce"
+   ],
+   "latencyWithinLimit": true,
+   "hoursAboveLatencyLimit": [],
+   "resources": {
+    "samples": 12,
+    "failedSamples": 12,
+    "processIdentities": 0,
+    "bootIds": 1,
+    "serviceRestartCounter": [],
+    "maximumSampleGapSeconds": 300.0676910877228,
+    "memoryBytes": null,
+    "memoryBytesFromStart": null,
+    "handlesOrFds": null,
+    "threads": null,
+    "queueDbPlusWalBytes": null,
+    "walBytes": null,
+    "cpuPercentOfOneCore": {
+     "count": 0,
+     "p50": null,
+     "p95": null,
+     "p99": null,
+     "max": null
+    },
+    "peakPending": null,
+    "peakOldestUndeliveredAgeSeconds": null,
+    "minimumDiskAvailableBytes": null,
+    "statuses": [],
+    "jobRuns": {},
+    "deliveryFailureCodes": []
+   }
+  },
+  "windows": {
+   "native": 35990,
+   "accepted": 35990,
+   "sentinelDistinct": 35990,
+   "sentinelRows": 35990,
+   "duplicateRows": 0,
+   "missingAtAccepted": 0,
+   "missingAtSentinel": 0,
+   "extraAtSentinel": 0,
+   "nativeSha256": "c352e10ba9bf4a294d5fd0c46e54aa416f668fbef4d3d17d0bd55ccb704ba47f",
+   "acceptedSha256": "c352e10ba9bf4a294d5fd0c46e54aa416f668fbef4d3d17d0bd55ccb704ba47f",
+   "sentinelSha256": "c352e10ba9bf4a294d5fd0c46e54aa416f668fbef4d3d17d0bd55ccb704ba47f",
+   "exact": true,
+   "nativeDetail": {
+    "windows": [
+     {
+      "window": "h00",
+      "since": "2026-11-02T03:35:00+00:00",
+      "until": "2026-11-02T04:35:00+00:00",
+      "selected": 35990,
+      "distinct": 35990,
+      "redactionChangedIds": 20,
+      "identitySetSha256": "86cc6e6ad4da82c17242301b2c341cd968bc5b95779986ac7368071112b8560b"
+     }
+    ],
+    "expected": 35990,
+    "crossWindowOrInWindowDuplicates": 0
+   },
+   "hours": [
+    {
+     "from": "2026-11-02T03:33:00.000000Z",
+     "to": "2026-11-02T04:33:00.000000Z",
+     "distinct": 34790,
+     "rows": 34790,
+     "latencySeconds": {
+      "count": 34790,
+      "p50": 6.778,
+      "p95": 9.737,
+      "p99": 12.473,
+      "max": 162.728
+     }
+    },
+    {
+     "from": "2026-11-02T04:33:00.000000Z",
+     "to": "2026-11-02T04:35:00.000000Z",
+     "distinct": 1200,
+     "rows": 1200,
+     "latencySeconds": {
+      "count": 1200,
+      "p50": 6.608,
+      "p95": 9.766,
+      "p99": 11.086,
+      "max": 12.708
+     }
+    }
+   ],
+   "latencySeconds": {
+    "count": 35990,
+    "p50": 6.773,
+    "p95": 9.739,
+    "p99": 12.401,
+    "max": 162.728
+   },
+   "queryHashes": [
+    "4fdaa90360c11175d4e9452876f44a658be62eed3449422b8defd2ee8adb93ee",
+    "54b28a8f2cc16324fbf7f03a6b9c0720561db75debcd1054ca74d6efb193490a"
+   ],
+   "latencyWithinLimit": true,
+   "hoursAboveLatencyLimit": [],
+   "resources": {
+    "samples": 12,
+    "failedSamples": 0,
+    "processIdentities": 1,
+    "bootIds": 1,
+    "serviceRestartCounter": null,
+    "maximumSampleGapSeconds": 301.0027959346771,
+    "memoryBytes": null,
+    "memoryBytesFromStart": {
+     "samples": 12,
+     "mean": 32256000.0,
+     "slopePerHour": 5442909.06,
+     "thirtyDayProjectionPercentOfMean": 12149.35,
+     "min": 29335552,
+     "max": 35782656
+    },
+    "handlesOrFds": null,
+    "threads": null,
+    "queueDbPlusWalBytes": null,
+    "walBytes": null,
+    "cpuPercentOfOneCore": {
+     "count": 11,
+     "p50": 14.409,
+     "p95": 17.574,
+     "p99": 17.574,
+     "max": 17.574
+    },
+    "peakPending": 5,
+    "peakOldestUndeliveredAgeSeconds": 0,
+    "minimumDiskAvailableBytes": 20742512640,
+    "statuses": [
+     "healthy"
+    ],
+    "jobRuns": {
+     "queue-maintenance": {
+      "runs": 1,
+      "states": [
+       "Succeeded"
+      ],
+      "last": "2026-11-02T03:00:00.8144388+00:00"
+     },
+     "queue-retention": {
+      "runs": 2,
+      "states": [
+       "Succeeded"
+      ],
+      "last": "2026-11-02T04:00:00.8382913+00:00"
+     },
+     "source-activity": {
+      "runs": 12,
+      "states": [
+       "Succeeded"
+      ],
+      "last": "2026-11-02T04:30:00.8577447+00:00"
+     }
+    },
+    "deliveryFailureCodes": [
+     null
+    ]
+   }
+  }
+ },
+ "health": [
+  {
+   "CollectorId": "bower-soak-20261102-015614-linux",
+   "Outcome": "Collector health: healthy",
+   "Records": 60,
+   "Earliest": "2026-11-02T03:35:52.2387092Z",
+   "Latest": "2026-11-02T04:34:53.4419629Z",
+   "MaxGapSeconds": 61
+  },
+  {
+   "CollectorId": "bower-soak-20261102-015614-windows",
+   "Outcome": "Collector health: healthy",
+   "Records": 60,
+   "Earliest": "2026-11-02T03:35:36.0008606Z",
+   "Latest": "2026-11-02T04:34:38.6784384Z",
+   "MaxGapSeconds": 61
+  }
+ ],
+ "healthQueryHash": "f1bdec42a711bcc8fdbc482473bddc8b6d3aa04d1bf24796fec1051f55e45645",
+ "privacy": [
+  {
+   "CollectorId": "bower-soak-20261102-015614-linux",
+   "Rows": 36062,
+   "Matches": 0
+  },
+  {
+   "CollectorId": "bower-soak-20261102-015614-windows",
+   "Rows": 36052,
+   "Matches": 0
+  }
+ ],
+ "privacyQueryHash": "07d35efd321200ded62cc582c5b05508475d89b45831ed0e4037407e17f69dc9",
+ "alerts": {
+  "alerts": [
+   {
+    "name": "bower-soak-20261102-015614-syslog-tls-expiry",
+    "state": "Fired",
+    "startedAt": "2026-11-02T02:36:41.4375267Z"
+   }
+  ],
+  "incidents": []
+ }
+}

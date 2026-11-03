@@ -81,7 +81,7 @@ def scope_from_environment(environment, now):
     seconds = int(environment.get('BOWER_OUTAGE_SECONDS', '3600'))
     scenario = environment.get('BOWER_SCENARIO', 'a-destination-outage')
     if (not 600 <= seconds <= 3600 or not re.fullmatch(r'a-[a-z0-9-]{1,40}', scenario)
-            or not re.fullmatch(r'bower-(?:ws6|fw)-\d{8}-\d{6}', run) or not re.fullmatch(r'[0-9a-f]{64}', plan)
+            or not re.fullmatch(r'bower-(?:ws6|fw|soak)-\d{8}-\d{6}', run) or not re.fullmatch(r'[0-9a-f]{64}', plan)
             or not re.fullmatch(r'[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]', bucket)
             or environment.get('AWS_DEFAULT_REGION') != 'ap-southeast-2'
             or not math.isfinite(start) or not 30 <= start - now <= 900):
