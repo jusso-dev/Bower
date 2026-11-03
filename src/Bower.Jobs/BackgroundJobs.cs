@@ -217,6 +217,9 @@ internal sealed partial class RecurringJobScheduler(
     TimeProvider? clock = null) : BackgroundService
 {
     private readonly TimeProvider clock = clock ?? TimeProvider.System;
+    // Never disposed: a job still running after a timed-out host stop releases it from its
+    // finally block after the scheduler is disposed. Without AvailableWaitHandle it holds no
+    // unmanaged resource.
     private readonly SemaphoreSlim workers = new(options.WorkerCount, options.WorkerCount);
     private readonly List<Task> running = [];
 
@@ -241,12 +244,6 @@ internal sealed partial class RecurringJobScheduler(
         }
 
         await Task.WhenAll(running);
-    }
-
-    public override void Dispose()
-    {
-        workers.Dispose();
-        base.Dispose();
     }
 
     private async Task RunAsync(RecurringJobRegistry.RecurringJob job, CancellationToken stoppingToken)
