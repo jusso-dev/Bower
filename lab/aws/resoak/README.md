@@ -80,10 +80,7 @@ After the smoke (start + 16 minutes), export and reconcile it. A smoke that does
 stops the run:
 
 ```bash
-L=lab/aws/upgrade-recovery/lab.py; S=$(python3 -c 'import json,os;print(json.load(open(os.environ["BOWER_LAB_DIR"]+"/run.json"))["smokeStart"])')
-python3 $L run Dc lab/aws/soak/dc-native-window.ps1 NAME=smoke FROM=$S TO=$((S+960))
-python3 $L run Linux lab/aws/soak/collector-agent.sh env:BOWER_SOAK_ACTION=upload
-python3 $L run Wec lab/aws/soak/wec-agent.ps1 ACTION=upload SOAK_START=<soakStart> SOAK_SECONDS=<soakSeconds> PROBE_SHA256=<stage.json probeSha256>
+python3 $R smoke-export                # DC native window, a DC agent tick, fresh accepted unions
 python3 lab/aws/resoak/reconcile.py fetch --lab-dir "$BOWER_LAB_DIR"
 python3 lab/aws/resoak/reconcile.py smoke --lab-dir "$BOWER_LAB_DIR" --out "$BOWER_LAB_DIR/smoke.json"
 python3 $R start [--plan dryrun]       # fault agents, canaries, then the soak generators; prints the end time
@@ -116,3 +113,4 @@ TO=<end+3600>`).
 | `fault-agent.ps1` | Wec, Dc | Per-minute and at-start-up task: outage (firewall rule with an independent restore task), kill, reboot, ingestion rotation, WinRM restart, the DC's canary binds |
 | `reconcile.py` | operator | `fetch`, `smoke`, `interim`, `final`: the soak reconciler plus canaries, fault windows, the registered accounting and the verdict |
 | `probe.sh`, `probe.ps1` | all | Readiness probe after a reboot (boot identity only) |
+| `dc-tick.ps1` | Dc | One immediate tick of the DC soak agent (uploads generator records) |

@@ -191,6 +191,7 @@ def outage_restore(fault):
         record = {'restoredAt': None, 'by': 'unknown', 'error': 'outage-table-missing-without-restore-record'}
     append('faults.jsonl', {'fault': fault['id'], 'step': 'restored', 'at': now().isoformat(), 'bootId': boot_id(), **record})
     done.write_text(now().isoformat())
+    upload(['faults.jsonl'])
 
 
 def act(fault, at):

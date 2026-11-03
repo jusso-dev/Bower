@@ -14,7 +14,8 @@ in the private lab directory and are fetched on the hosts through their instance
   azure                          workspace, DCE/DCR/table, Sentinel, alert rules, second ingest cert
   stage [--plan dryrun]          certificates, signed packs, manifests, plan; upload to the run bucket
   deploy                         host setup in order (each step once; resumes after a failure)
-  smoke                          start the 15-minute smoke generators (then reconcile.py smoke)
+  smoke                          soak agents, then the 15-minute smoke generators
+  smoke-export                   after the smoke: DC native window and accepted unions (then reconcile.py smoke)
   start [--plan dryrun]          agents, faults, canaries and generators for the soak itself
   status                         host agent status
 """
@@ -256,14 +257,18 @@ def azure():
 
 # ------------------------------------------------------------------ staging
 
+OPENSSL = next((p for p in ('/opt/homebrew/opt/openssl@3/bin/openssl', '/usr/local/opt/openssl@3/bin/openssl') if os.path.exists(p)), 'openssl')
+
+
 def openssl(*args):
-    sh('openssl', *args)
+    # Keys use named curves: OpenSSL 3 on the hosts refuses explicit EC parameters (macOS LibreSSL's default).
+    sh(OPENSSL, *args)
 
 
 def issue(ca_dir, out, name, usage, san, days=30, key=None):
     key = key or out / (name + '-key.pem')
     if not key.exists():
-        openssl('genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256', '-out', str(key))
+        openssl('genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256', '-pkeyopt', 'ec_param_enc:named_curve', '-out', str(key))
     csr, ext = out / (name + '.csr'), out / (name + '.ext')
     openssl('req', '-new', '-key', str(key), '-subj', '/CN=' + san[0], '-out', str(csr))
     ext.write_text('basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=' + usage
@@ -290,7 +295,7 @@ def stage(plan_kind):
     root = private(LAB / 'stage')
     pki = private(root / 'pki')
     if not (pki / 'ca.pem').exists():
-        openssl('genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256', '-out', str(pki / 'ca-key.pem'))
+        openssl('genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256', '-pkeyopt', 'ec_param_enc:named_curve', '-out', str(pki / 'ca-key.pem'))
         openssl('req', '-x509', '-new', '-key', str(pki / 'ca-key.pem'), '-days', '30', '-subj', '/CN=Bower lab ' + RUN,
                 '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,keyCertSign,cRLSign', '-out', str(pki / 'ca.pem'))
         issue(pki, pki, 'server', 'serverAuth', ['collector-a.' + DOMAIN, outputs['LinuxIp']])
@@ -385,7 +390,7 @@ def stage(plan_kind):
               'packs': {n: {'name': p.name, 'sha256': sha256(p)} for n, p in built.items()},
               'caSha256': sha256(pki / 'ca.pem'), 'serverNextSha256': sha256(pki / 'server-next.pem'),
               'serverNextKeySha256': sha256(pki / 'server-next-key.pem'), 'ingestNextSha256': sha256(ingest_next),
-              'certificates': {n: sh('openssl', 'x509', '-in', str(pki / (n + '.pem')), '-noout', '-enddate').strip()
+              'certificates': {n: sh(OPENSSL, 'x509', '-in', str(pki / (n + '.pem')), '-noout', '-enddate').strip()
                                for n in ('ca', 'server', 'server-next', 'sender-r')},
               'candidate': {k: cand[k] for k in ('ciRun', 'commit', 'buildNumber', 'version')}}
     save('stage.json', record)
@@ -401,7 +406,7 @@ def build_probe():
         before = changed()
         dotnet = os.path.expanduser('~/.dotnet/dotnet')
         sh(dotnet, 'publish', str(HERE.parent / 'upgrade-recovery' / 'probe'), '-c', 'Release', '-r', 'win-x64', '--self-contained',
-           '-p:PublishSingleFile=true', '-o', str(out), env={**os.environ, 'DOTNET_ROOT': os.path.expanduser('~/.dotnet')}, timeout=1800)
+           '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true', '-o', str(out), env={**os.environ, 'DOTNET_ROOT': os.path.expanduser('~/.dotnet')}, timeout=1800)
         rewritten = sorted(changed() - before)
         if rewritten:
             sh('git', '-C', str(REPO), 'checkout', '--', *rewritten)
@@ -522,6 +527,26 @@ def smoke(kind):
     print(json.dumps(run))
 
 
+def smoke_export():
+    """After the smoke: the DC's native window and fresh accepted unions on both collectors."""
+    verify_account()
+    run, st = load('run.json'), load('stage.json')
+    if time.time() < run['smokeStart'] + run['smokeSeconds'] + 60:
+        raise SystemExit('The smoke has not finished')
+    soak = HERE.parent / 'soak'
+    for name, host, script, params in (
+            ('smoke-native', 'Dc', soak / 'dc-native-window.ps1', ['NAME=smoke', 'FROM=%d' % run['smokeStart'], 'TO=%d' % (run['smokeStart'] + run['smokeSeconds'] + 60)]),
+            # The DC agent uploads generator records every 15 minutes; push the smoke's now.
+            ('smoke-dc-tick', 'Dc', HERE / 'dc-tick.ps1', []),
+            ('smoke-union-linux', 'Linux', soak / 'collector-agent.sh', ['env:BOWER_SOAK_ACTION=upload']),
+            ('smoke-union-wec', 'Wec', soak / 'wec-agent.ps1', ['ACTION=upload', 'SOAK_START=%d' % run['soakStart'], 'SOAK_SECONDS=%d' % run['soakSeconds'],
+                                                                'PROBE_SHA256=' + st['probeSha256']])):
+        status, out = run_on(host, script, *params)
+        log({'smokeExport': name, 'host': host, 'status': status, 'output': out[-800:]})
+        if status != 'Success':
+            raise SystemExit(name + ' failed')
+
+
 def start(kind):
     """Agents first (samplers, unions, native exporter, faults, canaries), then the generators."""
     verify_account()
@@ -580,7 +605,7 @@ def status_all():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('command', choices=('candidate', 'bucket', 'azure', 'stage', 'deploy', 'smoke', 'start', 'status'))
+    parser.add_argument('command', choices=('candidate', 'bucket', 'azure', 'stage', 'deploy', 'smoke', 'smoke-export', 'start', 'status'))
     parser.add_argument('action', nargs='?')
     parser.add_argument('--ci-run')
     parser.add_argument('--plan', choices=('registered', 'dryrun'), default='registered')
@@ -600,6 +625,8 @@ def main():
         deploy(args.only)
     elif args.command == 'smoke':
         smoke(args.plan)
+    elif args.command == 'smoke-export':
+        smoke_export()
     elif args.command == 'start':
         start(args.plan)
     else:
