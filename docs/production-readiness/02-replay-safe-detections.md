@@ -485,8 +485,8 @@ receives `BowerSecurity_CL`.
   11+ and the Bicep CLI on `PATH`.
 - At least one Bower event already ingested **and queryable** (the
   [verify query](#verify-the-deployment) returns `Events` of at least 1). In the live run
-  every row uploaded before 05:57 has `ingestion_time()` 05:57:56
-  ([table volume](../evidence/sentinel-20261103-054834/table-volume.json)). The rules, deployed at 05:52:24,
+  the first rows in the new table became queryable at 05:57:56 (`FirstIngested`,
+  [table volume](../evidence/sentinel-20261103-054834/table-volume.json)). The rules, deployed at 05:52:24,
   ran their first window before that and it failed (`QueryGeneralError`) and was skipped.
 
 Following [deploy/AGENTS.md](../../deploy/AGENTS.md), the rules are created **disabled**
