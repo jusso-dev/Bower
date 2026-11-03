@@ -4,6 +4,13 @@ Status: **not production-ready**. This is a release qualification record, not a
 certificate. A successful unit test, HTTP upload or local spool write cannot close
 a real destination or operating-system validation gate.
 
+> **Current status (3 November 2026).** The [production-readiness index](../production-readiness/index.md)
+> is the current summary of all seven gaps and what is still open. This page keeps the
+> history. Since it was first written: firewall delivery over RELP closed the forced-kill,
+> reset and sender-reboot losses below ([gap 1](../production-readiness/01-syslog-delivery-reliability.md)).
+> Storage pressure, upgrades, credential rotation, monitoring and replay-safe detections
+> have live evidence. The 24-hour soak [failed on the WEC path](../production-readiness/07-soak-and-release-validation.md).
+
 ## First release candidate
 
 The initial qualification scope is the C# collector on Windows Server 2022
