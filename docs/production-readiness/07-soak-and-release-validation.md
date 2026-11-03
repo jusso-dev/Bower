@@ -360,8 +360,9 @@ still applies.
   met criteria 1, 2, 4 and 6 and failed 3 (growth above the registered threshold) and 5 (the
   TLS-expiry false positive, fixed by #171 after the soak). It needs a re-soak on a build with
   #171 that passes all six.
-- **WEC:** check 7 is **open**. It failed criteria 3, 4 and 5 on reader latency, CPU growth and
-  retention contention. It needs the reader fix and a re-soak.
+- **WEC:** check 7 is **open**. It failed criteria 3, 4 and 5 on reader latency, growth slopes
+  (memory, handles, threads, queue) and retention contention. It needs the reader fix and a
+  re-soak.
 - **Releases:** unsigned until signing is enabled.
 
 ## 6. Results of the soak

@@ -101,7 +101,7 @@ was the rule set in advance. A longer run is needed to settle them.
 
 **WEC CPU is the real growth** (an observation; CPU was not part of the registered criterion 3 and
 is recommended as a gate for future runs). At a constant 10 events/s, the collector's CPU seconds per hour went
-450, 808, 1,308 … 2,049 (hour 12) … 2,503 (hour 21). The curve flattened only when the instance ran out
+450, 808, 1,308 … 2,049 (hour 12) … 2,503 (hour 20; hours counted from 0). The curve flattened only when the instance ran out
 of CPU credits. `CPUCreditBalance` was 0 from about 15:00Z. The firewall collector used 3.2% of one
 core (p50) all day.
 
