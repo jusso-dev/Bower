@@ -205,6 +205,8 @@ public sealed class BackgroundJobsTests
         // service must still complete instead of failing (which would stop the host).
         await scheduler.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
         Assert.True(scheduler.ExecuteTask.IsCompletedSuccessfully);
+        // The job still records its outcome (the old exception skipped this).
+        Assert.Equal(BackgroundJobStates.Succeeded, registry.List().Single().LastState);
     }
 
     private static async Task WaitForAsync(Func<bool> condition, CancellationToken cancellationToken)
