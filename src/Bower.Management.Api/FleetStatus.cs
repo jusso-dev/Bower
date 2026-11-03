@@ -249,8 +249,8 @@ public static class FleetStatus
 
     /// <summary>
     /// Semantic-version precedence: numeric core first; a release outranks any pre-release of
-    /// the same core; pre-releases compare identifier by identifier, numbers numerically and
-    /// below words, words by ordinal text, so Bower's <c>dev.N</c> &lt; <c>rc.N</c> &lt; release.
+    /// the same core; pre-releases compare identifier by identifier, numbers numerically (of any
+    /// length) and below words, words by ordinal text, so Bower's <c>dev.N</c> &lt; <c>rc.N</c> &lt; release.
     /// </summary>
     internal static int CompareVersions(string? left, string? right)
     {
@@ -271,14 +271,20 @@ public static class FleetStatus
 
         for (int index = 0; index < Math.Min(a.PreRelease.Length, b.PreRelease.Length); index++)
         {
-            bool leftNumber = Numeric(a.PreRelease[index], out int leftValue);
-            bool rightNumber = Numeric(b.PreRelease[index], out int rightValue);
+            // Digit-only identifiers have no leading zero (ParseVersion), so a longer one is
+            // larger and equal lengths compare as text: any size, no Int32 conversion.
+            string leftPart = a.PreRelease[index];
+            string rightPart = b.PreRelease[index];
+            bool leftNumber = leftPart.All(char.IsAsciiDigit);
+            bool rightNumber = rightPart.All(char.IsAsciiDigit);
             result = (leftNumber, rightNumber) switch
             {
-                (true, true) => leftValue.CompareTo(rightValue),
+                (true, true) => leftPart.Length != rightPart.Length
+                    ? leftPart.Length.CompareTo(rightPart.Length)
+                    : string.CompareOrdinal(leftPart, rightPart),
                 (true, false) => -1,
                 (false, true) => 1,
-                _ => string.CompareOrdinal(a.PreRelease[index], b.PreRelease[index])
+                _ => string.CompareOrdinal(leftPart, rightPart)
             };
             if (result != 0)
             {

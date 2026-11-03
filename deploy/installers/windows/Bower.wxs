@@ -2,9 +2,11 @@
 <!--
   Bower collector MSI (#112). Built in CI with WiX v5 from the `publish` job artefact:
 
-    wix build -ext WixToolset.Util.wixext -arch x64 -d Version=0.1.362 -d BowerVersion=0.1.0-dev.362
-              -d Dist=<artefact> -d Policies=policies\default
-              -o bower-collector-0.1.0-dev.362-x64.msi deploy\installers\windows\Bower.wxs
+    wix build -ext WixToolset.Util.wixext -arch x64 -d Version=0.1.362 -d BowerVersion=0.1.1-dev.362
+              -d VersionKey=000.001.00001.0.00362 -d Dist=<artefact> -d Policies=policies\default
+              -o bower-collector-0.1.1-dev.362-x64.msi deploy\installers\windows\Bower.wxs
+
+  build.ps1 computes all three version values; prefer it to a hand-written command.
 
   Version is the MSI ProductVersion MAJOR.MINOR.BUILD, BowerVersion the release version
   and VersionKey its fixed-width sort key (docs/operations/release-versioning.md). Windows

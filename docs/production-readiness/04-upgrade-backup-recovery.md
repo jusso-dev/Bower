@@ -892,10 +892,15 @@ Known limits:
 
 - **Downgrade protection** applies to targets built with the
   [release versioning](../operations/release-versioning.md) scheme. Pre-scheme dev packages
-  (`0.1.0-dev.N`, MSI `0.1.0.N`) carry no package guard: `dpkg -i` of one only warns. rpm and
-  those MSIs still refuse a lower version natively. The guard compares versions, not queue
-  schemas; the queue schema refusal (`UnsupportedQueueSchemaException`) still protects the
-  data on an allowed rollback.
+  (`0.1.0-dev.N`, MSI `0.1.0.N`) carry no package guard: `dpkg -i` of one only warns, and rpm
+  refuses a lower version natively. Between pre-scheme MSIs nothing is refused: Windows
+  Installer ignores the fourth ProductVersion field, so a `0.1.0.N` MSI installs over a newer
+  `0.1.0.M`. Over a build of this scheme (ProductVersion `0.1.<build>`), a pre-scheme MSI is
+  refused by its own `MajorUpgrade`. The guard compares versions, not queue schemas. On an
+  allowed rollback the queue schema refusal (`UnsupportedQueueSchemaException`, before any
+  change) protects the data only when the target build includes that pre-check (#163 and
+  later); older builds such as dev.264 and dev.270 can write tables into a newer database
+  before failing, so never roll back to one over a queue a newer release has opened.
 - **Reported version.** From this scheme on, the collector reports its build's version
   (`/v1/status` `version`, heartbeat, `collector.version` on every event including
   `collector_health`, `bower --version`). Earlier builds report `0.1.0` whatever the

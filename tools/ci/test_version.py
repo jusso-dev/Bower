@@ -187,6 +187,30 @@ class PackageDowngradeGuardTests(unittest.TestCase):
                     self.assertEqual(self.older(left, right), index < other)
                     self.assertEqual(version.parse(left) < version.parse(right), index < other)
 
+    # Strings at and around every rule of the grammar (version.py is the reference).
+    GRAMMAR_CASES = [
+        "0.0.0", "0.1.0", "255.255.65535", "0.1.0-dev.0", "0.1.0-dev.65535", "0.1.0-rc.1",
+        "00.1.0-dev.362", "0.01.0", "0.1.00", "0.1.0-dev.01", "0.1.0-rc.65536", "0.1.65536",
+        "256.0.0", "0.256.0", "999999999.0.0", "0.1.0-rc.1-dev.2", "0.1.0-dev-rc.1",
+        "0.1.0-dev.1.2", "0.1.0-dev", "0.1.0-dev.", "0.1.0-", "0.1.0-beta.1", "0.1.0+sha",
+        "0.1", "0.1.0.0", ".1.0", "0..0", "-0.1.0", "v0.1.0", " 0.1.0", "0.1.0 ", "", "garbage",
+        "0.1.0-DEV.1", "0.1.0-dev.+1", "0.1.0-dev.-1", "1e3.0.0", "0x1.0.0", "9" * 80]
+
+    def valid_in_shell(self, value):
+        result = subprocess.run(["sh", "-c", self.functions() + 'version_fields "$1" >/dev/null', "sh", value],
+                                check=False)
+        return result.returncode == 0
+
+    def test_shell_grammar_matches_version_py(self):
+        for value in self.GRAMMAR_CASES:
+            with self.subTest(value=value):
+                try:
+                    version.parse(value)
+                    expected = True
+                except version.VersionError:
+                    expected = False
+                self.assertEqual(self.valid_in_shell(value), expected)
+
     def test_unrecognised_versions_are_never_older(self):
         for left, right in (("garbage", "0.1.0"), ("0.1.0", "garbage"), ("0.1", "0.2.0"),
                             ("0.1.0-beta.1", "0.2.0"), ("0.1.0-dev.", "0.2.0"), ("", "0.1.0"),
@@ -229,12 +253,62 @@ class PackageDowngradeGuardTests(unittest.TestCase):
         self.assertIn("downgrading from 0.1.0-dev.362 to 0.1.0-dev.0", error)
         self.assertTrue(accounts)
 
+    def test_unparseable_installed_marker_fails_closed(self):
+        # Including near misses reported in review: leading zeros, limits, double suffixes.
+        for marker in ("garbage", "", "0.1", "0.1.0-beta.1", "9" * 80, "00.1.0-dev.362",
+                       "0.1.0-rc.65536", "999999999.0.0", "0.1.0-rc.1-dev.2", "0.1.0-dev-rc.1",
+                       "256.0.0", "0.1.0-dev.01", "0.1.65536"):
+            with self.subTest(marker=marker):
+                code, error, accounts = self.run_preinstall("0.1.0-dev.362", marker)
+                self.assertEqual(code, 1)
+                self.assertIn("does not hold a Bower version", error)
+                self.assertIn("BOWER_ALLOW_DOWNGRADE=1", error)
+                self.assertFalse(accounts)
+        for marker in ("00.1.0-dev.362", "0.1.0-rc.65536"):
+            with self.subTest(package="0.1.1-dev.362", marker=marker):
+                code, _, accounts = self.run_preinstall("0.1.1-dev.362", marker)
+                self.assertEqual((code, accounts), (1, False))
+        code, error, accounts = self.run_preinstall("0.1.0-dev.362", "garbage", allow="1")
+        self.assertEqual(code, 0)
+        self.assertIn("over an unrecognised installed version", error)
+        self.assertTrue(accounts)
+
     def test_install_upgrade_and_same_version_reinstall_proceed(self):
-        for installed in (None, "0.1.0-dev.361", "0.1.0-dev.362", "0.0.9"):
+        for installed in (None, "0.1.0-dev.361", "0.1.0-dev.362", "0.0.9", "0.0.65535", "0.1.0-dev.0"):
             with self.subTest(installed=installed):
                 code, error, accounts = self.run_preinstall("0.1.0-dev.362", installed)
                 self.assertEqual((code, error), (0, ""))
                 self.assertTrue(accounts)
+
+
+
+class LinuxBuildVersionLimitTests(unittest.TestCase):
+    """build.sh accepts exactly the versions version.py accepts."""
+
+    def build(self, value):
+        with tempfile.TemporaryDirectory() as directory:
+            return subprocess.run(
+                ["bash", str(REPO / "deploy/installers/linux/build.sh"), directory, "amd64", value,
+                 str(Path(directory) / "out")], cwd=REPO, capture_output=True, text=True, check=False)
+
+    def test_out_of_range_versions_are_rejected_before_packaging(self):
+        for value in ("256.0.0", "0.256.0", "0.1.65536", "0.1.1-dev.65536", "0.1.1-rc.70000",
+                      "01.1.1", "0.1.1-beta.1", "0.1.1+sha"):
+            with self.subTest(value=value):
+                result = self.build(value)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("version must be MAJOR.MINOR.PATCH", result.stderr)
+                with self.assertRaises(version.VersionError):
+                    version.parse(value)
+
+    def test_versions_at_the_limits_pass_the_check(self):
+        for value in ("255.255.65535", "0.1.1-dev.65535", "0.1.1-rc.0", "0.1.1"):
+            with self.subTest(value=value):
+                version.parse(value)
+                # Past the version check, the empty artefact folder is reported instead.
+                result = self.build(value)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn("missing", result.stderr)
 
 
 if __name__ == "__main__":
