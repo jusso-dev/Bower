@@ -169,6 +169,46 @@ public sealed class BackgroundJobsTests
         Assert.Equal(1, counter.Runs);
     }
 
+    [Fact]
+    public async Task Scheduler_JobOutlivingATimedOutStop_FinishesWithoutFailingTheHost()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        ServiceCollection services = new();
+        Gate gate = new();
+        services.AddSingleton(gate);
+        services.AddScoped<BlockingJob>();
+        await using ServiceProvider provider = services.BuildServiceProvider();
+        RecurringJobRegistry registry = new();
+        registry.AddOrUpdate<BlockingJob>("blocking", (job, token) => job.RunAsync(token), Cron.Daily(2));
+        RecurringJobScheduler scheduler = new(
+            registry,
+            new BackgroundJobOptions("test", 1) { PollingInterval = TimeSpan.FromMilliseconds(20) },
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<RecurringJobScheduler>.Instance);
+
+        await scheduler.StartAsync(cancellationToken);
+        Assert.True(registry.Trigger("blocking"));
+        await gate.Started.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+
+        // The host's shutdown timeout has already expired, so stop returns while the job still
+        // runs, and the host disposes the scheduler.
+        using (CancellationTokenSource expired = new())
+        {
+            await expired.CancelAsync();
+            await scheduler.StopAsync(expired.Token);
+        }
+
+        scheduler.Dispose();
+        gate.Release.SetResult();
+
+        // The job's finally block releases the worker slot after disposal; the background
+        // service must still complete instead of failing (which would stop the host).
+        await scheduler.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+        Assert.True(scheduler.ExecuteTask.IsCompletedSuccessfully);
+        // The job still records its outcome (the old exception skipped this).
+        Assert.Equal(BackgroundJobStates.Succeeded, registry.List().Single().LastState);
+    }
+
     private static async Task WaitForAsync(Func<bool> condition, CancellationToken cancellationToken)
     {
         using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -194,6 +234,23 @@ public sealed class BackgroundJobsTests
         {
             counter.Increment();
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class Gate
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private sealed class BlockingJob(Gate gate)
+    {
+        // Ignores cancellation, like a job blocked in a call that does not observe the token.
+        public async Task RunAsync(CancellationToken cancellationToken)
+        {
+            gate.Started.TrySetResult();
+            await gate.Release.Task;
         }
     }
 

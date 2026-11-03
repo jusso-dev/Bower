@@ -153,7 +153,7 @@ public sealed partial class RelayListener : IHostedService, IAsyncDisposable
         }
 
         certificate.Dispose();
-        batchSlots.Dispose();
+        // batchSlots is not disposed: a request still running after a forced shutdown releases it.
         stopping.Dispose();
     }
 
