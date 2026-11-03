@@ -683,6 +683,8 @@ struct StatusQueue {
 #[derive(Serialize)]
 struct StatusBody<'a> {
     status: &'static str,
+    /// The release version of this build (C# `settings.Version`, always `BowerVersion.Current`).
+    version: &'static str,
     policy: StatusPolicy<'a>,
     ledger: StatusLedger,
     queue: StatusQueue,
@@ -906,6 +908,7 @@ async fn status(
         StatusCode::OK,
         &StatusBody {
             status,
+            version: bower_contracts::version::CURRENT,
             policy: StatusPolicy {
                 hash: &bundle.hash,
                 policies: &bundle.policies,

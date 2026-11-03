@@ -343,7 +343,7 @@ still applies.
 
 | # | Check | Guide | Latest evidence |
 |---|---|---|---|
-| 0 | CI green on the candidate, including `package-*` and `install-*`; package hashes recorded; signature status recorded (currently **unsigned**, deferred) | [installers](../deployment/installers.md) | CI per commit |
+| 0 | CI green on the candidate, including `version`, `package-*` and `install-*` (upgrade, refused downgrade and rollback); the exact Bower version, build number, deb/rpm versions and MSI ProductVersion recorded (below); package hashes recorded; signature status recorded (currently **unsigned**, deferred) | [release versioning](../operations/release-versioning.md), [installers](../deployment/installers.md) | CI per commit |
 | 1 | Firewall syslog uses RELP with mutual TLS and the recommended sender (rsyslog ≥ 8.2606, `omrelp`); fault scenarios reconcile with 0 missing | [01 syslog delivery](01-syslog-delivery-reliability.md) | [fw-20261101-111911](../evidence/fw-20261101-111911/README.md) |
 | 2 | Detections are replay-safe (deduplicate by `EventId`, outage-aware lookback) | [02 replay-safe detections](02-replay-safe-detections.md) | #169 |
 | 3 | Storage pressure: watermarks, `queue-storage` alert, recovery without discarding unacknowledged events | [03 storage pressure](03-storage-pressure.md) | #161 |
@@ -353,6 +353,42 @@ still applies.
 | 7 | 24-hour soak passes all six criteria for **every** collector type in the rollout | this guide | [soak-20261102-015614](../evidence/soak-20261102-015614/README.md): **failed** (WEC latency, alerts, growth) |
 | 8 | Pilot envelope (10/s, 100/s bursts, one-hour outage) reconciles | [pilot](https://github.com/jusso-dev/Bower/blob/main/lab/aws/PILOT.md) | [pilot-native-20261030](../evidence/pilot-native-20261030/README.md) |
 | 9 | Known limits of each guide reviewed and accepted by the owner | each guide | — |
+
+**Record the exact version.** Every check above is evidence for one build, so write its
+identity into the release record before ticking anything. The version comes from the CI
+`version` job of the candidate run (`tools/ci/version.py`, see
+[release versioning](../operations/release-versioning.md)); a release is tagged
+`v<VERSION>`, a candidate `v<VERSION>-rc.N`.
+
+| Field | Where to read it | Example |
+| --- | --- | --- |
+| Bower version | CI `version` job output; `bower --version`; `/v1/status` `version`; heartbeat `version`; `collector.version` on every event | `0.2.0-rc.1` |
+| Build number | CI run number (`version` job `build`) | `412` |
+| Commit | The tag's commit; image label `org.opencontainers.image.revision` | `5b7ded8` |
+| deb / rpm version | `dpkg-query -W bower-collector` / `rpm -q bower-collector` | `0.2.0~rc.1-1` / `0.2.0~rc.1-1` |
+| MSI ProductVersion | `DisplayVersion` in Programs and Features (`MAJOR.MINOR.BUILD`) | `0.2.412` |
+| Release version on Windows | `HKLM\SOFTWARE\Bower\Collector\Version` | `0.2.0-rc.1` |
+| Image tag and label | `ghcr.io/<owner>/bower-collector:<version>`; `org.opencontainers.image.version` | `0.2.0-rc.1` |
+| SHA-256 of each package and image digest | `sha256sum`, `Get-FileHash`, `docker buildx imagetools inspect` | — |
+| Signature status | `UNSIGNED.txt` in the bundles | unsigned (deferred) |
+
+Then check on every collector in the rollout that the reported version is the recorded one:
+
+```bash
+bower --version                                   # bower 0.2.0-rc.1
+# The header goes to curl on stdin (-K -), never in its argument list (visible in ps).
+sudo cat /etc/bower/secrets/ingest-token | sed 's/^/header = "Authorization: Bearer /; s/$/"/' |
+  curl -fsS -K - http://127.0.0.1:4319/v1/status | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])'
+```
+
+```powershell
+& "$env:ProgramFiles\Bower\bower.exe" --version
+(Get-ItemProperty 'HKLM:\SOFTWARE\Bower\Collector').Version
+```
+
+In Sentinel, `BowerSecurity_CL | where TimeGenerated > ago(1h) | summarize by tostring(RawEnvelope.collector.version), CollectorId`
+lists the version each collector runs. A soak, pilot or fault-test result counts only for the
+version it recorded.
 
 **Current state (2026-11-03).**
 

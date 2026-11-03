@@ -62,6 +62,44 @@ public sealed class DurabilityAdversarialTests
     }
 
     [Fact]
+    public async Task Replay_AfterAnUpgradeIsADuplicateAlthoughCollectorVersionChanged()
+    {
+        // Upgrades change collector.version (BowerVersion); an event replayed by its source
+        // across an upgrade or a downgrade must stay a duplicate, never an identity conflict.
+        using TemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "queue.db");
+        SecurityEventEnvelope Built(string version) => TestEvents.AuthenticationFailure(TestEvents.Now) with
+        {
+            Collector = new CollectorContext
+            {
+                Id = "collector-1",
+                Version = version,
+                SourceAdapter = "local-http",
+                ConfigurationHash = "sha256:configuration",
+                ReceivedAt = TestEvents.Now
+            }
+        };
+        SecurityEventEnvelope before = Built("0.1.0-dev.361");
+        QueuedEvent item = new(before.EventId, EventFingerprint.Create(before),
+            JsonSerializer.Serialize(before, BowerJson.Envelope), TestEvents.Now);
+        SqliteEventStore store = new(path, 1_048_576);
+        await store.InitializeAsync(Cancellation);
+        await store.EnqueueAsync(item, Cancellation);
+
+        SqliteEventStore upgraded = new(path, 1_048_576);
+        await upgraded.InitializeAsync(Cancellation);
+        foreach (string version in new[] { "0.1.0-dev.362", "0.1.0", "0.1.0-dev.0" })
+        {
+            SecurityEventEnvelope after = Built(version);
+            Assert.Equal(item.Fingerprint, EventFingerprint.Create(after));
+            Assert.True((await upgraded.EnqueueAsync(item with
+            {
+                Payload = JsonSerializer.Serialize(after, BowerJson.Envelope)
+            }, Cancellation)).Duplicate);
+        }
+    }
+
+    [Fact]
     public async Task Replay_IgnoresLocalDetectionChangesButPreservesSourceAttributes()
     {
         using TemporaryDirectory directory = new();

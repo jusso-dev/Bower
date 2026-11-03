@@ -5,6 +5,10 @@
 # it was running.
 set -eu
 
+# A failed upgrade (for example a refused downgrade) left the installed package as it
+# was; its prerm changes nothing on upgrade, so there is nothing to undo.
+[ "${1:-}" != abort-upgrade ] || exit 0
+
 umask 077
 install -d -o root -g root -m 0755 /etc/bower /etc/bower/keys /etc/bower/packs
 install -d -o root -g bower -m 0750 /etc/bower/secrets

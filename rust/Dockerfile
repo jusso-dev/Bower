@@ -12,14 +12,19 @@ COPY rust/ ./
 # Multi-arch builds run both platforms at once: lock the shared registry cache and
 # keep one target cache per platform, or parallel unpacks fail with "File exists".
 ARG TARGETPLATFORM
+# Release version (docs/operations/release-versioning.md); unset builds are <version>-dev.0.
+ARG BOWER_VERSION=
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/src/rust/target,id=bower-rust-target-${TARGETPLATFORM},sharing=locked \
-    cargo build --release --locked -p bower-collector \
+    if [ -n "$BOWER_VERSION" ]; then export BOWER_VERSION; else unset BOWER_VERSION; fi \
+    && cargo build --release --locked -p bower-collector \
     && install -D -m 0755 target/release/bower-collector /out/app/bower-collector \
     && mkdir -p /out/var/lib/bower /out/var/spool/bower
 
 # Static distroless base: CA certificates and tzdata only, no shell or package manager.
 FROM gcr.io/distroless/static-debian12 AS runtime
+ARG BOWER_VERSION=
+LABEL org.opencontainers.image.version="${BOWER_VERSION}"
 WORKDIR /app
 COPY --from=build --chown=1654:1654 /out/app/ /app/
 COPY --chown=1654:1654 policies ./policies

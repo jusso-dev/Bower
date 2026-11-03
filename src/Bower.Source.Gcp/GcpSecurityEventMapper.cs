@@ -306,7 +306,7 @@ public sealed partial class GcpSecurityEventMapper
             Collector = new CollectorContext
             {
                 Id = options.SourceId,
-                Version = "0.1.0",
+                Version = BowerVersion.Current,
                 SourceAdapter = eventType == GcpEventTypes.SccFinding ? "gcp.scc" : "gcp.audit",
                 ConfigurationHash = configurationHash,
                 ReceivedAt = observedAt.ToUniversalTime()

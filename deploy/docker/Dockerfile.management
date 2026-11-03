@@ -27,8 +27,11 @@ RUN sh /usr/local/bin/aot-cross-deps.sh "$BUILDARCH" "$TARGETARCH"
 WORKDIR /src
 COPY . .
 RUN dotnet restore src/Bower.Management.Api/Bower.Management.Api.csproj --locked-mode
+# Release version (docs/operations/release-versioning.md); unset builds are <VERSION>-dev.0.
+ARG BOWER_VERSION=
+ARG BOWER_BUILD_NUMBER=
 RUN RID="linux-$([ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64)" \
-    && dotnet publish src/Bower.Management.Api/Bower.Management.Api.csproj \
+    && BowerVersion="$BOWER_VERSION" BowerBuildNumber="$BOWER_BUILD_NUMBER" dotnet publish src/Bower.Management.Api/Bower.Management.Api.csproj \
         --configuration Release \
         --no-restore \
         --runtime "$RID" \
@@ -38,6 +41,8 @@ RUN RID="linux-$([ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64)" \
 
 # Chiseled runtime-deps: no shell, no package manager, no ICU (InvariantGlobalization).
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0.14-noble-chiseled AS runtime
+ARG BOWER_VERSION=
+LABEL org.opencontainers.image.version="${BOWER_VERSION}"
 WORKDIR /app
 COPY --from=api-build /app .
 COPY --from=web-build /src/ui/Bower.Management.Web/dist ./wwwroot

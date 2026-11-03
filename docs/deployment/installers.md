@@ -22,8 +22,12 @@ documentation changes skip packaging; see [CI](../architecture/ci.md).
 | `bower-packages-linux` | `bower-collector_<version>-1_{amd64,arm64}.deb`, `bower-collector-<version>-1.{x86_64,aarch64}.rpm`, `bower-collector-offline-<version>-linux-{amd64,arm64}.tar.gz` |
 | `bower-packages-windows` | `bower-collector-<version>-{x64,arm64}.msi`, `bower-collector-offline-<version>-win-{x64,arm64}.zip` |
 
-`<version>` is `0.1.0-dev.<run number>` for CI builds (`0.1.0~dev.<n>` in deb and rpm
-naming). The Linux binaries need glibc 2.34 or later: Ubuntu 22.04+, Debian 12+, RHEL,
+`<version>` is the Bower version from [release versioning](../operations/release-versioning.md):
+`<VERSION>-dev.<run number>` for CI builds and `<VERSION>` or `<VERSION>-rc.N` for a
+release tag (`~dev.<n>` / `~rc.<n>` in deb and rpm naming). The MSI ProductVersion is
+`MAJOR.MINOR.<run number>`. Each run also uploads `bower-upgrade-test-linux` and
+`bower-upgrade-test-windows`: the same binaries packaged as `<VERSION>-dev.0` for the upgrade
+tests below. They are test fixtures, never releases. The Linux binaries need glibc 2.34 or later: Ubuntu 22.04+, Debian 12+, RHEL,
 Rocky and AlmaLinux 9+. Windows needs a version .NET 10 supports (x64 or arm64).
 
 ## What the packages install
@@ -206,6 +210,7 @@ not part of this change.
 |---|---|
 | `install-linux` (ubuntu-latest) | Offline bundle and Ansible role (deb) on the runner, offline bundle (rpm) in a Rocky Linux 9 systemd container: each joins `Pending` against a loopback management API, runs as the `bower` system account with no capabilities, has the permissions above, deletes the token and never writes it to disk or the journal. `remove` leaves no secret and keeps the queue; `purge` leaves nothing. The Ansible role is idempotent. |
 | `install-windows` (windows-latest, Windows Server) | `Install-BowerCollector.ps1` under Windows PowerShell 5.1 installs the MSI, the collector joins `Pending` as `NT SERVICE\Bower`, the service SID matches the MSI, no principal beyond SYSTEM, Administrators and the service can access `%ProgramData%\Bower`, the token is gone and absent from every file and msiexec log. `msiexec /x` removes the service, credential, token and secrets and keeps the queue. |
+| `install-linux`, `install-windows`: versioning | Install `<VERSION>-dev.0`, upgrade to this build, and check that the package, `bower --version`, `Bower.Collector --version` and `/v1/status` report this build's version. A downgrade (`dpkg -i`, `apt-get --allow-downgrades`, `rpm -U`, `rpm -U --oldpackage`, `dnf downgrade`, `msiexec /i`, and on Windows an older version built later with a higher ProductVersion) is refused with a clear message, and the package, service PID, `bower.env` and queue are unchanged. `BOWER_ALLOW_DOWNGRADE=1` / `BOWERALLOWDOWNGRADE=1` rolls back with settings, secrets and queue kept. Reinstalling the same version is a no-op (MSI) or a reinstall (deb/rpm). |
 
 The jobs use a development-authentication management API on loopback; approval and the
 `Active` transition with a real token are covered by the compose enrolment e2e.
@@ -214,8 +219,8 @@ The jobs use a development-authentication management API on loopback; approval a
 
 - Unsigned until the signing secrets are configured (see above).
 - MSI and RPM upgrades with populated queues were exercised on AWS
-  ([evidence](../evidence/ws4-20261031-074918/README.md)), not in CI. MSI compares only
-  `major.minor.build`, so it cannot block a downgrade between `0.1.0.N` development builds.
+  ([evidence](../evidence/ws4-20261031-074918/README.md)), not in CI. Version upgrades and
+  refused downgrades run in CI with an almost empty queue.
 - arm64 packages and MSIs are built but not install-tested (no arm64 install job).
 - No apt or dnf repository, no auto-update channel (out of scope for #112).
 - The Windows service reports restart requests (managed privacy profile) as a normal

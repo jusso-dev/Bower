@@ -1,4 +1,5 @@
 using System.Globalization;
+using Bower.Contracts;
 using Bower.Packs;
 
 namespace Bower.Functions.Collector;
@@ -58,7 +59,8 @@ public sealed record FunctionSettings
 
     public string CollectorId { get; init; } = "azure-function";
 
-    public string Version { get; init; } = "0.1.0";
+    /// <summary>The build that delivers (docs/operations/release-versioning.md); not configurable.</summary>
+    public string Version { get; init; } = BowerVersion.Current;
 
     /// <summary>Upper bound for one Logs Ingestion delivery before the caller is told to retry.</summary>
     public TimeSpan DeliveryTimeout { get; init; } = TimeSpan.FromSeconds(30);

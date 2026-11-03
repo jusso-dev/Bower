@@ -738,7 +738,7 @@ dependencies = [
 
 [[package]]
 name = "bower-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.23.1",
  "bower-collector",
@@ -767,7 +767,7 @@ dependencies = [
 
 [[package]]
 name = "bower-collector"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -809,7 +809,7 @@ dependencies = [
 
 [[package]]
 name = "bower-contracts"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "indexmap",
@@ -820,7 +820,7 @@ dependencies = [
 
 [[package]]
 name = "bower-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bower-contracts",
  "bower-persistence",
@@ -836,7 +836,7 @@ dependencies = [
 
 [[package]]
 name = "bower-dcr"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bower-contracts",
  "chrono",
@@ -848,7 +848,7 @@ dependencies = [
 
 [[package]]
 name = "bower-detection"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bower-contracts",
  "hex",
@@ -863,7 +863,7 @@ dependencies = [
 
 [[package]]
 name = "bower-evidence"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "bower-contracts",
@@ -882,7 +882,7 @@ dependencies = [
 
 [[package]]
 name = "bower-integrity"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.23.1",
  "bower-contracts",
@@ -896,7 +896,7 @@ dependencies = [
 
 [[package]]
 name = "bower-lambda"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aws-config",
  "aws-sdk-cloudtraildata",
@@ -927,7 +927,7 @@ dependencies = [
 
 [[package]]
 name = "bower-output-ama-spool"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bower-contracts",
  "hex",
@@ -941,7 +941,7 @@ dependencies = [
 
 [[package]]
 name = "bower-output-azure"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -973,7 +973,7 @@ dependencies = [
 
 [[package]]
 name = "bower-packs"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bower-contracts",
  "bower-dcr",
@@ -994,7 +994,7 @@ dependencies = [
 
 [[package]]
 name = "bower-persistence"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bower-contracts",
  "chrono",
@@ -1010,7 +1010,7 @@ dependencies = [
 
 [[package]]
 name = "bower-pipeline"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bower-contracts",
  "indexmap",
@@ -1023,7 +1023,7 @@ dependencies = [
 
 [[package]]
 name = "bower-policy"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bower-contracts",
  "chrono",
@@ -1038,7 +1038,7 @@ dependencies = [
 
 [[package]]
 name = "bower-redaction"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aes-gcm",
  "base64 0.23.1",
@@ -1059,7 +1059,7 @@ dependencies = [
 
 [[package]]
 name = "bower-source-syslog"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.23.1",
  "bower-contracts",

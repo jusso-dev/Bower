@@ -14,7 +14,7 @@ static async Task<int> RunAsync(string[] args)
     {
         return args switch
         {
-            ["version"] => WriteVersion(),
+            ["version"] or ["--version"] => WriteVersion(),
             ["validate", .. string[] rest] => Validate(rest),
             ["pipeline", "validate", .. string[] rest] => ValidatePipeline(rest),
             ["pipeline", "template", .. string[] rest] => PipelineTemplate(rest),
@@ -59,7 +59,7 @@ static async Task<int> RunAsync(string[] args)
 
 static int WriteVersion()
 {
-    Console.WriteLine("bower 0.1.0");
+    Console.WriteLine($"bower {BowerVersion.Current}");
     return 0;
 }
 
@@ -301,7 +301,7 @@ static int WriteHelp()
           bower tap [--collector URL] [--stage redacted|decided|queued] [--source APP] [--event-type TYPE]
                     [--limit N] [--duration SECONDS] [--sample N]   (post-redaction JSON lines on stdout)
           bower top [--collector URL] [--interval SECONDS] [--once] [--iterations N]
-          bower version
+          bower version | bower --version
         """);
     return 0;
 }

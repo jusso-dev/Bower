@@ -1,6 +1,8 @@
 # deb and rpm for the Native AOT collector and CLI (#112). Built in CI from the
 # `publish` job artefacts by deploy/installers/linux/build.sh, which renders the
-# BOWER_ placeholders below. Paths are relative to the repository root.
+# BOWER_ placeholders below. Paths are relative to the repository root. The version is
+# the Bower version (docs/operations/release-versioning.md); nfpm writes a pre-release
+# as 0.1.0~dev.42, which deb and rpm order before 0.1.0.
 name: bower-collector
 arch: ${BOWER_ARCH}
 platform: linux
@@ -53,6 +55,10 @@ contents:
   - src: deploy/installers/linux/bower.env
     dst: /usr/share/bower/bower.env.example
     file_info: { mode: 0644, owner: root, group: root }
+  # The installed version; the next package's preinstall reads it to refuse a downgrade.
+  - src: ${BOWER_STAGE}/version
+    dst: /usr/share/bower/version
+    file_info: { mode: 0644, owner: root, group: root }
   - dst: /etc/bower
     type: dir
     file_info: { mode: 0755, owner: root, group: root }
@@ -65,7 +71,8 @@ contents:
     file_info: { mode: 0644, owner: root, group: root }
 
 scripts:
-  preinstall: deploy/installers/linux/scripts/preinstall.sh
+  # Rendered by build.sh: it embeds the package version for the downgrade guard.
+  preinstall: ${BOWER_STAGE}/preinstall.sh
   postinstall: deploy/installers/linux/scripts/postinstall.sh
   preremove: deploy/installers/linux/scripts/preremove.sh
   postremove: deploy/installers/linux/scripts/postremove.sh

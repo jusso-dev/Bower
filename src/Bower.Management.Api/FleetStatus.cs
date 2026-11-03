@@ -44,12 +44,15 @@ public static class FleetStatus
     {
         ArgumentNullException.ThrowIfNull(collectors);
         ArgumentNullException.ThrowIfNull(signedOut);
-        string? newest = collectors
+        // The newest release; a preview build (dev, rc) never makes released collectors old.
+        // A fleet with no release yet compares its pre-releases, so drift still shows.
+        string[] fresh = [.. collectors
             .Where(item => HomeStatus.Fresh(item, now))
             .Select(item => item.Version)
-            .Where(version => ParseVersion(version) is { PreRelease: false })
-            .Order(Comparer<string>.Create(CompareVersions))
-            .LastOrDefault();
+            .Where(version => ParseVersion(version) is not null)
+            .Order(Comparer<string>.Create(CompareVersions))];
+        string? newest = fresh.LastOrDefault(version => ParseVersion(version) is { PreRelease: null })
+            ?? fresh.LastOrDefault();
 
         FleetCollector[] fleet = collectors
             .Select(item => Collector(item, newest, signedOut.Contains(item.Id), now))
@@ -193,10 +196,11 @@ public static class FleetStatus
         || (newest is not null && ParseVersion(item.Version) is not null && CompareVersions(item.Version, newest) < 0);
 
     /// <summary>
-    /// Major, minor and patch numbers, and whether a pre-release tag follows. Build metadata
-    /// (after <c>+</c>) is ignored. Null for anything that is not <c>N.N.N[-tag][+build]</c>.
+    /// Major, minor and patch numbers and the pre-release identifiers (null for a release).
+    /// Build metadata (after <c>+</c>) is ignored. Null for anything that is not
+    /// <c>N.N.N[-tag][+build]</c>.
     /// </summary>
-    internal static (int Major, int Minor, int Patch, bool PreRelease)? ParseVersion(string? value)
+    internal static (int Major, int Minor, int Patch, string[]? PreRelease)? ParseVersion(string? value)
     {
         if (string.IsNullOrWhiteSpace(value) || value.Length > 64)
         {
@@ -220,16 +224,13 @@ public static class FleetStatus
         int[] parsed = new int[3];
         for (int index = 0; index < 3; index++)
         {
-            if (numbers[index].Length == 0
-                || (numbers[index].Length > 1 && numbers[index][0] == '0')
-                || !numbers[index].All(char.IsAsciiDigit)
-                || !int.TryParse(numbers[index], NumberStyles.None, CultureInfo.InvariantCulture, out parsed[index]))
+            if (!Numeric(numbers[index], out parsed[index]))
             {
                 return null;
             }
         }
 
-        return (parsed[0], parsed[1], parsed[2], parts.Length == 2);
+        return (parsed[0], parsed[1], parsed[2], parts.Length == 2 ? parts[1].Split('.') : null);
     }
 
     private static bool ValidIdentifiers(string value, bool preRelease) =>
@@ -237,15 +238,55 @@ public static class FleetStatus
             && part.All(character => char.IsAsciiLetterOrDigit(character) || character == '-')
             && (!preRelease || part.Length == 1 || part[0] != '0' || !part.All(char.IsAsciiDigit)));
 
-    /// <summary>Numeric core first; a release outranks a pre-release of the same core, and two pre-releases tie.</summary>
+    private static bool Numeric(string value, out int number)
+    {
+        number = 0;
+        return value.Length > 0
+            && (value.Length == 1 || value[0] != '0')
+            && value.All(char.IsAsciiDigit)
+            && int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out number);
+    }
+
+    /// <summary>
+    /// Semantic-version precedence: numeric core first; a release outranks any pre-release of
+    /// the same core; pre-releases compare identifier by identifier, numbers numerically and
+    /// below words, words by ordinal text, so Bower's <c>dev.N</c> &lt; <c>rc.N</c> &lt; release.
+    /// </summary>
     internal static int CompareVersions(string? left, string? right)
     {
-        (int Major, int Minor, int Patch, bool PreRelease) a = ParseVersion(left) ?? default;
-        (int Major, int Minor, int Patch, bool PreRelease) b = ParseVersion(right) ?? default;
+        (int Major, int Minor, int Patch, string[]? PreRelease) a = ParseVersion(left) ?? default;
+        (int Major, int Minor, int Patch, string[]? PreRelease) b = ParseVersion(right) ?? default;
         int result = a.Major.CompareTo(b.Major);
         result = result != 0 ? result : a.Minor.CompareTo(b.Minor);
         result = result != 0 ? result : a.Patch.CompareTo(b.Patch);
-        return result != 0 ? result : b.PreRelease.CompareTo(a.PreRelease);
+        if (result != 0 || (a.PreRelease is null && b.PreRelease is null))
+        {
+            return result;
+        }
+
+        if (a.PreRelease is null || b.PreRelease is null)
+        {
+            return a.PreRelease is null ? 1 : -1;
+        }
+
+        for (int index = 0; index < Math.Min(a.PreRelease.Length, b.PreRelease.Length); index++)
+        {
+            bool leftNumber = Numeric(a.PreRelease[index], out int leftValue);
+            bool rightNumber = Numeric(b.PreRelease[index], out int rightValue);
+            result = (leftNumber, rightNumber) switch
+            {
+                (true, true) => leftValue.CompareTo(rightValue),
+                (true, false) => -1,
+                (false, true) => 1,
+                _ => string.CompareOrdinal(a.PreRelease[index], b.PreRelease[index])
+            };
+            if (result != 0)
+            {
+                return Math.Sign(result);
+            }
+        }
+
+        return a.PreRelease.Length.CompareTo(b.PreRelease.Length);
     }
 
     private static int Rank(string light) => light switch

@@ -384,7 +384,7 @@ impl LambdaSettings {
             collector_id: value("BOWER_COLLECTOR_ID")
                 .or_else(|| value("AWS_LAMBDA_FUNCTION_NAME"))
                 .unwrap_or_else(|| "bower-lambda".into()),
-            version: env!("CARGO_PKG_VERSION").into(),
+            version: bower_contracts::version::CURRENT.into(),
         })
     }
 

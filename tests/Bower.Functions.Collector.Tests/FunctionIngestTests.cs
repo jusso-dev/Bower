@@ -102,6 +102,10 @@ public sealed class FunctionIngestTests
         Assert.All(batch, item => Assert.DoesNotContain(Harness.SecretCanary, item.Payload, StringComparison.Ordinal));
         JsonNode payload = JsonNode.Parse(delivered.Payload)!;
         Assert.Equal($"azure-function:{TestEntra.ProducerObjectId}", payload["collector"]!["sourceAdapter"]!.GetValue<string>());
+        // The build's release version, not a hard-coded 0.1.0.
+        Assert.Equal(Bower.Contracts.BowerVersion.Current, payload["collector"]!["version"]!.GetValue<string>());
+        Assert.StartsWith(File.ReadAllText(Path.Combine(RepositoryRoot(), "VERSION")).Trim(),
+            payload["collector"]!["version"]!.GetValue<string>(), StringComparison.Ordinal);
         Assert.Equal("BWR-POL-AUTH-FAILURE", payload["security"]!["policyId"]!.GetValue<string>());
         Assert.DoesNotContain(Harness.SecretCanary, delivered.Payload, StringComparison.Ordinal);
         Assert.DoesNotContain(Harness.SecretCanary, harness.AllLogs, StringComparison.Ordinal);
@@ -457,5 +461,18 @@ public sealed class FunctionIngestTests
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             throw new InvalidOperationException("unreachable");
         }
+    }
+
+    private static string RepositoryRoot()
+    {
+        for (DirectoryInfo? directory = new(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "VERSION")) && File.Exists(Path.Combine(directory.FullName, "Bower.sln")))
+            {
+                return directory.FullName;
+            }
+        }
+
+        throw new InvalidOperationException("Repository root not found.");
     }
 }

@@ -50,6 +50,29 @@ jobs:
           fi
           python3 tools/ci/select_jobs.py "${args[@]}"
 
+  version:
+    # One version for every artefact of this run (docs/operations/release-versioning.md):
+    # v<VERSION> or v<VERSION>-rc.N for a release tag, otherwise <VERSION>-dev.<run number>.
+    # The run number is the build number: the MSI's third field and the file version's fourth.
+    runs-on: ubuntu-latest
+    # A non-tag build fails once v<VERSION> is tagged, which enforces the VERSION bump after a release.
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
+      build: ${{ steps.compute.outputs.build }}
+      core: ${{ steps.compute.outputs.core }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-tags: true
+      - id: compute
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          python3 tools/ci/version.py --ref-type "$REF_TYPE" --ref-name "$REF_NAME" --build-number "$RUN_NUMBER" --check-released
+
   workflow-lint:
     # Static analysis of the workflows themselves (unpinned actions, injection,
     # dangerous triggers). Fails on high-severity zizmor findings.
@@ -79,7 +102,7 @@ jobs:
         run: uvx zizmor==1.31.1 --format github --min-severity high .github/workflows
 
   build-test:
-    needs: changes
+    needs: [changes, version]
     if: needs.changes.outputs.dotnet == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -92,8 +115,20 @@ jobs:
           cache: true
           cache-dependency-path: '**/packages.lock.json'
       - run: dotnet restore Bower.sln --locked-mode
-      - run: dotnet build Bower.sln --configuration Release --no-restore
+      - run: dotnet build Bower.sln --configuration Release --no-restore -p:BowerVersion="$BOWER_VERSION" -p:BowerBuildNumber="$BOWER_BUILD"
+        env:
+          BOWER_VERSION: ${{ needs.version.outputs.version }}
+          BOWER_BUILD: ${{ needs.version.outputs.build }}
+      # BowerVersionTests check the stamped version reaches the collector and the CLI.
       - run: dotnet test --solution Bower.sln --configuration Release --no-build
+        env:
+          BOWER_EXPECTED_VERSION: ${{ needs.version.outputs.version }}
+      - name: The CLI and the collector report the stamped version
+        env:
+          BOWER_VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          test "$(src/Bower.Cli/bin/Release/net10.0/bower --version)" = "bower $BOWER_VERSION"
+          test "$(src/Bower.Collector/bin/Release/net10.0/Bower.Collector --version)" = "bower-collector $BOWER_VERSION"
       # Every pack builds (samples and field assertions gate signing) and passes `pack test`.
       # The key is ephemeral: CI proves the packs, it never publishes a signed pack.
       - name: Test every pack
@@ -152,7 +187,7 @@ jobs:
           --filter-class "Bower.UnitTests.WindowsSettingsFileTests"
 
   rust:
-    needs: changes
+    needs: [changes, version]
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     defaults:
@@ -160,6 +195,10 @@ jobs:
         working-directory: rust
     env:
       CARGO_TERM_COLOR: always
+      # Every build, test and binary in this job carries this run's version; the
+      # bower_contracts::version test asserts it equals BOWER_EXPECTED_VERSION.
+      BOWER_VERSION: ${{ needs.version.outputs.version }}
+      BOWER_EXPECTED_VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -179,6 +218,12 @@ jobs:
       # C#-vs-Rust parity tests that need a built C# binary skip when it is absent.
       - run: cargo test --workspace --locked
       - run: cargo build --locked -p bower-collector -p bower-cli
+      # The binaries report the version CI stamped in at compile time (BOWER_VERSION).
+      - name: Check the stamped version
+        run: |
+          test "$(target/debug/bower --version)" = "bower $BOWER_VERSION"
+          test "$(target/debug/bower version)" = "bower $BOWER_VERSION"
+          test "$(target/debug/bower-collector --version)" = "bower-collector $BOWER_VERSION"
       - name: Test every pack with the Rust CLI
         run: |
           bower=target/debug/bower
@@ -400,19 +445,34 @@ jobs:
           retention-days: 7
 
   docker:
-    needs: changes
+    needs: [changes, version]
     if: needs.changes.outputs.containers == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: docker build -f deploy/docker/Dockerfile -t bower-collector:ci .
+      - run: >
+          docker build -f deploy/docker/Dockerfile -t bower-collector:ci
+          --build-arg BOWER_VERSION="$BOWER_VERSION" --build-arg BOWER_BUILD_NUMBER="$BOWER_BUILD" .
+        env:
+          BOWER_VERSION: ${{ needs.version.outputs.version }}
+          BOWER_BUILD: ${{ needs.version.outputs.build }}
       - run: docker build -f deploy/docker/Dockerfile.management -t bower-management:ci --build-arg BOWER_AUTH_MODE=development .
       - run: docker build -f deploy/docker/Dockerfile.web -t bower-web:ci .
       - run: docker build -f deploy/docker/Dockerfile.sidecar -t bower-sidecar:ci .
       - run: docker build -f deploy/docker/Dockerfile.cloud -t bower-cloud:ci .
-      - run: docker build -f rust/Dockerfile -t bower-collector-rs:ci .
+      - run: docker build -f rust/Dockerfile -t bower-collector-rs:ci --build-arg BOWER_VERSION="$BOWER_VERSION" .
+        env:
+          BOWER_VERSION: ${{ needs.version.outputs.version }}
+      - name: Images report and label the stamped version
+        env:
+          BOWER_VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          for image in bower-collector bower-collector-rs; do
+            test "$(docker run --rm "$image:ci" --version)" = "bower-collector $BOWER_VERSION"
+            test "$(docker image inspect "$image:ci" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')" = "$BOWER_VERSION"
+          done
       - name: Enrol the C# and Rust collectors with one-time tokens (compose e2e)
         run: bash tests/e2e/enrolment.sh
       - name: Relay mode across C# and Rust relays and downstreams (compose e2e)
@@ -459,11 +519,16 @@ jobs:
           --output type=cacheonly .
 
   publish:
-    needs: changes
+    needs: [changes, version]
     if: needs.changes.outputs.platforms == 'true'
     # Native AOT cannot cross-compile to another OS, and cross-architecture links need
     # a target sysroot, so every RID builds on a native runner.
     runs-on: ${{ matrix.os }}
+    # MSBuild reads these as properties: every binary carries this run's version
+    # (docs/operations/release-versioning.md).
+    env:
+      BowerVersion: ${{ needs.version.outputs.version }}
+      BowerBuildNumber: ${{ needs.version.outputs.build }}
     strategy:
       fail-fast: false
       matrix:
@@ -504,7 +569,7 @@ jobs:
 
   # Installer validation runs for packaging changes and full validation.
   package-linux:
-    needs: [publish, changes]
+    needs: [publish, changes, version]
     if: needs.changes.outputs.packaging == 'true'
     runs-on: ubuntu-latest
     env:
@@ -540,13 +605,14 @@ jobs:
       - name: Build deb, rpm and offline bundles
         env:
           NFPM_PASSPHRASE: ${{ secrets.BOWER_PACKAGE_GPG_PASSPHRASE }}
-          REF_TYPE: ${{ github.ref_type }}
-          REF_NAME: ${{ github.ref_name }}
-          RUN_NUMBER: ${{ github.run_number }}
+          BOWER_VERSION: ${{ needs.version.outputs.version }}
+          BOWER_CORE: ${{ needs.version.outputs.core }}
         run: |
-          if [ "$REF_TYPE" = tag ]; then version="${REF_NAME#v}"; else version="0.1.0-dev.${RUN_NUMBER}"; fi
-          deploy/installers/linux/build.sh artefacts/bower-linux-x64 amd64 "$version" dist
-          deploy/installers/linux/build.sh artefacts/bower-linux-arm64 arm64 "$version" dist
+          deploy/installers/linux/build.sh artefacts/bower-linux-x64 amd64 "$BOWER_VERSION" dist
+          deploy/installers/linux/build.sh artefacts/bower-linux-arm64 arm64 "$BOWER_VERSION" dist
+          # Test only, never released: the same binaries as an older package (<core>-dev.0)
+          # for the install-linux upgrade and downgrade-refusal test. Unsigned.
+          BOWER_GPG_KEY_FILE='' deploy/installers/linux/build.sh artefacts/bower-linux-x64 amd64 "$BOWER_CORE-dev.0" dist-upgrade-test
       - name: Remove the signing key
         if: always()
         run: rm -f "$RUNNER_TEMP/package-signing.asc"
@@ -554,9 +620,14 @@ jobs:
         with:
           name: bower-packages-linux
           path: dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bower-upgrade-test-linux
+          path: dist-upgrade-test
+          retention-days: 7
 
   package-windows:
-    needs: [publish, changes]
+    needs: [publish, changes, version]
     if: needs.changes.outputs.packaging == 'true'
     runs-on: windows-latest
     env:
@@ -594,15 +665,23 @@ jobs:
       - name: Build MSI and offline bundles
         env:
           BOWER_SIGN_PFX_PASSWORD: ${{ secrets.BOWER_WINDOWS_SIGNING_PFX_PASSWORD }}
-          REF_TYPE: ${{ github.ref_type }}
-          REF_NAME: ${{ github.ref_name }}
-          RUN_NUMBER: ${{ github.run_number }}
+          BOWER_VERSION: ${{ needs.version.outputs.version }}
+          BOWER_BUILD: ${{ needs.version.outputs.build }}
+          BOWER_CORE: ${{ needs.version.outputs.core }}
         run: |
-          $version = if ($env:REF_TYPE -eq 'tag') { $env:REF_NAME.TrimStart('v') } else { "0.1.0-dev.$env:RUN_NUMBER" }
           foreach ($arch in 'x64', 'arm64') {
             ./deploy/installers/windows/build.ps1 -ArtefactDirectory "artefacts/bower-win-$arch" `
-              -Architecture $arch -Version $version -OutputDirectory dist
+              -Architecture $arch -Version $env:BOWER_VERSION -BuildNumber $env:BOWER_BUILD -OutputDirectory dist
           }
+          # Test only, never released: the same binaries as an older MSI (<core>-dev.0,
+          # ProductVersion MAJOR.MINOR.0) for the install-windows upgrade and downgrade test.
+          $env:BOWER_SIGN_PFX_FILE = ''
+          ./deploy/installers/windows/build.ps1 -ArtefactDirectory artefacts/bower-win-x64 `
+            -Architecture x64 -Version "$env:BOWER_CORE-dev.0" -BuildNumber 0 -OutputDirectory dist-upgrade-test
+          # The same, built "later" (ProductVersion MAJOR.MINOR.65535, above this build): the MSI
+          # must still refuse it, because it is semantically older (as an rc -> later dev build).
+          ./deploy/installers/windows/build.ps1 -ArtefactDirectory artefacts/bower-win-x64 `
+            -Architecture x64 -Version "$env:BOWER_CORE-dev.0" -BuildNumber 65535 -OutputDirectory dist-upgrade-test/later-build
       - name: Remove the signing certificate
         if: always()
         run: Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'signing.pfx') -Force -ErrorAction SilentlyContinue
@@ -610,11 +689,16 @@ jobs:
         with:
           name: bower-packages-windows
           path: dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bower-upgrade-test-windows
+          path: dist-upgrade-test
+          retention-days: 7
 
   install-linux:
     # Ubuntu (offline bundle and Ansible role, deb) on the runner and Rocky Linux 9
     # (offline bundle, rpm) in a systemd container, against a loopback management API.
-    needs: [package-linux]
+    needs: [package-linux, version]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -628,6 +712,10 @@ jobs:
         with:
           name: bower-packages-linux
           path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bower-upgrade-test-linux
+          path: dist-upgrade-test
       - name: Start the management API (development auth, loopback only)
         run: |
           dotnet restore src/Bower.Management.Api/Bower.Management.Api.csproj --locked-mode
@@ -638,12 +726,14 @@ jobs:
             nohup dotnet Bower.Management.Api.dll >"$RUNNER_TEMP/management.log" 2>&1 &
           for _ in $(seq 1 60); do curl -sf http://127.0.0.1:4320/health && break; sleep 1; done
           curl -sf http://127.0.0.1:4320/health
-      - run: bash tests/installers/linux.sh dist
+      - run: bash tests/installers/linux.sh dist dist-upgrade-test "$BOWER_VERSION"
+        env:
+          BOWER_VERSION: ${{ needs.version.outputs.version }}
 
   install-windows:
     # Windows Server (windows-latest): the MSI through the offline installer under
     # Windows PowerShell 5.1, against a loopback management API.
-    needs: [package-windows]
+    needs: [package-windows, version]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -656,6 +746,10 @@ jobs:
         with:
           name: bower-packages-windows
           path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bower-upgrade-test-windows
+          path: dist-upgrade-test
       - name: Start the management API (development auth, loopback only) and run the install test
         run: |
           dotnet restore src/Bower.Management.Api/Bower.Management.Api.csproj --locked-mode
@@ -670,7 +764,9 @@ jobs:
           }
           Invoke-RestMethod http://127.0.0.1:4320/health | Out-Null
           # Same step: Windows runners stop a step's child processes when the step ends.
-          ./tests/installers/windows.ps1 -PackagesDirectory dist
+          ./tests/installers/windows.ps1 -PackagesDirectory dist -UpgradeTestDirectory dist-upgrade-test -ExpectedVersion $env:BOWER_VERSION
+        env:
+          BOWER_VERSION: ${{ needs.version.outputs.version }}
       - name: Service and installer diagnostics
         if: failure()
         run: |
@@ -694,7 +790,7 @@ jobs:
   ci-success:
     name: ci-success
     if: always()
-    needs: [changes, workflow-lint, build-test, windows-event-log, rust, infrastructure, monitoring-windows, powershell, ui, e2e, docker, docker-arm64, publish, package-linux, package-windows, install-linux, install-windows]
+    needs: [changes, version, workflow-lint, build-test, windows-event-log, rust, infrastructure, monitoring-windows, powershell, ui, e2e, docker, docker-arm64, publish, package-linux, package-windows, install-linux, install-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Require every selected check to pass
@@ -706,7 +802,7 @@ jobs:
           results = json.loads(os.environ['RESULTS'])
           failed = {name: job['result'] for name, job in results.items()
                     if job['result'] not in ('success', 'skipped')}
-          for required in ('changes', 'workflow-lint'):
+          for required in ('changes', 'version', 'workflow-lint'):
               if results[required]['result'] != 'success':
                   failed[required] = results[required]['result']
           selected = results['changes'].get('outputs', {})

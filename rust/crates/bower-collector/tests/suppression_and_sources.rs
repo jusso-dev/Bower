@@ -187,6 +187,7 @@ async fn ingest_reports_suppression_and_status_shows_pipeline_and_expected_sourc
     assert!(sources[1]["lastSeenAt"].is_null());
     // Fresh start: never-seen sources are within their grace period.
     assert_eq!(health, r#"{"status":"healthy"}"#);
+    assert_eq!(status["version"], bower_contracts::version::CURRENT);
     let keys: Vec<&str> = status
         .as_object()
         .unwrap()
@@ -197,6 +198,7 @@ async fn ingest_reports_suppression_and_status_shows_pipeline_and_expected_sourc
         keys,
         [
             "status",
+            "version",
             "policy",
             "ledger",
             "queue",

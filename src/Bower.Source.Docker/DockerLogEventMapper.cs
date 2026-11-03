@@ -26,7 +26,7 @@ public sealed record DockerMapperOptions
 {
     public required string SidecarId { get; init; }
 
-    public string Version { get; init; } = "0.1.0";
+    public string Version { get; init; } = BowerVersion.Current;
 
     public string DefaultEnvironment { get; init; } = "production";
 }

@@ -8,12 +8,27 @@ API on 127.0.0.1:4320. Runs Install-BowerCollector.ps1 under Windows PowerShell 
 proves the collector joins Pending as NT SERVICE\Bower with locked-down folders, then
 uninstalls with msiexec /x and proves no secret is left behind. Never prints a token.
 
+With -UpgradeTestDirectory and -ExpectedVersion it then installs the older test MSI (the
+same binaries as <core>-dev.0, ProductVersion MAJOR.MINOR.0), upgrades to this build,
+checks every reported version, and proves that a downgrade is refused with a clear
+message while the service, settings and queue stay untouched, that the same MSI
+reinstalls as a no-op, and that BOWERALLOWDOWNGRADE=1 rolls back on purpose
+(docs/operations/release-versioning.md).
+
 .PARAMETER PackagesDirectory
 Folder holding bower-collector-offline-<version>-win-x64.zip.
+
+.PARAMETER UpgradeTestDirectory
+Folder holding the older test MSI, bower-collector-<core>-dev.0-x64.msi.
+
+.PARAMETER ExpectedVersion
+The version this build reports, for example 0.1.0-dev.362.
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][string] $PackagesDirectory
+    [Parameter(Mandatory)][string] $PackagesDirectory,
+    [string] $UpgradeTestDirectory,
+    [string] $ExpectedVersion
 )
 
 Set-StrictMode -Version Latest
@@ -77,6 +92,112 @@ function Assert-Folder([string] $Path, [string] $ServiceRights) {
     if ($Path -eq $data) {
         Assert-That $acl.AreAccessRulesProtected "$Path inherits the ProgramData ACL"
     }
+}
+
+function Invoke-Msi([string[]] $Arguments, [string] $Log) {
+    $process = Start-Process -FilePath msiexec.exe -Wait -PassThru -ArgumentList (
+        $Arguments + @('/qn', '/norestart', '/l*v', ('"{0}"' -f (Join-Path $work $Log))))
+    $process.ExitCode
+}
+
+function Wait-Healthy {
+    for ($i = 0; $i -lt 60; $i++) {
+        try { Invoke-RestMethod http://127.0.0.1:4319/health -TimeoutSec 2 | Out-Null; return } catch { Start-Sleep -Seconds 1 }
+    }
+    throw 'FAIL: collector never became healthy'
+}
+
+function Get-InstalledState {
+    # Everything a refused downgrade must leave alone.
+    $product = @(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
+            Where-Object { $_.PSObject.Properties['DisplayName'] -and $_.DisplayName -eq 'Bower Collector' })
+    Assert-That ($product.Count -eq 1) "expected one installed Bower Collector, found $($product.Count)"
+    [pscustomobject]@{
+        DisplayVersion = $product[0].DisplayVersion
+        Version        = (Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Bower\Collector').Version
+        VersionKey     = (Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Bower\Collector').VersionKey
+        ProcessId      = (Get-CimInstance Win32_Service -Filter "Name='Bower'").ProcessId
+        Settings       = (Get-FileHash -LiteralPath (Join-Path $data 'bower.env') -Algorithm SHA256).Hash
+        Queue          = (Get-Item -LiteralPath (Join-Path $data 'state\queue.db')).CreationTimeUtc.Ticks
+    } | ConvertTo-Json -Compress
+}
+
+function Test-Versioning([string] $Older, [string] $Newer, [string] $Version) {
+    Assert-That ($Version -match '^(\d+)\.(\d+)\.\d+(-(dev|rc)\.\d+)?$') "-ExpectedVersion is not a Bower version: $Version"
+    $msiPrefix = '^{0}\.{1}\.' -f $Matches[1], $Matches[2]
+    $oldVersion = $Version.Split('-')[0] + '-dev.0'
+    $headers = @{}
+    $status = { (Invoke-RestMethod http://127.0.0.1:4319/v1/status -Headers $headers).version }
+
+    Write-Information "== Windows: install $oldVersion, upgrade to $Version (MSI)" -InformationAction Continue
+    Assert-That ((Invoke-Msi @('/i', ('"{0}"' -f $Older)) 'older-install.log') -eq 0) 'older MSI did not install'
+    Assert-That ((Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Bower\Collector').Version -eq $oldVersion) 'older MSI did not record its version'
+    # An ingest token so /v1/status answers, wired through the operator settings file.
+    $token = [Convert]::ToHexString([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+    $tokens.Add($token)
+    [System.IO.File]::WriteAllText((Join-Path $data 'secrets\ingest-token'), $token)
+    Set-Content -LiteralPath (Join-Path $data 'bower.env') -Encoding ASCII -Value "BOWER_INGEST_TOKEN_FILE=$data\secrets\ingest-token"
+    & icacls.exe (Join-Path $data 'bower.env') /setowner '*S-1-5-32-544' | Out-Null
+    $headers['Authorization'] = "Bearer $token"
+    Restart-Service -Name Bower
+    Wait-Healthy
+
+    Assert-That ((Invoke-Msi @('/i', ('"{0}"' -f $Newer)) 'upgrade.log') -eq 0) 'upgrade MSI failed'
+    Wait-Healthy
+    $installed = Get-InstalledState | ConvertFrom-Json
+    Assert-That ($installed.Version -eq $Version) "registry records $($installed.Version), expected $Version"
+    Assert-That ($installed.VersionKey -match '^\d{3}\.\d{3}\.\d{5}\.[012]\.\d{5}$') "registry VersionKey is $($installed.VersionKey)"
+    Assert-That ($installed.DisplayVersion -match ($msiPrefix + '[1-9]\d*$')) "ProductVersion $($installed.DisplayVersion) is not MAJOR.MINOR.BUILD"
+    $cli = & (Join-Path $env:ProgramFiles 'Bower\bower.exe') --version
+    Assert-That ($cli -eq "bower $Version") "bower --version printed $cli"
+    $collector = & (Join-Path $env:ProgramFiles 'Bower\Bower.Collector.exe') --version
+    Assert-That ($collector -eq "bower-collector $Version") "Bower.Collector --version printed $collector"
+    Assert-That ((& $status) -eq $Version) "/v1/status reports $(& $status)"
+    Write-Information "upgraded: ProductVersion $($installed.DisplayVersion); registry, CLI, collector and /v1/status report $Version" -InformationAction Continue
+
+    Write-Information "== Windows: downgrade to $oldVersion must be refused" -InformationAction Continue
+    $before = Get-InstalledState
+    $code = Invoke-Msi @('/i', ('"{0}"' -f $Older)) 'downgrade.log'
+    $log = Get-Content -LiteralPath (Join-Path $work 'downgrade.log') -Raw
+    Assert-That ($code -eq 1603) "downgrade exited with $code, expected 1603"
+    Assert-That ($log.Contains('A newer Bower Collector is already installed')) 'the msiexec log does not explain the refused downgrade'
+    Assert-That ((Get-InstalledState) -eq $before) 'a refused downgrade changed the product, service, settings or queue'
+    Assert-That ((& $status) -eq $Version) 'status changed after a refused downgrade'
+    Write-Information "refused (exit 1603): $(($log -split "`r?`n" | Select-String -SimpleMatch 'A newer Bower Collector' | Select-Object -First 1).Line.Trim())" -InformationAction Continue
+
+    # Semantically older but built later: its ProductVersion (MAJOR.MINOR.65535) is above this
+    # build's, as a dev build made after an rc is. The installed VersionKey still refuses it.
+    $later = @(Get-ChildItem -LiteralPath (Join-Path (Split-Path $Older) 'later-build') -Filter 'bower-collector-*-x64.msi' -File)
+    Assert-That ($later.Count -eq 1) 'expected one later-build fixture MSI'
+    $code = Invoke-Msi @('/i', ('"{0}"' -f $later[0].FullName)) 'semantic-downgrade.log'
+    $log = Get-Content -LiteralPath (Join-Path $work 'semantic-downgrade.log') -Raw
+    Assert-That ($code -eq 1603) "semantic downgrade with a higher ProductVersion exited with $code, expected 1603"
+    Assert-That ($log.Contains("A newer Bower Collector is already installed ($Version)")) 'the msiexec log does not explain the refused semantic downgrade'
+    Assert-That ((Get-InstalledState) -eq $before) 'a refused semantic downgrade changed the product, service, settings or queue'
+    Write-Information 'refused (exit 1603): a later build of an older version' -InformationAction Continue
+
+    Write-Information '== Windows: the same MSI again is a no-op' -InformationAction Continue
+    Assert-That ((Invoke-Msi @('/i', ('"{0}"' -f $Newer)) 'reinstall.log') -eq 0) 'same-version reinstall failed'
+    Assert-That ((Get-InstalledState) -eq $before) 'reinstalling the installed MSI changed the product, service, settings or queue'
+
+    Write-Information '== Windows: explicit rollback with BOWERALLOWDOWNGRADE=1' -InformationAction Continue
+    Assert-That ((Invoke-Msi @('/i', ('"{0}"' -f $Older), 'BOWERALLOWDOWNGRADE=1') 'rollback.log') -eq 0) 'rollback MSI failed'
+    Wait-Healthy
+    $rolledBack = Get-InstalledState | ConvertFrom-Json
+    $original = $before | ConvertFrom-Json
+    Assert-That ($rolledBack.Version -eq $oldVersion) "rollback recorded $($rolledBack.Version)"
+    Assert-That ($rolledBack.Settings -eq $original.Settings) 'rollback changed bower.env'
+    Assert-That ($rolledBack.Queue -eq $original.Queue) 'rollback replaced the queue'
+    Assert-That (Test-Path -LiteralPath (Join-Path $data 'secrets\ingest-token')) 'rollback deleted a secret'
+    # The test MSI carries this build's binaries, so the service still reports $Version.
+    Assert-That ((& $status) -eq $Version) 'the rolled-back service is not answering'
+
+    Assert-That ((Invoke-Msi @('/i', ('"{0}"' -f $Newer)) 'upgrade-again.log') -eq 0) 'upgrade after rollback failed'
+    Wait-Healthy
+    Assert-That (((Get-InstalledState | ConvertFrom-Json).Version) -eq $Version) 'upgrade after rollback did not record the version'
+    Assert-That ((Invoke-Msi @('/x', ('"{0}"' -f $Newer)) 'versioning-uninstall.log') -eq 0) 'uninstall after the versioning test failed'
+    Assert-NoToken $work 'the installer logs'
+    Write-Information "Windows versioning test passed: upgrade, refused downgrade, no-op reinstall, explicit rollback." -InformationAction Continue
 }
 
 try {
@@ -192,6 +313,11 @@ try {
     Assert-That (-not (Test-Path -LiteralPath 'HKLM:\SOFTWARE\Bower\Collector')) 'remembered settings left behind'
     Assert-NoToken $work 'the installer logs'
     Write-Information 'Windows installer test passed: Pending as NT SERVICE\Bower, no secret left after uninstall.' -InformationAction Continue
+
+    if ($UpgradeTestDirectory) {
+        Test-Versioning -Older (Get-ChildItem -LiteralPath $UpgradeTestDirectory -Filter 'bower-collector-*-x64.msi' -File).FullName `
+            -Newer $msi -Version $ExpectedVersion
+    }
 }
 finally {
     # msiexec logs hold no secret values (asserted above); keep them for a failed run.

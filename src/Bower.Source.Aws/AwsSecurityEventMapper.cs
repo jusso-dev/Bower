@@ -464,7 +464,7 @@ public sealed partial class AwsSecurityEventMapper
             Collector = new CollectorContext
             {
                 Id = options.SourceId,
-                Version = "0.1.0",
+                Version = BowerVersion.Current,
                 SourceAdapter = $"aws.{options.Kind.ToString().ToLowerInvariant()}",
                 ConfigurationHash = configurationHash,
                 ReceivedAt = observedAt.ToUniversalTime()

@@ -17,19 +17,26 @@ The bower-<rid> artefact (collector\ and cli\ folders).
 x64 or arm64.
 
 .PARAMETER Version
-Semantic version, for example 0.1.0 or 0.1.0-dev.42.
+The Bower version, MAJOR.MINOR.PATCH[-dev.N|-rc.N], for example 0.1.0 or 0.1.0-dev.42
+(docs/operations/release-versioning.md; tools/ci/version.py computes it in CI).
+
+.PARAMETER BuildNumber
+The CI build number (0-65535). The MSI ProductVersion is MAJOR.MINOR.BuildNumber, because
+Windows Installer compares only the first three fields: every build must use a new,
+higher number for upgrades and the downgrade refusal to work.
 
 .PARAMETER OutputDirectory
 Where the MSI and the offline zip are written.
 
 .EXAMPLE
-pwsh -File deploy/installers/windows/build.ps1 -ArtefactDirectory artefacts/bower-win-x64 -Architecture x64 -Version 0.1.0 -OutputDirectory dist
+pwsh -File deploy/installers/windows/build.ps1 -ArtefactDirectory artefacts/bower-win-x64 -Architecture x64 -Version 0.1.0-dev.42 -BuildNumber 42 -OutputDirectory dist
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string] $ArtefactDirectory,
     [Parameter(Mandatory)][ValidateSet('x64', 'arm64')][string] $Architecture,
-    [Parameter(Mandatory)][ValidatePattern('^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$')][string] $Version,
+    [Parameter(Mandatory)][ValidatePattern('^(0|[1-9]\d{0,4})\.(0|[1-9]\d{0,4})\.(0|[1-9]\d{0,4})(-(dev|rc)\.(0|[1-9]\d{0,4}))?$')][string] $Version,
+    [Parameter(Mandatory)][ValidateRange(0, 65535)][int] $BuildNumber,
     [Parameter(Mandatory)][string] $OutputDirectory
 )
 
@@ -42,13 +49,30 @@ $dist = (Resolve-Path $ArtefactDirectory).Path
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 $out = (Resolve-Path $OutputDirectory).Path
 
-# MSI versions are numeric: 0.1.0-dev.42 becomes 0.1.0.42 (the fourth field is ignored
-# when comparing upgrades, so builds of one version upgrade each other in place).
-$core = $Version.Split('-')[0]
-$msiVersion = $core
-if ($Version -match '\.(\d+)$' -and $Version.Contains('-')) {
-    $msiVersion = "$core.$($Matches[1])"
+# MSI ProductVersion is MAJOR.MINOR.BUILD (major and minor at most 255): Windows Installer
+# ignores a fourth field, so the build number takes the third and orders every build.
+function Get-BowerVersionKey {
+    <# The fixed-width, text-sortable key of a Bower version, as tools/ci/version.py key():
+       MMM.mmm.PPPPP.S.NNNNN with S = 0 dev, 1 rc, 2 release. The MSI compares it as text to
+       refuse a semantic downgrade whatever the build numbers say. tools/ci/test_version.py
+       checks both agree. #>
+    param([Parameter(Mandatory)][string] $Value)
+    $core, $pre = $Value.Split('-', 2)
+    $parts = $core.Split('.') | ForEach-Object { [int] $_ }
+    $stage = 2
+    $number = 0
+    if ($pre) {
+        $label, $text = $pre.Split('.')
+        $stage = if ($label -eq 'dev') { 0 } else { 1 }
+        $number = [int] $text
+    }
+    '{0:D3}.{1:D3}.{2:D5}.{3}.{4:D5}' -f $parts[0], $parts[1], $parts[2], $stage, $number
 }
+
+$fields = $Version.Split('-')[0].Split('.') | ForEach-Object { [int] $_ }
+if ($fields[0] -gt 255 -or $fields[1] -gt 255) { throw "MAJOR and MINOR must be at most 255 for an MSI: $Version" }
+$msiVersion = "$($fields[0]).$($fields[1]).$BuildNumber"
+$versionKey = Get-BowerVersionKey -Value $Version
 
 function Invoke-Signing {
     param([string] $Tool, [string] $Thumbprint, [string[]] $Path)
@@ -80,7 +104,7 @@ if ($signing) {
 }
 
 $msi = Join-Path $out "bower-collector-$Version-$Architecture.msi"
-& wix build -ext WixToolset.Util.wixext -arch $Architecture -d "Version=$msiVersion" -d "Dist=$dist" `
+& wix build -ext WixToolset.Util.wixext -arch $Architecture -d "Version=$msiVersion" -d "BowerVersion=$Version" -d "VersionKey=$versionKey" -d "Dist=$dist" `
     -d "Policies=$(Join-Path $repo 'policies\default')" -o $msi (Join-Path $here 'Bower.wxs')
 if ($LASTEXITCODE -ne 0) { throw "wix build failed with $LASTEXITCODE." }
 if ($signing) {

@@ -294,7 +294,7 @@ public sealed class Ec2HostCollector
                     Collector = new CollectorContext
                     {
                         Id = options.AgentId,
-                        Version = "0.1.0",
+                        Version = BowerVersion.Current,
                         SourceAdapter = "aws.ec2-agent",
                         ConfigurationHash = configurationHash,
                         ReceivedAt = observed

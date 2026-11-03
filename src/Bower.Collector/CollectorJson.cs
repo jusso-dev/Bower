@@ -33,6 +33,7 @@ internal sealed record IngestPolicyResponse(string PolicyId, string PolicyVersio
 
 internal sealed record StatusResponse(
     string Status,
+    string Version,
     StatusPolicyResponse Policy,
     LedgerResponse Ledger,
     StatusQueueResponse Queue,

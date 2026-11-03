@@ -14,6 +14,36 @@
          that breaks lock-file content hash validation. Restore from nuget.org only. -->
     <DisableImplicitLibraryPacksFolder>true</DisableImplicitLibraryPacksFolder>
   </PropertyGroup>
+  <!-- Release version (docs/operations/release-versioning.md). VERSION holds MAJOR.MINOR.PATCH
+       and is the single source of truth. CI passes the full version computed by
+       tools/ci/version.py (-p:BowerVersion=0.1.0-dev.362 -p:BowerBuildNumber=362); a local
+       build is <VERSION>-dev.0. Status, heartbeat, events and the CLI report BowerVersion. -->
+  <PropertyGroup>
+    <BowerVersionCore>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)VERSION').Trim())</BowerVersionCore>
+    <BowerVersion Condition="'$(BowerVersion)' == ''">$(BowerVersionCore)-dev.0</BowerVersion>
+    <BowerBuildNumber Condition="'$(BowerBuildNumber)' == ''">0</BowerBuildNumber>
+    <Version>$(BowerVersion)</Version>
+    <!-- Kept at 1.0.0.0: YAML error messages carry the assembly identity, and the C# and Rust
+         policy parity vectors pin that text. The release version is in the two below. -->
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>$(BowerVersionCore).$(BowerBuildNumber)</FileVersion>
+    <!-- Report the version alone; the commit is in the image and package metadata. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+  <Target Name="ValidateBowerVersion" BeforeTargets="BeforeBuild">
+    <PropertyGroup>
+      <!-- Character classes, not backslashes: MSBuild on Linux and macOS turns \ into /. -->
+      <_BowerByte>(0|[1-9][0-9]?|1[0-9][0-9]|2[0-4][0-9]|25[0-5])</_BowerByte>
+      <_BowerNumber>(0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9][0-9]|655[0-2][0-9]|6553[0-5])</_BowerNumber>
+      <_BowerCorePattern>$(BowerVersionCore.Replace('.', '[.]'))</_BowerCorePattern>
+    </PropertyGroup>
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(BowerVersionCore)', '^$(_BowerByte)[.]$(_BowerByte)[.]$(_BowerNumber)$'))"
+           Text="VERSION must hold MAJOR.MINOR.PATCH (MAJOR and MINOR at most 255), found '$(BowerVersionCore)'." />
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(BowerVersion)', '^$(_BowerCorePattern)(-(dev|rc)[.]$(_BowerNumber))?$'))"
+           Text="BowerVersion must be $(BowerVersionCore), $(BowerVersionCore)-dev.N or $(BowerVersionCore)-rc.N, found '$(BowerVersion)'." />
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(BowerBuildNumber)', '^$(_BowerNumber)$'))"
+           Text="BowerBuildNumber must be 0-65535, found '$(BowerBuildNumber)'." />
+  </Target>
   <!-- Every shipped executable is published as Native AOT, so product libraries run the
        trim, AOT and single-file analyzers at build time (warnings are errors). A project
        that cannot be AOT-safe opts out explicitly and documents why. -->

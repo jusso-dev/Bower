@@ -2,8 +2,20 @@
 <!--
   Bower collector MSI (#112). Built in CI with WiX v5 from the `publish` job artefact:
 
-    wix build -ext WixToolset.Util.wixext -arch x64 -d Version=0.1.0 -d Dist=<artefact> -d Policies=policies\default
-              -o bower-collector-0.1.0-x64.msi deploy\installers\windows\Bower.wxs
+    wix build -ext WixToolset.Util.wixext -arch x64 -d Version=0.1.362 -d BowerVersion=0.1.0-dev.362
+              -d Dist=<artefact> -d Policies=policies\default
+              -o bower-collector-0.1.0-dev.362-x64.msi deploy\installers\windows\Bower.wxs
+
+  Version is the MSI ProductVersion MAJOR.MINOR.BUILD, BowerVersion the release version
+  and VersionKey its fixed-width sort key (docs/operations/release-versioning.md). Windows
+  Installer compares only the first three ProductVersion fields, so the CI build number is
+  the third: every build is a distinct product version. Whether an install is a downgrade
+  is decided semantically, as deb and rpm do: by comparing the installed VersionKey (saved
+  in the registry) with this package's, dev < rc < release. An older build is refused
+  unless BOWERALLOWDOWNGRADE=1, which then removes the installed product like an upgrade
+  does (settings, secrets, credential and queue kept). Installs from before the key fall
+  back to ProductVersion. The same version reinstalls (a rebuild) or, for the identical
+  MSI, is a no-op.
 
   Installs the Native AOT collector as the auto-start service "Bower" running as the
   virtual account NT SERVICE\Bower (no password, no interactive logon, no rights beyond
@@ -27,9 +39,30 @@
   <Package Name="Bower Collector" Manufacturer="Bower" Version="$(var.Version)"
            UpgradeCode="1B809EE5-8A1D-4B96-805F-21D66C1CF58E" Scope="perMachine"
            InstallerVersion="500" Compressed="yes">
-    <SummaryInformation Description="Bower security telemetry collector" />
-    <MajorUpgrade AllowSameVersionUpgrades="yes"
-                  DowngradeErrorMessage="A newer Bower Collector is already installed." />
+    <SummaryInformation Description="Bower security telemetry collector $(var.BowerVersion)" />
+    <Property Id="ARPCOMMENTS" Value="Bower version $(var.BowerVersion)" />
+    <!-- MajorUpgrade with AllowSameVersionUpgrades and DowngradeErrorMessage, written out so
+         that the downgrade decision is semantic and an operator can allow a rollback.
+         RemoveExistingProducts removes any installed product of either range once the
+         launch condition has let the install proceed. -->
+    <Upgrade Id="1B809EE5-8A1D-4B96-805F-21D66C1CF58E">
+      <UpgradeVersion Property="BOWEROLDERVERSIONDETECTED" Minimum="0.0.0" IncludeMinimum="yes"
+                      Maximum="$(var.Version)" IncludeMaximum="yes" MigrateFeatures="yes" />
+      <UpgradeVersion Property="BOWERNEWERVERSIONDETECTED" Minimum="$(var.Version)" IncludeMinimum="no"
+                      MigrateFeatures="yes" />
+    </Upgrade>
+    <Property Id="BOWERALLOWDOWNGRADE" Secure="yes" />
+    <!-- The installed product's release version and sort key (absent before the key existed). -->
+    <Property Id="BOWERINSTALLEDVERSION" Secure="yes">
+      <RegistrySearch Id="FindInstalledVersion" Root="HKLM" Key="SOFTWARE\Bower\Collector" Name="Version" Type="raw" />
+    </Property>
+    <Property Id="BOWERINSTALLEDVERSIONKEY" Secure="yes">
+      <RegistrySearch Id="FindInstalledVersionKey" Root="HKLM" Key="SOFTWARE\Bower\Collector" Name="VersionKey" Type="raw" />
+    </Property>
+    <!-- Refused unless allowed: an installed key above this package's key (text order is
+         version order), or, for an install without a key, a newer ProductVersion. -->
+    <Launch Condition="Installed OR BOWERALLOWDOWNGRADE = &quot;1&quot; OR (BOWERINSTALLEDVERSIONKEY AND BOWERINSTALLEDVERSIONKEY &lt;= &quot;$(var.VersionKey)&quot;) OR (NOT BOWERINSTALLEDVERSIONKEY AND NOT BOWERNEWERVERSIONDETECTED)"
+            Message="A newer Bower Collector is already installed ([BOWERINSTALLEDVERSION]), so this older version ($(var.BowerVersion)) was not installed. The installed collector, its settings and its queue are unchanged. To roll back on purpose, back up the queue and run msiexec again with BOWERALLOWDOWNGRADE=1." />
     <MediaTemplate EmbedCab="yes" />
 
     <!-- Remembered properties: the command line wins, otherwise the last install's value. -->
@@ -144,6 +177,10 @@
       <Component Id="RememberedSettings">
         <RegistryKey Root="HKLM" Key="SOFTWARE\Bower\Collector">
           <RegistryValue Name="ManagementEndpoint" Type="string" Value="[MANAGEMENTENDPOINT]" KeyPath="yes" />
+          <!-- The release version; Programs and Features shows the MSI ProductVersion. -->
+          <RegistryValue Name="Version" Type="string" Value="$(var.BowerVersion)" />
+          <!-- Read by the next MSI to decide semantically whether it is a downgrade. -->
+          <RegistryValue Name="VersionKey" Type="string" Value="$(var.VersionKey)" />
           <RegistryValue Name="CollectorId" Type="string" Value="[COLLECTORID]" />
           <RegistryValue Name="Environment" Type="string" Value="[BOWERENVIRONMENT]" />
           <RegistryValue Name="Packs" Type="string" Value="[PACKS]" />
@@ -188,6 +225,8 @@
     <CustomAction Id="RemoveSecrets" Directory="DATAFOLDER" Execute="deferred" Impersonate="no" Return="check"
                   ExeCommand="&quot;[System64Folder]cmd.exe&quot; /d /q /c (for %d in (&quot;[STATEFOLDER]management-credential&quot; &quot;[DATAFOLDER]enrolment&quot; &quot;[DATAFOLDER]secrets&quot;) do if exist %d rmdir /s /q %d) &amp; if exist &quot;[DATAFOLDER]bower.env&quot; del /f /q &quot;[DATAFOLDER]bower.env&quot;" />
     <InstallExecuteSequence>
+      <!-- Where MajorUpgrade schedules it: the old product is removed before this one installs. -->
+      <RemoveExistingProducts After="InstallValidate" />
       <Custom Action="RemoveSecrets" After="DeleteServices" Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
     </InstallExecuteSequence>
 

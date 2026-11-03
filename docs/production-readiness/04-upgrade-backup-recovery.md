@@ -28,7 +28,7 @@ still verifies signed packs against the trusted keys you configure.
 | Host power loss / forced stop | Yes | Pending backlog kept on disk | Both platforms |
 | Online backup (`bower queue backup`) | Yes | Point-in-time copy of queue, ledger, cursors and suppression state | 0.5–0.7 s for 20–33 MB |
 | Restore onto a new host (`bower queue restore`) | Yes | Every row in the backup is kept. Rows pending at backup time are delivered again. | Linux and WEC |
-| Downgrade inside the same queue schema (5) | Works, but test first | See [downgrades](#supported-versions-downgrades-and-limits) | RPM 277 → 264 |
+| Downgrade | **Refused by default** (deb, rpm, MSI); explicit rollback with `BOWER_ALLOW_DOWNGRADE=1` / `BOWERALLOWDOWNGRADE=1` inside the same queue schema (5) | Refusal leaves service, settings and queue untouched; see [downgrades](#supported-versions-downgrades-and-limits) | RPM 277 → 264 (before the guard); CI `install-*` jobs on every packaging change |
 | Old binary on a newer queue schema | Refused, nothing changed (this release on) | Fails closed with `UnsupportedQueueSchemaException` | Real binaries, two shapes of future schema |
 
 ## What Bower keeps on disk
@@ -96,8 +96,10 @@ at rest (see [Backup handling](#backup-handling-and-encryption)).
 Work through each step and record the result.
 
 1. **Read the release notes** for queue schema, bookmark version, settings and package
-   changes. Confirm the target is newer than the installed version (see the
-   [MSI version limit](#supported-versions-downgrades-and-limits)).
+   changes. Confirm the target is newer than the installed version: compare `bower --version`
+   (or `/v1/status` `version`) with the target's version, as described in
+   [release versioning](../operations/release-versioning.md). The packages refuse an older
+   target unless you allow a rollback explicitly.
 2. **Record the artifact hash** and compare it with the release manifest. Packages are
    unsigned today; the hash is your integrity check.
 
@@ -208,8 +210,21 @@ new dead letters.
 
 ### Rollback
 
-Same queue schema (check the release notes): reinstall the previous package with
-`sudo dnf downgrade -y ./bower-collector-<previous>.rpm` (or `apt-get install --allow-downgrades`).
+Same queue schema (check the release notes): the packages refuse a downgrade by default, so
+allow it explicitly for the rollback:
+
+```bash
+sudo BOWER_ALLOW_DOWNGRADE=1 dnf downgrade -y ./bower-collector-<previous>.rpm
+#    rpm only: sudo BOWER_ALLOW_DOWNGRADE=1 rpm -U --oldpackage ./bower-collector-<previous>.rpm
+#    Debian/Ubuntu:
+sudo BOWER_ALLOW_DOWNGRADE=1 apt-get install -y --allow-downgrades ./bower-collector_<previous>_amd64.deb
+```
+
+Without the variable the package stops before changing anything and prints
+`bower-collector: refusing to downgrade from <installed> to <previous>.` The guard is in the
+package being installed, so it applies to targets built with this scheme
+([release versioning](../operations/release-versioning.md#downgrades)); older dev builds
+(`0.1.0-dev.N` from before the scheme) have no guard and `dpkg -i` only warns.
 In the lab, 277 → 264 took 3.4 s and continued from the same queue. If the new release
 changed the queue schema, the old build refuses to start (from this release on). Then
 stop the service and move `/var/lib/bower/queue.db*` aside (do not delete it). Restore the
@@ -222,6 +237,7 @@ events accepted after the backup must come again from their sources.
 | --- | --- | --- |
 | `UnauthorizedAccessException: Access to the path '/etc/bower/...'` | A directory created with a restrictive umask | `chmod 0755` the directory, or `chown root:bower` with `0750` |
 | `Unsupported queue schema version.` / `UnsupportedQueueSchemaException` | Older binary than the queue | Install the newer release, or restore a backup made by this version |
+| `bower-collector: refusing to downgrade from X to Y.` | The package is older than the installed one | Install the newer package, or roll back on purpose with `BOWER_ALLOW_DOWNGRADE=1` (above) |
 | Service active, but syslog `connectionsAccepted` stays flat | Sender not reconnecting | Restart or repair the sender. Bower cannot recover frames a sender never resends. |
 | `rpm -V` lists files | Packaged files edited by hand | Reinstall the package; keep local changes in `bower.env` |
 
@@ -425,16 +441,26 @@ power-off with no gap.
 
 ### Rollback
 
-**The MSI does not reliably stop downgrades today.** MSI compares only the first three
-version fields, and every development build is `0.1.0.N`. With
-`AllowSameVersionUpgrades`, installing an older dev MSI over a newer one succeeds; the lab
-showed 277 → 264 succeeding. A rollback to a release **without** `BOWER_SETTINGS_FILE`
-also loses the settings file wiring.
+**The MSI refuses a downgrade by default.** It decides by semantic version, the same order
+deb and rpm use (dev < rc < release), not by build order: the installed product's
+`VersionKey` registry value is compared with the new MSI's
+([release versioning](../operations/release-versioning.md)). Installing an older version, even
+one built later (for example a dev build made after an rc), fails with exit code `1603` and, in
+the msiexec log, `A newer Bower Collector is already installed (<installed>), so this older
+version (<version>) was not installed.` Nothing changes. Dev MSIs built before the
+scheme (`0.1.0.N`, compared as `0.1.0`) should also refuse to replace a newer build, because
+their own `MajorUpgrade` detects it (by design; not tested). A rollback to a release **without** `BOWER_SETTINGS_FILE` also loses the settings
+file wiring.
 
 1. Back up the queue (`bower queue backup`), and check that the target release uses the
    same queue schema and bookmark version (see the
    [compatibility table](#supported-versions-downgrades-and-limits)).
-2. Install the previous MSI: `msiexec /i <previous>.msi /qn /norestart`.
+2. Install the previous MSI and allow the rollback explicitly:
+   `msiexec /i <previous>.msi /qn /norestart BOWERALLOWDOWNGRADE=1 /l*v %TEMP%\bower-rollback.log`.
+   The newer product is removed the way an upgrade removes it, so `bower.env`, the secrets,
+   the management credential and the queue stay. The target MSI must be built with this
+   scheme; a pre-scheme MSI cannot be rolled back to over a newer build except by
+   uninstalling first (which deletes `bower.env`, the secrets and the credential).
 3. If that release predates `BOWER_SETTINGS_FILE`, copy the `bower.env` lines back into the
    service `Environment` value, then `Restart-Service Bower`.
 4. Verify as above. A pre-#157 build refuses v2 bookmarks (`winevt-bookmark-invalid`), and
@@ -448,6 +474,7 @@ also loses the settings file wiring.
 | `BOWER_SETTINGS_FILE line N is not a BOWER_* or AZURE_* KEY=VALUE setting` | Typo, or another variable in the file | Fix line N; only `BOWER_*` / `AZURE_*` names are allowed |
 | `winevt-bookmark-invalid` | Bookmark from a newer format, or another channel | Upgrade to the release that wrote it; never edit the cursor |
 | `winevt-read-failed` on `ForwardedEvents` | Pre-#157 build, or no read access for `NT SERVICE\Bower` | Upgrade; grant `(A;;0x1;;;<service SID>)` on the channel |
+| msiexec exit `1603`, log says `A newer Bower Collector is already installed` | The MSI is older than the installed product | Use the newer MSI, or roll back on purpose with `BOWERALLOWDOWNGRADE=1` (above) |
 | Edited policy files reverted | MSI-managed files | Use signed packs or a separate policy directory set in `bower.env` |
 
 ## Docker and Compose
@@ -820,7 +847,7 @@ back and Bower read past its bookmark. Mitigations, in order of preference:
 | Any v5 release → newer v5 release (dev.264 → dev.270 → dev.277) | Unchanged | v2 → v2 | Linux `bower.env` kept. Windows: registry settings lost before `BOWER_SETTINGS_FILE`; kept with it. | Yes | Measured |
 | Pre-#157 (v1 bookmark) → current | Unchanged | v1 → v2: one full channel re-read with deduplication | As above | Yes | Re-read volume is the whole channel; replays older than retention are re-delivered |
 | v1–v4 queue → v5 | Automatic migration | — | — | Yes, after a backup | [Queue durability](../operations/queue-v5-durability.md) |
-| Newer v5 → older v5 (downgrade) | Same | v2 → v2 | The older build may not read `bower.env` | Works; test first | RPM measured. MSI does not block it for dev builds. |
+| Newer v5 → older v5 (downgrade) | Same | v2 → v2 | The older build may not read `bower.env` | **Refused by default**; explicit rollback with `BOWER_ALLOW_DOWNGRADE=1` (deb/rpm) or `BOWERALLOWDOWNGRADE=1` (MSI); test first | RPM 277 → 264 measured before the guard. Refusal, rollback and same-version reinstall run in CI (`install-linux`, `install-windows`). |
 | Settlement ceiling (#161) → earlier C# build, or Rust before #161 | Same schema, but the file can be up to 1.75 × (M + 4 MiB) | v2 → v2 | — | Only after [compaction](#rollback-after-settlement-growth) | Earlier builds refuse to open a database larger than `M + 4 MiB` (`QueueCapacityExceededException` at start). Unit-tested, not run live |
 | Current → pre-#157 | Same | v2 refused (`winevt-bookmark-invalid`) | — | **No** | WEC cannot read `ForwardedEvents` at all on pre-#157 |
 | Future schema (6+) → this release | Refused, unchanged | — | — | **No** (fails closed) | Older dev builds could write into a future database |
@@ -863,12 +890,17 @@ changes the storage budget.
 
 Known limits:
 
-- **MSI downgrade protection.** MSI ignores the fourth version field, and dev builds are
-  `0.1.0.N`, so any dev MSI replaces any other. Releases must increment `major.minor.patch`
-  for `DowngradeErrorMessage` to apply.
-- **Reported version.** The collector reports `0.1.0` in status and management whatever
-  the package version. Verify upgrades with the package version
-  (`rpm -q`, `DisplayVersion`) and the executable SHA-256.
+- **Downgrade protection** applies to targets built with the
+  [release versioning](../operations/release-versioning.md) scheme. Pre-scheme dev packages
+  (`0.1.0-dev.N`, MSI `0.1.0.N`) carry no package guard: `dpkg -i` of one only warns. rpm and
+  those MSIs still refuse a lower version natively. The guard compares versions, not queue
+  schemas; the queue schema refusal (`UnsupportedQueueSchemaException`) still protects the
+  data on an allowed rollback.
+- **Reported version.** From this scheme on, the collector reports its build's version
+  (`/v1/status` `version`, heartbeat, `collector.version` on every event including
+  `collector_health`, `bower --version`). Earlier builds report `0.1.0` whatever the
+  package version; for those, verify with the package version (`rpm -q`, `DisplayVersion`)
+  and the executable SHA-256.
 - **Rust.** The Rust CLI has no `queue backup` / `queue restore`; use the C# CLI (schema 5
   is shared). The Rust collector does not read `BOWER_SETTINGS_FILE`; on Linux, use systemd
   `EnvironmentFile`. Both runtimes implement the newer-schema refusal and the persisted

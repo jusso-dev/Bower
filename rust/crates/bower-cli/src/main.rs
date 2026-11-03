@@ -66,7 +66,7 @@ Commands:
   bower tap [--collector URL] [--stage redacted|decided|queued] [--source APP] [--event-type TYPE]
             [--limit N] [--duration SECONDS] [--sample N]   (post-redaction JSON lines on stdout)
   bower top [--collector URL] [--interval SECONDS] [--once] [--iterations N]
-  bower version";
+  bower version | bower --version";
 
 const UNKNOWN_COMMAND: &str = "Unknown command. Run 'bower --help'.";
 
@@ -76,6 +76,10 @@ fn run(args: Vec<String>) -> i32 {
         || matches!(rest, [only] if only == "--help" || only == "-h" || only == "help")
     {
         println!("{HELP}");
+        return 0;
+    }
+    if matches!(rest, [only] if only == "--version") {
+        println!("bower {}", bower_contracts::version::CURRENT);
         return 0;
     }
     if rest

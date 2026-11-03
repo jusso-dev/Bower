@@ -31,7 +31,7 @@ use crate::support::{CliError, CliResult};
 pub fn dispatch(command: Command) -> CliResult {
     match command {
         Command::Version => {
-            println!("bower 0.1.0");
+            println!("bower {}", bower_contracts::version::CURRENT);
             Ok(0)
         }
         Command::Validate(args) => content::validate(args.policy_directory.as_deref()),

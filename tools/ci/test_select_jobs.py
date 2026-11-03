@@ -122,7 +122,7 @@ class MergeGateTests(unittest.TestCase):
         workflow = Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml"
         script = workflow.read_text(encoding="utf-8").split("python3 - <<'PYTHON'\n", 1)[1]
         script = textwrap.dedent(script.split("          PYTHON", 1)[0])
-        jobs = ("changes", "workflow-lint", "build-test", "rust", "infrastructure",
+        jobs = ("changes", "version", "workflow-lint", "build-test", "rust", "infrastructure",
                 "powershell", "ui", "e2e", "windows-event-log", "docker", "docker-arm64",
                 "publish", "package-linux", "package-windows", "install-linux", "install-windows")
         results = {job: {"result": "success"} for job in jobs}
@@ -142,6 +142,8 @@ class MergeGateTests(unittest.TestCase):
     def test_failed_or_cancelled_checks_block(self):
         for state in ("failure", "cancelled"):
             self.assertNotEqual(0, self.gate({"e2e": state}))
+            # The version job feeds every artefact; it is always required.
+            self.assertNotEqual(0, self.gate({"version": state}))
 
     def test_selection_and_lint_must_run(self):
         for job in ("changes", "workflow-lint"):

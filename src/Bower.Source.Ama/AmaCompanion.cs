@@ -223,7 +223,7 @@ public sealed class AmaCompanionService
                     Collector = new CollectorContext
                     {
                         Id = options.SourceId,
-                        Version = "0.1.0",
+                        Version = BowerVersion.Current,
                         SourceAdapter = "ama.companion",
                         ConfigurationHash = originalId[..16],
                         ReceivedAt = observed
