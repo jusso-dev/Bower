@@ -9,7 +9,11 @@ AWSPowerShell use instance roles to fetch ephemeral secrets without embedding
 credentials in command text; OpenSSL creates the isolated TLS/signing material;
 nginx restricts development administration to loopback while collectors use TLS.
 The resolved AMI IDs and artifact hashes are recorded for each run. No product
-runtime or Python package dependency is added. CI reuses its existing pinned
+runtime or Python package dependency is added. The wecfix profiler report
+(`lab/aws/wecfix/etlstacks`, lab-only, never shipped or run in CI) uses
+`Microsoft.Diagnostics.Tracing.TraceEvent` 3.1.23 (MIT, Microsoft) to read the in-box Windows
+Performance Recorder trace and resolve frames against the build's PDBs; the alternative
+(Windows Performance Analyzer) is not on Windows Server and has no scriptable report. CI reuses its existing pinned
 `cfn-lint` for generated infrastructure. Alternatives are custom SigV4 clients,
 hand-written TLS provisioning or exposing development admin remotely, each with
 more security-sensitive code or weaker isolation.

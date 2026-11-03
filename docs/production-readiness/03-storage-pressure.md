@@ -190,7 +190,9 @@ count, and `queue.undeliveredBytes` by the same count.
    created with `-m 0`, 0.05 for ext4 defaults. `V` is the filesystem size; a disk or
    claim of that size formats to about 2% less on ext4 (inode tables and journal), so
    request `V / 0.98`. The 128 MiB covers WAL bursts (a 5,000-row retention purge wrote
-   up to 72 MB of WAL on AWS, truncated within 5 seconds) and shared memory. Add archive
+   up to 72 MB of WAL on AWS, truncated within 5 seconds; retention now purges in
+   1,000-row transactions, see [Windows Event Log source](../deployment/windows-event-log-source.md#throughput-cpu-and-wec-sizing))
+   and shared memory. Add archive
    and spool space if they share the volume.
 5. **`ForwardedEvents`:** `S ≥ R × E × T_stall × 1.2`, where `T_stall` is the longest
    time Bower itself may stop reading (service down, queue full, volume critical). A

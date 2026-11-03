@@ -91,6 +91,7 @@ Collector log events worth alerting on (all metadata only):
 | 1001 | Warning | Output failed; batch will retry | R1, R2 |
 | 1002 | Error | Delivery loop failed (for example `SqliteException`); retrying after back-off. Repeating every 5 s means delivery is stalled | R5 |
 | 1004 | Warning | Delivery attempts exhausted; event dead-lettered | R3 |
+| 1009 | Information | Queue database busy past the 5 s busy timeout (another writer, for example a retention batch); delivery retries after 1 s. Not a failure; collectors before wecfix logged this as 1002 `SqliteException`. Sustained repeats point at a long-running external reader or writer on the queue file | None |
 | 1006 | Warning | Retry-After above one hour was capped | R2 |
 | 1007 | Warning | Output exceeded its delivery timeout; batch will retry (seen throughout a destination outage) | R1 |
 | 1008 | Warning | Output did not deliver N events; retrying or dead-lettered. Allow-listed `destination-azure-credential-failed`, `destination-azure-http-401` and `destination-azure-http-403` indicate identity or role failure. Other unrecognised codes are reported as `delivery-failure` to avoid exposing arbitrary adapter text ([credential rotation](05-credential-rotation-and-security-failures.md)) | R1 |

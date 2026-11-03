@@ -169,6 +169,12 @@ one host's log: for restores onto another WEC host, follow the order in
   the `source_cursors` table of the queue database. The bookmark moves past an event
   only once it is durably enqueued, or definitively dropped (not selected, rejected by
   policy, malformed or oversized). It is committed after each batch, and on stop.
+- **Group commit.** The events of one read are enqueued in one queue transaction and
+  become durable together when it commits; only then does the bookmark move. A failure
+  or stop before that commit rolls the whole read back and it is read again (nothing is
+  lost or duplicated). An event the queue refuses (full queue) ends the read: the events
+  before it commit, the refused one is retried. A read with no new events takes no write
+  lock. While a read commits (tens of milliseconds) other writers wait for it.
 - **Restart.** Reading resumes after the bookmark. If the collector stops between
   enqueueing events and committing the bookmark, those events are read again; their
   deterministic ids make the queue drop them as duplicates. A restart neither loses
@@ -191,6 +197,11 @@ one host's log: for restores onto another WEC host, follow the order in
 - **Overwritten events.** When the channel's oldest record is past the bookmark, the
   log wrapped before Bower read those events (some may have been allow-listed). The
   subscription carries on from the oldest event and counts `gaps`.
+- **Busy queue database.** When another writer holds the queue database past the 5-second
+  busy timeout (SQLite `BUSY`/`LOCKED`), reading the bookmark, enqueueing or committing
+  the bookmark is retried after a second as `backpressure` (counted in `retries`). It is
+  not a failure: nothing was written, so the bookmark does not move and no event is
+  skipped. Collectors before this change reported `winevt-source-failed` instead.
 - **Failures.** A missing channel, denied access, invalid query, storage or sink
   failure keeps the bookmark, sets the subscription state to the failure code and
   retries with backoff (up to a minute). A stored bookmark for another channel or an
@@ -215,6 +226,43 @@ producing selected events degrades `/health` once its allowance passes. Use it f
 application events with a steady rate; failed logons (`windows-security-logon`) are
 legitimately quiet, so watch the subscription instead: one whose `lastPollAt` stops
 moving, or whose `state` is a failure code, is not reading.
+
+## Throughput, CPU and WEC sizing
+
+Measured on AWS in [wecfix](../evidence/wecfix-20261103-043750/README.md): Windows Server 2022,
+`m6i.large` (2 vCPU, 8 GiB, no CPU credits), gp3 volume, `ForwardedEvents` filled to
+1,040,001 records (2.5 GB), the `windows-security-logon` 4625 allow-list, Sentinel delivery.
+
+- **Reading cost does not depend on the size of `ForwardedEvents`.** One idle poll (two
+  boundary queries, then the allow-listed query resumed from the bookmark) took 0.8-0.95 ms
+  at 10,000 records and at 1,040,000. At the default 1-second poll that is under a second
+  of collector CPU per hour.
+- **Durable intake is bound by disk flush latency, not CPU.** Every queued event must be
+  durable before the bookmark passes it. Until this change each event was its own commit
+  (a write-ahead-log flush and a checkpoint flush, about 22 ms on gp3), so one subscription
+  could take about **44 events a second** whatever the CPU. A burst above that became a
+  backlog in `ForwardedEvents`: at 100/s for 60 s the old reader fell 3,508 records
+  behind and took about 3 minutes to catch up; at 100/s for 17 minutes, 55,456 records.
+  The collector now commits one read (up to `batchSize`, default 256) at once
+  ([group commit](#bookmarks-restart-and-backpressure)): the same 100/s burst was read at
+  98 events a second with at most 88 records of lag.
+- **Steady-state CPU.** At 10 events a second, with 15,000 to 170,000 acknowledged rows
+  retained, the collector used 40-55 CPU seconds per hour with group commit and 70-104
+  without (about 1.5% and 2.5% of one vCPU). Ten times the retained rows added about 10%.
+  The 24-hour soak's growth to 2,500 seconds an hour on a `t3.medium` (4 GiB, standard
+  credits) did not reproduce on `m6i.large`; see the evidence for what that does and
+  does not rule out.
+
+Sizing a WEC that runs the collector:
+
+| Item | Guidance |
+|---|---|
+| Instance class | Not CPU-credit-limited: `m6i.large`/`m7i.large` (2 vCPU, 8 GiB) or larger on AWS; `D2s_v5` or larger on Azure; on premises, 2 dedicated cores and 8 GiB. Avoid burstable classes (`t3`, `B`-series) unless set to unlimited: a WEC that exhausts its credits runs at the baseline and every burst becomes backlog |
+| Memory | 8 GiB for a `ForwardedEvents` log of up to 4 GiB; the event log service maps the log file and the queue database shares the file cache |
+| Queue disk | SSD-backed (gp3 or premium SSD); intake throughput follows the disk's flush latency. Size per [storage pressure](../production-readiness/03-storage-pressure.md) |
+| Headroom | With group commit one subscription read a sustained 100 events a second for 10 minutes on `m6i.large`/gp3 with at most 400 records of lag, using 12.5% of one vCPU; the previous build managed about 44 a second on the same host. Keep the expected peak below what you measure on your own disk, so a burst or a destination outage drains in minutes rather than hours |
+| Retention | Hourly retention purges acknowledged rows in 1,000-row transactions with a 100 ms pause between them, so reading continues during a large purge (151,878 rows in about 6 minutes, reading at 10 a second throughout; the previous 5,000-row purge stalled reading for about 2 minutes) |
+| Verify | `/v1/status`: `windowsEventLog[].bookmarkRecordId` within a few hundred records of the channel's newest record; collector CPU per hour flat as `queue.delivered` grows |
 
 ## Residual risks
 
