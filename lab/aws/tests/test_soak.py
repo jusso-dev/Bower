@@ -40,8 +40,9 @@ class SoakTests(unittest.TestCase):
 
     def test_sender_refuses_identities_outside_the_track_a_rule(self):
         self.assertEqual(len(sender_segments(86400, first=100000)), 18)
-        self.assertEqual(len(sender_segments(86400, first=2000000 - 896400)), 18)
-        for first in (-1, 2000000 - 896400 + 1):
+        # The rule's identity space is 0..2,948,799 (syslog-host.py nft_ports, extended for the re-soak).
+        self.assertEqual(len(sender_segments(86400, first=2948800 - 896400)), 18)
+        for first in (-1, 2948800 - 896400 + 1):
             with self.assertRaises(SystemExit):
                 sender_segments(86400, first=first)
         script = (ROOT / 'soak' / 'sender-generator.sh').read_text()

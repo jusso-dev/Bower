@@ -17,17 +17,19 @@ STATE = ROOT / 'state.json'
 ACCOUNT = '959038055523'
 REGION = 'ap-southeast-2'
 PROJECT = 'bower-lab'
-RUN = os.environ['BOWER_LAB_RUN_ID']  # bower-ws4-UTCyyyymmdd-HHMMSS or bower-soak-UTCyyyymmdd-HHMMSS
+RUN = os.environ['BOWER_LAB_RUN_ID']  # bower-<profile>-UTCyyyymmdd-HHMMSS
 VPC = 'vpc-0386855f644985706'
 NAT = 'nat-016cf975ae7ffe691'
 # ws4 (default): upgrade/recovery. soak: the 24-hour soak (gap 7): Dc, Wec, the RPM collector
 # Linux and the rsyslog/RELP Sender, which gets its own role limited to its artifact prefix.
+# resoak: the same four hosts for the 72-hour re-soak (lab/aws/resoak) on fixed-performance
+# instances, an 80-hour expiry and write access to the run's separate identity bucket.
 PROFILE = os.environ.get('BOWER_LAB_PROFILE', 'ws4')
-if PROFILE not in ('ws4', 'soak') or not __import__('re').fullmatch(r'bower-' + PROFILE + r'-\d{8}-\d{6}', RUN):
+if PROFILE not in ('ws4', 'soak', 'resoak') or not __import__('re').fullmatch(r'bower-' + PROFILE + r'-\d{8}-\d{6}', RUN):
     raise SystemExit('BOWER_LAB_RUN_ID does not match BOWER_LAB_PROFILE')
 # The Windows generators only target a DC inside their profile's subnet (generator.ps1:
-# 172.31.244., soak/generator-windows.ps1: 172.31.247.); refuse any other subnet before create.
-GENERATOR_SUBNET = {'ws4': '172.31.244.0/24', 'soak': '172.31.247.0/24'}[PROFILE]
+# 172.31.244., soak/generator-windows.ps1: 172.31.247. or 172.31.248.); refuse any other subnet.
+GENERATOR_SUBNET = {'ws4': '172.31.244.0/24', 'soak': '172.31.247.0/24', 'resoak': '172.31.248.0/24'}[PROFILE]
 CIDR = os.environ.get('BOWER_LAB_CIDR', GENERATOR_SUBNET)
 if CIDR != GENERATOR_SUBNET:
     raise SystemExit('BOWER_LAB_CIDR must be ' + GENERATOR_SUBNET + ' for profile ' + PROFILE
@@ -35,7 +37,16 @@ if CIDR != GENERATOR_SUBNET:
 WINDOWS = ['Dc', 'Wec', 'Wec2'] if PROFILE == 'ws4' else ['Dc', 'Wec']
 LINUX = ['Linux', 'Linux2'] if PROFILE == 'ws4' else ['Linux', 'Sender']
 HOSTS = WINDOWS + LINUX
-EXPIRY_HOURS = 10 if PROFILE == 'ws4' else 30
+EXPIRY_HOURS = {'ws4': 10, 'soak': 30, 'resoak': 80}[PROFILE]
+# A shorter guard (never a longer one), e.g. 12 hours for the re-soak's dry run.
+if os.environ.get('BOWER_LAB_EXPIRY_HOURS'):
+    EXPIRY_HOURS = min(EXPIRY_HOURS, int(os.environ['BOWER_LAB_EXPIRY_HOURS']))
+# Results must outlive the run: the soak's one-day lifecycle would expire hourly uploads of a
+# 72-hour run before the final reconciliation.
+RESULTS_DAYS = 7 if PROFILE == 'resoak' else 1
+# The identity lists of the re-soak go to a RunId-owned bucket outside the stack (created first by
+# resoak/evidence_bucket.py), so they survive teardown of the stack until reconciliation is done.
+EVIDENCE_BUCKET = RUN + '-ids' if PROFILE == 'resoak' else None
 
 
 def aws(*args, raw=False):
@@ -81,7 +92,7 @@ def build(expiry):
         'Secret': res('AWS::SecretsManager::Secret', GenerateSecretString={'PasswordLength': 32, 'ExcludePunctuation': True}, Tags=tags),
         'Artifacts': res('AWS::S3::Bucket', BucketEncryption={'ServerSideEncryptionConfiguration': [{'ServerSideEncryptionByDefault': {'SSEAlgorithm': 'AES256'}}]},
                          PublicAccessBlockConfiguration={'BlockPublicAcls': True, 'BlockPublicPolicy': True, 'IgnorePublicAcls': True, 'RestrictPublicBuckets': True},
-                         LifecycleConfiguration={'Rules': [{'Id': 'Expire', 'Status': 'Enabled', 'ExpirationInDays': 1}]}, Tags=tags),
+                         LifecycleConfiguration={'Rules': [{'Id': 'Expire', 'Status': 'Enabled', 'ExpirationInDays': RESULTS_DAYS}]}, Tags=tags),
     }
     r['BucketPolicy'] = res('AWS::S3::BucketPolicy', Bucket=ref('Artifacts'), PolicyDocument={'Version': '2012-10-17', 'Statement': [
         {'Effect': 'Deny', 'Principal': '*', 'Action': 's3:*', 'Resource': [att('Artifacts', 'Arn'), sub('${Artifacts.Arn}/*')],
@@ -91,6 +102,9 @@ def build(expiry):
         {'Effect': 'Allow', 'Action': ['s3:GetObject', 's3:PutObject'], 'Resource': [sub('${Artifacts.Arn}/backups/*'), sub('${Artifacts.Arn}/results/*')]},
         {'Effect': 'Allow', 'Action': ['secretsmanager:GetSecretValue'], 'Resource': ref('Secret')},
     ]
+    if EVIDENCE_BUCKET:
+        statements.append({'Effect': 'Allow', 'Action': ['s3:PutObject'],
+                           'Resource': 'arn:aws:s3:::' + EVIDENCE_BUCKET + '/hosts/*'})
     r['HostRole'] = res('AWS::IAM::Role', AssumeRolePolicyDocument={'Version': '2012-10-17', 'Statement': [
         {'Effect': 'Allow', 'Principal': {'Service': 'ec2.amazonaws.com'}, 'Action': 'sts:AssumeRole'}]},
         ManagedPolicyArns=['arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'],
@@ -103,18 +117,23 @@ def build(expiry):
             ManagedPolicyArns=['arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'],
             Policies=[{'PolicyName': 'OnlySenderArtifacts', 'PolicyDocument': {'Version': '2012-10-17', 'Statement': [
                 {'Effect': 'Allow', 'Action': 's3:GetObject', 'Resource': sub('${Artifacts.Arn}/artifacts/qualification/' + RUN + '/sender/*')},
-                {'Effect': 'Allow', 'Action': 's3:PutObject', 'Resource': sub('${Artifacts.Arn}/results/sender/*')}]}}], Tags=tags)
+                {'Effect': 'Allow', 'Action': 's3:PutObject', 'Resource': sub('${Artifacts.Arn}/results/sender/*')}]
+                + ([{'Effect': 'Allow', 'Action': 's3:PutObject', 'Resource': 'arn:aws:s3:::' + EVIDENCE_BUCKET + '/sender/*'}]
+                   if EVIDENCE_BUCKET else [])}}], Tags=tags)
         r['SenderProfile'] = res('AWS::IAM::InstanceProfile', Roles=[ref('SenderRole')])
     sizes = {'Dc': 't3.medium', 'Wec': 't3.medium', 'Wec2': 't3.medium', 'Linux': 't3.medium', 'Linux2': 't3.small',
              'Sender': 't3.small'}
     if PROFILE == 'soak':
         sizes['Linux'] = 't3.small'
+    if PROFILE == 'resoak':
+        # Fixed performance: the first soak measured the t3 CPU-credit policy, not Bower.
+        sizes = {name: 'm6i.large' for name in HOSTS}
     for name in HOSTS:
         win = name in WINDOWS
         r[name] = res('AWS::EC2::Instance', ImageId=win_ami if win else lin_ami, InstanceType=sizes[name],
                       IamInstanceProfile=ref('SenderProfile' if name == 'Sender' else 'HostProfile'),
                       MetadataOptions={'HttpTokens': 'required', 'HttpPutResponseHopLimit': 1},
-                      CreditSpecification={'CPUCredits': 'standard'},
+                      **({} if PROFILE == 'resoak' else {'CreditSpecification': {'CPUCredits': 'standard'}}),
                       InstanceInitiatedShutdownBehavior='stop',
                       BlockDeviceMappings=[{'DeviceName': '/dev/sda1' if win else '/dev/xvda', 'Ebs': {
                           'VolumeType': 'gp3', 'VolumeSize': 40 if win else 30, 'Encrypted': True, 'DeleteOnTermination': True}}],
@@ -154,7 +173,7 @@ def check_instance(state, host, states=('running',)):
 
 def render(state, host, script, extra):
     body = Path(script).read_text()
-    values = {'REGION': REGION, 'HOST': host, 'RUN_ID': RUN, **state['outputs'], **extra}
+    values = {'REGION': REGION, 'HOST': host, 'RUN_ID': RUN, 'EVIDENCE_BUCKET': EVIDENCE_BUCKET or 'none', **state['outputs'], **extra}
     for key, value in values.items():
         body = body.replace('{{' + key + '}}', str(value))
     if any(not m.startswith(('{{.', '{{range', '{{end')) for m in __import__('re').findall(r'\{\{[^}]*\}\}', body)):
@@ -212,7 +231,8 @@ def main():
         if env:
             if extra or any(not __import__('re').fullmatch(r'[A-Z][A-Z0-9_]*', k) for k in env):
                 raise RuntimeError('Mixing placeholders and env:, or an invalid name')
-            env = {'BOWER_LAB_BUCKET': state['outputs']['Artifacts'], 'BOWER_LAB_RUN': RUN, 'AWS_DEFAULT_REGION': REGION, **env}
+            env = {'BOWER_LAB_BUCKET': state['outputs']['Artifacts'], 'BOWER_LAB_RUN': RUN, 'AWS_DEFAULT_REGION': REGION,
+                   **({'BOWER_EVIDENCE_BUCKET': EVIDENCE_BUCKET} if EVIDENCE_BUCKET else {}), **env}
             if host in LINUX:
                 prefix = '\n'.join('export ' + k + '=' + __import__('shlex').quote(v) for k, v in env.items())
             else:
@@ -250,6 +270,7 @@ def main():
                 break
             time.sleep(5)
         if r['Status'] in ('Success', 'Failed', 'TimedOut', 'Cancelled'):
+            (ROOT / 'results').mkdir(exist_ok=True)
             (ROOT / 'results' / (record['id'] + '.json')).write_text(json.dumps(r, indent=2))
         print(json.dumps({'Status': r['Status'], 'ResponseCode': r.get('ResponseCode')}))
         print(r.get('StandardOutputContent', ''))

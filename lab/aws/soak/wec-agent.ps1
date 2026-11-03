@@ -5,16 +5,23 @@ $ErrorActionPreference = 'Stop'
 # files, /v1/status queue/jobs/delivery/WEC counters, ForwardedEvents size). At :00 and :30 it
 # adds the queue's identities to the accepted union (Bower.LabProbe queue-union), hourly it
 # uploads, and SOAK_SECONDS + 30 min after SOAK_START it exports a final record and stops.
-#   ACTION=install|tick|final|upload|status
+# The union runs in its own task (BowerSoakUnion, every 30 minutes, 25-minute limit): a union of
+# millions of ids must not delay or skip the 5-minute samples. With EVIDENCE_BUCKET (re-soak)
+# every upload is also copied to the RunId-owned identity bucket that outlives the stack.
+#   ACTION=install|tick|union|final|upload|status
 $Action = if ($args.Count -gt 0) { $args[0] } else { '{{ACTION}}' }
 $aws = 'C:\Program Files\Amazon\AWSCLIV2\aws.exe'
-$bucket = '{{Artifacts}}'; $region = '{{REGION}}'; $run = '{{RUN_ID}}'
+$bucket = '{{Artifacts}}'; $region = '{{REGION}}'; $run = '{{RUN_ID}}'; $evidence = '{{EVIDENCE_BUCKET}}'
 $start = [long]'{{SOAK_START}}'; $seconds = [long]'{{SOAK_SECONDS}}'
 $dir = 'C:\BowerLab\soak'; $root = 'C:\ProgramData\Bower'
 New-Item -ItemType Directory -Force $dir | Out-Null
 function Put($name) {
     & $aws s3 cp "$dir\$name" "s3://$bucket/results/soak/$run/wec/$name" --region $region --sse AES256 --only-show-errors
     if ($LASTEXITCODE -ne 0) { throw "upload failed: $name" }
+    if ($evidence -ne 'none') {
+        & $aws s3 cp "$dir\$name" "s3://$evidence/hosts/wec/$name" --region $region --sse AES256 --only-show-errors
+        if ($LASTEXITCODE -ne 0) { throw "evidence upload failed: $name" }
+    }
 }
 function Get-ReceivingBookmarkRecordId([string]$ProbePath, [string]$Channel) {
     try {
@@ -88,10 +95,15 @@ if ($Action -eq 'install') {
     & $aws s3 cp "s3://$bucket/artifacts/soak/dc/Bower.LabProbe.exe" "$dir\probe.exe" --region $region --only-show-errors
     if ((Get-FileHash "$dir\probe.exe" -Algorithm SHA256).Hash.ToLowerInvariant() -cne '{{PROBE_SHA256}}') { throw 'probe digest mismatch' }
     $next = (Get-Date).Date.AddMinutes([Math]::Ceiling((Get-Date).TimeOfDay.TotalMinutes / 5) * 5)
-    $trigger = New-ScheduledTaskTrigger -Once -At $next -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 2)
+    $days = [Math]::Ceiling($seconds / 86400) + 2
+    $trigger = New-ScheduledTaskTrigger -Once -At $next -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days $days)
     Register-ScheduledTask -TaskName 'BowerSoakAgent' -User SYSTEM -RunLevel Highest -Trigger $trigger `
         -Action (New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File $dir\agent.ps1 tick") `
-        -Settings (New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -MultipleInstances IgnoreNew) | Out-Null
+        -Settings (New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -MultipleInstances IgnoreNew -StartWhenAvailable) | Out-Null
+    $union = New-ScheduledTaskTrigger -Once -At $next.AddMinutes(2) -RepetitionInterval (New-TimeSpan -Minutes 30) -RepetitionDuration (New-TimeSpan -Days $days)
+    Register-ScheduledTask -TaskName 'BowerSoakUnion' -User SYSTEM -RunLevel Highest -Trigger $union `
+        -Action (New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File $dir\agent.ps1 union") `
+        -Settings (New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 25) -MultipleInstances IgnoreNew -StartWhenAvailable) | Out-Null
     Sample; Union
     Write-Output "installed BowerSoakAgent first=$($next.ToString('o'))"
     Get-Content "$dir\union-last.json"
@@ -103,7 +115,6 @@ if ($Action -eq 'tick') {
     if (Test-Path "$dir\published.json") { exit 0 }
     $now = [DateTimeOffset]::UtcNow
     Sample
-    if ($now.Minute % 30 -lt 5) { Union }
     if ($now.Minute -lt 5) { Upload }
     if ($now.ToUnixTimeSeconds() -ge $start + $seconds + 1800) { $Action = 'final' } else { exit 0 }
 }
@@ -114,9 +125,11 @@ if ($Action -eq 'final') {
     @{ runId = $run; publishedAt = [DateTimeOffset]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content "$dir\published.json"
     Put 'published.json'
     Disable-ScheduledTask -TaskName 'BowerSoakAgent' | Out-Null
+    Disable-ScheduledTask -TaskName 'BowerSoakUnion' -ErrorAction SilentlyContinue | Out-Null
     Get-Content "$dir\union-last.json"
     exit 0
 }
+if ($Action -eq 'union') { if (-not (Test-Path "$dir\published.json")) { Union }; exit 0 }
 if ($Action -eq 'upload') { Union; Upload; Get-Content "$dir\union-last.json"; exit 0 }
 if ($Action -eq 'status') {
     Get-Content "$dir\samples.jsonl" -Tail 1

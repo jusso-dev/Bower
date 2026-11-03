@@ -9,7 +9,8 @@ using Microsoft.Data.Sqlite;
 
 // ws4 lab probe: metadata and synthetic identities only, never payloads.
 //   queue  DB OUT       read-only queue snapshot (+ OUT.ids: eventId<TAB>state)
-//   native CHANNEL SINCE OUT [UNTIL]   4625 identities (+ OUT.ids: expectedId<TAB>recordId<TAB>originRecordId<TAB>originalId);
+//   native CHANNEL SINCE OUT [UNTIL]   4625 identities (+ OUT.ids: expectedId<TAB>recordId<TAB>originRecordId<TAB>originalId<TAB>kind);
+//          kind is 'canary' for the re-soak's per-minute canary account (bower-canary), else 'bulk'
 //          originalId is the unredacted id: collectors whose privacy profile keeps ids compare against it
 //          UNTIL (exclusive) bounds the native query to one window, as the soak exports hourly
 //   queue-union DB UNION OUT   adds the queue's current identities to UNION (eventId<TAB>firstSeenAt<TAB>receivedAt),
@@ -206,7 +207,7 @@ if (args is ["native", string channel, string sinceText, string nativeOutput, ..
     var redactor = new JsonEventRedactor();
     var lines = new StringBuilder();
     var expected = new SortedSet<string>(StringComparer.Ordinal);
-    int examined = 0, selected = 0, unselected = 0, changed = 0, duplicates = 0;
+    int examined = 0, selected = 0, unselected = 0, changed = 0, duplicates = 0, canaries = 0;
     long minRecord = long.MaxValue, maxRecord = 0;
     DateTimeOffset captureStartedAt = DateTimeOffset.UtcNow;
     using var reader = new EventLogReader(new EventLogQuery(channel, PathType.LogName,
@@ -232,7 +233,11 @@ if (args is ["native", string channel, string sinceText, string nativeOutput, ..
             selected++;
             long position = record.RecordId ?? -1;
             minRecord = Math.Min(minRecord, position); maxRecord = Math.Max(maxRecord, position);
-            lines.Append(id).Append('\t').Append(position).Append('\t').Append(parsed.RecordId).Append('\t').Append(originalId).Append('\n');
+            // Only the account class leaves the probe, never the account name.
+            bool canary = string.Equals(parsed.Data.FirstOrDefault(p => p.Key == "data.TargetUserName").Value, "bower-canary", StringComparison.OrdinalIgnoreCase);
+            if (canary) canaries++;
+            lines.Append(id).Append('\t').Append(position).Append('\t').Append(parsed.RecordId).Append('\t').Append(originalId)
+                .Append('\t').Append(canary ? "canary" : "bulk").Append('\n');
         }
     }
     File.WriteAllText(nativeOutput + ".ids", lines.ToString());
@@ -247,6 +252,7 @@ if (args is ["native", string channel, string sinceText, string nativeOutput, ..
         examined,
         selected,
         unselected,
+        canaries,
         distinct = expected.Count,
         duplicateIdentities = duplicates,
         redactionChangedIds = changed,

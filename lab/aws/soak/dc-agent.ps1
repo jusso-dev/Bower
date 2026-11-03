@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 #   ACTION=status     print exported windows and generator progress
 $Action = if ($args.Count -gt 0) { $args[0] } else { '{{ACTION}}' }
 $aws = 'C:\Program Files\Amazon\AWSCLIV2\aws.exe'
-$bucket = '{{Artifacts}}'; $region = '{{REGION}}'; $run = '{{RUN_ID}}'
+$bucket = '{{Artifacts}}'; $region = '{{REGION}}'; $run = '{{RUN_ID}}'; $evidence = '{{EVIDENCE_BUCKET}}'
 $dir = 'C:\BowerLab\soak'
 New-Item -ItemType Directory -Force $dir, "$dir\native" | Out-Null
 function Fetch($name, $path) {
@@ -18,6 +18,11 @@ function Fetch($name, $path) {
 function Put($path, $key) {
     & $aws s3 cp $path "s3://$bucket/results/soak/$run/dc/$key" --region $region --sse AES256 --only-show-errors
     if ($LASTEXITCODE -ne 0) { throw "upload failed: $key" }
+    # Re-soak: the native identity lists also go to the RunId-owned bucket that outlives the stack.
+    if ($evidence -ne 'none') {
+        & $aws s3 cp $path "s3://$evidence/hosts/dc/$key" --region $region --sse AES256 --only-show-errors
+        if ($LASTEXITCODE -ne 0) { throw "evidence upload failed: $key" }
+    }
 }
 function Assert-Hash($path, $expected) {
     if ((Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) { throw "digest mismatch: $path" }
@@ -31,7 +36,7 @@ if ($Action -eq 'generator') {
     $arguments = "-NoProfile -ExecutionPolicy Bypass -File $dir\generator-windows.ps1 -Target {{DcIp}} -StartEpoch {{GEN_START}} -Seconds {{GEN_SECONDS}} -Label {{LABEL}}$smoke"
     Register-ScheduledTask -TaskName $name -User SYSTEM -RunLevel Highest `
         -Action (New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments) `
-        -Settings (New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 27) -AllowStartIfOnBatteries) | Out-Null
+        -Settings (New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours ([Math]::Ceiling([long]'{{GEN_SECONDS}}' / 3600) + 4)) -AllowStartIfOnBatteries) | Out-Null
     Start-ScheduledTask -TaskName $name
     Write-Output "started $name start={{GEN_START}} seconds={{GEN_SECONDS}} smoke={{SMOKE}}"
     exit 0
@@ -44,7 +49,7 @@ if ($Action -eq 'install') {
     Fetch 'Bower.LabProbe.exe' "$dir\probe.exe"
     Assert-Hash "$dir\probe.exe" '{{PROBE_SHA256}}'
     $arguments = "-NoProfile -ExecutionPolicy Bypass -File $dir\agent.ps1 tick"
-    $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 15) -RepetitionDuration (New-TimeSpan -Days 2)
+    $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 15) -RepetitionDuration (New-TimeSpan -Days ([Math]::Ceiling($soakSeconds / 86400) + 2))
     Register-ScheduledTask -TaskName 'BowerSoakNative' -User SYSTEM -RunLevel Highest -Trigger $trigger `
         -Action (New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments) `
         -Settings (New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 14) -MultipleInstances IgnoreNew) | Out-Null

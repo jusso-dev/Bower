@@ -5,7 +5,7 @@
 set -euo pipefail
 umask 077
 : "${BOWER_LAB_BUCKET:?}" "${BOWER_LAB_RUN:?}" "${ROLE:?}" "${CA_SHA256:?}" "${CERT_SHA256:?}"
-[[ "$BOWER_LAB_RUN" =~ ^bower-soak-[0-9]{8}-[0-9]{6}$ ]]
+[[ "$BOWER_LAB_RUN" =~ ^bower-(re)?soak-[0-9]{8}-[0-9]{6}$ ]]
 stage=$(mktemp -d); trap 'rm -rf -- "$stage"' EXIT
 if [ "$ROLE" = collector ]; then
   src="artifacts/soak/linux"; cert=server; dir=/etc/bower/syslog; key=$dir/server-key.pem; target=$dir/server.pem; unit=bower

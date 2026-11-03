@@ -1,0 +1,391 @@
+{
+ "schemaVersion": 1,
+ "name": "Bower 72-hour re-soak (scoped rollout: WEF/WEC and firewall syslog over RELP to Sentinel)",
+ "registeredOn": "2026-11-03",
+ "rule": "Registered before the run and never changed afterwards. The run records the SHA-256 of this file; the reconciler refuses a different file.",
+ "criteriaSource": {
+  "guide": "docs/production-readiness/07-soak-and-release-validation.md",
+  "section": "2. Pass criteria",
+  "commit": "71d5de7644a84d436f130cf16eb477785bfdbc02",
+  "tableSha256": "86e803479f5e6552cb2ca306a65e78c699dc3026146ab8b7563f8f720aec603d",
+  "unchanged": true
+ },
+ "criteria": [
+  {
+   "id": 1,
+   "criterion": "Exact delivery",
+   "howMeasured": "Native, accepted and distinct Sentinel identity sets, compared by SHA-256 of the sorted ids joined by newline",
+   "pass": "All three equal, 0 missing, 0 extra. Duplicate rows are counted and reported separately; they are allowed (at-least-once) if they collapse with the documented `arg_min(ingestion_time(), *) by EventId` query",
+   "verbatim": "| 1 | Exact delivery | Native, accepted and distinct Sentinel identity sets, compared by SHA-256 of the sorted ids joined by newline | All three equal, 0 missing, 0 extra. Duplicate rows are counted and reported separately; they are allowed (at-least-once) if they collapse with the documented `arg_min(ingestion_time(), *) by EventId` query |"
+  },
+  {
+   "id": 2,
+   "criterion": "No restarts",
+   "howMeasured": "Collector PID and start time in every sample; systemd `NRestarts`; container `RestartCount`; pod `restartCount`; boot ID",
+   "pass": "One process identity for the whole run",
+   "verbatim": "| 2 | No restarts | Collector PID and start time in every sample; systemd `NRestarts`; container `RestartCount`; pod `restartCount`; boot ID | One process identity for the whole run |"
+  },
+  {
+   "id": 3,
+   "criterion": "No unbounded growth",
+   "howMeasured": "Least-squares slope over hours 3–24 of the workload (not the drain after it) of memory (RSS / private bytes), FDs / handles, threads and queue DB + WAL bytes",
+   "pass": "The slope × 720 h is under 10% of the mean (a falling series passes)",
+   "verbatim": "| 3 | No unbounded growth | Least-squares slope over hours 3–24 of the workload (not the drain after it) of memory (RSS / private bytes), FDs / handles, threads and queue DB + WAL bytes | The slope × 720 h is under 10% of the mean (a falling series passes) |"
+  },
+  {
+   "id": 4,
+   "criterion": "Latency",
+   "howMeasured": "First `ingestion_time()` minus event time, per hour and overall",
+   "pass": "Whole-run p99 at most twice the pilot's connected p99 (13.3 s firewall, 18.16 s WEC; [pilot](../evidence/pilot-native-20261030/README.md)). Every hour above the limit is listed",
+   "verbatim": "| 4 | Latency | First `ingestion_time()` minus event time, per hour and overall | Whole-run p99 at most twice the pilot's connected p99 (13.3 s firewall, 18.16 s WEC; [pilot](../evidence/pilot-native-20261030/README.md)). Every hour above the limit is listed |"
+  },
+  {
+   "id": 5,
+   "criterion": "No alerts",
+   "howMeasured": "Azure Monitor alert instances and Sentinel incidents from the [monitoring rules](06-monitoring-and-runbooks.md)",
+   "pass": "None fired during the run",
+   "verbatim": "| 5 | No alerts | Azure Monitor alert instances and Sentinel incidents from the [monitoring rules](06-monitoring-and-runbooks.md) | None fired during the run |"
+  },
+  {
+   "id": 6,
+   "criterion": "Privacy",
+   "howMeasured": "`tostring(pack_all())` of every destination row searched for the synthetic markers (the synthetic user name, raw kernel prefix, synthetic password prefix)",
+   "pass": "0 matches",
+   "verbatim": "| 6 | Privacy | `tostring(pack_all())` of every destination row searched for the synthetic markers (the synthetic user name, raw kernel prefix, synthetic password prefix) | 0 matches |"
+  }
+ ],
+ "latencyP99LimitSeconds": {
+  "linux": 13.3,
+  "windows": 18.16
+ },
+ "growth": {
+  "limitPercentOfMeanFor720Hours": 10,
+  "warmupHours": 3,
+  "literalWindowHours": [
+   3,
+   24
+  ]
+ },
+ "privacyMarkers": [
+  "bower-probe",
+  "BOWER_DENY",
+  "synthetic-invalid",
+  "bower-canary"
+ ],
+ "profile": {
+  "soakSeconds": 259200,
+  "smokeSeconds": 900,
+  "steadyRate": 10,
+  "burstRate": 100,
+  "burstSeconds": 60,
+  "firstBurstOffsetSeconds": 7200,
+  "burstEverySeconds": 14400,
+  "firewallSmokeFirst": 0,
+  "firewallSoakFirst": 100000,
+  "startAlignment": "The soak starts at hh:05:00 UTC so that scheduled faults (hh:25 of the run hour) are clear of the hourly queue-retention run at hh:00",
+  "eventsPerCollector": 2689200,
+  "collectorSettings": {
+   "BOWER_HEALTH_RECORD_INTERVAL_SECONDS": 60,
+   "BOWER_QUEUE_RETENTION_HOURS": 2
+  },
+  "instances": "m6i.large (fixed performance, no CPU credits) for Dc, Wec, Linux and Sender",
+  "forwardedEventsMaxBytes": 4294967296
+ },
+ "canaries": {
+  "purpose": "Continuous end-to-end proof independent of the bulk generators: one synthetic event per minute at each source, each with a known identity and time",
+  "firewall": {
+   "host": "Sender",
+   "everySeconds": 60,
+   "identity": "a13-n4399x<20000 + minute>",
+   "nftRule": "a separate table bower_resoak_canary: udp dport 4399, counter, log prefix \"BOWER_DENY A \", drop"
+  },
+  "windows": {
+   "host": "Dc",
+   "everySeconds": 60,
+   "identity": "the 4625 winevt- id; native export kind column \"canary\" (account bower-canary)"
+  },
+  "report": "Per collector: canaries sent, at Sentinel, missing, latency p50/p99/max, and minutes without a delivered canary outside fault windows"
+ },
+ "faults": [
+  {
+   "id": "F01",
+   "kind": "destination-outage",
+   "at": 4800,
+   "durationSeconds": 1800,
+   "hosts": [
+    "Linux",
+    "Wec"
+   ],
+   "collectors": [
+    "linux",
+    "windows"
+   ],
+   "action": "Block TCP 443 for the collector process only (Linux: nftables skuid bower; Windows: outbound firewall rule on Bower.Collector.exe), restored by an independent timer/task",
+   "restarts": [],
+   "reboots": [],
+   "impactAllowanceSeconds": 1800,
+   "alertsPermitted": [
+    "collector-health-missing",
+    "queue-backlog",
+    "destination-freshness",
+    "table-no-ingestion"
+   ],
+   "alertsRequiredAnyOf": [
+    "collector-health-missing",
+    "queue-backlog"
+   ],
+   "expected": "Events queue durably during the block (pending grows, oldest undelivered age reaches about 1,800 s), delivery resumes within 5 minutes of restore with no dead letters, the backlog drains within the allowance, 0 missing (criterion 1). At least one of the required alerts fires for each collector and every fired alert resolves within 60 minutes after restore."
+  },
+  {
+   "id": "F02",
+   "kind": "sender-restart",
+   "at": 15600,
+   "hosts": [
+    "Sender",
+    "Dc"
+   ],
+   "collectors": [
+    "linux",
+    "windows"
+   ],
+   "action": "Sender: systemctl restart rsyslog (disk-assisted queue saved on shutdown). Dc: Restart-Service WinRM -Force (the source-initiated WEF forwarder)",
+   "restarts": [],
+   "reboots": [],
+   "impactAllowanceSeconds": 900,
+   "alertsPermitted": [
+    "source-transport-errors"
+   ],
+   "alertsRequiredAnyOf": [],
+   "expected": "The collectors keep running (no new process identity). RELP reconnects and the WEF source resumes from its bookmark. 0 missing; duplicates allowed."
+  },
+  {
+   "id": "F03",
+   "kind": "log-rollover",
+   "at": 30000,
+   "hosts": [
+    "Sender",
+    "Linux"
+   ],
+   "collectors": [
+    "linux"
+   ],
+   "action": "journalctl --rotate on the sender (the imjournal source) and the firewall collector (Bower's own log)",
+   "restarts": [],
+   "reboots": [],
+   "impactAllowanceSeconds": 900,
+   "alertsPermitted": [],
+   "alertsRequiredAnyOf": [],
+   "expected": "imjournal reads across the rotation; 0 missing, no collector restart, no alert."
+  },
+  {
+   "id": "F04",
+   "kind": "credential-rotation-syslog-tls",
+   "at": 44400,
+   "hosts": [
+    "Linux"
+   ],
+   "collectors": [
+    "linux"
+   ],
+   "action": "Replace the RELP listener server certificate and key with a pre-staged pair (new key, same lab CA) in place; hot reload, no restart (guide 05, section 6.2)",
+   "restarts": [],
+   "reboots": [],
+   "impactAllowanceSeconds": 900,
+   "alertsPermitted": [
+    "source-transport-errors"
+   ],
+   "alertsRequiredAnyOf": [],
+   "expected": "The collector loads the new certificate within seconds (health records show the new serverCertificateNotAfter), no restart, tlsHandshakeFailures unchanged, 0 missing."
+  },
+  {
+   "id": "F05",
+   "kind": "collector-kill",
+   "at": 94800,
+   "hosts": [
+    "Linux"
+   ],
+   "collectors": [
+    "linux"
+   ],
+   "action": "systemctl kill --signal=SIGKILL bower.service; systemd restarts it (Restart=on-failure, RestartSec=5s)",
+   "restarts": [
+    "linux"
+   ],
+   "reboots": [],
+   "impactAllowanceSeconds": 900,
+   "alertsPermitted": [
+    "source-transport-errors"
+   ],
+   "alertsRequiredAnyOf": [],
+   "expected": "One new process identity starting within 60 s; RELP resends unacknowledged frames; 0 missing; duplicates allowed."
+  },
+  {
+   "id": "F06",
+   "kind": "collector-kill",
+   "at": 102000,
+   "hosts": [
+    "Wec"
+   ],
+   "collectors": [
+    "windows"
+   ],
+   "action": "Stop-Process -Force on the Bower service process; the service control manager restarts it (MSI failure actions: restart after 5 s)",
+   "restarts": [
+    "windows"
+   ],
+   "reboots": [],
+   "impactAllowanceSeconds": 900,
+   "alertsPermitted": [
+    "source-transport-errors"
+   ],
+   "alertsRequiredAnyOf": [],
+   "expected": "One new process identity starting within 60 s; the reader resumes from its durable bookmark; 0 missing; duplicates allowed."
+  },
+  {
+   "id": "F07",
+   "kind": "host-reboot",
+   "at": 112800,
+   "hosts": [
+    "Wec"
+   ],
+   "collectors": [
+    "windows"
+   ],
+   "action": "Restart-Computer -Force on the WEC host",
+   "restarts": [
+    "windows"
+   ],
+   "reboots": [
+    "windows"
+   ],
+   "impactAllowanceSeconds": 1800,
+   "alertsPermitted": [
+    "collector-health-missing",
+    "source-transport-errors",
+    "queue-backlog",
+    "source-overdue"
+   ],
+   "alertsRequiredAnyOf": [],
+   "expected": "One new boot and one new process identity within 15 minutes; the DC buffers forwarded events and the subscription resumes; 0 missing."
+  },
+  {
+   "id": "F08",
+   "kind": "host-reboot",
+   "at": 120000,
+   "hosts": [
+    "Linux"
+   ],
+   "collectors": [
+    "linux"
+   ],
+   "action": "systemctl reboot on the firewall collector",
+   "restarts": [
+    "linux"
+   ],
+   "reboots": [
+    "linux"
+   ],
+   "impactAllowanceSeconds": 1800,
+   "alertsPermitted": [
+    "collector-health-missing",
+    "source-transport-errors",
+    "queue-backlog",
+    "source-overdue"
+   ],
+   "alertsRequiredAnyOf": [],
+   "expected": "One new boot and one new process identity within 10 minutes; the sender queues on disk and resends; 0 missing."
+  },
+  {
+   "id": "F09",
+   "kind": "credential-rotation-ingestion",
+   "at": 127200,
+   "hosts": [
+    "Linux",
+    "Wec"
+   ],
+   "collectors": [
+    "linux",
+    "windows"
+   ],
+   "action": "Logs Ingestion certificate rotation with overlap (guide 05, section 6.1.2): a second certificate was added to the ingestion application before the run; point AZURE_CLIENT_CERTIFICATE_PATH at it and restart the collector",
+   "restarts": [
+    "linux",
+    "windows"
+   ],
+   "reboots": [],
+   "impactAllowanceSeconds": 900,
+   "alertsPermitted": [
+    "source-transport-errors"
+   ],
+   "alertsRequiredAnyOf": [],
+   "expected": "One new process identity per collector; delivery continues with the new certificate and no delivery failure code (destination-credential must not fire); 0 missing."
+  },
+  {
+   "id": "F10",
+   "kind": "sender-restart",
+   "at": 163200,
+   "hosts": [
+    "Sender",
+    "Dc"
+   ],
+   "collectors": [
+    "linux",
+    "windows"
+   ],
+   "action": "As F02",
+   "restarts": [],
+   "reboots": [],
+   "impactAllowanceSeconds": 900,
+   "alertsPermitted": [
+    "source-transport-errors"
+   ],
+   "alertsRequiredAnyOf": [],
+   "expected": "As F02."
+  },
+  {
+   "id": "F11",
+   "kind": "log-rollover",
+   "at": 206400,
+   "hosts": [
+    "Sender",
+    "Linux"
+   ],
+   "collectors": [
+    "linux"
+   ],
+   "action": "As F03",
+   "restarts": [],
+   "reboots": [],
+   "impactAllowanceSeconds": 900,
+   "alertsPermitted": [],
+   "alertsRequiredAnyOf": [],
+   "expected": "As F03."
+  }
+ ],
+ "skipped": [
+  {
+   "kind": "sentinel-throttling",
+   "reason": "Not simulated. A real 429 from the Logs Ingestion API needs either a TLS-intercepting proxy trusted by the collector (changes the trust configuration under test) or deliberate overload of the shared Azure endpoint above its documented limits. Neither is a safe or faithful lab action. 429 handling is covered by unit tests and gap 5 (Entra 5xx/408/429 classified as destination-azure-unavailable), not by this soak."
+  }
+ ],
+ "naturalEvents": [
+  "queue-retention hourly",
+  "queue-maintenance daily at 03:00 UTC (three runs)",
+  "Entra token refresh with no delivery failure code",
+  "sender journald rotation",
+  "ForwardedEvents reaching its 4 GiB maximum and overwriting its oldest records (expected around hours 50-56)",
+  "health records with no gap longer than two intervals outside fault windows"
+ ],
+ "faultAccounting": {
+  "why": "The six criteria are unchanged. The 07 soak injected no faults; this run schedules them, so the restarts, latency and alerts that a scheduled fault causes by design are accounted for by the rules below, which are fixed before the run. Nothing outside a fault window is excused.",
+  "faultWindow": "[fault start, fault end + impactAllowanceSeconds], by event time (TimeGenerated) for latency and by sample time for restarts and health gaps",
+  "alertWindow": "[fault start, fault end + impactAllowanceSeconds + 3600 s] (5-minute evaluation, 30-minute health window)",
+  "1": "Unchanged and applied to the whole run, every event including fault windows and canaries: native = accepted = distinct Sentinel, 0 missing, 0 extra.",
+  "2": "Every process identity and boot ID after the first must start inside the fault window of a scheduled fault that lists that collector under restarts (or reboots). The number of process identities is exactly 1 + the scheduled restarts of that collector, and the number of boots exactly 1 + its scheduled reboots. Any other restart fails.",
+  "3": "Evaluated as written (least squares, slope x 720 h under 10% of the mean, falling passes) on two windows, both of which must pass: (a) hours 3-24 of the workload, which contain no scheduled restart; (b) from 3 hours after the last scheduled restart (F09 at +35:20, so from +38:20) to the end of the workload (+72:00, 33.7 hours). CPU seconds per hour and per event are reported, not gated.",
+  "4": "The whole-run p99 over every event whose event time is outside all fault windows must be at most the limit (13.3 s firewall, 18.16 s WEC). Every hour above the limit is listed. The p99 including fault windows is reported, not gated. Per fault, every event inside its window must be delivered (criterion 1) and its maximum latency is reported.",
+  "5": "Fails if any alert instance or Sentinel incident is active during the run and either started outside every alert window, or belongs to a rule not in alertsPermitted of the fault whose alert window it started in. syslog-tls-expiry and destination-credential are never permitted.",
+  "6": "Unchanged, whole run, with bower-canary added as a marker.",
+  "faultOutcomes": "Each fault also has an expected outcome (above). The run passes only if all six criteria pass for every collector AND every fault outcome is met. A fault that did not execute as scheduled is a harness failure, recorded, and the run does not pass."
+ }
+}

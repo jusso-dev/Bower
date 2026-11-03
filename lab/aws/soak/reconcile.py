@@ -91,8 +91,21 @@ def profile(label):
             'first': 0 if smoke else 100000, 'windows': windows}
 
 
+# syslog-host.py nft_ports: 40,000 source ports per destination port below index 2,000,000, then
+# the extended source ports 1024..19999 (18,976 per port) used by the 72-hour re-soak.
+EXTENDED_FIRST, EXTENDED_PER_PORT = 2000000, 18976
+FIREWALL_ID = re.compile(r'a13-n\d{4}x\d{4,5}')
+
+
+def firewall_id(n):
+    if n < EXTENDED_FIRST:
+        return 'a13-n{}x{}'.format(4400 + n // 40000, 20000 + n % 40000)
+    e = n - EXTENDED_FIRST
+    return 'a13-n{}x{}'.format(4400 + e // EXTENDED_PER_PORT, 1024 + e % EXTENDED_PER_PORT)
+
+
 def firewall_ids(first, count):
-    return {'a13-n{}x{}'.format(4400 + n // 40000, 20000 + n % 40000) for n in range(first, first + count)}
+    return {firewall_id(n) for n in range(first, first + count)}
 
 
 def firewall_native(results, label, cutoff):
@@ -230,7 +243,7 @@ def scope_accepted(host, union, label, last_index=None):
         low, high = expected['first'], expected['first'] + expected['events']
         if last_index is not None:
             high = min(high, last_index + 1)
-        return {i for i in union if re.fullmatch(r'a13-n\d{4}x\d{5}', i) and low <= index(i) < high}
+        return {i for i in union if FIREWALL_ID.fullmatch(i) and low <= index(i) < high}
     low, high = (SMOKE_START, SOAK_START) if label == 'smoke' else (SOAK_START, float('inf'))
     return {i for i, at in union.items() if i.startswith('winevt-') and at and low <= stamp_any(at) < high}
 
@@ -560,7 +573,7 @@ def main():
             # The scoped sequence range, cut at the interim prefix: later identities of the
             # running segment are neither expected nor counted in latency.
             top = high if args.action != 'interim' else min(high, max((index(i) for i in native), default=-1) + 1)
-            keep = lambda k, low=low, top=top: bool(re.fullmatch(r'a13-n\d{4}x\d{5}', k)) and low <= index(k) < top
+            keep = lambda k, low=low, top=top: bool(FIREWALL_ID.fullmatch(k)) and low <= index(k) < top
         rows, hours, latency, hashes = sentinel(verifier, collector, event_type, query_start, query_end, cutoff, keep=keep)
         # The interim compares a running prefix; completeness gates smoke and final only.
         result = compare(native, queue, rows, native_meta['complete'] or args.action == 'interim')
@@ -586,8 +599,10 @@ def main():
 
 
 def index(identity):
-    port, source = identity[5:].split('x')
-    return (int(port) - 4400) * 40000 + int(source) - 20000
+    port, source = map(int, identity[5:].split('x'))
+    if source < 20000:
+        return EXTENDED_FIRST + (port - 4400) * EXTENDED_PER_PORT + source - 1024
+    return (port - 4400) * 40000 + source - 20000
 
 
 if __name__ == '__main__':

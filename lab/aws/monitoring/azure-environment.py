@@ -24,9 +24,11 @@ REGION = 'australiaeast'
 PROJECT = 'bower-lab'
 READER_ROLE = '73c42c96-874c-492b-b04d-ab87d138a893'
 ROLES = ('ingest', 'verifier')
+# Local credential files per role; 'ingest-next' is the overlap certificate of a rotation.
+CREDENTIAL_FILES = ('ingest', 'verifier', 'ingest-next')
 GRAPH_DELETED = 'https://graph.microsoft.com/v1.0/directory/deletedItems/'
 # A generated name, or the owning AWS run's id so Azure resources share its RunId.
-RUN_PATTERN = r'bower-val-\d{12}-[0-9a-f]{8}|bower-(?:ws6|fw|soak)-\d{8}-\d{6}'
+RUN_PATTERN = r'bower-val-\d{12}-[0-9a-f]{8}|bower-(?:ws6|fw|soak|resoak)-\d{8}-\d{6}'
 
 
 class NotFoundError(RuntimeError):
@@ -122,7 +124,35 @@ def plan_hash(repo, state):
     return digest.hexdigest()
 
 
-def prepare(root, state_path, run_id=None):
+def new_certificate(root, name, subject, days):
+    key, cert, pem = [root / (name + suffix) for suffix in ('-key.pem', '-cert.pem', '-identity.pem')]
+    subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:3072', '-nodes', '-keyout', str(key),
+                    '-out', str(cert), '-days', str(days), '-subj', '/CN=' + subject],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    pem.write_bytes(key.read_bytes() + cert.read_bytes())
+    for path in (key, cert, pem):
+        path.chmod(0o600)
+    return cert, pem
+
+
+def add_ingest_credential(root, state_path, state):
+    """Rotation with overlap (guide 05, section 6.1.2): append a second certificate to the ingestion
+    application. Both stay valid; the collectors switch to the new one later."""
+    identity = state['identities']['ingest']
+    if identity.get('nextCertificatePath'):
+        raise RuntimeError('A second ingestion credential already exists')
+    days = state.get('credentialDays', 2)
+    cert, pem = new_certificate(root, 'ingest-next', identity['name'] + '-next', days)
+    identity['nextCertificatePath'] = str(pem)
+    atomic_json(state_path, state)
+    expiry = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=days)).strftime('%Y-%m-%dT%H:%M:%SZ')
+    az('ad', 'app', 'credential', 'reset', '--id', identity['appId'], '--append', '--cert', '@' + str(cert), '--end-date', expiry)
+    identity['nextCredentialExpiresAt'] = expiry
+    atomic_json(state_path, state)
+    return {'added': True, 'expiresAt': expiry}
+
+
+def prepare(root, state_path, run_id=None, credential_days=2):
     if state_path.exists():
         raise RuntimeError('State already exists; use cleanup or another state directory')
     now = dt.datetime.now(dt.timezone.utc)
@@ -131,7 +161,7 @@ def prepare(root, state_path, run_id=None):
         raise ValueError('Invalid Azure run id')
     state = {'run': run, 'group': 'rg-' + run, 'workspaceName': run + '-logs',
              'subscription': SUB, 'tenant': TENANT, 'region': REGION,
-             'createdAt': now.isoformat(), 'identities': {}}
+             'createdAt': now.isoformat(), 'identities': {}, 'credentialDays': credential_days}
     if az('group', 'exists', '--name', state['group'], '--subscription', SUB):
         raise RuntimeError('Generated resource group already exists')
     for role in ROLES:
@@ -162,16 +192,10 @@ def prepare(root, state_path, run_id=None):
         principal = az('ad', 'sp', 'create', '--id', app['appId'])
         identity['principalId'] = principal['id']
         atomic_json(state_path, state)
-        key, cert, pem = [root / (role + suffix) for suffix in ('-key.pem', '-cert.pem', '-identity.pem')]
-        subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:3072', '-nodes', '-keyout', str(key),
-                        '-out', str(cert), '-days', '2', '-subj', '/CN=' + identity['name']],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-        pem.write_bytes(key.read_bytes() + cert.read_bytes())
-        for path in (key, cert, pem):
-            path.chmod(0o600)
+        cert, pem = new_certificate(root, role, identity['name'], credential_days)
         identity['certificatePath'] = str(pem)
         atomic_json(state_path, state)
-        expiry = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=2)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        expiry = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=credential_days)).strftime('%Y-%m-%dT%H:%M:%SZ')
         az('ad', 'app', 'credential', 'reset', '--id', app['appId'], '--append', '--cert', '@' + str(cert), '--end-date', expiry)
         identity['credentialExpiresAt'] = expiry
         atomic_json(state_path, state)
@@ -185,12 +209,14 @@ def prepare(root, state_path, run_id=None):
 
 def local_cleanup(root):
     failures = []
-    for role in ROLES:
+    for role in CREDENTIAL_FILES:
         for suffix in ('-key.pem', '-cert.pem', '-identity.pem'):
             try:
                 (root / (role + suffix)).unlink(missing_ok=True)
             except OSError:
                 failures.append(role + suffix)
+        if role not in ROLES:
+            continue
         cache = root / ('azure-cli-' + role)
         try:
             if cache.is_symlink():
@@ -311,17 +337,21 @@ def cleanup(root, state_path, state, timeout):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['prepare', 'plan', 'apply', 'sentinel', 'status', 'cleanup'])
+    parser.add_argument('action', choices=['prepare', 'plan', 'apply', 'sentinel', 'status', 'cleanup', 'add-ingest-credential'])
     parser.add_argument('--state-dir', required=True)
     parser.add_argument('--repo', type=Path, default=Path(__file__).resolve().parents[3])
     parser.add_argument('--apply', action='store_true', help='explicitly authorize this action to modify Azure')
     parser.add_argument('--timeout-seconds', type=int, default=300)
     parser.add_argument('--run-id', help='prepare only: name Azure resources after this owning AWS RunId')
+    parser.add_argument('--credential-days', type=int, default=2,
+                        help='prepare only: certificate credential lifetime (1-7 days; the 72-hour re-soak needs 7)')
     args = parser.parse_args()
-    if args.action in ('prepare', 'apply', 'sentinel', 'cleanup') and not args.apply:
+    if args.action in ('prepare', 'apply', 'sentinel', 'cleanup', 'add-ingest-credential') and not args.apply:
         parser.error('this action requires --apply')
     if args.timeout_seconds < 0:
         parser.error('timeout must be non-negative')
+    if not 1 <= args.credential_days <= 7:
+        parser.error('credential days must be 1 to 7')
     os.umask(0o077)
     root = secure_dir(args.state_dir)
     state_path = root / 'azure-state.json'
@@ -329,14 +359,14 @@ def main():
     try:
         if args.action == 'prepare':
             reserved = [state_path, root / 'azure-what-if.json']
-            for role in ROLES:
+            for role in CREDENTIAL_FILES:
                 reserved.extend(root / (role + suffix) for suffix in ('-key.pem', '-cert.pem', '-identity.pem'))
-                reserved.append(root / ('azure-cli-' + role))
+            reserved.extend(root / ('azure-cli-' + role) for role in ROLES)
             if any(os.path.lexists(path) for path in reserved):
                 raise RuntimeError('State directory contains existing lab files; use a fresh directory')
             owns_local_files = True
             account()
-            state = prepare(root, state_path, args.run_id)
+            state = prepare(root, state_path, args.run_id, args.credential_days)
             result = {'prepared': True, 'group': state['group'], 'workspaceId': state['workspaceId']}
         else:
             state = json.loads(state_path.read_text())
@@ -348,7 +378,7 @@ def main():
                 raise RuntimeError('Invalid saved workspace ownership')
             owns_local_files = True
             account()
-            if args.action in ('plan', 'apply', 'sentinel'):
+            if args.action in ('plan', 'apply', 'sentinel', 'add-ingest-credential'):
                 group_owned(state)
             if args.action == 'plan':
                 plan = az('deployment', 'group', 'what-if', '--name', state['run'] + '-destination', '--resource-group', state['group'], '--subscription', SUB, '--template-file', str(args.repo / 'deploy/bicep/main.bicep'), '--parameters', *parameters(state), '--no-pretty-print')
@@ -371,6 +401,8 @@ def main():
                 result = {'sentinelResourceId': response['id']}
             elif args.action == 'cleanup':
                 result = cleanup(root, state_path, state, args.timeout_seconds)
+            elif args.action == 'add-ingest-credential':
+                result = add_ingest_credential(root, state_path, state)
             else:
                 result = {key: value for key, value in state.items() if key != 'identities'}
         print(json.dumps(result))

@@ -6,7 +6,7 @@
 set -euo pipefail
 umask 077
 : "${BOWER_LAB_BUCKET:?}" "${BOWER_LAB_RUN:?}" "${BOWER_TOOL_SHA256:?}"
-[[ "$BOWER_LAB_RUN" =~ ^bower-(fw|soak)-[0-9]{8}-[0-9]{6}$ && "$BOWER_TOOL_SHA256" =~ ^[0-9a-f]{64}$ ]]
+[[ "$BOWER_LAB_RUN" =~ ^bower-(fw|soak|resoak)-[0-9]{8}-[0-9]{6}$ && "$BOWER_TOOL_SHA256" =~ ^[0-9a-f]{64}$ ]]
 [ "$(id -u)" = 0 ]
 python3 -c 'import json,os,sys; sys.exit(json.load(open("/var/lib/bower-lab/qualification-owner.json")) != {"runId": os.environ["BOWER_LAB_RUN"], "role": "sender"})'
 [ "$(aws sts get-caller-identity --query Account --output text)" = 959038055523 ]

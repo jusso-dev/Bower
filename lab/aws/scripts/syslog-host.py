@@ -34,6 +34,20 @@ DOMAIN = "bower.lab"
 # Listener id -> (port, idle timeout seconds). Track A runs faults, track B idle gaps.
 LISTENERS = {"a13": (6514, 0), "a12": (6516, 0), "b13i": (6514, 3600), "b13n": (6515, 0), "b12i": (6516, 3600)}
 NFT_PORT_BASE = {"A": 4400, "B": 4450}
+# Identity index -> (destination port, source port). Indices below 2,000,000 use source ports
+# 20000..59999 (40,000 per port; unchanged). The 72-hour re-soak needs more: indices from
+# 2,000,000 use the unused source ports 1024..19999 (18,976 per port), up to 2,948,799.
+NFT_EXTENDED_FIRST, NFT_EXTENDED_PER_PORT = 2000000, 18976
+NFT_INDEX_LIMIT = NFT_EXTENDED_FIRST + 50 * NFT_EXTENDED_PER_PORT
+
+
+def nft_ports(base, index):
+    if not 0 <= index < NFT_INDEX_LIMIT:
+        raise ValueError("nft identity index outside the deny rule")
+    if index < NFT_EXTENDED_FIRST:
+        return base + index // 40000, 20000 + index % 40000
+    extended = index - NFT_EXTENDED_FIRST
+    return base + extended // NFT_EXTENDED_PER_PORT, 1024 + extended % NFT_EXTENDED_PER_PORT
 NETNS = "bower-client"
 
 
@@ -245,7 +259,7 @@ def expected_keys(spec):
         if block["kind"] == "nft":
             base = NFT_PORT_BASE[block["track"]]
             for index in range(block["first"], block["first"] + block["count"]):
-                keys.add("{}-n{}x{}".format(spec["listener"], base + index // 40000, 20000 + index % 40000))
+                keys.add("{}-n{}x{}".format(spec["listener"], *nft_ports(base, index)))
         else:
             for index in range(block["first"], block["first"] + block["count"]):
                 keys.add("{}-{}{:02d}x{:06d}".format(spec["listener"], block["sender"], block["scenario"], index))
@@ -650,7 +664,7 @@ def generate(args):
         base = NFT_PORT_BASE[args.track]
         for i in range(args.count):
             index = args.first + i
-            subprocess_payload = (base + index // 40000, 20000 + index % 40000)
+            subprocess_payload = nft_ports(base, index)
             sock_send(subprocess_payload)
             sent += 1
             time.sleep(max(0, started + (i + 1) / args.rate - time.monotonic()))

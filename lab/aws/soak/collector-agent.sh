@@ -9,7 +9,7 @@
 set -euo pipefail
 umask 077
 : "${BOWER_LAB_BUCKET:?}" "${BOWER_LAB_RUN:?}"
-[[ "$BOWER_LAB_RUN" =~ ^bower-soak-[0-9]{8}-[0-9]{6}$ ]]
+[[ "$BOWER_LAB_RUN" =~ ^bower-(re)?soak-[0-9]{8}-[0-9]{6}$ ]]
 [ "$(id -u)" = 0 ]
 dir=/var/lib/bower-lab/soak
 mkdir -p "$dir"
@@ -26,8 +26,9 @@ if [ "$action" = install ]; then
   : "${BOWER_SOAK_START:?}" "${BOWER_SOAK_SECONDS:?}"
   [ ! -e "$dir/agent.env" ] || { echo '{"error":"agent already installed"}'; exit 1; }
   sed -n '/^# WORKER$/,/^WORKER$/p' "$0" | sed '1d;$d' > /opt/bower-lab/soak-agent.py
-  printf 'BOWER_LAB_BUCKET=%s\nBOWER_LAB_RUN=%s\nBOWER_SOAK_START=%s\nBOWER_SOAK_SECONDS=%s\nAWS_DEFAULT_REGION=ap-southeast-2\n' \
-    "$BOWER_LAB_BUCKET" "$BOWER_LAB_RUN" "$BOWER_SOAK_START" "$BOWER_SOAK_SECONDS" > "$dir/agent.env"
+  # BOWER_EVIDENCE_BUCKET (re-soak): the RunId-owned identity bucket that outlives the stack.
+  printf 'BOWER_LAB_BUCKET=%s\nBOWER_LAB_RUN=%s\nBOWER_SOAK_START=%s\nBOWER_SOAK_SECONDS=%s\nBOWER_EVIDENCE_BUCKET=%s\nAWS_DEFAULT_REGION=ap-southeast-2\n' \
+    "$BOWER_LAB_BUCKET" "$BOWER_LAB_RUN" "$BOWER_SOAK_START" "$BOWER_SOAK_SECONDS" "${BOWER_EVIDENCE_BUCKET:-}" > "$dir/agent.env"
   cat > /etc/systemd/system/bower-soak-agent.service <<'UNIT'
 [Unit]
 Description=Bower soak sampler and identity exporter (lab)
@@ -83,6 +84,7 @@ DIR = Path('/var/lib/bower-lab/soak')
 QUEUE = Path('/var/lib/bower/queue.db')
 TOKEN = Path('/etc/bower/secrets/token')
 RUN, BUCKET = os.environ['BOWER_LAB_RUN'], os.environ['BOWER_LAB_BUCKET']
+EVIDENCE = os.environ.get('BOWER_EVIDENCE_BUCKET', '')
 START, SECONDS = int(os.environ['BOWER_SOAK_START']), int(os.environ['BOWER_SOAK_SECONDS'])
 PREFIX = 'results/soak/' + RUN + '/linux/'
 SOURCE = ('framesReceived', 'queued', 'duplicates', 'rejected', 'parserErrors', 'malformed', 'oversized', 'dropped',
@@ -174,6 +176,9 @@ def upload(names=('samples.jsonl', 'union.jsonl', 'accepted.tsv.gz')):
             continue
         subprocess.run(['aws', 's3', 'cp', '--only-show-errors', '--sse', 'AES256', str(path),
                         's3://' + BUCKET + '/' + PREFIX + name], check=True, timeout=300)
+        if EVIDENCE:
+            subprocess.run(['aws', 's3', 'cp', '--only-show-errors', '--sse', 'AES256', str(path),
+                            's3://' + EVIDENCE + '/hosts/linux/' + name], check=True, timeout=300)
         files[name] = {'bytes': path.stat().st_size, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
     return files
 

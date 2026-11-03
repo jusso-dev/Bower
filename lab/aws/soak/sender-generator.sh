@@ -10,7 +10,7 @@
 set -euo pipefail
 umask 077
 : "${BOWER_LAB_BUCKET:?}" "${BOWER_LAB_RUN:?}" "${BOWER_SOAK_LABEL:?}"
-[[ "$BOWER_LAB_RUN" =~ ^bower-soak-[0-9]{8}-[0-9]{6}$ && "$BOWER_SOAK_LABEL" =~ ^[a-z0-9-]{1,40}$ ]]
+[[ "$BOWER_LAB_RUN" =~ ^bower-(re)?soak-[0-9]{8}-[0-9]{6}$ && "$BOWER_SOAK_LABEL" =~ ^[a-z0-9-]{1,40}$ ]]
 [ "$(id -u)" = 0 ]
 dir=/var/lib/bower-lab/soak/$BOWER_SOAK_LABEL
 if [ "${BOWER_SOAK_ACTION:-status}" = status ]; then
@@ -28,7 +28,7 @@ mkdir -p "$dir"
 sed -n '/^# WORKER$/,/^WORKER$/p' "$0" | sed '1d;$d' > "$dir/worker.py"
 systemd-run --quiet --unit="bower-soak-gen-$BOWER_SOAK_LABEL" --property=Type=exec \
   --setenv=BOWER_LAB_BUCKET="$BOWER_LAB_BUCKET" --setenv=BOWER_LAB_RUN="$BOWER_LAB_RUN" --setenv=BOWER_LAB_HOST=SenderR \
-  --setenv=AWS_DEFAULT_REGION=ap-southeast-2 \
+  --setenv=AWS_DEFAULT_REGION=ap-southeast-2 --setenv=BOWER_EVIDENCE_BUCKET="${BOWER_EVIDENCE_BUCKET:-}" \
   /usr/bin/python3 "$dir/worker.py" "$dir" "$BOWER_SOAK_LABEL" "$BOWER_SOAK_START" "$BOWER_SOAK_SECONDS" "$BOWER_SOAK_FIRST" "${BOWER_SOAK_SMOKE:-0}"
 echo "{\"started\":\"bower-soak-gen-$BOWER_SOAK_LABEL\",\"workerSha256\":\"$(sha256sum "$dir/worker.py" | cut -c1-64)\"}"
 exit 0
@@ -50,9 +50,10 @@ for begin, end in zip(edges, edges[1:]):
     rate = 100 if begin in bursts else 10
     for at in range(begin, end, 7200):
         segments.append((at, min(7200, end - at), rate))
-# The Track A nftables rule logs ports 4400..4449, 40,000 identities each: indices 0..1,999,999.
-if not 0 <= first or first + sum(n * r for _, n, r in segments) > 2000000:
-    raise SystemExit('identity range outside the Track A rule (0..1,999,999)')
+# The Track A nftables rule logs ports 4400..4449: indices 0..2,948,799 (syslog-host.py nft_ports;
+# from 2,000,000 the extended source ports used by the 72-hour re-soak).
+if not 0 <= first or first + sum(n * r for _, n, r in segments) > 2948800:
+    raise SystemExit('identity range outside the Track A rule (0..2,948,799)')
 (directory / 'plan.json').write_text(json.dumps({'label': label, 'start': start, 'seconds': seconds, 'first': first,
                                                  'segments': segments, 'total': sum(s * r for _, s, r in segments)}))
 index = first
@@ -77,6 +78,9 @@ for number, (offset, length, rate) in enumerate(segments, 1):
     subprocess.run(['aws', 's3', 'cp', '--only-show-errors', '--sse', 'AES256', str(directory / 'segments.jsonl'),
                     's3://%s/results/sender/soak/%s/%s/segments.jsonl' % (os.environ['BOWER_LAB_BUCKET'], os.environ['BOWER_LAB_RUN'], label)],
                    timeout=120)
+    if os.environ.get('BOWER_EVIDENCE_BUCKET'):
+        subprocess.run(['aws', 's3', 'cp', '--only-show-errors', '--sse', 'AES256', str(directory / 'segments.jsonl'),
+                        's3://%s/sender/generator/%s/segments.jsonl' % (os.environ['BOWER_EVIDENCE_BUCKET'], label)], timeout=120)
 (directory / 'done.json').write_text(json.dumps({'label': label, 'last': index - 1, 'finishedAt': time.time()}))
 subprocess.run(['aws', 's3', 'cp', '--only-show-errors', '--sse', 'AES256', str(directory / 'done.json'),
                 's3://%s/results/sender/soak/%s/%s/done.json' % (os.environ['BOWER_LAB_BUCKET'], os.environ['BOWER_LAB_RUN'], label)], timeout=120)

@@ -60,6 +60,7 @@ Contents:
 8. [How we tested this](#8-how-we-tested-this)
 9. [Known defects found by this work](#9-known-defects-found-by-this-work)
 10. [Known limits](#10-known-limits)
+11. [The 72-hour re-soak (pre-registered)](#11-the-72-hour-re-soak-pre-registered)
 
 ## 1. What a soak proves, and what it does not
 
@@ -567,3 +568,75 @@ independently (37 of 37 checks absent).
   above are not qualified by this run.
 - The soak covers `1a4c4c2` only. Later commits need their own soak before release.
 - Releases are unsigned (deferred).
+
+## 11. The 72-hour re-soak (pre-registered)
+
+Check 7 is closed only by a re-soak on the final build. Its harness is
+[`lab/aws/resoak/`](https://github.com/jusso-dev/Bower/tree/main/lab/aws/resoak) and its plan,
+[`preregistration.json`](https://github.com/jusso-dev/Bower/blob/main/lab/aws/resoak/preregistration.json),
+is committed before the run starts. **Status: prepared, dry run done, not run.** The 72-hour run
+starts once the WEC reader fix is on main.
+
+**What is the same.** The six criteria of [section 2](#2-pass-criteria), copied verbatim (a unit
+test fails if either copy changes), the load (10 events/s per collector and a 60-second 100/s burst
+every 4 hours), the collector settings, the method of [section 3](#3-the-soak-method-all-environments),
+the verifier identity and the reconciliation of [section 4.8](#48-reconcile-and-decide-operator-any-environment).
+
+**What is different, and why.**
+
+| Item | 24-hour soak | Re-soak |
+|---|---|---|
+| Length | 24 hours (896,400 events per collector) | 72 hours (2,689,200 events per collector) |
+| Hosts | `t3` on standard credits | `m6i.large`, no CPU credits (section 6: the WEC result measured the credit policy) |
+| Build | main `1a4c4c2`, CI `0.1.0-dev.337` | the exact CI candidate on the final main; version, build number, commit and package SHA-256 recorded before deployment |
+| Faults | none | scheduled faults, each with a registered expected outcome (below) |
+| Continuous proof | the hourly native windows | plus one canary event a minute at each source (firewall: its own nftables rule and counter; Windows: a failed bind by a canary account the probe labels at the source) |
+| Identity lists | in the run bucket and the lab directory, deleted at teardown | also in a RunId-owned bucket outside the stack, kept until the final reconciliation is accepted |
+
+**Faults.** A 30-minute destination outage on both collectors (+1:20), sender restarts (rsyslog
+and the DC's WEF forwarder, +4:20 and +45:20), log rollovers (+8:20 and +57:20), a hot syslog
+TLS certificate rotation (+12:20), a collector kill on each collector (+26:20, +28:20), a WEC
+host reboot (+31:20), a firewall-collector reboot (+33:20) and an ingestion certificate rotation
+with overlap on both (+35:20). ForwardedEvents (4 GiB) fills and starts overwriting at about
++50 to +56 hours. **Sentinel throttling is not simulated**: a real 429 needs either a
+TLS-intercepting proxy the collector trusts, which changes the trust configuration under test, or
+overloading the shared Azure endpoint. It is recorded as skipped, not passed.
+
+**How the criteria treat faults (registered with the plan).** A fault window runs from the fault
+to its end plus a registered allowance (15 or 30 minutes).
+
+- Criteria 1 and 6: unchanged, whole run, every event, including fault windows and canaries.
+- Criterion 2: exactly one new process identity per scheduled restart (kill, reboot, ingestion
+  rotation) and one new boot per scheduled reboot, each inside its fault window. Anything else fails.
+- Criterion 3: evaluated as written on two windows, both of which must pass: hours 3–24 (no
+  restart is scheduled before +26:20) and from 3 hours after the last scheduled restart to the
+  end (+38:20 to +72:00). The outage ends before hour 3, so its queue growth is outside both.
+- Criterion 4: the whole-run p99 over events outside every fault window. The p99 including fault
+  windows and each fault's maximum latency are reported.
+- Criterion 5: an alert is excused only if its rule is listed for the fault and it starts inside
+  that fault's window plus one hour. `syslog-tls-expiry` and `destination-credential` are never
+  excused. The outage must raise `collector-health-missing` or `queue-backlog`, and every alert must
+  resolve.
+- The run passes only if all six criteria pass for both collectors, every fault's expected outcome
+  is met and every collector reports the candidate's version.
+
+**How to run it.** [`lab/aws/resoak/README.md`](https://github.com/jusso-dev/Bower/blob/main/lab/aws/resoak/README.md)
+gives every command for the lab (AWS-hosted Linux and Windows collectors). For other
+environments, run the steps of [section 4](#4-step-by-step-per-environment) for 72 hours and apply
+the same fault schedule with the platform's own commands:
+
+| Fault | Linux packages (systemd) | Windows (MSI, WEC) | Docker | Kubernetes |
+|---|---|---|---|---|
+| Collector kill | `sudo systemctl kill --signal=SIGKILL bower` | `Stop-Process -Id (Get-CimInstance Win32_Service -Filter "Name='Bower'").ProcessId -Force` | `docker kill --signal KILL bower-soak` | `kubectl -n bower-soak delete pod -l app.kubernetes.io/name=bower-collector --grace-period=0 --force` |
+| Destination outage (30 min) | `nft add table inet soak_outage; nft add chain inet soak_outage o '{ type filter hook output priority 0; }'; nft add rule inet soak_outage o meta skuid bower tcp dport 443 drop`, then `nft delete table inet soak_outage` | `New-NetFirewallRule -Name SoakOutage -Direction Outbound -Action Block -Program "$env:ProgramFiles\Bower\Bower.Collector.exe" -Protocol TCP -RemotePort 443`, then `Remove-NetFirewallRule -Name SoakOutage` | `docker network disconnect <network> bower-soak`, then `connect` | a `NetworkPolicy` denying egress from the pod, then delete it |
+| Host reboot | `sudo systemctl reboot` | `Restart-Computer -Force` | reboot the Docker host | `kubectl drain <node>`, reboot, `kubectl uncordon <node>` |
+| Credential rotation | [05, section 6.1.2](05-credential-rotation-and-security-failures.md) (restart) and [section 6.2](05-credential-rotation-and-security-failures.md) (syslog TLS, hot) | 05, section 6.1.2 | 05, section 5 | 05, section 5 |
+| Sender restart | `sudo systemctl restart rsyslog` on the sender | `Restart-Service WinRM -Force` on the WEF source | as Linux | as Linux |
+| Log rollover | `sudo journalctl --rotate` on the sender | let ForwardedEvents reach its maximum size | `docker` log driver rotation | node log rotation |
+
+Arm the restoration of an outage before applying it (a timer or a scheduled task), so a lost
+operator session cannot leave the destination blocked.
+
+**Expected output and pass/fail.** `reconcile.py final` writes the per-collector criteria, each
+fault's outcome checks and the overall `verdict.pass`. It refuses a plan whose SHA-256 is not the
+registered file's. A dry run (shortened clock, one fault) can never pass.

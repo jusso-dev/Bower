@@ -11,8 +11,9 @@ param(
 # 100/sec burst at +2 h, +6 h, ... (every 4 hours). Each segment writes one metadata record.
 $ErrorActionPreference='Stop'
 $address=$null
-if (![Net.IPAddress]::TryParse($Target,[ref]$address) -or !$Target.StartsWith('172.31.247.')) { throw 'Target must be the lab domain controller' }
-if ($Seconds -lt 60 -or $Seconds -gt 90000) { throw 'Seconds out of range' }
+# 172.31.247.: the 24-hour soak subnet; 172.31.248.: the 72-hour re-soak subnet (lab.py profiles).
+if (![Net.IPAddress]::TryParse($Target,[ref]$address) -or -not ($Target.StartsWith('172.31.247.') -or $Target.StartsWith('172.31.248.'))) { throw 'Target must be the lab domain controller' }
+if ($Seconds -lt 60 -or $Seconds -gt 266400) { throw 'Seconds out of range' }
 Add-Type -AssemblyName System.DirectoryServices.Protocols
 Add-Type -ReferencedAssemblies System.DirectoryServices.Protocols,System,System.Core -TypeDefinition @'
 using System;
