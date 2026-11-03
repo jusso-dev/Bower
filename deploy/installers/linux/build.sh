@@ -18,11 +18,12 @@ arch="$2"
 version="$3"
 out="$4"
 case "$arch" in amd64|arm64) ;; *) echo "unsupported architecture: $arch" >&2; exit 2 ;; esac
-# The Bower version scheme (docs/operations/release-versioning.md); tools/ci/version.py
-# computes it in CI from the VERSION file.
-version_number='(0|[1-9][0-9]{0,4})'
-if ! [[ "$version" =~ ^$version_number\.$version_number\.$version_number(-(dev|rc)\.$version_number)?$ ]]; then
-  echo "version must be MAJOR.MINOR.PATCH[-dev.N|-rc.N] (1.2.3 or 1.2.3-dev.4): $version" >&2
+# The Bower version scheme (docs/operations/release-versioning.md), with the limits
+# tools/ci/version.py and Directory.Build.props enforce: MAJOR and MINOR 0-255, PATCH and N 0-65535.
+version_byte='(0|[1-9][0-9]?|1[0-9][0-9]|2[0-4][0-9]|25[0-5])'
+version_number='(0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9][0-9]|655[0-2][0-9]|6553[0-5])'
+if ! [[ "$version" =~ ^$version_byte\.$version_byte\.$version_number(-(dev|rc)\.$version_number)?$ ]]; then
+  echo "version must be MAJOR.MINOR.PATCH[-dev.N|-rc.N] (MAJOR, MINOR 0-255; PATCH, N 0-65535): $version" >&2
   exit 2
 fi
 for file in collector/Bower.Collector collector/libe_sqlite3.so cli/bower; do

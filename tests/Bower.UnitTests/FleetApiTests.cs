@@ -281,6 +281,12 @@ public sealed class FleetApiTests
     // A preview build never makes a release old.
     [InlineData("0.1.1", "0.1.2-dev.1", false)]
     [InlineData("0.1.1-dev.362", "0.1.1-dev.362", false)]
+    // Numeric identifiers of any length compare numerically, beyond Int32, without throwing.
+    [InlineData("1.0.0-rc.99999999999", "1.0.0-rc.100000000000", true)]
+    [InlineData("1.0.0-rc.100000000000", "1.0.0-rc.99999999999", false)]
+    [InlineData("1.0.0-rc.9", "1.0.0-rc.12345678901234567890", true)]
+    [InlineData("1.0.0-rc.12345678901234567890", "1.0.0-rc.alpha", true)]
+    [InlineData("1.0.0-rc.2147483648", "1.0.0-rc.2147483647", false)]
     public void Fleet_ComparesVersionNumbersAndStableReleases(string installed, string other, bool outdated)
     {
         FleetRecord fleet = FleetStatus.Evaluate([Record("installed", installed), Record("other", other)], new HashSet<string>(), Now);

@@ -232,7 +232,7 @@ once the last legacy collector is upgraded.
 | --- | --- | --- | --- | --- |
 | Newer build | Upgrade in place; service restarted if running; `bower.env` kept | Same | Major upgrade; old product removed first; `bower.env`, secrets, credential and queue kept | New image on the same volume |
 | Same version | `dpkg -i` reinstalls | `rpm -U --replacepkgs` reinstalls (the offline installer uses it) | Same MSI: a no-op (exit 0, service untouched). A rebuild with the same ProductVersion: reinstalled as a major upgrade | Same image: nothing changes |
-| Older version (semantic order, whatever the build order) | **Refused**: `bower-collector: refusing to downgrade from X to Y.` | **Refused**: natively by `rpm -U`/`dnf install`; with `--oldpackage` or `dnf downgrade` by the package guard | **Refused** by the installed `VersionKey`, even when the older version has a higher ProductVersion: exit `1603`, log: `A newer Bower Collector is already installed (X), so this older version (Y) was not installed.` | Not detected: an older image starts on the queue if the schema allows it |
+| Older version (semantic order, whatever the build order) | **Refused**: `bower-collector: refusing to downgrade from X to Y.` | **Refused**: natively by `rpm -U`/`dnf install`; with `--oldpackage` or `dnf downgrade` by the package guard | **Refused** by the installed `VersionKey`, even when the older version has a higher ProductVersion: exit `1603`, log: `A newer Bower Collector is already installed (X), so this older version (Y) was not installed.` | Not detected: an older image starts on the queue if the schema allows it, and is refused before any change only if it has the schema pre-check (#163 and later) |
 | Explicit rollback | `sudo BOWER_ALLOW_DOWNGRADE=1 apt-get install --allow-downgrades ./old.deb` | `sudo BOWER_ALLOW_DOWNGRADE=1 dnf downgrade ./old.rpm` | `msiexec /i old.msi BOWERALLOWDOWNGRADE=1` | Pin the older tag |
 
 ### Downgrades
@@ -299,7 +299,10 @@ dpkg/rpm, `100` for apt, `1603` for msiexec), and the installed version, service
   test dev builds on hosts without the rc, or tag the next rc.
 - **Pull-request builds** are numbered like main builds: a PR build is "newer" than older main
   builds. Do not install PR builds on production hosts.
-- **Containers** have no downgrade guard; the queue schema refusal still protects the data.
+- **Containers** have no downgrade guard. An older image is refused before any change
+  (`UnsupportedQueueSchemaException`) only if it includes the queue schema pre-check (#163 and
+  later); an older image without it can write tables into a newer queue before failing. Never
+  start an older image on a volume a newer release has opened.
 - **PowerShell modules** keep their own module versions (`0.1.0`); they are not Bower release
   artefacts.
 - **Upgrade-test fixtures** carry this build's binaries under an older package version, so after

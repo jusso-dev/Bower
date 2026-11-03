@@ -63,8 +63,19 @@ version_older() {
 
 # The installed package wrote its version here; packages older than the guard did not.
 if [ -r "$installed_version_file" ]; then
-  installed_version=$(head -n 1 "$installed_version_file")
-  if version_older "$package_version" "$installed_version"; then
+  installed_version=$(head -n 1 "$installed_version_file" | cut -c1-64)
+  # A marker that is present but unreadable fails closed: it could hide a newer install.
+  if ! version_fields "$installed_version" >/dev/null; then
+    if [ "${BOWER_ALLOW_DOWNGRADE:-}" = 1 ]; then
+      echo "bower-collector: installing $package_version over an unrecognised installed version (BOWER_ALLOW_DOWNGRADE=1)." >&2
+    else
+      echo "bower-collector: refusing to install $package_version: $installed_version_file does not hold a Bower version," \
+        "so a downgrade cannot be ruled out. The installed collector, its settings and its queue are unchanged." \
+        "If this is intended, back up the queue and rerun with BOWER_ALLOW_DOWNGRADE=1" \
+        "(see docs/operations/release-versioning.md)." >&2
+      exit 1
+    fi
+  elif version_older "$package_version" "$installed_version"; then
     if [ "${BOWER_ALLOW_DOWNGRADE:-}" = 1 ]; then
       echo "bower-collector: downgrading from $installed_version to $package_version (BOWER_ALLOW_DOWNGRADE=1)." >&2
     else
