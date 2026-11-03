@@ -9,7 +9,8 @@ Azure and AWS on 31 October 2026 with retained failures; several metrics were no
 triggered and the Azure storage alert did not report an already-full queue. The revised
 rules, host checks and queue-page metrics have not been validated end to end (a
 [smoke test on 3 November 2026](../evidence/sentinel-20261103-054834/README.md) showed the
-revised A4, A7, A9, A10 and A11 rules firing and resolving on synthetic health records). The drill found
+revised A4, A7, A9, A10 and A11 rules firing on synthetic health records and resolving on
+recovery records, except A10, which stays fired by design for its 2-day window). The drill found
 a **queue page-ceiling defect** that stops delivery after the queue file fills, and a
 recovery procedure that worked. See [known defects](#known-defects-found-by-this-work)
 and the [evidence](../evidence/ws6-20261031-074751/README.md). Releases are **unsigned**

@@ -7,7 +7,10 @@ trickle   upload on-time events at --rate per second for --duration-minutes.
 
 Addresses are IPv6 documentation addresses (RFC 3849) assigned round-robin, and the
 command refuses a load that could put --threshold events of one address in one
-event-time bucket, so the load itself never raises a detection. Rows are gzip-compressed;
+--bucket-minutes event-time bucket, so one invocation never raises a detection. Pass the
+deployed rule's firewallDenyThreshold and bucketMinutes. The guarantee covers one
+invocation only: give loads whose event times can share a bucket disjoint address ranges
+(--address-offset at least the previous offset plus its --addresses). Rows are gzip-compressed;
 the token comes from the signed-in Azure CLI identity (use an isolated AZURE_CONFIG_DIR)
 and is never printed. The summary is metadata only: counts, statuses and timings.
 """
@@ -15,6 +18,7 @@ and is never printed. The summary is metadata only: counts, statuses and timings
 import argparse
 import concurrent.futures
 import datetime
+import email.utils
 import gzip
 import json
 import math
@@ -26,9 +30,10 @@ import urllib.error
 import urllib.request
 import uuid
 
-# Refresh this long before the token expires; the Azure CLI may hand back a cached token
-# with only minutes left.
-TOKEN_MARGIN_SECONDS = 10 * 60
+# Refresh this long before the token expires. The Azure CLI hands back its cached token
+# until less than five minutes are left, so a shorter margin never asks it again for the
+# token it just returned.
+TOKEN_MARGIN_SECONDS = 4 * 60
 
 
 def stamp(value):
@@ -52,6 +57,56 @@ def row(prefix, index, at, addresses, offset, collector_id):
 def per_address_bound(events_per_bucket, addresses):
     # Round-robin over contiguous indices; a bucket edge can split one cycle, so add one.
     return math.ceil(events_per_bucket / addresses) + 1
+
+
+def trickle_plan(rate, batch):
+    """Seconds between trickle requests and events per request, as the trickle loop sends them."""
+    # One request every `tick` seconds keeps the rate without a request per event.
+    tick = max(1.0, min(30.0, batch / max(rate, 0.001)))
+    return tick, max(1, round(rate * tick))
+
+
+def trickle_step(rate, tick, remaining):
+    """Length of the next trickle step and its events: a full tick, or what is left of the run."""
+    step = max(0.0, min(tick, remaining))
+    return step, max(1, round(rate * step))
+
+
+def chunks(count, batch):
+    """Split one step's events into requests of at most `batch` rows."""
+    return [min(batch, count - start) for start in range(0, count, batch)]
+
+
+def events_per_bucket(args):
+    """Most events one event-time bucket can receive from this load, as actually sent."""
+    bucket_seconds = args.bucket_minutes * 60
+    if args.mode == "backfill":
+        # Evenly spaced event times: a bucket holds at most ceil(bucket / step) + 1 of them.
+        return math.ceil(args.rows * args.bucket_minutes / args.span_minutes) + 1
+    # Requests are at least `tick` apart and each sends `count` events with one event time,
+    # so a bucket sees at most floor(bucket / tick) + 1 requests. A rate below one event per
+    # request still sends one event per request, more than rate x bucket.
+    tick, count = trickle_plan(args.rate, args.batch)
+    return count * (math.floor(bucket_seconds / tick) + 1)
+
+
+def retry_after(value, default):
+    """Seconds to wait from a Retry-After header: delta-seconds or an HTTP date; else the default."""
+    if not value:
+        return default
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    try:
+        when = email.utils.parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return default
+    if when is None:
+        return default
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=datetime.timezone.utc)
+    return max(0.0, (when - datetime.datetime.now(datetime.timezone.utc)).total_seconds())
 
 
 class Uploader:
@@ -84,7 +139,7 @@ class Uploader:
                 with urllib.request.urlopen(request, timeout=60) as response:
                     status, wait = response.status, 0
             except urllib.error.HTTPError as error:
-                status, wait = error.code, float(error.headers.get("Retry-After") or 2 ** attempt)
+                status, wait = error.code, retry_after(error.headers.get("Retry-After"), 2 ** attempt)
             except (urllib.error.URLError, TimeoutError):
                 status, wait = "network-error", 2 ** attempt
             with self.lock:
@@ -118,29 +173,50 @@ def main(argv):
     parser.add_argument("--duration-minutes", type=float, default=0, help="how long to trickle")
     parser.add_argument("--addresses", type=int, default=8192)
     parser.add_argument("--address-offset", type=int, default=0, help="first address slot, to separate loads")
-    parser.add_argument("--threshold", type=int, default=20, help="firewall rule threshold the load must stay below")
-    parser.add_argument("--bucket-minutes", type=float, default=10)
+    parser.add_argument("--threshold", type=int, required=True,
+                        help="the deployed firewall rule's firewallDenyThreshold (template default 20)")
+    parser.add_argument("--bucket-minutes", type=float, required=True,
+                        help="the deployed rules' bucketMinutes (template default 10)")
     parser.add_argument("--batch", type=int, default=2000, help="rows per request (keep under 1 MB uncompressed)")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--collector-id", default="load-direct")
     parser.add_argument("--summary", required=True, help="metadata-only JSON summary written here")
     args = parser.parse_args(argv)
 
-    if args.mode == "backfill":
-        events_per_bucket = args.rows * args.bucket_minutes / args.span_minutes
-    else:
-        events_per_bucket = args.rate * args.bucket_minutes * 60
-    bound = per_address_bound(events_per_bucket, args.addresses)
+    # Ranges as main.bicep allows them (threshold at least 2, bucket 1 to 60 minutes).
+    problems = [message for failed, message in (
+        (args.addresses < 1, "--addresses must be at least 1"),
+        (args.address_offset < 0, "--address-offset must not be negative"),
+        (args.threshold < 2, "--threshold must be at least 2 (the template minimum)"),
+        (not 1 <= args.bucket_minutes <= 60, "--bucket-minutes must be 1 to 60 (the template range)"),
+        (args.batch < 1, "--batch must be at least 1"),
+        (args.workers < 1, "--workers must be at least 1"),
+        (args.mode == "backfill" and args.rows < 1, "backfill needs --rows of at least 1"),
+        (args.mode == "backfill" and args.span_minutes <= 0, "backfill needs a positive --span-minutes"),
+        (args.mode == "trickle" and args.rate <= 0, "trickle needs a positive --rate"),
+        (args.mode == "trickle" and args.duration_minutes <= 0, "trickle needs a positive --duration-minutes"),
+    ) if failed]
+    if problems:
+        raise SystemExit("; ".join(problems))
+    bound = per_address_bound(events_per_bucket(args), args.addresses)
     if bound >= args.threshold:
         raise SystemExit(f"up to {bound} events per address and bucket would reach the threshold {args.threshold}: "
                          "use more --addresses")
 
+    # Open the summary before sending anything: the event id prefix is recorded only there.
+    with open(args.summary, "w", encoding="utf-8") as output:
+        summary = run(args, bound)
+        output.write(json.dumps(summary, indent=1) + "\n")
+    print(json.dumps({key: summary[key] for key in ("mode", "rows", "requests", "retries", "seconds", "statuses")}))
+
+
+def run(args, bound):
     prefix = f"load-{args.mode}-{uuid.uuid4().hex[:8]}"
     uploader = Uploader(args.endpoint, args.dcr)
     started = datetime.datetime.now(datetime.timezone.utc)
     if args.mode == "backfill":
         first = started - datetime.timedelta(minutes=args.span_minutes)
-        step = datetime.timedelta(minutes=args.span_minutes) / max(args.rows, 1)
+        step = datetime.timedelta(minutes=args.span_minutes) / args.rows
         with concurrent.futures.ThreadPoolExecutor(args.workers) as pool:
             futures = [pool.submit(uploader.send, [row(prefix, i, first + step * i, args.addresses, args.address_offset,
                                                        args.collector_id) for i in range(lo, min(lo + args.batch, args.rows))])
@@ -149,26 +225,25 @@ def main(argv):
                 future.result()
     else:
         index, deadline = 0, time.monotonic() + args.duration_minutes * 60
-        # One request every `tick` seconds keeps the rate without a request per event.
-        tick = max(1.0, min(30.0, args.batch / max(args.rate, 0.001)))
+        tick, _ = trickle_plan(args.rate, args.batch)
         while time.monotonic() < deadline:
-            due = time.monotonic() + tick
-            count = max(1, round(args.rate * tick))
+            # The last step is cut to the time left, so the run ends at its deadline.
+            step, count = trickle_step(args.rate, tick, deadline - time.monotonic())
+            due = time.monotonic() + step
             at = datetime.datetime.now(datetime.timezone.utc)
-            uploader.send([row(prefix, index + i, at, args.addresses, args.address_offset, args.collector_id)
-                           for i in range(count)])
-            index += count
+            for size in chunks(count, args.batch):
+                uploader.send([row(prefix, index + i, at, args.addresses, args.address_offset, args.collector_id)
+                               for i in range(size)])
+                index += size
             time.sleep(max(0.0, due - time.monotonic()))
     finished = datetime.datetime.now(datetime.timezone.utc)
-    summary = {"mode": args.mode, "eventIdPrefix": prefix, "collectorId": args.collector_id,
-               "startedAt": stamp(started), "finishedAt": stamp(finished),
-               "seconds": round((finished - started).total_seconds(), 1), "addresses": args.addresses,
-               "addressOffset": args.address_offset, "maxEventsPerAddressAndBucket": bound,
-               "spanMinutes": args.span_minutes if args.mode == "backfill" else None,
-               "ratePerSecond": args.rate if args.mode == "trickle" else None, **uploader.stats}
-    with open(args.summary, "w", encoding="utf-8") as output:
-        output.write(json.dumps(summary, indent=1) + "\n")
-    print(json.dumps({key: summary[key] for key in ("mode", "rows", "requests", "retries", "seconds", "statuses")}))
+    return {"mode": args.mode, "eventIdPrefix": prefix, "collectorId": args.collector_id,
+            "startedAt": stamp(started), "finishedAt": stamp(finished),
+            "seconds": round((finished - started).total_seconds(), 1), "addresses": args.addresses,
+            "addressOffset": args.address_offset, "threshold": args.threshold, "bucketMinutes": args.bucket_minutes,
+            "maxEventsPerAddressAndBucket": bound,
+            "spanMinutes": args.span_minutes if args.mode == "backfill" else None,
+            "ratePerSecond": args.rate if args.mode == "trickle" else None, **uploader.stats}
 
 
 if __name__ == "__main__":
