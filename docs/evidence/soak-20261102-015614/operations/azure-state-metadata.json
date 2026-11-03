@@ -1,0 +1,24 @@
+{
+ "run": "bower-soak-20261102-015614",
+ "group": "rg-bower-soak-20261102-015614",
+ "workspaceName": "bower-soak-20261102-015614-logs",
+ "subscription": "945092a0-2500-4b25-85a4-99f1c3135906",
+ "tenant": "f4f33fb1-b681-40d1-a854-6f888d45b891",
+ "createdAt": "2026-11-02T01:57:52.390254+00:00",
+ "cleanupCheckedAt": "2026-11-03T04:25:26.273929+00:00",
+ "cleanupErrors": [],
+ "identities": {
+  "ingest": {
+   "name": "bower-soak-20261102-015614-ingest",
+   "appId": "da6b6838-0bb2-4c59-93bd-70e8e0c048a7",
+   "objectId": "267965d3-f4e8-4fa4-becf-e5fc5699e133",
+   "principalId": "1ae2930e-dcaf-4d21-8be6-05ba002e3a18"
+  },
+  "verifier": {
+   "name": "bower-soak-20261102-015614-verifier",
+   "appId": "0046b34f-2550-4204-8506-5857d18c6333",
+   "objectId": "a2d49abf-bd86-4fd4-8e54-2895710eb316",
+   "principalId": "7b1247e5-56ee-403f-8140-bf20fec43777"
+  }
+ }
+}

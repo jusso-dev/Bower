@@ -106,6 +106,10 @@ def main():
         elif kind == "AWS::S3::Bucket":
             # head-bucket reports a missing bucket as HTTP 404; 403 means it exists for someone else.
             exact("S3 bucket " + physical, aws("s3api", "head-bucket", "--bucket", physical), "404", "NoSuchBucket")
+        elif kind == "AWS::SecretsManager::Secret":
+            # A secret scheduled for deletion still describes; only not-found proves it is gone.
+            exact("secret " + physical, aws("secretsmanager", "describe-secret", "--secret-id", physical),
+                  "ResourceNotFoundException")
         elif kind == "AWS::Scheduler::Schedule":
             exact("expiry schedule " + physical, aws("scheduler", "get-schedule", "--name", physical),
                   "ResourceNotFoundException")

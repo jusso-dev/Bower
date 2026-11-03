@@ -1,0 +1,97 @@
+[
+ {
+  "type": "AWS::S3::Bucket",
+  "logical": "Artifacts",
+  "physical": "bower-soak-20261102-015614-artifacts-t833llw1ynbd"
+ },
+ {
+  "type": "AWS::S3::BucketPolicy",
+  "logical": "BucketPolicy",
+  "physical": "bower-soak-20261102-015614-artifacts-t833llw1ynbd"
+ },
+ {
+  "type": "AWS::EC2::Instance",
+  "logical": "Dc",
+  "physical": "i-0bb64b393e2c1ee08"
+ },
+ {
+  "type": "AWS::EC2::Route",
+  "logical": "DefaultRoute",
+  "physical": "rtb-0e124480894aee1d9|0.0.0.0/0"
+ },
+ {
+  "type": "AWS::Scheduler::Schedule",
+  "logical": "Expiry",
+  "physical": "bower-soak-20261102-015614-expiry"
+ },
+ {
+  "type": "AWS::IAM::Role",
+  "logical": "ExpiryRole",
+  "physical": "bower-soak-20261102-015614-ExpiryRole-9yFyoXhU48Ve"
+ },
+ {
+  "type": "AWS::EC2::SecurityGroup",
+  "logical": "Group",
+  "physical": "sg-0c1b151451eadcae8"
+ },
+ {
+  "type": "AWS::IAM::InstanceProfile",
+  "logical": "HostProfile",
+  "physical": "bower-soak-20261102-015614-HostProfile-AABBppcqfiSd"
+ },
+ {
+  "type": "AWS::IAM::Role",
+  "logical": "HostRole",
+  "physical": "bower-soak-20261102-015614-HostRole-MgSL6xoy68d5"
+ },
+ {
+  "type": "AWS::EC2::SecurityGroupIngress",
+  "logical": "Internal",
+  "physical": "sgr-04e01bc8f94566873"
+ },
+ {
+  "type": "AWS::EC2::Instance",
+  "logical": "Linux",
+  "physical": "i-04f5e969087d4662f"
+ },
+ {
+  "type": "AWS::EC2::SubnetRouteTableAssociation",
+  "logical": "RouteAssociation",
+  "physical": "rtbassoc-0a70087777dd4389d"
+ },
+ {
+  "type": "AWS::EC2::RouteTable",
+  "logical": "Routes",
+  "physical": "rtb-0e124480894aee1d9"
+ },
+ {
+  "type": "AWS::SecretsManager::Secret",
+  "logical": "Secret",
+  "physical": "arn:aws:secretsmanager:ap-southeast-2:959038055523:secret:Secret-Xyv3WnA04etP-6YDY5f"
+ },
+ {
+  "type": "AWS::EC2::Instance",
+  "logical": "Sender",
+  "physical": "i-0a9d2278779b53a80"
+ },
+ {
+  "type": "AWS::IAM::InstanceProfile",
+  "logical": "SenderProfile",
+  "physical": "bower-soak-20261102-015614-SenderProfile-NiShxntErvJJ"
+ },
+ {
+  "type": "AWS::IAM::Role",
+  "logical": "SenderRole",
+  "physical": "bower-soak-20261102-015614-SenderRole-Xc881z6q7xPA"
+ },
+ {
+  "type": "AWS::EC2::Subnet",
+  "logical": "Subnet",
+  "physical": "subnet-0ba3f6815026f3ee0"
+ },
+ {
+  "type": "AWS::EC2::Instance",
+  "logical": "Wec",
+  "physical": "i-045feea6c5bbec8f9"
+ }
+]

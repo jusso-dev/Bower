@@ -1,0 +1,22 @@
+[
+  {
+    "enabled": true,
+    "name": "bower-soak-20261102-015614-dcr-columns-dropped",
+    "severity": 2
+  },
+  {
+    "enabled": true,
+    "name": "bower-soak-20261102-015614-dcr-request-errors",
+    "severity": 2
+  },
+  {
+    "enabled": true,
+    "name": "bower-soak-20261102-015614-dcr-rows-dropped",
+    "severity": 1
+  },
+  {
+    "enabled": true,
+    "name": "bower-soak-20261102-015614-dcr-transformation-errors",
+    "severity": 1
+  }
+]
