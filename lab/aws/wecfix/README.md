@@ -25,8 +25,63 @@ placeholders below.
 | `wec-profile.ps1` + `etlstacks/` | Wec, Wec2 | In-box WPR CPU sampling of the collector, reported per module and frame with the build's PDBs |
 | `wec-logs.ps1` | Wec, Wec2 | Counts of the collector's own log events (1002, 1009, 1201 with purge size) |
 | `dc-native.ps1` | Dc | Native 4625 identities per window (`Bower.LabProbe native`) |
-| `reconcile.py` | operator | Native = accepted = Sentinel per WEC, latency quantiles, CPU per hour |
+| `reconcile.py` | operator | Native = accepted = Sentinel per WEC using source generation time, latency quantiles, CPU per hour |
 
 `bench/` and `etlstacks/` are lab-only tools (not shipped); `etlstacks` uses
 `Microsoft.Diagnostics.Tracing.TraceEvent` to read the WPR trace and resolve symbols.
 Every output is counts, positions and timings; traces are deleted after reporting.
+
+Numeric reader lag in newly captured samples is the observed difference between receiving
+channel record IDs, not a count of unread events or proof of channel continuity. It assumes
+no unobserved clear or reset; a clear followed by sufficient regrowth between samples can
+evade the recorded counters. Older samples without the native-bookmark basis are unknown.
+The Windows PowerShell 5.1 sampler uses the installed, hash-verified .NET 10 lab probe's
+`receiving-position ForwardedEvents` command rather than accessing a private Framework
+bookmark property. The probe uses Bower's bounded native bookmark parser and does not
+export event content. If the command fails or returns no usable position while the channel
+has records, `newestRecordIdState` is `missing-bookmark-with-records`; treat lag as unknown
+and correct the probe before qualification. The new probe and sampler still need live WEC
+validation; the Windows CI check uses a real local Application or System log, not WEF.
+Reconciliation only uses a position when its native-bookmark basis is present and the
+position self-check says `observed`; missing or inconsistent states remain unknown.
+The probe emits a fixed, compact three-field JSON response; the sampler accepts only that
+exact field order and a bounded positive integer. Duplicate, escaped or extra properties,
+alternative whitespace and noncanonical numbers fail closed rather than being interpreted
+by PowerShell's permissive JSON parser. A differently formatted or older probe therefore
+reports the position as unknown until the matching verified probe is installed.
+
+The shared lab probe's `queue-union` exports only the normalized WEC source generation
+time in a fourth TSV field, never a queue payload. Legacy rows without that field are
+indeterminate unless the original retained queue row can safely supply it. Reconciliation
+reports `availableObservedSetsEqual` separately from exact qualification, together with
+available sampling, union and error-log observations. `exact` remains false because the
+current harness cannot independently verify native channel continuity or complete union
+capture; a matching set of available observations does not prove either. Missing or invalid
+artifacts and observed union failures are reported, not treated as successful capture.
+The reported p99 and `observedSampleP99WithinLimit` describe only arrived samples; the
+full-workload `latencyPassesPilotLimit` remains indeterminate while workload, capture and
+destination completeness are unproven. Negative destination latencies indicate clock skew
+and also make the observed-sample comparison indeterminate. Specify one existing
+`--lab-dir` and one `--out` path outside the lab input tree. The tool rejects output
+aliases to input files, including symlink and hardlink aliases, before touching the report.
+It fails closed if it cannot inspect the tree or finds a directory symlink that prevents a
+complete alias check. Avoid modifying the input tree concurrently with reconciliation.
+
+Once the paths are safely identified, the tool attempts to invalidate an old report
+before validating other arguments and publishes the final report atomically. Once that
+invalidation succeeds, an argument, input or destination failure leaves an invalid
+placeholder. Ambiguous or unsafe paths, a filesystem failure, or a help invocation cannot
+guarantee invalidation. Always require exit status zero and `status: complete` before
+consuming an output file. A help invocation does not run reconciliation; do not consume
+its output as a fresh result.
+
+To exercise the probe against a disposable local SQLite database, build it and run:
+
+```sh
+dotnet build lab/aws/upgrade-recovery/probe/Bower.LabProbe.csproj -c Release
+BOWER_WECFIX_PROBE_DLL="$PWD/lab/aws/upgrade-recovery/probe/bin/Release/net10.0/Bower.LabProbe.dll" \
+  python3 -m unittest discover -s lab/aws/tests -p 'test_wecfix_probe.py'
+```
+
+Set `BOWER_WECFIX_DOTNET` to the dotnet executable if it is not on `PATH`. The probe
+integration tests are skipped unless `BOWER_WECFIX_PROBE_DLL` is set.

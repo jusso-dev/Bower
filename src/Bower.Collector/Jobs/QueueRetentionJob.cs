@@ -30,14 +30,20 @@ public sealed partial class QueueRetentionJob(
     public const int RetryAttempts = 3;
 
     /// <summary>
-    /// Rows per purge transaction. Each batch is its own short write transaction (the ledger
-    /// compaction in it is bounded by the batch), so sources and delivery never wait near
-    /// the 5-second busy timeout behind retention.
+    /// Maximum queue rows removed per purge transaction. Ledger compaction also verifies
+    /// earlier unresolved entries and segments, so a large unresolved prefix can make a
+    /// transaction take longer than the batch size alone suggests.
     /// </summary>
     public const int BatchSize = 1_000;
 
-    /// <summary>Pause between purge batches, so waiting writers take the write lock in between.</summary>
+    /// <summary>
+    /// Pause between routine and pressure-reclaim batches so waiting writers can take the
+    /// write lock. Page utilisation is not an admission gate and may fall during a purge.
+    /// </summary>
     public static readonly TimeSpan BatchPause = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>Waits between batches; a test seam (the default is a wall-clock delay).</summary>
+    internal Func<TimeSpan, CancellationToken, Task> Pause { get; init; } = Task.Delay;
 
     // Smaller batches under page pressure, so purging stops close to the target.
     private const int PressureBatchSize = 500;
@@ -51,7 +57,7 @@ public sealed partial class QueueRetentionJob(
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         DateTimeOffset now = clock.GetUtcNow();
-        int total = await PurgeAsync(now - settings.DeliveredRetention, BatchSize, _ => Task.FromResult(true), cancellationToken);
+        int total = await PurgeAsync(now - settings.DeliveredRetention, BatchSize, _ => Task.FromResult(true), BatchPause, cancellationToken);
         if (total > 0)
         {
             LogPurged(logger, total);
@@ -144,29 +150,31 @@ public sealed partial class QueueRetentionJob(
         bool pagePressure = files.PageUtilisationPercent >= QueueStorageMonitor.PagePressurePercent;
         if (diskPressure || pagePressure)
         {
-            // Low disk: reclaim every eligible row, so new events reuse freed pages instead of
-            // growing the file. Page pressure alone: stop once use is back at the target. Once
-            // new events are refused, intake outranks duplicate detection: the floor no longer
-            // protects acknowledged rows (after a large drain they are all recent).
-            bool intakeBlocked = files.PageUtilisationPercent >= DeliveryHealth.PageBackpressurePercent;
+            // Low disk: reclaim eligible rows so new events reuse freed pages instead of
+            // growing the file. Page pressure alone stops at the target and keeps the floor:
+            // the 95% health threshold does not prove that intake has been refused. Critical
+            // disk really does block ordinary intake, so let it reclaim recent acknowledgements.
+            bool intakeBlocked = disk == StorageState.Critical;
             double targetPages = files.IntakeLimitPages * PressureTargetPercent / 100;
             int purged = await PurgeAsync(
                 intakeBlocked ? now.AddSeconds(1) : now - settings.PressureRetentionFloor,
                 diskPressure ? BatchSize : PressureBatchSize,
                 async token => diskPressure || (await store.GetStorageSnapshotAsync(token)).UsedPages > targetPages,
+                BatchPause,
                 cancellationToken);
-            await RecordAsync(purged, diskPressure ? "low-disk" : intakeBlocked ? "intake-blocked" : "queue-pages");
+            await RecordAsync(purged, diskPressure ? "low-disk" : "queue-pages");
         }
 
         if (refusedPages > 0)
         {
-            // Only as many of the oldest acknowledgements as the refused event needs, at any
-            // age: duplicate detection keeps everything else.
+            // Purge oldest acknowledgements at any age until the refused event can fit,
+            // checking the target between batches. Remaining rows still detect duplicates.
             long limit = files.IntakeLimitPages;
             int purged = await PurgeAsync(
                 now.AddSeconds(1),
                 RefusalBatchSize,
                 async token => (await store.GetStorageSnapshotAsync(token)).UsedPages + refusedPages > limit,
+                BatchPause,
                 cancellationToken);
             await RecordAsync(purged, "large-event");
         }
@@ -195,6 +203,7 @@ public sealed partial class QueueRetentionJob(
         DateTimeOffset cutoff,
         int batchSize,
         Func<CancellationToken, Task<bool>> more,
+        TimeSpan pause,
         CancellationToken cancellationToken)
     {
         // With an archive, purge only what verified archive coverage of this queue holds.
@@ -246,10 +255,10 @@ public sealed partial class QueueRetentionJob(
             }
 
             total += purged;
-            if (purged == batchSize)
+            if (purged == batchSize && pause > TimeSpan.Zero)
             {
                 // Wall-clock, not the injected clock: this yields the write lock in real time.
-                await Task.Delay(BatchPause, cancellationToken);
+                await Pause(pause, cancellationToken);
             }
         }
         while (purged == batchSize && !cancellationToken.IsCancellationRequested);

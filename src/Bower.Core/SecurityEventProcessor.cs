@@ -36,8 +36,48 @@ public sealed class SecurityEventProcessor(
     {
         ArgumentNullException.ThrowIfNull(candidateJson);
         long bytesIn = Encoding.UTF8.GetByteCount(candidateJson);
+        // Attempts include retries and failures, even if a surrounding batch rolls back.
         telemetry?.RecordAttempt(bytesIn);
-        return await ProcessCoreAsync(candidateJson, collector, context, bytesIn, false, cancellationToken);
+        int? pendingBefore = QueueEnqueueBatch.PendingCount(queue);
+        bool sourceRecord = QueueEnqueueBatch.IsSourceRecord(queue);
+        ProcessingResult result;
+        try
+        {
+            result = await ProcessCoreAsync(candidateJson, collector, context, bytesIn, false, cancellationToken);
+        }
+        catch (QueueCapacityExceededException)
+        {
+            // For an atomic source record, an alert refusal rolls back the main write too.
+            // The primary refusal was already recorded as an alert refusal.
+            if (QueueEnqueueBatch.SourceRecordMutated(queue))
+            {
+                telemetry?.RecordSourceRecordRollback(bytesIn);
+            }
+            throw;
+        }
+        if (result.Queued || result.Suppressed)
+        {
+            // A batched enqueue is provisional until commit. Report each rolled-back
+            // candidate as a refusal if SQLite rejects that commit for capacity.
+            QueueEnqueueBatch.WhenRefused(queue, refusal =>
+            {
+                telemetry?.RecordCapacityRefusal(bytesIn, refusal.Reason);
+                if (sourceRecord) telemetry?.RecordSourceRecordRollback(bytesIn);
+            });
+        }
+        else if (result.PrivacyAlertEventId is not null && pendingBefore is { } before
+            && QueueEnqueueBatch.PendingCount(queue) > before)
+        {
+            // Only the generated alert was newly written. Do not classify it as a main
+            // event refusal or count it twice if the alert was already a duplicate.
+            QueueEnqueueBatch.WhenRefused(queue, refusal =>
+            {
+                telemetry?.RecordPrivacyAlertRefusal(bytesIn, refusal.Reason);
+                if (sourceRecord) telemetry?.RecordSourceRecordRollback(bytesIn);
+            });
+        }
+
+        return result;
     }
 
     // Only the collector assembly's own health worker uses this entry point. Origin is
@@ -54,6 +94,13 @@ public sealed class SecurityEventProcessor(
     }
 
     /// <summary>
+    /// Runs <paramref name="action"/> now, or, inside a source's group commit
+    /// (<see cref="QueueEnqueueBatch"/>), once that commit succeeds; a rolled-back read is
+    /// read again, so its signals must not be recorded twice.
+    /// </summary>
+    internal void WhenDurable(Action action) => QueueEnqueueBatch.WhenDurable(queue, action);
+
+    /// <summary>
     /// Records the selection outcome once it is final: before any privacy alert enqueue, so
     /// an alert refused for capacity never hides an event that was already decided or queued.
     /// The tap sees the same outcome, after redaction only: <paramref name="subject"/> is the
@@ -65,8 +112,22 @@ public sealed class SecurityEventProcessor(
         SecurityEventEnvelope? subject = null,
         string? acceptedPayload = null)
     {
-        telemetry?.Record(result, bytesIn);
-        tap?.Publish(result, subject, acceptedPayload);
+        void RecordOutcome()
+        {
+            telemetry?.Record(result, bytesIn);
+            tap?.Publish(result, subject, acceptedPayload);
+        }
+        if (result.RedactionRetryRequired)
+        {
+            // This is an attempt-level failure, not a claim that the source record was
+            // handled. The source rolls its record back and retries, but operators still
+            // need the failure signal and redacted tap frame for each attempt.
+            RecordOutcome();
+        }
+        else
+        {
+            WhenDurable(RecordOutcome);
+        }
         return result;
     }
 
@@ -374,7 +435,7 @@ public sealed class SecurityEventProcessor(
         if (enqueue.Enqueued)
         {
             // Counted once per stored event: a duplicate or suppressed retry adds nothing.
-            telemetry?.RecordRedactions(redaction.PrivacyDetected);
+            WhenDurable(() => telemetry?.RecordRedactions(redaction.PrivacyDetected));
         }
 
         string? privacyAlertEventId = await TryEnqueuePrivacyAlertAsync(

@@ -390,6 +390,259 @@ public sealed class StoragePressureTests
     }
 
     /// <summary>
+    /// When an enqueue is actually refused, reclaim enough recent acknowledgements to
+    /// admit it, retaining the others for duplicate detection.
+    /// </summary>
+    [Fact]
+    public async Task RefusedPagePressureReclaim_AdmitsTheRefusedEventAndKeepsOtherAcknowledgements()
+    {
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        string path = Path.Combine(directory.Path, "queue.db");
+        SqliteEventStore store = new(path, MiB, clock, new StorageGuard(path, new(), new FakeDiskSpaceProbe(10 * GiB, 20 * GiB), clock));
+        await store.InitializeAsync(Cancellation);
+        string refusedId = "";
+        for (int index = 0; ; index++)
+        {
+            try
+            {
+                await store.EnqueueAsync(Event($"small-{index}", 64), Cancellation);
+            }
+            catch (QueueCapacityExceededException)
+            {
+                refusedId = $"small-{index}";
+                break;
+            }
+
+            if (index % 100 == 99)
+            {
+                IReadOnlyList<QueuedEvent> leased = await store.LeaseAsync(100, TimeSpan.FromMinutes(1), Cancellation);
+                await store.MarkDeliveredBatchAsync([.. leased.Select(item => item.EventId)], "ack",
+                    leased.ToDictionary(item => item.EventId, item => item.LeaseToken!), Cancellation);
+            }
+        }
+
+        Assert.True((await store.GetStorageSnapshotAsync(Cancellation)).PageUtilisationPercent >= DeliveryHealth.PageBackpressurePercent);
+        Assert.True(store.RefusedIntakePages > 0);
+        long retained = (await store.GetSnapshotAsync(Cancellation)).Delivered;
+        QueueStoragePressure pressure = new();
+        await new QueueRetentionJob(store, clock, Settings(), new RecordingLogger<QueueRetentionJob>(), null, pressure)
+            .RunAsync(Cancellation);
+        Assert.True(pressure.PurgedEvents > 0);
+        Assert.True((await store.GetSnapshotAsync(Cancellation)).Delivered > retained / 2);
+        Assert.True((await store.EnqueueAsync(Event(refusedId, 64), Cancellation)).Enqueued);
+    }
+
+    [Fact]
+    public async Task HealthBackpressureWithoutARefusal_KeepsThePressureRetentionFloor()
+    {
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        string path = Path.Combine(directory.Path, "queue.db");
+        SqliteEventStore store = new(path, 4 * MiB, clock,
+            new StorageGuard(path, new(), new FakeDiskSpaceProbe(10 * GiB, 20 * GiB), clock));
+        await store.InitializeAsync(Cancellation);
+        int index = 0;
+        double utilisation;
+        do
+        {
+            for (int added = 0; added < 10; added++)
+            {
+                await store.EnqueueAsync(Event($"health-threshold-{index++}", 64), Cancellation);
+            }
+            IReadOnlyList<QueuedEvent> leased = await store.LeaseAsync(10, TimeSpan.FromMinutes(1), Cancellation);
+            await store.MarkDeliveredBatchAsync([.. leased.Select(item => item.EventId)], "ack",
+                leased.ToDictionary(item => item.EventId, item => item.LeaseToken!), Cancellation);
+            utilisation = (await store.GetStorageSnapshotAsync(Cancellation)).PageUtilisationPercent;
+        }
+        while (utilisation < DeliveryHealth.PageBackpressurePercent);
+
+        Assert.True((await store.EnqueueAsync(Event("still-admitted", 64), Cancellation)).Enqueued);
+        Assert.Equal(0, store.RefusedIntakePages);
+        long retained = (await store.GetSnapshotAsync(Cancellation)).Delivered;
+        QueueStoragePressure pressure = new();
+        await new QueueRetentionJob(store, clock, Settings(), new RecordingLogger<QueueRetentionJob>(), null, pressure)
+            .RunAsync(Cancellation);
+        Assert.Equal(0, pressure.PurgedEvents);
+        Assert.Equal(retained, (await store.GetSnapshotAsync(Cancellation)).Delivered);
+        Assert.True((await store.VerifyLedgerAsync(Cancellation)).Intact);
+    }
+
+    [Fact]
+    public async Task CriticalDiskRefusal_CanReclaimRecentAcknowledgements()
+    {
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        string path = Path.Combine(directory.Path, "queue.db");
+        FakeDiskSpaceProbe probe = new(10 * GiB, 20 * GiB);
+        SqliteEventStore store = new(path, 10 * MiB, clock, new StorageGuard(path, new(), probe, clock));
+        await store.InitializeAsync(Cancellation);
+        await store.EnqueueAsync(Event("recent-ack"), Cancellation);
+        QueuedEvent leased = Assert.Single(await store.LeaseAsync(1, TimeSpan.FromMinutes(1), Cancellation));
+        await store.MarkDeliveredAsync(leased.EventId, "ack", leased.LeaseToken, Cancellation);
+        probe.FreeBytes = 100 * MiB;
+        clock.Advance(TimeSpan.FromSeconds(1));
+        await Assert.ThrowsAsync<QueueCapacityExceededException>(() => store.EnqueueAsync(Event("refused"), Cancellation));
+        QueueStoragePressure pressure = new();
+        await new QueueRetentionJob(store, clock, Settings(), new RecordingLogger<QueueRetentionJob>(), null, pressure)
+            .RunAsync(Cancellation);
+        Assert.Equal(1, pressure.PurgedEvents);
+        Assert.Equal(0, (await store.GetSnapshotAsync(Cancellation)).Delivered);
+        Assert.True((await store.VerifyLedgerAsync(Cancellation)).Intact);
+    }
+
+    [Fact]
+    public async Task PagePressureReclaim_AllowsAWriterBetweenBatchesWhileIntakeIsOpen()
+    {
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        string path = Path.Combine(directory.Path, "queue.db");
+        SqliteEventStore store = new(path, 4 * MiB, clock,
+            new StorageGuard(path, new(), new FakeDiskSpaceProbe(10 * GiB, 20 * GiB), clock));
+        await store.InitializeAsync(Cancellation);
+        int index = 0;
+        double utilisation;
+        do
+        {
+            for (int added = 0; added < 50; added++)
+            {
+                await store.EnqueueAsync(Event($"page-pressure-{index++}", 64), Cancellation);
+            }
+
+            IReadOnlyList<QueuedEvent> leased = await store.LeaseAsync(50, TimeSpan.FromMinutes(1), Cancellation);
+            await store.MarkDeliveredBatchAsync([.. leased.Select(item => item.EventId)], "ack",
+                leased.ToDictionary(item => item.EventId, item => item.LeaseToken!), Cancellation);
+            utilisation = (await store.GetStorageSnapshotAsync(Cancellation)).PageUtilisationPercent;
+        }
+        while (utilisation < 90);
+
+        Assert.InRange(utilisation, QueueStorageMonitor.PagePressurePercent, DeliveryHealth.PageBackpressurePercent - 0.001);
+        clock.Advance(TimeSpan.FromHours(2));
+        QueueStoragePressure pressure = new();
+        List<TimeSpan> pauses = [];
+        await new QueueRetentionJob(store, clock, Settings(), new RecordingLogger<QueueRetentionJob>(), null, pressure)
+        {
+            Pause = async (pause, cancellation) =>
+            {
+                pauses.Add(pause);
+                if (pauses.Count == 1)
+                {
+                    EnqueueResult written = await store.EnqueueAsync(Event("writer-during-page-pressure"), cancellation)
+                        .WaitAsync(TimeSpan.FromSeconds(3), cancellation);
+                    Assert.True(written.Enqueued);
+                }
+            }
+        }.RunAsync(Cancellation);
+
+        Assert.True(pressure.PurgedEvents >= 500);
+        Assert.NotEmpty(pauses);
+        Assert.All(pauses, pause => Assert.Equal(QueueRetentionJob.BatchPause, pause));
+        Assert.Equal(1, (await store.GetSnapshotAsync(Cancellation)).Queued);
+        Assert.True((await store.VerifyLedgerAsync(Cancellation)).Intact);
+    }
+
+    [Fact]
+    public async Task LowDiskReclaim_AllowsAWriterBetweenBatches()
+    {
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        string path = Path.Combine(directory.Path, "queue.db");
+        FakeDiskSpaceProbe probe = new(10 * GiB, 20 * GiB);
+        SqliteEventStore store = new(path, 64 * MiB, clock, new StorageGuard(path, new(), probe, clock));
+        await store.InitializeAsync(Cancellation);
+        for (int index = 0; index < 2_100; index++)
+        {
+            await store.EnqueueAsync(Event($"low-disk-{index}", 64), Cancellation);
+        }
+
+        while (await store.LeaseAsync(500, TimeSpan.FromMinutes(1), Cancellation) is { Count: > 0 } leased)
+        {
+            await store.MarkDeliveredBatchAsync([.. leased.Select(item => item.EventId)], "ack",
+                leased.ToDictionary(item => item.EventId, item => item.LeaseToken!), Cancellation);
+        }
+
+        clock.Advance(TimeSpan.FromHours(2));
+        probe.FreeBytes = 1536 * MiB; // warning, but not critical: new intake is still allowed
+        QueueStoragePressure pressure = new();
+        List<TimeSpan> pauses = [];
+        await new QueueRetentionJob(store, clock, Settings(), new RecordingLogger<QueueRetentionJob>(), null, pressure)
+        {
+            Pause = async (pause, cancellation) =>
+            {
+                pauses.Add(pause);
+                if (pauses.Count == 1)
+                {
+                    // An actual SQLite writer must complete while the purge is between
+                    // transactions; fail rather than silently wait for the busy timeout.
+                    EnqueueResult written = await store.EnqueueAsync(Event("writer-during-low-disk"), cancellation)
+                        .WaitAsync(TimeSpan.FromSeconds(3), cancellation);
+                    Assert.True(written.Enqueued);
+                }
+            }
+        }.RunAsync(Cancellation);
+
+        Assert.Equal(2_100, pressure.PurgedEvents);
+        Assert.Equal([QueueRetentionJob.BatchPause, QueueRetentionJob.BatchPause], pauses);
+        Assert.Equal(1, (await store.GetSnapshotAsync(Cancellation)).Queued);
+        Assert.True((await store.VerifyLedgerAsync(Cancellation)).Intact);
+    }
+
+    [Fact]
+    public async Task LargeEventPressureReclaim_YieldsBetweenBatches()
+    {
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        string path = Path.Combine(directory.Path, "queue.db");
+        SqliteEventStore store = new(path, 4 * MiB, clock,
+            new StorageGuard(path, new(), new FakeDiskSpaceProbe(10 * GiB, 20 * GiB), clock));
+        await store.InitializeAsync(Cancellation);
+        await store.EnqueueAsync(Event("settle-during-large-event-reclaim"), Cancellation);
+        QueuedEvent waiting = Assert.Single(await store.LeaseAsync(1, TimeSpan.FromMinutes(1), Cancellation));
+        int index = 0;
+        double utilisation;
+        do
+        {
+            for (int added = 0; added < 50; added++)
+            {
+                await store.EnqueueAsync(Event($"large-pressure-{index++}", 2_000), Cancellation);
+            }
+
+            IReadOnlyList<QueuedEvent> leased = await store.LeaseAsync(50, TimeSpan.FromMinutes(1), Cancellation);
+            await store.MarkDeliveredBatchAsync([.. leased.Select(item => item.EventId)], "ack",
+                leased.ToDictionary(item => item.EventId, item => item.LeaseToken!), Cancellation);
+            utilisation = (await store.GetStorageSnapshotAsync(Cancellation)).PageUtilisationPercent;
+        }
+        while (utilisation < 75);
+
+        Assert.True(utilisation < QueueStorageMonitor.PagePressurePercent);
+        await Assert.ThrowsAsync<QueueCapacityExceededException>(
+            () => store.EnqueueAsync(Event("large-pressure-candidate", 2_000_000), Cancellation));
+        Assert.True(store.RefusedIntakePages > 0);
+        List<TimeSpan> pauses = [];
+        bool settled = false;
+        QueueStoragePressure pressure = new();
+        await new QueueRetentionJob(store, clock, Settings(), new RecordingLogger<QueueRetentionJob>(), null, pressure)
+        {
+            Pause = async (pause, cancellation) =>
+            {
+                pauses.Add(pause);
+                if (!settled)
+                {
+                    await store.MarkDeliveredAsync(waiting.EventId, "ack", waiting.LeaseToken, cancellation)
+                        .WaitAsync(TimeSpan.FromSeconds(3), cancellation);
+                    settled = true;
+                }
+            }
+        }.RunAsync(Cancellation);
+
+        Assert.True(pressure.PurgedEvents >= 50);
+        Assert.NotEmpty(pauses);
+        Assert.All(pauses, pause => Assert.Equal(QueueRetentionJob.BatchPause, pause));
+        Assert.True(settled);
+        Assert.True((await store.VerifyLedgerAsync(Cancellation)).Intact);
+    }
+
+    /// <summary>
     /// Seen on AWS: after a backlog drained, every page held a fresh acknowledgement, so the
     /// floor kept them and intake stayed refused. Once intake is blocked the floor yields.
     /// </summary>
@@ -421,8 +674,8 @@ public sealed class StoragePressureTests
         RecordingLogger<QueueRetentionJob> logger = new();
         await new QueueRetentionJob(store, clock, Settings(), logger, null, pressure).RunAsync(Cancellation);
         Assert.True(pressure.PurgedEvents > 0);
-        Assert.Contains(logger.Messages, message => message.Contains("intake-blocked", StringComparison.Ordinal));
-        Assert.True((await store.GetStorageSnapshotAsync(Cancellation)).PageUtilisationPercent <= QueueRetentionJob.PressureTargetPercent + 5);
+        Assert.Contains(logger.Messages, message => message.Contains("large-event", StringComparison.Ordinal));
+        Assert.True((await store.GetSnapshotAsync(Cancellation)).Delivered > 0);
         Assert.True((await store.EnqueueAsync(Event("accepted-again", 2_000), Cancellation)).Enqueued);
     }
 

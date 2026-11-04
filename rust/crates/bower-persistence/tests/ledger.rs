@@ -410,3 +410,158 @@ fn truncated_database_fails_closed() {
         "{outcome:?}"
     );
 }
+
+fn segments(directory: &std::path::Path) -> Vec<(i64, i64)> {
+    let connection = raw(&queue_path(directory));
+    let mut query = connection
+        .prepare("SELECT start_sequence, end_sequence FROM queue_ledger_segments ORDER BY start_sequence")
+        .unwrap();
+    query
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+}
+
+fn ledger_rows(directory: &std::path::Path) -> i64 {
+    raw(&queue_path(directory))
+        .query_row("SELECT COUNT(*) FROM queue_ledger", [], |row| row.get(0))
+        .unwrap()
+}
+
+fn deliver(store: &SqliteEventStore, ids: &[&str]) {
+    for id in ids {
+        store
+            .mark_delivered(id, "ack", claim(store, id).as_deref())
+            .unwrap();
+    }
+}
+
+/// Port of C# `QueueRetentionBatchingTests.Purge_CompactsOnlyThroughThePurgedRows_…`:
+/// compaction scans only up to the purged rows (or the last segment, if later), so
+/// out-of-order purges leave split runs that a later purge merges; restart-safe.
+#[test]
+fn purge_compacts_only_through_purged_rows_survives_restart_and_merges_runs() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    let store = store(directory.path(), 64 * ONE_MEBIBYTE, &clock);
+    for index in 1..=9 {
+        enqueue(&store, &clock, &format!("e{index}"));
+    }
+    store.lease(9, Duration::from_secs(3600)).unwrap();
+    // The newest three are acknowledged first, so the first purge (oldest acknowledgement
+    // first) takes sequences 7-9 while 1-6 are retained ahead of them.
+    deliver(&store, &["e7", "e8", "e9"]);
+    clock.advance(Span::minutes(1));
+    deliver(&store, &["e1", "e2", "e3", "e4", "e5", "e6"]);
+    clock.advance(Span::days(8));
+    let cutoff = clock.now() - Span::days(7);
+
+    assert_eq!(store.purge_delivered(cutoff, 3).unwrap(), 3);
+    assert_eq!(segments(directory.path()), [(7, 9)]);
+    assert_eq!(ledger_rows(directory.path()), 6);
+    assert!(store.verify_ledger().unwrap().intact);
+
+    drop(store);
+    let restarted = common::store(directory.path(), 64 * ONE_MEBIBYTE, &clock);
+    assert!(restarted.verify_ledger().unwrap().intact);
+    assert_eq!(restarted.purge_delivered(cutoff, 3).unwrap(), 3);
+    // A run split at `through` (1-3), the later segment untouched.
+    assert_eq!(segments(directory.path()), [(1, 3), (7, 9)]);
+    assert_eq!(restarted.purge_delivered(cutoff, 10).unwrap(), 3);
+    // The scan reaches the last segment, so the runs merge.
+    assert_eq!(segments(directory.path()), [(1, 9)]);
+    assert_eq!(ledger_rows(directory.path()), 0);
+
+    enqueue(&restarted, &clock, "e10");
+    restarted.lease(1, Duration::from_secs(3600)).unwrap();
+    deliver(&restarted, &["e10"]);
+    clock.advance(Span::days(8));
+    assert_eq!(
+        restarted
+            .purge_delivered(clock.now() - Span::days(7), 10)
+            .unwrap(),
+        1
+    );
+    assert_eq!(segments(directory.path()), [(1, 10)]);
+    let verification = restarted.verify_ledger().unwrap();
+    assert!(verification.intact, "{:?}", verification.issues);
+    assert_eq!(restarted.ledger_head().unwrap().sequence, 10);
+}
+
+/// A corrupt entry before the purged rows is inside the bounded scan: the purge is
+/// refused and rolled back, nothing is deleted.
+#[test]
+fn corrupt_entry_before_the_purged_rows_is_refused_and_nothing_is_purged() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    let store = store(directory.path(), 64 * ONE_MEBIBYTE, &clock);
+    for index in 1..=6 {
+        enqueue(&store, &clock, &format!("e{index}"));
+    }
+    store.lease(6, Duration::from_secs(3600)).unwrap();
+    deliver(&store, &["e4", "e5", "e6"]);
+    clock.advance(Span::days(8));
+    raw(&queue_path(directory.path()))
+        .execute(
+            "UPDATE queue_ledger SET chain_hash = 'corrupt' WHERE sequence = 2",
+            [],
+        )
+        .unwrap();
+
+    assert!(
+        store
+            .purge_delivered(clock.now() - Span::days(7), 10)
+            .is_err()
+    );
+    let connection = raw(&queue_path(directory.path()));
+    let (events, purged): (i64, i64) = connection
+        .query_row(
+            "SELECT (SELECT COUNT(*) FROM queue_events_v5), (SELECT COUNT(*) FROM queue_ledger WHERE purged_at IS NOT NULL)",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!((events, purged), (6, 0));
+    assert!(segments(directory.path()).is_empty());
+}
+
+/// With nothing to purge, compaction still verifies through the last segment, so a
+/// corrupt checkpoint is refused rather than skipped.
+#[test]
+fn nothing_purged_still_verifies_through_the_last_segment() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(test_now());
+    let store = store(directory.path(), 64 * ONE_MEBIBYTE, &clock);
+    for index in 1..=3 {
+        enqueue(&store, &clock, &format!("e{index}"));
+    }
+    store.lease(3, Duration::from_secs(3600)).unwrap();
+    deliver(&store, &["e1", "e2"]);
+    clock.advance(Span::days(8));
+    assert_eq!(
+        store
+            .purge_delivered(clock.now() - Span::days(7), 10)
+            .unwrap(),
+        2
+    );
+    assert_eq!(segments(directory.path()), [(1, 2)]);
+    // Nothing eligible: an intact ledger purges 0 and stays intact.
+    assert_eq!(
+        store
+            .purge_delivered(clock.now() - Span::days(7), 10)
+            .unwrap(),
+        0
+    );
+    raw(&queue_path(directory.path()))
+        .execute(
+            "UPDATE queue_ledger_segments SET checkpoint_hash = 'corrupt'",
+            [],
+        )
+        .unwrap();
+    assert!(
+        store
+            .purge_delivered(clock.now() - Span::days(7), 10)
+            .is_err()
+    );
+}

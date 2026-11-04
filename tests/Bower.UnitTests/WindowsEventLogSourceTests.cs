@@ -38,6 +38,15 @@ public sealed class WindowsEventLogSourceTests
         Assert.Throws<WindowsEventChannelException>(() => WindowsNativeBookmark.Position(xml, "ForwardedEvents"));
 
     [Fact]
+    public void NativeBookmark_RejectsDtdAndOversizedXml()
+    {
+        const string dtd = "<!DOCTYPE BookmarkList [<!ENTITY x '1'>]><BookmarkList><Bookmark Channel='ForwardedEvents' RecordId='&x;'/></BookmarkList>";
+        string oversized = "<BookmarkList>" + new string(' ', 4097) + "</BookmarkList>";
+        Assert.Throws<System.Xml.XmlException>(() => WindowsNativeBookmark.Position(dtd, "ForwardedEvents"));
+        Assert.Throws<System.Xml.XmlException>(() => WindowsNativeBookmark.Position(oversized, "ForwardedEvents"));
+    }
+
+    [Fact]
     public void Parse_SecurityEvent_ReadsTheSystemHeaderAndNamedEventData()
     {
         WindowsEvent parsed = WindowsEventXml.Parse(WindowsEventFixtures.Read("security-4625.xml"));

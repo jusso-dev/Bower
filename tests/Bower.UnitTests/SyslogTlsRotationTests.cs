@@ -216,7 +216,10 @@ public sealed class SyslogTlsRotationTests
         pki.WriteAuthorities(ca);
         pki.WriteRevocations(Pki.RevocationList(ca, []));
         SyslogSourceTests.FakeSink sink = new();
-        SyslogSource source = await Start(pki, sink, cancellation, revocationList: true);
+        // Allow the revocation reload's 10-second wait to finish before the test's
+        // drain window expires, including when the full suite is under load.
+        SyslogSource source = await Start(pki, sink, cancellation, revocationList: true,
+            drainTimeout: TimeSpan.FromSeconds(15));
         await using Connection open = await Connection.OpenAsync(source, sender, cancellation);
         await open.SendAsync("before shutdown", cancellation);
         await sink.WaitForAsync(1, cancellation);
@@ -591,13 +594,13 @@ public sealed class SyslogTlsRotationTests
     }
 
     private static async Task<SyslogSource> Start(Pki pki, SyslogSourceTests.FakeSink sink, CancellationToken cancellation,
-        bool mutual = true, bool revocationList = false)
+        bool mutual = true, bool revocationList = false, TimeSpan? drainTimeout = null)
     {
         SyslogSource source = new(SyslogSourceConfigurationLoader.Parse(SyslogSourceTests.Config(Listener(pki, mutual, revocationList))), sink)
         {
             RetryDelay = TimeSpan.FromMilliseconds(20),
             TlsReloadInterval = TimeSpan.FromMilliseconds(10),
-            DrainTimeout = TimeSpan.FromSeconds(1)
+            DrainTimeout = drainTimeout ?? TimeSpan.FromSeconds(1)
         };
         try
         {

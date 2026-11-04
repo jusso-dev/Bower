@@ -27,7 +27,10 @@ internal enum PackRecordOutcome
 /// The collector side shared by in-process sources (syslog, Windows Event Log). A record
 /// becomes an event only through a signed pack parser (its match filter must select it),
 /// then redaction, policy and the durable queue, exactly like <c>/v1/packs/.../events</c>.
-/// <see cref="PackRecordOutcome.Queued"/> means the event is durably enqueued.
+/// <see cref="PackRecordOutcome.Queued"/> means the event is durably enqueued: at once, or,
+/// when the caller reads inside a group commit (<see cref="Bower.Persistence.QueueEnqueueBatch"/>),
+/// when that commit returns true. Until then it is not durable, and the caller must not move
+/// its cursor past it; counters and tap frames for it are recorded only after the commit.
 /// </summary>
 internal sealed class PackRecordIntake(
     PolicyBundle bundle,
@@ -79,8 +82,11 @@ internal sealed class PackRecordIntake(
             // reaches redaction, policy or the queue, and only the stable code is counted.
             ProcessingResult quarantined =
                 ProcessingResult.Failed(DecisionAction.Quarantine, exception.Code, ProcessingStage.Transform);
-            telemetry.Record(quarantined, Encoding.UTF8.GetByteCount(record));
-            tap?.Publish(quarantined);
+            processor.WhenDurable(() =>
+            {
+                telemetry.Record(quarantined, Encoding.UTF8.GetByteCount(record));
+                tap?.Publish(quarantined);
+            });
             return PackRecordOutcome.Rejected;
         }
 

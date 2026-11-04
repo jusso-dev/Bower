@@ -200,10 +200,9 @@ internal static class QueueLedger
     /// compacted segment, if later; with nothing just purged, also the last purged entry
     /// left by an interrupted or older purge), including runs behind unresolved events, and
     /// verifies the chain over that range so a corrupt ledger is never folded into a checkpoint.
-    /// Bounded by the purge, not the ledger: retention purges the oldest acknowledgements
-    /// first, so the scan from the anchor covers about one batch plus the segments and
-    /// unresolved rows before it. Entries after it are left for a later purge; a run split
-    /// there is merged when that purge scans it.
+    /// The scan includes all segments and unresolved rows before that point, so a large
+    /// unresolved prefix can make it much larger than the purge batch. Entries after it are
+    /// left for a later purge; a run split there is merged when that purge scans it.
     /// </summary>
     internal static async Task<int> CompactAsync(SqliteConnection connection, SqliteTransaction transaction, string now, long through, CancellationToken cancellationToken)
     {

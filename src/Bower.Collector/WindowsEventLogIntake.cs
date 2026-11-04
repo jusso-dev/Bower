@@ -1,3 +1,4 @@
+using Bower.Abstractions;
 using Bower.Packs;
 using Bower.Persistence;
 using Bower.Source.WindowsEventLog;
@@ -17,11 +18,28 @@ internal sealed class CollectorWindowsEventSink(PackRecordIntake intake, SqliteE
     public async ValueTask<IWindowsEventBatch> BeginBatchAsync(CancellationToken cancellationToken) =>
         queue is null ? NoBatch.Instance : new Batch(await queue.BeginEnqueueBatchAsync(cancellationToken));
 
-    private sealed class Batch(QueueEnqueueBatch batch) : IWindowsEventBatch
+    private sealed class Batch(QueueEnqueueBatch batch) : IWindowsEventAtomicBatch
     {
         public void Join() => batch.Join();
 
-        public Task CommitAsync(CancellationToken cancellationToken) => batch.CommitAsync(cancellationToken);
+        public Task<bool> CommitAsync(CancellationToken cancellationToken) => batch.CommitAsync(cancellationToken);
+
+        public bool CanAdvanceCursor(ISourceCursorStore cursors) => batch.CanAdvanceCursor(cursors);
+
+        public void BeginRecord() => batch.BeginRecord();
+
+        public void EndRecord(bool handled) => batch.EndRecord(handled);
+
+        public async Task<WindowsEventAtomicCommit> CommitWithCursorAsync(
+            ISourceCursorStore cursors, string sourceId, long expectedVersion, string value,
+            DateTimeOffset updatedAt, CancellationToken cancellationToken) =>
+            await batch.CommitWithCursorAsync(cursors, sourceId, expectedVersion, value, updatedAt, cancellationToken) switch
+            {
+                QueueBatchCursorResult.Committed => WindowsEventAtomicCommit.Committed,
+                QueueBatchCursorResult.Refused => WindowsEventAtomicCommit.Refused,
+                QueueBatchCursorResult.Conflict => WindowsEventAtomicCommit.Conflict,
+                _ => throw new InvalidOperationException("Unexpected queue batch result.")
+            };
 
         public ValueTask DisposeAsync() => batch.DisposeAsync();
     }
@@ -35,7 +53,7 @@ internal sealed class CollectorWindowsEventSink(PackRecordIntake intake, SqliteE
         {
         }
 
-        public Task CommitAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task<bool> CommitAsync(CancellationToken cancellationToken) => Task.FromResult(true);
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }

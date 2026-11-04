@@ -69,6 +69,38 @@ public sealed class QueueRetentionBatchingTests
     }
 
     [Fact]
+    public async Task CorruptEntryBeforeThePurgedRows_IsRefusedAndNothingIsPurged()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using SqliteTemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "queue.db");
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = new(path, 64 * OneMebibyte, clock);
+        await store.InitializeAsync(cancellation);
+        for (int index = 1; index <= 6; index++)
+        {
+            await Enqueue(store, clock, index, cancellation);
+        }
+
+        await Deliver(store, ["e4", "e5", "e6"], cancellation);
+        clock.Advance(TimeSpan.FromDays(8));
+        await using (SqliteConnection connection = new($"Data Source={path};Pooling=False"))
+        {
+            await connection.OpenAsync(cancellation);
+            await using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "UPDATE queue_ledger SET chain_hash = 'corrupt' WHERE sequence = 2;";
+            await command.ExecuteNonQueryAsync(cancellation);
+        }
+
+        // Sequence 2 is inside the bounded scan (before the purged 4-6): refused, rolled back.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => store.PurgeDeliveredAsync(clock.UtcNow.AddDays(-7), 10, cancellation));
+        QueueSnapshot snapshot = await store.GetSnapshotAsync(cancellation);
+        Assert.Equal((3L, 3L), (snapshot.Retrying, snapshot.Delivered));
+        Assert.Equal(0, await LedgerRows(path, purgedOnly: true));
+        Assert.Empty(await Segments(path));
+    }
+
+    [Fact]
     public async Task RetentionJob_LargePurge_NeverHoldsWritersNearTheBusyTimeout()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
@@ -115,7 +147,11 @@ public sealed class QueueRetentionBatchingTests
             PolicyDirectory = "policies",
             CollectorId = "collector-1"
         };
-        await new QueueRetentionJob(store, clock, settings, NullLogger<QueueRetentionJob>.Instance).RunAsync(cancellation);
+        List<TimeSpan> pauses = [];
+        await new QueueRetentionJob(store, clock, settings, NullLogger<QueueRetentionJob>.Instance)
+        {
+            Pause = async (pause, token) => { pauses.Add(pause); await Task.Delay(pause, token); }
+        }.RunAsync(cancellation);
         await stop.CancelAsync();
         await writer;
 
@@ -126,6 +162,8 @@ public sealed class QueueRetentionBatchingTests
         Assert.True(slowest < TimeSpan.FromMilliseconds(2_500), $"slowest write {slowest.TotalMilliseconds} ms");
         Assert.Equal(0, await LedgerRows(path, purgedOnly: true));
         Assert.True((await store.VerifyLedgerAsync(cancellation)).Intact);
+        // Routine expiry pauses after each full batch (three of 1,000, then 200).
+        Assert.Equal([QueueRetentionJob.BatchPause, QueueRetentionJob.BatchPause, QueueRetentionJob.BatchPause], pauses);
     }
 
     private static Task<EnqueueResult> Enqueue(SqliteEventStore store, FakeClock clock, int index, CancellationToken cancellation) =>

@@ -137,6 +137,16 @@ try {
         @($report.findings | Where-Object { $_.detail -match 'baseline unavailable' }).Count | Should -Be 2
     }
 
+    It 'reports an unreconciled Windows cursor as critical even without new errors' {
+        $collector = Initialize-FakeCollector
+        $collector.Shared.Body = New-Status @{ windowsEventLog = @(@{ id = 'wec'; state = 'winevt-cursor-unreconciled'; cursorConflicts = 0 }) }
+        try { $result = Invoke-Check $Shell $collector.Url }
+        finally { Stop-FakeCollector $collector }
+        $report = $result.Output | ConvertFrom-Json
+        $result.Code | Should -Be 2
+        ($report.findings | Where-Object code -eq 'windows-event-log').detail | Should -Match 'winevt-cursor-unreconciled'
+    }
+
     It 'does not forward the bearer token across redirects' {
         $collector = Initialize-FakeCollector
         $target = Initialize-FakeCollector

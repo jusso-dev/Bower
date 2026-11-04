@@ -71,6 +71,13 @@ public sealed record QueueDeliveryOptions
     /// </summary>
     public TimeSpan BusyDelay { get; init; } = TimeSpan.FromSeconds(1);
 
+    /// <summary>
+    /// How long the queue database may stay busy before log 1009 is raised from Information
+    /// to Warning: a write lock held this long (for example by an external tool with an open
+    /// transaction on the queue file) is stalling delivery, not ordinary contention.
+    /// </summary>
+    public TimeSpan BusyWarningAfter { get; init; } = TimeSpan.FromSeconds(60);
+
     /// <summary>Settlement attempts while the queue database is busy, so an acknowledged batch is not redelivered after its lease expires.</summary>
     public int SettlementAttempts { get; init; } = 5;
 
@@ -117,6 +124,9 @@ public sealed partial class QueueDeliveryWorker(
     {
         long consecutiveFailures = 0;
         long consecutiveBusy = 0;
+        long busySince = 0;
+        bool busyEscalated = false;
+        bool wasBusy = false;
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -124,6 +134,8 @@ public sealed partial class QueueDeliveryWorker(
                 int leased = await DeliverOnceAsync(stoppingToken);
                 consecutiveFailures = 0;
                 consecutiveBusy = 0;
+                busyEscalated = false;
+                wasBusy = false;
                 if (leased == 0)
                 {
                     await Task.Delay(deliveryOptions.IdleDelay, clock, stoppingToken);
@@ -139,10 +151,20 @@ public sealed partial class QueueDeliveryWorker(
                 // leased, and the next attempt follows a short back-off. Logged at most once
                 // per LoopFailureLogInterval busy attempts.
                 consecutiveBusy++;
-                if (consecutiveBusy == 1 || consecutiveBusy % LoopFailureLogInterval == 0)
+                if (!wasBusy)
                 {
-                    LogQueueBusy(logger, consecutiveBusy);
+                    busySince = clock.GetTimestamp();
                 }
+                wasBusy = true;
+
+                TimeSpan busyFor = clock.GetElapsedTime(busySince);
+                bool escalate = busyFor >= deliveryOptions.BusyWarningAfter;
+                if (consecutiveBusy == 1 || consecutiveBusy % LoopFailureLogInterval == 0 || (escalate && !busyEscalated))
+                {
+                    LogQueueBusy(logger, escalate ? LogLevel.Warning : LogLevel.Information, consecutiveBusy, (long)busyFor.TotalSeconds);
+                }
+
+                busyEscalated |= escalate;
 
                 await Task.Delay(deliveryOptions.BusyDelay, clock, stoppingToken);
             }
@@ -151,6 +173,11 @@ public sealed partial class QueueDeliveryWorker(
                 // Storage errors (for example SQLITE_BUSY or a full volume) must not stop
                 // collection. Leased events stay leased and are reclaimed when the lease
                 // expires. Bounded logging: a full disk must not also fill the journal.
+                // Retain both log counters until a successful iteration. Alternating busy
+                // and other failures must not defeat the rate limit for either log. Keep
+                // the escalation latch too: subsequent sustained busy intervals are logged
+                // as warnings at the periodic interval until the loop succeeds.
+                wasBusy = false;
                 consecutiveFailures++;
                 if (consecutiveFailures == 1 || consecutiveFailures % LoopFailureLogInterval == 0)
                 {
@@ -425,7 +452,7 @@ public sealed partial class QueueDeliveryWorker(
     [LoggerMessage(
         EventId = 1002,
         Level = LogLevel.Error,
-        Message = "Delivery loop failed with {FailureType} ({ConsecutiveFailures} consecutive); retrying after back-off.")]
+        Message = "Delivery loop failed with {FailureType} ({ConsecutiveFailures} failures since the last successful cycle); retrying after back-off.")]
     private static partial void LogLoopFailure(ILogger logger, string failureType, long consecutiveFailures);
 
     [LoggerMessage(
@@ -440,11 +467,12 @@ public sealed partial class QueueDeliveryWorker(
         Message = "Output adapter {OutputId} exhausted {Attempts} delivery attempts; event dead-lettered.")]
     private static partial void LogAttemptsExhausted(ILogger logger, string outputId, int attempts);
 
+    // Information while busy is ordinary contention; Warning once it has lasted
+    // BusyWarningAfter, so a write lock that is never released surfaces.
     [LoggerMessage(
         EventId = 1009,
-        Level = LogLevel.Information,
-        Message = "Queue database busy ({ConsecutiveAttempts} consecutive); delivery retries after a short back-off.")]
-    private static partial void LogQueueBusy(ILogger logger, long consecutiveAttempts);
+        Message = "Queue database busy ({ConsecutiveAttempts} busy attempts since the last successful cycle, {BusySeconds} s in this busy interval); delivery retries after a short back-off.")]
+    private static partial void LogQueueBusy(ILogger logger, LogLevel level, long consecutiveAttempts, long busySeconds);
 
     [LoggerMessage(
         EventId = 1005,

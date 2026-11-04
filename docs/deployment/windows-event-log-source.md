@@ -128,8 +128,12 @@ the first of repeated names wins; an event with more fields is dropped as oversi
 | `data.<Name>` | each named `EventData` value; unnamed values are `data.0`, `data.1`, ... |
 | `userData.<Name>` | each leaf value of a `UserData` element |
 
-Map `eventId` to `id` and `timeGenerated` to `timeCreated`, so an event read twice (for
-example after a crash) deduplicates in the queue. Message strings are rendered by the
+Map `eventId` to `id` and `timeGenerated` to `timeCreated`, so a queued event read twice
+(for example after a crash) deduplicates while its queue identity is retained. Suppressed
+events do not have a retained identity. The default shared SQLite queue and cursor commit
+together, so a new committed suppression cannot outlive its bookmark update. Separate
+cursor stores and suppressions committed before upgrading do not have that protection.
+The new transaction path still requires live crash and restart qualification. Message strings are rendered by the
 publisher from its metadata and can carry anything the event carries: they are only
 present when asked for, reach the envelope only through a pack mapping, and are
 redacted like any other mapped field. Extraction from `message` or `data.*` belongs in
@@ -155,8 +159,8 @@ Version 2 checkpoints store the receiving channel's native bookmark position.
 On upgrade, a recognized version 1 checkpoint triggers one replay of all retained
 events, even with `readExisting: false`. Old origin IDs are never interpreted as
 receiving positions. Existing durable event IDs suppress duplicates; keep the
-queue database during upgrade. Backpressure preserves the last handled receiving
-position, and the migrated checkpoint is saved atomically. Unknown versions and
+queue database during upgrade. The rewind baseline is saved before replay; subsequent
+handled batches advance the checkpoint with the queue transaction. Unknown versions and
 channel mismatches still fail closed. Older collector versions cannot read version
 2 checkpoints, so do not downgrade against a migrated queue database. Events
 already overwritten by Windows cannot be recovered by this migration. In the tested WEC
@@ -168,17 +172,27 @@ one host's log: for restores onto another WEC host, follow the order in
 - **Bookmark.** Each subscription's position (channel and last record id) is a row in
   the `source_cursors` table of the queue database. The bookmark moves past an event
   only once it is durably enqueued, or definitively dropped (not selected, rejected by
-  policy, malformed or oversized). It is committed after each batch, and on stop.
+  policy, malformed or oversized). In the default collector, the cursor and queue share
+  one SQLite database and the cursor advances in the same transaction as the batch.
 - **Group commit.** The events of one read are enqueued in one queue transaction and
-  become durable together when it commits; only then does the bookmark move. A failure
-  or stop before that commit rolls the whole read back and it is read again (nothing is
-  lost or duplicated). An event the queue refuses (full queue) ends the read: the events
-  before it commit, the refused one is retried. A read with no new events takes no write
-  lock. While a read commits (tens of milliseconds) other writers wait for it.
-- **Restart.** Reading resumes after the bookmark. If the collector stops between
-  enqueueing events and committing the bookmark, those events are read again; their
-  deterministic ids make the queue drop them as duplicates. A restart neither loses
-  nor duplicates events.
+  become durable together with the bookmark when it commits. A failure or cancellation
+  during handling rolls the read back and it is read again; a fully handled read commits
+  even when shutdown has been requested. Each record has a savepoint:
+  when a submission is refused, including a generated privacy alert, its changes roll
+  back, earlier handled records can commit, and the refused record is retried. If the
+  volume fills at commit, the whole read is refused (`backpressure`, `retries` + 1,
+  bookmark unchanged).
+  Durable outcome counters (`queued`, `duplicates`, …), selection metrics and tap frames
+  are recorded only after commit. Retryable redaction-failure signals, attempted
+  requests, events and bytes read, and retries count attempts, including reads that
+  roll back and are repeated. A read with no new events takes no write lock. While a
+  read commits, other writers wait for it.
+- **Restart and upgrade.** In the shared SQLite configuration, committed queue and
+  suppression changes advance with the cursor; an uncommitted read is retried.
+  Suppressions committed by an older version before its bookmark advanced cannot be
+  retroactively reconciled. Custom or separate cursor stores retain the older non-atomic
+  behavior, where replay may count a suppression again. The new path has unit tests;
+  abrupt process termination, native Windows and live re-soak validation remain open.
 - **First start.** Without a bookmark the subscription starts at the newest event in
   the channel unless `readExisting` is set.
 - **Shutdown.** The host requests cancellation and waits for subscription loops until its
@@ -207,13 +221,28 @@ one host's log: for restores onto another WEC host, follow the order in
   retries with backoff (up to a minute). A stored bookmark for another channel or an
   unknown version stops that subscription (`winevt-bookmark-invalid`) rather than being
   reinterpreted; give the subscription a new `id` to start a new bookmark.
+- **Unreconciled cursor.** `winevt-cursor-unreconciled` means a reset or gap was observed,
+  but the stored cursor changed to a different value while its baseline could not be saved.
+  The subscription stops reading and remains unhealthy; it cannot tell which generation
+  the competing cursor represents. Keep the collector running while preserving status,
+  configuration, source and destination evidence and a consistent queue backup. A qualified
+  administrator must identify competing writers and reconcile the evidence before choosing
+  a safe recovery position. Do not blindly restart or change the cursor: the latch exists only
+  in memory. Once the recovery position is established, stop and restart with the same
+  subscription only if its stored cursor is safe. Otherwise, after evaluating replay and
+  duplicate risks, an administrator may stop the collector, configure a new subscription ID
+  with `readExisting: true` and restart to replay the retained channel. That reads retained
+  records, not an arbitrary chosen position.
+  If no safe recovery can be established, treat coverage as unknown and escalate. A restart or
+  new subscription cannot recover events already overwritten or cleared. Follow
+  [the source runbook](../production-readiness/06-monitoring-and-runbooks.md).
 
 ## Monitoring
 
 `GET /v1/status` (token required) has a `windowsEventLog` array, one entry per
 subscription: `id`, `channel`, `state` (`starting`, `running`, `backpressure`,
 `stopped` or a failure code: `winevt-channel-not-found`, `winevt-access-denied`,
-`winevt-query-invalid`, `winevt-read-failed`, `winevt-bookmark-invalid`,
+`winevt-query-invalid`, `winevt-read-failed`, `winevt-bookmark-invalid`, `winevt-cursor-unreconciled`,
 `winevt-submit-failed`, `winevt-source-failed`), `bookmarkRecordId`, and counters
 since start: `eventsRead`, `bytesRead`, `queued`, `duplicates`, `suppressed`,
 `notSelected`, `rejected`, `parserErrors`, `malformed`, `oversized`, `retries`,
@@ -240,12 +269,11 @@ Measured on AWS in [wecfix](../evidence/wecfix-20261103-043750/README.md): Windo
 - **Durable intake is bound by disk flush latency, not CPU.** Every queued event must be
   durable before the bookmark passes it. Until this change each event was its own commit
   (a write-ahead-log flush and a checkpoint flush, about 22 ms on gp3), so one subscription
-  could take about **44 events a second** whatever the CPU. A burst above that became a
-  backlog in `ForwardedEvents`: at 100/s for 60 s the old reader fell 3,508 records
-  behind and took about 3 minutes to catch up; at 100/s for 17 minutes, 55,456 records.
-  The collector now commits one read (up to `batchSize`, default 256) at once
-  ([group commit](#bookmarks-restart-and-backpressure)): the same 100/s burst was read at
-  98 events a second with at most 88 records of lag.
+  could take about **44 events a second** whatever the CPU. The tested group-commit
+  build committed one read (up to `batchSize`, default 256) at once. Historical reader
+  lag is unknown: the measurement used a retained record count in place of the newest
+  record ID. Subsequent changes to record savepoints and cursor commits have not been
+  qualified in a live throughput test.
 - **Steady-state CPU.** At 10 events a second, with 15,000 to 170,000 acknowledged rows
   retained, the collector used 40-55 CPU seconds per hour with group commit and 70-104
   without (about 1.5% and 2.5% of one vCPU). Ten times the retained rows added about 10%.
@@ -260,17 +288,25 @@ Sizing a WEC that runs the collector:
 | Instance class | Not CPU-credit-limited: `m6i.large`/`m7i.large` (2 vCPU, 8 GiB) or larger on AWS; `D2s_v5` or larger on Azure; on premises, 2 dedicated cores and 8 GiB. Avoid burstable classes (`t3`, `B`-series) unless set to unlimited: a WEC that exhausts its credits runs at the baseline and every burst becomes backlog |
 | Memory | 8 GiB for a `ForwardedEvents` log of up to 4 GiB; the event log service maps the log file and the queue database shares the file cache |
 | Queue disk | SSD-backed (gp3 or premium SSD); intake throughput follows the disk's flush latency. Size per [storage pressure](../production-readiness/03-storage-pressure.md) |
-| Headroom | With group commit one subscription read a sustained 100 events a second for 10 minutes on `m6i.large`/gp3 with at most 400 records of lag, using 12.5% of one vCPU; the previous build managed about 44 a second on the same host. Keep the expected peak below what you measure on your own disk, so a burst or a destination outage drains in minutes rather than hours |
+| Headroom | Measure the current build on your own disk, including bursts, retention and outage recovery. The earlier group-commit build was exercised at 100 events a second on `m6i.large`/gp3, but its historical lag is unknown and later runtime changes are not yet live-qualified |
 | Retention | Hourly retention purges acknowledged rows in 1,000-row transactions with a 100 ms pause between them, so reading continues during a large purge (151,878 rows in about 6 minutes, reading at 10 a second throughout; the previous 5,000-row purge stalled reading for about 2 minutes) |
-| Verify | `/v1/status`: `windowsEventLog[].bookmarkRecordId` within a few hundred records of the channel's newest record; collector CPU per hour flat as `queue.delivered` grows |
+| Verify | Compare `windowsEventLog[].bookmarkRecordId` with the channel's newest receiving record ID while checking for resets and gaps; a retained record count is not the newest record ID. No lag target has been qualified for the current build. Measure lag, CPU and recovery on the intended hardware under the pilot workload. |
 
 ## Residual risks
 
 - Any program that can write to a channel can write any event ID and claim any
   provider name it registers. Prefer channels with a restricted writer (Security, or an
   application's own channel), list `providers`, and match on `provider` in the pack.
-- A log cleared and refilled past the bookmark while the collector is stopped is not
-  detected as a reset; events up to the old bookmark position are skipped.
+- A log cleared and refilled past the bookmark between polls, including while the
+  collector is stopped, is not detected as a reset; events up to the old bookmark
+  position are skipped. Detecting this needs a reliable channel-generation or
+  continuity marker and remains an open qualification item.
+- When a reset or gap is observed but storage refuses its baseline checkpoint, the
+  running source retains an in-memory latch, checks the channel range again on each retry,
+  and stops on an unreconciled competing cursor. A cursor at exactly the attempted
+  baseline and the next version can be accepted as a completed checkpoint; a changed
+  channel range is checked before reading. A process restart before the baseline is saved
+  can lose that observation; do not claim crash-safe reset recovery under a full-disk failure.
 - Events overwritten before they are read are lost (`gaps`); size the channel for the
   longest queue outage.
 - Message strings are rendered from publisher metadata on the collecting host; a

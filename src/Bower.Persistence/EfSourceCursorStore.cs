@@ -25,6 +25,8 @@ public sealed class EfSourceCursorStore : ISourceCursorStore
     private readonly string connectionString;
     private readonly string databasePath;
 
+    internal string DatabasePath => databasePath;
+
     public EfSourceCursorStore(string databasePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);

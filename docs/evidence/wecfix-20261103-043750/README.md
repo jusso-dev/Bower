@@ -2,34 +2,35 @@
 
 **Result.** Both soak defects were profiled on real Windows hosts, and the fixes were measured
 against the previous build on the same hardware, under the same load and at the same fill level.
-Delivery was exact on both collectors.
+The observed identity sets matched on both collectors, but exact delivery is
+unqualified because native source coverage was not proven.
 
 - **The suspected cause of Defect 1 is not the cause.** A poll's cost does not grow with
   `ForwardedEvents`. It was 0.8–0.95 ms from 10,000 to 1,040,000 records. The real limit is
   the per-event durable commit: about 44 events a second per subscription, set by disk flush
   latency rather than CPU. Every burst above that rate became a backlog. **Group commit** (one
-  durable commit per read) removes the limit: 100 events a second, sustained, with at most 402
-  records of lag. The old build fell 32,699 records behind under the same load.
+  durable commit per read) removes the limit: 100 events a second, sustained. Reader lag is
+  unknown for this historical run because it did not capture the newest record ID.
 - **The soak's CPU growth did not reproduce.** On `m6i.large`, the old build's CPU went from
   74–82 s/h with about 17,000 retained queue rows to 89–103 s/h with about 150,000. The soak's
   growth to 2,500 s/h on a credit-limited `t3.medium` is not explained by this run (see
   Limits).
 - **Defect 2: retention no longer stalls intake.** Purging 151,878 rows stalled the old
-  build's reading for about 2 minutes (0.6 events/s, lag 1,169). The new build kept reading
-  at 10/s with at most 84 records of lag. Neither build logged a `SqliteException` on this
+  build's reading for about 2 minutes (0.6 events/s). The new build kept reading
+  at 10/s. Historical reader lag is unknown. Neither build logged a `SqliteException` on this
   hardware.
 
 | Criterion (brief) | Old build (Wec2) | New build (Wec) |
 |---|---|---|
-| Native = accepted = Sentinel, exact | **PASS**: 293,400 = 293,400 = 293,400, 0 duplicate rows | **PASS**: 293,400 = 293,400 = 293,400, 0 duplicate rows |
+| Native = accepted = Sentinel, exact | **UNQUALIFIED**: observed exports gave 293,400 = 293,400 = 293,400, 0 duplicate rows; native coverage was not proven | **UNQUALIFIED**: same observed counts; native coverage was not proven |
 | ≥ 1,000,000 records in `ForwardedEvents` before the run | 1,040,001 (2.53 GB), growing to 1,333,401 | same channel content |
 | ≥ 2 h at 10/s with ≥ 2 retention runs of tens of thousands of rows | 07:03–09:17Z, purges 151,875 and 95,452 | 07:03–09:17Z, purges 151,878 and 95,461 |
-| p99 latency ≤ 18.16 s (07:03–09:47Z, 139,802 events) | **FAIL**: p50 / p95 / p99 51.2 / 667.4 / 728.5 s | **PASS**: 6.0 / 9.1 / 13.3 s |
-| p99 within each retention window (10 min) | FAIL: 158.0 s (08:00), 80.0 s (09:00) | PASS 16.2 s (08:00), **FAIL 35.7 s (09:00)** |
+| p99 latency ≤ 18.16 s (07:03–09:47Z, 139,802 observed events) | **UNQUALIFIED**: observed p50 / p95 / p99 51.2 / 667.4 / 728.5 s | **UNQUALIFIED**: observed p50 / p95 / p99 6.0 / 9.1 / 13.3 s |
+| p99 within each retention window (10 min) | **UNQUALIFIED**: observed p99 158.0 s (08:00), 80.0 s (09:00) | **UNQUALIFIED**: observed p99 16.2 s (08:00), 35.7 s (09:00) |
 | Collector `SqliteException` loop failures (1002) / source failures | 0 / 0 | 0 / 0 (and 0 busy back-offs, 1009) |
 | CPU at 10/s with 100,000–125,000 retained rows | 104 s/h | **42 s/h** |
 
-Source: [`live/final-reconciliation.json`](live/final-reconciliation.json). Identity digest
+Source: [`live/final-reconciliation.json`](live/final-reconciliation.json). The observed identity digest
 (SHA-256 of the sorted ids, newline-separated) is
 `ec573d33b880181cc43c21b2ee5e09c231155ce43cdab7bd4c0900b74e4606d3` for native, both
 accepted sets and both Sentinel sets.
@@ -41,7 +42,7 @@ accepted sets and both Sentinel sets.
 | AWS | Account 959038055523, ap-southeast-2. Stack `bower-wecfix-20261103-043750` from #170's `lab/aws/upgrade-recovery/lab.py` with a `wecfix` profile ([diff](operations/lab-profile-wecfix.diff)), template SHA-256 `5b05da1f…dd33b`. Private subnet 172.31.249.0/24 in the default VPC via the existing NAT. SSM only, no public addresses, IMDSv2, encrypted gp3 (60 GB). EventBridge Scheduler expiry at 2026-11-03T15:38:08Z (11 hours), which terminates all instances |
 | Hosts | `Dc`, `Wec` and `Wec2`, all **`m6i.large`** (2 vCPU, 8 GiB, no CPU credits). Windows Server 2022 `ami-086db0bc6076e24da`. `Dc` is the `bower.test` DC and the 4625 source, forwarding source-initiated to both WECs (subscription batches of 100 events, 1 s, as in the soak). Each WEC has `ForwardedEvents` at 4 GiB, so both read identical channels |
 | Old build | CI run [41411891627](https://github.com/jusso-dev/Bower/actions/runs/41411891627) on main `d7ddc55`. `bower-collector-0.1.0-dev.354-x64.msi` `1308fd53…3a1e`, `Bower.Collector.exe` `1b10e07b…c051` |
-| New build | CI run [41591542377](https://github.com/jusso-dev/Bower/actions/runs/41591542377) on `3812ba5` (this branch; later commits change docs, lab and tests only). `bower-collector-0.1.0-dev.370-x64.msi` `c5cd759e…8a72`, `Bower.Collector.exe` `42c21142…fbe7`. Installed on `Wec` at 07:02:17Z as an in-place MSI upgrade under load: exit 0, 4 s, healthy immediately, settings file unchanged ([`live/upgrade-wec.json`](live/upgrade-wec.json)) |
+| New build | CI run [41591542377](https://github.com/jusso-dev/Bower/actions/runs/41591542377) on `3812ba5`. Subsequent runtime changes in this branch have not been live-qualified by this run. `bower-collector-0.1.0-dev.370-x64.msi` `c5cd759e…8a72`, `Bower.Collector.exe` `42c21142…fbe7`. Installed on `Wec` at 07:02:17Z as an in-place MSI upgrade under load: exit 0, 4 s, healthy immediately, settings file unchanged ([`live/upgrade-wec.json`](live/upgrade-wec.json)) |
 | Packages | **Unsigned** (release signing is deferred). Pack `windows-security-logon-1.0.2`, signed with a run-generated key |
 | Collector settings | Soak `bower.env`: Sentinel through the Logs Ingestion API (certificate credential), health records every 60 s, lease 90 s, output timeout 60 s, queue cap 4 GiB, subscription `ForwardedEvents` 4625, poll 1 s, batch 256, `readExisting: false` (started after the pre-fill). Queue retention: 1 h from the start, 6 h during the row build-up (06:08–07:02Z), then 1 h again |
 | Azure | `rg-bower-wecfix-20261103-043750` (australiaeast): workspace and Sentinel, repository Bicep DCE/DCR/table, ingestion and verifier applications |
@@ -110,8 +111,8 @@ another, so the old build read at **44–45 events a second** whatever the CPU.
 
 | Load | Old build | New build (group commit) |
 |---|---|---|
-| 100/s for 60 s (07:17Z) | 44/s, lag 3,508, about 3 min to drain; p99 79.8 s | 98/s, lag ≤ 88; p99 9.1 s |
-| 100/s for 10 min (07:21–07:31Z) | 45.2/s, lag 32,699, about 17 min to drain; p99 738.2 s | 99.8/s, lag ≤ 402; p99 8.5 s; 456 s/h CPU (12.7% of a vCPU) |
+| 100/s for 60 s (07:17Z) | 44/s; p99 79.8 s | 98/s; p99 9.1 s |
+| 100/s for 10 min (07:21–07:31Z) | 45.2/s; p99 738.2 s | 99.8/s; p99 8.5 s; 456 s/h CPU (12.7% of a vCPU) |
 | 10/s, 100,000–125,000 rows | 104 s/h | 42 s/h |
 | 10/s, 39,000–46,000 rows | 86 s/h | 34 s/h |
 
@@ -125,10 +126,10 @@ to drain.
 
 ## Defect 2: retention
 
-| Purge | Old build (5,000-row transactions, full ledger compaction each) | New build (1,000-row transactions, bounded compaction, 100 ms pauses) |
+| Purge | Old build (5,000-row transactions, full ledger compaction each) | New build (1,000-row transactions, compaction through the purge boundary, 100 ms pauses) |
 |---|---|---|
-| 08:00Z, 151,875 / 151,878 rows | 2.7 min; reading stalled about 2 min (0.6–0.7 events/s), lag 1,169; p95 / p99 139.8 / 158.0 s | 5.9 min; reading 9.7–10.4/s, lag ≤ 84; p95 / p99 14.3 / 16.2 s |
-| 09:00Z, 95,452 / 95,461 rows | 1.4 min; reading 0.3/s for a minute, lag 641; p95 / p99 62.7 / 80.0 s | 3.4 min; reading 9.2–10.4/s, lag ≤ 95; p95 / p99 **21.9 / 35.7 s** |
+| 08:00Z, 151,875 / 151,878 rows | 2.7 min; reading stalled about 2 min (0.6–0.7 events/s); p95 / p99 139.8 / 158.0 s | 5.9 min; reading 9.7–10.4/s; p95 / p99 14.3 / 16.2 s |
+| 09:00Z, 95,452 / 95,461 rows | 1.4 min; reading 0.3/s for a minute; p95 / p99 62.7 / 80.0 s | 3.4 min; reading 9.2–10.4/s; p95 / p99 **21.9 / 35.7 s** |
 
 Neither build logged loop failures (1002), busy back-offs (1009) or source failures
 ([`collector-logs-Wec.json`](live/collector-logs-Wec.json), [`collector-logs-Wec2.json`](live/collector-logs-Wec2.json)). Each old 5,000-row transaction finished inside the 5 s
@@ -146,7 +147,7 @@ reproduce. The stall they caused did.
   six minutes are disturbed (they are outside every comparison window).
 - WPR capture attempt 1 failed: Windows PowerShell 5.1 turned `wpr.exe` stderr into an error.
   It now runs through `cmd /c`.
-- The first CI run of the branch (41583610926) failed. Bounded compaction no longer
+- The first CI run of the branch (41583610926) failed. The shortened compaction scan no longer
   verified the ledger when a purge removed nothing (`DurabilityAdversarialTests:151`, Rust
   `adversarial.rs:170`). It was fixed before any live use (`05ff5ae`).
 - The log-count script's first run used the wrong epoch (09:00Z, not 08:00Z) and parsed the
@@ -162,17 +163,49 @@ reproduce. The stall they caused did.
   credits (the CPU step at 15:00Z coincides with the credit balance reaching 0). This run did
   not test a `t3.medium`, so that is unproven. The sizing guidance therefore asks for
   non-burstable WEC hosts.
-- In the 09:00Z purge window the new build's p99 was 35.7 s, above 18.16 s. Reading kept up;
-  delivery waited behind the purge batches. The whole post-upgrade window passes at 13.3 s.
-  Tuning `BatchSize` or `BatchPause` against delivery is a follow-up.
+- In the 09:00Z purge window the new build's observed-sample p99 was 35.7 s, above 18.16 s.
+  The observed post-upgrade sample p99 was 13.3 s; neither figure qualifies the complete
+  workload because capture and destination completeness are unproven.
+  Tuning `BatchSize` or `BatchPause` against delivery and repeating this gate remain open.
+- Limiting the sequence scanned by compaction does not bound work by the purge batch size:
+  a large unresolved prefix is still scanned while the write transaction is held. That
+  workload has not been qualified.
+- The source and queue tests inject failures or dispose objects; they do not demonstrate an
+  abrupt process kill at the batch commit and bookmark boundary. Suppressed-event replay
+  across that boundary remains unqualified.
 - About 3.5 hours, one hardware class, one run. Not a 24-hour re-soak, so memory and handle
   trends were not re-measured.
 - Group commit holds the queue's write lock for one read (up to 256 events, tens of
   milliseconds here). Other writers wait for it.
 - The C# collector only. The Rust collector does not run the Windows source (see
   `rust/AGENTS.md` for the recorded gaps). Packages are unsigned.
-- Identity lists are not published, only counts and digests. `lab/aws/wecfix/reconcile.py`
-  recomputes them from the host exports.
+- Identity lists are not published, only counts and digests. The original reconciliation
+  excluded accepted IDs absent from both native and Sentinel sets as outside the window,
+  without establishing their generation time. The final published export reports zero such
+  excluded IDs on both hosts; narrower interim results that excluded IDs cannot prove exact
+  equality. The updated probe exports each WEC event's normalized generation time from its
+  redacted queue envelope, without its payload. The updated `lab/aws/wecfix/reconcile.py`
+  uses that time for window membership; missing or malformed generation times are
+  indeterminate and prevent an exact pass. The historical export predates this field and
+  cannot pass the updated check without recoverable generation times. Intake time alone
+  cannot prove generation-window membership.
+- Native coverage is not proven. These exports lack the time the Windows Event Log query
+  began, and `w5` was captured at 09:20:38Z even though its declared window ends at
+  09:47Z. Earlier windows also report 168 redaction-changed identities in aggregate;
+  the source export's digest covers redacted IDs while the original reconciliation compared
+  original IDs. The updated check requires capture to start after the declared window,
+  verifies counts and the redacted-ID digest, and requires IDs to be unchanged. Even a
+  complete, internally consistent export proves only the events observed in the channel:
+  channel wrap, clearing or other loss before capture must be excluded separately. The
+  current reconciler keeps `exact` false while channel continuity and complete queue-union
+  capture lack independent proof, and reports matching available observations separately.
+  It also exposes missing/invalid sample and union artifacts and observed union failures.
+- Historical reader lag is unknown. The original calculations subtracted the bookmark's
+  record ID from the channel's `RecordCount`, which is a count and can diverge from record
+  IDs after wrap. Ignore `readerLagRecords` in the archived reconciliation JSON; it retains
+  the original, invalid calculations. New samples include the newest record ID; its distance from the bookmark
+  is an ID distance, not necessarily the number of unread events, and a missing or reset
+  ID is reported as unknown.
 
 ## Cleanup
 

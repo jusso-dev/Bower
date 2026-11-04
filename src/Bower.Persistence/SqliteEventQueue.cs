@@ -44,6 +44,10 @@ public sealed partial class SqliteEventStore : IDurableEventStore
     private readonly TimeProvider clock;
     private readonly StorageGuard? storage;
 
+    internal bool SharesDatabase(EfSourceCursorStore cursors) => string.Equals(
+        databasePath, cursors.DatabasePath,
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
     public SqliteEventStore(string databasePath, long maximumBytes, TimeProvider? clock = null)
         : this(databasePath, maximumBytes, clock, null)
     {
@@ -295,6 +299,9 @@ public sealed partial class SqliteEventStore : IDurableEventStore
 
         return result;
     }
+
+    /// <summary>Test seam: an exception to raise in place of the next batch commit (for example SQLITE_FULL).</summary>
+    internal Func<Exception?>? BatchCommitFaultForTesting { get; set; }
 
     /// <summary>
     /// Opens a group commit for one source read: every <see cref="EnqueueAsync"/> from the
