@@ -24,6 +24,22 @@ public sealed class CollectorHealthRecordTests
         Path.Combine(AppContext.BaseDirectory, "examples", "policies", "collector-health", "collector-health.yaml");
 
     [Fact]
+    public void UnreconciledCursorRemainsUnhealthyWithoutNewCounterDeltas()
+    {
+        CollectorHealthSample previous = Sample(TestEvents.Now, sequence: 1) with
+        {
+            WindowsEventLog = [Subscription(WindowsEventChannelFailures.CursorUnreconciled)]
+        };
+        CollectorHealthSample current = previous with { At = previous.At.AddMinutes(5), Sequence = 2 };
+
+        Assert.Contains(CollectorHealthRecord.WindowsEventLogErrors, CollectorHealthRecord.Problems(current, previous));
+        SecurityEventEnvelope record = CollectorHealthRecord.Create(current, Identity.Id, "production", previous);
+        Assert.Equal(EventResult.Failure, record.EventResult);
+        Assert.Equal(WindowsEventChannelFailures.CursorUnreconciled,
+            record.Attributes!["windowsEventLog"][0].GetProperty("state").GetString());
+    }
+
+    [Fact]
     public void Create_ReportsQueueDeliverySourcesAndTransportAsMetadataOnly()
     {
         CollectorHealthSample sample = Sample(TestEvents.Now, sequence: 3) with

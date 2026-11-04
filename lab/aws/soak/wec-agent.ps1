@@ -16,6 +16,33 @@ function Put($name) {
     & $aws s3 cp "$dir\$name" "s3://$bucket/results/soak/$run/wec/$name" --region $region --sse AES256 --only-show-errors
     if ($LASTEXITCODE -ne 0) { throw "upload failed: $name" }
 }
+function Get-ReceivingBookmarkRecordId([string]$ProbePath, [string]$Channel) {
+    try {
+        if ($Channel -cnotin @('ForwardedEvents', 'Application', 'System')) { return $null }
+        $output = @(& $ProbePath 'receiving-position' $Channel 2>$null)
+        if ($LASTEXITCODE -ne 0 -or $output.Count -ne 1) { return $null }
+        $json = [string]$output[0]
+        if ($json.Length -gt 512) { return $null }
+        # The verified probe emits exactly these three fields in this order. Anchoring
+        # the whole ASCII grammar rejects duplicate, escaped and unexpected properties.
+        $pattern = '\A\{"kind":"receiving-position","channel":"' + [regex]::Escape($Channel) + '","newestRecordId":([1-9][0-9]{0,18})\}\z'
+        $match = [regex]::Match($json, $pattern, [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)
+        $position = 0L
+        if (-not $match.Success -or -not [long]::TryParse($match.Groups[1].Value,
+                [System.Globalization.NumberStyles]::None, [System.Globalization.CultureInfo]::InvariantCulture,
+                [ref]$position)) { return $null }
+        return $position
+    } catch { return $null }
+}
+
+function Get-ReceivingPositionState($RecordCount, $Position) {
+    if (($Position -is [int32] -or $Position -is [int64]) -and [long]$Position -gt 0) { return 'observed' }
+    if (($RecordCount -is [int32] -or $RecordCount -is [int64]) -and [long]$RecordCount -gt 0) {
+        return 'missing-bookmark-with-records'
+    }
+    return 'unknown'
+}
+
 function Sample {
     $at = [DateTimeOffset]::UtcNow
     $row = [ordered]@{ at = $at.ToString('o'); offsetSeconds = [Math]::Round($at.ToUnixTimeMilliseconds() / 1000 - $start, 1); error = $null }
@@ -44,7 +71,9 @@ function Sample {
         $row.delivery = $s.deliveryActivity
         $row.windowsEventLog = $s.windowsEventLog
         $fwd = Get-WinEvent -ListLog ForwardedEvents
-        $row.forwardedEvents = [ordered]@{ records = $fwd.RecordCount; fileBytes = $fwd.FileSize; maxBytes = $fwd.MaximumSizeInBytes }
+        $newestRecordId = Get-ReceivingBookmarkRecordId "$dir\probe.exe" 'ForwardedEvents'
+        $positionState = Get-ReceivingPositionState $fwd.RecordCount $newestRecordId
+        $row.forwardedEvents = [ordered]@{ records = $fwd.RecordCount; newestRecordId = $newestRecordId; newestRecordIdState = $positionState; newestRecordIdBasis = 'native-receiving-bookmark-v1'; fileBytes = $fwd.FileSize; maxBytes = $fwd.MaximumSizeInBytes }
     } catch { $row.error = $_.Exception.GetType().Name }
     Add-Content "$dir\samples.jsonl" ($row | ConvertTo-Json -Compress -Depth 6)
 }

@@ -506,8 +506,8 @@ LIMIT ?3;",
             }
             // Record the purge in the ledger in the same transaction so
             // verification can tell retention from tampering.
-            ledger::mark_purged(&transaction, &event_ids, &self.now_text())?;
-            ledger::compact(&transaction, &self.now_text())?;
+            let through = ledger::mark_purged(&transaction, &event_ids, &self.now_text())?;
+            ledger::compact(&transaction, &self.now_text(), through)?;
             transaction.commit().map_err(storage)?;
             Ok(event_ids.len())
         })

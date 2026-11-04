@@ -1,3 +1,4 @@
+using Bower.Abstractions;
 using Bower.Packs;
 using Bower.Persistence;
 using Bower.Source.WindowsEventLog;
@@ -7,10 +8,56 @@ namespace Bower.Collector;
 /// <summary>
 /// Collector side of the Windows Event Log source (see <see cref="PackRecordIntake"/>).
 /// <see cref="WindowsEventSubmitOutcome.Queued"/> means durably enqueued; only then can the
-/// bookmark move past the event.
+/// bookmark move past the event. With the SQLite queue, one read's events share one durable
+/// commit (<see cref="QueueEnqueueBatch"/>); <c>Queued</c> then means durable once the
+/// batch commits, and the source moves the bookmark only after that.
 /// </summary>
-internal sealed class CollectorWindowsEventSink(PackRecordIntake intake) : IWindowsEventSink
+internal sealed class CollectorWindowsEventSink(PackRecordIntake intake, SqliteEventStore? queue = null)
+    : IWindowsEventSink, IWindowsEventBatchSink
 {
+    public async ValueTask<IWindowsEventBatch> BeginBatchAsync(CancellationToken cancellationToken) =>
+        queue is null ? NoBatch.Instance : new Batch(await queue.BeginEnqueueBatchAsync(cancellationToken));
+
+    private sealed class Batch(QueueEnqueueBatch batch) : IWindowsEventAtomicBatch
+    {
+        public void Join() => batch.Join();
+
+        public Task<bool> CommitAsync(CancellationToken cancellationToken) => batch.CommitAsync(cancellationToken);
+
+        public bool CanAdvanceCursor(ISourceCursorStore cursors) => batch.CanAdvanceCursor(cursors);
+
+        public void BeginRecord() => batch.BeginRecord();
+
+        public void EndRecord(bool handled) => batch.EndRecord(handled);
+
+        public async Task<WindowsEventAtomicCommit> CommitWithCursorAsync(
+            ISourceCursorStore cursors, string sourceId, long expectedVersion, string value,
+            DateTimeOffset updatedAt, CancellationToken cancellationToken) =>
+            await batch.CommitWithCursorAsync(cursors, sourceId, expectedVersion, value, updatedAt, cancellationToken) switch
+            {
+                QueueBatchCursorResult.Committed => WindowsEventAtomicCommit.Committed,
+                QueueBatchCursorResult.Refused => WindowsEventAtomicCommit.Refused,
+                QueueBatchCursorResult.Conflict => WindowsEventAtomicCommit.Conflict,
+                _ => throw new InvalidOperationException("Unexpected queue batch result.")
+            };
+
+        public ValueTask DisposeAsync() => batch.DisposeAsync();
+    }
+
+    /// <summary>Another queue implementation: each event commits on its own.</summary>
+    private sealed class NoBatch : IWindowsEventBatch
+    {
+        public static readonly NoBatch Instance = new();
+
+        public void Join()
+        {
+        }
+
+        public Task<bool> CommitAsync(CancellationToken cancellationToken) => Task.FromResult(true);
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
     public async ValueTask<WindowsEventSubmitOutcome> SubmitAsync(
         WindowsEventSubscriptionOptions subscription,
         string record,

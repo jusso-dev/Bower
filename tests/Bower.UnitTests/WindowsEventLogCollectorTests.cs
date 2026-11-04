@@ -11,6 +11,7 @@ using Bower.Integrity;
 using Bower.Packs;
 using Bower.Persistence;
 using Bower.PolicyEngine;
+using Bower.Redaction;
 using Bower.Source.WindowsEventLog;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -219,6 +220,181 @@ public sealed class WindowsEventLogCollectorTests
     }
 
     [Fact]
+    public async Task RefusedGroupCommit_IsBackpressure_AndEachEventIsCountedOnceAfterItsCommit()
+    {
+        // Through the real pack intake, processor and batching sink: the volume fills at the
+        // batch commit (SQLITE_FULL), twice. Nothing is durable, so the bookmark stays, the
+        // subscription reports backpressure (not winevt-source-failed), and no durable outcome
+        // counter or tap frame claims the events until the read that commits them. Attempts
+        // count every read, including the failed commits.
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using SqliteTemporaryDirectory directory = new();
+        FakeWindowsEventChannelFactory channels = new();
+        FakeWindowsEventChannel security = channels["Security"];
+        string selected = WindowsEventFixtures.Read("security-4625.xml");
+        security.Add(selected);
+        security.Add(selected.Replace("184467", "184468", StringComparison.Ordinal)
+            .Replace("10:00:00.1234567Z", "10:01:00.0000000Z", StringComparison.Ordinal));
+        int commits = 0;
+        List<(long Queued, long Attempts, int Frames, long SourceQueued, long? Bookmark)> atRefusal = [];
+        EventTapSession? tap = null;
+        WindowsEventLogSource? source = null;
+        PipelineTelemetry? telemetry = null;
+
+        await using WebApplication app = await Start(directory, channels, cancellation, beforeStart: started =>
+        {
+            telemetry = started.Services.GetRequiredService<PipelineTelemetry>();
+            source = started.Services.GetRequiredService<WindowsEventLogSource>();
+            tap = started.Services.GetRequiredService<EventTap>().TryOpen(
+                new EventTapRequest("test", TapPoint.Queued, null, null, 10, TimeSpan.FromSeconds(60), 1))!;
+            ((SqliteEventStore)started.Services.GetRequiredService<IDurableEventStore>()).BatchCommitFaultForTesting = () =>
+            {
+                if (++commits > 2)
+                {
+                    return null;
+                }
+
+                WindowsEventSubscriptionStatus now = source!.Snapshot()[0];
+                atRefusal.Add((telemetry!.Snapshot().EventsQueued, telemetry.IntakeSnapshot().AttemptedRequests,
+                    tap!.Reader.Count, now.Queued, now.BookmarkRecordId));
+                return new SqliteException("database or disk is full", 13);
+            };
+        });
+        using EventTapSession session = tap!;
+
+        WindowsEventSubscriptionStatus done = await WindowsEventLogSourceTests.WaitFor(
+            source!, status => status.Queued == 2 && status.State == "running", cancellation);
+        Assert.Equal(3, commits);
+        // Outcomes are deferred; attempts count both failed reads.
+        Assert.Equal([2L, 4L], atRefusal.Select(seen => seen.Attempts));
+        Assert.All(atRefusal, seen => Assert.Equal((0L, 0, 0L), (seen.Queued, seen.Frames, seen.SourceQueued)));
+        Assert.All(atRefusal, seen => Assert.True(seen.Bookmark is null or < 184467));
+        Assert.Equal((2L, 0L, 0L), (done.Retries, done.ReadErrors, done.SubmitFailures));
+        Assert.Equal(184468, done.BookmarkRecordId);
+        Assert.Equal(6, done.EventsRead); // three reads of two events
+        Assert.Equal(2, telemetry!.Snapshot().EventsQueued);
+        Assert.Equal(6, telemetry.IntakeSnapshot().AttemptedRequests);
+        Assert.Equal(4, telemetry.IntakeSnapshot().CapacityRefusals);
+        Assert.Equal(4, telemetry.IntakeSnapshot().SourceRecordsRolledBack);
+        Assert.Equal(PipelineTelemetry.QueueCapacityReason, telemetry.IntakeSnapshot().LastRefusalReason);
+        Assert.NotNull(telemetry.IntakeSnapshot().LastRefusalAt);
+        Assert.Equal(2, session.Reader.Count);
+        QueueSnapshot queue = await app.Services.GetRequiredService<IDurableEventStore>().GetSnapshotAsync(cancellation);
+        Assert.Equal(2, queue.Queued + queue.Uploading + queue.Delivered);
+        Assert.True((await app.Services.GetRequiredService<IDurableEventStore>().VerifyLedgerAsync(cancellation)).Intact);
+    }
+
+    [Fact]
+    public async Task SuppressedWecEvent_WhenPrivacyAlertIsRefused_RetriesAfterRestartOnlyOnce()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using SqliteTemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "queue.db");
+        FakeClock clock = new(TestEvents.Now);
+        FakeDiskSpaceProbe disk = new(10L * 1024 * 1_048_576, 20L * 1024 * 1_048_576);
+        FakeWindowsEventChannelFactory channels = new();
+        string fixture = WindowsEventFixtures.Read("security-4625.xml");
+        channels["Security"].Add(fixture);
+        SuppressionTestPolicy policy = new();
+        SqliteEventStore CreateStore() => new(path, 64 * 1_048_576, clock,
+            new StorageGuard(path, new(), disk, clock) { SampleInterval = TimeSpan.Zero });
+
+        await using (WebApplication app = await Start(directory, channels, cancellation,
+            redactor: new JsonEventRedactor(), policy: policy, queue: CreateStore(), startHosted: false))
+        {
+            WindowsEventLogSource source = app.Services.GetRequiredService<WindowsEventLogSource>();
+            Assert.False((await source.PollOnceAsync("security-logon", cancellation)).Backpressure);
+            channels["Security"].Add(fixture.Replace("184467", "184468", StringComparison.Ordinal)
+                .Replace("10:00:00.1234567Z", "10:01:00.0000000Z", StringComparison.Ordinal)
+                .Replace("deploy-admin", "TFN 100000001", StringComparison.Ordinal));
+            // The suppression storage check sees space; the following generated alert sees
+            // the critical watermark and is refused. No background host is running.
+            disk.AfterMeasure = _ => disk.FreeBytes = 1_048_576;
+            Assert.True((await source.PollOnceAsync("security-logon", cancellation)).Backpressure);
+            IntakeMetricsSnapshot intake = app.Services.GetRequiredService<PipelineTelemetry>().IntakeSnapshot();
+            Assert.Equal(1, intake.PrivacyAlertRefusals);
+            Assert.Equal(0, intake.CapacityRefusals);
+            Assert.Equal(1, intake.SourceRecordsRolledBack);
+            Assert.True(intake.SourceRecordRolledBackBytes > 0);
+            Assert.Equal(0, await CountSuppressed(path, cancellation));
+            Assert.Equal(184467, source.Snapshot()[0].BookmarkRecordId);
+        }
+
+        disk.AfterMeasure = null;
+        disk.FreeBytes = 10L * 1024 * 1_048_576;
+        SqliteConnection.ClearAllPools();
+        await using (WebApplication app = await Start(directory, channels, cancellation,
+            redactor: new JsonEventRedactor(), policy: policy, queue: CreateStore(), startHosted: false))
+        {
+            WindowsEventLogSource source = app.Services.GetRequiredService<WindowsEventLogSource>();
+            Assert.False((await source.PollOnceAsync("security-logon", cancellation)).Backpressure);
+            Assert.Equal(184468, source.Snapshot()[0].BookmarkRecordId);
+            Assert.Equal(1, await CountSuppressed(path, cancellation));
+            Assert.Equal(2, (await app.Services.GetRequiredService<IDurableEventStore>().GetSnapshotAsync(cancellation)).Queued);
+        }
+        await using (WebApplication app = await Start(directory, channels, cancellation,
+            redactor: new JsonEventRedactor(), policy: policy, queue: CreateStore(), startHosted: false))
+        {
+            await app.Services.GetRequiredService<WindowsEventLogSource>().PollOnceAsync("security-logon", cancellation);
+            Assert.Equal(1, await CountSuppressed(path, cancellation));
+        }
+    }
+
+    [Fact]
+    public async Task AlertOnlyBatchRefusal_IsReportedAsPrivacyAlertAndSourceRollback()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using SqliteTemporaryDirectory directory = new();
+        FakeWindowsEventChannelFactory channels = new();
+        channels["Security"].Add(WindowsEventFixtures.Read("security-4625.xml")
+            .Replace("deploy-admin", "TFN 100000001", StringComparison.Ordinal));
+        await using WebApplication app = await Start(directory, channels, cancellation,
+            redactor: new JsonEventRedactor(), policy: new AlertOnlyTestPolicy(), startHosted: false);
+        SqliteEventStore store = (SqliteEventStore)app.Services.GetRequiredService<IDurableEventStore>();
+        store.BatchCommitFaultForTesting = () => new SqliteException("database full", 13);
+        WindowsEventLogSource source = app.Services.GetRequiredService<WindowsEventLogSource>();
+
+        Assert.True((await source.PollOnceAsync("security-logon", cancellation)).Backpressure);
+        IntakeMetricsSnapshot intake = app.Services.GetRequiredService<PipelineTelemetry>().IntakeSnapshot();
+        Assert.Equal(1, intake.AttemptedRequests);
+        Assert.Equal(0, intake.CapacityRefusals);
+        Assert.Equal(1, intake.PrivacyAlertRefusals);
+        Assert.Equal(1, intake.SourceRecordsRolledBack);
+        Assert.Equal(PipelineTelemetry.PrivacyAlertCapacityReason, intake.LastRefusalReason);
+        Assert.Equal(0, (await store.GetSnapshotAsync(cancellation)).Queued);
+        Assert.True(source.Snapshot()[0].BookmarkRecordId is null or < 184467);
+
+        store.BatchCommitFaultForTesting = null;
+        Assert.False((await source.PollOnceAsync("security-logon", cancellation)).Backpressure);
+        Assert.Equal(184467, source.Snapshot()[0].BookmarkRecordId);
+        Assert.Equal(1, (await store.GetSnapshotAsync(cancellation)).Queued);
+    }
+
+    private static async Task<long> CountSuppressed(string path, CancellationToken cancellation)
+    {
+        await using SqliteConnection connection = new($"Data Source={path};Pooling=False");
+        await connection.OpenAsync(cancellation);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT COALESCE(SUM(suppressed), 0) FROM suppression_windows;";
+        return (long)(await command.ExecuteScalarAsync(cancellation))!;
+    }
+
+    private sealed class SuppressionTestPolicy : ITelemetryPolicyEvaluator
+    {
+        public PolicyDecision Evaluate(SecurityEventEnvelope candidate) => new(
+            DecisionAction.Accept, "test-suppression", "1", "sha256:test", 100, [], [],
+            candidate.EventCategory == SecurityEventCategories.PrivacyControl
+                ? null : new SuppressionDirective([], [], 3600, 1));
+    }
+
+    private sealed class AlertOnlyTestPolicy : ITelemetryPolicyEvaluator
+    {
+        public PolicyDecision Evaluate(SecurityEventEnvelope candidate) => new(
+            candidate.EventCategory == SecurityEventCategories.PrivacyControl ? DecisionAction.Accept : DecisionAction.Reject,
+            "test-alert-only", "1", "sha256:test", 100, [], []);
+    }
+
+    [Fact]
     public async Task HostileEventData_NeverReachesTheQueueRaw()
     {
         // An attacker controls the account, workstation, process and status text of a failed
@@ -386,7 +562,11 @@ public sealed class WindowsEventLogCollectorTests
         string? identityAction = null,
         IEventRedactor? redactor = null,
         bool crlf = false,
-        Bower.Persistence.IDiskSpaceProbe? disk = null)
+        Bower.Persistence.IDiskSpaceProbe? disk = null,
+        Action<WebApplication>? beforeStart = null,
+        ITelemetryPolicyEvaluator? policy = null,
+        IDurableEventStore? queue = null,
+        bool startHosted = true)
     {
         string archive = Path.Combine(directory.Path, "pack");
         string trust = Path.Combine(directory.Path, "trusted.pem");
@@ -466,11 +646,21 @@ public sealed class WindowsEventLogCollectorTests
             {
                 builder.Services.AddSingleton(disk);
             }
+            if (policy is not null) builder.Services.AddSingleton(policy);
+            if (queue is not null) builder.Services.AddSingleton(queue);
         });
         try
         {
             await CollectorApplication.InitializeAsync(app, cancellation);
-            await app.StartAsync(cancellation);
+            beforeStart?.Invoke(app);
+            if (startHosted)
+            {
+                await app.StartAsync(cancellation);
+            }
+            else
+            {
+                await app.Services.GetRequiredService<WindowsEventLogBookmarks>().Store.InitializeAsync(cancellation);
+            }
         }
         catch
         {

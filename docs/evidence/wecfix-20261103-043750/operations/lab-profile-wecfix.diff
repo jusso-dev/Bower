@@ -1,0 +1,52 @@
+--- a/lab/aws/upgrade-recovery/lab.py
++++ b/lab/aws/upgrade-recovery/lab.py
+@@ -23,13 +23,13 @@
+ # ws4 (default): upgrade/recovery. soak: the 24-hour soak (gap 7): Dc, Wec, the RPM collector
+ # Linux and the rsyslog/RELP Sender, which gets its own role limited to its artifact prefix.
+ PROFILE = os.environ.get('BOWER_LAB_PROFILE', 'ws4')
+-if PROFILE not in ('ws4', 'soak') or not __import__('re').fullmatch(r'bower-' + PROFILE + r'-\d{8}-\d{6}', RUN):
++if PROFILE not in ('ws4', 'soak', 'wecfix') or not __import__('re').fullmatch(r'bower-' + PROFILE + r'-\d{8}-\d{6}', RUN):
+     raise SystemExit('BOWER_LAB_RUN_ID does not match BOWER_LAB_PROFILE')
+ CIDR = os.environ.get('BOWER_LAB_CIDR', '172.31.244.0/24')
+-WINDOWS = ['Dc', 'Wec', 'Wec2'] if PROFILE == 'ws4' else ['Dc', 'Wec']
+-LINUX = ['Linux', 'Linux2'] if PROFILE == 'ws4' else ['Linux', 'Sender']
++WINDOWS = ['Dc', 'Wec', 'Wec2'] if PROFILE in ('ws4', 'wecfix') else ['Dc', 'Wec']
++LINUX = ['Linux', 'Linux2'] if PROFILE == 'ws4' else [] if PROFILE == 'wecfix' else ['Linux', 'Sender']
+ HOSTS = WINDOWS + LINUX
+-EXPIRY_HOURS = 10 if PROFILE == 'ws4' else 30
++EXPIRY_HOURS = {'ws4': 10, 'soak': 30, 'wecfix': 11}[PROFILE]
+ 
+ 
+ def aws(*args, raw=False):
+@@ -103,15 +103,18 @@
+              'Sender': 't3.small'}
+     if PROFILE == 'soak':
+         sizes['Linux'] = 't3.small'
++    if PROFILE == 'wecfix':
++        # Not CPU-credit-limited: the soak's t3 WEC ran out of credits.
++        sizes.update(Dc='m6i.large', Wec='m6i.large', Wec2='m6i.large')
+     for name in HOSTS:
+         win = name in WINDOWS
+         r[name] = res('AWS::EC2::Instance', ImageId=win_ami if win else lin_ami, InstanceType=sizes[name],
+                       IamInstanceProfile=ref('SenderProfile' if name == 'Sender' else 'HostProfile'),
+                       MetadataOptions={'HttpTokens': 'required', 'HttpPutResponseHopLimit': 1},
+-                      CreditSpecification={'CPUCredits': 'standard'},
++                      **({'CreditSpecification': {'CPUCredits': 'standard'}} if sizes[name].startswith('t') else {}),
+                       InstanceInitiatedShutdownBehavior='stop',
+                       BlockDeviceMappings=[{'DeviceName': '/dev/sda1' if win else '/dev/xvda', 'Ebs': {
+-                          'VolumeType': 'gp3', 'VolumeSize': 40 if win else 30, 'Encrypted': True, 'DeleteOnTermination': True}}],
++                          'VolumeType': 'gp3', 'VolumeSize': (60 if PROFILE == 'wecfix' else 40) if win else 30, 'Encrypted': True, 'DeleteOnTermination': True}}],
+                       PropagateTagsToVolumeOnCreation=True,
+                       NetworkInterfaces=[{'DeviceIndex': '0', 'SubnetId': ref('Subnet'), 'GroupSet': [ref('Group')],
+                                           'AssociatePublicIpAddress': False, 'DeleteOnTermination': True}],
+--- a/lab/aws/monitoring/azure-environment.py
++++ b/lab/aws/monitoring/azure-environment.py
+@@ -26,7 +26,7 @@
+ ROLES = ('ingest', 'verifier')
+ GRAPH_DELETED = 'https://graph.microsoft.com/v1.0/directory/deletedItems/'
+ # A generated name, or the owning AWS run's id so Azure resources share its RunId.
+-RUN_PATTERN = r'bower-val-\d{12}-[0-9a-f]{8}|bower-(?:ws6|fw|soak)-\d{8}-\d{6}'
++RUN_PATTERN = r'bower-val-\d{12}-[0-9a-f]{8}|bower-(?:ws6|fw|soak|wecfix)-\d{8}-\d{6}'
+ 
+ 
+ class NotFoundError(RuntimeError):

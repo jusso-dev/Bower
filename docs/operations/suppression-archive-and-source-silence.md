@@ -145,7 +145,7 @@ match these rows. See [tap and top](tap-and-top.md).
 ## Intake metrics
 
 `GET /v1/status` also includes `intake`, so a full queue is distinguishable from an
-idle collector. Same shape in the C# and Rust collectors:
+idle collector. The base fields are shared by the C# and Rust collectors:
 
 ```json
 "intake": {"observedSince": "2026-10-26T01:00:00+00:00",
@@ -160,7 +160,7 @@ idle collector. Same shape in the C# and Rust collectors:
   packs) parsing. Rate-limited, unauthorised, oversized or unparseable requests are not
   attempts. Bytes are the UTF-8 candidate JSON, as for `pipeline.bytesIn`.
 - Both refusal kinds return HTTP 503 (`Collector queue is at capacity; retry later.`).
-  They differ in what was committed:
+  For direct HTTP intake they differ in what was committed:
   - `capacityRefusals` (reason `queue-capacity`): the queue refused the event itself,
     whichever admission branch refused it. Nothing was committed for the attempt: no
     queue row, no `pipeline` count, no source activity, no evidence.
@@ -172,6 +172,13 @@ idle collector. Same shape in the C# and Rust collectors:
   once admitted. After a `privacy-alert-capacity` refusal of an accepted event, the
   retry is reported as a duplicate (HTTP 200) and emits the alert; alert ids are stable,
   so retries never create a second alert.
+- For a WEC source using the C# collector's shared SQLite queue and cursor, the entire
+  refused record is rolled back, including a main event whose generated privacy alert
+  could not be queued. The additional `sourceRecordsRolledBack` and
+  `sourceRecordRolledBackBytes` fields count affected source records and their candidate
+  bytes for capacity refusals; they are a subset of the primary refusal counts, not
+  additional attempts. They are not currently present in the Rust collector's status.
+  Source retries are not HTTP responses.
 - `lastRefusalReason` is one of the two bounded codes above, matching `lastRefusalAt`
   (the latest refusal); both are `null` before any refusal.
 - Counters are process lifetime: they start at zero at `observedSince` (collector start)

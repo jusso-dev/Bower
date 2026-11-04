@@ -8,7 +8,7 @@ main `1a4c4c2`. This file was corrected after review on 2026-11-03 (see
 
 | # | Criterion | Firewall (RPM, RELP) | WEC (MSI) |
 |---|---|---|---|
-| 1 | Native = accepted = distinct Sentinel, exactly | **PASS**: 896,400 = 896,400 = 896,400; 54 duplicate rows | **PASS for delivery; accepted extras not verified**: 896,400 native records, 0 missing at the queue, 0 missing and 0 extra at Sentinel; 101 duplicate rows |
+| 1 | Native = accepted = distinct Sentinel, exactly | **PASS**: 896,400 = 896,400 = 896,400; 54 duplicate rows | **UNQUALIFIED: observed delivery; accepted extras and source coverage not verified**: 896,400 native records, 0 missing at the queue, 0 missing and 0 extra at Sentinel; 101 duplicate rows |
 | 2 | No process restarts | **PASS**: one PID for the whole soak, `NRestarts` 0, one boot | **PASS**: one PID, one boot. The source restarted in-process twice (below) |
 | 3 | No unbounded growth (30-day projection of the hours 3–24 slope under 10% of the mean) | **FAIL**: RSS +75 KB/h (61%), FDs +0.055/h (166%), queue +106 KB/h (36%); threads falling | **FAIL**: private bytes +461 KB/h (735%), handles +0.54/h (93%), threads +0.12/h (527%), queue +73 KB/h (17%) |
 | 4 | p99 latency ≤ 2× the pilot's connected p99 | **PASS**: 8.68 s ≤ 13.3 s. Three hours were above the limit (10:33, 00:33, 02:33) | **FAIL**: 881.8 s against 18.16 s; 23 of 25 hours were above the limit |
@@ -37,7 +37,7 @@ Source: [`final/final-reconciliation.json`](final/final-reconciliation.json).
 
 ## Results in detail
 
-### 1. Exact delivery (firewall PASS; WEC PASS for delivery, accepted extras not verified)
+### 1. Exact delivery (firewall PASS; WEC UNQUALIFIED)
 
 - **Firewall.** 18 generator segments sent 896,400. The nftables counter delta was 896,400,
   every segment exact ([`generators/sender/segments.jsonl`](generators/sender/segments.jsonl)).
@@ -70,7 +70,9 @@ The WEC's Windows Event Log **source** failed and recovered twice inside the pro
 records show `winevt-source-failed` at 12:00:46Z and 17:00:28Z. In both cases the hourly
 `queue-retention` job was purging 41,458 and 36,045 rows (43 s and 72 s). The delivery loop logged
 `SqliteException` (event 1002, retried after back-off) at 16:00:44Z, 22:00:44Z and 02:00:44Z,
-also at retention time. Nothing was lost. The Linux collector logged no warnings.
+also at retention time. The observed native IDs were found at the queue and destination;
+source coverage and accepted-stage extras were not fully verified, so losslessness was not
+established. The Linux collector logged no warnings.
 
 ### 3. Resource trends (both FAIL the registered threshold)
 
@@ -140,22 +142,21 @@ event time):
 
 Whole soak: firewall p50/p95/p99 3.9/6.4/8.7 s, max 151 s; WEC 11.7/771.8/881.8 s, max 969 s.
 
-**Why the WEC fell behind (finding).** Bower's own queue never backed up: pending stayed at 36
-or fewer, and the oldest undelivered age stayed at 7 s or less in every sample. The lag was
-ForwardedEvents records that Bower's Windows Event Log reader had not yet read
-(`forwardedEvents.records` minus `windowsEventLog.eventsRead` in `series/wec-samples.jsonl`).
-Between bursts it was tens of records, but every burst left a backlog: 2,786 at 05:40Z, 3,124 at
-09:40Z and 3,673 at 13:40Z, each drained within 5–15 minutes. Once CPU was capped, the backlogs
-stopped draining: 5,063 at 17:40Z, 5,495 at 22:00Z, and a maximum of 8,950 at 03:05Z on 3 Nov
-(about 15 minutes at 10/s). The reader's CPU per hour grew with the number of records in ForwardedEvents:
-about 450 s at 42,000 records and about 2,500 s at 860,000. `WindowsEventLogChannel.Read`
-builds a new filtered `EventLogQuery` and seeks to the bookmark on every 1-second poll, so the
-Event Log service's work per poll grows with the size of the channel. That is consistent with the
-measurements but not proven by a profiler. On a t3.medium on standard credits, CPU credits ran
-out at about 15:00Z, the instance was held at its baseline, and the backlog grew after every
-burst instead of draining. The pilot and the ws6 runs used 1 GiB logs and lasted 1–2 hours, so they
-never reached this size. A production WEC with a multi-gigabyte ForwardedEvents log will.
-**This needs a product fix and a re-soak before the WEC path is production-ready.**
+**WEC delay and the measurement limit.** Bower's sampled pending queue stayed at 36 or
+fewer, and its oldest undelivered age stayed at 7 s or less. The destination latency above
+still failed the gate. The previously reported reader backlog subtracted the process's
+`windowsEventLog.eventsRead` counter from the channel's retained `forwardedEvents.records`
+count. These have different baselines and the channel can wrap: the final sample gives
+−103, which cannot be an unread-event count. The earlier backlog sizes and drain times are
+therefore unproven; this run did not capture the newest channel record ID. The archived
+sample file is unchanged.
+
+The measured collector CPU rose from about 450 s/h at 42,000 retained records to about
+2,500 s/h at 860,000; that correlation alone does not establish the cause. A later
+[wecfix investigation](../wecfix-20261103-043750/README.md) found the query cost roughly
+flat over its tested range and identified per-event durable commits as a throughput limit.
+The original CPU growth remains unexplained. **The WEC path still requires the failed
+latency gate and the re-soak to pass before production qualification.**
 
 ### 5. Alerts (FAIL)
 
@@ -285,7 +286,7 @@ or a fail into a pass, except where stated.
 | Mixed identity forms | `crossWindowOrInWindowDuplicates: 1` in `final-reconciliation.json` | That was the probe's redacted-id collision in `h23`. Native counts and duplicates now use original ids; redacted counts are labelled `probeRedacted*` |
 | CPU added to criterion 3 after registration | The guide's criterion 3 said "CPU per event does not trend upwards" | Moved to a recommendation for future runs; the WEC CPU growth is an observation, not a criterion-3 result |
 | Latency comment | `reconcile.py` said the gate applied to every hour | The registered rule is the whole-run p99; hours above are listed |
-| WEC backlog understated | "About 20 records for the first 14 hours" | 2,786, 3,124 and 3,673 after the first three bursts; maximum 8,950 |
+| WEC backlog estimate | Earlier notes used `RecordCount - eventsRead` | Unknown: the two values have different baselines; the final sample gives −103. The historical export lacks the newest record ID. |
 | Alerts read | First page only, failures recorded as an error object | Paginated, fail closed, and each alert is marked active or not during the run. This run's list (`monitoring/alerts-final.json`) was captured with one request returning three items; whether a further page existed was not checked |
 | Line endings | 25 Windows-origin JSON files had CRLF | Normalised to LF (content otherwise unchanged) |
 | Interim latency set | The interim firewall latency used every row the padded query returned: 39,000 rows against 36,000 reconciled ids (the extra 3,000 are 04:35Z to 04:40Z) | `sentinel()` applies the identity scope before any count or latency. The published interim p99 (8.97 s) includes those rows and cannot be recomputed without the deleted lists. The final reconciliation is not affected: its firewall latency count is exactly the 896,400 reconciled ids |

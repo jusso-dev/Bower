@@ -1,0 +1,28 @@
+{
+ "sqlite": "3.53.4",
+ "headPlan": "MERGE (UNION ALL) | LEFT | SCAN queue_ledger | RIGHT | SCAN queue_ledger_segments | USE TEMP B-TREE FOR ORDER BY",
+ "rows": [
+  {
+   "retainedRows": 1300,
+   "ledgerRows": 1300,
+   "events": 300,
+   "wallMsPerEvent": 17.505,
+   "cpuMsPerEvent": 1.823
+  },
+  {
+   "retainedRows": 15300,
+   "ledgerRows": 15300,
+   "events": 300,
+   "wallMsPerEvent": 16.585,
+   "cpuMsPerEvent": 1.927
+  },
+  {
+   "retainedRows": 30300,
+   "ledgerRows": 30300,
+   "events": 300,
+   "wallMsPerEvent": 17.28,
+   "cpuMsPerEvent": 1.875
+  }
+ ],
+ "host": "BOWERDC (m6i.large, gp3), bench6"
+}

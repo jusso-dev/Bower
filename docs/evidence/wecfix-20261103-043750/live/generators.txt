@@ -1,0 +1,9 @@
+main/done.json attempted= completed= rate=0 success= codes=
+main/segment-001.json attempted=72000 completed=72000 rate=10 success=0 codes={"49":72000}
+main/segment-002.json attempted=6000 completed=6000 rate=99.98 success=0 codes={"49":6000}
+main/segment-003.json attempted=53400 completed=53400 rate=10 success=0 codes={"49":53400}
+tail/done.json attempted= completed= rate=0 success= codes=
+tail/segment-001.json attempted=18000 completed=18000 rate=10 success=0 codes={"49":18000}
+burst-rows1.json attempted=90000 completed=90000 rate=90 success=0
+burst-sustained.json attempted=54000 completed=54000 rate=90 success=0
+

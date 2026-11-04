@@ -9,6 +9,18 @@ import subprocess
 JOBS = ("dotnet", "rust", "infrastructure", "powershell", "ui", "e2e",
         "windows", "containers", "platforms", "packaging")
 
+# Direct and transitive project references of lab/aws/upgrade-recovery/probe.
+# Changes here must exercise the compiled evidence probe in the infrastructure job.
+WEC_PROBE_PROJECTS = (
+    "src/Bower.Persistence/", "src/Bower.Source.WindowsEventLog/", "src/Bower.Redaction/",
+    "src/Bower.Abstractions/", "src/Bower.Contracts/",
+)
+WEC_POSITION_INPUTS = {
+    "lab/aws/tests/test_wec_receiving_position.ps1",
+    "lab/aws/soak/wec-agent.ps1",
+    "lab/aws/wecfix/wec-agent.ps1",
+}
+
 
 def select(paths, full=False):
     selected = set(JOBS) if full else set()
@@ -27,6 +39,8 @@ def select(paths, full=False):
             selected.update(("infrastructure", "dotnet"))
         elif path.startswith(("lab/aws/", "tests/scorecard/")):
             selected.add("infrastructure")
+            if path in WEC_POSITION_INPUTS or path.startswith("lab/aws/upgrade-recovery/probe/"):
+                selected.add("windows")
         elif path.startswith("ui/"):
             selected.update(("ui", "e2e"))
         elif path.startswith("powershell/"):
@@ -48,6 +62,8 @@ def select(paths, full=False):
                 selected.add("containers")
         elif path.startswith(("src/", "tests/")):
             selected.update(("dotnet", "windows", "e2e"))
+            if path.startswith(WEC_PROBE_PROJECTS):
+                selected.add("infrastructure")
             if "/Relay/" in path or path.startswith("src/Bower.Forwarding/") or "Enrolment" in path:
                 selected.add("containers")
         elif path.startswith(("packs/", "policies/", "schemas/")):

@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Microsoft.Data.Sqlite;
 
 namespace Bower.Persistence;
 
@@ -13,6 +14,31 @@ public static class QueueCapacityReasons
 
     /// <summary>SQLite reported the volume full (or an I/O error while it was critically low).</summary>
     public const string StorageFull = "storage-full";
+}
+
+/// <summary>Classifies queue database failures for callers that cannot reference SQLite.</summary>
+public static class QueueStorageErrors
+{
+    private const int SqliteBusy = 5;
+    private const int SqliteLocked = 6;
+
+    /// <summary>
+    /// SQLite busy or locked anywhere in the chain: another connection held the write lock
+    /// past the busy timeout (for example a retention batch). Nothing was written, so the
+    /// caller retries after a back-off; it is not a failure of the source or the queue.
+    /// </summary>
+    public static bool IsBusy(Exception? exception)
+    {
+        for (; exception is not null; exception = exception.InnerException)
+        {
+            if (exception is SqliteException { SqliteErrorCode: SqliteBusy or SqliteLocked })
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }
 
 /// <summary>

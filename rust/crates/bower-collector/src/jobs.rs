@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -27,7 +28,12 @@ pub const MANAGEMENT_HEARTBEAT_JOB_ID: &str = "management-heartbeat";
 pub const MANAGED_PRIVACY_PROFILE_JOB_ID: &str = "managed-privacy-profile";
 pub const SOURCE_ACTIVITY_JOB_ID: &str = "source-activity";
 pub const QUEUE_ARCHIVE_JOB_ID: &str = "queue-archive";
-const RETENTION_BATCH_SIZE: usize = 5_000;
+/// Maximum queue rows per purge transaction (C# `QueueRetentionJob.BatchSize`). Ledger
+/// verification can scan a larger unresolved prefix, so transaction time is not bounded
+/// by this count alone.
+const RETENTION_BATCH_SIZE: usize = 1_000;
+/// Pause between purge batches (C# `QueueRetentionJob.BatchPause`).
+const RETENTION_BATCH_PAUSE: std::time::Duration = std::time::Duration::from_millis(100);
 
 /// UTC schedules used by the collector (Hangfire `Cron.*` helpers).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -320,7 +326,10 @@ pub async fn run_queue_retention(
     archive: Option<(Arc<QueueArchive>, Arc<SqliteEventStore>)>,
 ) -> Result<usize, &'static str> {
     let cutoff = clock.utc_now() - TimeDelta::from_std(retention).unwrap_or(TimeDelta::MAX);
-    let total = tokio::task::spawn_blocking(move || {
+    let total = run_retention_blocking(move |cancelled| {
+        if cancelled.load(Ordering::Relaxed) {
+            return Ok(Some(0));
+        }
         // With an archive, purge only what verified archive coverage of this queue holds.
         let coverage = match &archive {
             Some((archive, ledger)) => {
@@ -339,8 +348,7 @@ pub async fn run_queue_retention(
             }
             None => None,
         };
-        let mut total = 0usize;
-        loop {
+        purge_retention_batches(cancelled, || {
             let purged = match (&archive, &coverage) {
                 (Some((archive, ledger)), Some(coverage)) => {
                     // The cache trusts size and write time; re-hash the segments holding
@@ -351,25 +359,24 @@ pub async fn run_queue_retention(
                         .read_purge_candidate_sequences(cutoff, RETENTION_BATCH_SIZE, through)
                         .map_err(|error| store_error_name(&error))?;
                     if batch.is_empty() {
-                        return Ok(Some(total));
+                        return Ok(None);
                     }
                     if let Some(reason) = archive.verify_segments_for_purge(&batch) {
                         log_coverage_refused(&reason, coverage.first_sequence, through);
-                        return Ok(Some(total));
+                        return Ok(None);
+                    }
+                    if cancelled.load(Ordering::Relaxed) {
+                        return Ok(None);
                     }
                     queue.purge_delivered_archived(cutoff, RETENTION_BATCH_SIZE, through)
                 }
                 _ => queue.purge_delivered(cutoff, RETENTION_BATCH_SIZE),
             }
             .map_err(|error| store_error_name(&error))?;
-            total += purged;
-            if purged != RETENTION_BATCH_SIZE {
-                return Ok::<Option<usize>, &'static str>(Some(total));
-            }
-        }
+            Ok(Some(purged))
+        })
     })
-    .await
-    .map_err(|_| "JoinError")??;
+    .await?;
     let Some(total) = total else {
         return Ok(0);
     };
@@ -378,6 +385,45 @@ pub async fn run_queue_retention(
         "Queue retention removed acknowledged event(s)."
     );
     Ok(total)
+}
+
+// Dropping a spawn_blocking JoinHandle does not stop the worker. The scheduler drops
+// the job future on shutdown, so signal the worker to stop after its current transaction.
+struct CancelRetentionOnDrop(Arc<AtomicBool>);
+
+impl Drop for CancelRetentionOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+}
+
+async fn run_retention_blocking(
+    work: impl FnOnce(&AtomicBool) -> Result<Option<usize>, &'static str> + Send + 'static,
+) -> Result<Option<usize>, &'static str> {
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let _cancel_on_drop = CancelRetentionOnDrop(Arc::clone(&cancelled));
+    tokio::task::spawn_blocking(move || work(&cancelled))
+        .await
+        .map_err(|_| "JoinError")?
+}
+
+fn purge_retention_batches(
+    cancelled: &AtomicBool,
+    mut purge: impl FnMut() -> Result<Option<usize>, &'static str>,
+) -> Result<Option<usize>, &'static str> {
+    let mut total = 0;
+    while !cancelled.load(Ordering::Relaxed) {
+        let Some(purged) = purge()? else {
+            break;
+        };
+        total += purged;
+        if purged != RETENTION_BATCH_SIZE || cancelled.load(Ordering::Relaxed) {
+            break;
+        }
+        // Blocking thread: yield the write lock to waiting writers in real time.
+        std::thread::sleep(RETENTION_BATCH_PAUSE);
+    }
+    Ok(Some(total))
 }
 
 /// C# `QueueRetentionJob` event 1202: metadata only.
@@ -454,6 +500,40 @@ pub async fn run_queue_maintenance(queue: Arc<dyn DurableEventStore>) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn dropping_retention_stops_the_blocking_worker_after_its_current_batch() {
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let (finished_tx, finished_rx) = tokio::sync::oneshot::channel();
+        let job = tokio::spawn(run_retention_blocking(move |cancelled| {
+            let mut calls = 0;
+            let mut started_tx = Some(started_tx);
+            let result = purge_retention_batches(cancelled, || {
+                calls += 1;
+                if let Some(started_tx) = started_tx.take() {
+                    let _ = started_tx.send(());
+                    release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                }
+                Ok(Some(RETENTION_BATCH_SIZE))
+            });
+            let _ = finished_tx.send(calls);
+            result
+        }));
+
+        tokio::time::timeout(Duration::from_secs(5), started_rx)
+            .await
+            .unwrap()
+            .unwrap();
+        job.abort();
+        assert!(job.await.unwrap_err().is_cancelled());
+        release_tx.send(()).unwrap();
+        let calls = tokio::time::timeout(Duration::from_secs(5), finished_rx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(calls, 1, "no next purge begins after shutdown");
+    }
 
     fn at(text: &str) -> Timestamp {
         bower_contracts::time::parse(text).unwrap()

@@ -11,14 +11,17 @@ untrusted packs.
 
 **Status: the soak was run and FAILED.** Neither collector met all six criteria, so the
 release check for the soak (check 7) stays open. Firewall: criteria 1, 2, 4 and 6 met, 3 and 5
-failed. WEC: criteria 2 and 6 met, 3, 4 and 5 failed; criterion 1 met for delivery (no event
-missing at the queue or at Sentinel, no extra Sentinel id) but its accepted-stage extras were
-not checked (section 6). Every one of 896,400 events per collector reached Sentinel, with no
-process restarts and no privacy-marker matches. The failures:
+failed. WEC: criteria 2 and 6 met, 3, 4 and 5 failed; criterion 1 is unqualified because
+accepted-stage extras and complete native coverage were not verified (section 6). All
+896,400 observed native IDs per collector appeared in Sentinel, with no process restarts
+and no privacy-marker matches. The failures:
 
-- **WEC latency.** p99 reached 882 s. The Windows Event Log reader's CPU cost grows with the
-  size of `ForwardedEvents`, so on a CPU-credit-limited host the reader fell up to 8,950
-  events (about 15 minutes at 10/sec) behind.
+- **WEC latency.** p99 reached 882 s on a CPU-credit-limited host. Historical reader
+  backlog is unknown: the earlier estimate subtracted a process counter from the channel's
+  retained record count. Profiling afterwards
+  ([wecfix](../evidence/wecfix-20261103-043750/README.md)) found the reader's poll cost flat
+  with `ForwardedEvents` size; the limit was one durable queue commit per event (about 44
+  events/sec), addressed by group commit; a re-soak remains required (section 9).
 - **Alerts.** The TLS-expiry false positive fired all run (fixed afterwards on main by #171),
   and the source-transport alert fired twice, correctly, when the WEC source failed during the
   hourly queue retention.
@@ -36,8 +39,14 @@ The soak ran main at **`1a4c4c2`**. Later merges are not covered by it and rely 
 evidence: [#161](https://github.com/jusso-dev/Bower/pull/161) storage pressure
 ([gap 3](03-storage-pressure.md)), [#169](https://github.com/jusso-dev/Bower/pull/169)
 replay-safe detections ([gap 2](02-replay-safe-detections.md)) and
-[#171](https://github.com/jusso-dev/Bower/pull/171) the TLS-expiry fix. Main is now
-`d7ddc55`. A release built from it needs its own soak (section 4).
+[#171](https://github.com/jusso-dev/Bower/pull/171) the TLS-expiry fix. At that snapshot,
+main was `d7ddc55`. A release built from a later commit needs its own soak (section 4).
+
+An isolated re-soak harness dry run on 3 November was interrupted before its final
+reconciliation. Its hosts were subsequently terminated by the run's expiry guard, and
+available synthetic result files and destination counts were retained for recovery. The
+planned 72-hour qualification has not run; neither the dry run nor the partial counts close
+the soak gate. See the [interrupted campaign record](../evidence/interrupted-20261103/README.md).
 
 Contents:
 
@@ -210,26 +219,65 @@ same steps for each supported environment.
 
    Expected: `Running`. Register `Test-BowerCollectorHealth.ps1` as a one-minute SYSTEM task
    ([gap 6](06-monitoring-and-runbooks.md)).
-2. **Size `ForwardedEvents` to production.** Do not shrink it for the soak. The defect in
-   section 9 only appears once the channel holds hundreds of thousands of records.
+2. **Size `ForwardedEvents` to production.** Do not shrink it for the soak. Use the
+   production retention and expected load when evaluating the WEC path.
 
    ```powershell
    wevtutil gl ForwardedEvents | Select-String maxSize
    ```
 
-3. Record the baseline and sample every 5 minutes from a SYSTEM scheduled task:
+3. Record the baseline and sample every 5 minutes from a SYSTEM scheduled task. This
+   example uses the hash-verified `Bower.LabProbe.exe` installed by the soak lab at
+   `C:\BowerLab\soak\probe.exe`; provision and verify that probe before running the
+   example on another host. It works in Windows PowerShell 5.1 and PowerShell 7:
 
    ```powershell
+   function Get-ReceivingBookmarkRecordId([string]$ProbePath, [string]$Channel) {
+     try {
+       if ($Channel -cnotin @('ForwardedEvents', 'Application', 'System')) { return $null }
+       $output = @(& $ProbePath 'receiving-position' $Channel 2>$null)
+       if ($LASTEXITCODE -ne 0 -or $output.Count -ne 1) { return $null }
+       $json = [string]$output[0]
+       if ($json.Length -gt 512) { return $null }
+       # The verified probe emits exactly these three fields in this order. Anchoring
+       # the whole ASCII grammar rejects duplicate, escaped and unexpected properties.
+       $pattern = '\A\{"kind":"receiving-position","channel":"' + [regex]::Escape($Channel) + '","newestRecordId":([1-9][0-9]{0,18})\}\z'
+       $match = [regex]::Match($json, $pattern, [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)
+       $position = 0L
+       if (-not $match.Success -or -not [long]::TryParse($match.Groups[1].Value,
+               [System.Globalization.NumberStyles]::None, [System.Globalization.CultureInfo]::InvariantCulture,
+               [ref]$position)) { return $null }
+       return $position
+     } catch { return $null }
+   }
+   function Get-ReceivingPositionState($RecordCount, $Position) {
+     if (($Position -is [int32] -or $Position -is [int64]) -and [long]$Position -gt 0) { return 'observed' }
+     if (($RecordCount -is [int32] -or $RecordCount -is [int64]) -and [long]$RecordCount -gt 0) {
+       return 'missing-bookmark-with-records'
+     }
+     return 'unknown'
+   }
+   $probe = 'C:\BowerLab\soak\probe.exe'
    $svc = Get-CimInstance Win32_Service -Filter "Name='Bower'"
    $p = Get-Process -Id $svc.ProcessId
+   $recordCount = (Get-WinEvent -ListLog ForwardedEvents).RecordCount
+   $newestId = Get-ReceivingBookmarkRecordId $probe 'ForwardedEvents'
+   $positionState = Get-ReceivingPositionState $recordCount $newestId
    [ordered]@{ pid=$p.Id; started=$p.StartTime.ToUniversalTime().ToString('o'); cpu=$p.TotalProcessorTime.TotalSeconds
      privateBytes=$p.PrivateMemorySize64; handles=$p.HandleCount; threads=$p.Threads.Count
-     forwarded=(Get-WinEvent -ListLog ForwardedEvents).RecordCount } | ConvertTo-Json -Compress
+     forwarded=$recordCount; newestRecordId=$newestId; newestRecordIdState=$positionState
+     newestRecordIdBasis='native-receiving-bookmark-v1' } | ConvertTo-Json -Compress
    ```
 
-   Also record `/v1/status` `windowsEventLog` (`eventsRead`, `state`, `lastEventAt`). The
-   difference between `ForwardedEvents` records and `eventsRead` is the reader backlog, which is
-   the key WEC signal. The lab version is `lab/aws/soak/wec-agent.ps1`.
+   Also record `/v1/status` `windowsEventLog` (`eventsRead`, `state`, `lastEventAt`,
+   `bookmarkRecordId`). Compare the newest channel record ID with the bookmark only when
+   both are available and refer to the same unreset channel. Use the receiving bookmark's
+   `RecordId`, not the event's origin `RecordId`; missing or invalid bookmark metadata is
+   unknown. `missing-bookmark-with-records` means the probe failed to obtain a position
+   for a nonempty channel; investigate the probe and channel read access. Their difference is an ID
+   distance, which can exceed the number of unread events; missing or reset IDs leave it
+   unknown. `RecordCount` minus `eventsRead` is not a backlog: a retained record count and
+   a process counter have different baselines. The lab version is `lab/aws/soak/wec-agent.ps1`.
 4. Every 30 minutes, add the queue's identities to a union with
    `Bower.LabProbe.exe queue-union <queue.db> <union.tsv> <summary.json>` (read-only;
    `lab/aws/upgrade-recovery/probe`). A union of about 900,000 ids takes minutes, so give the
@@ -291,7 +339,9 @@ Not run in this soak.
 As 4.1 or 4.2 on the instance, plus:
 
 - **Credits:** use `t3`/`t3a` with `--credit-specification CpuCredits=unlimited`, or a
-  non-burstable type. Record `CPUCreditBalance` and `CPUUtilization` for the whole run:
+  non-burstable type. For WEC hosts prefer a non-burstable type (`m6i.large` or larger, as
+  measured in [wecfix](../evidence/wecfix-20261103-043750/README.md); see
+  [WEC sizing](../deployment/windows-event-log-source.md#throughput-cpu-and-wec-sizing)). Record `CPUCreditBalance` and `CPUUtilization` for the whole run:
 
   ```bash
   aws cloudwatch get-metric-statistics --namespace AWS/EC2 --metric-name CPUCreditBalance \
@@ -409,7 +459,7 @@ Run `bower-soak-20261102-015614`, 2026-11-02T03:35:00Z to 2026-11-03T03:35:00Z, 
 
 | # | Criterion | Firewall (RPM, RELP) | WEC (MSI) |
 |---|---|---|---|
-| 1 | Exact delivery | **PASS**: native 896,400 = accepted 896,400 = distinct Sentinel 896,400; 54 duplicate rows | **PASS for delivery, accepted extras not verified**: native 896,400 records, none missing at the queue or Sentinel, 0 extra Sentinel ids; 101 duplicate rows |
+| 1 | Exact delivery | **PASS**: native 896,400 = accepted 896,400 = distinct Sentinel 896,400; 54 duplicate rows | **UNQUALIFIED**: 896,400 observed native IDs found at the queue and Sentinel, 0 extra Sentinel IDs, 101 duplicate rows; accepted extras and complete source coverage unverified |
 | 2 | No restarts | **PASS** | **PASS** (the source restarted in-process twice) |
 | 3 | No unbounded growth (hours 3–24) | **FAIL**: RSS +75 KB/h (61%), FDs +0.055/h (166%), queue +106 KB/h (36%); threads falling (flat) | **FAIL**: private bytes +461 KB/h (735%), handles +0.54/h (93%), threads +0.12/h (527%), queue +73 KB/h (17%) |
 | 4 | p99 latency | **PASS**: 8.7 s (limit 13.3 s); 3 hours above | **FAIL**: 881.8 s (limit 18.16 s); 23 of 25 hours above |
@@ -446,9 +496,9 @@ What else the run showed:
 
 | Symptom | Likely cause | Check | Action |
 |---|---|---|---|
-| WEC latency grows over hours while Bower's queue stays empty | Windows Event Log reader cost grows with `ForwardedEvents` size (section 9) | `ForwardedEvents` `RecordCount` minus `/v1/status` `windowsEventLog.eventsRead`; CPU seconds per hour | Until fixed: a non-burstable WEC host, `ForwardedEvents` sized to hold hours not days, and a reader-backlog alert |
+| WEC latency grows over hours while Bower's queue stays empty | Reader backlog: before group commit, one durable commit per event capped a subscription at about 44 events/sec; on a burstable host out of credits, lower (section 9) | `ForwardedEvents` newest record minus `/v1/status` `windowsEventLog.bookmarkRecordId`; CPU seconds per hour | Upgrade to a build with group commit; a non-burstable WEC host ([sizing](../deployment/windows-event-log-source.md#throughput-cpu-and-wec-sizing)); `ForwardedEvents` sized to hold hours, not days |
 | Latency grows after every burst and never recovers | Burstable instance out of CPU credits | `CPUCreditBalance` (AWS), `CPU Credits Remaining` (Azure) | Unlimited credits or a fixed-performance size |
-| `source-transport-errors` at :00 | Hourly retention purge holding the queue while the source or delivery writes (`SqliteException`, `winevt-source-failed`) | Application log event 1002 and health `windowsEventLog.state` at :00 | Recovers by itself without loss. Track section 9 |
+| `source-transport-errors` at :00 | Hourly retention purge holding the queue while the source or delivery writes (`SqliteException`, `winevt-source-failed`) | Application log event 1002 and health `windowsEventLog.state` at :00 | Investigate and track section 9. In this soak it recovered without a measured loss |
 | `syslog-tls-expiry` fires with valid certificates | No client CRL configured; the rule on `1a4c4c2` treats the missing date as unknown | Rule query output `tls-metadata-unknown` | Upgrade to a build with #171 |
 | Reconciliation shows N missing and N extra Windows ids | Native ids compared after default-detector redaction | Probe `redactionChangedIds` | Compare on the original id (probe column 4) |
 | Extra Sentinel ids at the end | Generation drifted past the last native window | Last window's event times | Export the window after the end (`h24`) |
@@ -471,22 +521,42 @@ independently (37 of 37 checks absent).
 
 ## 9. Known defects found by this work
 
-1. **Windows Event Log reader cost grows with channel size** (open). At a constant 10
-   events/sec, CPU per hour went from about 450 s to about 2,500 s as `ForwardedEvents` grew to
-   900,000 records. `WindowsEventLogChannel.Read` builds a new filtered `EventLogQuery` and
-   seeks to the bookmark on every 1-second poll; that is consistent with the measurements, not
-   profiled. After every burst the reader fell behind (2,786, 3,124 and 3,673 events after the
-   first three); once CPU was capped it fell up to 8,950 events (about 15 minutes) behind. This needs a fix (for example a long-lived reader or
-   subscription that is not re-seeked every poll), unit or benchmark coverage, and a re-soak.
-2. **Hourly retention contends with queue writers on Windows** (open). The source failed
+1. **WEC reader falls behind** (mitigated by group commit; [wecfix evidence](../evidence/wecfix-20261103-043750/README.md),
+   re-soak still required). The suspected cause below was profiled and is not it: a poll
+   costs 0.8–0.95 ms from 10,000 to 1,040,000 records. Each event was its own durable commit
+   (about 22 ms of flushes on gp3), capping a subscription at about 44 events/sec, below the
+   tested burst rate. The earlier group-commit build was exercised at 100/sec, but its
+   historical reader lag is unknown, and subsequent runtime changes have not been live-qualified.
+   The CPU growth did not reproduce on `m6i.large` and stays unexplained (the soak's
+   `t3.medium` is the candidate). In the original soak, CPU per hour rose from about 450 s
+   to about 2,500 s as `ForwardedEvents` grew to 900,000 retained records; the cause is
+   unproven. Previously reported backlog sizes and drain times were computed by subtracting
+   the process `eventsRead` counter from `RecordCount` and are invalid. The archived final
+   sample yields −103 by that calculation; the run did not record the newest record ID.
+   Repeat the failed destination latency gate and the full re-soak before qualification.
+2. **Hourly retention contends with queue writers on Windows** (mitigated: 1,000-row purge
+   transactions with pauses, ledger compaction scanning through the purge boundary (including
+   any unresolved prefix), SQLite busy treated as a
+   back-off). In the [wecfix evidence](../evidence/wecfix-20261103-043750/README.md),
+   the second purge window's observed Sentinel sample had a 35.7-second p99 against
+   the 18.16-second limit; completeness of the workload was not proven. Repeat that
+   scenario and the re-soak before calling the issue qualified. The source failed
    in-process twice and the delivery loop logged `SqliteException` three times, each while
-   retention purged 36,000–41,000 rows (43–72 s). It recovered with no loss and fired a true
-   `source-transport-errors` alert. Smaller purge batches or yielding between batches should be
+   retention purged 36,000–41,000 rows (43–72 s). It recovered and fired a true
+   `source-transport-errors` alert; the historical native exports do not establish complete
+   no-loss reconciliation. Smaller purge batches or yielding between batches should be
    evaluated.
 3. **TLS-expiry false positive without a CRL** (fixed after this soak by
    [#171](https://github.com/jusso-dev/Bower/pull/171); not covered by this soak).
 4. Harness defects found and fixed during the run (all preserved in the evidence): probe id
    redaction in the smoke, the sampler's timestamp parsing, and the final export's task time limit.
+5. **Suppression replay around a bookmark update.** In the default collector, the new WEC
+   batch path commits the cursor and queue together and rolls back an entire refused record,
+   including its suppression and generated alert. This has focused tests but has not been
+   qualified by a native Windows process kill, Windows-host backup/restore, or live
+   Sentinel re-soak. A platform-neutral SQLite backup/restore test passes.
+   Earlier committed suppressions and custom or separate cursor stores retain the prior
+   replay limitation; see [bookmarks and restart](../deployment/windows-event-log-source.md#bookmarks-restart-and-backpressure).
 
 ## 10. Known limits
 

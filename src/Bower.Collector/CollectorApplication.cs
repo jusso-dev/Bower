@@ -154,11 +154,16 @@ public static partial class CollectorApplication
                     services.GetRequiredService<ManagedPrivacyProfileState>(),
                     services.GetRequiredService<PipelineTelemetry>(),
                     services.GetRequiredService<TimeProvider>(),
-                    services.GetRequiredService<EventTap>())),
+                    services.GetRequiredService<EventTap>()),
+                    services.GetRequiredService<IDurableEventStore>() as SqliteEventStore),
                 services.GetRequiredService<WindowsEventLogBookmarks>().Store,
                 // Tests supply an in-memory channel; otherwise the Windows reader (Windows only).
                 services.GetService<IWindowsEventChannelFactory>() ?? WindowsEventLogRoutes.PlatformChannels(),
-                services.GetRequiredService<TimeProvider>()));
+                services.GetRequiredService<TimeProvider>())
+            {
+                // A busy queue database (for example during a retention batch) is backpressure.
+                IsTransientStorageFailure = QueueStorageErrors.IsBusy
+            });
             builder.Services.AddHostedService<WindowsEventLogIntakeService>();
         }
         builder.Services.AddSingleton<EventIdentityConflicts>();

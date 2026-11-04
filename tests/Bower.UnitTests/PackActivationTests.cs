@@ -396,12 +396,15 @@ public sealed class PackActivationTests
             Assert.Equal(intake.GetProperty("attemptedBytes").GetInt64(), intake.GetProperty("capacityRefusedBytes").GetInt64());
             Assert.Equal("queue-capacity", intake.GetProperty("lastRefusalReason").GetString());
             Assert.NotEqual(JsonValueKind.Null, intake.GetProperty("lastRefusalAt").ValueKind);
-            // Wire shape shared with the Rust collector.
+            // The common intake fields are shared with Rust; the C# WEC source adds
+            // rollback counters. Direct HTTP refusals do not roll back a source record.
             Assert.Equal(
                 ["observedSince", "attemptedRequests", "attemptedBytes", "capacityRefusals",
                     "capacityRefusedBytes", "privacyAlertRefusals", "privacyAlertRefusedBytes", "lastRefusalAt",
-                    "lastRefusalReason"],
+                    "lastRefusalReason", "sourceRecordsRolledBack", "sourceRecordRolledBackBytes"],
                 intake.EnumerateObject().Select(property => property.Name));
+            Assert.Equal(0, intake.GetProperty("sourceRecordsRolledBack").GetInt64());
+            Assert.Equal(0, intake.GetProperty("sourceRecordRolledBackBytes").GetInt64());
             string text = intake.GetRawText();
             Assert.DoesNotContain("generic-1", text, StringComparison.Ordinal);
             Assert.DoesNotContain("activation-1", text, StringComparison.Ordinal);

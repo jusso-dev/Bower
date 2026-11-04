@@ -1,0 +1,155 @@
+{
+  "recordType": "interrupted-campaign-destination-counts",
+  "scope": "Aggregate destination rows only. Not source reconciliation, a loss measurement, or production qualification.",
+  "query": "BowerSecurity_CL | summarize Rows=count() by CollectorId, EventType | take 100",
+  "timespan": "P2D",
+  "snapshots": [
+    {
+      "campaign": "eks",
+      "collectorRole": "eks",
+      "eventType": "collector_health",
+      "rows": 646,
+      "capturedAt": "2026-11-03 22:17:12 UTC"
+    },
+    {
+      "campaign": "eks",
+      "collectorRole": "eks",
+      "eventType": "network_connection_denied",
+      "rows": 7240,
+      "capturedAt": "2026-11-03 22:17:12 UTC"
+    },
+    {
+      "campaign": "eks",
+      "collectorRole": "eks",
+      "eventType": "authentication_failure",
+      "rows": 7220,
+      "capturedAt": "2026-11-03 22:17:12 UTC"
+    },
+    {
+      "campaign": "awslog",
+      "collectorRole": "awslog",
+      "eventType": "aws_eks_audit",
+      "rows": 63,
+      "capturedAt": "2026-11-03 22:17:12 UTC"
+    },
+    {
+      "campaign": "impl",
+      "collectorRole": "deb",
+      "eventType": "collector_health",
+      "rows": 640,
+      "capturedAt": "2026-11-03 22:17:12 UTC"
+    },
+    {
+      "campaign": "impl",
+      "collectorRole": "rpm",
+      "eventType": "collector_health",
+      "rows": 641,
+      "capturedAt": "2026-11-03 22:17:12 UTC"
+    },
+    {
+      "campaign": "impl",
+      "collectorRole": "deb",
+      "eventType": "network_connection_denied",
+      "rows": 9620,
+      "capturedAt": "2026-11-03 22:17:12 UTC"
+    },
+    {
+      "campaign": "impl",
+      "collectorRole": "rpm",
+      "eventType": "network_connection_denied",
+      "rows": 9620,
+      "capturedAt": "2026-11-03 22:17:12 UTC"
+    },
+    {
+      "campaign": "impl",
+      "collectorRole": "docker",
+      "eventType": "collector_health",
+      "rows": 615,
+      "capturedAt": "2026-11-03 22:17:12 UTC"
+    },
+    {
+      "campaign": "impl",
+      "collectorRole": "docker",
+      "eventType": "network_connection_denied",
+      "rows": 9620,
+      "capturedAt": "2026-11-03 22:17:12 UTC"
+    },
+    {
+      "campaign": "impl",
+      "collectorRole": "rust",
+      "eventType": "network_connection_denied",
+      "rows": 9620,
+      "capturedAt": "2026-11-03 22:17:12 UTC"
+    },
+    {
+      "campaign": "resoak",
+      "collectorRole": "linux",
+      "eventType": "collector_health",
+      "rows": 697,
+      "capturedAt": "2026-11-03 22:17:12 UTC"
+    },
+    {
+      "campaign": "resoak",
+      "collectorRole": "windows",
+      "eventType": "collector_health",
+      "rows": 695,
+      "capturedAt": "2026-11-03 22:17:12 UTC"
+    },
+    {
+      "campaign": "resoak",
+      "collectorRole": "linux",
+      "eventType": "network_connection_denied",
+      "rows": 33040,
+      "capturedAt": "2026-11-03 22:17:12 UTC"
+    },
+    {
+      "campaign": "resoak",
+      "collectorRole": "windows",
+      "eventType": "authentication_failure",
+      "rows": 33040,
+      "capturedAt": "2026-11-03 22:17:12 UTC"
+    },
+    {
+      "campaign": "azurehost",
+      "collectorRole": "linux",
+      "eventType": "collector_health",
+      "rows": 687,
+      "capturedAt": "2026-11-03 22:39:24 UTC"
+    },
+    {
+      "campaign": "azurehost",
+      "collectorRole": "linux",
+      "eventType": "network_connection_denied",
+      "rows": 3600,
+      "capturedAt": "2026-11-03 22:39:24 UTC"
+    },
+    {
+      "campaign": "azurehost",
+      "collectorRole": "linux",
+      "eventType": "authentication_failure",
+      "rows": 3600,
+      "capturedAt": "2026-11-03 22:39:24 UTC"
+    },
+    {
+      "campaign": "azurehost",
+      "collectorRole": "windows",
+      "eventType": "collector_health",
+      "rows": 657,
+      "capturedAt": "2026-11-03 22:39:24 UTC"
+    },
+    {
+      "campaign": "azurehost",
+      "collectorRole": "function",
+      "eventType": "authentication_failure",
+      "rows": 900,
+      "capturedAt": "2026-11-03 22:39:24 UTC"
+    },
+    {
+      "campaign": "azurehost",
+      "collectorRole": "windows",
+      "eventType": "authentication_failure",
+      "rows": 2566,
+      "capturedAt": "2026-11-03 22:39:24 UTC"
+    }
+  ]
+}

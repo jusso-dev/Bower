@@ -472,6 +472,194 @@ public sealed class QueueDeliveryWorkerTests
         }
     }
 
+    [Fact]
+    public async Task BusyQueue_IsAQuietBackOff_UntilItLastsBusyWarningAfter_ThenAWarning()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore inner, _) = await CreateStoreAsync(directory, cancellationToken);
+        FlakyStore store = new(inner, int.MaxValue, busy: true);
+        BusyLogProbe logger = new();
+        StepTimestampClock clock = new();
+        QueueDeliveryWorker worker = new(store, new FakeOutput(_ => throw new InvalidOperationException("not reached")),
+            clock, new QueueDeliveryOptions { BusyDelay = TimeSpan.Zero, BusyWarningAfter = TimeSpan.FromMilliseconds(300) },
+            logger);
+
+        await worker.StartAsync(cancellationToken);
+        try
+        {
+            await logger.FirstBusy.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+            Assert.DoesNotContain(LogLevel.Warning, logger.BusyLevels);
+            clock.Advance(TimeSpan.FromSeconds(1));
+            await logger.BusyWarning.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+        }
+        finally
+        {
+            await worker.StopAsync(cancellationToken);
+        }
+
+        Assert.Contains(LogLevel.Warning, logger.BusyLevels);
+        Assert.DoesNotContain(1002, logger.EventIds);
+    }
+
+    [Fact]
+    public async Task AlternatingFailures_DoNotDefeatLogRateLimits()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore inner, _) = await CreateStoreAsync(directory, cancellationToken);
+        TaskCompletionSource lastAttempt = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        FlakyStore store = new(inner, 24, failureFactory: attempt =>
+        {
+            if (attempt == 24) lastAttempt.TrySetResult();
+            return attempt % 2 == 0
+                ? new InvalidOperationException("other storage failure")
+                : new SqliteException("database is locked", 5);
+        });
+        BusyLogProbe logger = new();
+        QueueDeliveryWorker worker = new(store, new FakeOutput(_ => throw new InvalidOperationException("not reached")),
+            new StepTimestampClock(), new QueueDeliveryOptions
+            {
+                BusyDelay = TimeSpan.Zero,
+                ErrorDelay = TimeSpan.Zero,
+                BusyWarningAfter = TimeSpan.FromMinutes(1)
+            }, logger);
+        await worker.StartAsync(cancellationToken);
+        try
+        {
+            await lastAttempt.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+        }
+        finally
+        {
+            await worker.StopAsync(cancellationToken);
+        }
+        Assert.InRange(logger.EventIds.Count(id => id == 1002), 1, 2);
+        Assert.InRange(logger.EventIds.Count(id => id == 1009), 1, 2);
+    }
+
+    [Fact]
+    public async Task SustainedBusyAfterOtherFailure_WarnsAgainAtPeriodicLog()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore inner, _) = await CreateStoreAsync(directory, cancellationToken);
+        StepTimestampClock clock = new();
+        FlakyStore store = new(inner, 13, failureFactory: attempt =>
+        {
+            if (attempt is 2 or 5) clock.Advance(TimeSpan.FromSeconds(1));
+            return attempt == 3
+                ? new InvalidOperationException("other storage failure")
+                : new SqliteException("database is locked", 5);
+        });
+        BusyLogProbe logger = new();
+        QueueDeliveryWorker worker = new(store, new FakeOutput(_ => throw new InvalidOperationException("not reached")),
+            clock, new QueueDeliveryOptions
+            {
+                BusyDelay = TimeSpan.Zero,
+                ErrorDelay = TimeSpan.Zero,
+                BusyWarningAfter = TimeSpan.FromMilliseconds(100)
+            }, logger);
+        await worker.StartAsync(cancellationToken);
+        try
+        {
+            await logger.ThirdBusy.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+        }
+        finally
+        {
+            await worker.StopAsync(cancellationToken);
+        }
+        Assert.Equal([LogLevel.Information, LogLevel.Warning, LogLevel.Warning], logger.BusyLevels.ToArray());
+    }
+
+    [Fact]
+    public async Task DifferentFailure_InterruptsTheConsecutiveBusyInterval()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore inner, _) = await CreateStoreAsync(directory, cancellationToken);
+        StepTimestampClock clock = new();
+        FlakyStore store = new(inner, 13, failureFactory: attempt =>
+        {
+            if (attempt == 2)
+            {
+                clock.Advance(TimeSpan.FromSeconds(1));
+                return new InvalidOperationException("other storage failure");
+            }
+
+            return new SqliteException("database is locked", 5);
+        });
+        BusyLogProbe logger = new();
+        QueueDeliveryWorker worker = new(store, new FakeOutput(_ => throw new InvalidOperationException("not reached")),
+            clock, new QueueDeliveryOptions
+            {
+                BusyDelay = TimeSpan.Zero,
+                ErrorDelay = TimeSpan.Zero,
+                BusyWarningAfter = TimeSpan.FromMilliseconds(100)
+            }, logger);
+
+        await worker.StartAsync(cancellationToken);
+        try
+        {
+            await logger.SecondBusy.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+        }
+        finally
+        {
+            await worker.StopAsync(cancellationToken);
+        }
+
+        Assert.Equal([LogLevel.Information, LogLevel.Information], logger.BusyLevels.ToArray());
+    }
+
+    [Fact]
+    public async Task BusySettlement_IsRetried_SoTheBatchIsNotLeftLeased()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore inner, FakeClock clock) = await CreateStoreAsync(directory, cancellationToken);
+        await inner.EnqueueAsync(new QueuedEvent("busy-1", "sha256:busy-1", """{"eventId":"busy-1"}""", clock.UtcNow), cancellationToken);
+        FlakyStore store = new(inner, 0, failedBatchFailures: 2, busy: true);
+        QueueDeliveryWorker worker = new(store,
+            new FakeOutput(events => new DeliveryResult([], [.. events.Select(item => new DeliveryFailure(item.EventId, "output-adapter-failure", true, null))], null)),
+            clock, new QueueDeliveryOptions { BusyDelay = TimeSpan.Zero }, new RecordingLogger());
+
+        Assert.Equal(1, await worker.DeliverOnceAsync(cancellationToken));
+        Assert.Equal(3, store.FailedBatchCalls);
+        QueueSnapshot snapshot = await inner.GetSnapshotAsync(cancellationToken);
+        Assert.Equal((1L, 0L), (snapshot.Retrying, snapshot.Uploading));
+    }
+
+    [Theory]
+    [InlineData(2, false)]
+    [InlineData(5, true)]
+    public async Task BusyAcknowledgementSettlement_RetriesOrReplaysAfterLeaseExpiry(int busyFailures, bool exhausted)
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore inner, FakeClock clock) = await CreateStoreAsync(directory, cancellationToken);
+        await inner.EnqueueAsync(new QueuedEvent("ack-busy", "sha256:ack-busy", """{"eventId":"ack-busy"}""", clock.UtcNow), cancellationToken);
+        FlakyStore store = new(inner, 0, busy: true, deliveredBatchFailures: busyFailures);
+        int uploads = 0;
+        QueueDeliveryWorker worker = new(store, new FakeOutput(events =>
+        {
+            uploads++;
+            return new DeliveryResult(events.Select(item => item.EventId).ToArray(), [], "accepted");
+        }), clock, new QueueDeliveryOptions { BusyDelay = TimeSpan.Zero, SettlementAttempts = 5 }, new RecordingLogger());
+
+        if (exhausted)
+        {
+            await Assert.ThrowsAsync<SqliteException>(() => worker.DeliverOnceAsync(cancellationToken));
+            Assert.Equal(5, store.DeliveredBatchCalls);
+            Assert.Equal(1, (await inner.GetSnapshotAsync(cancellationToken)).Uploading);
+            // The destination has already accepted the event. The expired lease makes the
+            // next upload a replay; a destination must deduplicate it by event identity.
+            clock.Advance(TimeSpan.FromHours(1));
+        }
+        Assert.Equal(1, await worker.DeliverOnceAsync(cancellationToken));
+        Assert.Equal(exhausted ? 2 : 1, uploads);
+        Assert.Equal(exhausted ? 6 : 3, store.DeliveredBatchCalls);
+        Assert.Equal(1, (await inner.GetSnapshotAsync(cancellationToken)).Delivered);
+    }
+
     private sealed class FakeOutput(Func<IReadOnlyList<QueuedEvent>, DeliveryResult> deliver) : IOutputAdapter
     {
         public string Id => "fake";
@@ -485,11 +673,20 @@ public sealed class QueueDeliveryWorkerTests
     private sealed class FlakyStore(
         IDurableEventStore inner,
         int failuresBeforeSuccess,
-        int failedBatchFailures = 0) : IDurableEventStore
+        int failedBatchFailures = 0,
+        bool busy = false,
+        Func<int, Exception>? failureFactory = null,
+        int deliveredBatchFailures = 0) : IDurableEventStore
     {
+        private Exception Failure() => busy
+            ? new Microsoft.Data.Sqlite.SqliteException("database is locked", 5)
+            : new InvalidOperationException("database is locked");
+
         public int Failures { get; private set; }
 
         public int FailedBatchCalls { get; private set; }
+
+        public int DeliveredBatchCalls { get; private set; }
 
         public Task<IReadOnlyList<string>> MarkFailedBatchAsync(
             IReadOnlyList<FailureSettlement> failures,
@@ -498,7 +695,7 @@ public sealed class QueueDeliveryWorkerTests
             FailedBatchCalls++;
             if (FailedBatchCalls <= failedBatchFailures)
             {
-                throw new InvalidOperationException("database is locked");
+                throw Failure();
             }
 
             return inner.MarkFailedBatchAsync(failures, cancellationToken);
@@ -512,7 +709,7 @@ public sealed class QueueDeliveryWorkerTests
             if (Failures < failuresBeforeSuccess)
             {
                 Failures++;
-                throw new InvalidOperationException("database is locked");
+                throw failureFactory?.Invoke(Failures) ?? Failure();
             }
 
             return inner.LeaseAsync(maximumCount, leaseDuration, cancellationToken);
@@ -527,8 +724,15 @@ public sealed class QueueDeliveryWorkerTests
         public Task MarkDeliveredAsync(string eventId, string acknowledgement, string? leaseToken, CancellationToken cancellationToken = default) =>
             inner.MarkDeliveredAsync(eventId, acknowledgement, leaseToken, cancellationToken);
 
-        public Task<IReadOnlyList<string>> MarkDeliveredBatchAsync(IReadOnlyList<string> eventIds, string acknowledgement, IReadOnlyDictionary<string, string>? leaseTokens, CancellationToken cancellationToken = default) =>
-            inner.MarkDeliveredBatchAsync(eventIds, acknowledgement, leaseTokens, cancellationToken);
+        public Task<IReadOnlyList<string>> MarkDeliveredBatchAsync(IReadOnlyList<string> eventIds, string acknowledgement, IReadOnlyDictionary<string, string>? leaseTokens, CancellationToken cancellationToken = default)
+        {
+            DeliveredBatchCalls++;
+            if (DeliveredBatchCalls <= deliveredBatchFailures)
+            {
+                throw Failure();
+            }
+            return inner.MarkDeliveredBatchAsync(eventIds, acknowledgement, leaseTokens, cancellationToken);
+        }
 
         public Task MarkRetryingAsync(string eventId, string failureCode, DateTimeOffset retryAfter, string? leaseToken, CancellationToken cancellationToken = default) =>
             inner.MarkRetryingAsync(eventId, failureCode, retryAfter, leaseToken, cancellationToken);
@@ -576,6 +780,52 @@ public sealed class QueueDeliveryWorkerTests
 
         public Task<LedgerVerification> VerifyLedgerAsync(CancellationToken cancellationToken = default) =>
             inner.VerifyLedgerAsync(cancellationToken);
+    }
+
+    private sealed class StepTimestampClock : TimeProvider
+    {
+        private long ticks;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => Interlocked.Read(ref ticks);
+
+        public void Advance(TimeSpan amount) => Interlocked.Add(ref ticks, amount.Ticks);
+    }
+
+    private sealed class BusyLogProbe : ILogger<QueueDeliveryWorker>
+    {
+        public System.Collections.Concurrent.ConcurrentQueue<LogLevel> BusyLevels { get; } = new();
+        public System.Collections.Concurrent.ConcurrentQueue<int> EventIds { get; } = new();
+
+        public TaskCompletionSource FirstBusy { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource SecondBusy { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ThirdBusy { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource BusyWarning { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            EventIds.Enqueue(eventId.Id);
+            if (eventId.Id == 1009)
+            {
+                BusyLevels.Enqueue(logLevel);
+                FirstBusy.TrySetResult();
+                if (logLevel == LogLevel.Warning) BusyWarning.TrySetResult();
+                if (BusyLevels.Count == 2)
+                {
+                    SecondBusy.TrySetResult();
+                }
+                if (BusyLevels.Count == 3)
+                {
+                    ThirdBusy.TrySetResult();
+                }
+            }
+        }
     }
 
     private sealed class RecordingLogger : ILogger<QueueDeliveryWorker>

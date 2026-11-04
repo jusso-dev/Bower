@@ -74,9 +74,10 @@ space or the reader to be released before writes can resume:
   full backlog grew the database to 140% of the intake limit in the regression test.
 - When pages in use reach 80% of the intake limit, or the volume is below its warning
   watermark, retention removes **acknowledged** rows older than
-  `BOWER_QUEUE_PRESSURE_RETENTION_MINUTES` (default 60), oldest first. At 95% of
-  the intake limit it can remove acknowledged rows of any age, before the 100%
-  intake-page refusal threshold.
+  `BOWER_QUEUE_PRESSURE_RETENTION_MINUTES` (default 60), oldest first. The 95% health
+  warning alone does not waive that floor. For critical disk pressure, or an actual
+  intake page refusal, eligible acknowledged rows can be reclaimed below the floor;
+  page-refusal reclaim stops once enough space is available, checked between batches.
   Undelivered, retrying and dead-lettered rows are never removed. With an archive
   configured, only rows the archive verifiably holds are removed.
 - A write over the physical budget first attempts a `wal_checkpoint(TRUNCATE)` (at
@@ -190,7 +191,9 @@ count, and `queue.undeliveredBytes` by the same count.
    created with `-m 0`, 0.05 for ext4 defaults. `V` is the filesystem size; a disk or
    claim of that size formats to about 2% less on ext4 (inode tables and journal), so
    request `V / 0.98`. The 128 MiB covers WAL bursts (a 5,000-row retention purge wrote
-   up to 72 MB of WAL on AWS, truncated within 5 seconds) and shared memory. Add archive
+   up to 72 MB of WAL on AWS, truncated within 5 seconds; retention now purges in
+   1,000-row transactions, see [Windows Event Log source](../deployment/windows-event-log-source.md#throughput-cpu-and-wec-sizing))
+   and shared memory. Add archive
    and spool space if they share the volume.
 5. **`ForwardedEvents`:** `S ≥ R × E × T_stall × 1.2`, where `T_stall` is the longest
    time Bower itself may stop reading (service down, queue full, volume critical). A
@@ -671,13 +674,16 @@ or SQL against a running queue.
 
 ### 8.3 Queue full (page limit)
 
-1. Confirm: `intake.lastRefusalReason` = `queue-capacity`,
-   `queuePages.usedPercent` ≥ 95.
+1. Confirm `intake.lastRefusalReason` = `queue-capacity` and inspect
+   `queuePages.usedPercent`. A large event can be refused below 95% when it needs
+   more pages than remain.
 2. Restore the destination and monitor backlog age, settlement errors and free
-   disk space. Retention may reclaim acknowledged rows (log `1506`, trigger
-   `intake-blocked`) and reopen intake. A full volume, pinned WAL or insufficient
-   settlement headroom can prevent progress; use the recovery steps below and
-   do not assume a drain deadline without a validated measurement.
+   disk space. A refused page allocation may trigger targeted reclaim of acknowledged
+   rows (log `1506`, trigger `large-event`) and reopen intake. With an archive,
+   refusal-triggered reclaim is disabled; verified rows remain subject to the retention
+   floor unless the disk is critical. A full volume, pinned WAL or insufficient
+   settlement headroom can prevent progress; use the recovery steps below and do not
+   assume a drain deadline without a validated measurement.
 3. If the queue is too small for your outages, raise `BOWER_QUEUE_MAX_BYTES` (and the
    volume) at the next maintenance window. That needs a restart; see 8.5 for syslog.
 
@@ -784,7 +790,7 @@ Unit and integration tests (`StoragePressureTests`, plus additions to
 `HeartbeatV2CollectorTests`) cover watermark thresholds and hysteresis, sampling
 bounds, configuration validation and hashes, refusal without commit and with exact
 replay still answered as duplicate, settlement during critical, pressure and
-intake-blocked retention, the drain-deadlock regression, WAL self-healing, page-limit
+refusal-triggered retention, the drain-deadlock regression, WAL self-healing, page-limit
 refusal with crash/recovery, restart while critical, syslog frames held without
 dropping or closing the connection, WEC bookmarks held, status, health and heartbeat
 fields.
@@ -840,12 +846,12 @@ fields.
   `storage-full` refusals (handled as backpressure).
 - **Large events below the pressure trigger:** a large event can need more pages than
   remain below the intake limit, so it is refused well below 80%. The refusal now
-  triggers retention, which removes only as many of the oldest acknowledged rows as the
-  event needs (at any age, in batches of 50), so the rest keep detecting duplicates;
+  triggers retention, which removes the oldest acknowledged rows until the event fits
+  (at any age, checked in batches of 50), so the rest keep detecting duplicates;
   unacknowledged rows are never touched. An
   event larger than the whole intake limit is refused permanently. Not for archived
-  queues (next item): there the source retries until age retention or the 80%/95%
-  triggers free enough pages. Unit-tested only.
+  queues (next item): there the source retries until age or pressure retention frees
+  enough verified rows. Unit-tested only.
 - **Archive-backed retention:** retention now deletes only the sequence set whose
   archive segments it re-hashed, and rechecks acknowledgement and cutoff in the write
   transaction. Interleaved purge and corrupted-segment regressions cover the previously
@@ -859,7 +865,7 @@ fields.
   Until then retain and retry the source event where the source supports it, and restore
   capacity without deleting recent acknowledgements or unverified rows. UDP can drop
   events under backpressure.
-- Pressure and intake-blocked retention shorten duplicate detection. Replays of
+- Pressure and refusal-triggered retention shorten duplicate detection. Replays of
   events whose acknowledged rows were removed are accepted again and duplicated at
   the destination. Production queries should deduplicate by `CollectorId, EventId`
   as in the [pilot guide](../../lab/aws/PILOT.md).

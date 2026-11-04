@@ -112,6 +112,14 @@ class EvaluateTests(unittest.TestCase):
         self.assertIn("windows-event-log", codes(findings))
         self.assertEqual(1, metrics["bower_sources_overdue"])
 
+    def test_unreconciled_windows_cursor_is_critical_without_new_errors(self):
+        windows = [{"id": "wec", "state": "winevt-cursor-unreconciled", "cursorConflicts": 0}]
+        verdict, findings, _, _ = healthcheck.evaluate(
+            {"status": "healthy"}, status(windowsEventLog=windows), None, options(), {}, NOW)
+        self.assertEqual(healthcheck.CRITICAL, verdict)
+        self.assertIn("windows-event-log", codes(findings))
+        self.assertTrue(any("winevt-cursor-unreconciled" in item["detail"] for item in findings))
+
     def test_syslog_errors_are_reported_only_when_new_in_the_same_process(self):
         listener = {"id": "firewall-tls", "tlsHandshakeFailures": 2, "connectionsAccepted": 9, "activeConnections": 1}
         current = status(syslog=[listener])

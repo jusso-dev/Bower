@@ -185,6 +185,20 @@ jobs:
           dotnet test --project tests/Bower.UnitTests/Bower.UnitTests.csproj
           --configuration Release --no-build
           --filter-class "Bower.UnitTests.WindowsSettingsFileTests"
+      - name: Build Windows lab position probe
+        shell: pwsh
+        run: |
+          dotnet restore lab/aws/upgrade-recovery/probe/Bower.LabProbe.csproj --locked-mode
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build lab/aws/upgrade-recovery/probe/Bower.LabProbe.csproj --configuration Release --no-restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test receiving position under Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          if ($PSVersionTable.PSVersion.Major -ne 5) { throw 'Expected Windows PowerShell 5.1' }
+          $env:BOWER_LAB_PROBE_PATH = Join-Path $env:GITHUB_WORKSPACE 'lab\aws\upgrade-recovery\probe\bin\Release\net10.0\Bower.LabProbe.exe'
+          if (-not (Test-Path -LiteralPath $env:BOWER_LAB_PROBE_PATH)) { throw 'Lab probe apphost not found' }
+          & .\lab\aws\tests\test_wec_receiving_position.ps1
 
   rust:
     needs: [changes, version]
@@ -254,9 +268,19 @@ jobs:
           dotnet restore "$probe" --locked-mode
           dotnet build "$probe" --configuration Release --no-restore
           dotnet format "$probe" --verify-no-changes --no-restore
-      - name: Validate AWS lab harness
+      - name: Build WEC evidence probe
         run: |
+          probe=lab/aws/upgrade-recovery/probe/Bower.LabProbe.csproj
+          dotnet restore "$probe" --locked-mode
+          dotnet build "$probe" --configuration Release --no-restore
+          dotnet format "$probe" --verify-no-changes --no-restore
+      - name: Validate AWS lab harness
+        env:
+          BOWER_WECFIX_PROBE_DLL: ${{ github.workspace }}/lab/aws/upgrade-recovery/probe/bin/Release/net10.0/Bower.LabProbe.dll
+        run: |
+          pwsh -NoProfile -File lab/aws/tests/test_wec_receiving_position.ps1
           python3 -m unittest discover -s lab/aws/tests -v
+          python3 -m unittest discover -s tools/docs/tests -p 'test_wec_helper_sync.py' -v
           python3 -m unittest discover -s lab/aws/monitoring -p 'test_*.py' -v
           python3 -m compileall -q lab/aws/scripts
           python3 -m compileall -q lab/aws/monitoring

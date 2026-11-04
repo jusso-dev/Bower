@@ -1,0 +1,16 @@
+{
+    "build":  "new",
+    "exitCode":  0,
+    "before":  "0.1.0.354",
+    "after":  "0.1.0.370",
+    "startedAt":  "2026-11-03T07:02:17.9112567+00:00",
+    "finishedAt":  "2026-11-03T07:02:21.9975822+00:00",
+    "healthyAt":  "2026-11-03T07:02:22.0757662+00:00",
+    "pidBefore":  2136,
+    "pidAfter":  2500,
+    "state":  "Running",
+    "account":  "NT SERVICE\\Bower",
+    "collectorSha256":  "42c211428ba4a51788302752d0f97b92fb31d7449b2ed41b4c20bf4a4459fbe7",
+    "settingsSha256":  "3d5045f06b34b1f2c9aa0dfd6543d2d11f886743c639e757aad3b6f3084d19cf"
+}
+

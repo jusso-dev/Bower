@@ -56,6 +56,8 @@ public sealed class PipelineTelemetry(TimeProvider clock)
     private long capacityRefusedBytes;
     private long privacyAlertRefusals;
     private long privacyAlertRefusedBytes;
+    private long sourceRecordsRolledBack;
+    private long sourceRecordRolledBackBytes;
 
     // UtcTicks * 2 + reason bit (0 queue, 1 privacy alert); 0 before any refusal.
     private long lastRefusal;
@@ -123,6 +125,16 @@ public sealed class PipelineTelemetry(TimeProvider clock)
         RecordStorageRefusal(bytesIn, reason);
     }
 
+    /// <summary>
+    /// Counts a source record whose provisional queue or suppression write was rolled back
+    /// for capacity. This is a subset of the primary refusal counters, not another attempt.
+    /// </summary>
+    public void RecordSourceRecordRollback(long bytesIn)
+    {
+        Interlocked.Add(ref sourceRecordRolledBackBytes, bytesIn);
+        Interlocked.Increment(ref sourceRecordsRolledBack);
+    }
+
     public IntakeMetricsSnapshot IntakeSnapshot()
     {
         // Read in the reverse of write order. Writers set the last refusal, then bytes, then
@@ -142,7 +154,9 @@ public sealed class PipelineTelemetry(TimeProvider clock)
             alertRefusals,
             alertRefusedBytes,
             last == 0 ? null : new DateTimeOffset(last >> 1, TimeSpan.Zero),
-            last == 0 ? null : (last & 1) == 0 ? QueueCapacityReason : PrivacyAlertCapacityReason);
+            last == 0 ? null : (last & 1) == 0 ? QueueCapacityReason : PrivacyAlertCapacityReason,
+            Interlocked.Read(ref sourceRecordsRolledBack),
+            Interlocked.Read(ref sourceRecordRolledBackBytes));
     }
 
     // Forward only, so concurrent refusals keep the latest time and its reason.
@@ -427,7 +441,9 @@ public sealed record IntakeMetricsSnapshot(
     long PrivacyAlertRefusals,
     long PrivacyAlertRefusedBytes,
     DateTimeOffset? LastRefusalAt,
-    string? LastRefusalReason);
+    string? LastRefusalReason,
+    long SourceRecordsRolledBack = 0,
+    long SourceRecordRolledBackBytes = 0);
 
 /// <summary>
 /// Capacity refusals caused by free disk space on the queue volume since process start

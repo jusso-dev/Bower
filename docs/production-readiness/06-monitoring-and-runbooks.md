@@ -94,6 +94,7 @@ Collector log events worth alerting on (all metadata only):
 | 1001 | Warning | Output failed; batch will retry | R1, R2 |
 | 1002 | Error | Delivery loop failed (for example `SqliteException`); retrying after back-off. Repeating every 5 s means delivery is stalled | R5 |
 | 1004 | Warning | Delivery attempts exhausted; event dead-lettered | R3 |
+| 1009 | Information, then Warning | Queue database busy past the 5 s busy timeout (another writer, for example a retention batch); delivery retries after 1 s. Collectors before wecfix logged this as 1002 `SqliteException`. Logged on the first and every 12th busy attempt, and immediately when the first busy stretch reaches 60 s. After that first warning, another busy stretch reaching 60 s warns at the next periodic log; the escalation latch resets after a successful delivery cycle. Shorter stretches log at Information when due. Investigate sustained contention, including external tools or a stuck backup, before intervening | R5 |
 | 1006 | Warning | Retry-After above one hour was capped | R2 |
 | 1007 | Warning | Output exceeded its delivery timeout; batch will retry (seen throughout a destination outage) | R1 |
 | 1008 | Warning | Output did not deliver N events; retrying or dead-lettered. Allow-listed `destination-azure-credential-failed`, `destination-azure-http-401` and `destination-azure-http-403` indicate identity or role failure. Other unrecognised codes are reported as `delivery-failure` to avoid exposing arbitrary adapter text ([credential rotation](05-credential-rotation-and-security-failures.md)) | R1 |
@@ -663,9 +664,14 @@ Full procedure, sizing and measurements: [storage pressure](03-storage-pressure.
    (undelivered against the cap).
 2. **Volume warning or critical:** free space or grow the volume. Do not restart the
    collector; intake resumes within seconds of space returning (measured 2 s).
-3. **Pages at the limit with the destination down:** nothing to do; after delivery
-   resumes, retention removes acknowledged rows (log 1506, `intake-blocked`) and intake
-   reopens without a restart.
+3. **Pages at the limit with the destination down:** restore delivery, then watch
+   settlement and intake. An actual page refusal may trigger targeted reclaim of
+   acknowledged rows (log 1506, `large-event`); ordinary pressure retention uses
+   `queue-pages` and keeps the configured floor. With an archive, refusal-triggered
+   reclaim is disabled: only verified rows past the applicable floor are eligible, so
+   intake can remain blocked until those rows age or capacity is restored. A full volume,
+   pinned WAL or inadequate settlement headroom can also prevent progress. Do not assume
+   a recovery deadline or delete unverified rows.
 4. **Pages high with no backlog:** retained acknowledged rows. Lower
    `BOWER_QUEUE_RETENTION_HOURS` or raise the cap at the next maintenance window; size the
    volume for `1.75 × (cap + 4 MiB)` plus the watermark.
@@ -720,6 +726,21 @@ Windows WEF/WEC:
 4. Bower side: `windowsEventLog[]` `state` (`running`), `readErrors`, `lastEventAt`;
    `winevt-access-denied` means `NT SERVICE\Bower` lost read access to `ForwardedEvents`
    (`wevtutil gl ForwardedEvents` channel access).
+5. `winevt-cursor-unreconciled` is a persistent unhealthy state: a reset or gap was
+   observed, but a competing cursor change could not be reconciled with its pending
+   baseline. Keep the collector running while preserving status, configuration and source
+   and destination evidence, and take a consistent queue backup using the
+   [backup procedure](04-upgrade-backup-recovery.md). Do not blindly restart or modify the
+   cursor: the latch exists only in memory. A qualified administrator must identify
+   competing writers and reconcile the evidence to establish a safe recovery position.
+   If the stored cursor is safe, stop and restart the collector to clear the latch and resume
+   that subscription. Otherwise, after assessing replay and duplicate risks, the administrator
+   may stop the collector, configure a new subscription ID with `readExisting: true` and restart
+   to replay the retained channel; this reads retained records rather than seeking an arbitrary
+   position. If neither option provides safe recovery, mark coverage unknown and escalate.
+   Neither option recovers events
+   already overwritten or cleared. The host check and health record report the unhealthy
+   state; the Sentinel source-transport rule must still be validated in the target workspace.
 
 **Verify:** new rows from the source; A5/A6 resolve about 15 minutes later. Adjust
 `BOWER_SOURCE_EXPECTATIONS` or `sourceSilenceOverrides` for sources that are legitimately

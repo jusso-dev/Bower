@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Bower.Abstractions;
 using Bower.Persistence;
+using Bower.Source.WindowsEventLog;
 using Microsoft.Data.Sqlite;
 
 namespace Bower.UnitTests;
@@ -8,6 +9,93 @@ namespace Bower.UnitTests;
 public sealed class QueueBackupTests
 {
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
+
+    [Fact]
+    public async Task BackupAndRestore_AtomicWecCursorQueueAndSuppressionStayTogetherAcrossRefusal()
+    {
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        string live = Path.Combine(directory.Path, "live", "queue.db");
+        SqliteEventStore store = new(live, 16 * 1_048_576, clock);
+        await store.InitializeAsync(Cancellation);
+        EfSourceCursorStore cursors = new(live);
+        await cursors.InitializeAsync(Cancellation);
+        SuppressionRequest rule = new("policy", "1", "hash", "key", [], [], 3600, 1,
+            "authentication", "failure", "application", "test", null);
+        QueuedEvent admitted = Event(1, clock) with { Suppression = rule };
+        QueuedEvent suppressed = Event(2, clock) with { Suppression = rule };
+        const string sourceId = "windows-eventlog:wec";
+        string cursorTwo = WindowsEventBookmark.At("ForwardedEvents", 2).Serialize();
+
+        await using (QueueEnqueueBatch committed = await store.BeginEnqueueBatchAsync(Cancellation))
+        {
+            committed.Join();
+            committed.BeginRecord();
+            Assert.True((await store.EnqueueAsync(admitted, Cancellation)).Enqueued);
+            committed.EndRecord(true);
+            committed.BeginRecord();
+            Assert.True((await store.EnqueueAsync(suppressed, Cancellation)).Suppressed);
+            committed.EndRecord(true);
+            Assert.Equal(QueueBatchCursorResult.Committed,
+                await committed.CommitWithCursorAsync(cursors, sourceId, 0, cursorTwo, clock.UtcNow, Cancellation));
+        }
+
+        string duringWrite = Path.Combine(directory.Path, "backups", "during.bowerbackup");
+        store.BatchCommitFaultForTesting = () => new SqliteException("database full", 13);
+        await using (QueueEnqueueBatch pending = await store.BeginEnqueueBatchAsync(Cancellation))
+        {
+            pending.Join();
+            pending.BeginRecord();
+            Assert.True((await store.EnqueueAsync(Event(3, clock) with { Suppression = rule }, Cancellation)).Suppressed);
+            pending.EndRecord(true);
+            pending.BeginRecord();
+            Assert.True((await store.EnqueueAsync(Event(4, clock), Cancellation)).Enqueued);
+            pending.EndRecord(true);
+            // A WAL snapshot while this transaction is still open must include only the
+            // committed cursor, queue row and suppression count.
+            QueueBackupManifest snapshot = await QueueBackup.CreateAsync(live, duringWrite, "collector-a", clock,
+                busyTimeout: TimeSpan.FromSeconds(5), cancellationToken: Cancellation);
+            Assert.Equal(1, snapshot.SourceCursors);
+            Assert.Equal(1, snapshot.Counts!.Queued);
+            Assert.Equal(1, snapshot.LedgerSequence);
+            Assert.Equal(QueueBatchCursorResult.Refused,
+                await pending.CommitWithCursorAsync(cursors, sourceId, 1,
+                    WindowsEventBookmark.At("ForwardedEvents", 4).Serialize(), clock.UtcNow, Cancellation));
+        }
+
+        string afterRefusal = Path.Combine(directory.Path, "backups", "after.bowerbackup");
+        await QueueBackup.CreateAsync(live, afterRefusal, "collector-a", clock, cancellationToken: Cancellation);
+        foreach (string backup in new[] { duringWrite, afterRefusal })
+        {
+            string restoredPath = Path.Combine(directory.Path, Path.GetFileNameWithoutExtension(backup), "queue.db");
+            QueueRestoreResult restore = await QueueBackup.RestoreAsync(backup, restoredPath, clock, cancellationToken: Cancellation);
+            Assert.True(restore.Backup.LedgerIntact);
+            SqliteEventStore restored = new(restoredPath, 16 * 1_048_576, clock);
+            await restored.InitializeAsync(Cancellation);
+            EfSourceCursorStore restoredCursors = new(restoredPath);
+            await restoredCursors.InitializeAsync(Cancellation);
+            SourceCursorSnapshot cursor = (await restoredCursors.ReadAsync(sourceId, Cancellation))!;
+            Assert.Equal((cursorTwo, 1L), (cursor.Value, cursor.Version));
+            Assert.Equal(1, (await restored.GetSnapshotAsync(Cancellation)).Queued);
+            Assert.Equal(1, await ScalarAsync(restoredPath, "SELECT COALESCE(SUM(suppressed), 0) FROM suppression_windows;"));
+            Assert.True((await restored.VerifyLedgerAsync(Cancellation)).Intact);
+            Assert.True((await restored.EnqueueAsync(admitted, Cancellation)).Duplicate);
+
+            // Resume from the restored cursor: the next suppressed record is counted once.
+            await using QueueEnqueueBatch retry = await restored.BeginEnqueueBatchAsync(Cancellation);
+            retry.Join();
+            retry.BeginRecord();
+            Assert.True((await restored.EnqueueAsync(Event(3, clock) with { Suppression = rule }, Cancellation)).Suppressed);
+            retry.EndRecord(true);
+            Assert.Equal(QueueBatchCursorResult.Committed,
+                await retry.CommitWithCursorAsync(restoredCursors, sourceId, cursor.Version,
+                    WindowsEventBookmark.At("ForwardedEvents", 3).Serialize(), clock.UtcNow, Cancellation));
+            Assert.Equal(2, await ScalarAsync(restoredPath, "SELECT COALESCE(SUM(suppressed), 0) FROM suppression_windows;"));
+            SourceCursorSnapshot retriedCursor = (await restoredCursors.ReadAsync(sourceId, Cancellation))!;
+            Assert.Equal(2, retriedCursor.Version);
+            Assert.Equal(3, WindowsEventBookmark.Deserialize(retriedCursor.Value, "ForwardedEvents").RecordId);
+        }
+    }
 
     [Fact]
     public async Task Backup_OfLiveQueue_RestoresEveryStateCursorAndDeduplicationOnANewHost()

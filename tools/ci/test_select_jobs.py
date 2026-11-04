@@ -24,9 +24,37 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual({"ui", "e2e"}, self.enabled(["ui/Bower.Management.Web/src/App.tsx"]))
 
     def test_source_security_changes_keep_tests_and_windows_coverage(self):
-        self.assertEqual({"dotnet", "windows", "e2e"}, self.enabled([
+        self.assertEqual({"dotnet", "windows", "e2e", "infrastructure"}, self.enabled([
             "src/Bower.Redaction/Redactor.cs", "tests/Bower.UnitTests/QueueTests.cs",
         ]))
+
+    def test_wec_probe_references_run_lab_infrastructure(self):
+        for project in ("Bower.Persistence", "Bower.Source.WindowsEventLog", "Bower.Redaction",
+                        "Bower.Abstractions", "Bower.Contracts"):
+            with self.subTest(project=project):
+                self.assertEqual({"dotnet", "windows", "e2e", "infrastructure"},
+                                 self.enabled([f"src/{project}/Changed.cs"]))
+
+    def test_wec_receiving_position_inputs_run_windows_and_lab_checks(self):
+        for path in ("lab/aws/tests/test_wec_receiving_position.ps1", "lab/aws/soak/wec-agent.ps1",
+                     "lab/aws/wecfix/wec-agent.ps1", "lab/aws/upgrade-recovery/probe/Program.cs",
+                     "lab/aws/upgrade-recovery/probe/Bower.LabProbe.csproj",
+                     "lab/aws/upgrade-recovery/probe/packages.lock.json"):
+            with self.subTest(path=path):
+                self.assertEqual({"windows", "infrastructure"}, self.enabled([path]))
+
+    def test_unrelated_lab_inputs_do_not_run_windows_checks(self):
+        for path in ("lab/aws/wecfix/reconcile.py", "lab/aws/soak/dc-agent.ps1",
+                     "lab/aws/tests/test_wec_receiving_position_extra.ps1",
+                     "lab/aws/upgrade-recovery/probes/other.cs"):
+            with self.subTest(path=path):
+                self.assertEqual({"infrastructure"}, self.enabled([path]))
+
+    def test_unrelated_sources_do_not_run_lab_infrastructure(self):
+        for path in ("src/Bower.Source.Syslog/SyslogSource.cs", "src/Bower.Collector/Program.cs",
+                     "src/Bower.PersistenceExtra/Other.cs", "tests/Bower.UnitTests/QueueTests.cs"):
+            with self.subTest(path=path):
+                self.assertEqual({"dotnet", "windows", "e2e"}, self.enabled([path]))
 
     def test_shared_assets_test_both_implementations(self):
         result = self.enabled(["packs/windows-security-logon/parsers/security-4625.json"])
@@ -65,7 +93,8 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual({"dotnet", "infrastructure"}, self.enabled(["deploy/sentinel/analytics/rules/firewall-deny.kql"]))
 
     def test_unknown_and_workflow_inputs_fail_safe(self):
-        for path in ("global.json", "Directory.Build.props", "new-tool/config.json",
+        for path in ("global.json", "Directory.Build.props", "Directory.Packages.props",
+                     "nuget.config", "new-tool/config.json",
                      ".github/workflows/ci.yml", "tools/ci/select_jobs.py"):
             self.assertEqual(set(JOBS), self.enabled([path]))
 

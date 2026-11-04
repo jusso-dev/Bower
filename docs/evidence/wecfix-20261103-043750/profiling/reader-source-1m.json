@@ -1,0 +1,92 @@
+{
+ "info": {
+  "channel": "ForwardedEvents",
+  "recordCount": 1040001,
+  "fileSize": 2525040640,
+  "oldestRecordNumber": 1,
+  "isLogFull": false,
+  "oldestPosition": 1,
+  "newestPosition": 1040001
+ },
+ "polls": 71617,
+ "eventsReturned": 0,
+ "maxLagRecords": 0,
+ "wallMsMedian": 0.806,
+ "wallMsP95": 0.888,
+ "clientCpuMsMedian": 0,
+ "clientCpuMsTotal": 15015.625,
+ "serviceCpuMsMedian": 0,
+ "serviceCpuMsTotal": 44296.875,
+ "deciles": [
+  {
+   "fromPoll": 0,
+   "polls": 7161,
+   "wallMsMean": 0.869,
+   "clientCpuMsMean": 0.2771,
+   "serviceCpuMsMean": 0.6764
+  },
+  {
+   "fromPoll": 7161,
+   "polls": 7161,
+   "wallMsMean": 0.8185,
+   "clientCpuMsMean": 0.2138,
+   "serviceCpuMsMean": 0.6066
+  },
+  {
+   "fromPoll": 14322,
+   "polls": 7161,
+   "wallMsMean": 0.8155,
+   "clientCpuMsMean": 0.2291,
+   "serviceCpuMsMean": 0.5826
+  },
+  {
+   "fromPoll": 21483,
+   "polls": 7161,
+   "wallMsMean": 0.8186,
+   "clientCpuMsMean": 0.2095,
+   "serviceCpuMsMean": 0.6153
+  },
+  {
+   "fromPoll": 28644,
+   "polls": 7161,
+   "wallMsMean": 0.8152,
+   "clientCpuMsMean": 0.2095,
+   "serviceCpuMsMean": 0.6022
+  },
+  {
+   "fromPoll": 35805,
+   "polls": 7161,
+   "wallMsMean": 0.814,
+   "clientCpuMsMean": 0.1702,
+   "serviceCpuMsMean": 0.6371
+  },
+  {
+   "fromPoll": 42966,
+   "polls": 7161,
+   "wallMsMean": 0.814,
+   "clientCpuMsMean": 0.2247,
+   "serviceCpuMsMean": 0.5848
+  },
+  {
+   "fromPoll": 50127,
+   "polls": 7161,
+   "wallMsMean": 0.8139,
+   "clientCpuMsMean": 0.1811,
+   "serviceCpuMsMean": 0.6371
+  },
+  {
+   "fromPoll": 57288,
+   "polls": 7161,
+   "wallMsMean": 0.8123,
+   "clientCpuMsMean": 0.2073,
+   "serviceCpuMsMean": 0.6
+  },
+  {
+   "fromPoll": 64449,
+   "polls": 7161,
+   "wallMsMean": 0.8136,
+   "clientCpuMsMean": 0.1746,
+   "serviceCpuMsMean": 0.6415
+  }
+ ]
+}
