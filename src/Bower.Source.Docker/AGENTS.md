@@ -14,7 +14,7 @@ Read-only Docker source for the sidecar.
   (`Bower.Source.File.FileTailFiles.Plan`); this project owns only the json-file decoder
   (entries, 16 KiB chunk join, malformed entries, oversized discard, bounds). Docker keeps
   its own policy: 64-byte identity (`FileTailHandle.OpenWithPrefixIdentity`), no device or
-  inode use, no rotation grace window, no copy drain on a same-identity truncation, no
+  inode use, no rotation grace window or drain cap, no copy drain on a same-identity truncation, no
   abandoned-generation tracking, waiting while the current file cannot be identified, and
   the oversized discard carried across rotation. `DockerLogCursor` keeps no rotation state,
   so each read detects a rotation again. Changing any of

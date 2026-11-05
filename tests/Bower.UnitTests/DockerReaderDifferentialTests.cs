@@ -21,7 +21,7 @@ public sealed class DockerReaderDifferentialTests
     [Fact]
     public void CurrentReader_MatchesThePreRefactorReaderOnRandomFileHistories()
     {
-        int reads = 0, records = 0, gaps = 0, discarding = 0, rotations = 0, failures = 0;
+        int reads = 0, records = 0, gaps = 0, discarding = 0, rotations = 0, failures = 0, restarts = 0;
         for (int seed = 0; seed < Seeds; seed++)
         {
             Random random = new(seed);
@@ -40,7 +40,7 @@ public sealed class DockerReaderDifferentialTests
             string? pendingTail = null;
             for (int step = 0; step < Steps; step++)
             {
-                switch (random.Next(14))
+                switch (random.Next(17))
                 {
                     case 0 or 1:
                         Append(path, Entries(random, random.Next(1, 5)));
@@ -92,6 +92,20 @@ public sealed class DockerReaderDifferentialTests
                         System.IO.File.Delete(path);
                         pendingTail = null;
                         break;
+                    case 11 when random.Next(3) == 0:
+                        // A new container (or a lost cursor): both start again from no cursor,
+                        // so the start-at-end scan runs over whatever the file holds now.
+                        legacyCursor = null;
+                        currentCursor = null;
+                        restarts++;
+                        break;
+                    case 12 when pendingTail is null:
+                        // An unfinished entry longer than any batch byte budget.
+                        string longEntry = Entry("long " + random.Next() + new string('z', random.Next(3_000, 6_000)) + "\n");
+                        int split = longEntry.Length - random.Next(2, 40);
+                        Append(path, longEntry[..split]);
+                        pendingTail = longEntry[split..];
+                        break;
                     default:
                         (DockerLogBatch? legacy, string? legacyError) = Run(() => LegacyDockerJsonLogReader.Read(container, legacyCursor, options));
                         (DockerLogBatch? current, string? currentError) = Run(() => DockerJsonLogReader.Read(container, currentCursor, options));
@@ -120,8 +134,8 @@ public sealed class DockerReaderDifferentialTests
         }
 
         // The histories must actually exercise the interesting paths.
-        Assert.True(reads > Seeds * 10 && records > 1_000 && gaps > 20 && discarding > 20 && rotations > 200,
-            $"reads {reads}, records {records}, gaps {gaps}, discarding {discarding}, rotations {rotations}, failures {failures}");
+        Assert.True(reads > Seeds * 10 && records > 1_000 && gaps > 20 && discarding > 20 && rotations > 200 && restarts > 100,
+            $"reads {reads}, records {records}, gaps {gaps}, discarding {discarding}, rotations {rotations}, restarts {restarts}, failures {failures}");
     }
 
     [Fact]

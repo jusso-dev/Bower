@@ -4,4 +4,7 @@
     <ProjectReference Include="../Bower.Contracts/Bower.Contracts.csproj" />
     <ProjectReference Include="../Bower.Source.File/Bower.Source.File.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Bower.UnitTests" />
+  </ItemGroup>
 </Project>

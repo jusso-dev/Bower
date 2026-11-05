@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -111,16 +112,7 @@ public static class DockerJsonLogReader
                 fileId: null,
                 () => rotated ??= FileTailHandle.OpenWithPrefixIdentity(container.LogPath + ".1"),
                 cursor is null ? null : Shared(cursor),
-                new FileTailPolicy
-                {
-                    StartAtEnd = options.StartAtEnd,
-                    WaitWhileCurrentUnidentified = true,
-                    DrainCopyOfSameIdentity = false,
-                    RotationGracePolls = null,
-                    RotationDrainMaxPolls = null,
-                    CarryDiscardingAcrossRotation = true,
-                    TrackAbandoned = false
-                },
+                options.StartAtEnd ? StartAtEndPolicy : ReplayPolicy,
                 new Decoder(options));
         }
         finally
@@ -130,13 +122,37 @@ public static class DockerJsonLogReader
     }
 
     /// <summary>
+    /// Docker's historical rotation behaviour on the shared tailer: wait while the current file
+    /// cannot be identified, no copy drain, no grace window (leave once drained, measured after
+    /// the scan), no abandoned tracking, the oversized discard carried across rotation and an
+    /// unbounded start-at-end scan.
+    /// </summary>
+    private static readonly FileTailPolicy StartAtEndPolicy = new()
+    {
+        StartAtEnd = true,
+        WaitWhileCurrentUnidentified = true,
+        DrainCopyOfSameIdentity = false,
+        RotationGracePolls = null,
+        RotationDrainMaxPolls = null,
+        CarryDiscardingAcrossRotation = true,
+        TrackAbandoned = false,
+        DrainedAgainstLengthAfterScan = true
+    };
+
+    private static readonly FileTailPolicy ReplayPolicy = StartAtEndPolicy with { StartAtEnd = false };
+
+    /// <summary>
     /// Docker json-file entries. A drain stopped by the record limit is not drained. Docker's
     /// cursor keeps no rotation state, so each read detects the rotation again, as it always did.
     /// </summary>
     private sealed class Decoder(DockerLogReaderOptions options) : IFileTailDecoder<DockerLogBatch>
     {
+        // Only a copy drain or a settled grace window ends a line at end of file; Docker's
+        // policy has neither, so reaching this would mean a policy change, not data.
         public DockerLogBatch Scan(FileTailHandle file, FileTailCursor cursor, bool eofEndsLine, bool gap) =>
-            ReadFile(file, Docker(cursor), options, gap);
+            eofEndsLine
+                ? throw new UnreachableException("The Docker policy never ends a line at end of file.")
+                : ReadFile(file, Docker(cursor), options, gap);
 
         public DockerLogBatch Empty(FileTailCursor cursor, bool gap) => DockerJsonLogReader.Empty(Docker(cursor)) with { RotationGap = gap };
 
@@ -152,15 +168,16 @@ public static class DockerJsonLogReader
 
         public DockerLogBatch MovedToCurrent(DockerLogBatch batch, FileTailCursor moved) => batch with { Cursor = Docker(moved) };
 
-        public DockerLogBatch Append(DockerLogBatch batch, DockerLogBatch tail) => batch;
+        public DockerLogBatch Append(DockerLogBatch batch, DockerLogBatch tail) =>
+            throw new UnreachableException("The Docker policy has no grace window, so no settled tail is appended.");
     }
 
     // Same fields and JSON as the shared cursor, so persisted Docker cursors stay valid.
     private static FileTailCursor Shared(DockerLogCursor cursor) =>
         new(cursor.SchemaVersion, cursor.Fingerprint, cursor.Offset, cursor.Discarding);
 
-    // Docker's own schema version: the file tail cursor schema evolves separately.
-    private static DockerLogCursor Docker(FileTailCursor cursor) =>
+    /// <summary>Docker's own schema version, independent of the file tail cursor's.</summary>
+    internal static DockerLogCursor Docker(FileTailCursor cursor) =>
         new(DockerLogCursor.CurrentSchemaVersion, cursor.Fingerprint, cursor.Offset, cursor.Discarding);
 
     private static DockerLogBatch ReadFile(

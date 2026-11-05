@@ -43,6 +43,13 @@ public sealed record FileTailPolicy
 
     /// <summary>Record the generation a rename left, so its later growth is reported as a gap.</summary>
     public bool TrackAbandoned { get; init; } = true;
+
+    /// <summary>
+    /// Without a grace window, decide that <c>path.1</c> is drained against its length after the
+    /// scan rather than at open, so bytes appended meanwhile keep the cursor on it (the Docker
+    /// source's historical check).
+    /// </summary>
+    public bool DrainedAgainstLengthAfterScan { get; init; }
 }
 
 /// <summary>A line format on top of the shared tailer: scans one opened generation within its bounds.</summary>
@@ -260,7 +267,8 @@ public static class FileTailFiles
             if (policy.RotationGracePolls is not { } grace)
             {
                 // No grace window: leave once drained to its end.
-                return fingerprint is null || decoder.CursorOf(batch).Offset < file.Length
+                long end = policy.DrainedAgainstLengthAfterScan ? file.Stream.Length : file.Length;
+                return fingerprint is null || decoder.CursorOf(batch).Offset < end
                     ? batch
                     : decoder.MovedToCurrent(batch, Abandon(Carry(next, batch), at, file));
             }
