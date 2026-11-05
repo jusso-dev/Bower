@@ -6,6 +6,7 @@ using Bower.Integrity;
 using Bower.Management.Api;
 using Bower.Packs;
 using Bower.Pipeline;
+using Bower.Source.File;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using static Bower.UnitTests.SourceSetupApiTests;
@@ -123,7 +124,7 @@ public sealed class FileSourceSetupTests
     [InlineData("posix")]
     [InlineData("windows")]
     [InlineData("beginning")]
-    public async Task Plan_ConfigurationHasExactlyThePlannedLoaderShape(string variant)
+    public async Task Plan_ConfigurationPassesTheCollectorLoaderAndRouteCheck(string variant)
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         using TemporaryDirectory directory = new();
@@ -144,10 +145,10 @@ public sealed class FileSourceSetupTests
         SourceSetupPlanResult result = await PlanAsync(app, "file", "edge-01", values, cancellationToken);
 
         Assert.True(result.Valid, string.Join(" ", result.Checks.Select(check => check.Message)));
-        PlannedShape.Check(File(result.Plan!, FileSourceSchema.FileName));
+        string json = File(result.Plan!, FileSourceSchema.FileName);
         if (variant == "windows")
         {
-            using JsonDocument document = JsonDocument.Parse(File(result.Plan!, FileSourceSchema.FileName));
+            using JsonDocument document = JsonDocument.Parse(json);
             Assert.Equal(@"C:\Logs\Security", document.RootElement.GetProperty("allowedRoots")[0].GetString());
             Assert.All(result.Plan!.Files, file => Assert.StartsWith(@"C:\ProgramData\Bower\", file.InstallPath, StringComparison.Ordinal));
             Assert.Equal("powershell", Assert.Single(result.Plan!.Snippets).Language);
@@ -156,6 +157,38 @@ public sealed class FileSourceSetupTests
         {
             Assert.Equal("linux-sshd/production", result.Plan!.Verification.ReportId);
         }
+
+        // The loader checks paths for the host it runs on, so Windows paths load only on Windows.
+        if (variant != "windows" || OperatingSystem.IsWindows())
+        {
+            FileTailInputOptions input = Assert.Single(LoadAsCollector(json, SignedPackBundle(directory)).Inputs);
+            Assert.Equal(values["path"], input.Path);
+            Assert.Equal(new FileTailRoute("linux-authlog-ssh", 0), input.Route);
+            Assert.Equal(variant == "beginning" ? "beginning" : "end", input.StartAt);
+            Assert.False(input.AllowSymlink);
+        }
+    }
+
+    [Fact]
+    public void Schema_MatchesTheCollectorLoaderLimitsAndRefusesUnloadedRoutes()
+    {
+        using TemporaryDirectory directory = new();
+        Assert.Equal(
+            (FileTailFormats.Text, FileTailFormats.JsonLines),
+            (FileSourceSchema.FormatText, FileSourceSchema.FormatJsonLines));
+        Assert.Equal(
+            (FileTailSourceConfigurationLoader.MinimumMaxLineBytes, FileTailSourceConfigurationLoader.DefaultMaxLineBytes, FileTailSourceConfigurationLoader.MaximumMaxLineBytes),
+            (FileSourceSchema.MinimumLineBytes, FileSourceSchema.DefaultLineBytes, FileSourceSchema.MaximumLineBytes));
+        PolicyBundle bundle = SignedPackBundle(directory);
+        FileTailSourceConfiguration golden = LoadAsCollector(Golden, bundle);
+        Assert.Equal(
+            (1_000, 256, 1_048_576),
+            (golden.PollIntervalMilliseconds, golden.MaxLinesPerBatch, golden.MaxBytesPerBatch));
+
+        // The route check is real: a parser the bundle does not load stops start-up.
+        Assert.Throws<InvalidOperationException>(() => LoadAsCollector(Golden.Replace("\"parser\": 0", "\"parser\": 1", StringComparison.Ordinal), bundle));
+        Assert.Throws<InvalidOperationException>(() => LoadAsCollector(Golden.Replace("linux-authlog-ssh", "linux-ssh-gateway", StringComparison.Ordinal), bundle));
+        Assert.Throws<InvalidDataException>(() => LoadAsCollector(Golden.Replace("16384", "30721", StringComparison.Ordinal), bundle));
     }
 
     [Theory]
@@ -277,8 +310,6 @@ public sealed class FileSourceSetupTests
         foreach (FileSourceParser parser in FileSourceSchema.Parsers)
         {
             string source = Path.Combine(AppContext.BaseDirectory, "packs", parser.Pack);
-            // linux-authlog-ssh ships with the file tail source (feat/file-tail-source).
-            Assert.SkipUnless(Directory.Exists(source), $"Pack {parser.Pack} is not in this checkout yet.");
             LoadedPack pack = PackArchive.Load(PackArchive.Build(source, privatePem, directory.Path), [publicPem]);
             Assert.Equal(parser.Pack, pack.Manifest.Id);
             CustomLogParserConfiguration loaded = pack.Parsers[parser.ParserIndex];
@@ -355,36 +386,33 @@ public sealed class FileSourceSetupTests
             signed.RequestId, signed.CollectorId, signed.SourceType, signed.ContentHash, files, signed.Variables,
             signed.Snippets, signed.Verification, signed.ApprovedAt);
 
-    /// <summary>
-    /// The <c>BOWER_FILE_CONFIG</c> shape of <c>FileTailSourceConfigurationLoader</c>, strictly
-    /// (unknown keys rejected). Replace with the loader itself once Bower.Source.File is on main.
-    /// </summary>
-    private static class PlannedShape
+    /// <summary>What a collector start does with <c>BOWER_FILE_CONFIG</c>: load it, then check every route.</summary>
+    private static FileTailSourceConfiguration LoadAsCollector(string json, PolicyBundle bundle)
     {
-        public static void Check(string json)
-        {
-            using JsonDocument document = JsonDocument.Parse(json);
-            JsonElement root = document.RootElement;
-            Keys(root, "apiVersion", "kind", "allowedRoots", "inputs");
-            Assert.Equal(FileSourceSchema.ApiVersion, root.GetProperty("apiVersion").GetString());
-            Assert.Equal(FileSourceSchema.Kind, root.GetProperty("kind").GetString());
-            string[] roots = [.. root.GetProperty("allowedRoots").EnumerateArray().Select(item => item.GetString()!)];
-            Assert.NotEmpty(roots);
-            Assert.All(roots, item => Assert.True(item.StartsWith('/') || (item.Length > 3 && char.IsAsciiLetter(item[0]) && item[1..3] == ":\\"), item));
-            JsonElement input = Assert.Single(root.GetProperty("inputs").EnumerateArray());
-            Keys(input, "id", "path", "route", "format", "startAt", "maxLineBytes");
-            Keys(input.GetProperty("route"), "pack", "parser");
-            string path = input.GetProperty("path").GetString()!;
-            Assert.Contains(roots, item => path.StartsWith(item + (item.StartsWith('/') ? "/" : "\\"), StringComparison.Ordinal));
-            Assert.Contains(input.GetProperty("format").GetString(), new[] { FileSourceSchema.FormatText, FileSourceSchema.FormatJsonLines });
-            Assert.Contains(input.GetProperty("startAt").GetString(), new[] { FileSourceSchema.StartAtEnd, FileSourceSchema.StartAtBeginning });
-            Assert.InRange(input.GetProperty("maxLineBytes").GetInt32(), FileSourceSchema.MinimumLineBytes, FileSourceSchema.MaximumLineBytes);
-            Assert.Contains(FileSourceSchema.Parsers, parser =>
-                parser.Pack == input.GetProperty("route").GetProperty("pack").GetString()
-                && parser.ParserIndex == input.GetProperty("route").GetProperty("parser").GetInt32());
-        }
+        FileTailSourceConfiguration configuration = FileTailSourceConfigurationLoader.Parse(json);
+        Bower.Collector.FileTailRoutes.Validate(configuration, bundle);
+        return configuration;
+    }
 
-        private static void Keys(JsonElement element, params string[] expected) =>
-            Assert.Equal(expected, element.EnumerateObject().Select(property => property.Name));
+    /// <summary>A collector bundle with every offered pack built, signed and loaded under a trusted key.</summary>
+    private static PolicyBundle SignedPackBundle(TemporaryDirectory directory)
+    {
+        (string privatePem, string publicPem, _) = DetachedSigner.GenerateKeyPair();
+        string trusted = Path.Combine(directory.Path, "trusted.pem");
+        string hmacKey = Path.Combine(directory.Path, "hmac.key");
+        System.IO.File.WriteAllText(trusted, publicPem);
+        System.IO.File.WriteAllText(hmacKey, Convert.ToBase64String(new byte[32]));
+        string[] packs =
+        [
+            .. FileSourceSchema.Parsers.Select(parser => parser.Pack).Distinct(StringComparer.Ordinal)
+                .Select(pack => PackArchive.Build(Path.Combine(AppContext.BaseDirectory, "packs", pack), privatePem, directory.Path))
+        ];
+        return PolicyBundle.Load(new PolicyBundleSources
+        {
+            PolicyDirectory = Directory.CreateDirectory(Path.Combine(directory.Path, "policies")).FullName,
+            Packs = packs,
+            PackTrustedKeyFiles = [trusted],
+            PrivacyHmacKeyFile = hmacKey
+        });
     }
 }

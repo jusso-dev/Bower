@@ -20,9 +20,9 @@ and routes every line to one signed pack parser. Lines the parser does not selec
 are dropped; this is not log shipping. The form generates `file-source.json`
 (`BOWER_FILE_CONFIG`, kind `FileTailSource`) and a source expectation for the
 parser's application, so
-**Check it works** reports the source from the collector's heartbeat. The
-collector-side guide is `docs/deployment/file-tail-source.md`, added with the
-file source itself.
+**Check it works** reports the source from the collector's heartbeat. For the
+collector side (path guards, the record a parser sees, least privilege and
+rotation), see the [file tail source guide](../deployment/file-tail-source.md).
 
 - **One file, one parser.** Enter the exact absolute path of one file and the
   narrowest **allowed directory** that holds it. Wildcards, `..`, `.` and empty

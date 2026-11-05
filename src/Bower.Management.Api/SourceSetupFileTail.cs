@@ -20,7 +20,9 @@ public sealed record FileSourceParser(
 /// <summary>
 /// The collector file tail source configuration (<c>BOWER_FILE_CONFIG</c>), in one place. Mirrors
 /// <c>FileTailSourceConfigurationLoader</c> in <c>src/Bower.Source.File</c> (and the Rust port),
-/// which rejects unknown keys. Poll interval and batch limits are left at the loader's defaults,
+/// which rejects unknown keys; Management.Api does not reference the source, so the unit tests
+/// load every generated file with that loader and its route check (FileSourceSetupTests).
+/// Poll interval and batch limits are left at the loader's defaults,
 /// and <c>allowSymlink</c> is never generated, so a symbolic link is always refused.
 /// </summary>
 public static class FileSourceSchema
