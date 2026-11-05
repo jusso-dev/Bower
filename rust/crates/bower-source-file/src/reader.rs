@@ -31,9 +31,7 @@ pub const CURRENT_SCHEMA_VERSION: i32 = 2;
 /// `drain_length` is `path.1`'s length when the drain began and `drain_polls` the polls
 /// counted towards the drain cap (only polls that reach the end of `path.1` or get past that
 /// length); `abandoned` is the generation the cursor left, whose later growth is a gap while
-/// it can still be observed; `anchor` is the SHA-256 of the last min(offset, 256) bytes before
-/// `offset`, which tells the same content at another device and inode (restored or copied)
-/// from another generation. Optional fields are omitted when unset.
+/// it can still be observed. Optional fields are omitted when unset.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Cursor {
@@ -60,8 +58,6 @@ pub struct Cursor {
     pub abandoned: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub abandoned_length: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub anchor: Option<String>,
 }
 
 pub const RENAME_DRAIN: &str = "rename";
@@ -98,8 +94,6 @@ struct StoredCursor {
     abandoned: Option<String>,
     #[serde(default)]
     abandoned_length: Option<i64>,
-    #[serde(default)]
-    anchor: Option<String>,
 }
 
 fn is_fingerprint(value: &str) -> bool {
@@ -138,7 +132,6 @@ impl Cursor {
             drain_length: None,
             abandoned: None,
             abandoned_length: None,
-            anchor: None,
         }
     }
 
@@ -181,7 +174,6 @@ impl Cursor {
             drain_length: stored.drain_length,
             abandoned: stored.abandoned,
             abandoned_length: stored.abandoned_length,
-            anchor: stored.anchor,
         };
         (cursor.schema_version == CURRENT_SCHEMA_VERSION && cursor.offset >= 0 && cursor.is_valid())
             .then_some(cursor)
@@ -207,10 +199,6 @@ impl Cursor {
             && self.abandoned.is_none() == self.abandoned_length.is_none()
             && self.abandoned.as_deref().is_none_or(is_fingerprint)
             && self.abandoned_length.is_none_or(|length| length >= 0)
-            && self
-                .anchor
-                .as_deref()
-                .is_none_or(|anchor| is_fingerprint(anchor) && self.offset > 0)
     }
 
     fn normal(fingerprint: &str, offset: i64, file_id: Option<String>) -> Self {
@@ -271,19 +259,10 @@ pub struct Batch {
 impl Batch {
     /// Back to a line's start; inside an oversized line, keep skipping it.
     pub fn rewind_to(&self, line: &Line) -> Cursor {
-        let from = self.origin.clone().unwrap_or_else(|| self.cursor.clone());
-        // An anchor belongs to the offset it was taken at: kept only when the rewind lands
-        // there (otherwise none, and the next read on the same file takes it again).
-        let anchor = if from.offset == line.start_offset {
-            from.anchor.clone()
-        } else {
-            None
-        };
         Cursor {
             offset: line.start_offset,
             discarding: line.continues_discard,
-            anchor,
-            ..from
+            ..self.origin.clone().unwrap_or_else(|| self.cursor.clone())
         }
     }
 }
@@ -434,11 +413,9 @@ impl Reading<'_> {
             }
             let (budget, stop) = (self.options.max_bytes_per_batch, self.stop);
             let (offset, discarding) = start_position(self.current(), budget, stop)?;
-            let anchor = self.current().anchor_at(offset);
             return Ok(empty(Cursor {
                 offset,
                 discarding,
-                anchor,
                 ..initial
             }));
         };
@@ -505,24 +482,19 @@ impl Reading<'_> {
         let same_identity = fingerprint.as_deref() == Some(at.fingerprint.as_str());
 
         if same_identity {
-            // The same first line at another device and inode is a rename only when path.1
-            // carries it: the stored file id is a hint, never a reason to re-read. The same
-            // content restored or copied to a new inode continues from the cursor.
-            if other_file && self.previous_matching(&at.fingerprint)?.is_some() {
-                return self.drain(at.start_drain(RENAME_DRAIN), fingerprint, file_id);
+            // The same first line at another device and inode: a rename when path.1 carries
+            // it, else another generation with the same first line or the same content
+            // restored or copied, which no bounded check tells apart safely. Read it from its
+            // start and count the gap: a restore replays with the same event ids.
+            if other_file {
+                if self.previous_matching(&at.fingerprint)?.is_some() {
+                    return self.drain(at.start_drain(RENAME_DRAIN), fingerprint, file_id);
+                }
+                let fingerprint = fingerprint.expect("identified file");
+                return self.scan_current(Cursor::normal(&fingerprint, 0, file_id), true);
             }
             let length = self.current().length;
             if length >= at.offset {
-                // At a new inode with no path.1, only bytes before the offset that match the
-                // anchor show the same content (restored or copied): continue. Otherwise, or
-                // without an anchor, it is another generation with the same first line: read it
-                // from its start and count the gap, never skip it.
-                if other_file
-                    && (at.anchor.is_none() || self.current().anchor_at(at.offset) != at.anchor)
-                {
-                    let fingerprint = fingerprint.expect("identified file");
-                    return self.scan_current(Cursor::normal(&fingerprint, 0, file_id), true);
-                }
                 let file_id = file_id.or_else(|| at.file_id.clone());
                 return self.scan_current(Cursor { file_id, ..at }, false);
             }
@@ -835,7 +807,6 @@ fn read_file(
         cursor: Cursor {
             offset: committed,
             discarding,
-            anchor: file.anchor_at(committed),
             ..cursor.clone()
         },
         rotated: false,

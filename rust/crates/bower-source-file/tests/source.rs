@@ -1607,11 +1607,12 @@ fn legacy_cursor_gap_is_counted_once_though_the_path_is_refused_first() {
     assert_eq!(source.snapshot()[0].rotation_gaps, 1);
 }
 
-/// C# `ARestoredFileWithTheSameContentAtANewInode_ContinuesWithoutAGapOrReplay` (C# reads
+/// C# `ARestoredFileWithTheSameContentAtANewInode_IsReplayedWithTheSameEventIdsAndAGap` (C# reads
 /// device and inode numbers on Linux only; Rust on every Unix).
 #[cfg(unix)]
 #[test]
-fn a_restored_file_with_the_same_content_at_a_new_inode_continues_without_a_gap_or_replay() {
+fn a_restored_file_with_the_same_content_at_a_new_inode_is_replayed_with_the_same_event_ids_and_a_gap()
+ {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("auth.log");
     std::fs::write(&path, format!("{}{}", line("first-1"), line("two"))).unwrap();
@@ -1647,11 +1648,80 @@ fn a_restored_file_with_the_same_content_at_a_new_inode_continues_without_a_gap_
         .iter()
         .map(|record| first_word(record))
         .collect();
-    assert_eq!(words, ["first-1", "two", "three"]);
-    assert_eq!(source.snapshot()[0].rotation_gaps, 0);
-    // The stored id is only a hint, and now names the restored file.
+    // Not told apart from a new generation with the same first line: read from its start with a
+    // gap. The replayed lines carry the same event ids, so the queue deduplicates them while it
+    // holds the rows, and consumers can dedupe on the id after that.
+    assert_eq!(words, ["first-1", "two", "first-1", "two", "three"]);
+    let ids: Vec<String> = sink
+        .records()
+        .iter()
+        .map(|record| {
+            serde_json::from_str::<serde_json::Value>(record).unwrap()["id"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(ids[..2], ids[2..4]);
+    assert_eq!(source.snapshot()[0].rotation_gaps, 1);
     let written = Cursor::deserialize(&cursors.value("file:auth").unwrap()).unwrap();
     assert_eq!(written.file_id, now);
+}
+
+/// C# `ANewGenerationWithRepeatedLinesAtANewInode_IsReadFromItsStartWithAGap` (Sol's round-7
+/// case; C# reads device and inode numbers on Linux only, Rust on every Unix).
+#[cfg(unix)]
+#[test]
+fn a_new_generation_with_repeated_lines_at_a_new_inode_is_read_from_its_start_with_a_gap() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("auth.log");
+    let repeated = line80("repeat", 80).repeat(4);
+    std::fs::write(
+        &path,
+        format!("{}{}{repeated}", line80("header", 80), line80("old001", 80)),
+    )
+    .unwrap();
+    let sink = FakeSink::new(|_| Ok(SubmitOutcome::Queued));
+    let source = FileTailSource::new(
+        text(directory.path(), &path, "beginning"),
+        sink.clone(),
+        Arc::new(MemoryCursors::default()),
+        None,
+    );
+    source.poll_once("auth").unwrap();
+    let before = bower_source_file::handle::file_id_of(&path);
+    // The old generation stays hard-linked, so the new one cannot be given its inode number.
+    std::fs::hard_link(&path, directory.path().join("old")).unwrap();
+
+    // Sol's round-7 case: the bytes just before the 480-byte cursor are the same in both
+    // generations (repeated lines), so no bounded sample of them could tell them apart.
+    let replacement = directory.path().join("auth.log.new");
+    std::fs::write(
+        &replacement,
+        format!(
+            "{}{}{repeated}{}",
+            line80("header", 80),
+            line80("new001", 80),
+            line80("tail01", 80)
+        ),
+    )
+    .unwrap();
+    std::fs::rename(&replacement, &path).unwrap();
+    assert_ne!(bower_source_file::handle::file_id_of(&path), before);
+    source.poll_once("auth").unwrap();
+
+    let words: Vec<String> = sink
+        .records()
+        .iter()
+        .map(|record| first_word(record))
+        .collect();
+    let mut expected = vec!["header", "old001"];
+    expected.extend(["repeat"; 4]);
+    expected.extend(["header", "new001"]);
+    expected.extend(["repeat"; 4]);
+    expected.push("tail01");
+    assert_eq!(words, expected);
+    assert_eq!(source.snapshot()[0].rotation_gaps, 1);
 }
 
 /// C# `ALineWithinMaxLineBytesButOverThePackLimitOnceEscaped_IsCountedAsOversized`.
@@ -1828,117 +1898,6 @@ fn a_file_replaced_at_a_new_inode_with_the_same_header_is_read_from_its_start_wi
         ["header", "old-1", "old-2", "header", "new-1", "new-2"]
     );
     assert_eq!(source.snapshot()[0].rotation_gaps, 1);
-}
-
-/// C# `ACursorWithoutAnAnchor_AtANewInode_IsReadFromItsStartWithAGap` (real inodes here).
-#[cfg(unix)]
-#[test]
-fn a_cursor_without_an_anchor_at_a_new_inode_is_read_from_its_start_with_a_gap() {
-    use bower_source_file::reader::{self, ReaderOptions};
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("auth.log");
-    std::fs::write(&path, format!("{}{}", line("first-1"), line("two"))).unwrap();
-    // Each replaced generation stays hard-linked, so its inode number is never freed: file
-    // systems such as ext4 hand freed numbers straight back, and a restore that got the
-    // original's number would look like the same file (an inherent limit of inode hints).
-    let kept = directory.path().join("kept");
-    std::fs::create_dir(&kept).unwrap();
-    let restore = |generation: usize| {
-        std::fs::hard_link(&path, kept.join(generation.to_string())).unwrap();
-        let copy = directory.path().join("auth.log.restore");
-        std::fs::write(&copy, std::fs::read(&path).unwrap()).unwrap();
-        std::fs::rename(&copy, &path).unwrap();
-        bower_source_file::handle::file_id_of(&path)
-    };
-    let options = ReaderOptions {
-        start_at_end: false,
-        ..ReaderOptions::default()
-    };
-    let first = reader::read(Some(&path), None, None, &options, None).unwrap();
-    assert!(first.cursor.anchor.is_some());
-    // A start-at-end cursor is anchored too.
-    let started = reader::read(Some(&path), None, None, &ReaderOptions::default(), None).unwrap();
-    assert_eq!(
-        (started.cursor.offset, &started.cursor.anchor),
-        (first.cursor.offset, &first.cursor.anchor)
-    );
-
-    // The same content at a new inode: the anchor matches, so it continues.
-    let second = restore(1);
-    assert!(second.is_some() && second != first.cursor.file_id);
-    let anchored = reader::read(Some(&path), None, Some(&first.cursor), &options, None).unwrap();
-    assert_eq!(
-        (anchored.lines.len(), anchored.gap, anchored.cursor.offset),
-        (0, false, first.cursor.offset)
-    );
-
-    // An earlier schema-2 cursor has no anchor: never skip, read from the start with a gap.
-    let third = restore(2);
-    assert!(third.is_some() && third != first.cursor.file_id && third != second);
-    let without = Cursor {
-        anchor: None,
-        ..first.cursor.clone()
-    };
-    let conservative = reader::read(Some(&path), None, Some(&without), &options, None).unwrap();
-    assert_eq!((conservative.lines.len(), conservative.gap), (2, true));
-}
-
-/// C# `ABackpressureRewind_StoresAnAnchorConsistentWithItsOffset`.
-#[test]
-fn a_backpressure_rewind_stores_an_anchor_consistent_with_its_offset() {
-    use sha2::{Digest, Sha256};
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("auth.log");
-    std::fs::write(&path, line("first-1")).unwrap();
-    let submissions = std::sync::atomic::AtomicUsize::new(0);
-    let sink = FakeSink::new(move |_| {
-        if submissions.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 2 {
-            Ok(SubmitOutcome::Unavailable)
-        } else {
-            Ok(SubmitOutcome::Queued)
-        }
-    });
-    let cursors = Arc::new(MemoryCursors::default());
-    let source = FileTailSource::new(
-        text(directory.path(), &path, "beginning"),
-        sink,
-        cursors.clone(),
-        None,
-    );
-
-    source.poll_once("auth").unwrap();
-    let first = Cursor::deserialize(&cursors.value("file:auth").unwrap()).unwrap();
-    assert!(first.anchor.is_some());
-    let mut file = std::fs::OpenOptions::new()
-        .append(true)
-        .open(&path)
-        .unwrap();
-    std::io::Write::write_all(
-        &mut file,
-        format!("{}{}", line("two"), line("three")).as_bytes(),
-    )
-    .unwrap();
-
-    // This read starts at an anchored cursor and is rewound to "three", another offset:
-    // no anchor there (never the starting cursor's, which belongs to its own offset).
-    source.poll_once("auth").unwrap();
-    let rewound = Cursor::deserialize(&cursors.value("file:auth").unwrap()).unwrap();
-    assert_eq!(
-        (rewound.offset, rewound.anchor),
-        (line("first-1").len() as i64 * 2, None)
-    );
-
-    // The next read on the same file takes it again, for the offset it stores.
-    source.poll_once("auth").unwrap();
-    let next = Cursor::deserialize(&cursors.value("file:auth").unwrap()).unwrap();
-    let bytes = std::fs::read(&path).unwrap();
-    let offset = usize::try_from(next.offset).unwrap();
-    assert_eq!(offset, bytes.len());
-    let count = offset.min(256);
-    assert_eq!(
-        next.anchor,
-        Some(hex::encode(Sha256::digest(&bytes[offset - count..offset])))
-    );
 }
 
 /// C# `UnknownCursorSchemas_ReplayButDamagedCurrentCursorsStillFailClosed`.

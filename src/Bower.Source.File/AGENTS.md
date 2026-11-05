@@ -18,13 +18,13 @@ cursor format, limits, defaults, failure codes and configuration messages.
   report empty), and never add a glob form without a hard file-count cap and review.
 - Identity is SHA-256 of the first complete line (64–4096 bytes). The cursor stores the
   file's `device:inode` (`fileId`) only as a hint: with a `path.1` that carries the cursor's
-  identity it tells rename from copytruncate. With the same identity at a new inode, no
-  matching `path.1` and at least the cursor's length, the cursor's `anchor` (SHA-256 of the
-  last min(offset, 256) bytes before the offset) decides: a match is the same content
-  (restored or copied) and continues; a mismatch or no anchor is another generation, read from
-  0 with a gap. Never skip. The reader takes the anchor for every cursor it returns at an
-  offset above 0; a rewind keeps it only when it lands on the offset the anchor was taken at.
-  Both runtimes write and read `fileId` and `anchor` identically.
+  identity it tells rename from copytruncate; without one, the same identity at another inode
+  is read from 0 with a gap (a restore replays, with the same event ids). Do not add a content
+  check to continue instead: any bounded sample is fooled by repeated lines (council round 7).
+  The known limit, documented and never claimed otherwise: a same-first-line generation at
+  the old inode (rewritten in place, or the number reused) or without inode numbers (C#
+  outside Linux), at least as long as the offset, continues and can skip records without a
+  gap. Both runtimes write and read `fileId` identically.
 - Bound everything: `maxLineBytes` (at most 30 KiB so the record fits the 32 KiB pack
   record limit), lines and bytes per poll, json-lines depth 8, configuration 256 KiB.
   Oversized lines are skipped without being buffered.

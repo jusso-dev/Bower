@@ -134,38 +134,6 @@ public sealed class FileTailHandle : IDisposable
         : FileIds is { } ids ? ids(path)
         : OperatingSystem.IsLinux() ? LinuxTailFile.FileIdOf(path) : null;
 
-    /// <summary>Bytes before a cursor's offset that its <see cref="FileTailCursor.Anchor"/> covers, at most.</summary>
-    public const int AnchorBytes = 256;
-
-    /// <summary>
-    /// The continuity anchor at <paramref name="offset"/>: SHA-256 of the last
-    /// min(offset, <see cref="AnchorBytes"/>) bytes before it, read through this handle. Null at
-    /// offset 0, or when those bytes are no longer all there.
-    /// </summary>
-    public string? AnchorAt(long offset)
-    {
-        if (offset <= 0)
-        {
-            return null;
-        }
-
-        byte[] bytes = new byte[(int)Math.Min(offset, AnchorBytes)];
-        long start = offset - bytes.Length;
-        int total = 0;
-        while (total < bytes.Length)
-        {
-            int read = RandomAccess.Read(Stream.SafeFileHandle, bytes.AsSpan(total), start + total);
-            if (read == 0)
-            {
-                return null;
-            }
-
-            total += read;
-        }
-
-        return Convert.ToHexStringLower(SHA256.HashData(bytes));
-    }
-
     /// <summary>The identity of the file at <paramref name="path"/>, or null (tests and tools).</summary>
     public static string? FingerprintOf(string path)
     {

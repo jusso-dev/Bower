@@ -245,8 +245,11 @@ public sealed class FileTailSourceTests
         Assert.Null(FileTailCursor.Deserialize("""{"schemaVersion":2,"fingerprint":"","offset":-1}"""));
         Assert.Null(FileTailCursor.Deserialize("not json"));
         // Every field, in the order both runtimes write it (Rust: cursor_json_matches_csharp).
-        string full = $$"""{"schemaVersion":2,"fingerprint":"{{new string('a', 64)}}","offset":42,"discarding":true,"fileId":"1:2","drain":"rename","observedLength":10,"observedWriteTime":11,"stablePolls":1,"drainPolls":3,"drainLength":12,"abandoned":"{{new string('b', 64)}}","abandonedLength":13,"anchor":"{{new string('c', 64)}}"}""";
+        string full = $$"""{"schemaVersion":2,"fingerprint":"{{new string('a', 64)}}","offset":42,"discarding":true,"fileId":"1:2","drain":"rename","observedLength":10,"observedWriteTime":11,"stablePolls":1,"drainPolls":3,"drainLength":12,"abandoned":"{{new string('b', 64)}}","abandonedLength":13}""";
         Assert.Equal(full, FileTailCursor.Deserialize(full)!.Serialize());
+        // An "anchor" from an earlier pre-release build is ignored, not refused, and dropped on
+        // the next commit (C# and Rust both skip unknown members).
+        Assert.Equal(full, FileTailCursor.Deserialize(full[..^1] + $$""","anchor":"{{new string('c', 64)}}"}""")!.Serialize());
         Assert.Null(FileTailCursor.Deserialize("""{"schemaVersion":2,"fingerprint":"","offset":0,"drainLength":5}"""));
     }
 
@@ -1280,7 +1283,7 @@ public sealed class FileTailSourceTests
     }
 
     [Fact]
-    public async Task ARestoredFileWithTheSameContentAtANewInode_ContinuesWithoutAGapOrReplay()
+    public async Task ARestoredFileWithTheSameContentAtANewInode_IsReplayedWithTheSameEventIdsAndAGap()
     {
         Assert.SkipUnless(OperatingSystem.IsLinux(), "C# reads device and inode numbers on Linux only.");
         CancellationToken cancellation = TestContext.Current.CancellationToken;
@@ -1303,9 +1306,13 @@ public sealed class FileTailSourceTests
         await source.PollOnceAsync("auth", cancellation);
 
         Assert.NotEqual(before, FileTailHandle.FileIdOf(path));
-        Assert.Equal(["first-1", "two", "three"], sink.Records.Select(record => Message(record).Split(' ')[0]));
-        Assert.Equal(0, source.Snapshot()[0].RotationGaps);
-        // The stored id is only a hint, and now names the restored file.
+        // Not told apart from a new generation with the same first line: read from its start
+        // with a gap. The replayed lines carry the same event ids, so the queue deduplicates
+        // them while it holds the rows, and consumers can dedupe on the id after that.
+        string[] records = [.. sink.Records];
+        Assert.Equal(["first-1", "two", "first-1", "two", "three"], records.Select(record => Message(record).Split(' ')[0]));
+        Assert.Equal(records[..2].Select(Id), records[2..4].Select(Id));
+        Assert.Equal(1, source.Snapshot()[0].RotationGaps);
         Assert.Equal(FileTailHandle.FileIdOf(path), FileTailCursor.Deserialize(cursors.Value("file:auth"))!.FileId);
     }
 
@@ -1364,69 +1371,33 @@ public sealed class FileTailSourceTests
     }
 
     [Fact]
-    public void ACursorWithoutAnAnchor_AtANewInode_IsReadFromItsStartWithAGap()
+    public async Task ANewGenerationWithRepeatedLinesAtANewInode_IsReadFromItsStartWithAGap()
     {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "C# reads device and inode numbers on Linux only.");
         CancellationToken cancellation = TestContext.Current.CancellationToken;
         using TemporaryDirectory directory = new();
         string path = Path.Combine(directory.Path, "auth.log");
-        File.WriteAllText(path, Line("first-1") + Line("two"));
-        string id = "1:1";
-        FileTailHandle.FileIds = _ => id;
-        try
-        {
-            FileTailReaderOptions options = new() { StartAtEnd = false };
-            FileTailBatch first = FileTailReader.Read(path, null, null, options, cancellation);
-            Assert.NotNull(first.Cursor.Anchor);
-            // A start-at-end cursor is anchored too.
-            FileTailBatch started = FileTailReader.Read(path, null, null, new FileTailReaderOptions(), cancellation);
-            Assert.Equal((first.Cursor.Offset, first.Cursor.Anchor), (started.Cursor.Offset, started.Cursor.Anchor));
-
-            // The same content at a new inode: the anchor matches, so it continues.
-            id = "1:2";
-            FileTailBatch anchored = FileTailReader.Read(path, null, first.Cursor, options, cancellation);
-            Assert.Equal((0, false, first.Cursor.Offset), (anchored.Lines.Count, anchored.Gap, anchored.Cursor.Offset));
-
-            // An earlier schema-2 cursor has no anchor: never skip, read from the start with a gap.
-            id = "1:3";
-            FileTailBatch conservative = FileTailReader.Read(path, null, first.Cursor with { Anchor = null }, options, cancellation);
-            Assert.Equal((2, true), (conservative.Lines.Count, conservative.Gap));
-        }
-        finally
-        {
-            FileTailHandle.FileIds = null;
-        }
-    }
-
-    [Fact]
-    public async Task ABackpressureRewind_StoresAnAnchorConsistentWithItsOffset()
-    {
-        CancellationToken cancellation = TestContext.Current.CancellationToken;
-        using TemporaryDirectory directory = new();
-        string path = Path.Combine(directory.Path, "auth.log");
-        await File.WriteAllTextAsync(path, Line("first-1"), cancellation);
-        int submissions = 0;
-        FakeSink sink = new(_ => ++submissions == 3 ? FileTailSubmitOutcome.Unavailable : FileTailSubmitOutcome.Queued);
-        MemoryCursors cursors = new();
-        await using FileTailSource source = new(Configuration(directory.Path, path, startAt: "beginning"), sink, cursors);
+        string repeated = string.Concat(Enumerable.Repeat(Line80("repeat"), 4));
+        await File.WriteAllTextAsync(path, Line80("header") + Line80("old001") + repeated, cancellation);
+        FakeSink sink = new(_ => FileTailSubmitOutcome.Queued);
+        await using FileTailSource source = new(Configuration(directory.Path, path, startAt: "beginning"), sink, new MemoryCursors());
         await source.PollOnceAsync("auth", cancellation);
-        Assert.NotNull(FileTailCursor.Deserialize(cursors.Value("file:auth"))!.Anchor);
-        await File.AppendAllTextAsync(path, Line("two") + Line("three"), cancellation);
+        string? before = FileTailHandle.FileIdOf(path);
+        // The old generation stays open, so the new one cannot be given its inode number back.
+        using FileStream old = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
 
-        // This read starts at an anchored cursor and is rewound to "three", another offset:
-        // no anchor there (never the starting cursor's, which belongs to its own offset).
+        // Sol's round-7 case: the bytes just before the 480-byte cursor are the same in both
+        // generations (repeated lines), so no bounded sample of them could tell them apart.
+        await File.WriteAllTextAsync(path + ".new", Line80("header") + Line80("new001") + repeated + Line80("tail01"), cancellation);
+        File.Move(path + ".new", path, overwrite: true);
+        Assert.NotEqual(before, FileTailHandle.FileIdOf(path));
         await source.PollOnceAsync("auth", cancellation);
-        FileTailCursor rewound = FileTailCursor.Deserialize(cursors.Value("file:auth"))!;
-        Assert.Equal(((long)Line("first-1").Length * 2, (string?)null), (rewound.Offset, rewound.Anchor));
 
-        // The next read on the same file takes it again, for the offset it stores.
-        await source.PollOnceAsync("auth", cancellation);
-        FileTailCursor next = FileTailCursor.Deserialize(cursors.Value("file:auth"))!;
-        byte[] bytes = await File.ReadAllBytesAsync(path, cancellation);
-        int count = (int)Math.Min(next.Offset, FileTailHandle.AnchorBytes);
-        Assert.Equal(bytes.Length, next.Offset);
+        string[] repeats = ["repeat", "repeat", "repeat", "repeat"];
         Assert.Equal(
-            Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes.AsSpan((int)next.Offset - count, count))),
-            next.Anchor);
+            ["header", "old001", .. repeats, "header", "new001", .. repeats, "tail01"],
+            sink.Records.Select(record => Message(record).Split(' ')[0]));
+        Assert.Equal(1, source.Snapshot()[0].RotationGaps);
     }
 
     private static string Line80(string text, int length = 80) => (text + " ").PadRight(length - 1, 'x') + "\n";

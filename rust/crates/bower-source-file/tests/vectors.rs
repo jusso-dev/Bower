@@ -250,12 +250,19 @@ fn cursor_json_matches_csharp() {
     assert_eq!(Cursor::deserialize("not json"), None);
     // Every field, in the order both runtimes write it (C# Cursor_RoundTripsAndRefusesValuesThisVersionDidNotWrite).
     let full = format!(
-        r#"{{"schemaVersion":2,"fingerprint":"{}","offset":42,"discarding":true,"fileId":"1:2","drain":"rename","observedLength":10,"observedWriteTime":11,"stablePolls":1,"drainPolls":3,"drainLength":12,"abandoned":"{}","abandonedLength":13,"anchor":"{}"}}"#,
+        r#"{{"schemaVersion":2,"fingerprint":"{}","offset":42,"discarding":true,"fileId":"1:2","drain":"rename","observedLength":10,"observedWriteTime":11,"stablePolls":1,"drainPolls":3,"drainLength":12,"abandoned":"{}","abandonedLength":13}}"#,
         "a".repeat(64),
-        "b".repeat(64),
-        "c".repeat(64)
+        "b".repeat(64)
     );
     assert_eq!(Cursor::deserialize(&full).unwrap().serialize(), full);
+    // An "anchor" from an earlier pre-release build is ignored, not refused, and dropped on the
+    // next commit (C# and Rust both skip unknown members).
+    let with_anchor = format!(
+        r#"{},"anchor":"{}"}}"#,
+        &full[..full.len() - 1],
+        "c".repeat(64)
+    );
+    assert_eq!(Cursor::deserialize(&with_anchor).unwrap().serialize(), full);
     assert_eq!(
         Cursor::deserialize(r#"{"schemaVersion":2,"fingerprint":"","offset":0,"drainLength":5}"#),
         None

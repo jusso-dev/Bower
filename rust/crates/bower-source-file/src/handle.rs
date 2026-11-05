@@ -36,26 +36,7 @@ pub struct Handle {
     pub file_id: Option<String>,
 }
 
-/// Bytes before a cursor's offset that its anchor covers, at most (C# `AnchorBytes`).
-pub const ANCHOR_BYTES: i64 = 256;
-
 impl Handle {
-    /// The continuity anchor at `offset` (C# `AnchorAt`): SHA-256 of the last
-    /// min(offset, `ANCHOR_BYTES`) bytes before it, read through this handle. `None` at offset
-    /// 0, or when those bytes are no longer all there.
-    pub fn anchor_at(&mut self, offset: i64) -> Option<String> {
-        if offset <= 0 {
-            return None;
-        }
-        let count = offset.min(ANCHOR_BYTES);
-        let mut bytes = vec![0; usize::try_from(count).ok()?];
-        self.file
-            .seek(SeekFrom::Start(u64::try_from(offset - count).ok()?))
-            .ok()?;
-        self.file.read_exact(&mut bytes).ok()?;
-        Some(hex::encode(Sha256::digest(&bytes)))
-    }
-
     /// Write time as 100 ns ticks since the Unix epoch (C# `WriteTicks`).
     pub fn write_ticks(&self) -> i64 {
         self.write_time

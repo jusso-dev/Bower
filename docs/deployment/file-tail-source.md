@@ -222,18 +222,21 @@ shorter than 4096 bytes) has no identity yet and waits. Device and inode numbers
 open and are stored in the cursor, but only as a hint, never as part of the identity (they
 are reused after a file is deleted, and copytruncate keeps them). When `path.1` carries the
 cursor's identity they tell rename (the original moved to `path.1`) from copytruncate (the
-original truncated in place). A file with the cursor's identity at a new device or inode and
-no matching `path.1` is told apart by the cursor's anchor, a SHA-256 of the last 256 bytes
-(fewer near the start) before the offset: if the new file has the same bytes there, it is the
-same content (restored from a backup or copied) and reading continues from the cursor without
-a gap; otherwise it is a new generation with the same first line and is read from its start
-with a `rotationGaps` entry. A cursor without an anchor (written by an earlier build, or at
-offset 0) is treated the same conservative way. A new file that the file system gives the old
-file's inode number again (ext4 reuses freed numbers quickly) looks like the same file: one
-with a different first line is still read from its start with a gap, but one with the same
-first line, at least as long as the cursor, continues from the cursor, as it does where
-inode numbers are not known. Lines may then be delivered twice (the queue
-deduplicates what it still holds), never skipped.
+original truncated in place). A file with the cursor's identity at another device or inode
+and no matching `path.1` is read from its start with a `rotationGaps` entry: it may be a new
+generation with the same first line (a constant header), and no bounded comparison of content
+tells that apart from the same content restored from a backup or copied (repeated lines defeat
+any sample). A restore is therefore replayed. The replayed lines have the same event ids (the
+input, identity, start offset and line bytes are unchanged), so the queue deduplicates them
+while it still holds the rows, and consumers can deduplicate on the event id after that:
+delivery is at least once.
+
+What Bower cannot tell apart from the same file: a new generation with the same first line
+that is at least as long as the cursor's offset and either has the old file's device and
+inode (the file was rewritten in place, or the file system gave the new file the old number,
+as ext4 does quickly) or is read where device and inode numbers are not known (the C#
+collector outside Linux). Bower continues from the offset, so that generation's records
+before the offset are skipped without a gap.
 
 - **Advance rule.** The cursor moves past a line only once it is durably enqueued or
   definitively dropped (not selected, rejected, quarantined, malformed, oversized, too
@@ -308,15 +311,15 @@ deduplicates what it still holds), never skipped.
   without a `.1` (for example logrotate `dateext`, `compress` without `delaycompress`, or
   `rotate 0`), or truncated in place, Bower reads the current file from its start and counts a
   `rotationGaps` entry. That includes a new generation with the same first line (a constant
-  header) that is already longer than the cursor: where device and inode numbers are known
-  (Linux in C#, every Unix in Rust), it is at a new inode and its bytes before the offset do
-  not match the cursor's anchor. Lines written to the old file after the last read were not
-  seen. Use `nodateext` and `delaycompress` for tailed files and keep the poll interval well
+  header) that is already longer than the cursor, when it has a new device and inode and
+  device and inode numbers are known (Linux in C#, every Unix in Rust). Lines written to the
+  old file after the last read were not seen. Use `nodateext` and `delaycompress` for tailed files and keep the poll interval well
   below the rotation interval.
-- What cannot be detected: a file rewritten in place (same device and inode) with the same
-  first line and at least as long as the cursor, and, where device and inode numbers are not
-  known (C# outside Linux), a new generation with the same first line that is at least as
-  long as the cursor. Any two files are indistinguishable before their first line ends.
+- What cannot be detected: a new generation with the same first line and at least as long as
+  the cursor's offset, at the old device and inode (rewritten in place, or the number reused)
+  or where device and inode numbers are not known (C# outside Linux). Its records before the
+  offset are skipped without a gap (see **Cursors, rotation and backpressure**). Any two files
+  are indistinguishable before their first line ends.
 
 ## Monitoring
 

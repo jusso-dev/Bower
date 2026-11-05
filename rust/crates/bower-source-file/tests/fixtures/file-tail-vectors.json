@@ -3407,7 +3407,7 @@
       ]
     },
     {
-      "name": "fileIds: the same content restored at a new inode continues without a gap, and a new file with the same first line after a rename is still a rename",
+      "name": "fileIds: the same content restored at a new inode is read from its start with a gap (replayed lines keep their offsets, so their event ids), and a new file with the same first line after a rename is still a rename",
       "options": {
         "startAtEnd": false,
         "fileIds": true,
@@ -3446,14 +3446,25 @@
         },
         {
           "read": {
-            "lines": [],
+            "lines": [
+              {
+                "text": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              },
+              {
+                "text": "a-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 71,
+                "end": 112
+              }
+            ],
             "provisional": false,
             "offset": 112,
             "discarding": false,
             "drain": null,
             "abandoned": false,
             "rotated": false,
-            "gap": false,
+            "gap": true,
             "more": false
           }
         },
@@ -3620,16 +3631,15 @@
       ]
     },
     {
-      "name": "fileIds: the same content at a new inode after more reads still matches its anchor and continues",
+      "name": "fileIds: a new generation with repeated lines at a new inode is read from its start with a gap, though the bytes before the cursor are the same",
       "options": {
         "startAtEnd": false,
         "fileIds": true,
-        "rotationGracePolls": 1,
-        "maxLinesPerBatch": 2
+        "rotationGracePolls": 1
       },
       "steps": [
         {
-          "write": "header xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\none xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\ntwo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nthree xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+          "write": "header xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nold001 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nrepeat xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nrepeat xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nrepeat xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nrepeat xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
         },
         {
           "read": {
@@ -3640,45 +3650,90 @@
                 "end": 80
               },
               {
-                "text": "one xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "text": "old001 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
                 "start": 80,
                 "end": 160
+              },
+              {
+                "text": "repeat xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 160,
+                "end": 240
+              },
+              {
+                "text": "repeat xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 240,
+                "end": 320
+              },
+              {
+                "text": "repeat xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 320,
+                "end": 400
+              },
+              {
+                "text": "repeat xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 400,
+                "end": 480
               }
             ],
             "provisional": false,
-            "offset": 160,
+            "offset": 480,
             "discarding": false,
             "drain": null,
             "abandoned": false,
             "rotated": false,
             "gap": false,
-            "more": true
+            "more": false
           }
         },
         {
-          "restore": {}
+          "replace": "header xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nnew001 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nrepeat xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nrepeat xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nrepeat xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nrepeat xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\ntail01 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
         },
         {
           "read": {
             "lines": [
               {
-                "text": "two xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "text": "header xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 80
+              },
+              {
+                "text": "new001 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 80,
+                "end": 160
+              },
+              {
+                "text": "repeat xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
                 "start": 160,
                 "end": 240
               },
               {
-                "text": "three xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "text": "repeat xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
                 "start": 240,
                 "end": 320
+              },
+              {
+                "text": "repeat xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 320,
+                "end": 400
+              },
+              {
+                "text": "repeat xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 400,
+                "end": 480
+              },
+              {
+                "text": "tail01 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 480,
+                "end": 560
               }
             ],
             "provisional": false,
-            "offset": 320,
+            "offset": 560,
             "discarding": false,
             "drain": null,
             "abandoned": false,
             "rotated": false,
-            "gap": false,
+            "gap": true,
             "more": false
           }
         },
@@ -3686,29 +3741,7 @@
           "read": {
             "lines": [],
             "provisional": false,
-            "offset": 320,
-            "discarding": false,
-            "drain": null,
-            "abandoned": false,
-            "rotated": false,
-            "gap": false,
-            "more": false
-          }
-        },
-        {
-          "append": "four xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
-        },
-        {
-          "read": {
-            "lines": [
-              {
-                "text": "four xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-                "start": 320,
-                "end": 400
-              }
-            ],
-            "provisional": false,
-            "offset": 400,
+            "offset": 560,
             "discarding": false,
             "drain": null,
             "abandoned": false,
