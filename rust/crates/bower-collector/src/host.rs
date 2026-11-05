@@ -779,6 +779,19 @@ pub fn create_output(
                 settings.collector_id.clone(),
             ))
         }
+        "s3" => {
+            let mut options = settings.s3_output.clone().ok_or_else(|| {
+                HostError::new(
+                    "InvalidOperationException",
+                    "BOWER_OUTPUT=s3 requires BOWER_S3_BUCKET and BOWER_S3_REGION.",
+                )
+            })?;
+            options.collector_id = settings.collector_id.clone();
+            Arc::new(
+                bower_output_s3::S3Output::new(options)
+                    .map_err(|error| HostError::new("InvalidOperationException", error.0))?,
+            )
+        }
         other => {
             return Err(HostError::new(
                 "InvalidOperationException",

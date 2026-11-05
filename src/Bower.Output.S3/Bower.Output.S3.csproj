@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <!-- See docs/architecture/dependencies.md: S3 PutObject with the AWS default credential
+         chain (IRSA via STS web identity, ECS task role, EC2 instance profile, environment). -->
+    <PackageReference Include="AWSSDK.S3" />
+    <PackageReference Include="AWSSDK.SecurityToken" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Bower.Abstractions/Bower.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Bower.UnitTests" />
+  </ItemGroup>
+</Project>

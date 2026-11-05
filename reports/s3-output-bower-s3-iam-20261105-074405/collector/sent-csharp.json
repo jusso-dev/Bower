@@ -1,0 +1,66 @@
+{
+  "runtime": "csharp",
+  "count": 10,
+  "events": [
+    {
+      "eventId": "bower-s3-iam-20261105-074405-csharp-0000",
+      "status": 202,
+      "decision": "accept",
+      "queued": true
+    },
+    {
+      "eventId": "bower-s3-iam-20261105-074405-csharp-0001",
+      "status": 202,
+      "decision": "accept",
+      "queued": true
+    },
+    {
+      "eventId": "bower-s3-iam-20261105-074405-csharp-0002",
+      "status": 202,
+      "decision": "accept",
+      "queued": true
+    },
+    {
+      "eventId": "bower-s3-iam-20261105-074405-csharp-0003",
+      "status": 202,
+      "decision": "accept",
+      "queued": true
+    },
+    {
+      "eventId": "bower-s3-iam-20261105-074405-csharp-0004",
+      "status": 202,
+      "decision": "accept",
+      "queued": true
+    },
+    {
+      "eventId": "bower-s3-iam-20261105-074405-csharp-0005",
+      "status": 202,
+      "decision": "accept",
+      "queued": true
+    },
+    {
+      "eventId": "bower-s3-iam-20261105-074405-csharp-0006",
+      "status": 202,
+      "decision": "accept",
+      "queued": true
+    },
+    {
+      "eventId": "bower-s3-iam-20261105-074405-csharp-0007",
+      "status": 202,
+      "decision": "accept",
+      "queued": true
+    },
+    {
+      "eventId": "bower-s3-iam-20261105-074405-csharp-0008",
+      "status": 202,
+      "decision": "accept",
+      "queued": true
+    },
+    {
+      "eventId": "bower-s3-iam-20261105-074405-csharp-0009",
+      "status": 202,
+      "decision": "accept",
+      "queued": true
+    }
+  ]
+}

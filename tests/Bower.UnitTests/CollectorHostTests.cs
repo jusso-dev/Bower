@@ -260,6 +260,39 @@ public sealed class CollectorHostTests
         Assert.DoesNotContain("\"delivery\"", await status.Content.ReadAsStringAsync(cancellationToken), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Status_ReportsTheOutputOnlyWhenItIsNotSentinel()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory sentinel = new();
+        using TemporaryDirectory s3 = new();
+        await using WebApplication none = await StartAsync(sentinel, Token, cancellationToken);
+        await using WebApplication bucket = await StartAsync(s3, Token, cancellationToken, settings => settings with
+        {
+            OutputType = "s3",
+            S3Output = new Bower.Output.S3.S3OutputOptions
+            {
+                Bucket = "bower-status-test",
+                Region = "ap-southeast-2",
+                CollectorId = "collector-status"
+            }
+        });
+
+        async Task<string> StatusAsync(WebApplication app)
+        {
+            using HttpRequestMessage request = new(HttpMethod.Get, "/v1/status");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Token);
+            using HttpResponseMessage response = await app.GetTestClient().SendAsync(request, cancellationToken);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            return await response.Content.ReadAsStringAsync(cancellationToken);
+        }
+
+        Assert.DoesNotContain("\"output\":", await StatusAsync(none), StringComparison.Ordinal);
+        string body = await StatusAsync(bucket);
+        Assert.Contains("\"output\":\"s3\"", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("bower-status-test", body, StringComparison.Ordinal);
+    }
+
     private sealed class ConcurrencyReportingOutput : Bower.Abstractions.IOutputAdapter, Bower.Abstractions.IOutputConcurrencyStatus
     {
         public string Id => "azure-logs-ingestion";

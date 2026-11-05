@@ -221,6 +221,129 @@ public sealed partial class ParserProbeEvidenceTests
     }
 
     [Theory]
+    [InlineData("s3", null, "s3")]
+    [InlineData("s3", Profile, "s3")]
+    [InlineData("foo", null, "foo")]
+    [InlineData("foo", Profile, "foo")]
+    [InlineData("S3; drop", null, "unknown")]
+    public async Task NonSentinelOutput_IsRefusedWithoutSendingAProbe(string output, string? profile, string label)
+    {
+        ProbeEchoDestination destination = new();
+        FakeCollector collector = new(output: output);
+        EvidenceRunner runner = new(collector, destination, null, new FakeClock(TestEvents.Now));
+        EvidenceOptions options = new()
+        {
+            CollectorUrl = new Uri("http://collector.test:4319/"),
+            WorkspaceId = Workspace,
+            ProbeProfile = profile ?? ProbeProfiles.Generic
+        };
+
+        EvidenceBundle bundle = await runner.RunAsync(options, TestContext.Current.CancellationToken);
+        EvidenceBundle simulated = await new EvidenceRunner(collector, null, null, new FakeClock(TestEvents.Now))
+            .RunAsync(options with { WorkspaceId = null }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(EvidenceModes.Failed, bundle.Mode);
+        Assert.Equal(EvidenceModes.Simulated, simulated.Mode);
+        Assert.False(bundle.Arrival.Found);
+        Assert.Equal(ProbeOutcomes.CollectorOutputNotSentinel, bundle.Arrival.QueryError);
+        Assert.Contains(ProbeOutcomes.NonSentinelLimitation(label), bundle.Limitations);
+        Assert.Contains(ProbeOutcomes.NonSentinelLimitation(label), simulated.Limitations);
+        Assert.Equal(0, collector.Canaries + collector.Records);
+        Assert.DoesNotContain(destination.Queries, kql => kql.Contains(bundle.Canary.EventId, StringComparison.Ordinal));
+        if (profile is not null)
+        {
+            Assert.Equal(ProbeOutcomes.CollectorOutputNotSentinel, bundle.Probe!.Outcome);
+        }
+    }
+
+    [Theory]
+    [InlineData("azure-logs-ingestion", null, 200)]
+    [InlineData("azure-logs-ingestion", Profile, 200)]
+    [InlineData("ama-spool", null, 200)]
+    [InlineData("ama-spool", Profile, 200)]
+    [InlineData("relay", null, 200)]
+    [InlineData("relay", Profile, 200)]
+    [InlineData(null, null, 200)]
+    [InlineData(null, Profile, 200)]
+    [InlineData(null, null, 500)]
+    public async Task SentinelAllowlistedOrUnknownOutput_ProceedsAndOnlyTheQueryVerifies(string? output, string? profile, int statusCode)
+    {
+        ProbeEchoDestination destination = new();
+        FakeCollector collector = new(statusCode: statusCode, output: output);
+        EvidenceRunner runner = new(collector, destination, null, new FakeClock(TestEvents.Now));
+
+        EvidenceBundle bundle = await runner.RunAsync(
+            new EvidenceOptions
+            {
+                CollectorUrl = new Uri("http://collector.test:4319/"),
+                WorkspaceId = Workspace,
+                ProbeProfile = profile ?? ProbeProfiles.Generic
+            },
+            TestContext.Current.CancellationToken);
+
+        // Relay, a missing output field and unreadable status all proceed: the canary or probe
+        // is sent and only the Sentinel query (here an echoing fake) can verify it.
+        Assert.Equal(1, collector.Canaries + collector.Records);
+        Assert.Equal(EvidenceModes.Verified, bundle.Mode);
+        Assert.True(bundle.Arrival.Found);
+        Assert.DoesNotContain(bundle.Limitations, item => item.StartsWith("NOT SENTINEL", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task StalledStatus_TimesOutAsUnreadable_AndTheCanaryProceeds()
+    {
+        StallingStatusCollector handler = new();
+        HttpCanarySender sender = new(new HttpClient(handler) { Timeout = TimeSpan.FromMilliseconds(200) });
+        EvidenceRunner runner = new(sender, null, null, new FakeClock(TestEvents.Now), sender);
+
+        EvidenceBundle bundle = await runner.RunAsync(
+            new EvidenceOptions { CollectorUrl = new Uri("http://collector.test:4319/") },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, handler.StatusReads);
+        Assert.Equal(202, bundle.Canary.CollectorStatus);
+        Assert.Equal(EvidenceModes.Simulated, bundle.Mode);
+        Assert.DoesNotContain(bundle.Limitations, item => item.StartsWith("NOT SENTINEL", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task StalledStatus_CallerCancellationStillStopsTheRun()
+    {
+        StallingStatusCollector handler = new();
+        HttpCanarySender sender = new(new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan });
+        EvidenceRunner runner = new(sender, null, null, new FakeClock(TestEvents.Now), sender);
+        using CancellationTokenSource cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        cancellation.CancelAfter(TimeSpan.FromMilliseconds(200));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.RunAsync(
+            new EvidenceOptions { CollectorUrl = new Uri("http://collector.test:4319/") }, cancellation.Token));
+        Assert.Equal(0, handler.Canaries);
+    }
+
+    /// <summary>/v1/status never answers; /v1/events accepts the canary.</summary>
+    private sealed class StallingStatusCollector : HttpMessageHandler
+    {
+        public int StatusReads { get; private set; }
+
+        public int Canaries { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.RequestUri!.AbsolutePath == "/v1/status")
+            {
+                StatusReads++;
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+
+            Canaries++;
+            return new HttpResponseMessage(System.Net.HttpStatusCode.Accepted)
+            {
+                Content = new StringContent("""{"decision":"accept"}""", System.Text.Encoding.UTF8, "application/json")
+            };
+        }
+    }
+
+    [Theory]
     [InlineData("queued-false")]
     [InlineData("duplicate")]
     [InlineData("suppressed")]
@@ -516,14 +639,17 @@ public sealed partial class ParserProbeEvidenceTests
     }
 
     /// <summary>A collector reporting an active linux-ssh-gateway parser that accepts the probe.</summary>
-    private sealed class FakeCollector(int statusCode = 200, string? notQueued = null) : ICanarySender, IParserProbeSender
+    private sealed class FakeCollector(int statusCode = 200, string? notQueued = null, string? output = null) : ICanarySender, IParserProbeSender
     {
         public int StatusReads { get; private set; }
 
         public int Records { get; private set; }
 
+        public int Canaries { get; private set; }
+
         public Task<(int Status, JsonObject? Body)> SendAsync(Uri collector, string? token, string json, CancellationToken cancellationToken)
         {
+            Canaries++;
             string eventId = JsonNode.Parse(json)!["eventId"]!.GetValue<string>();
             return Task.FromResult<(int, JsonObject?)>((202, new JsonObject { ["eventId"] = eventId, ["decision"] = "accept" }));
         }
@@ -543,7 +669,8 @@ public sealed partial class ParserProbeEvidenceTests
                         ["packHash"] = "sha256:pack",
                         ["parserStatuses"] = new JsonArray("active-local-json")
                     })
-                }
+                },
+                ["output"] = output
             }));
         }
 

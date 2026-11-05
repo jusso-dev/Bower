@@ -1,0 +1,1 @@
+{"Version":"2012-10-17","Statement":[{"Sid":"BowerLabOperatorOnly","Effect":"Allow","Principal":{"AWS":"arn:aws:iam::<account>:user/<operator>"},"Action":"sts:AssumeRole","Condition":{"DateLessThan":{"aws:CurrentTime":"2026-11-05T10:44:53Z"}}}]}

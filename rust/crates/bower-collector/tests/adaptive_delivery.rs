@@ -84,6 +84,7 @@ impl OutputAdapter for ConcurrencyReportingOutput {
 
     async fn deliver(&self, events: &[QueuedEvent]) -> DeliveryResult {
         DeliveryResult {
+            event_acknowledgements: Default::default(),
             acknowledged_event_ids: Vec::new(),
             failures: events
                 .iter()

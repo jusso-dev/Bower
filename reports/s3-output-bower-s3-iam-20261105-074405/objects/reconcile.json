@@ -1,0 +1,48 @@
+{
+  "objects": [
+    {
+      "key": "bower/bower-s3-iam-20261105-074405-csharp/2026/11/05/07/2aaee25fb24c9a80ff68957b671da0356aa145fa209d8922fded01c6d16515a4.jsonl.gz",
+      "namespace": "bower/bower-s3-iam-20261105-074405-csharp",
+      "events": 10,
+      "bytes": 998,
+      "bodySha256": "b0dfe7a78c7ddaea3c467bdf64d81d23e3e23657e5c43096acc634702c69241e",
+      "keyMatchesLayout": true
+    },
+    {
+      "key": "bower/live-idem/2026/11/05/00/57775cb0297cf8ece1effaf7cc01fc3fe4e8d43638476e42d05c54c9a77332a5.jsonl.gz",
+      "namespace": "bower/live-idem",
+      "events": 5,
+      "bytes": 105,
+      "bodySha256": "4f25c5ab8aa25bc39cdb7db1a8ee786b164ca231cb31826e33e9fbc447ed0158",
+      "keyMatchesLayout": true
+    },
+    {
+      "key": "bower/live-idem/2026/11/05/00/a2c61a6a924288a9a1134c11181182c2b5864a5b90cae1d8f8f2acd0d8f87a2a.jsonl.gz",
+      "namespace": "bower/live-idem",
+      "events": 5,
+      "bytes": 106,
+      "bodySha256": "fee1457c22932103a10774a65188a5a2a3f27c0dc052da8c7d7ed9181aebb5ec",
+      "keyMatchesLayout": true
+    }
+  ],
+  "objectCount": 3,
+  "namespaces": {
+    "bower/bower-s3-iam-20261105-074405-csharp": {
+      "expected": 10,
+      "timesEach": 1,
+      "matched": 10,
+      "missing": [],
+      "wrongCount": []
+    },
+    "bower/live-idem": {
+      "expected": 5,
+      "timesEach": 2,
+      "matched": 5,
+      "missing": [],
+      "wrongCount": []
+    }
+  },
+  "unexpected": [],
+  "allKeysMatchLayout": true,
+  "pass": true
+}

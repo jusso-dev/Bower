@@ -1,0 +1,21 @@
+{
+    "Versions": [
+        {
+            "Key": "bower/bower-s3-iam-20261105-074405-csharp/2026/11/05/07/2aaee25fb24c9a80ff68957b671da0356aa145fa209d8922fded01c6d16515a4.jsonl.gz",
+            "IsLatest": true
+        },
+        {
+            "Key": "bower/live-idem/2026/11/05/00/57775cb0297cf8ece1effaf7cc01fc3fe4e8d43638476e42d05c54c9a77332a5.jsonl.gz",
+            "IsLatest": true
+        },
+        {
+            "Key": "bower/live-idem/2026/11/05/00/a2c61a6a924288a9a1134c11181182c2b5864a5b90cae1d8f8f2acd0d8f87a2a.jsonl.gz",
+            "IsLatest": true
+        },
+        {
+            "Key": "bower/manual/with-condition.json",
+            "IsLatest": true
+        }
+    ],
+    "DeleteMarkers": 0
+}

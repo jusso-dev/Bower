@@ -1,0 +1,4 @@
+{"SSE": "AES256", "ChecksumSHA256": "jXFFmEjHH7fHMhaG1/D10uFUc7ANqfNXtaAUCrtnStw=", "ETag": "\"c8879753ea10f467c817b8401feb64d8\"", "Key": "bower/bower-s3-iam-20261105-074405-csharp/2026/11/05/07/2aaee25fb24c9a80ff68957b671da0356aa145fa209d8922fded01c6d16515a4.jsonl.gz"}
+{"SSE": "AES256", "ChecksumSHA256": "YxW3Sl/01ZsajnhdiljYBOT0eQKt8S3D63LnJIYkWeA=", "ETag": "\"111ce2632b2e5b0691f209963ddbe608\"", "Key": "bower/live-idem/2026/11/05/00/57775cb0297cf8ece1effaf7cc01fc3fe4e8d43638476e42d05c54c9a77332a5.jsonl.gz"}
+{"SSE": "AES256", "ChecksumSHA256": "6+qpnccBsQxtOKZKH6o1Od1SvUJLhD34xdGJ9q85Bxg=", "ETag": "\"b04f1ad592fc0929634665be086b3ed8\"", "Key": "bower/live-idem/2026/11/05/00/a2c61a6a924288a9a1134c11181182c2b5864a5b90cae1d8f8f2acd0d8f87a2a.jsonl.gz"}
+{"SSE": "AES256", "ChecksumSHA256": null, "ETag": "\"dbac59e326c998bd79341fb4b3b25143\"", "Key": "bower/manual/with-condition.json"}

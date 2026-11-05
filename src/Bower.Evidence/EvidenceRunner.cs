@@ -138,7 +138,10 @@ public sealed partial class EvidenceRunner(
             Labels = new Dictionary<string, string>(StringComparer.Ordinal) { ["evidenceType"] = "canary" }
         };
 
-        (int status, JsonObject? body) = await sender.SendAsync(
+        // A collector that reports a non-Sentinel output (s3) gets no canary: its delivery
+        // can never be evidenced in Sentinel, so the bundle says so instead of waiting.
+        string? nonSentinelOutput = await ReadNonSentinelOutputAsync(options, cancellationToken);
+        (int status, JsonObject? body) = nonSentinelOutput is not null ? (0, null) : await sender.SendAsync(
             options.CollectorUrl,
             options.IngestToken,
             JsonSerializer.Serialize(canary, BowerJson.Envelope),
@@ -163,11 +166,17 @@ public sealed partial class EvidenceRunner(
         {
             limitations.Add("SIMULATED: no Sentinel query was run, so this bundle is not delivery evidence.");
         }
-        else if (!collectorAccepted)
+
+        if (nonSentinelOutput is not null)
+        {
+            limitations.Add(ProbeOutcomes.NonSentinelLimitation(nonSentinelOutput));
+            arrival = arrival with { QueryError = ProbeOutcomes.CollectorOutputNotSentinel };
+        }
+        else if (!simulated && !collectorAccepted)
         {
             arrival = arrival with { QueryError = "collector-rejected-canary" };
         }
-        else
+        else if (!simulated)
         {
             arrival = await PollAsync(options, eventId, sentAt, cancellationToken);
         }
@@ -186,6 +195,35 @@ public sealed partial class EvidenceRunner(
             errors,
             ControlMapping.Map(mode, arrival, retention),
             limitations);
+    }
+
+    /// <summary>
+    /// The non-Sentinel output the collector's <c>/v1/status</c> reports, or null when it
+    /// reports none, the sender cannot read status, or status is unreadable (the generic
+    /// probe then proceeds as before and only a Sentinel query can verify it).
+    /// </summary>
+    private async Task<string?> ReadNonSentinelOutputAsync(EvidenceOptions options, CancellationToken cancellationToken)
+    {
+        if ((parserSender ?? sender as IParserProbeSender) is not { } statusReader)
+        {
+            return null;
+        }
+
+        try
+        {
+            (int code, JsonObject? status) = await statusReader.GetStatusAsync(options.CollectorUrl, options.IngestToken, cancellationToken);
+            return code == 200 ? ProbeOutcomes.NonSentinelOutput(status) : null;
+        }
+        catch (HttpRequestException)
+        {
+            return null;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // HttpClient.Timeout elapsed (TaskCanceledException): status is unreadable, so the
+            // probe proceeds. A cancelled run still stops.
+            return null;
+        }
     }
 
     /// <summary>
@@ -208,6 +246,7 @@ public sealed partial class EvidenceRunner(
         string? packVersion = null;
         string? packHash = null;
         string? parserStatus = null;
+        string? nonSentinelOutput = null;
         (int statusCode, JsonObject? status) = await probe.GetStatusAsync(options.CollectorUrl, options.IngestToken, cancellationToken);
         if (statusCode is 401 or 403)
         {
@@ -227,7 +266,12 @@ public sealed partial class EvidenceRunner(
             parserStatus = pack?["parserStatuses"] is JsonArray statuses && fixture.ParserIndex < statuses.Count
                 ? ProbeOutcomes.Text(statuses[fixture.ParserIndex])
                 : "absent";
-            if (parserStatus != "active-local-json")
+            if (ProbeOutcomes.NonSentinelOutput(status) is { } output)
+            {
+                outcome = ProbeOutcomes.CollectorOutputNotSentinel;
+                nonSentinelOutput = output;
+            }
+            else if (parserStatus != "active-local-json")
             {
                 outcome = ProbeOutcomes.ParserInactive;
             }
@@ -257,6 +301,10 @@ public sealed partial class EvidenceRunner(
             $"Proves delivery for this probe through {fixture.Path} at this time; it does not prove the untested paths listed in the probe record or that every event was delivered.",
             "Bundles hold metadata only: no event payloads or credentials."
         ];
+        if (nonSentinelOutput is not null)
+        {
+            limitations.Add(ProbeOutcomes.NonSentinelLimitation(nonSentinelOutput));
+        }
 
         ArrivalRecord arrival = new(false, options.WorkspaceId, options.Table, null, 0, null, null, null, null, null);
         DateTimeOffset? queriedAt = null;

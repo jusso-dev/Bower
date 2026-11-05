@@ -272,6 +272,7 @@ impl OutputAdapter for RelayOutput {
             }
         }
         DeliveryResult {
+            event_acknowledgements: Default::default(),
             acknowledged_event_ids: acknowledged,
             failures,
             destination_acknowledgement: acknowledgement,

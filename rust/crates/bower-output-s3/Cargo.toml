@@ -1,0 +1,29 @@
+[package]
+name = "bower-output-s3"
+description = "Bower Amazon S3 NDJSON object output (port of Bower.Output.S3)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+aws-config.workspace = true
+aws-credential-types.workspace = true
+aws-sdk-s3.workspace = true
+base64.workspace = true
+bower-contracts.workspace = true
+flate2.workspace = true
+hex.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+chrono.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

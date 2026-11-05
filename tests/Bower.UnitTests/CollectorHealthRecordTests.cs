@@ -215,6 +215,30 @@ public sealed class CollectorHealthRecordTests
             previous));
     }
 
+    [Theory]
+    [InlineData("destination-s3-credential-failed", true)]
+    [InlineData("destination-s3-access-denied", true)]
+    [InlineData("destination-s3-access-denied:retry-after-capped", true)]
+    [InlineData("destination-s3-kms-denied", true)]
+    [InlineData("destination-s3-no-such-bucket", false)]
+    [InlineData("destination-s3-unavailable", false)]
+    [InlineData("destination-s3-throttled", false)]
+    public void Problems_ReportS3CredentialAndAccessFailures(string code, bool credential)
+    {
+        CollectorHealthSample previous = Sample(TestEvents.Now, sequence: 1);
+        CollectorHealthSample failing = previous with
+        {
+            At = TestEvents.Now.AddMinutes(5),
+            Sequence = 2,
+            LastSuccessfulDeliveryAt = TestEvents.Now.AddMinutes(-1),
+            LastDeliveryFailure = new DeliveryFailureActivity(code, TestEvents.Now.AddMinutes(4))
+        };
+
+        IReadOnlyList<string> problems = CollectorHealthRecord.Problems(failing, previous);
+
+        Assert.Equal(credential, problems.Contains(CollectorHealthRecord.DestinationCredential));
+    }
+
     [Fact]
     public void Create_ReportsSyslogTlsReloadAndCertificateLifetimes()
     {

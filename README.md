@@ -491,7 +491,8 @@ Neither has been exercised against a live tenant or account yet.
 | `BOWER_DELIVERY_TIMEOUT_SECONDS` | `240` | C# output cancellation deadline; at least 1 second and at least 30 seconds below the lease. Destination timeouts retain events for retry. |
 | `BOWER_HEALTH_RECORD_INTERVAL_SECONDS` | unset (off) | C#: queue a metadata-only `collector_health` record at startup and then every 60–3600 seconds, through the configured output, for destination-side monitoring. Startup fails unless the loaded policy accepts the record. [Details](docs/production-readiness/06-monitoring-and-runbooks.md#the-collector-health-record) |
 | `BOWER_POLICY_DIRECTORY` | `./policies/default` | Versioned policy YAML. |
-| `BOWER_OUTPUT` | `none` | `none`, `ama-spool`, `azure-logs-ingestion` or `relay` (deliver through a relay collector). |
+| `BOWER_OUTPUT` | `none` | `none`, `ama-spool`, `azure-logs-ingestion`, `relay` (deliver through a relay collector) or `s3` (NDJSON objects in Amazon S3; not Sentinel delivery). |
+| `BOWER_S3_BUCKET` / `BOWER_S3_REGION` / `BOWER_S3_PREFIX` / `BOWER_S3_SSE` / `BOWER_S3_KMS_KEY_ID` / `BOWER_S3_EXPECTED_BUCKET_OWNER` / `BOWER_S3_MAX_OBJECT_BYTES` / `BOWER_S3_MAX_OBJECT_EVENTS` / `BOWER_S3_GZIP` | — / — / `bower` / unset (bucket default) / — / — / `8388608` / `1000` / `true` | S3 output (`BOWER_OUTPUT=s3`). Keys are namespaced by `BOWER_COLLECTOR_ID`. Credentials come only from the AWS default chain; key settings are refused. [S3 output](docs/deployment/s3-output.md) |
 | `BOWER_RELAY_URL` / `BOWER_RELAY_CLIENT_CERTIFICATE_FILE` / `BOWER_RELAY_CLIENT_KEY_FILE` / `BOWER_RELAY_CA_BUNDLE` | — | Downstream of a relay (`BOWER_OUTPUT=relay`): the relay's https URL and the mutual TLS client certificate. [Relay mode](docs/deployment/relay.md) |
 | `BOWER_MANAGEMENT_VIA_RELAY` | `false` | Send management traffic through the relay's tunnel; TLS to management stays end to end. Needs `BOWER_MANAGEMENT_AUTH=enrolment`. |
 | `BOWER_RELAY_LISTEN_URL` / `BOWER_RELAY_CERTIFICATE_FILE` / `BOWER_RELAY_KEY_FILE` / `BOWER_RELAY_DOWNSTREAMS_FILE` | — | Relay role: a mutual TLS listener for downstream collectors pinned in the downstreams file. [Relay mode](docs/deployment/relay.md) |
@@ -989,6 +990,11 @@ Relay mode (`BOWER_OUTPUT=relay`) sends the queue's stored envelopes, unchanged,
 relay collector over mutual TLS; the relay queues them durably and delivers them as
 above. An event counts as delivered only after the relay committed it. See
 [relay mode](docs/deployment/relay.md).
+
+S3 mode (`BOWER_OUTPUT=s3`) writes the same envelopes as gzip NDJSON objects to one
+bucket, one conditional, checksummed and encrypted PUT per object, with credentials from
+the AWS default chain only. It is an extra sink, not Sentinel delivery. See
+[S3 output](docs/deployment/s3-output.md).
 
 Failed uploads map back to their exact events; unattributable failures retry the
 whole batch, never count as delivered. Azure upload acknowledgement

@@ -6,7 +6,8 @@ Root `AGENTS.md` invariants apply unchanged.
 ## Scope
 
 `bower-collector` and `bower` CLI plus their libraries: contracts, integrity,
-packs, policy, redaction, persistence, core, outputs and the syslog source. `bower-lambda` is a Rust-only
+packs, policy, redaction, persistence, core, outputs (`bower-output-azure`,
+`bower-output-ama-spool`, `bower-output-s3`) and the syslog source. `bower-lambda` is a Rust-only
 AWS Lambda host that reuses the collector pipeline (see its `AGENTS.md`). Agents,
 Management API and the console stay C# only. The Windows Event Log source
 (`src/Bower.Source.WindowsEventLog`) is C#-only because the Rust collector does not

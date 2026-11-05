@@ -11,8 +11,8 @@ use std::time::Duration;
 
 use bower_contracts::time::Clock;
 use bower_contracts::{
-    DeliveryFailure, DeliveryResult, DurableEventStore, FailureSettlement, OutputAdapter,
-    QueuedEvent, StoreError, StoreResult,
+    DeliveryFailure, DeliveryResult, DeliverySettlement, DurableEventStore, FailureSettlement,
+    OutputAdapter, QueuedEvent, StoreError, StoreResult,
 };
 use tracing::{error, info, warn};
 
@@ -177,15 +177,36 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
 
         if !delivered.is_empty() {
             let count = delivered.len();
-            // One queue transaction for every acknowledged event in the batch.
-            let reclaimed = self
-                .blocking(
+            // One queue transaction for every acknowledged event in the batch, also when the
+            // adapter names a per-event acknowledgement (one per S3 object, for example): a
+            // partial settlement would re-lease later objects' events into different objects.
+            let reclaimed = if result.event_acknowledgements.is_empty() {
+                self.blocking(
                     move |queue| queue.mark_delivered_batch(&delivered, &acknowledgement, &claims),
                     shutdown,
                 )
-                .await?;
-            self.log_stale_leases(reclaimed.len());
-            if reclaimed.len() < count
+                .await?
+            } else {
+                let deliveries: Vec<DeliverySettlement> = delivered
+                    .into_iter()
+                    .map(|event_id| DeliverySettlement {
+                        acknowledgement: result
+                            .event_acknowledgements
+                            .get(&event_id)
+                            .unwrap_or(&acknowledgement)
+                            .clone(),
+                        event_id,
+                    })
+                    .collect();
+                self.blocking(
+                    move |queue| queue.mark_delivered_each(&deliveries, &claims),
+                    shutdown,
+                )
+                .await?
+            }
+            .len();
+            self.log_stale_leases(reclaimed);
+            if reclaimed < count
                 && let Some(activity) = &self.activity
             {
                 activity.record_delivery(self.clock.utc_now());
@@ -300,6 +321,7 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
                 "Output adapter failed; batch will retry."
             );
             DeliveryResult {
+                event_acknowledgements: Default::default(),
                 acknowledged_event_ids: Vec::new(),
                 failures: order
                     .iter()
@@ -431,7 +453,8 @@ fn safe_failure_code(code: &str, destination: bool) -> String {
         "azure-http-",
     ]
     .into_iter()
-    .any(|prefix| is_http_status_code(base, prefix));
+    .any(|prefix| is_http_status_code(base, prefix))
+        || is_s3_code(base);
     let safe = if known {
         base
     } else if base.starts_with("relay-rejected:") {
@@ -446,6 +469,21 @@ fn safe_failure_code(code: &str, destination: bool) -> String {
     } else {
         safe.to_string()
     }
+}
+
+/// Bounded S3 output codes (`bower_output_s3::output`).
+fn is_s3_code(code: &str) -> bool {
+    matches!(
+        code,
+        "destination-s3-throttled"
+            | "destination-s3-access-denied"
+            | "destination-s3-kms-denied"
+            | "destination-s3-no-such-bucket"
+            | "destination-s3-wrong-region"
+            | "destination-s3-credential-failed"
+            | "destination-s3-unavailable"
+            | "destination-s3-cancelled"
+    ) || is_http_status_code(code, "destination-s3-http-")
 }
 
 fn is_http_status_code(code: &str, prefix: &str) -> bool {

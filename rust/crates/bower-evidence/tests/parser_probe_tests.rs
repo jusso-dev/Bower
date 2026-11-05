@@ -53,8 +53,10 @@ fn object(value: Value) -> Map<String, Value> {
 struct FakeCollector {
     status_code: u16,
     not_queued: Option<&'static str>,
+    output: Option<&'static str>,
     status_reads: Mutex<usize>,
     records: Mutex<usize>,
+    canaries: Mutex<usize>,
 }
 
 impl FakeCollector {
@@ -66,8 +68,25 @@ impl FakeCollector {
         Arc::new(Self {
             status_code,
             not_queued,
+            output: None,
             status_reads: Mutex::new(0),
             records: Mutex::new(0),
+            canaries: Mutex::new(0),
+        })
+    }
+
+    fn with_output(output: &'static str) -> Arc<Self> {
+        Self::with_status_and_output(200, Some(output))
+    }
+
+    fn with_status_and_output(status_code: u16, output: Option<&'static str>) -> Arc<Self> {
+        Arc::new(Self {
+            status_code,
+            not_queued: None,
+            output,
+            status_reads: Mutex::new(0),
+            records: Mutex::new(0),
+            canaries: Mutex::new(0),
         })
     }
 }
@@ -79,6 +98,7 @@ impl CanarySender for FakeCollector {
         _token: Option<&'a str>,
         json: String,
     ) -> BoxFuture<'a, Result<CollectorResponse, EvidenceError>> {
+        *self.canaries.lock().unwrap() += 1;
         let event: Value = serde_json::from_str(&json).unwrap();
         let body = object(json!({"eventId": event["eventId"], "decision": "accept"}));
         Box::pin(async move { Ok((202, Some(body))) })
@@ -97,7 +117,7 @@ impl ParserProbeSender for FakeCollector {
             object(json!({"policy": {"hash": "sha256:bundle", "packs": [{
                 "id": "linux-ssh-gateway", "version": "1.1.0", "packHash": "sha256:pack",
                 "parserStatuses": ["active-local-json"]
-            }]}}))
+            }]}, "output": self.output}))
         });
         Box::pin(async move { Ok((status, body)) })
     }
@@ -239,6 +259,104 @@ fn runner(
     destination: Option<Arc<dyn LogAnalyticsQuery>>,
 ) -> EvidenceRunner {
     EvidenceRunner::new(collector.clone(), destination, None).with_parser_sender(collector)
+}
+
+/// C# `NonSentinelOutput_IsRefusedWithoutSendingAProbe`.
+#[tokio::test]
+async fn non_sentinel_output_is_refused_without_sending_a_probe() {
+    for (output, profile, label) in [
+        ("s3", probe::GENERIC, "s3"),
+        ("s3", PROFILE, "s3"),
+        ("foo", probe::GENERIC, "foo"),
+        ("foo", PROFILE, "foo"),
+        ("S3; drop", probe::GENERIC, "unknown"),
+    ] {
+        let collector = FakeCollector::with_output(output);
+        let destination = EchoDestination::new("sha256:policy");
+        let mut options = options(Some(WORKSPACE));
+        options.probe_profile = profile.to_owned();
+
+        let bundle = runner(collector.clone(), Some(destination.clone()))
+            .run(&options)
+            .await
+            .unwrap();
+        options.workspace_id = None;
+        let simulated = runner(collector.clone(), None).run(&options).await.unwrap();
+
+        assert_eq!(modes::FAILED, bundle.mode);
+        assert_eq!(modes::SIMULATED, simulated.mode);
+        assert!(!bundle.arrival.found);
+        assert_eq!(
+            Some(outcomes::COLLECTOR_OUTPUT_NOT_SENTINEL),
+            bundle.arrival.query_error.as_deref()
+        );
+        let limitation = probe::non_sentinel_limitation(label);
+        assert!(bundle.limitations.contains(&limitation));
+        assert!(simulated.limitations.contains(&limitation));
+        assert_eq!(
+            0,
+            *collector.canaries.lock().unwrap() + *collector.records.lock().unwrap()
+        );
+        let event_id = bundle.canary.event_id.clone();
+        assert!(
+            !destination
+                .queries
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|kql| kql.contains(&event_id))
+        );
+        if profile == PROFILE {
+            assert_eq!(
+                outcomes::COLLECTOR_OUTPUT_NOT_SENTINEL,
+                bundle.probe.unwrap().outcome
+            );
+        }
+    }
+}
+
+/// C# `SentinelAllowlistedOrUnknownOutput_ProceedsAndOnlyTheQueryVerifies`.
+#[tokio::test]
+async fn sentinel_allowlisted_or_unknown_output_proceeds_and_only_the_query_verifies() {
+    for (output, profile, status) in [
+        (Some("azure-logs-ingestion"), probe::GENERIC, 200),
+        (Some("azure-logs-ingestion"), PROFILE, 200),
+        (Some("ama-spool"), probe::GENERIC, 200),
+        (Some("ama-spool"), PROFILE, 200),
+        (Some("relay"), probe::GENERIC, 200),
+        (Some("relay"), PROFILE, 200),
+        (None, probe::GENERIC, 200),
+        (None, PROFILE, 200),
+        (None, probe::GENERIC, 500),
+    ] {
+        let collector = FakeCollector::with_status_and_output(status, output);
+        let destination = EchoDestination::new("sha256:policy");
+        let mut options = options(Some(WORKSPACE));
+        options.probe_profile = profile.to_owned();
+
+        let bundle = runner(collector.clone(), Some(destination))
+            .run(&options)
+            .await
+            .unwrap();
+
+        // Relay, a missing output field and unreadable status all proceed: only the
+        // Sentinel query (an echoing fake here) can verify.
+        let case = format!("{output:?} {profile} {status}");
+        assert_eq!(
+            1,
+            *collector.canaries.lock().unwrap() + *collector.records.lock().unwrap(),
+            "{case}"
+        );
+        assert_eq!(modes::VERIFIED, bundle.mode, "{case}");
+        assert!(bundle.arrival.found, "{case}");
+        assert!(
+            !bundle
+                .limitations
+                .iter()
+                .any(|item| item.starts_with("NOT SENTINEL")),
+            "{case}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -614,4 +732,64 @@ async fn non_json_query_error_body_is_a_timeout_not_a_crash() {
         assert_eq!(generic.arrival.query_error.as_deref(), Some("http-504"));
         assert!(generic.probe.is_none());
     }
+}
+
+/// C# `StalledStatus_TimesOutAsUnreadable_AndTheCanaryProceeds`: a `/v1/status` that never
+/// answers hits the client timeout (`EvidenceError::Http`), reads as unreadable status, and
+/// the canary is still sent. The Rust runner has no caller token; dropping the run future
+/// is its cancellation.
+#[tokio::test]
+async fn stalled_status_times_out_as_unreadable_and_the_canary_proceeds() {
+    let canaries = Arc::new(Mutex::new(0usize));
+    let posted = Arc::clone(&canaries);
+    let app = Router::new()
+        .route(
+            "/v1/status",
+            get(|| async {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                "{}"
+            }),
+        )
+        .route(
+            "/v1/events",
+            post(move || {
+                let posted = Arc::clone(&posted);
+                async move {
+                    *posted.lock().unwrap() += 1;
+                    (
+                        axum::http::StatusCode::ACCEPTED,
+                        [(axum::http::header::CONTENT_TYPE, "application/json")],
+                        "{\"decision\":\"accept\"}",
+                    )
+                }
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_millis(200))
+        .build()
+        .unwrap();
+    let sender = Arc::new(HttpCanarySender::new(client));
+    let mut options = EvidenceOptions::new(format!("http://{address}/").parse().unwrap());
+    options.ingest_token = Some(TOKEN.to_owned());
+
+    let started = std::time::Instant::now();
+    let bundle = EvidenceRunner::new(sender.clone(), None, None)
+        .with_parser_sender(sender)
+        .run(&options)
+        .await
+        .unwrap();
+
+    assert!(started.elapsed() < Duration::from_secs(10));
+    assert_eq!(1, *canaries.lock().unwrap());
+    assert_eq!(202, bundle.canary.collector_status);
+    assert_eq!(modes::SIMULATED, bundle.mode);
+    assert!(
+        !bundle
+            .limitations
+            .iter()
+            .any(|item| item.starts_with("NOT SENTINEL"))
+    );
 }

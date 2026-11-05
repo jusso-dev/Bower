@@ -1,0 +1,2 @@
+bower/manual/no-condition.json: aws: [ERROR]: An error occurred (404) when calling the HeadObject operation: Not Found
+outside/with-condition.json: aws: [ERROR]: An error occurred (404) when calling the HeadObject operation: Not Found

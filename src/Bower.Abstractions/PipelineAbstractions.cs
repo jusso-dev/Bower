@@ -162,6 +162,18 @@ public interface IDurableEventStore
         IReadOnlyDictionary<string, string>? leaseTokens,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// As <see cref="MarkDeliveredBatchAsync(IReadOnlyList{string}, string, IReadOnlyDictionary{string, string}?, CancellationToken)"/>,
+    /// but each event records its own acknowledgement (for example the S3 object holding it),
+    /// still in one atomic transaction: on error nothing is settled. Stores that cannot
+    /// settle atomically do not implement it, and the delivery then retries after lease expiry.
+    /// </summary>
+    Task<IReadOnlyList<string>> MarkDeliveredBatchAsync(
+        IReadOnlyList<DeliverySettlement> deliveries,
+        IReadOnlyDictionary<string, string>? leaseTokens,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("This store cannot settle per-event acknowledgements atomically.");
+
     Task MarkRetryingAsync(
         string eventId,
         string failureCode,
@@ -307,6 +319,9 @@ public sealed record SuppressionWindow(
     DateTimeOffset? FirstSuppressedAt,
     DateTimeOffset? LastSuppressedAt);
 
+/// <summary>One delivered event and the acknowledgement it records.</summary>
+public sealed record DeliverySettlement(string EventId, string Acknowledgement);
+
 /// <summary>
 /// One failed delivery to settle. A <see cref="RetryAfter"/> value schedules a retry;
 /// null dead-letters the event with <see cref="FailureCode"/>.
@@ -416,7 +431,14 @@ public sealed record OutputConcurrencySnapshot(
 public sealed record DeliveryResult(
     IReadOnlyList<string> AcknowledgedEventIds,
     IReadOnlyList<DeliveryFailure> Failures,
-    string? DestinationAcknowledgement);
+    string? DestinationAcknowledgement)
+{
+    /// <summary>
+    /// Optional per-event acknowledgement (for example the S3 object holding the event).
+    /// Overrides <see cref="DestinationAcknowledgement"/> for the events it lists.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? EventAcknowledgements { get; init; }
+}
 
 public sealed record DeliveryFailure(
     string EventId,

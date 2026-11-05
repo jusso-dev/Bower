@@ -107,6 +107,9 @@ pub mod outcomes {
     pub const COLLECTOR_PERMISSION_DENIED: &str = "collector-permission-denied";
     pub const COLLECTOR_STATUS_UNREADABLE: &str = "collector-status-unreadable";
     pub const COLLECTOR_REJECTED: &str = "collector-rejected";
+    /// The collector's `/v1/status` reports an output that does not deliver to Sentinel
+    /// (for example `s3`). No probe is sent: Sentinel delivery cannot be evidenced.
+    pub const COLLECTOR_OUTPUT_NOT_SENTINEL: &str = "collector-output-not-sentinel";
     pub const DESTINATION_PERMISSION_DENIED: &str = "destination-permission-denied";
     pub const DESTINATION_ROW_MISSING: &str = "destination-row-missing";
     pub const DESTINATION_WRONG_EVENT: &str = "destination-wrong-event";
@@ -154,6 +157,46 @@ pub fn is_timeout_error(code: &str) -> bool {
 
 pub(crate) fn text(value: Option<&Value>) -> Option<String> {
     value.and_then(Value::as_str).map(str::to_owned)
+}
+
+/// C# `ProbeOutcomes.SentinelOutputs`: outputs whose delivery a Sentinel query can prove
+/// (`relay` included: the relay's own output is unknown, so the query stays the only
+/// proof). An allowlist: any other value, including future outputs, refuses.
+pub const SENTINEL_OUTPUTS: [&str; 3] = ["azure-logs-ingestion", "ama-spool", "relay"];
+
+/// C# `ProbeOutcomes.NonSentinelOutput`: the output a collector status body reports when it
+/// is not on the Sentinel allowlist, or `None` (allowlisted, or no `output` field). Only
+/// short lowercase output ids are echoed; anything else, including a non-string value,
+/// reads as `unknown`.
+pub fn non_sentinel_output(status: Option<&Map<String, Value>>) -> Option<String> {
+    let output = status?.get("output")?;
+    if output.is_null() {
+        return None;
+    }
+    let output = text(Some(output));
+    if output
+        .as_deref()
+        .is_some_and(|output| SENTINEL_OUTPUTS.contains(&output))
+    {
+        return None;
+    }
+    Some(
+        output
+            .filter(|output| {
+                (1..=32).contains(&output.len())
+                    && output
+                        .bytes()
+                        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+            })
+            .unwrap_or_else(|| "unknown".to_owned()),
+    )
+}
+
+/// C# `ProbeOutcomes.NonSentinelLimitation`.
+pub fn non_sentinel_limitation(output: &str) -> String {
+    format!(
+        "NOT SENTINEL: the collector delivers to the {output} output, so no probe was sent and this bundle is not Sentinel delivery evidence."
+    )
 }
 
 /// Classifies a collector parser intake response; `None` means accepted.

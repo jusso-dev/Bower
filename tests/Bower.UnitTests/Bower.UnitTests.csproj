@@ -49,6 +49,11 @@
       <Link>examples/policies/collector-health/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- S3 output layout vectors shared with rust/crates/bower-output-s3. -->
+    <Content Include="../fixtures/s3-output/*.json">
+      <Link>s3-output/%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <!-- C# outcomes pinned for the Rust port (rust/crates/bower-policy). -->
     <Content Include="../../rust/crates/bower-policy/tests/fixtures/**/*">
       <Link>policy-vectors/%(RecursiveDir)%(Filename)%(Extension)</Link>

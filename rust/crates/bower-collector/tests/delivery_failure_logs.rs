@@ -64,6 +64,7 @@ fn result(
     ack: Option<&str>,
 ) -> DeliveryResult {
     DeliveryResult {
+        event_acknowledgements: Default::default(),
         acknowledged_event_ids: acknowledged.iter().map(|id| id.to_string()).collect(),
         failures,
         destination_acknowledgement: ack.map(str::to_string),

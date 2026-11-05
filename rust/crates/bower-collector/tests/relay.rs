@@ -224,6 +224,7 @@ impl OutputAdapter for Capture {
     async fn deliver(&self, events: &[QueuedEvent]) -> DeliveryResult {
         self.0.lock().unwrap().extend(events.iter().cloned());
         DeliveryResult {
+            event_acknowledgements: Default::default(),
             acknowledged_event_ids: events.iter().map(|item| item.event_id.clone()).collect(),
             failures: Vec::new(),
             destination_acknowledgement: Some("capture:accepted".into()),

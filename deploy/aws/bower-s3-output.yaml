@@ -1,0 +1,134 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Bower S3 output (docs/deployment/s3-output.md). A least-privilege managed policy for
+  the collector role (s3:PutObject on the prefix, plus kms:GenerateDataKey for a
+  customer managed key) and, optionally, the bucket: public access blocked, default
+  encryption, TLS-only access, bucket owner enforced and a lifecycle expiry. Plan first:
+  create a change set and review it before executing.
+
+Parameters:
+  BucketName:
+    Type: String
+    AllowedPattern: "^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$"
+    Description: Output bucket (BOWER_S3_BUCKET). Dotted names are refused by Bower.
+  CreateBucket:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Create the bucket here, or grant access to an existing one.
+  KeyPrefix:
+    Type: String
+    Default: bower
+    AllowedPattern: "^[A-Za-z0-9!_.'()=-]+(/[A-Za-z0-9!_.'()=-]+)*$"
+    Description: BOWER_S3_PREFIX. The policy allows writes under this prefix only. IAM wildcard and variable characters (* ? $ { }) are refused, as Bower refuses them.
+  KmsKeyArn:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$"
+    Description: Optional customer managed key. Set, it becomes the bucket default and the emitted settings send BOWER_S3_SSE=aws:kms with this key. Empty uses SSE-S3.
+  ExpirationDays:
+    Type: Number
+    Default: 0
+    MinValue: 0
+    MaxValue: 3650
+    Description: Expire objects after this many days (0 keeps them). Applies only to a bucket created here.
+
+Conditions:
+  CreateTheBucket: !Equals [!Ref CreateBucket, "true"]
+  UseKms: !Not [!Equals [!Ref KmsKeyArn, ""]]
+  Expire: !And [!Condition CreateTheBucket, !Not [!Equals [!Ref ExpirationDays, 0]]]
+
+Resources:
+  OutputBucket:
+    Type: AWS::S3::Bucket
+    Condition: CreateTheBucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref BucketName
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: true
+            ServerSideEncryptionByDefault: !If
+              - UseKms
+              - SSEAlgorithm: aws:kms
+                KMSMasterKeyID: !Ref KmsKeyArn
+              - SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration: !If
+        - Expire
+        - Rules:
+            - Id: bower-output-expiry
+              Status: Enabled
+              ExpirationInDays: !Ref ExpirationDays
+              NoncurrentVersionExpiration:
+                NoncurrentDays: 1
+        - !Ref AWS::NoValue
+
+  OutputBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: CreateTheBucket
+    Properties:
+      Bucket: !Ref OutputBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !Sub "arn:${AWS::Partition}:s3:::${BucketName}"
+              - !Sub "arn:${AWS::Partition}:s3:::${BucketName}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  CollectorWritePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Bower S3 output. Write-only; no read, list or delete.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: BowerS3OutputWrite
+            Effect: Allow
+            Action: s3:PutObject
+            Resource: !Sub "arn:${AWS::Partition}:s3:::${BucketName}/${KeyPrefix}/*"
+            Condition:
+              # Bower sends If-None-Match: * on every PUT: never overwrite an object.
+              "Null":
+                s3:if-none-match: "false"
+              # Only a bucket in this account (a re-created bucket elsewhere is refused).
+              StringEquals:
+                s3:ResourceAccount: !Ref AWS::AccountId
+          - !If
+            - UseKms
+            - Sid: BowerS3OutputKms
+              Effect: Allow
+              Action: kms:GenerateDataKey
+              Resource: !Ref KmsKeyArn
+              Condition:
+                StringEquals:
+                  kms:ViaService: !Sub "s3.${AWS::Region}.amazonaws.com"
+            - !Ref AWS::NoValue
+
+Outputs:
+  CollectorPolicyArn:
+    Description: Attach to the collector role (IRSA, ECS task role or instance profile).
+    Value: !Ref CollectorWritePolicy
+  CollectorSettings:
+    Description: Collector settings for this bucket (with the KMS key when KmsKeyArn is set).
+    Value: !If
+      - UseKms
+      - !Sub "BOWER_OUTPUT=s3 BOWER_S3_BUCKET=${BucketName} BOWER_S3_REGION=${AWS::Region} BOWER_S3_PREFIX=${KeyPrefix} BOWER_S3_EXPECTED_BUCKET_OWNER=${AWS::AccountId} BOWER_S3_SSE=aws:kms BOWER_S3_KMS_KEY_ID=${KmsKeyArn}"
+      - !Sub "BOWER_OUTPUT=s3 BOWER_S3_BUCKET=${BucketName} BOWER_S3_REGION=${AWS::Region} BOWER_S3_PREFIX=${KeyPrefix} BOWER_S3_EXPECTED_BUCKET_OWNER=${AWS::AccountId}"

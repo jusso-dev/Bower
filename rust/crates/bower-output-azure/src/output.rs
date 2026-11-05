@@ -642,6 +642,7 @@ impl AzureLogsIngestionOutput {
 
         if records.is_empty() {
             return DeliveryResult {
+                event_acknowledgements: Default::default(),
                 acknowledged_event_ids: Vec::new(),
                 failures,
                 destination_acknowledgement: None,
@@ -729,6 +730,7 @@ impl AzureLogsIngestionOutput {
                         .map(|id| failure(id, "destination-azure-unattributed", true)),
                 );
                 return DeliveryResult {
+                    event_acknowledgements: Default::default(),
                     acknowledged_event_ids: Vec::new(),
                     failures,
                     destination_acknowledgement: None,
@@ -794,6 +796,7 @@ impl AzureLogsIngestionOutput {
         let acknowledgement = (!acknowledged.is_empty())
             .then(|| "azure-logs-ingestion:accepted:owned-batches".to_owned());
         DeliveryResult {
+            event_acknowledgements: Default::default(),
             acknowledged_event_ids: acknowledged,
             failures,
             destination_acknowledgement: acknowledgement,
