@@ -295,7 +295,8 @@ def query_live(directory, query, *, timespan_seconds=None):
     token = az('account', 'get-access-token', '--resource', 'https://api.loganalytics.io/')['accessToken']
     request = urllib.request.Request('https://api.loganalytics.io/v1/workspaces/' + state['workspaceId'] + '/query',
                                     data=json.dumps(payload).encode(), method='POST',
-                                    headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+                                    headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json',
+                                             'Cache-Control': 'no-cache'})
     del token
     with urllib.request.build_opener(NoRedirect).open(request, timeout=120) as response:
         if response.status != 200 or any(response.headers.get(key) for key in ('x-ms-continuation', 'x-ms-continuation-token', 'Link')):

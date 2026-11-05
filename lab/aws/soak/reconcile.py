@@ -265,7 +265,8 @@ class Verifier:
         token = self.az('account', 'get-access-token', '--resource', 'https://api.loganalytics.io/')['accessToken']
         request = urllib.request.Request('https://api.loganalytics.io/v1/workspaces/' + self.state['workspaceId'] + '/query',
                                          data=json.dumps({'query': text}).encode(), method='POST',
-                                         headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+                                         headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json',
+                                                  'Cache-Control': 'no-cache'})
         del token
         with urllib.request.build_opener(qf.NoRedirect).open(request, timeout=660) as response:
             body = response.read(qf.MAX_BYTES + 1)

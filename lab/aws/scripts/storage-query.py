@@ -35,7 +35,7 @@ def token(config_dir, client_id):
 def query(workspace, access_token, text):
     request = urllib.request.Request(f"https://api.loganalytics.io/v1/workspaces/{workspace}/query",
         data=json.dumps({"query": text}).encode(), method="POST",
-        headers={"Authorization": "Bearer " + access_token, "Content-Type": "application/json"})
+        headers={"Authorization": "Bearer " + access_token, "Content-Type": "application/json", "Cache-Control": "no-cache"})
     with urllib.request.urlopen(request, timeout=300) as response:
         body = response.read(MAXIMUM_RESPONSE_BYTES + 1)
     if len(body) > MAXIMUM_RESPONSE_BYTES:

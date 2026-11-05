@@ -204,6 +204,34 @@ public sealed partial class ParserProbeEvidenceTests
     }
 
     [Fact]
+    public async Task LogAnalyticsQuery_BypassesCachedEmptyResults()
+    {
+        using HttpClient http = new(new CacheAwareQueryHandler());
+        LogAnalyticsQueryClient client = new(http, new StaticCredential());
+
+        QueryRows result = await client.QueryAsync(Workspace, "T | take 1", TimeSpan.FromHours(1), TestContext.Current.CancellationToken);
+
+        Assert.Null(result.Error);
+        Assert.Equal("fresh", Assert.Single(result.Rows)["EventId"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData("""{"error":{"code":"PartialError"},"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}""", "query-incomplete")]
+    [InlineData("""{"error":{},"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}""", "query-incomplete")]
+    [InlineData("""{"error":{"code":"sensitive query marker"},"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}""", "query-incomplete")]
+    public async Task LogAnalyticsQuery_DoesNotUseRowsFromPartialSuccess(string body, string expectedError)
+    {
+        using HttpClient http = new(new StubHandler(System.Net.HttpStatusCode.OK, body));
+        LogAnalyticsQueryClient client = new(http, new StaticCredential());
+
+        QueryRows result = await client.QueryAsync(Workspace, "T | take 1", TimeSpan.FromHours(1), TestContext.Current.CancellationToken);
+
+        Assert.Equal(expectedError, result.Error);
+        Assert.DoesNotContain("sensitive query marker", result.Error, StringComparison.Ordinal);
+        Assert.Empty(result.Rows);
+    }
+
+    [Fact]
     public async Task ParserProbe_DestinationPolicyHashMismatchIsNotVerified()
     {
         ProbeEchoDestination destination = new("sha256:another-replica");
@@ -369,6 +397,17 @@ public sealed partial class ParserProbeEvidenceTests
             {
                 Content = new StringContent(body, System.Text.Encoding.UTF8, body.Length == 0 ? "text/plain" : "text/html")
             });
+    }
+
+    private sealed class CacheAwareQueryHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            string body = request.Headers.CacheControl?.NoCache == true
+                ? """{"tables":[{"columns":[{"name":"EventId"}],"rows":[["fresh"]]}]}"""
+                : """{"tables":[{"columns":[{"name":"EventId"}],"rows":[]}]}""";
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(body) });
+        }
     }
 
     private sealed class StaticCredential : Azure.Core.TokenCredential

@@ -69,7 +69,10 @@ def rest(method, url, body=None, resource=None):
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json') as handle:
         json.dump(body, handle)
         handle.flush()
-        return az(*args, '--headers', 'Content-Type=application/json', '--body', '@' + handle.name)
+        headers = ['Content-Type=application/json']
+        if resource and resource.rstrip('/') == 'https://api.loganalytics.io':
+            headers.append('Cache-Control=no-cache')
+        return az(*args, '--headers', *headers, '--body', '@' + handle.name)
 
 
 def query(state, kql):

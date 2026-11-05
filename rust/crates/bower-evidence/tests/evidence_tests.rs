@@ -133,6 +133,24 @@ impl LogAnalyticsQuery for FakeQuery {
     }
 }
 
+struct PartialQuery;
+
+impl LogAnalyticsQuery for PartialQuery {
+    fn query<'a>(
+        &'a self,
+        _workspace_id: &'a str,
+        _kql: &'a str,
+        _timespan: Duration,
+    ) -> BoxFuture<'a, Result<QueryRows, EvidenceError>> {
+        Box::pin(async {
+            Ok(QueryRows {
+                rows: vec![row(json!({"EventId": "candidate"}))],
+                error: Some("query-incomplete".to_owned()),
+            })
+        })
+    }
+}
+
 struct FakeArm {
     total_days: i32,
     region: &'static str,
@@ -296,6 +314,23 @@ async fn evidence_fails_when_canary_never_arrives() {
 }
 
 #[tokio::test]
+async fn evidence_does_not_verify_rows_accompanied_by_query_error() {
+    let runner = EvidenceRunner::new(FakeSender::new(202), Some(Arc::new(PartialQuery)), None);
+    let mut options = options(Some("workspace-1"));
+    options.timeout = Duration::ZERO;
+    options.poll_interval = Duration::from_secs(1);
+
+    let bundle = runner.run(&options).await.unwrap();
+
+    assert_eq!(bundle.mode, modes::FAILED);
+    assert!(!bundle.arrival.found);
+    assert_eq!(
+        bundle.arrival.query_error.as_deref(),
+        Some("query-incomplete")
+    );
+}
+
+#[tokio::test]
 async fn evidence_is_labelled_simulated_without_a_workspace() {
     let runner = EvidenceRunner::new(FakeSender::new(202), None, None)
         .with_clock(Arc::new(FixedClock(now())));
@@ -370,6 +405,18 @@ fn query_parser_reads_log_analytics_response() {
         LogAnalyticsQueryClient::parse(r#"{"tables":[]}"#).unwrap(),
         QueryRows::default()
     );
+    let partial = LogAnalyticsQueryClient::parse(
+        r#"{"error":{},"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}"#,
+    )
+    .unwrap();
+    assert_eq!(partial.error.as_deref(), Some("query-incomplete"));
+    assert!(partial.rows.is_empty());
+    let unsafe_code = LogAnalyticsQueryClient::parse(
+        r#"{"error":{"code":"sensitive query marker"},"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}"#,
+    )
+    .unwrap();
+    assert_eq!(unsafe_code.error.as_deref(), Some("query-incomplete"));
+    assert!(unsafe_code.rows.is_empty());
 }
 
 /// The bundle that the C# vector generator signed (see `tests/fixtures`).
@@ -544,6 +591,23 @@ async fn query(
     }
     if workspace == "empty-error" {
         return StatusCode::UNAUTHORIZED.into_response();
+    }
+    if workspace == "cache-check" {
+        let rows = if headers
+            .get("cache-control")
+            .and_then(|value| value.to_str().ok())
+            == Some("no-cache")
+        {
+            json!([["fresh"]])
+        } else {
+            json!([])
+        };
+        return axum::Json(json!({"tables": [{"columns": [{"name": "EventId"}], "rows": rows}]}))
+            .into_response();
+    }
+    if workspace == "partial-check" {
+        return axum::Json(json!({"error": {"code": "PartialError"}, "tables": [{"columns": [{"name": "EventId"}], "rows": [["e1"]]}]}))
+            .into_response();
     }
     let request: Value = serde_json::from_str(&text).unwrap();
     if request["query"]
@@ -721,6 +785,28 @@ async fn query_client_keeps_only_the_error_code() {
         .await
         .unwrap();
     assert_eq!(empty.error.as_deref(), Some("http-401"));
+}
+
+#[tokio::test]
+async fn query_client_bypasses_cached_empty_results_and_rejects_partial_rows() {
+    let (base, _) = start_server().await;
+    let client = LogAnalyticsQueryClient::new(reqwest::Client::new(), Arc::new(StaticToken))
+        .with_endpoint(&base);
+
+    let fresh = client
+        .query("cache-check", "T | take 1", Duration::from_secs(60))
+        .await
+        .unwrap();
+    assert_eq!(fresh.error, None);
+    assert_eq!(fresh.rows.len(), 1);
+    assert_eq!(fresh.rows[0]["EventId"], "fresh");
+
+    let partial = client
+        .query("partial-check", "T | take 1", Duration::from_secs(60))
+        .await
+        .unwrap();
+    assert_eq!(partial.error.as_deref(), Some("query-incomplete"));
+    assert!(partial.rows.is_empty());
 }
 
 #[tokio::test]

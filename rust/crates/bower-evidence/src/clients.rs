@@ -207,6 +207,12 @@ impl LogAnalyticsQueryClient {
         let root: Value = serde_json::from_str(body).map_err(|_| {
             EvidenceError::InvalidData("Query response is not valid JSON.".to_owned())
         })?;
+        if root.get("error").is_some_and(|error| !error.is_null()) {
+            return Ok(QueryRows {
+                rows: Vec::new(),
+                error: Some("query-incomplete".to_owned()),
+            });
+        }
         let table = match root
             .get("tables")
             .and_then(Value::as_array)
@@ -283,6 +289,8 @@ impl LogAnalyticsQuery for LogAnalyticsQueryClient {
                     reqwest::header::CONTENT_TYPE,
                     "application/json; charset=utf-8",
                 )
+                // Evidence polling needs fresh destination state, not API cache entries.
+                .header(reqwest::header::CACHE_CONTROL, "no-cache")
                 .bearer_auth(&token.token)
                 .body(body)
                 .send()

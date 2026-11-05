@@ -710,7 +710,7 @@ impl EvidenceRunner {
             let result = query
                 .query(workspace, &kql, Duration::from_secs(86_400))
                 .await?;
-            if let Some(row) = result.rows.first() {
+            if let (None, Some(row)) = (&result.error, result.rows.first()) {
                 let generated = read_time(row, "TimeGenerated");
                 let ingested = read_time(row, "IngestionTime");
                 return Ok(ArrivalRecord {

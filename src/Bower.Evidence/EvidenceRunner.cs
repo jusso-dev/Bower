@@ -492,7 +492,7 @@ public sealed partial class EvidenceRunner(
             attempts++;
             QueryRows result = await query!.QueryAsync(options.WorkspaceId!, kql, TimeSpan.FromDays(1), cancellationToken);
             lastError = result.Error;
-            if (result.Rows.Count > 0 && result.Rows[0] is { } row)
+            if (result.Error is null && result.Rows.Count > 0 && result.Rows[0] is { } row)
             {
                 DateTimeOffset? generated = ReadTime(row, "TimeGenerated");
                 DateTimeOffset? ingested = ReadTime(row, "IngestionTime");
