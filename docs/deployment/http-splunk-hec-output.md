@@ -34,9 +34,9 @@ reach it, exactly as they would reach Sentinel.
 | `BOWER_HTTP_FORMAT` | `splunk-hec` | `splunk-hec` or `ndjson`. |
 | `BOWER_HTTP_TOKEN_FILE` | — | File holding the token (preferred). A trailing newline is ignored. Read at start-up. |
 | `BOWER_HTTP_TOKEN` | — | The token itself, when a file is not possible. Exactly one of the two is required. |
-| `BOWER_HTTP_AUTH_HEADER` | `Authorization` | `ndjson` only. `Authorization` sends `Authorization: Bearer <token>`; any other header name (for example `X-Api-Key`) carries the token as is. Connection, content and proxy headers are refused. |
-| `BOWER_HTTP_CA_BUNDLE` | — | PEM roots added to the system roots, for a private CA. Certificate and host name verification are never disabled. |
-| `BOWER_HTTP_ALLOW_INSECURE_LOOPBACK` | `false` | Allows `http://` only to a loopback host (`localhost`, `127.0.0.0/8`, `::1`), for a local test endpoint. Plain HTTP to any other host is refused. |
+| `BOWER_HTTP_AUTH_HEADER` | `Authorization` | `ndjson` only. `Authorization` sends `Authorization: Bearer <token>`; any other header name (for example `X-Api-Key`) carries the token as is. Refused: hop-by-hop and framing headers (`Host`, `Connection`, `Transfer-Encoding`, `TE`, `Upgrade`, ...), proxy credentials, content headers (`Content-Type`, `Content-Length`, `Content-Disposition`, `Content-Range`, `Content-Language`, `Allow`, `Expires`, ...) and response-only headers (`Server`, `Location`, `Retry-After`, ...). The full list is in `tests/fixtures/http-output/vectors.json`; the collector also refuses to start if the header cannot be added to a request. |
+| `BOWER_HTTP_CA_BUNDLE` | — | PEM **self-signed root** CA certificates added to the system roots, for a private CA. Certificate and host name verification are never disabled. Put only roots in the bundle: the C# collector anchors trust at self-signed roots only, so an intermediate would be trusted by the Rust collector but not the C# one. Start-up refuses a bundle holding a certificate whose subject differs from its issuer. Servers must send their intermediates. |
+| `BOWER_HTTP_ALLOW_INSECURE_LOOPBACK` | `false` | Allows `http://` only to a loopback IP literal (`127.0.0.0/8` or `::1`), for a local test endpoint. Host names, `localhost` included, and every other address are refused. Plain HTTP never goes through a proxy. |
 | `BOWER_HTTP_HEC_INDEX` | token default | HEC `index` (lowercase letters, digits, `_`, `-`). Omitted when unset, so the token's default index applies. |
 | `BOWER_HTTP_HEC_SOURCETYPE` | `bower:security` | HEC `sourcetype`. |
 | `BOWER_HTTP_HEC_SOURCE` | `bower` | HEC `source`. |
@@ -109,6 +109,10 @@ bytes are pinned by `tests/fixtures/http-output/vectors.json`.
 
 Delivery is at least once. A request that times out after the endpoint accepted it, or
 a crash between acceptance and the queue's acknowledgement, sends the same event again.
+The Rust collector has one more window: on shutdown its delivery worker aborts the
+output task and discards its partial result, so batches the endpoint already accepted in
+that delivery stay leased and are sent again after the lease expires (C# waits for the
+output and settles what it accepted).
 Every copy carries the same `bower_event_id`, so deduplicate downstream, for example:
 
 ```spl
@@ -118,29 +122,46 @@ index=security sourcetype="bower:security" | dedup bower_event_id
 ## Delivery and failure handling
 
 Requests go one at a time, in queue order. The queue marks an event delivered only
-after the endpoint accepted it; nothing is deleted before then.
+after the endpoint accepted it; nothing is deleted before then. A response is never
+taken as proof that an event is bad unless the same request also proved that its
+siblings are good.
 
 | Response | Outcome | Failure code |
 |---|---|---|
 | 2xx (HEC: JSON body with `code` 0) | Delivered (`http:<format>:endpoint-accepted`). | — |
-| 2xx from HEC without `code` 0 (a proxy page, a captive portal, malformed or over 64 KiB) | Retried behind the destination circuit. | `destination-http-response-invalid` |
-| 401, 403 | Retried behind the destination circuit; raises the `destination-credential` health problem (C#). | `destination-http-401`, `destination-http-403` |
-| 404, 3xx (redirects are never followed), 408, 429, 5xx | Retried behind the destination circuit, honouring `Retry-After` up to one hour. | `destination-http-<status>` |
-| Connection, TLS or certificate failure | Retried behind the destination circuit. | `destination-http-unavailable` |
-| Timeout | Retried behind the destination circuit. | `destination-http-timeout` |
-| 413 | The batch is split in half and resent (at most 16 splits per delivery). A single event the endpoint still refuses is dead-lettered. | `http-413` |
-| Other 4xx (400, 405, 415, ...) | The whole batch is dead-lettered. | `http-<status>` |
+| 2xx from HEC without `code` 0 (a proxy page, a captive portal, malformed or over 64 KiB) | Held and retried, indefinitely. | `destination-http-response-invalid` |
+| 401, 403 | Held; raises the `destination-credential` health problem (C#). | `destination-http-401`, `destination-http-403` |
+| 400 with a HEC configuration code (see below) | Held: a destination or token setting is wrong, not the events. | `destination-http-400:hec-<n>` |
+| 3xx (redirects are never followed), 404, 405, 408, 410, 415, 421, 429, 5xx, and any other status not listed here | Held, honouring `Retry-After` up to one hour. | `destination-http-<status>` |
+| Connection, TLS or certificate failure | Held. | `destination-http-unavailable` |
+| Timeout | Held. | `destination-http-timeout` |
+| Other 400, 422 or 413 | The batch is bisected and resent (16 bisections per delivery). A single event is dead-lettered only when an event from the same original batch was accepted; otherwise it is held. Batches left when the budget runs out are held and bisected again on the next delivery. | dead letter: `http-<status>[:hec-<n>]`; held: `destination-http-<status>[:hec-<n>]` |
 | Payload is not one JSON object, or its `eventId` differs from the queue's | That event alone is dead-lettered. | `payload-invalid-json`, `payload-event-id-mismatch` |
-| One event larger than `BOWER_HTTP_MAX_BATCH_BYTES` | That event alone is dead-lettered. | `payload-too-large` |
+| One event larger than `BOWER_HTTP_MAX_BATCH_BYTES` (newline included) | That event alone is dead-lettered. | `payload-too-large` |
 
-Destination failures (`destination-*`) keep events queued without spending their
-attempt budget, and stop the rest of the delivery so they are not sent into the same
-failure. For HEC, the response's numeric `code` (0–99) is appended as metadata, for
-example `http-400:hec-7` (incorrect index) or `destination-http-403:hec-4` (invalid
-token). Response text is never stored or logged.
+Held failures (`destination-*`) keep events queued without spending their attempt budget.
+An endpoint-wide one (anything but the bisection cases) also stops the rest of the
+delivery, so later batches are not sent into the same failure. For HEC, the response's
+numeric `code` (0–99) is appended as metadata, for example `destination-http-400:hec-7`
+(incorrect index) or `http-400:hec-6` (invalid data format, isolated). Response text is
+never stored or logged.
 
-A configuration error such as a wrong index dead-letters each batch it affects. Fix the
-setting, then replay: `bower queue replay --code http-400`.
+HEC configuration codes (all HTTP 400, from Splunk's "Troubleshoot HTTP Event Collector"
+table): 7 incorrect index, 10 data channel is missing, 11 invalid data channel,
+14 ACK is disabled, 16 query string authorization is not enabled, 21 invalid token,
+22 token disabled. 405 (method not allowed), 410 (gone), 415 (unsupported media type,
+for example gzip not accepted) and 421 (misdirected request) mean the URL, host or
+encoding is wrong for this endpoint, so they are held too.
+
+!!! warning "Alarm on the destination backlog"
+    Held failures retry until the endpoint or its configuration is fixed. Alert on a
+    growing retrying backlog with `destination-*` failure codes (`/v1/status`
+    `queue.retrying` and `deliveryActivity.lastFailureCode`, the C# `collector_health`
+    record, or the `Output adapter did not deliver events` log line). In particular a
+    2xx from HEC without `code` 0 is retried indefinitely. Splunk documents codes 24 and
+    25 (`HEC queue/ACK is approaching its capacity limit`) as **200 OK**: Bower treats
+    those as not accepted and resends, which can duplicate events. Watch for
+    `destination-http-response-invalid` while HEC is near capacity.
 
 ## Security
 
@@ -150,25 +171,30 @@ setting, then replay: `bower queue replay --code http-400`.
 - HTTPS only, with system roots plus the optional CA bundle; host names are always
   checked. Redirects are never followed, so the token is never sent to a second host.
 - Response bodies are read up to 64 KiB, and only for HEC.
-- The standard `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` variables apply, as for other
-  outbound .NET and reqwest clients.
+- For `https://`, the standard `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` variables
+  apply, as for the Azure output. Plain `http://` (loopback only) never uses a proxy.
 - Rotating the token or the CA bundle needs a collector restart.
 
 ## Status, health and evidence
 
 - `/v1/status` reports `"output":"http"`; C# also reports the last failure code under
   `deliveryActivity.lastFailureCode`.
-- `bower evidence run` reads `/v1/status` first. For an `http` output it does **not**
-  query Sentinel: the bundle mode is `failed` with arrival error `output-not-sentinel`
-  (or `simulated` without a workspace), and the limitations say why. A Sentinel-verified
+- `bower evidence run` reads `/v1/status` **before** sending anything. Only
+  `azure-logs-ingestion` and `ama-spool` are known to deliver to Sentinel; `relay`, a
+  missing `output` or an unreadable status proceed, with the Sentinel query still the
+  only proof. For an `http` output no canary or probe is sent and Sentinel is not
+  queried: the bundle is `failed` with code `collector-output-not-sentinel` (or
+  `simulated` without a workspace) and a `NOT SENTINEL` limitation. A Sentinel-verified
   bundle is impossible for this output by design.
 
 ## Qualification
 
 - Unit and integration tests in both runtimes: shared request vectors (HEC and NDJSON
-  bytes, headers, poison records, batch caps, gzip), shared response classification
-  vectors (2xx, 3xx, 4xx, 5xx, `Retry-After`, HEC error-code bodies, malformed, deep and
-  oversize bodies), TLS policy against a private CA (untrusted, trusted, host name
+  bytes, headers, poison records, batch caps with byte-exact boundaries, gzip), shared
+  response classification vectors (2xx, 3xx, 4xx, 5xx, `Retry-After`, HEC error-code
+  bodies, malformed, deep and oversize bodies), shared isolation scenarios (mid-stream
+  poison, configuration errors, 413 splitting and budget exhaustion), header-name and
+  endpoint-policy vectors, a 500-event multi-pass delivery to a single-event endpoint, TLS policy against a private CA (untrusted, trusted, host name
   mismatch), 413 splitting and its budget, timeouts, cancellation (C#), queue
   settlement, the configuration hash (pinned identically in both) and token redaction in
   logs and status.
@@ -182,5 +208,6 @@ setting, then replay: `bower queue replay --code http-400`.
   poll acknowledgements and only then acknowledge the queue. Until then a 200 is
   acceptance, not indexing.
 - One output per collector, no fan-out.
-- No per-event isolation of a 400: the whole batch is dead-lettered and can be replayed.
+- Splunk's 200 OK codes 24 and 25 are not yet treated as acceptance (see the warning
+  above).
 - One request at a time; no adaptive concurrency.

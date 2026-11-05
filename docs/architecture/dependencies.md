@@ -160,9 +160,10 @@ CA bundle themselves use reqwest's `Proxy` and `tls_certs_merge`; no new crate i
 (`SocketsHttpHandler`), `GZipStream` and `System.Text.Json` from the runtime, and
 references only `Bower.Abstractions`. `rust/crates/bower-output-http` uses workspace
 crates already in the lock file (`reqwest` with `tls_certs_merge` for the CA bundle,
-`flate2` for gzip bodies, `regex`, `serde`, `serde_json`, `chrono`); its tests reuse
-`axum`, `hyper`, `hyper-util`, `rcgen`, `rustls`, `tokio-rustls` and `tempfile` as
-dev-only dependencies, as `bower-collector` already does. No new crate or package enters
+`flate2` for gzip bodies, `regex`, `serde`, `serde_json`, `chrono`, and `rustls`'s PEM
+reader with `x509-cert` to refuse CA bundles holding anything but self-signed roots, as
+C# custom root trust requires); its tests reuse `axum`, `hyper`, `hyper-util`, `rcgen`,
+`tokio-rustls` and `tempfile` as dev-only dependencies, as `bower-collector` already does. No new crate or package enters
 either lock file. Alternatives considered: a Splunk SDK (adds a dependency for a single
 documented POST) and a generic log shipper (out of scope: Bower is not a log forwarder).
 
