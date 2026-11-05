@@ -65,13 +65,14 @@ start-up and refuses a signed `reload`.
 | `maxLinesPerBatch` | `256` | 1–1024 lines per poll. A full poll reads again at once. |
 | `maxBytesPerBatch` | `1048576` | 65536–4194304 bytes scanned per poll (one line may run up to its own limit past it). Also bounds the backward scan for `startAt: end`. |
 | `rotationGracePolls` | `5` | 1–60 polls `path.1` must stay unchanged (size and write time) before the cursor moves to the new file. See [rotation](#cursors-rotation-and-backpressure). |
+| `rotationDrainMaxPolls` | `300` | `rotationGracePolls`–3600. The most polls a rename drain may take; then the cursor moves to the new file anyway. A writer (or an attacker who can write `path.1`) can delay the switch by at most this many polls. |
 | `inputs[].id` | required | 1–63 lowercase letters, digits or hyphens, unique. Names the cursor (`file:<id>`) and the event's source adapter (`file:<id>:<pack>:<parser>`). |
-| `inputs[].path` | required | Absolute, normalised (no `.`, `..`, repeated or trailing separators), no wildcard characters (`* ? [ ] { }`) or control characters, strictly below an allowed root, and read by only one input. Paths that differ only in ASCII case count as the same file, and one input's path may not be another's `path.1`. These rules are applied to canonical paths too (directories resolved through links, so `/var/run/x.log` and `/run/x.log` are the same file), at load and at every read; a directory that does not exist yet is compared as written. |
+| `inputs[].path` | required | Absolute, normalised (no `.`, `..`, repeated or trailing separators), no wildcard characters (`* ? [ ] { }`) or control characters, strictly below an allowed root, and read by only one input. Paths that differ only in ASCII case count as the same file, and one input's path may not be another's `path.1`. These rules are applied to canonical paths too (directories resolved through links, so `/var/run/x.log` and `/run/x.log` are the same file), at load and at every read; a directory that does not exist yet is compared as written. Canonical paths follow `realpath` in both collectors: a `..` after a linked directory goes to that link's real parent. |
 | `inputs[].route` | required | `{ "pack": "<id>", "parser": <index> }`: an active parser of a loaded signed pack. Checked at start-up and before a signed reload. |
 | `inputs[].format` | `text` | `text` or `json-lines`. |
 | `inputs[].startAt` | `end` | `end`: the first start reads only lines written after it. `beginning`: the first start reads the whole file. Either way a restart resumes from the stored cursor. |
 | `inputs[].maxLineBytes` | `16384` | 256–30720. A pack parser reads records of at most 32 KiB, so a longer line could never be parsed. |
-| `inputs[].allowSymlink` | `false` | Allow the file itself to be one symbolic link whose target is a regular file below an allowed root. Directories on the path are never links. The target may not be another input's file, another input's link target, or either one's `path.1` (checked at load and at every read). |
+| `inputs[].allowSymlink` | `false` | Allow the file itself to be one symbolic link whose target is a regular file below an allowed root. Directories on the path are never links. The target may not be another input's file, another input's link target, or either one's `path.1` (checked at load and at every read). If two inputs come to name one file after load, only the input whose resolution changed is refused (state `file-path-refused`, logged once with its id and the reason `overlaps-another-input`, never a path); the other keeps reading. |
 
 There is deliberately no glob form in this version. List each file. Use one input per
 file (for example `auth.log` and `secure` on different hosts are different
@@ -143,26 +144,45 @@ merge distinct lines.
 
 ### Shipped pack: `linux-authlog-ssh`
 
-[`packs/linux-authlog-ssh`](../../packs/linux-authlog-ssh) 1.2.0 parses plain-text sshd
+[`packs/linux-authlog-ssh`](../../packs/linux-authlog-ssh) 1.3.0 parses plain-text sshd
 `auth.log` lines with a signed transform program. Bounded regexes extract the time,
 account, source address and method from lines written by `sshd[<pid>]` or
-`sshd-session[<pid>]` (OpenSSH 9.8 and later), with an exact grammar for the whole line:
+`sshd-session[<pid>]` (OpenSSH 9.8 and later), with an exact grammar for the whole line.
+Selected, and nothing may follow:
 
-- `Failed password|keyboard-interactive/pam for [invalid user ]<user> from <ip> port <n> ssh2`
-  and nothing after it;
+- `Failed password|keyboard-interactive/pam|none|gssapi-with-mic for [invalid user ]<user> from <ip> port <n> ssh2`;
 - `Failed publickey for [invalid user ]<user> from <ip> port <n> ssh2: <KEYTYPE> <HASH>:<fp>`,
   optionally followed by ` ID <key-id> (serial <n>) CA <KEYTYPE> <HASH>:<fp>` for a
-  certificate, and nothing after it.
+  certificate;
+- `Failed publickey for invalid user <user> from <ip> port <n> ssh2` (no key: for an
+  invalid user sshd fails before it logs the key). A valid user's public key failure
+  must carry its key.
+
+`<ip>` may carry an IPv6 scope (`fe80::1%eth0`, at most 15 letters, digits, `_`, `.` or
+`-`); the reported address leaves the scope out.
 
 The username and the certificate key ID are the two fields a client controls, so neither
 may contain a space, and every other part of the line is fixed. A hostile username such as
-`x from 10.9.9.9 port 1 ssh2` (or `x from 6.6.6.6 port 1 ssh2: k`), or a certificate key ID
-that imitates a second address, therefore makes the line not selected; it never yields a
-spoofed source address. Usernames or key IDs that contain spaces are not selected either:
-they are counted in `notSelected` (a gap, not an error). A static table maps the method to
-the outcome reason. It produces only `authentication_failure` from
-application `linux-sshd`, pseudonymises usernames with HMAC, and never forwards the line,
-host name or path. Accepted sign-ins, other programs, `message repeated N times: [...]`
+`x from 10.9.9.9 port 1 ssh2` (or `x from 6.6.6.6 port 1 ssh2: k`), a certificate key ID
+that imitates a second address, or an interface name that does, therefore makes the line
+not selected; it never yields a spoofed source address. A static table maps the method to
+the outcome reason. It produces only `authentication_failure` from application
+`linux-sshd`, pseudonymises usernames with HMAC, and never forwards the line, host name or
+path.
+
+Not selected (counted in `notSelected`, a gap rather than an error):
+
+- the `hostbased` method, because its trailer carries a client user and host name the
+  client chooses (`client user "…", client host "…"`), and any other method name;
+- usernames or certificate key IDs that contain spaces, and interface scopes longer than
+  15 characters or with other characters;
+- a key suffix on `password`, `keyboard-interactive/pam`, `none` or `gssapi-with-mic`, and a
+  keyless public key failure for a valid user;
+- `message repeated N times: [ … ]` summaries, `Invalid user … from …`, `Connection closed by
+  authenticating user …`, `Disconnected from …`, `error: maximum authentication attempts
+  exceeded …`, `PAM … authentication failure` (pam_unix) and `Accepted …` lines;
+- lines from other programs, and lines without a parseable time.
+
 summaries and other lines are not selected. Sign it with your key like any pack
 (`bower pack build packs/linux-authlog-ssh --key ...`).
 
@@ -237,6 +257,12 @@ after a file is deleted and copytruncate keeps them.
   (identity and length) is kept in the cursor too, and only once the switch is committed:
   later growth of that `path.1`, before or after a restart, is counted in `rotationGaps`,
   never lost silently. Keep `delaycompress` so `path.1` stays plain text.
+- **Drain cap.** A `path.1` that keeps changing (a writer that never reopens its file, or
+  someone appending to it on purpose) would hold the cursor there forever. After
+  `rotationDrainMaxPolls` polls in a rename drain (counted in the cursor, so a restart does
+  not reset it) the cursor moves to the new file anyway; whatever is still unread in
+  `path.1` then, and every later write to it, is counted in `rotationGaps`. A writer can
+  delay the switch by at most that many polls.
 - **startAt: end** scans back from the end for the last complete line within
   `maxBytesPerBatch` bytes (stopping promptly on shutdown). Without a newline in that window
   it starts at the end and skips the rest of the line being written.
@@ -258,10 +284,18 @@ code), `offset` (durable position), and counters since start: `linesRead`, `byte
 `tooLarge`, `malformed`, `oversized`, `blank`, `rotations`, `rotationGaps`,
 `backpressure`, `readErrors`, `submitFailures`, `cursorConflicts`, `lastLineAt` and
 `lastPollAt`. They are metadata only and reset on restart. Failure codes:
-`file-path-refused`, `file-read-failed`, `file-cursor-invalid` (a stored cursor this
-version did not write; never reset silently), `file-cursor-conflict`,
+`file-path-refused`, `file-read-failed`, `file-cursor-invalid` (a damaged cursor of the
+current schema; never reset silently), `file-cursor-conflict`,
 `file-submit-failed` and `file-source-failed`. A failing input backs off from the poll
 interval up to 60 seconds and keeps retrying.
+
+A refused input is logged once when it becomes refused (event 1121 in the C# collector), with
+its id and a reason code only: `path`, `rotated-path`, `overlaps-another-input` or `handle`.
+
+Cursors from another build are never interpreted. The cursor schema is 2; a stored cursor
+with any other `schemaVersion` (the pre-release builds wrote 1, without the rotation state)
+replays the current file from its start and counts one `rotationGaps` entry: lines may be
+delivered twice (the queue deduplicates what it still holds), never skipped.
 
 Alert on `rotationGaps` and on a state other than `running` or `waiting`. List the
 pack's `applicationName`/`environment` in `BOWER_SOURCE_EXPECTATIONS` to degrade
