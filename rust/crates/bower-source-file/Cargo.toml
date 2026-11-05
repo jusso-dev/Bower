@@ -1,0 +1,26 @@
+[package]
+name = "bower-source-file"
+description = "Bower file tail source: security-selected local files routed to signed pack parsers."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bower-contracts.workspace = true
+chrono.workspace = true
+hex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }
+
+[dev-dependencies]
+base64.workspace = true
+bower-persistence.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true
