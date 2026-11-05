@@ -5,13 +5,56 @@ fill in the settings. The form explains what you need and gives a suggested fix
 for each invalid value. **Check settings** validates the configuration on the
 management server and shows the files and sender instructions it will generate.
 
-The guided forms currently cover syslog, Windows Event Log, Docker containers,
-AWS security events, Google Cloud security events, the AMA companion output and
-application events through HTTP or the SDK. Windows setup selects the shipped
-Security 4625 network-logon parser; it does not enable arbitrary event collection
-or configure WEC forwarding. A SQL Server hosted integration, journald,
+The guided forms currently cover syslog, Windows Event Log, security-selected
+files, Docker containers, AWS security events, Google Cloud security events, the
+AMA companion output and application events through HTTP or the SDK. Windows
+setup selects the shipped Security 4625 network-logon parser; it does not enable
+arbitrary event collection or configure WEC forwarding. A SQL Server hosted integration, journald,
 Kubernetes and Kafka need their corresponding runtime integrations before they
 can be offered here.
+
+## Security-selected files
+
+The **Security-selected file** form tails one named file on the collector host
+and routes every line to one signed pack parser. Lines the parser does not select
+are dropped; this is not log shipping. The form generates `file-source.json`
+(`BOWER_FILE_CONFIG`, kind `FileTailSource`) and a source expectation for the
+parser's application, so
+**Check it works** reports the source from the collector's heartbeat. The
+collector-side guide is `docs/deployment/file-tail-source.md`, added with the
+file source itself.
+
+- **One file, one parser.** Enter the exact absolute path of one file and the
+  narrowest **allowed directory** that holds it. Wildcards, `..`, `.` and empty
+  segments are refused, the file must be inside the allowed directory, and the
+  whole disk (`/`, `C:\`), `/proc`, `/sys`, `/dev` and Bower's own configuration,
+  secrets and queue directories are refused. `/home`, `/root` and `/run/user`
+  are allowed with a warning because `bower.service` hides them
+  (`ProtectHome=true`).
+- **Symbolic links.** The collector refuses symbolic links: the file and every
+  directory between the allowed directory and the file must be real; the allowed
+  directory itself may be a link. The form never generates `allowSymlink`. The
+  form, plan and this guide say so.
+- **Signed parsers only.** The parser is a choice of shipped signed pack parsers
+  written for file tail records, currently `linux-authlog-ssh` parser 0 (sshd
+  failures from `auth.log` text lines, application `linux-sshd`). Parsers for
+  other sources read different fields and are not offered. Any other pack or
+  parser is refused, and there is no catch-all parser. The collector still
+  refuses to start if the chosen pack is not loaded and signed by a trusted key.
+- **Bounded lines.** Choose where reading starts the first time (new lines only,
+  or existing lines first) and the longest line, 256 to 30720 bytes (pack parsers
+  read records of at most 32 KiB). Longer lines are dropped and counted, never
+  cut and parsed. Poll interval and batch limits stay at the collector defaults.
+- **No duplicates.** An input name or file already used by another file request
+  waiting for approval on the same collector is refused. If an approved request
+  already uses it, the form warns that the new request replaces it; remove the old
+  input when merging. One request adds one input; to add more, ask again and merge
+  the approved input and allowed directory into the collector's existing
+  `file-source.json` lists.
+
+The generated configuration holds paths and the parser route only, never
+credentials. Status pages show the request state and heartbeat metadata, not the
+file path or file contents.
 
 ## Review, approve, install, check
 
@@ -49,7 +92,9 @@ access path from the management API.
 A source request is a configuration plan, not a signed content pack. Collectors
 still refuse unsigned packs and packs signed by an untrusted key. Generated
 Windows configuration requires the signed `windows-security-logon` pack and
-Security channel permissions for the service identity.
+Security channel permissions for the service identity. Generated file
+configuration requires the chosen signed pack and read access to the file for
+the collector's service account.
 
 For signed downloads, configure `BOWER_MANAGEMENT_SOURCE_SIGNING_KEY_FILE` on the
 management API to an ECDSA P-256 private key file with restricted permissions.

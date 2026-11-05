@@ -384,6 +384,11 @@ use existing authenticated heartbeat metadata. Preview samples are synthetic and
 redacted server-side; failed redaction prevents submission. A healthy check-in is
 not Sentinel evidence, and an old source event cannot complete a new request.
 
+File source plans never read the named file. They name one file inside one
+allowed directory (no wildcards, traversal or whole-disk, kernel, device or Bower
+state roots) and route it to one shipped signed pack parser, so a request cannot
+widen collection to arbitrary files or unparsed lines.
+
 An operator requests a plan and a different approver decides it; the API enforces
 this independently of UI controls and audits both decisions and self-review
 refusals. Approved plans can be signed by an opt-in server-side P-256 key. The
