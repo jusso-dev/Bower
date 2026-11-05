@@ -48,6 +48,14 @@ after 30 seconds; a timeout is reported as an error with exit code 1, never a cr
 `evidence verify` exits 1 with `Evidence bundle is unreadable.` for a file that is not
 a JSON object with a `bundle` object.
 
+## Destination queries
+
+Every Log Analytics query sends `Cache-Control: no-cache`, so polling sees current
+destination state rather than a cached empty result. A query answered with HTTP 200
+and an `error` object (partial results) is a failed query with code
+`query-incomplete`: its rows are never used as evidence and the error details are not
+recorded. The C# and Rust clients behave the same.
+
 ## Parser probes (opt-in)
 
 The generic probe proves `/v1/events` and nothing else. A working generic probe can

@@ -202,7 +202,8 @@ impl LogAnalyticsQueryClient {
         self
     }
 
-    /// Parses a query response into column-name rows (first table only).
+    /// Parses a query response into column-name rows (first table only). A non-null
+    /// `error` (partial results) yields no rows and the `query-incomplete` code.
     pub fn parse(body: &str) -> Result<QueryRows, EvidenceError> {
         let root: Value = serde_json::from_str(body).map_err(|_| {
             EvidenceError::InvalidData("Query response is not valid JSON.".to_owned())

@@ -417,6 +417,14 @@ fn query_parser_reads_log_analytics_response() {
     .unwrap();
     assert_eq!(unsafe_code.error.as_deref(), Some("query-incomplete"));
     assert!(unsafe_code.rows.is_empty());
+    // An explicit null error is not a partial result.
+    let null_error = LogAnalyticsQueryClient::parse(
+        r#"{"error":null,"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}"#,
+    )
+    .unwrap();
+    assert_eq!(null_error.error, None);
+    assert_eq!(null_error.rows.len(), 1);
+    assert_eq!(null_error.rows[0]["EventId"], "e1");
 }
 
 /// The bundle that the C# vector generator signed (see `tests/fixtures`).

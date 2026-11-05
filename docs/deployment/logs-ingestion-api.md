@@ -20,15 +20,16 @@ responses yield `azure-logs-ingestion:accepted:owned-batches`. This records API
 acceptance only, never Sentinel queryability.
 
 The Log Analytics query API can cache responses. Bower's evidence client requests
-fresh results and rejects partial query responses; custom reconciliation tools
-should likewise send `Cache-Control: no-cache` and fail closed on partial errors.
+fresh results and rejects partial query responses (see
+[evidence bundles](../operations/evidence-bundles.md#destination-queries)); custom
+reconciliation tools should likewise send `Cache-Control: no-cache` and fail closed
+on partial errors.
 
 Monitor the workspace's [daily cap](https://learn.microsoft.com/en-us/azure/azure-monitor/logs/daily-cap)
 and its `_LogOperation` ingestion warnings. A workspace can stop collecting after
 an API request was accepted; Bower cannot automatically retry a row that Azure
 accepted but did not make queryable. Raising a cap is not proof that collection
-has resumed: in a controlled test an `OverQuota` warning occurred several minutes
-after Azure reported the higher setting. Configure capacity before starting a
+has resumed: wait until new rows are queryable. Configure capacity before starting a
 workload, alert on quota warnings, and verify representative event IDs in the
 destination. If collection stops, restore capacity, reconcile the affected
 window, and use a reviewed recovery procedure and the source or a tested backup

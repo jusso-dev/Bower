@@ -203,6 +203,12 @@ public sealed class PackAndEvidenceTests
 
         IReadOnlyDictionary<string, JsonNode?> row = Assert.Single(rows.Rows);
         Assert.Equal("e1", row["EventId"]!.GetValue<string>());
+
+        // An explicit null error is not a partial result.
+        QueryRows nullError = LogAnalyticsQueryClient.Parse(
+            """{"error":null,"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}""");
+        Assert.Null(nullError.Error);
+        Assert.Equal("e1", Assert.Single(nullError.Rows)["EventId"]!.GetValue<string>());
     }
 
     [Fact]
