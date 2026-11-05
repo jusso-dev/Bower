@@ -17,7 +17,8 @@ logs or status.
   kept); never `serde_json::Value` on the record path.
 - The sink and cursor store are synchronous; `run` calls `poll_once` on the blocking pool.
   Stopping takes effect between lines (C# also cancels a submission in flight).
-- Recorded divergence: Rust refuses a FIFO, socket or device at the path; C# cannot tell
-  them from an empty file and never opens them (shorter than the fingerprint).
+- Recorded divergences: Rust refuses a FIFO, socket or device at the path; C# cannot tell
+  them from an empty file and never opens them (shorter than 64 bytes). Rust verifies each
+  open (`O_NOFOLLOW`, device and inode) on every Unix; C# does so on Linux only.
 - Move the cursor past a line only after the sink settled it; never move this into a
   scheduled job.

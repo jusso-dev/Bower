@@ -5,6 +5,7 @@
 //! selects it.
 
 pub mod config;
+pub mod handle;
 pub mod paths;
 pub mod reader;
 pub mod record;
@@ -12,7 +13,7 @@ pub mod source;
 
 pub use config::{FileTailSourceConfiguration, InputOptions, Route};
 pub use paths::PathState;
-pub use reader::{Batch, Cursor, Line, ReaderOptions};
+pub use reader::{Batch, Cursor, Line, ReadError, ReaderOptions, RotationState};
 pub use source::{
     FileTailError, FileTailMetrics, FileTailSink, FileTailSource, InputStatus, PollResult,
     SinkFailure, SubmitOutcome,

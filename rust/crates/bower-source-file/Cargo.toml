@@ -17,6 +17,10 @@ sha2.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }
 
+[target.'cfg(unix)'.dependencies]
+# O_NOFOLLOW and O_NONBLOCK for the verified open (see docs/architecture/dependencies.md).
+libc.workspace = true
+
 [dev-dependencies]
 base64.workspace = true
 bower-persistence.workspace = true

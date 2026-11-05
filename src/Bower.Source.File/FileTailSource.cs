@@ -282,20 +282,25 @@ public sealed class FileTailSource : IAsyncDisposable
             Interlocked.Exchange(ref input.Offset, cursor.Offset);
         }
 
-        (FileTailPathState state, string path) = FileTailPaths.Resolve(options.Path, configuration.AllowedRoots, options.AllowSymlink);
-        if (state == FileTailPathState.Refused)
-        {
-            throw new FileTailException(FileTailFailures.PathRefused);
-        }
+        (FileTailPathState state, string path) = Check(options);
+        // path.1 gets exactly the same checks as the configured path (never a link).
+        (FileTailPathState rotatedState, string rotatedPath) = CheckRotated(path);
 
         // A missing file is read as missing: the cursor is still persisted (a file created
         // later is read from its start) and the rotated file may still hold unread lines.
-        FileTailBatch batch = Read(state == FileTailPathState.Ready ? path : null, Rotated(path), cursor, options);
+        FileTailBatch batch = Read(
+            state == FileTailPathState.Ready ? path : null,
+            rotatedState == FileTailPathState.Ready ? rotatedPath : null,
+            cursor,
+            options,
+            input.Rotation,
+            cancellationToken);
 
         // Re-check after reading: a link swapped in during the read discards the read.
-        if (FileTailPaths.Resolve(options.Path, configuration.AllowedRoots, options.AllowSymlink).State == FileTailPathState.Refused)
+        _ = Check(options);
+        if (batch.RotatedPath is not null)
         {
-            throw new FileTailException(FileTailFailures.PathRefused);
+            _ = CheckRotated(path);
         }
 
         if (batch.Gap)
@@ -385,7 +390,13 @@ public sealed class FileTailSource : IAsyncDisposable
         return new FileTailPollResult(handled, backpressure, !backpressure && batch.More);
     }
 
-    private FileTailBatch Read(string? path, string? rotated, FileTailCursor? cursor, FileTailInputOptions options)
+    private FileTailBatch Read(
+        string? path,
+        string? rotated,
+        FileTailCursor? cursor,
+        FileTailInputOptions options,
+        FileTailRotationState rotation,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -394,8 +405,13 @@ public sealed class FileTailSource : IAsyncDisposable
                 MaxLineBytes = options.MaxLineBytes,
                 MaxLinesPerBatch = configuration.MaxLinesPerBatch,
                 MaxBytesPerBatch = configuration.MaxBytesPerBatch,
-                StartAtEnd = !string.Equals(options.StartAt, "beginning", StringComparison.Ordinal)
-            });
+                StartAtEnd = !string.Equals(options.StartAt, "beginning", StringComparison.Ordinal),
+                RotationGracePolls = configuration.RotationGracePolls
+            }, rotation, cancellationToken);
+        }
+        catch (FileTailRefusedException exception)
+        {
+            throw new FileTailException(FileTailFailures.PathRefused, exception);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -403,14 +419,33 @@ public sealed class FileTailSource : IAsyncDisposable
         }
     }
 
-    /// <summary>The rotated file (<c>path.1</c>, never a link), or null when it cannot be read.</summary>
-    private string? Rotated(string path) =>
-        FileTailPaths.Resolve(path + ".1", configuration.AllowedRoots, allowSymlink: false) is (FileTailPathState.Ready, string rotated)
-            ? rotated
-            : null;
+    /// <summary>
+    /// The configured path, refused when it is a link, outside the roots, or (through an
+    /// allowed link) another input's file or rotated file.
+    /// </summary>
+    private (FileTailPathState State, string Path) Check(FileTailInputOptions options)
+    {
+        (FileTailPathState state, string path) = FileTailPaths.Resolve(options.Path, configuration.AllowedRoots, options.AllowSymlink);
+        if (state == FileTailPathState.Refused
+            || (!string.Equals(path, options.Path, StringComparison.Ordinal) && configuration.Inputs.Any(other =>
+                !ReferenceEquals(other, options) && FileTailSourceConfigurationLoader.Overlaps(path, other.Path))))
+        {
+            throw new FileTailException(FileTailFailures.PathRefused);
+        }
 
+        return (state, path);
+    }
+
+    /// <summary><c>path.1</c>: missing is fine, refused fails the poll (never read past a swapped link).</summary>
+    private (FileTailPathState State, string Path) CheckRotated(string path)
+    {
+        (FileTailPathState state, string rotated) = FileTailPaths.Resolve(path + ".1", configuration.AllowedRoots, allowSymlink: false);
+        return state == FileTailPathState.Refused ? throw new FileTailException(FileTailFailures.PathRefused) : (state, rotated);
+    }
+
+    /// <summary>Back to the line's start; inside an oversized line, keep skipping it.</summary>
     private static FileTailCursor Rewind(FileTailLine line) =>
-        new(FileTailCursor.CurrentSchemaVersion, line.Fingerprint, line.StartOffset);
+        new(FileTailCursor.CurrentSchemaVersion, line.Fingerprint, line.StartOffset, line.ContinuesDiscard);
 
     private void Count(Input input, FileTailLine line, FileTailSubmitOutcome? outcome)
     {
@@ -483,6 +518,7 @@ public sealed class FileTailSource : IAsyncDisposable
         public FileTailInputOptions Options { get; } = options;
         public SemaphoreSlim Gate { get; } = new(1, 1);
         public FileTailCounters Counters { get; } = new();
+        public FileTailRotationState Rotation { get; } = new();
         public volatile string State = "starting";
         public long Offset = -1;
         public long LastLineTicks;

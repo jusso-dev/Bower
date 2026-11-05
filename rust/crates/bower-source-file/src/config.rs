@@ -16,6 +16,8 @@ pub const DEFAULT_MAX_LINE_BYTES: i32 = 16_384;
 /// metadata fields, so a longer line could never be parsed.
 pub const MAXIMUM_MAX_LINE_BYTES: i32 = 30_720;
 pub const MINIMUM_MAX_LINE_BYTES: i32 = 256;
+pub const DEFAULT_ROTATION_GRACE_POLLS: i32 = 5;
+pub const MAXIMUM_ROTATION_GRACE_POLLS: i32 = 60;
 const MAXIMUM_BYTES: u64 = 262_144;
 
 pub const FORMAT_TEXT: &str = "text";
@@ -48,6 +50,9 @@ pub struct FileTailSourceConfiguration {
     pub max_lines_per_batch: i32,
     #[serde(default = "default_max_bytes_per_batch")]
     pub max_bytes_per_batch: i32,
+    /// Polls `path.1` must stay unchanged before the cursor moves to the new file.
+    #[serde(default = "default_rotation_grace_polls")]
+    pub rotation_grace_polls: i32,
 }
 
 /// One file below an allowed root and the signed pack parser that maps its lines.
@@ -108,6 +113,9 @@ fn default_max_lines_per_batch() -> i32 {
 fn default_max_bytes_per_batch() -> i32 {
     1_048_576
 }
+fn default_rotation_grace_polls() -> i32 {
+    DEFAULT_ROTATION_GRACE_POLLS
+}
 fn default_format() -> String {
     FORMAT_TEXT.into()
 }
@@ -135,7 +143,39 @@ pub fn load_file(path: impl AsRef<Path>) -> Result<FileTailSourceConfiguration, 
     }
     let text = std::fs::read_to_string(path)
         .map_err(|error| ConfigError::Io(format!("{:?}", error.kind())))?;
-    parse(&text)
+    let configuration = parse(&text)?;
+    validate_links(&configuration)?;
+    Ok(configuration)
+}
+
+/// Allowed links must not lead to another input's file or rotated file (C#
+/// `ValidateLinks`). Read once at load (one hop, as at read time); a link that does not
+/// exist yet is checked when read.
+pub fn validate_links(configuration: &FileTailSourceConfiguration) -> Result<(), ConfigError> {
+    for input in configuration.inputs().filter(|input| input.allow_symlink) {
+        let Ok(target) = std::fs::read_link(&input.path) else {
+            continue;
+        };
+        let Some(resolved) = paths::link_target(&input.path, &target) else {
+            continue;
+        };
+        if configuration
+            .inputs()
+            .any(|other| other.id != input.id && overlaps(&resolved, &other.path))
+        {
+            return Err(fail(
+                &input.id,
+                "allowSymlink target is another input's file or rotated file.",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The same file, or one is the other's rotated file (`path.1`), ignoring ASCII case.
+pub fn overlaps(path: &str, other: &str) -> bool {
+    let (left, right) = (path.to_ascii_lowercase(), other.to_ascii_lowercase());
+    left == right || left == format!("{right}.1") || format!("{left}.1") == right
 }
 
 pub fn parse(json: &str) -> Result<FileTailSourceConfiguration, ConfigError> {
@@ -185,9 +225,14 @@ pub fn parse(json: &str) -> Result<FileTailSourceConfiguration, ConfigError> {
             "File tail maxBytesPerBatch must be between 65536 and 4194304.",
         ));
     }
+    if !(1..=MAXIMUM_ROTATION_GRACE_POLLS).contains(&configuration.rotation_grace_polls) {
+        return Err(invalid_data(format!(
+            "File tail rotationGracePolls must be between 1 and {MAXIMUM_ROTATION_GRACE_POLLS}."
+        )));
+    }
     let roots = configuration.roots();
     let mut ids = HashSet::new();
-    let mut seen_paths = HashSet::new();
+    let mut earlier: Vec<&InputOptions> = Vec::new();
     for input in &configuration.inputs {
         let Some(input) = input else {
             return Err(invalid_id());
@@ -199,9 +244,23 @@ pub fn parse(json: &str) -> Result<FileTailSourceConfiguration, ConfigError> {
                 input.id
             )));
         }
-        if !seen_paths.insert(input.path.clone()) {
+        // Case-only differences count as the same file everywhere, for simplicity.
+        if earlier
+            .iter()
+            .any(|other| other.path.eq_ignore_ascii_case(&input.path))
+        {
             return Err(fail(&input.id, "path is already read by another input."));
         }
+        if earlier
+            .iter()
+            .any(|other| overlaps(&input.path, &other.path))
+        {
+            return Err(fail(
+                &input.id,
+                "path overlaps another input's rotated file (path.1).",
+            ));
+        }
+        earlier.push(input);
     }
     Ok(configuration)
 }

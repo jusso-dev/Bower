@@ -8,7 +8,7 @@ use std::path::Path;
 
 use base64::Engine;
 use bower_source_file::config::{self, InputOptions, Route};
-use bower_source_file::reader::{self, Batch, Cursor, Line, ReaderOptions};
+use bower_source_file::reader::{self, Batch, Cursor, Line, ReaderOptions, RotationState};
 use bower_source_file::record;
 use serde_json::Value;
 
@@ -53,6 +53,7 @@ fn records_match_the_csharp_specification() {
             fingerprint: fingerprint.into(),
             start_offset: offset,
             oversized: false,
+            continues_discard: false,
         };
         let expect = &vector["expect"];
         match record::build(&input, &line, &read_at) {
@@ -75,7 +76,9 @@ fn sequences_match_the_csharp_specification() {
             max_line_bytes: options["maxLineBytes"].as_u64().unwrap_or(256) as usize,
             max_lines_per_batch: options["maxLinesPerBatch"].as_u64().unwrap_or(256) as usize,
             max_bytes_per_batch: options["maxBytesPerBatch"].as_u64().unwrap_or(1_048_576),
+            rotation_grace_polls: options["rotationGracePolls"].as_i64().unwrap_or(1) as i32,
         };
+        let mut state = RotationState::default();
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("app.log");
         let rotated = directory.path().join("app.log.1");
@@ -98,6 +101,10 @@ fn sequences_match_the_csharp_specification() {
                     .open(&path)
                     .unwrap();
                 file.write_all(text.as_bytes()).unwrap();
+            } else if let Some(text) = step["appendRotated"].as_str() {
+                // A writer that has not reopened its file yet keeps writing to path.1.
+                let mut file = OpenOptions::new().append(true).open(&rotated).unwrap();
+                file.write_all(text.as_bytes()).unwrap();
             } else if step.get("rename").is_some() {
                 std::fs::rename(&path, &rotated).unwrap();
             } else if step.get("copytruncate").is_some() {
@@ -114,6 +121,8 @@ fn sequences_match_the_csharp_specification() {
                     rotated.exists().then_some(rotated.as_path()),
                     cursor.as_ref(),
                     &reader,
+                    &mut state,
+                    None,
                 )
                 .unwrap();
                 assert_eq!(describe(&batch), step["read"], "{name}, step {index}");

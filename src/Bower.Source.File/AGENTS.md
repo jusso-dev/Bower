@@ -11,17 +11,23 @@ cursor format, limits, defaults, failure codes and configuration messages.
   parser does not select are counted and dropped.
 - Paths: absolute, normalised, no wildcards, strictly below an allowed root (never `/`).
   Refuse symbolic links on the file and on every directory below the root; `allowSymlink`
-  permits exactly one link on the file whose target passes the same checks. Check before
-  and after each read. Never open a file shorter than the 64-byte fingerprint (FIFOs and
-  devices report empty), and never add a glob form without a hard file-count cap and review.
+  permits exactly one link on the file whose target passes the same checks. Check the path
+  and `path.1` before and after each read; open through `FileTailHandle` (Linux:
+  `O_NOFOLLOW | O_NONBLOCK` plus a `statx` device/inode match) and take identity, length and
+  lines from that one handle. Never open a file shorter than 64 bytes (FIFOs and devices
+  report empty), and never add a glob form without a hard file-count cap and review.
+- Identity is SHA-256 of the first complete line (64–4096 bytes). Inodes check each open
+  but are never stored: cursors must stay readable by both runtimes.
 - Bound everything: `maxLineBytes` (at most 30 KiB so the record fits the 32 KiB pack
   record limit), lines and bytes per poll, json-lines depth 8, configuration 256 KiB.
   Oversized lines are skipped without being buffered.
 - Cursors live in the queue database's `source_cursors` table (`file:<id>`). Move the
   cursor past a line only once it is durably enqueued or definitively dropped; a full
   queue stops reading and rewinds to the start of that line. Never drop for backpressure.
-- Rotation: rename (`path.1`) and copytruncate are drained through the fingerprint; a
-  missed rotation or in-place truncation is counted as a gap, never hidden.
+- Rotation: rename (`path.1`) and copytruncate are drained through the identity. Leave
+  `path.1` only when the current file is identified and `path.1` stayed unchanged for
+  `rotationGracePolls` polls; later growth of the abandoned `path.1`, a missed rotation or
+  an in-place truncation is counted as a gap, never hidden.
 - Event ids derive from input id, file fingerprint, line start offset and line bytes so a
   re-read deduplicates; change them only with a migration note.
 - Never log or expose line content, records or file contents. Counters, paths and failure

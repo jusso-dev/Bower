@@ -654,6 +654,17 @@
               }
             ],
             "provisional": false,
+            "offset": 123,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
             "offset": 0,
             "discarding": false,
             "rotated": true,
@@ -716,6 +727,17 @@
         },
         {
           "write": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nsecond-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 41,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
         },
         {
           "read": {
@@ -808,6 +830,17 @@
               }
             ],
             "provisional": false,
+            "offset": 123,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
             "offset": 0,
             "discarding": false,
             "rotated": true,
@@ -879,19 +912,19 @@
         {
           "read": {
             "lines": [],
-            "provisional": true,
-            "offset": 0,
+            "provisional": false,
+            "offset": 82,
             "discarding": false,
-            "rotated": true,
+            "rotated": false,
             "gap": false,
-            "more": true
+            "more": false
           }
         },
         {
           "read": {
             "lines": [],
-            "provisional": true,
-            "offset": 0,
+            "provisional": false,
+            "offset": 82,
             "discarding": false,
             "rotated": false,
             "gap": false,
@@ -900,6 +933,17 @@
         },
         {
           "append": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nsecond-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 0,
+            "discarding": false,
+            "rotated": true,
+            "gap": false,
+            "more": true
+          }
         },
         {
           "read": {
@@ -1197,16 +1241,27 @@
                 "end": 123
               }
             ],
-            "provisional": true,
+            "provisional": false,
+            "offset": 123,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "write": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nsecond-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
             "offset": 0,
             "discarding": false,
             "rotated": true,
             "gap": false,
             "more": true
           }
-        },
-        {
-          "write": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nsecond-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
         },
         {
           "read": {
@@ -1224,6 +1279,714 @@
             ],
             "provisional": false,
             "offset": 82,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "rename: an empty new file has no identity, so path.1 keeps being read",
+      "options": {
+        "startAtEnd": false
+      },
+      "steps": [
+        {
+          "write": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nfirst-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 41
+              },
+              {
+                "text": "first-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 41,
+                "end": 82
+              }
+            ],
+            "provisional": false,
+            "offset": 82,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "append": "first-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "rename": {}
+        },
+        {
+          "write": ""
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 82,
+                "end": 123
+              }
+            ],
+            "provisional": false,
+            "offset": 123,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "appendRotated": "first-4 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-4 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 123,
+                "end": 164
+              }
+            ],
+            "provisional": false,
+            "offset": 164,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 164,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "write": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nsecond-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 0,
+            "discarding": false,
+            "rotated": true,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 41
+              },
+              {
+                "text": "second-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 41,
+                "end": 82
+              }
+            ],
+            "provisional": false,
+            "offset": 82,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 82,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "rename: an unterminated tail of path.1 waits until completed or settled",
+      "options": {
+        "startAtEnd": false
+      },
+      "steps": [
+        {
+          "write": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nfirst tail still being written"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 41
+              }
+            ],
+            "provisional": false,
+            "offset": 41,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "rename": {}
+        },
+        {
+          "write": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nsecond-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 41,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "appendRotated": " and done\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first tail still being written and done",
+                "start": 41,
+                "end": 81
+              }
+            ],
+            "provisional": false,
+            "offset": 81,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 0,
+            "discarding": false,
+            "rotated": true,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 41
+              },
+              {
+                "text": "second-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 41,
+                "end": 82
+              }
+            ],
+            "provisional": false,
+            "offset": 82,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "rename: lines written to path.1 after the switch are reported as a gap",
+      "options": {
+        "startAtEnd": false
+      },
+      "steps": [
+        {
+          "write": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              }
+            ],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "rename": {}
+        },
+        {
+          "write": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 0,
+            "discarding": false,
+            "rotated": true,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "appendRotated": "late-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              }
+            ],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "rotated": false,
+            "gap": true,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "the grace window counts unchanged polls of path.1",
+      "options": {
+        "startAtEnd": false,
+        "rotationGracePolls": 3
+      },
+      "steps": [
+        {
+          "write": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              }
+            ],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "append": "first-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "rename": {}
+        },
+        {
+          "write": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 71,
+                "end": 112
+              }
+            ],
+            "provisional": false,
+            "offset": 112,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 112,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 112,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 0,
+            "discarding": false,
+            "rotated": true,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              }
+            ],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "same-prefix copytruncate drains the unread copy before the truncated file",
+      "options": {
+        "startAtEnd": false
+      },
+      "steps": [
+        {
+          "write": "line-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "line-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              },
+              {
+                "text": "line-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 71,
+                "end": 112
+              },
+              {
+                "text": "line-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 112,
+                "end": 153
+              }
+            ],
+            "provisional": false,
+            "offset": 153,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "append": "line-4 unread xxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "copytruncate": {}
+        },
+        {
+          "append": "line-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "line-4 unread xxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 153,
+                "end": 194
+              }
+            ],
+            "provisional": false,
+            "offset": 194,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 0,
+            "discarding": false,
+            "rotated": true,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "line-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              }
+            ],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "identity covers the whole first line, not just 64 bytes",
+      "options": {
+        "startAtEnd": false
+      },
+      "steps": [
+        {
+          "write": "{\"type\":\"header\",\"source\":\"app\",\"padding\":\"pppppppppppppppppppppppppppppppppppppppp\",\"generation\":\"a\"}\na-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "{\"type\":\"header\",\"source\":\"app\",\"padding\":\"pppppppppppppppppppppppppppppppppppppppp\",\"generation\":\"a\"}",
+                "start": 0,
+                "end": 103
+              },
+              {
+                "text": "a-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 103,
+                "end": 144
+              }
+            ],
+            "provisional": false,
+            "offset": 144,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "rename": {}
+        },
+        {
+          "write": "{\"type\":\"header\",\"source\":\"app\",\"padding\":\"pppppppppppppppppppppppppppppppppppppppp\",\"generation\":\"b\"}\nb-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 144,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 0,
+            "discarding": false,
+            "rotated": true,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "{\"type\":\"header\",\"source\":\"app\",\"padding\":\"pppppppppppppppppppppppppppppppppppppppp\",\"generation\":\"b\"}",
+                "start": 0,
+                "end": 103
+              },
+              {
+                "text": "b-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 103,
+                "end": 144
+              }
+            ],
+            "provisional": false,
+            "offset": 144,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "a first line still being written has no identity yet",
+      "options": {
+        "startAtEnd": true
+      },
+      "steps": [
+        {
+          "write": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": true,
+            "offset": 0,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "append": "\nnext xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+                "start": 0,
+                "end": 101
+              },
+              {
+                "text": "next xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 101,
+                "end": 142
+              }
+            ],
+            "provisional": false,
+            "offset": 142,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "startAt end without a newline in the scan budget starts at the end, skipping that line",
+      "options": {
+        "startAtEnd": true,
+        "maxBytesPerBatch": 100
+      },
+      "steps": [
+        {
+          "write": "first xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 341,
+            "discarding": true,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "append": "z tail\nafter xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "oversized": true,
+                "start": 341,
+                "end": 348
+              },
+              {
+                "text": "after xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 348,
+                "end": 389
+              }
+            ],
+            "provisional": false,
+            "offset": 389,
             "discarding": false,
             "rotated": false,
             "gap": false,
@@ -1281,7 +2044,8 @@
         ],
         "pollIntervalMilliseconds": 250,
         "maxLinesPerBatch": 64,
-        "maxBytesPerBatch": 65536
+        "maxBytesPerBatch": 65536,
+        "rotationGracePolls": 10
       },
       "expect": {
         "valid": true
@@ -2422,6 +3186,178 @@
       },
       "expect": {
         "error": "File tail maxBytesPerBatch must be between 65536 and 4194304."
+      }
+    },
+    {
+      "name": "rotation grace of zero polls",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ],
+        "rotationGracePolls": 0
+      },
+      "expect": {
+        "error": "File tail rotationGracePolls must be between 1 and 60."
+      }
+    },
+    {
+      "name": "rotation grace too long",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ],
+        "rotationGracePolls": 61
+      },
+      "expect": {
+        "error": "File tail rotationGracePolls must be between 1 and 60."
+      }
+    },
+    {
+      "name": "case-only duplicate path",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "auth-2",
+            "path": "/var/log/Auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth-2: path is already read by another input."
+      }
+    },
+    {
+      "name": "path is another input's rotated file",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "auth-2",
+            "path": "/var/log/auth.log.1",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth-2: path overlaps another input's rotated file (path.1)."
+      }
+    },
+    {
+      "name": "another input's path is this input's rotated file",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log.1",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "auth-2",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth-2: path overlaps another input's rotated file (path.1)."
+      }
+    },
+    {
+      "name": "rotated-file overlap ignores case",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "auth-2",
+            "path": "/var/log/AUTH.LOG.1",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth-2: path overlaps another input's rotated file (path.1)."
       }
     }
   ]

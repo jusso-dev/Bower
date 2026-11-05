@@ -1,0 +1,212 @@
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using Microsoft.Win32.SafeHandles;
+
+namespace Bower.Source.File;
+
+/// <summary>The opened file is not the validated regular file (a link or another file was swapped in).</summary>
+public sealed class FileTailRefusedException() : IOException(FileTailFailures.PathRefused);
+
+/// <summary>
+/// One generation of a tailed file, opened once: its identity, length and write time come
+/// from the same handle the lines are read from, so bytes of one generation can never move
+/// another generation's cursor.
+/// </summary>
+public sealed class FileTailHandle : IDisposable
+{
+    /// <summary>The identity covers the first complete line, at least 64 and at most 4096 bytes.</summary>
+    public const int MinimumIdentityBytes = 64;
+    public const int MaximumIdentityBytes = 4_096;
+
+    /// <summary>Tests only: runs before a validated path is opened (to swap the path).</summary>
+    [ThreadStatic]
+    internal static Action<string>? BeforeOpen;
+
+    /// <summary>Tests only: runs once a path is opened and identified (to replace the file).</summary>
+    [ThreadStatic]
+    internal static Action<string>? AfterOpen;
+
+    private FileTailHandle(FileStream stream, long length, DateTime writeTime, string? fingerprint)
+    {
+        Stream = stream;
+        Length = length;
+        WriteTime = writeTime;
+        Fingerprint = fingerprint;
+    }
+
+    public FileStream Stream { get; }
+
+    /// <summary>Length when opened; bytes appended later wait for the next read.</summary>
+    public long Length { get; }
+
+    public DateTime WriteTime { get; }
+
+    /// <summary>Null while the first line is incomplete (and shorter than 4096 bytes).</summary>
+    public string? Fingerprint { get; }
+
+    /// <summary>
+    /// Opens a path already checked by <see cref="FileTailPaths"/>, or returns null when it is
+    /// missing or shorter than 64 bytes (never opened, so FIFOs and devices never block). On
+    /// Linux the open does not follow a final symbolic link and does not block, and the
+    /// handle must be a regular file with the same device and inode as the path; elsewhere
+    /// the path must still not be a link after opening.
+    /// </summary>
+    /// <exception cref="FileTailRefusedException">The handle is not the validated regular file.</exception>
+    public static FileTailHandle? Open(string? path)
+    {
+        if (path is null)
+        {
+            return null;
+        }
+
+        FileInfo info = new(path);
+        if (info.LinkTarget is not null)
+        {
+            throw new FileTailRefusedException();
+        }
+
+        if (!info.Exists || info.Length < MinimumIdentityBytes)
+        {
+            return null;
+        }
+
+        BeforeOpen?.Invoke(path);
+        FileStream stream;
+        try
+        {
+            stream = OperatingSystem.IsLinux() ? LinuxTailFile.Open(path) : OpenShared(path);
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return null;
+        }
+
+        try
+        {
+            if (!OperatingSystem.IsLinux() && new FileInfo(path).LinkTarget is not null)
+            {
+                throw new FileTailRefusedException();
+            }
+
+            long length = stream.Length;
+            DateTime writeTime = System.IO.File.GetLastWriteTimeUtc(stream.SafeFileHandle);
+            FileTailHandle handle = new(stream, length, writeTime, Identity(stream, length));
+            AfterOpen?.Invoke(path);
+            return handle;
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>The identity of the file at <paramref name="path"/>, or null (tests and tools).</summary>
+    public static string? FingerprintOf(string path)
+    {
+        using FileTailHandle? handle = Open(path);
+        return handle?.Fingerprint;
+    }
+
+    public void Dispose() => Stream.Dispose();
+
+    /// <summary>
+    /// SHA-256 over the first complete line, extended to 64 bytes and capped at 4096. A line
+    /// still being written has no identity yet (unless 4096 bytes already arrived).
+    /// </summary>
+    private static string? Identity(FileStream stream, long length)
+    {
+        int available = (int)Math.Min(length, MaximumIdentityBytes);
+        byte[] prefix = new byte[available];
+        int read = RandomAccess.Read(stream.SafeFileHandle, prefix, 0);
+        if (read < MinimumIdentityBytes)
+        {
+            return null;
+        }
+
+        int newline = prefix.AsSpan(0, read).IndexOf((byte)'\n');
+        int identity = newline >= 0 ? Math.Max(MinimumIdentityBytes, newline + 1)
+            : read == MaximumIdentityBytes ? MaximumIdentityBytes : -1;
+        return identity < 0 || identity > read ? null : Convert.ToHexStringLower(SHA256.HashData(prefix.AsSpan(0, identity)));
+    }
+
+    private static FileStream OpenShared(string path) =>
+        new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4_096);
+}
+
+/// <summary>
+/// Linux opens through libc, as the settings loader does: <c>O_NOFOLLOW | O_NONBLOCK</c>,
+/// then <c>statx</c> on the handle (a regular file) and on the path without following links
+/// (same device and inode), so a link or another file swapped in after validation is refused.
+/// </summary>
+internal static partial class LinuxTailFile
+{
+    private const int ReadOnly = 0;
+    private const int NoFollow = 0x20000;
+    private const int CloseOnExec = 0x80000;
+    private const int NonBlock = 0x800;
+    private const int CurrentDirectory = -100;
+    private const int EmptyPath = 0x1000;
+    private const int SymlinkNoFollow = 0x100;
+    private const uint TypeAndInode = 0x1 | 0x100;
+    private const ushort TypeMask = 0xf000;
+    private const ushort RegularType = 0x8000;
+
+    internal static FileStream Open(string path)
+    {
+        int descriptor = OpenNative(path, ReadOnly | NoFollow | CloseOnExec | NonBlock);
+        if (descriptor < 0)
+        {
+            int error = Marshal.GetLastPInvokeError();
+            throw error switch
+            {
+                2 => new FileNotFoundException(),
+                40 => new FileTailRefusedException(), // ELOOP: the path is a symbolic link.
+                _ => new IOException(FileTailFailures.ReadFailed)
+            };
+        }
+
+        SafeFileHandle handle = new(descriptor, ownsHandle: true);
+        try
+        {
+            if (StatxHandle(handle, "", EmptyPath, TypeAndInode, out Statx opened) != 0
+                || (opened.Mask & TypeAndInode) != TypeAndInode
+                || (opened.Mode & TypeMask) != RegularType
+                || StatxPath(CurrentDirectory, path, SymlinkNoFollow, TypeAndInode, out Statx named) != 0
+                || (named.Mask & TypeAndInode) != TypeAndInode
+                || opened.Inode != named.Inode
+                || opened.DeviceMajor != named.DeviceMajor
+                || opened.DeviceMinor != named.DeviceMinor)
+            {
+                throw new FileTailRefusedException();
+            }
+
+            return new FileStream(handle, FileAccess.Read, 4_096);
+        }
+        catch
+        {
+            handle.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary><c>struct statx</c>: the same layout on every Linux architecture.</summary>
+    [StructLayout(LayoutKind.Explicit, Size = 256)]
+    internal struct Statx
+    {
+        [FieldOffset(0)] public uint Mask;
+        [FieldOffset(28)] public ushort Mode;
+        [FieldOffset(32)] public ulong Inode;
+        [FieldOffset(136)] public uint DeviceMajor;
+        [FieldOffset(140)] public uint DeviceMinor;
+    }
+
+    [LibraryImport("libc", EntryPoint = "open", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial int OpenNative(string path, int flags);
+
+    [LibraryImport("libc", EntryPoint = "statx", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial int StatxHandle(SafeFileHandle descriptor, string path, int flags, uint mask, out Statx buffer);
+
+    [LibraryImport("libc", EntryPoint = "statx", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial int StatxPath(int directory, string path, int flags, uint mask, out Statx buffer);
+}

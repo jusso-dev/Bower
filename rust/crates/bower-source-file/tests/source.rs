@@ -49,6 +49,7 @@ fn configuration(
         poll_interval_milliseconds: 100,
         max_lines_per_batch: 256,
         max_bytes_per_batch: 1_048_576,
+        rotation_grace_polls: 1,
     }
 }
 
@@ -415,6 +416,8 @@ fn rotation_is_counted_and_a_missed_rotation_is_a_gap() {
     std::fs::write(&path, format!("{}{}", line("first-1"), line("first-2"))).unwrap();
     std::fs::rename(&path, &rotated).unwrap();
     std::fs::write(&path, line("second-1")).unwrap();
+    // Drain path.1, wait one unchanged poll (grace), then move to the new file.
+    assert!(!source.poll_once("auth").unwrap().more);
     assert!(source.poll_once("auth").unwrap().more);
     source.poll_once("auth").unwrap();
 
@@ -700,4 +703,208 @@ fn configuration_loads_defaults_and_rejects_oversized_files() {
         bower_source_file::config::load_file(directory.path().join("none.json")).unwrap_err(),
         bower_source_file::config::ConfigError::FileNotFound
     );
+}
+
+/// C# `RotatedFileThatBecomesALink_FailsThePollWithoutReadingIt`.
+#[cfg(unix)]
+#[test]
+fn rotated_file_that_becomes_a_link_fails_the_poll_without_reading_it() {
+    let directory = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let path = directory.path().join("auth.log");
+    std::fs::write(&path, line("first-1")).unwrap();
+    let sink = FakeSink::new(|_| Ok(SubmitOutcome::Queued));
+    let cursors = Arc::new(MemoryCursors::default());
+    let source = FileTailSource::new(
+        text(directory.path(), &path, "beginning"),
+        sink.clone(),
+        cursors.clone(),
+        None,
+    );
+    source.poll_once("auth").unwrap();
+    let secret = outside.path().join("shadow");
+    std::fs::write(&secret, line("root:secret-marker")).unwrap();
+    std::fs::rename(&path, outside.path().join("moved")).unwrap();
+    std::os::unix::fs::symlink(&secret, directory.path().join("auth.log.1")).unwrap();
+    std::fs::write(&path, line("second-1")).unwrap();
+
+    assert_eq!(
+        source.poll_once("auth").unwrap_err().code,
+        failures::PATH_REFUSED
+    );
+    assert!(
+        !sink
+            .records()
+            .iter()
+            .any(|record| record.contains("secret-marker"))
+    );
+    let stored = Cursor::deserialize(&cursors.value("file:auth").unwrap()).unwrap();
+    assert_eq!(stored.offset, line("first-1").len() as i64);
+}
+
+/// C# `StopInsideAnOversizedLine_RewindsAndKeepsDiscarding`.
+#[test]
+fn stop_inside_an_oversized_line_rewinds_and_keeps_discarding() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("auth.log");
+    std::fs::write(&path, format!("{}{}", line("before"), "o".repeat(300))).unwrap();
+    let sink = FakeSink::new(|_| Ok(SubmitOutcome::Queued));
+    let cursors = Arc::new(MemoryCursors::default());
+    let configuration = configuration(directory.path(), &path, "beginning", "text", 256);
+    FileTailSource::new(configuration.clone(), sink.clone(), cursors.clone(), None)
+        .poll_once("auth")
+        .unwrap();
+    let discarding = Cursor::deserialize(&cursors.value("file:auth").unwrap()).unwrap();
+    assert!(discarding.discarding);
+    let mut content = std::fs::read(&path).unwrap();
+    content.extend_from_slice(format!("ooo\n{}", line("after")).as_bytes());
+    std::fs::write(&path, content).unwrap();
+
+    let stopping = FileTailSource::new(configuration, sink.clone(), cursors.clone(), None);
+    stopping.request_stop();
+    let result = stopping.poll_once("auth").unwrap();
+
+    assert_eq!(result.lines, 0);
+    let stored = Cursor::deserialize(&cursors.value("file:auth").unwrap()).unwrap();
+    assert_eq!(
+        (stored.offset, stored.discarding),
+        (discarding.offset, true)
+    );
+    assert_eq!(sink.records().len(), 1);
+}
+
+/// C# `FullQueueWhileDrainingTheRotatedFile_RewindsIntoItAndLosesNothing`.
+#[test]
+fn full_queue_while_draining_the_rotated_file_rewinds_into_it_and_loses_nothing() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("auth.log");
+    std::fs::write(&path, line("first-1")).unwrap();
+    let full = Arc::new(Mutex::new(false));
+    let gate = Arc::clone(&full);
+    let sink = FakeSink::new(move |record| {
+        Ok(if *gate.lock().unwrap() && record.contains("first-3") {
+            SubmitOutcome::Unavailable
+        } else {
+            SubmitOutcome::Queued
+        })
+    });
+    let cursors = Arc::new(MemoryCursors::default());
+    let source = FileTailSource::new(
+        text(directory.path(), &path, "beginning"),
+        sink.clone(),
+        cursors.clone(),
+        None,
+    );
+    source.poll_once("auth").unwrap();
+    let generation = Cursor::deserialize(&cursors.value("file:auth").unwrap())
+        .unwrap()
+        .fingerprint;
+    std::fs::write(
+        &path,
+        format!(
+            "{}{}{}{}",
+            line("first-1"),
+            line("first-2"),
+            line("first-3"),
+            line("first-4")
+        ),
+    )
+    .unwrap();
+    std::fs::rename(&path, directory.path().join("auth.log.1")).unwrap();
+    std::fs::write(&path, line("second-1")).unwrap();
+
+    *full.lock().unwrap() = true;
+    assert!(source.poll_once("auth").unwrap().backpressure);
+    let rewound = Cursor::deserialize(&cursors.value("file:auth").unwrap()).unwrap();
+    assert_eq!(
+        (rewound.fingerprint, rewound.offset),
+        (generation, line("first-1").len() as i64 * 2)
+    );
+    *full.lock().unwrap() = false;
+    for _ in 0..4 {
+        source.poll_once("auth").unwrap();
+    }
+    let mut words: Vec<String> = sink
+        .records()
+        .iter()
+        .map(|record| first_word(record))
+        .collect();
+    words.dedup();
+    assert_eq!(
+        words,
+        ["first-1", "first-2", "first-3", "first-4", "second-1"]
+    );
+    let status = &source.snapshot()[0];
+    assert_eq!((status.queued, status.rotation_gaps), (5, 0));
+}
+
+/// C# `AllowedLinkToAnotherInputsFile_IsRefusedAtLoad`.
+#[cfg(unix)]
+#[test]
+fn allowed_link_to_another_inputs_file_is_refused_at_load() {
+    let directory = tempfile::tempdir().unwrap();
+    let auth = directory.path().join("auth.log");
+    let linked = directory.path().join("alias.log");
+    std::fs::write(&auth, line("one")).unwrap();
+    std::os::unix::fs::symlink(directory.path().join("auth.log.1"), &linked).unwrap();
+    let file = directory.path().join("file.json");
+    std::fs::write(
+        &file,
+        serde_json::json!({
+            "apiVersion": "bower.security/v1",
+            "kind": "FileTailSource",
+            "allowedRoots": [directory.path().to_str().unwrap()],
+            "inputs": [
+                {"id": "auth", "path": auth.to_str().unwrap(), "route": {"pack": "p", "parser": 0}},
+                {"id": "alias", "path": linked.to_str().unwrap(), "allowSymlink": true, "route": {"pack": "p", "parser": 0}}
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    assert_eq!(
+        bower_source_file::config::load_file(&file).unwrap_err(),
+        bower_source_file::config::ConfigError::InvalidData(
+            "File tail input alias: allowSymlink target is another input's file or rotated file."
+                .into()
+        )
+    );
+}
+
+/// A busy cursor store is backpressure, retried after the retry delay (C#
+/// `IsTransientStorageFailure`), never a source failure.
+#[test]
+fn busy_cursor_store_is_backpressure_not_a_failure() {
+    struct Busy;
+    impl SourceCursorStore for Busy {
+        fn read(&self, _: &str) -> StoreResult<Option<SourceCursorSnapshot>> {
+            Err(StoreError::Storage("busy".into()))
+        }
+        fn try_advance(&self, _: &str, _: i64, _: &str, _: Timestamp) -> StoreResult<bool> {
+            Err(StoreError::Storage("busy".into()))
+        }
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("auth.log");
+    std::fs::write(&path, line("one")).unwrap();
+    let sink = FakeSink::new(|_| Ok(SubmitOutcome::Queued));
+    let source = FileTailSource::new(
+        text(directory.path(), &path, "beginning"),
+        sink.clone(),
+        Arc::new(Busy),
+        None,
+    )
+    .with_transient_storage(
+        |error| matches!(error, StoreError::Storage(message) if message == "busy"),
+    );
+
+    let result = source.poll_once("auth").unwrap();
+
+    assert!(result.backpressure);
+    let status = &source.snapshot()[0];
+    assert_eq!(
+        (status.state.as_str(), status.backpressure),
+        ("backpressure", 1)
+    );
+    assert!(sink.records().is_empty());
 }

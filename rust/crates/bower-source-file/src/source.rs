@@ -18,15 +18,15 @@ use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use bower_contracts::SourceCursorStore;
 use bower_contracts::time::{Clock, SystemClock, Timestamp, serde_offset_option};
+use bower_contracts::{SourceCursorStore, StoreError};
 use serde::Serialize;
 use tokio::sync::watch;
 use tokio::task::JoinSet;
 
-use crate::config::{FileTailSourceConfiguration, InputOptions};
+use crate::config::{self, FileTailSourceConfiguration, InputOptions};
 use crate::paths::{self, PathState};
-use crate::reader::{self, Batch, Cursor, Line, ReaderOptions};
+use crate::reader::{self, Batch, Cursor, Line, ReadError, ReaderOptions, RotationState};
 use crate::record;
 
 /// What happened to one record handed to the collector (C# `FileTailSubmitOutcome`).
@@ -149,6 +149,8 @@ struct InputState {
     offset: AtomicI64,
     last_line_at: Mutex<Option<Timestamp>>,
     last_poll_at: Mutex<Option<Timestamp>>,
+    /// Grace and abandoned-generation state of the reader, in memory only.
+    rotation: Mutex<RotationState>,
 }
 
 impl InputState {
@@ -225,6 +227,8 @@ pub struct FileTailSource {
     stopping: Arc<AtomicBool>,
     retry_delay: Duration,
     maximum_backoff: Duration,
+    rotation_grace_polls: i32,
+    transient: Arc<dyn Fn(&StoreError) -> bool + Send + Sync>,
 }
 
 impl FileTailSource {
@@ -245,6 +249,7 @@ impl FileTailSource {
                     offset: AtomicI64::new(-1),
                     last_line_at: Mutex::new(None),
                     last_poll_at: Mutex::new(None),
+                    rotation: Mutex::new(RotationState::default()),
                 })
             })
             .collect();
@@ -269,7 +274,20 @@ impl FileTailSource {
             stopping: Arc::new(AtomicBool::new(false)),
             retry_delay: Duration::from_secs(1),
             maximum_backoff: Duration::from_secs(60),
+            rotation_grace_polls: configuration.rotation_grace_polls,
+            transient: Arc::new(|_| false),
         }
+    }
+
+    /// Recognises contention on the cursor store (the collector supplies SQLite busy and
+    /// locked, C# `IsTransientStorageFailure`). Such a poll is retried after the retry delay
+    /// as backpressure, not reported as a source failure; the cursor is unchanged.
+    pub fn with_transient_storage(
+        mut self,
+        transient: impl Fn(&StoreError) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        self.transient = Arc::new(transient);
+        self
     }
 
     /// Wait before retrying a line the queue could not take yet (default 1 s).
@@ -299,7 +317,18 @@ impl FileTailSource {
             .gate
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
-        let result = self.poll(&input);
+        let result = match self.poll(&input) {
+            Err(error) if error.code == BUSY => {
+                input.set_state("backpressure");
+                input.counters.backpressure.fetch_add(1, Ordering::Relaxed);
+                return Ok(PollResult {
+                    lines: 0,
+                    backpressure: true,
+                    more: false,
+                });
+            }
+            result => result,
+        };
         if let Err(error) = &result {
             input.set_state(error.code);
             if matches!(error.code, failures::READ_FAILED | failures::PATH_REFUSED) {
@@ -319,7 +348,7 @@ impl FileTailSource {
         let snapshot = self
             .cursors
             .read(&source_id)
-            .map_err(|_| FileTailError::new(failures::SOURCE_FAILED))?;
+            .map_err(|error| self.storage(&error))?;
         let cursor = match &snapshot {
             Some(snapshot) => {
                 // Never reinterpret or silently reset a position this version did not write.
@@ -331,30 +360,49 @@ impl FileTailSource {
             None => None,
         };
 
-        let (state, path) = paths::resolve(&options.path, &self.roots, options.allow_symlink);
-        if state == PathState::Refused {
-            return Err(FileTailError::new(failures::PATH_REFUSED));
-        }
+        let (state, path) = self.check(options)?;
+        // path.1 gets exactly the same checks as the configured path (never a link).
+        let (rotated_state, rotated) = self.check_rotated(&path)?;
         // A missing file is read as missing: the cursor is still persisted and the rotated
         // file may still hold unread lines.
-        let rotated = self.rotated(&path);
-        let batch = reader::read(
-            (state == PathState::Ready).then_some(Path::new(&path)),
-            rotated.as_deref().map(Path::new),
-            cursor.as_ref(),
-            &ReaderOptions {
-                max_line_bytes: usize::try_from(options.max_line_bytes).unwrap_or(16_384),
-                max_lines_per_batch: self.max_lines_per_batch,
-                max_bytes_per_batch: self.max_bytes_per_batch,
-                start_at_end: options.start_at != "beginning",
-            },
-        )
-        .map_err(|_| FileTailError::new(failures::READ_FAILED))?;
+        let read = {
+            let mut rotation = input
+                .rotation
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            reader::read(
+                (state == PathState::Ready).then_some(Path::new(&path)),
+                (rotated_state == PathState::Ready).then_some(Path::new(&rotated)),
+                cursor.as_ref(),
+                &ReaderOptions {
+                    max_line_bytes: usize::try_from(options.max_line_bytes).unwrap_or(16_384),
+                    max_lines_per_batch: self.max_lines_per_batch,
+                    max_bytes_per_batch: self.max_bytes_per_batch,
+                    start_at_end: options.start_at != "beginning",
+                    rotation_grace_polls: self.rotation_grace_polls,
+                },
+                &mut rotation,
+                Some(&self.stopping),
+            )
+        };
+        let batch = match read {
+            Ok(batch) => batch,
+            Err(ReadError::Refused) => return Err(FileTailError::new(failures::PATH_REFUSED)),
+            Err(ReadError::Io(_)) => return Err(FileTailError::new(failures::READ_FAILED)),
+            Err(ReadError::Stopped) => {
+                input.set_state("stopped");
+                return Ok(PollResult {
+                    lines: 0,
+                    backpressure: false,
+                    more: false,
+                });
+            }
+        };
 
         // Re-check after reading: a link swapped in during the read discards the read.
-        if paths::resolve(&options.path, &self.roots, options.allow_symlink).0 == PathState::Refused
-        {
-            return Err(FileTailError::new(failures::PATH_REFUSED));
+        self.check(options)?;
+        if batch.rotated_opened {
+            self.check_rotated(&path)?;
         }
         if batch.gap {
             input.counters.rotation_gaps.fetch_add(1, Ordering::Relaxed);
@@ -370,7 +418,7 @@ impl FileTailSource {
             let advanced = self
                 .cursors
                 .try_advance(&source_id, expected, &value, self.clock.utc_now())
-                .map_err(|_| FileTailError::new(failures::SOURCE_FAILED))?;
+                .map_err(|error| self.storage(&error))?;
             if !advanced {
                 input
                     .counters
@@ -462,11 +510,35 @@ impl FileTailSource {
         counter.fetch_add(1, Ordering::Relaxed);
     }
 
-    /// The rotated file (`path.1`, never a link), or `None` when it cannot be read.
-    fn rotated(&self, path: &str) -> Option<String> {
+    /// The configured path, refused when it is a link, outside the roots, or (through an
+    /// allowed link) another input's file or rotated file.
+    fn check(&self, options: &InputOptions) -> Result<(PathState, String), FileTailError> {
+        let (state, path) = paths::resolve(&options.path, &self.roots, options.allow_symlink);
+        let overlaps = path != options.path
+            && self.inputs.iter().any(|other| {
+                other.options.id != options.id && config::overlaps(&path, &other.options.path)
+            });
+        if state == PathState::Refused || overlaps {
+            return Err(FileTailError::new(failures::PATH_REFUSED));
+        }
+        Ok((state, path))
+    }
+
+    /// `path.1`: missing is fine, refused fails the poll (never read past a swapped link).
+    fn check_rotated(&self, path: &str) -> Result<(PathState, String), FileTailError> {
         match paths::resolve(&format!("{path}.1"), &self.roots, false) {
-            (PathState::Ready, rotated) => Some(rotated),
-            _ => None,
+            (PathState::Refused, _) => Err(FileTailError::new(failures::PATH_REFUSED)),
+            resolved => Ok(resolved),
+        }
+    }
+
+    /// Busy or locked storage is backpressure (C# `IsTransientStorageFailure`); anything
+    /// else fails the poll.
+    fn storage(&self, error: &StoreError) -> FileTailError {
+        if (self.transient)(error) {
+            FileTailError::new(BUSY)
+        } else {
+            FileTailError::new(failures::SOURCE_FAILED)
         }
     }
 
@@ -531,6 +603,13 @@ async fn run_input(source: Arc<FileTailSource>, id: String, mut stop: watch::Rec
     }
 }
 
+/// Back to the line's start; inside an oversized line, keep skipping it.
 fn rewind(line: &Line) -> Cursor {
-    Cursor::new(line.fingerprint.clone(), line.start_offset)
+    Cursor {
+        discarding: line.continues_discard,
+        ..Cursor::new(line.fingerprint.clone(), line.start_offset)
+    }
 }
+
+/// Internal marker for busy storage; reported as backpressure, never as a failure code.
+const BUSY: &str = "backpressure";

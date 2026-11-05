@@ -12,6 +12,7 @@ namespace Bower.Source.File;
 /// <param name="PollIntervalMilliseconds">Wait between reads once an input has caught up.</param>
 /// <param name="MaxLinesPerBatch">Lines read per poll; the cursor is committed after each poll.</param>
 /// <param name="MaxBytesPerBatch">Bytes scanned per poll (one line may run up to its own limit past it).</param>
+/// <param name="RotationGracePolls">Polls <c>path.1</c> must stay unchanged before the cursor moves to the new file.</param>
 public sealed record FileTailSourceConfiguration(
     string ApiVersion,
     string Kind,
@@ -19,7 +20,8 @@ public sealed record FileTailSourceConfiguration(
     IReadOnlyList<FileTailInputOptions> Inputs,
     int PollIntervalMilliseconds = 1_000,
     int MaxLinesPerBatch = 256,
-    int MaxBytesPerBatch = 1_048_576);
+    int MaxBytesPerBatch = 1_048_576,
+    int RotationGracePolls = FileTailSourceConfigurationLoader.DefaultRotationGracePolls);
 
 /// <summary>The active parser of a loaded signed pack that maps this input's lines.</summary>
 public sealed record FileTailRoute(string Pack, int Parser);
@@ -66,6 +68,8 @@ public static class FileTailSourceConfigurationLoader
     public const int MaximumMaxLineBytes = 30_720;
 
     public const int MinimumMaxLineBytes = 256;
+    public const int DefaultRotationGracePolls = 5;
+    public const int MaximumRotationGracePolls = 60;
     private const int MaximumBytes = 262_144;
 
     public static FileTailSourceConfiguration LoadFile(string path)
@@ -81,7 +85,9 @@ public static class FileTailSourceConfigurationLoader
             throw new InvalidDataException("File tail source configuration file exceeds 256 KiB.");
         }
 
-        return Parse(System.IO.File.ReadAllText(path));
+        FileTailSourceConfiguration configuration = Parse(System.IO.File.ReadAllText(path));
+        ValidateLinks(configuration);
+        return configuration;
     }
 
     public static FileTailSourceConfiguration Parse(string json)
@@ -138,8 +144,13 @@ public static class FileTailSourceConfigurationLoader
             throw new InvalidDataException("File tail maxBytesPerBatch must be between 65536 and 4194304.");
         }
 
+        if (configuration.RotationGracePolls is < 1 or > MaximumRotationGracePolls)
+        {
+            throw new InvalidDataException($"File tail rotationGracePolls must be between 1 and {MaximumRotationGracePolls}.");
+        }
+
         HashSet<string> ids = new(StringComparer.Ordinal);
-        HashSet<string> paths = new(FileTailPaths.Comparer);
+        List<FileTailInputOptions> earlier = [];
         foreach (FileTailInputOptions input in configuration.Inputs)
         {
             Validate(input, configuration.AllowedRoots);
@@ -148,14 +159,65 @@ public static class FileTailSourceConfigurationLoader
                 throw new InvalidDataException($"File tail input {input.Id} is listed more than once.");
             }
 
-            if (!paths.Add(input.Path))
+            // Case-only differences count as the same file everywhere, for simplicity.
+            if (earlier.Any(other => string.Equals(Fold(other.Path), Fold(input.Path), StringComparison.Ordinal)))
             {
                 throw Invalid(input.Id, "path is already read by another input.");
             }
+
+            if (earlier.Any(other => Overlaps(input.Path, other.Path)))
+            {
+                throw Invalid(input.Id, "path overlaps another input's rotated file (path.1).");
+            }
+
+            earlier.Add(input);
         }
 
         return configuration;
     }
+
+    /// <summary>
+    /// Allowed links must not lead to another input's file or rotated file. Read once at
+    /// load (one hop, as at read time); a link that does not exist yet is checked when read.
+    /// </summary>
+    public static void ValidateLinks(FileTailSourceConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        foreach (FileTailInputOptions input in configuration.Inputs.Where(input => input.AllowSymlink))
+        {
+            if (new FileInfo(input.Path).LinkTarget is not { } target)
+            {
+                continue;
+            }
+
+            string resolved = Path.GetFullPath(target, Path.GetDirectoryName(input.Path)!);
+            if (configuration.Inputs.Any(other => !ReferenceEquals(other, input) && Overlaps(resolved, other.Path)))
+            {
+                throw Invalid(input.Id, "allowSymlink target is another input's file or rotated file.");
+            }
+        }
+    }
+
+    /// <summary>The same file, or one is the other's rotated file (<c>path.1</c>), ignoring ASCII case.</summary>
+    public static bool Overlaps(string path, string other)
+    {
+        string left = Fold(path);
+        string right = Fold(other);
+        return string.Equals(left, right, StringComparison.Ordinal)
+            || string.Equals(left, right + ".1", StringComparison.Ordinal)
+            || string.Equals(left + ".1", right, StringComparison.Ordinal);
+    }
+
+    /// <summary>ASCII-only case folding, identical in both runtimes.</summary>
+    private static string Fold(string value) =>
+        string.Create(value.Length, value, static (span, source) =>
+        {
+            for (int index = 0; index < source.Length; index++)
+            {
+                char character = source[index];
+                span[index] = character is >= 'A' and <= 'Z' ? (char)(character + 32) : character;
+            }
+        });
 
     private static void Validate(FileTailInputOptions input, IReadOnlyList<string> roots)
     {

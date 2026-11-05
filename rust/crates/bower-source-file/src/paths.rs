@@ -76,13 +76,9 @@ pub fn resolve(path: &str, roots: &[String], allow_symlink: bool) -> (PathState,
             let Ok(target) = std::fs::read_link(path) else {
                 return (PathState::Missing, path.to_owned());
             };
-            let parent = parent(path);
-            let joined = match target.to_str() {
-                Some(target) if target.starts_with('/') => target.to_owned(),
-                Some(target) => format!("{parent}/{target}"),
-                None => return (PathState::Refused, path.to_owned()),
+            let Some(resolved) = link_target(path, &target) else {
+                return (PathState::Refused, path.to_owned());
             };
-            let resolved = normalise(&joined);
             let Some(target_root) = root_of(&resolved, roots) else {
                 return (PathState::Refused, path.to_owned());
             };
@@ -94,6 +90,15 @@ pub fn resolve(path: &str, roots: &[String], allow_symlink: bool) -> (PathState,
         }
         _ => (finish(path), path.to_owned()),
     }
+}
+
+/// The normalised absolute target of the link at `path` (C# `Path.GetFullPath(target, parent)`).
+pub fn link_target(path: &str, target: &Path) -> Option<String> {
+    let joined = match target.to_str()? {
+        target if target.starts_with('/') => target.to_owned(),
+        target => format!("{}/{target}", parent(path)),
+    };
+    Some(normalise(&joined))
 }
 
 fn finish(path: &str) -> PathState {
