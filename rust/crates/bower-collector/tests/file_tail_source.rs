@@ -228,8 +228,11 @@ async fn restart_resumes_from_the_durable_cursor_without_loss_or_duplicates() {
     std::fs::create_dir_all(log.parent().unwrap()).unwrap();
     let (failed, _, _) = lines(&at());
     std::fs::write(&log, format!("{failed}\n")).unwrap();
+    let committed = std::fs::metadata(&log).unwrap().len() as i64;
     let first = start(settings(directory.path(), &log, "beginning", 0)).await;
-    first.input(|input| count(input, "queued") == 1).await;
+    first
+        .input(|input| count(input, "queued") == 1 && input["offset"].as_i64() == Some(committed))
+        .await;
     first.stop().await;
 
     let content = format!("{failed}\n{}\n", failed.replace("4242", "4250"));
@@ -300,6 +303,7 @@ async fn crash_replay_with_an_identity_conflict_is_counted_and_never_blocks_the_
     let (failed, _, _) = lines(&at());
     std::fs::write(&log, format!("{failed}\n")).unwrap();
     let pack = read_time_pack(directory.path());
+    let end = std::fs::metadata(&log).unwrap().len() as i64;
     let first = start(settings_with_pack(
         directory.path(),
         &log,
@@ -308,7 +312,10 @@ async fn crash_replay_with_an_identity_conflict_is_counted_and_never_blocks_the_
         &pack,
     ))
     .await;
-    first.input(|input| count(input, "queued") == 1).await;
+    // Wait for the committed cursor, not just the counter (counted before the commit).
+    first
+        .input(|input| count(input, "queued") == 1 && input["offset"].as_i64() == Some(end))
+        .await;
     first.stop().await;
 
     // Crash before the cursor commit: the stored cursor still points at the line.
@@ -337,18 +344,17 @@ async fn crash_replay_with_an_identity_conflict_is_counted_and_never_blocks_the_
         &pack,
     ))
     .await;
-    let input = second.input(|input| count(input, "rejected") == 1).await;
+    // The poll is complete once the cursor past the line is committed and the state is set.
+    let input = second
+        .input(|input| {
+            count(input, "rejected") == 1
+                && input["offset"].as_i64() == Some(end)
+                && input["state"] == "running"
+        })
+        .await;
     assert_eq!(
-        (
-            count(&input, "queued"),
-            count(&input, "backpressure"),
-            input["state"].as_str()
-        ),
-        (0, 0, Some("running"))
-    );
-    assert_eq!(
-        input["offset"].as_i64(),
-        Some(std::fs::metadata(&log).unwrap().len() as i64)
+        (count(&input, "queued"), count(&input, "backpressure")),
+        (0, 0)
     );
     let mut content = std::fs::read_to_string(&log).unwrap();
     content.push_str(&format!("{}\n", failed.replace("4242", "4251")));

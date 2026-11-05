@@ -95,7 +95,9 @@ public sealed class FileTailCollectorTests
         await File.WriteAllTextAsync(log, Failed + "\n", cancellation);
         await using (WebApplication first = await Start(directory, log, cancellation, startAt: "beginning"))
         {
-            await WaitFor(first.Services.GetRequiredService<FileTailSource>(), status => status.Queued == 1, cancellation);
+            long committed = new FileInfo(log).Length;
+            await WaitFor(first.Services.GetRequiredService<FileTailSource>(),
+                status => status.Queued == 1 && status.Offset == committed, cancellation);
             await first.StopAsync(cancellation);
         }
 
@@ -121,9 +123,12 @@ public sealed class FileTailCollectorTests
         Directory.CreateDirectory(Path.GetDirectoryName(log)!);
         await File.WriteAllTextAsync(log, Failed + "\n", cancellation);
         string pack = ReadTimePack(directory);
+        long end = new FileInfo(log).Length;
         await using (WebApplication first = await Start(directory, log, cancellation, "beginning", pack))
         {
-            await WaitFor(first.Services.GetRequiredService<FileTailSource>(), status => status.Queued == 1, cancellation);
+            // Wait for the committed cursor, not just the counter (counted before the commit).
+            await WaitFor(first.Services.GetRequiredService<FileTailSource>(),
+                status => status.Queued == 1 && status.Offset == end && status.State == "running", cancellation);
             await first.StopAsync(cancellation);
         }
 
@@ -136,9 +141,10 @@ public sealed class FileTailCollectorTests
 
         await using WebApplication second = await Start(directory, log, cancellation, "beginning", pack);
         FileTailSource source = second.Services.GetRequiredService<FileTailSource>();
-        FileTailInputStatus conflicted = await WaitFor(source, status => status.Rejected == 1, cancellation);
-        Assert.Equal((0, 0, "running"), (conflicted.Queued, conflicted.Backpressure, conflicted.State));
-        Assert.Equal(new FileInfo(log).Length, conflicted.Offset);
+        // The poll is complete once the cursor past the line is committed and the state is set.
+        FileTailInputStatus conflicted = await WaitFor(source,
+            status => status.Rejected == 1 && status.Offset == end && status.State == "running", cancellation);
+        Assert.Equal((0, 0), (conflicted.Queued, conflicted.Backpressure));
 
         await File.AppendAllTextAsync(log, Failed.Replace("4242", "4251", StringComparison.Ordinal) + "\n", cancellation);
         await WaitFor(source, status => status.Queued == 1, cancellation);
