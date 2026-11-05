@@ -107,6 +107,82 @@ public sealed class FileTailCollectorTests
         Assert.Equal(2, (await second.Services.GetRequiredService<IDurableEventStore>().GetSnapshotAsync(cancellation)).Queued);
     }
 
+    /// <summary>
+    /// A replayed line whose mapped content differs from the queued event (here a test
+    /// parser maps the read time) is an event-identity conflict in the real SQLite queue. It
+    /// is quarantined and counted, and the cursor moves on: it never blocks the input.
+    /// </summary>
+    [Fact]
+    public async Task CrashReplayWithAnIdentityConflict_IsCountedAndNeverBlocksTheInput()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string log = Path.Combine(directory.Path, "log", "auth.log");
+        Directory.CreateDirectory(Path.GetDirectoryName(log)!);
+        await File.WriteAllTextAsync(log, Failed + "\n", cancellation);
+        string pack = ReadTimePack(directory);
+        await using (WebApplication first = await Start(directory, log, cancellation, "beginning", pack))
+        {
+            await WaitFor(first.Services.GetRequiredService<FileTailSource>(), status => status.Queued == 1, cancellation);
+            await first.StopAsync(cancellation);
+        }
+
+        // Crash before the cursor commit: the stored cursor still points at the line.
+        Bower.Persistence.EfSourceCursorStore cursors = new(Path.Combine(directory.Path, "queue.db"));
+        SourceCursorSnapshot stored = (await cursors.ReadAsync("file:auth", cancellation))!;
+        FileTailCursor rewound = FileTailCursor.Deserialize(stored.Value)! with { Offset = 0 };
+        Assert.True(await cursors.TryAdvanceAsync("file:auth", stored.Version, rewound.Serialize(), DateTimeOffset.UtcNow, cancellation));
+        await Task.Delay(5, cancellation);
+
+        await using WebApplication second = await Start(directory, log, cancellation, "beginning", pack);
+        FileTailSource source = second.Services.GetRequiredService<FileTailSource>();
+        FileTailInputStatus conflicted = await WaitFor(source, status => status.Rejected == 1, cancellation);
+        Assert.Equal((0, 0, "running"), (conflicted.Queued, conflicted.Backpressure, conflicted.State));
+        Assert.Equal(new FileInfo(log).Length, conflicted.Offset);
+
+        await File.AppendAllTextAsync(log, Failed.Replace("4242", "4251", StringComparison.Ordinal) + "\n", cancellation);
+        await WaitFor(source, status => status.Queued == 1, cancellation);
+        Assert.Equal(2, (await second.Services.GetRequiredService<IDurableEventStore>().GetSnapshotAsync(cancellation)).Queued);
+    }
+
+    /// <summary>The shipped pack, but timeGenerated is the read time, so a replay maps differently.</summary>
+    private static string ReadTimePack(TemporaryDirectory directory)
+    {
+        string target = Path.Combine(directory.Path, "read-time-pack");
+        foreach (string file in Directory.EnumerateFiles(PackSource, "*", SearchOption.AllDirectories))
+        {
+            string destination = Path.Combine(target, Path.GetRelativePath(PackSource, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(file, destination);
+        }
+
+        string parserPath = Path.Combine(target, "parsers", "sshd-authlog.json");
+        System.Text.Json.Nodes.JsonObject parser = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(parserPath))!.AsObject();
+        System.Text.Json.Nodes.JsonArray fields = parser["fields"]!.AsArray();
+        if (!fields.Any(field => field!["sourceName"]!.GetValue<string>() == "readAt"))
+        {
+            fields.Add(new System.Text.Json.Nodes.JsonObject
+            {
+                ["sourceName"] = "readAt",
+                ["type"] = "DateTime",
+                ["ocsfPath"] = null,
+                ["asimField"] = null,
+                ["sensitive"] = false
+            });
+        }
+
+        parser["runtime"]!["transforms"]!.AsArray().Add(".timestamp = .readAt");
+        File.WriteAllText(parserPath, parser.ToJsonString());
+        string samples = Path.Combine(target, "samples", "authlog.jsonl");
+        File.WriteAllLines(samples, File.ReadAllLines(samples).Select(line =>
+        {
+            System.Text.Json.Nodes.JsonObject sample = System.Text.Json.Nodes.JsonNode.Parse(line)!.AsObject();
+            sample.Remove("expectFields");
+            return sample.ToJsonString();
+        }));
+        return target;
+    }
+
     [Fact]
     public async Task RouteToAMissingParser_StopsStartUpAndRefusesASignedReload()
     {
@@ -173,22 +249,22 @@ public sealed class FileTailCollectorTests
         }
     }
 
-    private static async Task<WebApplication> Start(TemporaryDirectory directory, string log, CancellationToken cancellation, string startAt = "end")
+    private static async Task<WebApplication> Start(TemporaryDirectory directory, string log, CancellationToken cancellation, string startAt = "end", string? packSource = null)
     {
-        WebApplication app = CollectorApplication.Build(Settings(directory, log, startAt), builder => builder.WebHost.UseTestServer());
+        WebApplication app = CollectorApplication.Build(Settings(directory, log, startAt, packSource: packSource), builder => builder.WebHost.UseTestServer());
         await CollectorApplication.InitializeAsync(app, cancellation);
         await app.StartAsync(cancellation);
         return app;
     }
 
-    private static CollectorSettings Settings(TemporaryDirectory directory, string log, string startAt, int parser = 0)
+    private static CollectorSettings Settings(TemporaryDirectory directory, string log, string startAt, int parser = 0, string? packSource = null)
     {
         string archive = Path.Combine(directory.Path, "linux-authlog-ssh.bowerpack");
         string trust = Path.Combine(directory.Path, "trusted.pem");
         if (!File.Exists(archive))
         {
             (string privateKey, string publicKey, _) = DetachedSigner.GenerateKeyPair();
-            File.Move(PackArchive.Build(PackSource, privateKey, directory.Path), archive);
+            File.Move(PackArchive.Build(packSource ?? PackSource, privateKey, directory.Path), archive);
             File.WriteAllText(trust, publicKey);
             File.WriteAllText(Path.Combine(directory.Path, "hmac.key"), Convert.ToBase64String(new byte[32]));
         }

@@ -93,12 +93,16 @@ impl FileTailSink for CollectorFileTailSink {
                     SubmitOutcome::Queued
                 },
             ),
-            // The source stops reading and retries the same line.
+            // The source stops reading and retries the same line. A busy queue database (for
+            // example a retention batch) is the same backpressure, as in C#.
             Err(
                 ProcessError::Store(StoreError::Full(_))
                 | ProcessError::EventIdRedacted
                 | ProcessError::RedactionUnavailable,
             ) => Ok(SubmitOutcome::Unavailable),
+            Err(ProcessError::Store(error)) if bower_persistence::is_busy(&error) => {
+                Ok(SubmitOutcome::Unavailable)
+            }
             Err(_) => Err(SinkFailure),
         }
     }

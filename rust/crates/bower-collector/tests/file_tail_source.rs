@@ -45,18 +45,28 @@ fn lines(at: &chrono::DateTime<chrono::FixedOffset>) -> (String, String, String)
 }
 
 fn settings(directory: &Path, log: &Path, start_at: &str, parser: i32) -> CollectorSettings {
+    settings_with_pack(
+        directory,
+        log,
+        start_at,
+        parser,
+        &repo_root().join("packs/linux-authlog-ssh"),
+    )
+}
+
+fn settings_with_pack(
+    directory: &Path,
+    log: &Path,
+    start_at: &str,
+    parser: i32,
+    pack: &Path,
+) -> CollectorSettings {
     let archive = directory.join("linux-authlog-ssh.bowerpack");
     let trust = directory.join("trusted.pem");
     let hmac = directory.join("hmac.key");
     if !archive.exists() {
         let keys = bower_integrity::generate_key_pair();
-        let built = bower_packs::build(
-            &repo_root().join("packs/linux-authlog-ssh"),
-            &keys.private_key_pem,
-            directory,
-            None,
-        )
-        .unwrap();
+        let built = bower_packs::build(pack, &keys.private_key_pem, directory, None).unwrap();
         std::fs::rename(built, &archive).unwrap();
         std::fs::write(&trust, keys.public_key_pem).unwrap();
         std::fs::write(&hmac, [0u8; 32]).unwrap();
@@ -230,6 +240,120 @@ async fn restart_resumes_from_the_durable_cursor_without_loss_or_duplicates() {
         (count(&input, "linesRead"), count(&input, "duplicates")),
         (1, 0)
     );
+    assert_eq!(second.store.snapshot().unwrap().queued, 2);
+    second.stop().await;
+}
+
+/// The shipped pack, but timeGenerated is the read time, so a replay maps differently.
+fn read_time_pack(directory: &Path) -> PathBuf {
+    let source = repo_root().join("packs/linux-authlog-ssh");
+    let target = directory.join("read-time-pack");
+    for sub in ["", "parsers", "policies", "samples"] {
+        std::fs::create_dir_all(target.join(sub)).unwrap();
+    }
+    for file in [
+        "pack.yaml",
+        "privacy.yaml",
+        "policies/authlog-ssh-authentication.yaml",
+    ] {
+        std::fs::copy(source.join(file), target.join(file)).unwrap();
+    }
+    let mut parser: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(source.join("parsers/sshd-authlog.json")).unwrap(),
+    )
+    .unwrap();
+    let fields = parser["fields"].as_array_mut().unwrap();
+    if !fields.iter().any(|field| field["sourceName"] == "readAt") {
+        fields.push(serde_json::json!({"sourceName": "readAt", "type": "DateTime", "ocsfPath": null, "asimField": null, "sensitive": false}));
+    }
+    parser["runtime"]["transforms"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!(".timestamp = .readAt"));
+    std::fs::write(target.join("parsers/sshd-authlog.json"), parser.to_string()).unwrap();
+    let samples: Vec<String> = std::fs::read_to_string(source.join("samples/authlog.jsonl"))
+        .unwrap()
+        .lines()
+        .map(|line| {
+            let mut sample: serde_json::Value = serde_json::from_str(line).unwrap();
+            sample.as_object_mut().unwrap().remove("expectFields");
+            sample.to_string()
+        })
+        .collect();
+    std::fs::write(
+        target.join("samples/authlog.jsonl"),
+        samples.join("\n") + "\n",
+    )
+    .unwrap();
+    target
+}
+
+/// A replayed line whose mapped content differs from the queued event is an
+/// event-identity conflict in the real SQLite queue: quarantined, counted, and the cursor
+/// moves on (C# `CrashReplayWithAnIdentityConflict_IsCountedAndNeverBlocksTheInput`).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn crash_replay_with_an_identity_conflict_is_counted_and_never_blocks_the_input() {
+    use bower_contracts::SourceCursorStore;
+    let directory = tempfile::tempdir().unwrap();
+    let log = directory.path().join("log").join("auth.log");
+    std::fs::create_dir_all(log.parent().unwrap()).unwrap();
+    let (failed, _, _) = lines(&at());
+    std::fs::write(&log, format!("{failed}\n")).unwrap();
+    let pack = read_time_pack(directory.path());
+    let first = start(settings_with_pack(
+        directory.path(),
+        &log,
+        "beginning",
+        0,
+        &pack,
+    ))
+    .await;
+    first.input(|input| count(input, "queued") == 1).await;
+    first.stop().await;
+
+    // Crash before the cursor commit: the stored cursor still points at the line.
+    let cursors =
+        bower_persistence::SqliteSourceCursorStore::new(directory.path().join("queue.db")).unwrap();
+    let stored = cursors.read("file:auth").unwrap().unwrap();
+    let mut rewound = bower_source_file::Cursor::deserialize(&stored.value).unwrap();
+    rewound.offset = 0;
+    assert!(
+        cursors
+            .try_advance(
+                "file:auth",
+                stored.version,
+                &rewound.serialize(),
+                bower_contracts::time::now()
+            )
+            .unwrap()
+    );
+    tokio::time::sleep(Duration::from_millis(5)).await;
+
+    let second = start(settings_with_pack(
+        directory.path(),
+        &log,
+        "beginning",
+        0,
+        &pack,
+    ))
+    .await;
+    let input = second.input(|input| count(input, "rejected") == 1).await;
+    assert_eq!(
+        (
+            count(&input, "queued"),
+            count(&input, "backpressure"),
+            input["state"].as_str()
+        ),
+        (0, 0, Some("running"))
+    );
+    assert_eq!(
+        input["offset"].as_i64(),
+        Some(std::fs::metadata(&log).unwrap().len() as i64)
+    );
+    let mut content = std::fs::read_to_string(&log).unwrap();
+    content.push_str(&format!("{}\n", failed.replace("4242", "4251")));
+    std::fs::write(&log, content).unwrap();
+    second.input(|input| count(input, "queued") == 1).await;
     assert_eq!(second.store.snapshot().unwrap().queued, 2);
     second.stop().await;
 }

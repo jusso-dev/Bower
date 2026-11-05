@@ -312,7 +312,9 @@ pub fn build(
                 }),
                 Arc::clone(&cursors) as Arc<dyn bower_contracts::SourceCursorStore>,
                 Some(Arc::clone(&clock)),
-            );
+            )
+            // A busy queue database (for example a retention batch) is backpressure.
+            .with_transient_storage(bower_persistence::is_busy);
             Ok::<_, HostError>((source, cursors))
         })
         .transpose()?;
