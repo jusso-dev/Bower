@@ -13,12 +13,21 @@ and evidence bundles say so (see [Evidence](#evidence)).
 
 - **Body**: one Bower event envelope per line (NDJSON), exactly as stored in the
   queue after redaction. Gzip is on by default (`.jsonl.gz`, `Content-Encoding: gzip`).
-- **Key**: `<prefix>/<yyyy>/<MM>/<dd>/<HH>/<sha256>.jsonl.gz`.
+- **Key**: `<prefix>/<collectorId>/<yyyy>/<MM>/<dd>/<HH>/<object hash>.jsonl.gz`.
+  - `<collectorId>` is `BOWER_COLLECTOR_ID` (default: the machine name). Collectors that
+    share a bucket and prefix never write the same key. With `BOWER_OUTPUT=s3` it must
+    be 1 to 128 letters, digits, dots, hyphens and underscores, starting with a letter or
+    digit; anything else stops start-up. It is validated, never rewritten, so two
+    collectors cannot be mapped to one segment.
   - The hour partition is the first event's **queue receive time** in UTC. It is set
     once when the collector accepts the event and never changes. Delivery time would
     move a retry into a later partition and write a second object.
-  - `<sha256>` is the lowercase hex SHA-256 of the object's event ids, in order, joined
-    by line feeds. A retry of the same batch writes the same key.
+  - `<object hash>` is the lowercase hex SHA-256 of an unambiguous encoding: the id
+    count, then each UTF-8 event id prefixed with its byte length (32-bit big-endian),
+    then the SHA-256 of the **uncompressed** NDJSON body. The same batch always gets the
+    same key; the same ids with any other content, or a different id split (`a\nb`,`c`
+    versus `a`,`b\nc`), get a different key. Gzip output differs between the C# and
+    Rust collectors, so only the uncompressed body is hashed.
 - **Batching**: one delivery (up to 500 queued events) is split, in order, into objects
   under `BOWER_S3_MAX_OBJECT_BYTES` (uncompressed, newlines included) and
   `BOWER_S3_MAX_OBJECT_EVENTS`. An event that is not one JSON object on one line, or is
@@ -26,12 +35,16 @@ and evidence bundles say so (see [Evidence](#evidence)).
   `payload-too-large`).
 - **Request**: every `PutObject` sends
   - `If-None-Match: *`: S3 refuses to overwrite an existing key with
-    `412 Precondition Failed`. Bower treats 412 as success, because the key is a hash
-    of the ordered event ids and a queued payload never changes. Objects are never
-    overwritten, so versioned or Object Lock buckets keep one version per key.
+    `412 Precondition Failed`. Bower treats 412 as success, because the key binds the
+    collector, the exact ids and the uncompressed body: an existing key holds
+    byte-identical events. Objects are never overwritten, so versioned or Object Lock
+    buckets keep one version per key.
   - `x-amz-checksum-sha256` over the uploaded bytes, so S3 rejects corrupted uploads.
-  - server-side encryption: `AES256` (SSE-S3, default) or `aws:kms` with an optional
-    key.
+  - server-side encryption **only when `BOWER_S3_SSE` is set**. Unset (the default), no
+    encryption header is sent and the bucket's default encryption applies, including a
+    bucket KMS key; S3 always encrypts new objects, at least with SSE-S3. An explicit
+    `AES256` would override a bucket's KMS default, so leave it unset for KMS buckets or
+    set `aws:kms` with the key.
   - `ExpectedBucketOwner` when `BOWER_S3_EXPECTED_BUCKET_OWNER` is set, so a bucket
     re-created under another account is refused.
   - `x-amz-meta-bower-events`: the event count.
@@ -42,12 +55,15 @@ The shared layout vectors are in `tests/fixtures/s3-output/vectors.json`.
 
 An event is acknowledged only after its object's PUT returned success. S3 stores an
 object durably before it answers, so that is the acknowledgement; the queue records
-`s3://<bucket>/<first key>` (plus ` +N` when one delivery wrote N more objects).
+each event's own object, `s3://<bucket>/<key>`. One delivery can write several objects;
+each object's events are settled in their own queue transaction.
 
 Delivery is at least once. A retry of the same batch rewrites the same key and gets
 412, so it never duplicates. If the queue reassembles a different batch after a crash
 between the PUT and the acknowledgement (for example when newer events join it), the
-second object holds some of the same events. Consumers deduplicate on `eventId`.
+second object holds some of the same events. Event ids are unique only within one
+collector's queue (a producer may choose them), so consumers deduplicate on
+`(collectorId, eventId)`; the collector id is the key segment after the prefix.
 
 ## Settings
 
@@ -56,9 +72,10 @@ second object holds some of the same events. Consumers deduplicate on `eventId`.
 | `BOWER_OUTPUT` | `none` | `s3` selects this output. |
 | `BOWER_S3_BUCKET` | (required) | Bucket name: 3 to 63 lowercase letters, digits and hyphens. Dotted names are refused (TLS for virtual-hosted requests). |
 | `BOWER_S3_REGION` | (required) | Bucket region, for example `ap-southeast-2`. |
-| `BOWER_S3_PREFIX` | `bower` | Key prefix: segments of letters, digits and `!-_.*'()=`, no leading or trailing slash. |
-| `BOWER_S3_SSE` | `AES256` | `AES256` (SSE-S3) or `aws:kms`. |
-| `BOWER_S3_KMS_KEY_ID` | (bucket default) | KMS key id, alias or ARN; only with `aws:kms`. |
+| `BOWER_S3_PREFIX` | `bower` | Key prefix: segments of letters, digits and `!-_.'()=`, no leading or trailing slash. `* ? $ { }` are refused: the prefix becomes an IAM resource, where they are wildcards or variables. |
+| `BOWER_COLLECTOR_ID` | machine name | Key segment after the prefix (see [What is written](#what-is-written)). |
+| `BOWER_S3_SSE` | (unset) | Unset: no header, the bucket default encryption applies. `AES256` (SSE-S3) or `aws:kms`: sent on every PUT. |
+| `BOWER_S3_KMS_KEY_ID` | (none) | KMS key id, alias or ARN; only with `aws:kms`. `aws:kms` without it uses the AWS managed `aws/s3` key, **not** the bucket's default key. |
 | `BOWER_S3_EXPECTED_BUCKET_OWNER` | (none) | 12-digit account id that must own the bucket. |
 | `BOWER_S3_MAX_OBJECT_BYTES` | `8388608` | Uncompressed bytes per object, 1 MiB to 64 MiB. |
 | `BOWER_S3_MAX_OBJECT_EVENTS` | `1000` | Events per object, 1 to 100000. |
@@ -81,8 +98,11 @@ the SDK in memory and never logged, put in status or hashed.
 ## Least-privilege IAM
 
 The collector needs `s3:PutObject` on the prefix, and `kms:GenerateDataKey` on the key
-when `aws:kms` uses a customer managed key. It needs no read, list or delete
-permission: the conditional PUT replaces a read-before-write check.
+when objects are encrypted with a customer managed key (set explicitly, or as the
+bucket default). It needs no read, list or delete permission: the conditional PUT
+replaces a read-before-write check. The write statement also requires the
+`If-None-Match` header (Bower sends it on every PUT, so the role can never overwrite an
+object) and a bucket owned by the same account.
 
 ```json
 {
@@ -92,7 +112,11 @@ permission: the conditional PUT replaces a read-before-write check.
       "Sid": "BowerS3OutputWrite",
       "Effect": "Allow",
       "Action": "s3:PutObject",
-      "Resource": "arn:aws:s3:::<bucket>/<prefix>/*"
+      "Resource": "arn:aws:s3:::<bucket>/<prefix>/*",
+      "Condition": {
+        "Null": { "s3:if-none-match": "false" },
+        "StringEquals": { "s3:ResourceAccount": "<account>" }
+      }
     },
     {
       "Sid": "BowerS3OutputKms",
@@ -107,7 +131,9 @@ permission: the conditional PUT replaces a read-before-write check.
 
 Leave out the second statement for SSE-S3. `deploy/aws/bower-s3-output.yaml` creates
 this policy (and, optionally, a bucket with public access blocked, default encryption,
-TLS-only access and a lifecycle expiry). Validate and review it as a change set before
+TLS-only access and a lifecycle expiry). Its `CollectorSettings` output lists the
+collector settings, including `BOWER_S3_SSE=aws:kms` and `BOWER_S3_KMS_KEY_ID` when
+`KmsKeyArn` is given. Validate and review it as a change set before
 executing it:
 
 ```bash
@@ -142,8 +168,9 @@ first failure holds that object and every later one in the delivery.
 | `destination-s3-cancelled` | C# delivery deadline reached mid-batch | None; finished objects stay acknowledged. |
 
 Both collectors log each code with its event count. The C# collector also reports
-credential, access and KMS codes first in status and health records
-(`deliveryActivity.lastFailureCode`), like Azure credential failures. Codes never carry
+credential, access and KMS codes first in status (`deliveryActivity.lastFailureCode`),
+and its `collector_health` records raise the high-severity `destination-credential`
+problem for them, like Azure credential failures (health records are C#-only). Codes never carry
 response bodies, error messages or credentials. The SDKs make at most three attempts
 per PUT in memory (standard retry mode); longer outages wait in the durable queue.
 
@@ -162,5 +189,7 @@ reconciling event ids, as the live qualification in
 - One bucket per collector; objects are written one at a time per delivery.
 - No S3 Express One Zone directory buckets, access points or Object Lambda.
 - Gzip bytes differ between the C# and Rust collectors; bodies and keys do not.
+- Changing `BOWER_COLLECTOR_ID` starts a new key namespace; events already written stay
+  under the old one.
 - The Rust worker has no delivery deadline token, so it never produces
   `destination-s3-cancelled`; on shutdown unsettled events return after the lease.

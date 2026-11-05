@@ -19,13 +19,13 @@ Parameters:
   KeyPrefix:
     Type: String
     Default: bower
-    AllowedPattern: "^[A-Za-z0-9!_.*'()=-]+(/[A-Za-z0-9!_.*'()=-]+)*$"
-    Description: BOWER_S3_PREFIX. The policy allows writes under this prefix only.
+    AllowedPattern: "^[A-Za-z0-9!_.'()=-]+(/[A-Za-z0-9!_.'()=-]+)*$"
+    Description: BOWER_S3_PREFIX. The policy allows writes under this prefix only. IAM wildcard and variable characters (* ? $ { }) are refused, as Bower refuses them.
   KmsKeyArn:
     Type: String
     Default: ""
     AllowedPattern: "^$|^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$"
-    Description: Optional customer managed key (BOWER_S3_SSE=aws:kms). Empty uses SSE-S3.
+    Description: Optional customer managed key. Set, it becomes the bucket default and the emitted settings send BOWER_S3_SSE=aws:kms with this key. Empty uses SSE-S3.
   ExpirationDays:
     Type: Number
     Default: 0
@@ -104,6 +104,13 @@ Resources:
             Effect: Allow
             Action: s3:PutObject
             Resource: !Sub "arn:${AWS::Partition}:s3:::${BucketName}/${KeyPrefix}/*"
+            Condition:
+              # Bower sends If-None-Match: * on every PUT: never overwrite an object.
+              "Null":
+                s3:if-none-match: "false"
+              # Only a bucket in this account (a re-created bucket elsewhere is refused).
+              StringEquals:
+                s3:ResourceAccount: !Ref AWS::AccountId
           - !If
             - UseKms
             - Sid: BowerS3OutputKms
@@ -120,5 +127,8 @@ Outputs:
     Description: Attach to the collector role (IRSA, ECS task role or instance profile).
     Value: !Ref CollectorWritePolicy
   CollectorSettings:
-    Description: Collector settings for this bucket.
-    Value: !Sub "BOWER_OUTPUT=s3 BOWER_S3_BUCKET=${BucketName} BOWER_S3_REGION=${AWS::Region} BOWER_S3_PREFIX=${KeyPrefix} BOWER_S3_EXPECTED_BUCKET_OWNER=${AWS::AccountId}"
+    Description: Collector settings for this bucket (with the KMS key when KmsKeyArn is set).
+    Value: !If
+      - UseKms
+      - !Sub "BOWER_OUTPUT=s3 BOWER_S3_BUCKET=${BucketName} BOWER_S3_REGION=${AWS::Region} BOWER_S3_PREFIX=${KeyPrefix} BOWER_S3_EXPECTED_BUCKET_OWNER=${AWS::AccountId} BOWER_S3_SSE=aws:kms BOWER_S3_KMS_KEY_ID=${KmsKeyArn}"
+      - !Sub "BOWER_OUTPUT=s3 BOWER_S3_BUCKET=${BucketName} BOWER_S3_REGION=${AWS::Region} BOWER_S3_PREFIX=${KeyPrefix} BOWER_S3_EXPECTED_BUCKET_OWNER=${AWS::AccountId}"
