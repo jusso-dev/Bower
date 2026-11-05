@@ -83,7 +83,10 @@ rotation), see the [file tail source guide](../deployment/file-tail-source.md).
   After approval it shows **Pack events seen, input not individually verified**
   once the collector reports a new `linux-sshd/production` event, and asks you to
   confirm the request's input in the collector's `GET /v1/status` (`fileTail`,
-  running with queued lines).
+  running with queued lines). `waiting` means the file does not exist yet; a
+  failure state such as `file-path-inaccessible` (usually a permission the
+  service account lacks) or `file-path-refused` means the input is not reading.
+  See [monitoring the file tail source](../deployment/file-tail-source.md#monitoring).
 
 The generated configuration holds paths and the parser route only, never
 credentials. The request detail, which anyone with the View role can open, shows
