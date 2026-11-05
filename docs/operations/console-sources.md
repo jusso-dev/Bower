@@ -38,7 +38,12 @@ rotation), see the [file tail source guide](../deployment/file-tail-source.md).
   is accepted as the allowed directory only while the file itself is outside
   every refused directory. An allowed directory or file under `/home`, `/root`
   or `/run/user` is allowed with a warning because `bower.service` hides them
-  (`ProtectHome=true`).
+  (`ProtectHome=true`). These checks compare path text only; `/var/run` is
+  treated as `/run`, because it is a link to it on standard Linux. The server
+  cannot see the host's links, so an allowed directory that is a link into a
+  refused directory (for example `/opt/x` linked to `/etc/bower`) passes the
+  form. Keeping such links out of allowed directories is the host
+  administrator's responsibility.
 - **Symbolic links.** The collector refuses symbolic links: the file and every
   directory between the allowed directory and the file must be real; the allowed
   directory itself may be a link. The form never generates `allowSymlink`. The
