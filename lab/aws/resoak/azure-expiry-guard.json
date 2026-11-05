@@ -1,0 +1,74 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Re-soak Azure expiry guard: a Consumption Logic App in the run's resource group, with a system-assigned identity that is Contributor on that group only. At deleteAt (UTC) it force-deletes the workspace (no 14-day soft delete) and then deletes the whole group, itself included. It fires daily from deleteAt until the group is gone."
+  },
+  "parameters": {
+    "deleteAt": { "type": "string", "metadata": { "description": "UTC, yyyy-MM-ddTHH:mm:ssZ" } },
+    "workspaceName": { "type": "string" },
+    "tags": { "type": "object" }
+  },
+  "variables": {
+    "name": "[concat(resourceGroup().name, '-expiry')]",
+    "contributor": "b24988ac-6181-42a0-ab88-20f7382dd24c",
+    "group": "[concat('https://management.azure.com/subscriptions/', subscription().subscriptionId, '/resourceGroups/', resourceGroup().name)]",
+    "msi": { "type": "ManagedServiceIdentity", "audience": "https://management.azure.com/" }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[variables('name')]",
+      "location": "[resourceGroup().location]",
+      "tags": "[parameters('tags')]",
+      "identity": { "type": "SystemAssigned" },
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "triggers": {
+            "Expiry": { "type": "Recurrence", "recurrence": { "frequency": "Day", "interval": 1, "startTime": "[parameters('deleteAt')]" } }
+          },
+          "actions": {
+            "DeleteWorkspace": {
+              "type": "Http",
+              "operationOptions": "DisableAsyncPattern",
+              "inputs": {
+                "method": "DELETE",
+                "uri": "[concat(variables('group'), '/providers/Microsoft.OperationalInsights/workspaces/', parameters('workspaceName'), '?api-version=2022-10-01&force=true')]",
+                "authentication": "[variables('msi')]"
+              }
+            },
+            "DeleteGroup": {
+              "type": "Http",
+              "operationOptions": "DisableAsyncPattern",
+              "runAfter": { "DeleteWorkspace": [ "Succeeded", "Failed", "TimedOut" ] },
+              "inputs": {
+                "method": "DELETE",
+                "uri": "[concat(variables('group'), '?api-version=2021-04-01')]",
+                "authentication": "[variables('msi')]"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(resourceGroup().id, variables('name'), variables('contributor'))]",
+      "dependsOn": [ "[resourceId('Microsoft.Logic/workflows', variables('name'))]" ],
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('contributor'))]",
+        "principalId": "[reference(resourceId('Microsoft.Logic/workflows', variables('name')), '2019-05-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      }
+    }
+  ],
+  "outputs": {
+    "workflowId": { "type": "string", "value": "[resourceId('Microsoft.Logic/workflows', variables('name'))]" },
+    "principalId": { "type": "string", "value": "[reference(resourceId('Microsoft.Logic/workflows', variables('name')), '2019-05-01', 'full').identity.principalId]" }
+  }
+}

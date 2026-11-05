@@ -135,6 +135,8 @@ class LabProfileTests(unittest.TestCase):
             properties = resources[host]['Properties']
             self.assertEqual(properties['InstanceType'], 'm6i.large')
             self.assertNotIn('CreditSpecification', properties)
+            # The in-guest expiry guard powers off; that must terminate, not stop.
+            self.assertEqual(properties['InstanceInitiatedShutdownBehavior'], 'terminate')
             self.assertEqual(properties['MetadataOptions']['HttpTokens'], 'required')
             self.assertFalse(properties['NetworkInterfaces'][0]['AssociatePublicIpAddress'])
         self.assertEqual(resources['Artifacts']['Properties']['LifecycleConfiguration']['Rules'][0]['ExpirationInDays'], 7)
@@ -212,6 +214,40 @@ class FaultAgentTests(unittest.TestCase):
         for path in sorted((ROOT / 'resoak').glob('*.sh')):
             with self.subTest(script=path.name):
                 self.assertEqual(subprocess.run(['bash', '-n', str(path)], capture_output=True).returncode, 0)
+
+
+class ExpiryGuardTests(unittest.TestCase):
+    def test_guards_fire_in_order_after_the_final_exports(self):
+        os.environ.update(BOWER_LAB_RUN_ID=RUN, BOWER_LAB_DIR=tempfile.mkdtemp())
+        r = load('resoak_driver', ROOT / 'resoak' / 'resoak.py')
+        seconds = PLAN['profile']['soakSeconds']
+        # Hosts power off 4 h after the end, after the end + 30 min final exports.
+        self.assertEqual(r.GUARD_AFTER_START, seconds + 4 * 3600)
+        # The Azure group outlives the stack guard by a day so the operator can still reconcile.
+        self.assertEqual(r.AZURE_GUARD_AFTER_AWS, 86400)
+        source = (ROOT / 'resoak' / 'resoak.py').read_text()
+        self.assertIn("aws_expiry() < run['soakStart'] + run['soakSeconds'] + 7200", source)
+        self.assertLess(source.index("('guard-linux'"), source.index("('gen-sender'"))
+
+    def test_azure_guard_deletes_only_its_own_group(self):
+        template = json.loads((ROOT / 'resoak' / 'azure-expiry-guard.json').read_text())
+        text = json.dumps(template)
+        workflow, grant = template['resources']
+        self.assertEqual(workflow['identity'], {'type': 'SystemAssigned'})
+        self.assertNotIn('scope', grant)   # assigned at the deployment's resource group only
+        self.assertIn('resourceGroup().name', template['variables']['group'])
+        self.assertNotIn('/subscriptions/', text.replace("'https://management.azure.com/subscriptions/'", ''))
+        actions = workflow['properties']['definition']['actions']
+        self.assertEqual([a['inputs']['method'] for a in actions.values()], ['DELETE', 'DELETE'])
+        self.assertIn('force=true', actions['DeleteWorkspace']['inputs']['uri'])
+
+    def test_host_guards_terminate_and_survive_reboots(self):
+        shell = (ROOT / 'resoak' / 'expiry-guard.sh').read_text()
+        self.assertIn('Persistent=true', shell)
+        self.assertIn('systemctl poweroff', shell)
+        windows = (ROOT / 'resoak' / 'expiry-guard.ps1').read_text()
+        self.assertIn('-StartWhenAvailable', windows)
+        self.assertIn('shutdown.exe', windows)
 
 
 class AccountingTests(unittest.TestCase):

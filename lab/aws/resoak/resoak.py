@@ -45,6 +45,12 @@ EVIDENCE_BUCKET = RUN + '-ids'
 ENV = {**os.environ, 'BOWER_LAB_PROFILE': 'resoak', 'BOWER_LAB_CIDR': '172.31.248.0/24'}
 PLAN_FILE = HERE / 'preregistration.json'
 DOMAIN = 'bower.lab'
+# Expiry guards (README, "Expiry guards"): every host powers itself off (shutdown behaviour
+# terminate) GUARD_AFTER_START seconds after the soak start, i.e. 4 hours after the 72-hour end;
+# the stack's scheduler terminates the hosts at its own expiry; the Azure resource group deletes
+# itself AZURE_GUARD_AFTER_AWS seconds after the AWS expiry, leaving a day to reconcile.
+GUARD_AFTER_START = 76 * 3600
+AZURE_GUARD_AFTER_AWS = 24 * 3600
 # The dry run keeps every mechanism and shortens the clock: 40 minutes, one fault (a 10-minute
 # destination outage on both collectors), canaries on.
 DRY_RUN_SECONDS, DRY_RUN_FAULT = 2400, {'id': 'D01', 'kind': 'destination-outage', 'at': 600, 'durationSeconds': 600,
@@ -153,6 +159,19 @@ def candidate(ci_run):
                          'headSha,headBranch,event,conclusion,number,workflowName,jobs,url'))
     if info['workflowName'] != 'CI':
         raise SystemExit('Not a CI workflow run')
+    # The soak counts only for current main: the CI commit must be origin/main's head (fetched
+    # now) and inside this harness's history, so the packs built from this tree match it.
+    sh('git', '-C', str(REPO), 'fetch', '--quiet', 'origin', 'main')
+    main_head = sh('git', '-C', str(REPO), 'rev-parse', 'origin/main').strip()
+    if info['headBranch'] != 'main' or info['headSha'] != main_head:
+        raise SystemExit('CI run %s built %s@%s, not origin/main %s' % (ci_run, info['headBranch'], info['headSha'][:12], main_head[:12]))
+    if subprocess.run(['git', '-C', str(REPO), 'merge-base', '--is-ancestor', info['headSha'], 'HEAD']).returncode:
+        raise SystemExit('The harness checkout does not contain the candidate commit; rebase it on origin/main')
+    jobs = {j['name']: j['conclusion'] for j in info['jobs']}
+    needed = ('build-test', 'windows-event-log', 'package-linux', 'package-windows', 'install-linux', 'install-windows')
+    if info['conclusion'] != 'success' or any(jobs.get(name) != 'success' for name in needed) \
+            or jobs.get('publish (osx-arm64, macos-latest)') != 'success':
+        raise SystemExit('The CI run did not build and install the packages (a push run skips them; dispatch CI on main)')
     root = private(LAB / 'candidate')
     for name in ('bower-packages-linux', 'bower-packages-windows', 'bower-osx-arm64'):
         target = root / name
@@ -171,6 +190,7 @@ def candidate(ci_run):
     failed = sorted(j['name'] for j in info['jobs'] if j['conclusion'] not in ('success', 'skipped'))
     record = {'ciRun': int(ci_run), 'ciRunUrl': info['url'], 'buildNumber': info['number'], 'event': info['event'],
               'ref': info['headBranch'], 'commit': info['headSha'], 'conclusion': info['conclusion'], 'jobsNotSucceeded': failed,
+              'harnessCommit': sh('git', '-C', str(REPO), 'rev-parse', 'HEAD').strip(),
               'version': version,
               'rpm': {'name': rpm[0].name, 'path': rpm[0].relative_to(root).as_posix(), 'version': rpm_version,
                       'sha256': sha256(rpm[0]), 'bytes': rpm[0].stat().st_size},
@@ -225,7 +245,8 @@ def azure():
     py = lambda *a, **k: sh(sys.executable, str(script), *a, '--state-dir', str(directory), timeout=k.get('timeout', 2400))
     state_file = directory / 'azure-state.json'
     if not state_file.exists():
-        log({'azure': 'prepare', 'out': py('prepare', '--apply', '--run-id', RUN, '--credential-days', '7')})
+        hours = -(-(azure_guard_at() - int(time.time())) // 3600)
+        log({'azure': 'prepare', 'out': py('prepare', '--apply', '--run-id', RUN, '--credential-days', '7', '--expires-hours', str(hours))})
     current = json.loads(state_file.read_text())
     if not current.get('outputs'):
         log({'azure': 'plan', 'out': py('plan')[:400]})
@@ -252,7 +273,32 @@ def azure():
                                    '--only-show-errors', '-o', 'json', timeout=1800))
         marker.write_text(json.dumps({'state': deployment['properties']['provisioningState'], 'dcr': rules[0]['name'],
                                       'expectedCollectorIds': json.loads(expected)}) + '\n')
-    print(json.dumps({'group': current['group'], 'workspaceId': current['workspaceId'], 'monitoring': json.loads(marker.read_text())}))
+    guard = directory / 'expiry-guard-deployed.json'
+    if not guard.exists():
+        guard.write_text(json.dumps(azure_guard(current, iso(azure_guard_at()))) + '\n')
+    print(json.dumps({'group': current['group'], 'workspaceId': current['workspaceId'], 'monitoring': json.loads(marker.read_text()),
+                      'expiryGuard': json.loads(guard.read_text())}))
+
+
+def azure_guard(current, delete_at, group=None):
+    """The Azure expiry guard (azure-expiry-guard.json): a Logic App in the run's group deletes the
+    workspace (forced) and the group at delete_at, even if nobody returns."""
+    group = group or current['group']
+    tags = {t: v for t, v in json.loads(sh('az', 'group', 'show', '--name', group, '--subscription', current['subscription'],
+                                             '--only-show-errors', '-o', 'json')).get('tags', {}).items()}
+    if tags.get('Project') != PROJECT or tags.get('RunId') != RUN:
+        raise SystemExit('Resource group is not owned by this run')
+    if json.loads(sh('az', 'provider', 'show', '--namespace', 'Microsoft.Logic', '--subscription', current['subscription'],
+                     '--only-show-errors', '-o', 'json'))['registrationState'] != 'Registered':
+        sh('az', 'provider', 'register', '--namespace', 'Microsoft.Logic', '--subscription', current['subscription'], '--wait',
+           '--only-show-errors', timeout=900)
+    deployment = json.loads(sh('az', 'deployment', 'group', 'create', '--name', group + '-expiry', '--resource-group', group,
+                               '--subscription', current['subscription'], '--template-file', str(HERE / 'azure-expiry-guard.json'),
+                               '--parameters', 'deleteAt=' + delete_at, 'workspaceName=' + current['workspaceName'],
+                               'tags=' + json.dumps({'Project': PROJECT, 'RunId': RUN, 'ExpiresAt': delete_at}),
+                               '--only-show-errors', '-o', 'json', timeout=1200))
+    return {'state': deployment['properties']['provisioningState'], 'deleteAt': delete_at,
+            'workflowId': deployment['properties']['outputs']['workflowId']['value']}
 
 
 # ------------------------------------------------------------------ staging
@@ -555,10 +601,18 @@ def start(kind):
         raise SystemExit('Staged plan differs from the planned run')
     if time.time() > run['soakStart'] - 300:
         raise SystemExit('Too late to start the agents before the soak start; re-plan the times')
+    # The stack's own guard must not end the run before the agents publish their final exports.
+    if aws_expiry() < run['soakStart'] + run['soakSeconds'] + 7200:
+        raise SystemExit('The stack expiry guard fires before the soak end + 2 h; re-plan the stack')
+    guard_at = run['soakStart'] + min(GUARD_AFTER_START, run['soakSeconds'] + 4 * 3600)
     soak = HERE.parent / 'soak'
     common = ['SMOKE_START=%d' % run['smokeStart'], 'SOAK_START=%d' % run['soakStart'], 'SOAK_SECONDS=%d' % run['soakSeconds'],
               'PROBE_SHA256=' + st['probeSha256']]
     sequence = [
+        ('guard-linux', 'Linux', HERE / 'expiry-guard.sh', ['env:RESOAK_GUARD_ACTION=install', 'env:RESOAK_GUARD_AT=%d' % guard_at]),
+        ('guard-sender', 'Sender', HERE / 'expiry-guard.sh', ['env:RESOAK_GUARD_ACTION=install', 'env:RESOAK_GUARD_AT=%d' % guard_at]),
+        ('guard-wec', 'Wec', HERE / 'expiry-guard.ps1', ['ACTION=install', 'GUARD_AT=%d' % guard_at]),
+        ('guard-dc', 'Dc', HERE / 'expiry-guard.ps1', ['ACTION=install', 'GUARD_AT=%d' % guard_at]),
         ('faults-linux', 'Linux', HERE / 'fault-agent.sh', ['env:RESOAK_ACTION=install', 'env:RESOAK_HOST=Linux', 'env:RESOAK_START=%d' % run['soakStart'],
                                                              'env:RESOAK_PLAN_SHA256=' + st['planSha256'], 'env:RESOAK_SERVER_NEXT_SHA256=' + st['serverNextSha256'],
                                                              'env:RESOAK_SERVER_KEY_NEXT_SHA256=' + st['serverNextKeySha256'],
@@ -578,9 +632,18 @@ def start(kind):
     sequence_run(sequence, 'start')
     run['startedAt'] = dt.datetime.now(dt.timezone.utc).isoformat()
     run['soakEnd'] = run['soakStart'] + run['soakSeconds']
+    run['guards'] = {'hostsPowerOffAt': iso(guard_at), 'stackSchedulerAt': iso(aws_expiry()), 'azureGroupDeleteAt': iso(azure_guard_at())}
     save('run.json', run)
     print(json.dumps({'soakStart': iso(run['soakStart']), 'soakEnd': iso(run['soakEnd']),
-                      'finalExportAfter': iso(run['soakEnd'] + 1800)}))
+                      'finalExportAfter': iso(run['soakEnd'] + 1800), 'guards': run['guards']}))
+
+
+def aws_expiry():
+    return int(dt.datetime.strptime(state()['expiry'], '%Y-%m-%dT%H:%M:%S').replace(tzinfo=dt.timezone.utc).timestamp())
+
+
+def azure_guard_at():
+    return aws_expiry() + AZURE_GUARD_AFTER_AWS
 
 
 def iso(epoch):
@@ -597,7 +660,9 @@ def status_all():
                                  ('Wec', soak / 'wec-agent.ps1', ['ACTION=status', 'SOAK_START=%d' % run['soakStart'], 'SOAK_SECONDS=%d' % run['soakSeconds'],
                                                                   'PROBE_SHA256=' + load('stage.json')['probeSha256']]),
                                  ('Wec', HERE / 'fault-agent.ps1', ['ACTION=status', 'RESOAK_START=%d' % run['soakStart'], 'PLAN_SHA256=x', 'INGEST_NEXT_SHA256=x']),
-                                 ('Dc', HERE / 'fault-agent.ps1', ['ACTION=status', 'RESOAK_START=%d' % run['soakStart'], 'PLAN_SHA256=x', 'INGEST_NEXT_SHA256=x'])):
+                                 ('Dc', HERE / 'fault-agent.ps1', ['ACTION=status', 'RESOAK_START=%d' % run['soakStart'], 'PLAN_SHA256=x', 'INGEST_NEXT_SHA256=x']),
+                                 *((h, HERE / 'expiry-guard.sh', ['env:RESOAK_GUARD_ACTION=status']) for h in ('Linux', 'Sender')),
+                                 *((h, HERE / 'expiry-guard.ps1', ['ACTION=status', 'GUARD_AT=0']) for h in ('Wec', 'Dc'))):
         status, out = run_on(host, script, *params, timeout=600)
         print(json.dumps({'host': host, 'script': script.name, 'status': status}))
         print(out[-2500:])

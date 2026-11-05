@@ -152,7 +152,7 @@ def add_ingest_credential(root, state_path, state):
     return {'added': True, 'expiresAt': expiry}
 
 
-def prepare(root, state_path, run_id=None, credential_days=2):
+def prepare(root, state_path, run_id=None, credential_days=2, expires_hours=12):
     if state_path.exists():
         raise RuntimeError('State already exists; use cleanup or another state directory')
     now = dt.datetime.now(dt.timezone.utc)
@@ -170,7 +170,7 @@ def prepare(root, state_path, run_id=None, credential_days=2):
             raise RuntimeError('Generated application name already exists')
         state['identities'][role] = {'name': name, 'nameChecked': True}
     atomic_json(state_path, state)
-    expires = (now + dt.timedelta(hours=12)).isoformat()
+    expires = (now + dt.timedelta(hours=expires_hours)).isoformat()
     group_url = ('https://management.azure.com/subscriptions/' + SUB + '/resourcegroups/'
                  + state['group'] + '?api-version=2021-04-01')
     az('rest', '--method', 'put', '--url', group_url, '--headers', 'If-None-Match=*',
@@ -345,6 +345,8 @@ def main():
     parser.add_argument('--run-id', help='prepare only: name Azure resources after this owning AWS RunId')
     parser.add_argument('--credential-days', type=int, default=2,
                         help='prepare only: certificate credential lifetime (1-7 days; the 72-hour re-soak needs 7)')
+    parser.add_argument('--expires-hours', type=int, default=12,
+                        help='prepare only: the ExpiresAt metadata tag (1-200 hours; the re-soak sets its guard time)')
     args = parser.parse_args()
     if args.action in ('prepare', 'apply', 'sentinel', 'cleanup', 'add-ingest-credential') and not args.apply:
         parser.error('this action requires --apply')
@@ -352,6 +354,8 @@ def main():
         parser.error('timeout must be non-negative')
     if not 1 <= args.credential_days <= 7:
         parser.error('credential days must be 1 to 7')
+    if not 1 <= args.expires_hours <= 200:
+        parser.error('expires hours must be 1 to 200')
     os.umask(0o077)
     root = secure_dir(args.state_dir)
     state_path = root / 'azure-state.json'
@@ -366,7 +370,7 @@ def main():
                 raise RuntimeError('State directory contains existing lab files; use a fresh directory')
             owns_local_files = True
             account()
-            state = prepare(root, state_path, args.run_id, args.credential_days)
+            state = prepare(root, state_path, args.run_id, args.credential_days, args.expires_hours)
             result = {'prepared': True, 'group': state['group'], 'workspaceId': state['workspaceId']}
         else:
             state = json.loads(state_path.read_text())

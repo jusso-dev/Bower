@@ -17,6 +17,8 @@ What changed after the first soak, and why:
 | Firewall identities past 2,000,000 (`syslog-host.py nft_ports`) | 72 hours need 2,689,200 identities; the old mapping held 2,000,000 |
 | A separate WEC union task (30 minutes, 25-minute limit) | A union of millions of ids must not skip the 5-minute samples |
 | Credential lifetime 7 days (`azure-environment.py --credential-days`), results kept 7 days | The 2-day lab certificates and 1-day result expiry would end a 72-hour run early |
+| The candidate must be origin/main's head from a full CI run (`workflow_dispatch`), contained in the harness checkout | A soak counts only for the build it records; push runs on main skip the packaging jobs |
+| Three independent expiry guards (below) | The run is left unattended for three days |
 
 Releases and packages are **unsigned** (signing is deferred). Bower still refuses unsigned or
 untrusted packs; the packs here are signed with a run key.
@@ -52,6 +54,24 @@ fault's alert window; `syslog-tls-expiry` and `destination-credential` are never
 passes only if all six criteria hold for both collectors, every fault outcome holds and the
 reported version is the candidate's.
 
+## Expiry guards
+
+The run is unattended, so three guards end it even if nobody returns. Each is independent of the
+operator's machine and session.
+
+| Guard | Where | When | Does |
+|---|---|---|---|
+| In-guest power-off | every host (`expiry-guard.sh`: a persistent systemd timer; `expiry-guard.ps1`: a SYSTEM task with `StartWhenAvailable`), installed by `start` | soak start + 76 h (end + 4 h) | Powers the host off. The re-soak instances have `InstanceInitiatedShutdownBehavior=terminate`, so this terminates them (volumes delete on termination). Survives the scheduled reboots and fires at the next boot if missed |
+| Stack scheduler | EventBridge Scheduler `<RunId>-expiry` in the stack (`lab.py`) | stack plan time + 80 h; `start` refuses a run whose soak end + 2 h falls after it | `ec2:TerminateInstances` on the four hosts only |
+| Azure group | Logic App `rg-<RunId>-expiry` in the run's resource group (`azure-expiry-guard.json`), its identity Contributor on that group only | stack expiry + 24 h (a day to reconcile) | Force-deletes the workspace (no 14-day soft delete), then deletes the resource group, itself included; retries daily until the group is gone |
+
+Also bounded by lifetime: the run bucket expires objects after 7 days, the identity bucket after
+30 days, and the Entra application certificates after 7 days. What the guards do not remove (all
+without running cost): the stack shell (subnet, route table, security group, roles, secret at
+about USD 0.40 a month, the empty buckets), the Entra applications and the identity bucket. The
+operator teardown and the cleanup audit remove these. A guard is not cleanup: always run the
+teardown and the audit.
+
 ## Run it
 
 Everything below uses public identifiers only. Credentials are created in the private lab
@@ -64,12 +84,14 @@ mkdir -m 700 "$BOWER_LAB_DIR"
 # Dry run only: a guard of at most 12 hours (the 72-hour run uses the profile's 80 hours).
 # export BOWER_LAB_EXPIRY_HOURS=12
 R=lab/aws/resoak/resoak.py
-python3 $R candidate --ci-run <CI run id of the candidate>   # version, build, commit, SHA-256
+gh workflow run CI --repo jusso-dev/Bower --ref main         # a full run: push runs skip the packages
+python3 $R candidate --ci-run <that run id>                  # origin/main head only; version, build, SHA-256
 python3 $R bucket create                                     # <RunId>-ids, tagged, 30-day guard
 python3 lab/aws/upgrade-recovery/lab.py plan                 # review template.json, then
 aws --profile homelab-admin sts get-caller-identity          # 959038055523
 python3 lab/aws/upgrade-recovery/lab.py create
-python3 $R azure                                             # workspace, DCE/DCR/table, Sentinel, alert rules, 2nd ingest cert
+az account set --subscription 945092a0-2500-4b25-85a4-99f1c3135906   # the lab tenant must be the CLI default
+python3 $R azure                                             # workspace, DCE/DCR/table, Sentinel, alert rules, 2nd ingest cert, Azure guard
 python3 lab/aws/upgrade-recovery/lab.py status               # CREATE_COMPLETE and SSM Online
 python3 $R stage [--plan dryrun]                             # CA, certificates, signed packs, manifests, plan -> run bucket
 python3 $R deploy                                            # DC forest, WEC join and subscription, collectors, sender (rsyslog 8.2610.0)

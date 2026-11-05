@@ -134,7 +134,8 @@ def build(expiry):
                       IamInstanceProfile=ref('SenderProfile' if name == 'Sender' else 'HostProfile'),
                       MetadataOptions={'HttpTokens': 'required', 'HttpPutResponseHopLimit': 1},
                       **({} if PROFILE == 'resoak' else {'CreditSpecification': {'CPUCredits': 'standard'}}),
-                      InstanceInitiatedShutdownBehavior='stop',
+                      # resoak: an in-guest shutdown (the re-soak's expiry guard) terminates, not stops.
+                      InstanceInitiatedShutdownBehavior='terminate' if PROFILE == 'resoak' else 'stop',
                       BlockDeviceMappings=[{'DeviceName': '/dev/sda1' if win else '/dev/xvda', 'Ebs': {
                           'VolumeType': 'gp3', 'VolumeSize': 40 if win else 30, 'Encrypted': True, 'DeleteOnTermination': True}}],
                       PropagateTagsToVolumeOnCreation=True,
