@@ -33,6 +33,31 @@ public sealed class HttpOutputTests
     public static TheoryData<string> ResponseVectors() =>
         [.. Vectors["responses"]!.AsArray().Select(item => item!["name"]!.GetValue<string>())];
 
+    public static TheoryData<string> ScenarioVectors() =>
+        [.. Vectors["scenarios"]!.AsArray().Select(item => item!["name"]!.GetValue<string>())];
+
+    public static TheoryData<string, bool> AuthHeaderVectors()
+    {
+        TheoryData<string, bool> data = [];
+        foreach (JsonNode? item in Vectors["authHeaderNames"]!.AsArray())
+        {
+            data.Add(item!["name"]!.GetValue<string>(), item["allowed"]!.GetValue<bool>());
+        }
+
+        return data;
+    }
+
+    public static TheoryData<string, bool, bool> EndpointVectors()
+    {
+        TheoryData<string, bool, bool> data = [];
+        foreach (JsonNode? item in Vectors["endpoints"]!.AsArray())
+        {
+            data.Add(item!["url"]!.GetValue<string>(), item["allowInsecureLoopback"]!.GetValue<bool>(), item["valid"]!.GetValue<bool>());
+        }
+
+        return data;
+    }
+
     [Theory]
     [MemberData(nameof(RequestVectors))]
     public async Task RequestVector_MatchesSharedBytesHeadersAndOutcomes(string name)
@@ -135,7 +160,7 @@ public sealed class HttpOutputTests
     }
 
     [Fact]
-    public async Task SplittingIsBudgetedAndARefusedSingleRecordIsDeadLettered()
+    public async Task AlwaysTooLargeEndpointIsHeldWithinTheSplitBudget()
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         await using TestHttpEndpoint endpoint = await TestHttpEndpoint.StartAsync(null, cancellationToken);
@@ -143,9 +168,9 @@ public sealed class HttpOutputTests
         using HttpOutput output = new(HecOptions(endpoint), "token-1");
 
         DeliveryResult single = await output.DeliverAsync(Events(1), cancellationToken);
-        DeliveryFailure refused = Assert.Single(single.Failures);
-        Assert.Equal("http-413", refused.Code);
-        Assert.False(refused.IsRetryable);
+        DeliveryFailure held = Assert.Single(single.Failures);
+        Assert.Equal("destination-http-413", held.Code);
+        Assert.True(held.IsRetryable);
 
         while (endpoint.Requests.TryDequeue(out _))
         {
@@ -153,13 +178,15 @@ public sealed class HttpOutputTests
 
         DeliveryResult many = await output.DeliverAsync(Events(200), cancellationToken);
 
-        // One request plus two per split, never more.
+        // One request plus two per split, never more; nothing is poison without a sibling's success.
         Assert.Equal(1 + 2 * HttpOutput.SplitBudget, endpoint.Requests.Count);
         Assert.Empty(many.AcknowledgedEventIds);
         Assert.Equal(200, many.Failures.Count);
-        Assert.All(many.Failures, failure => Assert.StartsWith("http-413", failure.Code, StringComparison.Ordinal));
-        // Batches that still hold several records retry (and split again) later.
-        Assert.Contains(many.Failures, failure => failure.IsRetryable);
+        Assert.All(many.Failures, failure =>
+        {
+            Assert.Equal("destination-http-413", failure.Code);
+            Assert.True(failure.IsDestinationFailure);
+        });
     }
 
     [Fact]
@@ -329,30 +356,112 @@ public sealed class HttpOutputTests
     }
 
     [Theory]
-    [InlineData("http://splunk.example.test:8088/services/collector/event", true)]
-    [InlineData("http://127.0.0.1:8088/services/collector/event", false)]
-    [InlineData("https://user:pass@splunk.example.test/services/collector/event", false)]
-    [InlineData("https://splunk.example.test/services/collector/event?token=abc", false)]
-    [InlineData("https://splunk.example.test/services/collector/event#x", false)]
-    [InlineData("ftp://splunk.example.test/", true)]
-    public void Tls_EndpointPolicyRefusesInsecureOrCredentialedUrls(string url, bool allowInsecureLoopback)
+    [MemberData(nameof(EndpointVectors))]
+    public void EndpointPolicyVector_AllowsPlainHttpOnlyToLoopbackAddresses(string url, bool allowInsecureLoopback, bool valid)
     {
         HttpOutputOptions options = new() { Endpoint = new Uri(url), HecHost = "h", AllowInsecureLoopback = allowInsecureLoopback };
 
-        InvalidOperationException error = Assert.Throws<InvalidOperationException>(options.Validate);
+        if (valid)
+        {
+            options.Validate();
+            return;
+        }
 
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(options.Validate);
         Assert.StartsWith("BOWER_HTTP_URL must be an absolute https:// URL", error.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain("pass", error.Message, StringComparison.Ordinal);
     }
 
     [Theory]
-    [InlineData("http://127.0.0.1:8088/x")]
-    [InlineData("http://localhost:8088/x")]
-    [InlineData("http://[::1]:8088/x")]
-    [InlineData("https://splunk.example.test/x")]
-    public void Tls_PlainHttpOnlyToLoopbackWithTheOptIn(string url)
+    [InlineData("https://user:pass@splunk.example.test/services/collector/event")]
+    [InlineData("https://splunk.example.test/services/collector/event?token=abc")]
+    [InlineData("https://splunk.example.test/services/collector/event#x")]
+    [InlineData("ftp://splunk.example.test/")]
+    public void EndpointPolicy_RefusesCredentialedOrOddUrlsWithoutEchoingThem(string url)
     {
-        new HttpOutputOptions { Endpoint = new Uri(url), HecHost = "h", AllowInsecureLoopback = true }.Validate();
+        HttpOutputOptions options = new() { Endpoint = new Uri(url), HecHost = "h", AllowInsecureLoopback = true };
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(options.Validate);
+
+        Assert.DoesNotContain("pass", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("abc", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PlainHttpNeverUsesAProxyAndHttpsKeepsTheStandardProxySettings()
+    {
+        using SocketsHttpHandler plain = HttpOutput.CreateHandler(
+            new HttpOutputOptions { Endpoint = new Uri("http://127.0.0.1:8088/x"), HecHost = "h", AllowInsecureLoopback = true });
+        using SocketsHttpHandler secure = HttpOutput.CreateHandler(
+            new HttpOutputOptions { Endpoint = new Uri("https://splunk.example.test/x"), HecHost = "h" });
+
+        Assert.False(plain.UseProxy);
+        Assert.True(secure.UseProxy);
+    }
+
+    [Theory]
+    [MemberData(nameof(AuthHeaderVectors))]
+    public void AuthHeaderVector_AllowsOnlyNamesThatCanCarryTheToken(string name, bool allowed)
+    {
+        Assert.Equal(allowed, HttpOutputOptions.IsAllowedHeaderName(name));
+        if (allowed)
+        {
+            // Every allowed name is one .NET adds to request headers, so the token is never dropped.
+            using HttpRequestMessage request = new();
+            Assert.True(request.Headers.TryAddWithoutValidation(name, "token"));
+            using HttpOutput output = new(
+                new HttpOutputOptions
+                {
+                    Endpoint = new Uri("https://intake.example.test/x"),
+                    Format = HttpOutputFormat.Ndjson,
+                    AuthorizationHeader = name,
+                    HecHost = "h"
+                },
+                "token-1");
+        }
+    }
+
+    [Theory]
+    [InlineData("Content-Disposition")]
+    [InlineData("Content-Range")]
+    [InlineData("Content-Language")]
+    [InlineData("Content-Type")]
+    [InlineData("Content-Length")]
+    [InlineData("Content-Location")]
+    [InlineData("Content-MD5")]
+    [InlineData("Content-Encoding")]
+    [InlineData("Allow")]
+    [InlineData("Expires")]
+    [InlineData("Last-Modified")]
+    public void AuthHeader_EveryHeaderDotNetRefusesOnRequestsIsRejected(string name)
+    {
+        using HttpRequestMessage request = new();
+        Assert.False(request.Headers.TryAddWithoutValidation(name, "token"));
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => new HttpOutput(
+            new HttpOutputOptions
+            {
+                Endpoint = new Uri("https://intake.example.test/x"),
+                Format = HttpOutputFormat.Ndjson,
+                AuthorizationHeader = name,
+                HecHost = "h"
+            },
+            "token-1"));
+        Assert.StartsWith("BOWER_HTTP_AUTH_HEADER must be an HTTP header name", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Tls_CaBundleWithAnIntermediateIsRefused()
+    {
+        using TemporaryDirectory directory = new();
+        using TestCertificateAuthority authority = new(directory.Path);
+        using System.Security.Cryptography.X509Certificates.X509Certificate2 intermediate = authority.IssueIntermediate();
+        string bundle = Path.Combine(directory.Path, "with-intermediate.pem");
+        File.WriteAllText(bundle, authority.Certificate.ExportCertificatePem() + "\n" + intermediate.ExportCertificatePem());
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => new HttpOutput(
+            new HttpOutputOptions { Endpoint = new Uri("https://hec.example.test/x"), HecHost = "h", CaBundlePath = bundle }, "token-1"));
+
+        Assert.Equal("BOWER_HTTP_CA_BUNDLE must hold only self-signed root CA certificates, not intermediates.", error.Message);
     }
 
     [Fact]
@@ -429,6 +538,8 @@ public sealed class HttpOutputTests
 
     [Theory]
     [InlineData("Content-Type")]
+    [InlineData("Content-Disposition")]
+    [InlineData("Content-Range")]
     [InlineData("host")]
     [InlineData("Proxy-Authorization")]
     [InlineData("X Api")]
@@ -509,7 +620,7 @@ public sealed class HttpOutputTests
     }
 
     [Fact]
-    public async Task Queue_KeepsRetryableFailuresQueuedAndDeadLettersPermanentOnesWithoutLoggingTheToken()
+    public async Task Queue_HoldsUnprovenFailuresAndDeadLettersOnlyIsolatedPoisonWithoutLoggingTheToken()
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         const string token = "hec-token-0123456789abcdef";
@@ -523,24 +634,124 @@ public sealed class HttpOutputTests
         using ILoggerFactory factory = LoggerFactory.Create(builder => builder.AddProvider(logs).SetMinimumLevel(LogLevel.Trace));
         QueueDeliveryWorker worker = new(store, output, clock, new QueueDeliveryOptions(), factory.CreateLogger<QueueDeliveryWorker>());
 
-        await store.EnqueueAsync(new QueuedEvent("q1", "f", """{"eventId":"q1"}""", Now), cancellationToken);
+        await store.EnqueueAsync(new QueuedEvent("q1", "sha256:q1", """{"eventId":"q1"}""", Now), cancellationToken);
         endpoint.Reply = (_, _) => Task.FromResult(new EndpointReply(503, """{"text":"Server is busy","code":9}"""u8.ToArray()));
         await worker.DeliverOnceAsync(cancellationToken);
-        QueueSnapshot retrying = await store.GetSnapshotAsync(cancellationToken);
+        QueueSnapshot busy = await store.GetSnapshotAsync(cancellationToken);
 
+        // Alone, a 400 is not proof the event is bad: it stays queued.
         clock.Advance(TimeSpan.FromHours(2));
-        endpoint.Reply = (_, _) => Task.FromResult(new EndpointReply(400, """{"text":"Incorrect index","code":7}"""u8.ToArray()));
+        endpoint.Reply = (request, _) => Task.FromResult(Ids(request).Contains("q1")
+            ? new EndpointReply(400, """{"text":"Invalid data format","code":6}"""u8.ToArray())
+            : EndpointReply.HecSuccess);
         await worker.DeliverOnceAsync(cancellationToken);
-        QueueSnapshot deadLettered = await store.GetSnapshotAsync(cancellationToken);
+        QueueSnapshot alone = await store.GetSnapshotAsync(cancellationToken);
+
+        // With an accepted sibling in the same request lineage, it is isolated as poison.
+        await store.EnqueueAsync(new QueuedEvent("q2", "sha256:q2", """{"eventId":"q2"}""", Now), cancellationToken);
+        clock.Advance(TimeSpan.FromHours(2));
+        await worker.DeliverOnceAsync(cancellationToken);
+        QueueSnapshot isolated = await store.GetSnapshotAsync(cancellationToken);
         DeadLetterRecord record = Assert.Single(await store.ListDeadLetteredAsync(10, cancellationToken));
 
-        Assert.Equal(1, retrying.Retrying);
-        Assert.Equal(0, retrying.Delivered);
-        Assert.Equal(1, deadLettered.DeadLettered);
-        Assert.Equal("http-400:hec-7", record.FailureCode);
+        Assert.Equal((1, 0L), (busy.Retrying, busy.Delivered));
+        Assert.Equal((1, 0L), (alone.Retrying, alone.DeadLettered));
+        Assert.Equal((1, 1L, 0L), (isolated.DeadLettered, isolated.Delivered, isolated.Retrying));
+        Assert.Equal("q1", record.EventId);
+        Assert.Equal("http-400:hec-6", record.FailureCode);
         Assert.Contains(logs.Messages, line => line.Contains("destination-http-503:hec-9", StringComparison.Ordinal));
+        Assert.Contains(logs.Messages, line => line.Contains("destination-http-400:hec-6", StringComparison.Ordinal));
         Assert.DoesNotContain(logs.Messages, line => line.Contains(token, StringComparison.Ordinal));
         Assert.All(endpoint.Requests, request => Assert.Equal("Splunk " + token, request.Headers["authorization"]));
+    }
+
+    [Fact]
+    public async Task Queue_SingleEventOnlyEndpointDeliversAllFiveHundredOverPassesWithoutDeadLetters()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(Now);
+        SqliteEventStore store = new(Path.Combine(directory.Path, "queue.db"), 10 * 1024 * 1024, clock);
+        await store.InitializeAsync(cancellationToken);
+        await using TestHttpEndpoint endpoint = await TestHttpEndpoint.StartAsync(null, cancellationToken);
+        endpoint.Reply = (request, _) => Task.FromResult(Lines(request) > 1 ? new EndpointReply(413) : EndpointReply.HecSuccess);
+        using HttpOutput output = new(HecOptions(endpoint), "token-1", clock: clock);
+        // A tiny attempt budget: split deferrals must never spend it.
+        QueueDeliveryWorker worker = new(store, output, clock, new QueueDeliveryOptions { MaximumDeliveryAttempts = 2 },
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<QueueDeliveryWorker>.Instance);
+        foreach (QueuedEvent item in Events(500))
+        {
+            await store.EnqueueAsync(item, cancellationToken);
+        }
+
+        int passes = 0;
+        QueueSnapshot snapshot = await store.GetSnapshotAsync(cancellationToken);
+        while (snapshot.Delivered < 500 && passes++ < 200)
+        {
+            await worker.DeliverOnceAsync(cancellationToken);
+            clock.Advance(TimeSpan.FromMinutes(2));
+            snapshot = await store.GetSnapshotAsync(cancellationToken);
+        }
+
+        Assert.Equal(500, snapshot.Delivered);
+        Assert.Equal(0, snapshot.DeadLettered);
+        Assert.True(passes > 1, "the split budget must have forced more than one pass");
+    }
+
+    [Fact]
+    public async Task Queue_AlwaysTooLargeEndpointNeverDeadLetters()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(Now);
+        SqliteEventStore store = new(Path.Combine(directory.Path, "queue.db"), 10 * 1024 * 1024, clock);
+        await store.InitializeAsync(cancellationToken);
+        await using TestHttpEndpoint endpoint = await TestHttpEndpoint.StartAsync(null, cancellationToken);
+        endpoint.Reply = (_, _) => Task.FromResult(new EndpointReply(413));
+        using HttpOutput output = new(HecOptions(endpoint), "token-1", clock: clock);
+        QueueDeliveryWorker worker = new(store, output, clock, new QueueDeliveryOptions { MaximumDeliveryAttempts = 2 },
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<QueueDeliveryWorker>.Instance);
+        foreach (QueuedEvent item in Events(50))
+        {
+            await store.EnqueueAsync(item, cancellationToken);
+        }
+
+        for (int pass = 0; pass < 5; pass++)
+        {
+            await worker.DeliverOnceAsync(cancellationToken);
+            clock.Advance(TimeSpan.FromMinutes(2));
+        }
+
+        QueueSnapshot snapshot = await store.GetSnapshotAsync(cancellationToken);
+        Assert.Equal(0, snapshot.DeadLettered);
+        Assert.Equal(0, snapshot.Delivered);
+        Assert.Equal(50, snapshot.Retrying);
+    }
+
+    [Theory]
+    [MemberData(nameof(ScenarioVectors))]
+    public async Task ScenarioVector_IsolatesPoisonAndHoldsEverythingElse(string name)
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        JsonObject vector = Vectors["scenarios"]!.AsArray().Single(item => item!["name"]!.GetValue<string>() == name)!.AsObject();
+        JsonObject rule = vector["endpoint"]!.AsObject();
+        await using TestHttpEndpoint endpoint = await TestHttpEndpoint.StartAsync(null, cancellationToken);
+        int requests = 0;
+        endpoint.Reply = (request, _) => Task.FromResult(ScenarioReply(rule, Interlocked.Increment(ref requests), Ids(request)));
+        HttpOutputOptions options = Options(vector["options"]!.AsObject(), endpoint.Url());
+        using HttpOutput output = new(options, "token-1");
+        QueuedEvent[] events = [.. Enumerable.Range(0, vector["events"]!.GetValue<int>())
+            .Select(index => new QueuedEvent($"s-{index}", "f", $$"""{"eventId":"s-{{index}}"}""", Now))];
+
+        DeliveryResult result = await output.DeliverAsync(events, cancellationToken);
+
+        Assert.Equal(vector["expectedRequests"]!.GetValue<int>(), requests);
+        Assert.Equal(vector["expectedAcknowledged"]!.AsArray().Select(item => item!.GetValue<string>()), result.AcknowledgedEventIds);
+        Assert.Equal(
+            vector["expectedFailures"]!.AsArray().Select(item => (
+                item!["eventId"]!.GetValue<string>(), item["code"]!.GetValue<string>(), item["retryable"]!.GetValue<bool>())),
+            result.Failures.Select(failure => (failure.EventId, failure.Code, failure.IsRetryable)));
+        Assert.All(result.Failures, failure => Assert.Equal(failure.IsRetryable, failure.IsDestinationFailure));
     }
 
     [Fact]
@@ -675,6 +886,39 @@ public sealed class HttpOutputTests
         .Select(index => new QueuedEvent($"e{index}", $"f{index}", $$"""{"eventId":"e{{index}}","n":{{index}}}""", Now))];
 
     private static int Lines(CapturedRequest request) => request.Body.Count(value => value == (byte)'\n');
+
+    /// <summary>Event ids in a request body (HEC <c>fields.bower_event_id</c> or the NDJSON <c>eventId</c>).</summary>
+    private static string[] Ids(CapturedRequest request) => [.. Encoding.UTF8.GetString(request.Body)
+        .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+        .Select(line => JsonNode.Parse(line)!)
+        .Select(line => (line["fields"]?["bower_event_id"] ?? line["eventId"])!.GetValue<string>())];
+
+    /// <summary>The shared scenario endpoint: always, then by request number, then a record cap, then rejected ids.</summary>
+    private static EndpointReply ScenarioReply(JsonObject rule, int request, string[] ids)
+    {
+        static EndpointReply Reply(JsonNode reply) => new(
+            reply["status"]!.GetValue<int>(),
+            reply["body"]?.GetValue<string>() is { } body ? Encoding.UTF8.GetBytes(body) : null);
+
+        if (rule["always"] is { } always)
+        {
+            return Reply(always);
+        }
+
+        if (rule["byRequest"]?[request.ToString(System.Globalization.CultureInfo.InvariantCulture)] is { } byRequest)
+        {
+            return Reply(byRequest);
+        }
+
+        if (rule["maxRecords"] is { } maxRecords && ids.Length > maxRecords.GetValue<int>())
+        {
+            return new EndpointReply(413);
+        }
+
+        return rule["reject"] is { } reject && ids.Any(id => reject["eventIds"]!.AsArray().Any(item => item!.GetValue<string>() == id))
+            ? Reply(reject)
+            : EndpointReply.HecSuccess;
+    }
 
     private static byte[] Gunzip(byte[] body)
     {

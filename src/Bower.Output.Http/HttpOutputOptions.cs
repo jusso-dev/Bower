@@ -76,7 +76,8 @@ public sealed record HttpOutputOptions
         {
             throw new InvalidOperationException(
                 "BOWER_HTTP_URL must be an absolute https:// URL with a host and no credentials, query or " +
-                "fragment; http:// is allowed only to a loopback host with BOWER_HTTP_ALLOW_INSECURE_LOOPBACK=true.");
+                "fragment; http:// is allowed only to a loopback IP address (127.0.0.0/8 or ::1) with " +
+                "BOWER_HTTP_ALLOW_INSECURE_LOOPBACK=true.");
         }
 
         if (Format == HttpOutputFormat.SplunkHec && AuthorizationHeader is not null)
@@ -129,13 +130,18 @@ public sealed record HttpOutputOptions
         }
 
         return endpoint.Scheme == Uri.UriSchemeHttps
-            || (endpoint.Scheme == Uri.UriSchemeHttp && allowInsecureLoopback && IsLoopback(endpoint.Host));
+            || (endpoint.Scheme == Uri.UriSchemeHttp && allowInsecureLoopback && IsLoopbackAddress(endpoint.Host));
     }
 
-    /// <summary><c>localhost</c> or a loopback IP address (brackets trimmed).</summary>
-    public static bool IsLoopback(string host) =>
-        string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
-        || (IPAddress.TryParse(host.Trim('[', ']'), out IPAddress? address) && IPAddress.IsLoopback(address));
+    /// <summary>
+    /// A loopback IP literal: 127.0.0.0/8 or ::1 (brackets trimmed). Never a name such as
+    /// <c>localhost</c>, which resolution or a hosts file could send elsewhere.
+    /// </summary>
+    public static bool IsLoopbackAddress(string host) =>
+        IPAddress.TryParse(host.Trim('[', ']'), out IPAddress? address)
+        && (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
+            ? address.GetAddressBytes()[0] == 127
+            : address.Equals(IPAddress.IPv6Loopback));
 
     /// <summary>A token of printable ASCII without spaces, at most 4096 characters.</summary>
     public static bool IsValidToken(string? token)
@@ -156,13 +162,22 @@ public sealed record HttpOutputOptions
         return true;
     }
 
-    private static readonly string[] ReservedHeaders =
+    /// <summary>
+    /// Header names that cannot carry the token: hop-by-hop and framing headers, proxy
+    /// credentials, content headers (.NET refuses them on request headers) and
+    /// response-only headers. Shared with the Rust port through the vectors.
+    /// </summary>
+    public static IReadOnlyList<string> ReservedHeaders { get; } =
     [
-        "host", "content-length", "content-type", "content-encoding", "transfer-encoding", "connection",
-        "upgrade", "te", "trailer", "keep-alive", "expect", "proxy-authorization", "proxy-connection"
+        "host", "connection", "keep-alive", "proxy-connection", "transfer-encoding", "te", "trailer",
+        "upgrade", "expect", "proxy-authorization", "proxy-authenticate",
+        "allow", "content-disposition", "content-encoding", "content-language", "content-length",
+        "content-location", "content-md5", "content-range", "content-type", "expires", "last-modified",
+        "accept-ranges", "age", "etag", "location", "retry-after", "server", "vary", "www-authenticate"
     ];
 
-    private static bool IsAllowedHeaderName(string name)
+    /// <summary>Whether BOWER_HTTP_AUTH_HEADER may name this header.</summary>
+    public static bool IsAllowedHeaderName(string name)
     {
         if (name.Length is < 1 or > 64 || ReservedHeaders.Contains(name.ToLowerInvariant(), StringComparer.Ordinal))
         {

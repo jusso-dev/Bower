@@ -451,6 +451,168 @@
         "content-type": "application/json; charset=utf-8"
       },
       "expectedAcknowledgement": null
+    },
+    {
+      "name": "byte-cap-line-exactly-at-cap",
+      "options": {
+        "format": "ndjson",
+        "maximumBatchBytes": 1024
+      },
+      "events": [
+        {
+          "eventId": "c-1",
+          "fingerprint": "f",
+          "payload": "{\"eventId\":\"c-1\",\"pad\":\"ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\"}"
+        }
+      ],
+      "expectedBodies": [
+        "{\"eventId\":\"c-1\",\"pad\":\"ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\"}\n"
+      ],
+      "expectedFailures": [],
+      "expectedHeaders": {
+        "authorization": "Bearer 11111111-2222-3333-4444-555555555555",
+        "content-type": "application/x-ndjson; charset=utf-8"
+      },
+      "expectedAcknowledgement": "http:ndjson:endpoint-accepted"
+    },
+    {
+      "name": "byte-cap-line-at-cap-minus-one",
+      "options": {
+        "format": "ndjson",
+        "maximumBatchBytes": 1024
+      },
+      "events": [
+        {
+          "eventId": "c-2",
+          "fingerprint": "f",
+          "payload": "{\"eventId\":\"c-2\",\"pad\":\"pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\"}"
+        }
+      ],
+      "expectedBodies": [
+        "{\"eventId\":\"c-2\",\"pad\":\"pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\"}\n"
+      ],
+      "expectedFailures": [],
+      "expectedHeaders": {
+        "authorization": "Bearer 11111111-2222-3333-4444-555555555555",
+        "content-type": "application/x-ndjson; charset=utf-8"
+      },
+      "expectedAcknowledgement": "http:ndjson:endpoint-accepted"
+    },
+    {
+      "name": "byte-cap-line-one-over-cap",
+      "options": {
+        "format": "ndjson",
+        "maximumBatchBytes": 1024
+      },
+      "events": [
+        {
+          "eventId": "c-3",
+          "fingerprint": "f",
+          "payload": "{\"eventId\":\"c-3\",\"pad\":\"pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\"}"
+        }
+      ],
+      "expectedBodies": [],
+      "expectedFailures": [
+        {
+          "eventId": "c-3",
+          "code": "payload-too-large"
+        }
+      ],
+      "expectedHeaders": {
+        "authorization": "Bearer 11111111-2222-3333-4444-555555555555",
+        "content-type": "application/x-ndjson; charset=utf-8"
+      },
+      "expectedAcknowledgement": null
+    },
+    {
+      "name": "byte-cap-two-lines-at-half-cap",
+      "options": {
+        "format": "ndjson",
+        "maximumBatchBytes": 1024
+      },
+      "events": [
+        {
+          "eventId": "c-4",
+          "fingerprint": "f",
+          "payload": "{\"eventId\":\"c-4\",\"pad\":\"ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\"}"
+        },
+        {
+          "eventId": "c-5",
+          "fingerprint": "f",
+          "payload": "{\"eventId\":\"c-5\",\"pad\":\"ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\"}"
+        }
+      ],
+      "expectedBodies": [
+        "{\"eventId\":\"c-4\",\"pad\":\"ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\"}\n{\"eventId\":\"c-5\",\"pad\":\"ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\"}\n"
+      ],
+      "expectedFailures": [],
+      "expectedHeaders": {
+        "authorization": "Bearer 11111111-2222-3333-4444-555555555555",
+        "content-type": "application/x-ndjson; charset=utf-8"
+      },
+      "expectedAcknowledgement": "http:ndjson:endpoint-accepted"
+    },
+    {
+      "name": "byte-cap-two-lines-one-byte-over-half-cap",
+      "options": {
+        "format": "ndjson",
+        "maximumBatchBytes": 1024
+      },
+      "events": [
+        {
+          "eventId": "c-6",
+          "fingerprint": "f",
+          "payload": "{\"eventId\":\"c-6\",\"pad\":\"ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\"}"
+        },
+        {
+          "eventId": "c-7",
+          "fingerprint": "f",
+          "payload": "{\"eventId\":\"c-7\",\"pad\":\"pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\"}"
+        }
+      ],
+      "expectedBodies": [
+        "{\"eventId\":\"c-6\",\"pad\":\"ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\"}\n",
+        "{\"eventId\":\"c-7\",\"pad\":\"pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\"}\n"
+      ],
+      "expectedFailures": [],
+      "expectedHeaders": {
+        "authorization": "Bearer 11111111-2222-3333-4444-555555555555",
+        "content-type": "application/x-ndjson; charset=utf-8"
+      },
+      "expectedAcknowledgement": "http:ndjson:endpoint-accepted"
+    },
+    {
+      "name": "hec-record-exactly-at-cap",
+      "options": {
+        "format": "splunk-hec",
+        "maximumBatchBytes": 1024
+      },
+      "events": [
+        {
+          "eventId": "c-8",
+          "fingerprint": "f",
+          "payload": "{\"eventId\":\"c-8\",\"pad\":\"ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\"}"
+        },
+        {
+          "eventId": "c-9",
+          "fingerprint": "f",
+          "payload": "{\"eventId\":\"c-9\",\"pad\":\"pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\"}"
+        }
+      ],
+      "expectedBodies": [
+        "{\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"eventId\":\"c-8\",\"pad\":\"ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\"},\"fields\":{\"bower_event_id\":\"c-8\",\"bower_fingerprint\":\"f\"}}\n"
+      ],
+      "expectedFailures": [
+        {
+          "eventId": "c-9",
+          "code": "payload-too-large"
+        }
+      ],
+      "expectedHeaders": {
+        "authorization": "Splunk 11111111-2222-3333-4444-555555555555",
+        "content-type": "application/json; charset=utf-8"
+      },
+      "expectedAcknowledgement": "http:splunk-hec:endpoint-accepted"
     }
   ],
   "responses": [
@@ -459,168 +621,180 @@
       "format": "splunk-hec",
       "status": 200,
       "body": "{\"text\":\"Success\",\"code\":0}",
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null,
       "accepted": true,
       "code": null,
       "retryable": null,
       "destination": false,
       "retryAfterSeconds": null,
-      "retryAfter": null,
-      "bodyPadding": 0,
-      "location": null
+      "isolate": false
     },
     {
       "name": "hec-success-with-ack-id",
       "format": "splunk-hec",
       "status": 200,
       "body": "{\"text\":\"Success\",\"code\":0,\"ackId\":7}",
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null,
       "accepted": true,
       "code": null,
       "retryable": null,
       "destination": false,
       "retryAfterSeconds": null,
-      "retryAfter": null,
-      "bodyPadding": 0,
-      "location": null
+      "isolate": false
     },
     {
       "name": "hec-success-negative-zero",
       "format": "splunk-hec",
       "status": 200,
       "body": "{\"code\":-0}",
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null,
       "accepted": true,
       "code": null,
       "retryable": null,
       "destination": false,
       "retryAfterSeconds": null,
-      "retryAfter": null,
-      "bodyPadding": 0,
-      "location": null
+      "isolate": false
     },
     {
       "name": "ndjson-2xx-any-body",
       "format": "ndjson",
       "status": 202,
       "body": "<html>accepted</html>",
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null,
       "accepted": true,
       "code": null,
       "retryable": null,
       "destination": false,
       "retryAfterSeconds": null,
-      "retryAfter": null,
-      "bodyPadding": 0,
-      "location": null
+      "isolate": false
     },
     {
       "name": "ndjson-204-no-body",
       "format": "ndjson",
       "status": 204,
       "body": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null,
       "accepted": true,
       "code": null,
       "retryable": null,
       "destination": false,
       "retryAfterSeconds": null,
-      "retryAfter": null,
-      "bodyPadding": 0,
-      "location": null
+      "isolate": false
     },
     {
       "name": "hec-200-html",
       "format": "splunk-hec",
       "status": 200,
       "body": "<html>proxy login</html>",
-      "code": "destination-http-response-invalid",
-      "retryable": true,
-      "accepted": false,
-      "destination": true,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-response-invalid",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
     },
     {
       "name": "hec-200-empty",
       "format": "splunk-hec",
       "status": 200,
       "body": null,
-      "code": "destination-http-response-invalid",
-      "retryable": true,
-      "accepted": false,
-      "destination": true,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-response-invalid",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
     },
     {
       "name": "hec-200-code-string",
       "format": "splunk-hec",
       "status": 200,
       "body": "{\"code\":\"0\"}",
-      "code": "destination-http-response-invalid",
-      "retryable": true,
-      "accepted": false,
-      "destination": true,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-response-invalid",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
     },
     {
       "name": "hec-200-code-decimal",
       "format": "splunk-hec",
       "status": 200,
       "body": "{\"code\":0.0}",
-      "code": "destination-http-response-invalid",
-      "retryable": true,
-      "accepted": false,
-      "destination": true,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-response-invalid",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
     },
     {
       "name": "hec-200-nonzero-code",
       "format": "splunk-hec",
       "status": 200,
       "body": "{\"code\":17}",
-      "code": "destination-http-response-invalid",
-      "retryable": true,
-      "accepted": false,
-      "destination": true,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-response-invalid",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
     },
     {
       "name": "hec-200-array",
       "format": "splunk-hec",
       "status": 200,
       "body": "[{\"code\":0}]",
-      "code": "destination-http-response-invalid",
-      "retryable": true,
-      "accepted": false,
-      "destination": true,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-response-invalid",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
     },
     {
       "name": "hec-200-too-deep",
       "format": "splunk-hec",
       "status": 200,
       "body": "{\"code\":0,\"x\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}",
-      "code": "destination-http-response-invalid",
-      "retryable": true,
-      "accepted": false,
-      "destination": true,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-response-invalid",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
     },
     {
       "name": "hec-200-oversize",
@@ -628,209 +802,389 @@
       "status": 200,
       "body": "{\"text\":\"Success\",\"code\":0}",
       "bodyPadding": 70000,
+      "retryAfter": null,
+      "location": null,
+      "accepted": false,
       "code": "destination-http-response-invalid",
       "retryable": true,
-      "accepted": false,
       "destination": true,
       "retryAfterSeconds": null,
-      "retryAfter": null,
-      "location": null
+      "isolate": false
     },
     {
       "name": "hec-200-trailing-garbage",
       "format": "splunk-hec",
       "status": 200,
       "body": "{\"code\":0}x",
-      "code": "destination-http-response-invalid",
-      "retryable": true,
-      "accepted": false,
-      "destination": true,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-response-invalid",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
     },
     {
       "name": "hec-400-incorrect-index",
       "format": "splunk-hec",
       "status": 400,
       "body": "{\"text\":\"Incorrect index\",\"code\":7,\"invalid-event-number\":0}",
-      "code": "http-400:hec-7",
-      "retryable": false,
-      "accepted": false,
-      "destination": false,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-400:hec-7",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
+    },
+    {
+      "name": "hec-400-data-channel-missing",
+      "format": "splunk-hec",
+      "status": 400,
+      "body": "{\"text\":\"Data channel is missing\",\"code\":10}",
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-400:hec-10",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
+    },
+    {
+      "name": "hec-400-invalid-data-channel",
+      "format": "splunk-hec",
+      "status": 400,
+      "body": "{\"text\":\"Invalid data channel\",\"code\":11}",
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-400:hec-11",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
+    },
+    {
+      "name": "hec-400-ack-disabled",
+      "format": "splunk-hec",
+      "status": 400,
+      "body": "{\"text\":\"ACK is disabled\",\"code\":14}",
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-400:hec-14",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
+    },
+    {
+      "name": "hec-400-query-string-auth-disabled",
+      "format": "splunk-hec",
+      "status": 400,
+      "body": "{\"text\":\"Query string authorization is not enabled\",\"code\":16}",
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-400:hec-16",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
+    },
+    {
+      "name": "hec-400-invalid-token",
+      "format": "splunk-hec",
+      "status": 400,
+      "body": "{\"text\":\"Invalid token\",\"code\":21}",
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-400:hec-21",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
+    },
+    {
+      "name": "hec-400-token-disabled",
+      "format": "splunk-hec",
+      "status": 400,
+      "body": "{\"text\":\"Token disabled\",\"code\":22}",
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-400:hec-22",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
     },
     {
       "name": "hec-400-invalid-format",
       "format": "splunk-hec",
       "status": 400,
       "body": "{\"text\":\"Invalid data format\",\"code\":6,\"invalid-event-number\":3}",
-      "code": "http-400:hec-6",
-      "retryable": false,
-      "accepted": false,
-      "destination": false,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-400:hec-6",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": true
     },
     {
       "name": "hec-400-code-out-of-range",
       "format": "splunk-hec",
       "status": 400,
       "body": "{\"code\":100}",
-      "code": "http-400",
-      "retryable": false,
-      "accepted": false,
-      "destination": false,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-400",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": true
     },
     {
       "name": "hec-400-code-negative",
       "format": "splunk-hec",
       "status": 400,
       "body": "{\"code\":-1}",
-      "code": "http-400",
-      "retryable": false,
-      "accepted": false,
-      "destination": false,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-400",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": true
     },
     {
       "name": "hec-400-duplicate-code-last-wins",
       "format": "splunk-hec",
       "status": 400,
       "body": "{\"code\":6,\"code\":7}",
-      "code": "http-400:hec-7",
-      "retryable": false,
-      "accepted": false,
-      "destination": false,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-400:hec-7",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
     },
     {
       "name": "hec-400-hostile-text",
       "format": "splunk-hec",
       "status": 400,
       "body": "{\"text\":\"Bearer secret-in-body \\n injected\",\"code\":12}",
-      "code": "http-400:hec-12",
-      "retryable": false,
-      "accepted": false,
-      "destination": false,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-400:hec-12",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": true
     },
     {
       "name": "hec-401-token-required",
       "format": "splunk-hec",
       "status": 401,
       "body": "{\"text\":\"Token is required\",\"code\":2}",
-      "code": "destination-http-401:hec-2",
-      "retryable": true,
-      "accepted": false,
-      "destination": true,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-401:hec-2",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
     },
     {
       "name": "hec-403-invalid-token",
       "format": "splunk-hec",
       "status": 403,
       "body": "{\"text\":\"Invalid token\",\"code\":4}",
-      "code": "destination-http-403:hec-4",
-      "retryable": true,
-      "accepted": false,
-      "destination": true,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-403:hec-4",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
     },
     {
       "name": "hec-403-token-disabled",
       "format": "splunk-hec",
       "status": 403,
       "body": "{\"text\":\"Token disabled\",\"code\":1}",
-      "code": "destination-http-403:hec-1",
-      "retryable": true,
-      "accepted": false,
-      "destination": true,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-403:hec-1",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
     },
     {
       "name": "ndjson-401-body-ignored",
       "format": "ndjson",
       "status": 401,
       "body": "{\"code\":2}",
-      "code": "destination-http-401",
-      "retryable": true,
-      "accepted": false,
-      "destination": true,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-401",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
     },
     {
       "name": "ndjson-403",
       "format": "ndjson",
       "status": 403,
       "body": null,
-      "code": "destination-http-403",
-      "retryable": true,
-      "accepted": false,
-      "destination": true,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-403",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
     },
     {
       "name": "hec-404",
       "format": "splunk-hec",
       "status": 404,
       "body": "not found",
-      "code": "destination-http-404",
-      "retryable": true,
-      "accepted": false,
-      "destination": true,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-404",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
+    },
+    {
+      "name": "hec-405-method-not-allowed",
+      "format": "splunk-hec",
+      "status": 405,
+      "body": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-405",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
     },
     {
       "name": "hec-408",
       "format": "splunk-hec",
       "status": 408,
       "body": null,
-      "code": "destination-http-408",
-      "retryable": true,
-      "accepted": false,
-      "destination": true,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-408",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
+    },
+    {
+      "name": "ndjson-410-gone",
+      "format": "ndjson",
+      "status": 410,
+      "body": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-410",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
+    },
+    {
+      "name": "ndjson-415-unsupported-media-type",
+      "format": "ndjson",
+      "status": 415,
+      "body": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-415",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
+    },
+    {
+      "name": "hec-421-misdirected",
+      "format": "splunk-hec",
+      "status": 421,
+      "body": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-421",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
+    },
+    {
+      "name": "ndjson-422-single",
+      "format": "ndjson",
+      "status": 422,
+      "body": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-422",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": true
     },
     {
       "name": "hec-429-retry-after",
@@ -838,27 +1192,29 @@
       "status": 429,
       "body": null,
       "retryAfter": "30",
+      "bodyPadding": 0,
+      "location": null,
+      "accepted": false,
       "code": "destination-http-429",
       "retryable": true,
-      "retryAfterSeconds": 30,
-      "accepted": false,
       "destination": true,
-      "bodyPadding": 0,
-      "location": null
+      "retryAfterSeconds": 30,
+      "isolate": false
     },
     {
       "name": "hec-500-internal",
       "format": "splunk-hec",
       "status": 500,
       "body": "{\"text\":\"Internal server error\",\"code\":8}",
-      "code": "destination-http-500:hec-8",
-      "retryable": true,
-      "accepted": false,
-      "destination": true,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-500:hec-8",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
     },
     {
       "name": "hec-503-busy-capped",
@@ -866,13 +1222,14 @@
       "status": 503,
       "body": "{\"text\":\"Server is busy\",\"code\":9}",
       "retryAfter": "7200",
+      "bodyPadding": 0,
+      "location": null,
+      "accepted": false,
       "code": "destination-http-503:hec-9",
       "retryable": true,
-      "retryAfterSeconds": 3600,
-      "accepted": false,
       "destination": true,
-      "bodyPadding": 0,
-      "location": null
+      "retryAfterSeconds": 3600,
+      "isolate": false
     },
     {
       "name": "hec-503-retry-after-zero",
@@ -880,13 +1237,14 @@
       "status": 503,
       "body": null,
       "retryAfter": "0",
+      "bodyPadding": 0,
+      "location": null,
+      "accepted": false,
       "code": "destination-http-503",
       "retryable": true,
-      "accepted": false,
       "destination": true,
       "retryAfterSeconds": null,
-      "bodyPadding": 0,
-      "location": null
+      "isolate": false
     },
     {
       "name": "hec-503-retry-after-garbage",
@@ -894,13 +1252,14 @@
       "status": 503,
       "body": null,
       "retryAfter": "soon",
+      "bodyPadding": 0,
+      "location": null,
+      "accepted": false,
       "code": "destination-http-503",
       "retryable": true,
-      "accepted": false,
       "destination": true,
       "retryAfterSeconds": null,
-      "bodyPadding": 0,
-      "location": null
+      "isolate": false
     },
     {
       "name": "ndjson-502",
@@ -908,13 +1267,14 @@
       "status": 502,
       "body": null,
       "retryAfter": "5",
+      "bodyPadding": 0,
+      "location": null,
+      "accepted": false,
       "code": "destination-http-502",
       "retryable": true,
-      "retryAfterSeconds": 5,
-      "accepted": false,
       "destination": true,
-      "bodyPadding": 0,
-      "location": null
+      "retryAfterSeconds": 5,
+      "isolate": false
     },
     {
       "name": "hec-302-no-redirect",
@@ -922,69 +1282,740 @@
       "status": 302,
       "body": null,
       "location": "https://elsewhere.example.test/",
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "accepted": false,
       "code": "destination-http-302",
       "retryable": true,
-      "accepted": false,
       "destination": true,
       "retryAfterSeconds": null,
-      "retryAfter": null,
-      "bodyPadding": 0
+      "isolate": false
     },
     {
-      "name": "hec-405",
-      "format": "splunk-hec",
-      "status": 405,
-      "body": null,
-      "code": "http-405",
-      "retryable": false,
-      "accepted": false,
-      "destination": false,
-      "retryAfterSeconds": null,
-      "retryAfter": null,
-      "bodyPadding": 0,
-      "location": null
-    },
-    {
-      "name": "hec-413-single",
+      "name": "hec-413-single-held",
       "format": "splunk-hec",
       "status": 413,
-      "body": "{\"text\":\"Content too large\",\"code\":27}",
-      "code": "http-413:hec-27",
-      "retryable": false,
-      "accepted": false,
-      "destination": false,
-      "retryAfterSeconds": null,
+      "body": "{\"text\":\"Content too large\"}",
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-413",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": true
     },
     {
       "name": "ndjson-418",
       "format": "ndjson",
       "status": 418,
       "body": null,
-      "code": "http-418",
-      "retryable": false,
-      "accepted": false,
-      "destination": false,
-      "retryAfterSeconds": null,
       "retryAfter": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-418",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
     },
     {
-      "name": "ndjson-400-retry-after-ignored",
+      "name": "ndjson-400-single-held-with-retry-after",
       "format": "ndjson",
       "status": 400,
       "body": null,
       "retryAfter": "30",
-      "code": "http-400",
-      "retryable": false,
-      "accepted": false,
-      "destination": false,
-      "retryAfterSeconds": null,
       "bodyPadding": 0,
-      "location": null
+      "location": null,
+      "accepted": false,
+      "code": "destination-http-400",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": 30,
+      "isolate": true
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "poison-isolated-mid-stream",
+      "options": {
+        "format": "splunk-hec",
+        "maximumBatchEvents": 2
+      },
+      "events": 6,
+      "endpoint": {
+        "reject": {
+          "eventIds": [
+            "s-2"
+          ],
+          "status": 400,
+          "body": "{\"text\":\"Invalid data format\",\"code\":6,\"invalid-event-number\":0}"
+        }
+      },
+      "expectedAcknowledged": [
+        "s-0",
+        "s-1",
+        "s-3",
+        "s-4",
+        "s-5"
+      ],
+      "expectedFailures": [
+        {
+          "eventId": "s-2",
+          "code": "http-400:hec-6",
+          "retryable": false
+        }
+      ],
+      "expectedRequests": 5
+    },
+    {
+      "name": "poison-lineage-without-accepted-sibling-is-held",
+      "options": {
+        "format": "splunk-hec",
+        "maximumBatchEvents": 2
+      },
+      "events": 4,
+      "endpoint": {
+        "reject": {
+          "eventIds": [
+            "s-0",
+            "s-1"
+          ],
+          "status": 400,
+          "body": "{\"text\":\"Invalid data format\",\"code\":6,\"invalid-event-number\":0}"
+        }
+      },
+      "expectedAcknowledged": [
+        "s-2",
+        "s-3"
+      ],
+      "expectedFailures": [
+        {
+          "eventId": "s-0",
+          "code": "destination-http-400:hec-6",
+          "retryable": true
+        },
+        {
+          "eventId": "s-1",
+          "code": "destination-http-400:hec-6",
+          "retryable": true
+        }
+      ],
+      "expectedRequests": 4
+    },
+    {
+      "name": "incorrect-index-mid-stream-is-held",
+      "options": {
+        "format": "splunk-hec",
+        "maximumBatchEvents": 2
+      },
+      "events": 6,
+      "endpoint": {
+        "byRequest": {
+          "2": {
+            "status": 400,
+            "body": "{\"text\":\"Incorrect index\",\"code\":7,\"invalid-event-number\":0}"
+          }
+        }
+      },
+      "expectedAcknowledged": [
+        "s-0",
+        "s-1"
+      ],
+      "expectedFailures": [
+        {
+          "eventId": "s-2",
+          "code": "destination-http-400:hec-7",
+          "retryable": true
+        },
+        {
+          "eventId": "s-3",
+          "code": "destination-http-400:hec-7",
+          "retryable": true
+        },
+        {
+          "eventId": "s-4",
+          "code": "destination-http-400:hec-7",
+          "retryable": true
+        },
+        {
+          "eventId": "s-5",
+          "code": "destination-http-400:hec-7",
+          "retryable": true
+        }
+      ],
+      "expectedRequests": 2
+    },
+    {
+      "name": "unsupported-media-type-mid-stream-is-held",
+      "options": {
+        "format": "ndjson",
+        "maximumBatchEvents": 2
+      },
+      "events": 6,
+      "endpoint": {
+        "byRequest": {
+          "2": {
+            "status": 415
+          }
+        }
+      },
+      "expectedAcknowledged": [
+        "s-0",
+        "s-1"
+      ],
+      "expectedFailures": [
+        {
+          "eventId": "s-2",
+          "code": "destination-http-415",
+          "retryable": true
+        },
+        {
+          "eventId": "s-3",
+          "code": "destination-http-415",
+          "retryable": true
+        },
+        {
+          "eventId": "s-4",
+          "code": "destination-http-415",
+          "retryable": true
+        },
+        {
+          "eventId": "s-5",
+          "code": "destination-http-415",
+          "retryable": true
+        }
+      ],
+      "expectedRequests": 2
+    },
+    {
+      "name": "ambiguous-422-isolated",
+      "options": {
+        "format": "ndjson",
+        "maximumBatchEvents": 4
+      },
+      "events": 4,
+      "endpoint": {
+        "reject": {
+          "eventIds": [
+            "s-1"
+          ],
+          "status": 422
+        }
+      },
+      "expectedAcknowledged": [
+        "s-0",
+        "s-2",
+        "s-3"
+      ],
+      "expectedFailures": [
+        {
+          "eventId": "s-1",
+          "code": "http-422",
+          "retryable": false
+        }
+      ],
+      "expectedRequests": 5
+    },
+    {
+      "name": "always-400-is-held",
+      "options": {
+        "format": "splunk-hec"
+      },
+      "events": 5,
+      "endpoint": {
+        "always": {
+          "status": 400,
+          "body": "{\"text\":\"Invalid data format\",\"code\":6,\"invalid-event-number\":0}"
+        }
+      },
+      "expectedAcknowledged": [],
+      "expectedFailures": [
+        {
+          "eventId": "s-0",
+          "code": "destination-http-400:hec-6",
+          "retryable": true
+        },
+        {
+          "eventId": "s-1",
+          "code": "destination-http-400:hec-6",
+          "retryable": true
+        },
+        {
+          "eventId": "s-2",
+          "code": "destination-http-400:hec-6",
+          "retryable": true
+        },
+        {
+          "eventId": "s-3",
+          "code": "destination-http-400:hec-6",
+          "retryable": true
+        },
+        {
+          "eventId": "s-4",
+          "code": "destination-http-400:hec-6",
+          "retryable": true
+        }
+      ],
+      "expectedRequests": 9
+    },
+    {
+      "name": "too-large-splits-until-accepted",
+      "options": {
+        "format": "splunk-hec"
+      },
+      "events": 7,
+      "endpoint": {
+        "maxRecords": 2
+      },
+      "expectedAcknowledged": [
+        "s-0",
+        "s-1",
+        "s-2",
+        "s-3",
+        "s-4",
+        "s-5",
+        "s-6"
+      ],
+      "expectedFailures": [],
+      "expectedRequests": 7
+    },
+    {
+      "name": "too-large-single-without-sibling-is-held",
+      "options": {
+        "format": "splunk-hec"
+      },
+      "events": 3,
+      "endpoint": {
+        "always": {
+          "status": 413
+        }
+      },
+      "expectedAcknowledged": [],
+      "expectedFailures": [
+        {
+          "eventId": "s-0",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-1",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-2",
+          "code": "destination-http-413",
+          "retryable": true
+        }
+      ],
+      "expectedRequests": 5
+    },
+    {
+      "name": "too-large-single-with-accepted-sibling-is-dead-lettered",
+      "options": {
+        "format": "splunk-hec"
+      },
+      "events": 2,
+      "endpoint": {
+        "reject": {
+          "eventIds": [
+            "s-0"
+          ],
+          "status": 413
+        }
+      },
+      "expectedAcknowledged": [
+        "s-1"
+      ],
+      "expectedFailures": [
+        {
+          "eventId": "s-0",
+          "code": "http-413",
+          "retryable": false
+        }
+      ],
+      "expectedRequests": 3
+    },
+    {
+      "name": "split-budget-exhausted-is-held",
+      "options": {
+        "format": "splunk-hec"
+      },
+      "events": 40,
+      "endpoint": {
+        "maxRecords": 1
+      },
+      "expectedAcknowledged": [
+        "s-0",
+        "s-1",
+        "s-2",
+        "s-3",
+        "s-4",
+        "s-5",
+        "s-6",
+        "s-7",
+        "s-8",
+        "s-9",
+        "s-10",
+        "s-11",
+        "s-12",
+        "s-13",
+        "s-14"
+      ],
+      "expectedFailures": [
+        {
+          "eventId": "s-15",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-16",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-17",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-18",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-19",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-20",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-21",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-22",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-23",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-24",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-25",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-26",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-27",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-28",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-29",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-30",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-31",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-32",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-33",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-34",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-35",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-36",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-37",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-38",
+          "code": "destination-http-413",
+          "retryable": true
+        },
+        {
+          "eventId": "s-39",
+          "code": "destination-http-413",
+          "retryable": true
+        }
+      ],
+      "expectedRequests": 33
+    }
+  ],
+  "authHeaderNames": [
+    {
+      "name": "X-Api-Key",
+      "allowed": true
+    },
+    {
+      "name": "Authorization",
+      "allowed": true
+    },
+    {
+      "name": "authorization",
+      "allowed": true
+    },
+    {
+      "name": "X-Custom_Token",
+      "allowed": true
+    },
+    {
+      "name": "Cookie",
+      "allowed": true
+    },
+    {
+      "name": "X-Splunk-Request-Channel",
+      "allowed": true
+    },
+    {
+      "name": "Content-Disposition",
+      "allowed": false
+    },
+    {
+      "name": "Content-Range",
+      "allowed": false
+    },
+    {
+      "name": "Content-Language",
+      "allowed": false
+    },
+    {
+      "name": "Content-Type",
+      "allowed": false
+    },
+    {
+      "name": "Content-Length",
+      "allowed": false
+    },
+    {
+      "name": "Content-Location",
+      "allowed": false
+    },
+    {
+      "name": "Content-MD5",
+      "allowed": false
+    },
+    {
+      "name": "Content-Encoding",
+      "allowed": false
+    },
+    {
+      "name": "Allow",
+      "allowed": false
+    },
+    {
+      "name": "Expires",
+      "allowed": false
+    },
+    {
+      "name": "Last-Modified",
+      "allowed": false
+    },
+    {
+      "name": "Server",
+      "allowed": false
+    },
+    {
+      "name": "Location",
+      "allowed": false
+    },
+    {
+      "name": "ETag",
+      "allowed": false
+    },
+    {
+      "name": "Retry-After",
+      "allowed": false
+    },
+    {
+      "name": "WWW-Authenticate",
+      "allowed": false
+    },
+    {
+      "name": "Accept-Ranges",
+      "allowed": false
+    },
+    {
+      "name": "Age",
+      "allowed": false
+    },
+    {
+      "name": "Vary",
+      "allowed": false
+    },
+    {
+      "name": "Host",
+      "allowed": false
+    },
+    {
+      "name": "Connection",
+      "allowed": false
+    },
+    {
+      "name": "Keep-Alive",
+      "allowed": false
+    },
+    {
+      "name": "Transfer-Encoding",
+      "allowed": false
+    },
+    {
+      "name": "TE",
+      "allowed": false
+    },
+    {
+      "name": "Trailer",
+      "allowed": false
+    },
+    {
+      "name": "Upgrade",
+      "allowed": false
+    },
+    {
+      "name": "Expect",
+      "allowed": false
+    },
+    {
+      "name": "Proxy-Authorization",
+      "allowed": false
+    },
+    {
+      "name": "Proxy-Authenticate",
+      "allowed": false
+    },
+    {
+      "name": "Proxy-Connection",
+      "allowed": false
+    },
+    {
+      "name": "X Api",
+      "allowed": false
+    },
+    {
+      "name": "X:Api",
+      "allowed": false
+    },
+    {
+      "name": "X-Api-Key\r\nX-Injected",
+      "allowed": false
+    },
+    {
+      "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "allowed": false
+    },
+    {
+      "name": "X-é",
+      "allowed": false
+    }
+  ],
+  "endpoints": [
+    {
+      "url": "https://splunk.example.test/services/collector/event",
+      "allowInsecureLoopback": false,
+      "valid": true
+    },
+    {
+      "url": "https://localhost:8088/x",
+      "allowInsecureLoopback": false,
+      "valid": true
+    },
+    {
+      "url": "http://127.0.0.1:8088/x",
+      "allowInsecureLoopback": true,
+      "valid": true
+    },
+    {
+      "url": "http://127.0.0.2:8088/x",
+      "allowInsecureLoopback": true,
+      "valid": true
+    },
+    {
+      "url": "http://[::1]:8088/x",
+      "allowInsecureLoopback": true,
+      "valid": true
+    },
+    {
+      "url": "http://localhost:8088/x",
+      "allowInsecureLoopback": true,
+      "valid": false
+    },
+    {
+      "url": "http://LOCALHOST:8088/x",
+      "allowInsecureLoopback": true,
+      "valid": false
+    },
+    {
+      "url": "http://[::ffff:127.0.0.1]:8088/x",
+      "allowInsecureLoopback": true,
+      "valid": false
+    },
+    {
+      "url": "http://10.0.0.1:8088/x",
+      "allowInsecureLoopback": true,
+      "valid": false
+    },
+    {
+      "url": "http://splunk.example.test:8088/x",
+      "allowInsecureLoopback": true,
+      "valid": false
+    },
+    {
+      "url": "http://127.0.0.1:8088/x",
+      "allowInsecureLoopback": false,
+      "valid": false
     }
   ]
 }

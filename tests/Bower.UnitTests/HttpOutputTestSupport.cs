@@ -146,6 +146,16 @@ internal sealed class TestCertificateAuthority : IDisposable
         return X509CertificateLoader.LoadPkcs12(withKey.Export(X509ContentType.Pkcs12), null);
     }
 
+    /// <summary>An intermediate CA certificate issued by this authority (no key kept).</summary>
+    public X509Certificate2 IssueIntermediate()
+    {
+        using ECDsa intermediateKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        CertificateRequest request = new("CN=Bower HTTP Output Test Intermediate", intermediateKey, HashAlgorithmName.SHA256);
+        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
+        request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true));
+        return request.Create(Certificate, DateTimeOffset.UtcNow.AddHours(-1), DateTimeOffset.UtcNow.AddDays(7), RandomNumberGenerator.GetBytes(8));
+    }
+
     public void Dispose()
     {
         Certificate.Dispose();

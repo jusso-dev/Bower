@@ -96,7 +96,8 @@ impl HttpOutputOptions {
         if !is_valid_endpoint(&self.endpoint, self.allow_insecure_loopback) {
             return Err(invalid(
                 "BOWER_HTTP_URL must be an absolute https:// URL with a host and no credentials, query or \
-                 fragment; http:// is allowed only to a loopback host with BOWER_HTTP_ALLOW_INSECURE_LOOPBACK=true.",
+                 fragment; http:// is allowed only to a loopback IP address (127.0.0.0/8 or ::1) with \
+                 BOWER_HTTP_ALLOW_INSECURE_LOOPBACK=true.",
             ));
         }
         if self.format == HttpOutputFormat::SplunkHec && self.authorization_header.is_some() {
@@ -172,18 +173,19 @@ pub fn is_valid_endpoint(endpoint: &Url, allow_insecure_loopback: bool) -> bool 
     }
     match endpoint.scheme() {
         "https" => true,
-        "http" => allow_insecure_loopback && is_loopback(host),
+        "http" => allow_insecure_loopback && is_loopback_address(host),
         _ => false,
     }
 }
 
-/// C# `IsLoopback`: `localhost` or a loopback IP address (brackets trimmed).
-pub fn is_loopback(host: &str) -> bool {
-    host.eq_ignore_ascii_case("localhost")
-        || host
-            .trim_matches(['[', ']'])
-            .parse::<std::net::IpAddr>()
-            .is_ok_and(|address| address.is_loopback())
+/// C# `IsLoopbackAddress`: a loopback IP literal, 127.0.0.0/8 or `::1` (brackets trimmed).
+/// Never a name such as `localhost`, which resolution or a hosts file could send elsewhere.
+pub fn is_loopback_address(host: &str) -> bool {
+    match host.trim_matches(['[', ']']).parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(address)) => address.octets()[0] == 127,
+        Ok(std::net::IpAddr::V6(address)) => address == std::net::Ipv6Addr::LOCALHOST,
+        Err(_) => false,
+    }
 }
 
 /// C# `IsValidToken`: printable ASCII without spaces, at most 4096 characters.
@@ -193,23 +195,44 @@ pub fn is_valid_token(token: &str) -> bool {
         && token.bytes().all(|byte| (b'!'..=b'~').contains(&byte))
 }
 
-const RESERVED_HEADERS: &[&str] = &[
+/// C# `ReservedHeaders`: header names that cannot carry the token: hop-by-hop and
+/// framing headers, proxy credentials, content headers (.NET refuses them on request
+/// headers) and response-only headers.
+pub const RESERVED_HEADERS: &[&str] = &[
     "host",
-    "content-length",
-    "content-type",
-    "content-encoding",
-    "transfer-encoding",
     "connection",
-    "upgrade",
+    "keep-alive",
+    "proxy-connection",
+    "transfer-encoding",
     "te",
     "trailer",
-    "keep-alive",
+    "upgrade",
     "expect",
     "proxy-authorization",
-    "proxy-connection",
+    "proxy-authenticate",
+    "allow",
+    "content-disposition",
+    "content-encoding",
+    "content-language",
+    "content-length",
+    "content-location",
+    "content-md5",
+    "content-range",
+    "content-type",
+    "expires",
+    "last-modified",
+    "accept-ranges",
+    "age",
+    "etag",
+    "location",
+    "retry-after",
+    "server",
+    "vary",
+    "www-authenticate",
 ];
 
-fn is_allowed_header_name(name: &str) -> bool {
+/// C# `IsAllowedHeaderName`: whether `BOWER_HTTP_AUTH_HEADER` may name this header.
+pub fn is_allowed_header_name(name: &str) -> bool {
     (1..=64).contains(&name.chars().count())
         && !RESERVED_HEADERS.contains(&name.to_ascii_lowercase().as_str())
         && name

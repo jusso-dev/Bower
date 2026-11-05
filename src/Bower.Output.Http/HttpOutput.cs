@@ -28,7 +28,10 @@ public sealed partial class HttpOutput : IOutputAdapter, IDisposable
     /// <summary>Largest response body read (HEC replies are a few dozen bytes).</summary>
     public const int MaximumResponseBytes = 64 * 1024;
 
-    /// <summary>413 splits per delivery, so a hostile endpoint cannot multiply requests.</summary>
+    /// <summary>
+    /// Bisections (ambiguous 400/422 and 413) per delivery, so a hostile endpoint cannot
+    /// multiply requests. Batches left when it runs out are held, not dead-lettered.
+    /// </summary>
     public const int SplitBudget = 16;
 
     public const string SplunkHecContentType = "application/json; charset=utf-8";
@@ -69,6 +72,16 @@ public sealed partial class HttpOutput : IOutputAdapter, IDisposable
                 ? ("Authorization", "Bearer " + token)
                 : (options.AuthorizationHeader, token);
         hecMetadata = HecMetadata(options);
+        using (HttpRequestMessage probe = new())
+        {
+            // Fail closed: a header .NET refuses (a content header, for example) would
+            // otherwise be dropped and the request sent without the token.
+            if (!probe.Headers.TryAddWithoutValidation(authorizationName, authorizationValue))
+            {
+                throw new InvalidOperationException("BOWER_HTTP_AUTH_HEADER cannot carry the token on an HTTP request.");
+            }
+        }
+
         client = new HttpClient(handler ?? CreateHandler(options)) { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
     }
 
@@ -87,11 +100,12 @@ public sealed partial class HttpOutput : IOutputAdapter, IDisposable
     {
         ArgumentNullException.ThrowIfNull(events);
         List<DeliveryFailure> failures = [];
-        List<List<Record>> pending = [];
+        List<(int Lineage, List<Record> Batch)> pending = [];
         List<Record> current = [];
         int bytes = 0;
-        foreach (QueuedEvent item in events)
+        for (int index = 0; index < events.Count; index++)
         {
+            QueuedEvent item = events[index];
             byte[]? record = Encode(item, out string? poison);
             if (record is null)
             {
@@ -100,35 +114,40 @@ public sealed partial class HttpOutput : IOutputAdapter, IDisposable
                 continue;
             }
 
-            if (record.Length > options.MaximumBatchBytes)
+            // Every record is followed by a newline, which counts against the cap.
+            int length = record.Length + 1;
+            if (length > options.MaximumBatchBytes)
             {
                 failures.Add(new DeliveryFailure(item.EventId, "payload-too-large", false, null));
                 continue;
             }
 
             if (current.Count > 0
-                && (current.Count == options.MaximumBatchEvents || bytes + record.Length > options.MaximumBatchBytes))
+                && (current.Count == options.MaximumBatchEvents || bytes + length > options.MaximumBatchBytes))
             {
-                pending.Add(current);
+                pending.Add((pending.Count, current));
                 current = [];
                 bytes = 0;
             }
 
-            current.Add(new Record(item.EventId, record));
-            bytes += record.Length;
+            current.Add(new Record(index, item.EventId, record));
+            bytes += length;
         }
 
         if (current.Count > 0)
         {
-            pending.Add(current);
+            pending.Add((pending.Count, current));
         }
 
         List<string> acknowledged = [];
+        SortedDictionary<int, DeliveryFailure> sent = [];
+        HashSet<int> acceptedLineages = [];
+        List<(int Lineage, Record Record, DeliveryFailure Held)> isolated = [];
         int splits = SplitBudget;
         for (int index = 0; index < pending.Count; index++)
         {
-            List<Record> batch = pending[index];
-            (int Status, DeliveryFailure? Failure) outcome;
+            (int lineage, List<Record> batch) = pending[index];
+            (int Status, DeliveryFailure? Failure, bool Isolate) outcome;
             try
             {
                 outcome = await SendAsync(batch, cancellationToken);
@@ -136,53 +155,68 @@ public sealed partial class HttpOutput : IOutputAdapter, IDisposable
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested && acknowledged.Count > 0)
             {
                 // Keep the acknowledged batches; never replay known acceptances.
-                foreach (Record record in pending.Skip(index).SelectMany(item => item))
+                foreach (Record record in pending.Skip(index).SelectMany(item => item.Batch))
                 {
-                    failures.Add(new DeliveryFailure(record.EventId, "destination-http-cancelled", true, null));
+                    sent[record.Index] = new DeliveryFailure(record.EventId, "destination-http-cancelled", true, null);
                 }
 
                 break;
             }
 
-            if (outcome.Failure is null)
+            if (outcome.Failure is not { } failure)
             {
                 acknowledged.AddRange(batch.Select(record => record.EventId));
+                acceptedLineages.Add(lineage);
                 continue;
             }
 
-            if (outcome.Status == 413 && batch.Count > 1 && splits > 0)
+            if (!outcome.Isolate)
             {
-                // Too large for this endpoint: send the halves in order instead.
-                splits--;
-                int middle = batch.Count / 2;
-                pending.Insert(index + 1, batch.GetRange(0, middle));
-                pending.Insert(index + 2, batch.GetRange(middle, batch.Count - middle));
-                continue;
-            }
-
-            // A multi-record 413 past the split budget retries (and splits again) next time;
-            // only a single record the endpoint refuses as too large is dead-lettered.
-            DeliveryFailure failure = outcome.Status == 413 && batch.Count > 1
-                ? outcome.Failure with { IsRetryable = true }
-                : outcome.Failure;
-            foreach (Record record in batch)
-            {
-                failures.Add(failure with { EventId = record.EventId });
-            }
-
-            if (failure.IsDestinationFailure)
-            {
-                // The endpoint is unavailable or refuses this collector: keep the rest queued
-                // behind the destination circuit instead of sending them into the same failure.
-                foreach (Record record in pending.Skip(index + 1).SelectMany(item => item))
+                // The endpoint is unavailable, refuses this collector or is misconfigured:
+                // hold this batch and the rest behind the destination circuit instead of
+                // sending them into the same failure.
+                foreach (Record record in pending.Skip(index).SelectMany(item => item.Batch))
                 {
-                    failures.Add(failure with { EventId = record.EventId });
+                    sent[record.Index] = failure with { EventId = record.EventId };
                 }
 
                 break;
+            }
+
+            // An ambiguous 400 or 422, or a 413, is not proof of record poison. Bounded
+            // bisection lets valid siblings progress; a single record is dead-lettered only
+            // when a sibling from the same original batch was accepted.
+            if (batch.Count > 1 && splits > 0)
+            {
+                splits--;
+                int middle = batch.Count / 2;
+                pending.Insert(index + 1, (lineage, batch.GetRange(0, middle)));
+                pending.Insert(index + 2, (lineage, batch.GetRange(middle, batch.Count - middle)));
+                continue;
+            }
+
+            if (batch.Count == 1)
+            {
+                isolated.Add((lineage, batch[0], failure));
+                continue;
+            }
+
+            // Out of split budget: hold the batch; the next delivery splits it again without
+            // spending attempt budgets.
+            foreach (Record record in batch)
+            {
+                sent[record.Index] = failure with { EventId = record.EventId };
             }
         }
 
+        foreach ((int lineage, Record record, DeliveryFailure held) in isolated)
+        {
+            sent[record.Index] = acceptedLineages.Contains(lineage)
+                ? new DeliveryFailure(record.EventId, held.Code["destination-".Length..], false, null)
+                : held with { EventId = record.EventId };
+        }
+
+        failures.AddRange(sent.Values);
         return new DeliveryResult(acknowledged, failures, acknowledged.Count == 0 ? null : Acknowledgement);
     }
 
@@ -271,34 +305,38 @@ public sealed partial class HttpOutput : IOutputAdapter, IDisposable
     }
 
     /// <summary>
+    /// HEC codes that mean the destination or token is misconfigured, not that an event is
+    /// bad (Splunk "Troubleshoot HTTP Event Collector"): 7 incorrect index, 10 data channel
+    /// is missing, 11 invalid data channel, 14 ACK is disabled, 16 query string
+    /// authorization is not enabled, 21 invalid token, 22 token disabled (all HTTP 400).
+    /// </summary>
+    public static bool IsHecConfigurationCode(int code) => code is 7 or 10 or 11 or 14 or 16 or 21 or 22;
+
+    /// <summary>
     /// The outcome of one response: accepted (no failure) or a bounded failure code. HEC
     /// error codes are added as <c>:hec-&lt;n&gt;</c> metadata; response text never is.
+    /// Every failure is held as <c>destination-http-*</c>. <c>Isolate</c> marks the
+    /// ambiguous ones (400 without a configuration code, 422, 413): the batch is bisected,
+    /// and a single event becomes <c>http-&lt;status&gt;</c> poison only when a sibling from
+    /// the same original batch was accepted.
     /// </summary>
-    public static (int Status, DeliveryFailure? Failure) Classify(
+    public static (int Status, DeliveryFailure? Failure, bool Isolate) Classify(
         HttpOutputFormat format, int status, DateTimeOffset? retryAfter, byte[]? body)
     {
         int? hec = format == HttpOutputFormat.SplunkHec ? ReadHecCode(body) : null;
         if (status is >= 200 and < 300)
         {
             return format == HttpOutputFormat.Ndjson || hec == 0
-                ? (status, null)
+                ? (status, null, false)
                 // A 2xx that is not a HEC success (a captive portal, a proxy page) is not acceptance.
-                : (status, new DeliveryFailure(string.Empty, "destination-http-response-invalid", true, null));
+                : (status, new DeliveryFailure(string.Empty, "destination-http-response-invalid", true, null), false);
         }
 
         string suffix = hec is { } code ? string.Create(CultureInfo.InvariantCulture, $":hec-{code}") : string.Empty;
-        string text = status.ToString(CultureInfo.InvariantCulture);
-        if (status == 413)
-        {
-            return (status, new DeliveryFailure(string.Empty, $"http-413{suffix}", false, null));
-        }
-
-        // Endpoint-wide refusals and outages hold the stream without spending poison budgets:
-        // a wrong or revoked token (401/403) or path (404) is fixed by the operator, not the event.
-        bool destination = status is < 200 or (>= 300 and < 400) or 401 or 403 or 404 or 408 or 429 or >= 500;
-        return destination
-            ? (status, new DeliveryFailure(string.Empty, $"destination-http-{text}{suffix}", true, retryAfter))
-            : (status, new DeliveryFailure(string.Empty, $"http-{text}{suffix}", false, null));
+        bool isolate = status is 413 or 422 || (status == 400 && !(hec is { } value && IsHecConfigurationCode(value)));
+        return (status,
+            new DeliveryFailure(string.Empty, $"destination-http-{status.ToString(CultureInfo.InvariantCulture)}{suffix}", true, retryAfter),
+            isolate);
     }
 
     /// <summary>The integer HEC <c>code</c> (0-99) of a JSON object body, or null.</summary>
@@ -336,7 +374,7 @@ public sealed partial class HttpOutput : IOutputAdapter, IDisposable
         return at is null || at <= now ? null : at > now.Add(MaximumRetryAfter) ? now.Add(MaximumRetryAfter) : at;
     }
 
-    private async Task<(int Status, DeliveryFailure? Failure)> SendAsync(List<Record> batch, CancellationToken cancellationToken)
+    private async Task<(int Status, DeliveryFailure? Failure, bool Isolate)> SendAsync(List<Record> batch, CancellationToken cancellationToken)
     {
         byte[] body = Join(batch.Select(record => record.Utf8Json));
         using HttpRequestMessage request = new(HttpMethod.Post, options.Endpoint)
@@ -350,10 +388,11 @@ public sealed partial class HttpOutput : IOutputAdapter, IDisposable
             request.Content.Headers.ContentEncoding.Add("gzip");
         }
 
-        request.Headers.TryAddWithoutValidation(authorizationName, authorizationValue);
-        if (options.HecChannel is not null)
+        if (!request.Headers.TryAddWithoutValidation(authorizationName, authorizationValue)
+            || (options.HecChannel is not null && !request.Headers.TryAddWithoutValidation(ChannelHeader, options.HecChannel)))
         {
-            request.Headers.TryAddWithoutValidation(ChannelHeader, options.HecChannel);
+            // Never send a request without its token (validated at start-up, checked again here).
+            throw new InvalidOperationException("The HTTP output could not add its request headers.");
         }
 
         // One deadline from connect to the end of the bounded body read, so a stalled
@@ -376,12 +415,12 @@ public sealed partial class HttpOutput : IOutputAdapter, IDisposable
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return (0, new DeliveryFailure(string.Empty, "destination-http-timeout", true, null));
+            return (0, new DeliveryFailure(string.Empty, "destination-http-timeout", true, null), false);
         }
         catch (Exception exception) when (exception is HttpRequestException or IOException)
         {
             // Transport and TLS failures (an untrusted certificate included). Text is never kept.
-            return (0, new DeliveryFailure(string.Empty, "destination-http-unavailable", true, null));
+            return (0, new DeliveryFailure(string.Empty, "destination-http-unavailable", true, null), false);
         }
 
         return Classify(options.Format, status, retryAfter, response);
@@ -519,10 +558,14 @@ public sealed partial class HttpOutput : IOutputAdapter, IDisposable
         return buffer.WrittenSpan.ToArray();
     }
 
-    private static SocketsHttpHandler CreateHandler(HttpOutputOptions options)
+    internal static SocketsHttpHandler CreateHandler(HttpOutputOptions options)
     {
         SocketsHttpHandler handler = new()
         {
+            // Plain http is allowed only to a loopback address; a proxy would carry it (and
+            // the token) off the host. HTTPS keeps the standard proxy variables, like the
+            // Azure output.
+            UseProxy = options.Endpoint.Scheme == Uri.UriSchemeHttps,
             // A redirect is a misconfigured URL; it would also resend the token elsewhere.
             AllowAutoRedirect = false,
             AutomaticDecompression = DecompressionMethods.None,
@@ -588,14 +631,25 @@ public sealed partial class HttpOutput : IOutputAdapter, IDisposable
             roots.Clear();
         }
 
-        return roots.Count > 0
-            ? roots
-            : throw new InvalidOperationException("BOWER_HTTP_CA_BUNDLE must name a readable PEM file of CA certificates.");
+        if (roots.Count == 0)
+        {
+            throw new InvalidOperationException("BOWER_HTTP_CA_BUNDLE must name a readable PEM file of CA certificates.");
+        }
+
+        // Custom root trust anchors only at self-signed roots; an intermediate here would
+        // be trusted by the Rust collector but not by this one.
+        if (roots.Any(root => !root.SubjectName.RawData.AsSpan().SequenceEqual(root.IssuerName.RawData)))
+        {
+            throw new InvalidOperationException(
+                "BOWER_HTTP_CA_BUNDLE must hold only self-signed root CA certificates, not intermediates.");
+        }
+
+        return roots;
     }
 
     [GeneratedRegex(@"\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,7})?(Z|[+-][0-9]{2}:[0-9]{2})\z",
         RegexOptions.CultureInvariant)]
     private static partial Regex StrictTimestamp();
 
-    private sealed record Record(string EventId, byte[] Utf8Json);
+    private sealed record Record(int Index, string EventId, byte[] Utf8Json);
 }

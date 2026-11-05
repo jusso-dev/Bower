@@ -265,17 +265,33 @@ fn worker_persists_only_bounded_http_output_codes() {
 
 // ------------------------------------------------------------------ queue integration
 
+type Responder = dyn Fn(&str) -> (u16, &'static str) + Send + Sync;
+
 #[derive(Clone)]
 struct Endpoint {
-    replies: Arc<Mutex<(u16, &'static str)>>,
+    responder: Arc<Mutex<Arc<Responder>>>,
     authorizations: Arc<Mutex<Vec<String>>>,
     port: u16,
+}
+
+impl Endpoint {
+    fn reply(&self, responder: impl Fn(&str) -> (u16, &'static str) + Send + Sync + 'static) {
+        *self.responder.lock().unwrap() = Arc::new(responder);
+    }
+
+    fn url(&self) -> reqwest::Url {
+        reqwest::Url::parse(&format!(
+            "http://127.0.0.1:{}/services/collector/event",
+            self.port
+        ))
+        .unwrap()
+    }
 }
 
 async fn handle(
     State(endpoint): State<Endpoint>,
     headers: axum::http::HeaderMap,
-    _: Bytes,
+    body: Bytes,
 ) -> Response {
     endpoint.authorizations.lock().unwrap().push(
         headers
@@ -284,17 +300,21 @@ async fn handle(
             .unwrap_or_default()
             .to_string(),
     );
-    let (status, body) = *endpoint.replies.lock().unwrap();
+    let responder = Arc::clone(&endpoint.responder.lock().unwrap());
+    let (status, body) = responder(&String::from_utf8_lossy(&body));
     Response::builder()
         .status(StatusCode::from_u16(status).unwrap())
         .body(Body::from(body))
         .unwrap()
 }
 
+const SUCCESS: &str = r#"{"text":"Success","code":0}"#;
+
 async fn endpoint(status: u16, body: &'static str) -> Endpoint {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let responder: Arc<Responder> = Arc::new(move |_| (status, body));
     let endpoint = Endpoint {
-        replies: Arc::new(Mutex::new((status, body))),
+        responder: Arc::new(Mutex::new(responder)),
         authorizations: Arc::default(),
         port: listener.local_addr().unwrap().port(),
     };
@@ -305,6 +325,18 @@ async fn endpoint(status: u16, body: &'static str) -> Endpoint {
 
 #[derive(Clone)]
 struct FakeClock(Arc<Mutex<Timestamp>>);
+
+impl FakeClock {
+    fn new() -> Self {
+        Self(Arc::new(Mutex::new(
+            bower_contracts::time::parse("2026-11-05T01:02:03Z").unwrap(),
+        )))
+    }
+
+    fn advance(&self, by: chrono::TimeDelta) {
+        *self.0.lock().unwrap() += by;
+    }
+}
 
 impl Clock for FakeClock {
     fn utc_now(&self) -> Timestamp {
@@ -326,21 +358,7 @@ impl std::io::Write for Captured {
     }
 }
 
-#[tokio::test]
-async fn queue_keeps_retryable_failures_and_dead_letters_permanent_ones_without_logging_the_token()
-{
-    const TOKEN: &str = "hec-token-0123456789abcdef";
-    let captured = Captured::default();
-    let writer = captured.clone();
-    let subscriber = tracing_subscriber::fmt()
-        .with_ansi(false)
-        .with_writer(move || writer.clone())
-        .finish();
-    let _guard = tracing::subscriber::set_default(subscriber);
-    let directory = tempfile::tempdir().unwrap();
-    let clock = FakeClock(Arc::new(Mutex::new(
-        bower_contracts::time::parse("2026-11-05T01:02:03Z").unwrap(),
-    )));
+fn store(directory: &tempfile::TempDir, clock: &FakeClock) -> Arc<SqliteEventStore> {
     let store = Arc::new(
         SqliteEventStore::new(
             directory.path().join("queue.db"),
@@ -351,10 +369,14 @@ async fn queue_keeps_retryable_failures_and_dead_letters_permanent_ones_without_
     );
     store.initialize().unwrap();
     store
+}
+
+fn enqueue(store: &SqliteEventStore, clock: &FakeClock, id: &str) {
+    store
         .enqueue(&QueuedEvent {
-            event_id: "q1".into(),
-            fingerprint: "f".into(),
-            payload: r#"{"eventId":"q1"}"#.into(),
+            event_id: id.into(),
+            fingerprint: format!("sha256:{id}"),
+            payload: format!(r#"{{"eventId":"{id}"}}"#),
             received_at: clock.utc_now(),
             state: QueueState::Queued,
             delivery_attempts: 0,
@@ -362,42 +384,89 @@ async fn queue_keeps_retryable_failures_and_dead_letters_permanent_ones_without_
             suppression: None,
         })
         .unwrap();
-    let server = endpoint(503, r#"{"text":"Server is busy","code":9}"#).await;
-    let mut options = HttpOutputOptions::new(
-        reqwest::Url::parse(&format!(
-            "http://127.0.0.1:{}/services/collector/event",
-            server.port
-        ))
-        .unwrap(),
-        "edge-01",
-    );
+}
+
+fn worker(
+    store: &Arc<SqliteEventStore>,
+    server: &Endpoint,
+    token: &str,
+    clock: &FakeClock,
+    maximum_delivery_attempts: i32,
+) -> QueueDeliveryWorker<HttpOutput> {
+    let mut options = HttpOutputOptions::new(server.url(), "edge-01");
     options.allow_insecure_loopback = true;
-    let output = HttpOutput::new(options, TOKEN)
+    let output = HttpOutput::new(options, token)
         .unwrap()
         .with_clock(Arc::new(clock.clone()));
-    let worker = QueueDeliveryWorker::new(
+    QueueDeliveryWorker::new(
         store.clone(),
         Arc::new(output),
         Arc::new(clock.clone()),
-        QueueDeliveryOptions::default(),
-    );
+        QueueDeliveryOptions {
+            maximum_delivery_attempts,
+            ..QueueDeliveryOptions::default()
+        },
+    )
+}
+
+#[tokio::test]
+async fn queue_holds_unproven_failures_and_dead_letters_only_isolated_poison_without_logging_the_token()
+ {
+    const TOKEN: &str = "hec-token-0123456789abcdef";
+    let captured = Captured::default();
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new();
+    let store = store(&directory, &clock);
+    enqueue(&store, &clock, "q1");
+    let server = endpoint(503, r#"{"text":"Server is busy","code":9}"#).await;
+    let worker = worker(&store, &server, TOKEN, &clock, 20);
     let (_owner, shutdown) = shutdown::channel();
 
     worker.deliver_once(&shutdown).await.unwrap();
-    let retrying = store.snapshot().unwrap();
-    *clock.0.lock().unwrap() += chrono::TimeDelta::hours(2);
-    *server.replies.lock().unwrap() = (400, r#"{"text":"Incorrect index","code":7}"#);
+    let busy = store.snapshot().unwrap();
+    // Alone, a 400 is not proof the event is bad: it stays queued.
+    clock.advance(chrono::TimeDelta::hours(2));
+    server.reply(|body| {
+        if body.contains("\"q1\"") {
+            (400, r#"{"text":"Invalid data format","code":6}"#)
+        } else {
+            (200, SUCCESS)
+        }
+    });
     worker.deliver_once(&shutdown).await.unwrap();
-    let dead_lettered = store.snapshot().unwrap();
+    let alone = store.snapshot().unwrap();
+    // With an accepted sibling in the same request lineage, it is isolated as poison.
+    enqueue(&store, &clock, "q2");
+    clock.advance(chrono::TimeDelta::hours(2));
+    worker.deliver_once(&shutdown).await.unwrap();
+    let isolated = store.snapshot().unwrap();
     let records = store.list_dead_lettered(10).unwrap();
 
-    assert_eq!(retrying.retrying, 1);
-    assert_eq!(retrying.delivered, 0);
-    assert_eq!(dead_lettered.dead_lettered, 1);
-    assert_eq!(records[0].failure_code.as_deref(), Some("http-400:hec-7"));
+    assert_eq!((busy.retrying, busy.delivered), (1, 0));
+    assert_eq!((alone.retrying, alone.dead_lettered), (1, 0));
+    assert_eq!(
+        (
+            isolated.dead_lettered,
+            isolated.delivered,
+            isolated.retrying
+        ),
+        (1, 1, 0)
+    );
+    assert_eq!(records[0].event_id, "q1");
+    assert_eq!(records[0].failure_code.as_deref(), Some("http-400:hec-6"));
     let logs = String::from_utf8_lossy(&captured.0.lock().unwrap()).into_owned();
     assert!(
         logs.contains("failure_code=\"destination-http-503:hec-9\""),
+        "{logs}"
+    );
+    assert!(
+        logs.contains("failure_code=\"destination-http-400:hec-6\""),
         "{logs}"
     );
     assert!(!logs.contains(TOKEN));
@@ -412,11 +481,72 @@ async fn queue_keeps_retryable_failures_and_dead_letters_permanent_ones_without_
 }
 
 #[tokio::test]
+async fn queue_single_event_only_endpoint_delivers_all_five_hundred_over_passes_without_dead_letters()
+ {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new();
+    let store = store(&directory, &clock);
+    for index in 0..500 {
+        enqueue(&store, &clock, &format!("e{index}"));
+    }
+    let server = endpoint(200, SUCCESS).await;
+    server.reply(|body| {
+        if body.lines().count() > 1 {
+            (413, "")
+        } else {
+            (200, SUCCESS)
+        }
+    });
+    // A tiny attempt budget: split deferrals must never spend it.
+    let worker = worker(&store, &server, "token-1", &clock, 2);
+    let (_owner, shutdown) = shutdown::channel();
+
+    let mut passes = 0;
+    let mut snapshot = store.snapshot().unwrap();
+    while snapshot.delivered < 500 && passes < 200 {
+        passes += 1;
+        worker.deliver_once(&shutdown).await.unwrap();
+        clock.advance(chrono::TimeDelta::minutes(2));
+        snapshot = store.snapshot().unwrap();
+    }
+
+    assert_eq!(snapshot.delivered, 500);
+    assert_eq!(snapshot.dead_lettered, 0);
+    assert!(
+        passes > 1,
+        "the split budget must have forced more than one pass"
+    );
+}
+
+#[tokio::test]
+async fn queue_always_too_large_endpoint_never_dead_letters() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new();
+    let store = store(&directory, &clock);
+    for index in 0..50 {
+        enqueue(&store, &clock, &format!("e{index}"));
+    }
+    let server = endpoint(413, "").await;
+    let worker = worker(&store, &server, "token-1", &clock, 2);
+    let (_owner, shutdown) = shutdown::channel();
+
+    for _ in 0..5 {
+        worker.deliver_once(&shutdown).await.unwrap();
+        clock.advance(chrono::TimeDelta::minutes(2));
+    }
+
+    let snapshot = store.snapshot().unwrap();
+    assert_eq!(snapshot.dead_lettered, 0);
+    assert_eq!(snapshot.delivered, 0);
+    assert_eq!(snapshot.retrying, 50);
+}
+
+#[tokio::test]
 async fn status_reports_the_http_output_without_the_token() {
     const TOKEN: &str = "hec-token-fedcba9876543210";
     const INGEST: &str = "http-output-ingest-token-0123456789abcdef";
     let directory = tempfile::tempdir().unwrap();
-    let server = endpoint(200, r#"{"text":"Success","code":0}"#).await;
+    let server = endpoint(200, SUCCESS).await;
     let token_file = directory.path().join("hec-token");
     std::fs::write(&token_file, format!("{TOKEN}\n")).unwrap();
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
@@ -429,13 +559,7 @@ async fn status_reports_the_http_output_without_the_token() {
     settings.ingest_token = Some(INGEST.into());
     settings.single_trust_domain = true;
     settings.output_type = "http".into();
-    let mut http = bower_collector::http_output::HttpOutputSettings::new(Some(
-        reqwest::Url::parse(&format!(
-            "http://127.0.0.1:{}/services/collector/event",
-            server.port
-        ))
-        .unwrap(),
-    ));
+    let mut http = bower_collector::http_output::HttpOutputSettings::new(Some(server.url()));
     http.token_file = Some(token_file);
     http.allow_insecure_loopback = true;
     settings.http_output = Some(http);

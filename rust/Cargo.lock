@@ -1051,6 +1051,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-rustls",
+ "x509-cert",
 ]
 
 [[package]]

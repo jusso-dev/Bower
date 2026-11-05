@@ -5,6 +5,7 @@
 //! bounded code. The token is held as a sensitive header value and never appears in
 //! failures, errors or logs.
 
+use std::collections::{BTreeMap, HashSet};
 use std::io::Write as _;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
@@ -23,7 +24,8 @@ use crate::options::{ConfigError, HttpOutputFormat, HttpOutputOptions, is_valid_
 pub const OUTPUT_ID: &str = "http";
 /// Largest response body read (HEC replies are a few dozen bytes).
 pub const MAXIMUM_RESPONSE_BYTES: usize = 64 * 1024;
-/// 413 splits per delivery, so a hostile endpoint cannot multiply requests.
+/// Bisections (ambiguous 400/422 and 413) per delivery, so a hostile endpoint cannot
+/// multiply requests. Batches left when it runs out are held, not dead-lettered.
 pub const SPLIT_BUDGET: usize = 16;
 pub const SPLUNK_HEC_CONTENT_TYPE: &str = "application/json; charset=utf-8";
 pub const NDJSON_CONTENT_TYPE: &str = "application/x-ndjson; charset=utf-8";
@@ -82,6 +84,9 @@ impl HttpOutput {
             .connect_timeout(options.timeout.min(Duration::from_secs(10)))
             .timeout(options.timeout)
             .pool_idle_timeout(Duration::from_secs(60));
+        if !uses_proxy(&options) {
+            builder = builder.no_proxy();
+        }
         if let Some(path) = &options.ca_bundle_path {
             builder = builder.tls_certs_merge(read_ca_bundle(path)?);
         }
@@ -144,8 +149,8 @@ impl HttpOutput {
         Ok(record)
     }
 
-    async fn send(&self, batch: &[(String, Vec<u8>)]) -> (u16, Option<DeliveryFailure>) {
-        let body = join(batch.iter().map(|(_, record)| record.as_slice()));
+    async fn send(&self, batch: &[Record]) -> Outcome {
+        let body = join(batch.iter().map(|record| record.bytes.as_slice()));
         let mut request = self
             .client
             .post(self.options.endpoint.clone())
@@ -176,6 +181,7 @@ impl HttpOutput {
                     is_retryable: true,
                     retry_after: None,
                 }),
+                false,
             )
         };
         // Transport and TLS failures (an untrusted certificate included). Text is never kept.
@@ -207,10 +213,10 @@ impl OutputAdapter for HttpOutput {
 
     async fn deliver(&self, events: &[QueuedEvent]) -> DeliveryResult {
         let mut failures = Vec::new();
-        let mut pending: Vec<Vec<(String, Vec<u8>)>> = Vec::new();
-        let mut current: Vec<(String, Vec<u8>)> = Vec::new();
+        let mut pending: Vec<(usize, Vec<Record>)> = Vec::new();
+        let mut current: Vec<Record> = Vec::new();
         let mut bytes = 0usize;
-        for item in events {
+        for (index, item) in events.iter().enumerate() {
             let record = match self.encode(item) {
                 Ok(record) => record,
                 Err(poison) => {
@@ -219,6 +225,7 @@ impl OutputAdapter for HttpOutput {
                     continue;
                 }
             };
+            // Every record is followed by a newline, which counts against the cap.
             let length = record.len() + 1;
             if length > self.options.maximum_batch_bytes {
                 failures.push(failure(&item.event_id, "payload-too-large", false, None));
@@ -228,61 +235,87 @@ impl OutputAdapter for HttpOutput {
                 && (current.len() == self.options.maximum_batch_events
                     || bytes + length > self.options.maximum_batch_bytes)
             {
-                pending.push(std::mem::take(&mut current));
+                pending.push((pending.len(), std::mem::take(&mut current)));
                 bytes = 0;
             }
-            current.push((item.event_id.clone(), record));
+            current.push(Record {
+                index,
+                event_id: item.event_id.clone(),
+                bytes: record,
+            });
             bytes += length;
         }
         if !current.is_empty() {
-            pending.push(current);
+            pending.push((pending.len(), current));
         }
 
         let mut acknowledged = Vec::new();
+        let mut sent: BTreeMap<usize, DeliveryFailure> = BTreeMap::new();
+        let mut accepted_lineages = HashSet::new();
+        let mut isolated: Vec<(usize, usize, String, DeliveryFailure)> = Vec::new();
         let mut splits = SPLIT_BUDGET;
         let mut index = 0;
         while index < pending.len() {
-            let (status, outcome) = self.send(&pending[index]).await;
-            let Some(outcome) = outcome else {
-                acknowledged.extend(pending[index].iter().map(|(id, _)| id.clone()));
+            let lineage = pending[index].0;
+            let (_, failure, isolate) = self.send(&pending[index].1).await;
+            let Some(failure) = failure else {
+                acknowledged.extend(
+                    pending[index]
+                        .1
+                        .iter()
+                        .map(|record| record.event_id.clone()),
+                );
+                accepted_lineages.insert(lineage);
                 index += 1;
                 continue;
             };
-            let count = pending[index].len();
-            if status == 413 && count > 1 && splits > 0 {
-                // Too large for this endpoint: send the halves in order instead.
-                splits -= 1;
-                let mut first = std::mem::take(&mut pending[index]);
-                let second = first.split_off(count / 2);
-                pending.splice(index + 1..index + 1, [first, second]);
-                index += 1;
-                continue;
-            }
-            // A multi-record 413 past the split budget retries (and splits again) next
-            // time; only a single record the endpoint refuses as too large is dead-lettered.
-            let outcome = DeliveryFailure {
-                is_retryable: outcome.is_retryable || (status == 413 && count > 1),
-                ..outcome
-            };
-            let stop = outcome.is_destination_failure();
-            let rest = if stop {
-                &pending[index..]
-            } else {
-                &pending[index..=index]
-            };
-            // The endpoint is unavailable or refuses this collector: keep the rest queued
-            // behind the destination circuit instead of sending them into the same failure.
-            for (id, _) in rest.iter().flatten() {
-                failures.push(DeliveryFailure {
-                    event_id: id.clone(),
-                    ..outcome.clone()
-                });
-            }
-            if stop {
+            if !isolate {
+                // The endpoint is unavailable, refuses this collector or is misconfigured:
+                // hold this batch and the rest behind the destination circuit instead of
+                // sending them into the same failure.
+                for record in pending[index..].iter().flat_map(|(_, batch)| batch) {
+                    sent.insert(record.index, with_event(&failure, &record.event_id));
+                }
                 break;
+            }
+            // An ambiguous 400 or 422, or a 413, is not proof of record poison. Bounded
+            // bisection lets valid siblings progress; a single record is dead-lettered
+            // only when a sibling from the same original batch was accepted.
+            let count = pending[index].1.len();
+            if count > 1 && splits > 0 {
+                splits -= 1;
+                let mut first = std::mem::take(&mut pending[index].1);
+                let second = first.split_off(count / 2);
+                pending.splice(index + 1..index + 1, [(lineage, first), (lineage, second)]);
+                index += 1;
+                continue;
+            }
+            if count == 1 {
+                let record = &pending[index].1[0];
+                isolated.push((lineage, record.index, record.event_id.clone(), failure));
+            } else {
+                // Out of split budget: hold the batch; the next delivery splits it again
+                // without spending attempt budgets.
+                for record in &pending[index].1 {
+                    sent.insert(record.index, with_event(&failure, &record.event_id));
+                }
             }
             index += 1;
         }
+        for (lineage, record, event_id, held) in isolated {
+            let outcome = if accepted_lineages.contains(&lineage) {
+                failure(
+                    &event_id,
+                    held.code.strip_prefix("destination-").unwrap_or(&held.code),
+                    false,
+                    None,
+                )
+            } else {
+                with_event(&held, &event_id)
+            };
+            sent.insert(record, outcome);
+        }
+        failures.extend(sent.into_values());
 
         DeliveryResult {
             destination_acknowledgement: (!acknowledged.is_empty())
@@ -293,6 +326,30 @@ impl OutputAdapter for HttpOutput {
             ..DeliveryResult::default()
         }
     }
+}
+
+/// One encoded record and its position in the delivery.
+struct Record {
+    index: usize,
+    event_id: String,
+    bytes: Vec<u8>,
+}
+
+/// Status, failure (`None` is accepted) and whether the failure is ambiguous (isolate).
+type Outcome = (u16, Option<DeliveryFailure>, bool);
+
+fn with_event(failure: &DeliveryFailure, event_id: &str) -> DeliveryFailure {
+    DeliveryFailure {
+        event_id: event_id.to_string(),
+        ..failure.clone()
+    }
+}
+
+/// C# `CreateHandler` `UseProxy`: plain http is allowed only to a loopback address, and a
+/// proxy would carry it (and the token) off the host. HTTPS keeps the standard proxy
+/// variables, like the Azure output.
+pub fn uses_proxy(options: &HttpOutputOptions) -> bool {
+    options.endpoint.scheme() == "https"
 }
 
 /// C# `Join`: every record followed by a newline.
@@ -335,53 +392,55 @@ pub fn event_time(time_generated: Option<&str>) -> Option<String> {
     ))
 }
 
+/// C# `IsHecConfigurationCode`: HEC codes that mean the destination or token is
+/// misconfigured, not that an event is bad (Splunk "Troubleshoot HTTP Event Collector"):
+/// 7 incorrect index, 10 data channel is missing, 11 invalid data channel, 14 ACK is
+/// disabled, 16 query string authorization is not enabled, 21 invalid token, 22 token
+/// disabled (all HTTP 400).
+pub fn is_hec_configuration_code(code: i32) -> bool {
+    matches!(code, 7 | 10 | 11 | 14 | 16 | 21 | 22)
+}
+
 /// C# `Classify`: accepted (no failure) or a bounded failure code. HEC error codes are
-/// added as `:hec-<n>` metadata; response text never is.
+/// added as `:hec-<n>` metadata; response text never is. Every failure is held as
+/// `destination-http-*`; the flag marks the ambiguous ones (400 without a configuration
+/// code, 422, 413) that are bisected, a single event becoming `http-<status>` poison only
+/// when a sibling from the same original batch was accepted.
 pub fn classify(
     format: HttpOutputFormat,
     status: u16,
     retry_after: Option<Timestamp>,
     body: Option<&[u8]>,
-) -> (u16, Option<DeliveryFailure>) {
+) -> Outcome {
     let hec = match format {
         HttpOutputFormat::SplunkHec => read_hec_code(body),
         HttpOutputFormat::Ndjson => None,
     };
     if (200..300).contains(&status) {
         return if format == HttpOutputFormat::Ndjson || hec == Some(0) {
-            (status, None)
+            (status, None, false)
         } else {
             // A 2xx that is not a HEC success (a captive portal, a proxy page) is not acceptance.
             (
                 status,
                 Some(failure("", "destination-http-response-invalid", true, None)),
+                false,
             )
         };
     }
     let suffix = hec.map(|code| format!(":hec-{code}")).unwrap_or_default();
-    if status == 413 {
-        return (
-            status,
-            Some(failure("", &format!("http-413{suffix}"), false, None)),
-        );
-    }
-    // Endpoint-wide refusals and outages hold the stream without spending poison budgets:
-    // a wrong or revoked token (401/403) or path (404) is fixed by the operator, not the event.
-    let destination = status < 200
-        || (300..400).contains(&status)
-        || matches!(status, 401 | 403 | 404 | 408 | 429)
-        || status >= 500;
-    let failure = if destination {
-        failure(
+    let isolate = matches!(status, 413 | 422)
+        || (status == 400 && !hec.is_some_and(is_hec_configuration_code));
+    (
+        status,
+        Some(failure(
             "",
             &format!("destination-http-{status}{suffix}"),
             true,
             retry_after,
-        )
-    } else {
-        failure("", &format!("http-{status}{suffix}"), false, None)
-    };
-    (status, Some(failure))
+        )),
+        isolate,
+    )
 }
 
 /// C# `ReadHecCode`: the integer HEC `code` (0-99) of a JSON object body (depth 64), or
@@ -546,6 +605,21 @@ fn read_ca_bundle(path: &std::path::Path) -> Result<Vec<reqwest::Certificate>, C
     let certificates = reqwest::Certificate::from_pem_bundle(&bytes).map_err(|_| invalid())?;
     if certificates.is_empty() {
         return Err(invalid());
+    }
+    // C# custom root trust anchors only at self-signed roots; an intermediate here would
+    // be trusted by this collector but not by the C# one.
+    use rustls::pki_types::CertificateDer;
+    use rustls::pki_types::pem::PemObject as _;
+    use x509_cert::der::Decode as _;
+    for der in CertificateDer::pem_slice_iter(&bytes) {
+        let der = der.map_err(|_| invalid())?;
+        let certificate = x509_cert::Certificate::from_der(&der).map_err(|_| invalid())?;
+        if certificate.tbs_certificate().subject() != certificate.tbs_certificate().issuer() {
+            return Err(ConfigError(
+                "BOWER_HTTP_CA_BUNDLE must hold only self-signed root CA certificates, not intermediates."
+                    .into(),
+            ));
+        }
     }
     Ok(certificates)
 }

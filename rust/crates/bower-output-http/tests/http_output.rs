@@ -14,7 +14,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
 use bower_contracts::time::Timestamp;
 use bower_contracts::{OutputAdapter, QueueState, QueuedEvent};
-use bower_output_http::output::{MAXIMUM_RESPONSE_BYTES, SPLIT_BUDGET, event_time};
+use bower_output_http::output::{MAXIMUM_RESPONSE_BYTES, SPLIT_BUDGET, event_time, uses_proxy};
 use bower_output_http::{HttpOutput, HttpOutputFormat, HttpOutputOptions};
 use rcgen::{
     BasicConstraints, CertificateParams, CertifiedIssuer, DnType, ExtendedKeyUsagePurpose, IsCa,
@@ -475,30 +475,159 @@ async fn payload_too_large_for_the_endpoint_splits_the_batch_until_accepted() {
 }
 
 #[tokio::test]
-async fn splitting_is_budgeted_and_a_refused_single_record_is_dead_lettered() {
+async fn always_too_large_endpoint_is_held_within_the_split_budget() {
     let endpoint = start(None).await;
     endpoint.reply(|_| Reply::status(413));
     let output = HttpOutput::new(hec_options(&endpoint), "token-1").unwrap();
 
     let single = output.deliver(&events(1)).await;
     assert_eq!(single.failures.len(), 1);
-    assert_eq!(single.failures[0].code, "http-413");
-    assert!(!single.failures[0].is_retryable);
+    assert_eq!(single.failures[0].code, "destination-http-413");
+    assert!(single.failures[0].is_retryable);
 
     endpoint.requests.lock().unwrap().clear();
     let many = output.deliver(&events(200)).await;
 
-    // One request plus two per split, never more.
+    // One request plus two per split, never more; nothing is poison without a sibling's success.
     assert_eq!(endpoint.requests().len(), 1 + 2 * SPLIT_BUDGET);
     assert!(many.acknowledged_event_ids.is_empty());
     assert_eq!(many.failures.len(), 200);
-    assert!(
-        many.failures
+    assert!(many.failures.iter().all(|failure| {
+        failure.code == "destination-http-413" && failure.is_destination_failure()
+    }));
+}
+
+/// Event ids in a request body (HEC `fields.bower_event_id` or the NDJSON `eventId`).
+fn ids(request: &Captured) -> Vec<String> {
+    String::from_utf8(request.body.clone())
+        .unwrap()
+        .lines()
+        .map(|line| {
+            let value: Value = serde_json::from_str(line).unwrap();
+            value["fields"]["bower_event_id"]
+                .as_str()
+                .or_else(|| value["eventId"].as_str())
+                .unwrap()
+                .to_string()
+        })
+        .collect()
+}
+
+/// The shared scenario endpoint: always, then by request number, then a record cap, then
+/// rejected ids.
+fn scenario_reply(rule: &Value, request: usize, ids: &[String]) -> Reply {
+    let reply = |value: &Value| {
+        let reply = Reply::status(u16::try_from(value["status"].as_u64().unwrap()).unwrap());
+        match value["body"].as_str() {
+            Some(body) => reply.body(body),
+            None => reply,
+        }
+    };
+    if let Some(always) = rule.get("always") {
+        return reply(always);
+    }
+    if let Some(by_request) = rule
+        .get("byRequest")
+        .and_then(|by| by.get(request.to_string()))
+    {
+        return reply(by_request);
+    }
+    if let Some(maximum) = rule.get("maxRecords").and_then(Value::as_u64)
+        && ids.len() > usize::try_from(maximum).unwrap()
+    {
+        return Reply::status(413);
+    }
+    match rule.get("reject") {
+        Some(reject)
+            if ids.iter().any(|id| {
+                reject["eventIds"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|item| item.as_str() == Some(id))
+            }) =>
+        {
+            reply(reject)
+        }
+        _ => Reply::hec_success(),
+    }
+}
+
+#[tokio::test]
+async fn scenario_vectors_isolate_poison_and_hold_everything_else() {
+    for vector in vectors()["scenarios"].as_array().unwrap() {
+        let name = text(vector, "name").unwrap();
+        let endpoint = start(None).await;
+        let rule = vector["endpoint"].clone();
+        let counter = Arc::new(Mutex::new(0usize));
+        let counted = Arc::clone(&counter);
+        endpoint.reply(move |request| {
+            let mut count = counted.lock().unwrap();
+            *count += 1;
+            scenario_reply(&rule, *count, &ids(request))
+        });
+        let output = HttpOutput::new(
+            vector_options(&vector["options"], endpoint.url("127.0.0.1")),
+            "token-1",
+        )
+        .unwrap();
+        let queued: Vec<QueuedEvent> = (0..vector["events"].as_u64().unwrap())
+            .map(|index| {
+                event(
+                    &format!("s-{index}"),
+                    "f",
+                    &format!(r#"{{"eventId":"s-{index}"}}"#),
+                )
+            })
+            .collect();
+
+        let result = output.deliver(&queued).await;
+
+        assert_eq!(
+            *counter.lock().unwrap() as u64,
+            vector["expectedRequests"].as_u64().unwrap(),
+            "{name}"
+        );
+        let acknowledged: Vec<String> = vector["expectedAcknowledged"]
+            .as_array()
+            .unwrap()
             .iter()
-            .all(|failure| failure.code.starts_with("http-413"))
-    );
-    // Batches that still hold several records retry (and split again) later.
-    assert!(many.failures.iter().any(|failure| failure.is_retryable));
+            .map(|id| id.as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(result.acknowledged_event_ids, acknowledged, "{name}");
+        let expected: Vec<(String, String, bool)> = vector["expectedFailures"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| {
+                (
+                    text(item, "eventId").unwrap(),
+                    text(item, "code").unwrap(),
+                    item["retryable"].as_bool().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            result
+                .failures
+                .iter()
+                .map(|failure| (
+                    failure.event_id.clone(),
+                    failure.code.clone(),
+                    failure.is_retryable
+                ))
+                .collect::<Vec<_>>(),
+            expected,
+            "{name}"
+        );
+        assert!(
+            result
+                .failures
+                .iter()
+                .all(|failure| failure.is_retryable == failure.is_destination_failure()),
+            "{name}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -746,46 +875,103 @@ async fn tls_ca_bundle_never_overrides_a_host_name_mismatch() {
 }
 
 #[test]
-fn tls_endpoint_policy_refuses_insecure_or_credentialed_urls() {
-    for (url, allow) in [
-        (
-            "http://splunk.example.test:8088/services/collector/event",
-            true,
-        ),
-        ("http://127.0.0.1:8088/services/collector/event", false),
-        (
-            "https://user:pass@splunk.example.test/services/collector/event",
-            false,
-        ),
-        (
-            "https://splunk.example.test/services/collector/event?token=abc",
-            false,
-        ),
-        (
-            "https://splunk.example.test/services/collector/event#x",
-            false,
-        ),
-        ("ftp://splunk.example.test/", true),
-    ] {
-        let mut options = HttpOutputOptions::new(Url::parse(url).unwrap(), "h");
-        options.allow_insecure_loopback = allow;
-        let error = options.validate().unwrap_err().0;
-        assert!(
-            error.starts_with("BOWER_HTTP_URL must be an absolute https:// URL"),
-            "{url}"
-        );
-        assert!(!error.contains("pass"));
+fn endpoint_vectors_allow_plain_http_only_to_loopback_addresses() {
+    for vector in vectors()["endpoints"].as_array().unwrap() {
+        let url = text(vector, "url").unwrap();
+        let mut options = HttpOutputOptions::new(Url::parse(&url).unwrap(), "h");
+        options.allow_insecure_loopback = vector["allowInsecureLoopback"].as_bool().unwrap();
+        match options.validate() {
+            Ok(()) => assert!(vector["valid"].as_bool().unwrap(), "{url}"),
+            Err(error) => {
+                assert!(!vector["valid"].as_bool().unwrap(), "{url}");
+                assert!(
+                    error
+                        .0
+                        .starts_with("BOWER_HTTP_URL must be an absolute https:// URL"),
+                    "{url}"
+                );
+            }
+        }
     }
+}
+
+#[test]
+fn endpoint_policy_refuses_credentialed_or_odd_urls_without_echoing_them() {
     for url in [
-        "http://127.0.0.1:8088/x",
-        "http://localhost:8088/x",
-        "http://[::1]:8088/x",
-        "https://splunk.example.test/x",
+        "https://user:pass@splunk.example.test/services/collector/event",
+        "https://splunk.example.test/services/collector/event?token=abc",
+        "https://splunk.example.test/services/collector/event#x",
+        "ftp://splunk.example.test/",
     ] {
         let mut options = HttpOutputOptions::new(Url::parse(url).unwrap(), "h");
         options.allow_insecure_loopback = true;
-        options.validate().unwrap();
+        let error = options.validate().unwrap_err().0;
+        assert!(!error.contains("pass") && !error.contains("abc"), "{url}");
     }
+}
+
+#[test]
+fn plain_http_never_uses_a_proxy_and_https_keeps_the_standard_proxy_settings() {
+    let mut plain = HttpOutputOptions::new(Url::parse("http://127.0.0.1:8088/x").unwrap(), "h");
+    plain.allow_insecure_loopback = true;
+    let secure = HttpOutputOptions::new(Url::parse("https://splunk.example.test/x").unwrap(), "h");
+
+    assert!(!uses_proxy(&plain));
+    assert!(uses_proxy(&secure));
+}
+
+#[test]
+fn auth_header_vectors_allow_only_names_that_can_carry_the_token() {
+    for vector in vectors()["authHeaderNames"].as_array().unwrap() {
+        let name = text(vector, "name").unwrap();
+        let mut options =
+            HttpOutputOptions::new(Url::parse("https://intake.example.test/x").unwrap(), "h");
+        options.format = HttpOutputFormat::Ndjson;
+        options.authorization_header = Some(name.clone());
+        let result = HttpOutput::new(options, "token-1");
+        if vector["allowed"].as_bool().unwrap() {
+            assert!(result.is_ok(), "{name:?}");
+        } else {
+            assert!(
+                result
+                    .err()
+                    .unwrap()
+                    .0
+                    .starts_with("BOWER_HTTP_AUTH_HEADER must be an HTTP header name"),
+                "{name:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn tls_ca_bundle_with_an_intermediate_is_refused() {
+    let directory = tempfile::tempdir().unwrap();
+    let authority = authority(directory.path());
+    let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
+    params
+        .distinguished_name
+        .push(DnType::CommonName, "Bower HTTP Output Test Intermediate");
+    params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
+    validity(&mut params, -1, 7);
+    let intermediate = params
+        .signed_by(&KeyPair::generate().unwrap(), &authority.issuer)
+        .unwrap();
+    let bundle = directory.path().join("with-intermediate.pem");
+    std::fs::write(
+        &bundle,
+        format!("{}\n{}", authority.issuer.pem(), intermediate.pem()),
+    )
+    .unwrap();
+    let mut options =
+        HttpOutputOptions::new(Url::parse("https://hec.example.test/x").unwrap(), "h");
+    options.ca_bundle_path = Some(bundle);
+
+    assert_eq!(
+        HttpOutput::new(options, "token-1").err().unwrap().0,
+        "BOWER_HTTP_CA_BUNDLE must hold only self-signed root CA certificates, not intermediates."
+    );
 }
 
 #[test]
