@@ -17,9 +17,12 @@ namespace Bower.Source.File;
 /// <c>path.1</c>, which is drained before the current file is read again; for a rename,
 /// <paramref name="ObservedLength"/>, <paramref name="ObservedWriteTime"/> (100 ns ticks since
 /// the Unix epoch) and <paramref name="StablePolls"/> track the grace window.
+/// <paramref name="DrainLength"/> is <c>path.1</c>'s length when the drain began and
+/// <paramref name="DrainPolls"/> the polls counted towards the drain cap: only polls that reach
+/// the end of <c>path.1</c> or get past that length count, so a backlog is always read in full.
 /// <paramref name="Abandoned"/> and <paramref name="AbandonedLength"/> are the generation the
-/// cursor left after a rename: later growth of that <c>path.1</c> is a gap. Optional fields
-/// are omitted when unset. The cursor carries no line content.
+/// cursor left: later growth of that <c>path.1</c> is a gap while it can still be observed.
+/// Optional fields are omitted when unset. The cursor carries no line content.
 /// </para>
 /// </summary>
 public sealed record FileTailCursor(
@@ -33,6 +36,7 @@ public sealed record FileTailCursor(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? ObservedWriteTime = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? StablePolls = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? DrainPolls = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? DrainLength = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Abandoned = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? AbandonedLength = null)
 {
@@ -103,7 +107,8 @@ public sealed record FileTailCursor(
         && cursor.ObservedLength is null or >= 0
         && cursor.StablePolls is null or >= 0
         && (cursor.ObservedLength is null || cursor.Drain == RenameDrain)
-        && (cursor.DrainPolls is null || (cursor.Drain == RenameDrain && cursor.DrainPolls >= 0))
+        && (cursor.DrainPolls is null || (cursor.Drain is not null && cursor.DrainPolls >= 0))
+        && (cursor.DrainLength is null || (cursor.Drain is not null && cursor.DrainLength >= 0))
         && (cursor.Abandoned is null) == (cursor.AbandonedLength is null)
         && (cursor.Abandoned is null || IsFingerprint(cursor.Abandoned))
         && cursor.AbandonedLength is null or >= 0;
@@ -187,9 +192,11 @@ public sealed record FileTailReaderOptions
     public int RotationGracePolls { get; init; } = FileTailSourceConfigurationLoader.DefaultRotationGracePolls;
 
     /// <summary>
-    /// Polls a rename drain may take before the cursor moves to the new file anyway, so a
-    /// <c>path.1</c> that keeps changing cannot starve the current file. Unread lines left in
-    /// it, and later writes to it, are counted as gaps.
+    /// Polls a drain may take before the cursor moves to the new file anyway, so a
+    /// <c>path.1</c> that keeps changing cannot starve the current file. Only polls that reach
+    /// the end of <c>path.1</c> or get past its length when the drain began count, so a static
+    /// backlog of any size is read in full. Unread lines left in it are counted as a gap, and
+    /// later writes to it are too while it can still be observed.
     /// </summary>
     public int RotationDrainMaxPolls { get; init; } = FileTailSourceConfigurationLoader.DefaultRotationDrainMaxPolls;
 
@@ -218,7 +225,8 @@ public sealed record FileTailReaderOptions
 /// until HUP): the cursor leaves only once the current file is identified and <c>path.1</c>
 /// stayed unchanged over <see cref="FileTailReaderOptions.RotationGracePolls"/> end-of-file
 /// polls; only then is its unterminated last line complete. Later growth of that
-/// <c>path.1</c> is reported as a gap (<see cref="FileTailCursor.Abandoned"/>).</item>
+/// <c>path.1</c> is reported as a gap (<see cref="FileTailCursor.Abandoned"/>) while it can
+/// still be observed; once it is rotated away, nothing more is seen (best effort).</item>
 /// </list>
 /// <para>
 /// Device and inode numbers tell the two apart where available (Linux): copytruncate keeps the
@@ -289,16 +297,19 @@ public static class FileTailReader
                 return Drain(cursor, fingerprint, fileId);
             }
 
-            if (cursor.Fingerprint.Length == 0)
-            {
-                // Provisional cursor: the file was missing or could not be identified.
-                return fingerprint is null
-                    ? Empty(cursor)
-                    : Scan(current!, Normal(fingerprint, 0, fileId), eofEndsLine: false, gap: false);
-            }
-
+            // Watched from a provisional cursor too: a drain left at the cap while the current
+            // file was missing keeps its abandoned generation.
             (FileTailCursor watched, bool late) = WatchAbandoned(cursor);
-            FileTailBatch batch = Detect(watched, fingerprint, fileId);
+            FileTailBatch batch = watched.Fingerprint.Length > 0
+                ? Detect(watched, fingerprint, fileId)
+                : fingerprint is null
+                    // Provisional cursor: the file was missing or could not be identified.
+                    ? Empty(watched)
+                    : Scan(current!, Normal(fingerprint, 0, fileId) with
+                    {
+                        Abandoned = watched.Abandoned,
+                        AbandonedLength = watched.AbandonedLength
+                    }, eofEndsLine: false, gap: false);
             return late ? batch with { Gap = true } : batch;
         }
 
@@ -388,23 +399,20 @@ public static class FileTailReader
             {
                 // A static copy: drain it to its end, then move to the truncated original at once.
                 FileTailBatch copied = Scan(file, at, eofEndsLine: true, gap: false);
-                return copied.More ? copied : copied with { Cursor = next, Rotated = true, More = true };
+                if (!copied.More)
+                {
+                    return copied with { Cursor = next, Rotated = true, More = true };
+                }
+
+                // A copy that keeps growing cannot hold the cursor either.
+                (FileTailBatch counted, bool copyCapped) = CountDrainPoll(copied, at, file);
+                return copyCapped ? Leave(counted, next, at, file) : counted;
             }
 
-            FileTailBatch scanned = Scan(file, at, eofEndsLine: false, gap: false);
-            int polls = Math.Min((at.DrainPolls ?? 0) + 1, FileTailSourceConfigurationLoader.MaximumRotationDrainMaxPolls);
-            FileTailBatch batch = scanned with { Cursor = scanned.Cursor with { DrainPolls = polls } };
-            if (polls >= options.RotationDrainMaxPolls)
+            (FileTailBatch batch, bool capped) = CountDrainPoll(Scan(file, at, eofEndsLine: false, gap: false), at, file);
+            if (capped)
             {
-                // A path.1 that never settles cannot hold the cursor: move on anyway. What is
-                // left unread in it now, and anything written to it later, is a gap.
-                return batch with
-                {
-                    Cursor = next with { Abandoned = at.Fingerprint, AbandonedLength = file.Length },
-                    Rotated = true,
-                    More = true,
-                    Gap = batch.Gap || batch.Cursor.Offset < file.Length
-                };
+                return Leave(batch, next, at, file);
             }
 
             if (batch.More)
@@ -436,6 +444,31 @@ public static class FileTailReader
             };
         }
 
+        // Only a poll that reaches the end of path.1, or gets past its length when the drain
+        // began, counts towards the cap: a static backlog is read in full however long it is,
+        // and a path.1 that keeps growing is still left after a bounded number of polls.
+        (FileTailBatch Batch, bool Capped) CountDrainPoll(FileTailBatch scanned, FileTailCursor at, FileTailHandle file)
+        {
+            long backlog = at.DrainLength ?? file.Length;
+            bool counts = !scanned.More || scanned.Cursor.Offset >= backlog;
+            int polls = counts
+                ? Math.Min((at.DrainPolls ?? 0) + 1, FileTailSourceConfigurationLoader.MaximumRotationDrainMaxPolls)
+                : at.DrainPolls ?? 0;
+            FileTailBatch batch = scanned with { Cursor = scanned.Cursor with { DrainPolls = polls, DrainLength = backlog } };
+            return (batch, counts && polls >= options.RotationDrainMaxPolls);
+        }
+
+        // A path.1 that never settles cannot hold the cursor: move on anyway. What is left
+        // unread in it now is a gap, and so are later writes to it while it can be observed.
+        static FileTailBatch Leave(FileTailBatch batch, FileTailCursor next, FileTailCursor at, FileTailHandle file) =>
+            batch with
+            {
+                Cursor = next with { Abandoned = at.Fingerprint, AbandonedLength = file.Length },
+                Rotated = true,
+                More = true,
+                Gap = batch.Gap || batch.Cursor.Offset < file.Length
+            };
+
         FileTailBatch Scan(FileTailHandle file, FileTailCursor at, bool eofEndsLine, bool gap) =>
             ReadFile(file, at, options, eofEndsLine, gap) with { Origin = at };
     }
@@ -454,6 +487,7 @@ public static class FileTailReader
             ObservedWriteTime = null,
             StablePolls = null,
             DrainPolls = null,
+            DrainLength = null,
             Abandoned = null,
             AbandonedLength = null
         };

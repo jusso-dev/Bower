@@ -217,4 +217,15 @@ fn cursor_json_matches_csharp() {
         None
     );
     assert_eq!(Cursor::deserialize("not json"), None);
+    // Every field, in the order both runtimes write it (C# Cursor_RoundTripsAndRefusesValuesThisVersionDidNotWrite).
+    let full = format!(
+        r#"{{"schemaVersion":2,"fingerprint":"{}","offset":42,"discarding":true,"fileId":"1:2","drain":"rename","observedLength":10,"observedWriteTime":11,"stablePolls":1,"drainPolls":3,"drainLength":12,"abandoned":"{}","abandonedLength":13}}"#,
+        "a".repeat(64),
+        "b".repeat(64)
+    );
+    assert_eq!(Cursor::deserialize(&full).unwrap().serialize(), full);
+    assert_eq!(
+        Cursor::deserialize(r#"{"schemaVersion":2,"fingerprint":"","offset":0,"drainLength":5}"#),
+        None
+    );
 }

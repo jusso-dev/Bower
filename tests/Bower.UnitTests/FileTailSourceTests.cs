@@ -195,6 +195,10 @@ public sealed class FileTailSourceTests
         Assert.Null(FileTailCursor.Deserialize("""{"schemaVersion":2,"fingerprint":"zz","offset":0}"""));
         Assert.Null(FileTailCursor.Deserialize("""{"schemaVersion":2,"fingerprint":"","offset":-1}"""));
         Assert.Null(FileTailCursor.Deserialize("not json"));
+        // Every field, in the order both runtimes write it (Rust: cursor_json_matches_csharp).
+        string full = $$"""{"schemaVersion":2,"fingerprint":"{{new string('a', 64)}}","offset":42,"discarding":true,"fileId":"1:2","drain":"rename","observedLength":10,"observedWriteTime":11,"stablePolls":1,"drainPolls":3,"drainLength":12,"abandoned":"{{new string('b', 64)}}","abandonedLength":13}""";
+        Assert.Equal(full, FileTailCursor.Deserialize(full)!.Serialize());
+        Assert.Null(FileTailCursor.Deserialize("""{"schemaVersion":2,"fingerprint":"","offset":0,"drainLength":5}"""));
     }
 
     [Fact]
@@ -1161,6 +1165,67 @@ public sealed class FileTailSourceTests
         await using FileTailSource refused = new(Configuration(directory.Path, path), sink, damaged);
         FileTailException failure = await Assert.ThrowsAsync<FileTailException>(() => refused.PollOnceAsync("auth", cancellation));
         Assert.Equal(FileTailFailures.CursorInvalid, failure.Code);
+    }
+
+    [Fact]
+    public async Task ADrainLeftAtTheCapWhileTheCurrentFileIsMissing_StillCountsALateWriteToPathOne()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "auth.log");
+        await File.WriteAllTextAsync(path, Line("first-1"), cancellation);
+        FakeSink sink = new(_ => FileTailSubmitOutcome.Queued);
+        FileTailSourceConfiguration configuration = Configuration(directory.Path, path, startAt: "beginning")
+            with
+        { RotationGracePolls = 2, RotationDrainMaxPolls = 3 };
+        await using FileTailSource source = new(configuration, sink, new MemoryCursors());
+        await source.PollOnceAsync("auth", cancellation);
+        // Renamed, and no new file yet: the drain reaches the cap with the current file missing.
+        File.Move(path, path + ".1");
+        for (int poll = 0; poll < 3; poll++)
+        {
+            await source.PollOnceAsync("auth", cancellation);
+        }
+
+        await File.AppendAllTextAsync(path + ".1", Line("late-1"), cancellation);
+        await File.WriteAllTextAsync(path, Line("second-1"), cancellation);
+        await source.PollOnceAsync("auth", cancellation);
+        await source.PollOnceAsync("auth", cancellation);
+
+        Assert.Equal(["first-1", "second-1"], sink.Records.Select(record => Message(record).Split(' ')[0]));
+        Assert.Equal(1, source.Snapshot()[0].RotationGaps); // late-1, written after the cursor left.
+    }
+
+    [Fact]
+    public async Task LegacyCursorGap_IsCountedOnceThoughThePathIsRefusedFirst()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Symbolic links need privileges on Windows.");
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "auth.log");
+        string elsewhere = Path.Combine(directory.Path, "elsewhere.log");
+        await File.WriteAllTextAsync(elsewhere, Line("one"), cancellation);
+        File.CreateSymbolicLink(path, elsewhere);
+        MemoryCursors cursors = new();
+        Assert.True(await cursors.TryAdvanceAsync(
+            "file:auth", 0, """{"schemaVersion":1,"fingerprint":"","offset":0}""", DateTimeOffset.UnixEpoch, cancellation));
+        FakeSink sink = new(_ => FileTailSubmitOutcome.Queued);
+        await using FileTailSource source = new(Configuration(directory.Path, path), sink, cursors);
+
+        for (int retry = 0; retry < 3; retry++)
+        {
+            FileTailException refused = await Assert.ThrowsAsync<FileTailException>(() => source.PollOnceAsync("auth", cancellation));
+            Assert.Equal(FileTailFailures.PathRefused, refused.Code);
+        }
+
+        File.Delete(path);
+        await File.WriteAllTextAsync(path, Line("one"), cancellation);
+        await source.PollOnceAsync("auth", cancellation);
+        await source.PollOnceAsync("auth", cancellation);
+
+        // One replay stored, one gap: the refused polls stored nothing and counted nothing.
+        Assert.Single(sink.Records);
+        Assert.Equal(1, source.Snapshot()[0].RotationGaps);
     }
 
     [Fact]

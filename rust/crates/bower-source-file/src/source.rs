@@ -400,15 +400,16 @@ impl FileTailSource {
             .cursors
             .read(&source_id)
             .map_err(|error| self.storage(&error))?;
+        let mut other_schema = false;
         let cursor = match &snapshot {
             Some(snapshot) => {
                 let cursor = match Cursor::deserialize(&snapshot.value) {
                     Some(cursor) => cursor,
                     // A cursor from another build (the pre-release schema 1 lacked the rotation
                     // state). Never guess its meaning, never skip: replay the current file from
-                    // its start (at least once) and count a gap so the operator sees it.
+                    // its start (at least once) and count a gap, once the replay cursor is stored.
                     None if Cursor::is_other_schema(&snapshot.value) => {
-                        input.counters.rotation_gaps.fetch_add(1, Ordering::Relaxed);
+                        other_schema = true;
                         Cursor::new("", 0)
                     }
                     // Never reinterpret or silently reset a damaged position this version wrote.
@@ -481,6 +482,10 @@ impl FileTailSource {
                     .fetch_add(1, Ordering::Relaxed);
                 return Err(FileTailError::new(failures::CURSOR_CONFLICT));
             }
+        }
+        if other_schema {
+            // Counted once: a refused or failed poll before this point stores nothing and retries.
+            input.counters.rotation_gaps.fetch_add(1, Ordering::Relaxed);
         }
         input.offset.store(next.offset, Ordering::Relaxed);
         if failed {

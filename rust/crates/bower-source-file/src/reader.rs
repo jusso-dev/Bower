@@ -7,7 +7,9 @@
 //! A writer keeps writing to `path.1` until it reopens its file (rsyslog until HUP), so the
 //! cursor leaves `path.1` only once the current file can be identified and `path.1` stayed
 //! unchanged for `rotation_grace_polls` polls; only then is its unterminated last line
-//! complete. Lines written to it afterwards cannot be read and are reported as a gap.
+//! complete. Lines written to it afterwards cannot be read and are reported as a gap while
+//! that `path.1` can still be observed (best effort: once it is rotated away, nothing more
+//! is seen).
 
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
@@ -26,8 +28,10 @@ pub const CURRENT_SCHEMA_VERSION: i32 = 2;
 /// `FileTailCursor`, same JSON). An empty fingerprint is provisional: the file was missing
 /// or could not be identified yet. `drain` (`rename` or `copytruncate`) means the cursor
 /// refers to `path.1`; `observed_*` and `stable_polls` track a rename's grace window;
-/// `abandoned` is the generation the cursor left after a rename. Optional fields are omitted
-/// when unset.
+/// `drain_length` is `path.1`'s length when the drain began and `drain_polls` the polls
+/// counted towards the drain cap (only polls that reach the end of `path.1` or get past that
+/// length); `abandoned` is the generation the cursor left, whose later growth is a gap while
+/// it can still be observed. Optional fields are omitted when unset.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Cursor {
@@ -48,6 +52,8 @@ pub struct Cursor {
     pub stable_polls: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub drain_polls: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drain_length: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub abandoned: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -82,6 +88,8 @@ struct StoredCursor {
     stable_polls: Option<i32>,
     #[serde(default)]
     drain_polls: Option<i32>,
+    #[serde(default)]
+    drain_length: Option<i64>,
     #[serde(default)]
     abandoned: Option<String>,
     #[serde(default)]
@@ -121,6 +129,7 @@ impl Cursor {
             observed_write_time: None,
             stable_polls: None,
             drain_polls: None,
+            drain_length: None,
             abandoned: None,
             abandoned_length: None,
         }
@@ -162,6 +171,7 @@ impl Cursor {
             observed_write_time: stored.observed_write_time,
             stable_polls: stored.stable_polls,
             drain_polls: stored.drain_polls,
+            drain_length: stored.drain_length,
             abandoned: stored.abandoned,
             abandoned_length: stored.abandoned_length,
         };
@@ -182,7 +192,10 @@ impl Cursor {
             && (self.observed_length.is_none() || self.drain.as_deref() == Some(RENAME_DRAIN))
             && self
                 .drain_polls
-                .is_none_or(|polls| self.drain.as_deref() == Some(RENAME_DRAIN) && polls >= 0)
+                .is_none_or(|polls| self.drain.is_some() && polls >= 0)
+            && self
+                .drain_length
+                .is_none_or(|length| self.drain.is_some() && length >= 0)
             && self.abandoned.is_none() == self.abandoned_length.is_none()
             && self.abandoned.as_deref().is_none_or(is_fingerprint)
             && self.abandoned_length.is_none_or(|length| length >= 0)
@@ -203,6 +216,7 @@ impl Cursor {
             observed_write_time: None,
             stable_polls: None,
             drain_polls: None,
+            drain_length: None,
             abandoned: None,
             abandoned_length: None,
             ..self.clone()
@@ -263,8 +277,10 @@ pub struct ReaderOptions {
     /// Unchanged end-of-file polls of a renamed `path.1` (size and write time) before the
     /// cursor moves to the new file. Copytruncate never waits.
     pub rotation_grace_polls: i32,
-    /// Polls a rename drain may take before the cursor moves on anyway, so a `path.1` that
-    /// keeps changing cannot starve the current file (C# `RotationDrainMaxPolls`).
+    /// Polls a drain may take before the cursor moves on anyway, so a `path.1` that keeps
+    /// changing cannot starve the current file (C# `RotationDrainMaxPolls`). Only polls that
+    /// reach the end of `path.1` or get past its length when the drain began count, so a
+    /// static backlog of any size is read in full.
     pub rotation_drain_max_polls: i32,
     /// Use device and inode numbers (Unix) to tell rename from copytruncate and to spot a
     /// replaced file. Off, identities alone decide; the shared vectors run this way.
@@ -406,17 +422,25 @@ impl Reading<'_> {
         if cursor.drain.is_some() {
             return self.drain(cursor.clone(), fingerprint, file_id);
         }
-        if cursor.fingerprint.is_empty() {
-            // Provisional cursor: the file was missing or could not be identified.
-            return match fingerprint {
-                None => Ok(empty(cursor.clone())),
-                Some(fingerprint) => {
-                    self.scan_current(Cursor::normal(&fingerprint, 0, file_id), false)
-                }
-            };
-        }
+        // Watched from a provisional cursor too: a drain left at the cap while the current file
+        // was missing keeps its abandoned generation.
         let (watched, late) = self.watch_abandoned(cursor)?;
-        let mut batch = self.detect(watched, fingerprint, file_id)?;
+        let mut batch = if !watched.fingerprint.is_empty() {
+            self.detect(watched, fingerprint, file_id)?
+        } else {
+            // Provisional cursor: the file was missing or could not be identified.
+            match fingerprint {
+                None => empty(watched),
+                Some(fingerprint) => self.scan_current(
+                    Cursor {
+                        abandoned: watched.abandoned,
+                        abandoned_length: watched.abandoned_length,
+                        ..Cursor::normal(&fingerprint, 0, file_id)
+                    },
+                    false,
+                )?,
+            }
+        };
         batch.gap |= late;
         Ok(batch)
     }
@@ -526,44 +550,28 @@ impl Reading<'_> {
         let file = self.rotated()?.expect("matching rotated file is open");
         if at.drain.as_deref() == Some(COPY_DRAIN) {
             // A static copy: drain it to its end, then move to the truncated original at once.
-            let copied = scan(file, at, &options, true, false)?;
-            return Ok(if copied.more {
-                copied
-            } else {
-                Batch {
+            let copied = scan(file, at.clone(), &options, true, false)?;
+            if !copied.more {
+                return Ok(Batch {
                     cursor: next,
                     rotated: true,
                     more: true,
                     ..copied
-                }
+                });
+            }
+            // A copy that keeps growing cannot hold the cursor either.
+            let (counted, capped) = count_drain_poll(copied, &at, file.length, &options);
+            return Ok(if capped {
+                leave(counted, next, &at, file.length)
+            } else {
+                counted
             });
         }
 
         let scanned = scan(file, at.clone(), &options, false, false)?;
-        let polls =
-            (at.drain_polls.unwrap_or(0) + 1).min(crate::config::MAXIMUM_ROTATION_DRAIN_MAX_POLLS);
-        let batch = Batch {
-            cursor: Cursor {
-                drain_polls: Some(polls),
-                ..scanned.cursor.clone()
-            },
-            ..scanned
-        };
-        if polls >= options.rotation_drain_max_polls {
-            // A path.1 that never settles cannot hold the cursor: move on anyway. What is left
-            // unread in it now, and anything written to it later, is a gap.
-            let unread = batch.cursor.offset < file.length;
-            return Ok(Batch {
-                cursor: Cursor {
-                    abandoned: Some(at.fingerprint.clone()),
-                    abandoned_length: Some(file.length),
-                    ..next
-                },
-                rotated: true,
-                more: true,
-                gap: batch.gap || unread,
-                ..batch
-            });
+        let (batch, capped) = count_drain_poll(scanned, &at, file.length, &options);
+        if capped {
+            return Ok(leave(batch, next, &at, file.length));
         }
         if batch.more {
             return Ok(batch); // A backlog poll never counts towards the grace window.
@@ -608,6 +616,51 @@ impl Reading<'_> {
             more: true,
             ..batch
         })
+    }
+}
+
+/// Only a poll that reaches the end of `path.1`, or gets past its length when the drain
+/// began, counts towards the cap (C# `CountDrainPoll`): a static backlog is read in full
+/// however long it is, and a `path.1` that keeps growing is still left after a bounded number
+/// of polls.
+fn count_drain_poll(
+    scanned: Batch,
+    at: &Cursor,
+    length: i64,
+    options: &ReaderOptions,
+) -> (Batch, bool) {
+    let backlog = at.drain_length.unwrap_or(length);
+    let counts = !scanned.more || scanned.cursor.offset >= backlog;
+    let polls = if counts {
+        (at.drain_polls.unwrap_or(0) + 1).min(crate::config::MAXIMUM_ROTATION_DRAIN_MAX_POLLS)
+    } else {
+        at.drain_polls.unwrap_or(0)
+    };
+    let batch = Batch {
+        cursor: Cursor {
+            drain_polls: Some(polls),
+            drain_length: Some(backlog),
+            ..scanned.cursor.clone()
+        },
+        ..scanned
+    };
+    (batch, counts && polls >= options.rotation_drain_max_polls)
+}
+
+/// A `path.1` that never settles cannot hold the cursor: move on anyway (C# `Leave`). What is
+/// left unread in it now is a gap, and so are later writes to it while it can be observed.
+fn leave(batch: Batch, next: Cursor, at: &Cursor, length: i64) -> Batch {
+    let unread = batch.cursor.offset < length;
+    Batch {
+        cursor: Cursor {
+            abandoned: Some(at.fingerprint.clone()),
+            abandoned_length: Some(length),
+            ..next
+        },
+        rotated: true,
+        more: true,
+        gap: batch.gap || unread,
+        ..batch
     }
 }
 

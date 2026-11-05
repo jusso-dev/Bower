@@ -2807,6 +2807,551 @@
           }
         }
       ]
+    },
+    {
+      "name": "rename: a static path.1 backlog longer than the drain cap times the batch is read in full, without a gap",
+      "options": {
+        "startAtEnd": false,
+        "maxLinesPerBatch": 2,
+        "rotationGracePolls": 1,
+        "rotationDrainMaxPolls": 4
+      },
+      "steps": [
+        {
+          "write": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              }
+            ],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "append": "backlog-01 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nbacklog-02 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nbacklog-03 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nbacklog-04 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nbacklog-05 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nbacklog-06 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nbacklog-07 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nbacklog-08 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nbacklog-09 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nbacklog-10 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nbacklog-11 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nbacklog-12 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "rename": {}
+        },
+        {
+          "write": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "backlog-01 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 71,
+                "end": 112
+              },
+              {
+                "text": "backlog-02 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 112,
+                "end": 153
+              }
+            ],
+            "provisional": false,
+            "offset": 153,
+            "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "backlog-03 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 153,
+                "end": 194
+              },
+              {
+                "text": "backlog-04 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 194,
+                "end": 235
+              }
+            ],
+            "provisional": false,
+            "offset": 235,
+            "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "backlog-05 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 235,
+                "end": 276
+              },
+              {
+                "text": "backlog-06 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 276,
+                "end": 317
+              }
+            ],
+            "provisional": false,
+            "offset": 317,
+            "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "backlog-07 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 317,
+                "end": 358
+              },
+              {
+                "text": "backlog-08 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 358,
+                "end": 399
+              }
+            ],
+            "provisional": false,
+            "offset": 399,
+            "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "backlog-09 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 399,
+                "end": 440
+              },
+              {
+                "text": "backlog-10 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 440,
+                "end": 481
+              }
+            ],
+            "provisional": false,
+            "offset": 481,
+            "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "backlog-11 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 481,
+                "end": 522
+              },
+              {
+                "text": "backlog-12 xxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 522,
+                "end": 563
+              }
+            ],
+            "provisional": false,
+            "offset": 563,
+            "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 0,
+            "discarding": false,
+            "drain": null,
+            "abandoned": true,
+            "rotated": true,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              }
+            ],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "drain": null,
+            "abandoned": true,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "drain": null,
+            "abandoned": true,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "drain": null,
+            "abandoned": true,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "rename: a drain left at the cap while the current file is missing keeps watching path.1",
+      "options": {
+        "startAtEnd": false,
+        "rotationGracePolls": 2,
+        "rotationDrainMaxPolls": 3
+      },
+      "steps": [
+        {
+          "write": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              }
+            ],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "rename": {}
+        },
+        {
+          "appendRotated": "late-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "late-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 71,
+                "end": 112
+              }
+            ],
+            "provisional": false,
+            "offset": 112,
+            "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "appendRotated": "late-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "late-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 112,
+                "end": 153
+              }
+            ],
+            "provisional": false,
+            "offset": 153,
+            "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "appendRotated": "late-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "late-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 153,
+                "end": 194
+              }
+            ],
+            "provisional": true,
+            "offset": 0,
+            "discarding": false,
+            "drain": null,
+            "abandoned": true,
+            "rotated": true,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "appendRotated": "late-4 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "append": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              }
+            ],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "drain": null,
+            "abandoned": true,
+            "rotated": false,
+            "gap": true,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "drain": null,
+            "abandoned": true,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "copytruncate: a copy that keeps growing is left at the drain cap, and the rest is a gap",
+      "options": {
+        "startAtEnd": false,
+        "maxLinesPerBatch": 1,
+        "rotationGracePolls": 1,
+        "rotationDrainMaxPolls": 2
+      },
+      "steps": [
+        {
+          "write": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              }
+            ],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "append": "copy-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "copy-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 71,
+                "end": 112
+              }
+            ],
+            "provisional": false,
+            "offset": 112,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "append": "copy-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\ncopy-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "copytruncate": {}
+        },
+        {
+          "write": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "copy-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 112,
+                "end": 153
+              }
+            ],
+            "provisional": false,
+            "offset": 153,
+            "discarding": false,
+            "drain": "copytruncate",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "appendRotated": "grow-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "copy-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 153,
+                "end": 194
+              }
+            ],
+            "provisional": false,
+            "offset": 194,
+            "discarding": false,
+            "drain": "copytruncate",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "appendRotated": "grow-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "grow-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 194,
+                "end": 235
+              }
+            ],
+            "provisional": false,
+            "offset": 0,
+            "discarding": false,
+            "drain": null,
+            "abandoned": true,
+            "rotated": true,
+            "gap": true,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              }
+            ],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "drain": null,
+            "abandoned": true,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "appendRotated": "grow-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "drain": null,
+            "abandoned": true,
+            "rotated": false,
+            "gap": true,
+            "more": false
+          }
+        }
+      ]
     }
   ],
   "config": [

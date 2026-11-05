@@ -1515,6 +1515,96 @@ fn legacy_cursors_replay_the_current_file_from_its_start_with_a_gap() {
     }
 }
 
+/// C# `ADrainLeftAtTheCapWhileTheCurrentFileIsMissing_StillCountsALateWriteToPathOne`.
+#[test]
+fn a_drain_left_at_the_cap_while_the_current_file_is_missing_still_counts_a_late_write_to_path_one()
+{
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("auth.log");
+    let rotated = directory.path().join("auth.log.1");
+    std::fs::write(&path, line("first-1")).unwrap();
+    let sink = FakeSink::new(|_| Ok(SubmitOutcome::Queued));
+    let mut configuration = grace(text(directory.path(), &path, "beginning"), 2);
+    configuration.rotation_drain_max_polls = 3;
+    let source = FileTailSource::new(
+        configuration,
+        sink.clone(),
+        Arc::new(MemoryCursors::default()),
+        None,
+    );
+    source.poll_once("auth").unwrap();
+    // Renamed, and no new file yet: the drain reaches the cap with the current file missing.
+    std::fs::rename(&path, &rotated).unwrap();
+    for _ in 0..3 {
+        source.poll_once("auth").unwrap();
+    }
+
+    let mut late = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&rotated)
+        .unwrap();
+    std::io::Write::write_all(&mut late, line("late-1").as_bytes()).unwrap();
+    std::fs::write(&path, line("second-1")).unwrap();
+    source.poll_once("auth").unwrap();
+    source.poll_once("auth").unwrap();
+
+    let words: Vec<String> = sink
+        .records()
+        .iter()
+        .map(|record| first_word(record))
+        .collect();
+    assert_eq!(words, ["first-1", "second-1"]);
+    assert_eq!(
+        source.snapshot()[0].rotation_gaps,
+        1,
+        "late-1, written after the cursor left"
+    );
+}
+
+/// C# `LegacyCursorGap_IsCountedOnceThoughThePathIsRefusedFirst`.
+#[cfg(unix)]
+#[test]
+fn legacy_cursor_gap_is_counted_once_though_the_path_is_refused_first() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("auth.log");
+    let elsewhere = directory.path().join("elsewhere.log");
+    std::fs::write(&elsewhere, line("one")).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &path).unwrap();
+    let cursors = Arc::new(MemoryCursors::default());
+    assert!(
+        cursors
+            .try_advance(
+                "file:auth",
+                0,
+                r#"{"schemaVersion":1,"fingerprint":"","offset":0}"#,
+                bower_contracts::time::now()
+            )
+            .unwrap()
+    );
+    let sink = FakeSink::new(|_| Ok(SubmitOutcome::Queued));
+    let source = FileTailSource::new(
+        text(directory.path(), &path, "end"),
+        sink.clone(),
+        cursors,
+        None,
+    );
+
+    for _ in 0..3 {
+        assert_eq!(
+            source.poll_once("auth").unwrap_err().code,
+            failures::PATH_REFUSED
+        );
+    }
+    std::fs::remove_file(&path).unwrap();
+    std::fs::write(&path, line("one")).unwrap();
+    source.poll_once("auth").unwrap();
+    source.poll_once("auth").unwrap();
+
+    // One replay stored, one gap: the refused polls stored nothing and counted nothing.
+    assert_eq!(sink.records().len(), 1);
+    assert_eq!(source.snapshot()[0].rotation_gaps, 1);
+}
+
 /// C# `UnknownCursorSchemas_ReplayButDamagedCurrentCursorsStillFailClosed`.
 #[test]
 fn unknown_cursor_schemas_replay_but_damaged_current_cursors_still_fail_closed() {

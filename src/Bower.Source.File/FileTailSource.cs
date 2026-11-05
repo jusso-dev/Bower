@@ -311,6 +311,7 @@ public sealed class FileTailSource : IAsyncDisposable
         Interlocked.Exchange(ref input.LastPollTicks, clock.GetUtcNow().UtcTicks);
         SourceCursorSnapshot? snapshot = await cursors.ReadAsync(options.SourceId, cancellationToken);
         FileTailCursor? cursor = null;
+        bool otherSchema = false;
         if (snapshot is not null)
         {
             cursor = FileTailCursor.Deserialize(snapshot.Value);
@@ -318,9 +319,9 @@ public sealed class FileTailSource : IAsyncDisposable
             {
                 // A cursor from another build (the pre-release schema 1 lacked the rotation
                 // state). Never guess its meaning, never skip: replay the current file from
-                // its start (at least once) and count a gap so the operator sees it.
+                // its start (at least once) and count a gap, once the replay cursor is stored.
                 cursor = new FileTailCursor(FileTailCursor.CurrentSchemaVersion, string.Empty, 0);
-                Interlocked.Increment(ref input.Counters.RotationGaps);
+                otherSchema = true;
             }
 
             // Never reinterpret or silently reset a damaged position this version wrote.
@@ -422,6 +423,12 @@ public sealed class FileTailSource : IAsyncDisposable
                 Interlocked.Increment(ref input.Counters.CursorConflicts);
                 throw new FileTailException(FileTailFailures.CursorConflict);
             }
+        }
+
+        if (otherSchema)
+        {
+            // Counted once: a refused or failed poll before this point stores nothing and retries.
+            Interlocked.Increment(ref input.Counters.RotationGaps);
         }
 
         Interlocked.Exchange(ref input.Offset, next.Offset);
