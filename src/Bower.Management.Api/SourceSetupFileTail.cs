@@ -22,7 +22,7 @@ public sealed record FileSourceParser(
 /// <c>FileTailSourceConfigurationLoader</c> in <c>src/Bower.Source.File</c> (and the Rust port),
 /// which rejects unknown keys; Management.Api does not reference the source, so the unit tests
 /// load every generated file with that loader and its route check (FileSourceSetupTests).
-/// Poll interval, batch limits and <c>rotationGracePolls</c> are left at the loader's defaults,
+/// Poll interval, batch limits, <c>rotationGracePolls</c> and <c>rotationDrainMaxPolls</c> are left at the loader's defaults,
 /// and <c>allowSymlink</c> is never generated, so a symbolic link is always refused.
 /// </summary>
 public static class FileSourceSchema
@@ -43,8 +43,9 @@ public static class FileSourceSchema
     // A pack parser reads records of at most 32 KiB, so the loader caps lines below that.
     public const int MaximumLineBytes = 30_720;
 
-    // Not generated; the collector default applies.
+    // Not generated; the collector defaults apply.
     public const int DefaultRotationGracePolls = 5;
+    public const int DefaultRotationDrainMaxPolls = 300;
 
     /// <summary>How the collector treats symbolic links. Shown in the form, the plan and the docs.</summary>
     public const string SymlinkPolicy =

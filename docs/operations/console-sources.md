@@ -57,8 +57,8 @@ rotation), see the [file tail source guide](../deployment/file-tail-source.md).
 - **Bounded lines.** Choose where reading starts the first time (new lines only,
   or existing lines first) and the longest line, 256 to 30720 bytes (pack parsers
   read records of at most 32 KiB). Longer lines are dropped and counted, never
-  cut and parsed. Poll interval, batch limits and `rotationGracePolls` stay at
-  the collector defaults.
+  cut and parsed. Poll interval, batch limits, `rotationGracePolls` and
+  `rotationDrainMaxPolls` stay at the collector defaults.
 - **No duplicates.** An input name or file already used by another file request
   waiting for approval on the same collector is refused. As in the collector, a
   file counts as the same when it differs only in ASCII letter case or is the

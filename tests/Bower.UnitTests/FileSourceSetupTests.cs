@@ -170,13 +170,16 @@ public sealed class FileSourceSetupTests
         Assert.Equal(
             (FileTailSourceConfigurationLoader.MinimumMaxLineBytes, FileTailSourceConfigurationLoader.DefaultMaxLineBytes, FileTailSourceConfigurationLoader.MaximumMaxLineBytes),
             (FileSourceSchema.MinimumLineBytes, FileSourceSchema.DefaultLineBytes, FileSourceSchema.MaximumLineBytes));
-        Assert.Equal(FileTailSourceConfigurationLoader.DefaultRotationGracePolls, FileSourceSchema.DefaultRotationGracePolls);
+        Assert.Equal(
+            (FileTailSourceConfigurationLoader.DefaultRotationGracePolls, FileTailSourceConfigurationLoader.DefaultRotationDrainMaxPolls),
+            (FileSourceSchema.DefaultRotationGracePolls, FileSourceSchema.DefaultRotationDrainMaxPolls));
         PolicyBundle bundle = SignedPackBundle(directory);
         FileTailSourceConfiguration golden = LoadAsCollector(Golden, bundle);
         Assert.Equal(
-            (1_000, 256, 1_048_576, FileSourceSchema.DefaultRotationGracePolls),
-            (golden.PollIntervalMilliseconds, golden.MaxLinesPerBatch, golden.MaxBytesPerBatch, golden.RotationGracePolls));
+            (1_000, 256, 1_048_576, FileSourceSchema.DefaultRotationGracePolls, FileSourceSchema.DefaultRotationDrainMaxPolls),
+            (golden.PollIntervalMilliseconds, golden.MaxLinesPerBatch, golden.MaxBytesPerBatch, golden.RotationGracePolls, golden.RotationDrainMaxPolls));
         Assert.DoesNotContain("rotationGracePolls", Golden, StringComparison.Ordinal);
+        Assert.DoesNotContain("rotationDrainMaxPolls", Golden, StringComparison.Ordinal);
 
         // The route check is real: a parser the bundle does not load stops start-up.
         Assert.Throws<InvalidOperationException>(() => LoadAsCollector(Golden.Replace("\"parser\": 0", "\"parser\": 1", StringComparison.Ordinal), bundle));
