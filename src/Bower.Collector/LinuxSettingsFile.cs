@@ -5,12 +5,9 @@ using Microsoft.Win32.SafeHandles;
 namespace Bower.Collector;
 
 /// <summary>Opens a settings file through verified Linux directory handles.</summary>
-[SupportedOSPlatform("linux")]
 internal static partial class LinuxSettingsFile
 {
     private const int ReadOnly = 0;
-    private const int DirectoryOnly = 0x10000;
-    private const int NoFollow = 0x20000;
     private const int CloseOnExec = 0x80000;
     private const int NonBlock = 0x800;
     private const int EmptyPath = 0x1000;
@@ -21,15 +18,35 @@ internal static partial class LinuxSettingsFile
     private const ushort GroupOrOtherWrite = 0x12;
     private const ushort Sticky = 0x200;
 
+    /// <summary>
+    /// <c>O_DIRECTORY</c> and <c>O_NOFOLLOW</c> per architecture: 0x10000 and 0x20000 on x86 and
+    /// x86-64, but 0x4000 and 0x8000 on arm and arm64 (where 0x10000 is <c>O_DIRECT</c> and 0x20000
+    /// is <c>O_LARGEFILE</c>). Other architectures get null and the file is refused (fail closed).
+    /// </summary>
+    internal static (int DirectoryOnly, int NoFollow)? OpenFlags(Architecture architecture) => architecture switch
+    {
+        Architecture.X64 or Architecture.X86 => (0x10000, 0x20000),
+        Architecture.Arm64 or Architecture.Arm => (0x4000, 0x8000),
+        _ => null
+    };
+
+    [SupportedOSPlatform("linux")]
     internal static FileStream Open(string path)
     {
+        if (OpenFlags(RuntimeInformation.ProcessArchitecture) is not { } flags)
+        {
+            throw new InvalidOperationException(
+                $"BOWER_SETTINGS_FILE cannot be opened safely on {RuntimeInformation.ProcessArchitecture} Linux.");
+        }
+        (int directoryOnly, int noFollow) = flags;
+
         string[] components = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (components.Length == 0 || !Path.IsPathFullyQualified(path))
         {
             throw new InvalidOperationException("BOWER_SETTINGS_FILE must name a file.");
         }
 
-        using SafeFileHandle root = OpenHandle(OpenNative("/", ReadOnly | DirectoryOnly | CloseOnExec));
+        using SafeFileHandle root = OpenHandle(OpenNative("/", ReadOnly | directoryOnly | CloseOnExec));
         Verify(root, directory: true);
         SafeFileHandle? parent = null;
         try
@@ -37,7 +54,7 @@ internal static partial class LinuxSettingsFile
             SafeFileHandle current = root;
             for (int i = 0; i < components.Length - 1; i++)
             {
-                SafeFileHandle next = OpenHandle(OpenAt(current, components[i], ReadOnly | DirectoryOnly | NoFollow | CloseOnExec));
+                SafeFileHandle next = OpenHandle(OpenAt(current, components[i], ReadOnly | directoryOnly | noFollow | CloseOnExec));
                 try { Verify(next, directory: true); }
                 catch { next.Dispose(); throw; }
                 parent?.Dispose();
@@ -45,7 +62,7 @@ internal static partial class LinuxSettingsFile
                 current = next;
             }
 
-            SafeFileHandle file = OpenHandle(OpenAt(current, components[^1], ReadOnly | NoFollow | CloseOnExec | NonBlock));
+            SafeFileHandle file = OpenHandle(OpenAt(current, components[^1], ReadOnly | noFollow | CloseOnExec | NonBlock));
             try
             {
                 Verify(file, directory: false);

@@ -185,6 +185,39 @@ public sealed class CollectorSettingsFileTests
         finally { File.SetUnixFileMode(directory.Path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
     }
 
+    [Fact]
+    public void LinuxOpenFlags_UseEachArchitecturesDirectoryAndNoFollowValues()
+    {
+        Assert.Equal((0x10000, 0x20000), LinuxSettingsFile.OpenFlags(System.Runtime.InteropServices.Architecture.X64));
+        Assert.Equal((0x10000, 0x20000), LinuxSettingsFile.OpenFlags(System.Runtime.InteropServices.Architecture.X86));
+        // On arm and arm64, 0x10000 is O_DIRECT and 0x20000 is O_LARGEFILE.
+        Assert.Equal((0x4000, 0x8000), LinuxSettingsFile.OpenFlags(System.Runtime.InteropServices.Architecture.Arm64));
+        Assert.Equal((0x4000, 0x8000), LinuxSettingsFile.OpenFlags(System.Runtime.InteropServices.Architecture.Arm));
+        // Unknown flag values: refuse the settings file rather than open it unprotected.
+        Assert.Null(LinuxSettingsFile.OpenFlags(System.Runtime.InteropServices.Architecture.RiscV64));
+        Assert.Null(LinuxSettingsFile.OpenFlags(System.Runtime.InteropServices.Architecture.S390x));
+    }
+
+    [Fact]
+    public void LinuxLoad_RefusesSymbolicLinksOnThisArchitecture()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        using TemporaryDirectory directory = new();
+        string trusted = Write(directory, "BOWER_OUTPUT=none");
+        Assert.NotNull(LinuxSettingsFile.OpenFlags(System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture));
+        Assert.NotNull(CollectorSettingsFile.Load(trusted));
+
+        // Without this architecture's O_NOFOLLOW the open follows the link and the trusted target loads.
+        string link = Path.Combine(directory.Path, "link.env");
+        File.CreateSymbolicLink(link, trusted);
+        Assert.Contains("symbolic link", Assert.Throws<InvalidOperationException>(() => CollectorSettingsFile.Load(link)).Message,
+            StringComparison.Ordinal);
+
+        string linkedDirectory = Path.Combine(directory.Path, "linked");
+        Directory.CreateSymbolicLink(linkedDirectory, directory.Path);
+        Assert.Throws<InvalidOperationException>(() => CollectorSettingsFile.Load(Path.Combine(linkedDirectory, "bower.env")));
+    }
+
     private static bool IsRoot() => Environment.UserName == "root";
 
     private static string Write(TemporaryDirectory directory, string content, string name = "bower.env")
