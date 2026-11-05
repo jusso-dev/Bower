@@ -455,7 +455,7 @@ fn safe_failure_code(code: &str, destination: bool) -> String {
     .into_iter()
     .any(|prefix| is_http_status_code(base, prefix))
         || is_s3_code(base);
-    let safe = if known {
+    let safe = if known || is_http_output_code(base) {
         base
     } else if base.starts_with("relay-rejected:") {
         "relay-rejected:unknown"
@@ -484,6 +484,34 @@ fn is_s3_code(code: &str) -> bool {
             | "destination-s3-unavailable"
             | "destination-s3-cancelled"
     ) || is_http_status_code(code, "destination-s3-http-")
+}
+
+/// C# `IsHttpOutputCode`: codes of the HTTP output (`bower-output-http`): fixed
+/// destination codes, or `[destination-]http-<status>` with an optional `:hec-<0-99>`.
+pub fn is_http_output_code(code: &str) -> bool {
+    if matches!(
+        code,
+        "destination-http-unavailable"
+            | "destination-http-timeout"
+            | "destination-http-cancelled"
+            | "destination-http-response-invalid"
+    ) {
+        return true;
+    }
+    let (status, hec) = code
+        .split_once(":hec-")
+        .map_or((code, None), |(status, hec)| (status, Some(hec)));
+    if let Some(number) = hec {
+        let bytes = number.as_bytes();
+        if bytes.is_empty()
+            || bytes.len() > 2
+            || !bytes.iter().all(u8::is_ascii_digit)
+            || (bytes.len() == 2 && bytes[0] == b'0')
+        {
+            return false;
+        }
+    }
+    is_http_status_code(status, "destination-http-") || is_http_status_code(status, "http-")
 }
 
 fn is_http_status_code(code: &str, prefix: &str) -> bool {

@@ -333,7 +333,7 @@ async fn status_body(output: Option<BoxedOutput>) -> String {
 }
 
 #[tokio::test]
-async fn status_reports_the_output_only_when_it_is_not_sentinel() {
+async fn status_reports_the_configured_output_and_omits_it_without_one() {
     assert!(!status_body(None).await.contains("\"output\":"));
     let s3 = S3Output::new(S3OutputOptions::new(
         "collector-status",

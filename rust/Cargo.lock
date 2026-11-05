@@ -836,6 +836,7 @@ dependencies = [
  "bower-integrity",
  "bower-output-ama-spool",
  "bower-output-azure",
+ "bower-output-http",
  "bower-output-s3",
  "bower-packs",
  "bower-persistence",
@@ -1029,6 +1030,27 @@ dependencies = [
  "tokio-rustls",
  "uuid",
  "x509-cert",
+]
+
+[[package]]
+name = "bower-output-http"
+version = "0.1.1"
+dependencies = [
+ "axum",
+ "bower-contracts",
+ "chrono",
+ "flate2",
+ "hyper",
+ "hyper-util",
+ "rcgen",
+ "regex",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-rustls",
 ]
 
 [[package]]

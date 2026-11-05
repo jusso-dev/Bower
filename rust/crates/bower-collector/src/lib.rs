@@ -12,6 +12,7 @@ pub mod enrolment;
 pub mod error;
 pub mod heartbeat;
 pub mod host;
+pub mod http_output;
 pub mod jobs;
 pub mod logging;
 pub mod managed_privacy;
