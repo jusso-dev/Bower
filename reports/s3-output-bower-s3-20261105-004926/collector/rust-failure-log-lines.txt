@@ -1,0 +1,1 @@
+2026-11-05T00:50:52.908582Z  WARN bower_collector::worker: Output adapter did not deliver events. output_id="s3" count=40 failure_code="destination-s3-access-denied" disposition="retrying"

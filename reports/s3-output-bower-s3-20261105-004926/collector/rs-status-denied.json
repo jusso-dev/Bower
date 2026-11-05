@@ -1,0 +1,130 @@
+{
+    "status": "healthy",
+    "version": "0.1.1-dev.0",
+    "policy": {
+        "hash": "sha256:762bcab1697155982dd65727ba0b9f8ee5cae4e6c6e56e52301fbd39236c8f66",
+        "policies": [
+            {
+                "id": "BWR-POL-AUTH-FAILURE",
+                "version": "1.0.0"
+            },
+            {
+                "id": "BWR-POL-EVIDENCE-CANARY",
+                "version": "1.0.0"
+            },
+            {
+                "id": "BWR-POL-ROLE-MEMBERSHIP",
+                "version": "1.0.0"
+            },
+            {
+                "id": "BWR-POL-PRIVACY-DETECT",
+                "version": "1.0.0"
+            },
+            {
+                "id": "BWR-POL-SENSITIVE-EXPORT",
+                "version": "1.0.0"
+            }
+        ],
+        "packs": [],
+        "privacyProfile": null,
+        "privacyProfileVersion": null,
+        "privacyProfileHash": "default",
+        "privacyProfileSource": "local",
+        "managedPrivacyProfileState": null,
+        "managedPrivacyProfileRevision": null
+    },
+    "ledger": {
+        "sequence": 40,
+        "hash": "ee75def4c590d0f130412208b2b3f36bc3c2cc64262b3d0f690a898894e00ada"
+    },
+    "queue": {
+        "queued": 0,
+        "retrying": 40,
+        "uploading": 0,
+        "delivered": 0,
+        "deadLettered": 0,
+        "totalBytes": 50708,
+        "undeliveredBytes": 50708,
+        "oldestUndelivered": "2026-11-05T00:50:52.055387+00:00"
+    },
+    "jobs": [
+        {
+            "id": "queue-maintenance",
+            "schedule": "0 3 * * *",
+            "lastRunAt": null,
+            "lastState": null,
+            "nextRunAt": "2026-11-05T03:00:00+00:00"
+        },
+        {
+            "id": "queue-retention",
+            "schedule": "0 * * * *",
+            "lastRunAt": null,
+            "lastState": null,
+            "nextRunAt": "2026-11-05T01:00:00+00:00"
+        },
+        {
+            "id": "source-activity",
+            "schedule": "* * * * *",
+            "lastRunAt": "2026-11-05T00:51:00.002174+00:00",
+            "lastState": "Succeeded",
+            "nextRunAt": "2026-11-05T00:52:00+00:00"
+        }
+    ],
+    "eventIdentityConflicts": {
+        "producers": [],
+        "unattributed": 0,
+        "overflow": 0
+    },
+    "pipeline": {
+        "startedAt": "2026-11-05T00:50:45.587293+00:00",
+        "eventsIn": 40,
+        "eventsQueued": 40,
+        "duplicates": 0,
+        "suppressed": 0,
+        "bytesIn": 24080,
+        "bytesQueued": 50708,
+        "rows": [
+            {
+                "stage": "policy",
+                "policyId": "BWR-POL-AUTH-FAILURE",
+                "action": "accept",
+                "events": 40,
+                "queued": 40,
+                "duplicates": 0,
+                "suppressed": 0,
+                "bytesIn": 24080,
+                "bytesQueued": 50708
+            }
+        ]
+    },
+    "intake": {
+        "observedSince": "2026-11-05T00:50:45.587293+00:00",
+        "attemptedRequests": 40,
+        "attemptedBytes": 24080,
+        "capacityRefusals": 0,
+        "capacityRefusedBytes": 0,
+        "privacyAlertRefusals": 0,
+        "privacyAlertRefusedBytes": 0,
+        "lastRefusalAt": null,
+        "lastRefusalReason": null
+    },
+    "activity": [
+        {
+            "application": "BowerS3Lab",
+            "environment": "lab",
+            "lastSeenAt": "2026-11-05T00:50:52.300521+00:00",
+            "eventCount": 40
+        }
+    ],
+    "tap": {
+        "enabled": true,
+        "activeSessions": 0,
+        "maximumSessions": 2,
+        "sessionsOpened": 0,
+        "sessionsRefused": 0,
+        "framesSent": 0,
+        "framesDropped": 0,
+        "framesRateLimited": 0
+    },
+    "output": "s3"
+}

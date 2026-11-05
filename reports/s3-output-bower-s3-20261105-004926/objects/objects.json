@@ -1,0 +1,14 @@
+[
+    {
+        "Key": "csharp/2026/11/05/00/ac12af23a675febc5fd3308996029983a58701d8e37a002cef14d3f8bb375b9a.jsonl.gz",
+        "Size": 1967
+    },
+    {
+        "Key": "live/idempotent/2026/11/05/00/5ffd8ff5fe99a21e12c1e6525611cf00b2b956bd2bc630e4e50fcc9ae7a46b2f.jsonl.gz",
+        "Size": 105
+    },
+    {
+        "Key": "rust/2026/11/05/00/42d02abdd5831d63345a6302d28f72b47abc6c3d61887fab323e517c7fd264f9.jsonl.gz",
+        "Size": 1917
+    }
+]
