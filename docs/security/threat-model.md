@@ -90,6 +90,15 @@ evidence.
   only a route to an active signed pack parser that selects the record, then
   redaction and policy, can queue one. Counters only; no frame content is logged or
   exposed. See [syslog source](../deployment/syslog-source.md).
+- File tail (new local trust boundary, `BOWER_FILE_CONFIG`): only operator-named files,
+  no wildcards, directories or default route; paths must lie strictly below an allowed
+  root, with no linked directories and no linked file unless `allowSymlink` permits one
+  link whose target passes the same checks, re-checked after each read. Bounded lines
+  (at most 30 KiB), polls and json-lines depth; oversized lines are skipped without
+  buffering. A line becomes an event only through its route's signed pack parser, then
+  redaction and policy; anyone who can write the file can inject lines, so tail only
+  files written by trusted services. Counters only. See
+  [file tail source](../deployment/file-tail-source.md).
 - Live tap (`GET /v1/tap`, `bower tap`; new trust boundary: an operator-facing stream
   of accepted event content). See [tap and top](../operations/tap-and-top.md).
   - Pre-redaction exposure: there is no raw or `parsed` tap point. Frames are built only
