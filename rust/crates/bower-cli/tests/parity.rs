@@ -751,7 +751,11 @@ fn evidence_run_matches_csharp_and_bundles_cross_verify() {
         (cs.as_path(), "cs.json"),
         (bower_binary().as_path(), "rs.json"),
     ] {
-        let (address, server) = common::one_shot_server("202 Accepted", body);
+        // `evidence run` reads /v1/status before it sends the canary.
+        let (address, server) = common::sequence_server(vec![
+            ("200 OK", "{\"status\":\"healthy\"}"),
+            ("202 Accepted", body),
+        ]);
         let run: Run = command(
             binary,
             &[
