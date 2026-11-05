@@ -2,7 +2,7 @@ apiVersion: bower.security/v1
 kind: Pack
 metadata:
   id: linux-authlog-ssh
-  version: 1.2.0
+  version: 1.3.0
   name: Linux SSH failures from auth.log
   description: >-
     sshd authentication failures from plain-text auth.log lines read by the Bower file
