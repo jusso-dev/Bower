@@ -1,0 +1,8 @@
+audit_at=2026-11-05T01:24:18Z
+head_bucket: aws: [ERROR]: An error occurred (404) when calling the HeadBucket operation: Not Found
+list_objects: aws: [ERROR]: An error occurred (NoSuchBucket) when calling the ListObjectsV2 operation: The specified bucket does not exist
+list_buckets_prefix_bower-s3-: 0
+tagging_api_RunId_resources_ap-southeast-2: 0
+tagging_api_RunId_resources_us-east-1: 0
+tagging_api_Project_bower-lab_s3_buckets_for_run: 0
+local_collector_processes: 0

@@ -1,5 +1,10 @@
 # S3 output live qualification: bower-s3-20261105-004926
 
+> **Superseded layout.** This run predates the council round 1 key-layout change: keys here
+> are `<prefix>/yyyy/MM/dd/HH/<sha256 of ids joined by line feeds>`, with no collector
+> segment and no body hash, and `AES256` was sent explicitly. It is kept as history. The
+> current layout is qualified by a later `reports/s3-output-*` run (see its README).
+
 Live run of `BOWER_OUTPUT=s3` (C# `Bower.Output.S3` and Rust `bower-output-s3`) against
 Amazon S3 in ap-southeast-2, 05-11-2026 00:49 to 00:53 UTC. Code: branch `feat/s3-output`
 (working tree on top of `562c3e6`, the commits that follow add this report). The account id
