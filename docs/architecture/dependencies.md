@@ -154,6 +154,18 @@ trusts `BOWER_MANAGEMENT_CA_BUNDLE` and still refuses a host name mismatch or an
 unrelated CA. They add no production dependency and no lock-file packages. The proxy and
 CA bundle themselves use reqwest's `Proxy` and `tls_certs_merge`; no new crate is linked.
 
+### HTTP output (`BOWER_OUTPUT=http`)
+
+`src/Bower.Output.Http` adds no NuGet packages: it uses `HttpClient`
+(`SocketsHttpHandler`), `GZipStream` and `System.Text.Json` from the runtime, and
+references only `Bower.Abstractions`. `rust/crates/bower-output-http` uses workspace
+crates already in the lock file (`reqwest` with `tls_certs_merge` for the CA bundle,
+`flate2` for gzip bodies, `regex`, `serde`, `serde_json`, `chrono`); its tests reuse
+`axum`, `hyper`, `hyper-util`, `rcgen`, `rustls`, `tokio-rustls` and `tempfile` as
+dev-only dependencies, as `bower-collector` already does. No new crate or package enters
+either lock file. Alternatives considered: a Splunk SDK (adds a dependency for a single
+documented POST) and a generic log shipper (out of scope: Bower is not a log forwarder).
+
 ### Collector relay mode (issue #110)
 
 | Crate | Used by | Why | Alternatives considered |
