@@ -66,12 +66,12 @@ start-up and refuses a signed `reload`.
 | `maxBytesPerBatch` | `1048576` | 65536–4194304 bytes scanned per poll (one line may run up to its own limit past it). Also bounds the backward scan for `startAt: end`. |
 | `rotationGracePolls` | `5` | 1–60 polls `path.1` must stay unchanged (size and write time) before the cursor moves to the new file. See [rotation](#cursors-rotation-and-backpressure). |
 | `inputs[].id` | required | 1–63 lowercase letters, digits or hyphens, unique. Names the cursor (`file:<id>`) and the event's source adapter (`file:<id>:<pack>:<parser>`). |
-| `inputs[].path` | required | Absolute, normalised (no `.`, `..`, repeated or trailing separators), no wildcard characters (`* ? [ ] { }`) or control characters, strictly below an allowed root, and read by only one input. Paths that differ only in ASCII case count as the same file, and one input's path may not be another's `path.1`. |
+| `inputs[].path` | required | Absolute, normalised (no `.`, `..`, repeated or trailing separators), no wildcard characters (`* ? [ ] { }`) or control characters, strictly below an allowed root, and read by only one input. Paths that differ only in ASCII case count as the same file, and one input's path may not be another's `path.1`. These rules are applied to canonical paths too (directories resolved through links, so `/var/run/x.log` and `/run/x.log` are the same file), at load and at every read; a directory that does not exist yet is compared as written. |
 | `inputs[].route` | required | `{ "pack": "<id>", "parser": <index> }`: an active parser of a loaded signed pack. Checked at start-up and before a signed reload. |
 | `inputs[].format` | `text` | `text` or `json-lines`. |
 | `inputs[].startAt` | `end` | `end`: the first start reads only lines written after it. `beginning`: the first start reads the whole file. Either way a restart resumes from the stored cursor. |
 | `inputs[].maxLineBytes` | `16384` | 256–30720. A pack parser reads records of at most 32 KiB, so a longer line could never be parsed. |
-| `inputs[].allowSymlink` | `false` | Allow the file itself to be one symbolic link whose target is a regular file below an allowed root. Directories on the path are never links. The target may not be another input's file or `path.1` (checked at load and at every read). |
+| `inputs[].allowSymlink` | `false` | Allow the file itself to be one symbolic link whose target is a regular file below an allowed root. Directories on the path are never links. The target may not be another input's file, another input's link target, or either one's `path.1` (checked at load and at every read). |
 
 There is deliberately no glob form in this version. List each file. Use one input per
 file (for example `auth.log` and `secure` on different hosts are different
@@ -96,8 +96,10 @@ the read; a refused `path.1` fails the poll rather than being skipped.
 The open itself is checked too. On Linux (both collectors) and on every Unix (Rust), the
 file is opened with `O_NOFOLLOW | O_NONBLOCK`, and the handle must be a regular file with
 the same device and inode as the path at that moment, so a link or another file swapped in
-after the checks is refused. Elsewhere the C# collector can only re-check that the path is
-not a link after opening. Each file is opened once per read: its identity, length and
+after the checks is refused. The C# collector knows the flag values for x86-64 and arm64
+only (they differ: `O_NOFOLLOW` is 0x20000 on x86-64 and 0x8000 on arm64); on other Linux
+architectures it opens without them and relies on the device and inode check alone.
+Elsewhere the C# collector can only re-check that the path is not a link after opening. Each file is opened once per read: its identity, length and
 lines all come from that one handle, so bytes of one generation can never move another
 generation's cursor.
 
@@ -141,14 +143,24 @@ merge distinct lines.
 
 ### Shipped pack: `linux-authlog-ssh`
 
-[`packs/linux-authlog-ssh`](../../packs/linux-authlog-ssh) 1.1.0 parses plain-text sshd
+[`packs/linux-authlog-ssh`](../../packs/linux-authlog-ssh) 1.2.0 parses plain-text sshd
 `auth.log` lines with a signed transform program. Bounded regexes extract the time,
-account, source address and method from `Failed password|publickey|keyboard-interactive/pam
-for [invalid user] <user> from <ip> port <n> ssh2[: ...]` lines written by `sshd[<pid>]` or
-`sshd-session[<pid>]` (OpenSSH 9.8 and later). The match is anchored at the end of the line,
-so the last `from <ip> port <n> ssh2` wins: a hostile username such as
-`x from 10.9.9.9 port 1 ssh2` cannot change the reported source address. A static table
-maps the method to the outcome reason. It produces only `authentication_failure` from
+account, source address and method from lines written by `sshd[<pid>]` or
+`sshd-session[<pid>]` (OpenSSH 9.8 and later), with an exact grammar for the whole line:
+
+- `Failed password|keyboard-interactive/pam for [invalid user ]<user> from <ip> port <n> ssh2`
+  and nothing after it;
+- `Failed publickey for [invalid user ]<user> from <ip> port <n> ssh2: <KEYTYPE> <HASH>:<fp>`,
+  optionally followed by ` ID <key-id> (serial <n>) CA <KEYTYPE> <HASH>:<fp>` for a
+  certificate, and nothing after it.
+
+The username and the certificate key ID are the two fields a client controls, so neither
+may contain a space, and every other part of the line is fixed. A hostile username such as
+`x from 10.9.9.9 port 1 ssh2` (or `x from 6.6.6.6 port 1 ssh2: k`), or a certificate key ID
+that imitates a second address, therefore makes the line not selected; it never yields a
+spoofed source address. Usernames or key IDs that contain spaces are not selected either:
+they are counted in `notSelected` (a gap, not an error). A static table maps the method to
+the outcome reason. It produces only `authentication_failure` from
 application `linux-sshd`, pseudonymises usernames with HMAC, and never forwards the line,
 host name or path. Accepted sign-ins, other programs, `message repeated N times: [...]`
 summaries and other lines are not selected. Sign it with your key like any pack
@@ -172,14 +184,16 @@ telemetry, not proof that sshd wrote them.
 ## Cursors, rotation and backpressure
 
 Cursors live in the queue database's `source_cursors` table (`file:<id>`), so a restart
-resumes where the queue left off. A cursor holds the file's identity, an offset and
-whether an oversized line is being skipped; never line content. The identity is the SHA-256
+resumes where the queue left off. A cursor holds the file's identity, an offset, whether an
+oversized line is being skipped, the file's device and inode where known, and the rotation
+state described below; never line content. Because the rotation state is in the cursor, a
+restart in the middle of a rotation carries on exactly where it stopped. The identity is the SHA-256
 of the file's first complete line, extended to at least 64 bytes and capped at 4096, so
 files whose first 64 bytes are the same (a constant JSON prefix, for example) are still told
 apart once their first lines differ. A file whose first line is still being written (and
-shorter than 4096 bytes) has no identity yet and waits. Device and inode numbers are used
-to check each open, but are not part of the stored identity: they are reused after a file
-is deleted, copytruncate keeps them, and the cursor must stay readable by both collectors.
+shorter than 4096 bytes) has no identity yet and waits. Device and inode numbers check each
+open and tell rename from copytruncate, but are not part of the identity: they are reused
+after a file is deleted and copytruncate keeps them.
 
 - **Advance rule.** The cursor moves past a line only once it is durably enqueued or
   definitively dropped (not selected, rejected, quarantined, malformed, oversized, too
@@ -199,19 +213,30 @@ is deleted, copytruncate keeps them, and the cursor must stay readable by both c
   cursor is unchanged.
 - **Oversized lines** are skipped without being buffered, even across polls, and
   counted.
-- **Rename rotation** (logrotate's default): when the current file's identity changes and
-  `path.1` carries the old identity, Bower drains `path.1` from the cursor. A writer keeps
-  writing to `path.1` until it reopens its file (rsyslog until it is sent HUP), so the
-  cursor leaves `path.1` only once the new file can be identified and `path.1` has stayed
-  unchanged (size and write time) for `rotationGracePolls` polls; only then is an
-  unterminated last line of `path.1` taken as complete. Lines written to `path.1` after
-  that are counted in `rotationGaps`, never lost silently. Keep `delaycompress` so `path.1`
-  stays plain text. The grace window and that late-line watch live in memory: a restart
-  starts the window again.
-- **copytruncate**: the copy in `path.1` is drained the same way, then the truncated file
-  is read from its start. When the truncated file's first line repeats the old one (so the
-  identities match) and it is shorter than the cursor, a `path.1` with the same identity
-  and at least the cursor's length is drained from the cursor first.
+- **Rotation is a drain.** Once a rotation is detected, the cursor refers to `path.1`
+  (`drain` in the cursor) and the current file is not read at all until `path.1` is
+  drained, however the current file changes meanwhile. If `path.1` disappears or is rotated
+  again before it is drained, that is counted in `rotationGaps` and the current file is
+  read from its start.
+- **Rename or copytruncate.** On Linux (and every Unix in Rust) device and inode numbers
+  tell them apart: copytruncate keeps the original file at the path (truncated) and makes
+  `path.1` a copy; rename moves the original to `path.1` and puts another file at the path.
+  Without them, a current file shorter than the cursor with the same identity (and a
+  `path.1` with that identity at least as long as the cursor) is copytruncate, and a changed
+  identity with `path.1` carrying the old one is a rename.
+- **copytruncate**: the copy is static, so it is drained from the cursor to its end (its
+  last line is complete) and the cursor moves to the current file at offset 0 at once, with
+  no grace window.
+- **Rename rotation** (logrotate's default): a writer keeps writing to `path.1` until it
+  reopens its file (rsyslog until it is sent HUP), so the cursor leaves `path.1` only once
+  the new file can be identified and `path.1` has stayed unchanged over `rotationGracePolls`
+  end-of-file polls. A poll counts only when it read to the end of `path.1` without hitting
+  a line or byte limit and its size and write time are the same as at the previous such
+  poll, so a backlog never uses up the window; the count is kept in the cursor. Only then is
+  an unterminated last line of `path.1` taken as complete. The generation the cursor left
+  (identity and length) is kept in the cursor too, and only once the switch is committed:
+  later growth of that `path.1`, before or after a restart, is counted in `rotationGaps`,
+  never lost silently. Keep `delaycompress` so `path.1` stays plain text.
 - **startAt: end** scans back from the end for the last complete line within
   `maxBytesPerBatch` bytes (stopping promptly on shutdown). Without a newline in that window
   it starts at the end and skips the rest of the line being written.
