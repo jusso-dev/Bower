@@ -82,6 +82,7 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bower.Source.WindowsEventLog", "src\Bower.Source.WindowsEventLog\Bower.Source.WindowsEventLog.csproj", "{BB988EA2-6E0F-4DDF-8B99-574F40058EB6}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bower.Output.S3", "src\Bower.Output.S3\Bower.Output.S3.csproj", "{FAFC7640-0F63-4CE8-830C-8A91AD740823}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bower.Output.Http", "src\Bower.Output.Http\Bower.Output.Http.csproj", "{2482B137-1B29-4735-A2C4-0192E3DC9640}"
 EndProject
 Global
