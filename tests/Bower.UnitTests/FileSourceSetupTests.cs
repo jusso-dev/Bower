@@ -317,6 +317,36 @@ public sealed class FileSourceSetupTests
     }
 
     [Theory]
+    [InlineData("/run", "/var/run")]
+    [InlineData("/var/run", "/run")]
+    public async Task Plan_VarRunAndRunPathsOverlap(string first, string second)
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await ManagementApiTests.StartAsync(directory, new FakeClock(Now), cancellationToken);
+        await ActiveCollectorAsync(app, "edge-01", cancellationToken);
+        SourceSetupRequestDetail a = await SubmitAsync(
+            ManagementApiTests.Client(app, BowerRoles.Operator, "alex"),
+            "file",
+            With(("inputId", "a"), ("allowedRoot", $"{first}/security"), ("path", $"{first}/security/auth.log")),
+            cancellationToken);
+        Dictionary<string, string> b = With(("inputId", "b"), ("allowedRoot", $"{second}/security"), ("path", $"{second}/security/auth.log"));
+
+        // /var/run is a link to /run, so these name one file under different input names.
+        SourceSetupPlanResult whilePending = await PlanAsync(app, "file", "edge-01", b, cancellationToken);
+        await ManagementApiTests.Client(app, BowerRoles.Approver, "sam").PostAsJsonAsync(
+            $"/api/sources/requests/{a.Id}/approve", new ApprovalRequest("A"), cancellationToken);
+        SourceSetupPlanResult afterApproval = await PlanAsync(app, "file", "edge-01", b, cancellationToken);
+
+        Assert.False(whilePending.Valid);
+        Assert.Equal("path", Assert.Single(whilePending.Checks, check => check.State == SetupCheckStates.Fail).Id);
+        Assert.True(afterApproval.Valid);
+        SetupCheck warning = Assert.Single(afterApproval.Checks, check => check.Id == "path");
+        Assert.Equal(SetupCheckStates.Warn, warning.State);
+        Assert.Contains(a.Id[..8], warning.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
     [InlineData("/var/log/Auth.log", true)]
     [InlineData("/var/log/AUTH.LOG", true)]
     [InlineData("/var/log/auth.log.1", true)]
@@ -712,6 +742,8 @@ public sealed class FileSourceSetupTests
     private static FileTailSourceConfiguration LoadAsCollector(string json, PolicyBundle bundle)
     {
         FileTailSourceConfiguration configuration = FileTailSourceConfigurationLoader.Parse(json);
+        // LoadFile runs this after Parse: canonical (realpath) overlaps on this host.
+        FileTailSourceConfigurationLoader.ValidateLinks(configuration);
         Bower.Collector.FileTailRoutes.Validate(configuration, bundle);
         return configuration;
     }

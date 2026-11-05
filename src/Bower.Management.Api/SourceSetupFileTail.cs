@@ -271,12 +271,13 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
     /// <summary>
     /// Same rule as <c>FileTailSourceConfigurationLoader.Overlaps</c>, which refuses a merged
     /// file whose inputs overlap: the same file ignoring ASCII case, or one is the other's
-    /// rotated file (<c>path.1</c>).
+    /// rotated file (<c>path.1</c>). The collector compares realpath-resolved paths; this
+    /// server sees path text only, so it applies the one alias it knows (<c>/var/run</c>).
     /// </summary>
     private static bool Overlaps(string path, string other)
     {
-        string left = Fold(path);
-        string right = Fold(other);
+        string left = Fold(RunAlias(path));
+        string right = Fold(RunAlias(other));
         return left == right || left == right + ".1" || left + ".1" == right;
     }
 
@@ -373,14 +374,17 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
     private static bool Plain(string path) =>
         path.Split('/').Skip(1).All(segment => segment.Length > 0 && segment != "." && segment.Trim().Length == segment.Length);
 
-    // Text comparison only. /var/run is a link to /run on standard Linux and allowed
-    // directories may be links, so /var/run paths are checked as /run paths.
     private static string? Under(string path, IEnumerable<string> directories)
     {
-        string checkedPath = path == "/var/run" || path.StartsWith("/var/run/", StringComparison.Ordinal) ? path[4..] : path;
+        string checkedPath = RunAlias(path);
         return directories.FirstOrDefault(directory =>
             checkedPath == directory || checkedPath.StartsWith(directory + '/', StringComparison.Ordinal));
     }
+
+    // Text comparison only. /var/run is a link to /run on standard Linux and allowed
+    // directories may be links, so /var/run paths are checked as /run paths.
+    private static string RunAlias(string path) =>
+        path == "/var/run" || path.StartsWith("/var/run/", StringComparison.Ordinal) ? path[4..] : path;
 
     [GeneratedRegex("^[a-z0-9][a-z0-9-]{0,62}$")]
     private static partial Regex InputPattern();
