@@ -1,0 +1,2 @@
+CollectorPolicyArn	arn:aws:iam::<account>:policy/bower-s3-iam-20261105-074405-CollectorWritePolicy-vJX05BsKcQ0u
+CollectorSettings	BOWER_OUTPUT=s3 BOWER_S3_BUCKET=bower-s3-iam-20261105-074405-lab BOWER_S3_REGION=ap-southeast-2 BOWER_S3_PREFIX=bower BOWER_S3_EXPECTED_BUCKET_OWNER=<account>

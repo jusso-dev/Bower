@@ -1,0 +1,3 @@
+CollectorWritePolicy	AWS::IAM::ManagedPolicy	arn:aws:iam::<account>:policy/bower-s3-iam-20261105-074405-CollectorWritePolicy-vJX05BsKcQ0u	CREATE_COMPLETE
+OutputBucket	AWS::S3::Bucket	bower-s3-iam-20261105-074405-lab	CREATE_COMPLETE
+OutputBucketPolicy	AWS::S3::BucketPolicy	bower-s3-iam-20261105-074405-lab	CREATE_COMPLETE

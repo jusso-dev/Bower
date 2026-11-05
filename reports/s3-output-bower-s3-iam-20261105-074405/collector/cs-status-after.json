@@ -1,0 +1,171 @@
+{
+    "status": "healthy",
+    "version": "0.1.1-dev.0",
+    "policy": {
+        "hash": "sha256:762bcab1697155982dd65727ba0b9f8ee5cae4e6c6e56e52301fbd39236c8f66",
+        "policies": [
+            {
+                "id": "BWR-POL-AUTH-FAILURE",
+                "version": "1.0.0"
+            },
+            {
+                "id": "BWR-POL-EVIDENCE-CANARY",
+                "version": "1.0.0"
+            },
+            {
+                "id": "BWR-POL-ROLE-MEMBERSHIP",
+                "version": "1.0.0"
+            },
+            {
+                "id": "BWR-POL-PRIVACY-DETECT",
+                "version": "1.0.0"
+            },
+            {
+                "id": "BWR-POL-SENSITIVE-EXPORT",
+                "version": "1.0.0"
+            }
+        ],
+        "packs": [],
+        "privacyProfile": null,
+        "privacyProfileVersion": null,
+        "privacyProfileHash": "default",
+        "privacyProfileSource": "local",
+        "managedPrivacyProfileState": null,
+        "managedPrivacyProfileRevision": null
+    },
+    "ledger": {
+        "sequence": 10,
+        "hash": "05d0de6e8251dcc9376423bf88337a7cf413b678ab1c4285e54b735edc755c11"
+    },
+    "queue": {
+        "queued": 0,
+        "retrying": 0,
+        "uploading": 0,
+        "delivered": 10,
+        "deadLettered": 0,
+        "totalBytes": 12989,
+        "undeliveredBytes": 0,
+        "oldestUndelivered": null
+    },
+    "jobs": [
+        {
+            "id": "queue-maintenance",
+            "schedule": "0 3 * * *",
+            "lastRunAt": null,
+            "lastState": null,
+            "nextRunAt": "2026-11-06T03:00:00+00:00"
+        },
+        {
+            "id": "queue-retention",
+            "schedule": "0 * * * *",
+            "lastRunAt": null,
+            "lastState": null,
+            "nextRunAt": "2026-11-05T08:00:00+00:00"
+        },
+        {
+            "id": "source-activity",
+            "schedule": "* * * * *",
+            "lastRunAt": null,
+            "lastState": null,
+            "nextRunAt": "2026-11-05T07:46:00+00:00"
+        }
+    ],
+    "eventIdentityConflicts": {
+        "producers": [],
+        "unattributed": 0,
+        "overflow": 0
+    },
+    "pipeline": {
+        "startedAt": "2026-11-05T07:45:27.117711+00:00",
+        "eventsIn": 10,
+        "eventsQueued": 10,
+        "duplicates": 0,
+        "suppressed": 0,
+        "bytesIn": 6200,
+        "bytesQueued": 12989,
+        "rows": [
+            {
+                "stage": "policy",
+                "policyId": "BWR-POL-AUTH-FAILURE",
+                "action": "accept",
+                "events": 10,
+                "queued": 10,
+                "duplicates": 0,
+                "suppressed": 0,
+                "bytesIn": 6200,
+                "bytesQueued": 12989
+            }
+        ]
+    },
+    "intake": {
+        "observedSince": "2026-11-05T07:45:27.117711+00:00",
+        "attemptedRequests": 10,
+        "attemptedBytes": 6200,
+        "capacityRefusals": 0,
+        "capacityRefusedBytes": 0,
+        "privacyAlertRefusals": 0,
+        "privacyAlertRefusedBytes": 0,
+        "lastRefusalAt": null,
+        "lastRefusalReason": null,
+        "sourceRecordsRolledBack": 0,
+        "sourceRecordRolledBackBytes": 0
+    },
+    "activity": [
+        {
+            "application": "BowerS3Lab",
+            "environment": "lab",
+            "lastSeenAt": "2026-11-05T07:45:28.20975+00:00",
+            "eventCount": 10
+        }
+    ],
+    "tap": {
+        "enabled": true,
+        "activeSessions": 0,
+        "maximumSessions": 2,
+        "sessionsOpened": 0,
+        "sessionsRefused": 0,
+        "framesSent": 0,
+        "framesDropped": 0,
+        "framesRateLimited": 0
+    },
+    "queuePages": {
+        "pageSize": 4096,
+        "pageLimitBytes": 9130373120,
+        "usedBytes": 114688,
+        "freeListBytes": 0,
+        "usedPercent": 0,
+        "ceilingBytes": 18797821952
+    },
+    "output": "s3",
+    "deliveryActivity": {
+        "lastSuccessfulDeliveryAt": "2026-11-05T07:45:29.436473+00:00",
+        "lastFailureCode": null,
+        "lastFailureAt": null
+    },
+    "storage": {
+        "state": "normal",
+        "intakePaused": false,
+        "observedAt": "2026-11-05T07:45:30.311716+00:00",
+        "freeBytes": 67061100544,
+        "totalBytes": 494384795648,
+        "freePercent": 13.56,
+        "warningFreeBytes": 49438479564,
+        "criticalFreeBytes": 24719239782,
+        "stateChangedAt": "2026-11-05T07:45:27.128439+00:00",
+        "warningTransitions": 0,
+        "criticalTransitions": 0,
+        "queueFileBytes": 180448,
+        "queueDatabaseBytes": 114688,
+        "queueWalBytes": 32992,
+        "queueMaximumBytes": 10737418240,
+        "queueUndeliveredBytes": 0,
+        "queueUtilisationPercent": 0,
+        "oldestPendingAgeSeconds": null,
+        "pressurePurgedEvents": 0,
+        "lastPressurePurgeAt": null,
+        "storageRefusals": 0,
+        "storageRefusedBytes": 0,
+        "lastStorageRefusalAt": null,
+        "lastStorageRefusalReason": null
+    }
+}

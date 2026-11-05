@@ -1,0 +1,11 @@
+audit_at=2026-11-05T07:48:29Z
+head_bucket: aws: [ERROR]: An error occurred (404) when calling the HeadBucket operation: Not Found
+list_buckets_prefix_bower-s3-iam-: 0
+stack: aws: [ERROR]: An error occurred (ValidationError) when calling the DescribeStacks operation: Stack with id bower-s3-iam-20261105-074405 does not exist
+stack_status_by_id: DELETE_COMPLETE
+iam_roles_with_runid: 0
+0
+iam_local_policies_with_runid: 0
+tagging_api_RunId_resources_ap-southeast-2: 0
+tagging_api_RunId_resources_us-east-1: 0
+local_collector_processes: 0
