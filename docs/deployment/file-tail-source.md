@@ -228,7 +228,11 @@ no matching `path.1` is told apart by the cursor's anchor, a SHA-256 of the last
 same content (restored from a backup or copied) and reading continues from the cursor without
 a gap; otherwise it is a new generation with the same first line and is read from its start
 with a `rotationGaps` entry. A cursor without an anchor (written by an earlier build, or at
-offset 0) is treated the same conservative way. Lines may then be delivered twice (the queue
+offset 0) is treated the same conservative way. A new file that the file system gives the old
+file's inode number again (ext4 reuses freed numbers quickly) looks like the same file: one
+with a different first line is still read from its start with a gap, but one with the same
+first line, at least as long as the cursor, continues from the cursor, as it does where
+inode numbers are not known. Lines may then be delivered twice (the queue
 deduplicates what it still holds), never skipped.
 
 - **Advance rule.** The cursor moves past a line only once it is durably enqueued or

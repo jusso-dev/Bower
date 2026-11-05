@@ -1108,6 +1108,8 @@ fn copytruncate_detected_by_inode_drains_without_grace_and_rename_by_inode_keeps
     std::fs::remove_file(&rotated).unwrap();
     std::fs::rename(&path, &rotated).unwrap();
     std::fs::write(&path, format!("{}{}", line("second-1"), line("third-1"))).unwrap();
+    // The cursor's file is alive as path.1, so the new file's number always differs from it.
+    assert_ne!(bower_source_file::handle::file_id_of(&path), at.file_id);
     let renamed = reader::read(Some(&path), Some(&rotated), Some(&at), &options, None).unwrap();
     assert_eq!(renamed.cursor.drain.as_deref(), Some("rename"));
 }
@@ -1624,7 +1626,9 @@ fn a_restored_file_with_the_same_content_at_a_new_inode_continues_without_a_gap_
     source.poll_once("auth").unwrap();
     let before = bower_source_file::handle::file_id_of(&path);
 
-    // Restored from a backup: the same content, a new inode, and no path.1.
+    // Restored from a backup: the same content, a new inode, and no path.1. The original stays
+    // hard-linked, so the restored file can never be handed its inode number back.
+    std::fs::hard_link(&path, directory.path().join("original")).unwrap();
     let restored = directory.path().join("auth.log.restore");
     std::fs::write(&restored, std::fs::read(&path).unwrap()).unwrap();
     std::fs::rename(&restored, &path).unwrap();
@@ -1791,6 +1795,9 @@ fn a_file_replaced_at_a_new_inode_with_the_same_header_is_read_from_its_start_wi
         None,
     );
     source.poll_once("auth").unwrap();
+    let before = bower_source_file::handle::file_id_of(&path);
+    // The old generation stays hard-linked, so the new one cannot be given its inode number.
+    std::fs::hard_link(&path, directory.path().join("old")).unwrap();
 
     // Sol's case: a new generation at a new inode, no path.1 (compress without delaycompress,
     // rotate 0, or two rotations while Bower was down), the same header line, and already
@@ -1807,6 +1814,7 @@ fn a_file_replaced_at_a_new_inode_with_the_same_header_is_read_from_its_start_wi
     )
     .unwrap();
     std::fs::rename(&replacement, &path).unwrap();
+    assert_ne!(bower_source_file::handle::file_id_of(&path), before);
     source.poll_once("auth").unwrap();
 
     // Read from its start with a gap: the header and both new records, never skipped.
@@ -1830,10 +1838,17 @@ fn a_cursor_without_an_anchor_at_a_new_inode_is_read_from_its_start_with_a_gap()
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("auth.log");
     std::fs::write(&path, format!("{}{}", line("first-1"), line("two"))).unwrap();
-    let restore = || {
+    // Each replaced generation stays hard-linked, so its inode number is never freed: file
+    // systems such as ext4 hand freed numbers straight back, and a restore that got the
+    // original's number would look like the same file (an inherent limit of inode hints).
+    let kept = directory.path().join("kept");
+    std::fs::create_dir(&kept).unwrap();
+    let restore = |generation: usize| {
+        std::fs::hard_link(&path, kept.join(generation.to_string())).unwrap();
         let copy = directory.path().join("auth.log.restore");
         std::fs::write(&copy, std::fs::read(&path).unwrap()).unwrap();
         std::fs::rename(&copy, &path).unwrap();
+        bower_source_file::handle::file_id_of(&path)
     };
     let options = ReaderOptions {
         start_at_end: false,
@@ -1841,9 +1856,16 @@ fn a_cursor_without_an_anchor_at_a_new_inode_is_read_from_its_start_with_a_gap()
     };
     let first = reader::read(Some(&path), None, None, &options, None).unwrap();
     assert!(first.cursor.anchor.is_some());
+    // A start-at-end cursor is anchored too.
+    let started = reader::read(Some(&path), None, None, &ReaderOptions::default(), None).unwrap();
+    assert_eq!(
+        (started.cursor.offset, &started.cursor.anchor),
+        (first.cursor.offset, &first.cursor.anchor)
+    );
 
     // The same content at a new inode: the anchor matches, so it continues.
-    restore();
+    let second = restore(1);
+    assert!(second.is_some() && second != first.cursor.file_id);
     let anchored = reader::read(Some(&path), None, Some(&first.cursor), &options, None).unwrap();
     assert_eq!(
         (anchored.lines.len(), anchored.gap, anchored.cursor.offset),
@@ -1851,7 +1873,8 @@ fn a_cursor_without_an_anchor_at_a_new_inode_is_read_from_its_start_with_a_gap()
     );
 
     // An earlier schema-2 cursor has no anchor: never skip, read from the start with a gap.
-    restore();
+    let third = restore(2);
+    assert!(third.is_some() && third != first.cursor.file_id && third != second);
     let without = Cursor {
         anchor: None,
         ..first.cursor.clone()

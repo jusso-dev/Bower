@@ -921,6 +921,8 @@ public sealed class FileTailSourceTests
         File.Delete(rotated);
         File.Move(path, rotated);
         File.WriteAllText(path, Line("second-1") + Line("third-1"));
+        // The cursor's file is alive as path.1, so the new file's number always differs from it.
+        Assert.NotEqual(at.FileId, FileTailHandle.FileIdOf(path));
         FileTailBatch renamed = FileTailReader.Read(path, rotated, at, options, TestContext.Current.CancellationToken);
         Assert.Equal(FileTailCursor.RenameDrain, renamed.Cursor.Drain);
     }
@@ -1291,7 +1293,9 @@ public sealed class FileTailSourceTests
         await source.PollOnceAsync("auth", cancellation);
         string? before = FileTailHandle.FileIdOf(path);
 
-        // Restored from a backup: the same content, a new inode, and no path.1.
+        // Restored from a backup: the same content, a new inode, and no path.1. The original stays
+        // open, so the restored file can never be handed its inode number back.
+        using FileStream original = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         await File.WriteAllTextAsync(path + ".restore", await File.ReadAllTextAsync(path, cancellation), cancellation);
         File.Move(path + ".restore", path, overwrite: true);
         await source.PollOnceAsync("auth", cancellation);
@@ -1339,12 +1343,17 @@ public sealed class FileTailSourceTests
         FakeSink sink = new(_ => FileTailSubmitOutcome.Queued);
         await using FileTailSource source = new(Configuration(directory.Path, path, startAt: "beginning"), sink, new MemoryCursors());
         await source.PollOnceAsync("auth", cancellation);
+        string? before = FileTailHandle.FileIdOf(path);
+        // The old generation stays open, so the new one cannot be given its inode number back
+        // (ext4 reuses freed numbers at once).
+        using FileStream old = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
 
         // Sol's case: a new generation at a new inode, no path.1 (compress without delaycompress,
         // rotate 0, or two rotations while Bower was down), the same header line, and already
         // longer than the 240-byte cursor.
         await File.WriteAllTextAsync(path + ".new", Line80("header") + Line80("new-1") + Line80("new-2", length: 100), cancellation);
         File.Move(path + ".new", path, overwrite: true);
+        Assert.NotEqual(before, FileTailHandle.FileIdOf(path));
         await source.PollOnceAsync("auth", cancellation);
 
         // Read from its start with a gap: the header and both new records, never skipped.
@@ -1368,6 +1377,9 @@ public sealed class FileTailSourceTests
             FileTailReaderOptions options = new() { StartAtEnd = false };
             FileTailBatch first = FileTailReader.Read(path, null, null, options, cancellation);
             Assert.NotNull(first.Cursor.Anchor);
+            // A start-at-end cursor is anchored too.
+            FileTailBatch started = FileTailReader.Read(path, null, null, new FileTailReaderOptions(), cancellation);
+            Assert.Equal((first.Cursor.Offset, first.Cursor.Anchor), (started.Cursor.Offset, started.Cursor.Anchor));
 
             // The same content at a new inode: the anchor matches, so it continues.
             id = "1:2";

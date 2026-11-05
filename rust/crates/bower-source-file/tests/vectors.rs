@@ -91,6 +91,18 @@ fn sequences_match_the_csharp_specification() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("app.log");
         let rotated = directory.path().join("app.log.1");
+        // With real device and inode numbers, a file about to be unlinked or overwritten stays
+        // hard-linked here, so a later file is never handed its number again (ext4 reuses
+        // freed numbers at once): a new file always has a new number, as the C# model assumes.
+        let kept = directory.path().join("kept");
+        std::fs::create_dir(&kept).unwrap();
+        let mut generation = 0;
+        let mut keep = |file: &Path| {
+            if reader.use_file_ids && file.exists() {
+                generation += 1;
+                std::fs::hard_link(file, kept.join(generation.to_string())).unwrap();
+            }
+        };
         let mut cursor: Option<Cursor> = None;
         for (index, step) in sequence["steps"].as_array().unwrap().iter().enumerate() {
             if let Some(text) = step["write"].as_str() {
@@ -115,20 +127,25 @@ fn sequences_match_the_csharp_specification() {
                 let mut file = OpenOptions::new().append(true).open(&rotated).unwrap();
                 file.write_all(text.as_bytes()).unwrap();
             } else if step.get("deleteRotated").is_some() {
+                keep(&rotated);
                 std::fs::remove_file(&rotated).unwrap();
             } else if step.get("rename").is_some() {
+                keep(&rotated);
                 std::fs::rename(&path, &rotated).unwrap();
             } else if let Some(text) = step["replace"].as_str() {
                 // Other content at a new inode (a new generation after a rotation Bower missed).
+                keep(&path);
                 let replacement = directory.path().join("app.log.replace");
                 std::fs::write(&replacement, text).unwrap();
                 std::fs::rename(&replacement, &path).unwrap();
             } else if step.get("restore").is_some() {
                 // The same content at a new inode, as a restore from backup or a copy leaves it.
+                keep(&path);
                 let restored = directory.path().join("app.log.restore");
                 std::fs::write(&restored, std::fs::read(&path).unwrap()).unwrap();
                 std::fs::rename(&restored, &path).unwrap();
             } else if step.get("copytruncate").is_some() {
+                keep(&rotated);
                 std::fs::copy(&path, &rotated).unwrap();
                 OpenOptions::new()
                     .write(true)
