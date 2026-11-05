@@ -13,7 +13,7 @@ use bower_persistence::SqliteSourceCursorStore;
 use bower_source_file::config::{FileTailSourceConfiguration, InputOptions, Route};
 use bower_source_file::paths::{self, PathState};
 use bower_source_file::reader::Cursor;
-use bower_source_file::source::failures;
+use bower_source_file::source::{failures, refusals};
 use bower_source_file::{FileTailSink, FileTailSource, SinkFailure, SubmitOutcome};
 
 fn line(text: &str) -> String {
@@ -50,6 +50,7 @@ fn configuration(
         max_lines_per_batch: 256,
         max_bytes_per_batch: 1_048_576,
         rotation_grace_polls: 1,
+        rotation_drain_max_polls: 300,
     }
 }
 
@@ -1175,7 +1176,7 @@ fn two_allowed_links_that_meet_after_load_are_refused_at_read_time() {
     let sink = FakeSink::new(|_| Ok(SubmitOutcome::Queued));
     let source = FileTailSource::new(
         configuration,
-        sink,
+        sink.clone(),
         Arc::new(MemoryCursors::default()),
         None,
     );
@@ -1185,6 +1186,14 @@ fn two_allowed_links_that_meet_after_load_are_refused_at_read_time() {
         source.poll_once("second").unwrap_err().code,
         failures::PATH_REFUSED
     );
+    // The input whose link did not move keeps reading.
+    source.poll_once("first").unwrap();
+    let words: Vec<String> = sink
+        .records()
+        .iter()
+        .map(|record| first_word(record))
+        .collect();
+    assert_eq!(words, ["one"]);
 }
 
 /// C# `Cursor_RotationFieldsRoundTripAndInconsistentStateIsRefused` (same JSON).
@@ -1201,7 +1210,7 @@ fn cursor_rotation_fields_round_trip_and_inconsistent_state_is_refused() {
     assert_eq!(
         draining.serialize(),
         format!(
-            r#"{{"schemaVersion":1,"fingerprint":"{}","offset":10,"fileId":"2049:131","drain":"rename","observedLength":10,"observedWriteTime":17000000000000000,"stablePolls":1}}"#,
+            r#"{{"schemaVersion":2,"fingerprint":"{}","offset":10,"fileId":"2049:131","drain":"rename","observedLength":10,"observedWriteTime":17000000000000000,"stablePolls":1}}"#,
             "a".repeat(64)
         )
     );
@@ -1213,14 +1222,14 @@ fn cursor_rotation_fields_round_trip_and_inconsistent_state_is_refused() {
     };
     assert_eq!(Cursor::deserialize(&abandoned.serialize()), Some(abandoned));
     for invalid in [
-        r#"{"schemaVersion":1,"fingerprint":"","offset":0,"drain":"rename"}"#.to_owned(),
+        r#"{"schemaVersion":2,"fingerprint":"","offset":0,"drain":"rename"}"#.to_owned(),
         format!(
-            r#"{{"schemaVersion":1,"fingerprint":"{}","offset":0,"drain":"move"}}"#,
+            r#"{{"schemaVersion":2,"fingerprint":"{}","offset":0,"drain":"move"}}"#,
             "a".repeat(64)
         ),
-        r#"{"schemaVersion":1,"fingerprint":"","offset":0,"abandoned":"zz","abandonedLength":1}"#
+        r#"{"schemaVersion":2,"fingerprint":"","offset":0,"abandoned":"zz","abandonedLength":1}"#
             .to_owned(),
-        r#"{"schemaVersion":1,"fingerprint":"","offset":0,"fileId":"x:1"}"#.to_owned(),
+        r#"{"schemaVersion":2,"fingerprint":"","offset":0,"fileId":"x:1"}"#.to_owned(),
     ] {
         assert_eq!(Cursor::deserialize(&invalid), None, "{invalid}");
     }
@@ -1306,28 +1315,259 @@ fn the_same_file_through_a_directory_linked_after_load_is_refused_at_read_time()
     ];
     bower_source_file::config::validate_links(&configuration).unwrap();
     let sink = FakeSink::new(|_| Ok(SubmitOutcome::Queued));
+    let refusals = Arc::new(Mutex::new(Vec::<(String, String)>::new()));
+    let log = Arc::clone(&refusals);
     let source = FileTailSource::new(
         configuration,
         sink.clone(),
         Arc::new(MemoryCursors::default()),
         None,
-    );
+    )
+    .with_on_refused(move |input, reason| log.lock().unwrap().push((input.into(), reason.into())));
     source.poll_once("var-run").unwrap();
     std::fs::remove_dir_all(&var_run).unwrap();
     std::os::unix::fs::symlink(&run, &var_run).unwrap();
+    // Only the input whose resolution changed is refused; the other keeps reading.
+    let refused = source.poll_once("var-run").unwrap_err();
     assert_eq!(
-        source.poll_once("var-run").unwrap_err().code,
-        failures::PATH_REFUSED
+        (refused.code, refused.reason),
+        (failures::PATH_REFUSED, Some(refusals::OVERLAP))
     );
-    // Both inputs now name one file: neither reads it (fail closed) until that is fixed.
+    assert!(source.poll_once("var-run").is_err());
+    source.poll_once("run").unwrap();
+    let words: Vec<String> = sink
+        .records()
+        .iter()
+        .map(|record| first_word(record))
+        .collect();
+    assert_eq!(words, ["two", "one"]);
+    // Logged once per transition, with the id and reason code only.
     assert_eq!(
-        source.poll_once("run").unwrap_err().code,
-        failures::PATH_REFUSED
+        *refusals.lock().unwrap(),
+        [("var-run".to_owned(), refusals::OVERLAP.to_owned())]
+    );
+}
+
+/// C# `ALinkMovedOntoAnotherInputsFile_RefusesOnlyTheMovedInput`.
+#[cfg(unix)]
+#[test]
+fn a_link_moved_onto_another_inputs_file_refuses_only_the_moved_input() {
+    let directory = tempfile::tempdir().unwrap();
+    let auth = directory.path().join("auth.log");
+    let other = directory.path().join("other.log");
+    let alias = directory.path().join("alias.log");
+    std::fs::write(&auth, line("one")).unwrap();
+    std::fs::write(&other, line("two")).unwrap();
+    std::os::unix::fs::symlink(&other, &alias).unwrap();
+    let input = |id: &str, path: &Path, allow_symlink: bool| InputOptions {
+        id: id.into(),
+        path: path.to_str().unwrap().into(),
+        route: Route {
+            pack: "p".into(),
+            parser: 0,
+        },
+        format: "text".into(),
+        start_at: "beginning".into(),
+        max_line_bytes: 16_384,
+        allow_symlink,
+    };
+    let mut configuration = text(directory.path(), &auth, "beginning");
+    configuration.inputs = vec![
+        Some(input("auth", &auth, false)),
+        Some(input("alias", &alias, true)),
+    ];
+    bower_source_file::config::validate_links(&configuration).unwrap();
+    let refused_log = Arc::new(Mutex::new(Vec::<(String, String)>::new()));
+    let log = Arc::clone(&refused_log);
+    let sink = FakeSink::new(|_| Ok(SubmitOutcome::Queued));
+    let source = FileTailSource::new(
+        configuration,
+        sink.clone(),
+        Arc::new(MemoryCursors::default()),
+        None,
+    )
+    .with_on_refused(move |input, reason| log.lock().unwrap().push((input.into(), reason.into())));
+    std::fs::remove_file(&alias).unwrap();
+    std::os::unix::fs::symlink(&auth, &alias).unwrap();
+
+    // auth's path never changed: it keeps collecting. alias moved onto it: refused.
+    source.poll_once("auth").unwrap();
+    assert_eq!(
+        source.poll_once("alias").unwrap_err().reason,
+        Some(refusals::OVERLAP)
     );
     let words: Vec<String> = sink
         .records()
         .iter()
         .map(|record| first_word(record))
         .collect();
-    assert_eq!(words, ["two"]);
+    assert_eq!(words, ["one"]);
+    assert_eq!(
+        *refused_log.lock().unwrap(),
+        [("alias".to_owned(), refusals::OVERLAP.to_owned())]
+    );
+}
+
+/// C# `APathOneThatKeepsChanging_IsLeftAtTheDrainCapAndLateWritesAreGaps` (Sol's case).
+#[test]
+fn a_path_one_that_keeps_changing_is_left_at_the_drain_cap_and_late_writes_are_gaps() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("auth.log");
+    let rotated = directory.path().join("auth.log.1");
+    std::fs::write(&path, line("first-1")).unwrap();
+    let sink = FakeSink::new(|_| Ok(SubmitOutcome::Queued));
+    let cursors = Arc::new(MemoryCursors::default());
+    let mut configuration = grace(text(directory.path(), &path, "beginning"), 2);
+    configuration.rotation_drain_max_polls = 5;
+    FileTailSource::new(configuration.clone(), sink.clone(), cursors.clone(), None)
+        .poll_once("auth")
+        .unwrap();
+    std::fs::rename(&path, &rotated).unwrap();
+    std::fs::write(&path, line("second-1")).unwrap();
+    let mut gaps = 0;
+    // One line appended to path.1 before every poll, the cursor reloaded each time.
+    for poll in 0..20 {
+        let mut late = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&rotated)
+            .unwrap();
+        std::io::Write::write_all(&mut late, line(&format!("late-{poll}")).as_bytes()).unwrap();
+        let reloaded =
+            FileTailSource::new(configuration.clone(), sink.clone(), cursors.clone(), None);
+        reloaded.poll_once("auth").unwrap();
+        gaps += reloaded.snapshot()[0].rotation_gaps;
+    }
+    let words: Vec<String> = sink
+        .records()
+        .iter()
+        .map(|record| first_word(record))
+        .collect();
+    assert_eq!(
+        words,
+        [
+            "first-1", "late-0", "late-1", "late-2", "late-3", "late-4", "second-1"
+        ]
+    );
+    assert_eq!(gaps, 15, "late-5 to late-19");
+}
+
+/// C# `LegacyCursors_ReplayTheCurrentFileFromItsStartWithAGap`, both pre-release formats.
+#[test]
+fn legacy_cursors_replay_the_current_file_from_its_start_with_a_gap() {
+    use sha2::{Digest, Sha256};
+    for first_line in [true, false] {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("auth.log");
+        let old = format!(
+            "{}{}{}{}",
+            line("old-1 with a first line long enough"),
+            line("old-2"),
+            line("old-3"),
+            line("old-4")
+        );
+        // Mid-copytruncate: path.1 holds the copy, the original was truncated and rewritten.
+        std::fs::write(directory.path().join("auth.log.1"), &old).unwrap();
+        std::fs::write(
+            &path,
+            format!("{}{}{}", line("new-1"), line("new-2"), line("new-3")),
+        )
+        .unwrap();
+        let identity = if first_line {
+            old.find('\n').unwrap() + 1
+        } else {
+            64
+        };
+        let fingerprint = hex::encode(Sha256::digest(&old.as_bytes()[..identity]));
+        // Exactly the JSON those builds stored: schema 1, no rotation fields.
+        let legacy = format!(r#"{{"schemaVersion":1,"fingerprint":"{fingerprint}","offset":246}}"#);
+        let cursors = Arc::new(MemoryCursors::default());
+        assert!(
+            cursors
+                .try_advance("file:auth", 0, &legacy, bower_contracts::time::now())
+                .unwrap()
+        );
+        let sink = FakeSink::new(|_| Ok(SubmitOutcome::Queued));
+        let source = FileTailSource::new(
+            text(directory.path(), &path, "end"),
+            sink.clone(),
+            cursors.clone(),
+            None,
+        );
+
+        source.poll_once("auth").unwrap();
+
+        let words: Vec<String> = sink
+            .records()
+            .iter()
+            .map(|record| first_word(record))
+            .collect();
+        assert_eq!(
+            words,
+            ["new-1", "new-2", "new-3"],
+            "first line {first_line}"
+        );
+        assert_eq!(source.snapshot()[0].rotation_gaps, 1);
+        let written = Cursor::deserialize(&cursors.value("file:auth").unwrap()).unwrap();
+        assert_eq!(
+            (written.schema_version, written.offset),
+            (2, line("new-1").len() as i64 * 3)
+        );
+    }
+}
+
+/// C# `UnknownCursorSchemas_ReplayButDamagedCurrentCursorsStillFailClosed`.
+#[test]
+fn unknown_cursor_schemas_replay_but_damaged_current_cursors_still_fail_closed() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("auth.log");
+    std::fs::write(&path, line("one")).unwrap();
+    let sink = FakeSink::new(|_| Ok(SubmitOutcome::Queued));
+    let future = Arc::new(MemoryCursors::default());
+    future
+        .try_advance(
+            "file:auth",
+            0,
+            r#"{"schemaVersion":99,"anything":"else"}"#,
+            bower_contracts::time::now(),
+        )
+        .unwrap();
+    let source = FileTailSource::new(
+        text(directory.path(), &path, "end"),
+        sink.clone(),
+        future,
+        None,
+    );
+    source.poll_once("auth").unwrap();
+    assert_eq!(source.snapshot()[0].rotation_gaps, 1);
+    assert_eq!(sink.records().len(), 1);
+    let damaged = Arc::new(MemoryCursors::default());
+    damaged
+        .try_advance(
+            "file:auth",
+            0,
+            r#"{"schemaVersion":2,"fingerprint":"zz","offset":0}"#,
+            bower_contracts::time::now(),
+        )
+        .unwrap();
+    let refused = FileTailSource::new(text(directory.path(), &path, "end"), sink, damaged, None);
+    assert_eq!(
+        refused.poll_once("auth").unwrap_err().code,
+        failures::CURSOR_INVALID
+    );
+}
+
+/// C# `Canonical_ResolvesDotDotPhysicallyThroughALinkedDirectory` (realpath here).
+#[cfg(unix)]
+#[test]
+fn canonical_resolves_dot_dot_physically_through_a_linked_directory() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    std::fs::create_dir_all(root.join("deep/inner")).unwrap();
+    std::fs::create_dir_all(root.join("deep/z")).unwrap();
+    std::fs::create_dir_all(root.join("z")).unwrap();
+    std::os::unix::fs::symlink(root.join("deep/inner"), root.join("y")).unwrap();
+    std::os::unix::fs::symlink("y/../z", root.join("x")).unwrap();
+    let at = |relative: &str| paths::canonical(root.join(relative).to_str().unwrap());
+    assert_eq!(at("x/f.log"), at("deep/z/f.log"));
+    assert_ne!(at("x/f.log"), at("z/f.log"));
 }

@@ -187,7 +187,9 @@ public static partial class CollectorApplication
                 services.GetRequiredService<TimeProvider>())
             {
                 // A busy queue database (for example during a retention batch) is backpressure.
-                IsTransientStorageFailure = QueueStorageErrors.IsBusy
+                IsTransientStorageFailure = QueueStorageErrors.IsBusy,
+                // Metadata only: the input id and a reason code, never a path.
+                InputRefused = FileTailIntakeService.Refused(services.GetRequiredService<ILogger<FileTailIntakeService>>())
             });
             builder.Services.AddHostedService<FileTailIntakeService>();
         }

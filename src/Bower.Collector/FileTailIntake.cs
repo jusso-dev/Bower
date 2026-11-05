@@ -72,8 +72,14 @@ internal sealed partial class FileTailIntakeService(
     public async Task StopAsync(CancellationToken cancellationToken) =>
         await source.DisposeAsync().AsTask().WaitAsync(cancellationToken);
 
+    /// <summary>Logs an input refused at read time: its id and reason code only.</summary>
+    public static Action<string, string> Refused(ILogger logger) => (input, reason) => LogRefused(logger, input, reason);
+
     [LoggerMessage(EventId = 1120, Level = LogLevel.Information, Message = "File tail input {Input} reading {Path}.")]
     private static partial void LogTailing(ILogger logger, string input, string path);
+
+    [LoggerMessage(EventId = 1121, Level = LogLevel.Warning, Message = "File tail input {Input} refused: {Reason}.")]
+    private static partial void LogRefused(ILogger logger, string input, string reason);
 }
 
 /// <summary>The source cursor table inside the queue database (<c>BOWER_QUEUE_PATH</c>).</summary>

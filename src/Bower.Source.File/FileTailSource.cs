@@ -47,9 +47,28 @@ public static class FileTailFailures
     public const string SourceFailed = "file-source-failed";
 }
 
-public sealed class FileTailException(string code, Exception? innerException = null) : Exception(code, innerException)
+/// <summary>Why a path was refused: metadata only, never a path.</summary>
+public static class FileTailRefusals
+{
+    /// <summary>A link, a directory, or a path outside the allowed roots.</summary>
+    public const string Path = "path";
+
+    /// <summary><c>path.1</c> is a link, a directory, or outside the allowed roots.</summary>
+    public const string RotatedPath = "rotated-path";
+
+    /// <summary>The input now names another input's file (or rotated file); it is the one that changed.</summary>
+    public const string Overlap = "overlaps-another-input";
+
+    /// <summary>The opened handle is not the validated regular file.</summary>
+    public const string Handle = "handle";
+}
+
+public sealed class FileTailException(string code, Exception? innerException = null, string? reason = null) : Exception(code, innerException)
 {
     public string Code { get; } = code;
+
+    /// <summary>For <see cref="FileTailFailures.PathRefused"/>: a <see cref="FileTailRefusals"/> value.</summary>
+    public string? Reason { get; } = reason;
 }
 
 /// <summary>Per-input counters since start. Metadata only: no line content, ever.</summary>
@@ -112,6 +131,8 @@ public sealed class FileTailSource : IAsyncDisposable
     private readonly ISourceCursorStore cursors;
     private readonly TimeProvider clock;
     private readonly Dictionary<string, Input> inputs;
+    private readonly Dictionary<string, int> order;
+    private readonly Dictionary<string, string> loadTargets;
     private readonly CancellationTokenSource stopping = new();
     private readonly List<Task> running = [];
     private int started;
@@ -131,7 +152,17 @@ public sealed class FileTailSource : IAsyncDisposable
         this.cursors = cursors;
         this.clock = clock ?? TimeProvider.System;
         inputs = configuration.Inputs.ToDictionary(options => options.Id, options => new Input(options), StringComparer.Ordinal);
+        order = configuration.Inputs.Select((options, index) => (options.Id, index)).ToDictionary(item => item.Id, item => item.index, StringComparer.Ordinal);
+        // What each input named at load (a valid load has no overlaps): when two inputs meet
+        // later, only the one whose resolution changed is refused.
+        loadTargets = configuration.Inputs.ToDictionary(options => options.Id, EffectiveCanonical, StringComparer.Ordinal);
     }
+
+    /// <summary>
+    /// Called with the input id and a <see cref="FileTailRefusals"/> reason when an input
+    /// becomes refused at read time (not again while it stays refused). Metadata only.
+    /// </summary>
+    public Action<string, string>? InputRefused { get; init; }
 
     /// <summary>Wait before retrying a line the queue could not take yet.</summary>
     public TimeSpan RetryDelay { get; init; } = TimeSpan.FromSeconds(1);
@@ -181,6 +212,11 @@ public sealed class FileTailSource : IAsyncDisposable
         }
         catch (FileTailException exception)
         {
+            if (exception.Code == FileTailFailures.PathRefused && input.State != FileTailFailures.PathRefused)
+            {
+                InputRefused?.Invoke(input.Options.Id, exception.Reason ?? FileTailRefusals.Path);
+            }
+
             input.State = exception.Code;
             if (exception.Code is FileTailFailures.ReadFailed or FileTailFailures.PathRefused)
             {
@@ -277,8 +313,18 @@ public sealed class FileTailSource : IAsyncDisposable
         FileTailCursor? cursor = null;
         if (snapshot is not null)
         {
-            // Never reinterpret or silently reset a position this version did not write.
-            cursor = FileTailCursor.Deserialize(snapshot.Value) ?? throw new FileTailException(FileTailFailures.CursorInvalid);
+            cursor = FileTailCursor.Deserialize(snapshot.Value);
+            if (cursor is null && FileTailCursor.IsOtherSchema(snapshot.Value))
+            {
+                // A cursor from another build (the pre-release schema 1 lacked the rotation
+                // state). Never guess its meaning, never skip: replay the current file from
+                // its start (at least once) and count a gap so the operator sees it.
+                cursor = new FileTailCursor(FileTailCursor.CurrentSchemaVersion, string.Empty, 0);
+                Interlocked.Increment(ref input.Counters.RotationGaps);
+            }
+
+            // Never reinterpret or silently reset a damaged position this version wrote.
+            _ = cursor ?? throw new FileTailException(FileTailFailures.CursorInvalid);
             Interlocked.Exchange(ref input.Offset, cursor.Offset);
         }
 
@@ -404,12 +450,13 @@ public sealed class FileTailSource : IAsyncDisposable
                 MaxLinesPerBatch = configuration.MaxLinesPerBatch,
                 MaxBytesPerBatch = configuration.MaxBytesPerBatch,
                 StartAtEnd = !string.Equals(options.StartAt, "beginning", StringComparison.Ordinal),
-                RotationGracePolls = configuration.RotationGracePolls
+                RotationGracePolls = configuration.RotationGracePolls,
+                RotationDrainMaxPolls = configuration.RotationDrainMaxPolls
             }, cancellationToken);
         }
         catch (FileTailRefusedException exception)
         {
-            throw new FileTailException(FileTailFailures.PathRefused, exception);
+            throw new FileTailException(FileTailFailures.PathRefused, exception, FileTailRefusals.Handle);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -425,20 +472,62 @@ public sealed class FileTailSource : IAsyncDisposable
     private (FileTailPathState State, string Path) Check(FileTailInputOptions options)
     {
         (FileTailPathState state, string path) = FileTailPaths.Resolve(options.Path, configuration.AllowedRoots, options.AllowSymlink);
-        if (state == FileTailPathState.Refused
-            || FileTailSourceConfigurationLoader.OverlapsAnother(configuration, options, path))
+        if (state == FileTailPathState.Refused)
         {
-            throw new FileTailException(FileTailFailures.PathRefused);
+            throw new FileTailException(FileTailFailures.PathRefused, reason: FileTailRefusals.Path);
+        }
+
+        if (MeetsAnother(options, FileTailPaths.Canonical(path)))
+        {
+            throw new FileTailException(FileTailFailures.PathRefused, reason: FileTailRefusals.Overlap);
         }
 
         return (state, path);
     }
 
+    /// <summary>
+    /// Whether this input, now naming <paramref name="canonical"/>, is the one to refuse
+    /// because it meets another input's file or rotated file: the input whose resolution
+    /// changed since load is refused, the other keeps reading. If neither changed (not
+    /// possible after a valid load), the later input is refused.
+    /// </summary>
+    private bool MeetsAnother(FileTailInputOptions options, string canonical)
+    {
+        bool changed = !string.Equals(canonical, loadTargets[options.Id], StringComparison.Ordinal);
+        foreach (FileTailInputOptions other in configuration.Inputs)
+        {
+            if (ReferenceEquals(other, options))
+            {
+                continue;
+            }
+
+            string otherNow = EffectiveCanonical(other);
+            if (!FileTailSourceConfigurationLoader.Overlaps(canonical, otherNow))
+            {
+                continue;
+            }
+
+            bool otherChanged = !string.Equals(otherNow, loadTargets[other.Id], StringComparison.Ordinal);
+            if (changed || (!otherChanged && order[options.Id] > order[other.Id]))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>The canonical file an input reads now: where its allowed link leads, else its path.</summary>
+    private static string EffectiveCanonical(FileTailInputOptions input) =>
+        FileTailPaths.Canonical(FileTailSourceConfigurationLoader.LinkTarget(input) ?? input.Path);
+
     /// <summary><c>path.1</c>: missing is fine, refused fails the poll (never read past a swapped link).</summary>
     private (FileTailPathState State, string Path) CheckRotated(string path)
     {
         (FileTailPathState state, string rotated) = FileTailPaths.Resolve(path + ".1", configuration.AllowedRoots, allowSymlink: false);
-        return state == FileTailPathState.Refused ? throw new FileTailException(FileTailFailures.PathRefused) : (state, rotated);
+        return state == FileTailPathState.Refused
+            ? throw new FileTailException(FileTailFailures.PathRefused, reason: FileTailRefusals.RotatedPath)
+            : (state, rotated);
     }
 
 

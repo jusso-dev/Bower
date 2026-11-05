@@ -314,7 +314,11 @@ pub fn build(
                 Some(Arc::clone(&clock)),
             )
             // A busy queue database (for example a retention batch) is backpressure.
-            .with_transient_storage(bower_persistence::is_busy);
+            .with_transient_storage(bower_persistence::is_busy)
+            // Metadata only: the input id and a reason code, never a path.
+            .with_on_refused(|input, reason| {
+                warn!(input, reason, "File tail input refused.");
+            });
             Ok::<_, HostError>((source, cursors))
         })
         .transpose()?;

@@ -64,17 +64,40 @@ pub mod failures {
     pub const SOURCE_FAILED: &str = "file-source-failed";
 }
 
+/// Why a path was refused (C# `FileTailRefusals`): metadata only, never a path.
+pub mod refusals {
+    /// A link, a directory, or a path outside the allowed roots.
+    pub const PATH: &str = "path";
+    /// `path.1` is a link, a directory, or outside the allowed roots.
+    pub const ROTATED_PATH: &str = "rotated-path";
+    /// The input now names another input's file (or rotated file); it is the one that changed.
+    pub const OVERLAP: &str = "overlaps-another-input";
+    /// The opened handle is not the validated regular file.
+    pub const HANDLE: &str = "handle";
+}
+
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 #[error("{code}")]
 pub struct FileTailError {
     pub code: &'static str,
+    /// For `file-path-refused`: a `refusals` value.
+    pub reason: Option<&'static str>,
 }
 
 impl FileTailError {
     fn new(code: &'static str) -> Self {
-        Self { code }
+        Self { code, reason: None }
+    }
+
+    fn refused(reason: &'static str) -> Self {
+        Self {
+            code: failures::PATH_REFUSED,
+            reason: Some(reason),
+        }
     }
 }
+
+type Refused = dyn Fn(&str, &str) + Send + Sync;
 
 /// Per-input counters since start. Metadata only (C# `FileTailInputStatus`, same JSON).
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -227,7 +250,10 @@ pub struct FileTailSource {
     retry_delay: Duration,
     maximum_backoff: Duration,
     rotation_grace_polls: i32,
+    rotation_drain_max_polls: i32,
     transient: Arc<dyn Fn(&StoreError) -> bool + Send + Sync>,
+    refused: Option<Arc<Refused>>,
+    load_targets: HashMap<String, String>,
 }
 
 impl FileTailSource {
@@ -273,9 +299,24 @@ impl FileTailSource {
             retry_delay: Duration::from_secs(1),
             maximum_backoff: Duration::from_secs(60),
             rotation_grace_polls: configuration.rotation_grace_polls,
+            rotation_drain_max_polls: configuration.rotation_drain_max_polls,
             transient: Arc::new(|_| false),
+            refused: None,
+            // What each input named at load (a valid load has no overlaps): when two inputs
+            // meet later, only the one whose resolution changed is refused.
+            load_targets: configuration
+                .inputs()
+                .map(|input| (input.id.clone(), effective_canonical(input)))
+                .collect(),
             configuration,
         }
+    }
+
+    /// Called with the input id and a `refusals` reason when an input becomes refused at read
+    /// time (not again while it stays refused). Metadata only (C# `InputRefused`).
+    pub fn with_on_refused(mut self, refused: impl Fn(&str, &str) + Send + Sync + 'static) -> Self {
+        self.refused = Some(Arc::new(refused));
+        self
     }
 
     /// Recognises contention on the cursor store (the collector supplies SQLite busy and
@@ -329,6 +370,17 @@ impl FileTailSource {
             result => result,
         };
         if let Err(error) = &result {
+            let already = *input
+                .state
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner())
+                == failures::PATH_REFUSED;
+            if error.code == failures::PATH_REFUSED
+                && !already
+                && let Some(refused) = &self.refused
+            {
+                refused(&input.options.id, error.reason.unwrap_or(refusals::PATH));
+            }
             input.set_state(error.code);
             if matches!(error.code, failures::READ_FAILED | failures::PATH_REFUSED) {
                 input.counters.read_errors.fetch_add(1, Ordering::Relaxed);
@@ -350,9 +402,18 @@ impl FileTailSource {
             .map_err(|error| self.storage(&error))?;
         let cursor = match &snapshot {
             Some(snapshot) => {
-                // Never reinterpret or silently reset a position this version did not write.
-                let cursor = Cursor::deserialize(&snapshot.value)
-                    .ok_or_else(|| FileTailError::new(failures::CURSOR_INVALID))?;
+                let cursor = match Cursor::deserialize(&snapshot.value) {
+                    Some(cursor) => cursor,
+                    // A cursor from another build (the pre-release schema 1 lacked the rotation
+                    // state). Never guess its meaning, never skip: replay the current file from
+                    // its start (at least once) and count a gap so the operator sees it.
+                    None if Cursor::is_other_schema(&snapshot.value) => {
+                        input.counters.rotation_gaps.fetch_add(1, Ordering::Relaxed);
+                        Cursor::new("", 0)
+                    }
+                    // Never reinterpret or silently reset a damaged position this version wrote.
+                    None => return Err(FileTailError::new(failures::CURSOR_INVALID)),
+                };
                 input.offset.store(cursor.offset, Ordering::Relaxed);
                 Some(cursor)
             }
@@ -374,13 +435,14 @@ impl FileTailSource {
                 max_bytes_per_batch: self.max_bytes_per_batch,
                 start_at_end: options.start_at != "beginning",
                 rotation_grace_polls: self.rotation_grace_polls,
+                rotation_drain_max_polls: self.rotation_drain_max_polls,
                 use_file_ids: true,
             },
             Some(&self.stopping),
         );
         let batch = match read {
             Ok(batch) => batch,
-            Err(ReadError::Refused) => return Err(FileTailError::new(failures::PATH_REFUSED)),
+            Err(ReadError::Refused) => return Err(FileTailError::refused(refusals::HANDLE)),
             Err(ReadError::Io(_)) => return Err(FileTailError::new(failures::READ_FAILED)),
             Err(ReadError::Stopped) => {
                 input.set_state("stopped");
@@ -507,19 +569,40 @@ impl FileTailSource {
     /// allowed link) another input's file or rotated file.
     fn check(&self, options: &InputOptions) -> Result<(PathState, String), FileTailError> {
         let (state, path) = paths::resolve(&options.path, &self.roots, options.allow_symlink);
-        // Another input's file directly, through linked directories or through an allowed link.
-        if state == PathState::Refused
-            || config::overlaps_another(&self.configuration, options, &path)
-        {
-            return Err(FileTailError::new(failures::PATH_REFUSED));
+        if state == PathState::Refused {
+            return Err(FileTailError::refused(refusals::PATH));
+        }
+        if self.meets_another(options, &paths::canonical(&path)) {
+            return Err(FileTailError::refused(refusals::OVERLAP));
         }
         Ok((state, path))
+    }
+
+    /// Whether this input, now naming `canonical`, is the one to refuse because it meets
+    /// another input's file or rotated file (C# `MeetsAnother`): the input whose resolution
+    /// changed since load is refused, the other keeps reading. If neither changed (not
+    /// possible after a valid load), the later input is refused.
+    fn meets_another(&self, options: &InputOptions, canonical: &str) -> bool {
+        let changed = self.load_targets.get(&options.id).map(String::as_str) != Some(canonical);
+        let index = self.by_id[&options.id];
+        self.configuration.inputs().any(|other| {
+            if other.id == options.id {
+                return false;
+            }
+            let other_now = effective_canonical(other);
+            if !config::overlaps(canonical, &other_now) {
+                return false;
+            }
+            let other_changed =
+                self.load_targets.get(&other.id).map(String::as_str) != Some(other_now.as_str());
+            changed || (!other_changed && index > self.by_id[&other.id])
+        })
     }
 
     /// `path.1`: missing is fine, refused fails the poll (never read past a swapped link).
     fn check_rotated(&self, path: &str) -> Result<(PathState, String), FileTailError> {
         match paths::resolve(&format!("{path}.1"), &self.roots, false) {
-            (PathState::Refused, _) => Err(FileTailError::new(failures::PATH_REFUSED)),
+            (PathState::Refused, _) => Err(FileTailError::refused(refusals::ROTATED_PATH)),
             resolved => Ok(resolved),
         }
     }
@@ -597,3 +680,8 @@ async fn run_input(source: Arc<FileTailSource>, id: String, mut stop: watch::Rec
 
 /// Internal marker for busy storage; reported as backpressure, never as a failure code.
 const BUSY: &str = "backpressure";
+
+/// The canonical file an input reads now: where its allowed link leads, else its path.
+fn effective_canonical(input: &InputOptions) -> String {
+    paths::canonical(&config::link_target(input).unwrap_or_else(|| input.path.clone()))
+}

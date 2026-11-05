@@ -17,7 +17,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::handle::{self, Handle, OpenError};
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 1;
+/// 2 since the rotation fields (C# `FileTailCursor.CurrentSchemaVersion`). A stored cursor
+/// of any other version is never interpreted: `is_other_schema` lets the source replay the
+/// current file from its start instead.
+pub const CURRENT_SCHEMA_VERSION: i32 = 2;
 
 /// Position in one tailed file and the rotation state that must survive a restart (C#
 /// `FileTailCursor`, same JSON). An empty fingerprint is provisional: the file was missing
@@ -43,6 +46,8 @@ pub struct Cursor {
     pub observed_write_time: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stable_polls: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drain_polls: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub abandoned: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -75,6 +80,8 @@ struct StoredCursor {
     observed_write_time: Option<i64>,
     #[serde(default)]
     stable_polls: Option<i32>,
+    #[serde(default)]
+    drain_polls: Option<i32>,
     #[serde(default)]
     abandoned: Option<String>,
     #[serde(default)]
@@ -113,9 +120,25 @@ impl Cursor {
             observed_length: None,
             observed_write_time: None,
             stable_polls: None,
+            drain_polls: None,
             abandoned: None,
             abandoned_length: None,
         }
+    }
+
+    /// A JSON object with an integer `schemaVersion` other than the current one: a cursor
+    /// from another build, whose meaning must not be guessed (C# `IsOtherSchema`).
+    pub fn is_other_schema(value: &str) -> bool {
+        serde_json::from_str::<serde_json::Value>(value)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("schemaVersion")
+                    .and_then(serde_json::Value::as_i64)
+            })
+            .is_some_and(|version| {
+                i32::try_from(version).is_ok_and(|version| version != CURRENT_SCHEMA_VERSION)
+            })
     }
 
     pub fn serialize(&self) -> String {
@@ -138,6 +161,7 @@ impl Cursor {
             observed_length: stored.observed_length,
             observed_write_time: stored.observed_write_time,
             stable_polls: stored.stable_polls,
+            drain_polls: stored.drain_polls,
             abandoned: stored.abandoned,
             abandoned_length: stored.abandoned_length,
         };
@@ -156,6 +180,9 @@ impl Cursor {
             && self.observed_length.is_none_or(|length| length >= 0)
             && self.stable_polls.is_none_or(|polls| polls >= 0)
             && (self.observed_length.is_none() || self.drain.as_deref() == Some(RENAME_DRAIN))
+            && self
+                .drain_polls
+                .is_none_or(|polls| self.drain.as_deref() == Some(RENAME_DRAIN) && polls >= 0)
             && self.abandoned.is_none() == self.abandoned_length.is_none()
             && self.abandoned.as_deref().is_none_or(is_fingerprint)
             && self.abandoned_length.is_none_or(|length| length >= 0)
@@ -175,6 +202,7 @@ impl Cursor {
             observed_length: None,
             observed_write_time: None,
             stable_polls: None,
+            drain_polls: None,
             abandoned: None,
             abandoned_length: None,
             ..self.clone()
@@ -235,6 +263,9 @@ pub struct ReaderOptions {
     /// Unchanged end-of-file polls of a renamed `path.1` (size and write time) before the
     /// cursor moves to the new file. Copytruncate never waits.
     pub rotation_grace_polls: i32,
+    /// Polls a rename drain may take before the cursor moves on anyway, so a `path.1` that
+    /// keeps changing cannot starve the current file (C# `RotationDrainMaxPolls`).
+    pub rotation_drain_max_polls: i32,
     /// Use device and inode numbers (Unix) to tell rename from copytruncate and to spot a
     /// replaced file. Off, identities alone decide; the shared vectors run this way.
     pub use_file_ids: bool,
@@ -248,6 +279,7 @@ impl Default for ReaderOptions {
             max_bytes_per_batch: 1_048_576,
             start_at_end: true,
             rotation_grace_polls: crate::config::DEFAULT_ROTATION_GRACE_POLLS,
+            rotation_drain_max_polls: crate::config::DEFAULT_ROTATION_DRAIN_MAX_POLLS,
             use_file_ids: true,
         }
     }
@@ -507,7 +539,32 @@ impl Reading<'_> {
             });
         }
 
-        let batch = scan(file, at.clone(), &options, false, false)?;
+        let scanned = scan(file, at.clone(), &options, false, false)?;
+        let polls =
+            (at.drain_polls.unwrap_or(0) + 1).min(crate::config::MAXIMUM_ROTATION_DRAIN_MAX_POLLS);
+        let batch = Batch {
+            cursor: Cursor {
+                drain_polls: Some(polls),
+                ..scanned.cursor.clone()
+            },
+            ..scanned
+        };
+        if polls >= options.rotation_drain_max_polls {
+            // A path.1 that never settles cannot hold the cursor: move on anyway. What is left
+            // unread in it now, and anything written to it later, is a gap.
+            let unread = batch.cursor.offset < file.length;
+            return Ok(Batch {
+                cursor: Cursor {
+                    abandoned: Some(at.fingerprint.clone()),
+                    abandoned_length: Some(file.length),
+                    ..next
+                },
+                rotated: true,
+                more: true,
+                gap: batch.gap || unread,
+                ..batch
+            });
+        }
         if batch.more {
             return Ok(batch); // A backlog poll never counts towards the grace window.
         }

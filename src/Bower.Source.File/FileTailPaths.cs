@@ -82,33 +82,58 @@ public static class FileTailPaths
     {
         ArgumentNullException.ThrowIfNull(path);
         string? directory = Path.GetDirectoryName(path);
-        return directory is not null && RealDirectory(directory, 0) is { } real
+        if (directory is null || Path.GetPathRoot(directory) is not { Length: > 0 } root)
+        {
+            return path;
+        }
+
+        int hops = 0;
+        return Walk(root, directory[root.Length..], ref hops) is { } real
             ? Path.Combine(real, Path.GetFileName(path))
             : path;
     }
 
-    private static string? RealDirectory(string directory, int depth)
+    /// <summary>
+    /// <c>realpath</c>: follows <paramref name="relative"/> from the real directory
+    /// <paramref name="current"/>, resolving each link as it is met and each <c>..</c> against
+    /// the real parent (so <c>x/../y</c> through a linked <c>x</c> goes where the kernel goes).
+    /// Null when a component is missing or links loop.
+    /// </summary>
+    private static string? Walk(string current, string relative, ref int hops)
     {
-        if (depth > 40 || Path.GetPathRoot(directory) is not { Length: > 0 } root)
+        foreach (string segment in relative.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
         {
-            return null; // A link loop, or not an absolute path.
-        }
+            if (segment == ".")
+            {
+                continue;
+            }
 
-        string current = root;
-        foreach (string segment in directory[root.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
-        {
+            if (segment == "..")
+            {
+                current = Path.GetDirectoryName(current) ?? current;
+                continue;
+            }
+
             string next = Path.Combine(current, segment);
             DirectoryInfo info = new(next);
             if (info.LinkTarget is { } target)
             {
-                if (RealDirectory(Path.GetFullPath(target, current), depth + 1) is not { } resolved)
+                if (++hops > 40)
                 {
                     return null;
                 }
 
-                next = resolved;
+                string? start = Path.IsPathRooted(target) ? Path.GetPathRoot(target) : current;
+                if (start is null || Walk(start, Path.IsPathRooted(target) ? target[start.Length..] : target, ref hops) is not { } resolved)
+                {
+                    return null;
+                }
+
+                current = resolved;
+                continue;
             }
-            else if (!info.Exists)
+
+            if (!info.Exists)
             {
                 return null;
             }

@@ -18,6 +18,8 @@ pub const MAXIMUM_MAX_LINE_BYTES: i32 = 30_720;
 pub const MINIMUM_MAX_LINE_BYTES: i32 = 256;
 pub const DEFAULT_ROTATION_GRACE_POLLS: i32 = 5;
 pub const MAXIMUM_ROTATION_GRACE_POLLS: i32 = 60;
+pub const DEFAULT_ROTATION_DRAIN_MAX_POLLS: i32 = 300;
+pub const MAXIMUM_ROTATION_DRAIN_MAX_POLLS: i32 = 3_600;
 const MAXIMUM_BYTES: u64 = 262_144;
 
 pub const FORMAT_TEXT: &str = "text";
@@ -53,6 +55,9 @@ pub struct FileTailSourceConfiguration {
     /// Polls `path.1` must stay unchanged before the cursor moves to the new file.
     #[serde(default = "default_rotation_grace_polls")]
     pub rotation_grace_polls: i32,
+    /// Polls a rename drain may take before the cursor moves on anyway.
+    #[serde(default = "default_rotation_drain_max_polls")]
+    pub rotation_drain_max_polls: i32,
 }
 
 /// One file below an allowed root and the signed pack parser that maps its lines.
@@ -115,6 +120,9 @@ fn default_max_bytes_per_batch() -> i32 {
 }
 fn default_rotation_grace_polls() -> i32 {
     DEFAULT_ROTATION_GRACE_POLLS
+}
+fn default_rotation_drain_max_polls() -> i32 {
+    DEFAULT_ROTATION_DRAIN_MAX_POLLS
 }
 fn default_format() -> String {
     FORMAT_TEXT.into()
@@ -267,6 +275,13 @@ pub fn parse(json: &str) -> Result<FileTailSourceConfiguration, ConfigError> {
     if !(1..=MAXIMUM_ROTATION_GRACE_POLLS).contains(&configuration.rotation_grace_polls) {
         return Err(invalid_data(format!(
             "File tail rotationGracePolls must be between 1 and {MAXIMUM_ROTATION_GRACE_POLLS}."
+        )));
+    }
+    if configuration.rotation_drain_max_polls < configuration.rotation_grace_polls
+        || configuration.rotation_drain_max_polls > MAXIMUM_ROTATION_DRAIN_MAX_POLLS
+    {
+        return Err(invalid_data(format!(
+            "File tail rotationDrainMaxPolls must be between rotationGracePolls and {MAXIMUM_ROTATION_DRAIN_MAX_POLLS}."
         )));
     }
     let roots = configuration.roots();

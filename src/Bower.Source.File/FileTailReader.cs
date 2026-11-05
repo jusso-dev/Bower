@@ -32,10 +32,16 @@ public sealed record FileTailCursor(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? ObservedLength = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? ObservedWriteTime = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? StablePolls = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? DrainPolls = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Abandoned = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? AbandonedLength = null)
 {
-    public const int CurrentSchemaVersion = 1;
+    /// <summary>
+    /// 2 since the rotation fields. A stored cursor of any other version (the pre-release
+    /// version 1 lacked them) is never interpreted: <see cref="IsOtherSchema"/> lets the source
+    /// replay the current file from its start instead (at least once, with a counted gap).
+    /// </summary>
+    public const int CurrentSchemaVersion = 2;
     public const string RenameDrain = "rename";
     public const string CopyDrain = "copytruncate";
 
@@ -62,6 +68,32 @@ public sealed record FileTailCursor(
         }
     }
 
+    /// <summary>
+    /// A JSON object with an integer <c>schemaVersion</c> other than <see cref="CurrentSchemaVersion"/>:
+    /// a cursor from another (older or newer) build, whose meaning this version must not guess.
+    /// </summary>
+    public static bool IsOtherSchema(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(value);
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("schemaVersion", out JsonElement version)
+                && version.ValueKind == JsonValueKind.Number
+                && version.TryGetInt32(out int number)
+                && number != CurrentSchemaVersion;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
     private static bool IsValid(FileTailCursor cursor) =>
         (cursor.Fingerprint.Length == 0 || IsFingerprint(cursor.Fingerprint))
         && (cursor.FileId is null || IsFileId(cursor.FileId))
@@ -71,6 +103,7 @@ public sealed record FileTailCursor(
         && cursor.ObservedLength is null or >= 0
         && cursor.StablePolls is null or >= 0
         && (cursor.ObservedLength is null || cursor.Drain == RenameDrain)
+        && (cursor.DrainPolls is null || (cursor.Drain == RenameDrain && cursor.DrainPolls >= 0))
         && (cursor.Abandoned is null) == (cursor.AbandonedLength is null)
         && (cursor.Abandoned is null || IsFingerprint(cursor.Abandoned))
         && cursor.AbandonedLength is null or >= 0;
@@ -152,6 +185,13 @@ public sealed record FileTailReaderOptions
     /// cursor moves to the new file. Copytruncate never waits.
     /// </summary>
     public int RotationGracePolls { get; init; } = FileTailSourceConfigurationLoader.DefaultRotationGracePolls;
+
+    /// <summary>
+    /// Polls a rename drain may take before the cursor moves to the new file anyway, so a
+    /// <c>path.1</c> that keeps changing cannot starve the current file. Unread lines left in
+    /// it, and later writes to it, are counted as gaps.
+    /// </summary>
+    public int RotationDrainMaxPolls { get; init; } = FileTailSourceConfigurationLoader.DefaultRotationDrainMaxPolls;
 
     /// <summary>
     /// Use device and inode numbers where the platform reports them (Linux) to tell rename
@@ -351,7 +391,22 @@ public static class FileTailReader
                 return copied.More ? copied : copied with { Cursor = next, Rotated = true, More = true };
             }
 
-            FileTailBatch batch = Scan(file, at, eofEndsLine: false, gap: false);
+            FileTailBatch scanned = Scan(file, at, eofEndsLine: false, gap: false);
+            int polls = Math.Min((at.DrainPolls ?? 0) + 1, FileTailSourceConfigurationLoader.MaximumRotationDrainMaxPolls);
+            FileTailBatch batch = scanned with { Cursor = scanned.Cursor with { DrainPolls = polls } };
+            if (polls >= options.RotationDrainMaxPolls)
+            {
+                // A path.1 that never settles cannot hold the cursor: move on anyway. What is
+                // left unread in it now, and anything written to it later, is a gap.
+                return batch with
+                {
+                    Cursor = next with { Abandoned = at.Fingerprint, AbandonedLength = file.Length },
+                    Rotated = true,
+                    More = true,
+                    Gap = batch.Gap || batch.Cursor.Offset < file.Length
+                };
+            }
+
             if (batch.More)
             {
                 return batch; // A backlog poll never counts towards the grace window.
@@ -398,6 +453,7 @@ public static class FileTailReader
             ObservedLength = null,
             ObservedWriteTime = null,
             StablePolls = null,
+            DrainPolls = null,
             Abandoned = null,
             AbandonedLength = null
         };

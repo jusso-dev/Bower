@@ -2643,6 +2643,170 @@
           }
         }
       ]
+    },
+    {
+      "name": "rename: a path.1 that keeps changing is left at the drain cap, and later writes are gaps",
+      "options": {
+        "startAtEnd": false,
+        "rotationGracePolls": 2,
+        "rotationDrainMaxPolls": 4
+      },
+      "steps": [
+        {
+          "write": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              }
+            ],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "rename": {}
+        },
+        {
+          "write": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "appendRotated": "late-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "late-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 71,
+                "end": 112
+              }
+            ],
+            "provisional": false,
+            "offset": 112,
+            "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "appendRotated": "late-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "late-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 112,
+                "end": 153
+              }
+            ],
+            "provisional": false,
+            "offset": 153,
+            "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "appendRotated": "late-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "late-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 153,
+                "end": 194
+              }
+            ],
+            "provisional": false,
+            "offset": 194,
+            "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "appendRotated": "late-4 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "late-4 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 194,
+                "end": 235
+              }
+            ],
+            "provisional": false,
+            "offset": 0,
+            "discarding": false,
+            "drain": null,
+            "abandoned": true,
+            "rotated": true,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "appendRotated": "late-5 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              }
+            ],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "drain": null,
+            "abandoned": true,
+            "rotated": false,
+            "gap": true,
+            "more": false
+          }
+        },
+        {
+          "appendRotated": "late-6 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "drain": null,
+            "abandoned": true,
+            "rotated": false,
+            "gap": true,
+            "more": false
+          }
+        }
+      ]
     }
   ],
   "config": [
@@ -2694,7 +2858,8 @@
         "pollIntervalMilliseconds": 250,
         "maxLinesPerBatch": 64,
         "maxBytesPerBatch": 65536,
-        "rotationGracePolls": 10
+        "rotationGracePolls": 10,
+        "rotationDrainMaxPolls": 600
       },
       "expect": {
         "valid": true
@@ -3883,6 +4048,79 @@
       },
       "expect": {
         "error": "File tail rotationGracePolls must be between 1 and 60."
+      }
+    },
+    {
+      "name": "drain cap below the grace window",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ],
+        "rotationGracePolls": 10,
+        "rotationDrainMaxPolls": 9
+      },
+      "expect": {
+        "error": "File tail rotationDrainMaxPolls must be between rotationGracePolls and 3600."
+      }
+    },
+    {
+      "name": "drain cap too long",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ],
+        "rotationDrainMaxPolls": 3601
+      },
+      "expect": {
+        "error": "File tail rotationDrainMaxPolls must be between rotationGracePolls and 3600."
+      }
+    },
+    {
+      "name": "drain cap of zero",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ],
+        "rotationDrainMaxPolls": 0
+      },
+      "expect": {
+        "error": "File tail rotationDrainMaxPolls must be between rotationGracePolls and 3600."
       }
     },
     {

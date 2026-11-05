@@ -13,6 +13,7 @@ namespace Bower.Source.File;
 /// <param name="MaxLinesPerBatch">Lines read per poll; the cursor is committed after each poll.</param>
 /// <param name="MaxBytesPerBatch">Bytes scanned per poll (one line may run up to its own limit past it).</param>
 /// <param name="RotationGracePolls">Polls <c>path.1</c> must stay unchanged before the cursor moves to the new file.</param>
+/// <param name="RotationDrainMaxPolls">Polls a rename drain may take before the cursor moves on anyway (bounds a <c>path.1</c> that keeps changing).</param>
 public sealed record FileTailSourceConfiguration(
     string ApiVersion,
     string Kind,
@@ -21,7 +22,8 @@ public sealed record FileTailSourceConfiguration(
     int PollIntervalMilliseconds = 1_000,
     int MaxLinesPerBatch = 256,
     int MaxBytesPerBatch = 1_048_576,
-    int RotationGracePolls = FileTailSourceConfigurationLoader.DefaultRotationGracePolls);
+    int RotationGracePolls = FileTailSourceConfigurationLoader.DefaultRotationGracePolls,
+    int RotationDrainMaxPolls = FileTailSourceConfigurationLoader.DefaultRotationDrainMaxPolls);
 
 /// <summary>The active parser of a loaded signed pack that maps this input's lines.</summary>
 public sealed record FileTailRoute(string Pack, int Parser);
@@ -70,6 +72,8 @@ public static class FileTailSourceConfigurationLoader
     public const int MinimumMaxLineBytes = 256;
     public const int DefaultRotationGracePolls = 5;
     public const int MaximumRotationGracePolls = 60;
+    public const int DefaultRotationDrainMaxPolls = 300;
+    public const int MaximumRotationDrainMaxPolls = 3_600;
     private const int MaximumBytes = 262_144;
 
     public static FileTailSourceConfiguration LoadFile(string path)
@@ -147,6 +151,12 @@ public static class FileTailSourceConfigurationLoader
         if (configuration.RotationGracePolls is < 1 or > MaximumRotationGracePolls)
         {
             throw new InvalidDataException($"File tail rotationGracePolls must be between 1 and {MaximumRotationGracePolls}.");
+        }
+
+        if (configuration.RotationDrainMaxPolls < configuration.RotationGracePolls || configuration.RotationDrainMaxPolls > MaximumRotationDrainMaxPolls)
+        {
+            throw new InvalidDataException(
+                $"File tail rotationDrainMaxPolls must be between rotationGracePolls and {MaximumRotationDrainMaxPolls}.");
         }
 
         HashSet<string> ids = new(StringComparer.Ordinal);

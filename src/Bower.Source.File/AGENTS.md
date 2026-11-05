@@ -29,7 +29,12 @@ cursor format, limits, defaults, failure codes and configuration messages.
   known; else same identity and shorter than the cursor) drains the static copy and
   switches at once; only a rename waits `rotationGracePolls` unchanged end-of-file polls.
   Record the abandoned generation only in the committed switch cursor (rewinds use the
-  batch's `Origin`). A missed rotation, a vanished drain or later growth of the abandoned
+  batch's `Origin`). `rotationDrainMaxPolls` bounds a rename drain (counted in the cursor);
+  at the cap the cursor moves on and the unread rest is a gap.
+- Cursor schema 2. Never interpret another schema version: replay the current file from 0
+  and count a gap. A damaged current-schema cursor fails closed (`file-cursor-invalid`).
+- When two inputs come to name one file after load, refuse only the one whose canonical
+  target changed since load; report refusals through `InputRefused` (id and reason only). A missed rotation, a vanished drain or later growth of the abandoned
   `path.1` is counted as a gap, never hidden.
 - Event ids derive from input id, file fingerprint, line start offset and line bytes so a
   re-read deduplicates; change them only with a migration note.

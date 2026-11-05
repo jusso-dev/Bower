@@ -77,6 +77,10 @@ fn sequences_match_the_csharp_specification() {
             max_lines_per_batch: options["maxLinesPerBatch"].as_u64().unwrap_or(256) as usize,
             max_bytes_per_batch: options["maxBytesPerBatch"].as_u64().unwrap_or(1_048_576),
             rotation_grace_polls: options["rotationGracePolls"].as_i64().unwrap_or(1) as i32,
+            rotation_drain_max_polls: options["rotationDrainMaxPolls"]
+                .as_i64()
+                .unwrap_or(i64::from(config::DEFAULT_ROTATION_DRAIN_MAX_POLLS))
+                as i32,
             // Identities alone decide, so both runtimes agree on every platform.
             use_file_ids: false,
         };
@@ -193,7 +197,7 @@ fn configuration_errors_match_the_csharp_specification() {
 fn cursor_json_matches_csharp() {
     assert_eq!(
         Cursor::new("", 0).serialize(),
-        r#"{"schemaVersion":1,"fingerprint":"","offset":0}"#
+        r#"{"schemaVersion":2,"fingerprint":"","offset":0}"#
     );
     let cursor = Cursor {
         discarding: true,
@@ -201,15 +205,15 @@ fn cursor_json_matches_csharp() {
     };
     assert_eq!(Cursor::deserialize(&cursor.serialize()), Some(cursor));
     assert_eq!(
-        Cursor::deserialize(r#"{"schemaVersion":2,"fingerprint":"","offset":0}"#),
+        Cursor::deserialize(r#"{"schemaVersion":3,"fingerprint":"","offset":0}"#),
         None
     );
     assert_eq!(
-        Cursor::deserialize(r#"{"schemaVersion":1,"fingerprint":"zz","offset":0}"#),
+        Cursor::deserialize(r#"{"schemaVersion":2,"fingerprint":"zz","offset":0}"#),
         None
     );
     assert_eq!(
-        Cursor::deserialize(r#"{"schemaVersion":1,"fingerprint":"","offset":-1}"#),
+        Cursor::deserialize(r#"{"schemaVersion":2,"fingerprint":"","offset":-1}"#),
         None
     );
     assert_eq!(Cursor::deserialize("not json"), None);
