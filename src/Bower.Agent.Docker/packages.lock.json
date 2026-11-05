@@ -75,7 +75,14 @@
         "type": "Project",
         "dependencies": {
           "Bower.Abstractions": "[1.0.0, )",
-          "Bower.Contracts": "[1.0.0, )"
+          "Bower.Contracts": "[1.0.0, )",
+          "Bower.Source.File": "[1.0.0, )"
+        }
+      },
+      "bower.source.file": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[1.0.0, )"
         }
       },
       "Microsoft.Data.Sqlite": {

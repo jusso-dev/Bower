@@ -369,8 +369,10 @@ pack's `applicationName`/`environment` in `BOWER_SOURCE_EXPECTATIONS` to degrade
 
 ## Follow-ups
 
-- The Docker source keeps its own copy of the tail mechanics; moving it onto the shared
-  reader is a separate change.
+- The Docker source shares this tailer but keeps its previous behaviour (64-byte identity,
+  no device/inode use, no grace window, no copy drain, no durable rotation state, no
+  late-write gap counting). Giving it the rotation-loss fixes would change its output and
+  its cursor, and is a separate change.
 - There is no management API source type or console page for the file source yet.
 - Periodic `collector_health` records do not include file tail counters yet.
 - Each line commits on its own; group commit (as the Windows Event Log source uses) is

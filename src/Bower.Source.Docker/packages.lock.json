@@ -16,6 +16,12 @@
       },
       "bower.contracts": {
         "type": "Project"
+      },
+      "bower.source.file": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[1.0.0, )"
+        }
       }
     }
   }

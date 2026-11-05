@@ -23,7 +23,7 @@ public sealed class FileTailHandle : IDisposable
     [ThreadStatic]
     internal static Action<string>? BeforeOpen;
 
-    /// <summary>Tests only: runs once a path is opened and identified (to replace the file).</summary>
+    /// <summary>Tests only: runs once a path is opened and identified (to replace or rewrite the file).</summary>
     [ThreadStatic]
     internal static Action<string>? AfterOpen;
 
@@ -33,6 +33,17 @@ public sealed class FileTailHandle : IDisposable
     /// </summary>
     [ThreadStatic]
     internal static Func<string, string?>? FileIds;
+
+    /// <summary>Tests only: runs after the 64-byte length check of <see cref="OpenWithPrefixIdentity"/> (to shrink the file).</summary>
+    [ThreadStatic]
+    internal static Action<string>? BeforePrefixRead;
+
+    /// <summary>Tests only: the most bytes one <see cref="ReadFully"/> read returns (a filesystem that returns short reads).</summary>
+    [ThreadStatic]
+    internal static int? ShortReads;
+
+    /// <summary>The Docker json-file identity: SHA-256 of the first 64 bytes.</summary>
+    public const int PrefixIdentityBytes = 64;
 
     private FileTailHandle(FileStream stream, long length, DateTime writeTime, string? fingerprint, string? fileId = null)
     {
@@ -45,7 +56,10 @@ public sealed class FileTailHandle : IDisposable
 
     public FileStream Stream { get; }
 
-    /// <summary>Length when opened; bytes appended later wait for the next read.</summary>
+    /// <summary>
+    /// Length when opened; bytes appended later wait for the next read. A policy that measures
+    /// again (<see cref="FileTailLength.Measured"/>) uses <see cref="Stream"/>'s length instead.
+    /// </summary>
     public long Length { get; }
 
     public DateTime WriteTime { get; }
@@ -123,6 +137,77 @@ public sealed class FileTailHandle : IDisposable
             stream.Dispose();
             throw;
         }
+    }
+
+    /// <summary>
+    /// The Docker source's open, exactly as before the shared tailer: a plain shared read
+    /// (no link or handle checks; the Docker root is mounted read-only) and an identity of the
+    /// first 64 bytes. Null when the file is missing or shorter. A file that shrinks between
+    /// the length check and the read throws <see cref="EndOfStreamException"/>, which the
+    /// sidecar logs and backs off from, as it did.
+    /// </summary>
+    public static FileTailHandle? OpenWithPrefixIdentity(string path)
+    {
+        FileStream stream;
+        try
+        {
+            stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 65_536);
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return null;
+        }
+
+        try
+        {
+            long length = stream.Length;
+            if (length < PrefixIdentityBytes)
+            {
+                stream.Dispose();
+                return null;
+            }
+
+            BeforePrefixRead?.Invoke(path);
+            // Read past the stream's buffer, so the scan reads the file as it is then, as the
+            // reader's separate opens did, never bytes buffered while the identity was read.
+            byte[] prefix = new byte[PrefixIdentityBytes];
+            if (ReadFully(stream.SafeFileHandle, prefix, 0) < PrefixIdentityBytes)
+            {
+                throw new EndOfStreamException();
+            }
+
+            FileTailHandle handle = new(stream, length, default, Convert.ToHexStringLower(SHA256.HashData(prefix)));
+            AfterOpen?.Invoke(path);
+            return handle;
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Reads at <paramref name="offset"/> until <paramref name="buffer"/> is full or a read
+    /// returns 0 (end of file), as a stream's <c>ReadExactly</c> and <c>ReadAtLeast</c> do: FUSE
+    /// and network filesystems may return fewer bytes than asked before the end.
+    /// </summary>
+    internal static int ReadFully(SafeFileHandle handle, Span<byte> buffer, long offset)
+    {
+        int total = 0;
+        while (total < buffer.Length)
+        {
+            Span<byte> rest = buffer[total..];
+            int read = RandomAccess.Read(handle, ShortReads is { } most ? rest[..Math.Min(most, rest.Length)] : rest, offset + total);
+            if (read == 0)
+            {
+                break;
+            }
+
+            total += read;
+        }
+
+        return total;
     }
 
     /// <summary>
