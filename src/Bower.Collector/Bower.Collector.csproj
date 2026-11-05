@@ -18,6 +18,7 @@
     <ProjectReference Include="../Bower.Jobs/Bower.Jobs.csproj" />
     <ProjectReference Include="../Bower.Output.AmaSpool/Bower.Output.AmaSpool.csproj" />
     <ProjectReference Include="../Bower.Output.AzureLogsIngestion/Bower.Output.AzureLogsIngestion.csproj" />
+    <ProjectReference Include="../Bower.Output.S3/Bower.Output.S3.csproj" />
     <ProjectReference Include="../Bower.Packs/Bower.Packs.csproj" />
     <ProjectReference Include="../Bower.Source.Syslog/Bower.Source.Syslog.csproj" />
     <ProjectReference Include="../Bower.Source.WindowsEventLog/Bower.Source.WindowsEventLog.csproj" />

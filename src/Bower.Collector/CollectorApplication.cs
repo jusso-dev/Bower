@@ -10,6 +10,7 @@ using Bower.Forwarding;
 using Bower.Jobs;
 using Bower.Output.AmaSpool;
 using Bower.Output.AzureLogsIngestion;
+using Bower.Output.S3;
 using Bower.Packs;
 using Bower.Persistence;
 using Bower.PolicyEngine;
@@ -513,6 +514,7 @@ public static partial class CollectorApplication
                         Tap = context.RequestServices.GetRequiredService<EventTap>().Snapshot(),
                         WindowsEventLog = context.RequestServices.GetService<WindowsEventLogSource>()?.Snapshot(),
                         QueuePages = pages is null ? null : StatusQueuePagesResponse.From(pages),
+                        Output = settings.OutputType == "s3" ? settings.OutputType : null,
                         DeliveryActivity = new StatusDeliveryActivityResponse(
                             activity.LastSuccessfulDeliveryAt, lastFailure?.Code, lastFailure?.At),
                         Storage = await QueueStorageStatus.TryCaptureAsync(
@@ -604,6 +606,7 @@ public static partial class CollectorApplication
                     Timeout = TimeSpan.FromSeconds(60)
                 },
                 settings.CollectorId),
+            "s3" => new S3Output(settings.S3Output!),
             _ => throw new InvalidOperationException($"Unsupported BOWER_OUTPUT value: {settings.OutputType}")
         };
     }

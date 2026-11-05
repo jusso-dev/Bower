@@ -23,6 +23,11 @@
         "resolved": "10.0.14",
         "contentHash": "YlTamXppEQls6DYWt7RdUuwWDb0lyw/vXCaGeQpLCpsLmfwGuCkOz/vIGgMTV7ECsJcavkCOkxZXv9s8rdAHkQ=="
       },
+      "AWSSDK.Core": {
+        "type": "Transitive",
+        "resolved": "4.0.102.14",
+        "contentHash": "pRYOOIyj40UdQ6G9iq8AOU30sFPqWS/umM/sFTmAl4n1S6AVbVa67DJpJTxD+9qJFqweHPcyVW7Qb4BbUBLJdg=="
+      },
       "Azure.Core": {
         "type": "Transitive",
         "resolved": "1.53.0",
@@ -122,7 +127,7 @@
       "bower.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Bower.Contracts": "[1.0.0, )"
+          "Bower.Contracts": "[0.1.1-dev.0, )"
         }
       },
       "bower.contracts": {
@@ -131,10 +136,10 @@
       "bower.core": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
-          "Bower.Persistence": "[1.0.0, )",
-          "Bower.PolicyEngine": "[1.0.0, )",
-          "Bower.Redaction": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
+          "Bower.Persistence": "[0.1.1-dev.0, )",
+          "Bower.PolicyEngine": "[0.1.1-dev.0, )",
+          "Bower.Redaction": "[0.1.1-dev.0, )"
         }
       },
       "bower.dcr": {
@@ -143,14 +148,14 @@
       "bower.detection": {
         "type": "Project",
         "dependencies": {
-          "Bower.Contracts": "[1.0.0, )",
+          "Bower.Contracts": "[0.1.1-dev.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
       "bower.forwarding": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )"
         }
       },
       "bower.integrity": {
@@ -162,7 +167,7 @@
       "bower.output.amaspool": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )"
         }
       },
       "bower.output.azurelogsingestion": {
@@ -170,26 +175,34 @@
         "dependencies": {
           "Azure.Identity": "[1.21.0, )",
           "Azure.Monitor.Ingestion": "[1.2.0, )",
-          "Bower.Abstractions": "[1.0.0, )",
-          "Bower.Dcr": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
+          "Bower.Dcr": "[0.1.1-dev.0, )"
+        }
+      },
+      "bower.output.s3": {
+        "type": "Project",
+        "dependencies": {
+          "AWSSDK.S3": "[4.0.104.7, )",
+          "AWSSDK.SecurityToken": "[4.0.101.7, )",
+          "Bower.Abstractions": "[0.1.1-dev.0, )"
         }
       },
       "bower.packs": {
         "type": "Project",
         "dependencies": {
-          "Bower.Dcr": "[1.0.0, )",
-          "Bower.Detection": "[1.0.0, )",
-          "Bower.Integrity": "[1.0.0, )",
-          "Bower.Pipeline": "[1.0.0, )",
-          "Bower.PolicyEngine": "[1.0.0, )",
-          "Bower.Redaction": "[1.0.0, )",
+          "Bower.Dcr": "[0.1.1-dev.0, )",
+          "Bower.Detection": "[0.1.1-dev.0, )",
+          "Bower.Integrity": "[0.1.1-dev.0, )",
+          "Bower.Pipeline": "[0.1.1-dev.0, )",
+          "Bower.PolicyEngine": "[0.1.1-dev.0, )",
+          "Bower.Redaction": "[0.1.1-dev.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
       "bower.persistence": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
           "Microsoft.Data.Sqlite": "[10.0.14, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.5, )"
         }
@@ -197,21 +210,21 @@
       "bower.pipeline": {
         "type": "Project",
         "dependencies": {
-          "Bower.Redaction": "[1.0.0, )",
+          "Bower.Redaction": "[0.1.1-dev.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
       "bower.policyengine": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
       "bower.redaction": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
@@ -221,7 +234,25 @@
       "bower.source.windowseventlog": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )"
+        }
+      },
+      "AWSSDK.S3": {
+        "type": "CentralTransitive",
+        "requested": "[4.0.104.7, )",
+        "resolved": "4.0.104.7",
+        "contentHash": "mmURYvVR/+CM3+9FycHsz+ZZ2I3B1PPch7msARX8fKtiAfkDHYXCzdwQOKA5SvGGvleOKhLGa8YcWlAlbAtu0g==",
+        "dependencies": {
+          "AWSSDK.Core": "[4.0.102.14, 5.0.0)"
+        }
+      },
+      "AWSSDK.SecurityToken": {
+        "type": "CentralTransitive",
+        "requested": "[4.0.101.7, )",
+        "resolved": "4.0.101.7",
+        "contentHash": "n0aalsNSHL/qVb5rgOFnxN5bG+MPCybAlRShaaf+XL2WIOTmvoS6RU+HcjtTez/SrQ3NRfSXAphSqKKybsVS9A==",
+        "dependencies": {
+          "AWSSDK.Core": "[4.0.102.14, 5.0.0)"
         }
       },
       "Azure.Identity": {

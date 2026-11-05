@@ -126,6 +126,9 @@ public sealed record CollectorSettings
 
     public AzureCredentialMode AzureCredential { get; init; } = AzureCredentialMode.ManagedIdentity;
 
+    /// <summary>S3 output settings (BOWER_S3_*, BOWER_OUTPUT=s3); null when none is set.</summary>
+    public Bower.Output.S3.S3OutputOptions? S3Output { get; init; }
+
     public string? AzureClientId { get; init; }
 
     public Uri? ManagementEndpoint { get; init; }
@@ -350,6 +353,7 @@ public sealed record CollectorSettings
             DcrImmutableId = read("BOWER_DCR_ID"),
             AzureCredential = ParseCredentialMode(read("BOWER_AZURE_CREDENTIAL")),
             AzureClientId = read("BOWER_AZURE_CLIENT_ID"),
+            S3Output = Bower.Output.S3.S3OutputOptions.FromEnvironment(read),
             ManagementEndpoint = string.IsNullOrWhiteSpace(managementEndpoint)
                 ? null
                 : new Uri(managementEndpoint, UriKind.Absolute),
@@ -469,7 +473,7 @@ public sealed record CollectorSettings
                 "BOWER_HEALTH_RECORD_INTERVAL_SECONDS must be 0 (off) or between 60 and 3600.");
         }
 
-        if (OutputType is not ("none" or "ama-spool" or "azure-logs-ingestion" or "relay"))
+        if (OutputType is not ("none" or "ama-spool" or "azure-logs-ingestion" or "relay" or "s3"))
         {
             throw new InvalidOperationException($"Unsupported BOWER_OUTPUT value: {OutputType}");
         }
@@ -480,6 +484,14 @@ public sealed record CollectorSettings
             throw new InvalidOperationException(
                 "BOWER_DCE_ENDPOINT and BOWER_DCR_ID are required for azure-logs-ingestion.");
         }
+
+        if (OutputType == "s3" ? S3Output is null : S3Output is not null)
+        {
+            throw new InvalidOperationException(
+                "BOWER_OUTPUT=s3 requires BOWER_S3_BUCKET and BOWER_S3_REGION, and BOWER_S3_* settings require BOWER_OUTPUT=s3.");
+        }
+
+        S3Output?.Validate();
 
         if (ManagementAuthentication is not (ManagementAuthenticationModes.Entra or ManagementAuthenticationModes.Enrolment))
         {
@@ -830,6 +842,13 @@ public sealed record CollectorSettings
         if (UsesEnrolment)
         {
             material += '\u001f' + "management-auth:enrolment";
+        }
+
+        // Appended only when set so existing configuration hashes are unchanged. No credential
+        // is configured for S3, so none can enter the hash.
+        if (S3Output is not null)
+        {
+            material += '\u001f' + "s3:" + S3Output.HashMaterial();
         }
 
         // Relay settings, appended only when set. Hosts, ports and paths only, never file contents.

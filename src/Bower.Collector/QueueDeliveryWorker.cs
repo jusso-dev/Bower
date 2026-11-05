@@ -344,7 +344,8 @@ public sealed partial class QueueDeliveryWorker(
     }
 
     private static bool IsCredentialFailure(string code) => code is
-        "destination-azure-credential-failed" or "destination-azure-http-401" or "destination-azure-http-403";
+        "destination-azure-credential-failed" or "destination-azure-http-401" or "destination-azure-http-403"
+        or "destination-s3-credential-failed" or "destination-s3-access-denied" or "destination-s3-kms-denied";
 
     private static string SafeFailureCode(string code) => code switch
     {
@@ -353,6 +354,7 @@ public sealed partial class QueueDeliveryWorker(
         "destination-azure-credential-failed" or "destination-azure-http-401" or "destination-azure-http-403"
             or "payload-invalid-json" or "payload-event-id-mismatch" or "payload-too-large"
             or "destination-output-timeout" or "output-adapter-failure" or "output-result-missing" => code,
+        _ when IsS3Code(code) => code,
         _ => "delivery-failure"
     };
 
@@ -402,6 +404,7 @@ public sealed partial class QueueDeliveryWorker(
                 or "preflight-time-generated-missing"
                 or "output-adapter-failure" or "output-result-missing" or "azure-http-400-isolated"
                 or "record-exceeds-ama-file-limit" => baseCode,
+            _ when IsS3Code(baseCode) => baseCode,
             _ when IsHttpStatusCode(baseCode, "destination-azure-http-")
                 || IsHttpStatusCode(baseCode, "destination-relay-http-")
                 || IsHttpStatusCode(baseCode, "relay-http-")
@@ -411,6 +414,13 @@ public sealed partial class QueueDeliveryWorker(
         };
         return hasCap ? safe + capped : safe;
     }
+
+    /// <summary>Bounded S3 output codes (<c>Bower.Output.S3.S3Output</c>).</summary>
+    private static bool IsS3Code(string code) => code is
+        "destination-s3-throttled" or "destination-s3-access-denied" or "destination-s3-kms-denied"
+        or "destination-s3-no-such-bucket" or "destination-s3-wrong-region" or "destination-s3-credential-failed"
+        or "destination-s3-unavailable" or "destination-s3-cancelled"
+        || IsHttpStatusCode(code, "destination-s3-http-");
 
     private static bool IsHttpStatusCode(string code, string prefix)
     {

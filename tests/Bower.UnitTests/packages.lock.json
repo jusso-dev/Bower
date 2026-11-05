@@ -684,28 +684,28 @@
       "bower": {
         "type": "Project",
         "dependencies": {
-          "Bower.Contracts": "[1.0.0, )",
-          "Bower.Core": "[1.0.0, )",
-          "Bower.Dcr": "[1.0.0, )",
-          "Bower.Evidence": "[1.0.0, )",
-          "Bower.Packs": "[1.0.0, )",
-          "Bower.Persistence": "[1.0.0, )",
-          "Bower.Pipeline": "[1.0.0, )",
-          "Bower.PolicyEngine": "[1.0.0, )"
+          "Bower.Contracts": "[0.1.1-dev.0, )",
+          "Bower.Core": "[0.1.1-dev.0, )",
+          "Bower.Dcr": "[0.1.1-dev.0, )",
+          "Bower.Evidence": "[0.1.1-dev.0, )",
+          "Bower.Packs": "[0.1.1-dev.0, )",
+          "Bower.Persistence": "[0.1.1-dev.0, )",
+          "Bower.Pipeline": "[0.1.1-dev.0, )",
+          "Bower.PolicyEngine": "[0.1.1-dev.0, )"
         }
       },
       "bower.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Bower.Contracts": "[1.0.0, )"
+          "Bower.Contracts": "[0.1.1-dev.0, )"
         }
       },
       "bower.agent.aws": {
         "type": "Project",
         "dependencies": {
-          "Bower.Contracts": "[1.0.0, )",
-          "Bower.Redaction": "[1.0.0, )",
-          "Bower.Source.Aws": "[1.0.0, )"
+          "Bower.Contracts": "[0.1.1-dev.0, )",
+          "Bower.Redaction": "[0.1.1-dev.0, )",
+          "Bower.Source.Aws": "[0.1.1-dev.0, )"
         }
       },
       "bower.agent.cloud": {
@@ -714,36 +714,37 @@
           "AWSSDK.S3": "[4.0.104.7, )",
           "AWSSDK.SQS": "[4.0.100.21, )",
           "AWSSDK.SecurityToken": "[4.0.101.7, )",
-          "Bower.Forwarding": "[1.0.0, )",
-          "Bower.Source.Aws": "[1.0.0, )",
-          "Bower.Source.Gcp": "[1.0.0, )"
+          "Bower.Forwarding": "[0.1.1-dev.0, )",
+          "Bower.Source.Aws": "[0.1.1-dev.0, )",
+          "Bower.Source.Gcp": "[0.1.1-dev.0, )"
         }
       },
       "bower.agent.docker": {
         "type": "Project",
         "dependencies": {
-          "Bower.Forwarding": "[1.0.0, )",
-          "Bower.Persistence": "[1.0.0, )",
-          "Bower.Source.Docker": "[1.0.0, )"
+          "Bower.Forwarding": "[0.1.1-dev.0, )",
+          "Bower.Persistence": "[0.1.1-dev.0, )",
+          "Bower.Source.Docker": "[0.1.1-dev.0, )"
         }
       },
       "bower.analytics": {
         "type": "Project",
         "dependencies": {
-          "Bower.Contracts": "[1.0.0, )"
+          "Bower.Contracts": "[0.1.1-dev.0, )"
         }
       },
       "bower.collector": {
         "type": "Project",
         "dependencies": {
-          "Bower.Core": "[1.0.0, )",
-          "Bower.Forwarding": "[1.0.0, )",
-          "Bower.Jobs": "[1.0.0, )",
-          "Bower.Output.AmaSpool": "[1.0.0, )",
-          "Bower.Output.AzureLogsIngestion": "[1.0.0, )",
-          "Bower.Packs": "[1.0.0, )",
-          "Bower.Source.Syslog": "[1.0.0, )",
-          "Bower.Source.WindowsEventLog": "[1.0.0, )",
+          "Bower.Core": "[0.1.1-dev.0, )",
+          "Bower.Forwarding": "[0.1.1-dev.0, )",
+          "Bower.Jobs": "[0.1.1-dev.0, )",
+          "Bower.Output.AmaSpool": "[0.1.1-dev.0, )",
+          "Bower.Output.AzureLogsIngestion": "[0.1.1-dev.0, )",
+          "Bower.Output.S3": "[0.1.1-dev.0, )",
+          "Bower.Packs": "[0.1.1-dev.0, )",
+          "Bower.Source.Syslog": "[0.1.1-dev.0, )",
+          "Bower.Source.WindowsEventLog": "[0.1.1-dev.0, )",
           "Microsoft.Extensions.Hosting.WindowsServices": "[10.0.14, )"
         }
       },
@@ -753,10 +754,10 @@
       "bower.core": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
-          "Bower.Persistence": "[1.0.0, )",
-          "Bower.PolicyEngine": "[1.0.0, )",
-          "Bower.Redaction": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
+          "Bower.Persistence": "[0.1.1-dev.0, )",
+          "Bower.PolicyEngine": "[0.1.1-dev.0, )",
+          "Bower.Redaction": "[0.1.1-dev.0, )"
         }
       },
       "bower.dcr": {
@@ -765,7 +766,7 @@
       "bower.detection": {
         "type": "Project",
         "dependencies": {
-          "Bower.Contracts": "[1.0.0, )",
+          "Bower.Contracts": "[0.1.1-dev.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
@@ -773,14 +774,14 @@
         "type": "Project",
         "dependencies": {
           "Azure.Identity": "[1.21.0, )",
-          "Bower.Contracts": "[1.0.0, )",
-          "Bower.Integrity": "[1.0.0, )"
+          "Bower.Contracts": "[0.1.1-dev.0, )",
+          "Bower.Integrity": "[0.1.1-dev.0, )"
         }
       },
       "bower.forwarding": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )"
         }
       },
       "bower.integrity": {
@@ -792,12 +793,12 @@
       "bower.management.api": {
         "type": "Project",
         "dependencies": {
-          "Bower.Dcr": "[1.0.0, )",
-          "Bower.Evidence": "[1.0.0, )",
-          "Bower.Integrity": "[1.0.0, )",
-          "Bower.Jobs": "[1.0.0, )",
-          "Bower.Pipeline": "[1.0.0, )",
-          "Bower.Redaction": "[1.0.0, )",
+          "Bower.Dcr": "[0.1.1-dev.0, )",
+          "Bower.Evidence": "[0.1.1-dev.0, )",
+          "Bower.Integrity": "[0.1.1-dev.0, )",
+          "Bower.Jobs": "[0.1.1-dev.0, )",
+          "Bower.Pipeline": "[0.1.1-dev.0, )",
+          "Bower.Redaction": "[0.1.1-dev.0, )",
           "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.14, )",
           "Microsoft.Data.Sqlite": "[10.0.14, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.5, )",
@@ -807,13 +808,13 @@
       "bower.ocsf": {
         "type": "Project",
         "dependencies": {
-          "Bower.Contracts": "[1.0.0, )"
+          "Bower.Contracts": "[0.1.1-dev.0, )"
         }
       },
       "bower.output.amaspool": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )"
         }
       },
       "bower.output.azurelogsingestion": {
@@ -821,26 +822,34 @@
         "dependencies": {
           "Azure.Identity": "[1.21.0, )",
           "Azure.Monitor.Ingestion": "[1.2.0, )",
-          "Bower.Abstractions": "[1.0.0, )",
-          "Bower.Dcr": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
+          "Bower.Dcr": "[0.1.1-dev.0, )"
+        }
+      },
+      "bower.output.s3": {
+        "type": "Project",
+        "dependencies": {
+          "AWSSDK.S3": "[4.0.104.7, )",
+          "AWSSDK.SecurityToken": "[4.0.101.7, )",
+          "Bower.Abstractions": "[0.1.1-dev.0, )"
         }
       },
       "bower.packs": {
         "type": "Project",
         "dependencies": {
-          "Bower.Dcr": "[1.0.0, )",
-          "Bower.Detection": "[1.0.0, )",
-          "Bower.Integrity": "[1.0.0, )",
-          "Bower.Pipeline": "[1.0.0, )",
-          "Bower.PolicyEngine": "[1.0.0, )",
-          "Bower.Redaction": "[1.0.0, )",
+          "Bower.Dcr": "[0.1.1-dev.0, )",
+          "Bower.Detection": "[0.1.1-dev.0, )",
+          "Bower.Integrity": "[0.1.1-dev.0, )",
+          "Bower.Pipeline": "[0.1.1-dev.0, )",
+          "Bower.PolicyEngine": "[0.1.1-dev.0, )",
+          "Bower.Redaction": "[0.1.1-dev.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
       "bower.persistence": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
           "Microsoft.Data.Sqlite": "[10.0.14, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.5, )"
         }
@@ -848,69 +857,69 @@
       "bower.pipeline": {
         "type": "Project",
         "dependencies": {
-          "Bower.Redaction": "[1.0.0, )",
+          "Bower.Redaction": "[0.1.1-dev.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
       "bower.policyengine": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
       "bower.queuemigrationcheck": {
         "type": "Project",
         "dependencies": {
-          "Bower.Persistence": "[1.0.0, )"
+          "Bower.Persistence": "[0.1.1-dev.0, )"
         }
       },
       "bower.redaction": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
       "bower.sdk": {
         "type": "Project",
         "dependencies": {
-          "Bower.Contracts": "[1.0.0, )",
+          "Bower.Contracts": "[0.1.1-dev.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.14, )"
         }
       },
       "bower.source.ama": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
-          "Bower.Contracts": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
+          "Bower.Contracts": "[0.1.1-dev.0, )"
         }
       },
       "bower.source.aws": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
-          "Bower.Contracts": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
+          "Bower.Contracts": "[0.1.1-dev.0, )"
         }
       },
       "bower.source.docker": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
-          "Bower.Contracts": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
+          "Bower.Contracts": "[0.1.1-dev.0, )"
         }
       },
       "bower.source.gcp": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
-          "Bower.Contracts": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
+          "Bower.Contracts": "[0.1.1-dev.0, )"
         }
       },
       "bower.source.sqlserver": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
           "Microsoft.Data.SqlClient": "[7.1.1, )",
           "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.13, )"
         }
@@ -921,7 +930,7 @@
       "bower.source.windowseventlog": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )"
         }
       },
       "AWSSDK.S3": {

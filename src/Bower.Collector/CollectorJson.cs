@@ -79,6 +79,13 @@ internal sealed record StatusResponse(
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public StatusQueuePagesResponse? QueuePages { get; init; }
 
+    /// <summary>
+    /// The configured output when it does not deliver to Sentinel (<c>s3</c>), so evidence
+    /// runners refuse to claim Sentinel delivery. Omitted for every other output.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Output { get; init; }
+
     /// <summary>Last acknowledgement and last delivery failure code since start-up. Metadata only.</summary>
     public StatusDeliveryActivityResponse? DeliveryActivity { get; init; }
 

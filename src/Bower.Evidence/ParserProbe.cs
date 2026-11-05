@@ -111,6 +111,26 @@ public static class ProbeOutcomes
     /// <summary>Collector <c>/v1/status</c> could not be read, so the tested configuration is unknown.</summary>
     public const string CollectorStatusUnreadable = "collector-status-unreadable";
 
+    /// <summary>
+    /// The collector's <c>/v1/status</c> reports an output that does not deliver to Sentinel
+    /// (for example <c>s3</c>). No probe is sent: Sentinel delivery cannot be evidenced.
+    /// </summary>
+    public const string CollectorOutputNotSentinel = "collector-output-not-sentinel";
+
+    /// <summary>
+    /// The non-Sentinel output a collector status body reports, or null. Only short
+    /// lowercase output ids are echoed; anything else reads as <c>unknown</c>.
+    /// </summary>
+    public static string? NonSentinelOutput(JsonObject? status) =>
+        status?["output"] is null ? null
+            : Text(status["output"]) is { Length: >= 1 and <= 32 } output && output.All(c => c is >= 'a' and <= 'z' or >= '0' and <= '9' or '-')
+                ? output
+                : "unknown";
+
+    /// <summary>Bundle limitation when the collector delivers somewhere other than Sentinel.</summary>
+    public static string NonSentinelLimitation(string output) =>
+        $"NOT SENTINEL: the collector delivers to the {output} output, so no probe was sent and this bundle is not Sentinel delivery evidence.";
+
     /// <summary>The collector refused the probe for another reason (capacity, conflict, rate limit).</summary>
     public const string CollectorRejected = "collector-rejected";
 

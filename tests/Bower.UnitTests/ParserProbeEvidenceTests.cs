@@ -221,6 +221,40 @@ public sealed partial class ParserProbeEvidenceTests
     }
 
     [Theory]
+    [InlineData("s3", null, "s3")]
+    [InlineData("s3", Profile, "s3")]
+    [InlineData("S3; drop", null, "unknown")]
+    public async Task NonSentinelOutput_IsRefusedWithoutSendingAProbe(string output, string? profile, string label)
+    {
+        ProbeEchoDestination destination = new();
+        FakeCollector collector = new(output: output);
+        EvidenceRunner runner = new(collector, destination, null, new FakeClock(TestEvents.Now));
+        EvidenceOptions options = new()
+        {
+            CollectorUrl = new Uri("http://collector.test:4319/"),
+            WorkspaceId = Workspace,
+            ProbeProfile = profile ?? ProbeProfiles.Generic
+        };
+
+        EvidenceBundle bundle = await runner.RunAsync(options, TestContext.Current.CancellationToken);
+        EvidenceBundle simulated = await new EvidenceRunner(collector, null, null, new FakeClock(TestEvents.Now))
+            .RunAsync(options with { WorkspaceId = null }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(EvidenceModes.Failed, bundle.Mode);
+        Assert.Equal(EvidenceModes.Simulated, simulated.Mode);
+        Assert.False(bundle.Arrival.Found);
+        Assert.Equal(ProbeOutcomes.CollectorOutputNotSentinel, bundle.Arrival.QueryError);
+        Assert.Contains(ProbeOutcomes.NonSentinelLimitation(label), bundle.Limitations);
+        Assert.Contains(ProbeOutcomes.NonSentinelLimitation(label), simulated.Limitations);
+        Assert.Equal(0, collector.Canaries + collector.Records);
+        Assert.DoesNotContain(destination.Queries, kql => kql.Contains(bundle.Canary.EventId, StringComparison.Ordinal));
+        if (profile is not null)
+        {
+            Assert.Equal(ProbeOutcomes.CollectorOutputNotSentinel, bundle.Probe!.Outcome);
+        }
+    }
+
+    [Theory]
     [InlineData("queued-false")]
     [InlineData("duplicate")]
     [InlineData("suppressed")]
@@ -516,14 +550,17 @@ public sealed partial class ParserProbeEvidenceTests
     }
 
     /// <summary>A collector reporting an active linux-ssh-gateway parser that accepts the probe.</summary>
-    private sealed class FakeCollector(int statusCode = 200, string? notQueued = null) : ICanarySender, IParserProbeSender
+    private sealed class FakeCollector(int statusCode = 200, string? notQueued = null, string? output = null) : ICanarySender, IParserProbeSender
     {
         public int StatusReads { get; private set; }
 
         public int Records { get; private set; }
 
+        public int Canaries { get; private set; }
+
         public Task<(int Status, JsonObject? Body)> SendAsync(Uri collector, string? token, string json, CancellationToken cancellationToken)
         {
+            Canaries++;
             string eventId = JsonNode.Parse(json)!["eventId"]!.GetValue<string>();
             return Task.FromResult<(int, JsonObject?)>((202, new JsonObject { ["eventId"] = eventId, ["decision"] = "accept" }));
         }
@@ -543,7 +580,8 @@ public sealed partial class ParserProbeEvidenceTests
                         ["packHash"] = "sha256:pack",
                         ["parserStatuses"] = new JsonArray("active-local-json")
                     })
-                }
+                },
+                ["output"] = output
             }));
         }
 
