@@ -233,6 +233,27 @@ public sealed partial class ManagementStore
         return rows;
     }
 
+    /// <summary>Every pending or approved request of one type for one collector, for duplicate checks.</summary>
+    internal async Task<IReadOnlyList<SourceSetupRow>> ListLiveSourceSetupsAsync(
+        string collectorId, string sourceType, CancellationToken cancellationToken)
+    {
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT {SourceSetupColumns} FROM source_setup_requests "
+            + "WHERE collector_id = $collector AND source_type = $type AND status IN ('pending-review', 'approved');";
+        command.Parameters.AddWithValue("$collector", collectorId);
+        command.Parameters.AddWithValue("$type", sourceType);
+        List<SourceSetupRow> rows = [];
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(ReadSourceSetup(reader));
+        }
+
+        return rows;
+    }
+
     internal async Task<SourceSetupRow?> GetSourceSetupAsync(string id, CancellationToken cancellationToken)
     {
         await using SqliteConnection connection = await OpenAsync(cancellationToken);

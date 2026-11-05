@@ -243,6 +243,12 @@ internal static class SourceSetupEndpoints
             return new SourceSetupPlanResult(false, checks, null, null);
         }
 
+        type.ValidateAgainst(values, await store.ListLiveSourceSetupsAsync(id, type.Id, cancellationToken), checks);
+        if (checks.Any(check => check.State == SetupCheckStates.Fail))
+        {
+            return new SourceSetupPlanResult(false, checks, null, null);
+        }
+
         SourceSetupPlan plan = SourceSetupRegistry.Plan(type, id, values);
         if (collector!.Sources.Any(source => source.Id == plan.Verification.ReportId) && plan.Verification.Kind == "source")
         {
