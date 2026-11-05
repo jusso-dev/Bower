@@ -90,6 +90,21 @@ evidence.
   only a route to an active signed pack parser that selects the record, then
   redaction and policy, can queue one. Counters only; no frame content is logged or
   exposed. See [syslog source](../deployment/syslog-source.md).
+- File tail (new local trust boundary, `BOWER_FILE_CONFIG`): only operator-named files,
+  no wildcards, directories or default route; paths must lie strictly below an allowed
+  root, with no linked directories and no linked file unless `allowSymlink` permits one
+  link whose target passes the same checks, re-checked after each read (`path.1` too); on
+  Linux (and every Unix in Rust) the open is `O_NOFOLLOW | O_NONBLOCK` and the handle must
+  match the path's device and inode. Bounded lines
+  (at most 30 KiB), polls and json-lines depth; oversized lines are skipped without
+  buffering. A line becomes an event only through its route's signed pack parser, then
+  redaction and policy; anyone who can write the file can inject lines, and any local
+  user can through the system logger (`logger -t 'sshd[1]'`). Counters only. Rotation
+  gaps are counted on a best-effort basis: lines written to a rotated `path.1` after
+  Bower left it are counted only while Bower can still observe that `path.1`, and lines
+  are lost uncounted if it is rotated again (to `path.2`) first. A writer appending to
+  `path.1` can delay the switch to the new file only by a bounded number of polls (the
+  drain cap). See [file tail source](../deployment/file-tail-source.md).
 - Live tap (`GET /v1/tap`, `bower tap`; new trust boundary: an operator-facing stream
   of accepted event content). See [tap and top](../operations/tap-and-top.md).
   - Pre-redaction exposure: there is no raw or `parsed` tap point. Frames are built only

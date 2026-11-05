@@ -101,6 +101,7 @@ nav:
       - Connect a source:
           - Syslog: deployment/syslog-source.md
           - Windows Event Log: deployment/windows-event-log-source.md
+          - Local files: deployment/file-tail-source.md
           - Azure Monitor Agent companion: deployment/ama-companion.md
           - ASP.NET Core: developer-integration/aspnetcore.md
           - Custom parsers: developer-integration/custom-log-parser.md

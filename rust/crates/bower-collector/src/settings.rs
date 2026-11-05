@@ -119,6 +119,8 @@ pub struct CollectorSettings {
     pub archive_path: Option<PathBuf>,
     /// JSON file of syslog listeners and pack routes (BOWER_SYSLOG_CONFIG).
     pub syslog_config_path: Option<PathBuf>,
+    /// JSON file of security-selected local files and their pack routes (BOWER_FILE_CONFIG).
+    pub file_tail_config_path: Option<PathBuf>,
     /// Relay this collector delivers to (BOWER_RELAY_URL, BOWER_OUTPUT=relay): an https
     /// URL with no path, credentials or query. The connection uses mutual TLS.
     pub relay_url: Option<Url>,
@@ -237,6 +239,7 @@ impl CollectorSettings {
             source_expectations_path: None,
             archive_path: None,
             syslog_config_path: None,
+            file_tail_config_path: None,
             relay_url: None,
             relay_client_certificate_file: None,
             relay_client_key_file: None,
@@ -390,6 +393,7 @@ impl CollectorSettings {
             source_expectations_path: blank(read("BOWER_SOURCE_EXPECTATIONS")).map(PathBuf::from),
             archive_path: blank(read("BOWER_ARCHIVE_PATH")).map(PathBuf::from),
             syslog_config_path: blank(read("BOWER_SYSLOG_CONFIG")).map(PathBuf::from),
+            file_tail_config_path: blank(read("BOWER_FILE_CONFIG")).map(PathBuf::from),
             tap_enabled: read_bool(&read, "BOWER_TAP_ENABLED", true)?,
             tap_maximum_sessions: read_i64(&read, "BOWER_TAP_MAX_SESSIONS", 2)? as i32,
             tap_maximum_events_per_second: read_i64(&read, "BOWER_TAP_MAX_EVENTS_PER_SECOND", 20)?
@@ -905,6 +909,12 @@ impl CollectorSettings {
         if let Some(path) = &self.syslog_config_path {
             material.push('\u{1f}');
             material.push_str("syslog:");
+            material.push_str(&path.to_string_lossy());
+        }
+        // C# appends Windows Event Log (refused here) before this, so the order matches.
+        if let Some(path) = &self.file_tail_config_path {
+            material.push('\u{1f}');
+            material.push_str("file-tail:");
             material.push_str(&path.to_string_lossy());
         }
         if self.uses_managed_privacy_profile() {

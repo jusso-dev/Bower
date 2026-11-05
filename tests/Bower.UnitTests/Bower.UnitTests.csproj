@@ -18,6 +18,7 @@
     <ProjectReference Include="../../src/Bower.Cli/Bower.Cli.csproj" />
     <ProjectReference Include="../../src/Bower.Collector/Bower.Collector.csproj" />
     <ProjectReference Include="../../src/Bower.Source.Docker/Bower.Source.Docker.csproj" />
+    <ProjectReference Include="../../src/Bower.Source.File/Bower.Source.File.csproj" />
     <ProjectReference Include="../../src/Bower.Source.Syslog/Bower.Source.Syslog.csproj" />
     <ProjectReference Include="../../src/Bower.Source.WindowsEventLog/Bower.Source.WindowsEventLog.csproj" />
     <ProjectReference Include="../../src/Bower.Core/Bower.Core.csproj" />
@@ -119,6 +120,11 @@
     <!-- Syslog parser vectors and TEST-ONLY TLS keys shared with the Rust port (rust/crates/bower-source-syslog). -->
     <Content Include="../../rust/crates/bower-source-syslog/tests/fixtures/**/*">
       <Link>syslog-vectors/%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- File tail vectors shared with the Rust port (rust/crates/bower-source-file). -->
+    <Content Include="../../rust/crates/bower-source-file/tests/fixtures/file-tail-vectors.json">
+      <Link>file-tail-vectors/file-tail-vectors.json</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <!-- Recorded Windows event XML (EvtRender output), synthetic values. -->

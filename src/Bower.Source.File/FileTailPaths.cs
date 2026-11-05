@@ -1,0 +1,261 @@
+using System.Buffers;
+
+namespace Bower.Source.File;
+
+/// <summary>What a configured path resolves to at read time.</summary>
+public enum FileTailPathState
+{
+    /// <summary>A file below an allowed root, without symbolic links (or with the one allowed link).</summary>
+    Ready,
+
+    /// <summary>The file, or a directory on its path, does not exist yet. Not an error: wait.</summary>
+    Missing,
+
+    /// <summary>A symbolic link, a directory or a path outside the allowed roots. Never read.</summary>
+    Refused,
+
+    /// <summary>
+    /// The file, or a directory on its path, cannot be examined (permission denied or another
+    /// error than not found). A failure, never mistaken for a missing file.
+    /// </summary>
+    Inaccessible
+}
+
+/// <summary>
+/// Path guards. Configuration paths are checked lexically (absolute, normalised, no
+/// wildcards, below an allowed root); at read time every directory between the root and the
+/// file must exist and not be a symbolic link, and the file must not be one unless
+/// <c>allowSymlink</c> is set. An allowed link is followed exactly once and its target must
+/// pass the same checks. Roots themselves are trusted operator configuration and may be links.
+/// <para>
+/// The checks run before and after each read, which narrows but cannot close the window for
+/// a link swapped in between them: roots should be directories only trusted operators (root)
+/// can write to, which is the case for <c>/var/log</c>.
+/// </para>
+/// </summary>
+public static class FileTailPaths
+{
+    private static readonly SearchValues<char> Wildcards = SearchValues.Create("*?[]{}");
+
+    public static StringComparer Comparer { get; } =
+        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+
+    private static StringComparison Comparison =>
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+    /// <summary>Absolute and already normalised: no <c>.</c>, <c>..</c>, repeated or trailing separators, wildcards or control characters.</summary>
+    public static bool IsCanonical(string? path)
+    {
+        if (path is not { Length: >= 1 and <= FileTailSourceConfigurationLoader.MaximumPathLength }
+            || path.AsSpan().ContainsAny(Wildcards)
+            || path.Any(char.IsControl)
+            || !Path.IsPathFullyQualified(path))
+        {
+            return false;
+        }
+
+        string full;
+        try
+        {
+            full = Path.GetFullPath(path);
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+
+        return string.Equals(full, path, StringComparison.Ordinal)
+            && (IsFileSystemRoot(path) || !Path.EndsInDirectorySeparator(path));
+    }
+
+    public static bool IsFileSystemRoot(string path) =>
+        string.Equals(Path.GetPathRoot(path), path, StringComparison.Ordinal);
+
+    /// <summary>The allowed root the path lies strictly below, or null.</summary>
+    public static string? RootOf(string path, IReadOnlyList<string> roots)
+    {
+        ArgumentNullException.ThrowIfNull(roots);
+        return roots.FirstOrDefault(root =>
+            path.StartsWith(Path.TrimEndingDirectorySeparator(root) + Path.DirectorySeparatorChar, Comparison));
+    }
+
+    /// <summary>
+    /// The path with every directory resolved through symbolic links (<c>realpath</c> of the
+    /// directory, then the file name), or the path as written when its directory does not
+    /// exist yet. Used to spot two inputs that name the same file through linked directories.
+    /// </summary>
+    public static string Canonical(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        string? directory = Path.GetDirectoryName(path);
+        if (directory is null || Path.GetPathRoot(directory) is not { Length: > 0 } root)
+        {
+            return path;
+        }
+
+        int hops = 0;
+        return Walk(root, directory[root.Length..], ref hops) is { } real
+            ? Path.Combine(real, Path.GetFileName(path))
+            : path;
+    }
+
+    /// <summary>
+    /// <c>realpath</c>: follows <paramref name="relative"/> from the real directory
+    /// <paramref name="current"/>, resolving each link as it is met and each <c>..</c> against
+    /// the real parent (so <c>x/../y</c> through a linked <c>x</c> goes where the kernel goes).
+    /// Null when a component is missing or links loop.
+    /// </summary>
+    private static string? Walk(string current, string relative, ref int hops)
+    {
+        foreach (string segment in relative.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (segment == ".")
+            {
+                continue;
+            }
+
+            if (segment == "..")
+            {
+                current = Path.GetDirectoryName(current) ?? current;
+                continue;
+            }
+
+            string next = Path.Combine(current, segment);
+            DirectoryInfo info = new(next);
+            if (info.LinkTarget is { } target)
+            {
+                if (++hops > 40)
+                {
+                    return null;
+                }
+
+                string? start = Path.IsPathRooted(target) ? Path.GetPathRoot(target) : current;
+                if (start is null || Walk(start, Path.IsPathRooted(target) ? target[start.Length..] : target, ref hops) is not { } resolved)
+                {
+                    return null;
+                }
+
+                current = resolved;
+                continue;
+            }
+
+            if (!info.Exists)
+            {
+                return null;
+            }
+
+            current = next;
+        }
+
+        return current;
+    }
+
+    /// <summary>The path to open, or why it cannot be read now.</summary>
+    public static (FileTailPathState State, string Path) Resolve(string path, IReadOnlyList<string> roots, bool allowSymlink)
+    {
+        string? root = RootOf(path, roots);
+        if (root is null)
+        {
+            return (FileTailPathState.Refused, path);
+        }
+
+        FileTailPathState directories = CheckDirectories(root, path);
+        if (directories != FileTailPathState.Ready)
+        {
+            return (directories, path);
+        }
+
+        FileInfo file = new(path);
+        if (file.LinkTarget is { } target)
+        {
+            if (!allowSymlink)
+            {
+                return (FileTailPathState.Refused, path);
+            }
+
+            string resolved = Path.GetFullPath(target, Path.GetDirectoryName(path)!);
+            string? targetRoot = RootOf(resolved, roots);
+            if (targetRoot is null)
+            {
+                return (FileTailPathState.Refused, path);
+            }
+
+            FileTailPathState targetDirectories = CheckDirectories(targetRoot, resolved);
+            if (targetDirectories != FileTailPathState.Ready)
+            {
+                return (targetDirectories, path);
+            }
+
+            return Final(new FileInfo(resolved), resolved);
+        }
+
+        return Final(file, path);
+    }
+
+    private static (FileTailPathState State, string Path) Final(FileInfo file, string path)
+    {
+        if (file.LinkTarget is not null)
+        {
+            return (FileTailPathState.Refused, path);
+        }
+
+        (FileTailPathState state, FileAttributes attributes) = Probe(path);
+        return state != FileTailPathState.Ready ? (state, path)
+            : attributes.HasFlag(FileAttributes.Directory) ? (FileTailPathState.Refused, path)
+            : (FileTailPathState.Ready, path);
+    }
+
+    /// <summary>
+    /// What is at <paramref name="path"/>: <see cref="FileTailPathState.Missing"/> only when
+    /// nothing is there; permission denied or any other error is
+    /// <see cref="FileTailPathState.Inaccessible"/> (<c>Exists</c> would report both as missing).
+    /// </summary>
+    private static (FileTailPathState State, FileAttributes Attributes) Probe(string path)
+    {
+        try
+        {
+            return (FileTailPathState.Ready, System.IO.File.GetAttributes(path));
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return (FileTailPathState.Missing, default);
+        }
+        catch (Exception exception) when (exception is UnauthorizedAccessException or IOException)
+        {
+            return (FileTailPathState.Inaccessible, default);
+        }
+    }
+
+    /// <summary>Every directory strictly between the root and the file name.</summary>
+    private static FileTailPathState CheckDirectories(string root, string path)
+    {
+        string relative = Path.GetRelativePath(root, Path.GetDirectoryName(path)!);
+        if (relative == ".")
+        {
+            return FileTailPathState.Ready;
+        }
+
+        string current = Path.TrimEndingDirectorySeparator(root);
+        foreach (string segment in relative.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Combine(current, segment);
+            if (new DirectoryInfo(current).LinkTarget is not null)
+            {
+                return FileTailPathState.Refused;
+            }
+
+            (FileTailPathState state, FileAttributes attributes) = Probe(current);
+            if (state != FileTailPathState.Ready)
+            {
+                return state;
+            }
+
+            if (!attributes.HasFlag(FileAttributes.Directory))
+            {
+                return FileTailPathState.Missing;
+            }
+        }
+
+        return FileTailPathState.Ready;
+    }
+}

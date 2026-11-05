@@ -1,6 +1,7 @@
 using Bower.Collector.Relay;
 using Bower.Core;
 using Bower.Packs;
+using Bower.Source.File;
 using Bower.Source.Syslog;
 using Bower.Source.WindowsEventLog;
 
@@ -10,7 +11,7 @@ namespace Bower.Collector;
 /// Every file a collector start reads besides the policy bundle, loaded and checked the
 /// same way for start-up (<see cref="CollectorApplication.Build"/>) and for the signed
 /// <c>reload</c> pre-check: source expectations, producer scopes and ingest tokens, the
-/// syslog and Windows Event Log configurations and their routes to the loaded packs, the
+/// syslog, Windows Event Log and file tail configurations and their routes to the loaded packs, the
 /// syslog TLS material, and the relay's pins and certificates. A reload is therefore
 /// refused for exactly the files that would stop a restart.
 /// </summary>
@@ -28,7 +29,8 @@ public sealed record CollectorStartupSources(
     WindowsEventLogSourceConfiguration? WindowsEventLog,
     ProducerAuthorization Producers,
     IngestAuthentication Ingest,
-    RelayDownstreams? RelayDownstreams)
+    RelayDownstreams? RelayDownstreams,
+    FileTailSourceConfiguration? FileTail = null)
 {
     public static CollectorStartupSources Load(CollectorSettings settings, PolicyBundle bundle)
     {
@@ -50,6 +52,13 @@ public sealed record CollectorStartupSources(
         {
             windowsEventLog = WindowsEventLogSourceConfigurationLoader.LoadFile(settings.WindowsEventLogConfigPath);
             WindowsEventLogRoutes.Validate(windowsEventLog, bundle);
+        }
+
+        FileTailSourceConfiguration? fileTail = null;
+        if (settings.FileTailConfigPath is not null)
+        {
+            fileTail = FileTailSourceConfigurationLoader.LoadFile(settings.FileTailConfigPath);
+            FileTailRoutes.Validate(fileTail, bundle);
         }
 
         RelayDownstreams? downstreams = null;
@@ -78,6 +87,7 @@ public sealed record CollectorStartupSources(
             windowsEventLog,
             new ProducerAuthorization(settings.ProducerScopesFile, settings.SingleTrustDomain),
             new IngestAuthentication(settings.IngestToken, settings.IngestTokensFile),
-            downstreams);
+            downstreams,
+            fileTail);
     }
 }

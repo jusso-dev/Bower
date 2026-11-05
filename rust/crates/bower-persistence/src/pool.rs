@@ -75,10 +75,25 @@ impl ConnectionPool {
     }
 }
 
+/// Marks SQLite busy and locked failures (C# `QueueStorageErrors.IsBusy`).
+pub(crate) const BUSY_PREFIX: &str = "sqlite-busy: ";
+
+/// SQLite busy or locked: another connection held the write lock past the busy timeout
+/// (for example a retention batch). Nothing was written, so the caller retries after a
+/// back-off; it is not a failure of the source or the queue.
+pub fn is_busy(error: &StoreError) -> bool {
+    matches!(error, StoreError::Storage(message) if message.starts_with(BUSY_PREFIX))
+}
+
 pub(crate) fn storage(error: rusqlite::Error) -> StoreError {
     // rusqlite messages carry SQLite codes and constraint names, never bound values.
     if error.sqlite_error_code() == Some(rusqlite::ErrorCode::DiskFull) {
         StoreError::Full("physical-storage-budget-exceeded".into())
+    } else if matches!(
+        error.sqlite_error_code(),
+        Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
+    ) {
+        StoreError::Storage(format!("{BUSY_PREFIX}{error}"))
     } else {
         StoreError::Storage(error.to_string())
     }
@@ -136,5 +151,20 @@ pub(crate) fn require_text(value: &str, name: &str) -> StoreResult<()> {
         )))
     } else {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod busy_tests {
+    use super::*;
+
+    /// C# `QueueStorageErrors.IsBusy`: SQLite busy and locked are backpressure.
+    #[test]
+    fn busy_and_locked_are_classified_and_other_failures_are_not() {
+        let failure = |code| rusqlite::Error::SqliteFailure(rusqlite::ffi::Error::new(code), None);
+        assert!(is_busy(&storage(failure(rusqlite::ffi::SQLITE_BUSY))));
+        assert!(is_busy(&storage(failure(rusqlite::ffi::SQLITE_LOCKED))));
+        assert!(!is_busy(&storage(failure(rusqlite::ffi::SQLITE_CORRUPT))));
+        assert!(!is_busy(&StoreError::Storage("database is locked".into())));
     }
 }

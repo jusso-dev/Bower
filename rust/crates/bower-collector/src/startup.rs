@@ -1,7 +1,7 @@
 //! C# `CollectorStartupSources`: every file a collector start reads besides the policy
 //! bundle, loaded and checked the same way by start-up (`host::build`) and by the signed
 //! `reload` pre-check (`management_commands::reload_refusal`): source expectations, the
-//! syslog configuration and its routes to the loaded packs, the syslog TLS material,
+//! syslog and file tail configurations and their routes to the loaded packs, the syslog TLS material,
 //! producer scopes and ingest tokens, and the relay's pins and certificates. A reload is
 //! therefore refused for exactly the files that would stop a restart.
 //!
@@ -13,6 +13,7 @@ use std::sync::Arc;
 use bower_contracts::time::Clock;
 use bower_core::source_expectations::{self, SourceExpectations, SourceExpectationsError};
 use bower_packs::LoadedPack;
+use bower_source_file::FileTailSourceConfiguration;
 use bower_source_syslog::SyslogSourceConfiguration;
 
 use crate::auth::IngestAuthentication;
@@ -24,6 +25,7 @@ use crate::settings::CollectorSettings;
 pub struct StartupSources {
     pub expectations: Option<SourceExpectations>,
     pub syslog: Option<SyslogSourceConfiguration>,
+    pub file_tail: Option<FileTailSourceConfiguration>,
     pub authorization: ProducerAuthorization,
     pub auth: IngestAuthentication,
     pub relay_downstreams: Option<RelayDownstreams>,
@@ -56,6 +58,11 @@ pub fn load(
         bower_source_syslog::tls::validate(configuration)
             .map_err(|error| HostError::new("InvalidOperationException", error.to_string()))?;
     }
+    let file_tail = settings
+        .file_tail_config_path
+        .as_ref()
+        .map(|path| crate::file_tail::load(path, packs))
+        .transpose()?;
     let relay_downstreams = if settings.is_relay() {
         let downstreams = RelayDownstreams::load(
             settings
@@ -83,6 +90,7 @@ pub fn load(
     Ok(StartupSources {
         expectations,
         syslog,
+        file_tail,
         authorization: ProducerAuthorization::new(
             settings.producer_scopes_file.as_deref(),
             settings.single_trust_domain,

@@ -154,6 +154,9 @@ public sealed record CollectorSettings
     /// <summary>JSON file of Windows Event Log subscriptions and pack parsers (BOWER_WINDOWS_EVENTLOG_CONFIG). Windows only.</summary>
     public string? WindowsEventLogConfigPath { get; init; }
 
+    /// <summary>JSON file of security-selected local files and their pack routes (BOWER_FILE_CONFIG).</summary>
+    public string? FileTailConfigPath { get; init; }
+
     public string? ManagementScope { get; init; }
 
     /// <summary>
@@ -398,7 +401,8 @@ public sealed record CollectorSettings
             TapMaximumEvents = (int)ReadInt64(read, "BOWER_TAP_MAX_EVENTS", 1000),
             TapMaximumEventBytes = (int)ReadInt64(read, "BOWER_TAP_MAX_EVENT_BYTES", 16_384),
             TapProducers = SplitList(read("BOWER_TAP_PRODUCERS")),
-            WindowsEventLogConfigPath = Blank(read("BOWER_WINDOWS_EVENTLOG_CONFIG"))
+            WindowsEventLogConfigPath = Blank(read("BOWER_WINDOWS_EVENTLOG_CONFIG")),
+            FileTailConfigPath = Blank(read("BOWER_FILE_CONFIG"))
         };
         settings.Validate();
         return settings;
@@ -802,6 +806,11 @@ public sealed record CollectorSettings
         if (WindowsEventLogConfigPath is not null)
         {
             material += '\u001f' + "windows-eventlog:" + WindowsEventLogConfigPath;
+        }
+
+        if (FileTailConfigPath is not null)
+        {
+            material += '\u001f' + "file-tail:" + FileTailConfigPath;
         }
 
         if (PressureRetentionFloor != TimeSpan.FromHours(1))

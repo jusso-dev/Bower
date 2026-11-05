@@ -843,6 +843,7 @@ dependencies = [
  "bower-pipeline",
  "bower-policy",
  "bower-redaction",
+ "bower-source-file",
  "bower-source-syslog",
  "chrono",
  "flate2",
@@ -1157,6 +1158,24 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "bower-source-file"
+version = "0.1.1"
+dependencies = [
+ "base64 0.23.1",
+ "bower-contracts",
+ "bower-persistence",
+ "chrono",
+ "hex",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]

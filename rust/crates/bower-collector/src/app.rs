@@ -143,6 +143,8 @@ pub struct AppState {
     pub delivery: Arc<DeliveryStatus>,
     /// Syslog listener counters when `BOWER_SYSLOG_CONFIG` is set.
     pub syslog: Option<bower_source_syslog::SyslogMetrics>,
+    /// File tail input counters when `BOWER_FILE_CONFIG` is set.
+    pub file_tail: Option<bower_source_file::FileTailMetrics>,
     /// Relay role: counters per pinned downstream (`RelayTelemetry`).
     pub relay: Option<Arc<crate::relay::telemetry::RelayTelemetry>>,
     /// Live post-redaction tap (`bower tap`). In memory only; never persisted.
@@ -714,6 +716,9 @@ struct StatusBody<'a> {
     /// Syslog listener counters; omitted when BOWER_SYSLOG_CONFIG is not set. Metadata only.
     #[serde(skip_serializing_if = "Option::is_none")]
     syslog: Option<Vec<bower_source_syslog::ListenerStatus>>,
+    /// File tail input counters; omitted when BOWER_FILE_CONFIG is not set. Metadata only.
+    #[serde(rename = "fileTail", skip_serializing_if = "Option::is_none")]
+    file_tail: Option<Vec<bower_source_file::InputStatus>>,
     /// Relay counters since start; omitted unless BOWER_RELAY_LISTEN_URL is set.
     #[serde(skip_serializing_if = "Option::is_none")]
     relay: Option<crate::relay::telemetry::RelayStatusSnapshot>,
@@ -966,6 +971,10 @@ async fn status(
                 .syslog
                 .as_ref()
                 .map(bower_source_syslog::SyslogMetrics::snapshot),
+            file_tail: state
+                .file_tail
+                .as_ref()
+                .map(bower_source_file::FileTailMetrics::snapshot),
             relay: state.relay.as_ref().map(|relay| relay.snapshot()),
             activity: state
                 .telemetry
