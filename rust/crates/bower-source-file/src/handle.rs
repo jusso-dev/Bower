@@ -32,6 +32,38 @@ pub struct Handle {
     pub write_time: Option<SystemTime>,
     /// `None` while the first line is incomplete (and shorter than 4096 bytes).
     pub fingerprint: Option<String>,
+    /// `device:inode` of the opened file (Unix), or `None`.
+    pub file_id: Option<String>,
+}
+
+impl Handle {
+    /// Write time as 100 ns ticks since the Unix epoch (C# `WriteTicks`).
+    pub fn write_ticks(&self) -> i64 {
+        self.write_time
+            .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
+            .map_or(0, |since| {
+                i64::try_from(since.as_nanos() / 100).unwrap_or(i64::MAX)
+            })
+    }
+}
+
+/// `device:inode` of the regular file at `path` without opening it (Unix), or `None`.
+pub fn file_id_of(path: &Path) -> Option<String> {
+    std::fs::symlink_metadata(path)
+        .ok()
+        .filter(std::fs::Metadata::is_file)
+        .and_then(|metadata| file_id(&metadata))
+}
+
+#[cfg(unix)]
+fn file_id(metadata: &std::fs::Metadata) -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
+    Some(format!("{}:{}", metadata.dev(), metadata.ino()))
+}
+
+#[cfg(not(unix))]
+fn file_id(_: &std::fs::Metadata) -> Option<String> {
+    None
 }
 
 /// Tests only: a hook on the path being opened.
@@ -85,6 +117,7 @@ pub fn open(path: Option<&Path>) -> Result<Option<Handle>, OpenError> {
         length,
         write_time: opened.modified().ok(),
         fingerprint: None,
+        file_id: file_id(&opened),
     };
     handle.fingerprint = identity(&mut handle.file, length).map_err(OpenError::Io)?;
     #[cfg(test)]

@@ -293,7 +293,6 @@ public sealed class FileTailSource : IAsyncDisposable
             rotatedState == FileTailPathState.Ready ? rotatedPath : null,
             cursor,
             options,
-            input.Rotation,
             cancellationToken);
 
         // Re-check after reading: a link swapped in during the read discards the read.
@@ -316,7 +315,7 @@ public sealed class FileTailSource : IAsyncDisposable
         {
             if (cancellationToken.IsCancellationRequested)
             {
-                next = Rewind(line);
+                next = batch.RewindTo(line);
                 break;
             }
 
@@ -332,14 +331,14 @@ public sealed class FileTailSource : IAsyncDisposable
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {
-                        next = Rewind(line);
+                        next = batch.RewindTo(line);
                         break;
                     }
                     catch (Exception exception)
                     {
                         Interlocked.Increment(ref input.Counters.SubmitFailures);
                         failure = exception;
-                        next = Rewind(line);
+                        next = batch.RewindTo(line);
                         break;
                     }
 
@@ -347,7 +346,7 @@ public sealed class FileTailSource : IAsyncDisposable
                     {
                         Interlocked.Increment(ref input.Counters.Backpressure);
                         backpressure = true;
-                        next = Rewind(line);
+                        next = batch.RewindTo(line);
                         break;
                     }
                 }
@@ -395,7 +394,6 @@ public sealed class FileTailSource : IAsyncDisposable
         string? rotated,
         FileTailCursor? cursor,
         FileTailInputOptions options,
-        FileTailRotationState rotation,
         CancellationToken cancellationToken)
     {
         try
@@ -407,7 +405,7 @@ public sealed class FileTailSource : IAsyncDisposable
                 MaxBytesPerBatch = configuration.MaxBytesPerBatch,
                 StartAtEnd = !string.Equals(options.StartAt, "beginning", StringComparison.Ordinal),
                 RotationGracePolls = configuration.RotationGracePolls
-            }, rotation, cancellationToken);
+            }, cancellationToken);
         }
         catch (FileTailRefusedException exception)
         {
@@ -420,15 +418,15 @@ public sealed class FileTailSource : IAsyncDisposable
     }
 
     /// <summary>
-    /// The configured path, refused when it is a link, outside the roots, or (through an
-    /// allowed link) another input's file or rotated file.
+    /// The configured path, refused when it is a link, outside the roots, or (directly,
+    /// through linked directories or through an allowed link) another input's file or
+    /// rotated file.
     /// </summary>
     private (FileTailPathState State, string Path) Check(FileTailInputOptions options)
     {
         (FileTailPathState state, string path) = FileTailPaths.Resolve(options.Path, configuration.AllowedRoots, options.AllowSymlink);
         if (state == FileTailPathState.Refused
-            || (!string.Equals(path, options.Path, StringComparison.Ordinal) && configuration.Inputs.Any(other =>
-                !ReferenceEquals(other, options) && FileTailSourceConfigurationLoader.Overlaps(path, other.Path))))
+            || FileTailSourceConfigurationLoader.OverlapsAnother(configuration, options, path))
         {
             throw new FileTailException(FileTailFailures.PathRefused);
         }
@@ -443,9 +441,6 @@ public sealed class FileTailSource : IAsyncDisposable
         return state == FileTailPathState.Refused ? throw new FileTailException(FileTailFailures.PathRefused) : (state, rotated);
     }
 
-    /// <summary>Back to the line's start; inside an oversized line, keep skipping it.</summary>
-    private static FileTailCursor Rewind(FileTailLine line) =>
-        new(FileTailCursor.CurrentSchemaVersion, line.Fingerprint, line.StartOffset, line.ContinuesDiscard);
 
     private void Count(Input input, FileTailLine line, FileTailSubmitOutcome? outcome)
     {
@@ -518,7 +513,6 @@ public sealed class FileTailSource : IAsyncDisposable
         public FileTailInputOptions Options { get; } = options;
         public SemaphoreSlim Gate { get; } = new(1, 1);
         public FileTailCounters Counters { get; } = new();
-        public FileTailRotationState Rotation { get; } = new();
         public volatile string State = "starting";
         public long Offset = -1;
         public long LastLineTicks;

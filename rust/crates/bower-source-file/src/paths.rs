@@ -92,6 +92,22 @@ pub fn resolve(path: &str, roots: &[String], allow_symlink: bool) -> (PathState,
     }
 }
 
+/// The path with every directory resolved through symbolic links (`realpath` of the
+/// directory, then the file name), or the path as written when its directory does not exist
+/// yet (C# `FileTailPaths.Canonical`).
+pub fn canonical(path: &str) -> String {
+    let directory = parent(path);
+    let name = &path[path.rfind('/').map_or(0, |index| index + 1)..];
+    match std::fs::canonicalize(directory)
+        .ok()
+        .and_then(|real| real.to_str().map(str::to_owned))
+    {
+        Some(real) if real == "/" => format!("/{name}"),
+        Some(real) => format!("{real}/{name}"),
+        None => path.to_owned(),
+    }
+}
+
 /// The normalised absolute target of the link at `path` (C# `Path.GetFullPath(target, parent)`).
 pub fn link_target(path: &str, target: &Path) -> Option<String> {
     let joined = match target.to_str()? {

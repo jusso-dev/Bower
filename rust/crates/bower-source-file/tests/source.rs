@@ -908,3 +908,426 @@ fn busy_cursor_store_is_backpressure_not_a_failure() {
     );
     assert!(sink.records().is_empty());
 }
+
+fn grace(
+    mut configuration: FileTailSourceConfiguration,
+    polls: i32,
+) -> FileTailSourceConfiguration {
+    configuration.rotation_grace_polls = polls;
+    configuration
+}
+
+/// C# `RestartMidDrain_ContinuesThePersistedDrainWithoutLossOrDuplicates`.
+#[test]
+fn restart_mid_drain_continues_the_persisted_drain_without_loss_or_duplicates() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("auth.log");
+    let rotated = directory.path().join("auth.log.1");
+    std::fs::write(&path, line("first-1")).unwrap();
+    let sink = FakeSink::new(|_| Ok(SubmitOutcome::Queued));
+    let cursors = Arc::new(MemoryCursors::default());
+    let configuration = grace(text(directory.path(), &path, "beginning"), 2);
+    {
+        let first = FileTailSource::new(configuration.clone(), sink.clone(), cursors.clone(), None);
+        first.poll_once("auth").unwrap();
+        std::fs::write(&path, format!("{}{}", line("first-1"), line("first-2"))).unwrap();
+        std::fs::rename(&path, &rotated).unwrap();
+        std::fs::write(&path, line("second-1")).unwrap();
+        first.poll_once("auth").unwrap(); // Drains first-2; the grace window starts.
+        first.poll_once("auth").unwrap(); // One unchanged end-of-file poll.
+    }
+    let persisted = Cursor::deserialize(&cursors.value("file:auth").unwrap()).unwrap();
+    assert_eq!(
+        (persisted.drain.as_deref(), persisted.stable_polls),
+        (Some("rename"), Some(1))
+    );
+    let mut late = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&rotated)
+        .unwrap();
+    std::io::Write::write_all(
+        &mut late,
+        line("first-3 late but before the switch").as_bytes(),
+    )
+    .unwrap();
+    let restarted = FileTailSource::new(configuration, sink.clone(), cursors, None);
+    for _ in 0..5 {
+        restarted.poll_once("auth").unwrap();
+    }
+    let words: Vec<String> = sink
+        .records()
+        .iter()
+        .map(|record| first_word(record))
+        .collect();
+    assert_eq!(words, ["first-1", "first-2", "first-3", "second-1"]);
+    let status = &restarted.snapshot()[0];
+    assert_eq!((status.rotations, status.rotation_gaps), (1, 0));
+}
+
+/// C# `RestartAfterTheSwitch_StillCountsLateWritesToTheAbandonedGeneration`.
+#[test]
+fn restart_after_the_switch_still_counts_late_writes_to_the_abandoned_generation() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("auth.log");
+    let rotated = directory.path().join("auth.log.1");
+    std::fs::write(&path, line("first-1")).unwrap();
+    let sink = FakeSink::new(|_| Ok(SubmitOutcome::Queued));
+    let cursors = Arc::new(MemoryCursors::default());
+    let configuration = text(directory.path(), &path, "beginning");
+    {
+        let first = FileTailSource::new(configuration.clone(), sink.clone(), cursors.clone(), None);
+        first.poll_once("auth").unwrap();
+        std::fs::rename(&path, &rotated).unwrap();
+        std::fs::write(&path, line("second-1")).unwrap();
+        for _ in 0..3 {
+            first.poll_once("auth").unwrap();
+        }
+        assert_eq!(first.snapshot()[0].rotations, 1);
+    }
+    assert!(
+        Cursor::deserialize(&cursors.value("file:auth").unwrap())
+            .unwrap()
+            .abandoned
+            .is_some()
+    );
+    let mut late = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&rotated)
+        .unwrap();
+    std::io::Write::write_all(&mut late, line("written after the switch").as_bytes()).unwrap();
+    let restarted = FileTailSource::new(configuration, sink.clone(), cursors, None);
+    restarted.poll_once("auth").unwrap();
+    assert_eq!(restarted.snapshot()[0].rotation_gaps, 1);
+    assert!(
+        !sink
+            .records()
+            .iter()
+            .any(|record| record.contains("written after"))
+    );
+}
+
+/// C# `BackpressureOnTheSwitchingBatch_RewindsIntoTheDrainWithoutAFalseGap`.
+#[test]
+fn backpressure_on_the_switching_batch_rewinds_into_the_drain_without_a_false_gap() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("auth.log");
+    let rotated = directory.path().join("auth.log.1");
+    std::fs::write(&path, line("first-1")).unwrap();
+    let full = Arc::new(Mutex::new(false));
+    let gate = Arc::clone(&full);
+    let sink = FakeSink::new(move |record| {
+        Ok(if *gate.lock().unwrap() && record.contains("tail") {
+            SubmitOutcome::Unavailable
+        } else {
+            SubmitOutcome::Queued
+        })
+    });
+    let cursors = Arc::new(MemoryCursors::default());
+    let source = FileTailSource::new(
+        text(directory.path(), &path, "beginning"),
+        sink.clone(),
+        cursors.clone(),
+        None,
+    );
+    source.poll_once("auth").unwrap();
+    std::fs::write(
+        &path,
+        format!(
+            "{}tail without a newline, completed only by the switch",
+            line("first-1")
+        ),
+    )
+    .unwrap();
+    std::fs::rename(&path, &rotated).unwrap();
+    std::fs::write(&path, line("second-1")).unwrap();
+    source.poll_once("auth").unwrap(); // End of path.1; the window starts.
+
+    *full.lock().unwrap() = true;
+    assert!(source.poll_once("auth").unwrap().backpressure);
+    let rewound = Cursor::deserialize(&cursors.value("file:auth").unwrap()).unwrap();
+    assert_eq!(
+        (rewound.drain.as_deref(), rewound.abandoned),
+        (Some("rename"), None)
+    );
+    let mut more = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&rotated)
+        .unwrap();
+    std::io::Write::write_all(&mut more, format!("\n{}", line("first-3")).as_bytes()).unwrap();
+    *full.lock().unwrap() = false;
+    for _ in 0..4 {
+        source.poll_once("auth").unwrap();
+    }
+    let mut words: Vec<String> = sink
+        .records()
+        .iter()
+        .map(|record| first_word(record))
+        .collect();
+    words.dedup();
+    assert_eq!(words, ["first-1", "tail", "first-3", "second-1"]);
+    assert_eq!(source.snapshot()[0].rotation_gaps, 0);
+}
+
+/// C# `CopytruncateDetectedByInode_DrainsWithoutGraceAndRenameByInodeKeepsIt` (Linux there,
+/// every Unix here).
+#[cfg(unix)]
+#[test]
+fn copytruncate_detected_by_inode_drains_without_grace_and_rename_by_inode_keeps_it() {
+    use bower_source_file::reader::{self, ReaderOptions};
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("app.log");
+    let rotated = directory.path().join("app.log.1");
+    let options = ReaderOptions {
+        start_at_end: false,
+        rotation_grace_polls: 3,
+        ..ReaderOptions::default()
+    };
+    std::fs::write(&path, line("first-1")).unwrap();
+    let cursor = reader::read(Some(&path), None, None, &options, None)
+        .unwrap()
+        .cursor;
+    assert!(cursor.file_id.is_some());
+    std::fs::write(&path, format!("{}{}", line("first-1"), line("first-2"))).unwrap();
+    std::fs::copy(&path, &rotated).unwrap();
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_len(0)
+        .unwrap();
+    std::fs::write(&path, line("second-1")).unwrap();
+    let copied = reader::read(Some(&path), Some(&rotated), Some(&cursor), &options, None).unwrap();
+    assert!(copied.rotated, "a copy has no grace window");
+    assert_eq!(copied.lines.len(), 1);
+    assert!(copied.lines[0].bytes.starts_with(b"first-2"));
+
+    let at = reader::read(Some(&path), None, Some(&copied.cursor), &options, None)
+        .unwrap()
+        .cursor;
+    std::fs::remove_file(&rotated).unwrap();
+    std::fs::rename(&path, &rotated).unwrap();
+    std::fs::write(&path, format!("{}{}", line("second-1"), line("third-1"))).unwrap();
+    let renamed = reader::read(Some(&path), Some(&rotated), Some(&at), &options, None).unwrap();
+    assert_eq!(renamed.cursor.drain.as_deref(), Some("rename"));
+}
+
+/// C# `TwoAllowedLinksToTheSameFile_AreRefusedAtLoad`.
+#[cfg(unix)]
+#[test]
+fn two_allowed_links_to_the_same_file_are_refused_at_load() {
+    let directory = tempfile::tempdir().unwrap();
+    let real = directory.path().join("real.log");
+    std::fs::write(&real, line("one")).unwrap();
+    let first = directory.path().join("first.log");
+    let second = directory.path().join("second.log");
+    std::os::unix::fs::symlink(&real, &first).unwrap();
+    std::os::unix::fs::symlink(&real, &second).unwrap();
+    let input = |id: &str, path: &Path| serde_json::json!({"id": id, "path": path.to_str().unwrap(), "allowSymlink": true, "route": {"pack": "p", "parser": 0}});
+    let file = directory.path().join("file.json");
+    std::fs::write(
+        &file,
+        serde_json::json!({
+            "apiVersion": "bower.security/v1",
+            "kind": "FileTailSource",
+            "allowedRoots": [directory.path().to_str().unwrap()],
+            "inputs": [input("first", &first), input("second", &second)]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    assert_eq!(
+        bower_source_file::config::load_file(&file).unwrap_err(),
+        bower_source_file::config::ConfigError::InvalidData(
+            "File tail input first: allowSymlink target is another input's file or rotated file."
+                .into()
+        )
+    );
+}
+
+/// C# `TwoAllowedLinksThatMeetAfterLoad_AreRefusedAtReadTime`.
+#[cfg(unix)]
+#[test]
+fn two_allowed_links_that_meet_after_load_are_refused_at_read_time() {
+    let directory = tempfile::tempdir().unwrap();
+    let real = directory.path().join("real.log");
+    let other = directory.path().join("other.log");
+    std::fs::write(&real, line("one")).unwrap();
+    std::fs::write(&other, line("two")).unwrap();
+    let first = directory.path().join("first.log");
+    let second = directory.path().join("second.log");
+    std::os::unix::fs::symlink(&real, &first).unwrap();
+    std::os::unix::fs::symlink(&other, &second).unwrap();
+    let input = |id: &str, path: &Path| InputOptions {
+        id: id.into(),
+        path: path.to_str().unwrap().into(),
+        route: Route {
+            pack: "p".into(),
+            parser: 0,
+        },
+        format: "text".into(),
+        start_at: "beginning".into(),
+        max_line_bytes: 16_384,
+        allow_symlink: true,
+    };
+    let mut configuration = text(directory.path(), &first, "beginning");
+    configuration.inputs = vec![Some(input("first", &first)), Some(input("second", &second))];
+    bower_source_file::config::validate_links(&configuration).unwrap();
+    let sink = FakeSink::new(|_| Ok(SubmitOutcome::Queued));
+    let source = FileTailSource::new(
+        configuration,
+        sink,
+        Arc::new(MemoryCursors::default()),
+        None,
+    );
+    std::fs::remove_file(&second).unwrap();
+    std::os::unix::fs::symlink(&real, &second).unwrap();
+    assert_eq!(
+        source.poll_once("second").unwrap_err().code,
+        failures::PATH_REFUSED
+    );
+}
+
+/// C# `Cursor_RotationFieldsRoundTripAndInconsistentStateIsRefused` (same JSON).
+#[test]
+fn cursor_rotation_fields_round_trip_and_inconsistent_state_is_refused() {
+    let draining = Cursor {
+        file_id: Some("2049:131".into()),
+        drain: Some("rename".into()),
+        observed_length: Some(10),
+        observed_write_time: Some(17_000_000_000_000_000),
+        stable_polls: Some(1),
+        ..Cursor::new("a".repeat(64), 10)
+    };
+    assert_eq!(
+        draining.serialize(),
+        format!(
+            r#"{{"schemaVersion":1,"fingerprint":"{}","offset":10,"fileId":"2049:131","drain":"rename","observedLength":10,"observedWriteTime":17000000000000000,"stablePolls":1}}"#,
+            "a".repeat(64)
+        )
+    );
+    assert_eq!(Cursor::deserialize(&draining.serialize()), Some(draining));
+    let abandoned = Cursor {
+        abandoned: Some("a".repeat(64)),
+        abandoned_length: Some(99),
+        ..Cursor::new("b".repeat(64), 0)
+    };
+    assert_eq!(Cursor::deserialize(&abandoned.serialize()), Some(abandoned));
+    for invalid in [
+        r#"{"schemaVersion":1,"fingerprint":"","offset":0,"drain":"rename"}"#.to_owned(),
+        format!(
+            r#"{{"schemaVersion":1,"fingerprint":"{}","offset":0,"drain":"move"}}"#,
+            "a".repeat(64)
+        ),
+        r#"{"schemaVersion":1,"fingerprint":"","offset":0,"abandoned":"zz","abandonedLength":1}"#
+            .to_owned(),
+        r#"{"schemaVersion":1,"fingerprint":"","offset":0,"fileId":"x:1"}"#.to_owned(),
+    ] {
+        assert_eq!(Cursor::deserialize(&invalid), None, "{invalid}");
+    }
+}
+
+/// C# `TheSameFileThroughALinkedDirectory_IsRefusedAtLoad` (the shape of /var/run -> /run).
+#[cfg(unix)]
+#[test]
+fn the_same_file_through_a_linked_directory_is_refused_at_load() {
+    let directory = tempfile::tempdir().unwrap();
+    let run = directory.path().join("run");
+    let var_run = directory.path().join("varrun");
+    std::fs::create_dir_all(run.join("security")).unwrap();
+    std::os::unix::fs::symlink(&run, &var_run).unwrap();
+    std::fs::write(run.join("security/auth.log"), line("one")).unwrap();
+    let load_with = |other: &Path| {
+        let file = directory.path().join("file.json");
+        std::fs::write(
+            &file,
+            serde_json::json!({
+                "apiVersion": "bower.security/v1",
+                "kind": "FileTailSource",
+                "allowedRoots": [run.to_str().unwrap(), var_run.to_str().unwrap()],
+                "inputs": [
+                    {"id": "run", "path": run.join("security/auth.log").to_str().unwrap(), "route": {"pack": "p", "parser": 0}},
+                    {"id": "var-run", "path": other.to_str().unwrap(), "route": {"pack": "p", "parser": 0}}
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        match bower_source_file::config::load_file(&file).unwrap_err() {
+            bower_source_file::config::ConfigError::InvalidData(message) => message,
+            other => panic!("{other}"),
+        }
+    };
+    assert_eq!(
+        load_with(&var_run.join("security/auth.log")),
+        "File tail input var-run: path is already read by another input."
+    );
+    assert_eq!(
+        load_with(&var_run.join("security/AUTH.log.1")),
+        "File tail input var-run: path overlaps another input's rotated file (path.1)."
+    );
+    let later = directory.path().join("later/a.log");
+    assert_eq!(
+        paths::canonical(later.to_str().unwrap()),
+        later.to_str().unwrap()
+    );
+}
+
+/// C# `TheSameFileThroughADirectoryLinkedAfterLoad_IsRefusedAtReadTime`.
+#[cfg(unix)]
+#[test]
+fn the_same_file_through_a_directory_linked_after_load_is_refused_at_read_time() {
+    let directory = tempfile::tempdir().unwrap();
+    let run = directory.path().join("run");
+    let var_run = directory.path().join("varrun");
+    std::fs::create_dir_all(run.join("security")).unwrap();
+    std::fs::create_dir_all(var_run.join("security")).unwrap();
+    std::fs::write(run.join("security/auth.log"), line("one")).unwrap();
+    std::fs::write(var_run.join("security/auth.log"), line("two")).unwrap();
+    let input = |id: &str, path: &Path| InputOptions {
+        id: id.into(),
+        path: path.to_str().unwrap().into(),
+        route: Route {
+            pack: "p".into(),
+            parser: 0,
+        },
+        format: "text".into(),
+        start_at: "beginning".into(),
+        max_line_bytes: 16_384,
+        allow_symlink: false,
+    };
+    let mut configuration = text(&run, &run.join("security/auth.log"), "beginning");
+    configuration.allowed_roots = vec![
+        Some(run.to_str().unwrap().into()),
+        Some(var_run.to_str().unwrap().into()),
+    ];
+    configuration.inputs = vec![
+        Some(input("run", &run.join("security/auth.log"))),
+        Some(input("var-run", &var_run.join("security/auth.log"))),
+    ];
+    bower_source_file::config::validate_links(&configuration).unwrap();
+    let sink = FakeSink::new(|_| Ok(SubmitOutcome::Queued));
+    let source = FileTailSource::new(
+        configuration,
+        sink.clone(),
+        Arc::new(MemoryCursors::default()),
+        None,
+    );
+    source.poll_once("var-run").unwrap();
+    std::fs::remove_dir_all(&var_run).unwrap();
+    std::os::unix::fs::symlink(&run, &var_run).unwrap();
+    assert_eq!(
+        source.poll_once("var-run").unwrap_err().code,
+        failures::PATH_REFUSED
+    );
+    // Both inputs now name one file: neither reads it (fail closed) until that is fixed.
+    assert_eq!(
+        source.poll_once("run").unwrap_err().code,
+        failures::PATH_REFUSED
+    );
+    let words: Vec<String> = sink
+        .records()
+        .iter()
+        .map(|record| first_word(record))
+        .collect();
+    assert_eq!(words, ["two"]);
+}

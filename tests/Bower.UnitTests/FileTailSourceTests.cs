@@ -95,9 +95,10 @@ public sealed class FileTailSourceTests
             MaxLineBytes = options["maxLineBytes"]?.GetValue<int>() ?? 256,
             MaxLinesPerBatch = options["maxLinesPerBatch"]?.GetValue<int>() ?? 256,
             MaxBytesPerBatch = options["maxBytesPerBatch"]?.GetValue<int>() ?? 1_048_576,
-            RotationGracePolls = options["rotationGracePolls"]?.GetValue<int>() ?? 1
+            RotationGracePolls = options["rotationGracePolls"]?.GetValue<int>() ?? 1,
+            // Identities alone decide, so both runtimes agree on every platform.
+            UseFileIds = false
         };
-        FileTailRotationState state = new();
         FileTailCursor? cursor = null;
         foreach (JsonObject step in sequence["steps"]!.AsArray().Select(node => node!.AsObject()))
         {
@@ -117,6 +118,10 @@ public sealed class FileTailSourceTests
                 // A writer that has not reopened its file yet keeps writing to path.1.
                 File.AppendAllText(rotated, late.GetValue<string>());
             }
+            else if (step.ContainsKey("deleteRotated"))
+            {
+                File.Delete(rotated);
+            }
             else if (step.ContainsKey("rename"))
             {
                 File.Move(path, rotated, overwrite: true);
@@ -130,7 +135,7 @@ public sealed class FileTailSourceTests
             else
             {
                 FileTailBatch batch = FileTailReader.Read(
-                    File.Exists(path) ? path : null, File.Exists(rotated) ? rotated : null, cursor, reader, state);
+                    File.Exists(path) ? path : null, File.Exists(rotated) ? rotated : null, cursor, reader);
                 cursor = batch.Cursor;
                 step["read"] = Describe(batch);
             }
@@ -153,6 +158,8 @@ public sealed class FileTailSourceTests
             ["provisional"] = batch.Cursor.Fingerprint.Length == 0,
             ["offset"] = batch.Cursor.Offset,
             ["discarding"] = batch.Cursor.Discarding,
+            ["drain"] = batch.Cursor.Drain,
+            ["abandoned"] = batch.Cursor.Abandoned is not null,
             ["rotated"] = batch.Rotated,
             ["gap"] = batch.Gap,
             ["more"] = batch.More
@@ -702,7 +709,7 @@ public sealed class FileTailSourceTests
         Assert.Equal((new FileInfo(path).Length, true), (batch.Cursor.Offset, batch.Cursor.Discarding));
         using CancellationTokenSource cancelled = new();
         cancelled.Cancel();
-        Assert.Throws<OperationCanceledException>(() => FileTailReader.Read(path, null, null, options, null, cancelled.Token));
+        Assert.Throws<OperationCanceledException>(() => FileTailReader.Read(path, null, null, options, cancelled.Token));
     }
 
     [Fact]
@@ -727,6 +734,296 @@ public sealed class FileTailSourceTests
 
         InvalidDataException refused = Assert.Throws<InvalidDataException>(() => FileTailSourceConfigurationLoader.LoadFile(configuration));
         Assert.Equal("File tail input alias: allowSymlink target is another input's file or rotated file.", refused.Message);
+    }
+
+    [Fact]
+    public async Task RestartMidDrain_ContinuesThePersistedDrainWithoutLossOrDuplicates()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "auth.log");
+        await File.WriteAllTextAsync(path, Line("first-1"), cancellation);
+        FakeSink sink = new(_ => FileTailSubmitOutcome.Queued);
+        MemoryCursors cursors = new();
+        FileTailSourceConfiguration configuration = Configuration(directory.Path, path, startAt: "beginning") with { RotationGracePolls = 2 };
+        await using (FileTailSource first = new(configuration, sink, cursors))
+        {
+            await first.PollOnceAsync("auth", cancellation);
+            await File.AppendAllTextAsync(path, Line("first-2"), cancellation);
+            File.Move(path, path + ".1");
+            await File.WriteAllTextAsync(path, Line("second-1"), cancellation);
+            await first.PollOnceAsync("auth", cancellation); // Drains first-2; the grace window starts.
+            await first.PollOnceAsync("auth", cancellation); // One unchanged end-of-file poll.
+        }
+
+        FileTailCursor persisted = FileTailCursor.Deserialize(cursors.Value("file:auth"))!;
+        Assert.Equal((FileTailCursor.RenameDrain, 1), (persisted.Drain, persisted.StablePolls));
+
+        // A restart resumes the drain and its grace window from the cursor.
+        await File.AppendAllTextAsync(path + ".1", Line("first-3 late but before the switch"), cancellation);
+        await using FileTailSource restarted = new(configuration, sink, cursors);
+        for (int poll = 0; poll < 5; poll++)
+        {
+            await restarted.PollOnceAsync("auth", cancellation);
+        }
+
+        Assert.Equal(["first-1", "first-2", "first-3", "second-1"], sink.Records.Select(record => Message(record).Split(' ')[0]));
+        Assert.Equal((1, 0), (restarted.Snapshot()[0].Rotations, restarted.Snapshot()[0].RotationGaps));
+    }
+
+    [Fact]
+    public async Task RestartAfterTheSwitch_StillCountsLateWritesToTheAbandonedGeneration()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "auth.log");
+        await File.WriteAllTextAsync(path, Line("first-1"), cancellation);
+        FakeSink sink = new(_ => FileTailSubmitOutcome.Queued);
+        MemoryCursors cursors = new();
+        FileTailSourceConfiguration configuration = Configuration(directory.Path, path, startAt: "beginning");
+        await using (FileTailSource first = new(configuration, sink, cursors))
+        {
+            await first.PollOnceAsync("auth", cancellation);
+            File.Move(path, path + ".1");
+            await File.WriteAllTextAsync(path, Line("second-1"), cancellation);
+            for (int poll = 0; poll < 3; poll++)
+            {
+                await first.PollOnceAsync("auth", cancellation);
+            }
+
+            Assert.Equal(1, first.Snapshot()[0].Rotations);
+        }
+
+        Assert.NotNull(FileTailCursor.Deserialize(cursors.Value("file:auth"))!.Abandoned);
+        await File.AppendAllTextAsync(path + ".1", Line("written after the switch"), cancellation);
+        await using FileTailSource restarted = new(configuration, sink, cursors);
+        await restarted.PollOnceAsync("auth", cancellation);
+
+        Assert.Equal(1, restarted.Snapshot()[0].RotationGaps);
+        Assert.DoesNotContain(sink.Records, record => record.Contains("written after", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task BackpressureOnTheSwitchingBatch_RewindsIntoTheDrainWithoutAFalseGap()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "auth.log");
+        await File.WriteAllTextAsync(path, Line("first-1"), cancellation);
+        bool full = false;
+        FakeSink sink = new(record => full && record.Contains("tail", StringComparison.Ordinal)
+            ? FileTailSubmitOutcome.Unavailable : FileTailSubmitOutcome.Queued);
+        MemoryCursors cursors = new();
+        await using FileTailSource source = new(Configuration(directory.Path, path, startAt: "beginning"), sink, cursors);
+        await source.PollOnceAsync("auth", cancellation);
+        await File.AppendAllTextAsync(path, "tail without a newline, completed only by the switch", cancellation);
+        File.Move(path, path + ".1");
+        await File.WriteAllTextAsync(path, Line("second-1"), cancellation);
+        await source.PollOnceAsync("auth", cancellation); // End of path.1; the window starts.
+
+        full = true;
+        Assert.True((await source.PollOnceAsync("auth", cancellation)).Backpressure); // The switching batch is refused.
+        FileTailCursor rewound = FileTailCursor.Deserialize(cursors.Value("file:auth"))!;
+        Assert.Equal((FileTailCursor.RenameDrain, (string?)null), (rewound.Drain, rewound.Abandoned));
+
+        // The writer adds to path.1 before the switch commits: still part of the drain, not a gap.
+        await File.AppendAllTextAsync(path + ".1", "\n" + Line("first-3"), cancellation);
+        full = false;
+        for (int poll = 0; poll < 4; poll++)
+        {
+            await source.PollOnceAsync("auth", cancellation);
+        }
+
+        Assert.Equal(["first-1", "tail", "first-3", "second-1"], sink.Records.Select(record => Message(record).Split(' ')[0]).Distinct());
+        Assert.Equal(0, source.Snapshot()[0].RotationGaps);
+    }
+
+    [Fact]
+    public void CopytruncateDetectedByInode_DrainsWithoutGraceAndRenameByInodeKeepsIt()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Device and inode numbers are read on Linux only.");
+        using TemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "app.log");
+        string rotated = path + ".1";
+        FileTailReaderOptions options = new() { StartAtEnd = false, RotationGracePolls = 3 };
+        File.WriteAllText(path, Line("first-1"));
+        FileTailCursor cursor = FileTailReader.Read(path, null, null, options, TestContext.Current.CancellationToken).Cursor;
+        Assert.NotNull(cursor.FileId);
+        File.AppendAllText(path, Line("first-2"));
+        // copytruncate with a new first line: the original stays at the path.
+        File.Copy(path, rotated);
+        using (FileStream truncate = new(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete))
+        {
+            truncate.SetLength(0);
+        }
+
+        File.AppendAllText(path, Line("second-1"));
+        FileTailBatch copied = FileTailReader.Read(path, rotated, cursor, options, TestContext.Current.CancellationToken);
+        Assert.True(copied.Rotated); // No grace window for a copy.
+        Assert.StartsWith("first-2", Encoding.UTF8.GetString(Assert.Single(copied.Lines).Bytes), StringComparison.Ordinal);
+
+        // A rename with the same first line: another file at the path, so the old one is drained.
+        FileTailCursor at = FileTailReader.Read(path, null, copied.Cursor, options, TestContext.Current.CancellationToken).Cursor;
+        File.Delete(rotated);
+        File.Move(path, rotated);
+        File.WriteAllText(path, Line("second-1") + Line("third-1"));
+        FileTailBatch renamed = FileTailReader.Read(path, rotated, at, options, TestContext.Current.CancellationToken);
+        Assert.Equal(FileTailCursor.RenameDrain, renamed.Cursor.Drain);
+    }
+
+    [Fact]
+    public void TwoAllowedLinksToTheSameFile_AreRefusedAtLoad()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Symbolic links need privileges on Windows.");
+        using TemporaryDirectory directory = new();
+        string real = Path.Combine(directory.Path, "real.log");
+        File.WriteAllText(real, Line("one"));
+        string first = Path.Combine(directory.Path, "first.log");
+        string second = Path.Combine(directory.Path, "second.log");
+        File.CreateSymbolicLink(first, real);
+        File.CreateSymbolicLink(second, real);
+        JsonObject Input(string id, string path) => new()
+        {
+            ["id"] = id,
+            ["path"] = path,
+            ["allowSymlink"] = true,
+            ["route"] = new JsonObject { ["pack"] = "p", ["parser"] = 0 }
+        };
+        string configuration = Path.Combine(directory.Path, "file.json");
+        File.WriteAllText(configuration, new JsonObject
+        {
+            ["apiVersion"] = "bower.security/v1",
+            ["kind"] = "FileTailSource",
+            ["allowedRoots"] = new JsonArray(directory.Path),
+            ["inputs"] = new JsonArray(Input("first", first), Input("second", second))
+        }.ToJsonString());
+
+        InvalidDataException refused = Assert.Throws<InvalidDataException>(() => FileTailSourceConfigurationLoader.LoadFile(configuration));
+        Assert.Equal("File tail input first: allowSymlink target is another input's file or rotated file.", refused.Message);
+    }
+
+    [Fact]
+    public async Task TwoAllowedLinksThatMeetAfterLoad_AreRefusedAtReadTime()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Symbolic links need privileges on Windows.");
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string real = Path.Combine(directory.Path, "real.log");
+        string other = Path.Combine(directory.Path, "other.log");
+        await File.WriteAllTextAsync(real, Line("one"), cancellation);
+        await File.WriteAllTextAsync(other, Line("two"), cancellation);
+        string first = Path.Combine(directory.Path, "first.log");
+        string second = Path.Combine(directory.Path, "second.log");
+        File.CreateSymbolicLink(first, real);
+        File.CreateSymbolicLink(second, other);
+        FileTailSourceConfiguration configuration = new("bower.security/v1", "FileTailSource", [directory.Path],
+        [
+            new FileTailInputOptions("first", first, new FileTailRoute("p", 0), StartAt: "beginning", AllowSymlink: true),
+            new FileTailInputOptions("second", second, new FileTailRoute("p", 0), StartAt: "beginning", AllowSymlink: true)
+        ]);
+        FileTailSourceConfigurationLoader.ValidateLinks(configuration);
+        FakeSink sink = new(_ => FileTailSubmitOutcome.Queued);
+        await using FileTailSource source = new(configuration, sink, new MemoryCursors());
+        File.Delete(second);
+        File.CreateSymbolicLink(second, real);
+
+        FileTailException refused = await Assert.ThrowsAsync<FileTailException>(() => source.PollOnceAsync("second", cancellation));
+        Assert.Equal(FileTailFailures.PathRefused, refused.Code);
+    }
+
+    [Fact]
+    public void LinuxOpenFlags_UseEachArchitecturesNoFollowValue()
+    {
+        Assert.Equal(0x20000 | 0x80000 | 0x800, LinuxTailFile.OpenFlags(System.Runtime.InteropServices.Architecture.X64));
+        Assert.Equal(0x8000 | 0x80000 | 0x800, LinuxTailFile.OpenFlags(System.Runtime.InteropServices.Architecture.Arm64));
+        // Unknown flag values: open without them and rely on the post-open checks.
+        Assert.Null(LinuxTailFile.OpenFlags(System.Runtime.InteropServices.Architecture.X86));
+        Assert.Null(LinuxTailFile.OpenFlags(System.Runtime.InteropServices.Architecture.Arm));
+        Assert.Null(LinuxTailFile.OpenFlags(System.Runtime.InteropServices.Architecture.RiscV64));
+    }
+
+    [Fact]
+    public void Cursor_RotationFieldsRoundTripAndInconsistentStateIsRefused()
+    {
+        FileTailCursor draining = new(FileTailCursor.CurrentSchemaVersion, new string('a', 64), 10, FileId: "2049:131",
+            Drain: FileTailCursor.RenameDrain, ObservedLength: 10, ObservedWriteTime: 17_000_000_000_000_000, StablePolls: 1);
+        Assert.Equal(draining, FileTailCursor.Deserialize(draining.Serialize()));
+        Assert.Equal(
+            """{"schemaVersion":1,"fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","offset":10,"fileId":"2049:131","drain":"rename","observedLength":10,"observedWriteTime":17000000000000000,"stablePolls":1}""",
+            draining.Serialize());
+        FileTailCursor abandoned = new(FileTailCursor.CurrentSchemaVersion, new string('b', 64), 0, Abandoned: new string('a', 64), AbandonedLength: 99);
+        Assert.Equal(abandoned, FileTailCursor.Deserialize(abandoned.Serialize()));
+        Assert.Null(FileTailCursor.Deserialize("""{"schemaVersion":1,"fingerprint":"","offset":0,"drain":"rename"}"""));
+        Assert.Null(FileTailCursor.Deserialize("""{"schemaVersion":1,"fingerprint":"%A","offset":0,"drain":"move"}""".Replace("%A", new string('a', 64), StringComparison.Ordinal)));
+        Assert.Null(FileTailCursor.Deserialize("""{"schemaVersion":1,"fingerprint":"","offset":0,"abandoned":"zz","abandonedLength":1}"""));
+        Assert.Null(FileTailCursor.Deserialize("""{"schemaVersion":1,"fingerprint":"","offset":0,"fileId":"x:1"}"""));
+    }
+
+    [Fact]
+    public void TheSameFileThroughALinkedDirectory_IsRefusedAtLoad()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Symbolic links need privileges on Windows.");
+        using TemporaryDirectory directory = new();
+        // The shape of /var/run -> /run on standard Linux.
+        string run = Path.Combine(directory.Path, "run");
+        string varRun = Path.Combine(directory.Path, "varrun");
+        Directory.CreateDirectory(Path.Combine(run, "security"));
+        Directory.CreateSymbolicLink(varRun, run);
+        File.WriteAllText(Path.Combine(run, "security", "auth.log"), Line("one"));
+        string LoadWith(string otherPath)
+        {
+            string configuration = Path.Combine(directory.Path, "file.json");
+            File.WriteAllText(configuration, new JsonObject
+            {
+                ["apiVersion"] = "bower.security/v1",
+                ["kind"] = "FileTailSource",
+                ["allowedRoots"] = new JsonArray(run, varRun),
+                ["inputs"] = new JsonArray(
+                    new JsonObject { ["id"] = "run", ["path"] = Path.Combine(run, "security", "auth.log"), ["route"] = new JsonObject { ["pack"] = "p", ["parser"] = 0 } },
+                    new JsonObject { ["id"] = "var-run", ["path"] = otherPath, ["route"] = new JsonObject { ["pack"] = "p", ["parser"] = 0 } })
+            }.ToJsonString());
+            return Assert.Throws<InvalidDataException>(() => FileTailSourceConfigurationLoader.LoadFile(configuration)).Message;
+        }
+
+        Assert.Equal("File tail input var-run: path is already read by another input.",
+            LoadWith(Path.Combine(varRun, "security", "auth.log")));
+        Assert.Equal("File tail input var-run: path overlaps another input's rotated file (path.1).",
+            LoadWith(Path.Combine(varRun, "security", "AUTH.log.1")));
+        // A directory that does not exist yet falls back to the text rules.
+        Assert.Equal(Path.Combine(directory.Path, "later", "a.log"), FileTailPaths.Canonical(Path.Combine(directory.Path, "later", "a.log")));
+    }
+
+    [Fact]
+    public async Task TheSameFileThroughADirectoryLinkedAfterLoad_IsRefusedAtReadTime()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Symbolic links need privileges on Windows.");
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string run = Path.Combine(directory.Path, "run");
+        string varRun = Path.Combine(directory.Path, "varrun");
+        Directory.CreateDirectory(Path.Combine(run, "security"));
+        Directory.CreateDirectory(Path.Combine(varRun, "security"));
+        await File.WriteAllTextAsync(Path.Combine(run, "security", "auth.log"), Line("one"), cancellation);
+        await File.WriteAllTextAsync(Path.Combine(varRun, "security", "auth.log"), Line("two"), cancellation);
+        FileTailSourceConfiguration configuration = new("bower.security/v1", "FileTailSource", [run, varRun],
+        [
+            new FileTailInputOptions("run", Path.Combine(run, "security", "auth.log"), new FileTailRoute("p", 0), StartAt: "beginning"),
+            new FileTailInputOptions("var-run", Path.Combine(varRun, "security", "auth.log"), new FileTailRoute("p", 0), StartAt: "beginning")
+        ]);
+        FileTailSourceConfigurationLoader.ValidateLinks(configuration);
+        FakeSink sink = new(_ => FileTailSubmitOutcome.Queued);
+        await using FileTailSource source = new(configuration, sink, new MemoryCursors());
+        await source.PollOnceAsync("var-run", cancellation);
+
+        Directory.Delete(varRun, recursive: true);
+        Directory.CreateSymbolicLink(varRun, run);
+
+        FileTailException refused = await Assert.ThrowsAsync<FileTailException>(() => source.PollOnceAsync("var-run", cancellation));
+        Assert.Equal(FileTailFailures.PathRefused, refused.Code);
+        // Both inputs now name one file: neither reads it (fail closed) until that is fixed.
+        refused = await Assert.ThrowsAsync<FileTailException>(() => source.PollOnceAsync("run", cancellation));
+        Assert.Equal(FileTailFailures.PathRefused, refused.Code);
+        Assert.Equal(["two"], sink.Records.Select(record => Message(record).Split(' ')[0]));
     }
 
     internal static string Line(string text) => text + " " + new string('x', Math.Max(0, 69 - text.Length)) + "\n";

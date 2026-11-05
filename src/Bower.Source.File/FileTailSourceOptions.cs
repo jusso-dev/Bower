@@ -183,19 +183,52 @@ public static class FileTailSourceConfigurationLoader
     public static void ValidateLinks(FileTailSourceConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
-        foreach (FileTailInputOptions input in configuration.Inputs.Where(input => input.AllowSymlink))
+        List<FileTailInputOptions> earlier = [];
+        foreach (FileTailInputOptions input in configuration.Inputs)
         {
-            if (new FileInfo(input.Path).LinkTarget is not { } target)
-            {
-                continue;
-            }
-
-            string resolved = Path.GetFullPath(target, Path.GetDirectoryName(input.Path)!);
-            if (configuration.Inputs.Any(other => !ReferenceEquals(other, input) && Overlaps(resolved, other.Path)))
+            if (LinkTarget(input) is { } resolved && OverlapsAnother(configuration, input, resolved))
             {
                 throw Invalid(input.Id, "allowSymlink target is another input's file or rotated file.");
             }
+
+            // The same file through linked directories (/var/run and /run, for example):
+            // the text rules again, on canonical paths.
+            string canonical = FileTailPaths.Canonical(input.Path);
+            if (earlier.Any(other => string.Equals(Fold(FileTailPaths.Canonical(other.Path)), Fold(canonical), StringComparison.Ordinal)))
+            {
+                throw Invalid(input.Id, "path is already read by another input.");
+            }
+
+            if (earlier.Any(other => Overlaps(canonical, FileTailPaths.Canonical(other.Path))))
+            {
+                throw Invalid(input.Id, "path overlaps another input's rotated file (path.1).");
+            }
+
+            earlier.Add(input);
         }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="resolved"/> (the file <paramref name="input"/> reads now: its
+    /// path or where its link leads) is another input's configured file, its link target, or
+    /// either one's rotated file, compared on canonical paths.
+    /// </summary>
+    public static bool OverlapsAnother(FileTailSourceConfiguration configuration, FileTailInputOptions input, string resolved)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        string canonical = FileTailPaths.Canonical(resolved);
+        return configuration.Inputs.Any(other => !ReferenceEquals(other, input)
+            && (Overlaps(canonical, FileTailPaths.Canonical(other.Path))
+                || (LinkTarget(other) is { } target && Overlaps(canonical, FileTailPaths.Canonical(target)))));
+    }
+
+    /// <summary>Where an allowed link leads (one hop, normalised), or null when the input has no link now.</summary>
+    public static string? LinkTarget(FileTailInputOptions input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        return input.AllowSymlink && new FileInfo(input.Path).LinkTarget is { } target
+            ? Path.GetFullPath(target, Path.GetDirectoryName(input.Path)!)
+            : null;
     }
 
     /// <summary>The same file, or one is the other's rotated file (<c>path.1</c>), ignoring ASCII case.</summary>

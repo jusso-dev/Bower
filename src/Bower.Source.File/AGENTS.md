@@ -24,10 +24,13 @@ cursor format, limits, defaults, failure codes and configuration messages.
 - Cursors live in the queue database's `source_cursors` table (`file:<id>`). Move the
   cursor past a line only once it is durably enqueued or definitively dropped; a full
   queue stops reading and rewinds to the start of that line. Never drop for backpressure.
-- Rotation: rename (`path.1`) and copytruncate are drained through the identity. Leave
-  `path.1` only when the current file is identified and `path.1` stayed unchanged for
-  `rotationGracePolls` polls; later growth of the abandoned `path.1`, a missed rotation or
-  an in-place truncation is counted as a gap, never hidden.
+- Rotation state is in the cursor (`drain`, grace counters, `abandoned`), never only in
+  memory. While draining, never read the current file. Copytruncate (device/inode where
+  known; else same identity and shorter than the cursor) drains the static copy and
+  switches at once; only a rename waits `rotationGracePolls` unchanged end-of-file polls.
+  Record the abandoned generation only in the committed switch cursor (rewinds use the
+  batch's `Origin`). A missed rotation, a vanished drain or later growth of the abandoned
+  `path.1` is counted as a gap, never hidden.
 - Event ids derive from input id, file fingerprint, line start offset and line bytes so a
   re-read deduplicates; change them only with a migration note.
 - Never log or expose line content, records or file contents. Counters, paths and failure

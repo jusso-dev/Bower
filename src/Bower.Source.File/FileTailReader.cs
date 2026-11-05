@@ -4,24 +4,40 @@ using System.Text.Json.Serialization;
 namespace Bower.Source.File;
 
 /// <summary>
-/// Position in one tailed file. The fingerprint identifies the file by its first 64 bytes
-/// (which never change once written), so rename rotation and copytruncate are detected even
-/// though the file name stays the same. An empty fingerprint is provisional: the file did
-/// not exist or was too short to identify, and is read from <paramref name="Offset"/> 0 once
-/// it can be.
+/// Position in one tailed file, and the rotation state that must survive a restart. The
+/// fingerprint identifies the file by its first complete line (64–4096 bytes, which never
+/// change once written), so rename rotation and copytruncate are detected even though the
+/// file name stays the same. An empty fingerprint is provisional: the file did not exist or
+/// could not be identified yet, and is read from <paramref name="Offset"/> 0 once it can be.
 /// <para>
-/// <paramref name="Discarding"/> (omitted when false) means <paramref name="Offset"/> lies
-/// inside an oversized line: bytes up to and including its newline are skipped. The cursor
-/// carries no line content.
+/// <paramref name="Discarding"/> means <paramref name="Offset"/> lies inside an oversized
+/// line: bytes up to and including its newline are skipped. <paramref name="FileId"/> is the
+/// file's <c>device:inode</c> where the platform reports it (Linux; every Unix in Rust).
+/// <paramref name="Drain"/> (<c>rename</c> or <c>copytruncate</c>) means the cursor refers to
+/// <c>path.1</c>, which is drained before the current file is read again; for a rename,
+/// <paramref name="ObservedLength"/>, <paramref name="ObservedWriteTime"/> (100 ns ticks since
+/// the Unix epoch) and <paramref name="StablePolls"/> track the grace window.
+/// <paramref name="Abandoned"/> and <paramref name="AbandonedLength"/> are the generation the
+/// cursor left after a rename: later growth of that <c>path.1</c> is a gap. Optional fields
+/// are omitted when unset. The cursor carries no line content.
 /// </para>
 /// </summary>
 public sealed record FileTailCursor(
     int SchemaVersion,
     string Fingerprint,
     long Offset,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Discarding = false)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Discarding = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? FileId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Drain = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? ObservedLength = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? ObservedWriteTime = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? StablePolls = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Abandoned = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? AbandonedLength = null)
 {
     public const int CurrentSchemaVersion = 1;
+    public const string RenameDrain = "rename";
+    public const string CopyDrain = "copytruncate";
 
     public string Serialize() => JsonSerializer.Serialize(this, FileTailCursorJsonContext.Default.FileTailCursor);
 
@@ -36,8 +52,7 @@ public sealed record FileTailCursor(
         try
         {
             FileTailCursor? cursor = JsonSerializer.Deserialize(value, FileTailCursorJsonContext.Default.FileTailCursor);
-            return cursor is { SchemaVersion: CurrentSchemaVersion, Offset: >= 0, Fingerprint: not null }
-                && (cursor.Fingerprint.Length == 0 || IsFingerprint(cursor.Fingerprint))
+            return cursor is { SchemaVersion: CurrentSchemaVersion, Offset: >= 0, Fingerprint: not null } && IsValid(cursor)
                 ? cursor
                 : null;
         }
@@ -47,8 +62,29 @@ public sealed record FileTailCursor(
         }
     }
 
+    private static bool IsValid(FileTailCursor cursor) =>
+        (cursor.Fingerprint.Length == 0 || IsFingerprint(cursor.Fingerprint))
+        && (cursor.FileId is null || IsFileId(cursor.FileId))
+        && (cursor.Drain is null || (cursor.Fingerprint.Length > 0 && cursor.Drain is RenameDrain or CopyDrain))
+        && (cursor.ObservedLength is null) == (cursor.ObservedWriteTime is null)
+        && (cursor.ObservedLength is null) == (cursor.StablePolls is null)
+        && cursor.ObservedLength is null or >= 0
+        && cursor.StablePolls is null or >= 0
+        && (cursor.ObservedLength is null || cursor.Drain == RenameDrain)
+        && (cursor.Abandoned is null) == (cursor.AbandonedLength is null)
+        && (cursor.Abandoned is null || IsFingerprint(cursor.Abandoned))
+        && cursor.AbandonedLength is null or >= 0;
+
     private static bool IsFingerprint(string value) =>
         value.Length == 64 && value.All(character => char.IsAsciiDigit(character) || character is >= 'a' and <= 'f');
+
+    private static bool IsFileId(string value)
+    {
+        int colon = value.IndexOf(':', StringComparison.Ordinal);
+        return colon > 0 && colon < value.Length - 1 && value.Length <= 41
+            && value.AsSpan(0, colon).ContainsAnyExceptInRange('0', '9') is false
+            && value.AsSpan(colon + 1).ContainsAnyExceptInRange('0', '9') is false;
+    }
 }
 
 /// <summary>Cursor JSON: camelCase, otherwise default options (source generated).</summary>
@@ -71,20 +107,34 @@ public sealed record FileTailLine(
     bool ContinuesDiscard = false);
 
 /// <param name="Cursor">Position after every line in <paramref name="Lines"/>.</param>
-/// <param name="Rotated">A rotated file (<c>path.1</c>) was drained and the cursor moved to the current file.</param>
+/// <param name="Rotated">The cursor moved from a drained <c>path.1</c> to the current file.</param>
 /// <param name="Gap">
-/// Lines may have been lost: rotated more than once between reads, truncated in place, or
-/// written to <c>path.1</c> after the cursor moved to the current file.
+/// Lines may have been lost: rotated more than once between reads, truncated in place, the
+/// generation being drained disappeared, or lines were written to <c>path.1</c> after the
+/// cursor left it.
 /// </param>
 /// <param name="More">A limit stopped the read, or the cursor moved files: read again without waiting.</param>
 /// <param name="RotatedPath">The rotated file this read opened, so the caller can re-check it; null when none.</param>
+/// <param name="Origin">
+/// The cursor the lines were read under: a rewind to a line's start is this cursor at that
+/// offset, so it never carries a switch (or an abandoned generation) the batch did not commit.
+/// </param>
 public sealed record FileTailBatch(
     IReadOnlyList<FileTailLine> Lines,
     FileTailCursor Cursor,
     bool Rotated,
     bool Gap,
     bool More,
-    string? RotatedPath = null);
+    string? RotatedPath = null,
+    FileTailCursor? Origin = null)
+{
+    /// <summary>Back to a line's start; inside an oversized line, keep skipping it.</summary>
+    public FileTailCursor RewindTo(FileTailLine line)
+    {
+        ArgumentNullException.ThrowIfNull(line);
+        return (Origin ?? Cursor) with { Offset = line.StartOffset, Discarding = line.ContinuesDiscard };
+    }
+}
 
 public sealed record FileTailReaderOptions
 {
@@ -97,189 +147,260 @@ public sealed record FileTailReaderOptions
     /// <summary>When a file is first seen, start after its last complete line instead of replaying it.</summary>
     public bool StartAtEnd { get; init; } = true;
 
-    /// <summary>Polls <c>path.1</c> must stay unchanged (size and write time) before the cursor leaves it.</summary>
+    /// <summary>
+    /// Unchanged end-of-file polls of a renamed <c>path.1</c> (size and write time) before the
+    /// cursor moves to the new file. Copytruncate never waits.
+    /// </summary>
     public int RotationGracePolls { get; init; } = FileTailSourceConfigurationLoader.DefaultRotationGracePolls;
-}
 
-/// <summary>
-/// What a reader remembers between polls of one input, in memory only (a restart starts
-/// the grace window again and forgets the abandoned generation).
-/// </summary>
-public sealed class FileTailRotationState
-{
-    internal (long Length, DateTime WriteTime)? Observed { get; set; }
-
-    internal int StablePolls { get; set; }
-
-    /// <summary>The generation the cursor left, and its length then: later growth is a gap.</summary>
-    internal (string Fingerprint, long Length)? Abandoned { get; set; }
+    /// <summary>
+    /// Use device and inode numbers where the platform reports them (Linux) to tell rename
+    /// from copytruncate and to spot a replaced file. Off, identities alone decide (as on
+    /// other platforms); the shared vectors run this way so both runtimes agree everywhere.
+    /// </summary>
+    public bool UseFileIds { get; init; } = true;
 }
 
 /// <summary>
 /// Bounded, read-only tail of one plain-text file with rename and copytruncate rotation.
-/// Generalised from the Docker json-file reader: only complete lines are consumed, an
-/// oversized line is skipped without being buffered, and each read is bounded by a line count
-/// and a byte budget. Each file is opened once per read (<see cref="FileTailHandle"/>): its
-/// identity and its lines come from the same handle.
+/// Only complete lines are consumed, an oversized line is skipped without being buffered,
+/// and each read is bounded by a line count and a byte budget. Each file is opened once per
+/// read (<see cref="FileTailHandle"/>): its identity and its lines come from the same handle.
 /// <para>
-/// A writer keeps writing to <c>path.1</c> until it reopens its file (rsyslog until HUP), so
-/// the cursor leaves <c>path.1</c> only once the current file can be identified and
-/// <c>path.1</c> stayed unchanged for <see cref="FileTailReaderOptions.RotationGracePolls"/>
-/// polls; only then is its unterminated last line complete. Lines written to it afterwards
-/// cannot be read and are reported as a gap.
+/// Rotation state lives in the cursor, so it survives a restart. Once a rotation is detected
+/// the cursor refers to <c>path.1</c> (<see cref="FileTailCursor.Drain"/>) and the current
+/// file is not read until <c>path.1</c> is drained:
+/// </para>
+/// <list type="bullet">
+/// <item>Copytruncate (the current file is the original, truncated; <c>path.1</c> is a static
+/// copy): the copy is drained to its end and the cursor moves to the current file at once.</item>
+/// <item>Rename (the writer keeps writing to <c>path.1</c> until it reopens its file, rsyslog
+/// until HUP): the cursor leaves only once the current file is identified and <c>path.1</c>
+/// stayed unchanged over <see cref="FileTailReaderOptions.RotationGracePolls"/> end-of-file
+/// polls; only then is its unterminated last line complete. Later growth of that
+/// <c>path.1</c> is reported as a gap (<see cref="FileTailCursor.Abandoned"/>).</item>
+/// </list>
+/// <para>
+/// Device and inode numbers tell the two apart where available (Linux): copytruncate keeps the
+/// original file, rename moves it. Without them, a current file shorter than the cursor with
+/// the same identity is copytruncate and a changed identity is a rename.
 /// </para>
 /// </summary>
 public static class FileTailReader
 {
     /// <param name="path">The current file (already checked by <see cref="FileTailPaths"/>), or null when it is missing.</param>
     /// <param name="rotatedPath">The rotated file to drain (<c>path.1</c>, already checked), or null when it is missing.</param>
-    /// <param name="state">Grace and abandoned-generation state for this input; null for a single read.</param>
     /// <exception cref="FileTailRefusedException">An opened handle is not the validated regular file.</exception>
     public static FileTailBatch Read(
         string? path,
         string? rotatedPath,
         FileTailCursor? cursor,
         FileTailReaderOptions options,
-        FileTailRotationState? state = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(options);
-        state ??= new FileTailRotationState();
         using FileTailHandle? current = FileTailHandle.Open(path);
         FileTailHandle? rotated = null;
+        bool rotatedOpened = false;
         try
         {
             FileTailBatch batch = Plan();
-            return batch with { Gap = batch.Gap || LateRotatedLines(), RotatedPath = rotated is null ? null : rotatedPath };
+            return batch with { RotatedPath = rotated is null ? null : rotatedPath };
         }
         finally
         {
             rotated?.Dispose();
         }
 
-        FileTailHandle? Rotated() => rotated ??= FileTailHandle.Open(rotatedPath);
-
-        bool LateRotatedLines()
+        FileTailHandle? Rotated()
         {
-            if (state.Abandoned is not { } abandoned)
+            if (!rotatedOpened)
             {
-                return false;
+                rotatedOpened = true;
+                rotated = FileTailHandle.Open(rotatedPath);
             }
 
-            FileTailHandle? file = Rotated();
-            if (file is null || !string.Equals(file.Fingerprint, abandoned.Fingerprint, StringComparison.Ordinal))
-            {
-                state.Abandoned = null; // Rotated again or removed: nothing more can arrive.
-                return false;
-            }
-
-            if (file.Length <= abandoned.Length)
-            {
-                return false;
-            }
-
-            state.Abandoned = abandoned with { Length = file.Length };
-            return true;
+            return rotated;
         }
 
         FileTailBatch Plan()
         {
             string? fingerprint = current?.Fingerprint;
+            string? fileId = options.UseFileIds ? current?.FileId ?? FileTailHandle.FileIdOf(path) : null;
             if (cursor is null)
             {
-                state.Observed = null;
                 if (fingerprint is null)
                 {
-                    return Empty(new FileTailCursor(FileTailCursor.CurrentSchemaVersion, string.Empty, 0));
+                    return Empty(Provisional());
                 }
 
+                FileTailCursor initial = Normal(fingerprint, 0, fileId);
                 if (!options.StartAtEnd)
                 {
-                    return ReadFile(current!, new FileTailCursor(FileTailCursor.CurrentSchemaVersion, fingerprint, 0), options, eofEndsLine: false, gap: false);
+                    return Scan(current!, initial, eofEndsLine: false, gap: false);
                 }
 
                 (long offset, bool discarding) = StartPosition(current!, options.MaxBytesPerBatch, cancellationToken);
-                return Empty(new FileTailCursor(FileTailCursor.CurrentSchemaVersion, fingerprint, offset, discarding));
+                return Empty(initial with { Offset = offset, Discarding = discarding });
+            }
+
+            if (cursor.Drain is not null)
+            {
+                return Drain(cursor, fingerprint, fileId);
             }
 
             if (cursor.Fingerprint.Length == 0)
             {
-                // Provisional cursor: the file was missing or too short to identify.
-                state.Observed = null;
+                // Provisional cursor: the file was missing or could not be identified.
                 return fingerprint is null
                     ? Empty(cursor)
-                    : ReadFile(current!, cursor with { Fingerprint = fingerprint, Offset = 0, Discarding = false }, options, eofEndsLine: false, gap: false);
+                    : Scan(current!, Normal(fingerprint, 0, fileId), eofEndsLine: false, gap: false);
             }
 
-            if (string.Equals(cursor.Fingerprint, fingerprint, StringComparison.Ordinal))
-            {
-                if (current!.Length >= cursor.Offset)
-                {
-                    state.Observed = null;
-                    return ReadFile(current, cursor, options, eofEndsLine: false, gap: false);
-                }
-
-                // Shorter than the cursor with the same identity: copytruncate whose new first
-                // line repeats the old one. Drain the copy in path.1 first when it is ours.
-                if (Rotated() is { } copy
-                    && string.Equals(copy.Fingerprint, cursor.Fingerprint, StringComparison.Ordinal)
-                    && copy.Length >= cursor.Offset)
-                {
-                    return Drain(copy, fingerprint);
-                }
-
-                // Truncated in place without a matching copy: restart and flag the gap.
-                state.Observed = null;
-                return ReadFile(current, cursor with { Offset = 0, Discarding = false }, options, eofEndsLine: false, gap: true);
-            }
-
-            // The current file is another file. Drain the rotated file first if it is ours
-            // (rename rotation, or the copy copytruncate made).
-            if (Rotated() is { } previous && string.Equals(previous.Fingerprint, cursor.Fingerprint, StringComparison.Ordinal))
-            {
-                return Drain(previous, fingerprint);
-            }
-
-            state.Observed = null;
-            // Missing or too short to identify, and not rotated: wait until it can be.
-            // Otherwise rotated more than once since the last read, or replaced: lines were lost.
-            return fingerprint is null
-                ? Empty(cursor)
-                : ReadFile(current!, new FileTailCursor(FileTailCursor.CurrentSchemaVersion, fingerprint, 0), options, eofEndsLine: false, gap: true);
+            (FileTailCursor watched, bool late) = WatchAbandoned(cursor);
+            FileTailBatch batch = Detect(watched, fingerprint, fileId);
+            return late ? batch with { Gap = true } : batch;
         }
 
-        FileTailBatch Drain(FileTailHandle file, string? currentFingerprint)
+        // A generation the cursor left after a rename: writes to it now can never be read.
+        (FileTailCursor Cursor, bool Late) WatchAbandoned(FileTailCursor at)
         {
-            (long, DateTime) observed = (file.Length, file.WriteTime);
-            if (state.Observed == observed)
+            if (at.Abandoned is null)
             {
-                state.StablePolls = Math.Min(state.StablePolls + 1, FileTailSourceConfigurationLoader.MaximumRotationGracePolls);
-            }
-            else
-            {
-                state.Observed = observed;
-                state.StablePolls = 0;
+                return (at, false);
             }
 
-            // Leave path.1 only once the current file is identified and path.1 has settled;
-            // until then a writer may still add to it, and its last line may still grow.
-            bool leave = currentFingerprint is not null && state.StablePolls >= options.RotationGracePolls;
-            FileTailBatch batch = ReadFile(file, cursor!, options, eofEndsLine: leave, gap: false);
-            if (!leave || batch.More || batch.Cursor.Offset < file.Length)
+            FileTailHandle? file = Rotated();
+            if (file is null || !string.Equals(file.Fingerprint, at.Abandoned, StringComparison.Ordinal))
             {
-                return batch;
+                // Rotated again or removed: nothing more can arrive.
+                return (at with { Abandoned = null, AbandonedLength = null }, false);
             }
 
-            state.Observed = null;
-            state.Abandoned = (cursor!.Fingerprint, file.Length);
+            return file.Length > at.AbandonedLength
+                ? (at with { AbandonedLength = file.Length }, true)
+                : (at, false);
+        }
+
+        FileTailBatch Detect(FileTailCursor at, string? fingerprint, string? fileId)
+        {
+            bool sameFile = fileId is not null && at.FileId is not null && string.Equals(fileId, at.FileId, StringComparison.Ordinal);
+            bool otherFile = fileId is not null && at.FileId is not null && !sameFile;
+            bool sameIdentity = string.Equals(at.Fingerprint, fingerprint, StringComparison.Ordinal);
+            FileTailHandle? Previous() => Rotated() is { } file
+                && string.Equals(file.Fingerprint, at.Fingerprint, StringComparison.Ordinal) ? file : null;
+
+            if (sameIdentity && !otherFile)
+            {
+                if (current!.Length >= at.Offset)
+                {
+                    return Scan(current, at with { FileId = fileId ?? at.FileId }, eofEndsLine: false, gap: false);
+                }
+
+                // Shorter than the cursor: copytruncate when path.1 is the copy, else truncated.
+                if (Previous() is { } copy && copy.Length >= at.Offset)
+                {
+                    return Drain(StartDrain(at, FileTailCursor.CopyDrain), fingerprint, fileId);
+                }
+
+                return Scan(current, Normal(fingerprint!, 0, fileId), eofEndsLine: false, gap: true);
+            }
+
+            if (sameFile)
+            {
+                // The same file rewritten in place (its first line changed): copytruncate.
+                if (Previous() is not null)
+                {
+                    return Drain(StartDrain(at, FileTailCursor.CopyDrain), fingerprint, fileId);
+                }
+
+                return fingerprint is null
+                    ? Empty(Provisional()) with { Gap = true }
+                    : Scan(current!, Normal(fingerprint, 0, fileId), eofEndsLine: false, gap: true);
+            }
+
+            // Another file at the path: rename rotation when path.1 is ours.
+            if (Previous() is not null)
+            {
+                return Drain(StartDrain(at, FileTailCursor.RenameDrain), fingerprint, fileId);
+            }
+
+            // Missing or not identified yet, and not rotated: wait. Otherwise rotated more than
+            // once since the last read, or replaced: lines were lost.
+            return fingerprint is null
+                ? Empty(at)
+                : Scan(current!, Normal(fingerprint, 0, fileId), eofEndsLine: false, gap: true);
+        }
+
+        FileTailBatch Drain(FileTailCursor at, string? fingerprint, string? fileId)
+        {
+            FileTailHandle? file = Rotated();
+            FileTailCursor next = fingerprint is null ? Provisional() : Normal(fingerprint, 0, fileId);
+            if (file is null || !string.Equals(file.Fingerprint, at.Fingerprint, StringComparison.Ordinal))
+            {
+                // The generation being drained is gone (removed or rotated again): lines were lost.
+                return fingerprint is null
+                    ? Empty(next) with { Gap = true }
+                    : Scan(current!, next, eofEndsLine: false, gap: true);
+            }
+
+            if (at.Drain == FileTailCursor.CopyDrain)
+            {
+                // A static copy: drain it to its end, then move to the truncated original at once.
+                FileTailBatch copied = Scan(file, at, eofEndsLine: true, gap: false);
+                return copied.More ? copied : copied with { Cursor = next, Rotated = true, More = true };
+            }
+
+            FileTailBatch batch = Scan(file, at, eofEndsLine: false, gap: false);
+            if (batch.More)
+            {
+                return batch; // A backlog poll never counts towards the grace window.
+            }
+
+            // At the end of path.1 (only an unterminated last line may remain).
+            bool unchanged = at.ObservedLength == file.Length && at.ObservedWriteTime == file.WriteTicks;
+            FileTailCursor observed = batch.Cursor with
+            {
+                ObservedLength = file.Length,
+                ObservedWriteTime = file.WriteTicks,
+                StablePolls = unchanged ? Math.Min((at.StablePolls ?? 0) + 1, FileTailSourceConfigurationLoader.MaximumRotationGracePolls) : 0
+            };
+            if (fingerprint is null || observed.StablePolls < options.RotationGracePolls || batch.Lines.Count >= options.MaxLinesPerBatch)
+            {
+                return batch with { Cursor = observed };
+            }
+
+            // Settled: its unterminated last line is complete, then leave it.
+            FileTailBatch tail = Scan(file, observed, eofEndsLine: true, gap: false);
             return batch with
             {
-                Cursor = new FileTailCursor(FileTailCursor.CurrentSchemaVersion, currentFingerprint!, 0),
+                Lines = [.. batch.Lines, .. tail.Lines],
+                Cursor = next with { Abandoned = at.Fingerprint, AbandonedLength = file.Length },
                 Rotated = true,
                 More = true
             };
         }
+
+        FileTailBatch Scan(FileTailHandle file, FileTailCursor at, bool eofEndsLine, bool gap) =>
+            ReadFile(file, at, options, eofEndsLine, gap) with { Origin = at };
     }
+
+    private static FileTailCursor Provisional() => new(FileTailCursor.CurrentSchemaVersion, string.Empty, 0);
+
+    private static FileTailCursor Normal(string fingerprint, long offset, string? fileId) =>
+        new(FileTailCursor.CurrentSchemaVersion, fingerprint, offset, FileId: fileId);
+
+    /// <summary>The cursor now refers to path.1; grace and abandoned state start afresh.</summary>
+    private static FileTailCursor StartDrain(FileTailCursor at, string kind) =>
+        at with
+        {
+            Drain = kind,
+            ObservedLength = null,
+            ObservedWriteTime = null,
+            StablePolls = null,
+            Abandoned = null,
+            AbandonedLength = null
+        };
 
     /// <summary>The identity of the file at <paramref name="path"/> (null when it has none yet).</summary>
     public static string? Fingerprint(string path) => FileTailHandle.FingerprintOf(path);

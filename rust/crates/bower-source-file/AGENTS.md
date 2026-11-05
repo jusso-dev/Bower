@@ -21,4 +21,4 @@ logs or status.
   them from an empty file and never opens them (shorter than 64 bytes). Rust verifies each
   open (`O_NOFOLLOW`, device and inode) on every Unix; C# does so on Linux only.
 - Move the cursor past a line only after the sink settled it; never move this into a
-  scheduled job.
+  scheduled job. Rotation state lives in the cursor; rewinds use `Batch::rewind_to`.

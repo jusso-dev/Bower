@@ -8,7 +8,7 @@ use std::path::Path;
 
 use base64::Engine;
 use bower_source_file::config::{self, InputOptions, Route};
-use bower_source_file::reader::{self, Batch, Cursor, Line, ReaderOptions, RotationState};
+use bower_source_file::reader::{self, Batch, Cursor, Line, ReaderOptions};
 use bower_source_file::record;
 use serde_json::Value;
 
@@ -77,8 +77,9 @@ fn sequences_match_the_csharp_specification() {
             max_lines_per_batch: options["maxLinesPerBatch"].as_u64().unwrap_or(256) as usize,
             max_bytes_per_batch: options["maxBytesPerBatch"].as_u64().unwrap_or(1_048_576),
             rotation_grace_polls: options["rotationGracePolls"].as_i64().unwrap_or(1) as i32,
+            // Identities alone decide, so both runtimes agree on every platform.
+            use_file_ids: false,
         };
-        let mut state = RotationState::default();
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("app.log");
         let rotated = directory.path().join("app.log.1");
@@ -105,6 +106,8 @@ fn sequences_match_the_csharp_specification() {
                 // A writer that has not reopened its file yet keeps writing to path.1.
                 let mut file = OpenOptions::new().append(true).open(&rotated).unwrap();
                 file.write_all(text.as_bytes()).unwrap();
+            } else if step.get("deleteRotated").is_some() {
+                std::fs::remove_file(&rotated).unwrap();
             } else if step.get("rename").is_some() {
                 std::fs::rename(&path, &rotated).unwrap();
             } else if step.get("copytruncate").is_some() {
@@ -121,7 +124,6 @@ fn sequences_match_the_csharp_specification() {
                     rotated.exists().then_some(rotated.as_path()),
                     cursor.as_ref(),
                     &reader,
-                    &mut state,
                     None,
                 )
                 .unwrap();
@@ -153,6 +155,8 @@ fn describe(batch: &Batch) -> Value {
         "provisional": batch.cursor.fingerprint.is_empty(),
         "offset": batch.cursor.offset,
         "discarding": batch.cursor.discarding,
+        "drain": batch.cursor.drain,
+        "abandoned": batch.cursor.abandoned.is_some(),
         "rotated": batch.rotated,
         "gap": batch.gap,
         "more": batch.more

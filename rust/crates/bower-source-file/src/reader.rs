@@ -12,7 +12,6 @@
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
@@ -20,8 +19,12 @@ use crate::handle::{self, Handle, OpenError};
 
 pub const CURRENT_SCHEMA_VERSION: i32 = 1;
 
-/// Position in one tailed file (C# `FileTailCursor`, same JSON). An empty fingerprint is
-/// provisional: the file was missing or too short to identify.
+/// Position in one tailed file and the rotation state that must survive a restart (C#
+/// `FileTailCursor`, same JSON). An empty fingerprint is provisional: the file was missing
+/// or could not be identified yet. `drain` (`rename` or `copytruncate`) means the cursor
+/// refers to `path.1`; `observed_*` and `stable_polls` track a rename's grace window;
+/// `abandoned` is the generation the cursor left after a rename. Optional fields are omitted
+/// when unset.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Cursor {
@@ -30,7 +33,24 @@ pub struct Cursor {
     pub offset: i64,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub discarding: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drain: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_length: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_write_time: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stable_polls: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub abandoned: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub abandoned_length: Option<i64>,
 }
+
+pub const RENAME_DRAIN: &str = "rename";
+pub const COPY_DRAIN: &str = "copytruncate";
 
 /// C# deserializes with default options: missing members take their defaults and
 /// unknown members are ignored.
@@ -45,6 +65,40 @@ struct StoredCursor {
     offset: i64,
     #[serde(default)]
     discarding: bool,
+    #[serde(default)]
+    file_id: Option<String>,
+    #[serde(default)]
+    drain: Option<String>,
+    #[serde(default)]
+    observed_length: Option<i64>,
+    #[serde(default)]
+    observed_write_time: Option<i64>,
+    #[serde(default)]
+    stable_polls: Option<i32>,
+    #[serde(default)]
+    abandoned: Option<String>,
+    #[serde(default)]
+    abandoned_length: Option<i64>,
+}
+
+fn is_fingerprint(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn is_file_id(value: &str) -> bool {
+    match value.split_once(':') {
+        Some((device, inode)) => {
+            !device.is_empty()
+                && !inode.is_empty()
+                && value.len() <= 41
+                && device.bytes().all(|byte| byte.is_ascii_digit())
+                && inode.bytes().all(|byte| byte.is_ascii_digit())
+        }
+        None => false,
+    }
 }
 
 impl Cursor {
@@ -54,6 +108,13 @@ impl Cursor {
             fingerprint: fingerprint.into(),
             offset,
             discarding: false,
+            file_id: None,
+            drain: None,
+            observed_length: None,
+            observed_write_time: None,
+            stable_polls: None,
+            abandoned: None,
+            abandoned_length: None,
         }
     }
 
@@ -67,19 +128,57 @@ impl Cursor {
             return None;
         }
         let stored: StoredCursor = serde_json::from_str(value).ok()?;
-        let fingerprint = stored.fingerprint?;
-        let valid_fingerprint = fingerprint.is_empty()
-            || (fingerprint.len() == 64
-                && fingerprint
-                    .bytes()
-                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
-        (stored.schema_version == CURRENT_SCHEMA_VERSION && stored.offset >= 0 && valid_fingerprint)
-            .then_some(Self {
-                schema_version: stored.schema_version,
-                fingerprint,
-                offset: stored.offset,
-                discarding: stored.discarding,
+        let cursor = Self {
+            schema_version: stored.schema_version,
+            fingerprint: stored.fingerprint?,
+            offset: stored.offset,
+            discarding: stored.discarding,
+            file_id: stored.file_id,
+            drain: stored.drain,
+            observed_length: stored.observed_length,
+            observed_write_time: stored.observed_write_time,
+            stable_polls: stored.stable_polls,
+            abandoned: stored.abandoned,
+            abandoned_length: stored.abandoned_length,
+        };
+        (cursor.schema_version == CURRENT_SCHEMA_VERSION && cursor.offset >= 0 && cursor.is_valid())
+            .then_some(cursor)
+    }
+
+    fn is_valid(&self) -> bool {
+        (self.fingerprint.is_empty() || is_fingerprint(&self.fingerprint))
+            && self.file_id.as_deref().is_none_or(is_file_id)
+            && self.drain.as_deref().is_none_or(|drain| {
+                !self.fingerprint.is_empty() && (drain == RENAME_DRAIN || drain == COPY_DRAIN)
             })
+            && self.observed_length.is_none() == self.observed_write_time.is_none()
+            && self.observed_length.is_none() == self.stable_polls.is_none()
+            && self.observed_length.is_none_or(|length| length >= 0)
+            && self.stable_polls.is_none_or(|polls| polls >= 0)
+            && (self.observed_length.is_none() || self.drain.as_deref() == Some(RENAME_DRAIN))
+            && self.abandoned.is_none() == self.abandoned_length.is_none()
+            && self.abandoned.as_deref().is_none_or(is_fingerprint)
+            && self.abandoned_length.is_none_or(|length| length >= 0)
+    }
+
+    fn normal(fingerprint: &str, offset: i64, file_id: Option<String>) -> Self {
+        Self {
+            file_id,
+            ..Self::new(fingerprint, offset)
+        }
+    }
+
+    /// The cursor now refers to path.1; grace and abandoned state start afresh.
+    fn start_drain(&self, kind: &str) -> Self {
+        Self {
+            drain: Some(kind.to_owned()),
+            observed_length: None,
+            observed_write_time: None,
+            stable_polls: None,
+            abandoned: None,
+            abandoned_length: None,
+            ..self.clone()
+        }
     }
 }
 
@@ -101,15 +200,29 @@ pub struct Batch {
     pub lines: Vec<Line>,
     /// Position after every line in `lines`.
     pub cursor: Cursor,
-    /// `path.1` was drained and the cursor moved to the current file.
+    /// The cursor moved from a drained `path.1` to the current file.
     pub rotated: bool,
-    /// Lines may have been lost: rotated more than once, truncated in place, or written to
-    /// `path.1` after the cursor moved to the current file.
+    /// Lines may have been lost: rotated more than once, truncated in place, the generation
+    /// being drained disappeared, or lines were written to `path.1` after the cursor left it.
     pub gap: bool,
     /// A limit stopped the read, or the cursor moved files: read again without waiting.
     pub more: bool,
     /// This read opened `path.1`, so the caller re-checks it.
     pub rotated_opened: bool,
+    /// The cursor the lines were read under: a rewind to a line's start is this cursor at
+    /// that offset, so it never carries a switch the batch did not commit.
+    pub origin: Option<Cursor>,
+}
+
+impl Batch {
+    /// Back to a line's start; inside an oversized line, keep skipping it.
+    pub fn rewind_to(&self, line: &Line) -> Cursor {
+        Cursor {
+            offset: line.start_offset,
+            discarding: line.continues_discard,
+            ..self.origin.clone().unwrap_or_else(|| self.cursor.clone())
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -119,8 +232,12 @@ pub struct ReaderOptions {
     pub max_bytes_per_batch: u64,
     /// When a file is first seen, start after its last complete line.
     pub start_at_end: bool,
-    /// Polls `path.1` must stay unchanged (size and write time) before the cursor leaves it.
+    /// Unchanged end-of-file polls of a renamed `path.1` (size and write time) before the
+    /// cursor moves to the new file. Copytruncate never waits.
     pub rotation_grace_polls: i32,
+    /// Use device and inode numbers (Unix) to tell rename from copytruncate and to spot a
+    /// replaced file. Off, identities alone decide; the shared vectors run this way.
+    pub use_file_ids: bool,
 }
 
 impl Default for ReaderOptions {
@@ -131,18 +248,9 @@ impl Default for ReaderOptions {
             max_bytes_per_batch: 1_048_576,
             start_at_end: true,
             rotation_grace_polls: crate::config::DEFAULT_ROTATION_GRACE_POLLS,
+            use_file_ids: true,
         }
     }
-}
-
-/// What a reader remembers between polls of one input (C# `FileTailRotationState`), in
-/// memory only: a restart starts the grace window again and forgets the abandoned generation.
-#[derive(Clone, Debug, Default)]
-pub struct RotationState {
-    observed: Option<(i64, Option<SystemTime>)>,
-    stable_polls: i32,
-    /// The generation the cursor left, and its length then: later growth is a gap.
-    abandoned: Option<(String, i64)>,
 }
 
 #[derive(Debug)]
@@ -170,189 +278,292 @@ impl From<OpenError> for ReadError {
 }
 
 /// `path` is the current file (already checked by `paths::resolve`), `None` when missing;
-/// `rotated` is `path.1` when it exists (already checked).
+/// `rotated` is `path.1` when it exists (already checked). Rotation state lives in the
+/// cursor (C# `FileTailReader.Read`): once a rotation is detected the cursor refers to
+/// `path.1` and the current file is not read until it is drained. A copytruncate copy is
+/// drained to its end and the cursor moves on at once; a renamed `path.1` is left only once
+/// the current file is identified and `path.1` stayed unchanged over
+/// `rotation_grace_polls` end-of-file polls, and its later growth is reported as a gap.
 pub fn read(
     path: Option<&Path>,
     rotated: Option<&Path>,
     cursor: Option<&Cursor>,
     options: &ReaderOptions,
-    state: &mut RotationState,
     stop: Option<&AtomicBool>,
 ) -> Result<Batch, ReadError> {
-    let mut current = handle::open(path)?;
-    let mut previous: Option<Option<Handle>> = None;
-    let mut batch = plan(
-        &mut current,
-        &mut previous,
+    let mut reading = Reading {
+        current: handle::open(path)?,
+        previous: None,
         rotated,
-        cursor,
         options,
-        state,
         stop,
-    )?;
-    let late = late_rotated_lines(&mut previous, rotated, state)?;
-    batch.gap |= late;
-    batch.rotated_opened = matches!(previous, Some(Some(_)));
+    };
+    let fingerprint = reading
+        .current
+        .as_ref()
+        .and_then(|file| file.fingerprint.clone());
+    let file_id = if options.use_file_ids {
+        match &reading.current {
+            Some(file) => file.file_id.clone(),
+            None => path.and_then(handle::file_id_of),
+        }
+    } else {
+        None
+    };
+    let mut batch = reading.plan(cursor, fingerprint, file_id)?;
+    batch.rotated_opened = matches!(reading.previous, Some(Some(_)));
     Ok(batch)
 }
 
-fn open_rotated<'a>(
-    previous: &'a mut Option<Option<Handle>>,
-    rotated: Option<&Path>,
-) -> Result<Option<&'a mut Handle>, ReadError> {
-    if previous.is_none() {
-        *previous = Some(handle::open(rotated)?);
-    }
-    Ok(previous.as_mut().and_then(Option::as_mut))
+struct Reading<'a> {
+    current: Option<Handle>,
+    /// `path.1`, opened on first use.
+    previous: Option<Option<Handle>>,
+    rotated: Option<&'a Path>,
+    options: &'a ReaderOptions,
+    stop: Option<&'a AtomicBool>,
 }
 
-fn late_rotated_lines(
-    previous: &mut Option<Option<Handle>>,
-    rotated: Option<&Path>,
-    state: &mut RotationState,
-) -> Result<bool, ReadError> {
-    let Some((fingerprint, length)) = state.abandoned.clone() else {
-        return Ok(false);
-    };
-    let file = open_rotated(previous, rotated)?;
-    let Some(file) = file.filter(|file| file.fingerprint.as_deref() == Some(fingerprint.as_str()))
-    else {
-        state.abandoned = None; // Rotated again or removed: nothing more can arrive.
-        return Ok(false);
-    };
-    if file.length <= length {
-        return Ok(false);
-    }
-    state.abandoned = Some((fingerprint, file.length));
-    Ok(true)
-}
-
-fn plan(
-    current: &mut Option<Handle>,
-    previous: &mut Option<Option<Handle>>,
-    rotated: Option<&Path>,
-    cursor: Option<&Cursor>,
-    options: &ReaderOptions,
-    state: &mut RotationState,
-    stop: Option<&AtomicBool>,
-) -> Result<Batch, ReadError> {
-    let fingerprint = current.as_ref().and_then(|file| file.fingerprint.clone());
-    let Some(cursor) = cursor else {
-        state.observed = None;
-        let Some(fingerprint) = fingerprint else {
-            return Ok(empty(Cursor::new("", 0)));
-        };
-        let file = current.as_mut().expect("identified file is open");
-        if !options.start_at_end {
-            return read_file(file, &Cursor::new(fingerprint, 0), options, false, false);
+impl Reading<'_> {
+    fn rotated(&mut self) -> Result<Option<&mut Handle>, ReadError> {
+        if self.previous.is_none() {
+            self.previous = Some(handle::open(self.rotated)?);
         }
-        let (offset, discarding) = start_position(file, options.max_bytes_per_batch, stop)?;
-        return Ok(empty(Cursor {
-            discarding,
-            ..Cursor::new(fingerprint, offset)
-        }));
-    };
-
-    if cursor.fingerprint.is_empty() {
-        // Provisional cursor: the file was missing or too short to identify.
-        state.observed = None;
-        return match fingerprint {
-            None => Ok(empty(cursor.clone())),
-            Some(fingerprint) => read_file(
-                current.as_mut().expect("identified file is open"),
-                &Cursor::new(fingerprint, 0),
-                options,
-                false,
-                false,
-            ),
-        };
+        Ok(self.previous.as_mut().and_then(Option::as_mut))
     }
 
-    if fingerprint.as_deref() == Some(cursor.fingerprint.as_str()) {
-        let length = current.as_ref().expect("identified file is open").length;
-        if length >= cursor.offset {
-            state.observed = None;
-            return read_file(
-                current.as_mut().expect("identified file is open"),
-                cursor,
-                options,
-                false,
-                false,
-            );
+    /// `path.1` when it carries `fingerprint` (and its length).
+    fn previous_matching(&mut self, fingerprint: &str) -> Result<Option<i64>, ReadError> {
+        Ok(self
+            .rotated()?
+            .filter(|file| file.fingerprint.as_deref() == Some(fingerprint))
+            .map(|file| file.length))
+    }
+
+    fn current(&mut self) -> &mut Handle {
+        self.current.as_mut().expect("identified file is open")
+    }
+
+    fn scan_current(&mut self, at: Cursor, gap: bool) -> Result<Batch, ReadError> {
+        let options = *self.options;
+        scan(self.current(), at, &options, false, gap)
+    }
+
+    fn plan(
+        &mut self,
+        cursor: Option<&Cursor>,
+        fingerprint: Option<String>,
+        file_id: Option<String>,
+    ) -> Result<Batch, ReadError> {
+        let Some(cursor) = cursor else {
+            let Some(fingerprint) = fingerprint else {
+                return Ok(empty(Cursor::new("", 0)));
+            };
+            let initial = Cursor::normal(&fingerprint, 0, file_id);
+            if !self.options.start_at_end {
+                return self.scan_current(initial, false);
+            }
+            let (budget, stop) = (self.options.max_bytes_per_batch, self.stop);
+            let (offset, discarding) = start_position(self.current(), budget, stop)?;
+            return Ok(empty(Cursor {
+                offset,
+                discarding,
+                ..initial
+            }));
+        };
+        if cursor.drain.is_some() {
+            return self.drain(cursor.clone(), fingerprint, file_id);
         }
-        // Shorter than the cursor with the same identity: copytruncate whose new first line
-        // repeats the old one. Drain the copy in path.1 first when it is ours.
-        if let Some(copy) = open_rotated(previous, rotated)?
-            && copy.fingerprint.as_deref() == Some(cursor.fingerprint.as_str())
-            && copy.length >= cursor.offset
+        if cursor.fingerprint.is_empty() {
+            // Provisional cursor: the file was missing or could not be identified.
+            return match fingerprint {
+                None => Ok(empty(cursor.clone())),
+                Some(fingerprint) => {
+                    self.scan_current(Cursor::normal(&fingerprint, 0, file_id), false)
+                }
+            };
+        }
+        let (watched, late) = self.watch_abandoned(cursor)?;
+        let mut batch = self.detect(watched, fingerprint, file_id)?;
+        batch.gap |= late;
+        Ok(batch)
+    }
+
+    /// A generation the cursor left after a rename: writes to it now can never be read.
+    fn watch_abandoned(&mut self, at: &Cursor) -> Result<(Cursor, bool), ReadError> {
+        let (Some(abandoned), Some(length)) = (at.abandoned.clone(), at.abandoned_length) else {
+            return Ok((at.clone(), false));
+        };
+        match self.previous_matching(&abandoned)? {
+            // Rotated again or removed: nothing more can arrive.
+            None => Ok((
+                Cursor {
+                    abandoned: None,
+                    abandoned_length: None,
+                    ..at.clone()
+                },
+                false,
+            )),
+            Some(grown) if grown > length => Ok((
+                Cursor {
+                    abandoned_length: Some(grown),
+                    ..at.clone()
+                },
+                true,
+            )),
+            Some(_) => Ok((at.clone(), false)),
+        }
+    }
+
+    fn detect(
+        &mut self,
+        at: Cursor,
+        fingerprint: Option<String>,
+        file_id: Option<String>,
+    ) -> Result<Batch, ReadError> {
+        let same_file = matches!((&file_id, &at.file_id), (Some(now), Some(then)) if now == then);
+        let other_file = matches!((&file_id, &at.file_id), (Some(now), Some(then)) if now != then);
+        let same_identity = fingerprint.as_deref() == Some(at.fingerprint.as_str());
+
+        if same_identity && !other_file {
+            let length = self.current().length;
+            if length >= at.offset {
+                let file_id = file_id.or_else(|| at.file_id.clone());
+                return self.scan_current(Cursor { file_id, ..at }, false);
+            }
+            // Shorter than the cursor: copytruncate when path.1 is the copy, else truncated.
+            if self
+                .previous_matching(&at.fingerprint)?
+                .is_some_and(|copy| copy >= at.offset)
+            {
+                return self.drain(at.start_drain(COPY_DRAIN), fingerprint, file_id);
+            }
+            let fingerprint = fingerprint.expect("identified file");
+            return self.scan_current(Cursor::normal(&fingerprint, 0, file_id), true);
+        }
+
+        if same_file {
+            // The same file rewritten in place (its first line changed): copytruncate.
+            if self.previous_matching(&at.fingerprint)?.is_some() {
+                return self.drain(at.start_drain(COPY_DRAIN), fingerprint, file_id);
+            }
+            return match fingerprint {
+                None => Ok(Batch {
+                    gap: true,
+                    ..empty(Cursor::new("", 0))
+                }),
+                Some(fingerprint) => {
+                    self.scan_current(Cursor::normal(&fingerprint, 0, file_id), true)
+                }
+            };
+        }
+
+        // Another file at the path: rename rotation when path.1 is ours.
+        if self.previous_matching(&at.fingerprint)?.is_some() {
+            return self.drain(at.start_drain(RENAME_DRAIN), fingerprint, file_id);
+        }
+        // Missing or not identified yet, and not rotated: wait. Otherwise rotated more than
+        // once since the last read, or replaced: lines were lost.
+        match fingerprint {
+            None => Ok(empty(at)),
+            Some(fingerprint) => self.scan_current(Cursor::normal(&fingerprint, 0, file_id), true),
+        }
+    }
+
+    fn drain(
+        &mut self,
+        at: Cursor,
+        fingerprint: Option<String>,
+        file_id: Option<String>,
+    ) -> Result<Batch, ReadError> {
+        let options = *self.options;
+        let next = match &fingerprint {
+            None => Cursor::new("", 0),
+            Some(fingerprint) => Cursor::normal(fingerprint, 0, file_id),
+        };
+        if self.previous_matching(&at.fingerprint)?.is_none() {
+            // The generation being drained is gone (removed or rotated again): lines were lost.
+            return match fingerprint {
+                None => Ok(Batch {
+                    gap: true,
+                    ..empty(next)
+                }),
+                Some(_) => self.scan_current(next, true),
+            };
+        }
+        let file = self.rotated()?.expect("matching rotated file is open");
+        if at.drain.as_deref() == Some(COPY_DRAIN) {
+            // A static copy: drain it to its end, then move to the truncated original at once.
+            let copied = scan(file, at, &options, true, false)?;
+            return Ok(if copied.more {
+                copied
+            } else {
+                Batch {
+                    cursor: next,
+                    rotated: true,
+                    more: true,
+                    ..copied
+                }
+            });
+        }
+
+        let batch = scan(file, at.clone(), &options, false, false)?;
+        if batch.more {
+            return Ok(batch); // A backlog poll never counts towards the grace window.
+        }
+        // At the end of path.1 (only an unterminated last line may remain).
+        let write_ticks = file.write_ticks();
+        let unchanged =
+            at.observed_length == Some(file.length) && at.observed_write_time == Some(write_ticks);
+        let stable = if unchanged {
+            (at.stable_polls.unwrap_or(0) + 1).min(crate::config::MAXIMUM_ROTATION_GRACE_POLLS)
+        } else {
+            0
+        };
+        let observed = Cursor {
+            observed_length: Some(file.length),
+            observed_write_time: Some(write_ticks),
+            stable_polls: Some(stable),
+            ..batch.cursor.clone()
+        };
+        if fingerprint.is_none()
+            || stable < options.rotation_grace_polls
+            || batch.lines.len() >= options.max_lines_per_batch
         {
-            return drain(copy, cursor, fingerprint, options, state);
+            return Ok(Batch {
+                cursor: observed,
+                ..batch
+            });
         }
-        // Truncated in place without a matching copy: restart and flag the gap.
-        state.observed = None;
-        return read_file(
-            current.as_mut().expect("identified file is open"),
-            &Cursor {
-                offset: 0,
-                discarding: false,
-                ..cursor.clone()
+        // Settled: its unterminated last line is complete, then leave it.
+        let length = file.length;
+        let tail = scan(file, observed, &options, true, false)?;
+        let mut lines = batch.lines;
+        lines.extend(tail.lines);
+        Ok(Batch {
+            lines,
+            cursor: Cursor {
+                abandoned: Some(at.fingerprint.clone()),
+                abandoned_length: Some(length),
+                ..next
             },
-            options,
-            false,
-            true,
-        );
+            rotated: true,
+            more: true,
+            ..batch
+        })
     }
-
-    // The current file is another file. Drain the rotated file first if it is ours.
-    if let Some(previous) = open_rotated(previous, rotated)?
-        && previous.fingerprint.as_deref() == Some(cursor.fingerprint.as_str())
-    {
-        return drain(previous, cursor, fingerprint, options, state);
-    }
-
-    state.observed = None;
-    let Some(fingerprint) = fingerprint else {
-        // Missing or too short to identify, and not rotated: wait.
-        return Ok(empty(cursor.clone()));
-    };
-    // Rotated more than once since the last read, or replaced: lines were lost.
-    read_file(
-        current.as_mut().expect("identified file is open"),
-        &Cursor::new(fingerprint, 0),
-        options,
-        false,
-        true,
-    )
 }
 
-fn drain(
+fn scan(
     file: &mut Handle,
-    cursor: &Cursor,
-    current_fingerprint: Option<String>,
+    at: Cursor,
     options: &ReaderOptions,
-    state: &mut RotationState,
+    eof_ends_line: bool,
+    gap: bool,
 ) -> Result<Batch, ReadError> {
-    let observed = (file.length, file.write_time);
-    if state.observed == Some(observed) {
-        state.stable_polls =
-            (state.stable_polls + 1).min(crate::config::MAXIMUM_ROTATION_GRACE_POLLS);
-    } else {
-        state.observed = Some(observed);
-        state.stable_polls = 0;
-    }
-    // Leave path.1 only once the current file is identified and path.1 has settled; until
-    // then a writer may still add to it, and its last line may still grow.
-    let leave = current_fingerprint.is_some() && state.stable_polls >= options.rotation_grace_polls;
-    let batch = read_file(file, cursor, options, leave, false)?;
-    if !leave || batch.more || batch.cursor.offset < file.length {
-        return Ok(batch);
-    }
-    state.observed = None;
-    state.abandoned = Some((cursor.fingerprint.clone(), file.length));
+    let batch = read_file(file, &at, options, eof_ends_line, gap)?;
     Ok(Batch {
-        cursor: Cursor::new(current_fingerprint.expect("identified current file"), 0),
-        rotated: true,
-        more: true,
+        origin: Some(at),
         ..batch
     })
 }
@@ -481,6 +692,7 @@ fn read_file(
         gap,
         more,
         rotated_opened: false,
+        origin: None,
     })
 }
 
@@ -534,6 +746,7 @@ fn empty(cursor: Cursor) -> Batch {
         gap: false,
         more: false,
         rotated_opened: false,
+        origin: None,
     }
 }
 
@@ -567,8 +780,7 @@ mod tests {
         let secret = outside.path().join("shadow");
         std::fs::write(&secret, line("root:secret-marker")).unwrap();
         std::fs::write(&path, line("first-1")).unwrap();
-        let mut state = RotationState::default();
-        let cursor = read(Some(&path), None, None, &options(), &mut state, None)
+        let cursor = read(Some(&path), None, None, &options(), None)
             .unwrap()
             .cursor;
         std::fs::write(&path, format!("{}{}", line("first-1"), line("first-2"))).unwrap();
@@ -583,14 +795,7 @@ mod tests {
                 }
             }));
         });
-        let result = read(
-            Some(&path),
-            Some(&rotated),
-            Some(&cursor),
-            &options(),
-            &mut state,
-            None,
-        );
+        let result = read(Some(&path), Some(&rotated), Some(&cursor), &options(), None);
         handle::BEFORE_OPEN.with(|hook| *hook.borrow_mut() = None);
         assert!(matches!(result, Err(ReadError::Refused)));
     }
@@ -601,8 +806,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("app.log");
         std::fs::write(&path, line("old-1")).unwrap();
-        let mut state = RotationState::default();
-        let cursor = read(Some(&path), None, None, &options(), &mut state, None)
+        let cursor = read(Some(&path), None, None, &options(), None)
             .unwrap()
             .cursor;
         let old = cursor.fingerprint.clone();
@@ -621,14 +825,7 @@ mod tests {
                 }
             }));
         });
-        let batch = read(
-            Some(&path),
-            None,
-            Some(&cursor),
-            &options(),
-            &mut state,
-            None,
-        );
+        let batch = read(Some(&path), None, Some(&cursor), &options(), None);
         handle::AFTER_OPEN.with(|hook| *hook.borrow_mut() = None);
         let batch = batch.unwrap();
         assert_eq!(batch.lines.len(), 1);
@@ -637,15 +834,7 @@ mod tests {
             (batch.cursor.fingerprint.as_str(), batch.cursor.offset),
             (old.as_str(), line("old-1").len() as i64 * 2)
         );
-        let next = read(
-            Some(&path),
-            None,
-            Some(&batch.cursor),
-            &options(),
-            &mut state,
-            None,
-        )
-        .unwrap();
+        let next = read(Some(&path), None, Some(&batch.cursor), &options(), None).unwrap();
         assert!(next.gap);
         assert_eq!(next.lines.len(), 3);
         assert_ne!(next.cursor.fingerprint, old);
@@ -662,8 +851,7 @@ mod tests {
             max_bytes_per_batch: 65_536,
             ..ReaderOptions::default()
         };
-        let mut state = RotationState::default();
-        let batch = read(Some(&path), None, None, &options, &mut state, None).unwrap();
+        let batch = read(Some(&path), None, None, &options, None).unwrap();
         let length = std::fs::metadata(&path).unwrap().len() as i64;
         assert_eq!(
             (batch.cursor.offset, batch.cursor.discarding),
@@ -671,7 +859,7 @@ mod tests {
         );
         let stop = AtomicBool::new(true);
         assert!(matches!(
-            read(Some(&path), None, None, &options, &mut state, Some(&stop)),
+            read(Some(&path), None, None, &options, Some(&stop)),
             Err(ReadError::Stopped)
         ));
     }

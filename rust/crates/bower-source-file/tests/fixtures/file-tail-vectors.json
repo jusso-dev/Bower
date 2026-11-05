@@ -206,6 +206,8 @@
             "provisional": false,
             "offset": 82,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -226,6 +228,8 @@
             "provisional": false,
             "offset": 102,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -248,6 +252,8 @@
             "provisional": false,
             "offset": 123,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -268,6 +274,8 @@
             "provisional": false,
             "offset": 164,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -290,6 +298,8 @@
             "provisional": false,
             "offset": 82,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -310,6 +320,8 @@
             "provisional": false,
             "offset": 90,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -353,6 +365,8 @@
             "provisional": false,
             "offset": 88,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -392,6 +406,8 @@
             "provisional": false,
             "offset": 383,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -431,6 +447,8 @@
             "provisional": false,
             "offset": 556,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -460,6 +478,8 @@
             "provisional": false,
             "offset": 341,
             "discarding": true,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -485,6 +505,8 @@
             "provisional": false,
             "offset": 433,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -519,6 +541,8 @@
             "provisional": false,
             "offset": 82,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": true
@@ -536,6 +560,8 @@
             "provisional": false,
             "offset": 123,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -575,6 +601,8 @@
             "provisional": false,
             "offset": 123,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": true
@@ -597,6 +625,8 @@
             "provisional": false,
             "offset": 205,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -630,6 +660,8 @@
             "provisional": false,
             "offset": 82,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -656,6 +688,8 @@
             "provisional": false,
             "offset": 123,
             "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -667,6 +701,8 @@
             "provisional": false,
             "offset": 0,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": true,
             "gap": false,
             "more": true
@@ -689,6 +725,8 @@
             "provisional": false,
             "offset": 82,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": false,
             "gap": false,
             "more": false
@@ -717,6 +755,8 @@
             "provisional": false,
             "offset": 41,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -734,6 +774,8 @@
             "provisional": false,
             "offset": 41,
             "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -751,6 +793,8 @@
             "provisional": false,
             "offset": 0,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": true,
             "gap": false,
             "more": true
@@ -773,6 +817,8 @@
             "provisional": false,
             "offset": 82,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": false,
             "gap": false,
             "more": false
@@ -806,6 +852,8 @@
             "provisional": false,
             "offset": 82,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -832,6 +880,8 @@
             "provisional": false,
             "offset": 123,
             "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -843,6 +893,8 @@
             "provisional": false,
             "offset": 0,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": true,
             "gap": false,
             "more": true
@@ -865,6 +917,8 @@
             "provisional": false,
             "offset": 82,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": false,
             "gap": false,
             "more": false
@@ -898,6 +952,8 @@
             "provisional": false,
             "offset": 82,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -915,6 +971,8 @@
             "provisional": false,
             "offset": 82,
             "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -926,6 +984,8 @@
             "provisional": false,
             "offset": 82,
             "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -940,6 +1000,8 @@
             "provisional": false,
             "offset": 0,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": true,
             "gap": false,
             "more": true
@@ -967,6 +1029,8 @@
             "provisional": false,
             "offset": 88,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1000,6 +1064,8 @@
             "provisional": false,
             "offset": 82,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1034,6 +1100,8 @@
             "provisional": false,
             "offset": 82,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": true,
             "more": false
@@ -1072,6 +1140,8 @@
             "provisional": false,
             "offset": 153,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1092,6 +1162,8 @@
             "provisional": false,
             "offset": 71,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": true,
             "more": false
@@ -1111,6 +1183,8 @@
             "provisional": true,
             "offset": 0,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1136,6 +1210,8 @@
             "provisional": false,
             "offset": 82,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1158,6 +1234,8 @@
             "provisional": true,
             "offset": 0,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1188,6 +1266,8 @@
             "provisional": false,
             "offset": 88,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1221,6 +1301,8 @@
             "provisional": false,
             "offset": 82,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1244,6 +1326,8 @@
             "provisional": false,
             "offset": 123,
             "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1258,6 +1342,8 @@
             "provisional": false,
             "offset": 0,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": true,
             "gap": false,
             "more": true
@@ -1280,6 +1366,8 @@
             "provisional": false,
             "offset": 82,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1313,6 +1401,8 @@
             "provisional": false,
             "offset": 82,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1339,6 +1429,8 @@
             "provisional": false,
             "offset": 123,
             "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1359,6 +1451,8 @@
             "provisional": false,
             "offset": 164,
             "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1370,6 +1464,8 @@
             "provisional": false,
             "offset": 164,
             "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1384,6 +1480,8 @@
             "provisional": false,
             "offset": 0,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": true,
             "gap": false,
             "more": true
@@ -1406,6 +1504,8 @@
             "provisional": false,
             "offset": 82,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1417,6 +1517,8 @@
             "provisional": false,
             "offset": 82,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1445,6 +1547,8 @@
             "provisional": false,
             "offset": 41,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1462,6 +1566,8 @@
             "provisional": false,
             "offset": 41,
             "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1482,6 +1588,8 @@
             "provisional": false,
             "offset": 81,
             "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1493,6 +1601,8 @@
             "provisional": false,
             "offset": 0,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": true,
             "gap": false,
             "more": true
@@ -1515,6 +1625,8 @@
             "provisional": false,
             "offset": 82,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1543,6 +1655,8 @@
             "provisional": false,
             "offset": 71,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1560,6 +1674,8 @@
             "provisional": false,
             "offset": 71,
             "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1571,6 +1687,8 @@
             "provisional": false,
             "offset": 0,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": true,
             "gap": false,
             "more": true
@@ -1591,6 +1709,8 @@
             "provisional": false,
             "offset": 71,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": false,
             "gap": true,
             "more": false
@@ -1602,6 +1722,8 @@
             "provisional": false,
             "offset": 71,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1631,6 +1753,8 @@
             "provisional": false,
             "offset": 71,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1657,6 +1781,8 @@
             "provisional": false,
             "offset": 112,
             "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1668,6 +1794,8 @@
             "provisional": false,
             "offset": 112,
             "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1679,6 +1807,8 @@
             "provisional": false,
             "offset": 112,
             "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1690,6 +1820,8 @@
             "provisional": false,
             "offset": 0,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": true,
             "gap": false,
             "more": true
@@ -1707,6 +1839,8 @@
             "provisional": false,
             "offset": 71,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1718,6 +1852,8 @@
             "provisional": false,
             "offset": 71,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1756,6 +1892,8 @@
             "provisional": false,
             "offset": 153,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1780,19 +1918,10 @@
               }
             ],
             "provisional": false,
-            "offset": 194,
-            "discarding": false,
-            "rotated": false,
-            "gap": false,
-            "more": false
-          }
-        },
-        {
-          "read": {
-            "lines": [],
-            "provisional": false,
             "offset": 0,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": true,
             "gap": false,
             "more": true
@@ -1810,6 +1939,21 @@
             "provisional": false,
             "offset": 71,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1843,6 +1987,8 @@
             "provisional": false,
             "offset": 144,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1860,6 +2006,8 @@
             "provisional": false,
             "offset": 144,
             "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1871,6 +2019,8 @@
             "provisional": false,
             "offset": 0,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": true,
             "gap": false,
             "more": true
@@ -1893,6 +2043,8 @@
             "provisional": false,
             "offset": 144,
             "discarding": false,
+            "drain": null,
+            "abandoned": true,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1915,6 +2067,8 @@
             "provisional": true,
             "offset": 0,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1940,6 +2094,8 @@
             "provisional": false,
             "offset": 142,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1963,6 +2119,8 @@
             "provisional": false,
             "offset": 341,
             "discarding": true,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
             "more": false
@@ -1988,8 +2146,499 @@
             "provisional": false,
             "offset": 389,
             "discarding": false,
+            "drain": null,
+            "abandoned": false,
             "rotated": false,
             "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "copytruncate: the drain state wins over a current file that regrows past the cursor",
+      "options": {
+        "startAtEnd": false,
+        "maxLinesPerBatch": 1
+      },
+      "steps": [
+        {
+          "write": "line-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "line-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              }
+            ],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "line-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 71,
+                "end": 112
+              }
+            ],
+            "provisional": false,
+            "offset": 112,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "line-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 112,
+                "end": 153
+              }
+            ],
+            "provisional": false,
+            "offset": 153,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "append": "line-4 unread xxxxxxxxxxxxxxxxxxxxxxxxxx\nline-5 unread xxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "copytruncate": {}
+        },
+        {
+          "append": "line-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "line-4 unread xxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 153,
+                "end": 194
+              }
+            ],
+            "provisional": false,
+            "offset": 194,
+            "discarding": false,
+            "drain": "copytruncate",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "append": "new-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nnew-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nnew-4 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "line-5 unread xxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 194,
+                "end": 235
+              }
+            ],
+            "provisional": false,
+            "offset": 0,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": true,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "line-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              }
+            ],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "new-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 71,
+                "end": 112
+              }
+            ],
+            "provisional": false,
+            "offset": 112,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "new-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 112,
+                "end": 153
+              }
+            ],
+            "provisional": false,
+            "offset": 153,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "new-4 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 153,
+                "end": 194
+              }
+            ],
+            "provisional": false,
+            "offset": 194,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "rename: a backlog in path.1 does not use up the grace window",
+      "options": {
+        "startAtEnd": false,
+        "maxLinesPerBatch": 1,
+        "rotationGracePolls": 2
+      },
+      "steps": [
+        {
+          "write": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              }
+            ],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "append": "backlog-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nbacklog-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nbacklog-4 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nbacklog-5 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nbacklog-6 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nbacklog-7 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "rename": {}
+        },
+        {
+          "write": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "backlog-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 71,
+                "end": 112
+              }
+            ],
+            "provisional": false,
+            "offset": 112,
+            "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "backlog-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 112,
+                "end": 153
+              }
+            ],
+            "provisional": false,
+            "offset": 153,
+            "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "backlog-4 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 153,
+                "end": 194
+              }
+            ],
+            "provisional": false,
+            "offset": 194,
+            "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "backlog-5 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 194,
+                "end": 235
+              }
+            ],
+            "provisional": false,
+            "offset": 235,
+            "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "backlog-6 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 235,
+                "end": 276
+              }
+            ],
+            "provisional": false,
+            "offset": 276,
+            "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "backlog-7 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 276,
+                "end": 317
+              }
+            ],
+            "provisional": false,
+            "offset": 317,
+            "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 317,
+            "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 0,
+            "discarding": false,
+            "drain": null,
+            "abandoned": true,
+            "rotated": true,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              }
+            ],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "drain": null,
+            "abandoned": true,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "drain": null,
+            "abandoned": true,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "rename: the generation being drained disappears, which is a gap",
+      "options": {
+        "startAtEnd": false,
+        "rotationGracePolls": 2
+      },
+      "steps": [
+        {
+          "write": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              }
+            ],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "append": "first-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "rename": {}
+        },
+        {
+          "write": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 71,
+                "end": 112
+              }
+            ],
+            "provisional": false,
+            "offset": 112,
+            "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "deleteRotated": {}
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              }
+            ],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": true,
             "more": false
           }
         }

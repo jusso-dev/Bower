@@ -26,7 +26,7 @@ use tokio::task::JoinSet;
 
 use crate::config::{self, FileTailSourceConfiguration, InputOptions};
 use crate::paths::{self, PathState};
-use crate::reader::{self, Batch, Cursor, Line, ReadError, ReaderOptions, RotationState};
+use crate::reader::{self, Batch, Cursor, Line, ReadError, ReaderOptions};
 use crate::record;
 
 /// What happened to one record handed to the collector (C# `FileTailSubmitOutcome`).
@@ -149,8 +149,6 @@ struct InputState {
     offset: AtomicI64,
     last_line_at: Mutex<Option<Timestamp>>,
     last_poll_at: Mutex<Option<Timestamp>>,
-    /// Grace and abandoned-generation state of the reader, in memory only.
-    rotation: Mutex<RotationState>,
 }
 
 impl InputState {
@@ -215,6 +213,7 @@ impl FileTailMetrics {
 }
 
 pub struct FileTailSource {
+    configuration: FileTailSourceConfiguration,
     roots: Vec<String>,
     poll_interval: Duration,
     max_lines_per_batch: usize,
@@ -249,7 +248,6 @@ impl FileTailSource {
                     offset: AtomicI64::new(-1),
                     last_line_at: Mutex::new(None),
                     last_poll_at: Mutex::new(None),
-                    rotation: Mutex::new(RotationState::default()),
                 })
             })
             .collect();
@@ -276,6 +274,7 @@ impl FileTailSource {
             maximum_backoff: Duration::from_secs(60),
             rotation_grace_polls: configuration.rotation_grace_polls,
             transient: Arc::new(|_| false),
+            configuration,
         }
     }
 
@@ -365,26 +364,20 @@ impl FileTailSource {
         let (rotated_state, rotated) = self.check_rotated(&path)?;
         // A missing file is read as missing: the cursor is still persisted and the rotated
         // file may still hold unread lines.
-        let read = {
-            let mut rotation = input
-                .rotation
-                .lock()
-                .unwrap_or_else(|poison| poison.into_inner());
-            reader::read(
-                (state == PathState::Ready).then_some(Path::new(&path)),
-                (rotated_state == PathState::Ready).then_some(Path::new(&rotated)),
-                cursor.as_ref(),
-                &ReaderOptions {
-                    max_line_bytes: usize::try_from(options.max_line_bytes).unwrap_or(16_384),
-                    max_lines_per_batch: self.max_lines_per_batch,
-                    max_bytes_per_batch: self.max_bytes_per_batch,
-                    start_at_end: options.start_at != "beginning",
-                    rotation_grace_polls: self.rotation_grace_polls,
-                },
-                &mut rotation,
-                Some(&self.stopping),
-            )
-        };
+        let read = reader::read(
+            (state == PathState::Ready).then_some(Path::new(&path)),
+            (rotated_state == PathState::Ready).then_some(Path::new(&rotated)),
+            cursor.as_ref(),
+            &ReaderOptions {
+                max_line_bytes: usize::try_from(options.max_line_bytes).unwrap_or(16_384),
+                max_lines_per_batch: self.max_lines_per_batch,
+                max_bytes_per_batch: self.max_bytes_per_batch,
+                start_at_end: options.start_at != "beginning",
+                rotation_grace_polls: self.rotation_grace_polls,
+                use_file_ids: true,
+            },
+            Some(&self.stopping),
+        );
         let batch = match read {
             Ok(batch) => batch,
             Err(ReadError::Refused) => return Err(FileTailError::new(failures::PATH_REFUSED)),
@@ -452,7 +445,7 @@ impl FileTailSource {
         let mut handled = 0;
         for line in &batch.lines {
             if self.stopping.load(Ordering::SeqCst) {
-                return (rewind(line), handled, false, false, true);
+                return (batch.rewind_to(line), handled, false, false, true);
             }
             let mut outcome = None;
             if !line.oversized && !line.bytes.is_empty() {
@@ -460,7 +453,7 @@ impl FileTailSource {
                     Ok(record) => match self.sink.submit(&input.options, &record) {
                         Ok(SubmitOutcome::Unavailable) => {
                             input.counters.backpressure.fetch_add(1, Ordering::Relaxed);
-                            return (rewind(line), handled, true, false, false);
+                            return (batch.rewind_to(line), handled, true, false, false);
                         }
                         Ok(result) => outcome = Some(result),
                         Err(SinkFailure) => {
@@ -468,7 +461,7 @@ impl FileTailSource {
                                 .counters
                                 .submit_failures
                                 .fetch_add(1, Ordering::Relaxed);
-                            return (rewind(line), handled, false, true, false);
+                            return (batch.rewind_to(line), handled, false, true, false);
                         }
                     },
                     Err(_) => {
@@ -514,11 +507,10 @@ impl FileTailSource {
     /// allowed link) another input's file or rotated file.
     fn check(&self, options: &InputOptions) -> Result<(PathState, String), FileTailError> {
         let (state, path) = paths::resolve(&options.path, &self.roots, options.allow_symlink);
-        let overlaps = path != options.path
-            && self.inputs.iter().any(|other| {
-                other.options.id != options.id && config::overlaps(&path, &other.options.path)
-            });
-        if state == PathState::Refused || overlaps {
+        // Another input's file directly, through linked directories or through an allowed link.
+        if state == PathState::Refused
+            || config::overlaps_another(&self.configuration, options, &path)
+        {
             return Err(FileTailError::new(failures::PATH_REFUSED));
         }
         Ok((state, path))
@@ -600,14 +592,6 @@ async fn run_input(source: Arc<FileTailSource>, id: String, mut stop: watch::Rec
             () = tokio::time::sleep(wait) => {}
             _ = stop.wait_for(|stopped| *stopped) => break,
         }
-    }
-}
-
-/// Back to the line's start; inside an oversized line, keep skipping it.
-fn rewind(line: &Line) -> Cursor {
-    Cursor {
-        discarding: line.continues_discard,
-        ..Cursor::new(line.fingerprint.clone(), line.start_offset)
     }
 }
 

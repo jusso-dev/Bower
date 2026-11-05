@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using Microsoft.Win32.SafeHandles;
@@ -26,12 +27,13 @@ public sealed class FileTailHandle : IDisposable
     [ThreadStatic]
     internal static Action<string>? AfterOpen;
 
-    private FileTailHandle(FileStream stream, long length, DateTime writeTime, string? fingerprint)
+    private FileTailHandle(FileStream stream, long length, DateTime writeTime, string? fingerprint, string? fileId = null)
     {
         Stream = stream;
         Length = length;
         WriteTime = writeTime;
         Fingerprint = fingerprint;
+        FileId = fileId;
     }
 
     public FileStream Stream { get; }
@@ -43,6 +45,12 @@ public sealed class FileTailHandle : IDisposable
 
     /// <summary>Null while the first line is incomplete (and shorter than 4096 bytes).</summary>
     public string? Fingerprint { get; }
+
+    /// <summary><c>device:inode</c> of the opened file (Linux only), or null.</summary>
+    public string? FileId { get; }
+
+    /// <summary>Write time as 100 ns ticks since the Unix epoch (comparable across runtimes).</summary>
+    public long WriteTicks => WriteTime.Ticks - DateTime.UnixEpoch.Ticks;
 
     /// <summary>
     /// Opens a path already checked by <see cref="FileTailPaths"/>, or returns null when it is
@@ -72,9 +80,17 @@ public sealed class FileTailHandle : IDisposable
 
         BeforeOpen?.Invoke(path);
         FileStream stream;
+        string? fileId = null;
         try
         {
-            stream = OperatingSystem.IsLinux() ? LinuxTailFile.Open(path) : OpenShared(path);
+            if (OperatingSystem.IsLinux())
+            {
+                (stream, fileId) = LinuxTailFile.Open(path);
+            }
+            else
+            {
+                stream = OpenShared(path);
+            }
         }
         catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
         {
@@ -90,7 +106,7 @@ public sealed class FileTailHandle : IDisposable
 
             long length = stream.Length;
             DateTime writeTime = System.IO.File.GetLastWriteTimeUtc(stream.SafeFileHandle);
-            FileTailHandle handle = new(stream, length, writeTime, Identity(stream, length));
+            FileTailHandle handle = new(stream, length, writeTime, Identity(stream, length), fileId);
             AfterOpen?.Invoke(path);
             return handle;
         }
@@ -100,6 +116,13 @@ public sealed class FileTailHandle : IDisposable
             throw;
         }
     }
+
+    /// <summary>
+    /// <c>device:inode</c> of the regular file at <paramref name="path"/> without opening it
+    /// (Linux only; null elsewhere, when missing or not a regular file).
+    /// </summary>
+    public static string? FileIdOf(string? path) =>
+        path is not null && OperatingSystem.IsLinux() ? LinuxTailFile.FileIdOf(path) : null;
 
     /// <summary>The identity of the file at <paramref name="path"/>, or null (tests and tools).</summary>
     public static string? FingerprintOf(string path)
@@ -142,7 +165,6 @@ public sealed class FileTailHandle : IDisposable
 internal static partial class LinuxTailFile
 {
     private const int ReadOnly = 0;
-    private const int NoFollow = 0x20000;
     private const int CloseOnExec = 0x80000;
     private const int NonBlock = 0x800;
     private const int CurrentDirectory = -100;
@@ -152,21 +174,42 @@ internal static partial class LinuxTailFile
     private const ushort TypeMask = 0xf000;
     private const ushort RegularType = 0x8000;
 
-    internal static FileStream Open(string path)
+    /// <summary>
+    /// <c>open</c> flags per architecture: <c>O_NOFOLLOW</c> is 0x20000 on x86-64 but 0x8000 on
+    /// arm64 (where 0x20000 is <c>O_LARGEFILE</c>). Other architectures get null: the file is
+    /// opened without it and only the post-open checks apply (fail closed).
+    /// </summary>
+    internal static int? OpenFlags(Architecture architecture) => architecture switch
     {
-        int descriptor = OpenNative(path, ReadOnly | NoFollow | CloseOnExec | NonBlock);
-        if (descriptor < 0)
+        Architecture.X64 => ReadOnly | 0x20000 | CloseOnExec | NonBlock,
+        Architecture.Arm64 => ReadOnly | 0x8000 | CloseOnExec | NonBlock,
+        _ => null
+    };
+
+    internal static (FileStream Stream, string FileId) Open(string path)
+    {
+        SafeFileHandle handle;
+        if (OpenFlags(RuntimeInformation.ProcessArchitecture) is { } flags)
         {
-            int error = Marshal.GetLastPInvokeError();
-            throw error switch
+            int descriptor = OpenNative(path, flags);
+            if (descriptor < 0)
             {
-                2 => new FileNotFoundException(),
-                40 => new FileTailRefusedException(), // ELOOP: the path is a symbolic link.
-                _ => new IOException(FileTailFailures.ReadFailed)
-            };
+                int error = Marshal.GetLastPInvokeError();
+                throw error switch
+                {
+                    2 => new FileNotFoundException(),
+                    40 => new FileTailRefusedException(), // ELOOP: the path is a symbolic link.
+                    _ => new IOException(FileTailFailures.ReadFailed)
+                };
+            }
+
+            handle = new SafeFileHandle(descriptor, ownsHandle: true);
+        }
+        else
+        {
+            handle = System.IO.File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         }
 
-        SafeFileHandle handle = new(descriptor, ownsHandle: true);
         try
         {
             if (StatxHandle(handle, "", EmptyPath, TypeAndInode, out Statx opened) != 0
@@ -181,13 +224,30 @@ internal static partial class LinuxTailFile
                 throw new FileTailRefusedException();
             }
 
-            return new FileStream(handle, FileAccess.Read, 4_096);
+            return (new FileStream(handle, FileAccess.Read, 4_096), Id(opened));
         }
         catch
         {
             handle.Dispose();
             throw;
         }
+    }
+
+    internal static string? FileIdOf(string path) =>
+        StatxPath(CurrentDirectory, path, SymlinkNoFollow, TypeAndInode, out Statx named) == 0
+        && (named.Mask & TypeAndInode) == TypeAndInode
+        && (named.Mode & TypeMask) == RegularType
+            ? Id(named)
+            : null;
+
+    /// <summary>glibc <c>makedev</c>, so the device number equals Rust's <c>st_dev</c>.</summary>
+    internal static string Id(Statx stat)
+    {
+        ulong major = stat.DeviceMajor;
+        ulong minor = stat.DeviceMinor;
+        ulong device = ((major & 0x00000fffUL) << 8) | ((major & 0xfffff000UL) << 32)
+            | (minor & 0x000000ffUL) | ((minor & 0xffffff00UL) << 12);
+        return string.Create(CultureInfo.InvariantCulture, $"{device}:{stat.Inode}");
     }
 
     /// <summary><c>struct statx</c>: the same layout on every Linux architecture.</summary>

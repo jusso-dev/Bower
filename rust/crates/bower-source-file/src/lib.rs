@@ -13,7 +13,7 @@ pub mod source;
 
 pub use config::{FileTailSourceConfiguration, InputOptions, Route};
 pub use paths::PathState;
-pub use reader::{Batch, Cursor, Line, ReadError, ReaderOptions, RotationState};
+pub use reader::{Batch, Cursor, Line, ReadError, ReaderOptions};
 pub use source::{
     FileTailError, FileTailMetrics, FileTailSink, FileTailSource, InputStatus, PollResult,
     SinkFailure, SubmitOutcome,

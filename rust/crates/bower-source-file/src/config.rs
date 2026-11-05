@@ -152,24 +152,63 @@ pub fn load_file(path: impl AsRef<Path>) -> Result<FileTailSourceConfiguration, 
 /// `ValidateLinks`). Read once at load (one hop, as at read time); a link that does not
 /// exist yet is checked when read.
 pub fn validate_links(configuration: &FileTailSourceConfiguration) -> Result<(), ConfigError> {
-    for input in configuration.inputs().filter(|input| input.allow_symlink) {
-        let Ok(target) = std::fs::read_link(&input.path) else {
-            continue;
-        };
-        let Some(resolved) = paths::link_target(&input.path, &target) else {
-            continue;
-        };
-        if configuration
-            .inputs()
-            .any(|other| other.id != input.id && overlaps(&resolved, &other.path))
+    let mut earlier: Vec<&InputOptions> = Vec::new();
+    for input in configuration.inputs() {
+        if let Some(resolved) = link_target(input)
+            && overlaps_another(configuration, input, &resolved)
         {
             return Err(fail(
                 &input.id,
                 "allowSymlink target is another input's file or rotated file.",
             ));
         }
+        // The same file through linked directories (/var/run and /run, for example): the
+        // text rules again, on canonical paths.
+        let canonical = paths::canonical(&input.path);
+        if earlier
+            .iter()
+            .any(|other| paths::canonical(&other.path).eq_ignore_ascii_case(&canonical))
+        {
+            return Err(fail(&input.id, "path is already read by another input."));
+        }
+        if earlier
+            .iter()
+            .any(|other| overlaps(&canonical, &paths::canonical(&other.path)))
+        {
+            return Err(fail(
+                &input.id,
+                "path overlaps another input's rotated file (path.1).",
+            ));
+        }
+        earlier.push(input);
     }
     Ok(())
+}
+
+/// Whether `resolved` (the file `input` reads now: its path or where its link leads) is
+/// another input's configured file, its link target, or either one's rotated file,
+/// compared on canonical paths (C# `OverlapsAnother`).
+pub fn overlaps_another(
+    configuration: &FileTailSourceConfiguration,
+    input: &InputOptions,
+    resolved: &str,
+) -> bool {
+    let canonical = paths::canonical(resolved);
+    configuration.inputs().any(|other| {
+        other.id != input.id
+            && (overlaps(&canonical, &paths::canonical(&other.path))
+                || link_target(other)
+                    .is_some_and(|target| overlaps(&canonical, &paths::canonical(&target))))
+    })
+}
+
+/// Where an allowed link leads (one hop, normalised), or `None` when the input has no link now.
+pub fn link_target(input: &InputOptions) -> Option<String> {
+    if !input.allow_symlink {
+        return None;
+    }
+    let target = std::fs::read_link(&input.path).ok()?;
+    paths::link_target(&input.path, &target)
 }
 
 /// The same file, or one is the other's rotated file (`path.1`), ignoring ASCII case.

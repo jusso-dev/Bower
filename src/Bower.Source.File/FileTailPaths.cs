@@ -73,6 +73,52 @@ public static class FileTailPaths
             path.StartsWith(Path.TrimEndingDirectorySeparator(root) + Path.DirectorySeparatorChar, Comparison));
     }
 
+    /// <summary>
+    /// The path with every directory resolved through symbolic links (<c>realpath</c> of the
+    /// directory, then the file name), or the path as written when its directory does not
+    /// exist yet. Used to spot two inputs that name the same file through linked directories.
+    /// </summary>
+    public static string Canonical(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        string? directory = Path.GetDirectoryName(path);
+        return directory is not null && RealDirectory(directory, 0) is { } real
+            ? Path.Combine(real, Path.GetFileName(path))
+            : path;
+    }
+
+    private static string? RealDirectory(string directory, int depth)
+    {
+        if (depth > 40 || Path.GetPathRoot(directory) is not { Length: > 0 } root)
+        {
+            return null; // A link loop, or not an absolute path.
+        }
+
+        string current = root;
+        foreach (string segment in directory[root.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+        {
+            string next = Path.Combine(current, segment);
+            DirectoryInfo info = new(next);
+            if (info.LinkTarget is { } target)
+            {
+                if (RealDirectory(Path.GetFullPath(target, current), depth + 1) is not { } resolved)
+                {
+                    return null;
+                }
+
+                next = resolved;
+            }
+            else if (!info.Exists)
+            {
+                return null;
+            }
+
+            current = next;
+        }
+
+        return current;
+    }
+
     /// <summary>The path to open, or why it cannot be read now.</summary>
     public static (FileTailPathState State, string Path) Resolve(string path, IReadOnlyList<string> roots, bool allowSymlink)
     {
