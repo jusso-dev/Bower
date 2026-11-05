@@ -140,13 +140,15 @@ public sealed class FileTailCollectorTests
 
         // Appended after syslog (and Windows Event Log, which Rust refuses). Pinned in the
         // Rust collector too (rust/crates/bower-collector/tests/file_tail_source.rs).
-        CollectorSettings pinned = new CollectorSettings
+        CollectorSettings pinned = new()
         {
             ListenUrl = "http://127.0.0.1:4319",
             QueuePath = "queue.db",
             PolicyDirectory = "policies",
-            CollectorId = "edge-01"
-        } with { SyslogConfigPath = "/etc/bower/syslog.json", FileTailConfigPath = "/etc/bower/file.json" };
+            CollectorId = "edge-01",
+            SyslogConfigPath = "/etc/bower/syslog.json",
+            FileTailConfigPath = "/etc/bower/file.json"
+        };
         Assert.Equal("sha256:71d6a33e0d2c55df95ea9b44bc947d9bf28439afedb36e22f37b96b3d800bcae", pinned.ConfigurationHash());
     }
 
