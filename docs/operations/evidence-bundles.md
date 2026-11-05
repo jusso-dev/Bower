@@ -114,7 +114,7 @@ fixture was not sent.
 | `policy-not-selected` | The parser mapped the fixture but policy (or redaction) rejected or quarantined it. |
 | `collector-permission-denied` | The collector refused the ingest token or producer scope (401/403). |
 | `collector-status-unreadable` | `/v1/status` could not be read, so the tested configuration is unknown. |
-| `collector-output-not-sentinel` | `/v1/status` reports an output that does not deliver to Sentinel (`"output": "s3"`). No probe is sent and a `NOT SENTINEL` limitation is added. The generic canary does the same, with this code in `arrival.queryError`. See [S3 output](../deployment/s3-output.md#evidence). |
+| `collector-output-not-sentinel` | `/v1/status` reports an `output` outside the Sentinel allowlist (`azure-logs-ingestion`, `ama-spool`, `relay`), for example `s3` or any future output. No probe is sent and a `NOT SENTINEL` limitation is added. The generic canary does the same, with this code in `arrival.queryError`. A missing `output` field, an allowlisted value or unreadable status proceeds, and only the Sentinel query can verify. See [S3 output](../deployment/s3-output.md#evidence). |
 | `collector-rejected` | Any other refusal (capacity, rate limit, identity conflict). |
 | `destination-permission-denied` | The verifier identity may not query the workspace (stops at once). |
 | `destination-row-missing` | At least one query answered, and none returned the probe row before the timeout (later queries may have failed). |

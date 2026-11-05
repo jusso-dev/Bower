@@ -118,14 +118,35 @@ public static class ProbeOutcomes
     public const string CollectorOutputNotSentinel = "collector-output-not-sentinel";
 
     /// <summary>
-    /// The non-Sentinel output a collector status body reports, or null. Only short
-    /// lowercase output ids are echoed; anything else reads as <c>unknown</c>.
+    /// Outputs whose delivery a Sentinel query can prove: direct Logs Ingestion and the AMA
+    /// spool, plus <c>relay</c> (the relay's own output is unknown here, so the query stays
+    /// the only proof). An allowlist: any other value, including future outputs, refuses.
     /// </summary>
-    public static string? NonSentinelOutput(JsonObject? status) =>
-        status?["output"] is null ? null
-            : Text(status["output"]) is { Length: >= 1 and <= 32 } output && output.All(c => c is >= 'a' and <= 'z' or >= '0' and <= '9' or '-')
-                ? output
-                : "unknown";
+    public static IReadOnlyList<string> SentinelOutputs { get; } = ["azure-logs-ingestion", "ama-spool", "relay"];
+
+    /// <summary>
+    /// The output a collector status body reports when it is not on the Sentinel allowlist,
+    /// or null (allowlisted, or no <c>output</c> field: the probe proceeds and only the
+    /// Sentinel query can verify it). Only short lowercase output ids are echoed; anything
+    /// else, including a non-string value, reads as <c>unknown</c>.
+    /// </summary>
+    public static string? NonSentinelOutput(JsonObject? status)
+    {
+        if (status?["output"] is null)
+        {
+            return null;
+        }
+
+        string? output = Text(status["output"]);
+        if (output is not null && SentinelOutputs.Contains(output, StringComparer.Ordinal))
+        {
+            return null;
+        }
+
+        return output is { Length: >= 1 and <= 32 } && output.All(c => c is >= 'a' and <= 'z' or >= '0' and <= '9' or '-')
+            ? output
+            : "unknown";
+    }
 
     /// <summary>Bundle limitation when the collector delivers somewhere other than Sentinel.</summary>
     public static string NonSentinelLimitation(string output) =>

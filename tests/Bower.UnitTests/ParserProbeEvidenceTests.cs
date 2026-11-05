@@ -223,6 +223,8 @@ public sealed partial class ParserProbeEvidenceTests
     [Theory]
     [InlineData("s3", null, "s3")]
     [InlineData("s3", Profile, "s3")]
+    [InlineData("foo", null, "foo")]
+    [InlineData("foo", Profile, "foo")]
     [InlineData("S3; drop", null, "unknown")]
     public async Task NonSentinelOutput_IsRefusedWithoutSendingAProbe(string output, string? profile, string label)
     {
@@ -252,6 +254,39 @@ public sealed partial class ParserProbeEvidenceTests
         {
             Assert.Equal(ProbeOutcomes.CollectorOutputNotSentinel, bundle.Probe!.Outcome);
         }
+    }
+
+    [Theory]
+    [InlineData("azure-logs-ingestion", null, 200)]
+    [InlineData("azure-logs-ingestion", Profile, 200)]
+    [InlineData("ama-spool", null, 200)]
+    [InlineData("ama-spool", Profile, 200)]
+    [InlineData("relay", null, 200)]
+    [InlineData("relay", Profile, 200)]
+    [InlineData(null, null, 200)]
+    [InlineData(null, Profile, 200)]
+    [InlineData(null, null, 500)]
+    public async Task SentinelAllowlistedOrUnknownOutput_ProceedsAndOnlyTheQueryVerifies(string? output, string? profile, int statusCode)
+    {
+        ProbeEchoDestination destination = new();
+        FakeCollector collector = new(statusCode: statusCode, output: output);
+        EvidenceRunner runner = new(collector, destination, null, new FakeClock(TestEvents.Now));
+
+        EvidenceBundle bundle = await runner.RunAsync(
+            new EvidenceOptions
+            {
+                CollectorUrl = new Uri("http://collector.test:4319/"),
+                WorkspaceId = Workspace,
+                ProbeProfile = profile ?? ProbeProfiles.Generic
+            },
+            TestContext.Current.CancellationToken);
+
+        // Relay, a missing output field and unreadable status all proceed: the canary or probe
+        // is sent and only the Sentinel query (here an echoing fake) can verify it.
+        Assert.Equal(1, collector.Canaries + collector.Records);
+        Assert.Equal(EvidenceModes.Verified, bundle.Mode);
+        Assert.True(bundle.Arrival.Found);
+        Assert.DoesNotContain(bundle.Limitations, item => item.StartsWith("NOT SENTINEL", StringComparison.Ordinal));
     }
 
     [Theory]

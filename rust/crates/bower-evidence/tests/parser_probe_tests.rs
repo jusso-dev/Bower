@@ -76,10 +76,14 @@ impl FakeCollector {
     }
 
     fn with_output(output: &'static str) -> Arc<Self> {
+        Self::with_status_and_output(200, Some(output))
+    }
+
+    fn with_status_and_output(status_code: u16, output: Option<&'static str>) -> Arc<Self> {
         Arc::new(Self {
-            status_code: 200,
+            status_code,
             not_queued: None,
-            output: Some(output),
+            output,
             status_reads: Mutex::new(0),
             records: Mutex::new(0),
             canaries: Mutex::new(0),
@@ -263,6 +267,8 @@ async fn non_sentinel_output_is_refused_without_sending_a_probe() {
     for (output, profile, label) in [
         ("s3", probe::GENERIC, "s3"),
         ("s3", PROFILE, "s3"),
+        ("foo", probe::GENERIC, "foo"),
+        ("foo", PROFILE, "foo"),
         ("S3; drop", probe::GENERIC, "unknown"),
     ] {
         let collector = FakeCollector::with_output(output);
@@ -306,6 +312,50 @@ async fn non_sentinel_output_is_refused_without_sending_a_probe() {
                 bundle.probe.unwrap().outcome
             );
         }
+    }
+}
+
+/// C# `SentinelAllowlistedOrUnknownOutput_ProceedsAndOnlyTheQueryVerifies`.
+#[tokio::test]
+async fn sentinel_allowlisted_or_unknown_output_proceeds_and_only_the_query_verifies() {
+    for (output, profile, status) in [
+        (Some("azure-logs-ingestion"), probe::GENERIC, 200),
+        (Some("azure-logs-ingestion"), PROFILE, 200),
+        (Some("ama-spool"), probe::GENERIC, 200),
+        (Some("ama-spool"), PROFILE, 200),
+        (Some("relay"), probe::GENERIC, 200),
+        (Some("relay"), PROFILE, 200),
+        (None, probe::GENERIC, 200),
+        (None, PROFILE, 200),
+        (None, probe::GENERIC, 500),
+    ] {
+        let collector = FakeCollector::with_status_and_output(status, output);
+        let destination = EchoDestination::new("sha256:policy");
+        let mut options = options(Some(WORKSPACE));
+        options.probe_profile = profile.to_owned();
+
+        let bundle = runner(collector.clone(), Some(destination))
+            .run(&options)
+            .await
+            .unwrap();
+
+        // Relay, a missing output field and unreadable status all proceed: only the
+        // Sentinel query (an echoing fake here) can verify.
+        let case = format!("{output:?} {profile} {status}");
+        assert_eq!(
+            1,
+            *collector.canaries.lock().unwrap() + *collector.records.lock().unwrap(),
+            "{case}"
+        );
+        assert_eq!(modes::VERIFIED, bundle.mode, "{case}");
+        assert!(bundle.arrival.found, "{case}");
+        assert!(
+            !bundle
+                .limitations
+                .iter()
+                .any(|item| item.starts_with("NOT SENTINEL")),
+            "{case}"
+        );
     }
 }
 

@@ -159,15 +159,29 @@ pub(crate) fn text(value: Option<&Value>) -> Option<String> {
     value.and_then(Value::as_str).map(str::to_owned)
 }
 
-/// C# `ProbeOutcomes.NonSentinelOutput`: the non-Sentinel output a collector status body
-/// reports. Only short lowercase output ids are echoed; anything else reads as `unknown`.
+/// C# `ProbeOutcomes.SentinelOutputs`: outputs whose delivery a Sentinel query can prove
+/// (`relay` included: the relay's own output is unknown, so the query stays the only
+/// proof). An allowlist: any other value, including future outputs, refuses.
+pub const SENTINEL_OUTPUTS: [&str; 3] = ["azure-logs-ingestion", "ama-spool", "relay"];
+
+/// C# `ProbeOutcomes.NonSentinelOutput`: the output a collector status body reports when it
+/// is not on the Sentinel allowlist, or `None` (allowlisted, or no `output` field). Only
+/// short lowercase output ids are echoed; anything else, including a non-string value,
+/// reads as `unknown`.
 pub fn non_sentinel_output(status: Option<&Map<String, Value>>) -> Option<String> {
     let output = status?.get("output")?;
     if output.is_null() {
         return None;
     }
+    let output = text(Some(output));
+    if output
+        .as_deref()
+        .is_some_and(|output| SENTINEL_OUTPUTS.contains(&output))
+    {
+        return None;
+    }
     Some(
-        text(Some(output))
+        output
             .filter(|output| {
                 (1..=32).contains(&output.len())
                     && output
