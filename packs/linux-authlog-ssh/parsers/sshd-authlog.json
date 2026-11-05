@@ -2,14 +2,13 @@
   "version": "1.0",
   "format": "Json",
   "fields": [
-    { "sourceName": "id", "type": "Text", "ocsfPath": "metadata.uid", "asimField": "EventOriginalUid", "sensitive": false },
-    { "sourceName": "readAt", "type": "DateTime", "ocsfPath": null, "asimField": null, "sensitive": false },
-    { "sourceName": "message", "type": "Text", "ocsfPath": "message", "asimField": "EventMessage", "sensitive": true },
-    { "sourceName": "timestamp", "type": "DateTime", "ocsfPath": "time", "asimField": "TimeGenerated", "sensitive": true },
-    { "sourceName": "user", "type": "Text", "ocsfPath": "actor.user.name", "asimField": "TargetUsername", "sensitive": true },
-    { "sourceName": "source_ip", "type": "IpAddress", "ocsfPath": "src_endpoint.ip", "asimField": "SrcIpAddr", "sensitive": true },
-    { "sourceName": "result", "type": "Text", "ocsfPath": "status", "asimField": "EventResult", "sensitive": true },
-    { "sourceName": "reason", "type": "Text", "ocsfPath": "status_detail", "asimField": "EventResultDetails", "sensitive": true }
+    {"sourceName": "id", "type": "Text", "ocsfPath": "metadata.uid", "asimField": "EventOriginalUid", "sensitive": false},
+    {"sourceName": "message", "type": "Text", "ocsfPath": "message", "asimField": "EventMessage", "sensitive": true},
+    {"sourceName": "timestamp", "type": "DateTime", "ocsfPath": "time", "asimField": "TimeGenerated", "sensitive": true},
+    {"sourceName": "user", "type": "Text", "ocsfPath": "actor.user.name", "asimField": "TargetUsername", "sensitive": true},
+    {"sourceName": "source_ip", "type": "IpAddress", "ocsfPath": "src_endpoint.ip", "asimField": "SrcIpAddr", "sensitive": true},
+    {"sourceName": "result", "type": "Text", "ocsfPath": "status", "asimField": "EventResult", "sensitive": true},
+    {"sourceName": "reason", "type": "Text", "ocsfPath": "status_detail", "asimField": "EventResultDetails", "sensitive": true}
   ],
   "runtime": {
     "applicationName": "linux-sshd",
@@ -19,13 +18,15 @@
     "eventAction": "authentication.attempt",
     "eventResult": "failure",
     "transforms": [
-      ".m = regex_extract(.message, '^(?:(?<iso>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+(?:Z|[+\\-][0-9]{2}:[0-9]{2}))|(?<bsd>[A-Z][a-z]{2} [ 0-9][0-9] [0-9]{2}:[0-9]{2}:[0-9]{2})) [^ ]+ sshd\\[[0-9]+\\]: Failed (?<method>password|publickey|keyboard-interactive/pam) for (?:invalid user )?(?<user>[^ ]+) from (?<ip>[0-9A-Fa-f.:]+) port [0-9]+')",
-      "if .m.user != null { .result = \"failure\" } else { .result = \"ignored\" }",
+      ".t = regex_extract(.message, '^(?:(?<iso>[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+\\-](?:[01][0-9]|2[0-3]):[0-5][0-9]))|(?<bsd>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (?: [1-9]|[12][0-9]|3[01]) (?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9])) ')",
+      ".m = regex_extract(.message, '^(?:[^ ]+|[A-Z][a-z]{2} {1,2}[0-9]{1,2} [0-9:]{8}) [^ ]+ sshd(?:-session)?\\[[0-9]+\\]: Failed (?<method>password|publickey|keyboard-interactive/pam) for (?:invalid user )?(?<user>.*) from (?<ip>[0-9A-Fa-f.:]+) port [0-9]+ ssh2(?:: .*)?$')",
+      ".timestamp = coalesce(parse_timestamp(.t.iso, \"rfc3339\"), parse_timestamp(.t.bsd, \"rfc3164\"))",
+      "if .m.user != null && .timestamp != null { .result = \"failure\" } else { .result = \"ignored\" }",
       ".user = .m.user",
       ".source_ip = .m.ip",
       ".reason = lookup(\"methods\", .m.method)",
-      ".timestamp = coalesce(parse_timestamp(.m.iso, \"rfc3339\"), parse_timestamp(.m.bsd, \"rfc3164\"), .readAt)",
-      "del(.m)"
+      "del(.m)",
+      "del(.t)"
     ],
     "tables": {
       "methods": {
