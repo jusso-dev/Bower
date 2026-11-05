@@ -792,6 +792,22 @@ pub fn create_output(
                     .map_err(|error| HostError::new("InvalidOperationException", error.0))?,
             )
         }
+        // The token and CA bundle are read here, so a bad file stops start-up.
+        bower_output_http::OUTPUT_ID => {
+            let http = settings.http_output.as_ref().ok_or_else(|| {
+                HostError::new(
+                    "InvalidOperationException",
+                    "BOWER_OUTPUT=http requires BOWER_HTTP_URL and BOWER_HTTP_TOKEN_FILE (or BOWER_HTTP_TOKEN).",
+                )
+            })?;
+            Arc::new(
+                bower_output_http::HttpOutput::new(
+                    http.options(&settings.collector_id)?,
+                    &http.read_token()?,
+                )
+                .map_err(|error| HostError::new("InvalidOperationException", error.0))?,
+            )
+        }
         other => {
             return Err(HostError::new(
                 "InvalidOperationException",

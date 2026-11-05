@@ -353,7 +353,9 @@ public sealed partial class QueueDeliveryWorker(
 
     private static bool IsCredentialFailure(string code) => code is
         "destination-azure-credential-failed" or "destination-azure-http-401" or "destination-azure-http-403"
-        or "destination-s3-credential-failed" or "destination-s3-access-denied" or "destination-s3-kms-denied";
+        or "destination-s3-credential-failed" or "destination-s3-access-denied" or "destination-s3-kms-denied"
+        || code.StartsWith("destination-http-401", StringComparison.Ordinal)
+        || code.StartsWith("destination-http-403", StringComparison.Ordinal);
 
     private static string SafeFailureCode(string code) => code switch
     {
@@ -363,8 +365,13 @@ public sealed partial class QueueDeliveryWorker(
             or "payload-invalid-json" or "payload-event-id-mismatch" or "payload-too-large"
             or "destination-output-timeout" or "output-adapter-failure" or "output-result-missing" => code,
         _ when IsS3Code(code) => code,
+        _ when IsHttpOutputCode(Uncapped(code)) => Uncapped(code),
         _ => "delivery-failure"
     };
+
+    private static string Uncapped(string code) => code.EndsWith(":retry-after-capped", StringComparison.Ordinal)
+        ? code[..^":retry-after-capped".Length]
+        : code;
 
     private FailureSettlement ToSettlement(QueuedEvent item, DeliveryFailure failure)
     {
@@ -413,6 +420,7 @@ public sealed partial class QueueDeliveryWorker(
                 or "output-adapter-failure" or "output-result-missing" or "azure-http-400-isolated"
                 or "record-exceeds-ama-file-limit" => baseCode,
             _ when IsS3Code(baseCode) => baseCode,
+            _ when IsHttpOutputCode(baseCode) => baseCode,
             _ when IsHttpStatusCode(baseCode, "destination-azure-http-")
                 || IsHttpStatusCode(baseCode, "destination-relay-http-")
                 || IsHttpStatusCode(baseCode, "relay-http-")
@@ -429,6 +437,32 @@ public sealed partial class QueueDeliveryWorker(
         or "destination-s3-no-such-bucket" or "destination-s3-wrong-region" or "destination-s3-credential-failed"
         or "destination-s3-unavailable" or "destination-s3-cancelled"
         || IsHttpStatusCode(code, "destination-s3-http-");
+    /// <summary>
+    /// Codes of the HTTP output (<c>Bower.Output.Http</c>): fixed destination codes, or
+    /// <c>[destination-]http-&lt;status&gt;</c> with an optional <c>:hec-&lt;0-99&gt;</c>.
+    /// </summary>
+    internal static bool IsHttpOutputCode(string code)
+    {
+        if (code is "destination-http-unavailable" or "destination-http-timeout" or "destination-http-cancelled"
+            or "destination-http-response-invalid")
+        {
+            return true;
+        }
+
+        int hec = code.IndexOf(":hec-", StringComparison.Ordinal);
+        string status = hec < 0 ? code : code[..hec];
+        if (hec >= 0)
+        {
+            ReadOnlySpan<char> number = code.AsSpan(hec + ":hec-".Length);
+            if (number.Length is < 1 or > 2 || !char.IsAsciiDigit(number[0])
+                || (number.Length == 2 && (number[0] == '0' || !char.IsAsciiDigit(number[1]))))
+            {
+                return false;
+            }
+        }
+
+        return IsHttpStatusCode(status, "destination-http-") || IsHttpStatusCode(status, "http-");
+    }
 
     private static bool IsHttpStatusCode(string code, string prefix)
     {

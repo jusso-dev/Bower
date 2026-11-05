@@ -491,8 +491,9 @@ Neither has been exercised against a live tenant or account yet.
 | `BOWER_DELIVERY_TIMEOUT_SECONDS` | `240` | C# output cancellation deadline; at least 1 second and at least 30 seconds below the lease. Destination timeouts retain events for retry. |
 | `BOWER_HEALTH_RECORD_INTERVAL_SECONDS` | unset (off) | C#: queue a metadata-only `collector_health` record at startup and then every 60–3600 seconds, through the configured output, for destination-side monitoring. Startup fails unless the loaded policy accepts the record. [Details](docs/production-readiness/06-monitoring-and-runbooks.md#the-collector-health-record) |
 | `BOWER_POLICY_DIRECTORY` | `./policies/default` | Versioned policy YAML. |
-| `BOWER_OUTPUT` | `none` | `none`, `ama-spool`, `azure-logs-ingestion`, `relay` (deliver through a relay collector) or `s3` (NDJSON objects in Amazon S3; not Sentinel delivery). |
+| `BOWER_OUTPUT` | `none` | `none`, `ama-spool`, `azure-logs-ingestion`, `relay` (deliver through a relay collector), `s3` (NDJSON objects in Amazon S3; not Sentinel delivery) or `http` (Splunk HEC or an NDJSON endpoint; not Sentinel delivery). |
 | `BOWER_S3_BUCKET` / `BOWER_S3_REGION` / `BOWER_S3_PREFIX` / `BOWER_S3_SSE` / `BOWER_S3_KMS_KEY_ID` / `BOWER_S3_EXPECTED_BUCKET_OWNER` / `BOWER_S3_MAX_OBJECT_BYTES` / `BOWER_S3_MAX_OBJECT_EVENTS` / `BOWER_S3_GZIP` | — / — / `bower` / unset (bucket default) / — / — / `8388608` / `1000` / `true` | S3 output (`BOWER_OUTPUT=s3`). Keys are namespaced by `BOWER_COLLECTOR_ID`. Credentials come only from the AWS default chain; key settings are refused. [S3 output](docs/deployment/s3-output.md) |
+| `BOWER_HTTP_URL` / `BOWER_HTTP_FORMAT` / `BOWER_HTTP_TOKEN_FILE` / `BOWER_HTTP_TOKEN` / `BOWER_HTTP_CA_BUNDLE` / `BOWER_HTTP_HEC_*` / `BOWER_HTTP_MAX_BATCH_*` | — / `splunk-hec` | `BOWER_OUTPUT=http`: HTTPS endpoint, `splunk-hec` or `ndjson`, token (file preferred, never logged or hashed), extra CA roots, HEC index/sourcetype/source/host/channel and batch caps. Delivery means accepted by the endpoint, not Sentinel or indexed. [HTTP output](docs/deployment/http-splunk-hec-output.md) |
 | `BOWER_RELAY_URL` / `BOWER_RELAY_CLIENT_CERTIFICATE_FILE` / `BOWER_RELAY_CLIENT_KEY_FILE` / `BOWER_RELAY_CA_BUNDLE` | — | Downstream of a relay (`BOWER_OUTPUT=relay`): the relay's https URL and the mutual TLS client certificate. [Relay mode](docs/deployment/relay.md) |
 | `BOWER_MANAGEMENT_VIA_RELAY` | `false` | Send management traffic through the relay's tunnel; TLS to management stays end to end. Needs `BOWER_MANAGEMENT_AUTH=enrolment`. |
 | `BOWER_RELAY_LISTEN_URL` / `BOWER_RELAY_CERTIFICATE_FILE` / `BOWER_RELAY_KEY_FILE` / `BOWER_RELAY_DOWNSTREAMS_FILE` | — | Relay role: a mutual TLS listener for downstream collectors pinned in the downstreams file. [Relay mode](docs/deployment/relay.md) |
@@ -995,6 +996,11 @@ S3 mode (`BOWER_OUTPUT=s3`) writes the same envelopes as gzip NDJSON objects to 
 bucket, one conditional, checksummed and encrypted PUT per object, with credentials from
 the AWS default chain only. It is an extra sink, not Sentinel delivery. See
 [S3 output](docs/deployment/s3-output.md).
+
+HTTP mode (`BOWER_OUTPUT=http`) posts the stored envelopes to Splunk HTTP Event
+Collector or a generic NDJSON endpoint over HTTPS. An event counts as delivered when the
+endpoint accepted it (HEC `code` 0, or 24/25 near capacity); that is not Sentinel delivery and not proof of
+indexing. See [HTTP output](docs/deployment/http-splunk-hec-output.md).
 
 Failed uploads map back to their exact events; unattributable failures retry the
 whole batch, never count as delivered. Azure upload acknowledgement

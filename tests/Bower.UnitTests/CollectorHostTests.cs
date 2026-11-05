@@ -261,7 +261,7 @@ public sealed class CollectorHostTests
     }
 
     [Fact]
-    public async Task Status_ReportsTheOutputOnlyWhenItIsNotSentinel()
+    public async Task Status_ReportsTheConfiguredOutputAndOmitsItWithoutOne()
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         using TemporaryDirectory sentinel = new();

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <!-- IOutputAdapter and QueuedEvent; HttpClient, gzip and JSON come from the runtime. -->
+    <ProjectReference Include="../Bower.Abstractions/Bower.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Bower.UnitTests" />
+  </ItemGroup>
+</Project>

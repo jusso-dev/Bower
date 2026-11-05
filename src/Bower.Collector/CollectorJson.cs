@@ -80,8 +80,8 @@ internal sealed record StatusResponse(
     public StatusQueuePagesResponse? QueuePages { get; init; }
 
     /// <summary>
-    /// The configured output when it does not deliver to Sentinel (<c>s3</c>), so evidence
-    /// runners refuse to claim Sentinel delivery. Omitted for every other output.
+    /// Id of the configured output; omitted when there is none. Evidence runners refuse to
+    /// claim Sentinel delivery for outputs outside their Sentinel allowlist (<c>http</c>, <c>s3</c>).
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Output { get; init; }

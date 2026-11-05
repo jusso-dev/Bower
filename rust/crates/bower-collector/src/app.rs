@@ -176,16 +176,14 @@ impl DeliveryStatus {
             .and_then(OutputAdapter::concurrency_snapshot)
     }
 
-    /// C# status `output`: the configured output when it does not deliver to Sentinel
-    /// (`s3`), so evidence runners refuse to claim Sentinel delivery.
-    pub fn non_sentinel_output(&self) -> Option<String> {
+    /// Id of the configured output (`http`, `azure-logs-ingestion`, ...), or `None`.
+    pub fn output_id(&self) -> Option<String> {
         use bower_contracts::OutputAdapter;
         self.0
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .as_ref()
             .map(|output| output.id().to_string())
-            .filter(|id| id == "s3")
     }
 }
 
@@ -723,7 +721,8 @@ struct StatusBody<'a> {
     activity: Vec<ActivityBody>,
     /// Tap sessions and frame counters since start. Metadata only.
     tap: crate::tap::EventTapSnapshot,
-    /// The configured output when it does not deliver to Sentinel (`s3`); omitted otherwise.
+    /// Id of the configured output; omitted when there is none. Evidence runs refuse to
+    /// claim Sentinel delivery for outputs outside their Sentinel allowlist (`http`, `s3`).
     #[serde(skip_serializing_if = "Option::is_none")]
     output: Option<String>,
 }
@@ -980,7 +979,7 @@ async fn status(
                 })
                 .collect(),
             tap: state.tap.snapshot(),
-            output: state.delivery.non_sentinel_output(),
+            output: state.delivery.output_id(),
         },
     )
 }

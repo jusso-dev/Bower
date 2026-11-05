@@ -741,6 +741,7 @@
           "Bower.Jobs": "[0.1.1-dev.0, )",
           "Bower.Output.AmaSpool": "[0.1.1-dev.0, )",
           "Bower.Output.AzureLogsIngestion": "[0.1.1-dev.0, )",
+          "Bower.Output.Http": "[0.1.1-dev.0, )",
           "Bower.Output.S3": "[0.1.1-dev.0, )",
           "Bower.Packs": "[0.1.1-dev.0, )",
           "Bower.Source.Syslog": "[0.1.1-dev.0, )",
@@ -824,6 +825,12 @@
           "Azure.Monitor.Ingestion": "[1.2.0, )",
           "Bower.Abstractions": "[0.1.1-dev.0, )",
           "Bower.Dcr": "[0.1.1-dev.0, )"
+        }
+      },
+      "bower.output.http": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[0.1.1-dev.0, )"
         }
       },
       "bower.output.s3": {

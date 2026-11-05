@@ -81,6 +81,8 @@ pub struct CollectorSettings {
     pub ingest_requests_per_second: i32,
     pub maximum_delivery_attempts: i32,
     pub output_type: String,
+    /// `BOWER_HTTP_*` settings (`BOWER_OUTPUT=http`); `None` when none is set.
+    pub http_output: Option<crate::http_output::HttpOutputSettings>,
     pub ama_spool_path: PathBuf,
     pub stream_name: String,
     pub dce_endpoint: Option<Url>,
@@ -214,6 +216,7 @@ impl CollectorSettings {
             ingest_requests_per_second: 500,
             maximum_delivery_attempts: 20,
             output_type: "none".into(),
+            http_output: None,
             ama_spool_path: base_directory().join("spool"),
             stream_name: "Custom-BowerSecurity".into(),
             dce_endpoint: None,
@@ -340,6 +343,7 @@ impl CollectorSettings {
             output_type: read("BOWER_OUTPUT")
                 .unwrap_or_else(|| "none".into())
                 .to_lowercase(),
+            http_output: crate::http_output::HttpOutputSettings::from_environment(&read)?,
             ama_spool_path: read("BOWER_AMA_SPOOL_PATH")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| base_directory().join("spool")),
@@ -530,7 +534,7 @@ impl CollectorSettings {
 
         if !matches!(
             self.output_type.as_str(),
-            "none" | "ama-spool" | "azure-logs-ingestion" | "relay" | "s3"
+            "none" | "ama-spool" | "azure-logs-ingestion" | "relay" | "s3" | "http"
         ) {
             return Err(invalid(format!(
                 "Unsupported BOWER_OUTPUT value: {}",
@@ -614,6 +618,11 @@ impl CollectorSettings {
         self.validate_management_connection()?;
         self.validate_privacy_profile_source()?;
         self.validate_relay()?;
+        crate::http_output::HttpOutputSettings::validate(
+            &self.output_type,
+            self.http_output.as_ref(),
+            &self.collector_id,
+        )?;
         self.validate_tap()
     }
 
@@ -967,6 +976,11 @@ impl CollectorSettings {
                     .unwrap_or_default(),
                 dotnet_bool(self.relay_management_tunnel)
             ));
+        }
+        // HTTP output settings, appended only when set. Never the token.
+        if let Some(http) = &self.http_output {
+            material.push('\u{1f}');
+            material.push_str(&http.hash_material());
         }
         format!(
             "sha256:{}",

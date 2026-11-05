@@ -20,6 +20,7 @@ bower-integrity.workspace = true
 bower-output-ama-spool.workspace = true
 bower-output-azure.workspace = true
 bower-output-s3.workspace = true
+bower-output-http.workspace = true
 bower-packs.workspace = true
 bower-pipeline.workspace = true
 bower-persistence.workspace = true

@@ -1,0 +1,32 @@
+[package]
+name = "bower-output-http"
+description = "Bower HTTP output: Splunk HTTP Event Collector and generic NDJSON (port of Bower.Output.Http)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bower-contracts.workspace = true
+chrono.workspace = true
+flate2.workspace = true
+regex.workspace = true
+reqwest.workspace = true
+# CA bundle check: only self-signed roots (already compiled through reqwest and the collector).
+rustls.workspace = true
+x509-cert.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+rcgen.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+tokio-rustls.workspace = true
+
+[lints]
+workspace = true
