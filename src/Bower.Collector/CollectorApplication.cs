@@ -10,6 +10,7 @@ using Bower.Forwarding;
 using Bower.Jobs;
 using Bower.Output.AmaSpool;
 using Bower.Output.AzureLogsIngestion;
+using Bower.Output.Http;
 using Bower.Output.S3;
 using Bower.Packs;
 using Bower.Persistence;
@@ -514,7 +515,7 @@ public static partial class CollectorApplication
                         Tap = context.RequestServices.GetRequiredService<EventTap>().Snapshot(),
                         WindowsEventLog = context.RequestServices.GetService<WindowsEventLogSource>()?.Snapshot(),
                         QueuePages = pages is null ? null : StatusQueuePagesResponse.From(pages),
-                        Output = settings.OutputType == "s3" ? settings.OutputType : null,
+                        Output = context.RequestServices.GetService<IOutputAdapter>()?.Id,
                         DeliveryActivity = new StatusDeliveryActivityResponse(
                             activity.LastSuccessfulDeliveryAt, lastFailure?.Code, lastFailure?.At),
                         Storage = await QueueStorageStatus.TryCaptureAsync(
@@ -607,6 +608,9 @@ public static partial class CollectorApplication
                 },
                 settings.CollectorId),
             "s3" => new S3Output(settings.S3Output! with { CollectorId = settings.CollectorId }),
+            // The token and CA bundle are read here, so a bad file stops start-up.
+            HttpOutput.OutputId => new HttpOutput(
+                settings.HttpOutput!.Options(settings.CollectorId), settings.HttpOutput.ReadToken()),
             _ => throw new InvalidOperationException($"Unsupported BOWER_OUTPUT value: {settings.OutputType}")
         };
     }

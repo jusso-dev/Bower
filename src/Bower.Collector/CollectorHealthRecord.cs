@@ -78,7 +78,8 @@ public static class CollectorHealthRecord
     /// <summary>
     /// The destination refused this collector's identity: the credential failed
     /// (<c>destination-azure-credential-failed</c>, <c>destination-s3-credential-failed</c>) or
-    /// the role or key policy is missing (Azure HTTP 401/403, S3 access or KMS denied).
+    /// the role or key policy is missing (Azure HTTP 401/403, S3 access or KMS denied), or the
+    /// HTTP output's token was refused (<c>destination-http-401</c>/<c>-403</c>).
     /// Distinct from an unreachable destination, which the backlog problems cover.
     /// </summary>
     public const string DestinationCredential = "destination-credential";
@@ -86,7 +87,8 @@ public static class CollectorHealthRecord
     private static readonly string[] CredentialFailureCodes =
     [
         Bower.Output.AzureLogsIngestion.AzureLogsIngestionOutput.CredentialFailedCode, "destination-azure-http-401", "destination-azure-http-403",
-        Bower.Output.S3.S3Output.CredentialFailedCode, Bower.Output.S3.S3Output.AccessDeniedCode, Bower.Output.S3.S3Output.KmsDeniedCode
+        Bower.Output.S3.S3Output.CredentialFailedCode, Bower.Output.S3.S3Output.AccessDeniedCode, Bower.Output.S3.S3Output.KmsDeniedCode,
+        "destination-http-401", "destination-http-403"
     ];
 
     /// <summary>

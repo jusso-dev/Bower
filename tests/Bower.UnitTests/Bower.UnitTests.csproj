@@ -126,6 +126,11 @@
       <Link>windows-eventlog/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- HTTP output request and response vectors shared with the Rust port (rust/crates/bower-output-http). -->
+    <Content Include="../fixtures/http-output/*.json">
+      <Link>http-output-vectors/%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="../../rules/**/*.yml">
       <Link>rules/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

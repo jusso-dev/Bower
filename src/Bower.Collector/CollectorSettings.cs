@@ -116,6 +116,9 @@ public sealed record CollectorSettings
 
     public string OutputType { get; init; } = "none";
 
+    /// <summary>BOWER_HTTP_* settings (BOWER_OUTPUT=http); null when none is set.</summary>
+    public HttpOutputSettings? HttpOutput { get; init; }
+
     public string AmaSpoolPath { get; init; } = Path.Combine(AppContext.BaseDirectory, "spool");
 
     public string StreamName { get; init; } = "Custom-BowerSecurity";
@@ -345,6 +348,7 @@ public sealed record CollectorSettings
                 CriticalFreePercent = (int)Math.Clamp(ReadInt64(read, "BOWER_STORAGE_CRITICAL_FREE_PERCENT", 5), -1, 101)
             },
             OutputType = (read("BOWER_OUTPUT") ?? "none").ToLowerInvariant(),
+            HttpOutput = HttpOutputSettings.FromEnvironment(read),
             AmaSpoolPath = read("BOWER_AMA_SPOOL_PATH")
                 ?? Path.Combine(AppContext.BaseDirectory, "spool"),
             StreamName = read("BOWER_STREAM_NAME") ?? "Custom-BowerSecurity",
@@ -474,7 +478,7 @@ public sealed record CollectorSettings
                 "BOWER_HEALTH_RECORD_INTERVAL_SECONDS must be 0 (off) or between 60 and 3600.");
         }
 
-        if (OutputType is not ("none" or "ama-spool" or "azure-logs-ingestion" or "relay" or "s3"))
+        if (OutputType is not ("none" or "ama-spool" or "azure-logs-ingestion" or "relay" or "s3" or "http"))
         {
             throw new InvalidOperationException($"Unsupported BOWER_OUTPUT value: {OutputType}");
         }
@@ -536,6 +540,7 @@ public sealed record CollectorSettings
         ValidateManagementConnection();
         ValidatePrivacyProfileSource();
         ValidateRelay();
+        HttpOutputSettings.Validate(OutputType, HttpOutput, CollectorId);
         ValidateTap();
     }
 
@@ -870,6 +875,12 @@ public sealed record CollectorSettings
             material += '\u001f' + "relay-listen:" + RelayListenUrl.Host + ":" + RelayListenUrl.Port.ToString(CultureInfo.InvariantCulture)
                 + '\u001f' + "relay-downstreams:" + RelayDownstreamsFile
                 + '\u001f' + "relay-tunnel:" + RelayManagementTunnel.ToString();
+        }
+
+        // HTTP output settings, appended only when set. Never the token.
+        if (HttpOutput is not null)
+        {
+            material += '\u001f' + HttpOutput.HashMaterial();
         }
 
         return "sha256:" + Convert.ToHexStringLower(

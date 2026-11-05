@@ -1,0 +1,990 @@
+{
+  "_comment": "Shared HTTP output vectors (C# Bower.Output.Http and Rust bower-output-http). Bodies are exact bytes after the UTF-8 decode of these JSON strings. Token is test-only.",
+  "token": "11111111-2222-3333-4444-555555555555",
+  "requests": [
+    {
+      "name": "hec-defaults",
+      "options": {
+        "format": "splunk-hec"
+      },
+      "events": [
+        {
+          "eventId": "evt-0001",
+          "fingerprint": "sha256:0001",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-0001\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"},\"attributes\":{\"amount\":1.50,\"big\":12345678901234567890,\"tags\":[\"a\",\"b\"],\"nested\":{\"k\":null,\"t\":true}}}"
+        },
+        {
+          "eventId": "evt-0002",
+          "fingerprint": "sha256:0002",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-0002\",\"timeGenerated\":\"2026-11-05T11:02:03+10:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"},\"actor\":{\"username\":\"zo\\u00eb <admin>\",\"note\":\"line\\nbreak\"}}"
+        },
+        {
+          "eventId": "evt-0003",
+          "fingerprint": "sha256:0003",
+          "payload": "{\"eventId\":\"evt-0003\",\r\n  \"timeGenerated\":\"2026-11-05T01:02:03Z\",\n  \"eventType\":\"login_failed\"}"
+        }
+      ],
+      "expectedBodies": [
+        "{\"time\":1793840523.456,\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-0001\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"},\"attributes\":{\"amount\":1.50,\"big\":12345678901234567890,\"tags\":[\"a\",\"b\"],\"nested\":{\"k\":null,\"t\":true}}},\"fields\":{\"bower_event_id\":\"evt-0001\",\"bower_fingerprint\":\"sha256:0001\"}}\n{\"time\":1793840523.000,\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-0002\",\"timeGenerated\":\"2026-11-05T11:02:03+10:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"},\"actor\":{\"username\":\"zo\\u00eb <admin>\",\"note\":\"line\\nbreak\"}},\"fields\":{\"bower_event_id\":\"evt-0002\",\"bower_fingerprint\":\"sha256:0002\"}}\n{\"time\":1793840523.000,\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"eventId\":\"evt-0003\",  \"timeGenerated\":\"2026-11-05T01:02:03Z\",  \"eventType\":\"login_failed\"},\"fields\":{\"bower_event_id\":\"evt-0003\",\"bower_fingerprint\":\"sha256:0003\"}}\n"
+      ],
+      "expectedFailures": [],
+      "expectedHeaders": {
+        "authorization": "Splunk 11111111-2222-3333-4444-555555555555",
+        "content-type": "application/json; charset=utf-8"
+      },
+      "expectedAcknowledgement": "http:splunk-hec:endpoint-accepted"
+    },
+    {
+      "name": "hec-index-channel-metadata",
+      "options": {
+        "format": "splunk-hec",
+        "hecIndex": "security_events",
+        "hecChannel": "0aecaf82-3f0c-4c5d-9e2b-7a1f5d9c2b10",
+        "hecSource": "bower<&>'+`",
+        "hecSourceType": "bower:security:v1",
+        "hecHost": "hôte-😀"
+      },
+      "events": [
+        {
+          "eventId": "evt-0101",
+          "fingerprint": "fp \"quoted\" \\ slash",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-0101\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}"
+        }
+      ],
+      "expectedBodies": [
+        "{\"time\":1793840523.456,\"host\":\"h\\u00F4te-\\uD83D\\uDE00\",\"source\":\"bower\\u003C\\u0026\\u003E\\u0027\\u002B\\u0060\",\"sourcetype\":\"bower:security:v1\",\"index\":\"security_events\",\"event\":{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-0101\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}},\"fields\":{\"bower_event_id\":\"evt-0101\",\"bower_fingerprint\":\"fp \\u0022quoted\\u0022 \\\\ slash\"}}\n"
+      ],
+      "expectedFailures": [],
+      "expectedHeaders": {
+        "authorization": "Splunk 11111111-2222-3333-4444-555555555555",
+        "content-type": "application/json; charset=utf-8",
+        "x-splunk-request-channel": "0aecaf82-3f0c-4c5d-9e2b-7a1f5d9c2b10"
+      },
+      "expectedAcknowledgement": "http:splunk-hec:endpoint-accepted"
+    },
+    {
+      "name": "hec-event-time-rules",
+      "options": {
+        "format": "splunk-hec"
+      },
+      "events": [
+        {
+          "eventId": "evt-t1",
+          "fingerprint": "f",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-t1\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}"
+        },
+        {
+          "eventId": "evt-t2",
+          "fingerprint": "f",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-t2\",\"timeGenerated\":\"2026-11-05 01:02:03Z\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}"
+        },
+        {
+          "eventId": "evt-t3",
+          "fingerprint": "f",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-t3\",\"timeGenerated\":\"1969-12-31T23:59:59.999Z\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}"
+        },
+        {
+          "eventId": "evt-t4",
+          "fingerprint": "f",
+          "payload": "{\"eventId\":\"evt-t4\",\"timeGenerated\":null}"
+        },
+        {
+          "eventId": "evt-t5",
+          "fingerprint": "f",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-t5\",\"timeGenerated\":\"2026-02-30T00:00:00Z\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}"
+        },
+        {
+          "eventId": "evt-t6",
+          "fingerprint": "f",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-t6\",\"timeGenerated\":\"2026-11-05T01:02:03.12345678Z\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}"
+        },
+        {
+          "eventId": "evt-t7",
+          "fingerprint": "f",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-t7\",\"timeGenerated\":\"2026-11-05T01:02:03.999-14:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}"
+        },
+        {
+          "eventId": "evt-t8",
+          "fingerprint": "f",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-t8\",\"timeGenerated\":\"2026-11-05T01:02:03+14:30\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}"
+        },
+        {
+          "eventId": "evt-t9",
+          "fingerprint": "f",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-t9\",\"timeGenerated\":\"2026-11-05T01:02:60Z\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}"
+        },
+        {
+          "eventId": "evt-t10",
+          "fingerprint": "f",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-t10\",\"timeGenerated\":\"9999-12-31T23:59:59.9999999Z\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}"
+        },
+        {
+          "eventId": "evt-t11",
+          "fingerprint": "f",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-t11\",\"timeGenerated\":\"2026-11-05t01:02:03z\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}"
+        },
+        {
+          "eventId": "evt-t12",
+          "fingerprint": "f",
+          "payload": "{\"timeGenerated\":\"2026-11-05T01:02:03.5Z\",\"eventId\":\"evt-t12\"}"
+        }
+      ],
+      "expectedBodies": [
+        "{\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-t1\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}},\"fields\":{\"bower_event_id\":\"evt-t1\",\"bower_fingerprint\":\"f\"}}\n{\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-t2\",\"timeGenerated\":\"2026-11-05 01:02:03Z\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}},\"fields\":{\"bower_event_id\":\"evt-t2\",\"bower_fingerprint\":\"f\"}}\n{\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-t3\",\"timeGenerated\":\"1969-12-31T23:59:59.999Z\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}},\"fields\":{\"bower_event_id\":\"evt-t3\",\"bower_fingerprint\":\"f\"}}\n{\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"eventId\":\"evt-t4\",\"timeGenerated\":null},\"fields\":{\"bower_event_id\":\"evt-t4\",\"bower_fingerprint\":\"f\"}}\n{\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-t5\",\"timeGenerated\":\"2026-02-30T00:00:00Z\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}},\"fields\":{\"bower_event_id\":\"evt-t5\",\"bower_fingerprint\":\"f\"}}\n{\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-t6\",\"timeGenerated\":\"2026-11-05T01:02:03.12345678Z\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}},\"fields\":{\"bower_event_id\":\"evt-t6\",\"bower_fingerprint\":\"f\"}}\n{\"time\":1793890923.999,\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-t7\",\"timeGenerated\":\"2026-11-05T01:02:03.999-14:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}},\"fields\":{\"bower_event_id\":\"evt-t7\",\"bower_fingerprint\":\"f\"}}\n{\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-t8\",\"timeGenerated\":\"2026-11-05T01:02:03+14:30\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}},\"fields\":{\"bower_event_id\":\"evt-t8\",\"bower_fingerprint\":\"f\"}}\n{\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-t9\",\"timeGenerated\":\"2026-11-05T01:02:60Z\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}},\"fields\":{\"bower_event_id\":\"evt-t9\",\"bower_fingerprint\":\"f\"}}\n{\"time\":253402300799.999,\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-t10\",\"timeGenerated\":\"9999-12-31T23:59:59.9999999Z\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}},\"fields\":{\"bower_event_id\":\"evt-t10\",\"bower_fingerprint\":\"f\"}}\n{\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-t11\",\"timeGenerated\":\"2026-11-05t01:02:03z\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}},\"fields\":{\"bower_event_id\":\"evt-t11\",\"bower_fingerprint\":\"f\"}}\n{\"time\":1793840523.500,\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"timeGenerated\":\"2026-11-05T01:02:03.5Z\",\"eventId\":\"evt-t12\"},\"fields\":{\"bower_event_id\":\"evt-t12\",\"bower_fingerprint\":\"f\"}}\n"
+      ],
+      "expectedFailures": [],
+      "expectedHeaders": {
+        "authorization": "Splunk 11111111-2222-3333-4444-555555555555",
+        "content-type": "application/json; charset=utf-8"
+      },
+      "expectedAcknowledgement": "http:splunk-hec:endpoint-accepted"
+    },
+    {
+      "name": "poison-records",
+      "options": {
+        "format": "splunk-hec"
+      },
+      "events": [
+        {
+          "eventId": "evt-p1",
+          "fingerprint": "f",
+          "payload": "{\"eventId\":\"evt-p1\","
+        },
+        {
+          "eventId": "evt-p2",
+          "fingerprint": "f",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-other\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}"
+        },
+        {
+          "eventId": "evt-p3",
+          "fingerprint": "f",
+          "payload": "[\"evt-p3\"]"
+        },
+        {
+          "eventId": "evt-p4",
+          "fingerprint": "f",
+          "payload": "{\"eventId\":\"evt-p4\",\"eventId\":\"evt-p4\"}"
+        },
+        {
+          "eventId": "evt-p5",
+          "fingerprint": "f",
+          "payload": "{\"eventId\":7}"
+        },
+        {
+          "eventId": "evt-p6",
+          "fingerprint": "f",
+          "payload": "{\"eventId\":\"evt-p6\"} {}"
+        },
+        {
+          "eventId": "evt-p7",
+          "fingerprint": "f",
+          "payload": "{\"timeGenerated\":\"2026-11-05T01:02:03Z\"}"
+        },
+        {
+          "eventId": "evt-p8",
+          "fingerprint": "f",
+          "payload": "{\"eventId\":\"evt-p8\",\"deep\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}"
+        },
+        {
+          "eventId": "evt-p9",
+          "fingerprint": "f",
+          "payload": "{\"eventId\":\"evt-p9\",\"ok\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}"
+        },
+        {
+          "eventId": "evt-p10",
+          "fingerprint": "f",
+          "payload": "{\"event\\u0049d\":\"evt-p10\"}"
+        },
+        {
+          "eventId": "evt-p11",
+          "fingerprint": "f",
+          "payload": "{\"eventId\":\"evt-p11\",\"timeGenerated\":5}"
+        },
+        {
+          "eventId": "evt-p12",
+          "fingerprint": "f",
+          "payload": "{\"eventId\":\"evt-p12\",}"
+        }
+      ],
+      "expectedBodies": [
+        "{\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"eventId\":\"evt-p9\",\"ok\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]},\"fields\":{\"bower_event_id\":\"evt-p9\",\"bower_fingerprint\":\"f\"}}\n{\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"event\\u0049d\":\"evt-p10\"},\"fields\":{\"bower_event_id\":\"evt-p10\",\"bower_fingerprint\":\"f\"}}\n"
+      ],
+      "expectedFailures": [
+        {
+          "eventId": "evt-p1",
+          "code": "payload-invalid-json"
+        },
+        {
+          "eventId": "evt-p2",
+          "code": "payload-event-id-mismatch"
+        },
+        {
+          "eventId": "evt-p3",
+          "code": "payload-invalid-json"
+        },
+        {
+          "eventId": "evt-p4",
+          "code": "payload-invalid-json"
+        },
+        {
+          "eventId": "evt-p5",
+          "code": "payload-invalid-json"
+        },
+        {
+          "eventId": "evt-p6",
+          "code": "payload-invalid-json"
+        },
+        {
+          "eventId": "evt-p7",
+          "code": "payload-event-id-mismatch"
+        },
+        {
+          "eventId": "evt-p8",
+          "code": "payload-invalid-json"
+        },
+        {
+          "eventId": "evt-p11",
+          "code": "payload-invalid-json"
+        },
+        {
+          "eventId": "evt-p12",
+          "code": "payload-invalid-json"
+        }
+      ],
+      "expectedHeaders": {
+        "authorization": "Splunk 11111111-2222-3333-4444-555555555555",
+        "content-type": "application/json; charset=utf-8"
+      },
+      "expectedAcknowledgement": "http:splunk-hec:endpoint-accepted"
+    },
+    {
+      "name": "event-count-cap",
+      "options": {
+        "format": "splunk-hec",
+        "maximumBatchEvents": 2
+      },
+      "events": [
+        {
+          "eventId": "evt-c0",
+          "fingerprint": "f0",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-c0\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}"
+        },
+        {
+          "eventId": "evt-c1",
+          "fingerprint": "f1",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-c1\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}"
+        },
+        {
+          "eventId": "evt-c2",
+          "fingerprint": "f2",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-c2\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}"
+        },
+        {
+          "eventId": "evt-c3",
+          "fingerprint": "f3",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-c3\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}"
+        },
+        {
+          "eventId": "evt-c4",
+          "fingerprint": "f4",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-c4\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}"
+        }
+      ],
+      "expectedBodies": [
+        "{\"time\":1793840523.456,\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-c0\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}},\"fields\":{\"bower_event_id\":\"evt-c0\",\"bower_fingerprint\":\"f0\"}}\n{\"time\":1793840523.456,\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-c1\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}},\"fields\":{\"bower_event_id\":\"evt-c1\",\"bower_fingerprint\":\"f1\"}}\n",
+        "{\"time\":1793840523.456,\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-c2\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}},\"fields\":{\"bower_event_id\":\"evt-c2\",\"bower_fingerprint\":\"f2\"}}\n{\"time\":1793840523.456,\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-c3\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}},\"fields\":{\"bower_event_id\":\"evt-c3\",\"bower_fingerprint\":\"f3\"}}\n",
+        "{\"time\":1793840523.456,\"host\":\"edge-01\",\"source\":\"bower\",\"sourcetype\":\"bower:security\",\"event\":{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-c4\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}},\"fields\":{\"bower_event_id\":\"evt-c4\",\"bower_fingerprint\":\"f4\"}}\n"
+      ],
+      "expectedFailures": [],
+      "expectedHeaders": {
+        "authorization": "Splunk 11111111-2222-3333-4444-555555555555",
+        "content-type": "application/json; charset=utf-8"
+      },
+      "expectedAcknowledgement": "http:splunk-hec:endpoint-accepted"
+    },
+    {
+      "name": "byte-cap-and-oversize-record",
+      "options": {
+        "format": "ndjson",
+        "maximumBatchBytes": 1024
+      },
+      "events": [
+        {
+          "eventId": "evt-b1",
+          "fingerprint": "f",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-b1\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"},\"pad\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"
+        },
+        {
+          "eventId": "evt-b2",
+          "fingerprint": "f",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-b2\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"},\"pad\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}"
+        },
+        {
+          "eventId": "evt-b3",
+          "fingerprint": "f",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-b3\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"},\"pad\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"}"
+        },
+        {
+          "eventId": "evt-b4",
+          "fingerprint": "f",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-b4\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"},\"pad\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"}"
+        },
+        {
+          "eventId": "evt-b5",
+          "fingerprint": "f",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-b5\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"},\"pad\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"}"
+        }
+      ],
+      "expectedBodies": [
+        "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-b1\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"},\"pad\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n",
+        "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-b2\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"},\"pad\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}\n",
+        "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-b4\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"},\"pad\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"}\n{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-b5\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"},\"pad\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"}\n"
+      ],
+      "expectedFailures": [
+        {
+          "eventId": "evt-b3",
+          "code": "payload-too-large"
+        }
+      ],
+      "expectedHeaders": {
+        "authorization": "Bearer 11111111-2222-3333-4444-555555555555",
+        "content-type": "application/x-ndjson; charset=utf-8"
+      },
+      "expectedAcknowledgement": "http:ndjson:endpoint-accepted"
+    },
+    {
+      "name": "ndjson-bearer",
+      "options": {
+        "format": "ndjson"
+      },
+      "events": [
+        {
+          "eventId": "evt-n1",
+          "fingerprint": "f",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-n1\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}"
+        },
+        {
+          "eventId": "evt-n2",
+          "fingerprint": "f",
+          "payload": "{\"eventId\":\"evt-n2\",\r\n\"v\":\"a\\r\\nb\"}"
+        }
+      ],
+      "expectedBodies": [
+        "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-n1\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}\n{\"eventId\":\"evt-n2\",\"v\":\"a\\r\\nb\"}\n"
+      ],
+      "expectedFailures": [],
+      "expectedHeaders": {
+        "authorization": "Bearer 11111111-2222-3333-4444-555555555555",
+        "content-type": "application/x-ndjson; charset=utf-8"
+      },
+      "expectedAcknowledgement": "http:ndjson:endpoint-accepted"
+    },
+    {
+      "name": "ndjson-named-header-gzip",
+      "options": {
+        "format": "ndjson",
+        "authorizationHeader": "X-Api-Key",
+        "gzip": true
+      },
+      "events": [
+        {
+          "eventId": "evt-g1",
+          "fingerprint": "f",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-g1\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}"
+        }
+      ],
+      "expectedBodies": [
+        "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-g1\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}\n"
+      ],
+      "expectedFailures": [],
+      "expectedHeaders": {
+        "x-api-key": "11111111-2222-3333-4444-555555555555",
+        "content-type": "application/x-ndjson; charset=utf-8",
+        "content-encoding": "gzip"
+      },
+      "expectedAcknowledgement": "http:ndjson:endpoint-accepted"
+    },
+    {
+      "name": "ndjson-authorization-any-case",
+      "options": {
+        "format": "ndjson",
+        "authorizationHeader": "authorization"
+      },
+      "events": [
+        {
+          "eventId": "evt-a1",
+          "fingerprint": "f",
+          "payload": "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-a1\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}"
+        }
+      ],
+      "expectedBodies": [
+        "{\"schemaVersion\":\"1.0\",\"eventId\":\"evt-a1\",\"timeGenerated\":\"2026-11-05T01:02:03.4567891+00:00\",\"eventCategory\":\"authentication\",\"eventType\":\"login_failed\",\"application\":{\"name\":\"shop\",\"environment\":\"prod\"}}\n"
+      ],
+      "expectedFailures": [],
+      "expectedHeaders": {
+        "authorization": "Bearer 11111111-2222-3333-4444-555555555555",
+        "content-type": "application/x-ndjson; charset=utf-8"
+      },
+      "expectedAcknowledgement": "http:ndjson:endpoint-accepted"
+    },
+    {
+      "name": "all-poison-sends-nothing",
+      "options": {
+        "format": "splunk-hec"
+      },
+      "events": [
+        {
+          "eventId": "evt-z1",
+          "fingerprint": "f",
+          "payload": "not json"
+        }
+      ],
+      "expectedBodies": [],
+      "expectedFailures": [
+        {
+          "eventId": "evt-z1",
+          "code": "payload-invalid-json"
+        }
+      ],
+      "expectedHeaders": {
+        "authorization": "Splunk 11111111-2222-3333-4444-555555555555",
+        "content-type": "application/json; charset=utf-8"
+      },
+      "expectedAcknowledgement": null
+    }
+  ],
+  "responses": [
+    {
+      "name": "hec-success",
+      "format": "splunk-hec",
+      "status": 200,
+      "body": "{\"text\":\"Success\",\"code\":0}",
+      "accepted": true,
+      "code": null,
+      "retryable": null,
+      "destination": false,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-success-with-ack-id",
+      "format": "splunk-hec",
+      "status": 200,
+      "body": "{\"text\":\"Success\",\"code\":0,\"ackId\":7}",
+      "accepted": true,
+      "code": null,
+      "retryable": null,
+      "destination": false,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-success-negative-zero",
+      "format": "splunk-hec",
+      "status": 200,
+      "body": "{\"code\":-0}",
+      "accepted": true,
+      "code": null,
+      "retryable": null,
+      "destination": false,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "ndjson-2xx-any-body",
+      "format": "ndjson",
+      "status": 202,
+      "body": "<html>accepted</html>",
+      "accepted": true,
+      "code": null,
+      "retryable": null,
+      "destination": false,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "ndjson-204-no-body",
+      "format": "ndjson",
+      "status": 204,
+      "body": null,
+      "accepted": true,
+      "code": null,
+      "retryable": null,
+      "destination": false,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-200-html",
+      "format": "splunk-hec",
+      "status": 200,
+      "body": "<html>proxy login</html>",
+      "code": "destination-http-response-invalid",
+      "retryable": true,
+      "accepted": false,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-200-empty",
+      "format": "splunk-hec",
+      "status": 200,
+      "body": null,
+      "code": "destination-http-response-invalid",
+      "retryable": true,
+      "accepted": false,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-200-code-string",
+      "format": "splunk-hec",
+      "status": 200,
+      "body": "{\"code\":\"0\"}",
+      "code": "destination-http-response-invalid",
+      "retryable": true,
+      "accepted": false,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-200-code-decimal",
+      "format": "splunk-hec",
+      "status": 200,
+      "body": "{\"code\":0.0}",
+      "code": "destination-http-response-invalid",
+      "retryable": true,
+      "accepted": false,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-200-nonzero-code",
+      "format": "splunk-hec",
+      "status": 200,
+      "body": "{\"code\":17}",
+      "code": "destination-http-response-invalid",
+      "retryable": true,
+      "accepted": false,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-200-array",
+      "format": "splunk-hec",
+      "status": 200,
+      "body": "[{\"code\":0}]",
+      "code": "destination-http-response-invalid",
+      "retryable": true,
+      "accepted": false,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-200-too-deep",
+      "format": "splunk-hec",
+      "status": 200,
+      "body": "{\"code\":0,\"x\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}",
+      "code": "destination-http-response-invalid",
+      "retryable": true,
+      "accepted": false,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-200-oversize",
+      "format": "splunk-hec",
+      "status": 200,
+      "body": "{\"text\":\"Success\",\"code\":0}",
+      "bodyPadding": 70000,
+      "code": "destination-http-response-invalid",
+      "retryable": true,
+      "accepted": false,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "location": null
+    },
+    {
+      "name": "hec-200-trailing-garbage",
+      "format": "splunk-hec",
+      "status": 200,
+      "body": "{\"code\":0}x",
+      "code": "destination-http-response-invalid",
+      "retryable": true,
+      "accepted": false,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-400-incorrect-index",
+      "format": "splunk-hec",
+      "status": 400,
+      "body": "{\"text\":\"Incorrect index\",\"code\":7,\"invalid-event-number\":0}",
+      "code": "http-400:hec-7",
+      "retryable": false,
+      "accepted": false,
+      "destination": false,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-400-invalid-format",
+      "format": "splunk-hec",
+      "status": 400,
+      "body": "{\"text\":\"Invalid data format\",\"code\":6,\"invalid-event-number\":3}",
+      "code": "http-400:hec-6",
+      "retryable": false,
+      "accepted": false,
+      "destination": false,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-400-code-out-of-range",
+      "format": "splunk-hec",
+      "status": 400,
+      "body": "{\"code\":100}",
+      "code": "http-400",
+      "retryable": false,
+      "accepted": false,
+      "destination": false,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-400-code-negative",
+      "format": "splunk-hec",
+      "status": 400,
+      "body": "{\"code\":-1}",
+      "code": "http-400",
+      "retryable": false,
+      "accepted": false,
+      "destination": false,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-400-duplicate-code-last-wins",
+      "format": "splunk-hec",
+      "status": 400,
+      "body": "{\"code\":6,\"code\":7}",
+      "code": "http-400:hec-7",
+      "retryable": false,
+      "accepted": false,
+      "destination": false,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-400-hostile-text",
+      "format": "splunk-hec",
+      "status": 400,
+      "body": "{\"text\":\"Bearer secret-in-body \\n injected\",\"code\":12}",
+      "code": "http-400:hec-12",
+      "retryable": false,
+      "accepted": false,
+      "destination": false,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-401-token-required",
+      "format": "splunk-hec",
+      "status": 401,
+      "body": "{\"text\":\"Token is required\",\"code\":2}",
+      "code": "destination-http-401:hec-2",
+      "retryable": true,
+      "accepted": false,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-403-invalid-token",
+      "format": "splunk-hec",
+      "status": 403,
+      "body": "{\"text\":\"Invalid token\",\"code\":4}",
+      "code": "destination-http-403:hec-4",
+      "retryable": true,
+      "accepted": false,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-403-token-disabled",
+      "format": "splunk-hec",
+      "status": 403,
+      "body": "{\"text\":\"Token disabled\",\"code\":1}",
+      "code": "destination-http-403:hec-1",
+      "retryable": true,
+      "accepted": false,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "ndjson-401-body-ignored",
+      "format": "ndjson",
+      "status": 401,
+      "body": "{\"code\":2}",
+      "code": "destination-http-401",
+      "retryable": true,
+      "accepted": false,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "ndjson-403",
+      "format": "ndjson",
+      "status": 403,
+      "body": null,
+      "code": "destination-http-403",
+      "retryable": true,
+      "accepted": false,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-404",
+      "format": "splunk-hec",
+      "status": 404,
+      "body": "not found",
+      "code": "destination-http-404",
+      "retryable": true,
+      "accepted": false,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-408",
+      "format": "splunk-hec",
+      "status": 408,
+      "body": null,
+      "code": "destination-http-408",
+      "retryable": true,
+      "accepted": false,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-429-retry-after",
+      "format": "splunk-hec",
+      "status": 429,
+      "body": null,
+      "retryAfter": "30",
+      "code": "destination-http-429",
+      "retryable": true,
+      "retryAfterSeconds": 30,
+      "accepted": false,
+      "destination": true,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-500-internal",
+      "format": "splunk-hec",
+      "status": 500,
+      "body": "{\"text\":\"Internal server error\",\"code\":8}",
+      "code": "destination-http-500:hec-8",
+      "retryable": true,
+      "accepted": false,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-503-busy-capped",
+      "format": "splunk-hec",
+      "status": 503,
+      "body": "{\"text\":\"Server is busy\",\"code\":9}",
+      "retryAfter": "7200",
+      "code": "destination-http-503:hec-9",
+      "retryable": true,
+      "retryAfterSeconds": 3600,
+      "accepted": false,
+      "destination": true,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-503-retry-after-zero",
+      "format": "splunk-hec",
+      "status": 503,
+      "body": null,
+      "retryAfter": "0",
+      "code": "destination-http-503",
+      "retryable": true,
+      "accepted": false,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-503-retry-after-garbage",
+      "format": "splunk-hec",
+      "status": 503,
+      "body": null,
+      "retryAfter": "soon",
+      "code": "destination-http-503",
+      "retryable": true,
+      "accepted": false,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "ndjson-502",
+      "format": "ndjson",
+      "status": 502,
+      "body": null,
+      "retryAfter": "5",
+      "code": "destination-http-502",
+      "retryable": true,
+      "retryAfterSeconds": 5,
+      "accepted": false,
+      "destination": true,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-302-no-redirect",
+      "format": "splunk-hec",
+      "status": 302,
+      "body": null,
+      "location": "https://elsewhere.example.test/",
+      "code": "destination-http-302",
+      "retryable": true,
+      "accepted": false,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0
+    },
+    {
+      "name": "hec-405",
+      "format": "splunk-hec",
+      "status": 405,
+      "body": null,
+      "code": "http-405",
+      "retryable": false,
+      "accepted": false,
+      "destination": false,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "hec-413-single",
+      "format": "splunk-hec",
+      "status": 413,
+      "body": "{\"text\":\"Content too large\",\"code\":27}",
+      "code": "http-413:hec-27",
+      "retryable": false,
+      "accepted": false,
+      "destination": false,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "ndjson-418",
+      "format": "ndjson",
+      "status": 418,
+      "body": null,
+      "code": "http-418",
+      "retryable": false,
+      "accepted": false,
+      "destination": false,
+      "retryAfterSeconds": null,
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null
+    },
+    {
+      "name": "ndjson-400-retry-after-ignored",
+      "format": "ndjson",
+      "status": 400,
+      "body": null,
+      "retryAfter": "30",
+      "code": "http-400",
+      "retryable": false,
+      "accepted": false,
+      "destination": false,
+      "retryAfterSeconds": null,
+      "bodyPadding": 0,
+      "location": null
+    }
+  ]
+}
