@@ -63,12 +63,17 @@ public sealed partial class ManagementStore
     /// <summary>Stores a pending request. Null when the collector does not exist.</summary>
     /// <exception cref="ArgumentException">The reason is missing or too long.</exception>
     /// <exception cref="CollectorStateException">The collector is not approved or active.</exception>
-    /// <exception cref="SourceSetupConflictException">The collector has too many pending requests.</exception>
+    /// <exception cref="SourceSetupConflictException">
+    /// The collector has too many pending requests, or <paramref name="pendingConflict"/> found a
+    /// clash with another pending request of the same type (checked inside the write transaction,
+    /// so two simultaneous submissions cannot both pass).
+    /// </exception>
     internal async Task<SourceSetupRow?> SubmitSourceSetupAsync(
         string sourceType,
         string collectorId,
         IReadOnlyDictionary<string, string> values,
         SourceSetupPlan plan,
+        Func<IReadOnlyList<SourceSetupRow>, string?>? pendingConflict,
         string? reason,
         string actorObjectId,
         string actorName,
@@ -78,8 +83,8 @@ public sealed partial class ManagementStore
         string trimmed = RequireText(reason, nameof(reason));
         string id = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
-        await using SqliteTransaction transaction =
-            (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        // BEGIN IMMEDIATE: the write lock is taken before the checks below read anything.
+        await using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
         string? status = await ScalarAsync(
             connection, transaction, "SELECT status FROM collectors WHERE id = $id;", ("$id", collectorId), cancellationToken);
         if (status is null)
@@ -102,6 +107,11 @@ public sealed partial class ManagementStore
         {
             throw new SourceSetupConflictException(
                 $"This collector already has {MaximumPendingSourceSetupsPerCollector} source setup requests waiting for approval.");
+        }
+
+        if (pendingConflict?.Invoke(await PendingSourceSetupsAsync(connection, transaction, collectorId, sourceType, null, cancellationToken)) is { } clash)
+        {
+            throw new SourceSetupConflictException(clash);
         }
 
         await CommandAsync(
@@ -139,10 +149,14 @@ public sealed partial class ManagementStore
 
     /// <summary>Approves or rejects a pending request. The requester can never decide it. Null when it does not exist.</summary>
     /// <exception cref="ArgumentException">The reason is missing or too long.</exception>
-    /// <exception cref="SourceSetupConflictException">Four-eyes or state conflict.</exception>
+    /// <exception cref="SourceSetupConflictException">
+    /// Four-eyes or state conflict, or on approval <paramref name="approvalConflict"/> found a clash
+    /// between this request and another pending one of the same type.
+    /// </exception>
     internal async Task<SourceSetupRow?> ReviewSourceSetupAsync(
         string id,
         bool approve,
+        Func<SourceSetupRow, IReadOnlyList<SourceSetupRow>, string?>? approvalConflict,
         string? reason,
         string reviewerObjectId,
         string reviewerName,
@@ -151,29 +165,27 @@ public sealed partial class ManagementStore
     {
         string trimmed = RequireText(reason, nameof(reason));
         await using SqliteConnection connection = await OpenAsync(cancellationToken);
-        await using SqliteTransaction transaction =
-            (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
-        string? status = null;
-        string? requester = null;
+        await using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        SourceSetupRow? row = null;
         await using (SqliteCommand select = connection.CreateCommand())
         {
             select.Transaction = transaction;
-            select.CommandText = "SELECT status, requested_by_object_id FROM source_setup_requests WHERE id = $id;";
+            select.CommandText = $"SELECT {SourceSetupColumns} FROM source_setup_requests WHERE id = $id;";
             select.Parameters.AddWithValue("$id", id);
             await using SqliteDataReader reader = await select.ExecuteReaderAsync(cancellationToken);
             if (await reader.ReadAsync(cancellationToken))
             {
-                status = reader.GetString(0);
-                requester = reader.GetString(1);
+                row = ReadSourceSetup(reader);
             }
         }
 
-        if (status is null)
+        if (row is null)
         {
             return null;
         }
 
-        if (string.Equals(requester, reviewerObjectId, StringComparison.Ordinal))
+        string status = row.Status;
+        if (string.Equals(row.RequestedByObjectId, reviewerObjectId, StringComparison.Ordinal))
         {
             // Refusals are audited too: a self-approval attempt is worth seeing.
             await InsertAuditAsync(
@@ -186,6 +198,13 @@ public sealed partial class ManagementStore
         if (status != SourceSetupRequestStatus.PendingReview)
         {
             throw new SourceSetupConflictException("Only source setup requests waiting for approval can be decided.");
+        }
+
+        // Re-check on approval: covers pending pairs stored before submission was atomic.
+        if (approve
+            && approvalConflict?.Invoke(row, await PendingSourceSetupsAsync(connection, transaction, row.CollectorId, row.Type, id, cancellationToken)) is { } clash)
+        {
+            throw new SourceSetupConflictException(clash);
         }
 
         await CommandAsync(
@@ -223,6 +242,53 @@ public sealed partial class ManagementStore
         await using SqliteCommand command = connection.CreateCommand();
         command.CommandText =
             $"SELECT {SourceSetupColumns} FROM source_setup_requests ORDER BY requested_at DESC, rowid DESC LIMIT 200;";
+        List<SourceSetupRow> rows = [];
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(ReadSourceSetup(reader));
+        }
+
+        return rows;
+    }
+
+    /// <summary>Every pending or approved request of one type for one collector, for duplicate checks.</summary>
+    internal async Task<IReadOnlyList<SourceSetupRow>> ListLiveSourceSetupsAsync(
+        string collectorId, string sourceType, CancellationToken cancellationToken)
+    {
+        await using SqliteConnection connection = await OpenAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT {SourceSetupColumns} FROM source_setup_requests "
+            + "WHERE collector_id = $collector AND source_type = $type AND status IN ('pending-review', 'approved');";
+        command.Parameters.AddWithValue("$collector", collectorId);
+        command.Parameters.AddWithValue("$type", sourceType);
+        List<SourceSetupRow> rows = [];
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(ReadSourceSetup(reader));
+        }
+
+        return rows;
+    }
+
+    private static async Task<IReadOnlyList<SourceSetupRow>> PendingSourceSetupsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string collectorId,
+        string sourceType,
+        string? exceptId,
+        CancellationToken cancellationToken)
+    {
+        await using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            $"SELECT {SourceSetupColumns} FROM source_setup_requests "
+            + "WHERE collector_id = $collector AND source_type = $type AND status = 'pending-review' AND id <> $except;";
+        command.Parameters.AddWithValue("$collector", collectorId);
+        command.Parameters.AddWithValue("$type", sourceType);
+        command.Parameters.AddWithValue("$except", exceptId ?? string.Empty);
         List<SourceSetupRow> rows = [];
         await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))

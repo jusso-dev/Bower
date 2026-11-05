@@ -384,6 +384,20 @@ use existing authenticated heartbeat metadata. Preview samples are synthetic and
 redacted server-side; failed redaction prevents submission. A healthy check-in is
 not Sentinel evidence, and an old source event cannot complete a new request.
 
+File source plans never read the named file. They name one Linux file inside one
+allowed directory, with no wildcards or traversal and not the whole disk. Kernel,
+device, systemd credential (`/run/credentials`, also as `/var/run/credentials`)
+and Bower's own configuration, secret, state, spool and log directories are
+refused for both the allowed directory and the file, so a parent directory named
+in the plan cannot reach into them. These checks compare path text: the server
+cannot see host links, so an allowed directory that is a link into a refused
+directory (the collector allows a linked allowed directory) is the host
+administrator's responsibility. Each plan routes the file to one shipped signed pack
+parser, so a request cannot widen collection to arbitrary files or unparsed
+lines. Duplicate pending requests are refused inside the store transaction. File
+requests share their parser's application identity, so the server-side check
+never reports one as working on that evidence alone.
+
 An operator requests a plan and a different approver decides it; the API enforces
 this independently of UI controls and audits both decisions and self-review
 refusals. Approved plans can be signed by an opt-in server-side P-256 key. The

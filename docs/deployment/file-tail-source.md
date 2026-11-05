@@ -33,6 +33,12 @@ they are redacted before persistence.
 
 ## Configure
 
+The management console can generate this file. **Sources**, **Security-selected file**
+(source type `file`) produces `file-source.json` for one input, with Linux paths only and
+the `linux-authlog-ssh` parser. A different approver reviews it, and the signed download
+is installed by an operator. See [guided source setup](../operations/console-sources.md#security-selected-files)
+for its path, parser and duplicate rules. You can also write the file by hand.
+
 Set `BOWER_FILE_CONFIG` to a JSON file (at most 256 KiB). An invalid file, an unknown
 property, or a route that does not name an active parser of a loaded signed pack stops
 start-up and refuses a signed `reload`.
@@ -373,7 +379,9 @@ pack's `applicationName`/`environment` in `BOWER_SOURCE_EXPECTATIONS` to degrade
   no device/inode use, no grace window, no copy drain, no durable rotation state, no
   late-write gap counting). Giving it the rotation-loss fixes would change its output and
   its cursor, and is a separate change.
-- There is no management API source type or console page for the file source yet.
+- The heartbeat does not carry per-input file tail metadata yet, so the console check
+  for a `file` request cannot verify one input on its own (see
+  [guided source setup](../operations/console-sources.md#security-selected-files)).
 - Periodic `collector_health` records do not include file tail counters yet.
 - Each line commits on its own; group commit (as the Windows Event Log source uses) is
   not applied here.

@@ -51,6 +51,23 @@ internal abstract class SourceSetupType
     {
     }
 
+    /// <summary>
+    /// Plan-time checks against this type's other pending or approved requests for the same
+    /// collector (for example duplicate input names). Adds failing checks, or warnings for
+    /// conditions the person asking should see but that do not block the request.
+    /// </summary>
+    public virtual void ValidateAgainst(
+        IReadOnlyDictionary<string, string> values, IEnumerable<SourceSetupRow> existing, List<SetupCheck> checks)
+    {
+    }
+
+    /// <summary>
+    /// The clash that stops these values joining this type's other pending requests for the same
+    /// collector, or null. The store calls it inside the submit and approve transactions, so it
+    /// holds under concurrent requests; <see cref="ValidateAgainst"/> only guides the form.
+    /// </summary>
+    public virtual string? PendingConflict(IReadOnlyDictionary<string, string> values, IReadOnlyList<SourceSetupRow> pending) => null;
+
     public abstract SourceSetupBuild Build(IReadOnlyDictionary<string, string> values, string collectorId);
 
     /// <summary>A synthetic event as the collector would queue it. Fake values only.</summary>
@@ -70,6 +87,7 @@ internal static partial class SourceSetupRegistry
     [
         new SyslogSourceSetup(),
         new WindowsEventLogSourceSetup(),
+        new FileTailSourceSetup(),
         new DockerSourceSetup(),
         new AwsSourceSetup(),
         new GcpSourceSetup(),
@@ -349,7 +367,9 @@ internal static partial class SourceSetupRegistry
                         ? null
                         : ("contains an entry that is not valid.", rule.PatternFix ?? field.Help);
             case SourceFieldKinds.FilePath:
-                return AbsolutePath(text) ? null : ("must be an absolute file path.", PathFix);
+                return text.AsSpan().ContainsAny(Wildcards)
+                    ? ("cannot contain wildcards.", "Enter the exact path. Bower reads only the paths you name.")
+                    : AbsolutePath(text) ? null : ("must be an absolute file path.", PathFix);
             case SourceFieldKinds.SecretReference:
                 return AbsolutePath(text) || (field.KeyVaultAllowed && KeyVaultSecretUrl().IsMatch(text))
                     ? null
@@ -443,6 +463,8 @@ internal static partial class SourceSetupRegistry
             || (uri.Scheme == Uri.UriSchemeHttp && (uri.IsLoopback
                 || (uri.HostNameType == UriHostNameType.Dns && !uri.Host.Contains('.', StringComparison.Ordinal))));
     }
+
+    private static readonly SearchValues<char> Wildcards = SearchValues.Create("*?[]{}");
 
     private static readonly SearchValues<char> ControlCharacters = SearchValues.Create(
         [.. Enumerable.Range(0, 32).Select(value => (char)value), '\u007f']);

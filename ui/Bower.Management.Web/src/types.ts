@@ -590,7 +590,7 @@ export interface SourceSetupPlan {
   files: SourceSetupFile[];
   variables: SourceSetupVariable[];
   snippets: SourceSetupSnippet[];
-  verification: { kind: "source" | "output"; reportId: string; description: string };
+  verification: { kind: "source" | "pack-source" | "output"; reportId: string; description: string };
   contentHash: string;
 }
 

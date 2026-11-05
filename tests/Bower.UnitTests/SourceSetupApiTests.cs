@@ -55,7 +55,7 @@ public sealed class SourceSetupApiTests
         SourceTypeDefinition[] types = (await ManagementApiTests.Client(app, BowerRoles.Viewer)
             .GetFromJsonAsync<SourceTypeDefinition[]>("/api/sources/types", ManagementApiTests.ApiJson, cancellationToken))!;
 
-        Assert.Equal(["syslog", "windows-eventlog", "docker", "aws", "gcp", "ama", "http-sdk"], types.Select(type => type.Id));
+        Assert.Equal(["syslog", "windows-eventlog", "file", "docker", "aws", "gcp", "ama", "http-sdk"], types.Select(type => type.Id));
         string[] kinds =
         [
             SourceFieldKinds.Text, SourceFieldKinds.Number, SourceFieldKinds.Choice, SourceFieldKinds.Boolean,
@@ -177,6 +177,7 @@ public sealed class SourceSetupApiTests
             }),
         ("ama", new()),
         ("windows-eventlog", new()),
+        ("file", FileSourceSetupTests.Values()),
         (
             "http-sdk",
             new()
@@ -216,6 +217,10 @@ public sealed class SourceSetupApiTests
                     Assert.Equal("Security", windows.Subscriptions.Single().Channel);
                     Assert.Equal("windows-security/production", plan.Verification.ReportId);
                     Assert.All(plan.Files, file => Assert.StartsWith(@"C:\ProgramData\Bower\", file.InstallPath, StringComparison.Ordinal));
+                    break;
+                case "file":
+                    Assert.Equal("linux-sshd/production", plan.Verification.ReportId);
+                    Assert.Contains(plan.Variables, variable => variable is { Name: FileSourceSchema.Variable, Value: FileSourceSchema.LinuxInstallPath });
                     break;
                 case "aws":
                     CloudAgentSettings aws = CloudAgentSettings.FromEnvironment(name => forwarder.GetValueOrDefault(name));
@@ -576,7 +581,7 @@ public sealed class SourceSetupApiTests
         Assert.Equal(expected, access.ObjectId);
     }
 
-    private static async Task<SourceSetupPlanResult> PlanAsync(
+    internal static async Task<SourceSetupPlanResult> PlanAsync(
         WebApplication app, string type, string collectorId, Dictionary<string, string> values, CancellationToken cancellationToken)
     {
         using HttpResponseMessage response = await ManagementApiTests.Client(app, BowerRoles.Operator).PostAsJsonAsync(
@@ -585,7 +590,7 @@ public sealed class SourceSetupApiTests
         return (await response.Content.ReadFromJsonAsync<SourceSetupPlanResult>(ManagementApiTests.ApiJson, cancellationToken))!;
     }
 
-    private static async Task<SourceSetupRequestDetail> SubmitAsync(
+    internal static async Task<SourceSetupRequestDetail> SubmitAsync(
         HttpClient client, string type, Dictionary<string, string> values, CancellationToken cancellationToken)
     {
         using HttpResponseMessage response = await client.PostAsJsonAsync(
@@ -594,13 +599,13 @@ public sealed class SourceSetupApiTests
         return (await response.Content.ReadFromJsonAsync<SourceSetupRequestDetail>(ManagementApiTests.ApiJson, cancellationToken))!;
     }
 
-    private static async Task<SourceSetupRequestDetail> DetailAsync(WebApplication app, string id, CancellationToken cancellationToken) =>
+    internal static async Task<SourceSetupRequestDetail> DetailAsync(WebApplication app, string id, CancellationToken cancellationToken) =>
         (await ManagementApiTests.Client(app, BowerRoles.Viewer)
             .GetFromJsonAsync<SourceSetupRequestDetail>($"/api/sources/requests/{id}", ManagementApiTests.ApiJson, cancellationToken))!;
 
-    private static string File(SourceSetupPlan plan, string name) => plan.Files.Single(file => file.Name == name).Content;
+    internal static string File(SourceSetupPlan plan, string name) => plan.Files.Single(file => file.Name == name).Content;
 
-    private static async Task ActiveCollectorAsync(WebApplication app, string id, CancellationToken cancellationToken)
+    internal static async Task ActiveCollectorAsync(WebApplication app, string id, CancellationToken cancellationToken)
     {
         ManagementStore store = app.Services.GetRequiredService<ManagementStore>();
         await store.RegisterAsync(Registration(id), $"principal-{id}", Now, cancellationToken);
@@ -611,6 +616,6 @@ public sealed class SourceSetupApiTests
     private static CollectorRegistration Registration(string id) =>
         new(id, id, "production", "0.1.0", "c", "p", [new SourceReport("local-http", "local-http", "healthy", null, null)], []);
 
-    private static CollectorHeartbeat Heartbeat(params SourceReport[] extra) =>
+    internal static CollectorHeartbeat Heartbeat(params SourceReport[] extra) =>
         new("0.1.0", "c", "p", 0, "healthy", [new SourceReport("local-http", "local-http", "healthy", null, null), .. extra], []);
 }
