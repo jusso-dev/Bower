@@ -1,0 +1,2428 @@
+{
+  "description": "Shared file tail vectors (C# FileTailSourceTests, Rust bower-source-file tests). Inputs are hand-written; expectations come from the C# specification (BOWER_FILE_TAIL_VECTOR_OUTPUT regenerates them) and are reviewed by hand.",
+  "input": {
+    "id": "auth",
+    "path": "/var/log/auth.log"
+  },
+  "fingerprint": "3f1c0f2d6c9b4e8a7d5f0e1b2c3a4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e",
+  "readAt": "2026-11-05T10:00:01.1234567Z",
+  "records": [
+    {
+      "name": "plain ascii line",
+      "format": "text",
+      "offset": 0,
+      "line": "2026-11-05T21:00:00+11:00 bastion-1 sshd[1]: Failed password for root from 203.0.113.5 port 22 ssh2",
+      "expect": {
+        "record": "{\"id\":\"file-2fc2a7843c71b0ba27319a5b2c33cad0\",\"input\":\"auth\",\"path\":\"/var/log/auth.log\",\"offset\":\"0\",\"readAt\":\"2026-11-05T10:00:01.123456Z\",\"message\":\"2026-11-05T21:00:00\\u002B11:00 bastion-1 sshd[1]: Failed password for root from 203.0.113.5 port 22 ssh2\"}"
+      }
+    },
+    {
+      "name": "escaping matches System.Text.Json default encoder",
+      "format": "text",
+      "offset": 4096,
+      "line": "quote \" amp & lt < gt > apos ' plus + backtick ` backslash \\ tab \t e-acute é snowman ☃ emoji \uD83D\uDE00",
+      "expect": {
+        "record": "{\"id\":\"file-be7e2a8e5e81966be90037278f47e6fb\",\"input\":\"auth\",\"path\":\"/var/log/auth.log\",\"offset\":\"4096\",\"readAt\":\"2026-11-05T10:00:01.123456Z\",\"message\":\"quote \\u0022 amp \\u0026 lt \\u003C gt \\u003E apos \\u0027 plus \\u002B backtick \\u0060 backslash \\\\ tab \\t e-acute \\u00E9 snowman \\u2603 emoji \\uD83D\\uDE00\"}"
+      }
+    },
+    {
+      "name": "invalid UTF-8 is malformed",
+      "format": "text",
+      "offset": 0,
+      "lineBase64": "YmFkIP/+IGJ5dGU=",
+      "expect": {
+        "failure": "file-line-invalid-utf8"
+      }
+    },
+    {
+      "name": "overlong UTF-8 encoding is malformed",
+      "format": "text",
+      "offset": 0,
+      "lineBase64": "b3ZlcmxvbmcgwK8=",
+      "expect": {
+        "failure": "file-line-invalid-utf8"
+      }
+    },
+    {
+      "name": "json-lines object is carried canonically as json",
+      "format": "json-lines",
+      "offset": 77,
+      "line": "  {\"user\": \"alice\", \"n\": 1.50, \"big\": 1e400, \"nested\": {\"a\": [1, true, null]}, \"s\": \"caf\\u00e9 \\\"q\\\" <x>\"}  ",
+      "expect": {
+        "record": "{\"id\":\"file-c6d2f984904ca5f7150bda93f84853a6\",\"input\":\"auth\",\"path\":\"/var/log/auth.log\",\"offset\":\"77\",\"readAt\":\"2026-11-05T10:00:01.123456Z\",\"json\":{\"user\":\"alice\",\"n\":1.50,\"big\":1e400,\"nested\":{\"a\":[1,true,null]},\"s\":\"caf\\u00E9 \\u0022q\\u0022 \\u003Cx\\u003E\"}}"
+      }
+    },
+    {
+      "name": "json-lines keeps duplicate keys",
+      "format": "json-lines",
+      "offset": 0,
+      "line": "{\"a\":1,\"a\":2}",
+      "expect": {
+        "record": "{\"id\":\"file-62c48547c4f2e05f1172cac62fcdc5bd\",\"input\":\"auth\",\"path\":\"/var/log/auth.log\",\"offset\":\"0\",\"readAt\":\"2026-11-05T10:00:01.123456Z\",\"json\":{\"a\":1,\"a\":2}}"
+      }
+    },
+    {
+      "name": "json-lines array is malformed",
+      "format": "json-lines",
+      "offset": 0,
+      "line": "[1,2,3]",
+      "expect": {
+        "failure": "file-line-invalid-json"
+      }
+    },
+    {
+      "name": "json-lines string is malformed",
+      "format": "json-lines",
+      "offset": 0,
+      "line": "\"just a string\"",
+      "expect": {
+        "failure": "file-line-invalid-json"
+      }
+    },
+    {
+      "name": "json-lines invalid JSON is malformed",
+      "format": "json-lines",
+      "offset": 0,
+      "line": "{\"a\":",
+      "expect": {
+        "failure": "file-line-invalid-json"
+      }
+    },
+    {
+      "name": "json-lines trailing comma is malformed",
+      "format": "json-lines",
+      "offset": 0,
+      "line": "{\"a\":1,}",
+      "expect": {
+        "failure": "file-line-invalid-json"
+      }
+    },
+    {
+      "name": "json-lines comment is malformed",
+      "format": "json-lines",
+      "offset": 0,
+      "line": "{\"a\":1 /* c */}",
+      "expect": {
+        "failure": "file-line-invalid-json"
+      }
+    },
+    {
+      "name": "json-lines two values are malformed",
+      "format": "json-lines",
+      "offset": 0,
+      "line": "{\"a\":1} {\"b\":2}",
+      "expect": {
+        "failure": "file-line-invalid-json"
+      }
+    },
+    {
+      "name": "json-lines depth 8 is accepted",
+      "format": "json-lines",
+      "offset": 0,
+      "line": "{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{}}}}}}}}",
+      "expect": {
+        "record": "{\"id\":\"file-fbbb5c5d5052f8c05fdaad43c79692dd\",\"input\":\"auth\",\"path\":\"/var/log/auth.log\",\"offset\":\"0\",\"readAt\":\"2026-11-05T10:00:01.123456Z\",\"json\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{}}}}}}}}}"
+      }
+    },
+    {
+      "name": "json-lines depth 9 is malformed",
+      "format": "json-lines",
+      "offset": 0,
+      "line": "{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{}}}}}}}}}",
+      "expect": {
+        "failure": "file-line-invalid-json"
+      }
+    },
+    {
+      "name": "json-lines escaped lone surrogate is malformed",
+      "format": "json-lines",
+      "offset": 0,
+      "line": "{\"a\":\"\\ud800\"}",
+      "expect": {
+        "failure": "file-line-invalid-json"
+      }
+    },
+    {
+      "name": "json-lines escaped surrogate pair is kept",
+      "format": "json-lines",
+      "offset": 0,
+      "line": "{\"a\":\"\\ud83d\\ude00\"}",
+      "expect": {
+        "record": "{\"id\":\"file-eb8d6b5cc281a1f3a0afbae3e26fe6d1\",\"input\":\"auth\",\"path\":\"/var/log/auth.log\",\"offset\":\"0\",\"readAt\":\"2026-11-05T10:00:01.123456Z\",\"json\":{\"a\":\"\\uD83D\\uDE00\"}}"
+      }
+    },
+    {
+      "name": "json-lines invalid UTF-8 is malformed",
+      "format": "json-lines",
+      "offset": 0,
+      "lineBase64": "eyJhIjoi/yJ9",
+      "expect": {
+        "failure": "file-line-invalid-utf8"
+      }
+    },
+    {
+      "name": "json-lines UTF-8 byte order mark is malformed",
+      "format": "json-lines",
+      "offset": 0,
+      "lineBase64": "77u/eyJhIjoxfQ==",
+      "expect": {
+        "failure": "file-line-invalid-json"
+      }
+    },
+    {
+      "name": "json-lines empty object",
+      "format": "json-lines",
+      "offset": 0,
+      "line": "{}",
+      "expect": {
+        "record": "{\"id\":\"file-ce0c19bf49301d37f82a7a6615ea3c28\",\"input\":\"auth\",\"path\":\"/var/log/auth.log\",\"offset\":\"0\",\"readAt\":\"2026-11-05T10:00:01.123456Z\",\"json\":{}}"
+      }
+    }
+  ],
+  "sequences": [
+    {
+      "name": "complete lines only; a partial last line waits for its newline",
+      "options": {
+        "startAtEnd": false
+      },
+      "steps": [
+        {
+          "write": "line-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline-3 partial"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "line-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 41
+              },
+              {
+                "text": "line-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 41,
+                "end": 82
+              }
+            ],
+            "provisional": false,
+            "offset": 82,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "append": " rest\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "line-3 partial rest",
+                "start": 82,
+                "end": 102
+              }
+            ],
+            "provisional": false,
+            "offset": 102,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "startAt end skips history, then reads new lines",
+      "options": {
+        "startAtEnd": true
+      },
+      "steps": [
+        {
+          "write": "old-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nold-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nold-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 123,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "append": "new-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "new-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 123,
+                "end": 164
+              }
+            ],
+            "provisional": false,
+            "offset": 164,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "startAt end with a partial last line starts after the last newline",
+      "options": {
+        "startAtEnd": true
+      },
+      "steps": [
+        {
+          "write": "old-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nold-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\npartial"
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 82,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "append": "\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "partial",
+                "start": 82,
+                "end": 90
+              }
+            ],
+            "provisional": false,
+            "offset": 90,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "CRLF is trimmed once and blank lines are returned empty",
+      "options": {
+        "startAtEnd": false
+      },
+      "steps": [
+        {
+          "write": "crlf-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\r\n\r\n\ncrlf-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\r\r\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "crlf-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 42
+              },
+              {
+                "text": "",
+                "start": 42,
+                "end": 44
+              },
+              {
+                "text": "",
+                "start": 44,
+                "end": 45
+              },
+              {
+                "text": "crlf-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\r",
+                "start": 45,
+                "end": 88
+              }
+            ],
+            "provisional": false,
+            "offset": 88,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "an oversized line is skipped without being buffered",
+      "options": {
+        "startAtEnd": false,
+        "maxLineBytes": 256
+      },
+      "steps": [
+        {
+          "write": "before xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\noooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo\nafter xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "before xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 41
+              },
+              {
+                "oversized": true,
+                "start": 41,
+                "end": 342
+              },
+              {
+                "text": "after xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 342,
+                "end": 383
+              }
+            ],
+            "provisional": false,
+            "offset": 383,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "a line of exactly maxLineBytes is kept; one byte more is oversized",
+      "options": {
+        "startAtEnd": false,
+        "maxLineBytes": 256
+      },
+      "steps": [
+        {
+          "write": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\nmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm\nafter xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+                "start": 0,
+                "end": 257
+              },
+              {
+                "oversized": true,
+                "start": 257,
+                "end": 515
+              },
+              {
+                "text": "after xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 515,
+                "end": 556
+              }
+            ],
+            "provisional": false,
+            "offset": 556,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "an oversized line still being written is discarded across reads",
+      "options": {
+        "startAtEnd": false,
+        "maxLineBytes": 256
+      },
+      "steps": [
+        {
+          "write": "before xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\noooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "before xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 41
+              }
+            ],
+            "provisional": false,
+            "offset": 341,
+            "discarding": true,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "append": "oooooooooooooooooooooooooooooooooooooooooooooooooo\nafter xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "oversized": true,
+                "start": 341,
+                "end": 392
+              },
+              {
+                "text": "after xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 392,
+                "end": 433
+              }
+            ],
+            "provisional": false,
+            "offset": 433,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "the line limit stops a read and asks for more",
+      "options": {
+        "startAtEnd": false,
+        "maxLinesPerBatch": 2
+      },
+      "steps": [
+        {
+          "write": "a xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nb xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nc xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "a xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 41
+              },
+              {
+                "text": "b xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 41,
+                "end": 82
+              }
+            ],
+            "provisional": false,
+            "offset": 82,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "c xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 82,
+                "end": 123
+              }
+            ],
+            "provisional": false,
+            "offset": 123,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "the byte budget stops a read and asks for more",
+      "options": {
+        "startAtEnd": false,
+        "maxBytesPerBatch": 100
+      },
+      "steps": [
+        {
+          "write": "a xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nb xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nc xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nd xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\ne xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "a xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 41
+              },
+              {
+                "text": "b xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 41,
+                "end": 82
+              },
+              {
+                "text": "c xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 82,
+                "end": 123
+              }
+            ],
+            "provisional": false,
+            "offset": 123,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "d xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 123,
+                "end": 164
+              },
+              {
+                "text": "e xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 164,
+                "end": 205
+              }
+            ],
+            "provisional": false,
+            "offset": 205,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "rename rotation drains path.1, then reads the new file from its start",
+      "options": {
+        "startAtEnd": false
+      },
+      "steps": [
+        {
+          "write": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nfirst-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 41
+              },
+              {
+                "text": "first-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 41,
+                "end": 82
+              }
+            ],
+            "provisional": false,
+            "offset": 82,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "append": "first-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "rename": {}
+        },
+        {
+          "write": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nsecond-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 82,
+                "end": 123
+              }
+            ],
+            "provisional": false,
+            "offset": 0,
+            "discarding": false,
+            "rotated": true,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 41
+              },
+              {
+                "text": "second-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 41,
+                "end": 82
+              }
+            ],
+            "provisional": false,
+            "offset": 82,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "the unterminated last line of a rotated file is read",
+      "options": {
+        "startAtEnd": false
+      },
+      "steps": [
+        {
+          "write": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nfirst tail without newline padded to be long enough"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 41
+              }
+            ],
+            "provisional": false,
+            "offset": 41,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "rename": {}
+        },
+        {
+          "write": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nsecond-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first tail without newline padded to be long enough",
+                "start": 41,
+                "end": 92
+              }
+            ],
+            "provisional": false,
+            "offset": 0,
+            "discarding": false,
+            "rotated": true,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 41
+              },
+              {
+                "text": "second-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 41,
+                "end": 82
+              }
+            ],
+            "provisional": false,
+            "offset": 82,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "copytruncate drains the copy, then reads the truncated file from its start",
+      "options": {
+        "startAtEnd": false
+      },
+      "steps": [
+        {
+          "write": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nfirst-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 41
+              },
+              {
+                "text": "first-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 41,
+                "end": 82
+              }
+            ],
+            "provisional": false,
+            "offset": 82,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "append": "first-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "copytruncate": {}
+        },
+        {
+          "append": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nsecond-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 82,
+                "end": 123
+              }
+            ],
+            "provisional": false,
+            "offset": 0,
+            "discarding": false,
+            "rotated": true,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 41
+              },
+              {
+                "text": "second-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 41,
+                "end": 82
+              }
+            ],
+            "provisional": false,
+            "offset": 82,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "copytruncate to a file too short to identify waits with a provisional cursor",
+      "options": {
+        "startAtEnd": false
+      },
+      "steps": [
+        {
+          "write": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nfirst-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 41
+              },
+              {
+                "text": "first-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 41,
+                "end": 82
+              }
+            ],
+            "provisional": false,
+            "offset": 82,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "copytruncate": {}
+        },
+        {
+          "append": "short\n"
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": true,
+            "offset": 0,
+            "discarding": false,
+            "rotated": true,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": true,
+            "offset": 0,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "append": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nsecond-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "short",
+                "start": 0,
+                "end": 6
+              },
+              {
+                "text": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 6,
+                "end": 47
+              },
+              {
+                "text": "second-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 47,
+                "end": 88
+              }
+            ],
+            "provisional": false,
+            "offset": 88,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "rotated twice between reads flags a gap and reads the new file from its start",
+      "options": {
+        "startAtEnd": false
+      },
+      "steps": [
+        {
+          "write": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nfirst-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 41
+              },
+              {
+                "text": "first-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 41,
+                "end": 82
+              }
+            ],
+            "provisional": false,
+            "offset": 82,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "rename": {}
+        },
+        {
+          "write": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nsecond-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "rename": {}
+        },
+        {
+          "write": "third-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nthird-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "third-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 41
+              },
+              {
+                "text": "third-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 41,
+                "end": 82
+              }
+            ],
+            "provisional": false,
+            "offset": 82,
+            "discarding": false,
+            "rotated": false,
+            "gap": true,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "truncated in place with the same first bytes flags a gap and restarts",
+      "options": {
+        "startAtEnd": false
+      },
+      "steps": [
+        {
+          "write": "line-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nline-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "line-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              },
+              {
+                "text": "line-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 71,
+                "end": 112
+              },
+              {
+                "text": "line-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 112,
+                "end": 153
+              }
+            ],
+            "provisional": false,
+            "offset": 153,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "write": "line-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "line-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 71
+              }
+            ],
+            "provisional": false,
+            "offset": 71,
+            "discarding": false,
+            "rotated": false,
+            "gap": true,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "a missing file gets a provisional cursor and is read from its start once created",
+      "options": {
+        "startAtEnd": true
+      },
+      "steps": [
+        {
+          "read": {
+            "lines": [],
+            "provisional": true,
+            "offset": 0,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "write": "created-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\ncreated-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "created-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 41
+              },
+              {
+                "text": "created-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 41,
+                "end": 82
+              }
+            ],
+            "provisional": false,
+            "offset": 82,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "a file too short to identify waits, then is read from its start",
+      "options": {
+        "startAtEnd": true
+      },
+      "steps": [
+        {
+          "write": "short\n"
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": true,
+            "offset": 0,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "append": "more-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nmore-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "short",
+                "start": 0,
+                "end": 6
+              },
+              {
+                "text": "more-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 6,
+                "end": 47
+              },
+              {
+                "text": "more-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 47,
+                "end": 88
+              }
+            ],
+            "provisional": false,
+            "offset": 88,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "a deleted file whose rotated copy holds unread lines is drained",
+      "options": {
+        "startAtEnd": false
+      },
+      "steps": [
+        {
+          "write": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nfirst-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 41
+              },
+              {
+                "text": "first-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 41,
+                "end": 82
+              }
+            ],
+            "provisional": false,
+            "offset": 82,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "append": "first-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "rename": {}
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "first-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 82,
+                "end": 123
+              }
+            ],
+            "provisional": true,
+            "offset": 0,
+            "discarding": false,
+            "rotated": true,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "write": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nsecond-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 41
+              },
+              {
+                "text": "second-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 41,
+                "end": 82
+              }
+            ],
+            "provisional": false,
+            "offset": 82,
+            "discarding": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    }
+  ],
+  "config": [
+    {
+      "name": "minimal configuration is valid",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "name": "every option is valid",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            },
+            "format": "json-lines",
+            "startAt": "beginning",
+            "maxLineBytes": 30720,
+            "allowSymlink": true
+          }
+        ],
+        "pollIntervalMilliseconds": 250,
+        "maxLinesPerBatch": 64,
+        "maxBytesPerBatch": 65536
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "name": "unknown top-level key",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ],
+        "globs": [
+          "*.log"
+        ]
+      },
+      "expect": {
+        "errorPrefix": "File tail source configuration is invalid:"
+      }
+    },
+    {
+      "name": "unknown input key",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            },
+            "glob": "*.log"
+          }
+        ]
+      },
+      "expect": {
+        "errorPrefix": "File tail source configuration is invalid:"
+      }
+    },
+    {
+      "name": "unknown route key",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "p",
+              "parser": 0,
+              "match": "x"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "errorPrefix": "File tail source configuration is invalid:"
+      }
+    },
+    {
+      "name": "missing route",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log"
+          }
+        ]
+      },
+      "expect": {
+        "errorPrefix": "File tail source configuration is invalid:"
+      }
+    },
+    {
+      "name": "null route",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": null
+          }
+        ]
+      },
+      "expect": {
+        "errorPrefix": "File tail source configuration is invalid:"
+      }
+    },
+    {
+      "name": "null input",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          null
+        ]
+      },
+      "expect": {
+        "error": "File tail input id must be 1–63 lowercase letters, digits or hyphens and start with a letter or digit."
+      }
+    },
+    {
+      "name": "null root",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          null
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail allowedRoots must be absolute, normalised directories without wildcards, and not the file system root."
+      }
+    },
+    {
+      "name": "number as string",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            },
+            "maxLineBytes": "1024"
+          }
+        ]
+      },
+      "expect": {
+        "errorPrefix": "File tail source configuration is invalid:"
+      }
+    },
+    {
+      "name": "duplicate property",
+      "text": "{\"apiVersion\":\"bower.security/v1\",\"apiVersion\":\"bower.security/v1\",\"kind\":\"FileTailSource\",\"allowedRoots\":[\"/var/log\"],\"inputs\":[]}",
+      "expect": {
+        "errorPrefix": "File tail source configuration is invalid:"
+      }
+    },
+    {
+      "name": "wrong kind",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "SyslogSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail source configuration needs apiVersion bower.security/v1 and kind FileTailSource."
+      }
+    },
+    {
+      "name": "wrong apiVersion",
+      "config": {
+        "apiVersion": "bower.security/v2",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail source configuration needs apiVersion bower.security/v1 and kind FileTailSource."
+      }
+    },
+    {
+      "name": "no roots",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail source configuration must list 1–8 allowedRoots."
+      }
+    },
+    {
+      "name": "nine roots",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log/r0",
+          "/var/log/r1",
+          "/var/log/r2",
+          "/var/log/r3",
+          "/var/log/r4",
+          "/var/log/r5",
+          "/var/log/r6",
+          "/var/log/r7",
+          "/var/log/r8"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail source configuration must list 1–8 allowedRoots."
+      }
+    },
+    {
+      "name": "file system root is refused",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail allowedRoots must be absolute, normalised directories without wildcards, and not the file system root."
+      }
+    },
+    {
+      "name": "relative root",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail allowedRoots must be absolute, normalised directories without wildcards, and not the file system root."
+      }
+    },
+    {
+      "name": "root with trailing separator",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log/"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail allowedRoots must be absolute, normalised directories without wildcards, and not the file system root."
+      }
+    },
+    {
+      "name": "root with a wildcard",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/*"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail allowedRoots must be absolute, normalised directories without wildcards, and not the file system root."
+      }
+    },
+    {
+      "name": "no inputs",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": []
+      },
+      "expect": {
+        "error": "File tail source configuration must list 1–16 inputs."
+      }
+    },
+    {
+      "name": "seventeen inputs",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "in-0",
+            "path": "/var/log/f0.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "in-1",
+            "path": "/var/log/f1.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "in-2",
+            "path": "/var/log/f2.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "in-3",
+            "path": "/var/log/f3.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "in-4",
+            "path": "/var/log/f4.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "in-5",
+            "path": "/var/log/f5.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "in-6",
+            "path": "/var/log/f6.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "in-7",
+            "path": "/var/log/f7.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "in-8",
+            "path": "/var/log/f8.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "in-9",
+            "path": "/var/log/f9.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "in-10",
+            "path": "/var/log/f10.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "in-11",
+            "path": "/var/log/f11.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "in-12",
+            "path": "/var/log/f12.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "in-13",
+            "path": "/var/log/f13.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "in-14",
+            "path": "/var/log/f14.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "in-15",
+            "path": "/var/log/f15.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "in-16",
+            "path": "/var/log/f16.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail source configuration must list 1–16 inputs."
+      }
+    },
+    {
+      "name": "uppercase id",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "Auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input id must be 1–63 lowercase letters, digits or hyphens and start with a letter or digit."
+      }
+    },
+    {
+      "name": "id starting with a hyphen",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "-auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input id must be 1–63 lowercase letters, digits or hyphens and start with a letter or digit."
+      }
+    },
+    {
+      "name": "wildcard path",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/*.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth: path must be an absolute, normalised file path without wildcards; there is no directory or glob form."
+      }
+    },
+    {
+      "name": "character class path",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.lo[g]",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth: path must be an absolute, normalised file path without wildcards; there is no directory or glob form."
+      }
+    },
+    {
+      "name": "relative path",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth: path must be an absolute, normalised file path without wildcards; there is no directory or glob form."
+      }
+    },
+    {
+      "name": "dot-dot path",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/../../etc/shadow",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth: path must be an absolute, normalised file path without wildcards; there is no directory or glob form."
+      }
+    },
+    {
+      "name": "dot path",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/./auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth: path must be an absolute, normalised file path without wildcards; there is no directory or glob form."
+      }
+    },
+    {
+      "name": "repeated separator",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log//auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth: path must be an absolute, normalised file path without wildcards; there is no directory or glob form."
+      }
+    },
+    {
+      "name": "trailing separator path",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/app/",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth: path must be an absolute, normalised file path without wildcards; there is no directory or glob form."
+      }
+    },
+    {
+      "name": "control character path",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth\u0001.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth: path must be an absolute, normalised file path without wildcards; there is no directory or glob form."
+      }
+    },
+    {
+      "name": "path outside the roots",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/etc/shadow",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth: path is not below an allowed root."
+      }
+    },
+    {
+      "name": "path sharing a prefix with a root",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/logs/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth: path is not below an allowed root."
+      }
+    },
+    {
+      "name": "path equal to the root",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth: path is not below an allowed root."
+      }
+    },
+    {
+      "name": "duplicate id",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "auth",
+            "path": "/var/log/other.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth is listed more than once."
+      }
+    },
+    {
+      "name": "duplicate path",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          },
+          {
+            "id": "auth-2",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth-2: path is already read by another input."
+      }
+    },
+    {
+      "name": "empty pack",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": " ",
+              "parser": 0
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth: route needs a pack and a parser index of 0 or more."
+      }
+    },
+    {
+      "name": "negative parser",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "p",
+              "parser": -1
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth: route needs a pack and a parser index of 0 or more."
+      }
+    },
+    {
+      "name": "unknown format",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            },
+            "format": "syslog"
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth: format must be text or json-lines."
+      }
+    },
+    {
+      "name": "unknown startAt",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            },
+            "startAt": "middle"
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth: startAt must be end or beginning."
+      }
+    },
+    {
+      "name": "maxLineBytes too large",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            },
+            "maxLineBytes": 65536
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth: maxLineBytes must be between 256 and 30720."
+      }
+    },
+    {
+      "name": "maxLineBytes too small",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            },
+            "maxLineBytes": 100
+          }
+        ]
+      },
+      "expect": {
+        "error": "File tail input auth: maxLineBytes must be between 256 and 30720."
+      }
+    },
+    {
+      "name": "poll interval too short",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ],
+        "pollIntervalMilliseconds": 50
+      },
+      "expect": {
+        "error": "File tail pollIntervalMilliseconds must be between 100 and 60000."
+      }
+    },
+    {
+      "name": "no lines per batch",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ],
+        "maxLinesPerBatch": 0
+      },
+      "expect": {
+        "error": "File tail maxLinesPerBatch must be between 1 and 1024."
+      }
+    },
+    {
+      "name": "byte budget too small",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ],
+        "maxBytesPerBatch": 1000
+      },
+      "expect": {
+        "error": "File tail maxBytesPerBatch must be between 65536 and 4194304."
+      }
+    },
+    {
+      "name": "byte budget too large",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ],
+        "maxBytesPerBatch": 8388608
+      },
+      "expect": {
+        "error": "File tail maxBytesPerBatch must be between 65536 and 4194304."
+      }
+    }
+  ]
+}
