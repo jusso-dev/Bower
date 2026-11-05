@@ -59,5 +59,10 @@ cursor format, limits, defaults, failure codes and configuration messages.
   crash/recovery, backpressure and cancellation tests, mirrored in Rust
   (`rust/crates/bower-source-file/tests/fixtures/file-tail-vectors.json` is shared;
   regenerate with `BOWER_FILE_TAIL_VECTOR_OUTPUT`, then review the diff).
-- Follow-up, not in this project: the Docker source keeps its own copy of the tail
-  mechanics (`DockerJsonLogReader`); move it onto `FileTailReader` in its own change.
+- `FileTailFiles.Plan` is the shared tailer (identity, provisional cursors, truncation,
+  durable rename and copytruncate draining, grace window, abandoned generations, start
+  position) with a decoder and a `FileTailPolicy`. The Docker source uses it with its own
+  policy and decoder, so a change here must keep `DockerSourceTests`,
+  `DockerSidecarWorkerTests`, `DockerCursorCompatibilityTests` and
+  `DockerReaderDifferentialTests` passing unchanged. Keep `FileTailCursor`'s first four
+  fields and their JSON identical to `DockerLogCursor`.

@@ -34,6 +34,13 @@ public sealed class FileTailHandle : IDisposable
     [ThreadStatic]
     internal static Func<string, string?>? FileIds;
 
+    /// <summary>Tests only: runs after the 64-byte length check of <see cref="OpenWithPrefixIdentity"/> (to shrink the file).</summary>
+    [ThreadStatic]
+    internal static Action<string>? BeforePrefixRead;
+
+    /// <summary>The Docker json-file identity: SHA-256 of the first 64 bytes.</summary>
+    public const int PrefixIdentityBytes = 64;
+
     private FileTailHandle(FileStream stream, long length, DateTime writeTime, string? fingerprint, string? fileId = null)
     {
         Stream = stream;
@@ -117,6 +124,46 @@ public sealed class FileTailHandle : IDisposable
             FileTailHandle handle = new(stream, length, writeTime, Identity(stream, length), fileId);
             AfterOpen?.Invoke(path);
             return handle;
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// The Docker source's open, exactly as before the shared tailer: a plain shared read
+    /// (no link or handle checks; the Docker root is mounted read-only) and an identity of the
+    /// first 64 bytes. Null when the file is missing or shorter. A file that shrinks between
+    /// the length check and the read throws <see cref="EndOfStreamException"/>, which the
+    /// sidecar logs and backs off from, as it did.
+    /// </summary>
+    public static FileTailHandle? OpenWithPrefixIdentity(string path)
+    {
+        FileStream stream;
+        try
+        {
+            stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 65_536);
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return null;
+        }
+
+        try
+        {
+            long length = stream.Length;
+            if (length < PrefixIdentityBytes)
+            {
+                stream.Dispose();
+                return null;
+            }
+
+            BeforePrefixRead?.Invoke(path);
+            byte[] prefix = new byte[PrefixIdentityBytes];
+            stream.ReadExactly(prefix);
+            return new FileTailHandle(stream, length, default, Convert.ToHexStringLower(SHA256.HashData(prefix)));
         }
         catch
         {

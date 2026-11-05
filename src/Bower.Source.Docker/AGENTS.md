@@ -10,4 +10,16 @@ Read-only Docker source for the sidecar.
 - Event ids derive from container id, file fingerprint and offset so replays
   deduplicate.
 - Keep reads bounded (line, batch and byte limits) and consume only complete lines.
+- File identity, rotation, truncation and the start position come from the shared tailer
+  (`Bower.Source.File.FileTailFiles.Plan`); this project owns only the json-file decoder
+  (entries, 16 KiB chunk join, malformed entries, oversized discard, bounds). Docker keeps
+  its own policy: 64-byte identity (`FileTailHandle.OpenWithPrefixIdentity`), no device or
+  inode use, no rotation grace window, no copy drain on a same-identity truncation, no
+  abandoned-generation tracking, waiting while the current file cannot be identified, and
+  the oversized discard carried across rotation. `DockerLogCursor` keeps no rotation state,
+  so each read detects a rotation again. Changing any of
+  that changes Docker output: `DockerReaderDifferentialTests` compares the reader with the
+  frozen pre-refactor copy (`LegacyDockerJsonLogReader`) and must keep passing.
+- Persisted `DockerLogCursor` values must keep loading (`DockerCursorCompatibilityTests`);
+  change the schema only with a versioned migration.
 - Changes need malformed-input, rotation and durable cursor tests.

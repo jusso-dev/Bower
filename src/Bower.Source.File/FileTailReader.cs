@@ -252,7 +252,21 @@ public static class FileTailReader
         bool rotatedOpened = false;
         try
         {
-            FileTailBatch batch = Plan();
+            FileTailBatch batch = FileTailFiles.Plan(
+                current,
+                options.UseFileIds ? current?.FileId ?? FileTailHandle.FileIdOf(path) : null,
+                Rotated,
+                cursor,
+                new FileTailPolicy
+                {
+                    StartAtEnd = options.StartAtEnd,
+                    StartScanBudget = options.MaxBytesPerBatch,
+                    MaxLinesPerBatch = options.MaxLinesPerBatch,
+                    RotationGracePolls = options.RotationGracePolls,
+                    RotationDrainMaxPolls = options.RotationDrainMaxPolls
+                },
+                new TextDecoder(options),
+                cancellationToken);
             return batch with { RotatedPath = rotated is null ? null : rotatedPath };
         }
         finally
@@ -270,238 +284,32 @@ public static class FileTailReader
 
             return rotated;
         }
-
-        FileTailBatch Plan()
-        {
-            string? fingerprint = current?.Fingerprint;
-            string? fileId = options.UseFileIds ? current?.FileId ?? FileTailHandle.FileIdOf(path) : null;
-            if (cursor is null)
-            {
-                if (fingerprint is null)
-                {
-                    return Empty(Provisional());
-                }
-
-                FileTailCursor initial = Normal(fingerprint, 0, fileId);
-                if (!options.StartAtEnd)
-                {
-                    return Scan(current!, initial, eofEndsLine: false, gap: false);
-                }
-
-                (long offset, bool discarding) = StartPosition(current!, options.MaxBytesPerBatch, cancellationToken);
-                return Empty(initial with { Offset = offset, Discarding = discarding });
-            }
-
-            if (cursor.Drain is not null)
-            {
-                return Drain(cursor, fingerprint, fileId);
-            }
-
-            // Watched from a provisional cursor too: a drain left at the cap while the current
-            // file was missing keeps its abandoned generation.
-            (FileTailCursor watched, bool late) = WatchAbandoned(cursor);
-            FileTailBatch batch = watched.Fingerprint.Length > 0
-                ? Detect(watched, fingerprint, fileId)
-                : fingerprint is null
-                    // Provisional cursor: the file was missing or could not be identified.
-                    ? Empty(watched)
-                    : Scan(current!, Normal(fingerprint, 0, fileId) with
-                    {
-                        Abandoned = watched.Abandoned,
-                        AbandonedLength = watched.AbandonedLength
-                    }, eofEndsLine: false, gap: false);
-            return late ? batch with { Gap = true } : batch;
-        }
-
-        // A generation the cursor left after a rename: writes to it now can never be read.
-        (FileTailCursor Cursor, bool Late) WatchAbandoned(FileTailCursor at)
-        {
-            if (at.Abandoned is null)
-            {
-                return (at, false);
-            }
-
-            FileTailHandle? file = Rotated();
-            if (file is null || !string.Equals(file.Fingerprint, at.Abandoned, StringComparison.Ordinal))
-            {
-                // Rotated again or removed: nothing more can arrive.
-                return (at with { Abandoned = null, AbandonedLength = null }, false);
-            }
-
-            return file.Length > at.AbandonedLength
-                ? (at with { AbandonedLength = file.Length }, true)
-                : (at, false);
-        }
-
-        FileTailBatch Detect(FileTailCursor at, string? fingerprint, string? fileId)
-        {
-            bool sameFile = fileId is not null && at.FileId is not null && string.Equals(fileId, at.FileId, StringComparison.Ordinal);
-            bool otherFile = fileId is not null && at.FileId is not null && !sameFile;
-            bool sameIdentity = string.Equals(at.Fingerprint, fingerprint, StringComparison.Ordinal);
-            FileTailHandle? Previous() => Rotated() is { } file
-                && string.Equals(file.Fingerprint, at.Fingerprint, StringComparison.Ordinal) ? file : null;
-
-            if (sameIdentity)
-            {
-                // The same first line at another device and inode: a rename when path.1 carries
-                // it, else another generation with the same first line or the same content
-                // restored or copied, which no bounded check tells apart safely. Read it from
-                // its start and count the gap: a restore replays with the same event ids.
-                if (otherFile)
-                {
-                    return Previous() is not null
-                        ? Drain(StartDrain(at, FileTailCursor.RenameDrain), fingerprint, fileId)
-                        : Scan(current!, Normal(fingerprint!, 0, fileId), eofEndsLine: false, gap: true);
-                }
-
-                if (current!.Length >= at.Offset)
-                {
-                    return Scan(current, at with { FileId = fileId ?? at.FileId }, eofEndsLine: false, gap: false);
-                }
-
-                // Shorter than the cursor: copytruncate when path.1 is the copy, else truncated.
-                if (Previous() is { } copy && copy.Length >= at.Offset)
-                {
-                    return Drain(StartDrain(at, FileTailCursor.CopyDrain), fingerprint, fileId);
-                }
-
-                return Scan(current, Normal(fingerprint!, 0, fileId), eofEndsLine: false, gap: true);
-            }
-
-            if (sameFile)
-            {
-                // The same file rewritten in place (its first line changed): copytruncate.
-                if (Previous() is not null)
-                {
-                    return Drain(StartDrain(at, FileTailCursor.CopyDrain), fingerprint, fileId);
-                }
-
-                return fingerprint is null
-                    ? Empty(Provisional()) with { Gap = true }
-                    : Scan(current!, Normal(fingerprint, 0, fileId), eofEndsLine: false, gap: true);
-            }
-
-            // Another file at the path: rename rotation when path.1 is ours.
-            if (Previous() is not null)
-            {
-                return Drain(StartDrain(at, FileTailCursor.RenameDrain), fingerprint, fileId);
-            }
-
-            // Missing or not identified yet, and not rotated: wait. Otherwise rotated more than
-            // once since the last read, or replaced: lines were lost.
-            return fingerprint is null
-                ? Empty(at)
-                : Scan(current!, Normal(fingerprint, 0, fileId), eofEndsLine: false, gap: true);
-        }
-
-        FileTailBatch Drain(FileTailCursor at, string? fingerprint, string? fileId)
-        {
-            FileTailHandle? file = Rotated();
-            FileTailCursor next = fingerprint is null ? Provisional() : Normal(fingerprint, 0, fileId);
-            if (file is null || !string.Equals(file.Fingerprint, at.Fingerprint, StringComparison.Ordinal))
-            {
-                // The generation being drained is gone (removed or rotated again): lines were lost.
-                return fingerprint is null
-                    ? Empty(next) with { Gap = true }
-                    : Scan(current!, next, eofEndsLine: false, gap: true);
-            }
-
-            if (at.Drain == FileTailCursor.CopyDrain)
-            {
-                // A static copy: drain it to its end, then move to the truncated original at once.
-                FileTailBatch copied = Scan(file, at, eofEndsLine: true, gap: false);
-                if (!copied.More)
-                {
-                    return copied with { Cursor = next, Rotated = true, More = true };
-                }
-
-                // A copy that keeps growing cannot hold the cursor either.
-                (FileTailBatch counted, bool copyCapped) = CountDrainPoll(copied, at, file);
-                return copyCapped ? Leave(counted, next, at, file) : counted;
-            }
-
-            (FileTailBatch batch, bool capped) = CountDrainPoll(Scan(file, at, eofEndsLine: false, gap: false), at, file);
-            if (capped)
-            {
-                return Leave(batch, next, at, file);
-            }
-
-            if (batch.More)
-            {
-                return batch; // A backlog poll never counts towards the grace window.
-            }
-
-            // At the end of path.1 (only an unterminated last line may remain).
-            bool unchanged = at.ObservedLength == file.Length && at.ObservedWriteTime == file.WriteTicks;
-            FileTailCursor observed = batch.Cursor with
-            {
-                ObservedLength = file.Length,
-                ObservedWriteTime = file.WriteTicks,
-                StablePolls = unchanged ? Math.Min((at.StablePolls ?? 0) + 1, FileTailSourceConfigurationLoader.MaximumRotationGracePolls) : 0
-            };
-            if (fingerprint is null || observed.StablePolls < options.RotationGracePolls || batch.Lines.Count >= options.MaxLinesPerBatch)
-            {
-                return batch with { Cursor = observed };
-            }
-
-            // Settled: its unterminated last line is complete, then leave it.
-            FileTailBatch tail = Scan(file, observed, eofEndsLine: true, gap: false);
-            return batch with
-            {
-                Lines = [.. batch.Lines, .. tail.Lines],
-                Cursor = next with { Abandoned = at.Fingerprint, AbandonedLength = file.Length },
-                Rotated = true,
-                More = true
-            };
-        }
-
-        // Only a poll that reaches the end of path.1, or gets past its length when the drain
-        // began, counts towards the cap: a static backlog is read in full however long it is,
-        // and a path.1 that keeps growing is still left after a bounded number of polls.
-        (FileTailBatch Batch, bool Capped) CountDrainPoll(FileTailBatch scanned, FileTailCursor at, FileTailHandle file)
-        {
-            long backlog = at.DrainLength ?? file.Length;
-            bool counts = !scanned.More || scanned.Cursor.Offset >= backlog;
-            int polls = counts
-                ? Math.Min((at.DrainPolls ?? 0) + 1, FileTailSourceConfigurationLoader.MaximumRotationDrainMaxPolls)
-                : at.DrainPolls ?? 0;
-            FileTailBatch batch = scanned with { Cursor = scanned.Cursor with { DrainPolls = polls, DrainLength = backlog } };
-            return (batch, counts && polls >= options.RotationDrainMaxPolls);
-        }
-
-        // A path.1 that never settles cannot hold the cursor: move on anyway. What is left
-        // unread in it now is a gap, and so are later writes to it while it can be observed.
-        static FileTailBatch Leave(FileTailBatch batch, FileTailCursor next, FileTailCursor at, FileTailHandle file) =>
-            batch with
-            {
-                Cursor = next with { Abandoned = at.Fingerprint, AbandonedLength = file.Length },
-                Rotated = true,
-                More = true,
-                Gap = batch.Gap || batch.Cursor.Offset < file.Length
-            };
-
-        FileTailBatch Scan(FileTailHandle file, FileTailCursor at, bool eofEndsLine, bool gap) =>
-            ReadFile(file, at, options, eofEndsLine, gap) with { Origin = at };
     }
 
-    private static FileTailCursor Provisional() => new(FileTailCursor.CurrentSchemaVersion, string.Empty, 0);
+    /// <summary>Plain text lines; a settled rotated file's unterminated last line is complete.</summary>
+    private sealed class TextDecoder(FileTailReaderOptions options) : IFileTailDecoder<FileTailBatch>
+    {
+        public FileTailBatch Scan(FileTailHandle file, FileTailCursor cursor, bool eofEndsLine, bool gap) =>
+            ReadFile(file, cursor, options, eofEndsLine, gap) with { Origin = cursor };
 
-    private static FileTailCursor Normal(string fingerprint, long offset, string? fileId) =>
-        new(FileTailCursor.CurrentSchemaVersion, fingerprint, offset, FileId: fileId);
+        public FileTailBatch Empty(FileTailCursor cursor, bool gap) => FileTailReader.Empty(cursor) with { Gap = gap };
 
-    /// <summary>The cursor now refers to path.1; grace and abandoned state start afresh.</summary>
-    private static FileTailCursor StartDrain(FileTailCursor at, string kind) =>
-        at with
-        {
-            Drain = kind,
-            ObservedLength = null,
-            ObservedWriteTime = null,
-            StablePolls = null,
-            DrainPolls = null,
-            DrainLength = null,
-            Abandoned = null,
-            AbandonedLength = null
-        };
+        public FileTailCursor CursorOf(FileTailBatch batch) => batch.Cursor;
+
+        public bool StoppedByLimit(FileTailBatch batch) => batch.More;
+
+        public int LineCount(FileTailBatch batch) => batch.Lines.Count;
+
+        public FileTailBatch WithCursor(FileTailBatch batch, FileTailCursor cursor) => batch with { Cursor = cursor };
+
+        public FileTailBatch WithGap(FileTailBatch batch) => batch with { Gap = true };
+
+        public FileTailBatch MovedToCurrent(FileTailBatch batch, FileTailCursor moved) =>
+            batch with { Cursor = moved, Rotated = true, More = true };
+
+        public FileTailBatch Append(FileTailBatch batch, FileTailBatch tail) =>
+            batch with { Lines = [.. batch.Lines, .. tail.Lines] };
+    }
 
     /// <summary>The identity of the file at <paramref name="path"/> (null when it has none yet).</summary>
     public static string? Fingerprint(string path) => FileTailHandle.FingerprintOf(path);
@@ -615,35 +423,6 @@ public static class FileTailReader
 
     private static byte[] TrimCarriageReturn(byte[] buffer, int count) =>
         buffer.AsSpan(0, count > 0 && buffer[count - 1] == (byte)'\r' ? count - 1 : count).ToArray();
-
-    /// <summary>
-    /// After the last complete line, scanning back at most <paramref name="budget"/> bytes.
-    /// Without a newline in that window the read starts at the end, skipping the rest of the
-    /// line being written; a file with no newline at all starts at 0.
-    /// </summary>
-    private static (long Offset, bool Discarding) StartPosition(FileTailHandle file, long budget, CancellationToken cancellationToken)
-    {
-        byte[] block = new byte[4_096];
-        long end = file.Length;
-        long floor = Math.Max(0, file.Length - budget);
-        while (end > floor)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            int count = (int)Math.Min(block.Length, end - floor);
-            long start = end - count;
-            // A concurrent truncation can shorten the read; bytes past EOF are never '\n'.
-            int read = RandomAccess.Read(file.Stream.SafeFileHandle, block.AsSpan(0, count), start);
-            int newline = block.AsSpan(0, read).LastIndexOf((byte)'\n');
-            if (newline >= 0)
-            {
-                return (start + newline + 1, false);
-            }
-
-            end = start;
-        }
-
-        return floor > 0 ? (file.Length, true) : (0, false);
-    }
 
     private static FileTailBatch Empty(FileTailCursor cursor) => new([], cursor, false, false, false);
 }

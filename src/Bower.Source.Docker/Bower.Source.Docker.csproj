@@ -2,5 +2,6 @@
   <ItemGroup>
     <ProjectReference Include="../Bower.Abstractions/Bower.Abstractions.csproj" />
     <ProjectReference Include="../Bower.Contracts/Bower.Contracts.csproj" />
+    <ProjectReference Include="../Bower.Source.File/Bower.Source.File.csproj" />
   </ItemGroup>
 </Project>

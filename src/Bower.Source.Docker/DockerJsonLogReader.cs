@@ -1,8 +1,9 @@
 using System.Globalization;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+
+using Bower.Source.File;
 
 namespace Bower.Source.Docker;
 
@@ -81,11 +82,18 @@ public sealed record DockerLogReaderOptions
 /// <summary>
 /// Bounded, read-only tail of Docker json-file logs with rotation handling.
 /// Only complete lines are consumed; a line still being written is left for the next read.
+/// <para>
+/// File identity, rotation (<c>.1</c> draining), truncation and the start position come
+/// from the shared tailer (<see cref="FileTailFiles"/>) with Docker's own policy: the
+/// 64-byte identity, no rotation grace window, no copy drain on a same-identity truncation,
+/// waiting while the current file cannot be identified, and an oversized-line discard
+/// carried across rotation. This class is the Docker line decoder on top of it: json-file
+/// entries, the 16 KiB partial-chunk join, malformed entries and the oversized-line discard,
+/// within the record and byte bounds.
+/// </para>
 /// </summary>
 public static class DockerJsonLogReader
 {
-    internal const int FingerprintBytes = 64;
-
     public static DockerLogBatch Read(
         DockerContainer container,
         DockerLogCursor? cursor,
@@ -94,100 +102,69 @@ public static class DockerJsonLogReader
         ArgumentNullException.ThrowIfNull(container);
         ArgumentNullException.ThrowIfNull(options);
 
-        string currentPath = container.LogPath;
-        string rotatedPath = currentPath + ".1";
-        string? currentFingerprint = Fingerprint(currentPath);
-
-        if (cursor is null)
-        {
-            if (currentFingerprint is null)
-            {
-                return Empty(new DockerLogCursor(DockerLogCursor.CurrentSchemaVersion, string.Empty, 0));
-            }
-
-            long start = options.StartAtEnd ? LastCompleteLineEnd(currentPath) : 0;
-            DockerLogCursor initial = new(DockerLogCursor.CurrentSchemaVersion, currentFingerprint, start);
-            return options.StartAtEnd ? Empty(initial) : ReadFile(currentPath, initial, options, false);
-        }
-
-        if (currentFingerprint is null)
-        {
-            return Empty(cursor);
-        }
-
-        // Provisional cursor recorded before the file had enough bytes to fingerprint.
-        if (cursor.Fingerprint.Length == 0)
-        {
-            return ReadFile(
-                currentPath,
-                cursor with { Fingerprint = currentFingerprint, Offset = 0, Discarding = false },
-                options,
-                false);
-        }
-
-        if (string.Equals(cursor.Fingerprint, currentFingerprint, StringComparison.Ordinal))
-        {
-            long length = new FileInfo(currentPath).Length;
-            if (length < cursor.Offset)
-            {
-                // Truncated in place: restart and flag the gap.
-                return ReadFile(currentPath, cursor with { Offset = 0, Discarding = false }, options, true);
-            }
-
-            return ReadFile(currentPath, cursor, options, false);
-        }
-
-        // The current file is new. Drain the rotated file first if it is the one we were reading.
-        if (string.Equals(Fingerprint(rotatedPath), cursor.Fingerprint, StringComparison.Ordinal))
-        {
-            DockerLogBatch rotated = ReadFile(rotatedPath, cursor, options, false);
-            bool drained = rotated.Cursor.Offset >= new FileInfo(rotatedPath).Length;
-            if (drained && rotated.Records.Count < options.MaximumRecordsPerBatch)
-            {
-                // A line split across the rotation keeps being discarded in the new file.
-                return rotated with
-                {
-                    Cursor = new DockerLogCursor(
-                        DockerLogCursor.CurrentSchemaVersion,
-                        currentFingerprint,
-                        0,
-                        rotated.Cursor.Discarding)
-                };
-            }
-
-            return rotated;
-        }
-
-        // Rotated more than once since the last read (or file recreated): lines were lost.
-        return ReadFile(
-            currentPath,
-            new DockerLogCursor(DockerLogCursor.CurrentSchemaVersion, currentFingerprint, 0),
-            options,
-            true);
-    }
-
-    internal static string? Fingerprint(string path)
-    {
+        using FileTailHandle? current = FileTailHandle.OpenWithPrefixIdentity(container.LogPath);
+        FileTailHandle? rotated = null;
         try
         {
-            using FileStream stream = Open(path);
-            if (stream.Length < FingerprintBytes)
-            {
-                return null;
-            }
-
-            byte[] prefix = new byte[FingerprintBytes];
-            stream.ReadExactly(prefix);
-            return Convert.ToHexStringLower(SHA256.HashData(prefix));
+            return FileTailFiles.Plan(
+                current,
+                fileId: null,
+                () => rotated ??= FileTailHandle.OpenWithPrefixIdentity(container.LogPath + ".1"),
+                cursor is null ? null : Shared(cursor),
+                new FileTailPolicy
+                {
+                    StartAtEnd = options.StartAtEnd,
+                    WaitWhileCurrentUnidentified = true,
+                    DrainCopyOfSameIdentity = false,
+                    RotationGracePolls = null,
+                    RotationDrainMaxPolls = null,
+                    CarryDiscardingAcrossRotation = true,
+                    TrackAbandoned = false
+                },
+                new Decoder(options));
         }
-        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+        finally
         {
-            return null;
+            rotated?.Dispose();
         }
     }
 
+    /// <summary>
+    /// Docker json-file entries. A drain stopped by the record limit is not drained. Docker's
+    /// cursor keeps no rotation state, so each read detects the rotation again, as it always did.
+    /// </summary>
+    private sealed class Decoder(DockerLogReaderOptions options) : IFileTailDecoder<DockerLogBatch>
+    {
+        public DockerLogBatch Scan(FileTailHandle file, FileTailCursor cursor, bool eofEndsLine, bool gap) =>
+            ReadFile(file, Docker(cursor), options, gap);
+
+        public DockerLogBatch Empty(FileTailCursor cursor, bool gap) => DockerJsonLogReader.Empty(Docker(cursor)) with { RotationGap = gap };
+
+        public FileTailCursor CursorOf(DockerLogBatch batch) => Shared(batch.Cursor);
+
+        public bool StoppedByLimit(DockerLogBatch batch) => batch.Records.Count >= options.MaximumRecordsPerBatch;
+
+        public int LineCount(DockerLogBatch batch) => batch.Records.Count;
+
+        public DockerLogBatch WithCursor(DockerLogBatch batch, FileTailCursor cursor) => batch with { Cursor = Docker(cursor) };
+
+        public DockerLogBatch WithGap(DockerLogBatch batch) => batch with { RotationGap = true };
+
+        public DockerLogBatch MovedToCurrent(DockerLogBatch batch, FileTailCursor moved) => batch with { Cursor = Docker(moved) };
+
+        public DockerLogBatch Append(DockerLogBatch batch, DockerLogBatch tail) => batch;
+    }
+
+    // Same fields and JSON as the shared cursor, so persisted Docker cursors stay valid.
+    private static FileTailCursor Shared(DockerLogCursor cursor) =>
+        new(cursor.SchemaVersion, cursor.Fingerprint, cursor.Offset, cursor.Discarding);
+
+    // Docker's own schema version: the file tail cursor schema evolves separately.
+    private static DockerLogCursor Docker(FileTailCursor cursor) =>
+        new(DockerLogCursor.CurrentSchemaVersion, cursor.Fingerprint, cursor.Offset, cursor.Discarding);
+
     private static DockerLogBatch ReadFile(
-        string path,
+        FileTailHandle file,
         DockerLogCursor cursor,
         DockerLogReaderOptions options,
         bool rotationGap)
@@ -198,7 +175,7 @@ public static class DockerJsonLogReader
         long committed = cursor.Offset;
         bool committedDiscarding = cursor.Discarding;
 
-        using FileStream stream = Open(path);
+        FileStream stream = file.Stream;
         stream.Seek(cursor.Offset, SeekOrigin.Begin);
         long budgetEnd = Math.Min(stream.Length, cursor.Offset + options.MaximumBytesPerBatch);
 
@@ -391,35 +368,6 @@ public static class DockerJsonLogReader
             return false;
         }
     }
-
-    private static long LastCompleteLineEnd(string path)
-    {
-        // Scan backwards in blocks: seeking back one byte at a time discarded the 64 KiB
-        // read buffer on every step, so a long unterminated tail cost one buffer refill per byte.
-        using FileStream stream = Open(path);
-        byte[] block = new byte[4_096];
-        long end = stream.Length;
-        while (end > 0)
-        {
-            int count = (int)Math.Min(block.Length, end);
-            long start = end - count;
-            stream.Seek(start, SeekOrigin.Begin);
-            // A concurrent truncation can shorten the read; bytes past EOF are never '\n'.
-            int read = stream.ReadAtLeast(block.AsSpan(0, count), count, throwOnEndOfStream: false);
-            int newline = block.AsSpan(0, read).LastIndexOf((byte)'\n');
-            if (newline >= 0)
-            {
-                return start + newline + 1;
-            }
-
-            end = start;
-        }
-
-        return 0;
-    }
-
-    private static FileStream Open(string path) =>
-        new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 65_536);
 
     private static DockerLogBatch Empty(DockerLogCursor cursor) => new([], cursor, 0, 0, false);
 }
