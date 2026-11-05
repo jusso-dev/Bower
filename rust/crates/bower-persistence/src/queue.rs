@@ -7,9 +7,9 @@ use std::time::Duration;
 
 use bower_contracts::time::{self, Timestamp};
 use bower_contracts::{
-    DeadLetterRecord, DurableEventStore, EnqueueResult, FailureSettlement, LedgerHead,
-    LedgerVerification, QueueSnapshot, QueueState, QueuedEvent, SourceActivity, SourceMonitoring,
-    StoreError, StoreResult, SuppressionWindow,
+    DeadLetterRecord, DeliverySettlement, DurableEventStore, EnqueueResult, FailureSettlement,
+    LedgerHead, LedgerVerification, QueueSnapshot, QueueState, QueuedEvent, SourceActivity,
+    SourceMonitoring, StoreError, StoreResult, SuppressionWindow,
 };
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension, Row, TransactionBehavior, named_params, params};
@@ -881,10 +881,26 @@ AND CAST(enqueue_sequence AS TEXT) || ':' || CAST(lease_generation AS TEXT) = :l
         lease_tokens: &std::collections::HashMap<String, String>,
     ) -> StoreResult<Vec<String>> {
         require_text(acknowledgement, "acknowledgement")?;
-        for event_id in event_ids {
-            require_text(event_id, "eventId")?;
+        let deliveries: Vec<DeliverySettlement> = event_ids
+            .iter()
+            .map(|event_id| DeliverySettlement {
+                event_id: event_id.clone(),
+                acknowledgement: acknowledgement.to_string(),
+            })
+            .collect();
+        self.mark_delivered_each(&deliveries, lease_tokens)
+    }
+
+    fn mark_delivered_each(
+        &self,
+        deliveries: &[DeliverySettlement],
+        lease_tokens: &std::collections::HashMap<String, String>,
+    ) -> StoreResult<Vec<String>> {
+        for delivery in deliveries {
+            require_text(&delivery.event_id, "eventId")?;
+            require_text(&delivery.acknowledgement, "acknowledgement")?;
         }
-        if event_ids.is_empty() {
+        if deliveries.is_empty() {
             return Ok(Vec::new());
         }
         let delivered_at = self.now_text();
@@ -912,19 +928,19 @@ WHERE event_id = :event_id AND state = :uploading
 AND CAST(enqueue_sequence AS TEXT) || ':' || CAST(lease_generation AS TEXT) = :lease_token;",
                     )
                     .map_err(storage)?;
-                for event_id in event_ids {
+                for delivery in deliveries {
                     let affected = update
                         .execute(named_params! {
                             ":delivered": DELIVERED,
                             ":uploading": UPLOADING,
-                            ":acknowledgement": acknowledgement,
+                            ":acknowledgement": delivery.acknowledgement,
                             ":delivered_at": delivered_at,
-                            ":event_id": event_id,
-                            ":lease_token": lease_tokens.get(event_id).map(String::as_str),
+                            ":event_id": delivery.event_id,
+                            ":lease_token": lease_tokens.get(&delivery.event_id).map(String::as_str),
                         })
                         .map_err(storage)?;
                     if affected != 1 {
-                        not_leased.push(event_id.clone());
+                        not_leased.push(delivery.event_id.clone());
                     }
                 }
             }

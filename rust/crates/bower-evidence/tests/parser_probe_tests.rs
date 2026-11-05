@@ -733,3 +733,63 @@ async fn non_json_query_error_body_is_a_timeout_not_a_crash() {
         assert!(generic.probe.is_none());
     }
 }
+
+/// C# `StalledStatus_TimesOutAsUnreadable_AndTheCanaryProceeds`: a `/v1/status` that never
+/// answers hits the client timeout (`EvidenceError::Http`), reads as unreadable status, and
+/// the canary is still sent. The Rust runner has no caller token; dropping the run future
+/// is its cancellation.
+#[tokio::test]
+async fn stalled_status_times_out_as_unreadable_and_the_canary_proceeds() {
+    let canaries = Arc::new(Mutex::new(0usize));
+    let posted = Arc::clone(&canaries);
+    let app = Router::new()
+        .route(
+            "/v1/status",
+            get(|| async {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                "{}"
+            }),
+        )
+        .route(
+            "/v1/events",
+            post(move || {
+                let posted = Arc::clone(&posted);
+                async move {
+                    *posted.lock().unwrap() += 1;
+                    (
+                        axum::http::StatusCode::ACCEPTED,
+                        [(axum::http::header::CONTENT_TYPE, "application/json")],
+                        "{\"decision\":\"accept\"}",
+                    )
+                }
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_millis(200))
+        .build()
+        .unwrap();
+    let sender = Arc::new(HttpCanarySender::new(client));
+    let mut options = EvidenceOptions::new(format!("http://{address}/").parse().unwrap());
+    options.ingest_token = Some(TOKEN.to_owned());
+
+    let started = std::time::Instant::now();
+    let bundle = EvidenceRunner::new(sender.clone(), None, None)
+        .with_parser_sender(sender)
+        .run(&options)
+        .await
+        .unwrap();
+
+    assert!(started.elapsed() < Duration::from_secs(10));
+    assert_eq!(1, *canaries.lock().unwrap());
+    assert_eq!(202, bundle.canary.collector_status);
+    assert_eq!(modes::SIMULATED, bundle.mode);
+    assert!(
+        !bundle
+            .limitations
+            .iter()
+            .any(|item| item.starts_with("NOT SENTINEL"))
+    );
+}

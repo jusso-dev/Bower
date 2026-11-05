@@ -253,28 +253,26 @@ public sealed partial class QueueDeliveryWorker(
 
         if (delivered.Count > 0)
         {
-            // One queue transaction per distinct acknowledgement: the whole batch, unless the
-            // adapter names a per-event acknowledgement (one per S3 object, for example).
+            // One queue transaction for every acknowledged event in the batch, also when the
+            // adapter names a per-event acknowledgement (one per S3 object, for example): a
+            // partial settlement would re-lease later objects' events into different objects.
             Dictionary<string, string> tokens = events.ToDictionary(item => item.EventId, item => item.LeaseToken!, StringComparer.Ordinal);
-            int reclaimedCount = 0;
-            foreach (IGrouping<string, string> group in delivered.GroupBy(
-                eventId => result.EventAcknowledgements?.GetValueOrDefault(eventId) ?? acknowledgement,
-                StringComparer.Ordinal))
-            {
-                List<string> eventIds = [.. group];
-                IReadOnlyList<string> reclaimed = await SettleAsync(
-                    token => queue.MarkDeliveredBatchAsync(eventIds, group.Key, tokens, token),
-                    cancellationToken);
-                reclaimedCount += reclaimed.Count;
-            }
-
-            for (int index = 0; index < reclaimedCount; index++)
+            IReadOnlyDictionary<string, string>? perEvent = result.EventAcknowledgements;
+            IReadOnlyList<string> reclaimed = await SettleAsync(
+                token => perEvent is null or { Count: 0 }
+                    ? queue.MarkDeliveredBatchAsync(delivered, acknowledgement, tokens, token)
+                    : queue.MarkDeliveredBatchAsync(
+                        [.. delivered.Select(eventId => new DeliverySettlement(eventId, perEvent.GetValueOrDefault(eventId) ?? acknowledgement))],
+                        tokens,
+                        token),
+                cancellationToken);
+            for (int index = 0; index < reclaimed.Count; index++)
             {
                 // The lease expired and the event was reclaimed; the newer lease owns it now.
                 LogStaleLease(logger, output.Id);
             }
 
-            if (reclaimedCount < delivered.Count)
+            if (reclaimed.Count < delivered.Count)
             {
                 activity?.RecordDelivery(clock.GetUtcNow());
             }

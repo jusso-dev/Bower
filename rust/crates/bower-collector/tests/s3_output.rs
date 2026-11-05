@@ -345,3 +345,38 @@ async fn status_reports_the_output_only_when_it_is_not_sentinel() {
     assert!(body.contains("\"output\":\"s3\""), "{body}");
     assert!(!body.contains("bower-status-test"));
 }
+
+/// C# `Queue_SettlementFailureIsAllOrNothingAcrossObjects`: a storage failure while settling
+/// the second object leaves every event of the delivery unsettled, so a retry rebuilds the
+/// same objects instead of re-leasing only the later events into different ones.
+#[tokio::test]
+async fn settlement_failure_is_all_or_nothing_across_objects() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock(Arc::new(Mutex::new(
+        bower_contracts::time::parse("2026-07-26T02:14:19Z").unwrap(),
+    )));
+    let store = queue(directory.path(), &clock, 4);
+    rusqlite::Connection::open(directory.path().join("queue.db"))
+        .unwrap()
+        .execute_batch(
+            "CREATE TRIGGER inject_settlement_failure BEFORE UPDATE OF state ON queue_events_v5
+             WHEN NEW.event_id = 's3-3' AND NEW.state = 3
+             BEGIN SELECT RAISE(ABORT, 'injected storage failure'); END;",
+        )
+        .unwrap();
+    let fake = FakeS3::default();
+    *fake.status.lock().unwrap() = 200;
+    let address = start(fake.clone()).await;
+    let worker = QueueDeliveryWorker::new(
+        store.clone(),
+        Arc::new(output_with(address, 2)),
+        Arc::new(clock.clone()),
+        QueueDeliveryOptions::default(),
+    );
+
+    assert!(worker.deliver_once(&ShutdownToken::never()).await.is_err());
+
+    assert_eq!(2, fake.paths.lock().unwrap().len());
+    let snapshot = store.snapshot().unwrap();
+    assert_eq!((0, 4), (snapshot.delivered, snapshot.uploading));
+}

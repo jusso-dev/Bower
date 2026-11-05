@@ -257,6 +257,13 @@ pub struct DeadLetterRecord {
     pub received_at: Timestamp,
 }
 
+/// One delivered event and the acknowledgement it records (C# `DeliverySettlement`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeliverySettlement {
+    pub event_id: String,
+    pub acknowledgement: String,
+}
+
 /// One failed delivery to settle (C# `FailureSettlement`). `retry_after` set
 /// schedules a retry; `None` dead-letters the event with `failure_code`.
 #[derive(Clone, Debug, PartialEq)]
@@ -369,6 +376,20 @@ pub trait DurableEventStore: Send + Sync {
             }
         }
         Ok(not_leased)
+    }
+    /// C# `MarkDeliveredBatchAsync(IReadOnlyList<DeliverySettlement>, ...)`: as
+    /// `mark_delivered_batch`, but each event records its own acknowledgement (for example
+    /// the S3 object holding it), still in one atomic transaction (nothing settled on
+    /// error). Stores that cannot settle atomically keep this default, which refuses: the
+    /// delivery then retries after lease expiry instead of settling part of it.
+    fn mark_delivered_each(
+        &self,
+        _deliveries: &[DeliverySettlement],
+        _lease_tokens: &std::collections::HashMap<String, String>,
+    ) -> StoreResult<Vec<String>> {
+        Err(StoreError::Storage(
+            "this store cannot settle per-event acknowledgements atomically".into(),
+        ))
     }
     /// Settles failed deliveries: every listed event still leased becomes retrying
     /// (`retry_after` set) or dead-lettered (`None`); the rest are returned untouched.

@@ -629,7 +629,7 @@ public sealed partial class SqliteEventStore : IDurableEventStore
         await transaction.CommitAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<string>> MarkDeliveredBatchAsync(
+    public Task<IReadOnlyList<string>> MarkDeliveredBatchAsync(
         IReadOnlyList<string> eventIds,
         string acknowledgement,
         IReadOnlyDictionary<string, string>? leaseTokens,
@@ -637,12 +637,23 @@ public sealed partial class SqliteEventStore : IDurableEventStore
     {
         ArgumentNullException.ThrowIfNull(eventIds);
         ArgumentException.ThrowIfNullOrWhiteSpace(acknowledgement);
-        foreach (string eventId in eventIds)
+        return MarkDeliveredBatchAsync(
+            [.. eventIds.Select(eventId => new DeliverySettlement(eventId, acknowledgement))], leaseTokens, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<string>> MarkDeliveredBatchAsync(
+        IReadOnlyList<DeliverySettlement> deliveries,
+        IReadOnlyDictionary<string, string>? leaseTokens,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(deliveries);
+        foreach (DeliverySettlement delivery in deliveries)
         {
-            ArgumentException.ThrowIfNullOrWhiteSpace(eventId);
+            ArgumentException.ThrowIfNullOrWhiteSpace(delivery.EventId);
+            ArgumentException.ThrowIfNullOrWhiteSpace(delivery.Acknowledgement);
         }
 
-        if (eventIds.Count == 0)
+        if (deliveries.Count == 0)
         {
             return [];
         }
@@ -668,7 +679,7 @@ public sealed partial class SqliteEventStore : IDurableEventStore
             """;
         command.Parameters.AddWithValue("$delivered", (int)QueueState.Delivered);
         command.Parameters.AddWithValue("$uploading", (int)QueueState.Uploading);
-        command.Parameters.AddWithValue("$acknowledgement", acknowledgement);
+        SqliteParameter deliveredAcknowledgement = command.Parameters.Add("$acknowledgement", SqliteType.Text);
         command.Parameters.AddWithValue(
             "$delivered_at",
             clock.GetUtcNow().ToString(TimestampFormat, CultureInfo.InvariantCulture));
@@ -676,9 +687,10 @@ public sealed partial class SqliteEventStore : IDurableEventStore
 
         SqliteParameter token = command.Parameters.Add("$lease_token", SqliteType.Text);
         List<string> notLeased = [];
-        foreach (string eventId in eventIds)
+        foreach ((string eventId, string acknowledgement) in deliveries)
         {
             deliveredEventId.Value = eventId;
+            deliveredAcknowledgement.Value = acknowledgement;
             token.Value = leaseTokens is not null && leaseTokens.TryGetValue(eventId, out string? claim)
                 ? claim : DBNull.Value;
             if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)

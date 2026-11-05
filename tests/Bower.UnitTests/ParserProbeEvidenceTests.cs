@@ -289,6 +289,60 @@ public sealed partial class ParserProbeEvidenceTests
         Assert.DoesNotContain(bundle.Limitations, item => item.StartsWith("NOT SENTINEL", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task StalledStatus_TimesOutAsUnreadable_AndTheCanaryProceeds()
+    {
+        StallingStatusCollector handler = new();
+        HttpCanarySender sender = new(new HttpClient(handler) { Timeout = TimeSpan.FromMilliseconds(200) });
+        EvidenceRunner runner = new(sender, null, null, new FakeClock(TestEvents.Now), sender);
+
+        EvidenceBundle bundle = await runner.RunAsync(
+            new EvidenceOptions { CollectorUrl = new Uri("http://collector.test:4319/") },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, handler.StatusReads);
+        Assert.Equal(202, bundle.Canary.CollectorStatus);
+        Assert.Equal(EvidenceModes.Simulated, bundle.Mode);
+        Assert.DoesNotContain(bundle.Limitations, item => item.StartsWith("NOT SENTINEL", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task StalledStatus_CallerCancellationStillStopsTheRun()
+    {
+        StallingStatusCollector handler = new();
+        HttpCanarySender sender = new(new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan });
+        EvidenceRunner runner = new(sender, null, null, new FakeClock(TestEvents.Now), sender);
+        using CancellationTokenSource cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        cancellation.CancelAfter(TimeSpan.FromMilliseconds(200));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.RunAsync(
+            new EvidenceOptions { CollectorUrl = new Uri("http://collector.test:4319/") }, cancellation.Token));
+        Assert.Equal(0, handler.Canaries);
+    }
+
+    /// <summary>/v1/status never answers; /v1/events accepts the canary.</summary>
+    private sealed class StallingStatusCollector : HttpMessageHandler
+    {
+        public int StatusReads { get; private set; }
+
+        public int Canaries { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.RequestUri!.AbsolutePath == "/v1/status")
+            {
+                StatusReads++;
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+
+            Canaries++;
+            return new HttpResponseMessage(System.Net.HttpStatusCode.Accepted)
+            {
+                Content = new StringContent("""{"decision":"accept"}""", System.Text.Encoding.UTF8, "application/json")
+            };
+        }
+    }
+
     [Theory]
     [InlineData("queued-false")]
     [InlineData("duplicate")]

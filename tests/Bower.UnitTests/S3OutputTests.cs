@@ -443,6 +443,46 @@ public sealed class S3OutputTests
             rows);
     }
 
+    [Fact]
+    public async Task Queue_SettlementFailureIsAllOrNothingAcrossObjects()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        string path = Path.Combine(directory.Path, "queue.db");
+        SqliteEventStore store = new(path, 10 * 1024 * 1024, clock);
+        await store.InitializeAsync(cancellationToken);
+        foreach (QueuedEvent item in Events(4))
+        {
+            await store.EnqueueAsync(item, cancellationToken);
+        }
+
+        // Storage fails while settling the second object's last event.
+        using (Microsoft.Data.Sqlite.SqliteConnection connection = new($"Data Source={path};Pooling=False"))
+        {
+            connection.Open();
+            using Microsoft.Data.Sqlite.SqliteCommand trigger = connection.CreateCommand();
+            trigger.CommandText = $"""
+                CREATE TRIGGER inject_settlement_failure BEFORE UPDATE OF state ON queue_events_v5
+                WHEN NEW.event_id = 's3-3' AND NEW.state = {(int)QueueState.Delivered}
+                BEGIN SELECT RAISE(ABORT, 'injected storage failure'); END;
+                """;
+            trigger.ExecuteNonQuery();
+        }
+
+        FakeS3 s3 = new();
+        using S3Output output = Create(s3, Options() with { MaximumObjectEvents = 2 });
+        QueueDeliveryWorker worker = new(store, output, clock, new QueueDeliveryOptions(), new RecordingLogger());
+
+        await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() => worker.DeliverOnceAsync(cancellationToken));
+
+        // Both objects were written, but nothing was settled: object 1's events are not
+        // delivered while object 2's are re-leased, so a retry rebuilds the same two objects.
+        Assert.Equal(2, s3.Puts.Count);
+        QueueSnapshot snapshot = await store.GetSnapshotAsync(cancellationToken);
+        Assert.Equal((0, 4), (snapshot.Delivered, snapshot.Uploading));
+    }
+
     [Theory]
     [InlineData("BOWER_S3_ACCESS_KEY_ID")]
     [InlineData("BOWER_S3_SECRET_ACCESS_KEY")]

@@ -11,8 +11,8 @@ use std::time::Duration;
 
 use bower_contracts::time::Clock;
 use bower_contracts::{
-    DeliveryFailure, DeliveryResult, DurableEventStore, FailureSettlement, OutputAdapter,
-    QueuedEvent, StoreError, StoreResult,
+    DeliveryFailure, DeliveryResult, DeliverySettlement, DurableEventStore, FailureSettlement,
+    OutputAdapter, QueuedEvent, StoreError, StoreResult,
 };
 use tracing::{error, info, warn};
 
@@ -177,33 +177,34 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
 
         if !delivered.is_empty() {
             let count = delivered.len();
-            // One queue transaction per distinct acknowledgement: the whole batch, unless the
-            // adapter names a per-event acknowledgement (one per S3 object, for example).
-            let mut groups: Vec<(String, Vec<String>)> = Vec::new();
-            for event_id in delivered {
-                let key = result
-                    .event_acknowledgements
-                    .get(&event_id)
-                    .unwrap_or(&acknowledgement);
-                match groups.iter_mut().find(|(group, _)| group == key) {
-                    Some((_, ids)) => ids.push(event_id),
-                    None => groups.push((key.clone(), vec![event_id])),
-                }
+            // One queue transaction for every acknowledged event in the batch, also when the
+            // adapter names a per-event acknowledgement (one per S3 object, for example): a
+            // partial settlement would re-lease later objects' events into different objects.
+            let reclaimed = if result.event_acknowledgements.is_empty() {
+                self.blocking(
+                    move |queue| queue.mark_delivered_batch(&delivered, &acknowledgement, &claims),
+                    shutdown,
+                )
+                .await?
+            } else {
+                let deliveries: Vec<DeliverySettlement> = delivered
+                    .into_iter()
+                    .map(|event_id| DeliverySettlement {
+                        acknowledgement: result
+                            .event_acknowledgements
+                            .get(&event_id)
+                            .unwrap_or(&acknowledgement)
+                            .clone(),
+                        event_id,
+                    })
+                    .collect();
+                self.blocking(
+                    move |queue| queue.mark_delivered_each(&deliveries, &claims),
+                    shutdown,
+                )
+                .await?
             }
-            let mut reclaimed = 0;
-            for (group, ids) in groups {
-                let claims = claims.clone();
-                reclaimed += self
-                    .blocking(
-                        move |queue| {
-                            queue
-                                .mark_delivered_batch(&ids, &group, &claims)
-                                .map(|r| r.len())
-                        },
-                        shutdown,
-                    )
-                    .await?;
-            }
+            .len();
             self.log_stale_leases(reclaimed);
             if reclaimed < count
                 && let Some(activity) = &self.activity

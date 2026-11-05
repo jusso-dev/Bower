@@ -218,6 +218,12 @@ public sealed partial class EvidenceRunner(
         {
             return null;
         }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // HttpClient.Timeout elapsed (TaskCanceledException): status is unreadable, so the
+            // probe proceeds. A cancelled run still stops.
+            return null;
+        }
     }
 
     /// <summary>
