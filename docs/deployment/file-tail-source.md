@@ -65,7 +65,7 @@ start-up and refuses a signed `reload`.
 | `maxLinesPerBatch` | `256` | 1–1024 lines per poll. A full poll reads again at once. |
 | `maxBytesPerBatch` | `1048576` | 65536–4194304 bytes scanned per poll (one line may run up to its own limit past it). Also bounds the backward scan for `startAt: end`. |
 | `rotationGracePolls` | `5` | 1–60 polls `path.1` must stay unchanged (size and write time) before the cursor moves to the new file. See [rotation](#cursors-rotation-and-backpressure). |
-| `rotationDrainMaxPolls` | `300` | `rotationGracePolls`–3600. The most counted polls a rename or copytruncate drain may take; then the cursor moves to the new file anyway. A poll counts only once it reaches the end of `path.1` or gets past the length `path.1` had when the drain began, so a backlog of any size is read in full. A writer (or an attacker who can write `path.1`) can delay the switch by at most the time to read that backlog plus this many polls. |
+| `rotationDrainMaxPolls` | `300` | `rotationGracePolls` + 2 to 3600 (settling a rename takes `rotationGracePolls` + 1 end-of-file polls, so a lower cap would end every rename drain first and count a static `path.1`'s unterminated last line as a gap). The most counted polls a rename or copytruncate drain may take; then the cursor moves to the new file anyway. A poll counts only once it reaches the end of `path.1` or gets past the length `path.1` had when the drain began, so a backlog of any size is read in full. A writer (or an attacker who can write `path.1`) can delay the switch by at most the time to read that backlog plus this many polls. |
 | `inputs[].id` | required | 1–63 lowercase letters, digits or hyphens, unique. Names the cursor (`file:<id>`) and the event's source adapter (`file:<id>:<pack>:<parser>`). |
 | `inputs[].path` | required | Absolute, normalised (no `.`, `..`, repeated or trailing separators), no wildcard characters (`* ? [ ] { }`) or control characters, strictly below an allowed root, and read by only one input. Paths that differ only in ASCII case count as the same file, and one input's path may not be another's `path.1`. These rules are applied to canonical paths too (directories resolved through links, so `/var/run/x.log` and `/run/x.log` are the same file), at load and at every read; a directory that does not exist yet is compared as written. An input whose directory did not exist at load keeps that written path as its load-time resolution, so if the directory later appears behind a link that makes it meet another input, both inputs can be refused rather than only one (this fails closed). Canonical paths follow `realpath` in both collectors: a `..` after a linked directory goes to that link's real parent. |
 | `inputs[].route` | required | `{ "pack": "<id>", "parser": <index> }`: an active parser of a loaded signed pack. Checked at start-up and before a signed reload. |
@@ -263,7 +263,9 @@ after a file is deleted and copytruncate keeps them.
   rename or copytruncate drain are counted in the cursor (a restart does not reset them),
   but only those that reach the end of `path.1` or get past the length `path.1` had when the
   drain began: a static backlog, however large (the collector stopped across a rotation, or
-  long backpressure), is always read in full. After `rotationDrainMaxPolls` counted polls
+  long backpressure), is always read in full. A poll that stops part-way for backpressure
+  rewinds to the cursor it started from, so that poll's drain count (and a drain length
+  first recorded in it) is not kept. After `rotationDrainMaxPolls` counted polls
   the cursor moves to the new file anyway, even if the new file is still missing; whatever
   is still unread in `path.1` then is counted in `rotationGaps`, and so are later writes to
   it, on the same best-effort terms. A writer can delay the switch by at most the time to

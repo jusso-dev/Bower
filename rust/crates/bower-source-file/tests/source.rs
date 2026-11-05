@@ -1525,7 +1525,7 @@ fn a_drain_left_at_the_cap_while_the_current_file_is_missing_still_counts_a_late
     std::fs::write(&path, line("first-1")).unwrap();
     let sink = FakeSink::new(|_| Ok(SubmitOutcome::Queued));
     let mut configuration = grace(text(directory.path(), &path, "beginning"), 2);
-    configuration.rotation_drain_max_polls = 3;
+    configuration.rotation_drain_max_polls = 4;
     let source = FileTailSource::new(
         configuration,
         sink.clone(),
@@ -1535,7 +1535,7 @@ fn a_drain_left_at_the_cap_while_the_current_file_is_missing_still_counts_a_late
     source.poll_once("auth").unwrap();
     // Renamed, and no new file yet: the drain reaches the cap with the current file missing.
     std::fs::rename(&path, &rotated).unwrap();
-    for _ in 0..3 {
+    for _ in 0..4 {
         source.poll_once("auth").unwrap();
     }
 

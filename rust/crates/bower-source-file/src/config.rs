@@ -277,11 +277,13 @@ pub fn parse(json: &str) -> Result<FileTailSourceConfiguration, ConfigError> {
             "File tail rotationGracePolls must be between 1 and {MAXIMUM_ROTATION_GRACE_POLLS}."
         )));
     }
-    if configuration.rotation_drain_max_polls < configuration.rotation_grace_polls
+    // Settling a rename takes rotation_grace_polls + 1 end-of-file polls; a lower cap would end
+    // every drain first and turn a static path.1's unterminated last line into a gap.
+    if configuration.rotation_drain_max_polls < configuration.rotation_grace_polls + 2
         || configuration.rotation_drain_max_polls > MAXIMUM_ROTATION_DRAIN_MAX_POLLS
     {
         return Err(invalid_data(format!(
-            "File tail rotationDrainMaxPolls must be between rotationGracePolls and {MAXIMUM_ROTATION_DRAIN_MAX_POLLS}."
+            "File tail rotationDrainMaxPolls must be between rotationGracePolls + 2 and {MAXIMUM_ROTATION_DRAIN_MAX_POLLS}."
         )));
     }
     let roots = configuration.roots();

@@ -1177,12 +1177,12 @@ public sealed class FileTailSourceTests
         FakeSink sink = new(_ => FileTailSubmitOutcome.Queued);
         FileTailSourceConfiguration configuration = Configuration(directory.Path, path, startAt: "beginning")
             with
-        { RotationGracePolls = 2, RotationDrainMaxPolls = 3 };
+        { RotationGracePolls = 2, RotationDrainMaxPolls = 4 };
         await using FileTailSource source = new(configuration, sink, new MemoryCursors());
         await source.PollOnceAsync("auth", cancellation);
         // Renamed, and no new file yet: the drain reaches the cap with the current file missing.
         File.Move(path, path + ".1");
-        for (int poll = 0; poll < 3; poll++)
+        for (int poll = 0; poll < 4; poll++)
         {
             await source.PollOnceAsync("auth", cancellation);
         }

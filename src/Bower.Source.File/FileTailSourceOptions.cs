@@ -13,7 +13,7 @@ namespace Bower.Source.File;
 /// <param name="MaxLinesPerBatch">Lines read per poll; the cursor is committed after each poll.</param>
 /// <param name="MaxBytesPerBatch">Bytes scanned per poll (one line may run up to its own limit past it).</param>
 /// <param name="RotationGracePolls">Polls <c>path.1</c> must stay unchanged before the cursor moves to the new file.</param>
-/// <param name="RotationDrainMaxPolls">Polls a rename drain may take before the cursor moves on anyway (bounds a <c>path.1</c> that keeps changing).</param>
+/// <param name="RotationDrainMaxPolls">Counted polls a drain may take before the cursor moves on anyway (bounds a <c>path.1</c> that keeps changing); at least <paramref name="RotationGracePolls"/> + 2, so a settling rename is never cut off.</param>
 public sealed record FileTailSourceConfiguration(
     string ApiVersion,
     string Kind,
@@ -153,10 +153,12 @@ public static class FileTailSourceConfigurationLoader
             throw new InvalidDataException($"File tail rotationGracePolls must be between 1 and {MaximumRotationGracePolls}.");
         }
 
-        if (configuration.RotationDrainMaxPolls < configuration.RotationGracePolls || configuration.RotationDrainMaxPolls > MaximumRotationDrainMaxPolls)
+        // Settling a rename takes rotationGracePolls + 1 end-of-file polls; a lower cap would end
+        // every drain first and turn a static path.1's unterminated last line into a gap.
+        if (configuration.RotationDrainMaxPolls < configuration.RotationGracePolls + 2 || configuration.RotationDrainMaxPolls > MaximumRotationDrainMaxPolls)
         {
             throw new InvalidDataException(
-                $"File tail rotationDrainMaxPolls must be between rotationGracePolls and {MaximumRotationDrainMaxPolls}.");
+                $"File tail rotationDrainMaxPolls must be between rotationGracePolls + 2 and {MaximumRotationDrainMaxPolls}.");
         }
 
         HashSet<string> ids = new(StringComparer.Ordinal);

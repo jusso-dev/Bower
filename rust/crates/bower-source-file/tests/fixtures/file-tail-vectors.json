@@ -3057,7 +3057,7 @@
       "options": {
         "startAtEnd": false,
         "rotationGracePolls": 2,
-        "rotationDrainMaxPolls": 3
+        "rotationDrainMaxPolls": 4
       },
       "steps": [
         {
@@ -3141,6 +3141,28 @@
                 "end": 194
               }
             ],
+            "provisional": false,
+            "offset": 194,
+            "discarding": false,
+            "drain": "rename",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "appendRotated": "late-4 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "late-4 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 194,
+                "end": 235
+              }
+            ],
             "provisional": true,
             "offset": 0,
             "discarding": false,
@@ -3152,7 +3174,7 @@
           }
         },
         {
-          "appendRotated": "late-4 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+          "appendRotated": "late-5 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
         },
         {
           "append": "second-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
@@ -3197,7 +3219,7 @@
         "startAtEnd": false,
         "maxLinesPerBatch": 1,
         "rotationGracePolls": 1,
-        "rotationDrainMaxPolls": 2
+        "rotationDrainMaxPolls": 3
       },
       "steps": [
         {
@@ -3307,6 +3329,28 @@
               }
             ],
             "provisional": false,
+            "offset": 235,
+            "discarding": false,
+            "drain": "copytruncate",
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "appendRotated": "grow-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "grow-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 235,
+                "end": 276
+              }
+            ],
+            "provisional": false,
             "offset": 0,
             "discarding": false,
             "drain": null,
@@ -3336,7 +3380,7 @@
           }
         },
         {
-          "appendRotated": "grow-3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+          "appendRotated": "grow-4 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
         },
         {
           "read": {
@@ -4617,7 +4661,57 @@
         "rotationDrainMaxPolls": 9
       },
       "expect": {
-        "error": "File tail rotationDrainMaxPolls must be between rotationGracePolls and 3600."
+        "error": "File tail rotationDrainMaxPolls must be between rotationGracePolls + 2 and 3600."
+      }
+    },
+    {
+      "name": "drain cap one poll above the grace window",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ],
+        "rotationGracePolls": 10,
+        "rotationDrainMaxPolls": 11
+      },
+      "expect": {
+        "error": "File tail rotationDrainMaxPolls must be between rotationGracePolls + 2 and 3600."
+      }
+    },
+    {
+      "name": "drain cap at the grace window plus two",
+      "config": {
+        "apiVersion": "bower.security/v1",
+        "kind": "FileTailSource",
+        "allowedRoots": [
+          "/var/log"
+        ],
+        "inputs": [
+          {
+            "id": "auth",
+            "path": "/var/log/auth.log",
+            "route": {
+              "pack": "linux-authlog-ssh",
+              "parser": 0
+            }
+          }
+        ],
+        "rotationGracePolls": 10,
+        "rotationDrainMaxPolls": 12
+      },
+      "expect": {
+        "valid": true
       }
     },
     {
@@ -4641,7 +4735,7 @@
         "rotationDrainMaxPolls": 3601
       },
       "expect": {
-        "error": "File tail rotationDrainMaxPolls must be between rotationGracePolls and 3600."
+        "error": "File tail rotationDrainMaxPolls must be between rotationGracePolls + 2 and 3600."
       }
     },
     {
@@ -4665,7 +4759,7 @@
         "rotationDrainMaxPolls": 0
       },
       "expect": {
-        "error": "File tail rotationDrainMaxPolls must be between rotationGracePolls and 3600."
+        "error": "File tail rotationDrainMaxPolls must be between rotationGracePolls + 2 and 3600."
       }
     },
     {
