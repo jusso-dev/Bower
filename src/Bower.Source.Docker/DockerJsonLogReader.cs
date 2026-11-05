@@ -173,7 +173,7 @@ public static class DockerJsonLogReader
             throw new UnreachableException("The Docker policy has no grace window, so no settled tail is appended.");
     }
 
-    // Same fields and JSON as the shared cursor, so persisted Docker cursors stay valid.
+    // Mapped by name; Docker's JSON and schema version stay DockerLogCursor's own (see Docker()).
     private static FileTailCursor Shared(DockerLogCursor cursor) =>
         new(cursor.SchemaVersion, cursor.Fingerprint, cursor.Offset, cursor.Discarding);
 

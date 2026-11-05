@@ -363,7 +363,7 @@ public static class FileTailFiles
             int count = (int)Math.Min(block.Length, end - floor);
             long start = end - count;
             // A concurrent truncation can shorten the read; bytes past EOF are never '\n'.
-            int read = RandomAccess.Read(file.Stream.SafeFileHandle, block.AsSpan(0, count), start);
+            int read = FileTailHandle.ReadFully(file.Stream.SafeFileHandle, block.AsSpan(0, count), start);
             int newline = block.AsSpan(0, read).LastIndexOf((byte)'\n');
             if (newline >= 0)
             {

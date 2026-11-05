@@ -67,5 +67,8 @@ cursor format, limits, defaults, failure codes and configuration messages.
   measures again (`Measured`). The Docker source uses it with its own policy and decoder, so
   a change here must keep `DockerSourceTests`, `DockerSidecarWorkerTests`,
   `DockerCursorCompatibilityTests`, `DockerReaderDifferentialTests` and
-  `DockerSharedTailerTests` passing unchanged. Keep `FileTailCursor`'s first four
-  fields and their JSON identical to `DockerLogCursor`.
+  `DockerSharedTailerTests` passing unchanged. The Docker reader maps cursors by name
+  (`Shared()` and `Docker()`), so keep `FileTailCursor`'s `Fingerprint`, `Offset` and
+  `Discarding` with the meanings `DockerLogCursor` gives them. Docker's JSON and schema
+  version are `DockerLogCursor`'s own, and it keeps none of the rotation fields, so nothing
+  under Docker's policy may depend on them.

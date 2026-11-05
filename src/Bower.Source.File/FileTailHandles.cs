@@ -38,6 +38,10 @@ public sealed class FileTailHandle : IDisposable
     [ThreadStatic]
     internal static Action<string>? BeforePrefixRead;
 
+    /// <summary>Tests only: the most bytes one <see cref="ReadFully"/> read returns (a filesystem that returns short reads).</summary>
+    [ThreadStatic]
+    internal static int? ShortReads;
+
     /// <summary>The Docker json-file identity: SHA-256 of the first 64 bytes.</summary>
     public const int PrefixIdentityBytes = 64;
 
@@ -167,7 +171,7 @@ public sealed class FileTailHandle : IDisposable
             // Read past the stream's buffer, so the scan reads the file as it is then, as the
             // reader's separate opens did, never bytes buffered while the identity was read.
             byte[] prefix = new byte[PrefixIdentityBytes];
-            if (RandomAccess.Read(stream.SafeFileHandle, prefix, 0) < PrefixIdentityBytes)
+            if (ReadFully(stream.SafeFileHandle, prefix, 0) < PrefixIdentityBytes)
             {
                 throw new EndOfStreamException();
             }
@@ -181,6 +185,29 @@ public sealed class FileTailHandle : IDisposable
             stream.Dispose();
             throw;
         }
+    }
+
+    /// <summary>
+    /// Reads at <paramref name="offset"/> until <paramref name="buffer"/> is full or a read
+    /// returns 0 (end of file), as a stream's <c>ReadExactly</c> and <c>ReadAtLeast</c> do: FUSE
+    /// and network filesystems may return fewer bytes than asked before the end.
+    /// </summary>
+    internal static int ReadFully(SafeFileHandle handle, Span<byte> buffer, long offset)
+    {
+        int total = 0;
+        while (total < buffer.Length)
+        {
+            Span<byte> rest = buffer[total..];
+            int read = RandomAccess.Read(handle, ShortReads is { } most ? rest[..Math.Min(most, rest.Length)] : rest, offset + total);
+            if (read == 0)
+            {
+                break;
+            }
+
+            total += read;
+        }
+
+        return total;
     }
 
     /// <summary>

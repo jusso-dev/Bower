@@ -165,6 +165,33 @@ public sealed class DockerSharedTailerTests
     }
 
     [Fact]
+    public void ShortReadsFromTheFilesystem_GiveTheSameIdentityAndStartPosition()
+    {
+        // FUSE or a network filesystem returning 7 bytes per read, before the end of the file.
+        FileTailHandle.ShortReads = 7;
+        try
+        {
+            IReadOnlyList<DockerLogBatch> batches = SameAsLegacy((container, reader) =>
+            {
+                string unfinished = Entry("unfinished " + new string('x', 5_000) + "\n");
+                // The start-at-end scan crosses more than one 4 KiB block of the unfinished entry.
+                System.IO.File.WriteAllText(container.LogPath, First + Entry("history\n") + unfinished[..^1]);
+                DockerLogBatch start = reader.Read(null, new DockerLogReaderOptions());
+                System.IO.File.AppendAllText(container.LogPath, "\n" + Entry("after the start\n"));
+                return [start, reader.Read(start.Cursor, new DockerLogReaderOptions())];
+            });
+
+            Assert.Equal(
+                ["unfinished " + new string('x', 5_000), "after the start"],
+                batches[1].Records.Select(record => record.Text));
+        }
+        finally
+        {
+            FileTailHandle.ShortReads = null;
+        }
+    }
+
+    [Fact]
     public void NewDockerCursors_UseDockersOwnSchemaVersion()
     {
         // A file tail cursor schema bump must never leak into persisted Docker cursors.
