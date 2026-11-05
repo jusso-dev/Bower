@@ -29,13 +29,15 @@ rotation), see the [file tail source guide](../deployment/file-tail-source.md).
   narrowest **allowed directory** that holds it. Wildcards, `..`, `.` and empty
   segments are refused, the file must be inside the allowed directory, and the
   whole disk (`/`) is refused as the allowed directory.
-- **Refused directories.** `/proc`, `/sys`, `/dev` and Bower's own directories
-  (`/etc/bower` for configuration and secrets, `/var/lib/bower` for the queue and
-  enrolment credential, `/var/spool/bower`, and `/var/log/bower`, the service's
-  log directory) are refused both as the allowed directory and for the file. A
-  parent such as `/var` or `/etc` is accepted as the allowed directory only while
-  the file itself is outside every refused directory. `/home`, `/root` and
-  `/run/user` are allowed with a warning because `bower.service` hides them
+- **Refused directories.** `/proc`, `/sys`, `/dev`, systemd credentials
+  (`/run/credentials`, where `LoadCredential` puts the privacy HMAC key) and
+  Bower's own directories (`/etc/bower` for configuration and secrets,
+  `/var/lib/bower` for the queue and enrolment credential, `/var/spool/bower`,
+  and `/var/log/bower`, the service's log directory) are refused both as the
+  allowed directory and for the file. A parent such as `/var`, `/etc` or `/run`
+  is accepted as the allowed directory only while the file itself is outside
+  every refused directory. An allowed directory or file under `/home`, `/root`
+  or `/run/user` is allowed with a warning because `bower.service` hides them
   (`ProtectHome=true`).
 - **Symbolic links.** The collector refuses symbolic links: the file and every
   directory between the allowed directory and the file must be real; the allowed
@@ -55,17 +57,21 @@ rotation), see the [file tail source guide](../deployment/file-tail-source.md).
   waiting for approval on the same collector is refused. The server checks this
   inside the transaction that stores the request, so simultaneous identical
   submissions store one request and refuse the rest, and checks it again when a
-  request is approved. If an approved request already uses the name or file, the
-  form warns that the new request replaces it; remove the old input when merging.
-  Only the latest approval for each input name or file counts: a later approval
-  that shares either one replaced the earlier input, so the earlier one no longer
-  triggers a warning. Requests are not marked as replaced. One request adds one
-  input; to add more, ask again and merge the approved input and allowed
-  directory into the collector's existing `file-source.json` lists.
+  request is approved. Management cannot see what is installed, so every approved
+  request that shares the name or file gets an advisory warning. For the latest
+  such approval the warning says the new request replaces it; remove the old input
+  when merging. An approval that a later approval already replaced is reported as
+  possibly still installed: check the collector's `file-source.json`. Requests
+  are not marked as replaced. One request adds one input; to add more, ask again
+  and merge the approved input and allowed directory into the collector's
+  existing `file-source.json` lists.
 - **Checking it works.** Every file request for this parser reports as the same
   application (`linux-sshd/production`), and so can another file or a syslog
   listener using the same pack. The heartbeat carries no per-input file tail
-  metadata, so **Check it works** never turns a file request green on its own.
+  metadata, so **Check it works** never turns a file request green on its own
+  (this follows the request's source type, not only its stored plan). When the
+  collector already reports this pack's events, the form says the request cannot
+  be verified individually.
   After approval it shows **Pack events seen, input not individually verified**
   once the collector reports a new `linux-sshd/production` event, and asks you to
   confirm the request's input in the collector's `GET /v1/status` (`fileTail`,

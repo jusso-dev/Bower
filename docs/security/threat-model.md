@@ -386,8 +386,8 @@ not Sentinel evidence, and an old source event cannot complete a new request.
 
 File source plans never read the named file. They name one Linux file inside one
 allowed directory, with no wildcards or traversal and not the whole disk. Kernel,
-device and Bower's own configuration, secret, state, spool and log directories
-are refused for both the allowed directory and the file, so a parent directory
+device, systemd credential (`/run/credentials`) and Bower's own configuration,
+secret, state, spool and log directories are refused for both the allowed directory and the file, so a parent directory
 cannot reach into them. Each plan routes the file to one shipped signed pack
 parser, so a request cannot widen collection to arbitrary files or unparsed
 lines. Duplicate pending requests are refused inside the store transaction. File
