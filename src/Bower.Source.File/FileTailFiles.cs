@@ -1,11 +1,34 @@
 namespace Bower.Source.File;
 
+/// <summary>The length a read decides with, for each generation it opened.</summary>
+public enum FileTailLength
+{
+    /// <summary>
+    /// The length taken when the generation was opened, the same snapshot as its identity and
+    /// write time (the file tail source): the grace window compares one consistent observation,
+    /// the scan stops at the same length, a truncation seen at open stays seen even if the
+    /// file regrows during the read, and the Rust port decides the same way.
+    /// </summary>
+    Opened,
+
+    /// <summary>
+    /// The handle's length measured again at each decision (the Docker source, whose reader
+    /// always measured afresh): truncation, the start-at-end scan, a copy or drain check and
+    /// the abandoned generation's growth.
+    /// </summary>
+    Measured
+}
+
 /// <summary>
-/// How a reader treats rotation and its start position. The file tail source uses the
-/// defaults; the Docker source keeps its historical behaviour through its own policy.
+/// How a reader treats rotation and its start position. Every policy names its decision
+/// length; otherwise the file tail source uses the defaults, and the Docker source keeps its
+/// historical behaviour through its own policy.
 /// </summary>
 public sealed record FileTailPolicy
 {
+    /// <summary>Which length the read's decisions use; every policy chooses.</summary>
+    public required FileTailLength DecisionLength { get; init; }
+
     /// <summary>When a file is first seen, start after its last complete line.</summary>
     public bool StartAtEnd { get; init; } = true;
 
@@ -43,13 +66,6 @@ public sealed record FileTailPolicy
 
     /// <summary>Record the generation a rename left, so its later growth is reported as a gap.</summary>
     public bool TrackAbandoned { get; init; } = true;
-
-    /// <summary>
-    /// Without a grace window, decide that <c>path.1</c> is drained against its length after the
-    /// scan rather than at open, so bytes appended meanwhile keep the cursor on it (the Docker
-    /// source's historical check).
-    /// </summary>
-    public bool DrainedAgainstLengthAfterScan { get; init; }
 }
 
 /// <summary>A line format on top of the shared tailer: scans one opened generation within its bounds.</summary>
@@ -118,7 +134,7 @@ public static class FileTailFiles
                 return decoder.Scan(current!, initial, false, false);
             }
 
-            (long offset, bool discarding) = StartPosition(current!, policy.StartScanBudget, cancellationToken);
+            (long offset, bool discarding) = StartPosition(current!, LengthOf(current!), policy.StartScanBudget, cancellationToken);
             return decoder.Empty(initial with { Offset = offset, Discarding = discarding }, false);
         }
 
@@ -147,6 +163,8 @@ public static class FileTailFiles
                 }, false, false);
         return late ? decoder.WithGap(batch) : batch;
 
+        long LengthOf(FileTailHandle file) => policy.DecisionLength == FileTailLength.Measured ? file.Stream.Length : file.Length;
+
         FileTailHandle? Previous(FileTailCursor at) => rotated() is { } file
             && string.Equals(file.Fingerprint, at.Fingerprint, StringComparison.Ordinal) ? file : null;
 
@@ -165,8 +183,9 @@ public static class FileTailFiles
                 return (at with { Abandoned = null, AbandonedLength = null }, false);
             }
 
-            return file.Length > at.AbandonedLength
-                ? (at with { AbandonedLength = file.Length }, true)
+            long length = LengthOf(file);
+            return length > at.AbandonedLength
+                ? (at with { AbandonedLength = length }, true)
                 : (at, false);
         }
 
@@ -189,18 +208,18 @@ public static class FileTailFiles
                         : decoder.Scan(current!, Normal(fingerprint!, 0, fileId), false, true);
                 }
 
-                if (current!.Length >= at.Offset)
+                if (LengthOf(current!) >= at.Offset)
                 {
-                    return decoder.Scan(current, at with { FileId = fileId ?? at.FileId }, false, false);
+                    return decoder.Scan(current!, at with { FileId = fileId ?? at.FileId }, false, false);
                 }
 
                 // Shorter than the cursor: copytruncate when path.1 is the copy, else truncated.
-                if (policy.DrainCopyOfSameIdentity && Previous(at) is { } copy && copy.Length >= at.Offset)
+                if (policy.DrainCopyOfSameIdentity && Previous(at) is { } copy && LengthOf(copy) >= at.Offset)
                 {
                     return Drain(StartDrain(at, FileTailCursor.CopyDrain));
                 }
 
-                return decoder.Scan(current, Normal(fingerprint!, 0, fileId), false, true);
+                return decoder.Scan(current!, Normal(fingerprint!, 0, fileId), false, true);
             }
 
             if (sameFile)
@@ -266,18 +285,20 @@ public static class FileTailFiles
 
             if (policy.RotationGracePolls is not { } grace)
             {
-                // No grace window: leave once drained to its end.
-                long end = policy.DrainedAgainstLengthAfterScan ? file.Stream.Length : file.Length;
-                return fingerprint is null || decoder.CursorOf(batch).Offset < end
+                // No grace window: leave once drained to its end, measured after the scan, so
+                // bytes appended meanwhile keep the cursor on it (never leaves early, whatever the
+                // policy's decision length).
+                return fingerprint is null || decoder.CursorOf(batch).Offset < file.Stream.Length
                     ? batch
                     : decoder.MovedToCurrent(batch, Abandon(Carry(next, batch), at, file));
             }
 
             // At the end of path.1 (only an unterminated last line may remain).
-            bool unchanged = at.ObservedLength == file.Length && at.ObservedWriteTime == file.WriteTicks;
+            long length = LengthOf(file);
+            bool unchanged = at.ObservedLength == length && at.ObservedWriteTime == file.WriteTicks;
             FileTailCursor observed = decoder.CursorOf(batch) with
             {
-                ObservedLength = file.Length,
+                ObservedLength = length,
                 ObservedWriteTime = file.WriteTicks,
                 StablePolls = unchanged ? Math.Min((at.StablePolls ?? 0) + 1, FileTailSourceConfigurationLoader.MaximumRotationGracePolls) : 0
             };
@@ -302,7 +323,7 @@ public static class FileTailFiles
             }
 
             FileTailCursor reached = decoder.CursorOf(scanned);
-            long backlog = at.DrainLength ?? file.Length;
+            long backlog = at.DrainLength ?? LengthOf(file);
             bool counts = !decoder.StoppedByLimit(scanned) || reached.Offset >= backlog;
             int polls = counts
                 ? Math.Min((at.DrainPolls ?? 0) + 1, FileTailSourceConfigurationLoader.MaximumRotationDrainMaxPolls)
@@ -315,27 +336,27 @@ public static class FileTailFiles
         TBatch Leave(TBatch batch, FileTailCursor next, FileTailCursor at, FileTailHandle file)
         {
             TBatch forced = decoder.MovedToCurrent(batch, Abandon(Carry(next, batch), at, file));
-            return decoder.CursorOf(batch).Offset < file.Length ? decoder.WithGap(forced) : forced;
+            return decoder.CursorOf(batch).Offset < LengthOf(file) ? decoder.WithGap(forced) : forced;
         }
 
         FileTailCursor Carry(FileTailCursor next, TBatch scanned) =>
             policy.CarryDiscardingAcrossRotation ? next with { Discarding = decoder.CursorOf(scanned).Discarding } : next;
 
         FileTailCursor Abandon(FileTailCursor next, FileTailCursor at, FileTailHandle file) =>
-            policy.TrackAbandoned ? next with { Abandoned = at.Fingerprint, AbandonedLength = file.Length } : next;
+            policy.TrackAbandoned ? next with { Abandoned = at.Fingerprint, AbandonedLength = LengthOf(file) } : next;
     }
 
     /// <summary>
-    /// After the last complete line, scanning back at most <paramref name="budget"/> bytes.
-    /// Without a newline in that window the read starts at the end, skipping the rest of the
-    /// line being written; a file with no newline at all starts at 0.
+    /// After the last complete line before <paramref name="length"/>, scanning back at most
+    /// <paramref name="budget"/> bytes. Without a newline in that window the read starts at the
+    /// end, skipping the rest of the line being written; a file with no newline at all starts at 0.
     /// </summary>
-    public static (long Offset, bool Discarding) StartPosition(FileTailHandle file, long budget, CancellationToken cancellationToken = default)
+    public static (long Offset, bool Discarding) StartPosition(FileTailHandle file, long length, long budget, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(file);
         byte[] block = new byte[4_096];
-        long end = file.Length;
-        long floor = Math.Max(0, file.Length - budget);
+        long end = length;
+        long floor = Math.Max(0, length - budget);
         while (end > floor)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -352,7 +373,7 @@ public static class FileTailFiles
             end = start;
         }
 
-        return floor > 0 ? (file.Length, true) : (0, false);
+        return floor > 0 ? (length, true) : (0, false);
     }
 
     private static FileTailCursor Provisional() => new(FileTailCursor.CurrentSchemaVersion, string.Empty, 0);

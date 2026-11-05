@@ -12,11 +12,21 @@ namespace Bower.UnitTests;
 /// TEST ONLY: the Docker json-file reader exactly as it was before it moved onto the shared
 /// tailer (origin/feat/file-tail-source at 05fa1e6, unchanged since the Docker source was
 /// written). <see cref="DockerReaderDifferentialTests"/> runs it against the current reader.
-/// Do not change it.
+/// Do not change its logic. The only addition is two test hooks at the points that match
+/// <see cref="Bower.Source.File.FileTailHandle"/>'s, so a race can hit both readers in the
+/// same window; unset, they do nothing.
 /// </summary>
 internal static class LegacyDockerJsonLogReader
 {
     internal const int FingerprintBytes = 64;
+
+    /// <summary>Tests only: after the 64-byte length check of the identity read (as <c>FileTailHandle.BeforePrefixRead</c>).</summary>
+    [ThreadStatic]
+    internal static Action<string>? BeforePrefixRead;
+
+    /// <summary>Tests only: once the identity is read (as <c>FileTailHandle.AfterOpen</c>).</summary>
+    [ThreadStatic]
+    internal static Action<string>? AfterOpen;
 
     public static DockerLogBatch Read(
         DockerContainer container,
@@ -108,8 +118,10 @@ internal static class LegacyDockerJsonLogReader
                 return null;
             }
 
+            BeforePrefixRead?.Invoke(path);
             byte[] prefix = new byte[FingerprintBytes];
             stream.ReadExactly(prefix);
+            AfterOpen?.Invoke(path);
             return Convert.ToHexStringLower(SHA256.HashData(prefix));
         }
         catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)

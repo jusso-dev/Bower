@@ -23,7 +23,7 @@ public sealed class FileTailHandle : IDisposable
     [ThreadStatic]
     internal static Action<string>? BeforeOpen;
 
-    /// <summary>Tests only: runs once a path is opened and identified (to replace the file).</summary>
+    /// <summary>Tests only: runs once a path is opened and identified (to replace or rewrite the file).</summary>
     [ThreadStatic]
     internal static Action<string>? AfterOpen;
 
@@ -52,7 +52,10 @@ public sealed class FileTailHandle : IDisposable
 
     public FileStream Stream { get; }
 
-    /// <summary>Length when opened; bytes appended later wait for the next read.</summary>
+    /// <summary>
+    /// Length when opened; bytes appended later wait for the next read. A policy that measures
+    /// again (<see cref="FileTailLength.Measured"/>) uses <see cref="Stream"/>'s length instead.
+    /// </summary>
     public long Length { get; }
 
     public DateTime WriteTime { get; }
@@ -161,9 +164,17 @@ public sealed class FileTailHandle : IDisposable
             }
 
             BeforePrefixRead?.Invoke(path);
+            // Read past the stream's buffer, so the scan reads the file as it is then, as the
+            // reader's separate opens did, never bytes buffered while the identity was read.
             byte[] prefix = new byte[PrefixIdentityBytes];
-            stream.ReadExactly(prefix);
-            return new FileTailHandle(stream, length, default, Convert.ToHexStringLower(SHA256.HashData(prefix)));
+            if (RandomAccess.Read(stream.SafeFileHandle, prefix, 0) < PrefixIdentityBytes)
+            {
+                throw new EndOfStreamException();
+            }
+
+            FileTailHandle handle = new(stream, length, default, Convert.ToHexStringLower(SHA256.HashData(prefix)));
+            AfterOpen?.Invoke(path);
+            return handle;
         }
         catch
         {

@@ -122,21 +122,22 @@ public static class DockerJsonLogReader
     }
 
     /// <summary>
-    /// Docker's historical rotation behaviour on the shared tailer: wait while the current file
-    /// cannot be identified, no copy drain, no grace window (leave once drained, measured after
-    /// the scan), no abandoned tracking, the oversized discard carried across rotation and an
+    /// Docker's historical rotation behaviour on the shared tailer: every length measured again
+    /// where the reader used to measure it (truncation, the start-at-end scan, leaving a drained
+    /// <c>.1</c>), wait while the current file cannot be identified, no copy drain, no grace
+    /// window, no abandoned tracking, the oversized discard carried across rotation and an
     /// unbounded start-at-end scan.
     /// </summary>
     private static readonly FileTailPolicy StartAtEndPolicy = new()
     {
+        DecisionLength = FileTailLength.Measured,
         StartAtEnd = true,
         WaitWhileCurrentUnidentified = true,
         DrainCopyOfSameIdentity = false,
         RotationGracePolls = null,
         RotationDrainMaxPolls = null,
         CarryDiscardingAcrossRotation = true,
-        TrackAbandoned = false,
-        DrainedAgainstLengthAfterScan = true
+        TrackAbandoned = false
     };
 
     private static readonly FileTailPolicy ReplayPolicy = StartAtEndPolicy with { StartAtEnd = false };

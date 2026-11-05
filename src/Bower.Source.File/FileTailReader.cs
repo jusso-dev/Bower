@@ -259,6 +259,7 @@ public static class FileTailReader
                 cursor,
                 new FileTailPolicy
                 {
+                    DecisionLength = FileTailLength.Opened,
                     StartAtEnd = options.StartAtEnd,
                     StartScanBudget = options.MaxBytesPerBatch,
                     MaxLinesPerBatch = options.MaxLinesPerBatch,

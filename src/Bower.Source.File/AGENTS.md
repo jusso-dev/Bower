@@ -61,8 +61,11 @@ cursor format, limits, defaults, failure codes and configuration messages.
   regenerate with `BOWER_FILE_TAIL_VECTOR_OUTPUT`, then review the diff).
 - `FileTailFiles.Plan` is the shared tailer (identity, provisional cursors, truncation,
   durable rename and copytruncate draining, grace window, abandoned generations, start
-  position) with a decoder and a `FileTailPolicy`. The Docker source uses it with its own
-  policy and decoder, so a change here must keep `DockerSourceTests`,
-  `DockerSidecarWorkerTests`, `DockerCursorCompatibilityTests` and
-  `DockerReaderDifferentialTests` passing unchanged. Keep `FileTailCursor`'s first four
+  position) with a decoder and a `FileTailPolicy`. Every policy names the length it decides
+  with (`DecisionLength`): the file source uses the length taken at open
+  (`FileTailLength.Opened`, one snapshot with identity and write time, as in Rust); Docker
+  measures again (`Measured`). The Docker source uses it with its own policy and decoder, so
+  a change here must keep `DockerSourceTests`, `DockerSidecarWorkerTests`,
+  `DockerCursorCompatibilityTests`, `DockerReaderDifferentialTests` and
+  `DockerSharedTailerTests` passing unchanged. Keep `FileTailCursor`'s first four
   fields and their JSON identical to `DockerLogCursor`.
