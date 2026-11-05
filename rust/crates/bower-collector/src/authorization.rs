@@ -39,12 +39,34 @@ impl ProducerAuthorization {
             ));
         }
         let text = std::fs::read_to_string(path).map_err(|error| HostError::io(path, &error))?;
-        let invalid = || HostError::new("FormatException", "Invalid producer scopes file.");
+        if text.len() > 1_048_576 {
+            return Err(HostError::new(
+                "FormatException",
+                "Invalid producer scopes file.",
+            ));
+        }
+        result.load(
+            text.trim_start_matches('\u{feff}'),
+            "Invalid producer scopes file.",
+        )?;
+        Ok(result)
+    }
+
+    /// Parse inline scopes with the same bounds and default-deny semantics as C#.
+    pub fn from_json(text: &str) -> Result<Self, HostError> {
+        let mut result = Self::default();
+        if !text.trim().is_empty() {
+            result.load(text, "Invalid producer scopes document.")?;
+        }
+        Ok(result)
+    }
+
+    fn load(&mut self, text: &str, message: &'static str) -> Result<(), HostError> {
+        let invalid = || HostError::new("FormatException", message);
         if text.len() > 1_048_576 {
             return Err(invalid());
         }
-        let root =
-            JsonElement::parse(text.trim_start_matches('\u{feff}')).map_err(|_| invalid())?;
+        let root = JsonElement::parse(text).map_err(|_| invalid())?;
         let JsonElement::Array(items) = root else {
             return Err(invalid());
         };
@@ -59,9 +81,9 @@ impl ProducerAuthorization {
                 return Err(invalid());
             }
             let identity = read_identity(&item, true).ok_or_else(invalid)?;
-            result.scopes.push((producer, identity));
+            self.scopes.push((producer, identity));
         }
-        Ok(result)
+        Ok(())
     }
 
     pub fn is_authorized(&self, producer: &str, candidate: &str) -> bool {
@@ -189,5 +211,25 @@ mod tests {
             "a",
             r#"{"application":{"name":"x","environment":"test"},"source":{"hostname":"other"}}"#
         ));
+    }
+
+    #[test]
+    fn inline_scopes_are_bounded_and_fail_closed() {
+        let candidate = r#"{"application":{"name":"x","environment":"test"}}"#;
+        assert!(
+            !ProducerAuthorization::from_json("[]")
+                .unwrap()
+                .is_authorized("default", candidate)
+        );
+        let scopes = r#"[{"producer":"default","application":{"name":"x","environment":"test"}}]"#;
+        let authorization = ProducerAuthorization::from_json(scopes).unwrap();
+        assert!(authorization.is_authorized("default", candidate));
+        assert!(!authorization.is_authorized("other", candidate));
+        for invalid in ["bad-marker", "{}", "\u{feff}[]"] {
+            let error = ProducerAuthorization::from_json(invalid).err().unwrap();
+            assert_eq!(error.message, "Invalid producer scopes document.");
+            assert!(!error.message.contains(invalid));
+        }
+        assert!(ProducerAuthorization::from_json(&"x".repeat(1_048_577)).is_err());
     }
 }

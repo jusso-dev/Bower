@@ -345,6 +345,13 @@ impl LambdaSettings {
             ));
         }
 
+        // Unlike the HTTP collectors, this host has not implemented inline scopes.
+        // Refuse them rather than silently running a different authorization policy.
+        if value("BOWER_PRODUCER_SCOPES_JSON").is_some() {
+            return Err(SettingsError::new(
+                "BOWER_PRODUCER_SCOPES_JSON is not supported by the AWS Lambda collector; use BOWER_PRODUCER_SCOPES_FILE.",
+            ));
+        }
         let single_trust_domain = value("BOWER_SINGLE_TRUST_DOMAIN")
             .is_some_and(|value| value.trim().eq_ignore_ascii_case("true"));
         let producer_scopes_file = value("BOWER_PRODUCER_SCOPES_FILE").map(PathBuf::from);
@@ -626,6 +633,10 @@ mod tests {
                 ("BOWER_CLOUDTRAIL_CHANNEL_ARN", CHANNEL),
                 ("BOWER_SINGLE_TRUST_DOMAIN", "true"),
                 ("BOWER_PRODUCER_SCOPES_FILE", "/var/task/scopes.json"),
+            ],
+            &[
+                ("BOWER_CLOUDTRAIL_CHANNEL_ARN", CHANNEL),
+                ("BOWER_PRODUCER_SCOPES_JSON", "invalid-configuration-marker"),
             ],
         ];
         for case in cases {

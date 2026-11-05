@@ -90,6 +90,7 @@ nav:
           - Management console: deployment/console-image.md
           - Container images: deployment/container-images.md
           - Docker sidecar: deployment/docker-sidecar.md
+          - Hosted collectors: deployment/hosted-collectors.md
           - Azure Functions: deployment/azure-function.md
           - AWS: deployment/aws.md
           - AWS Lambda: deployment/aws-lambda.md

@@ -1,0 +1,44 @@
+# Run only on an Azure host whose managed identity has publish access to the DCR.
+# Provide the listed paths and image/DCR settings; no secrets belong in this file.
+services:
+  bower:
+    image: ${BOWER_COLLECTOR_IMAGE:?Set a reviewed image, preferably by digest}
+    restart: unless-stopped
+    read_only: true
+    user: '1654:1654'
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.0
+    environment:
+      BOWER_LISTEN_URL: https://0.0.0.0:4319
+      BOWER_QUEUE_PATH: /var/lib/bower/queue.db
+      BOWER_COLLECTOR_ID: ${BOWER_COLLECTOR_ID:?Set a unique collector ID}
+      BOWER_ENVIRONMENT: ${BOWER_ENVIRONMENT:?Set an environment}
+      BOWER_OUTPUT: azure-logs-ingestion
+      BOWER_AZURE_CREDENTIAL: managed-identity
+      BOWER_AZURE_CLIENT_ID: ${BOWER_AZURE_CLIENT_ID:-}
+      BOWER_DCE_ENDPOINT: ${BOWER_DCE_ENDPOINT:?Set the DCE HTTPS endpoint}
+      BOWER_DCR_ID: ${BOWER_DCR_ID:?Set the DCR immutable ID}
+      BOWER_STREAM_NAME: Custom-BowerSecurity
+      BOWER_INGEST_TOKEN_FILE: /run/bower/ingest-token
+      BOWER_PRODUCER_SCOPES_FILE: /run/bower/producer-scopes.json
+      ASPNETCORE_Kestrel__Certificates__Default__Path: /run/bower/tls-cert.pem
+      ASPNETCORE_Kestrel__Certificates__Default__KeyPath: /run/bower/tls-key.pem
+    volumes:
+      - bower-state:/var/lib/bower
+      - ${BOWER_INGEST_TOKEN_FILE:?Set the token file path}:/run/bower/ingest-token:ro
+      - ${BOWER_PRODUCER_SCOPES_FILE:?Set the producer-scopes file path}:/run/bower/producer-scopes.json:ro
+      - ${BOWER_TLS_CERT_FILE:?Set the certificate file path}:/run/bower/tls-cert.pem:ro
+      - ${BOWER_TLS_KEY_FILE:?Set the private key file path}:/run/bower/tls-key.pem:ro
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=64m']
+    ports: ['127.0.0.1:4319:4319']
+    networks: [intake]
+    logging:
+      driver: json-file
+      options: { max-size: '10m', max-file: '3' }
+volumes:
+  bower-state:
+networks:
+  intake:
