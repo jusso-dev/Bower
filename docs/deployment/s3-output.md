@@ -44,7 +44,10 @@ and evidence bundles say so (see [Evidence](#evidence)).
     encryption header is sent and the bucket's default encryption applies, including a
     bucket KMS key; S3 always encrypts new objects, at least with SSE-S3. An explicit
     `AES256` would override a bucket's KMS default, so leave it unset for KMS buckets or
-    set `aws:kms` with the key.
+    set `aws:kms` with the key. A bucket policy that denies uploads without an
+    `x-amz-server-side-encryption` header (the common `DenyUnEncryptedObjectUploads`
+    statement) refuses every unset-SSE PUT with 403 (`destination-s3-access-denied`):
+    for such a bucket set `BOWER_S3_SSE=AES256`, or `aws:kms` with the key, to match it.
   - `ExpectedBucketOwner` when `BOWER_S3_EXPECTED_BUCKET_OWNER` is set, so a bucket
     re-created under another account is refused.
   - `x-amz-meta-bower-events`: the event count.
@@ -129,6 +132,13 @@ object) and a bucket owned by the same account.
 }
 ```
 
+The collector id segment is a naming convention, not an isolation boundary: the grant
+covers the whole prefix, so any collector with this role may write under any collector
+segment. `If-None-Match` still stops it overwriting an existing object. To keep each
+collector in its own segment, give each collector its own role and scope the resource
+to its segment, for example
+`"Resource": "arn:aws:s3:::<bucket>/<prefix>/<collectorId>/*"`.
+
 Leave out the second statement for SSE-S3. `deploy/aws/bower-s3-output.yaml` creates
 this policy (and, optionally, a bucket with public access blocked, default encryption,
 TLS-only access and a lifecycle expiry). Its `CollectorSettings` output lists the
@@ -160,7 +170,7 @@ first failure holds that object and every later one in the delivery.
 | `destination-s3-throttled` | `SlowDown`, 503, 429 | None; the queue retries. |
 | `destination-s3-http-<status>` | Other 5xx or unclassified 4xx | Retries; investigate if it persists. |
 | `destination-s3-unavailable` | Network error or timeout | Check egress, proxy and DNS. |
-| `destination-s3-access-denied` | `AccessDenied` | Fix the role policy or bucket policy. |
+| `destination-s3-access-denied` | `AccessDenied` | Fix the role policy or bucket policy. If the bucket policy requires an encryption header (`DenyUnEncryptedObjectUploads`), set `BOWER_S3_SSE`. |
 | `destination-s3-kms-denied` | KMS key denied, disabled or missing | Grant `kms:GenerateDataKey` or fix the key. |
 | `destination-s3-no-such-bucket` | Bucket missing | Create it or fix `BOWER_S3_BUCKET`. |
 | `destination-s3-wrong-region` | `PermanentRedirect`, wrong signing region | Fix `BOWER_S3_REGION`. |
@@ -195,3 +205,6 @@ reconciling event ids, as the live qualification in
   under the old one.
 - The Rust worker has no delivery deadline token, so it never produces
   `destination-s3-cancelled`; on shutdown unsettled events return after the lease.
+- Every object is one `PutObject`. Adding multipart upload later would conflict with the
+  `s3:if-none-match` IAM condition: `CreateMultipartUpload` and `UploadPart` carry no
+  `If-None-Match`, so the policy would deny them; only `CompleteMultipartUpload` can.
