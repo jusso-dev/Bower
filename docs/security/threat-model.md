@@ -93,11 +93,13 @@ evidence.
 - File tail (new local trust boundary, `BOWER_FILE_CONFIG`): only operator-named files,
   no wildcards, directories or default route; paths must lie strictly below an allowed
   root, with no linked directories and no linked file unless `allowSymlink` permits one
-  link whose target passes the same checks, re-checked after each read. Bounded lines
+  link whose target passes the same checks, re-checked after each read (`path.1` too); on
+  Linux (and every Unix in Rust) the open is `O_NOFOLLOW | O_NONBLOCK` and the handle must
+  match the path's device and inode. Bounded lines
   (at most 30 KiB), polls and json-lines depth; oversized lines are skipped without
   buffering. A line becomes an event only through its route's signed pack parser, then
-  redaction and policy; anyone who can write the file can inject lines, so tail only
-  files written by trusted services. Counters only. See
+  redaction and policy; anyone who can write the file can inject lines, and any local
+  user can through the system logger (`logger -t 'sshd[1]'`). Counters only. See
   [file tail source](../deployment/file-tail-source.md).
 - Live tap (`GET /v1/tap`, `bower tap`; new trust boundary: an operator-facing stream
   of accepted event content). See [tap and top](../operations/tap-and-top.md).

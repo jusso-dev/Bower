@@ -115,6 +115,7 @@ policy hashes and pack signatures are unchanged.
 
 | Crate | Used by | Why | Alternatives considered |
 |---|---|---|---|
+| `libc` 0.2 (Unix only) | `bower-source-file` | `O_NOFOLLOW`, `O_NONBLOCK` and `ELOOP` for the verified open of tailed files: a final symbolic link swapped in after the path checks is refused, and a FIFO never blocks the open. Device and inode come from `std` (`MetadataExt`). Already in the lock file through tokio and others, so it adds no new code; only constants are used. | Hard-coding the flag values per target (differs between architectures); `std` alone (no way to request `O_NOFOLLOW`). |
 | `socket2` 0.6 (`all`) | `bower-source-syslog` | TCP keepalive time, interval and probe count on accepted syslog connections, matching C# `Socket.SetSocketOption(TcpKeepAlive*)`; tokio exposes only an on/off switch. Already in the lock file through `tokio` with the same `all` feature, so it adds no new code. | tokio `TcpSocket::set_keepalive` (no timing; the operating-system default of two hours is longer than the listener's idle bound); raw `setsockopt` (needs `unsafe`, which the workspace forbids). |
 | `getrandom` 0.3 | `bower-cli` (`bower token generate`) | 32 bytes from the operating system CSPRNG for ingest tokens, matching C# `RandomNumberGenerator.GetBytes`. Already in the lock file through `uuid`, so it adds no new code. | `rand` (larger API surface for one call); deriving tokens from UUID v4 bytes (not a full 256-bit random value). |
 | `hyper` 1, `hyper-util` 0.1, `http-body-util` 0.1 | `bower-collector` | Already in the lock file through `axum`, so they add no new code. Used directly because `axum::serve` sets no timer: the collector needs Kestrel's 30 s request-header timeout (slow-header connections), HTTP/1.1 only, bounded graceful drain on SIGTERM, and frame-by-frame body reads to enforce the 1 MiB limit and Kestrel's 240 B/s minimum body data rate. The `bower tap` stream (`GET /v1/tap`) enables `http-body-util`'s `channel` feature: a body fed from a bounded tokio channel, so a slow client back-pressures only its own stream task. The feature adds an edge to the `tokio` already compiled; no new crate. | `axum::serve` (no header timeout, unbounded idle slow-loris connections); `tower-http` timeouts (time whole requests, not header reads, and add a crate); `tokio-stream` or `futures` to build a `Stream` body (a new direct dependency for the same result). |
@@ -252,6 +253,12 @@ queries, and `ntdll` `NtCreateFile` for directory-handle-relative opens with
 rejecting every ancestor metadata-write grant also rejects normal ProgramData ACLs.
 Native calls are limited to read-only handles, bounded descriptors and fixed structures,
 and failures refuse startup. Dedicated native platform tests gate release qualification.
+
+The C# file tail source (`Bower.Source.File`) uses the same libc approach on Linux to open a
+tailed file with `O_NOFOLLOW | O_NONBLOCK` and to compare `statx` device and inode of the
+handle and the path (`FileTailHandles.cs`), so a link or another file swapped in after the
+path checks is refused. .NET has no no-follow open or inode API; other platforms only
+re-check that the path is not a link after opening.
 
 ## Documentation website
 

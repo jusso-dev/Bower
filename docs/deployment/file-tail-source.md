@@ -63,14 +63,15 @@ start-up and refuses a signed `reload`.
 | `allowedRoots` | required | 1–8 absolute, normalised directories without wildcards. `/` is refused. Roots are trusted operator configuration and may themselves be links (for example `/var` on macOS). |
 | `pollIntervalMilliseconds` | `1000` | 100–60000. Wait between reads once an input has caught up. |
 | `maxLinesPerBatch` | `256` | 1–1024 lines per poll. A full poll reads again at once. |
-| `maxBytesPerBatch` | `1048576` | 65536–4194304 bytes scanned per poll (one line may run up to its own limit past it). |
+| `maxBytesPerBatch` | `1048576` | 65536–4194304 bytes scanned per poll (one line may run up to its own limit past it). Also bounds the backward scan for `startAt: end`. |
+| `rotationGracePolls` | `5` | 1–60 polls `path.1` must stay unchanged (size and write time) before the cursor moves to the new file. See [rotation](#cursors-rotation-and-backpressure). |
 | `inputs[].id` | required | 1–63 lowercase letters, digits or hyphens, unique. Names the cursor (`file:<id>`) and the event's source adapter (`file:<id>:<pack>:<parser>`). |
-| `inputs[].path` | required | Absolute, normalised (no `.`, `..`, repeated or trailing separators), no wildcard characters (`* ? [ ] { }`) or control characters, strictly below an allowed root, and read by only one input. |
+| `inputs[].path` | required | Absolute, normalised (no `.`, `..`, repeated or trailing separators), no wildcard characters (`* ? [ ] { }`) or control characters, strictly below an allowed root, and read by only one input. Paths that differ only in ASCII case count as the same file, and one input's path may not be another's `path.1`. |
 | `inputs[].route` | required | `{ "pack": "<id>", "parser": <index> }`: an active parser of a loaded signed pack. Checked at start-up and before a signed reload. |
 | `inputs[].format` | `text` | `text` or `json-lines`. |
 | `inputs[].startAt` | `end` | `end`: the first start reads only lines written after it. `beginning`: the first start reads the whole file. Either way a restart resumes from the stored cursor. |
 | `inputs[].maxLineBytes` | `16384` | 256–30720. A pack parser reads records of at most 32 KiB, so a longer line could never be parsed. |
-| `inputs[].allowSymlink` | `false` | Allow the file itself to be one symbolic link whose target is a regular file below an allowed root. Directories on the path are never links. |
+| `inputs[].allowSymlink` | `false` | Allow the file itself to be one symbolic link whose target is a regular file below an allowed root. Directories on the path are never links. The target may not be another input's file or `path.1` (checked at load and at every read). |
 
 There is deliberately no glob form in this version. List each file. Use one input per
 file (for example `auth.log` and `secure` on different hosts are different
@@ -85,13 +86,24 @@ after reading:
 - the file is not a symbolic link, unless `allowSymlink` is set, and then the link is
   followed exactly once and its target must pass the same checks (below an allowed root,
   no linked directories, not itself a link);
-- the path is not a directory. A file shorter than the 64-byte fingerprint is never
-  opened, so a FIFO or device (reported as empty) is never read. The Rust collector also
-  refuses any non-regular file outright (state `file-path-refused`).
+- the path is not a directory. A file shorter than 64 bytes is never opened, so a FIFO or
+  device (reported as empty) is never read. The Rust collector also refuses any
+  non-regular file outright (state `file-path-refused`).
+
+`path.1` gets exactly the same checks (it is never allowed to be a link), before and after
+the read; a refused `path.1` fails the poll rather than being skipped.
+
+The open itself is checked too. On Linux (both collectors) and on every Unix (Rust), the
+file is opened with `O_NOFOLLOW | O_NONBLOCK`, and the handle must be a regular file with
+the same device and inode as the path at that moment, so a link or another file swapped in
+after the checks is refused. Elsewhere the C# collector can only re-check that the path is
+not a link after opening. Each file is opened once per read: its identity, length and
+lines all come from that one handle, so bytes of one generation can never move another
+generation's cursor.
 
 A refused path is never read and its state is `file-path-refused`; a missing file is
-`waiting` and is read from its start once it appears. The checks narrow, but cannot
-close, the window for a link swapped in between them: roots should be directories only
+`waiting` and is read from its start once it appears. A directory on the path swapped for
+a link and back between the checks is still not detected: roots should be directories only
 trusted operators can write to, as `/var/log` is.
 
 ## Run with least privilege
@@ -129,25 +141,45 @@ merge distinct lines.
 
 ### Shipped pack: `linux-authlog-ssh`
 
-[`packs/linux-authlog-ssh`](../../packs/linux-authlog-ssh) parses plain-text sshd
-`auth.log` lines with a signed transform program: a bounded regex extracts the time,
+[`packs/linux-authlog-ssh`](../../packs/linux-authlog-ssh) 1.1.0 parses plain-text sshd
+`auth.log` lines with a signed transform program. Bounded regexes extract the time,
 account, source address and method from `Failed password|publickey|keyboard-interactive/pam
-for [invalid user] <user> from <ip> port <n>` lines written by `sshd[<pid>]`, a static
-table maps the method to the outcome reason, and the time is parsed from an RFC 3339
-prefix (rsyslog's default file format on current distributions) or a classic
-`Mmm dd hh:mm:ss` prefix. Classic syslog times carry no zone or year: they are read as
-UTC in the evaluation year, so prefer RFC 3339 (`$ActionFileDefaultTemplate
-RSYSLOG_FileFormat`). It produces only `authentication_failure` from application
-`linux-sshd`, pseudonymises usernames with HMAC, and never forwards the line, host name
-or path. Accepted sign-ins, other programs and other lines are not selected. Sign it with
-your key like any pack (`bower pack build packs/linux-authlog-ssh --key ...`).
+for [invalid user] <user> from <ip> port <n> ssh2[: ...]` lines written by `sshd[<pid>]` or
+`sshd-session[<pid>]` (OpenSSH 9.8 and later). The match is anchored at the end of the line,
+so the last `from <ip> port <n> ssh2` wins: a hostile username such as
+`x from 10.9.9.9 port 1 ssh2` cannot change the reported source address. A static table
+maps the method to the outcome reason. It produces only `authentication_failure` from
+application `linux-sshd`, pseudonymises usernames with HMAC, and never forwards the line,
+host name or path. Accepted sign-ins, other programs, `message repeated N times: [...]`
+summaries and other lines are not selected. Sign it with your key like any pack
+(`bower pack build packs/linux-authlog-ssh --key ...`).
+
+The time comes from the line only: an RFC 3339 prefix (what rsyslog writes with
+`RSYSLOG_FileFormat`, the default file template on some current distributions) or a classic
+`Mmm dd hh:mm:ss` prefix, with impossible dates and times refused. A line whose time cannot
+be parsed is not selected; Bower never substitutes the read time, so a replay after a crash
+maps to exactly the same event. Classic syslog times carry no zone or year and are read as
+UTC in the evaluation year: on a host whose local time is not UTC every event is off by
+the host's offset (in Sydney, AEST, 10 hours, or 11 hours during daylight saving), and an
+event near New Year can land in the wrong year. Configure RFC 3339 (`$ActionFileDefaultTemplate
+RSYSLOG_FileFormat`) or run the host in UTC.
+
+Any local user can write a line that this pack selects, for example
+`logger -t 'sshd[1]' 'Failed password for root from 203.0.113.5 port 22 ssh2'`, because
+the system logger records the tag the caller supplies. Treat these events as host
+telemetry, not proof that sshd wrote them.
 
 ## Cursors, rotation and backpressure
 
 Cursors live in the queue database's `source_cursors` table (`file:<id>`), so a restart
-resumes where the queue left off. A cursor holds the file's fingerprint (SHA-256 of its
-first 64 bytes), an offset and whether an oversized line is being skipped; never line
-content.
+resumes where the queue left off. A cursor holds the file's identity, an offset and
+whether an oversized line is being skipped; never line content. The identity is the SHA-256
+of the file's first complete line, extended to at least 64 bytes and capped at 4096, so
+files whose first 64 bytes are the same (a constant JSON prefix, for example) are still told
+apart once their first lines differ. A file whose first line is still being written (and
+shorter than 4096 bytes) has no identity yet and waits. Device and inode numbers are used
+to check each open, but are not part of the stored identity: they are reused after a file
+is deleted, copytruncate keeps them, and the cursor must stay readable by both collectors.
 
 - **Advance rule.** The cursor moves past a line only once it is durably enqueued or
   definitively dropped (not selected, rejected, quarantined, malformed, oversized, too
@@ -157,22 +189,40 @@ content.
   resolved yet), the poll stops at that line and the cursor rewinds to its start. The
   line is offered again after one second. Nothing is dropped for backpressure; the file
   keeps the data.
-- **Complete lines only.** A line still being written is left for the next read. At the
-  end of a rotated file (which no longer grows) the final unterminated line is read.
+- **Complete lines only.** A line still being written is left for the next read.
+- **Identity conflicts.** A replayed line whose mapped event differs from the queued one
+  (the same event id with other content) is quarantined by the queue
+  (`event-identity-conflict`), counted under `rejected`, and the cursor moves on; it never
+  blocks the input.
+- **Busy queue database.** In both collectors a busy or locked queue database (for example
+  during a retention batch) is backpressure: the poll is retried after one second and the
+  cursor is unchanged.
 - **Oversized lines** are skipped without being buffered, even across polls, and
   counted.
-- **Rename rotation** (logrotate's default): when the current file's fingerprint changes
-  and `path.1` carries the old fingerprint, Bower drains `path.1` from the cursor, then
-  reads the new file from its start. Keep `delaycompress` so `path.1` stays plain text.
+- **Rename rotation** (logrotate's default): when the current file's identity changes and
+  `path.1` carries the old identity, Bower drains `path.1` from the cursor. A writer keeps
+  writing to `path.1` until it reopens its file (rsyslog until it is sent HUP), so the
+  cursor leaves `path.1` only once the new file can be identified and `path.1` has stayed
+  unchanged (size and write time) for `rotationGracePolls` polls; only then is an
+  unterminated last line of `path.1` taken as complete. Lines written to `path.1` after
+  that are counted in `rotationGaps`, never lost silently. Keep `delaycompress` so `path.1`
+  stays plain text. The grace window and that late-line watch live in memory: a restart
+  starts the window again.
 - **copytruncate**: the copy in `path.1` is drained the same way, then the truncated file
-  is read from its start.
+  is read from its start. When the truncated file's first line repeats the old one (so the
+  identities match) and it is shorter than the cursor, a `path.1` with the same identity
+  and at least the cursor's length is drained from the cursor first.
+- **startAt: end** scans back from the end for the last complete line within
+  `maxBytesPerBatch` bytes (stopping promptly on shutdown). Without a newline in that window
+  it starts at the end and skips the rest of the line being written.
 - **Missed rotation**: if the file was rotated more than once between reads, renamed
   without a `.1` (for example logrotate `dateext`), or truncated in place, Bower reads the
   current file from its start and counts a `rotationGaps` entry. Lines written to the
   old file after the last read were not seen. Use `nodateext` for tailed files and keep
   the poll interval well below the rotation interval.
-- A file rewritten in place with the same first 64 bytes and at least as long as the
-  cursor cannot be detected as replaced.
+- A file rewritten in place with the same first line and at least as long as the cursor
+  cannot be detected as replaced. Generations whose first lines are identical (a constant
+  header line) are indistinguishable, as are any two files before their first line ends.
 
 ## Monitoring
 
@@ -194,12 +244,15 @@ pack's `applicationName`/`environment` in `BOWER_SOURCE_EXPECTATIONS` to degrade
 
 ## Residual risks
 
-- Anyone who can write the tailed file can inject lines. The pack parser's match filter
-  and policy still apply, but the source cannot authenticate a line's author. Tail only
-  files written by the service you trust (sshd through the system logger).
+- Anyone who can write the tailed file can inject lines, and through the system logger
+  any local user can (`logger -t 'sshd[1]' ...`). The pack parser's match filter and policy
+  still apply, but the source cannot authenticate a line's author.
 - Lines lost to a missed rotation are counted, not recovered.
-- Path checks run before and after each read; a link swapped in and out between them by
-  someone who can write the root is not detected.
+- Path checks run before and after each read, and the open is verified against the path
+  (Linux, and every Unix for Rust). A directory on the path swapped for a link and back
+  between those steps by someone who can write the root is not detected; neither is a
+  link swapped in on a non-Linux platform by the C# collector between its open and its
+  re-check.
 - The C# collector cannot distinguish a FIFO from an empty regular file; it never opens
   one (shorter than the fingerprint), but reports it as `running` rather than refused.
 

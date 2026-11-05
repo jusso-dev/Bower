@@ -28,16 +28,20 @@ host name and other journal fields are never forwarded. A binary (array) `MESSAG
 quarantined with `transform-type-error`. Version 1.0.1 only adds `expectFields`
 assertions to its samples; parser, policy and privacy profile are unchanged.
 
-`linux-authlog-ssh` 1.0.0 exposes one signed JSON parser (index 0) for plain-text sshd
+`linux-authlog-ssh` 1.1.0 exposes one signed JSON parser (index 0) for plain-text sshd
 `auth.log` lines from the [file tail source](../deployment/file-tail-source.md). Its
-transform program extracts time, account, source address and method from `message`
-with a bounded regex that requires an RFC 3339 or classic syslog time and the `sshd[pid]`
-tag, maps the method through a static table to the outcome reason and converts the time
-to UTC (classic times are read as UTC in the evaluation year; `readAt` is the fallback).
-It produces only `authentication_failure`, action `authentication.attempt`, result
-`failure`, application `linux-sshd`, environment `production`, original ID the file
-source's `file-` id. Policy `BWR-PACK-AUTHLOG-SSH-AUTH` 1.0.0 selects; usernames are
-pseudonymised. The line, host name and file path are never forwarded.
+transform program extracts time, account, source address and method from `message` with
+bounded regexes that require an RFC 3339 or classic syslog time (impossible dates refused)
+and the `sshd[pid]` or `sshd-session[pid]` tag, and are anchored at the end of the line so
+the last `from <ip> port <n> ssh2` wins against a hostile username. It maps the method
+through a static table to the outcome reason and converts the time to UTC (classic times
+are read as UTC in the evaluation year). A line without a parseable time is not selected;
+the read time is never substituted. It produces only `authentication_failure`, action
+`authentication.attempt`, result `failure`, application `linux-sshd`, environment
+`production`, original ID the file source's `file-` id. Policy `BWR-PACK-AUTHLOG-SSH-AUTH`
+1.0.0 selects; usernames are pseudonymised. The line, host name and file path are never
+forwarded. Version 1.1.0 anchors the match, adds `sshd-session`, refuses impossible times
+and removes the read-time fallback; the policy and privacy profile are unchanged.
 
 `windows-security-logon` 1.0.2 exposes one signed JSON parser (index 0) for records from
 the [Windows Event Log source](../deployment/windows-event-log-source.md), subscribed
