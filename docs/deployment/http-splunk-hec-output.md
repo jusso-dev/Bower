@@ -162,6 +162,65 @@ encoding is wrong for this endpoint, so they are held too.
     2xx from HEC whose `code` is neither 0, 24 nor 25 is retried indefinitely
     (`destination-http-response-invalid`).
 
+### A single event held without an accepted sibling
+
+The poison rule is deliberately conservative: an event refused with 400, 422 or 413 is
+dead-lettered only when another event **from the same request** was accepted, which
+proves the endpoint works and the refusal is about that event. Without that proof the
+event is held as `destination-http-400` (or `-422`, `-413`, with any `:hec-<n>`) and
+retried about every 30 seconds, indefinitely. It never blocks other events: they are
+leased, sent and acknowledged around it. It does keep the backlog alarm above firing.
+
+This is the normal outcome when:
+
+- `BOWER_HTTP_MAX_BATCH_EVENTS=1`. Every request then carries one event, no sibling can
+  ever be accepted, and **poison isolation is disabled entirely**: every 400, 422 or 413
+  is held, never dead-lettered. Keep the default (500), or at least a value above 1.
+- Traffic is low and the event is leased alone, for example its retries fall due when
+  nothing else is queued. A later lease that pairs it with an accepted event isolates it
+  and dead-letters it then.
+
+**Recognise it**
+
+- `/v1/status`: `queue.retrying` stays above zero while, in the C# collector,
+  `deliveryActivity.lastSuccessfulDeliveryAt` keeps advancing (other events are
+  delivered) and `deliveryActivity.lastFailureCode` is `destination-http-400`, `-422` or
+  `-413`, often with a HEC suffix such as `:hec-6` (invalid data format) or `:hec-15`
+  (error in handling indexed fields).
+- The `Output adapter did not deliver events` log line with the same `failure_code`,
+  repeating with a small, steady `count`.
+- `bower queue inspect --database <queue.db>` shows the retrying count. To see which
+  events are held, query the queue read-only (state 2 is retrying):
+
+  ```sh
+  sqlite3 -readonly <queue.db> \
+    "SELECT event_id, last_failure_code, next_attempt_at FROM queue_events
+     WHERE state = 2 AND (last_failure_code LIKE 'destination-http-400%'
+       OR last_failure_code LIKE 'destination-http-422%'
+       OR last_failure_code LIKE 'destination-http-413%');"
+  ```
+
+**Resolve it**
+
+1. Find out why the endpoint refuses the event. The queued payload is the redacted event
+   Bower sends; read it from the same table (`payload` column, read-only) and compare it
+   with the endpoint's rules (HEC indexed-field limits, a schema the NDJSON endpoint
+   enforces, a request size limit below Bower's).
+2. If the endpoint or its configuration is at fault, fix it: the held event is delivered
+   on its next retry, nothing to replay.
+3. If one event is larger than the endpoint accepts, set `BOWER_HTTP_MAX_BATCH_BYTES` at
+   or below the endpoint's limit: Bower then dead-letters oversized events itself as
+   `payload-too-large`.
+4. If the event itself is bad, it is dead-lettered as `http-<status>[:hec-<n>]` the next
+   time it shares a request with an accepted event (only with a batch size above 1).
+   **There is no command yet to dead-letter or drop a held (retrying) event by hand**:
+   `bower queue replay` (`--code PREFIX` or `--event ID`) and `bower queue dead-letters`
+   act on dead letters only. Do not edit the queue database; until such a command
+   exists, the event stays held and the alarm keeps firing for it.
+5. Once dead-lettered, list it with `bower queue dead-letters --database <queue.db>` and,
+   after fixing the cause, return it with
+   `bower queue replay --database <queue.db> --event <id>` (or `--code http-400`).
+
 ### HEC near capacity (codes 24 and 25)
 
 Splunk's "Troubleshoot HTTP Event Collector" table documents two success-with-warning

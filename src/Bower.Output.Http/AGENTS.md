@@ -22,7 +22,10 @@ port: `rust/crates/bower-output-http`; request and response vectors in
   HEC configuration codes 7, 10, 11, 14, 16, 21, 22) stop the delivery. Ambiguous 400,
   422 and 413 bisect within the budget; a single event becomes `http-<status>` poison
   only when a sibling from the same original batch was accepted. HEC codes are metadata
-  only (`:hec-<n>`). Shared scenarios in the vectors pin this.
+  only (`:hec-<n>`). Shared scenarios in the vectors pin this. Consequence, accepted as
+  the conservative trade-off: a refused event with no accepted sibling is held and retried
+  indefinitely (always with `BOWER_HTTP_MAX_BATCH_EVENTS=1`, which disables isolation);
+  the deployment doc explains how operators recognise and resolve it.
 - The byte cap counts every record's newline.
 - `BOWER_HTTP_AUTH_HEADER` never names a header .NET refuses on requests (content,
   response-only) or a hop-by-hop/framing/proxy header; adding it must succeed or fail closed.

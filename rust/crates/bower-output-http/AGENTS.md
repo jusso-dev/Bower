@@ -18,7 +18,8 @@ Event Collector (`splunk-hec`) or a generic NDJSON endpoint (`ndjson`).
 - Response reads are bounded (64 KiB, depth 64 like C# `JsonDocument`); Retry-After is
   capped at one hour. Only an isolated single event whose original batch had an accepted
   sibling is poison; every other failure is held as `destination-http-*` (see
-  `src/Bower.Output.Http/AGENTS.md`). Endpoint-wide failures stop later batches.
+  `src/Bower.Output.Http/AGENTS.md`, including the single-event hold). Endpoint-wide
+  failures stop later batches.
 - Duplicate window: the collector's delivery worker aborts the output task on shutdown
   and discards its partial `DeliveryResult`, so batches already accepted in that delivery
   stay leased and are resent after lease expiry. Pre-existing worker behaviour; do not
