@@ -70,6 +70,51 @@ const types: SourceTypeDefinition[] = [
     guide: "docs/deployment/syslog-source.md"
   },
   {
+    id: "file",
+    title: "Security-selected file",
+    summary: "Tail one named file on the collector host. Each line goes to a signed pack parser, and only the security events it selects are kept.",
+    why: "Bower reads the one file you name and drops every line its signed parser does not select. It does not ship whole logs.",
+    needs: [
+      "The exact path of one file, and the directory it is allowed to live in. Wildcards, whole directories and catch-all parsers are not offered.",
+      "Symbolic links: The collector refuses symbolic links: the file and every directory between the allowed directory and the file must be real. The allowed directory itself may be a link."
+    ],
+    fields: [
+      {
+        id: "allowedRoot",
+        label: "Allowed directory",
+        kind: "file-path",
+        required: true,
+        help: "The collector reads only inside this directory.",
+        defaultValue: "/var/log",
+        maximumLength: 200,
+        keyVaultAllowed: false
+      },
+      {
+        id: "path",
+        label: "File path",
+        kind: "file-path",
+        required: true,
+        help: "The exact absolute path of one file inside the allowed directory. Wildcards are not supported.",
+        placeholder: "/var/log/auth.log",
+        maximumLength: 260,
+        keyVaultAllowed: false
+      },
+      {
+        id: "parser",
+        label: "Signed pack parser",
+        kind: "choice",
+        required: true,
+        help: "Every line goes to this parser. Lines it does not select are dropped.",
+        defaultValue: "linux-authlog-ssh:0",
+        options: [{ value: "linux-authlog-ssh:0", label: "linux-authlog-ssh parser 0: SSH sign-in failures from auth.log text lines" }],
+        maximumLength: 80,
+        keyVaultAllowed: false
+      }
+    ],
+    checkDescription: "Bower watches the collector's heartbeat for the parser's application and environment.",
+    guide: "docs/deployment/file-tail-source.md"
+  },
+  {
     id: "ama",
     title: "Azure Monitor Agent",
     summary: "Switches delivery to files AMA collects.",
@@ -257,6 +302,57 @@ describe("Sources page", () => {
 
     fireEvent.click(within(step).getByRole("radio", { name: "UDP, this host only" }));
     expect(within(step).queryByLabelText("Server private key file")).toBeNull();
+  });
+
+  it("offers security-selected file tailing with a signed parser choice and no collect-all option", async () => {
+    const outside: SourceSetupPlanResult = {
+      valid: false,
+      checks: [
+        {
+          id: "path",
+          state: "fail",
+          message: "File path is outside the allowed directory.",
+          fix: "Put the file inside the allowed directory, or choose the directory that holds it."
+        }
+      ],
+      plan: null,
+      preview: null
+    };
+    stub({ plans: [outside] });
+    renderAt("/sources");
+
+    const choice = await screen.findByRole("radio", { name: /Security-selected file/ });
+    expect(choice.closest("label")?.textContent).toMatch(/only the security events it selects are kept/);
+    fireEvent.click(choice);
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    const step = await screen.findByRole("region", { name: "Fill in the settings" });
+    expect(within(step).getByText(/Symbolic links:/)).toBeTruthy();
+    expect(within(step).getByLabelText("File path").tagName).toBe("INPUT");
+    expect(within(step).getByLabelText("Allowed directory").tagName).toBe("INPUT");
+    const parsers = within(within(step).getByRole("group", { name: "Signed pack parser" })).getAllByRole("radio");
+    expect(parsers.map((item) => (item as HTMLInputElement).value)).toEqual(["linux-authlog-ssh:0"]);
+    expect((parsers[0] as HTMLInputElement).checked).toBe(true);
+    // Nothing offers to collect everything: no wildcard, directory-wide or catch-all choice.
+    expect(within(step).queryByRole("radio", { name: /\ball\b|everything|\*/i })).toBeNull();
+    expect(within(step).queryByRole("checkbox")).toBeNull();
+    expect(step.textContent).not.toMatch(/log shipping|ship (all|every)/i);
+
+    fireEvent.change(within(step).getByLabelText("Collector"), { target: { value: "edge-01" } });
+    expect((within(step).getByLabelText("Allowed directory") as HTMLInputElement).value).toBe("/var/log");
+    fireEvent.change(within(step).getByLabelText("File path"), { target: { value: "/srv/app/auth.log" } });
+    fireEvent.click(within(step).getByRole("button", { name: "Check settings" }));
+
+    const field = await within(step).findByLabelText("File path");
+    await waitFor(() => expect(field.getAttribute("aria-invalid")).toBe("true"));
+    expect(step.querySelector("#source-field-path-problem")?.textContent).toMatch(/outside the allowed directory/);
+    const sent = requests.find((item) => item.path === "/api/sources/plan")!.body as { type: string; values: Record<string, string> };
+    expect(sent.type).toBe("file");
+    expect(sent.values).toEqual({
+      allowedRoot: "/var/log",
+      path: "/srv/app/auth.log",
+      parser: "linux-authlog-ssh:0"
+    });
   });
 
   it("shows the server's field problems next to the field and sends only visible values", async () => {
