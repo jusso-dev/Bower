@@ -481,7 +481,13 @@ impl Reading<'_> {
         let other_file = matches!((&file_id, &at.file_id), (Some(now), Some(then)) if now != then);
         let same_identity = fingerprint.as_deref() == Some(at.fingerprint.as_str());
 
-        if same_identity && !other_file {
+        if same_identity {
+            // The same first line at another device and inode is a rename only when path.1
+            // carries it: the stored file id is a hint, never a reason to re-read. The same
+            // content restored or copied to a new inode continues from the cursor.
+            if other_file && self.previous_matching(&at.fingerprint)?.is_some() {
+                return self.drain(at.start_drain(RENAME_DRAIN), fingerprint, file_id);
+            }
             let length = self.current().length;
             if length >= at.offset {
                 let file_id = file_id.or_else(|| at.file_id.clone());

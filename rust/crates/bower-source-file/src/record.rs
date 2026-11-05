@@ -15,6 +15,12 @@ pub const MAXIMUM_JSON_DEPTH: usize = 8;
 
 pub const INVALID_UTF8: &str = "file-line-invalid-utf8";
 pub const INVALID_JSON: &str = "file-line-invalid-json";
+/// The record would exceed `MAXIMUM_RECORD_BYTES` once JSON-escaped (a line within
+/// `maxLineBytes` can: a control character becomes six bytes). Counted as oversized.
+pub const TOO_LARGE: &str = "file-record-too-large";
+/// The largest record a pack parser reads (`bower_packs::runtime::MAXIMUM_RAW_BYTES`; a
+/// collector test keeps them equal).
+pub const MAXIMUM_RECORD_BYTES: usize = 32 * 1024;
 
 /// The record, or the failure code of a malformed line.
 pub fn build(
@@ -45,7 +51,11 @@ pub fn build(
         ("readAt".to_owned(), format(read_at).into()),
         (body.0.to_owned(), body.1),
     ];
-    json::to_string(&JsonElement::Object(fields)).map_err(|_| INVALID_JSON)
+    let record = json::to_string(&JsonElement::Object(fields)).map_err(|_| INVALID_JSON)?;
+    if record.len() > MAXIMUM_RECORD_BYTES {
+        return Err(TOO_LARGE);
+    }
+    Ok(record)
 }
 
 /// Depth beyond [`MAXIMUM_JSON_DEPTH`], counted like `Utf8JsonReader` (the top-level

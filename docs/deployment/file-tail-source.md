@@ -105,7 +105,10 @@ lines all come from that one handle, so bytes of one generation can never move a
 generation's cursor.
 
 A refused path is never read and its state is `file-path-refused`; a missing file is
-`waiting` and is read from its start once it appears. A directory on the path swapped for
+`waiting` and is read from its start once it appears. Only a file or directory that does not
+exist is missing: one Bower cannot examine (a directory the service account cannot search,
+for example) is `file-path-inaccessible`, counted in `readErrors` and logged, never
+`waiting`. A directory on the path swapped for
 a link and back between the checks is still not detected: roots should be directories only
 trusted operators can write to, as `/var/log` is.
 
@@ -190,10 +193,14 @@ The time comes from the line only: an RFC 3339 prefix (what rsyslog writes with
 `RSYSLOG_FileFormat`, the default file template on some current distributions) or a classic
 `Mmm dd hh:mm:ss` prefix, with impossible dates and times refused. A line whose time cannot
 be parsed is not selected; Bower never substitutes the read time, so a replay after a crash
-maps to exactly the same event. Classic syslog times carry no zone or year and are read as
-UTC in the evaluation year: on a host whose local time is not UTC every event is off by
-the host's offset (in Sydney, AEST, 10 hours, or 11 hours during daylight saving), and an
-event near New Year can land in the wrong year. Configure RFC 3339 (`$ActionFileDefaultTemplate
+maps to exactly the same event (classic times across New Year aside, below). Classic syslog
+times carry no zone or year and are read as UTC in the evaluation year: on a host whose
+local time is not UTC every event is off by the host's offset (in Sydney, AEST, 10 hours, or
+11 hours during daylight saving), and an event near New Year can land in the wrong year. The
+year comes from the clock when the line is submitted, so a crash replay across New Year can
+resolve a different year: the replayed duplicate keeps its event id but not its content, and
+is quarantined as `event-identity-conflict` (counted in `rejected`) instead of deduplicated;
+the original is already queued, so nothing is lost. Configure RFC 3339 (`$ActionFileDefaultTemplate
 RSYSLOG_FileFormat`) or run the host in UTC.
 
 Any local user can write a line that this pack selects, for example
@@ -212,8 +219,13 @@ of the file's first complete line, extended to at least 64 bytes and capped at 4
 files whose first 64 bytes are the same (a constant JSON prefix, for example) are still told
 apart once their first lines differ. A file whose first line is still being written (and
 shorter than 4096 bytes) has no identity yet and waits. Device and inode numbers check each
-open and tell rename from copytruncate, but are not part of the identity: they are reused
-after a file is deleted and copytruncate keeps them.
+open and are stored in the cursor, but only as a hint, never as part of the identity (they
+are reused after a file is deleted, and copytruncate keeps them). When `path.1` carries the
+cursor's identity they tell rename (the original moved to `path.1`) from copytruncate (the
+original truncated in place). On their own they never cause a re-read or a gap: a file with
+the cursor's identity at a new device or inode (restored from a backup, copied, or the
+cursor moved to another host) and no matching `path.1` continues from the cursor, as long as
+it is at least as long as the cursor.
 
 - **Advance rule.** The cursor moves past a line only once it is durably enqueued or
   definitively dropped (not selected, rejected, quarantined, malformed, oversized, too
@@ -232,7 +244,9 @@ after a file is deleted and copytruncate keeps them.
   during a retention batch) is backpressure: the poll is retried after one second and the
   cursor is unchanged.
 - **Oversized lines** are skipped without being buffered, even across polls, and
-  counted.
+  counted. A line within `maxLineBytes` whose record would exceed the 32 KiB pack record
+  limit once JSON-escaped (heavily escaped text: a control character becomes six bytes) is
+  counted in `oversized` too and never submitted.
 - **Rotation is a drain.** Once a rotation is detected, the cursor refers to `path.1`
   (`drain` in the cursor) and the current file is not read at all until `path.1` is
   drained, however the current file changes meanwhile. If `path.1` disappears or is rotated
@@ -300,13 +314,15 @@ code), `offset` (durable position), and counters since start: `linesRead`, `byte
 `tooLarge`, `malformed`, `oversized`, `blank`, `rotations`, `rotationGaps`,
 `backpressure`, `readErrors`, `submitFailures`, `cursorConflicts`, `lastLineAt` and
 `lastPollAt`. They are metadata only and reset on restart. Failure codes:
-`file-path-refused`, `file-read-failed`, `file-cursor-invalid` (a damaged cursor of the
+`file-path-refused`, `file-path-inaccessible` (the file or a directory on its path cannot be
+examined, usually a permission the service account lacks), `file-read-failed`, `file-cursor-invalid` (a damaged cursor of the
 current schema; never reset silently), `file-cursor-conflict`,
 `file-submit-failed` and `file-source-failed`. A failing input backs off from the poll
 interval up to 60 seconds and keeps retrying.
 
-A refused input is logged once when it becomes refused (event 1121 in the C# collector), with
-its id and a reason code only: `path`, `rotated-path`, `overlaps-another-input` or `handle`.
+A refused or inaccessible input is logged once when it enters that state (event 1121 in the
+C# collector), with its id and a reason code only: `path`, `rotated-path`,
+`overlaps-another-input`, `handle` or `inaccessible` (state `file-path-inaccessible`).
 
 Cursors from another build are never interpreted. The cursor schema is 2; a stored cursor
 with any other `schemaVersion` (the pre-release builds wrote 1, without the rotation state)
@@ -314,7 +330,8 @@ replays the current file from its start and counts one `rotationGaps` entry once
 cursor is stored (a poll refused or failed before that counts nothing): lines may be
 delivered twice (the queue deduplicates what it still holds), never skipped.
 
-Alert on `rotationGaps` and on a state other than `running` or `waiting`. List the
+Alert on `rotationGaps` and on a state other than `running` or `waiting` (which includes
+`file-path-inaccessible`; `waiting` means only that the file does not exist yet). List the
 pack's `applicationName`/`environment` in `BOWER_SOURCE_EXPECTATIONS` to degrade
 `/health` when the file goes quiet.
 

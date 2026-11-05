@@ -341,8 +341,16 @@ public static class FileTailReader
             FileTailHandle? Previous() => Rotated() is { } file
                 && string.Equals(file.Fingerprint, at.Fingerprint, StringComparison.Ordinal) ? file : null;
 
-            if (sameIdentity && !otherFile)
+            if (sameIdentity)
             {
+                // The same first line at another device and inode is a rename only when path.1
+                // carries it: the stored file id is a hint, never a reason to re-read. The same
+                // content restored or copied to a new inode continues from the cursor.
+                if (otherFile && Previous() is not null)
+                {
+                    return Drain(StartDrain(at, FileTailCursor.RenameDrain), fingerprint, fileId);
+                }
+
                 if (current!.Length >= at.Offset)
                 {
                     return Scan(current, at with { FileId = fileId ?? at.FileId }, eofEndsLine: false, gap: false);

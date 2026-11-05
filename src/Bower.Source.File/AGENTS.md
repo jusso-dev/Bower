@@ -16,8 +16,12 @@ cursor format, limits, defaults, failure codes and configuration messages.
   `O_NOFOLLOW | O_NONBLOCK` plus a `statx` device/inode match) and take identity, length and
   lines from that one handle. Never open a file shorter than 64 bytes (FIFOs and devices
   report empty), and never add a glob form without a hard file-count cap and review.
-- Identity is SHA-256 of the first complete line (64–4096 bytes). Inodes check each open
-  but are never stored: cursors must stay readable by both runtimes.
+- Identity is SHA-256 of the first complete line (64–4096 bytes). The cursor stores the
+  file's `device:inode` (`fileId`) only as a hint: with a `path.1` that carries the cursor's
+  identity it tells rename from copytruncate. A `fileId` mismatch alone never causes a
+  re-read or a gap: the same identity at a new inode, no matching `path.1` and at least the
+  cursor's length continues from the cursor (a restored or copied file). Both runtimes write
+  and read `fileId` identically.
 - Bound everything: `maxLineBytes` (at most 30 KiB so the record fits the 32 KiB pack
   record limit), lines and bytes per poll, json-lines depth 8, configuration 256 KiB.
   Oversized lines are skipped without being buffered.

@@ -22,6 +22,9 @@ pub enum PathState {
     Missing,
     /// A symbolic link, a directory, a special file or a path outside the roots. Never read.
     Refused,
+    /// The file, or a directory on its path, cannot be examined (permission denied or another
+    /// error than not found). A failure, never mistaken for a missing file.
+    Inaccessible,
 }
 
 const WILDCARDS: [char; 6] = ['*', '?', '[', ']', '{', '}'];
@@ -73,8 +76,9 @@ pub fn resolve(path: &str, roots: &[String], allow_symlink: bool) -> (PathState,
             if !allow_symlink {
                 return (PathState::Refused, path.to_owned());
             }
-            let Ok(target) = std::fs::read_link(path) else {
-                return (PathState::Missing, path.to_owned());
+            let target = match std::fs::read_link(path) {
+                Ok(target) => target,
+                Err(error) => return (unreadable(&error), path.to_owned()),
             };
             let Some(resolved) = link_target(path, &target) else {
                 return (PathState::Refused, path.to_owned());
@@ -124,8 +128,16 @@ fn finish(path: &str) -> PathState {
         }
         Ok(metadata) if !metadata.is_file() => PathState::Refused,
         Ok(_) => PathState::Ready,
-        Err(error) if error.kind() == ErrorKind::NotFound => PathState::Missing,
-        Err(_) => PathState::Missing,
+        Err(error) => unreadable(&error),
+    }
+}
+
+/// Missing only when nothing is there (C# `Probe`); permission denied or any other error is
+/// `Inaccessible`.
+fn unreadable(error: &std::io::Error) -> PathState {
+    match error.kind() {
+        ErrorKind::NotFound | ErrorKind::NotADirectory => PathState::Missing,
+        _ => PathState::Inaccessible,
     }
 }
 
@@ -143,7 +155,8 @@ fn check_directories(root: &str, path: &str) -> PathState {
         match std::fs::symlink_metadata(Path::new(&current)) {
             Ok(metadata) if metadata.file_type().is_symlink() => return PathState::Refused,
             Ok(metadata) if metadata.is_dir() => {}
-            _ => return PathState::Missing,
+            Ok(_) => return PathState::Missing,
+            Err(error) => return unreadable(&error),
         }
     }
     PathState::Ready

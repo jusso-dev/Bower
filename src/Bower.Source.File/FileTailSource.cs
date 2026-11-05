@@ -38,6 +38,9 @@ public static class FileTailFailures
 {
     /// <summary>A symbolic link, a directory or a path outside the allowed roots.</summary>
     public const string PathRefused = "file-path-refused";
+
+    /// <summary>The file or a directory on its path cannot be examined (permission denied): never read as missing.</summary>
+    public const string PathInaccessible = "file-path-inaccessible";
     public const string ReadFailed = "file-read-failed";
     public const string CursorInvalid = "file-cursor-invalid";
 
@@ -61,6 +64,9 @@ public static class FileTailRefusals
 
     /// <summary>The opened handle is not the validated regular file.</summary>
     public const string Handle = "handle";
+
+    /// <summary>The file or a directory on its path cannot be examined (state <see cref="FileTailFailures.PathInaccessible"/>).</summary>
+    public const string Inaccessible = "inaccessible";
 }
 
 public sealed class FileTailException(string code, Exception? innerException = null, string? reason = null) : Exception(code, innerException)
@@ -76,7 +82,7 @@ public sealed class FileTailException(string code, Exception? innerException = n
 /// <param name="Offset">Durable position in the current file.</param>
 /// <param name="NotSelected">Lines the pack parser's filter did not select: dropped (default deny).</param>
 /// <param name="Malformed">Lines that are not UTF-8, or not a JSON object for json-lines: dropped.</param>
-/// <param name="Oversized">Lines longer than <c>maxLineBytes</c>: skipped without being buffered.</param>
+/// <param name="Oversized">Lines longer than <c>maxLineBytes</c> (skipped without being buffered), or whose record would exceed the 32 KiB pack record limit once JSON-escaped.</param>
 /// <param name="RotationGaps">Missed rotations or in-place truncations: lines may have been lost.</param>
 /// <param name="Backpressure">Polls stopped because the queue could not take a line; the line is retried.</param>
 public sealed record FileTailInputStatus(
@@ -212,13 +218,13 @@ public sealed class FileTailSource : IAsyncDisposable
         }
         catch (FileTailException exception)
         {
-            if (exception.Code == FileTailFailures.PathRefused && input.State != FileTailFailures.PathRefused)
+            if (exception.Code is FileTailFailures.PathRefused or FileTailFailures.PathInaccessible && input.State != exception.Code)
             {
                 InputRefused?.Invoke(input.Options.Id, exception.Reason ?? FileTailRefusals.Path);
             }
 
             input.State = exception.Code;
-            if (exception.Code is FileTailFailures.ReadFailed or FileTailFailures.PathRefused)
+            if (exception.Code is FileTailFailures.ReadFailed or FileTailFailures.PathRefused or FileTailFailures.PathInaccessible)
             {
                 Interlocked.Increment(ref input.Counters.ReadErrors);
             }
@@ -369,7 +375,7 @@ public sealed class FileTailSource : IAsyncDisposable
             FileTailSubmitOutcome? outcome = null;
             if (!line.Oversized && line.Bytes.Length > 0)
             {
-                string? record = FileTailRecord.TryBuild(options, line, clock.GetUtcNow(), out _);
+                string? record = FileTailRecord.TryBuild(options, line, clock.GetUtcNow(), out string? unbuilt);
                 if (record is not null)
                 {
                     try
@@ -396,6 +402,12 @@ public sealed class FileTailSource : IAsyncDisposable
                         next = batch.RewindTo(line);
                         break;
                     }
+                }
+                else if (unbuilt == FileTailRecord.TooLarge)
+                {
+                    // Within maxLineBytes but over the pack record limit once escaped: the same
+                    // as a line too long to read, never a parser-side TooLarge.
+                    Interlocked.Increment(ref input.Counters.Oversized);
                 }
                 else
                 {
@@ -484,6 +496,11 @@ public sealed class FileTailSource : IAsyncDisposable
             throw new FileTailException(FileTailFailures.PathRefused, reason: FileTailRefusals.Path);
         }
 
+        if (state == FileTailPathState.Inaccessible)
+        {
+            throw new FileTailException(FileTailFailures.PathInaccessible, reason: FileTailRefusals.Inaccessible);
+        }
+
         if (MeetsAnother(options, FileTailPaths.Canonical(path)))
         {
             throw new FileTailException(FileTailFailures.PathRefused, reason: FileTailRefusals.Overlap);
@@ -532,9 +549,12 @@ public sealed class FileTailSource : IAsyncDisposable
     private (FileTailPathState State, string Path) CheckRotated(string path)
     {
         (FileTailPathState state, string rotated) = FileTailPaths.Resolve(path + ".1", configuration.AllowedRoots, allowSymlink: false);
-        return state == FileTailPathState.Refused
-            ? throw new FileTailException(FileTailFailures.PathRefused, reason: FileTailRefusals.RotatedPath)
-            : (state, rotated);
+        return state switch
+        {
+            FileTailPathState.Refused => throw new FileTailException(FileTailFailures.PathRefused, reason: FileTailRefusals.RotatedPath),
+            FileTailPathState.Inaccessible => throw new FileTailException(FileTailFailures.PathInaccessible, reason: FileTailRefusals.Inaccessible),
+            _ => (state, rotated)
+        };
     }
 
 

@@ -22,6 +22,15 @@ public static class FileTailRecord
     public const string InvalidUtf8 = "file-line-invalid-utf8";
     public const string InvalidJson = "file-line-invalid-json";
 
+    /// <summary>
+    /// The record would exceed <see cref="MaximumRecordBytes"/> once JSON-escaped (a line within
+    /// <c>maxLineBytes</c> can: a control character becomes six bytes). Counted as oversized.
+    /// </summary>
+    public const string TooLarge = "file-record-too-large";
+
+    /// <summary>The largest record a pack parser reads (<c>PackRuntime.MaximumRecordBytes</c>; a test keeps them equal).</summary>
+    public const int MaximumRecordBytes = 32 * 1024;
+
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     /// <returns>The record, or null with a failure code when the line is malformed.</returns>
@@ -87,6 +96,12 @@ public static class FileTailRecord
                 }
 
                 writer.WriteEndObject();
+            }
+
+            if (buffer.WrittenCount > MaximumRecordBytes)
+            {
+                failure = TooLarge;
+                return null;
             }
 
             return Encoding.UTF8.GetString(buffer.WrittenSpan);

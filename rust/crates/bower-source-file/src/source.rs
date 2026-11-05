@@ -57,6 +57,9 @@ pub trait FileTailSink: Send + Sync + 'static {
 /// Stable, metadata-only failure codes (C# `FileTailFailures`).
 pub mod failures {
     pub const PATH_REFUSED: &str = "file-path-refused";
+    /// The file or a directory on its path cannot be examined (permission denied): never
+    /// read as missing.
+    pub const PATH_INACCESSIBLE: &str = "file-path-inaccessible";
     pub const READ_FAILED: &str = "file-read-failed";
     pub const CURSOR_INVALID: &str = "file-cursor-invalid";
     pub const CURSOR_CONFLICT: &str = "file-cursor-conflict";
@@ -74,6 +77,8 @@ pub mod refusals {
     pub const OVERLAP: &str = "overlaps-another-input";
     /// The opened handle is not the validated regular file.
     pub const HANDLE: &str = "handle";
+    /// The file or a directory on its path cannot be examined (state `file-path-inaccessible`).
+    pub const INACCESSIBLE: &str = "inaccessible";
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -93,6 +98,13 @@ impl FileTailError {
         Self {
             code: failures::PATH_REFUSED,
             reason: Some(reason),
+        }
+    }
+
+    fn inaccessible() -> Self {
+        Self {
+            code: failures::PATH_INACCESSIBLE,
+            reason: Some(refusals::INACCESSIBLE),
         }
     }
 }
@@ -374,15 +386,20 @@ impl FileTailSource {
                 .state
                 .lock()
                 .unwrap_or_else(|poison| poison.into_inner())
-                == failures::PATH_REFUSED;
-            if error.code == failures::PATH_REFUSED
-                && !already
+                == error.code;
+            if matches!(
+                error.code,
+                failures::PATH_REFUSED | failures::PATH_INACCESSIBLE
+            ) && !already
                 && let Some(refused) = &self.refused
             {
                 refused(&input.options.id, error.reason.unwrap_or(refusals::PATH));
             }
             input.set_state(error.code);
-            if matches!(error.code, failures::READ_FAILED | failures::PATH_REFUSED) {
+            if matches!(
+                error.code,
+                failures::READ_FAILED | failures::PATH_REFUSED | failures::PATH_INACCESSIBLE
+            ) {
                 input.counters.read_errors.fetch_add(1, Ordering::Relaxed);
             }
         }
@@ -531,6 +548,11 @@ impl FileTailSource {
                             return (batch.rewind_to(line), handled, false, true, false);
                         }
                     },
+                    // Within maxLineBytes but over the pack record limit once escaped: the same
+                    // as a line too long to read, never a parser-side TooLarge.
+                    Err(record::TOO_LARGE) => {
+                        input.counters.oversized.fetch_add(1, Ordering::Relaxed);
+                    }
                     Err(_) => {
                         input.counters.malformed.fetch_add(1, Ordering::Relaxed);
                     }
@@ -577,6 +599,9 @@ impl FileTailSource {
         if state == PathState::Refused {
             return Err(FileTailError::refused(refusals::PATH));
         }
+        if state == PathState::Inaccessible {
+            return Err(FileTailError::inaccessible());
+        }
         if self.meets_another(options, &paths::canonical(&path)) {
             return Err(FileTailError::refused(refusals::OVERLAP));
         }
@@ -608,6 +633,7 @@ impl FileTailSource {
     fn check_rotated(&self, path: &str) -> Result<(PathState, String), FileTailError> {
         match paths::resolve(&format!("{path}.1"), &self.roots, false) {
             (PathState::Refused, _) => Err(FileTailError::refused(refusals::ROTATED_PATH)),
+            (PathState::Inaccessible, _) => Err(FileTailError::inaccessible()),
             resolved => Ok(resolved),
         }
     }

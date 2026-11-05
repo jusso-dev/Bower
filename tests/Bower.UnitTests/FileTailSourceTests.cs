@@ -97,14 +97,44 @@ public sealed class FileTailSourceTests
             MaxBytesPerBatch = options["maxBytesPerBatch"]?.GetValue<int>() ?? 1_048_576,
             RotationGracePolls = options["rotationGracePolls"]?.GetValue<int>() ?? 1,
             RotationDrainMaxPolls = options["rotationDrainMaxPolls"]?.GetValue<int>() ?? FileTailSourceConfigurationLoader.DefaultRotationDrainMaxPolls,
-            // Identities alone decide, so both runtimes agree on every platform.
-            UseFileIds = false
+            // Identities alone decide unless the sequence models device and inode numbers
+            // ("fileIds"): the Rust port uses its real ones, C# models the same rules here, so
+            // both runtimes agree on every platform.
+            UseFileIds = options["fileIds"]?.GetValue<bool>() ?? false
         };
+        // device:inode of each path: kept by in-place writes, appends and copytruncate, moved
+        // to path.1 by a rename, new whenever a file is created or restored.
+        Dictionary<string, string> ids = new(StringComparer.Ordinal);
+        int nextId = 0;
+        void Created(string at)
+        {
+            if (!File.Exists(at))
+            {
+                ids[at] = $"1:{++nextId}";
+            }
+        }
+
+        FileTailHandle.FileIds = at => File.Exists(at) && ids.TryGetValue(at, out string? id) ? id : null;
+        try
+        {
+            RunSteps(sequence, path, rotated, reader, ids, Created, () => $"1:{++nextId}");
+        }
+        finally
+        {
+            FileTailHandle.FileIds = null;
+        }
+    }
+
+    private static void RunSteps(
+        JsonObject sequence, string path, string rotated, FileTailReaderOptions reader,
+        Dictionary<string, string> ids, Action<string> created, Func<string> newId)
+    {
         FileTailCursor? cursor = null;
         foreach (JsonObject step in sequence["steps"]!.AsArray().Select(node => node!.AsObject()))
         {
             if (step["write"] is { } write)
             {
+                created(path);
                 // In place (same file), as a writer truncating and rewriting would.
                 using FileStream stream = new(path, FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
                 stream.SetLength(0);
@@ -112,6 +142,7 @@ public sealed class FileTailSourceTests
             }
             else if (step["append"] is { } append)
             {
+                created(path);
                 File.AppendAllText(path, append.GetValue<string>());
             }
             else if (step["appendRotated"] is { } late)
@@ -122,13 +153,24 @@ public sealed class FileTailSourceTests
             else if (step.ContainsKey("deleteRotated"))
             {
                 File.Delete(rotated);
+                ids.Remove(rotated);
             }
             else if (step.ContainsKey("rename"))
             {
                 File.Move(path, rotated, overwrite: true);
+                ids[rotated] = ids.GetValueOrDefault(path, newId());
+                ids.Remove(path);
+            }
+            else if (step.ContainsKey("restore"))
+            {
+                // The same content at a new inode, as a restore from backup or a copy leaves it.
+                File.WriteAllBytes(path + ".restore", File.ReadAllBytes(path));
+                File.Move(path + ".restore", path, overwrite: true);
+                ids[path] = newId();
             }
             else if (step.ContainsKey("copytruncate"))
             {
+                ids[rotated] = newId();
                 File.Copy(path, rotated, overwrite: true);
                 using FileStream stream = new(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
                 stream.SetLength(0);
@@ -1226,6 +1268,118 @@ public sealed class FileTailSourceTests
         // One replay stored, one gap: the refused polls stored nothing and counted nothing.
         Assert.Single(sink.Records);
         Assert.Equal(1, source.Snapshot()[0].RotationGaps);
+    }
+
+    [Fact]
+    public async Task ARestoredFileWithTheSameContentAtANewInode_ContinuesWithoutAGapOrReplay()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "C# reads device and inode numbers on Linux only.");
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "auth.log");
+        await File.WriteAllTextAsync(path, Line("first-1") + Line("two"), cancellation);
+        FakeSink sink = new(_ => FileTailSubmitOutcome.Queued);
+        MemoryCursors cursors = new();
+        await using FileTailSource source = new(Configuration(directory.Path, path, startAt: "beginning"), sink, cursors);
+        await source.PollOnceAsync("auth", cancellation);
+        string? before = FileTailHandle.FileIdOf(path);
+
+        // Restored from a backup: the same content, a new inode, and no path.1.
+        await File.WriteAllTextAsync(path + ".restore", await File.ReadAllTextAsync(path, cancellation), cancellation);
+        File.Move(path + ".restore", path, overwrite: true);
+        await source.PollOnceAsync("auth", cancellation);
+        await File.AppendAllTextAsync(path, Line("three"), cancellation);
+        await source.PollOnceAsync("auth", cancellation);
+
+        Assert.NotEqual(before, FileTailHandle.FileIdOf(path));
+        Assert.Equal(["first-1", "two", "three"], sink.Records.Select(record => Message(record).Split(' ')[0]));
+        Assert.Equal(0, source.Snapshot()[0].RotationGaps);
+        // The stored id is only a hint, and now names the restored file.
+        Assert.Equal(FileTailHandle.FileIdOf(path), FileTailCursor.Deserialize(cursors.Value("file:auth"))!.FileId);
+    }
+
+    [Fact]
+    public void RecordLimit_IsThePackRecordLimit() =>
+        Assert.Equal(Bower.Packs.PackRuntime.MaximumRecordBytes, FileTailRecord.MaximumRecordBytes);
+
+    [Fact]
+    public async Task ALineWithinMaxLineBytesButOverThePackLimitOnceEscaped_IsCountedAsOversized()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "auth.log");
+        // 6000 bytes (below maxLineBytes 16384), 36000 once each control character is \u0001.
+        await File.WriteAllTextAsync(path, new string('\u0001', 6_000) + "\n" + Line("next"), cancellation);
+        FakeSink sink = new(_ => FileTailSubmitOutcome.Queued);
+        await using FileTailSource source = new(Configuration(directory.Path, path, startAt: "beginning"), sink, new MemoryCursors());
+
+        await source.PollOnceAsync("auth", cancellation);
+
+        // Never submitted (no parser-side TooLarge): counted as oversized, and the cursor moves on.
+        Assert.Equal(["next"], sink.Records.Select(record => Message(record).Split(' ')[0]));
+        FileTailInputStatus status = source.Snapshot()[0];
+        Assert.Equal((1L, 0L, 0L, 2L), (status.Oversized, status.Malformed, status.TooLarge, status.LinesRead));
+    }
+
+    [Fact]
+    public async Task ADirectoryTheServiceCannotSearch_IsInaccessibleNotWaiting()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Skip("Unix directory permissions.");
+            return;
+        }
+
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string locked = Path.Combine(directory.Path, "locked");
+        Directory.CreateDirectory(locked);
+        string path = Path.Combine(locked, "auth.log");
+        await File.WriteAllTextAsync(path, Line("one"), cancellation);
+        FakeSink sink = new(_ => FileTailSubmitOutcome.Queued);
+        List<(string Input, string Reason)> refusals = [];
+        await using FileTailSource source = new(Configuration(directory.Path, path), sink, new MemoryCursors())
+        {
+            InputRefused = (input, reason) => refusals.Add((input, reason))
+        };
+        File.SetUnixFileMode(locked, UnixFileMode.None);
+        try
+        {
+            // A privileged account (root in a container) searches it anyway: nothing to test.
+            Assert.SkipWhen(CanList(locked), "The test account bypasses directory permissions.");
+            for (int poll = 0; poll < 2; poll++)
+            {
+                FileTailException failure = await Assert.ThrowsAsync<FileTailException>(() => source.PollOnceAsync("auth", cancellation));
+                Assert.Equal(FileTailFailures.PathInaccessible, failure.Code);
+            }
+        }
+        finally
+        {
+            File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        // A failure state, counted and logged once (id and reason only), never "waiting".
+        FileTailInputStatus status = source.Snapshot()[0];
+        Assert.Equal((FileTailFailures.PathInaccessible, 2L), (status.State, status.ReadErrors));
+        Assert.Equal([("auth", FileTailRefusals.Inaccessible)], refusals);
+        Assert.Empty(sink.Records);
+        // A directory that does not exist still waits.
+        Assert.Equal(
+            FileTailPathState.Missing,
+            FileTailPaths.Resolve(Path.Combine(directory.Path, "absent", "auth.log"), [directory.Path], allowSymlink: false).State);
+
+        static bool CanList(string directory)
+        {
+            try
+            {
+                _ = Directory.GetFileSystemEntries(directory);
+                return true;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
     }
 
     [Fact]

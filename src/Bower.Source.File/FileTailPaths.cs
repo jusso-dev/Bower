@@ -12,7 +12,13 @@ public enum FileTailPathState
     Missing,
 
     /// <summary>A symbolic link, a directory or a path outside the allowed roots. Never read.</summary>
-    Refused
+    Refused,
+
+    /// <summary>
+    /// The file, or a directory on its path, cannot be examined (permission denied or another
+    /// error than not found). A failure, never mistaken for a missing file.
+    /// </summary>
+    Inaccessible
 }
 
 /// <summary>
@@ -188,12 +194,36 @@ public static class FileTailPaths
 
     private static (FileTailPathState State, string Path) Final(FileInfo file, string path)
     {
-        if (file.LinkTarget is not null || Directory.Exists(path))
+        if (file.LinkTarget is not null)
         {
             return (FileTailPathState.Refused, path);
         }
 
-        return (file.Exists ? FileTailPathState.Ready : FileTailPathState.Missing, path);
+        (FileTailPathState state, FileAttributes attributes) = Probe(path);
+        return state != FileTailPathState.Ready ? (state, path)
+            : attributes.HasFlag(FileAttributes.Directory) ? (FileTailPathState.Refused, path)
+            : (FileTailPathState.Ready, path);
+    }
+
+    /// <summary>
+    /// What is at <paramref name="path"/>: <see cref="FileTailPathState.Missing"/> only when
+    /// nothing is there; permission denied or any other error is
+    /// <see cref="FileTailPathState.Inaccessible"/> (<c>Exists</c> would report both as missing).
+    /// </summary>
+    private static (FileTailPathState State, FileAttributes Attributes) Probe(string path)
+    {
+        try
+        {
+            return (FileTailPathState.Ready, System.IO.File.GetAttributes(path));
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return (FileTailPathState.Missing, default);
+        }
+        catch (Exception exception) when (exception is UnauthorizedAccessException or IOException)
+        {
+            return (FileTailPathState.Inaccessible, default);
+        }
     }
 
     /// <summary>Every directory strictly between the root and the file name.</summary>
@@ -214,7 +244,13 @@ public static class FileTailPaths
                 return FileTailPathState.Refused;
             }
 
-            if (!Directory.Exists(current))
+            (FileTailPathState state, FileAttributes attributes) = Probe(current);
+            if (state != FileTailPathState.Ready)
+            {
+                return state;
+            }
+
+            if (!attributes.HasFlag(FileAttributes.Directory))
             {
                 return FileTailPathState.Missing;
             }

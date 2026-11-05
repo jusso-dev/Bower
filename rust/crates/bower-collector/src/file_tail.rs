@@ -148,3 +148,15 @@ pub fn load(
     }
     Ok(configuration)
 }
+
+#[cfg(test)]
+mod tests {
+    /// C# `FileTailSourceTests.RecordLimit_IsThePackRecordLimit`.
+    #[test]
+    fn file_tail_record_limit_is_the_pack_record_limit() {
+        assert_eq!(
+            bower_source_file::record::MAXIMUM_RECORD_BYTES,
+            bower_packs::runtime::MAXIMUM_RAW_BYTES
+        );
+    }
+}

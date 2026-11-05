@@ -1605,6 +1605,147 @@ fn legacy_cursor_gap_is_counted_once_though_the_path_is_refused_first() {
     assert_eq!(source.snapshot()[0].rotation_gaps, 1);
 }
 
+/// C# `ARestoredFileWithTheSameContentAtANewInode_ContinuesWithoutAGapOrReplay` (C# reads
+/// device and inode numbers on Linux only; Rust on every Unix).
+#[cfg(unix)]
+#[test]
+fn a_restored_file_with_the_same_content_at_a_new_inode_continues_without_a_gap_or_replay() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("auth.log");
+    std::fs::write(&path, format!("{}{}", line("first-1"), line("two"))).unwrap();
+    let sink = FakeSink::new(|_| Ok(SubmitOutcome::Queued));
+    let cursors = Arc::new(MemoryCursors::default());
+    let source = FileTailSource::new(
+        text(directory.path(), &path, "beginning"),
+        sink.clone(),
+        cursors.clone(),
+        None,
+    );
+    source.poll_once("auth").unwrap();
+    let before = bower_source_file::handle::file_id_of(&path);
+
+    // Restored from a backup: the same content, a new inode, and no path.1.
+    let restored = directory.path().join("auth.log.restore");
+    std::fs::write(&restored, std::fs::read(&path).unwrap()).unwrap();
+    std::fs::rename(&restored, &path).unwrap();
+    source.poll_once("auth").unwrap();
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    std::io::Write::write_all(&mut file, line("three").as_bytes()).unwrap();
+    source.poll_once("auth").unwrap();
+
+    let now = bower_source_file::handle::file_id_of(&path);
+    assert_ne!(before, now);
+    let words: Vec<String> = sink
+        .records()
+        .iter()
+        .map(|record| first_word(record))
+        .collect();
+    assert_eq!(words, ["first-1", "two", "three"]);
+    assert_eq!(source.snapshot()[0].rotation_gaps, 0);
+    // The stored id is only a hint, and now names the restored file.
+    let written = Cursor::deserialize(&cursors.value("file:auth").unwrap()).unwrap();
+    assert_eq!(written.file_id, now);
+}
+
+/// C# `ALineWithinMaxLineBytesButOverThePackLimitOnceEscaped_IsCountedAsOversized`.
+#[test]
+fn a_line_within_max_line_bytes_but_over_the_pack_limit_once_escaped_is_counted_as_oversized() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("auth.log");
+    // 6000 bytes (below maxLineBytes 16384), 36000 once each control character is \u0001.
+    std::fs::write(
+        &path,
+        format!("{}\n{}", "\u{1}".repeat(6_000), line("next")),
+    )
+    .unwrap();
+    let sink = FakeSink::new(|_| Ok(SubmitOutcome::Queued));
+    let source = FileTailSource::new(
+        text(directory.path(), &path, "beginning"),
+        sink.clone(),
+        Arc::new(MemoryCursors::default()),
+        None,
+    );
+
+    source.poll_once("auth").unwrap();
+
+    // Never submitted (no parser-side TooLarge): counted as oversized, and the cursor moves on.
+    let words: Vec<String> = sink
+        .records()
+        .iter()
+        .map(|record| first_word(record))
+        .collect();
+    assert_eq!(words, ["next"]);
+    let status = &source.snapshot()[0];
+    assert_eq!(
+        (
+            status.oversized,
+            status.malformed,
+            status.too_large,
+            status.lines_read
+        ),
+        (1, 0, 0, 2)
+    );
+}
+
+/// C# `ADirectoryTheServiceCannotSearch_IsInaccessibleNotWaiting`.
+#[cfg(unix)]
+#[test]
+fn a_directory_the_service_cannot_search_is_inaccessible_not_waiting() {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = tempfile::tempdir().unwrap();
+    let locked = directory.path().join("locked");
+    std::fs::create_dir(&locked).unwrap();
+    let path = locked.join("auth.log");
+    std::fs::write(&path, line("one")).unwrap();
+    let refused_log = Arc::new(Mutex::new(Vec::<(String, String)>::new()));
+    let log = Arc::clone(&refused_log);
+    let sink = FakeSink::new(|_| Ok(SubmitOutcome::Queued));
+    let source = FileTailSource::new(
+        text(directory.path(), &path, "end"),
+        sink.clone(),
+        Arc::new(MemoryCursors::default()),
+        None,
+    )
+    .with_on_refused(move |input, reason| log.lock().unwrap().push((input.into(), reason.into())));
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    // A privileged account (root in a container) searches it anyway: nothing to test.
+    let privileged = std::fs::read_dir(&locked).is_ok();
+    let codes: Vec<&str> = if privileged {
+        Vec::new()
+    } else {
+        (0..2)
+            .map(|_| source.poll_once("auth").unwrap_err().code)
+            .collect()
+    };
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+    if privileged {
+        return;
+    }
+
+    assert_eq!(codes, [failures::PATH_INACCESSIBLE; 2]);
+    // A failure state, counted and logged once (id and reason only), never "waiting".
+    let status = &source.snapshot()[0];
+    assert_eq!(
+        (status.state.as_str(), status.read_errors),
+        (failures::PATH_INACCESSIBLE, 2)
+    );
+    assert_eq!(
+        *refused_log.lock().unwrap(),
+        [("auth".to_owned(), refusals::INACCESSIBLE.to_owned())]
+    );
+    assert!(sink.records().is_empty());
+    // A directory that does not exist still waits.
+    let roots = [directory.path().to_str().unwrap().to_owned()];
+    let absent = directory.path().join("absent").join("auth.log");
+    assert_eq!(
+        paths::resolve(absent.to_str().unwrap(), &roots, false).0,
+        PathState::Missing
+    );
+}
+
 /// C# `UnknownCursorSchemas_ReplayButDamagedCurrentCursorsStillFailClosed`.
 #[test]
 fn unknown_cursor_schemas_replay_but_damaged_current_cursors_still_fail_closed() {

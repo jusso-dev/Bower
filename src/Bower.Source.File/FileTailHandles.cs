@@ -27,6 +27,13 @@ public sealed class FileTailHandle : IDisposable
     [ThreadStatic]
     internal static Action<string>? AfterOpen;
 
+    /// <summary>
+    /// Tests only: the <c>device:inode</c> of a path, replacing the platform's (the shared
+    /// vectors model file identities so every platform agrees with the Rust port's real ones).
+    /// </summary>
+    [ThreadStatic]
+    internal static Func<string, string?>? FileIds;
+
     private FileTailHandle(FileStream stream, long length, DateTime writeTime, string? fingerprint, string? fileId = null)
     {
         Stream = stream;
@@ -104,6 +111,7 @@ public sealed class FileTailHandle : IDisposable
                 throw new FileTailRefusedException();
             }
 
+            fileId = FileIds is { } ids ? ids(path) : fileId;
             long length = stream.Length;
             DateTime writeTime = System.IO.File.GetLastWriteTimeUtc(stream.SafeFileHandle);
             FileTailHandle handle = new(stream, length, writeTime, Identity(stream, length), fileId);
@@ -122,7 +130,9 @@ public sealed class FileTailHandle : IDisposable
     /// (Linux only; null elsewhere, when missing or not a regular file).
     /// </summary>
     public static string? FileIdOf(string? path) =>
-        path is not null && OperatingSystem.IsLinux() ? LinuxTailFile.FileIdOf(path) : null;
+        path is null ? null
+        : FileIds is { } ids ? ids(path)
+        : OperatingSystem.IsLinux() ? LinuxTailFile.FileIdOf(path) : null;
 
     /// <summary>The identity of the file at <paramref name="path"/>, or null (tests and tools).</summary>
     public static string? FingerprintOf(string path)

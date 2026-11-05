@@ -81,9 +81,13 @@ fn sequences_match_the_csharp_specification() {
                 .as_i64()
                 .unwrap_or(i64::from(config::DEFAULT_ROTATION_DRAIN_MAX_POLLS))
                 as i32,
-            // Identities alone decide, so both runtimes agree on every platform.
-            use_file_ids: false,
+            // Identities alone decide unless the sequence uses device and inode numbers
+            // ("fileIds"): real ones here, modelled by the C# harness on every platform.
+            use_file_ids: options["fileIds"].as_bool().unwrap_or(false),
         };
+        if cfg!(not(unix)) && reader.use_file_ids {
+            continue; // No device and inode numbers to compare.
+        }
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("app.log");
         let rotated = directory.path().join("app.log.1");
@@ -114,6 +118,11 @@ fn sequences_match_the_csharp_specification() {
                 std::fs::remove_file(&rotated).unwrap();
             } else if step.get("rename").is_some() {
                 std::fs::rename(&path, &rotated).unwrap();
+            } else if step.get("restore").is_some() {
+                // The same content at a new inode, as a restore from backup or a copy leaves it.
+                let restored = directory.path().join("app.log.restore");
+                std::fs::write(&restored, std::fs::read(&path).unwrap()).unwrap();
+                std::fs::rename(&restored, &path).unwrap();
             } else if step.get("copytruncate").is_some() {
                 std::fs::copy(&path, &rotated).unwrap();
                 OpenOptions::new()
