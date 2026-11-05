@@ -19,7 +19,11 @@ The **Security-selected file** form tails one named file on the collector host
 and routes every line to one signed pack parser. Lines the parser does not select
 are dropped; this is not log shipping. The form generates `file-source.json`
 (`BOWER_FILE_CONFIG`, kind `FileTailSource`) and a source expectation for the
-parser's application. For the collector side (path guards, the record a parser sees, least privilege and
+parser's application. Every file request, and a syslog route for sshd, uses the
+same expectation (`linux-sshd/production`), and the collector refuses a repeated
+application and environment, which stops start-up and signed reload. Keep
+exactly one `linux-sshd/production` entry per collector: if its
+`BOWER_SOURCE_EXPECTATIONS` file already has one, do not add another. For the collector side (path guards, the record a parser sees, least privilege and
 rotation), see the [file tail source guide](../deployment/file-tail-source.md).
 
 - **Linux paths only.** The only offered parser reads Linux `auth.log`, so the
@@ -39,7 +43,10 @@ rotation), see the [file tail source guide](../deployment/file-tail-source.md).
   every refused directory. An allowed directory or file under `/home`, `/root`
   or `/run/user` is allowed with a warning because `bower.service` hides them
   (`ProtectHome=true`). These checks compare path text only; `/var/run` is
-  treated as `/run`, because it is a link to it on standard Linux. The server
+  treated as `/run`, because it is a link to it on standard Linux. A file under
+  `/var/run` is refused unless the allowed directory is `/var/run` or below it:
+  the collector refuses a linked directory between the allowed directory and the
+  file, so use `/run/...` for both instead. The server
   cannot see the host's links, so an allowed directory that is a link into a
   refused directory (for example `/opt/x` linked to `/etc/bower`) passes the
   form. Keeping such links out of allowed directories is the host

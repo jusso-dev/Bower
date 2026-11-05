@@ -211,6 +211,16 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
             return;
         }
 
+        // The collector lets only the allowed directory itself be a link; a linked directory
+        // between it and the file (such as /var/run under /var) makes it refuse the input.
+        if (IsVarRun(path) && !IsVarRun(trimmedRoot))
+        {
+            string real = RunAlias(path);
+            checks.Add(Fail("path", "/var/run is a link to /run, which the collector refuses inside an allowed directory.",
+                $"Use allowed directory {real[..real.LastIndexOf('/')]} and path {real}."));
+            return;
+        }
+
         if ((Under(trimmedRoot, HiddenDirectories) ?? Under(path, HiddenDirectories)) is { } hidden)
         {
             checks.Add(Warn("allowedRoot", $"bower.service hides {hidden} from the collector (ProtectHome).",
@@ -331,11 +341,21 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
                 parser,
                 values["startAt"],
                 int.Parse(values["maxLineBytes"], System.Globalization.CultureInfo.InvariantCulture))));
+        string identity = $"{parser.Application}/{parser.Environment}";
+        SourceSetupFile expectations = Expectations(parser.Application, parser.Environment, values["maximumSilenceMinutes"]) with
+        {
+            // Every file request (and a syslog sshd route) reports the same identity, and the
+            // collector refuses a repeated application and environment.
+            Description = $"Tells the collector to expect {identity} and report it on its heartbeat. Keep exactly one {identity} entry per collector: "
+                + "the collector refuses a repeated application and environment, which stops start-up and signed reload. "
+                + $"If the collector's BOWER_SOURCE_EXPECTATIONS file already has a {identity} entry (from another file request or a syslog sshd route), "
+                + "do not add this one; otherwise add it to that file's sources list."
+        };
         return new SourceSetupBuild(
-            [configuration, Expectations(parser.Application, parser.Environment, values["maximumSilenceMinutes"])],
+            [configuration, expectations],
             [new("collector", FileSourceSchema.Variable, configurationPath), ExpectationsVariable()],
             [new SourceSetupSnippet("Linux: apply approved settings",
-                "After a different approver approves the request, install or merge the files at the paths above. Add these lines to /etc/bower/bower.env (root:bower 0640), then restart the collector.",
+                "After a different approver approves the request, install or merge the files at the paths above (keep one source expectation per application and environment). Add these lines to /etc/bower/bower.env (root:bower 0640), then restart the collector.",
                 "shell",
                 $"{FileSourceSchema.Variable}={configurationPath}\n"
                 + $"BOWER_SOURCE_EXPECTATIONS={expectationsPath}\n"
@@ -384,8 +404,10 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
 
     // Text comparison only. /var/run is a link to /run on standard Linux and allowed
     // directories may be links, so /var/run paths are checked as /run paths.
-    private static string RunAlias(string path) =>
-        path == "/var/run" || path.StartsWith("/var/run/", StringComparison.Ordinal) ? path[4..] : path;
+    private static string RunAlias(string path) => IsVarRun(path) ? path[4..] : path;
+
+    private static bool IsVarRun(string path) =>
+        path == "/var/run" || path.StartsWith("/var/run/", StringComparison.Ordinal);
 
     [GeneratedRegex("^[a-z0-9][a-z0-9-]{0,62}$")]
     private static partial Regex InputPattern();

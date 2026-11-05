@@ -107,6 +107,18 @@ public sealed class FileSourceSetupTests
         SourceSetupSnippet install = Assert.Single(plan.Snippets);
         Assert.Contains($"{FileSourceSchema.Variable}={FileSourceSchema.LinuxInstallPath}\n", install.Content, StringComparison.Ordinal);
         Assert.Contains(FileSourceSchema.SymlinkPolicy, plan.Files[0].Description, StringComparison.Ordinal);
+        // Every file request (and a syslog sshd route) reports linux-sshd/production, and the
+        // collector refuses a repeated application and environment: keep exactly one entry.
+        string guidance = plan.Files.Single(file => file.Name == "source-expectations.json").Description;
+        Assert.Contains("Keep exactly one linux-sshd/production entry per collector", guidance, StringComparison.Ordinal);
+        Assert.Contains("already has a linux-sshd/production entry (from another file request or a syslog sshd route), do not add this one", guidance, StringComparison.Ordinal);
+        Assert.DoesNotContain("add this entry to its sources list instead", guidance, StringComparison.Ordinal);
+        Assert.Contains("keep one source expectation per application and environment", install.Description, StringComparison.Ordinal);
+        string merged = Path.Combine(directory.Path, "merged-expectations.json");
+        System.Text.Json.Nodes.JsonObject twice = System.Text.Json.Nodes.JsonNode.Parse(File(plan, "source-expectations.json"))!.AsObject();
+        twice["sources"]!.AsArray().Add(twice["sources"]![0]!.DeepClone());
+        await System.IO.File.WriteAllTextAsync(merged, twice.ToJsonString(), cancellationToken);
+        Assert.Contains("listed more than once", Assert.Throws<InvalidDataException>(() => SourceExpectationsLoader.LoadFile(merged)).Message, StringComparison.Ordinal);
         Assert.True(result.Preview!.Valid);
         Assert.DoesNotContain("casey.example@example.com", result.Preview.Redacted, StringComparison.Ordinal);
         // No secret material or credential settings in anything the request installs.
@@ -126,6 +138,9 @@ public sealed class FileSourceSetupTests
     [InlineData("posix")]
     [InlineData("parent")]
     [InlineData("beginning")]
+    // An allowed directory may itself be a link, so /var/run as the root is fine.
+    [InlineData("var-run")]
+    [InlineData("run")]
     public async Task Plan_ConfigurationPassesTheCollectorLoaderAndRouteCheck(string variant)
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
@@ -143,6 +158,12 @@ public sealed class FileSourceSetupTests
             values["startAt"] = FileSourceSchema.StartAtBeginning;
             values["maxLineBytes"] = "30720";
         }
+        else if (variant is "var-run" or "run")
+        {
+            string prefix = variant == "var-run" ? "/var/run" : "/run";
+            values["allowedRoot"] = prefix;
+            values["path"] = $"{prefix}/x/auth.log";
+        }
 
         SourceSetupPlanResult result = await PlanAsync(app, "file", "edge-01", values, cancellationToken);
 
@@ -152,7 +173,7 @@ public sealed class FileSourceSetupTests
         Assert.Equal("shell", Assert.Single(result.Plan!.Snippets).Language);
         Assert.All(result.Plan!.Files, file => Assert.StartsWith("/etc/bower/", file.InstallPath, StringComparison.Ordinal));
         FileTailSourceConfiguration loaded = LoadAsCollector(json, SignedPackBundle(directory));
-        Assert.Equal(variant == "parent" ? "/var" : "/var/log", Assert.Single(loaded.AllowedRoots));
+        Assert.Equal(values["allowedRoot"].TrimEnd('/'), Assert.Single(loaded.AllowedRoots));
         FileTailInputOptions input = Assert.Single(loaded.Inputs);
         Assert.Equal(values["path"], input.Path);
         Assert.Equal(new FileTailRoute("linux-authlog-ssh", 0), input.Route);
@@ -213,6 +234,9 @@ public sealed class FileSourceSetupTests
     [InlineData("path", "does not read files under /var/lib/bower", "allowedRoot=/var/lib", "path=/var/lib/bower/enrolment/enrolment-token")]
     [InlineData("path", "does not read files under /var/spool/bower", "allowedRoot=/var", "path=/var/spool/bower/ama/batch.json")]
     [InlineData("path", "does not read files under /var/log/bower", "allowedRoot=/var/log", "path=/var/log/bower/collector.log")]
+    // The collector refuses a linked directory below the allowed directory, and /var/run is one.
+    [InlineData("path", "/var/run is a link to /run", "allowedRoot=/var", "path=/var/run/x/auth.log")]
+    [InlineData("path", "Use allowed directory /run/x and path /run/x/auth.log", "allowedRoot=/var", "path=/var/run/x/auth.log")]
     // systemd LoadCredential (production-readiness 05) holds the privacy HMAC key here.
     [InlineData("path", "does not read files under /run/credentials", "allowedRoot=/run", "path=/run/credentials/bower.service/privacy-hmac-key")]
     [InlineData("allowedRoot", "does not read files under /run/credentials", "allowedRoot=/run/credentials/bower.service", "path=/run/credentials/bower.service/privacy-hmac-key")]
