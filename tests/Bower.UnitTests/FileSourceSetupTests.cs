@@ -207,6 +207,9 @@ public sealed class FileSourceSetupTests
     [InlineData("path", "does not read files under /var/lib/bower", "allowedRoot=/var/lib", "path=/var/lib/bower/enrolment/enrolment-token")]
     [InlineData("path", "does not read files under /var/spool/bower", "allowedRoot=/var", "path=/var/spool/bower/ama/batch.json")]
     [InlineData("path", "does not read files under /var/log/bower", "allowedRoot=/var/log", "path=/var/log/bower/collector.log")]
+    // systemd LoadCredential (production-readiness 05) holds the privacy HMAC key here.
+    [InlineData("path", "does not read files under /run/credentials", "allowedRoot=/run", "path=/run/credentials/bower.service/privacy-hmac-key")]
+    [InlineData("allowedRoot", "does not read files under /run/credentials", "allowedRoot=/run/credentials/bower.service", "path=/run/credentials/bower.service/privacy-hmac-key")]
     // Linux paths only for now: the only offered parser reads Linux auth.log.
     [InlineData("allowedRoot", "Linux paths only", @"allowedRoot=C:\Logs", @"path=C:\Logs\auth.log")]
     [InlineData("allowedRoot", "Linux paths only", @"allowedRoot=C:\ProgramData", @"path=C:\ProgramData\Bower\ingest.token")]
@@ -244,16 +247,19 @@ public sealed class FileSourceSetupTests
         Assert.False(string.IsNullOrWhiteSpace(failure.Fix));
     }
 
-    [Fact]
-    public async Task Plan_WarnsWhenTheServiceHidesTheDirectory()
+    [Theory]
+    [InlineData("/home/app/security", "/home/app/security/auth.log")]
+    // The file is checked too, so a parent allowed directory still warns.
+    [InlineData("/run", "/run/user/1000/auth.log")]
+    public async Task Plan_WarnsWhenTheServiceHidesTheDirectory(string root, string path)
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         using TemporaryDirectory directory = new();
         await using WebApplication app = await ManagementApiTests.StartAsync(directory, new FakeClock(Now), cancellationToken);
         await ActiveCollectorAsync(app, "edge-01", cancellationToken);
         Dictionary<string, string> values = Values();
-        values["allowedRoot"] = "/home/app/security";
-        values["path"] = "/home/app/security/auth.log";
+        values["allowedRoot"] = root;
+        values["path"] = path;
 
         SourceSetupPlanResult result = await PlanAsync(app, "file", "edge-01", values, cancellationToken);
 
@@ -338,23 +344,18 @@ public sealed class FileSourceSetupTests
         await ActiveCollectorAsync(app, "edge-01", cancellationToken);
         SourceSetupRequestDetail created = await SubmitAsync(ManagementApiTests.Client(app, BowerRoles.Operator, "alex"), "file", Values(), cancellationToken);
         string copy = new('b', 32);
-        await using (SqliteConnection connection = new($"Data Source={Path.Combine(directory.Path, "management.db")};Pooling=False"))
-        {
-            await connection.OpenAsync(cancellationToken);
-            await using SqliteCommand insert = connection.CreateCommand();
-            insert.CommandText =
-                """
-                INSERT INTO source_setup_requests (
-                    id, source_type, collector_id, status, values_json, plan_json, content_hash, reason,
-                    requested_by_object_id, requested_by_name, requested_at)
-                SELECT $copy, source_type, collector_id, status, values_json, plan_json, content_hash, reason,
-                    requested_by_object_id, requested_by_name, requested_at
-                FROM source_setup_requests WHERE id = $id;
-                """;
-            insert.Parameters.AddWithValue("$copy", copy);
-            insert.Parameters.AddWithValue("$id", created.Id);
-            Assert.Equal(1, await insert.ExecuteNonQueryAsync(cancellationToken));
-        }
+        Assert.Equal(1, await ExecuteAsync(
+            directory,
+            """
+            INSERT INTO source_setup_requests (
+                id, source_type, collector_id, status, values_json, plan_json, content_hash, reason,
+                requested_by_object_id, requested_by_name, requested_at)
+            SELECT $copy, source_type, collector_id, status, values_json, plan_json, content_hash, reason,
+                requested_by_object_id, requested_by_name, requested_at
+            FROM source_setup_requests WHERE id = $id;
+            """,
+            ("$copy", copy),
+            ("$id", created.Id)));
 
         HttpClient approver = ManagementApiTests.Client(app, BowerRoles.Approver, "sam");
         using HttpResponseMessage blocked = await approver.PostAsJsonAsync(
@@ -371,7 +372,7 @@ public sealed class FileSourceSetupTests
     }
 
     [Fact]
-    public async Task Plan_WarnsOnlyAboutTheLatestApprovalOfEachNameOrFile()
+    public async Task Plan_WarnsAboutEveryApprovalSharingANameOrFile()
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         using TemporaryDirectory directory = new();
@@ -392,11 +393,23 @@ public sealed class FileSourceSetupTests
         SourceSetupPlanResult currentFile = await PlanAsync(app, "file", "edge-01", With(("inputId", "other"), ("path", "/var/log/secure")), cancellationToken);
         SourceSetupPlanResult currentName = await PlanAsync(app, "file", "edge-01", With(("path", "/var/log/messages")), cancellationToken);
 
-        // The replacement approval took over input "auth", so the original's file is no longer read.
+        // A (auth, auth.log) may still be installed even though B (auth, secure) replaced it on
+        // approval: management cannot see what is installed, so C (other, auth.log) still warns.
         Assert.True(oldFile.Valid);
-        Assert.DoesNotContain(oldFile.Checks, check => check.Id is "inputId" or "path");
-        Assert.Contains(currentFile.Checks, check => check is { Id: "path", State: SetupCheckStates.Warn });
-        Assert.Contains(currentName.Checks, check => check is { Id: "inputId", State: SetupCheckStates.Warn });
+        SetupCheck advisory = Assert.Single(oldFile.Checks, check => check.Id is "inputId" or "path");
+        Assert.Equal(("path", SetupCheckStates.Warn), (advisory.Id, advisory.State));
+        Assert.Contains(original.Id[..8], advisory.Message, StringComparison.Ordinal);
+        Assert.Contains("may still be installed", advisory.Message, StringComparison.Ordinal);
+        Assert.Contains("file-source.json", advisory.Fix, StringComparison.Ordinal);
+        SetupCheck current = Assert.Single(currentFile.Checks, check => check.Id is "inputId" or "path");
+        Assert.Equal(("path", SetupCheckStates.Warn), (current.Id, current.State));
+        Assert.Contains(replacement.Id[..8], current.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("may still be installed", current.Message, StringComparison.Ordinal);
+        // Both approvals use input "auth": the current one replaces, the older one is advisory.
+        SetupCheck[] names = [.. currentName.Checks.Where(check => check.Id == "inputId")];
+        Assert.Equal(2, names.Length);
+        Assert.All(names, check => Assert.Equal(SetupCheckStates.Warn, check.State));
+        Assert.Single(names, check => check.Message.Contains("may still be installed", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -453,6 +466,75 @@ public sealed class FileSourceSetupTests
         Assert.Equal("pack-source", (await DetailAsync(app, neverInstalled.Id, cancellationToken)).Plan.Verification.Kind);
         // Other source types keep their existing check.
         Assert.Equal(("complete", "Receiving events"), (shared.State, shared.Label));
+    }
+
+    [Fact]
+    public async Task Check_FileRequestStoredWithSourceKindStillNeverCompletes()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(Now);
+        await using WebApplication app = await ManagementApiTests.StartAsync(directory, clock, cancellationToken);
+        ManagementStore store = app.Services.GetRequiredService<ManagementStore>();
+        await ActiveCollectorAsync(app, "edge-01", cancellationToken);
+        SourceSetupRequestDetail created = await SubmitAsync(ManagementApiTests.Client(app, BowerRoles.Operator, "alex"), "file", Values(), cancellationToken);
+        await ManagementApiTests.Client(app, BowerRoles.Approver, "sam").PostAsJsonAsync(
+            $"/api/sources/requests/{created.Id}/approve", new ApprovalRequest("Approved"), cancellationToken);
+        Assert.Equal(1, await ExecuteAsync(
+            directory,
+            """UPDATE source_setup_requests SET plan_json = replace(plan_json, '"pack-source"', '"source"') WHERE id = $id;""",
+            ("$id", created.Id)));
+        clock.Advance(TimeSpan.FromSeconds(5));
+        await store.ExchangeHeartbeatAsync(
+            "edge-01",
+            Heartbeat(new SourceReport("linux-sshd/production", "application", "healthy", 0, Now.AddSeconds(5))),
+            "principal-edge-01",
+            Now.AddSeconds(5),
+            cancellationToken);
+
+        SourceSetupRequestDetail detail = await DetailAsync(app, created.Id, cancellationToken);
+
+        Assert.Equal("source", detail.Plan.Verification.Kind);
+        Assert.Equal(("in-progress", "Pack events seen, input not individually verified"), (detail.Check.State, detail.Check.Label));
+    }
+
+    [Fact]
+    public async Task Plan_SharedPackIdentityWarningFitsTheFileForm()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await ManagementApiTests.StartAsync(directory, new FakeClock(Now), cancellationToken);
+        ManagementStore store = app.Services.GetRequiredService<ManagementStore>();
+        await ActiveCollectorAsync(app, "edge-01", cancellationToken);
+        await store.ExchangeHeartbeatAsync(
+            "edge-01",
+            Heartbeat(new SourceReport("linux-sshd/production", "application", "healthy", 0, Now)),
+            "principal-edge-01",
+            Now,
+            cancellationToken);
+
+        SourceSetupPlanResult result = await PlanAsync(app, "file", "edge-01", Values(), cancellationToken);
+
+        Assert.True(result.Valid);
+        SetupCheck duplicate = Assert.Single(result.Checks, check => check.Id == "duplicate");
+        Assert.Equal(SetupCheckStates.Warn, duplicate.State);
+        Assert.Contains("cannot be verified individually", duplicate.Fix, StringComparison.Ordinal);
+        Assert.DoesNotContain("application or environment name", duplicate.Message + duplicate.Fix, StringComparison.Ordinal);
+    }
+
+    /// <summary>Changes the management database directly, as an older build or a manual edit could have.</summary>
+    private static async Task<int> ExecuteAsync(TemporaryDirectory directory, string sql, params (string Name, string Value)[] parameters)
+    {
+        await using SqliteConnection connection = new($"Data Source={Path.Combine(directory.Path, "management.db")};Pooling=False");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        foreach ((string name, string value) in parameters)
+        {
+            command.Parameters.AddWithValue(name, value);
+        }
+
+        return await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
     }
 
     private static Dictionary<string, string> With(params (string Key, string Value)[] overrides)

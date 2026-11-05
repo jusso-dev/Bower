@@ -100,13 +100,17 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
     // Kernel and device trees, and Bower's own configuration and secrets, state (queue and
     // enrolment credential), spool and logs (bower.service LogsDirectory=bower). Checked against
     // both the allowed directory and the file, so a parent directory cannot reach into them.
+    // /run/credentials is systemd LoadCredential, which holds Bower's privacy HMAC key when the
+    // production-readiness 05 setup is used.
     private static readonly string[] RefusedDirectories =
-        ["/proc", "/sys", "/dev", "/etc/bower", "/var/lib/bower", "/var/spool/bower", "/var/log/bower"];
+        ["/proc", "/sys", "/dev", "/run/credentials", "/etc/bower", "/var/lib/bower", "/var/spool/bower", "/var/log/bower"];
 
     // bower.service runs with ProtectHome=true, so these are hidden from the collector.
     private static readonly string[] HiddenDirectories = ["/home", "/root", "/run/user"];
 
-    public override string Id => "file";
+    public const string TypeId = "file";
+
+    public override string Id => TypeId;
     public override string Title => "Security-selected file";
     public override string Summary =>
         "Tail one named file on the collector host. Each line goes to a signed pack parser, and only the security events it selects are kept.";
@@ -203,7 +207,7 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
             return;
         }
 
-        if (Under(trimmedRoot, HiddenDirectories) is { } hidden)
+        if ((Under(trimmedRoot, HiddenDirectories) ?? Under(path, HiddenDirectories)) is { } hidden)
         {
             checks.Add(Warn("allowedRoot", $"bower.service hides {hidden} from the collector (ProtectHome).",
                 "Write the security records somewhere else, such as /var/log, or change the service hardening deliberately."));
@@ -213,8 +217,8 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
     /// <summary>
     /// Refuses an input name or file that another pending file request on this collector uses.
     /// An approved one can only be replaced, so it warns: the merged file must keep one entry.
-    /// Only the latest approval for each name or file counts, because a later approval that
-    /// shares either one replaced the earlier input.
+    /// Management does not know what is installed, so every approval sharing the name or file
+    /// warns; one that a later approval replaced is reported as possibly still installed.
     /// </summary>
     public override void ValidateAgainst(
         IReadOnlyDictionary<string, string> values, IEnumerable<SourceSetupRow> existing, List<SetupCheck> checks)
@@ -230,14 +234,19 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
             }
         }
 
-        foreach (SourceSetupRow row in Current(rows))
+        foreach ((SourceSetupRow row, bool replaced) in Approvals(rows))
         {
-            if (Clash(values, row) is { } field)
+            if (Clash(values, row) is not { } field)
             {
-                checks.Add(Warn(field, $"An approved file request on this collector already {What(field)}.",
-                    "This replaces it: when merging, remove the old input so each name and file appears once."));
-                return;
+                continue;
             }
+
+            string request = row.Id[..8];
+            checks.Add(replaced
+                ? Warn(field, $"Approved file request {request} on this collector {What(field)}. A later approval replaced it, but it may still be installed.",
+                    "Check the collector's file-source.json; when merging, keep each input name and file once.")
+                : Warn(field, $"Approved file request {request} on this collector already {What(field)}.",
+                    "This replaces it: when merging, remove the old input so each name and file appears once."));
         }
     }
 
@@ -253,8 +262,8 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
 
     private static string What(string field) => field == "inputId" ? "uses this input name" : "reads this file";
 
-    /// <summary>Approved requests not replaced by a later approval sharing their input name or file.</summary>
-    private static IEnumerable<SourceSetupRow> Current(IEnumerable<SourceSetupRow> rows)
+    /// <summary>Approved requests, newest first, each marked when a later approval shares its input name or file.</summary>
+    private static IEnumerable<(SourceSetupRow Row, bool Replaced)> Approvals(IEnumerable<SourceSetupRow> rows)
     {
         HashSet<string> claimed = new(StringComparer.Ordinal);
         foreach (SourceSetupRow row in rows
@@ -266,10 +275,7 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
             bool replaced = claimed.Contains(id) || claimed.Contains(path);
             claimed.Add(id);
             claimed.Add(path);
-            if (!replaced)
-            {
-                yield return row;
-            }
+            yield return (row, replaced);
         }
     }
 

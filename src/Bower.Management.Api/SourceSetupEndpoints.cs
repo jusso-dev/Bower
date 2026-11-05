@@ -255,10 +255,15 @@ internal static class SourceSetupEndpoints
         if (collector!.Sources.Any(source => source.Id == plan.Verification.ReportId)
             && plan.Verification.Kind is "source" or FileTailSourceSetup.PackSourceVerification)
         {
-            checks.Add(SourceSetupRegistry.Warn(
-                "duplicate",
-                $"This collector already reports {plan.Verification.ReportId}.",
-                "Use a different application or environment name unless you are replacing the existing source."));
+            checks.Add(plan.Verification.Kind == FileTailSourceSetup.PackSourceVerification
+                ? SourceSetupRegistry.Warn(
+                    "duplicate",
+                    $"Another input or source on this collector already reports {plan.Verification.ReportId}, this pack's events.",
+                    "This request cannot be verified individually; see Check it works after approval.")
+                : SourceSetupRegistry.Warn(
+                    "duplicate",
+                    $"This collector already reports {plan.Verification.ReportId}.",
+                    "Use a different application or environment name unless you are replacing the existing source."));
         }
 
         string? profileContent = null;
@@ -420,7 +425,10 @@ internal static class SourceSetupEndpoints
                 source.LastEventAt, collector.LastSeenAt, now);
         }
 
-        if (Healthy(source.Status) && verification.Kind == FileTailSourceSetup.PackSourceVerification)
+        // By source type as well as stored kind: a file plan stored with another kind must not
+        // complete either. Approved plan bytes are never rewritten.
+        if (Healthy(source.Status)
+            && (verification.Kind == FileTailSourceSetup.PackSourceVerification || row.Type == FileTailSourceSetup.TypeId))
         {
             // Any file or source routed to this pack reports the same application, so an event
             // here does not show that this request's input is installed. Never green.
