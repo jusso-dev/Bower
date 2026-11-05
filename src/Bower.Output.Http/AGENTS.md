@@ -24,8 +24,11 @@ port: `rust/crates/bower-output-http`; request and response vectors in
   only when a sibling from the same original batch was accepted. HEC codes are metadata
   only (`:hec-<n>`). Shared scenarios in the vectors pin this. Consequence, accepted as
   the conservative trade-off: a refused event with no accepted sibling is held and retried
-  indefinitely (always with `BOWER_HTTP_MAX_BATCH_EVENTS=1`, which disables isolation);
-  the deployment doc explains how operators recognise and resolve it.
+  indefinitely (always with `BOWER_HTTP_MAX_BATCH_EVENTS=1`, which disables isolation).
+  Like every `destination-*` failure it trips the queue's destination circuit, pausing
+  all leasing until its retry time; the next lease (oldest first) usually pairs it with
+  newer events, so isolation can dead-letter it. The deployment doc explains how
+  operators recognise and resolve it.
 - The byte cap counts every record's newline.
 - `BOWER_HTTP_AUTH_HEADER` never names a header .NET refuses on requests (content,
   response-only) or a hop-by-hop/framing/proxy header; adding it must succeed or fail closed.

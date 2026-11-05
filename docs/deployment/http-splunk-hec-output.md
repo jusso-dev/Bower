@@ -168,25 +168,37 @@ The poison rule is deliberately conservative: an event refused with 400, 422 or 
 dead-lettered only when another event **from the same request** was accepted, which
 proves the endpoint works and the refusal is about that event. Without that proof the
 event is held as `destination-http-400` (or `-422`, `-413`, with any `:hec-<n>`) and
-retried about every 30 seconds, indefinitely. It never blocks other events: they are
-leased, sent and acknowledged around it. It does keep the backlog alarm above firing.
+retried after about 30 seconds (or the response's `Retry-After`), indefinitely, without
+spending its attempt budget.
 
-This is the normal outcome when:
+**A held event pauses delivery queue-wide.** Like every `destination-*` failure, it opens
+the queue's destination circuit (both runtimes): while any retrying event holds a
+`destination-*` code with a future retry time, the queue leases nothing, so newly queued
+events wait until that retry time. They are kept, not refused, within the queue's
+capacity. When the pause ends, the next lease takes due and queued events oldest first
+(`received_at`), up to the 500-event lease. The held event is older than anything queued
+during the pause, so it is leased first and sent in the same request as those newer
+events. If any of them is accepted, that proves the endpoint works: the held event is
+isolated, dead-lettered as `http-<status>[:hec-<n>]`, and the pause ends. That is the
+usual outcome while events keep arriving.
 
-- `BOWER_HTTP_MAX_BATCH_EVENTS=1`. Every request then carries one event, no sibling can
-  ever be accepted, and **poison isolation is disabled entirely**: every 400, 422 or 413
-  is held, never dead-lettered. Keep the default (500), or at least a value above 1.
-- Traffic is low and the event is leased alone, for example its retries fall due when
-  nothing else is queued. A later lease that pairs it with an accepted event isolates it
-  and dead-letters it then.
+At very low traffic nothing may be queued when the retry falls due, so the event is
+retried alone, and held again, repeatedly. The pause then delays nothing, because nothing
+else is waiting; the first event that arrives is sent with it on the next retry.
+
+With `BOWER_HTTP_MAX_BATCH_EVENTS=1`, every request carries one event, so no sibling can
+ever be accepted and **poison isolation is disabled entirely**: every 400, 422 or 413 is
+held, never dead-lettered, and the queue-wide pause repeats at every retry while traffic
+flows. Keep the default (500), or at least a value above 1.
 
 **Recognise it**
 
-- `/v1/status`: `queue.retrying` stays above zero while, in the C# collector,
-  `deliveryActivity.lastSuccessfulDeliveryAt` keeps advancing (other events are
-  delivered) and `deliveryActivity.lastFailureCode` is `destination-http-400`, `-422` or
-  `-413`, often with a HEC suffix such as `:hec-6` (invalid data format) or `:hec-15`
-  (error in handling indexed fields).
+- `/v1/status`: `queue.retrying` stays above zero, `queue.queued` grows during each
+  pause and drains when it ends, and in the C# collector
+  `deliveryActivity.lastFailureCode` is `destination-http-400`, `-422` or `-413`, often
+  with a HEC suffix such as `:hec-6` (invalid data format) or `:hec-15` (error in
+  handling indexed fields), while `deliveryActivity.lastSuccessfulDeliveryAt` advances
+  in steps about one retry interval apart.
 - The `Output adapter did not deliver events` log line with the same `failure_code`,
   repeating with a small, steady `count`.
 - `bower queue inspect --database <queue.db>` shows the retrying count. To see which
