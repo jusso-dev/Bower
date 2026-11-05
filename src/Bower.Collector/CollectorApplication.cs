@@ -16,6 +16,7 @@ using Bower.Packs;
 using Bower.Persistence;
 using Bower.PolicyEngine;
 using Bower.Redaction;
+using Bower.Source.File;
 using Bower.Source.Syslog;
 using Bower.Source.WindowsEventLog;
 using Microsoft.AspNetCore.RateLimiting;
@@ -167,6 +168,28 @@ public static partial class CollectorApplication
                 IsTransientStorageFailure = QueueStorageErrors.IsBusy
             });
             builder.Services.AddHostedService<WindowsEventLogIntakeService>();
+        }
+        if (sources.FileTail is { } fileTail)
+        {
+            // Cursors live with the queue, so a restart resumes where the queue left off.
+            builder.Services.AddSingleton(new FileTailCursors(settings.QueuePath));
+            builder.Services.AddSingleton(services => new FileTailSource(
+                fileTail,
+                new CollectorFileTailSink(new PackRecordIntake(
+                    bundle,
+                    services.GetRequiredService<SecurityEventProcessor>(),
+                    services.GetRequiredService<CollectorIdentity>(),
+                    services.GetRequiredService<ManagedPrivacyProfileState>(),
+                    services.GetRequiredService<PipelineTelemetry>(),
+                    services.GetRequiredService<TimeProvider>(),
+                    services.GetRequiredService<EventTap>())),
+                services.GetRequiredService<FileTailCursors>().Store,
+                services.GetRequiredService<TimeProvider>())
+            {
+                // A busy queue database (for example during a retention batch) is backpressure.
+                IsTransientStorageFailure = QueueStorageErrors.IsBusy
+            });
+            builder.Services.AddHostedService<FileTailIntakeService>();
         }
         builder.Services.AddSingleton<EventIdentityConflicts>();
         builder.Services.AddSingleton(
@@ -514,6 +537,7 @@ public static partial class CollectorApplication
                         Activity = telemetry.BusiestSources(),
                         Tap = context.RequestServices.GetRequiredService<EventTap>().Snapshot(),
                         WindowsEventLog = context.RequestServices.GetService<WindowsEventLogSource>()?.Snapshot(),
+                        FileTail = context.RequestServices.GetService<FileTailSource>()?.Snapshot(),
                         QueuePages = pages is null ? null : StatusQueuePagesResponse.From(pages),
                         Output = context.RequestServices.GetService<IOutputAdapter>()?.Id,
                         DeliveryActivity = new StatusDeliveryActivityResponse(

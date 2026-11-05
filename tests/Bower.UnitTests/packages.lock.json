@@ -744,6 +744,7 @@
           "Bower.Output.Http": "[1.0.0, )",
           "Bower.Output.S3": "[1.0.0, )",
           "Bower.Packs": "[1.0.0, )",
+          "Bower.Source.File": "[1.0.0, )",
           "Bower.Source.Syslog": "[1.0.0, )",
           "Bower.Source.WindowsEventLog": "[1.0.0, )",
           "Microsoft.Extensions.Hosting.WindowsServices": "[10.0.14, )"

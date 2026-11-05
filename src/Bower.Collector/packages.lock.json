@@ -234,6 +234,12 @@
           "YamlDotNet": "[18.1.0, )"
         }
       },
+      "bower.source.file": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[1.0.0, )"
+        }
+      },
       "bower.source.syslog": {
         "type": "Project"
       },

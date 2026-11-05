@@ -1,0 +1,20 @@
+apiVersion: bower.security/v1
+kind: Pack
+metadata:
+  id: linux-authlog-ssh
+  version: 1.0.0
+  name: Linux SSH failures from auth.log
+  description: >-
+    sshd authentication failures from plain-text auth.log lines read by the Bower file
+    tail source (BOWER_FILE_CONFIG). A signed transform program extracts the time, account,
+    source address and method from the line inside the collector, before redaction and
+    policy; the line itself is never forwarded. Pseudonymises usernames with HMAC.
+  owner: Security Operations
+policies:
+  - policies/authlog-ssh-authentication.yaml
+privacyProfile: privacy.yaml
+parsers:
+  - parsers/sshd-authlog.json
+samples:
+  - samples/authlog.jsonl
+dcr: true
