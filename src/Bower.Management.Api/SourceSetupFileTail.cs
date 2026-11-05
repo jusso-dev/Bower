@@ -264,7 +264,9 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
         : null;
 
     private static string What(string field) =>
-        field == "inputId" ? "uses this input name" : "reads this file, a case variant of it, or its rotated .1 file";
+        field == "inputId"
+            ? "uses this input name"
+            : "overlaps this file (the same file, a case variant, or one is the other's rotated .1 file)";
 
     /// <summary>
     /// Same rule as <c>FileTailSourceConfigurationLoader.Overlaps</c>, which refuses a merged
@@ -288,19 +290,23 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
             }
         });
 
-    /// <summary>Approved requests, newest first, each marked when a later approval shares its input name or file.</summary>
+    /// <summary>
+    /// Approved requests, newest first, each marked when a later approval shares its input name
+    /// or overlaps its file (the same rule as clash detection).
+    /// </summary>
     private static IEnumerable<(SourceSetupRow Row, bool Replaced)> Approvals(IEnumerable<SourceSetupRow> rows)
     {
-        HashSet<string> claimed = new(StringComparer.Ordinal);
+        HashSet<string> ids = new(StringComparer.Ordinal);
+        List<string> paths = [];
         foreach (SourceSetupRow row in rows
             .Where(row => row.Status == SourceSetupRequestStatus.Approved)
             .OrderByDescending(row => row.ReviewedAt))
         {
-            string id = "inputId:" + row.Values.GetValueOrDefault("inputId");
-            string path = "path:" + row.Values.GetValueOrDefault("path");
-            bool replaced = claimed.Contains(id) || claimed.Contains(path);
-            claimed.Add(id);
-            claimed.Add(path);
+            string id = row.Values.GetValueOrDefault("inputId") ?? string.Empty;
+            string path = row.Values.GetValueOrDefault("path") ?? string.Empty;
+            bool replaced = ids.Contains(id) || paths.Any(newer => Overlaps(newer, path));
+            ids.Add(id);
+            paths.Add(path);
             yield return (row, replaced);
         }
     }
@@ -367,8 +373,14 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
     private static bool Plain(string path) =>
         path.Split('/').Skip(1).All(segment => segment.Length > 0 && segment != "." && segment.Trim().Length == segment.Length);
 
-    private static string? Under(string path, IEnumerable<string> directories) =>
-        directories.FirstOrDefault(directory => path == directory || path.StartsWith(directory + '/', StringComparison.Ordinal));
+    // Text comparison only. /var/run is a link to /run on standard Linux and allowed
+    // directories may be links, so /var/run paths are checked as /run paths.
+    private static string? Under(string path, IEnumerable<string> directories)
+    {
+        string checkedPath = path == "/var/run" || path.StartsWith("/var/run/", StringComparison.Ordinal) ? path[4..] : path;
+        return directories.FirstOrDefault(directory =>
+            checkedPath == directory || checkedPath.StartsWith(directory + '/', StringComparison.Ordinal));
+    }
 
     [GeneratedRegex("^[a-z0-9][a-z0-9-]{0,62}$")]
     private static partial Regex InputPattern();

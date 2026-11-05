@@ -213,6 +213,9 @@ public sealed class FileSourceSetupTests
     // systemd LoadCredential (production-readiness 05) holds the privacy HMAC key here.
     [InlineData("path", "does not read files under /run/credentials", "allowedRoot=/run", "path=/run/credentials/bower.service/privacy-hmac-key")]
     [InlineData("allowedRoot", "does not read files under /run/credentials", "allowedRoot=/run/credentials/bower.service", "path=/run/credentials/bower.service/privacy-hmac-key")]
+    // /var/run is a link to /run on standard Linux, so it is checked as /run.
+    [InlineData("path", "does not read files under /run/credentials", "allowedRoot=/var/run", "path=/var/run/credentials/bower.service/privacy-hmac-key")]
+    [InlineData("allowedRoot", "does not read files under /run/credentials", "allowedRoot=/var/run/credentials/bower.service", "path=/var/run/credentials/bower.service/privacy-hmac-key")]
     // Linux paths only for now: the only offered parser reads Linux auth.log.
     [InlineData("allowedRoot", "Linux paths only", @"allowedRoot=C:\Logs", @"path=C:\Logs\auth.log")]
     [InlineData("allowedRoot", "Linux paths only", @"allowedRoot=C:\ProgramData", @"path=C:\ProgramData\Bower\ingest.token")]
@@ -254,6 +257,8 @@ public sealed class FileSourceSetupTests
     [InlineData("/home/app/security", "/home/app/security/auth.log")]
     // The file is checked too, so a parent allowed directory still warns.
     [InlineData("/run", "/run/user/1000/auth.log")]
+    [InlineData("/var/run", "/var/run/user/1000/auth.log")]
+    [InlineData("/var/run/user/1000", "/var/run/user/1000/auth.log")]
     public async Task Plan_WarnsWhenTheServiceHidesTheDirectory(string root, string path)
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
@@ -410,6 +415,36 @@ public sealed class FileSourceSetupTests
         Assert.Contains("waiting for approval", await blocked.Content.ReadAsStringAsync(cancellationToken), StringComparison.Ordinal);
         Assert.Equal(HttpStatusCode.OK, rejectCopy.StatusCode);
         Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+    }
+
+    [Fact]
+    public async Task Plan_ReplacementFollowsTheOverlapRule()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(Now);
+        await using WebApplication app = await ManagementApiTests.StartAsync(directory, clock, cancellationToken);
+        await ActiveCollectorAsync(app, "edge-01", cancellationToken);
+        HttpClient requester = ManagementApiTests.Client(app, BowerRoles.Operator, "alex");
+        HttpClient approver = ManagementApiTests.Client(app, BowerRoles.Approver, "sam");
+        SourceSetupRequestDetail a = await SubmitAsync(requester, "file", With(("inputId", "a"), ("path", "/var/log/auth.log")), cancellationToken);
+        await approver.PostAsJsonAsync($"/api/sources/requests/{a.Id}/approve", new ApprovalRequest("A"), cancellationToken);
+        clock.Advance(TimeSpan.FromSeconds(1));
+        SourceSetupRequestDetail b = await SubmitAsync(requester, "file", With(("inputId", "b"), ("path", "/var/log/auth.log.1")), cancellationToken);
+        await approver.PostAsJsonAsync($"/api/sources/requests/{b.Id}/approve", new ApprovalRequest("B"), cancellationToken);
+
+        SourceSetupPlanResult c = await PlanAsync(app, "file", "edge-01", With(("inputId", "c"), ("path", "/var/log/auth.log")), cancellationToken);
+
+        // B's auth.log.1 overlaps A's auth.log, so B replaced A even though the paths differ.
+        Assert.True(c.Valid);
+        SetupCheck[] warnings = [.. c.Checks.Where(check => check.Id == "path")];
+        Assert.Equal(2, warnings.Length);
+        SetupCheck older = Assert.Single(warnings, check => check.Message.Contains(a.Id[..8], StringComparison.Ordinal));
+        SetupCheck newer = Assert.Single(warnings, check => check.Message.Contains(b.Id[..8], StringComparison.Ordinal));
+        Assert.Contains("may still be installed", older.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("may still be installed", newer.Message, StringComparison.Ordinal);
+        Assert.Contains("This replaces it", newer.Fix, StringComparison.Ordinal);
+        Assert.Contains("one is the other's rotated .1 file", newer.Message, StringComparison.Ordinal);
     }
 
     [Fact]
