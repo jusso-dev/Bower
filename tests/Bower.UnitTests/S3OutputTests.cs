@@ -476,8 +476,8 @@ public sealed class S3OutputTests
 
         await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() => worker.DeliverOnceAsync(cancellationToken));
 
-        // Both objects were written, but nothing was settled: object 1's events are not
-        // delivered while object 2's are re-leased, so a retry rebuilds the same two objects.
+        // Both objects were written, but nothing was settled: all four events stay uploading
+        // and come back together when the lease expires, so a retry rebuilds the same two objects.
         Assert.Equal(2, s3.Puts.Count);
         QueueSnapshot snapshot = await store.GetSnapshotAsync(cancellationToken);
         Assert.Equal((0, 4), (snapshot.Delivered, snapshot.Uploading));
