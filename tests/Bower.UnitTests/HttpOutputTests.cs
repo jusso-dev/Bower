@@ -121,6 +121,7 @@ public sealed class HttpOutputTests
         {
             Assert.Equal(["evt-r"], result.AcknowledgedEventIds);
             Assert.Empty(result.Failures);
+            Assert.Equal(vector["expectedAcknowledgement"]!.GetValue<string>(), result.DestinationAcknowledgement);
             return;
         }
 
@@ -752,6 +753,7 @@ public sealed class HttpOutputTests
                 item!["eventId"]!.GetValue<string>(), item["code"]!.GetValue<string>(), item["retryable"]!.GetValue<bool>())),
             result.Failures.Select(failure => (failure.EventId, failure.Code, failure.IsRetryable)));
         Assert.All(result.Failures, failure => Assert.Equal(failure.IsRetryable, failure.IsDestinationFailure));
+        Assert.Equal(vector["expectedAcknowledgement"]?.GetValue<string>(), result.DestinationAcknowledgement);
     }
 
     [Fact]

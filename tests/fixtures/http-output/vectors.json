@@ -625,6 +625,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": true,
+      "expectedAcknowledgement": "http:splunk-hec:endpoint-accepted",
       "code": null,
       "retryable": null,
       "destination": false,
@@ -640,6 +641,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": true,
+      "expectedAcknowledgement": "http:splunk-hec:endpoint-accepted",
       "code": null,
       "retryable": null,
       "destination": false,
@@ -655,6 +657,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": true,
+      "expectedAcknowledgement": "http:splunk-hec:endpoint-accepted",
       "code": null,
       "retryable": null,
       "destination": false,
@@ -670,6 +673,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": true,
+      "expectedAcknowledgement": "http:ndjson:endpoint-accepted",
       "code": null,
       "retryable": null,
       "destination": false,
@@ -685,6 +689,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": true,
+      "expectedAcknowledgement": "http:ndjson:endpoint-accepted",
       "code": null,
       "retryable": null,
       "destination": false,
@@ -700,6 +705,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-response-invalid",
       "retryable": true,
       "destination": true,
@@ -715,6 +721,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-response-invalid",
       "retryable": true,
       "destination": true,
@@ -730,6 +737,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-response-invalid",
       "retryable": true,
       "destination": true,
@@ -745,6 +753,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-response-invalid",
       "retryable": true,
       "destination": true,
@@ -760,9 +769,90 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-response-invalid",
       "retryable": true,
       "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
+    },
+    {
+      "name": "hec-200-near-capacity-queue",
+      "format": "splunk-hec",
+      "status": 200,
+      "body": "{\"text\":\"HEC queue is approaching its capacity limit\",\"code\":24}",
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null,
+      "accepted": true,
+      "expectedAcknowledgement": "http:splunk-hec:endpoint-accepted:near-capacity:hec-24",
+      "code": null,
+      "retryable": null,
+      "destination": false,
+      "retryAfterSeconds": null,
+      "isolate": false
+    },
+    {
+      "name": "hec-200-near-capacity-ack",
+      "format": "splunk-hec",
+      "status": 200,
+      "body": "{\"text\":\"HEC ACK is approaching its capacity limit\",\"code\":25}",
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null,
+      "accepted": true,
+      "expectedAcknowledgement": "http:splunk-hec:endpoint-accepted:near-capacity:hec-25",
+      "code": null,
+      "retryable": null,
+      "destination": false,
+      "retryAfterSeconds": null,
+      "isolate": false
+    },
+    {
+      "name": "hec-200-code-23-not-accepted",
+      "format": "splunk-hec",
+      "status": 200,
+      "body": "{\"code\":23}",
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null,
+      "accepted": false,
+      "expectedAcknowledgement": null,
+      "code": "destination-http-response-invalid",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
+    },
+    {
+      "name": "hec-200-code-26-not-accepted",
+      "format": "splunk-hec",
+      "status": 200,
+      "body": "{\"code\":26}",
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null,
+      "accepted": false,
+      "expectedAcknowledgement": null,
+      "code": "destination-http-response-invalid",
+      "retryable": true,
+      "destination": true,
+      "retryAfterSeconds": null,
+      "isolate": false
+    },
+    {
+      "name": "ndjson-200-code-24-is-plain-acceptance",
+      "format": "ndjson",
+      "status": 200,
+      "body": "{\"code\":24}",
+      "retryAfter": null,
+      "bodyPadding": 0,
+      "location": null,
+      "accepted": true,
+      "expectedAcknowledgement": "http:ndjson:endpoint-accepted",
+      "code": null,
+      "retryable": null,
+      "destination": false,
       "retryAfterSeconds": null,
       "isolate": false
     },
@@ -775,6 +865,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-response-invalid",
       "retryable": true,
       "destination": true,
@@ -790,6 +881,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-response-invalid",
       "retryable": true,
       "destination": true,
@@ -805,6 +897,7 @@
       "retryAfter": null,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-response-invalid",
       "retryable": true,
       "destination": true,
@@ -820,6 +913,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-response-invalid",
       "retryable": true,
       "destination": true,
@@ -835,6 +929,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-400:hec-7",
       "retryable": true,
       "destination": true,
@@ -850,6 +945,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-400:hec-10",
       "retryable": true,
       "destination": true,
@@ -865,6 +961,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-400:hec-11",
       "retryable": true,
       "destination": true,
@@ -880,6 +977,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-400:hec-14",
       "retryable": true,
       "destination": true,
@@ -895,6 +993,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-400:hec-16",
       "retryable": true,
       "destination": true,
@@ -910,6 +1009,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-400:hec-21",
       "retryable": true,
       "destination": true,
@@ -925,6 +1025,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-400:hec-22",
       "retryable": true,
       "destination": true,
@@ -940,6 +1041,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-400:hec-6",
       "retryable": true,
       "destination": true,
@@ -955,6 +1057,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-400",
       "retryable": true,
       "destination": true,
@@ -970,6 +1073,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-400",
       "retryable": true,
       "destination": true,
@@ -985,6 +1089,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-400:hec-7",
       "retryable": true,
       "destination": true,
@@ -1000,6 +1105,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-400:hec-12",
       "retryable": true,
       "destination": true,
@@ -1015,6 +1121,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-401:hec-2",
       "retryable": true,
       "destination": true,
@@ -1030,6 +1137,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-403:hec-4",
       "retryable": true,
       "destination": true,
@@ -1045,6 +1153,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-403:hec-1",
       "retryable": true,
       "destination": true,
@@ -1060,6 +1169,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-401",
       "retryable": true,
       "destination": true,
@@ -1075,6 +1185,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-403",
       "retryable": true,
       "destination": true,
@@ -1090,6 +1201,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-404",
       "retryable": true,
       "destination": true,
@@ -1105,6 +1217,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-405",
       "retryable": true,
       "destination": true,
@@ -1120,6 +1233,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-408",
       "retryable": true,
       "destination": true,
@@ -1135,6 +1249,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-410",
       "retryable": true,
       "destination": true,
@@ -1150,6 +1265,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-415",
       "retryable": true,
       "destination": true,
@@ -1165,6 +1281,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-421",
       "retryable": true,
       "destination": true,
@@ -1180,6 +1297,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-422",
       "retryable": true,
       "destination": true,
@@ -1195,6 +1313,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-429",
       "retryable": true,
       "destination": true,
@@ -1210,6 +1329,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-500:hec-8",
       "retryable": true,
       "destination": true,
@@ -1225,6 +1345,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-503:hec-9",
       "retryable": true,
       "destination": true,
@@ -1240,6 +1361,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-503",
       "retryable": true,
       "destination": true,
@@ -1255,6 +1377,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-503",
       "retryable": true,
       "destination": true,
@@ -1270,6 +1393,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-502",
       "retryable": true,
       "destination": true,
@@ -1285,6 +1409,7 @@
       "retryAfter": null,
       "bodyPadding": 0,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-302",
       "retryable": true,
       "destination": true,
@@ -1300,6 +1425,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-413",
       "retryable": true,
       "destination": true,
@@ -1315,6 +1441,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-418",
       "retryable": true,
       "destination": true,
@@ -1330,6 +1457,7 @@
       "bodyPadding": 0,
       "location": null,
       "accepted": false,
+      "expectedAcknowledgement": null,
       "code": "destination-http-400",
       "retryable": true,
       "destination": true,
@@ -1368,7 +1496,8 @@
           "retryable": false
         }
       ],
-      "expectedRequests": 5
+      "expectedRequests": 5,
+      "expectedAcknowledgement": "http:splunk-hec:endpoint-accepted"
     },
     {
       "name": "poison-lineage-without-accepted-sibling-is-held",
@@ -1403,7 +1532,8 @@
           "retryable": true
         }
       ],
-      "expectedRequests": 4
+      "expectedRequests": 4,
+      "expectedAcknowledgement": "http:splunk-hec:endpoint-accepted"
     },
     {
       "name": "incorrect-index-mid-stream-is-held",
@@ -1446,7 +1576,8 @@
           "retryable": true
         }
       ],
-      "expectedRequests": 2
+      "expectedRequests": 2,
+      "expectedAcknowledgement": "http:splunk-hec:endpoint-accepted"
     },
     {
       "name": "unsupported-media-type-mid-stream-is-held",
@@ -1488,7 +1619,8 @@
           "retryable": true
         }
       ],
-      "expectedRequests": 2
+      "expectedRequests": 2,
+      "expectedAcknowledgement": "http:ndjson:endpoint-accepted"
     },
     {
       "name": "ambiguous-422-isolated",
@@ -1517,7 +1649,8 @@
           "retryable": false
         }
       ],
-      "expectedRequests": 5
+      "expectedRequests": 5,
+      "expectedAcknowledgement": "http:ndjson:endpoint-accepted"
     },
     {
       "name": "always-400-is-held",
@@ -1559,7 +1692,8 @@
           "retryable": true
         }
       ],
-      "expectedRequests": 9
+      "expectedRequests": 9,
+      "expectedAcknowledgement": null
     },
     {
       "name": "too-large-splits-until-accepted",
@@ -1580,7 +1714,8 @@
         "s-6"
       ],
       "expectedFailures": [],
-      "expectedRequests": 7
+      "expectedRequests": 7,
+      "expectedAcknowledgement": "http:splunk-hec:endpoint-accepted"
     },
     {
       "name": "too-large-single-without-sibling-is-held",
@@ -1611,7 +1746,8 @@
           "retryable": true
         }
       ],
-      "expectedRequests": 5
+      "expectedRequests": 5,
+      "expectedAcknowledgement": null
     },
     {
       "name": "too-large-single-with-accepted-sibling-is-dead-lettered",
@@ -1637,7 +1773,8 @@
           "retryable": false
         }
       ],
-      "expectedRequests": 3
+      "expectedRequests": 3,
+      "expectedAcknowledgement": "http:splunk-hec:endpoint-accepted"
     },
     {
       "name": "split-budget-exhausted-is-held",
@@ -1792,7 +1929,79 @@
           "retryable": true
         }
       ],
-      "expectedRequests": 33
+      "expectedRequests": 33,
+      "expectedAcknowledgement": "http:splunk-hec:endpoint-accepted"
+    },
+    {
+      "name": "near-capacity-is-accepted-and-tagged",
+      "options": {
+        "format": "splunk-hec",
+        "maximumBatchEvents": 2
+      },
+      "events": 6,
+      "endpoint": {
+        "byRequest": {
+          "1": {
+            "status": 200,
+            "body": "{\"text\":\"HEC ACK is approaching its capacity limit\",\"code\":25}"
+          },
+          "2": {
+            "status": 200,
+            "body": "{\"text\":\"Success\",\"code\":0}"
+          },
+          "3": {
+            "status": 200,
+            "body": "{\"text\":\"HEC queue is approaching its capacity limit\",\"code\":24}"
+          }
+        }
+      },
+      "expectedAcknowledged": [
+        "s-0",
+        "s-1",
+        "s-2",
+        "s-3",
+        "s-4",
+        "s-5"
+      ],
+      "expectedFailures": [],
+      "expectedRequests": 3,
+      "expectedAcknowledgement": "http:splunk-hec:endpoint-accepted:near-capacity:hec-24:hec-25"
+    },
+    {
+      "name": "near-capacity-sibling-proves-isolated-poison",
+      "options": {
+        "format": "splunk-hec",
+        "maximumBatchEvents": 2
+      },
+      "events": 2,
+      "endpoint": {
+        "byRequest": {
+          "1": {
+            "status": 400,
+            "body": "{\"text\":\"Invalid data format\",\"code\":6}"
+          },
+          "2": {
+            "status": 400,
+            "body": "{\"text\":\"Invalid data format\",\"code\":6}"
+          },
+          "3": {
+            "status": 200,
+            "body": "{\"text\":\"HEC queue is approaching its capacity limit\",\"code\":24}"
+          }
+        }
+      },
+      "expectedAcknowledged": [
+        "s-1"
+      ],
+      "expectedFailures": [
+        {
+          "eventId": "s-0",
+          "code": "http-400:hec-6",
+          "retryable": false
+        }
+      ],
+      "expectedRequests": 3,
+      "expectedAcknowledgement": "http:splunk-hec:endpoint-accepted:near-capacity:hec-24"
     }
   ],
   "authHeaderNames": [

@@ -11,7 +11,7 @@ reach it, exactly as they would reach Sentinel.
 
 !!! warning "Acceptance is not indexing, and it is not Sentinel"
     An event counts as delivered when the endpoint **accepted** its request: HTTP 2xx and,
-    for HEC, a response `code` of `0`. That is what HEC's response means: the event was
+    for HEC, a response `code` of `0`, `24` or `25`. That is what HEC's response means: the event was
     received, not that an indexer has written it. Bower does not implement HEC indexer
     acknowledgement (`useACK`) yet, so it cannot tell you an event was indexed. Nothing
     about this output is Sentinel delivery: status, acknowledgements and evidence say
@@ -129,7 +129,8 @@ siblings are good.
 | Response | Outcome | Failure code |
 |---|---|---|
 | 2xx (HEC: JSON body with `code` 0) | Delivered (`http:<format>:endpoint-accepted`). | — |
-| 2xx from HEC without `code` 0 (a proxy page, a captive portal, malformed or over 64 KiB) | Held and retried, indefinitely. | `destination-http-response-invalid` |
+| 2xx from HEC with `code` 24 or 25 (near capacity) | Delivered and never resent; the acknowledgement records the code (see below). | — |
+| 2xx from HEC with any other `code`, or without one (a proxy page, a captive portal, malformed or over 64 KiB) | Held and retried, indefinitely. | `destination-http-response-invalid` |
 | 401, 403 | Held; raises the `destination-credential` health problem (C#). | `destination-http-401`, `destination-http-403` |
 | 400 with a HEC configuration code (see below) | Held: a destination or token setting is wrong, not the events. | `destination-http-400:hec-<n>` |
 | 3xx (redirects are never followed), 404, 405, 408, 410, 415, 421, 429, 5xx, and any other status not listed here | Held, honouring `Retry-After` up to one hour. | `destination-http-<status>` |
@@ -158,10 +159,25 @@ encoding is wrong for this endpoint, so they are held too.
     growing retrying backlog with `destination-*` failure codes (`/v1/status`
     `queue.retrying` and `deliveryActivity.lastFailureCode`, the C# `collector_health`
     record, or the `Output adapter did not deliver events` log line). In particular a
-    2xx from HEC without `code` 0 is retried indefinitely. Splunk documents codes 24 and
-    25 (`HEC queue/ACK is approaching its capacity limit`) as **200 OK**: Bower treats
-    those as not accepted and resends, which can duplicate events. Watch for
-    `destination-http-response-invalid` while HEC is near capacity.
+    2xx from HEC whose `code` is neither 0, 24 nor 25 is retried indefinitely
+    (`destination-http-response-invalid`).
+
+### HEC near capacity (codes 24 and 25)
+
+Splunk's "Troubleshoot HTTP Event Collector" table documents two success-with-warning
+codes, both returned with **200 OK**: 24 "HEC queue is approaching its capacity limit"
+and 25 "HEC ACK is approaching its capacity limit". The request was accepted, so Bower
+acknowledges its events and never resends them (resending would duplicate events and add
+load exactly when HEC is short of room). Every other non-zero code on a 2xx is still not
+acceptance.
+
+The condition is kept as metadata only, in the queue acknowledgement of every event the
+delivery acknowledged: `http:splunk-hec:endpoint-accepted:near-capacity:hec-24` (or
+`:hec-25`, or both as `:near-capacity:hec-24:hec-25`). The acknowledgement covers the
+whole delivery, so it marks events from every batch of that delivery, not only the one
+whose response carried the code. No response text is kept. Treat a rising share of
+`near-capacity` acknowledgements as an early warning that HEC needs more capacity, before
+it starts answering 503 (code 9) or 429 (codes 26 and 27).
 
 ## Security
 
@@ -208,6 +224,4 @@ encoding is wrong for this endpoint, so they are held too.
   poll acknowledgements and only then acknowledge the queue. Until then a 200 is
   acceptance, not indexing.
 - One output per collector, no fan-out.
-- Splunk's 200 OK codes 24 and 25 are not yet treated as acceptance (see the warning
-  above).
 - One request at a time; no adaptive concurrency.

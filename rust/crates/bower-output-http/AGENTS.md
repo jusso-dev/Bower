@@ -5,7 +5,8 @@ Event Collector (`splunk-hec`) or a generic NDJSON endpoint (`ndjson`).
 
 - `tests/fixtures/http-output/vectors.json` (repo root) is shared with the C# tests: request
   bytes, headers and outcomes, and response classification. Keep it passing in both.
-- Delivery is acceptance by the endpoint (2xx; HEC `code` 0), never Sentinel delivery or
+- Delivery is acceptance by the endpoint (2xx; HEC `code` 0, or 24/25 near capacity, kept
+  only as `:near-capacity:hec-<n>` on the acknowledgement), never Sentinel delivery or
   indexing. HEC indexer acknowledgement is not implemented.
 - HTTPS only with verification on (platform roots plus `BOWER_HTTP_CA_BUNDLE`, self-signed
   roots only); `http://` only to loopback IP literals with the opt-in, never through a

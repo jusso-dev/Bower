@@ -379,6 +379,11 @@ async fn response_vectors_classify_as_shared() {
         if vector["accepted"].as_bool().unwrap() {
             assert_eq!(result.acknowledged_event_ids, ["evt-r"], "{name}");
             assert!(result.failures.is_empty(), "{name}");
+            assert_eq!(
+                result.destination_acknowledgement,
+                text(vector, "expectedAcknowledgement"),
+                "{name}"
+            );
             continue;
         }
         assert!(result.acknowledged_event_ids.is_empty(), "{name}");
@@ -625,6 +630,11 @@ async fn scenario_vectors_isolate_poison_and_hold_everything_else() {
                 .failures
                 .iter()
                 .all(|failure| failure.is_retryable == failure.is_destination_failure()),
+            "{name}"
+        );
+        assert_eq!(
+            result.destination_acknowledgement,
+            text(vector, "expectedAcknowledgement"),
             "{name}"
         );
     }

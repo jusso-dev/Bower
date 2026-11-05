@@ -999,7 +999,7 @@ the AWS default chain only. It is an extra sink, not Sentinel delivery. See
 
 HTTP mode (`BOWER_OUTPUT=http`) posts the stored envelopes to Splunk HTTP Event
 Collector or a generic NDJSON endpoint over HTTPS. An event counts as delivered when the
-endpoint accepted it (HEC `code` 0); that is not Sentinel delivery and not proof of
+endpoint accepted it (HEC `code` 0, or 24/25 near capacity); that is not Sentinel delivery and not proof of
 indexing. See [HTTP output](docs/deployment/http-splunk-hec-output.md).
 
 Failed uploads map back to their exact events; unattributable failures retry the

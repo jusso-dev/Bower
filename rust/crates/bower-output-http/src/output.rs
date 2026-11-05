@@ -5,7 +5,7 @@
 //! bounded code. The token is held as a sensitive header value and never appears in
 //! failures, errors or logs.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io::Write as _;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
@@ -115,6 +115,21 @@ impl HttpOutput {
         }
     }
 
+    /// C# `AcknowledgementFor`: the acknowledgement for one delivery, plus
+    /// `:near-capacity:hec-<n>` for each HEC near-capacity code (24, 25) an accepted
+    /// request of the delivery reported. Metadata only, kept with every event the delivery
+    /// acknowledged.
+    pub fn acknowledgement_for(&self, near_capacity: &BTreeSet<i32>) -> String {
+        let mut text = self.acknowledgement().to_string();
+        for (index, code) in near_capacity.iter().enumerate() {
+            if index == 0 {
+                text.push_str(":near-capacity");
+            }
+            text.push_str(&format!(":hec-{code}"));
+        }
+        text
+    }
+
     /// C# `Encode`: one record without its newline, or a poison code. The payload is
     /// embedded as stored (raw CR and LF, which valid JSON holds only as whitespace, are
     /// removed).
@@ -182,6 +197,7 @@ impl HttpOutput {
                     retry_after: None,
                 }),
                 false,
+                None,
             )
         };
         // Transport and TLS failures (an untrusted certificate included). Text is never kept.
@@ -253,11 +269,12 @@ impl OutputAdapter for HttpOutput {
         let mut sent: BTreeMap<usize, DeliveryFailure> = BTreeMap::new();
         let mut accepted_lineages = HashSet::new();
         let mut isolated: Vec<(usize, usize, String, DeliveryFailure)> = Vec::new();
+        let mut near_capacity = BTreeSet::new();
         let mut splits = SPLIT_BUDGET;
         let mut index = 0;
         while index < pending.len() {
             let lineage = pending[index].0;
-            let (_, failure, isolate) = self.send(&pending[index].1).await;
+            let (_, failure, isolate, accepted_code) = self.send(&pending[index].1).await;
             let Some(failure) = failure else {
                 acknowledged.extend(
                     pending[index]
@@ -266,6 +283,7 @@ impl OutputAdapter for HttpOutput {
                         .map(|record| record.event_id.clone()),
                 );
                 accepted_lineages.insert(lineage);
+                near_capacity.extend(accepted_code);
                 index += 1;
                 continue;
             };
@@ -319,7 +337,7 @@ impl OutputAdapter for HttpOutput {
 
         DeliveryResult {
             destination_acknowledgement: (!acknowledged.is_empty())
-                .then(|| self.acknowledgement().to_string()),
+                .then(|| self.acknowledgement_for(&near_capacity)),
             acknowledged_event_ids: acknowledged,
             failures,
             // One acknowledgement for the whole delivery; no per-event acknowledgements.
@@ -335,8 +353,9 @@ struct Record {
     bytes: Vec<u8>,
 }
 
-/// Status, failure (`None` is accepted) and whether the failure is ambiguous (isolate).
-type Outcome = (u16, Option<DeliveryFailure>, bool);
+/// Status, failure (`None` is accepted), whether the failure is ambiguous (isolate), and
+/// the HEC near-capacity code of an accepted response.
+type Outcome = (u16, Option<DeliveryFailure>, bool, Option<i32>);
 
 fn with_event(failure: &DeliveryFailure, event_id: &str) -> DeliveryFailure {
     DeliveryFailure {
@@ -401,11 +420,20 @@ pub fn is_hec_configuration_code(code: i32) -> bool {
     matches!(code, 7 | 10 | 11 | 14 | 16 | 21 | 22)
 }
 
+/// C# `IsHecNearCapacityCode`: HEC codes Splunk returns with 200 OK when it accepted the
+/// request but is near a limit ("Troubleshoot HTTP Event Collector"): 24 "HEC queue is
+/// approaching its capacity limit", 25 "HEC ACK is approaching its capacity limit".
+/// Accepted, never resent.
+pub fn is_hec_near_capacity_code(code: i32) -> bool {
+    matches!(code, 24 | 25)
+}
+
 /// C# `Classify`: accepted (no failure) or a bounded failure code. HEC error codes are
 /// added as `:hec-<n>` metadata; response text never is. Every failure is held as
 /// `destination-http-*`; the flag marks the ambiguous ones (400 without a configuration
 /// code, 422, 413) that are bisected, a single event becoming `http-<status>` poison only
-/// when a sibling from the same original batch was accepted.
+/// when a sibling from the same original batch was accepted. The last element is the HEC
+/// near-capacity code of an accepted response.
 pub fn classify(
     format: HttpOutputFormat,
     status: u16,
@@ -417,15 +445,17 @@ pub fn classify(
         HttpOutputFormat::Ndjson => None,
     };
     if (200..300).contains(&status) {
-        return if format == HttpOutputFormat::Ndjson || hec == Some(0) {
-            (status, None, false)
-        } else {
-            // A 2xx that is not a HEC success (a captive portal, a proxy page) is not acceptance.
-            (
+        return match hec {
+            _ if format == HttpOutputFormat::Ndjson => (status, None, false, None),
+            Some(0) => (status, None, false, None),
+            Some(code) if is_hec_near_capacity_code(code) => (status, None, false, Some(code)),
+            // Any other 2xx (a captive portal, a proxy page, another code) is not acceptance.
+            _ => (
                 status,
                 Some(failure("", "destination-http-response-invalid", true, None)),
                 false,
-            )
+                None,
+            ),
         };
     }
     let suffix = hec.map(|code| format!(":hec-{code}")).unwrap_or_default();
@@ -440,6 +470,7 @@ pub fn classify(
             retry_after,
         )),
         isolate,
+        None,
     )
 }
 

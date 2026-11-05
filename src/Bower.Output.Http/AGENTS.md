@@ -5,7 +5,9 @@ Splunk HTTP Event Collector (`splunk-hec`) or a generic NDJSON endpoint (`ndjson
 port: `rust/crates/bower-output-http`; request and response vectors in
 `tests/fixtures/http-output` are shared and must pass in both runtimes.
 
-- Delivery means "accepted by the endpoint" (2xx; HEC also `code` 0). Never call it
+- Delivery means "accepted by the endpoint" (2xx; HEC also `code` 0, or the near-capacity
+  codes 24/25, which are recorded only as `:near-capacity:hec-<n>` on the acknowledgement;
+  every other non-zero code on a 2xx is not acceptance). Never call it
   Sentinel delivery or indexing. HEC indexer acknowledgement (`useACK`) is not
   implemented; a 200 is acceptance only.
 - HTTPS only, certificate and host name verification always on. Plain `http://` only to

@@ -92,6 +92,16 @@ public sealed partial class HttpOutput : IOutputAdapter, IDisposable
         ? "http:splunk-hec:endpoint-accepted"
         : "http:ndjson:endpoint-accepted";
 
+    /// <summary>
+    /// The acknowledgement for one delivery: <see cref="Acknowledgement"/>, plus
+    /// <c>:near-capacity:hec-&lt;n&gt;</c> for each HEC near-capacity code (24, 25) an
+    /// accepted request of the delivery reported. Metadata only, kept with every event the
+    /// delivery acknowledged.
+    /// </summary>
+    public string AcknowledgementFor(IEnumerable<int> nearCapacityCodes) =>
+        Acknowledgement + string.Concat(nearCapacityCodes.Distinct().Order().Select((code, index) =>
+            string.Create(CultureInfo.InvariantCulture, $"{(index == 0 ? ":near-capacity" : string.Empty)}:hec-{code}")));
+
     public void Dispose() => client.Dispose();
 
     public async Task<DeliveryResult> DeliverAsync(
@@ -143,11 +153,12 @@ public sealed partial class HttpOutput : IOutputAdapter, IDisposable
         SortedDictionary<int, DeliveryFailure> sent = [];
         HashSet<int> acceptedLineages = [];
         List<(int Lineage, Record Record, DeliveryFailure Held)> isolated = [];
+        List<int> nearCapacity = [];
         int splits = SplitBudget;
         for (int index = 0; index < pending.Count; index++)
         {
             (int lineage, List<Record> batch) = pending[index];
-            (int Status, DeliveryFailure? Failure, bool Isolate) outcome;
+            (int Status, DeliveryFailure? Failure, bool Isolate, int? NearCapacity) outcome;
             try
             {
                 outcome = await SendAsync(batch, cancellationToken);
@@ -167,6 +178,11 @@ public sealed partial class HttpOutput : IOutputAdapter, IDisposable
             {
                 acknowledged.AddRange(batch.Select(record => record.EventId));
                 acceptedLineages.Add(lineage);
+                if (outcome.NearCapacity is { } code)
+                {
+                    nearCapacity.Add(code);
+                }
+
                 continue;
             }
 
@@ -217,7 +233,7 @@ public sealed partial class HttpOutput : IOutputAdapter, IDisposable
         }
 
         failures.AddRange(sent.Values);
-        return new DeliveryResult(acknowledged, failures, acknowledged.Count == 0 ? null : Acknowledgement);
+        return new DeliveryResult(acknowledged, failures, acknowledged.Count == 0 ? null : AcknowledgementFor(nearCapacity));
     }
 
     /// <summary>
@@ -313,30 +329,39 @@ public sealed partial class HttpOutput : IOutputAdapter, IDisposable
     public static bool IsHecConfigurationCode(int code) => code is 7 or 10 or 11 or 14 or 16 or 21 or 22;
 
     /// <summary>
+    /// HEC codes Splunk returns with 200 OK when it accepted the request but is near a limit
+    /// ("Troubleshoot HTTP Event Collector"): 24 "HEC queue is approaching its capacity
+    /// limit", 25 "HEC ACK is approaching its capacity limit". Accepted, never resent.
+    /// </summary>
+    public static bool IsHecNearCapacityCode(int code) => code is 24 or 25;
+
+    /// <summary>
     /// The outcome of one response: accepted (no failure) or a bounded failure code. HEC
     /// error codes are added as <c>:hec-&lt;n&gt;</c> metadata; response text never is.
     /// Every failure is held as <c>destination-http-*</c>. <c>Isolate</c> marks the
     /// ambiguous ones (400 without a configuration code, 422, 413): the batch is bisected,
     /// and a single event becomes <c>http-&lt;status&gt;</c> poison only when a sibling from
-    /// the same original batch was accepted.
+    /// the same original batch was accepted. <c>NearCapacity</c> is the HEC near-capacity
+    /// code of an accepted response, or null.
     /// </summary>
-    public static (int Status, DeliveryFailure? Failure, bool Isolate) Classify(
+    public static (int Status, DeliveryFailure? Failure, bool Isolate, int? NearCapacity) Classify(
         HttpOutputFormat format, int status, DateTimeOffset? retryAfter, byte[]? body)
     {
         int? hec = format == HttpOutputFormat.SplunkHec ? ReadHecCode(body) : null;
         if (status is >= 200 and < 300)
         {
-            return format == HttpOutputFormat.Ndjson || hec == 0
-                ? (status, null, false)
-                // A 2xx that is not a HEC success (a captive portal, a proxy page) is not acceptance.
-                : (status, new DeliveryFailure(string.Empty, "destination-http-response-invalid", true, null), false);
+            return format == HttpOutputFormat.Ndjson || hec == 0 ? (status, null, false, null)
+                : hec is { } accepted && IsHecNearCapacityCode(accepted) ? (status, null, false, accepted)
+                // Any other 2xx (a captive portal, a proxy page, another code) is not acceptance.
+                : (status, new DeliveryFailure(string.Empty, "destination-http-response-invalid", true, null), false, null);
         }
 
         string suffix = hec is { } code ? string.Create(CultureInfo.InvariantCulture, $":hec-{code}") : string.Empty;
         bool isolate = status is 413 or 422 || (status == 400 && !(hec is { } value && IsHecConfigurationCode(value)));
         return (status,
             new DeliveryFailure(string.Empty, $"destination-http-{status.ToString(CultureInfo.InvariantCulture)}{suffix}", true, retryAfter),
-            isolate);
+            isolate,
+            null);
     }
 
     /// <summary>The integer HEC <c>code</c> (0-99) of a JSON object body, or null.</summary>
@@ -374,7 +399,7 @@ public sealed partial class HttpOutput : IOutputAdapter, IDisposable
         return at is null || at <= now ? null : at > now.Add(MaximumRetryAfter) ? now.Add(MaximumRetryAfter) : at;
     }
 
-    private async Task<(int Status, DeliveryFailure? Failure, bool Isolate)> SendAsync(List<Record> batch, CancellationToken cancellationToken)
+    private async Task<(int Status, DeliveryFailure? Failure, bool Isolate, int? NearCapacity)> SendAsync(List<Record> batch, CancellationToken cancellationToken)
     {
         byte[] body = Join(batch.Select(record => record.Utf8Json));
         using HttpRequestMessage request = new(HttpMethod.Post, options.Endpoint)
@@ -415,12 +440,12 @@ public sealed partial class HttpOutput : IOutputAdapter, IDisposable
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return (0, new DeliveryFailure(string.Empty, "destination-http-timeout", true, null), false);
+            return (0, new DeliveryFailure(string.Empty, "destination-http-timeout", true, null), false, null);
         }
         catch (Exception exception) when (exception is HttpRequestException or IOException)
         {
             // Transport and TLS failures (an untrusted certificate included). Text is never kept.
-            return (0, new DeliveryFailure(string.Empty, "destination-http-unavailable", true, null), false);
+            return (0, new DeliveryFailure(string.Empty, "destination-http-unavailable", true, null), false, null);
         }
 
         return Classify(options.Format, status, retryAfter, response);
