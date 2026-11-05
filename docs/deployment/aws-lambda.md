@@ -278,6 +278,7 @@ under 1 MB. That size counts `eventData` after JSON escaping.
 | `BOWER_LAMBDA_INVOKE_PRODUCER` | — | Producer for every direct `Invoke` payload. Required with `invoke`; refused with `function-url`. |
 | `BOWER_PRIVACY_PROFILE_SOURCE` | `local` | Only `local`. `management` (managed profiles) and any other value stop the function at init: package a reviewed privacy profile, exported from the approved management version. |
 | `BOWER_PRODUCER_SCOPES_FILE` | — | Collector producer scopes. If it is missing, every event is denied unless single trust domain is on. |
+| `BOWER_PRODUCER_SCOPES_JSON` | — | Not supported: any value stops the function at init. Package a scopes file instead. |
 | `BOWER_SINGLE_TRUST_DOMAIN` | `false` | As on the collector |
 | `BOWER_POLICY_DIRECTORY` | `./policies/default` | Packaged policies |
 | `BOWER_PACKS`, `BOWER_PACK_TRUSTED_KEYS` | — | Packaged signed packs and trusted public keys, as on the collector |

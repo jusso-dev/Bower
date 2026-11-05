@@ -101,6 +101,17 @@ public sealed class ProducerAuthorizationTests
         Assert.Equal("Invalid producer scopes file.", error.Message);
     }
 
+    // Same vectors as the Rust collector's inline_scopes_are_bounded_and_fail_closed.
+    [Theory]
+    [InlineData("bad-marker")]
+    [InlineData("{}")]
+    [InlineData("﻿[]")]
+    public void InvalidInlineScopesFailClosedWithoutEchoingValues(string json)
+    {
+        FormatException error = Assert.Throws<FormatException>(() => ProducerAuthorization.FromJson(json));
+        Assert.Equal("Invalid producer scopes document.", error.Message);
+    }
+
     [Fact]
     public void CredentialOwnerAndAbsentSourceAreExact()
     {
