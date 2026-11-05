@@ -52,13 +52,21 @@ internal abstract class SourceSetupType
     }
 
     /// <summary>
-    /// Checks against this type's other pending or approved requests for the same collector
-    /// (for example duplicate input names). Adds failing checks only.
+    /// Plan-time checks against this type's other pending or approved requests for the same
+    /// collector (for example duplicate input names). Adds failing checks, or warnings for
+    /// conditions the person asking should see but that do not block the request.
     /// </summary>
     public virtual void ValidateAgainst(
         IReadOnlyDictionary<string, string> values, IEnumerable<SourceSetupRow> existing, List<SetupCheck> checks)
     {
     }
+
+    /// <summary>
+    /// The clash that stops these values joining this type's other pending requests for the same
+    /// collector, or null. The store calls it inside the submit and approve transactions, so it
+    /// holds under concurrent requests; <see cref="ValidateAgainst"/> only guides the form.
+    /// </summary>
+    public virtual string? PendingConflict(IReadOnlyDictionary<string, string> values, IReadOnlyList<SourceSetupRow> pending) => null;
 
     public abstract SourceSetupBuild Build(IReadOnlyDictionary<string, string> values, string collectorId);
 

@@ -143,6 +143,7 @@ internal static class SourceSetupEndpoints
                 submission.CollectorId!.Trim(),
                 values,
                 result.Plan,
+                pending => type.PendingConflict(values, pending),
                 submission.Reason,
                 ManagementApplication.ObjectId(user),
                 ManagementApplication.DisplayName(user),
@@ -186,6 +187,7 @@ internal static class SourceSetupEndpoints
             SourceSetupRow? row = await store.ReviewSourceSetupAsync(
                 id,
                 approve,
+                (reviewed, pending) => SourceSetupRegistry.Find(reviewed.Type)?.PendingConflict(reviewed.Values, pending),
                 request.Reason,
                 ManagementApplication.ObjectId(user),
                 ManagementApplication.DisplayName(user),
@@ -250,7 +252,8 @@ internal static class SourceSetupEndpoints
         }
 
         SourceSetupPlan plan = SourceSetupRegistry.Plan(type, id, values);
-        if (collector!.Sources.Any(source => source.Id == plan.Verification.ReportId) && plan.Verification.Kind == "source")
+        if (collector!.Sources.Any(source => source.Id == plan.Verification.ReportId)
+            && plan.Verification.Kind is "source" or FileTailSourceSetup.PackSourceVerification)
         {
             checks.Add(SourceSetupRegistry.Warn(
                 "duplicate",
@@ -414,6 +417,20 @@ internal static class SourceSetupEndpoints
                 [new SetupCheck("report", SetupCheckStates.Pending,
                     "No accepted event after this request was approved has been reported yet.",
                     "Install the approved settings and produce a matching security event, then wait for the next check-in.")],
+                source.LastEventAt, collector.LastSeenAt, now);
+        }
+
+        if (Healthy(source.Status) && verification.Kind == FileTailSourceSetup.PackSourceVerification)
+        {
+            // Any file or source routed to this pack reports the same application, so an event
+            // here does not show that this request's input is installed. Never green.
+            string input = row.Values.GetValueOrDefault("inputId") ?? "this";
+            return new(
+                SetupStepStates.InProgress,
+                "Pack events seen, input not individually verified",
+                [new SetupCheck("report", SetupCheckStates.Warn,
+                    $"The collector reports events from {verification.ReportId} after approval, but any file or source using this pack produces them, so input {input} is not individually verified.",
+                    $"On the collector host, check GET /v1/status: fileTail input {input} should be running with queued lines.")],
                 source.LastEventAt, collector.LastSeenAt, now);
         }
 

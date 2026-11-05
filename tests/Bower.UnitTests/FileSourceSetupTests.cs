@@ -8,6 +8,7 @@ using Bower.Packs;
 using Bower.Pipeline;
 using Bower.Source.File;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using static Bower.UnitTests.SourceSetupApiTests;
 
@@ -101,7 +102,7 @@ public sealed class FileSourceSetupTests
         await System.IO.File.WriteAllTextAsync(expectations, File(plan, "source-expectations.json"), cancellationToken);
         SourceExpectation expected = Assert.Single(SourceExpectationsLoader.LoadFile(expectations).Sources);
         Assert.Equal(("linux-sshd", "production", 60), (expected.Application, expected.Environment, expected.MaximumSilenceMinutes));
-        Assert.Equal(new SourceSetupVerification("source", "linux-sshd/production", plan.Verification.Description), plan.Verification);
+        Assert.Equal(new SourceSetupVerification("pack-source", "linux-sshd/production", plan.Verification.Description), plan.Verification);
         SourceSetupSnippet install = Assert.Single(plan.Snippets);
         Assert.Contains($"{FileSourceSchema.Variable}={FileSourceSchema.LinuxInstallPath}\n", install.Content, StringComparison.Ordinal);
         Assert.Contains(FileSourceSchema.SymlinkPolicy, plan.Files[0].Description, StringComparison.Ordinal);
@@ -122,7 +123,7 @@ public sealed class FileSourceSetupTests
 
     [Theory]
     [InlineData("posix")]
-    [InlineData("windows")]
+    [InlineData("parent")]
     [InlineData("beginning")]
     public async Task Plan_ConfigurationPassesTheCollectorLoaderAndRouteCheck(string variant)
     {
@@ -131,10 +132,10 @@ public sealed class FileSourceSetupTests
         await using WebApplication app = await ManagementApiTests.StartAsync(directory, new FakeClock(Now), cancellationToken);
         await ActiveCollectorAsync(app, "edge-01", cancellationToken);
         Dictionary<string, string> values = Values();
-        if (variant == "windows")
+        if (variant == "parent")
         {
-            values["allowedRoot"] = @"C:\Logs\Security\";
-            values["path"] = @"C:\Logs\Security\auth.log";
+            // A parent of a refused directory is allowed while the file stays outside them.
+            values["allowedRoot"] = "/var/";
         }
         else if (variant == "beginning")
         {
@@ -146,27 +147,16 @@ public sealed class FileSourceSetupTests
 
         Assert.True(result.Valid, string.Join(" ", result.Checks.Select(check => check.Message)));
         string json = File(result.Plan!, FileSourceSchema.FileName);
-        if (variant == "windows")
-        {
-            using JsonDocument document = JsonDocument.Parse(json);
-            Assert.Equal(@"C:\Logs\Security", document.RootElement.GetProperty("allowedRoots")[0].GetString());
-            Assert.All(result.Plan!.Files, file => Assert.StartsWith(@"C:\ProgramData\Bower\", file.InstallPath, StringComparison.Ordinal));
-            Assert.Equal("powershell", Assert.Single(result.Plan!.Snippets).Language);
-        }
-        else
-        {
-            Assert.Equal("linux-sshd/production", result.Plan!.Verification.ReportId);
-        }
-
-        // The loader checks paths for the host it runs on, so Windows paths load only on Windows.
-        if (variant != "windows" || OperatingSystem.IsWindows())
-        {
-            FileTailInputOptions input = Assert.Single(LoadAsCollector(json, SignedPackBundle(directory)).Inputs);
-            Assert.Equal(values["path"], input.Path);
-            Assert.Equal(new FileTailRoute("linux-authlog-ssh", 0), input.Route);
-            Assert.Equal(variant == "beginning" ? "beginning" : "end", input.StartAt);
-            Assert.False(input.AllowSymlink);
-        }
+        Assert.Equal("linux-sshd/production", result.Plan!.Verification.ReportId);
+        Assert.Equal("shell", Assert.Single(result.Plan!.Snippets).Language);
+        Assert.All(result.Plan!.Files, file => Assert.StartsWith("/etc/bower/", file.InstallPath, StringComparison.Ordinal));
+        FileTailSourceConfiguration loaded = LoadAsCollector(json, SignedPackBundle(directory));
+        Assert.Equal(variant == "parent" ? "/var" : "/var/log", Assert.Single(loaded.AllowedRoots));
+        FileTailInputOptions input = Assert.Single(loaded.Inputs);
+        Assert.Equal(values["path"], input.Path);
+        Assert.Equal(new FileTailRoute("linux-authlog-ssh", 0), input.Route);
+        Assert.Equal(variant == "beginning" ? "beginning" : "end", input.StartAt);
+        Assert.False(input.AllowSymlink);
     }
 
     [Fact]
@@ -204,13 +194,23 @@ public sealed class FileSourceSetupTests
     [InlineData("path", "name one file", "path=/var/log/./auth.log")]
     [InlineData("path", "outside the allowed directory", "path=/var/log")]
     [InlineData("allowedRoot", "not the whole disk", "allowedRoot=/", "path=/auth.log")]
-    [InlineData("allowedRoot", "not the whole disk", @"allowedRoot=C:\", @"path=C:\auth.log")]
+    [InlineData("allowedRoot", "Linux paths only", @"allowedRoot=C:\", @"path=C:\auth.log")]
     [InlineData("allowedRoot", "not the whole disk", "allowedRoot=/var//log", "path=/var//log/auth.log")]
     [InlineData("allowedRoot", "does not read files under /proc", "allowedRoot=/proc", "path=/proc/1/environ")]
     [InlineData("allowedRoot", "does not read files under /etc/bower", "allowedRoot=/etc/bower/secrets", "path=/etc/bower/secrets/ingest.token")]
     [InlineData("allowedRoot", "does not read files under /var/lib/bower", "allowedRoot=/var/lib/bower", "path=/var/lib/bower/queue.db")]
-    [InlineData("allowedRoot", "does not read its own files", @"allowedRoot=C:\ProgramData\Bower", @"path=C:\ProgramData\Bower\ingest.token")]
-    [InlineData("path", "different kinds of path", @"path=C:\Logs\auth.log")]
+    [InlineData("allowedRoot", "does not read files under /var/log/bower", "allowedRoot=/var/log/bower", "path=/var/log/bower/collector.log")]
+    // A parent allowed directory cannot reach into a refused one.
+    [InlineData("path", "does not read files under /etc/bower", "allowedRoot=/etc", "path=/etc/bower/secrets/ingest-token")]
+    [InlineData("path", "does not read files under /etc/bower", "allowedRoot=/etc", "path=/etc/bower/file-source.json")]
+    [InlineData("path", "does not read files under /var/lib/bower", "allowedRoot=/var", "path=/var/lib/bower/queue.db")]
+    [InlineData("path", "does not read files under /var/lib/bower", "allowedRoot=/var/lib", "path=/var/lib/bower/enrolment/enrolment-token")]
+    [InlineData("path", "does not read files under /var/spool/bower", "allowedRoot=/var", "path=/var/spool/bower/ama/batch.json")]
+    [InlineData("path", "does not read files under /var/log/bower", "allowedRoot=/var/log", "path=/var/log/bower/collector.log")]
+    // Linux paths only for now: the only offered parser reads Linux auth.log.
+    [InlineData("allowedRoot", "Linux paths only", @"allowedRoot=C:\Logs", @"path=C:\Logs\auth.log")]
+    [InlineData("allowedRoot", "Linux paths only", @"allowedRoot=C:\ProgramData", @"path=C:\ProgramData\Bower\ingest.token")]
+    [InlineData("path", "Linux paths only", @"path=C:\Logs\auth.log")]
     [InlineData("parser", "not one of the choices", "parser=windows-security-logon:0")]
     [InlineData("parser", "not one of the choices", "parser=linux-authlog-ssh:7")]
     [InlineData("parser", "not one of the choices", "parser=linux-ssh-gateway:0")]
@@ -303,6 +303,170 @@ public sealed class FileSourceSetupTests
     }
 
     [Fact]
+    public async Task Submit_ConcurrentIdenticalFileRequestsStoreExactlyOne()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await ManagementApiTests.StartAsync(directory, new FakeClock(Now), cancellationToken);
+        await ActiveCollectorAsync(app, "edge-01", cancellationToken);
+        HttpClient requester = ManagementApiTests.Client(app, BowerRoles.Operator, "alex");
+
+        HttpResponseMessage[] responses = await Task.WhenAll(Enumerable.Range(0, 4).Select(index => requester.PostAsJsonAsync(
+            "/api/sources/requests", new SourceSetupSubmission("file", "edge-01", Values(), $"Auth log {index}"), cancellationToken)));
+        try
+        {
+            Assert.Single(responses, response => response.StatusCode == HttpStatusCode.Created);
+            Assert.All(
+                responses.Where(response => response.StatusCode != HttpStatusCode.Created),
+                response => Assert.True(response.StatusCode is HttpStatusCode.Conflict or HttpStatusCode.BadRequest, response.StatusCode.ToString()));
+            List<SourceSetupRequestSummary> stored = (await requester.GetFromJsonAsync<List<SourceSetupRequestSummary>>(
+                "/api/sources/requests", ManagementApiTests.ApiJson, cancellationToken))!;
+            Assert.Single(stored, item => item is { Type: "file", Status: SourceSetupRequestStatus.PendingReview });
+        }
+        finally
+        {
+            foreach (HttpResponseMessage response in responses) response.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task Approve_RefusesAPendingDuplicateStoredBeforeSubmissionWasAtomic()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await ManagementApiTests.StartAsync(directory, new FakeClock(Now), cancellationToken);
+        await ActiveCollectorAsync(app, "edge-01", cancellationToken);
+        SourceSetupRequestDetail created = await SubmitAsync(ManagementApiTests.Client(app, BowerRoles.Operator, "alex"), "file", Values(), cancellationToken);
+        string copy = new('b', 32);
+        await using (SqliteConnection connection = new($"Data Source={Path.Combine(directory.Path, "management.db")};Pooling=False"))
+        {
+            await connection.OpenAsync(cancellationToken);
+            await using SqliteCommand insert = connection.CreateCommand();
+            insert.CommandText =
+                """
+                INSERT INTO source_setup_requests (
+                    id, source_type, collector_id, status, values_json, plan_json, content_hash, reason,
+                    requested_by_object_id, requested_by_name, requested_at)
+                SELECT $copy, source_type, collector_id, status, values_json, plan_json, content_hash, reason,
+                    requested_by_object_id, requested_by_name, requested_at
+                FROM source_setup_requests WHERE id = $id;
+                """;
+            insert.Parameters.AddWithValue("$copy", copy);
+            insert.Parameters.AddWithValue("$id", created.Id);
+            Assert.Equal(1, await insert.ExecuteNonQueryAsync(cancellationToken));
+        }
+
+        HttpClient approver = ManagementApiTests.Client(app, BowerRoles.Approver, "sam");
+        using HttpResponseMessage blocked = await approver.PostAsJsonAsync(
+            $"/api/sources/requests/{created.Id}/approve", new ApprovalRequest("Approve"), cancellationToken);
+        using HttpResponseMessage rejectCopy = await approver.PostAsJsonAsync(
+            $"/api/sources/requests/{copy}/reject", new ApprovalRequest("Duplicate"), cancellationToken);
+        using HttpResponseMessage approved = await approver.PostAsJsonAsync(
+            $"/api/sources/requests/{created.Id}/approve", new ApprovalRequest("Approve"), cancellationToken);
+
+        Assert.Equal(HttpStatusCode.Conflict, blocked.StatusCode);
+        Assert.Contains("waiting for approval", await blocked.Content.ReadAsStringAsync(cancellationToken), StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.OK, rejectCopy.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+    }
+
+    [Fact]
+    public async Task Plan_WarnsOnlyAboutTheLatestApprovalOfEachNameOrFile()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(Now);
+        await using WebApplication app = await ManagementApiTests.StartAsync(directory, clock, cancellationToken);
+        await ActiveCollectorAsync(app, "edge-01", cancellationToken);
+        HttpClient requester = ManagementApiTests.Client(app, BowerRoles.Operator, "alex");
+        HttpClient approver = ManagementApiTests.Client(app, BowerRoles.Approver, "sam");
+        SourceSetupRequestDetail original = await SubmitAsync(requester, "file", Values(), cancellationToken);
+        await approver.PostAsJsonAsync($"/api/sources/requests/{original.Id}/approve", new ApprovalRequest("Auth log"), cancellationToken);
+        clock.Advance(TimeSpan.FromSeconds(1));
+        Dictionary<string, string> moved = Values();
+        moved["path"] = "/var/log/secure";
+        SourceSetupRequestDetail replacement = await SubmitAsync(requester, "file", moved, cancellationToken);
+        await approver.PostAsJsonAsync($"/api/sources/requests/{replacement.Id}/approve", new ApprovalRequest("Moved"), cancellationToken);
+
+        SourceSetupPlanResult oldFile = await PlanAsync(app, "file", "edge-01", With(("inputId", "other"), ("path", "/var/log/auth.log")), cancellationToken);
+        SourceSetupPlanResult currentFile = await PlanAsync(app, "file", "edge-01", With(("inputId", "other"), ("path", "/var/log/secure")), cancellationToken);
+        SourceSetupPlanResult currentName = await PlanAsync(app, "file", "edge-01", With(("path", "/var/log/messages")), cancellationToken);
+
+        // The replacement approval took over input "auth", so the original's file is no longer read.
+        Assert.True(oldFile.Valid);
+        Assert.DoesNotContain(oldFile.Checks, check => check.Id is "inputId" or "path");
+        Assert.Contains(currentFile.Checks, check => check is { Id: "path", State: SetupCheckStates.Warn });
+        Assert.Contains(currentName.Checks, check => check is { Id: "inputId", State: SetupCheckStates.Warn });
+    }
+
+    [Fact]
+    public async Task Check_SharedPackEventsNeverCompleteAFileRequest()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(Now);
+        await using WebApplication app = await ManagementApiTests.StartAsync(directory, clock, cancellationToken);
+        ManagementStore store = app.Services.GetRequiredService<ManagementStore>();
+        await ActiveCollectorAsync(app, "edge-01", cancellationToken);
+        HttpClient requester = ManagementApiTests.Client(app, BowerRoles.Operator, "alex");
+        HttpClient approver = ManagementApiTests.Client(app, BowerRoles.Approver, "sam");
+        Dictionary<string, string> syslogValues = new()
+        {
+            ["protocol"] = "tls",
+            ["address"] = "0.0.0.0",
+            ["port"] = "6514",
+            ["allowedSenders"] = "10.20.0.0/24",
+            ["certificateFile"] = "/etc/bower/syslog/server.pem",
+            ["privateKeyFile"] = "/etc/bower/syslog/server-key.pem",
+            ["appName"] = "sshd",
+            ["application"] = "linux-sshd",
+            ["collectorHost"] = "collector.example.org"
+        };
+        SourceSetupRequestDetail installed = await SubmitAsync(requester, "file", Values(), cancellationToken);
+        SourceSetupRequestDetail neverInstalled = await SubmitAsync(
+            requester, "file", With(("inputId", "secure"), ("path", "/var/log/secure")), cancellationToken);
+        SourceSetupRequestDetail syslog = await SubmitAsync(requester, "syslog", syslogValues, cancellationToken);
+        foreach (string id in new[] { installed.Id, neverInstalled.Id, syslog.Id })
+        {
+            await approver.PostAsJsonAsync($"/api/sources/requests/{id}/approve", new ApprovalRequest("Approved"), cancellationToken);
+        }
+
+        // Only input "auth" is installed; its events (or the syslog listener's) report linux-sshd/production.
+        clock.Advance(TimeSpan.FromSeconds(5));
+        await store.ExchangeHeartbeatAsync(
+            "edge-01",
+            Heartbeat(new SourceReport("linux-sshd/production", "application", "healthy", 0, Now.AddSeconds(5))),
+            "principal-edge-01",
+            Now.AddSeconds(5),
+            cancellationToken);
+        SourceSetupStatusCheck a = (await DetailAsync(app, installed.Id, cancellationToken)).Check;
+        SourceSetupStatusCheck b = (await DetailAsync(app, neverInstalled.Id, cancellationToken)).Check;
+        SourceSetupStatusCheck shared = (await DetailAsync(app, syslog.Id, cancellationToken)).Check;
+
+        Assert.NotEqual("complete", b.State);
+        Assert.Equal(("in-progress", "Pack events seen, input not individually verified"), (b.State, b.Label));
+        SetupCheck report = Assert.Single(b.Checks);
+        Assert.Equal(SetupCheckStates.Warn, report.State);
+        Assert.Contains("input secure", report.Message + report.Fix, StringComparison.Ordinal);
+        Assert.Contains("/v1/status", report.Fix, StringComparison.Ordinal);
+        Assert.NotEqual("complete", a.State);
+        Assert.Equal("pack-source", (await DetailAsync(app, neverInstalled.Id, cancellationToken)).Plan.Verification.Kind);
+        // Other source types keep their existing check.
+        Assert.Equal(("complete", "Receiving events"), (shared.State, shared.Label));
+    }
+
+    private static Dictionary<string, string> With(params (string Key, string Value)[] overrides)
+    {
+        Dictionary<string, string> values = Values();
+        foreach ((string key, string value) in overrides)
+        {
+            values[key] = value;
+        }
+
+        return values;
+    }
+
+    [Fact]
     public void Parsers_AreActiveParsersOfTheShippedSignedPacks()
     {
         using TemporaryDirectory directory = new();
@@ -376,7 +540,7 @@ public sealed class FileSourceSetupTests
         string body = await list.Content.ReadAsStringAsync(cancellationToken);
         SourceSetupRequestSummary summary = Assert.Single(JsonSerializer.Deserialize<SourceSetupRequestSummary[]>(body, ManagementApiTests.ApiJson)!);
 
-        Assert.Equal(("complete", "Receiving events"), (summary.Check.State, summary.Check.Label));
+        Assert.Equal(("in-progress", "Pack events seen, input not individually verified"), (summary.Check.State, summary.Check.Label));
         Assert.Equal("Security-selected file", summary.TypeTitle);
         Assert.DoesNotContain("/var/log/auth.log", body, StringComparison.Ordinal);
     }

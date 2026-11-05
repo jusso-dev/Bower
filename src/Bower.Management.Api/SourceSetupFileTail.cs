@@ -32,7 +32,6 @@ public static class FileSourceSchema
     public const string Variable = "BOWER_FILE_CONFIG";
     public const string FileName = "file-source.json";
     public const string LinuxInstallPath = "/etc/bower/" + FileName;
-    public const string WindowsDirectory = @"C:\ProgramData\Bower";
 
     public const string FormatText = "text";
     public const string FormatJsonLines = "json-lines";
@@ -87,7 +86,8 @@ public static class FileSourceSchema
 /// <summary>
 /// Security-selected file tailing: one named file, inside one allowed directory, routed to one
 /// shipped signed pack parser. Lines the parser does not select are dropped. No wildcards,
-/// directories or catch-all parsers (docs/deployment/file-tail-source.md).
+/// directories or catch-all parsers (docs/deployment/file-tail-source.md). Linux paths only:
+/// the one offered parser reads Linux auth.log, so a Windows file parser is a follow-up.
 /// </summary>
 internal sealed partial class FileTailSourceSetup : SourceSetupType
 {
@@ -97,11 +97,14 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
         new(FileSourceSchema.StartAtBeginning, "Lines already in the file, then new lines")
     ];
 
-    // Kernel and device trees, and Bower's own configuration, secrets and queue.
-    private static readonly string[] RefusedPosixRoots = ["/proc", "/sys", "/dev", "/etc/bower", "/var/lib/bower", "/var/spool/bower"];
+    // Kernel and device trees, and Bower's own configuration and secrets, state (queue and
+    // enrolment credential), spool and logs (bower.service LogsDirectory=bower). Checked against
+    // both the allowed directory and the file, so a parent directory cannot reach into them.
+    private static readonly string[] RefusedDirectories =
+        ["/proc", "/sys", "/dev", "/etc/bower", "/var/lib/bower", "/var/spool/bower", "/var/log/bower"];
 
     // bower.service runs with ProtectHome=true, so these are hidden from the collector.
-    private static readonly string[] HiddenPosixRoots = ["/home", "/root", "/run/user"];
+    private static readonly string[] HiddenDirectories = ["/home", "/root", "/run/user"];
 
     public override string Id => "file";
     public override string Title => "Security-selected file";
@@ -112,7 +115,7 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
     public override IReadOnlyList<string> Needs =>
     [
         "An approved collector that supports the file source (BOWER_FILE_CONFIG) and loads the signed pack you choose, signed by a key it trusts.",
-        "The exact path of one file, and the directory it is allowed to live in. Wildcards, whole directories and catch-all parsers are not offered.",
+        "The exact Linux path of one file, and the directory it is allowed to live in. Wildcards, whole directories and catch-all parsers are not offered.",
         "The collector's service account able to read the file. bower.service hides /home and /root.",
         "Symbolic links: " + FileSourceSchema.SymlinkPolicy,
         "An administrator to install the approved files and restart the collector."
@@ -145,7 +148,8 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
         Silence()
     ];
     public override string CheckDescription =>
-        "Bower watches the collector's heartbeat for the parser's application and environment. It turns green when the collector reports an event selected after approval. This does not prove Sentinel delivery.";
+        "Bower watches the collector's heartbeat for the parser's application and environment. Other files or sources can report the same application, so this check never turns green on its own: "
+        + "it reports pack events seen after approval and asks you to confirm this input in the collector's /v1/status. This does not prove Sentinel delivery.";
     public override string Guide => "docs/deployment/file-tail-source.md";
 
     public static FileSourceParser Parser(IReadOnlyDictionary<string, string> values) =>
@@ -155,53 +159,51 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
     {
         string root = values["allowedRoot"];
         string path = values["path"];
-        bool windows = !root.StartsWith('/');
-        if (windows == path.StartsWith('/'))
+        if (!root.StartsWith('/') || !path.StartsWith('/'))
         {
-            checks.Add(Fail("path", "File path and allowed directory use different kinds of path.",
-                "Use Linux paths (/var/log/...) or Windows paths (C:\\...) for both."));
+            checks.Add(Fail(root.StartsWith('/') ? "path" : "allowedRoot", "This source takes Linux paths only for now.",
+                "Use a Linux path such as /var/log/auth.log. The only offered parser reads Linux auth.log; a Windows file parser is a follow-up."));
             return;
         }
 
-        char separator = windows ? '\\' : '/';
-        string trimmedRoot = root.TrimEnd(separator);
-        if (!Plain(trimmedRoot, separator) || !trimmedRoot.Contains(separator, StringComparison.Ordinal))
+        string trimmedRoot = root.TrimEnd('/');
+        if (!Plain(trimmedRoot) || trimmedRoot.Length == 0)
         {
             checks.Add(Fail("allowedRoot", "Allowed directory must be a specific directory, not the whole disk.",
                 "Enter the narrowest directory that holds the file, such as /var/log, without '.' or empty segments."));
             return;
         }
 
-        if (!windows && Under(trimmedRoot, RefusedPosixRoots, separator, StringComparison.Ordinal) is { } refused)
+        if (Under(trimmedRoot, RefusedDirectories) is { } refused)
         {
             checks.Add(Fail("allowedRoot", $"Bower does not read files under {refused}.",
                 "Choose a directory of security records, not kernel, device or Bower's own files."));
             return;
         }
 
-        if (windows && Under(trimmedRoot, [FileSourceSchema.WindowsDirectory], separator, StringComparison.OrdinalIgnoreCase) is not null)
-        {
-            checks.Add(Fail("allowedRoot", "Bower does not read its own files.",
-                "Choose a directory of security records outside C:\\ProgramData\\Bower."));
-            return;
-        }
-
-        StringComparison comparison = windows ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        if (path.EndsWith(separator) || !Plain(path, separator))
+        if (path.EndsWith('/') || !Plain(path))
         {
             checks.Add(Fail("path", "File path must name one file, without '.' or empty segments.",
                 "Enter the full path of the file itself, not its directory."));
             return;
         }
 
-        if (!path.StartsWith(trimmedRoot + separator, comparison))
+        if (!path.StartsWith(trimmedRoot + '/', StringComparison.Ordinal))
         {
             checks.Add(Fail("path", "File path is outside the allowed directory.",
                 "Put the file inside the allowed directory, or choose the directory that holds it."));
             return;
         }
 
-        if (!windows && Under(trimmedRoot, HiddenPosixRoots, separator, StringComparison.Ordinal) is { } hidden)
+        // A parent allowed directory (such as /var) must not reach a refused one.
+        if (Under(path, RefusedDirectories) is { } refusedFile)
+        {
+            checks.Add(Fail("path", $"Bower does not read files under {refusedFile}.",
+                "Choose a file of security records, not kernel, device or Bower's own files."));
+            return;
+        }
+
+        if (Under(trimmedRoot, HiddenDirectories) is { } hidden)
         {
             checks.Add(Warn("allowedRoot", $"bower.service hides {hidden} from the collector (ProtectHome).",
                 "Write the security records somewhere else, such as /var/log, or change the service hardening deliberately."));
@@ -211,40 +213,71 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
     /// <summary>
     /// Refuses an input name or file that another pending file request on this collector uses.
     /// An approved one can only be replaced, so it warns: the merged file must keep one entry.
+    /// Only the latest approval for each name or file counts, because a later approval that
+    /// shares either one replaced the earlier input.
     /// </summary>
     public override void ValidateAgainst(
         IReadOnlyDictionary<string, string> values, IEnumerable<SourceSetupRow> existing, List<SetupCheck> checks)
     {
-        StringComparison comparison = values["path"].StartsWith('/') ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-        foreach (SourceSetupRow row in existing.OrderBy(row => row.Status == SourceSetupRequestStatus.PendingReview ? 0 : 1))
+        SourceSetupRow[] rows = [.. existing];
+        foreach (SourceSetupRow row in rows.Where(row => row.Status == SourceSetupRequestStatus.PendingReview))
         {
-            bool pending = row.Status == SourceSetupRequestStatus.PendingReview;
-            string? field = row.Values.GetValueOrDefault("inputId") == values["inputId"] ? "inputId"
-                : string.Equals(row.Values.GetValueOrDefault("path"), values["path"], comparison) ? "path"
-                : null;
-            if (field is null)
+            if (Clash(values, row) is { } field)
             {
-                continue;
+                checks.Add(Fail(field, $"A file request waiting for approval on this collector already {What(field)}.",
+                    "Use a different input name and file, or reject the other request first."));
+                return;
             }
+        }
 
-            string what = field == "inputId" ? "uses this input name" : "reads this file";
-            checks.Add(pending
-                ? Fail(field, $"A file request waiting for approval on this collector already {what}.",
-                    "Use a different input name and file, or reject the other request first.")
-                : Warn(field, $"An approved file request on this collector already {what}.",
+        foreach (SourceSetupRow row in Current(rows))
+        {
+            if (Clash(values, row) is { } field)
+            {
+                checks.Add(Warn(field, $"An approved file request on this collector already {What(field)}.",
                     "This replaces it: when merging, remove the old input so each name and file appears once."));
-            return;
+                return;
+            }
+        }
+    }
+
+    public override string? PendingConflict(IReadOnlyDictionary<string, string> values, IReadOnlyList<SourceSetupRow> pending) =>
+        pending.Select(row => Clash(values, row)).FirstOrDefault(field => field is not null) is { } clash
+            ? $"A file request waiting for approval on this collector already {What(clash)}. Reject one of them first."
+            : null;
+
+    private static string? Clash(IReadOnlyDictionary<string, string> values, SourceSetupRow row) =>
+        row.Values.GetValueOrDefault("inputId") == values["inputId"] ? "inputId"
+        : row.Values.GetValueOrDefault("path") == values["path"] ? "path"
+        : null;
+
+    private static string What(string field) => field == "inputId" ? "uses this input name" : "reads this file";
+
+    /// <summary>Approved requests not replaced by a later approval sharing their input name or file.</summary>
+    private static IEnumerable<SourceSetupRow> Current(IEnumerable<SourceSetupRow> rows)
+    {
+        HashSet<string> claimed = new(StringComparer.Ordinal);
+        foreach (SourceSetupRow row in rows
+            .Where(row => row.Status == SourceSetupRequestStatus.Approved)
+            .OrderByDescending(row => row.ReviewedAt))
+        {
+            string id = "inputId:" + row.Values.GetValueOrDefault("inputId");
+            string path = "path:" + row.Values.GetValueOrDefault("path");
+            bool replaced = claimed.Contains(id) || claimed.Contains(path);
+            claimed.Add(id);
+            claimed.Add(path);
+            if (!replaced)
+            {
+                yield return row;
+            }
         }
     }
 
     public override SourceSetupBuild Build(IReadOnlyDictionary<string, string> values, string collectorId)
     {
-        string path = values["path"];
-        bool windows = !path.StartsWith('/');
-        char separator = windows ? '\\' : '/';
         FileSourceParser parser = Parser(values);
-        string configurationPath = windows ? FileSourceSchema.WindowsDirectory + @"\" + FileSourceSchema.FileName : FileSourceSchema.LinuxInstallPath;
-        string expectationsPath = windows ? FileSourceSchema.WindowsDirectory + @"\source-expectations.json" : ExpectationsVariable().Value;
+        string configurationPath = FileSourceSchema.LinuxInstallPath;
+        string expectationsPath = ExpectationsVariable().Value;
         SourceSetupFile configuration = new(
             FileSourceSchema.FileName,
             configurationPath,
@@ -252,33 +285,34 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
             + FileSourceSchema.SymlinkPolicy
             + " If the collector already has a BOWER_FILE_CONFIG file, add this input and allowed directory to its lists instead.",
             Json(FileSourceSchema.Document(
-                values["allowedRoot"].TrimEnd(separator),
+                values["allowedRoot"].TrimEnd('/'),
                 values["inputId"],
-                path,
+                values["path"],
                 parser,
                 values["startAt"],
                 int.Parse(values["maxLineBytes"], System.Globalization.CultureInfo.InvariantCulture))));
-        SourceSetupFile expectations =
-            Expectations(parser.Application, parser.Environment, values["maximumSilenceMinutes"]) with { InstallPath = expectationsPath };
-        SourceSetupSnippet install = windows
-            ? new SourceSetupSnippet("Windows: apply approved settings",
-                "After a different approver approves the request, install or merge the files at the paths above, then run this in an elevated PowerShell session.",
-                "powershell",
-                $"[Environment]::SetEnvironmentVariable('{FileSourceSchema.Variable}', '{configurationPath}', 'Machine')\n"
-                + $"[Environment]::SetEnvironmentVariable('BOWER_SOURCE_EXPECTATIONS', '{expectationsPath}', 'Machine')\n"
-                + "Restart-Service -Name Bower\n")
-            : new SourceSetupSnippet("Linux: apply approved settings",
+        return new SourceSetupBuild(
+            [configuration, Expectations(parser.Application, parser.Environment, values["maximumSilenceMinutes"])],
+            [new("collector", FileSourceSchema.Variable, configurationPath), ExpectationsVariable()],
+            [new SourceSetupSnippet("Linux: apply approved settings",
                 "After a different approver approves the request, install or merge the files at the paths above. Add these lines to /etc/bower/bower.env (root:bower 0640), then restart the collector.",
                 "shell",
                 $"{FileSourceSchema.Variable}={configurationPath}\n"
                 + $"BOWER_SOURCE_EXPECTATIONS={expectationsPath}\n"
-                + "# then: sudo systemctl restart bower\n");
-        return new SourceSetupBuild(
-            [configuration, expectations],
-            [new("collector", FileSourceSchema.Variable, configurationPath), new("collector", "BOWER_SOURCE_EXPECTATIONS", expectationsPath)],
-            [install],
-            ApplicationVerification(parser.Application, parser.Environment));
+                + "# then: sudo systemctl restart bower\n")],
+            PackVerification(parser.Application, parser.Environment, values["inputId"]));
     }
+
+    /// <summary>
+    /// Bound to the pack's application, which other files or sources can also report, so the
+    /// check never turns green for this input on its own (SourceSetupEndpoints.Check).
+    /// </summary>
+    private static SourceSetupVerification PackVerification(string application, string environment, string inputId) =>
+        new(
+            PackSourceVerification,
+            $"{application}/{environment}",
+            $"The collector's heartbeat reports {application}/{environment}, which any file or source using this pack can produce. "
+            + $"Confirm input {inputId} in the collector's /v1/status (fileTail) before relying on it.");
 
     public override JsonObject Sample(IReadOnlyDictionary<string, string> values)
     {
@@ -294,12 +328,15 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
         };
     }
 
-    // No '.', empty (such as '//') or space-padded segments, so a path has one spelling.
-    private static bool Plain(string path, char separator) =>
-        path.Split(separator).Skip(1).All(segment => segment.Length > 0 && segment != "." && segment.Trim().Length == segment.Length);
+    /// <summary>Verification kind for a pack application that does not identify one input.</summary>
+    public const string PackSourceVerification = "pack-source";
 
-    private static string? Under(string root, IEnumerable<string> prefixes, char separator, StringComparison comparison) =>
-        prefixes.FirstOrDefault(prefix => string.Equals(root, prefix, comparison) || root.StartsWith(prefix + separator, comparison));
+    // No '.', empty (such as '//') or space-padded segments, so a path has one spelling.
+    private static bool Plain(string path) =>
+        path.Split('/').Skip(1).All(segment => segment.Length > 0 && segment != "." && segment.Trim().Length == segment.Length);
+
+    private static string? Under(string path, IEnumerable<string> directories) =>
+        directories.FirstOrDefault(directory => path == directory || path.StartsWith(directory + '/', StringComparison.Ordinal));
 
     [GeneratedRegex("^[a-z0-9][a-z0-9-]{0,62}$")]
     private static partial Regex InputPattern();
