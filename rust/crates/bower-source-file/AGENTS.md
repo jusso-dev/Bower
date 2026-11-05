@@ -22,3 +22,8 @@ logs or status.
   open (`O_NOFOLLOW`, device and inode) on every Unix; C# does so on Linux only.
 - Move the cursor past a line only after the sink settled it; never move this into a
   scheduled job. Rotation state lives in the cursor; rewinds use `Batch::rewind_to`.
+- Gap counting (`rotation_gaps`) is best effort, as in C#: the drain cap counts only polls
+  that reach the end of `path.1` or pass `drain_length`; an abandoned `path.1` is watched
+  from any cursor, provisional included; a legacy-cursor gap is counted once the replay
+  cursor is stored. Late writes to an abandoned `path.1` rotated away before the next poll
+  are neither read nor counted.

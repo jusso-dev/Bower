@@ -65,9 +65,9 @@ start-up and refuses a signed `reload`.
 | `maxLinesPerBatch` | `256` | 1–1024 lines per poll. A full poll reads again at once. |
 | `maxBytesPerBatch` | `1048576` | 65536–4194304 bytes scanned per poll (one line may run up to its own limit past it). Also bounds the backward scan for `startAt: end`. |
 | `rotationGracePolls` | `5` | 1–60 polls `path.1` must stay unchanged (size and write time) before the cursor moves to the new file. See [rotation](#cursors-rotation-and-backpressure). |
-| `rotationDrainMaxPolls` | `300` | `rotationGracePolls`–3600. The most polls a rename drain may take; then the cursor moves to the new file anyway. A writer (or an attacker who can write `path.1`) can delay the switch by at most this many polls. |
+| `rotationDrainMaxPolls` | `300` | `rotationGracePolls`–3600. The most counted polls a rename or copytruncate drain may take; then the cursor moves to the new file anyway. A poll counts only once it reaches the end of `path.1` or gets past the length `path.1` had when the drain began, so a backlog of any size is read in full. A writer (or an attacker who can write `path.1`) can delay the switch by at most the time to read that backlog plus this many polls. |
 | `inputs[].id` | required | 1–63 lowercase letters, digits or hyphens, unique. Names the cursor (`file:<id>`) and the event's source adapter (`file:<id>:<pack>:<parser>`). |
-| `inputs[].path` | required | Absolute, normalised (no `.`, `..`, repeated or trailing separators), no wildcard characters (`* ? [ ] { }`) or control characters, strictly below an allowed root, and read by only one input. Paths that differ only in ASCII case count as the same file, and one input's path may not be another's `path.1`. These rules are applied to canonical paths too (directories resolved through links, so `/var/run/x.log` and `/run/x.log` are the same file), at load and at every read; a directory that does not exist yet is compared as written. Canonical paths follow `realpath` in both collectors: a `..` after a linked directory goes to that link's real parent. |
+| `inputs[].path` | required | Absolute, normalised (no `.`, `..`, repeated or trailing separators), no wildcard characters (`* ? [ ] { }`) or control characters, strictly below an allowed root, and read by only one input. Paths that differ only in ASCII case count as the same file, and one input's path may not be another's `path.1`. These rules are applied to canonical paths too (directories resolved through links, so `/var/run/x.log` and `/run/x.log` are the same file), at load and at every read; a directory that does not exist yet is compared as written. An input whose directory did not exist at load keeps that written path as its load-time resolution, so if the directory later appears behind a link that makes it meet another input, both inputs can be refused rather than only one (this fails closed). Canonical paths follow `realpath` in both collectors: a `..` after a linked directory goes to that link's real parent. |
 | `inputs[].route` | required | `{ "pack": "<id>", "parser": <index> }`: an active parser of a loaded signed pack. Checked at start-up and before a signed reload. |
 | `inputs[].format` | `text` | `text` or `json-lines`. |
 | `inputs[].startAt` | `end` | `end`: the first start reads only lines written after it. `beginning`: the first start reads the whole file. Either way a restart resumes from the stored cursor. |
@@ -246,7 +246,7 @@ after a file is deleted and copytruncate keeps them.
   identity with `path.1` carrying the old one is a rename.
 - **copytruncate**: the copy is static, so it is drained from the cursor to its end (its
   last line is complete) and the cursor moves to the current file at offset 0 at once, with
-  no grace window.
+  no grace window. A copy that keeps growing is bounded by the drain cap below.
 - **Rename rotation** (logrotate's default): a writer keeps writing to `path.1` until it
   reopens its file (rsyslog until it is sent HUP), so the cursor leaves `path.1` only once
   the new file can be identified and `path.1` has stayed unchanged over `rotationGracePolls`
@@ -255,14 +255,28 @@ after a file is deleted and copytruncate keeps them.
   poll, so a backlog never uses up the window; the count is kept in the cursor. Only then is
   an unterminated last line of `path.1` taken as complete. The generation the cursor left
   (identity and length) is kept in the cursor too, and only once the switch is committed:
-  later growth of that `path.1`, before or after a restart, is counted in `rotationGaps`,
-  never lost silently. Keep `delaycompress` so `path.1` stays plain text.
+  later growth of that `path.1`, before or after a restart, is counted in `rotationGaps`
+  when Bower can still see that `path.1` on a later poll (see **Gap counting is best
+  effort** below). Keep `delaycompress` so `path.1` stays plain text.
 - **Drain cap.** A `path.1` that keeps changing (a writer that never reopens its file, or
-  someone appending to it on purpose) would hold the cursor there forever. After
-  `rotationDrainMaxPolls` polls in a rename drain (counted in the cursor, so a restart does
-  not reset it) the cursor moves to the new file anyway; whatever is still unread in
-  `path.1` then, and every later write to it, is counted in `rotationGaps`. A writer can
-  delay the switch by at most that many polls.
+  someone appending to it on purpose) would hold the cursor there forever. Polls of a
+  rename or copytruncate drain are counted in the cursor (a restart does not reset them),
+  but only those that reach the end of `path.1` or get past the length `path.1` had when the
+  drain began: a static backlog, however large (the collector stopped across a rotation, or
+  long backpressure), is always read in full. After `rotationDrainMaxPolls` counted polls
+  the cursor moves to the new file anyway, even if the new file is still missing; whatever
+  is still unread in `path.1` then is counted in `rotationGaps`, and so are later writes to
+  it, on the same best-effort terms. A writer can delay the switch by at most the time to
+  read the backlog plus that many polls.
+- **Gap counting is best effort.** `rotationGaps` is an observability signal that lines
+  were probably missed, not an exact loss count, and some losses cannot be seen at all.
+  Late writes to a `path.1` the cursor has left are counted only when Bower can still
+  observe that `path.1` on a later poll. If it is rotated again first (`path.1` becomes
+  `path.2`), or if bytes are appended after the poll that took its length for the final
+  switch and `path.1` is then moved away before the next poll, those lines are neither read
+  nor counted. Bower does not follow `path.2`. Keep the poll interval well below the
+  rotation interval, and make the writer reopen its file promptly after a rename (for
+  example rsyslog's HUP in `postrotate`).
 - **startAt: end** scans back from the end for the last complete line within
   `maxBytesPerBatch` bytes (stopping promptly on shutdown). Without a newline in that window
   it starts at the end and skips the rest of the line being written.
@@ -294,7 +308,8 @@ its id and a reason code only: `path`, `rotated-path`, `overlaps-another-input` 
 
 Cursors from another build are never interpreted. The cursor schema is 2; a stored cursor
 with any other `schemaVersion` (the pre-release builds wrote 1, without the rotation state)
-replays the current file from its start and counts one `rotationGaps` entry: lines may be
+replays the current file from its start and counts one `rotationGaps` entry once the replay
+cursor is stored (a poll refused or failed before that counts nothing): lines may be
 delivered twice (the queue deduplicates what it still holds), never skipped.
 
 Alert on `rotationGaps` and on a state other than `running` or `waiting`. List the
@@ -306,7 +321,9 @@ pack's `applicationName`/`environment` in `BOWER_SOURCE_EXPECTATIONS` to degrade
 - Anyone who can write the tailed file can inject lines, and through the system logger
   any local user can (`logger -t 'sshd[1]' ...`). The pack parser's match filter and policy
   still apply, but the source cannot authenticate a line's author.
-- Lines lost to a missed rotation are counted, not recovered.
+- Lines lost to a missed rotation are not recovered, and are counted only when Bower can
+  still observe the generation they were written to (best effort; see **Gap counting is
+  best effort**).
 - Path checks run before and after each read, and the open is verified against the path
   (Linux, and every Unix for Rust). A directory on the path swapped for a link and back
   between those steps by someone who can write the root is not detected; neither is a

@@ -29,13 +29,21 @@ cursor format, limits, defaults, failure codes and configuration messages.
   known; else same identity and shorter than the cursor) drains the static copy and
   switches at once; only a rename waits `rotationGracePolls` unchanged end-of-file polls.
   Record the abandoned generation only in the committed switch cursor (rewinds use the
-  batch's `Origin`). `rotationDrainMaxPolls` bounds a rename drain (counted in the cursor);
-  at the cap the cursor moves on and the unread rest is a gap.
+  batch's `Origin`). `rotationDrainMaxPolls` bounds rename and copytruncate drains (counted
+  in the cursor), counting only polls that reach the end of `path.1` or pass its length when
+  the drain began (`drainLength`), so a static backlog is always read in full; at the cap
+  the cursor moves on (to a provisional cursor if the file is missing, still watching the
+  abandoned `path.1`) and the unread rest is a gap.
 - Cursor schema 2. Never interpret another schema version: replay the current file from 0
-  and count a gap. A damaged current-schema cursor fails closed (`file-cursor-invalid`).
+  and count a gap once the replay cursor is stored (never per refused retry). A damaged current-schema cursor fails closed (`file-cursor-invalid`).
 - When two inputs come to name one file after load, refuse only the one whose canonical
-  target changed since load; report refusals through `InputRefused` (id and reason only). A missed rotation, a vanished drain or later growth of the abandoned
-  `path.1` is counted as a gap, never hidden.
+  target changed since load (an input whose directory did not exist at load keeps its
+  written path as its load-time target, so both can be refused: fails closed); report
+  refusals through `InputRefused` (id and reason only). Gap counting is best effort, an
+  observability signal: a missed rotation, a vanished drain or later growth of the
+  abandoned `path.1` is counted when Bower can still observe it. Lines written to an
+  abandoned `path.1` that is rotated again (to `path.2`) before the next poll are neither
+  read nor counted; never claim otherwise in docs, and do not track `path.2`.
 - Event ids derive from input id, file fingerprint, line start offset and line bytes so a
   re-read deduplicates; change them only with a migration note.
 - Never log or expose line content, records or file contents. Counters, paths and failure

@@ -99,8 +99,12 @@ evidence.
   (at most 30 KiB), polls and json-lines depth; oversized lines are skipped without
   buffering. A line becomes an event only through its route's signed pack parser, then
   redaction and policy; anyone who can write the file can inject lines, and any local
-  user can through the system logger (`logger -t 'sshd[1]'`). Counters only. See
-  [file tail source](../deployment/file-tail-source.md).
+  user can through the system logger (`logger -t 'sshd[1]'`). Counters only. Rotation
+  gaps are counted on a best-effort basis: lines written to a rotated `path.1` after
+  Bower left it are counted only while Bower can still observe that `path.1`, and lines
+  are lost uncounted if it is rotated again (to `path.2`) first. A writer appending to
+  `path.1` can delay the switch to the new file only by a bounded number of polls (the
+  drain cap). See [file tail source](../deployment/file-tail-source.md).
 - Live tap (`GET /v1/tap`, `bower tap`; new trust boundary: an operator-facing stream
   of accepted event content). See [tap and top](../operations/tap-and-top.md).
   - Pre-redaction exposure: there is no raw or `parsed` tap point. Frames are built only
