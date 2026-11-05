@@ -751,7 +751,11 @@ fn evidence_run_matches_csharp_and_bundles_cross_verify() {
         (cs.as_path(), "cs.json"),
         (bower_binary().as_path(), "rs.json"),
     ] {
-        let (address, server) = common::one_shot_server("202 Accepted", body);
+        // `evidence run` reads /v1/status before it sends the canary.
+        let (address, server) = common::sequence_server(vec![
+            ("200 OK", "{\"status\":\"healthy\"}"),
+            ("202 Accepted", body),
+        ]);
         let run: Run = command(
             binary,
             &[
@@ -770,12 +774,15 @@ fn evidence_run_matches_csharp_and_bundles_cross_verify() {
         .unwrap()
         .into();
         if !run.stdout.starts_with("Mode:") {
-            // The binary never reached the server: release it instead of waiting out its timeout.
-            drop(std::net::TcpStream::connect(
-                address.trim_start_matches("http://"),
-            ));
+            // The binary did not finish: release every pending response instead of waiting
+            // out the server's timeout. Each release is recorded as an empty request.
+            for _ in 0..2 {
+                drop(std::net::TcpStream::connect(
+                    address.trim_start_matches("http://"),
+                ));
+            }
         }
-        if server.join().unwrap().is_empty() {
+        if server.join().unwrap().iter().all(String::is_empty) {
             eprintln!(
                 "skipping: {} could not reach the local test collector ({})",
                 binary.display(),
