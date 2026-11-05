@@ -3531,6 +3531,193 @@
           }
         }
       ]
+    },
+    {
+      "name": "fileIds: a new file at a new inode with the same first line, no path.1 and longer than the cursor is read from its start with a gap",
+      "options": {
+        "startAtEnd": false,
+        "fileIds": true,
+        "rotationGracePolls": 1
+      },
+      "steps": [
+        {
+          "write": "header xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nold-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nold-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "header xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 80
+              },
+              {
+                "text": "old-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 80,
+                "end": 160
+              },
+              {
+                "text": "old-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 160,
+                "end": 240
+              }
+            ],
+            "provisional": false,
+            "offset": 240,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "replace": "header xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nnew-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nnew-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "header xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 80
+              },
+              {
+                "text": "new-1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 80,
+                "end": 160
+              },
+              {
+                "text": "new-2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 160,
+                "end": 260
+              }
+            ],
+            "provisional": false,
+            "offset": 260,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": true,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 260,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "fileIds: the same content at a new inode after more reads still matches its anchor and continues",
+      "options": {
+        "startAtEnd": false,
+        "fileIds": true,
+        "rotationGracePolls": 1,
+        "maxLinesPerBatch": 2
+      },
+      "steps": [
+        {
+          "write": "header xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\none xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\ntwo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nthree xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "header xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 0,
+                "end": 80
+              },
+              {
+                "text": "one xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 80,
+                "end": 160
+              }
+            ],
+            "provisional": false,
+            "offset": 160,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": true
+          }
+        },
+        {
+          "restore": {}
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "two xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 160,
+                "end": 240
+              },
+              {
+                "text": "three xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 240,
+                "end": 320
+              }
+            ],
+            "provisional": false,
+            "offset": 320,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "read": {
+            "lines": [],
+            "provisional": false,
+            "offset": 320,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        },
+        {
+          "append": "four xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+        },
+        {
+          "read": {
+            "lines": [
+              {
+                "text": "four xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "start": 320,
+                "end": 400
+              }
+            ],
+            "provisional": false,
+            "offset": 400,
+            "discarding": false,
+            "drain": null,
+            "abandoned": false,
+            "rotated": false,
+            "gap": false,
+            "more": false
+          }
+        }
+      ]
     }
   ],
   "config": [

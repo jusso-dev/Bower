@@ -161,6 +161,13 @@ public sealed class FileTailSourceTests
                 ids[rotated] = ids.GetValueOrDefault(path, newId());
                 ids.Remove(path);
             }
+            else if (step["replace"] is { } replacement)
+            {
+                // Other content at a new inode (a new generation after a rotation Bower missed).
+                File.WriteAllText(path + ".replace", replacement.GetValue<string>());
+                File.Move(path + ".replace", path, overwrite: true);
+                ids[path] = newId();
+            }
             else if (step.ContainsKey("restore"))
             {
                 // The same content at a new inode, as a restore from backup or a copy leaves it.
@@ -238,7 +245,7 @@ public sealed class FileTailSourceTests
         Assert.Null(FileTailCursor.Deserialize("""{"schemaVersion":2,"fingerprint":"","offset":-1}"""));
         Assert.Null(FileTailCursor.Deserialize("not json"));
         // Every field, in the order both runtimes write it (Rust: cursor_json_matches_csharp).
-        string full = $$"""{"schemaVersion":2,"fingerprint":"{{new string('a', 64)}}","offset":42,"discarding":true,"fileId":"1:2","drain":"rename","observedLength":10,"observedWriteTime":11,"stablePolls":1,"drainPolls":3,"drainLength":12,"abandoned":"{{new string('b', 64)}}","abandonedLength":13}""";
+        string full = $$"""{"schemaVersion":2,"fingerprint":"{{new string('a', 64)}}","offset":42,"discarding":true,"fileId":"1:2","drain":"rename","observedLength":10,"observedWriteTime":11,"stablePolls":1,"drainPolls":3,"drainLength":12,"abandoned":"{{new string('b', 64)}}","abandonedLength":13,"anchor":"{{new string('c', 64)}}"}""";
         Assert.Equal(full, FileTailCursor.Deserialize(full)!.Serialize());
         Assert.Null(FileTailCursor.Deserialize("""{"schemaVersion":2,"fingerprint":"","offset":0,"drainLength":5}"""));
     }
@@ -1322,7 +1329,98 @@ public sealed class FileTailSourceTests
     }
 
     [Fact]
-    public async Task ADirectoryTheServiceCannotSearch_IsInaccessibleNotWaiting()
+    public async Task AFileReplacedAtANewInodeWithTheSameHeader_IsReadFromItsStartWithAGap()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "C# reads device and inode numbers on Linux only.");
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "auth.log");
+        await File.WriteAllTextAsync(path, Line80("header") + Line80("old-1") + Line80("old-2"), cancellation);
+        FakeSink sink = new(_ => FileTailSubmitOutcome.Queued);
+        await using FileTailSource source = new(Configuration(directory.Path, path, startAt: "beginning"), sink, new MemoryCursors());
+        await source.PollOnceAsync("auth", cancellation);
+
+        // Sol's case: a new generation at a new inode, no path.1 (compress without delaycompress,
+        // rotate 0, or two rotations while Bower was down), the same header line, and already
+        // longer than the 240-byte cursor.
+        await File.WriteAllTextAsync(path + ".new", Line80("header") + Line80("new-1") + Line80("new-2", length: 100), cancellation);
+        File.Move(path + ".new", path, overwrite: true);
+        await source.PollOnceAsync("auth", cancellation);
+
+        // Read from its start with a gap: the header and both new records, never skipped.
+        Assert.Equal(
+            ["header", "old-1", "old-2", "header", "new-1", "new-2"],
+            sink.Records.Select(record => Message(record).Split(' ')[0]));
+        Assert.Equal(1, source.Snapshot()[0].RotationGaps);
+    }
+
+    [Fact]
+    public void ACursorWithoutAnAnchor_AtANewInode_IsReadFromItsStartWithAGap()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "auth.log");
+        File.WriteAllText(path, Line("first-1") + Line("two"));
+        string id = "1:1";
+        FileTailHandle.FileIds = _ => id;
+        try
+        {
+            FileTailReaderOptions options = new() { StartAtEnd = false };
+            FileTailBatch first = FileTailReader.Read(path, null, null, options, cancellation);
+            Assert.NotNull(first.Cursor.Anchor);
+
+            // The same content at a new inode: the anchor matches, so it continues.
+            id = "1:2";
+            FileTailBatch anchored = FileTailReader.Read(path, null, first.Cursor, options, cancellation);
+            Assert.Equal((0, false, first.Cursor.Offset), (anchored.Lines.Count, anchored.Gap, anchored.Cursor.Offset));
+
+            // An earlier schema-2 cursor has no anchor: never skip, read from the start with a gap.
+            id = "1:3";
+            FileTailBatch conservative = FileTailReader.Read(path, null, first.Cursor with { Anchor = null }, options, cancellation);
+            Assert.Equal((2, true), (conservative.Lines.Count, conservative.Gap));
+        }
+        finally
+        {
+            FileTailHandle.FileIds = null;
+        }
+    }
+
+    [Fact]
+    public async Task ABackpressureRewind_StoresAnAnchorConsistentWithItsOffset()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "auth.log");
+        await File.WriteAllTextAsync(path, Line("first-1"), cancellation);
+        int submissions = 0;
+        FakeSink sink = new(_ => ++submissions == 3 ? FileTailSubmitOutcome.Unavailable : FileTailSubmitOutcome.Queued);
+        MemoryCursors cursors = new();
+        await using FileTailSource source = new(Configuration(directory.Path, path, startAt: "beginning"), sink, cursors);
+        await source.PollOnceAsync("auth", cancellation);
+        Assert.NotNull(FileTailCursor.Deserialize(cursors.Value("file:auth"))!.Anchor);
+        await File.AppendAllTextAsync(path, Line("two") + Line("three"), cancellation);
+
+        // This read starts at an anchored cursor and is rewound to "three", another offset:
+        // no anchor there (never the starting cursor's, which belongs to its own offset).
+        await source.PollOnceAsync("auth", cancellation);
+        FileTailCursor rewound = FileTailCursor.Deserialize(cursors.Value("file:auth"))!;
+        Assert.Equal(((long)Line("first-1").Length * 2, (string?)null), (rewound.Offset, rewound.Anchor));
+
+        // The next read on the same file takes it again, for the offset it stores.
+        await source.PollOnceAsync("auth", cancellation);
+        FileTailCursor next = FileTailCursor.Deserialize(cursors.Value("file:auth"))!;
+        byte[] bytes = await File.ReadAllBytesAsync(path, cancellation);
+        int count = (int)Math.Min(next.Offset, FileTailHandle.AnchorBytes);
+        Assert.Equal(bytes.Length, next.Offset);
+        Assert.Equal(
+            Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes.AsSpan((int)next.Offset - count, count))),
+            next.Anchor);
+    }
+
+    private static string Line80(string text, int length = 80) => (text + " ").PadRight(length - 1, 'x') + "\n";
+
+    [Fact]
+    public async Task ADirectoryTheServiceCannotSearch_IsInaccessibleNotWaitingAndRecovers()
     {
         if (OperatingSystem.IsWindows())
         {
@@ -1367,6 +1465,13 @@ public sealed class FileTailSourceTests
         Assert.Equal(
             FileTailPathState.Missing,
             FileTailPaths.Resolve(Path.Combine(directory.Path, "absent", "auth.log"), [directory.Path], allowSymlink: false).State);
+
+        // Permissions fixed: the input reads again (startAt end on a fresh cursor: then new lines).
+        await source.PollOnceAsync("auth", cancellation);
+        await File.AppendAllTextAsync(path, Line("after"), cancellation);
+        await source.PollOnceAsync("auth", cancellation);
+        Assert.Equal("running", source.Snapshot()[0].State);
+        Assert.Equal(["after"], sink.Records.Select(record => Message(record).Split(' ')[0]));
 
         static bool CanList(string directory)
         {

@@ -132,10 +132,11 @@ public sealed class FileTailCollectorTests
             await first.StopAsync(cancellation);
         }
 
-        // Crash before the cursor commit: the stored cursor still points at the line.
+        // Crash before the cursor commit: the stored cursor still points at the line (as stored
+        // then: offset 0, so no continuity anchor).
         Bower.Persistence.EfSourceCursorStore cursors = new(Path.Combine(directory.Path, "queue.db"));
         SourceCursorSnapshot stored = (await cursors.ReadAsync("file:auth", cancellation))!;
-        FileTailCursor rewound = FileTailCursor.Deserialize(stored.Value)! with { Offset = 0 };
+        FileTailCursor rewound = FileTailCursor.Deserialize(stored.Value)! with { Offset = 0, Anchor = null };
         Assert.True(await cursors.TryAdvanceAsync("file:auth", stored.Version, rewound.Serialize(), DateTimeOffset.UtcNow, cancellation));
         await Task.Delay(5, cancellation);
 

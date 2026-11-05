@@ -118,6 +118,11 @@ fn sequences_match_the_csharp_specification() {
                 std::fs::remove_file(&rotated).unwrap();
             } else if step.get("rename").is_some() {
                 std::fs::rename(&path, &rotated).unwrap();
+            } else if let Some(text) = step["replace"].as_str() {
+                // Other content at a new inode (a new generation after a rotation Bower missed).
+                let replacement = directory.path().join("app.log.replace");
+                std::fs::write(&replacement, text).unwrap();
+                std::fs::rename(&replacement, &path).unwrap();
             } else if step.get("restore").is_some() {
                 // The same content at a new inode, as a restore from backup or a copy leaves it.
                 let restored = directory.path().join("app.log.restore");
@@ -228,9 +233,10 @@ fn cursor_json_matches_csharp() {
     assert_eq!(Cursor::deserialize("not json"), None);
     // Every field, in the order both runtimes write it (C# Cursor_RoundTripsAndRefusesValuesThisVersionDidNotWrite).
     let full = format!(
-        r#"{{"schemaVersion":2,"fingerprint":"{}","offset":42,"discarding":true,"fileId":"1:2","drain":"rename","observedLength":10,"observedWriteTime":11,"stablePolls":1,"drainPolls":3,"drainLength":12,"abandoned":"{}","abandonedLength":13}}"#,
+        r#"{{"schemaVersion":2,"fingerprint":"{}","offset":42,"discarding":true,"fileId":"1:2","drain":"rename","observedLength":10,"observedWriteTime":11,"stablePolls":1,"drainPolls":3,"drainLength":12,"abandoned":"{}","abandonedLength":13,"anchor":"{}"}}"#,
         "a".repeat(64),
-        "b".repeat(64)
+        "b".repeat(64),
+        "c".repeat(64)
     );
     assert_eq!(Cursor::deserialize(&full).unwrap().serialize(), full);
     assert_eq!(

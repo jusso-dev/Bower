@@ -322,8 +322,10 @@ async fn crash_replay_with_an_identity_conflict_is_counted_and_never_blocks_the_
     let cursors =
         bower_persistence::SqliteSourceCursorStore::new(directory.path().join("queue.db")).unwrap();
     let stored = cursors.read("file:auth").unwrap().unwrap();
+    // As stored then: offset 0, so no continuity anchor.
     let mut rewound = bower_source_file::Cursor::deserialize(&stored.value).unwrap();
     rewound.offset = 0;
+    rewound.anchor = None;
     assert!(
         cursors
             .try_advance(

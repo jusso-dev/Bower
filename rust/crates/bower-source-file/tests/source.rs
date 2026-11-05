@@ -1690,10 +1690,10 @@ fn a_line_within_max_line_bytes_but_over_the_pack_limit_once_escaped_is_counted_
     );
 }
 
-/// C# `ADirectoryTheServiceCannotSearch_IsInaccessibleNotWaiting`.
+/// C# `ADirectoryTheServiceCannotSearch_IsInaccessibleNotWaitingAndRecovers`.
 #[cfg(unix)]
 #[test]
-fn a_directory_the_service_cannot_search_is_inaccessible_not_waiting() {
+fn a_directory_the_service_cannot_search_is_inaccessible_not_waiting_and_recovers() {
     use std::os::unix::fs::PermissionsExt;
     let directory = tempfile::tempdir().unwrap();
     let locked = directory.path().join("locked");
@@ -1743,6 +1743,178 @@ fn a_directory_the_service_cannot_search_is_inaccessible_not_waiting() {
     assert_eq!(
         paths::resolve(absent.to_str().unwrap(), &roots, false).0,
         PathState::Missing
+    );
+
+    // Permissions fixed: the input reads again (startAt end on a fresh cursor: then new lines).
+    source.poll_once("auth").unwrap();
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    std::io::Write::write_all(&mut file, line("after").as_bytes()).unwrap();
+    source.poll_once("auth").unwrap();
+    assert_eq!(source.snapshot()[0].state, "running");
+    let words: Vec<String> = sink
+        .records()
+        .iter()
+        .map(|record| first_word(record))
+        .collect();
+    assert_eq!(words, ["after"]);
+}
+
+fn line80(text: &str, length: usize) -> String {
+    format!("{:x<width$}\n", format!("{text} "), width = length - 1)
+}
+
+/// C# `AFileReplacedAtANewInodeWithTheSameHeader_IsReadFromItsStartWithAGap` (Sol's case;
+/// C# reads device and inode numbers on Linux only, Rust on every Unix).
+#[cfg(unix)]
+#[test]
+fn a_file_replaced_at_a_new_inode_with_the_same_header_is_read_from_its_start_with_a_gap() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("auth.log");
+    std::fs::write(
+        &path,
+        format!(
+            "{}{}{}",
+            line80("header", 80),
+            line80("old-1", 80),
+            line80("old-2", 80)
+        ),
+    )
+    .unwrap();
+    let sink = FakeSink::new(|_| Ok(SubmitOutcome::Queued));
+    let source = FileTailSource::new(
+        text(directory.path(), &path, "beginning"),
+        sink.clone(),
+        Arc::new(MemoryCursors::default()),
+        None,
+    );
+    source.poll_once("auth").unwrap();
+
+    // Sol's case: a new generation at a new inode, no path.1 (compress without delaycompress,
+    // rotate 0, or two rotations while Bower was down), the same header line, and already
+    // longer than the 240-byte cursor.
+    let replacement = directory.path().join("auth.log.new");
+    std::fs::write(
+        &replacement,
+        format!(
+            "{}{}{}",
+            line80("header", 80),
+            line80("new-1", 80),
+            line80("new-2", 100)
+        ),
+    )
+    .unwrap();
+    std::fs::rename(&replacement, &path).unwrap();
+    source.poll_once("auth").unwrap();
+
+    // Read from its start with a gap: the header and both new records, never skipped.
+    let words: Vec<String> = sink
+        .records()
+        .iter()
+        .map(|record| first_word(record))
+        .collect();
+    assert_eq!(
+        words,
+        ["header", "old-1", "old-2", "header", "new-1", "new-2"]
+    );
+    assert_eq!(source.snapshot()[0].rotation_gaps, 1);
+}
+
+/// C# `ACursorWithoutAnAnchor_AtANewInode_IsReadFromItsStartWithAGap` (real inodes here).
+#[cfg(unix)]
+#[test]
+fn a_cursor_without_an_anchor_at_a_new_inode_is_read_from_its_start_with_a_gap() {
+    use bower_source_file::reader::{self, ReaderOptions};
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("auth.log");
+    std::fs::write(&path, format!("{}{}", line("first-1"), line("two"))).unwrap();
+    let restore = || {
+        let copy = directory.path().join("auth.log.restore");
+        std::fs::write(&copy, std::fs::read(&path).unwrap()).unwrap();
+        std::fs::rename(&copy, &path).unwrap();
+    };
+    let options = ReaderOptions {
+        start_at_end: false,
+        ..ReaderOptions::default()
+    };
+    let first = reader::read(Some(&path), None, None, &options, None).unwrap();
+    assert!(first.cursor.anchor.is_some());
+
+    // The same content at a new inode: the anchor matches, so it continues.
+    restore();
+    let anchored = reader::read(Some(&path), None, Some(&first.cursor), &options, None).unwrap();
+    assert_eq!(
+        (anchored.lines.len(), anchored.gap, anchored.cursor.offset),
+        (0, false, first.cursor.offset)
+    );
+
+    // An earlier schema-2 cursor has no anchor: never skip, read from the start with a gap.
+    restore();
+    let without = Cursor {
+        anchor: None,
+        ..first.cursor.clone()
+    };
+    let conservative = reader::read(Some(&path), None, Some(&without), &options, None).unwrap();
+    assert_eq!((conservative.lines.len(), conservative.gap), (2, true));
+}
+
+/// C# `ABackpressureRewind_StoresAnAnchorConsistentWithItsOffset`.
+#[test]
+fn a_backpressure_rewind_stores_an_anchor_consistent_with_its_offset() {
+    use sha2::{Digest, Sha256};
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("auth.log");
+    std::fs::write(&path, line("first-1")).unwrap();
+    let submissions = std::sync::atomic::AtomicUsize::new(0);
+    let sink = FakeSink::new(move |_| {
+        if submissions.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 2 {
+            Ok(SubmitOutcome::Unavailable)
+        } else {
+            Ok(SubmitOutcome::Queued)
+        }
+    });
+    let cursors = Arc::new(MemoryCursors::default());
+    let source = FileTailSource::new(
+        text(directory.path(), &path, "beginning"),
+        sink,
+        cursors.clone(),
+        None,
+    );
+
+    source.poll_once("auth").unwrap();
+    let first = Cursor::deserialize(&cursors.value("file:auth").unwrap()).unwrap();
+    assert!(first.anchor.is_some());
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    std::io::Write::write_all(
+        &mut file,
+        format!("{}{}", line("two"), line("three")).as_bytes(),
+    )
+    .unwrap();
+
+    // This read starts at an anchored cursor and is rewound to "three", another offset:
+    // no anchor there (never the starting cursor's, which belongs to its own offset).
+    source.poll_once("auth").unwrap();
+    let rewound = Cursor::deserialize(&cursors.value("file:auth").unwrap()).unwrap();
+    assert_eq!(
+        (rewound.offset, rewound.anchor),
+        (line("first-1").len() as i64 * 2, None)
+    );
+
+    // The next read on the same file takes it again, for the offset it stores.
+    source.poll_once("auth").unwrap();
+    let next = Cursor::deserialize(&cursors.value("file:auth").unwrap()).unwrap();
+    let bytes = std::fs::read(&path).unwrap();
+    let offset = usize::try_from(next.offset).unwrap();
+    assert_eq!(offset, bytes.len());
+    let count = offset.min(256);
+    assert_eq!(
+        next.anchor,
+        Some(hex::encode(Sha256::digest(&bytes[offset - count..offset])))
     );
 }
 

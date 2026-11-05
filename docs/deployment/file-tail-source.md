@@ -222,10 +222,14 @@ shorter than 4096 bytes) has no identity yet and waits. Device and inode numbers
 open and are stored in the cursor, but only as a hint, never as part of the identity (they
 are reused after a file is deleted, and copytruncate keeps them). When `path.1` carries the
 cursor's identity they tell rename (the original moved to `path.1`) from copytruncate (the
-original truncated in place). On their own they never cause a re-read or a gap: a file with
-the cursor's identity at a new device or inode (restored from a backup, copied, or the
-cursor moved to another host) and no matching `path.1` continues from the cursor, as long as
-it is at least as long as the cursor.
+original truncated in place). A file with the cursor's identity at a new device or inode and
+no matching `path.1` is told apart by the cursor's anchor, a SHA-256 of the last 256 bytes
+(fewer near the start) before the offset: if the new file has the same bytes there, it is the
+same content (restored from a backup or copied) and reading continues from the cursor without
+a gap; otherwise it is a new generation with the same first line and is read from its start
+with a `rotationGaps` entry. A cursor without an anchor (written by an earlier build, or at
+offset 0) is treated the same conservative way. Lines may then be delivered twice (the queue
+deduplicates what it still holds), never skipped.
 
 - **Advance rule.** The cursor moves past a line only once it is durably enqueued or
   definitively dropped (not selected, rejected, quarantined, malformed, oversized, too
@@ -297,13 +301,18 @@ it is at least as long as the cursor.
   `maxBytesPerBatch` bytes (stopping promptly on shutdown). Without a newline in that window
   it starts at the end and skips the rest of the line being written.
 - **Missed rotation**: if the file was rotated more than once between reads, renamed
-  without a `.1` (for example logrotate `dateext`), or truncated in place, Bower reads the
-  current file from its start and counts a `rotationGaps` entry. Lines written to the
-  old file after the last read were not seen. Use `nodateext` for tailed files and keep
-  the poll interval well below the rotation interval.
-- A file rewritten in place with the same first line and at least as long as the cursor
-  cannot be detected as replaced. Generations whose first lines are identical (a constant
-  header line) are indistinguishable, as are any two files before their first line ends.
+  without a `.1` (for example logrotate `dateext`, `compress` without `delaycompress`, or
+  `rotate 0`), or truncated in place, Bower reads the current file from its start and counts a
+  `rotationGaps` entry. That includes a new generation with the same first line (a constant
+  header) that is already longer than the cursor: where device and inode numbers are known
+  (Linux in C#, every Unix in Rust), it is at a new inode and its bytes before the offset do
+  not match the cursor's anchor. Lines written to the old file after the last read were not
+  seen. Use `nodateext` and `delaycompress` for tailed files and keep the poll interval well
+  below the rotation interval.
+- What cannot be detected: a file rewritten in place (same device and inode) with the same
+  first line and at least as long as the cursor, and, where device and inode numbers are not
+  known (C# outside Linux), a new generation with the same first line that is at least as
+  long as the cursor. Any two files are indistinguishable before their first line ends.
 
 ## Monitoring
 

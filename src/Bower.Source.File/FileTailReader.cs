@@ -22,7 +22,10 @@ namespace Bower.Source.File;
 /// the end of <c>path.1</c> or get past that length count, so a backlog is always read in full.
 /// <paramref name="Abandoned"/> and <paramref name="AbandonedLength"/> are the generation the
 /// cursor left: later growth of that <c>path.1</c> is a gap while it can still be observed.
-/// Optional fields are omitted when unset. The cursor carries no line content.
+/// <paramref name="Anchor"/> is the SHA-256 of the last min(offset, 256) bytes before
+/// <paramref name="Offset"/> in the file the cursor refers to: when a file with the cursor's
+/// identity turns up at another device and inode, a matching anchor shows it is the same
+/// content (restored or copied). Optional fields are omitted when unset. The cursor carries no line content.
 /// </para>
 /// </summary>
 public sealed record FileTailCursor(
@@ -38,7 +41,8 @@ public sealed record FileTailCursor(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? DrainPolls = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? DrainLength = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Abandoned = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? AbandonedLength = null)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? AbandonedLength = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Anchor = null)
 {
     /// <summary>
     /// 2 since the rotation fields. A stored cursor of any other version (the pre-release
@@ -111,7 +115,8 @@ public sealed record FileTailCursor(
         && (cursor.DrainLength is null || (cursor.Drain is not null && cursor.DrainLength >= 0))
         && (cursor.Abandoned is null) == (cursor.AbandonedLength is null)
         && (cursor.Abandoned is null || IsFingerprint(cursor.Abandoned))
-        && cursor.AbandonedLength is null or >= 0;
+        && cursor.AbandonedLength is null or >= 0
+        && (cursor.Anchor is null || (IsFingerprint(cursor.Anchor) && cursor.Offset > 0));
 
     private static bool IsFingerprint(string value) =>
         value.Length == 64 && value.All(character => char.IsAsciiDigit(character) || character is >= 'a' and <= 'f');
@@ -170,7 +175,15 @@ public sealed record FileTailBatch(
     public FileTailCursor RewindTo(FileTailLine line)
     {
         ArgumentNullException.ThrowIfNull(line);
-        return (Origin ?? Cursor) with { Offset = line.StartOffset, Discarding = line.ContinuesDiscard };
+        FileTailCursor start = Origin ?? Cursor;
+        // An anchor belongs to the offset it was taken at: kept only when the rewind lands there
+        // (otherwise none, and the next read on the same file takes it again).
+        return start with
+        {
+            Offset = line.StartOffset,
+            Discarding = line.ContinuesDiscard,
+            Anchor = start.Offset == line.StartOffset ? start.Anchor : null
+        };
     }
 }
 
@@ -289,7 +302,7 @@ public static class FileTailReader
                 }
 
                 (long offset, bool discarding) = StartPosition(current!, options.MaxBytesPerBatch, cancellationToken);
-                return Empty(initial with { Offset = offset, Discarding = discarding });
+                return Empty(initial with { Offset = offset, Discarding = discarding, Anchor = current!.AnchorAt(offset) });
             }
 
             if (cursor.Drain is not null)
@@ -344,8 +357,7 @@ public static class FileTailReader
             if (sameIdentity)
             {
                 // The same first line at another device and inode is a rename only when path.1
-                // carries it: the stored file id is a hint, never a reason to re-read. The same
-                // content restored or copied to a new inode continues from the cursor.
+                // carries it: the stored file id is a hint, never a reason to skip.
                 if (otherFile && Previous() is not null)
                 {
                     return Drain(StartDrain(at, FileTailCursor.RenameDrain), fingerprint, fileId);
@@ -353,6 +365,15 @@ public static class FileTailReader
 
                 if (current!.Length >= at.Offset)
                 {
+                    // At a new inode with no path.1, only bytes before the offset that match the
+                    // anchor show the same content (restored or copied): continue. Otherwise, or
+                    // without an anchor, it is another generation with the same first line: read
+                    // it from its start and count the gap, never skip it.
+                    if (otherFile && (at.Anchor is null || !string.Equals(current.AnchorAt(at.Offset), at.Anchor, StringComparison.Ordinal)))
+                    {
+                        return Scan(current, Normal(fingerprint!, 0, fileId), eofEndsLine: false, gap: true);
+                    }
+
                     return Scan(current, at with { FileId = fileId ?? at.FileId }, eofEndsLine: false, gap: false);
                 }
 
@@ -607,7 +628,8 @@ public static class FileTailReader
             more = true;
         }
 
-        return new FileTailBatch(lines, cursor with { Offset = committed, Discarding = discarding }, false, gap, more);
+        return new FileTailBatch(
+            lines, cursor with { Offset = committed, Discarding = discarding, Anchor = file.AnchorAt(committed) }, false, gap, more);
     }
 
     private static byte[] TrimCarriageReturn(byte[] buffer, int count) =>
