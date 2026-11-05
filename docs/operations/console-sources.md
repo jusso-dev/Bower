@@ -19,17 +19,23 @@ The **Security-selected file** form tails one named file on the collector host
 and routes every line to one signed pack parser. Lines the parser does not select
 are dropped; this is not log shipping. The form generates `file-source.json`
 (`BOWER_FILE_CONFIG`, kind `FileTailSource`) and a source expectation for the
-parser's application, so
-**Check it works** reports the source from the collector's heartbeat. For the
-collector side (path guards, the record a parser sees, least privilege and
+parser's application. For the collector side (path guards, the record a parser sees, least privilege and
 rotation), see the [file tail source guide](../deployment/file-tail-source.md).
 
+- **Linux paths only.** The only offered parser reads Linux `auth.log`, so the
+  form refuses Windows paths and generates Linux install steps only. A Windows
+  file parser, and Windows paths with it, would be a follow-up.
 - **One file, one parser.** Enter the exact absolute path of one file and the
   narrowest **allowed directory** that holds it. Wildcards, `..`, `.` and empty
   segments are refused, the file must be inside the allowed directory, and the
-  whole disk (`/`, `C:\`), `/proc`, `/sys`, `/dev` and Bower's own configuration,
-  secrets and queue directories are refused. `/home`, `/root` and `/run/user`
-  are allowed with a warning because `bower.service` hides them
+  whole disk (`/`) is refused as the allowed directory.
+- **Refused directories.** `/proc`, `/sys`, `/dev` and Bower's own directories
+  (`/etc/bower` for configuration and secrets, `/var/lib/bower` for the queue and
+  enrolment credential, `/var/spool/bower`, and `/var/log/bower`, the service's
+  log directory) are refused both as the allowed directory and for the file. A
+  parent such as `/var` or `/etc` is accepted as the allowed directory only while
+  the file itself is outside every refused directory. `/home`, `/root` and
+  `/run/user` are allowed with a warning because `bower.service` hides them
   (`ProtectHome=true`).
 - **Symbolic links.** The collector refuses symbolic links: the file and every
   directory between the allowed directory and the file must be real; the allowed
@@ -46,15 +52,30 @@ rotation), see the [file tail source guide](../deployment/file-tail-source.md).
   read records of at most 32 KiB). Longer lines are dropped and counted, never
   cut and parsed. Poll interval and batch limits stay at the collector defaults.
 - **No duplicates.** An input name or file already used by another file request
-  waiting for approval on the same collector is refused. If an approved request
-  already uses it, the form warns that the new request replaces it; remove the old
-  input when merging. One request adds one input; to add more, ask again and merge
-  the approved input and allowed directory into the collector's existing
-  `file-source.json` lists.
+  waiting for approval on the same collector is refused. The server checks this
+  inside the transaction that stores the request, so simultaneous identical
+  submissions store one request and refuse the rest, and checks it again when a
+  request is approved. If an approved request already uses the name or file, the
+  form warns that the new request replaces it; remove the old input when merging.
+  Only the latest approval for each input name or file counts: a later approval
+  that shares either one replaced the earlier input, so the earlier one no longer
+  triggers a warning. Requests are not marked as replaced. One request adds one
+  input; to add more, ask again and merge the approved input and allowed
+  directory into the collector's existing `file-source.json` lists.
+- **Checking it works.** Every file request for this parser reports as the same
+  application (`linux-sshd/production`), and so can another file or a syslog
+  listener using the same pack. The heartbeat carries no per-input file tail
+  metadata, so **Check it works** never turns a file request green on its own.
+  After approval it shows **Pack events seen, input not individually verified**
+  once the collector reports a new `linux-sshd/production` event, and asks you to
+  confirm the request's input in the collector's `GET /v1/status` (`fileTail`,
+  running with queued lines).
 
 The generated configuration holds paths and the parser route only, never
-credentials. Status pages show the request state and heartbeat metadata, not the
-file path or file contents.
+credentials. The request detail, which anyone with the View role can open, shows
+the requested values and generated files, including the file path. Status pages
+(the request list and its checks) show the request state and heartbeat metadata,
+not the file path or file contents.
 
 ## Review, approve, install, check
 
