@@ -22,7 +22,7 @@ public sealed record FileSourceParser(
 /// <c>FileTailSourceConfigurationLoader</c> in <c>src/Bower.Source.File</c> (and the Rust port),
 /// which rejects unknown keys; Management.Api does not reference the source, so the unit tests
 /// load every generated file with that loader and its route check (FileSourceSetupTests).
-/// Poll interval and batch limits are left at the loader's defaults,
+/// Poll interval, batch limits and <c>rotationGracePolls</c> are left at the loader's defaults,
 /// and <c>allowSymlink</c> is never generated, so a symbolic link is always refused.
 /// </summary>
 public static class FileSourceSchema
@@ -42,6 +42,9 @@ public static class FileSourceSchema
     public const int DefaultLineBytes = 16_384;
     // A pack parser reads records of at most 32 KiB, so the loader caps lines below that.
     public const int MaximumLineBytes = 30_720;
+
+    // Not generated; the collector default applies.
+    public const int DefaultRotationGracePolls = 5;
 
     /// <summary>How the collector treats symbolic links. Shown in the form, the plan and the docs.</summary>
     public const string SymlinkPolicy =
@@ -257,10 +260,33 @@ internal sealed partial class FileTailSourceSetup : SourceSetupType
 
     private static string? Clash(IReadOnlyDictionary<string, string> values, SourceSetupRow row) =>
         row.Values.GetValueOrDefault("inputId") == values["inputId"] ? "inputId"
-        : row.Values.GetValueOrDefault("path") == values["path"] ? "path"
+        : row.Values.GetValueOrDefault("path") is { } path && Overlaps(path, values["path"]) ? "path"
         : null;
 
-    private static string What(string field) => field == "inputId" ? "uses this input name" : "reads this file";
+    private static string What(string field) =>
+        field == "inputId" ? "uses this input name" : "reads this file, a case variant of it, or its rotated .1 file";
+
+    /// <summary>
+    /// Same rule as <c>FileTailSourceConfigurationLoader.Overlaps</c>, which refuses a merged
+    /// file whose inputs overlap: the same file ignoring ASCII case, or one is the other's
+    /// rotated file (<c>path.1</c>).
+    /// </summary>
+    private static bool Overlaps(string path, string other)
+    {
+        string left = Fold(path);
+        string right = Fold(other);
+        return left == right || left == right + ".1" || left + ".1" == right;
+    }
+
+    private static string Fold(string value) =>
+        string.Create(value.Length, value, static (span, source) =>
+        {
+            for (int index = 0; index < source.Length; index++)
+            {
+                char character = source[index];
+                span[index] = character is >= 'A' and <= 'Z' ? (char)(character + 32) : character;
+            }
+        });
 
     /// <summary>Approved requests, newest first, each marked when a later approval shares its input name or file.</summary>
     private static IEnumerable<(SourceSetupRow Row, bool Replaced)> Approvals(IEnumerable<SourceSetupRow> rows)

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Bower.Core;
 using Bower.Integrity;
 using Bower.Management.Api;
@@ -169,11 +170,13 @@ public sealed class FileSourceSetupTests
         Assert.Equal(
             (FileTailSourceConfigurationLoader.MinimumMaxLineBytes, FileTailSourceConfigurationLoader.DefaultMaxLineBytes, FileTailSourceConfigurationLoader.MaximumMaxLineBytes),
             (FileSourceSchema.MinimumLineBytes, FileSourceSchema.DefaultLineBytes, FileSourceSchema.MaximumLineBytes));
+        Assert.Equal(FileTailSourceConfigurationLoader.DefaultRotationGracePolls, FileSourceSchema.DefaultRotationGracePolls);
         PolicyBundle bundle = SignedPackBundle(directory);
         FileTailSourceConfiguration golden = LoadAsCollector(Golden, bundle);
         Assert.Equal(
-            (1_000, 256, 1_048_576),
-            (golden.PollIntervalMilliseconds, golden.MaxLinesPerBatch, golden.MaxBytesPerBatch));
+            (1_000, 256, 1_048_576, FileSourceSchema.DefaultRotationGracePolls),
+            (golden.PollIntervalMilliseconds, golden.MaxLinesPerBatch, golden.MaxBytesPerBatch, golden.RotationGracePolls));
+        Assert.DoesNotContain("rotationGracePolls", Golden, StringComparison.Ordinal);
 
         // The route check is real: a parser the bundle does not load stops start-up.
         Assert.Throws<InvalidOperationException>(() => LoadAsCollector(Golden.Replace("\"parser\": 0", "\"parser\": 1", StringComparison.Ordinal), bundle));
@@ -306,6 +309,44 @@ public sealed class FileSourceSetupTests
         // An approved input can only be replaced, so a new request for it warns instead of failing.
         Assert.True(replacing.Valid);
         Assert.Contains(replacing.Checks, check => check is { Id: "inputId", State: SetupCheckStates.Warn });
+    }
+
+    [Theory]
+    [InlineData("/var/log/Auth.log", true)]
+    [InlineData("/var/log/AUTH.LOG", true)]
+    [InlineData("/var/log/auth.log.1", true)]
+    [InlineData("/var/log/auth.log.2", false)]
+    [InlineData("/var/log/auth.log-1", false)]
+    public async Task Plan_RefusesFilesTheCollectorTreatsAsOverlapping(string path, bool overlaps)
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await ManagementApiTests.StartAsync(directory, new FakeClock(Now), cancellationToken);
+        await ActiveCollectorAsync(app, "edge-01", cancellationToken);
+        await SubmitAsync(ManagementApiTests.Client(app, BowerRoles.Operator, "alex"), "file", Values(), cancellationToken);
+
+        SourceSetupPlanResult result = await PlanAsync(app, "file", "edge-01", With(("inputId", "other"), ("path", path)), cancellationToken);
+
+        // Same rule as the collector loader, which refuses the merged file for these pairs.
+        Assert.Equal(overlaps, FileTailSourceConfigurationLoader.Overlaps(path, "/var/log/auth.log"));
+        Assert.Equal(!overlaps, result.Valid);
+        if (overlaps)
+        {
+            SetupCheck failure = Assert.Single(result.Checks, check => check.State == SetupCheckStates.Fail);
+            Assert.Equal("path", failure.Id);
+            Assert.Contains("rotated .1 file", failure.Message, StringComparison.Ordinal);
+        }
+        else
+        {
+            JsonObject merged = JsonNode.Parse(Golden)!.AsObject();
+            merged["inputs"]!.AsArray().Add(new JsonObject
+            {
+                ["id"] = "other",
+                ["path"] = path,
+                ["route"] = new JsonObject { ["pack"] = "linux-authlog-ssh", ["parser"] = 0 }
+            });
+            Assert.Equal(2, LoadAsCollector(merged.ToJsonString(), SignedPackBundle(directory)).Inputs.Count);
+        }
     }
 
     [Fact]
